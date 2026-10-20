@@ -11,7 +11,7 @@ import { ZoneCardBand, type ZoneBandCard } from "../ui/molecules/ZoneCardBand"
 import { ZoneDialog } from "../ui/molecules/ZoneDialog"
 import { ZoneFoot } from "../ui/molecules/ZoneFoot"
 import { ZoneKeyboard, type ZoneKey, type ZoneKeyboardLayer } from "../ui/molecules/ZoneKeyboard"
-import { ZoneOptionGroup } from "../ui/molecules/ZoneOptionGroup"
+import { ZoneOptionGroup, type ZoneOptionGroupRow } from "../ui/molecules/ZoneOptionGroup"
 import { ZoneTabStrip, type ZoneTabItem } from "../ui/molecules/ZoneTabStrip"
 import { ZoneTitleCard } from "../ui/molecules/ZoneTitleCard"
 import { ZoneShell } from "../ui/templates/ZoneShell"
@@ -221,17 +221,17 @@ export function ZoneGames(props: ZoneGamesProps) {
     // targetKey names everything target says; the effect follows it alone.
   }, [targetKey])
 
-  const optRows: readonly SurfaceSettingItem[] = opts === undefined ? [] : [
-    ...opts.actions.map((action): SurfaceSettingItem => action.enabled
-      ? {
-        id: action.id,
-        label: action.label,
-        value: "Run",
-        description: action.description,
-        interaction: { kind: "action", actionId: action.id, destructive: action.destructive },
-      }
-      // Korri says why it cannot: its description stands where the verb would.
-      : { id: action.id, label: action.label, value: action.description }),
+  const optRows: readonly ZoneOptionGroupRow[] = opts === undefined ? [] : [
+    // A disabled action keeps its verb, dimmed; Korri's description under
+    // it says why, and A does nothing.
+    ...opts.actions.map((action): ZoneOptionGroupRow => ({
+      id: action.id,
+      label: action.label,
+      value: "Run",
+      description: action.description,
+      interaction: { kind: "action", actionId: action.id, destructive: action.destructive },
+      ...(action.enabled ? {} : { disabled: true }),
+    })),
     { id: RUN_WITH, label: "Run with", value: "Choose", interaction: { kind: "action", actionId: RUN_WITH } },
   ]
 

@@ -61,6 +61,15 @@ export interface ZoneOptionsConfirm {
   readonly confirmLabel: string
 }
 
+/**
+ * What a Wi-Fi row's value draws besides its words: the connection as the
+ * foot's badge, or a network's bars. The item's value is still the words,
+ * which name it for assistive tech.
+ */
+export type ZoneOptionsSignal =
+  | { readonly _tag: "Connection"; readonly connection: SurfaceNetworkConnection }
+  | { readonly _tag: "Network"; readonly strengthPercent: number }
+
 export interface ZoneOptionsRow {
   /** Korri's setting id, or a `zone:` id for a row Zone makes. */
   readonly id: string
@@ -69,6 +78,10 @@ export interface ZoneOptionsRow {
   /** What ZoneOptionRow draws. */
   readonly item: SurfaceSettingItem
   readonly press: ZoneOptionsPress
+  /** A Wi-Fi row's picture of its signal. */
+  readonly signal?: ZoneOptionsSignal
+  /** Korri cannot do this now: the row is dimmed and its description says why. */
+  readonly disabled?: boolean
 }
 
 export interface ZoneOptionsGroup {
@@ -100,17 +113,10 @@ export const ZONE_WIFI_HIDDEN = "zone:wifi:hidden"
 export const zoneSystemRowId = (actionId: string) => `zone:system:${actionId}`
 export const zoneNetworkRowId = (networkId: string) => `zone:wifi:network:${networkId}`
 
-/** Signal bars as glyphs: one lit per quarter, never none, as ZoneSignal counts them. */
-const BAR_GLYPHS = ["▂", "▄", "▆", "█"] as const
-const BAR_OFF = "▁"
-
-export function zoneBars(strengthPercent: number | undefined): string {
-  const lit = strengthPercent === undefined ? 1
-    : Math.max(1, Math.min(BAR_GLYPHS.length, Math.round(strengthPercent / 25)))
-  return BAR_GLYPHS.map((glyph, index) => (index < lit ? glyph : BAR_OFF)).join("")
-}
-
-/** The connection as the WI-FI group's first row reads it. */
+/**
+ * The connection as the WI-FI group's first row names it. The row draws it
+ * as ZoneSignal (the foot's badge, with its bars); these are its words.
+ */
 export function zoneConnectionValue(connection: SurfaceNetworkConnection): string {
   switch (connection._tag) {
     case "Offline":
@@ -119,15 +125,14 @@ export function zoneConnectionValue(connection: SurfaceNetworkConnection): strin
       return "WIRED"
     case "Wifi":
       return connection.strengthPercent === undefined
-        ? `${connection.ssid} ${zoneBars(undefined)}`
-        : `${connection.ssid} ${zoneBars(connection.strengthPercent)} ${connection.strengthPercent}%`
+        ? connection.ssid
+        : `${connection.ssid} ${connection.strengthPercent}%`
   }
 }
 
-/** A listed network's value: bars and strength, then LOCK and KNOWN when they hold. */
+/** A listed network's words: strength, then LOCK and KNOWN when they hold. The row draws bars before them. */
 export function zoneNetworkValue(network: SurfaceWifiNetwork): string {
   return [
-    zoneBars(network.strengthPercent),
     `${network.strengthPercent}%`,
     ...(network.secured ? ["LOCK"] : []),
     ...(network.known ? ["KNOWN"] : []),
@@ -205,7 +210,10 @@ function settingsGroups(slices: ZoneOptionsSlices): ZoneOptionsGroup[] {
   })
 }
 
-/** A device action as an action row. An inert one is drawn read-only and says so. */
+/**
+ * A device action as an action row. An inert one is the same row disabled:
+ * dimmed, A does nothing, and Korri's description says why when focused.
+ */
 function systemRow(action: SurfaceAction): ZoneOptionsRow {
   const id = zoneSystemRowId(action.id)
   const description = action.description === undefined ? {} : { description: action.description }
@@ -213,8 +221,9 @@ function systemRow(action: SurfaceAction): ZoneOptionsRow {
     return {
       id,
       group: ZONE_OPTIONS_SYSTEM,
-      item: { id, label: action.label, value: "Unavailable", ...description },
+      item: { id, label: action.label, value: "Go", ...description, interaction: { kind: "action", actionId: action.id } },
       press: { _tag: "Nothing" },
+      disabled: true,
     }
   }
   const destructive = action.destructive === true
@@ -259,11 +268,14 @@ const wifiRow = (id: string, item: Omit<SurfaceSettingItem, "id">, press: ZoneOp
 function wifiGroup(slices: ZoneOptionsSlices): ZoneOptionsGroup[] {
   const network = slices.network
   if (network === undefined) return []
-  const connection = wifiRow(
-    ZONE_WIFI_CONNECTION,
-    { label: "CONNECTION", value: zoneConnectionValue(network.connection) },
-    { _tag: "Nothing" },
-  )
+  const connection: ZoneOptionsRow = {
+    ...wifiRow(
+      ZONE_WIFI_CONNECTION,
+      { label: "CONNECTION", value: zoneConnectionValue(network.connection) },
+      { _tag: "Nothing" },
+    ),
+    signal: { _tag: "Connection", connection: network.connection },
+  }
   const wifi = network.wifi
   if (wifi._tag === "NoAdapter") {
     return [{
@@ -276,16 +288,19 @@ function wifiGroup(slices: ZoneOptionsSlices): ZoneOptionsGroup[] {
   }
   const networks = [...wifi.networks].sort((a, b) => b.strengthPercent - a.strengthPercent)
   const attempt = wifi.attempt
-  const networkRows = networks.map(item => wifiRow(
-    zoneNetworkRowId(item.id),
-    {
-      label: item.ssid,
-      value: zoneNetworkValue(item),
-      ...(attempt._tag === "Connecting" && attempt.ssid === item.ssid ? { description: "CONNECTING" } : {}),
-      interaction: { kind: "action", actionId: zoneNetworkRowId(item.id) },
-    },
-    { _tag: "Join", networkId: item.id },
-  ))
+  const networkRows = networks.map((item): ZoneOptionsRow => ({
+    ...wifiRow(
+      zoneNetworkRowId(item.id),
+      {
+        label: item.ssid,
+        value: zoneNetworkValue(item),
+        ...(attempt._tag === "Connecting" && attempt.ssid === item.ssid ? { description: "CONNECTING" } : {}),
+        interaction: { kind: "action", actionId: zoneNetworkRowId(item.id) },
+      },
+      { _tag: "Join", networkId: item.id },
+    ),
+    signal: { _tag: "Network", strengthPercent: item.strengthPercent },
+  }))
   const rows: ZoneOptionsRow[] = [
     connection,
     wifiRow(

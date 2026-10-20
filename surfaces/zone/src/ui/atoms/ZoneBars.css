@@ -1,0 +1,36 @@
+/* Four bars, bottom-aligned, a quarter taller each. */
+.zone-bars {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  gap: var(--zone-bar-gap);
+  height: var(--zone-bars-height);
+}
+
+.zone-bars-bar {
+  display: block;
+  width: var(--zone-bar-width);
+  background: var(--zone-bar-off);
+  opacity: var(--zone-bar-off-opacity);
+}
+
+.zone-bars-bar:nth-child(1) {
+  height: 31%;
+}
+
+.zone-bars-bar:nth-child(2) {
+  height: 54%;
+}
+
+.zone-bars-bar:nth-child(3) {
+  height: 77%;
+}
+
+.zone-bars-bar:nth-child(4) {
+  height: 100%;
+}
+
+.zone-bars-bar[data-lit="on"] {
+  background: var(--zone-badge-strength);
+  opacity: 1;
+}

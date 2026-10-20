@@ -609,3 +609,14 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   since `ZoneBusyStrip` has no callback (out of this fix). The onboarding
   keyboard still lights the last pressed key: its model has no focus
   message, and the fix was to keep behaviour identical.
+- **OPTIONS and GAME OPTS. use ZoneOptionRow's `valueNode` and
+  `disabled`.** Supersedes "Rows are strings" and "An inert device action
+  ... UNAVAILABLE" and GAME OPTS.' description-as-value. The plan marks a
+  Wi-Fi row with a `signal` and an inert row `disabled`; the page draws
+  the connection row as `ZoneSignal` (at the row's type, through
+  `--zone-signal-type`) and a network row as `ZoneBars` then its words
+  (72% LOCK KNOWN). The words stay the row's value and accessible name; no
+  glyph bars remain. `ZoneBars` is a new atom, and `ZoneSignal` draws its
+  bars with it. A disabled row keeps its verb (GO, RUN), dimmed, and
+  `ZoneOptionRow` now shows a disabled row's description whether or not
+  it is focused, so Korri's reason is always on screen.

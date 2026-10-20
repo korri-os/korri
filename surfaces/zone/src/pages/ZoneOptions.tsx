@@ -1,12 +1,21 @@
 import "./ZoneOptions.css"
 import { useEffect, useRef } from "react"
-import { entryHeading, focusedRow, optionsPlan, type ZoneOptionsSlices, type ZoneOptionsView } from "../plan/options"
+import {
+  entryHeading,
+  focusedRow,
+  optionsPlan,
+  type ZoneOptionsRow,
+  type ZoneOptionsSlices,
+  type ZoneOptionsView,
+} from "../plan/options"
+import { ZoneBars } from "../ui/atoms/ZoneBars"
 import { ZoneBanner } from "../ui/atoms/ZoneBanner"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
+import { ZoneSignal } from "../ui/atoms/ZoneSignal"
 import { ZoneDialog } from "../ui/molecules/ZoneDialog"
 import { ZoneFoot } from "../ui/molecules/ZoneFoot"
 import type { ZoneKey } from "../ui/molecules/ZoneKeyboard"
-import { ZoneOptionGroup } from "../ui/molecules/ZoneOptionGroup"
+import { ZoneOptionGroup, type ZoneOptionGroupRow } from "../ui/molecules/ZoneOptionGroup"
 import { ZoneTabStrip, type ZoneTabItem } from "../ui/molecules/ZoneTabStrip"
 import { ZoneOptionsEntry } from "../ui/organisms/ZoneOptionsEntry"
 import { ZoneShell, type ZoneBand, type ZoneStrips } from "../ui/templates/ZoneShell"
@@ -16,6 +25,25 @@ const TABS: readonly ZoneTabItem[] = [
   { id: "options", label: "Options", sub: "Settings + Wi-Fi" },
   { id: "savedata", label: "Save data", sub: "Identity" },
 ]
+
+/**
+ * A plan row as the group draws it. A Wi-Fi row's signal is drawn, not
+ * spelt: the connection as the foot's badge, a network's bars before its
+ * words. A disabled row stays focusable so Korri's reason can be read.
+ */
+function drawnRow(row: ZoneOptionsRow): ZoneOptionGroupRow {
+  const signal = row.signal
+  const valueNode = signal === undefined ? undefined
+    : signal._tag === "Connection"
+      ? <span className="zone-options-connection"><ZoneSignal connection={signal.connection} /></span>
+      : (
+        <span className="zone-options-network">
+          <ZoneBars strengthPercent={signal.strengthPercent} />
+          <span className="zone-options-network-words">{row.item.value}</span>
+        </span>
+      )
+  return { ...row.item, ...(valueNode === undefined ? {} : { valueNode }), ...(row.disabled ? { disabled: true } : {}) }
+}
 
 /**
  * The OPTIONS tab: Mania's OPTIONS screen. Under the OPTIONS banner, one
@@ -150,7 +178,7 @@ export function ZoneOptions({
                   onFocus={onRowFocus}
                   onPress={onRowPress}
                   onStep={onRowStep}
-                  rows={group.rows.map(row => row.item)}
+                  rows={group.rows.map(drawnRow)}
                   status={group.status}
                   title={group.title}
                 />

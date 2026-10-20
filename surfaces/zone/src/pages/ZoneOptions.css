@@ -74,3 +74,28 @@
   max-height: 100%;
   min-height: 0;
 }
+
+/* The connection row draws the foot's badge at the row's type. */
+.zone-options-connection {
+  --zone-signal-type: 1em;
+  --zone-signal-share: 100%;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+}
+
+/* A network's bars, then its strength, LOCK and KNOWN. */
+.zone-options-network {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--zone-row-gap);
+  min-width: 0;
+}
+
+.zone-options-network-words {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
