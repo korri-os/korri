@@ -19,11 +19,21 @@ import { useLayoutEffect, type RefObject } from "react"
 export const ZONE_FIT_MIN = 0.5
 export const ZONE_FIT_STEPS = 10
 
-const overflows = (element: HTMLElement): boolean =>
-  element.scrollHeight > element.clientHeight + 1
-  || element.scrollWidth > element.clientWidth + 1
-  || Array.from(element.children).some(child =>
-    child instanceof HTMLElement && child.scrollWidth > child.clientWidth + 1)
+/**
+ * A line of Anton reaches past its line box: the face's ascent and descent
+ * add up to more than Zone's line height, and the browser counts that
+ * reach as scrollable overflow. Half a line of slack lets a line that
+ * fits count as fitting; a whole extra line still counts as overflow.
+ */
+const VERTICAL_SLACK_EM = 0.5
+
+const overflows = (element: HTMLElement): boolean => {
+  const slack = Number.parseFloat(getComputedStyle(element).fontSize) * VERTICAL_SLACK_EM || 1
+  return element.scrollHeight > element.clientHeight + slack
+    || element.scrollWidth > element.clientWidth + 1
+    || Array.from(element.children).some(child =>
+      child instanceof HTMLElement && child.scrollWidth > child.clientWidth + 1)
+}
 
 export function fitZoneType(element: HTMLElement): void {
   for (let step = 0; step <= ZONE_FIT_STEPS; step += 1) {
