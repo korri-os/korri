@@ -5,11 +5,12 @@ import {
   type InMemoryClaim,
   type InMemoryStoreConfig,
 } from "../korrid/store-acquisition-client"
-import { ACQUIRE_FAILURE } from "../korrid/store-acquisition-types"
+import { ACQUISITION_CODE } from "../korrid/store-acquisition-types"
 import {
   CANCELLED_NOTE,
   createStoreAcquisition,
   NO_SYSTEM_REASON,
+  NOT_AVAILABLE_KICKER,
   STAGED_MESSAGE,
   STOPPED_KICKER,
   STOPPED_REASON,
@@ -17,9 +18,11 @@ import {
 } from "./store-acquisition"
 
 const HUB = "@korri:homebrewhub"
+const art = (system: string, file?: { name: string; sizeBytes?: number }) =>
+  ({ kind: "content" as const, format: { id: "rom" }, system, ...(file === undefined ? {} : { file }) })
 const claim = (id: string, extra: Partial<InMemoryClaim> = {}): InMemoryClaim => ({
   providerId: HUB, id, title: id.toUpperCase(), url: `https://hh3.gbdev.io/game/${id}`, platform: "Game Boy",
-  artifact: { system: "gb", file: { name: `${id}.gb`, sizeBytes: 32_000 } }, ...extra,
+  artifact: art("gb", { name: `${id}.gb`, sizeBytes: 32_000 }), ...extra,
 })
 const base = (claims: InMemoryClaim[], extra: Partial<InMemoryStoreConfig> = {}): InMemoryStoreConfig => ({
   providers: [{ id: HUB, title: "Homebrew Hub", pluginId: HUB }],
@@ -170,11 +173,10 @@ test("an older search answer never replaces a newer one", async () => {
   expect(store.getSnapshot().search).toMatchObject({ _tag: "Ready", query: "tobu" })
 })
 
-test("details offer Get; a claim with no system and one the provider withdrew cannot be got", async () => {
+test("details offer Get; a claim with no system cannot be got, and asks korrid nothing", async () => {
   const h = harness(base([
     claim("2048gb", { description: "Slide the tiles." }),
     claim("nosys", { artifact: undefined, platform: undefined }),
-    claim("gone", { unavailable: "Homebrew Hub no longer offers this game." }),
   ]))
   await h.open("2048gb")
   const details = h.now().details
@@ -185,10 +187,55 @@ test("details offer Get; a claim with no system and one the provider withdrew ca
   await h.until("nosys", () => h.now().details._tag === "Ready" && h.get()._tag === "Unavailable")
   expect(h.get()).toEqual({ _tag: "Unavailable", reason: NO_SYSTEM_REASON })
 
-  h.store.openEntry(storeEntryId({ providerId: HUB, id: "gone" }))
-  await h.until("gone", () => h.now().details._tag === "Ready" && (h.now().details as { entry: { title: string } }).entry.title === "GONE")
-  expect(h.get()).toEqual({ _tag: "Unavailable", reason: "Homebrew Hub no longer offers this game." })
   expect(h.calls.some(call => call.startsWith("acquire"))).toBe(false)
+})
+
+test("a provider that will not give the file: Not available, with Retry", async () => {
+  const h = harness(base([claim("gone", { unavailable: "The provider could not give this file. It may be back later." })]))
+  await h.open("gone")
+  h.press("Get")
+  h.press("Download")
+  await h.until("not available", () => h.get()._tag === "Problem")
+  expect(h.get()).toMatchObject({
+    _tag: "Problem", kicker: NOT_AVAILABLE_KICKER, reason: "The provider could not give this file. It may be back later.",
+    actions: [{ label: "Retry" }],
+  })
+  expect(h.korrid.downloadedBytes()).toBe(0)
+})
+
+test("a system this device cannot play is refused before download", async () => {
+  const h = harness(base([claim("chip", { platform: "CHIP-8", artifact: art("chip8") })], { unknownSystems: ["chip8"] }))
+  await h.open("chip")
+  h.press("Get")
+  h.press("Download")
+  await h.until("refused", () => h.get()._tag === "Unavailable")
+  expect(h.get()).toEqual({ _tag: "Unavailable", reason: "This game is for a system this device cannot play, so it can't be downloaded here." })
+})
+
+test("a page instead of the file (DownloadNotFinal) is not available here", async () => {
+  const korrid = createInMemoryStoreAcquisition(base([claim("itch")]))
+  const store = createStoreAcquisition({
+    ...korrid,
+    acquisitionProviders: () => korrid.acquisitionProviders(),
+    acquisitionSearch: request => korrid.acquisitionSearch(request),
+    acquisitionDetails: request => korrid.acquisitionDetails(request),
+    acquisitionAcquire: async request => ({
+      _tag: "Ok",
+      payload: { jobId: "j", providerId: request.providerId, id: request.id, state: {
+        _tag: "Failed", reason: { code: ACQUISITION_CODE.notFinal, message: "This provider hands out this game only on its website." },
+      } },
+    }),
+  }, { pollIntervalMs: 2 })
+  store.openStore(); await flush()
+  store.search(HUB, ""); await flush(); await flush()
+  store.openEntry(storeEntryId({ providerId: HUB, id: "itch" })); await flush(); await flush()
+  const act = (label: string) => {
+    const details = store.getSnapshot().details
+    if (details._tag !== "Ready" || !("actions" in details.get)) throw new Error("no actions")
+    store.act(details.get.actions.find(action => action.label === label)!.id)
+  }
+  act("Get"); act("Download"); await flush(); await flush()
+  expect(store.getSnapshot().details).toMatchObject({ get: { _tag: "Unavailable", reason: "This provider hands out this game only on its website." } })
 })
 
 test("details that fail to load offer Retry", async () => {
@@ -221,7 +268,7 @@ test("details that fail to load offer Retry", async () => {
 })
 
 test("Get asks first with the size; Cancel there asks nothing of korrid", async () => {
-  const h = harness(base([claim("2048gb"), claim("unsized", { artifact: { system: "gb" } })]))
+  const h = harness(base([claim("2048gb"), claim("unsized", { artifact: art("gb") })]))
   await h.open("2048gb")
   h.press("Get")
   expect(h.get()).toMatchObject({ _tag: "Confirm", kicker: "Download to this device", detail: "2048GB, 32 KB" })
@@ -275,7 +322,7 @@ test("no folder for the system is refused before any download, naming the system
 })
 
 test("several folders: the person chooses, and acquire goes again with that source", async () => {
-  const h = harness(base([claim("anguna", { platform: "Game Boy Advance", artifact: { system: "gba", file: { name: "anguna.gba", sizeBytes: 16_000 } } })], {
+  const h = harness(base([claim("anguna", { platform: "Game Boy Advance", artifact: art("gba", { name: "anguna.gba", sizeBytes: 16_000 }) })], {
     sources: { gba: [{ id: "games-gba", label: "Games · GBA" }, { id: "sd-gba", label: "SD card · GBA" }] },
   }))
   await h.open("anguna")
@@ -347,7 +394,7 @@ test("downloaded but not recognised says so plainly", async () => {
 })
 
 test("Cancel during the download stops it, and Get is offered again", async () => {
-  const h = harness(base([claim("2048gb", { artifact: { system: "gb", file: { name: "2048.gb", sizeBytes: 160_000 } } })]))
+  const h = harness(base([claim("2048gb", { artifact: art("gb", { name: "2048.gb", sizeBytes: 160_000 }) })]))
   await h.open("2048gb")
   h.press("Get")
   h.press("Download")
@@ -393,7 +440,7 @@ test("a failed download offers Retry, and Retry finishes it", async () => {
 })
 
 test("korrid restarting under a download: Download stopped, Retry starts from zero", async () => {
-  const h = harness(base([claim("2048gb", { artifact: { system: "gb", file: { name: "2048.gb", sizeBytes: 160_000 } } })]))
+  const h = harness(base([claim("2048gb", { artifact: art("gb", { name: "2048.gb", sizeBytes: 160_000 }) })]))
   await h.open("2048gb")
   h.press("Get")
   h.press("Download")
@@ -460,7 +507,7 @@ test("a stale or repeated press sends nothing", async () => {
 })
 
 test("a download keeps going while another entry is open, and shows again on its own", async () => {
-  const h = harness(base([claim("2048gb", { artifact: { system: "gb", file: { name: "2048.gb", sizeBytes: 160_000 } } }), claim("tobu")]))
+  const h = harness(base([claim("2048gb", { artifact: art("gb", { name: "2048.gb", sizeBytes: 160_000 }) }), claim("tobu")]))
   await h.open("2048gb")
   h.press("Get")
   h.press("Download")
@@ -476,13 +523,12 @@ test("a download keeps going while another entry is open, and shows again on its
   expect(["Working", "InLibrary"]).toContain(h.get()._tag)
 })
 
-test("the failure codes the store tells apart are the mirror's", () => {
-  // A reminder for integration: these names come from the local mirror, a GAP.
-  expect(ACQUIRE_FAILURE).toEqual({
-    noSource: "AcquireNoSource",
-    severalSources: "AcquireSeveralSources",
-    unknownSystem: "AcquireUnknownSystem",
-    unavailable: "AcquireEntryUnavailable",
-    jobNotFound: "NotFound",
+test("the codes the store tells apart are build-3's (SCRIPTING.md)", () => {
+  expect(ACQUISITION_CODE).toEqual({
+    unknownJob: "AcquisitionUnknownJob",
+    noSource: "AcquisitionNoSource",
+    systemUnknown: "AcquisitionSystemUnknown",
+    notFinal: "DownloadNotFinal",
+    resolutionFailed: "DownloadResolutionFailed",
   })
 })

@@ -2,86 +2,101 @@
  * GAP — delete at integration, and import these names from
  * "@contracts/generated/korrid" instead.
  *
- * Hand-declared mirror of the six game-acquisition RPC methods the `build`
- * worker adds to services/korrid and Typeshare regenerates into
- * contracts/generated/korrid.ts. The narrowest shape the portal reads, taken
- * from the workflow contract (section 4) and the legacy names it preserves:
- * `ProviderRecord { id, title }` plus the owning plugin, legacy
- * `SearchRequest`/`SearchResponse`, `ProviderClaim`, `ProviderClaimDetails`,
- * `AcquireArtifactRequest` minus the fields korrid now takes from the claim,
- * and `AcquireJobStatus` with `state` as a tagged union. Casing follows the
- * generated file (camelCase on the wire; unions tagged on `_tag`).
- *
- * Unresolved until `build` reports the exact wire (each one is named in the
- * report): the failure codes below, and how "several eligible folders" lists
- * the folders to choose from (here: `sources` on the failure).
+ * Mirror of the game-acquisition wire the `build` worker exports through
+ * Typeshare (build-3, f53e2cade, `services/korrid/SCRIPTING.md` "Acquisition
+ * providers"), copied name for name, plus the coordinator's ChooseSource
+ * amendment to AcquireJobState that build-3 is committing. Every name below is
+ * the generated one; only `StoreAcquisitionRpcRequest` is local, because the
+ * generated RpcRequest union does not carry the six methods yet.
  */
 import type { RpcFailure } from "@contracts/generated/korrid"
 
-export interface AcquisitionProvider {
+export type ArtifactKind = "content" | "patch"
+
+export interface SemanticFormat {
   id: string
-  title: string
-  /** The plugin that declares the provider. */
-  pluginId: string
+  version?: string
 }
 
-export interface AcquisitionProviders {
-  providers: AcquisitionProvider[]
-}
-
-/** Legacy `ArtifactFile`, as much as the portal reads. */
-export interface ClaimArtifactFile {
+export interface ArtifactFile {
   name: string
+  extension?: string
+  mediaType?: string
   sizeBytes?: number
 }
 
-/** Legacy `ArtifactAcquisitionHint`, as much as the portal reads. */
-export interface ClaimArtifact {
-  /** The system id the registry knows. Absent: the claim cannot be acquired. */
+export interface ArtifactAcquisitionHint {
+  kind: ArtifactKind
+  /** The Korri system id. Absent: the claim is shown but cannot be acquired. */
   system?: string
-  file?: ClaimArtifactFile
+  format: SemanticFormat
+  file?: ArtifactFile
 }
 
-/** Legacy `ProviderClaim` minus `ref`/`playable` (contract section 3). */
 export interface ProviderClaim {
+  _tag: "ProviderClaim"
   providerId: string
   id: string
   title: string
   url: string
   platform?: string
   thumbnailUrl?: string
-  artifact?: ClaimArtifact
+  artifact?: ArtifactAcquisitionHint
+  fetchedAt?: string
 }
 
-/** Legacy `ProviderClaimDetails` minus `ref`/`playable`/`facets`. */
-export interface ProviderClaimDetails extends ProviderClaim {
+export interface ProviderClaimDetails {
+  _tag: "ProviderClaimDetails"
+  providerId: string
+  id: string
+  title: string
+  url: string
   description?: string
+  downloadPageUrl?: string
+  artifact?: ArtifactAcquisitionHint
+  fetchedAt?: string
 }
 
-export interface AcquisitionSearchRequest {
+export interface AcquisitionPluginsPayload {}
+
+export interface AcquisitionProvider {
+  id: string
+  title: string
+  pluginId: string
+}
+
+export interface PluginListResponse {
+  providers: AcquisitionProvider[]
+}
+
+export interface SearchRequest {
   query: string
-  /** Exactly one in this run; more is a caller error. */
+  /** Exactly one. */
   providerIds: string[]
 }
 
-export interface AcquisitionSearchResponse {
+export interface SearchResponse {
   claims: ProviderClaim[]
 }
 
-export interface AcquisitionDetailsRequest {
+export interface DetailsRequest {
   providerId: string
   id: string
 }
 
-export interface AcquisitionAcquireRequest {
+export interface AcquireArtifactRequest {
   providerId: string
   id: string
   fileName?: string
-  /** One of several eligible sources, after the person chose. */
+  /** A `DiscoverySource.id` from a ChooseSource job. */
   sourceId?: string
 }
 
-export interface AcquisitionJobRequest {
+export interface AcquireStatusRequest {
+  jobId: string
+}
+
+export interface AcquireCancelRequest {
   jobId: string
 }
 
@@ -93,8 +108,10 @@ export type AcquireJobState =
   | { _tag: "Staged"; message: string }
   | { _tag: "Failed"; reason: RpcFailure }
   | { _tag: "Cancelled" }
+  /** Several folders can take it. Terminal: nothing was downloaded; acquire
+   * again with one `sourceId`, which makes a new job. DiscoverySource's names. */
+  | { _tag: "ChooseSource"; sources: { id: string; label: string }[] }
 
-/** Legacy `AcquireJobStatus` with `stagedPath`/`placedPath` dropped. */
 export interface AcquireJobStatus {
   jobId: string
   providerId: string
@@ -105,51 +122,38 @@ export interface AcquireJobStatus {
   state: AcquireJobState
 }
 
-/** One folder a claim could be placed in. */
-export interface AcquireSourceChoice {
-  id: string
-  label: string
-}
-
-/** RpcFailure, plus the folders to choose from when there are several. */
-export interface AcquireFailure extends RpcFailure {
-  sources?: AcquireSourceChoice[]
-}
-
-/**
- * The failure codes the portal tells apart. Every other code is shown with
- * korrid's own message.
- */
-export const ACQUIRE_FAILURE = {
-  /** No paired source holds the claim's system. Refused before download. */
-  noSource: "AcquireNoSource",
-  /** Several paired sources hold it; `sources` lists them. */
-  severalSources: "AcquireSeveralSources",
-  /** The claim names no system the registry knows. */
-  unknownSystem: "AcquireUnknownSystem",
-  /** The provider no longer offers the entry (legacy FailedDownload not-found). */
-  unavailable: "AcquireEntryUnavailable",
-  /** acquire-status / acquire-cancel for a job korrid does not hold. */
-  jobNotFound: "NotFound",
-} as const
-
-export type AcquisitionProvidersOutcome =
-  | { _tag: "Ok"; payload: AcquisitionProviders }
+export type PluginListOutcome =
+  | { _tag: "Ok"; payload: PluginListResponse }
   | { _tag: "Err"; payload: RpcFailure }
-export type AcquisitionSearchOutcome =
-  | { _tag: "Ok"; payload: AcquisitionSearchResponse }
+export type SearchOutcome =
+  | { _tag: "Ok"; payload: SearchResponse }
   | { _tag: "Err"; payload: RpcFailure }
-export type AcquisitionDetailsOutcome =
+export type DetailsOutcome =
   | { _tag: "Ok"; payload: ProviderClaimDetails }
   | { _tag: "Err"; payload: RpcFailure }
 export type AcquireJobOutcome =
   | { _tag: "Ok"; payload: AcquireJobStatus }
-  | { _tag: "Err"; payload: AcquireFailure }
+  | { _tag: "Err"; payload: RpcFailure }
+
+/** The codes the store tells apart (SCRIPTING.md, "Acquisition providers").
+ * Every other code is shown with korrid's own message, which is plain copy. */
+export const ACQUISITION_CODE = {
+  /** `acquire-status`/`acquire-cancel` after a korrid restart. */
+  unknownJob: "AcquisitionUnknownJob",
+  /** No paired source holds the claim's system; refused before download. */
+  noSource: "AcquisitionNoSource",
+  /** The claim names no enabled system: it cannot be acquired. */
+  systemUnknown: "AcquisitionSystemUnknown",
+  /** Failed: the provider answered with a page, not the file (NonFinalDownload). */
+  notFinal: "DownloadNotFinal",
+  /** Failed: the provider said it cannot give the file (FailedDownload). */
+  resolutionFailed: "DownloadResolutionFailed",
+} as const
 
 export type StoreAcquisitionRpcRequest =
-  | { _tag: "app.acquisition.providers"; payload: Record<string, never> }
-  | { _tag: "app.acquisition.search"; payload: AcquisitionSearchRequest }
-  | { _tag: "app.acquisition.details"; payload: AcquisitionDetailsRequest }
-  | { _tag: "app.acquisition.acquire"; payload: AcquisitionAcquireRequest }
-  | { _tag: "app.acquisition.acquire-status"; payload: AcquisitionJobRequest }
-  | { _tag: "app.acquisition.acquire-cancel"; payload: AcquisitionJobRequest }
+  | { _tag: "app.acquisition.providers"; payload: AcquisitionPluginsPayload }
+  | { _tag: "app.acquisition.search"; payload: SearchRequest }
+  | { _tag: "app.acquisition.details"; payload: DetailsRequest }
+  | { _tag: "app.acquisition.acquire"; payload: AcquireArtifactRequest }
+  | { _tag: "app.acquisition.acquire-status"; payload: AcquireStatusRequest }
+  | { _tag: "app.acquisition.acquire-cancel"; payload: AcquireCancelRequest }

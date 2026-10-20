@@ -10,30 +10,29 @@
  */
 import type { Game, RpcFailure, RpcRequest } from "@contracts/generated/korrid"
 import {
-  ACQUIRE_FAILURE,
+  ACQUISITION_CODE,
+  type AcquireArtifactRequest,
   type AcquireJobOutcome,
   type AcquireJobState,
   type AcquireJobStatus,
-  type AcquireSourceChoice,
-  type AcquisitionAcquireRequest,
-  type AcquisitionDetailsOutcome,
-  type AcquisitionDetailsRequest,
   type AcquisitionProvider,
-  type AcquisitionProvidersOutcome,
-  type AcquisitionSearchOutcome,
-  type AcquisitionSearchRequest,
-  type ProviderClaimDetails,
+  type DetailsOutcome,
+  type DetailsRequest,
+  type PluginListOutcome,
+  type ProviderClaim,
+  type SearchOutcome,
+  type SearchRequest,
   type StoreAcquisitionRpcRequest,
 } from "./store-acquisition-types"
 
 export interface StoreAcquisitionMethods {
   /** Providers every enabled provider plugin declares. */
-  acquisitionProviders(): Promise<AcquisitionProvidersOutcome>
+  acquisitionProviders(): Promise<PluginListOutcome>
   /** Search exactly one provider. */
-  acquisitionSearch(request: AcquisitionSearchRequest): Promise<AcquisitionSearchOutcome>
-  acquisitionDetails(request: AcquisitionDetailsRequest): Promise<AcquisitionDetailsOutcome>
-  /** Start, or return the existing job for the same claim. */
-  acquisitionAcquire(request: AcquisitionAcquireRequest): Promise<AcquireJobOutcome>
+  acquisitionSearch(request: SearchRequest): Promise<SearchOutcome>
+  acquisitionDetails(request: DetailsRequest): Promise<DetailsOutcome>
+  /** Start, or return the live or imported job for the same claim. */
+  acquisitionAcquire(request: AcquireArtifactRequest): Promise<AcquireJobOutcome>
   acquisitionAcquireStatus(jobId: string): Promise<AcquireJobOutcome>
   acquisitionAcquireCancel(jobId: string): Promise<AcquireJobOutcome>
 }
@@ -63,14 +62,19 @@ export function httpStoreAcquisition(call: Call, failed: Failed): StoreAcquisiti
 }
 
 /** One claim the in-memory providers offer, and how its download goes. */
-export interface InMemoryClaim extends ProviderClaimDetails {
+export interface InMemoryClaim extends Omit<ProviderClaim, "_tag"> {
+  readonly description?: string
   /** Fail once, with this plain copy, when the download reaches `atFraction`
    * (default half). The next acquire completes. */
   readonly failure?: { readonly message: string; readonly atFraction?: number }
   /** The library does not recognise the file: the job ends Staged. */
   readonly unrecognised?: boolean
-  /** The provider no longer offers it: details answers unavailable. */
+  /** The provider will not hand out the file (FailedDownload): the job fails
+   * DownloadResolutionFailed with this copy. */
   readonly unavailable?: string
+  /** The size the server states once the download starts (Content-Length),
+   * when the provider's claim stated none. */
+  readonly contentLength?: number
   /** The bytes are already in the folder: acquire answers Imported at once. */
   readonly inLibrary?: boolean
 }
@@ -80,7 +84,9 @@ export interface InMemoryStoreConfig {
   /** Keyed by provider id. */
   readonly claims?: Readonly<Record<string, readonly InMemoryClaim[]>>
   /** Folders on this device, keyed by system id. Absent: none. */
-  readonly sources?: Readonly<Record<string, readonly AcquireSourceChoice[]>>
+  readonly sources?: Readonly<Record<string, readonly { readonly id: string; readonly label: string }[]>>
+  /** Systems the registry does not know: their claims cannot be acquired. */
+  readonly unknownSystems?: readonly string[]
   /** Provider ids whose searches fail, with korrid's message. */
   readonly failingSearches?: Readonly<Record<string, string>>
   /** Failing searches recover after this many tries. Default: never. */
@@ -103,47 +109,48 @@ export interface InMemoryStoreAcquisition extends StoreAcquisitionMethods {
   bindCatalog(addGame: (game: Game) => void): void
 }
 
-/** The browser preview's providers: the three in scope (contract section 1). */
+/**
+ * The browser preview's korrid: the three providers in scope (workflow
+ * contract section 1) with the entries the providers worker found. Curated
+ * entries state no size, so Confirm says the size is unknown and the size
+ * arrives with the download (`contentLength`). No art: the portal never loads
+ * a provider's image. Folders: one each for Game Boy, NES and PICO-8, two for
+ * GBA (a choice). Ambushed fails once partway, so Retry shows.
+ */
 export const SAMPLE_STORE: InMemoryStoreConfig = {
   providers: [
+    { id: "@korri:pico8", title: "PICO-8 BBS", pluginId: "@korri:pico8" },
     { id: "@korri:homebrewhub", title: "Homebrew Hub", pluginId: "@korri:homebrewhub" },
     { id: "@korri:retrobrews", title: "RetroBrews", pluginId: "@korri:retrobrews" },
-    { id: "@korri:pico8", title: "PICO-8 BBS", pluginId: "@korri:pico8" },
   ],
   claims: {
     "@korri:homebrewhub": [
       {
         providerId: "@korri:homebrewhub", id: "2048gb", title: "2048", url: "https://hh3.gbdev.io/game/2048gb",
-        platform: "Game Boy", description: "Slide the tiles and join equal numbers to reach 2048. A Game Boy port of the puzzle.",
-        artifact: { system: "gb", file: { name: "2048.gb", sizeBytes: 32_768 } },
-      },
-      {
-        providerId: "@korri:homebrewhub", id: "tobu-tobu-girl", title: "Tobu Tobu Girl", url: "https://hh3.gbdev.io/game/tobutobugirl",
-        platform: "Game Boy", description: "An arcade platformer about a girl and her flying cat.",
-        artifact: { system: "gb", file: { name: "tobutobugirl.gb", sizeBytes: 262_144 } }, unrecognised: true,
-      },
-      {
-        providerId: "@korri:homebrewhub", id: "basil-termini", title: "Basil Termini 2048 Advance", url: "https://hh3.gbdev.io/game/basil",
-        platform: "Game Boy Advance", artifact: { system: "gba" }, unavailable: "The provider no longer offers this game.",
+        platform: "Game Boy", description: "Slide the tiles and join equal numbers to reach 2048.",
+        artifact: { kind: "content", format: { id: "gb-rom" }, system: "gb", file: { name: "2048.gb" } },
+        contentLength: 32_768,
       },
     ],
     "@korri:retrobrews": [
       {
         providerId: "@korri:retrobrews", id: "anguna", title: "Anguna", url: "https://retrobrews.github.io/gba-games/anguna",
         platform: "Game Boy Advance", description: "A top-down action adventure through a dungeon, made for the GBA.",
-        artifact: { system: "gba", file: { name: "anguna.gba", sizeBytes: 1_700_000 } },
+        artifact: { kind: "content", format: { id: "gba-rom" }, system: "gba", file: { name: "anguna.gba" } },
+        contentLength: 1_700_000,
       },
       {
         providerId: "@korri:retrobrews", id: "ambushed", title: "Ambushed", url: "https://retrobrews.github.io/nes-games/ambushed",
-        platform: "NES", artifact: { system: "nes", file: { name: "ambushed.nes" } },
-        failure: { message: "The provider stopped answering partway through. Try again." },
+        platform: "NES", artifact: { kind: "content", format: { id: "nes-rom" }, system: "nes", file: { name: "ambushed.nes" } },
+        failure: { message: "The download did not finish. Try again." },
       },
     ],
     "@korri:pico8": [
       {
         providerId: "@korri:pico8", id: "celeste_classic_2-5", title: "Celeste Classic 2", url: "https://www.lexaloffle.com/bbs/?tid=41282",
         platform: "PICO-8", description: "Madeline climbs again, with a grappling hook this time.",
-        artifact: { system: "pico8", file: { name: "celeste_classic_2-5.p8.png", sizeBytes: 15_872 } },
+        artifact: { kind: "content", format: { id: "pico8-cart" }, system: "pico8", file: { name: "celeste_classic_2-5.p8.png" } },
+        contentLength: 15_872,
       },
       {
         providerId: "@korri:pico8", id: "untitled-wip", title: "untitled work in progress", url: "https://www.lexaloffle.com/bbs/?tid=1",
@@ -153,13 +160,14 @@ export const SAMPLE_STORE: InMemoryStoreConfig = {
   },
   sources: {
     gb: [{ id: "games-gb", label: "Game Boy" }],
+    nes: [{ id: "games-nes", label: "NES" }],
     gba: [
       { id: "games-gba", label: "Game Boy Advance" },
       { id: "sd-gba", label: "SD card · GBA" },
     ],
     pico8: [{ id: "games-pico8", label: "PICO-8" }],
   },
-  failingSearches: { "@korri:pico8": "The PICO-8 BBS did not answer. Check the connection and try again." },
+  failingSearches: { "@korri:pico8": "The provider did not answer. Check the connection and try again." },
   searchFailuresBeforeRecovery: 1,
 }
 
@@ -171,6 +179,9 @@ interface InMemoryJob {
   resolveLeft: number
   placeLeft: number
 }
+
+/** What Downloading reports as `bytesTotal`: the server's length, else the claim's. */
+const totalOf = (claim: InMemoryClaim): number | undefined => claim.contentLength ?? claim.artifact?.file?.sizeBytes
 
 const failure = (code: string, message: string): { _tag: "Err"; payload: RpcFailure } =>
   ({ _tag: "Err", payload: { code, message } })
@@ -214,9 +225,12 @@ export function createInMemoryStoreAcquisition(
     const state = job.status.state
     if (state._tag === "Resolving") {
       if (job.resolveLeft > 0) job.resolveLeft -= 1
-      else set(job, { _tag: "Downloading", bytesDone: 0, ...(job.claim.artifact?.file?.sizeBytes === undefined ? {} : { bytesTotal: job.claim.artifact.file.sizeBytes }) })
+      else {
+        const total = totalOf(job.claim)
+        set(job, { _tag: "Downloading", bytesDone: 0, ...(total === undefined ? {} : { bytesTotal: total }) })
+      }
     } else if (state._tag === "Downloading") {
-      const total = job.claim.artifact?.file?.sizeBytes
+      const total = totalOf(job.claim)
       // A size korrid does not know still ends: the server closes at 4 steps.
       const end = total ?? bytesPerStep * 4
       const done = Math.min(end, job.partial + bytesPerStep)
@@ -243,56 +257,62 @@ export function createInMemoryStoreAcquisition(
       return { _tag: "Ok", payload: { providers: structuredClone([...providers]) } }
     },
     async acquisitionSearch({ query, providerIds }) {
-      if (providerIds.length !== 1) return failure("CallerError", "Search one provider at a time.")
+      if (providerIds.length !== 1) return failure("AcquisitionCaller", "Search one provider at a time.")
       const providerId = providerIds[0] ?? ""
-      if (!providers.some(provider => provider.id === providerId)) return failure("ProviderNotFound", "That provider is not on this device.")
+      if (!providers.some(provider => provider.id === providerId)) return failure("AcquisitionUnknownProvider", "That provider is not on this device.")
       const fails = config.failingSearches?.[providerId]
       if (fails !== undefined) {
         const tries = (searchFailures.get(providerId) ?? 0) + 1
         searchFailures.set(providerId, tries)
         const recoverAfter = config.searchFailuresBeforeRecovery
-        if (recoverAfter === undefined || tries <= recoverAfter) return failure("ProviderUnavailable", fails)
+        if (recoverAfter === undefined || tries <= recoverAfter) return failure("ProviderUnreachable", fails)
       }
       const needle = query.trim().toLowerCase()
       const found = (claims[providerId] ?? []).filter(claim => needle === "" || claim.title.toLowerCase().includes(needle))
       return {
         _tag: "Ok",
         payload: {
-          claims: found.map(({ description: _description, failure: _failure, unrecognised: _u, unavailable: _a, inLibrary: _l, ...claim }) => structuredClone(claim)),
+          claims: found.map(({ description: _description, failure: _failure, unrecognised: _u, unavailable: _a, inLibrary: _l, ...claim }) =>
+            ({ _tag: "ProviderClaim" as const, ...structuredClone(claim) })),
         },
       }
     },
     async acquisitionDetails({ providerId, id }) {
       const claim = claimOf(providerId, id)
-      if (claim === undefined) return failure("NotFound", "The provider no longer lists this game.")
-      if (claim.unavailable !== undefined) return failure(ACQUIRE_FAILURE.unavailable, claim.unavailable)
-      const { failure: _failure, unrecognised: _u, unavailable: _a, inLibrary: _l, ...details } = claim
-      return { _tag: "Ok", payload: structuredClone(details) }
+      if (claim === undefined) return failure("AcquisitionUnknownClaim", "Search again: Korri no longer holds this game.")
+      const { providerId: owner, id: claimId, title, url, description, artifact } = claim
+      return {
+        _tag: "Ok",
+        payload: structuredClone({
+          _tag: "ProviderClaimDetails" as const, providerId: owner, id: claimId, title, url,
+          ...(description === undefined ? {} : { description }),
+          ...(artifact === undefined ? {} : { artifact }),
+        }),
+      }
     },
     async acquisitionAcquire({ providerId, id, sourceId }) {
       await config.acquireGate?.()
       const claim = claimOf(providerId, id)
-      if (claim === undefined) return failure("NotFound", "The provider no longer lists this game.")
+      if (claim === undefined) return failure("AcquisitionUnknownClaim", "Search again: Korri no longer holds this game.")
       const key = JSON.stringify([providerId, id])
       const existing = byClaim.get(key)
       const running = existing === undefined ? undefined : jobs.get(existing)
-      // A repeated acquire for the same claim returns its job, unless that
-      // job ended without the game: then it is a new try.
-      if (running !== undefined && running.status.state._tag !== "Failed" && running.status.state._tag !== "Cancelled") {
+      // A repeated acquire for a claim whose newest job is live or Imported
+      // returns that job; after Failed, Cancelled or Staged it is a new try.
+      const tag = running?.status.state._tag
+      if (running !== undefined && (tag === "Resolving" || tag === "Downloading" || tag === "Placing" || tag === "Imported")) {
         return snapshot(running)
       }
-      if (claim.unavailable !== undefined) return failure(ACQUIRE_FAILURE.unavailable, claim.unavailable)
       const system = claim.artifact?.system
-      if (system === undefined) return failure(ACQUIRE_FAILURE.unknownSystem, "This source doesn't say which console this game is for, so it can't be downloaded yet.")
+      if (system === undefined || config.unknownSystems?.includes(system) === true) {
+        return failure(ACQUISITION_CODE.systemUnknown, "This game is for a system this device cannot play, so it can't be downloaded here.")
+      }
       const folders = sources[system] ?? []
       if (folders.length === 0) {
-        return failure(ACQUIRE_FAILURE.noSource, `No folder on this device holds ${claim.platform ?? system} games. Add one in Settings, then get this game again.`)
+        return failure(ACQUISITION_CODE.noSource, `No folder on this device holds ${claim.platform ?? system} games. Add one in Settings, then get this game again.`)
       }
-      if (folders.length > 1 && (sourceId === undefined || !folders.some(folder => folder.id === sourceId))) {
-        return {
-          _tag: "Err",
-          payload: { code: ACQUIRE_FAILURE.severalSources, message: "Choose which folder gets this game.", sources: structuredClone([...folders]) },
-        }
+      if (sourceId !== undefined && !folders.some(folder => folder.id === sourceId)) {
+        return failure("AcquisitionCaller", "That folder cannot take this game.")
       }
       const jobId = `job-${++jobSeq}`
       const job: InMemoryJob = {
@@ -309,19 +329,29 @@ export function createInMemoryStoreAcquisition(
       }
       jobs.set(jobId, job)
       byClaim.set(key, jobId)
+      // Several folders and none chosen: a terminal job that downloads nothing.
+      if (folders.length > 1 && sourceId === undefined) {
+        set(job, { _tag: "ChooseSource", sources: structuredClone([...folders]) })
+        return snapshot(job)
+      }
+      // The provider will not hand out the file.
+      if (claim.unavailable !== undefined) {
+        set(job, { _tag: "Failed", reason: { code: ACQUISITION_CODE.resolutionFailed, message: claim.unavailable } })
+        return snapshot(job)
+      }
       // The same bytes already sit in the folder: korrid reuses them.
       if (claim.inLibrary) finish(job)
       return snapshot(job)
     },
     async acquisitionAcquireStatus(jobId) {
       const job = jobs.get(jobId)
-      if (job === undefined) return failure(ACQUIRE_FAILURE.jobNotFound, "Korri has no such download.")
+      if (job === undefined) return failure(ACQUISITION_CODE.unknownJob, "Korri has no such download.")
       step(job)
       return snapshot(job)
     },
     async acquisitionAcquireCancel(jobId) {
       const job = jobs.get(jobId)
-      if (job === undefined) return failure(ACQUIRE_FAILURE.jobNotFound, "Korri has no such download.")
+      if (job === undefined) return failure(ACQUISITION_CODE.unknownJob, "Korri has no such download.")
       const tag = job.status.state._tag
       if (tag === "Resolving" || tag === "Downloading") set(job, { _tag: "Cancelled" })
       return snapshot(job)
