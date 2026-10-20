@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { RpcRequest } from "./acquisition-wire"
+import type { RpcRequest } from "@contracts/generated/korrid"
 import { createHttpKorridClient, createInMemoryKorridClient } from "./client"
 
 type AcquisitionRpcRequest = Extract<RpcRequest, { _tag: `app.acquisition.${string}` }>
@@ -151,6 +151,6 @@ test("in-memory: a launch's start goes before the queue and pauses the download 
   await korrid.acquisitionStatus() // a: 10
   expect(await korrid.acquisitionStart(["b"])).toMatchObject({ _tag: "Ok", payload: { artifacts: [{ id: "b", state: { _tag: "Downloading", bytesDone: 0 } }] } })
   expect(await korrid.acquisitionStatus("hk")).toMatchObject({ _tag: "Ok", payload: { artifacts: [{ id: "a", state: { _tag: "Queued" } }] } })
-  expect(await korrid.acquisitionRemove("hk")).toMatchObject({ _tag: "Err", payload: { code: "AcquisitionInProgress" } })
+  expect(await korrid.acquisitionRemove("hk")).toMatchObject({ _tag: "Err", payload: { code: "AcquisitionBusy" } })
   expect(await korrid.acquisitionCancel("a")).toMatchObject({ _tag: "Ok", payload: { artifacts: [{ id: "a", state: { _tag: "Missing" } }] } })
 })

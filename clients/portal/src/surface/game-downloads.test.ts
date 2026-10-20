@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { AcquisitionOutcome, ArtifactStatus } from "../korrid/acquisition-wire"
+import type { AcquisitionOutcome, ArtifactStatus } from "@contracts/generated/korrid"
 import { createGameDownloads } from "./game-downloads"
 
 const rootfs = (state: ArtifactStatus["state"]): ArtifactStatus => ({
@@ -167,6 +167,13 @@ test("download, cancel and remove go to korrid once each, and a refusal is a pla
   expect(downloads.dismiss()).toBe(true)
   expect(downloads.getStatus()).toBeUndefined()
   expect(downloads.dismiss()).toBe(false)
+
+  // korrid's refusal while anything of it is under way is already plain words.
+  korrid.answers.remove.push({ _tag: "Err", payload: { code: "AcquisitionBusy", message: "This game is still downloading. Cancel the download first." } })
+  downloads.remove(mm)
+  await settle()
+  expect(downloads.getStatus()).toMatchObject({ kicker: "Couldn't remove the download", reason: "This game is still downloading. Cancel the download first." })
+  downloads.dismiss()
 
   korrid.answers.download.push({ _tag: "Err", payload: { code: "BrainUnreachable", message: "fetch failed" } })
   downloads.download(mm)

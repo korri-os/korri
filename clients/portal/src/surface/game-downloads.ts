@@ -18,9 +18,8 @@
  * Ready, as before; a game whose files are all Ready is read once, when a
  * surface first asks what can be done with it.
  */
-import type { RpcFailure } from "@contracts/generated/korrid"
+import type { ArtifactStatus, RpcFailure } from "@contracts/generated/korrid"
 import type { SurfaceStatus } from "@contracts/surface/korri-surface"
-import type { ArtifactStatus } from "../korrid/acquisition-wire"
 import type { KorridClient } from "../korrid/client"
 import { ACQUISITION_POLL_INTERVAL_MS, isActive, totalBytes } from "./acquisition-gate"
 

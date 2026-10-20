@@ -45,8 +45,11 @@ import type {
   SettingsUpdateOutcome,
   SourceStatusOutcome,
   PeerListOutcome,
+  AcquisitionOutcome,
+  ArtifactStatus,
+  RpcRequest,
+  RpcResponse,
 } from "@contracts/generated/korrid"
-import type { AcquisitionOutcome, ArtifactStatus, RpcRequest, RpcResponse } from "./acquisition-wire"
 import {
   FocusOwnership,
   InitialHandoff,
@@ -990,7 +993,7 @@ export function createInMemoryKorridClient(
     // The release's own come first, as korrid lists them, each once.
     chosen.sort((left, right) => Number(release.includes(right.seed.id)) - Number(release.includes(left.seed.id)))
     return { _tag: "Ok", payload: { artifacts: chosen.map(entry => ({
-      ...structuredClone(entry.status), ...(release.includes(entry.seed.id) ? { release: true as const } : {}),
+      ...structuredClone(entry.status), ...(release.includes(entry.seed.id) ? { release: true } : {}),
     })) } }
   }
   const releaseOf = (gameId: string) => config.releaseArtifacts?.[gameId] ?? []
@@ -1625,7 +1628,7 @@ export function createInMemoryKorridClient(
       }
       const ids = gameArtifactIds(gameId)
       if (ids.some(id => queue.includes(id))) {
-        return routeFailure("AcquisitionInProgress", "The game is still downloading.")
+        return routeFailure("AcquisitionBusy", "This game is still downloading. Cancel the download first.")
       }
       // Only the release's own, and never one another release still names.
       const shared = new Set(Object.entries(config.releaseArtifacts ?? {})

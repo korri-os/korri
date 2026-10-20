@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { SurfaceStatus } from "@contracts/surface/korri-surface"
-import type { AcquisitionOutcome, ArtifactStatus } from "../korrid/acquisition-wire"
+import type { AcquisitionOutcome, ArtifactStatus } from "@contracts/generated/korrid"
 import {
   confirmDetail,
   createAcquisitionGate,

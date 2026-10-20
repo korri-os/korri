@@ -19,9 +19,8 @@
  * only what the gate itself started. Which games still need what, outside a
  * launch, is game-downloads.ts.
  */
-import type { RpcFailure } from "@contracts/generated/korrid"
+import type { ArtifactStatus, RpcFailure } from "@contracts/generated/korrid"
 import type { SurfaceAction, SurfaceStatus } from "@contracts/surface/korri-surface"
-import type { ArtifactStatus } from "../korrid/acquisition-wire"
 import type { KorridClient } from "../korrid/client"
 
 /** The cadence the host already observes app.session.status at: 1 Hz. */
