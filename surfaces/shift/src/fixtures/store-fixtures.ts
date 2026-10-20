@@ -37,7 +37,7 @@ export const STORE_GETS = {
     progress: { done: 8_000 }, actions: [action("store:6:cancel", "Cancel")],
   },
   queued: {
-    _tag: "Working", kicker: "Waiting to download", detail: "Waiting for the download before it",
+    _tag: "Working", kicker: "Waiting to download", detail: "Waiting for the download before it", queued: true,
     actions: [action("store:9:cancel", "Cancel")],
   },
   placing: { _tag: "Working", kicker: "Adding to your library…", actions: [] },

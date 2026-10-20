@@ -172,7 +172,7 @@ describe("ordering", () => {
     ["offer", { _tag: "Offer", actions: [action("store:1:get", "Get")] }, ["Get"], undefined],
     ["confirm", { _tag: "Confirm", kicker: "Download to this device", detail: "Celeste Classic 2, size unknown", actions: [action("store:3:download", "Download"), action("store:3:cancel", "Cancel")] }, ["Download", "Cancel"], "Celeste Classic 2, size unknown"],
     ["unavailable", { _tag: "Unavailable", reason: "This game is for a system this device cannot play." }, [], "This game is for a system this device cannot play."],
-    ["queued", { _tag: "Working", kicker: "Waiting to download", detail: "Waiting for the download before it", actions: [action("store:9:cancel", "Cancel")] }, ["Cancel"], "Waiting for the download before it"],
+    ["queued", { _tag: "Working", kicker: "Waiting to download", detail: "Waiting for the download before it", queued: true, actions: [action("store:9:cancel", "Cancel")] }, ["Cancel"], "Waiting for the download before it"],
     ["stopped", { _tag: "Problem", kicker: "Download stopped", reason: "Korri restarted before the download finished.", actions: [action("store:8:retry", "Retry")] }, ["Retry"], "Download stopped"],
   ] as const)("the entry when %s shows Korri's words and runs exactly its actions", (_name, get, labels, words) => {
     const { host } = atDesk(storeWith({ search: { _tag: "Ready", providerId: BBS, query: "", entries: [celeste] }, details: ready(get) }))
