@@ -1,0 +1,129 @@
+/* A row: the button over its note. The type is the wedge's, through
+ * --zone-paused-row-type, or the row token standing alone. */
+.zone-paused-control {
+  display: grid;
+  row-gap: var(--zone-drop-edge);
+  min-width: 0;
+  font-size: var(--zone-paused-row-type, var(--zone-type-row));
+}
+
+/* The whole row is one focus stop; the panel inside it fills its width. */
+.zone-paused-control-button {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  transition: translate var(--zone-press-time) var(--zone-bounce);
+}
+
+.zone-paused-control-button:active {
+  translate: var(--zone-press-sink) var(--zone-press-sink);
+}
+
+/* Label left, value right. The label wraps rather than cuts and keeps a
+ * few letters' room; when the row cannot hold both, the value drops under
+ * the label and stays at the right. */
+.zone-paused-control-face {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--zone-row-space) / 2) var(--zone-row-gap);
+  min-width: 0;
+  min-height: 1.2em;
+  white-space: normal;
+}
+
+.zone-paused-control-label {
+  flex: 1 1 var(--zone-paused-label-least);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.05;
+  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+}
+
+/* Destructive: the label is red, as a destructive option's value is. */
+.zone-paused-control[data-destructive] .zone-paused-control-label {
+  color: var(--zone-destructive-ink);
+  text-shadow: none;
+}
+
+.zone-paused-control-value {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: calc(var(--zone-row-gap) / 2);
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
+}
+
+.zone-paused-control-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+}
+
+/* The triangles' room is kept when the row is not focused. */
+.zone-paused-control-step {
+  display: inline-flex;
+  visibility: hidden;
+}
+
+.zone-paused-control-step[data-shown] {
+  visibility: visible;
+}
+
+/* A range's number never breaks, and its digits keep one width so the
+ * meter does not shift as it moves. */
+.zone-paused-control[data-kind="range"] .zone-paused-control-text {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A range on the move: its number turns yellow until Korri shows it. */
+.zone-paused-control-value[data-moving] .zone-paused-control-text {
+  color: var(--zone-paused-moving-ink);
+}
+
+/* The meter: a blue parallelogram, filled yellow from the left. */
+.zone-paused-control-meter {
+  --zone-paused-control-meter-slant: calc(var(--zone-paused-meter-height) * 0.5em);
+  position: relative;
+  flex: 0 0 auto;
+  width: calc(var(--zone-paused-meter-length) * 1em);
+  height: calc(var(--zone-paused-meter-height) * 1em);
+  background: var(--zone-paused-meter);
+  clip-path: polygon(
+    var(--zone-paused-control-meter-slant) 0,
+    100% 0,
+    calc(100% - var(--zone-paused-control-meter-slant)) 100%,
+    0 100%
+  );
+}
+
+.zone-paused-control-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--zone-paused-control-share, 0) * 100%);
+  background: var(--zone-paused-meter-fill);
+  transition: width var(--zone-press-time) var(--zone-bounce);
+}
+
+/* Disabled: the row dims and stays where it was. */
+.zone-paused-control[data-disabled] .zone-paused-control-button {
+  opacity: var(--zone-disabled-opacity);
+}
+
+/* Korri's words under the row: why it is disabled, or what it does. Black
+ * caps on the wedge's yellow, no outline. */
+.zone-paused-control-note {
+  padding-left: var(--zone-slant);
+  overflow-wrap: anywhere;
+  color: var(--zone-paused-note-ink);
+  font-size: max(var(--zone-type-note), calc(var(--zone-type-reason-scale) * 1em));
+  line-height: 1.15;
+  text-shadow: none;
+}

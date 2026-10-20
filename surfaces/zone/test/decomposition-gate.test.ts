@@ -313,10 +313,9 @@ describe("every component has a consumer", () => {
    * that names a component some page already imports is itself a failure.
    */
   const AWAITING_PAGE: readonly string[] = [
-    // The save-data page: the vertical save-card select (DIRECTION C16).
-    "ZoneSaveCard",
-    // The save-data page: the QR in a save card's well (C16).
-    "ZoneQrWell",
+    // The status layer (C7 to C10) sits over every page; the wire stage
+    // mounts it in ZoneSurface, which is the only file that may.
+    "ZoneStatusLayer",
   ]
 
   test("no atom, molecule, organism or template is imported by nothing", () => {
@@ -342,10 +341,16 @@ describe("every component has a consumer", () => {
     "ZoneOptions",
     "ZoneRunWith",
     "ZoneSaveData",
+    // the layers worker: the PAUSED overlay and onboarding pages.
+    "ZonePaused",
+    "ZoneOnboarding",
   ]
 
   test("every page is reached from the surface binding", () => {
     const binding = readFileSync(join(SRC, "ZoneSurface.tsx"), "utf8")
+    const pages = componentFiles
+      .filter((file) => file.includes("/pages/"))
+      .map((file) => basename(file, ".tsx"))
     const reachable = new Set<string>()
     const queue = [binding]
     while (queue.length > 0) {

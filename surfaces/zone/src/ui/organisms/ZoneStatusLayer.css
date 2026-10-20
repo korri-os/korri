@@ -1,0 +1,97 @@
+/* The page fills the layer; what covers it is placed over it. The layer is
+ * a size container, so the strip and the dialog size against the page they
+ * cover, not the device. */
+.zone-status-layer {
+  --zone-status-layer-margin: clamp(var(--zone-strip-margin-min), 3cqi, var(--zone-strip-margin));
+  position: relative;
+  width: 100%;
+  height: 100%;
+  container: zone-layer / size;
+}
+
+.zone-status-layer-page {
+  position: absolute;
+  inset: 0;
+}
+
+/* Covered: the page dims under a flat black sheet. No blur, one opacity. */
+.zone-status-layer-page[data-covered]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--zone-layer-dim);
+  opacity: var(--zone-layer-dim-opacity);
+  pointer-events: none;
+}
+
+/* Running: a small strip at the top of the page, centred. It never takes
+ * a pointer or focus, and the title gives way before the kicker does. */
+.zone-status-layer-running {
+  position: absolute;
+  top: var(--zone-status-layer-margin);
+  left: 50%;
+  display: flex;
+  max-width: calc(100% - var(--zone-status-layer-margin) * 2);
+  font-size: clamp(var(--zone-type-note), 3cqi, var(--zone-type-row));
+  pointer-events: none;
+  translate: -50% 0;
+  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
+}
+
+.zone-status-layer-running-line {
+  display: flex;
+  align-items: center;
+  gap: var(--zone-row-gap);
+  min-width: 0;
+}
+
+/* The OPEN tag at the caps' height. */
+.zone-status-layer-running-tag {
+  --zone-tag-type: calc(var(--zone-tag-type-share) * 1em);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: calc(var(--zone-tag-row-height) * var(--zone-tag-type-share) * 1em);
+}
+
+/* The game a status belongs to: its title in yellow, as the dialog states it. */
+.zone-status-layer-game {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--zone-dialog-title-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Busy: the strip dropped across the page's middle, no wider than its
+ * token, the game's title on its own panel above it. */
+.zone-status-layer-busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--zone-strip-gap);
+  padding: var(--zone-status-layer-margin)
+    max(var(--zone-status-layer-margin), calc((100cqi - var(--zone-layer-busy-width)) / 2));
+  overflow-y: auto;
+  scrollbar-width: none;
+  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
+}
+
+.zone-status-layer-busy-game {
+  display: flex;
+  max-width: 100%;
+  font-size: clamp(var(--zone-type-note), 2.6cqi, var(--zone-type-row));
+}
+
+/* Problem: the blue dialog in the middle of the page, never taller than it. */
+.zone-status-layer-problem {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  align-items: center;
+  padding: var(--zone-status-layer-margin)
+    max(var(--zone-status-layer-margin), calc((100cqi - var(--zone-layer-dialog-width)) / 2));
+  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
+}

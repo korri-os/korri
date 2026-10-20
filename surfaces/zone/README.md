@@ -428,3 +428,105 @@ bun run lint
 - **Retired keys are deleted, never backed up, from this page.** The brief's
   flow offers DELETE only; `exportIdentityBackup(password, retiredPublicKey)`
   is in the treaty but has no control here yet.
+
+## Layers: status, PAUSED, first boot
+
+Three shapes, each driven by a pure model, built ahead of their mount in
+`ZoneSurface.tsx`. Each takes Korri's slice and its model's value as plain
+props and reports through callbacks; the binding turns a callback into the
+model's message, and the model's `update` returns `ZoneRequest`s.
+
+| Shape | Model (`src/state/`) | Korri slice | Capability |
+|---|---|---|---|
+| `ui/organisms/ZoneStatusLayer` | `status.ts` (`updateStatus`) | `status`, the catalog's titles | C7 to C10 |
+| `pages/ZonePaused` (+ `ZonePausedControl`) | `overlay.ts` (`updateOverlay`) | `presentation` when `gameplay-overlay` | C24 |
+| `pages/ZoneOnboarding` (+ `ZoneControllerCard`) | `onboarding.ts` (`updateOnboarding`) | `onboarding`, `network`, `settings`, `settingsStatus` | C25 |
+
+- **Status layer.** Takes the page as its `page` prop and covers it:
+  nothing while Browsing; Busy drops the busy strip over the dimmed, inert
+  page with the game's title in yellow above it; Running is a small strip
+  at the top (kicker, OPEN, title) that leaves the page usable; Problem is
+  the blue dialog, DISMISS lit before RETRY. `reloadRequest()` in
+  `status.ts` is C10, for the catalog's Error state and the SYSTEM group.
+- **PAUSED.** The red band with Korri's title (PAUSED when absent), the
+  ground greyed and striped as the game's stand-in, the yellow wedge of
+  flat controls then groups. Left and right arrive as the portal's
+  `korri-semantic-direction` event on rows marked
+  `data-korri-horizontal-control` (and as arrow keys without a portal).
+- **First boot.** CONTROLLERS, WI-FI, NAME, IDENTITY under a strip of four
+  tags; NEXT on the first three, FINISH on the last. The controller cards'
+  grid is `src/plan/onboarding.ts`, measured on the stage.
+- **Focus.** Each model holds the lit control; `src/use-zone-layer-focus.ts`
+  moves DOM focus to it when a layer opens or the model moves it, and the
+  status layer gives focus back to the page when it closes.
+- **Parts** run the real models through `src/fixtures/layer-program.ts`, a
+  fixture program with a pretend Korri (it applies values, joins networks,
+  saves the name) and the fixture host recording every request.
+
+### Decided without asking: the layers
+
+- **`dismissOnSuccess` sends no dismiss.** The brief said such a control
+  closes the overlay after invoke. The portal's overlay controller already
+  returns to the game after one succeeds
+  (`clients/portal/src/overlay/live-overlay-controller.ts`, the
+  `dismissOnSuccess` branch), so a second `dismissGameplayOverlay` from Zone
+  would return before the outcome and close the overlay on a failure too.
+  Zone invokes, marks the overlay `leaving` (further presses wait for
+  Korri's next model) and lets the host close it.
+- **A range is invoked on every step**, as the brief says; Pico debounces
+  instead. The value shows at once in yellow (`moving`) and Korri's value
+  replaces it when it catches up, the cursor leaves, or Korri disables it.
+- **A on a toggle flips it, A on a choice steps it forward**; A on a range
+  does nothing. A choice wraps at its ends; a range stops at min and max and
+  its end triangle dims.
+- **Destructive applies to every interaction kind.** The question names the
+  control as headline, its description as the line, and the value it would
+  take in yellow.
+- **Disabled controls stay focusable** and wear the underline when focused,
+  so the reason under them can be reached and read.
+- **Destructive labels are red** on PAUSED's rows, as the busy strip's
+  destructive action is. Mania's EXIT is white; the treaty asks to mark it.
+- **The status layer takes the page as a `page` prop**, so it can dim it
+  and make it `inert` while Busy or Problem covers it. Running does neither.
+  Busy shows the game's title (C7 "the game it belongs to") on its own panel
+  in yellow, the colour the problem dialog states a game in.
+- **Busy with no action takes no focus**; the page goes inert, so focus
+  waits on nothing until Korri publishes the next status. Back never
+  cancels busy work.
+- **Problem's game** is Korri's `gameTitle`, else the catalog's title for
+  its `gameId`.
+- **Onboarding's device-name lookup** is by label: the first settings item,
+  in any group, whose label reads "Device name" (case and outer space
+  ignored) and whose interaction is `text` (`deviceNameSetting` in
+  `onboarding.ts`). Korri publishes it as `device-name` today; Zone does not
+  rely on the id. Absent, the row is read-only.
+- **No identity call at first boot.** The treaty asks for none: the device
+  already has its own identity. START on the NEW SAVE card is the player's
+  choice, held in the model, and FINISH waits for it. Restoring a save is
+  SAVE DATA's.
+- **WI-FI joins what needs no password at once.** `onboardingJoin(networkId)`
+  sends `connectWifi` for a saved or open network; a secured network Korri
+  has no key for is handed over as `join` in the model, for the OPTIONS
+  join flow to pick up when it is wired. A SCAN row (`scanWifi`) was added
+  beside the brief's SKIP. NEXT on WI-FI lights once the device is online
+  (or Korri cannot manage the network); SKIP always goes on.
+- **Network rows show SSIDs in caps**: `ZoneOptionRow` has no verbatim case.
+  Controller names keep their case on the cards.
+- **Zero controllers show one WAITING card**, COMPETITION's empty seat.
+  Seats are numbered in heard order; 1P blue, 2P red, 3P yellow, 4P mint.
+- **The keyboard's lit key follows the last press**, as its own part does:
+  `ZoneKeyboard` reports no key focus, and editing it was out of scope.
+- **The save card's START is a click on a wrapper.** `ZoneSaveCard` has no
+  press callback; the host's confirm is a real click and bubbles to it.
+- **Parts reach the models through a fixture.** The atomic gate forbids a
+  part under `ui/` or `pages/` to import `src/state`; the scenarios import
+  `src/fixtures/layer-program.ts`, which does. Shapes never do.
+- **Gate lists.** `ZoneBusyStrip`, `ZoneDialog`, `ZoneSaveCard`,
+  `ZoneKeycap`, `ZoneActionRow`, `ZoneOptionGroup` and `ZoneKeyboard` left
+  `AWAITING_PAGE`, since the layers consume them. `ZoneStatusLayer` joined
+  it, and a new `AWAITING_BINDING` names `ZonePaused` and `ZoneOnboarding`,
+  because `ZoneSurface.tsx` is not this worker's to edit. The entries go
+  when the binding mounts them.
+- **Tokens** are in the `/* ---- layers ---- */` block. The controller-card
+  plan's widest and gap equal `--zone-controller-card-max` and
+  `--zone-card-gap-wide` (held by `test/zone-onboarding.test.tsx`).

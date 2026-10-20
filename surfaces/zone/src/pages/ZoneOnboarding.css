@@ -1,0 +1,82 @@
+/* The page is the ground under the shell. The shell's body is the size
+ * container everything below measures. */
+.zone-onboarding {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  container: zone-onboarding / size;
+}
+
+/* The step strip in the tabs' place: four joined tags, the tabs' type,
+ * as wide as the room the two keycap hints leave, up to its token. */
+.zone-onboarding-steps {
+  --zone-tag-row-base: var(--zone-shell-tab-type, var(--zone-type-tab-wide));
+  display: flex;
+  width: min(var(--zone-onboarding-steps-width), calc(100cqi - var(--zone-onboarding-hint-room) * 2));
+}
+
+/* The step over its way forward. The step gives way; the action row keeps
+ * its height, so NEXT and FINISH are always on screen. */
+.zone-onboarding-body {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--zone-strip-gap);
+  padding: var(--zone-strip-inset) clamp(var(--zone-strip-margin-min), 3cqi, var(--zone-strip-margin));
+}
+
+/* A size container, so the save card and the controller cards size to the
+ * room the step has. A step taller than its room scrolls. */
+.zone-onboarding-stage {
+  display: grid;
+  place-items: safe center;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  container: zone-onboarding-stage / size;
+}
+
+/* COMPETITION's row. The page writes the card width and the columns from
+ * src/plan/onboarding.ts as the stage resizes: one row while the cards fit
+ * at a readable size, fewer columns when they do not. */
+.zone-onboarding-cards {
+  display: grid;
+  grid-template-columns: repeat(var(--zone-onboarding-columns, 4), auto);
+  justify-content: center;
+  align-content: center;
+  gap: var(--zone-card-gap-wide);
+}
+
+/* An OPTIONS group, as wide as a page of rows reads well, its rows
+ * scrolling under the title. */
+.zone-onboarding-group {
+  display: grid;
+  align-self: stretch;
+  width: min(100%, var(--zone-layer-dialog-width));
+  height: 100%;
+  min-height: 0;
+  padding-top: var(--zone-strip-inset);
+}
+
+.zone-onboarding-save {
+  display: flex;
+}
+
+.zone-onboarding-actions {
+  display: flex;
+  justify-content: center;
+  padding-bottom: var(--zone-strip-inset);
+}
+
+/* The keyboard rises over the lower body, the step left above it. */
+.zone-onboarding-keyboard {
+  position: absolute;
+  right: clamp(var(--zone-strip-margin-min), 3cqi, var(--zone-strip-margin));
+  bottom: var(--zone-strip-inset);
+  left: clamp(var(--zone-strip-margin-min), 3cqi, var(--zone-strip-margin));
+  display: flex;
+  max-height: calc(100% - var(--zone-strip-inset) * 2);
+  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
+}

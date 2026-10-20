@@ -1,0 +1,147 @@
+/* The page is its own size container. Height sets the band; width sets the
+ * wedge: at least its least width (all of a narrow page), at most its share
+ * of a wide one. The rows always clear the band. */
+.zone-paused {
+  --zone-paused-band-h: clamp(var(--zone-paused-band-min), 19cqb, var(--zone-paused-band-max));
+  --zone-paused-band-cut: min(calc(var(--zone-paused-band-h) * var(--zone-paused-band-lean)), 15cqi);
+  --zone-paused-wedge-w: clamp(min(100cqi, var(--zone-paused-wedge-min)), calc(var(--zone-paused-wedge-share) * 100cqi), 100cqi);
+  --zone-paused-wedge-cut: calc(var(--zone-paused-wedge-w) * var(--zone-paused-wedge-lean));
+  --zone-paused-margin: clamp(var(--zone-strip-margin-min), 3cqi, var(--zone-strip-margin));
+  --zone-paused-row-type: clamp(var(--zone-type-row-min), min(4.4cqi, 6cqb), var(--zone-type-paused-row));
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  container: zone-paused / size;
+}
+
+/* The game stand-in: the ground drained of colour, with a hard stripe
+ * field over it. */
+.zone-paused-behind {
+  position: absolute;
+  inset: 0;
+  background: var(--zone-ground);
+  filter: grayscale(1);
+}
+
+.zone-paused-stripes {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    var(--zone-paused-stripe-angle),
+    var(--zone-paused-stripe) 0% 2%,
+    transparent 2% 4%
+  );
+  opacity: var(--zone-paused-stripe-opacity);
+}
+
+/* The red band across the top-left, cut on Mania's diagonal. It is at
+ * least its share of the page and widens for a long title, up to the page. */
+.zone-paused-band {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  min-width: clamp(min(100cqi, var(--zone-paused-band-least)), calc(var(--zone-paused-band-share) * 100cqi), 100cqi);
+  max-width: 100cqi;
+  height: var(--zone-paused-band-h);
+  padding: 0 calc(var(--zone-paused-band-cut) + var(--zone-paused-margin)) 0 var(--zone-paused-margin);
+  background: var(--zone-paused-band);
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--zone-paused-band-cut)) 100%, 0 100%);
+  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
+}
+
+.zone-paused-title {
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  font: inherit;
+  font-size: clamp(var(--zone-type-paused-title-min), min(calc(var(--zone-paused-band-h) * 0.5), 9cqi), var(--zone-type-paused-title));
+}
+
+/* The yellow wedge: full height on the right, its left edge on the slant. */
+.zone-paused-wedge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  width: var(--zone-paused-wedge-w);
+  background: var(--zone-paused-wedge);
+  clip-path: polygon(var(--zone-paused-wedge-cut) 0, 100% 0, 100% 100%, 0 100%);
+  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
+}
+
+/* The rows' column: under the band, right of the slant's top, sitting at
+ * the bottom when few and scrolling when many. A row scrolled up passes
+ * under the band; the focused one is always brought out below it. */
+.zone-paused-list {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding:
+    calc(var(--zone-paused-band-h) + var(--zone-paused-margin))
+    calc(var(--zone-paused-margin) + var(--zone-drop-edge))
+    calc(var(--zone-paused-margin) * 2 + var(--zone-drop-edge) + var(--zone-type-hint-wide) * var(--zone-keycap-scale))
+    calc(var(--zone-paused-wedge-cut) * var(--zone-paused-list-inset));
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  scroll-padding: calc(var(--zone-paused-band-h) + var(--zone-paused-margin)) 0 var(--zone-paused-margin);
+}
+
+/* Auto margin above, so a short list rests at the bottom and a long one
+ * still scrolls from its first row. */
+.zone-paused-rows {
+  display: grid;
+  gap: var(--zone-paused-row-gap);
+  margin-top: auto;
+  padding-left: var(--zone-drop-edge);
+}
+
+.zone-paused-group {
+  display: grid;
+  gap: var(--zone-paused-row-gap);
+  margin-top: var(--zone-paused-row-gap);
+}
+
+.zone-paused-group-label {
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  font: inherit;
+  font-size: calc(var(--zone-paused-row-type) * var(--zone-paused-group-scale));
+}
+
+.zone-paused-group-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.05;
+}
+
+/* B BACK, bottom-left over the grey. */
+.zone-paused-hint {
+  position: absolute;
+  bottom: var(--zone-paused-margin);
+  left: var(--zone-paused-margin);
+  z-index: 2;
+  display: flex;
+}
+
+/* The question: the dialog over everything, in the page's middle. */
+.zone-paused-question {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  align-items: center;
+  padding: var(--zone-paused-margin)
+    max(var(--zone-paused-margin), calc((100cqi - var(--zone-layer-dialog-width)) / 2));
+  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
+}

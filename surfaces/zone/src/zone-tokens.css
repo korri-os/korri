@@ -569,3 +569,86 @@
   /** The room between two groups of the secret. @label Secret group gap */
   --zone-secret-group-gap: 0.5em;
 }
+
+/* ---- layers ---- */
+/* The status layer, PAUSED and first boot. Appended by the layers worker;
+ * the lines above are untouched. */
+.zone-theme {
+  /* The status layer. */
+  /** How much a covered page dims. @label Covered page dim @min 0 @max 1 @step 0.05 */
+  --zone-layer-dim-opacity: 0.55;
+  /** The busy strip's widest. @label Busy strip width @min 320 @max 1600 @step 10 */
+  --zone-layer-busy-width: 880px;
+  /** The problem dialog's widest. @label Problem dialog width @min 320 @max 1600 @step 10 */
+  --zone-layer-dialog-width: 960px;
+  /** @label Covered page sheet */
+  --zone-layer-dim: var(--zone-black);
+
+  /* PAUSED. */
+  /** The red band's least height. @label Paused band, least @min 32 @max 200 @step 1 */
+  --zone-paused-band-min: 56px;
+  /** The red band's greatest height. @label Paused band, most @min 40 @max 300 @step 1 */
+  --zone-paused-band-max: 150px;
+  /** The band's diagonal cut, as a share of its height. @label Paused band lean @min 0 @max 2 @step 0.05 */
+  --zone-paused-band-lean: 1;
+  /** The band's width as a share of the page. @label Paused band share @min 0.2 @max 1 @step 0.01 */
+  --zone-paused-band-share: 0.58;
+  /** The band's least width. @label Paused band, least width @min 120 @max 800 @step 10 */
+  --zone-paused-band-least: 300px;
+  /** The yellow wedge's least width (all of a page narrower than it). @label Paused wedge, least @min 200 @max 900 @step 10 */
+  --zone-paused-wedge-min: 440px;
+  /** The wedge's width as a share of the page. @label Paused wedge share @min 0.3 @max 1 @step 0.01 */
+  --zone-paused-wedge-share: 0.56;
+  /** The wedge's slanted edge: how far its top starts in, as a share of its width. @label Paused wedge lean @min 0 @max 0.8 @step 0.01 */
+  --zone-paused-wedge-lean: 0.34;
+  /** How far the rows sit in from the wedge's left, as a share of the slant. @label Paused rows inset @min 0 @max 1 @step 0.05 */
+  --zone-paused-list-inset: 0.6;
+  /** A row's caps at most. @label Paused row type @min 14 @max 48 @step 1 */
+  --zone-type-paused-row: 38px;
+  /** The title's caps at most. @label Paused title type @min 20 @max 120 @step 1 */
+  --zone-type-paused-title: 72px;
+  /** The title's caps at least. @label Paused title type, least @min 12 @max 60 @step 1 */
+  --zone-type-paused-title-min: 20px;
+  /** Room between rows. @label Paused row gap @min 0 @max 40 @step 1 */
+  --zone-paused-row-gap: 10px;
+  /** A group label's caps against a row's. @label Paused group label scale @min 0.4 @max 1.2 @step 0.05 */
+  --zone-paused-group-scale: 0.75;
+  /** The room a label keeps beside its value before the value drops under it. @label Paused label room @min 1em @max 20em @step 0.5 */
+  --zone-paused-label-least: 4em;
+  /** A range meter's length, in the row's type. @label Paused meter length @min 1 @max 10 @step 0.25 */
+  --zone-paused-meter-length: 3.5;
+  /** A range meter's height, in the row's type. @label Paused meter height @min 0.2 @max 1 @step 0.05 */
+  --zone-paused-meter-height: 0.55;
+  /** The stripe field's lean. @label Paused stripe angle @min -90 @max 90 @step 1 */
+  --zone-paused-stripe-angle: -45deg;
+  /** How dark the stripe field lies over the greyed ground. @label Paused stripes @min 0 @max 1 @step 0.05 */
+  --zone-paused-stripe-opacity: 0.3;
+  /** @label Paused band */
+  --zone-paused-band: var(--zone-red);
+  /** @label Paused wedge */
+  --zone-paused-wedge: var(--zone-yellow);
+  /** @label Paused stripe */
+  --zone-paused-stripe: var(--zone-black);
+  /** @label Paused moving value */
+  --zone-paused-moving-ink: var(--zone-yellow);
+  /** @label Paused meter */
+  --zone-paused-meter: var(--zone-blue);
+  /** @label Paused meter fill */
+  --zone-paused-meter-fill: var(--zone-yellow);
+  /** @label Paused note ink */
+  --zone-paused-note-ink: var(--zone-black);
+
+  /* First boot. */
+  /** A controller card's frame. @label Controller card frame @min 0 @max 16 @step 1 */
+  --zone-controller-frame: 6px;
+  /** A controller card's widest. @label Controller card width @min 80 @max 400 @step 1 */
+  --zone-controller-card-max: 220px;
+  /** The lean of the waiting card's stripes. @label Controller stripe angle @min -90 @max 90 @step 1 */
+  --zone-controller-stripe-angle: 128deg;
+  /** The step strip's widest. @label Step strip width @min 200 @max 1200 @step 10 */
+  --zone-onboarding-steps-width: 620px;
+  /** The room each keycap hint keeps beside the step strip. @label Step strip hint room @min 40 @max 300 @step 1 */
+  --zone-onboarding-hint-room: 128px;
+  /** @label Controller heard frame */
+  --zone-controller-heard: var(--zone-red);
+}
