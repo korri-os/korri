@@ -35,6 +35,8 @@ export type PicoMessage =
   | { readonly _tag: "ChoseMenuFind" }
   | { readonly _tag: "ChoseMenuSettings" }
   | { readonly _tag: "ChoseMenuView" }
+  /** GET GAMES on home's MENU: the store opens, and Korri lists providers. */
+  | { readonly _tag: "ChoseMenuStore" }
   /** The cursor is on a MENU control with this name, or has left them. */
   | { readonly _tag: "AimedMenu"; readonly label: string | undefined }
   /** Home put the cursor back where `focusOnReturn` asked. */
@@ -52,6 +54,18 @@ export type PicoMessage =
   | { readonly _tag: "ClearedQuery" }
   | { readonly _tag: "ChoseSection"; readonly section: string }
   | { readonly _tag: "ChoseOrder"; readonly order: PicoOrder }
+  // The store
+  | { readonly _tag: "ChoseStoreProvider"; readonly providerId: string }
+  /** The SEARCH row: the keyboard opens with the last search typed. */
+  | { readonly _tag: "OpenedStoreSearch" }
+  /** SEARCH on the keyboard: what is typed goes to the provider. */
+  | { readonly _tag: "SubmittedStoreSearch" }
+  | { readonly _tag: "ClosedStoreSearch" }
+  | { readonly _tag: "OpenedStoreEntry"; readonly entryId: string }
+  /** One of the actions Korri published for the store, such as Get or Cancel. */
+  | { readonly _tag: "PressedStoreAction"; readonly actionId: string }
+  /** PLAY on an entry that is in the library: the catalog game Korri named. */
+  | { readonly _tag: "PressedStorePlay"; readonly gameId: string }
   // A game's own screen
   | { readonly _tag: "PressedPlay" }
   | { readonly _tag: "ChoseLocation"; readonly locationId: string }

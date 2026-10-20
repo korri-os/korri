@@ -261,6 +261,20 @@ the chip's words. Remove download is destructive, so it asks first with
 Korri's description. When Korri replaces the pressed row (DOWNLOAD becomes
 CANCEL DOWNLOAD), the cursor stays on the row that took its place.
 
+Where Korri publishes `store`, home's MENU adds GET GAMES: getting a game
+from a provider. The store lists Korri's providers; a provider opens on the
+same keyboard Wi-Fi passwords use (`PicoTextEditor`, with SEARCH and CANCEL);
+results are carts on Find's shelf; an entry stands on a game's own stage with
+the provider's words, and where getting it stands is a card in Korri's words
+and with Korri's actions (yellow: download, which folder; red: failed,
+stopped; blue: not available, downloaded but not recognised, in your library
+with PLAY). A download takes the launch stage, with the bar from Korri's
+bytes. Back walks keyboard, entry, results, providers, home, and never
+cancels: the download keeps going and shows again on its entry. No provider
+art reaches Pico (it is on the provider's site), so each cart wears its
+initials. The place in the store is Pico's (`StorePlace`); every fact is
+Korri's.
+
 Everything is reachable with the d-pad, A and B alone, because many handhelds
 send the surface no `system`, `options` or `menu` button. Home's MENU key on
 the floor row opens FIND, SETTINGS and VIEW; those three buttons remain
@@ -281,7 +295,7 @@ bun install
 bun run caliper   # then open http://localhost:5173/__caliper/
 ```
 
-Caliper finds everything else from the source: the 74 `*.part.tsx` files, the
+Caliper finds everything else from the source: the 78 `*.part.tsx` files, the
 entry (`package.json` `exports["."]`), stylesheets and the wrapper
 (`<div className="pico-theme pico-screen">` in `src/PicoSurface.tsx`). Its Setup
 panel shows where each came from.
@@ -302,7 +316,7 @@ meaningful alternate inputs of the same real component. Caliper lists these
 states under the part; **All states** shows them together. Fixtures use the
 existing surface treaty and component props, with no backend or request swapping.
 
-The audit covers all 74 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
+The audit covers all 78 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
 so their default examples are their only states. A second export would duplicate
 the same output. Other parts include alternate inputs such as missing artwork,
 long content, disabled actions, loading, errors, and empty collections where

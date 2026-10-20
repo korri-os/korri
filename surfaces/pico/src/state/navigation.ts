@@ -17,6 +17,7 @@
  */
 import type { SurfaceAction, SurfaceIdentityDisposition } from "@contracts/surface/korri-surface"
 import type { PicoHomeMode } from "../pages/PicoHome"
+import type { PicoStoreShown } from "../pages/PicoStore"
 import { PICO_ALL_SECTIONS, type PicoOrder } from "../pico-library-view"
 import type { PicoInitialView } from "../pico-initial-view"
 import type { PicoSessionReturn } from "../pico-session-return"
@@ -40,6 +41,15 @@ export interface Home {
   /** The name of the focused MENU key or menu line, for the A hint. */
   readonly aim: string | undefined
 }
+
+/**
+ * Where the person is in the store: getting games from a provider. Outlives
+ * the store, so reopening it finds the same provider and page. Every fact on
+ * those pages is Korri's (`SurfaceModel.store`); only the place is Pico's.
+ */
+export type StorePlace = PicoStoreShown
+
+export const STORE_PLACE: StorePlace = { view: "Providers", providerId: undefined, typing: undefined }
 
 /** What Find has typed and chosen. Outlives Find: reopening it keeps them. */
 export interface Search {
@@ -118,6 +128,9 @@ export interface Idle {
 export interface PicoNavigation {
   readonly home: Home
   readonly find: boolean
+  /** The store is open. Drawn over Find, under a game's own screen. */
+  readonly store: boolean
+  readonly storePlace: StorePlace
   readonly detail: Detail | undefined
   readonly settings: Settings | undefined
   readonly search: Search
@@ -127,13 +140,14 @@ export interface PicoNavigation {
   readonly session: PicoSessionReturn
 }
 
-export type TopLayer = "Settings" | "Detail" | "Find" | "Home"
+export type TopLayer = "Settings" | "Detail" | "Store" | "Find" | "Home"
 
 /** The layer on top of the stack. Korri's status and the runner picker can
  * still cover it; `shownScreen` decides what is actually drawn. */
 export function topLayer(nav: PicoNavigation): TopLayer {
   if (nav.settings !== undefined) return "Settings"
   if (nav.detail !== undefined) return "Detail"
+  if (nav.store) return "Store"
   if (nav.find) return "Find"
   return "Home"
 }
@@ -147,6 +161,8 @@ export function initialNavigation(initial?: PicoInitialView): PicoNavigation {
   return {
     home: initial?._tag === "Home" ? { ...HOME, mode: initial.mode ?? "shelf" } : HOME,
     find: initial?._tag === "Find",
+    store: false,
+    storePlace: STORE_PLACE,
     detail: initial?._tag === "Detail" ? { gameId: initial.gameId, question: { _tag: "None" } } : undefined,
     settings: initial?._tag === "Settings" ? SETTINGS : undefined,
     search: {

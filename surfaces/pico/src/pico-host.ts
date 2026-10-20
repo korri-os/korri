@@ -73,6 +73,12 @@ export function performPicoRequest(
         : host.connectHiddenWifi(request.ssid, request.password)
     case "FinishOnboarding":
       return host.finishOnboarding()
+    case "OpenStore":
+      return host.openStore()
+    case "SearchStore":
+      return host.searchStore(request.providerId, request.query)
+    case "OpenStoreEntry":
+      return host.openStoreEntry(request.entryId)
     case "ChooseFont":
       return local.chooseFont(request.font)
     case "RememberFont":

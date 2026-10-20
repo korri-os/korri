@@ -8,6 +8,7 @@ import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { isPicoFont } from "../pico-font-preference"
 import { picoScreenViewFromModel } from "../pico-screen-view"
 import { picoSessionReturnFromModel, picoSessionReturnOnPlay } from "../pico-session-return"
+import { PICO_STORE_QUERY_MAX } from "../pico-store-view"
 import {
   PICO_FONT_SETTING,
   PICO_IDENTITY_BACKUP_ACTION,
@@ -32,6 +33,7 @@ import {
   SETTINGS,
   type Settings,
   type SettingsQuestion,
+  type StorePlace,
   type TextEditor,
   topLayer,
 } from "./navigation"
@@ -126,6 +128,11 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       return stay({ ...nav, settings: SETTINGS, home: { ...closeMenu(nav.home), focusOnReturn: "MenuKey" } })
     case "ChoseMenuView":
       return stay(cycleMode(nav))
+    case "ChoseMenuStore":
+      // Only where Korri can get games. Opening reads the providers again.
+      return korri.store === undefined
+        ? stay(nav)
+        : ask({ ...nav, store: true, home: { ...closeMenu(nav.home), focusOnReturn: "MenuKey" } }, { _tag: "OpenStore" })
     case "AimedMenu":
       return stay(nav.home.aim === message.label ? nav : { ...nav, home: { ...nav.home, aim: message.label } })
     case "ReturnedFocus":
@@ -162,6 +169,55 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       return stay({ ...nav, search: { ...nav.search, section: message.section } })
     case "ChoseOrder":
       return stay({ ...nav, search: { ...nav.search, order: message.order } })
+
+    // The store
+    case "ChoseStoreProvider": {
+      const providers = korri.store?.providers
+      if (providers?._tag !== "Ready" || !providers.providers.some(provider => provider.id === message.providerId)) return stay(nav)
+      // A provider not searched yet opens on the keyboard: typing is why you came.
+      const search = korri.store?.search
+      const searched = search !== undefined && search._tag !== "Idle" && search.providerId === message.providerId
+      return stay(withStore(nav, {
+        view: "Results",
+        providerId: message.providerId,
+        typing: searched ? undefined : picoTextDraft(""),
+      }))
+    }
+    case "OpenedStoreSearch": {
+      const search = korri.store?.search
+      const query = search !== undefined && search._tag !== "Idle" && search.providerId === nav.storePlace.providerId ? search.query : ""
+      return nav.storePlace.view === "Results" ? stay(withStore(nav, { ...nav.storePlace, typing: picoTextDraft(query) })) : stay(nav)
+    }
+    case "ClosedStoreSearch":
+      return stay(withStore(nav, { ...nav.storePlace, typing: undefined }))
+    case "SubmittedStoreSearch": {
+      const { providerId, typing } = nav.storePlace
+      if (providerId === undefined || typing === undefined) return stay(nav)
+      return ask(withStore(nav, { ...nav.storePlace, typing: undefined }), { _tag: "SearchStore", providerId, query: typing.text.trim() })
+    }
+    case "OpenedStoreEntry": {
+      const search = korri.store?.search
+      if (search?._tag !== "Ready" || !search.entries.some(entry => entry.id === message.entryId)) return stay(nav)
+      return ask(withStore(nav, { ...nav.storePlace, view: "Entry", typing: undefined }), { _tag: "OpenStoreEntry", entryId: message.entryId })
+    }
+    case "PressedStoreAction":
+      // Only what Korri publishes now, enabled, is authority.
+      return storeActionPublished(korri, message.actionId) ? ask(nav, { _tag: "RunAction", actionId: message.actionId }) : stay(nav)
+    case "PressedStorePlay": {
+      const details = korri.store?.details
+      if (details?._tag !== "Ready" || details.get._tag !== "InLibrary" || details.get.gameId !== message.gameId) return stay(nav)
+      const view = picoScreenViewFromModel(korri)
+      const game = view._tag === "Shelf" ? view.games.find(candidate => candidate.id === message.gameId) : undefined
+      if (game === undefined) return stay(nav)
+      // More than one place to play: the game's own screen asks.
+      if (game.locations !== undefined && game.locations.length > 0) {
+        return stay({ ...nav, detail: { gameId: game.id, question: { _tag: "ChoosingLocation", game } } })
+      }
+      return ask(
+        { ...nav, session: picoSessionReturnOnPlay(nav.session, game.id, korri.catalog) },
+        { _tag: "LaunchGame", gameId: game.id },
+      )
+    }
 
     // A game's own screen
     case "PressedPlay": {
@@ -334,10 +390,25 @@ function back(nav: PicoNavigation): PicoNavigation {
       return nav.detail.question._tag !== "None"
         ? { ...nav, detail: { ...nav.detail, question: { _tag: "None" } } }
         : { ...nav, detail: undefined }
+    case "Store":
+      return backInStore(nav, nav.storePlace)
     case "Find":
       return { ...nav, find: false }
     case "Home":
       return nav.home.menu === "Open" ? { ...nav, home: closeMenu(nav.home) } : nav
+  }
+}
+
+/** The keyboard, then the entry, then the results, then the store itself. */
+function backInStore(nav: PicoNavigation, place: StorePlace): PicoNavigation {
+  if (place.typing !== undefined) return withStore(nav, { ...place, typing: undefined })
+  switch (place.view) {
+    case "Entry":
+      return withStore(nav, { ...place, view: "Results" })
+    case "Results":
+      return withStore(nav, { ...place, view: "Providers" })
+    case "Providers":
+      return { ...nav, store: false }
   }
 }
 
@@ -371,6 +442,7 @@ function settleSession(nav: PicoNavigation, korri: SurfaceModel): PicoNavigation
     ...nav,
     home: { ...nav.home, mode: "shelf", menu: "Closed", focusOnReturn: "None" },
     find: false,
+    store: false,
     detail: undefined,
     settings: undefined,
     session: { _tag: "Idle" },
@@ -467,6 +539,11 @@ function editDraft(
   if (entry !== undefined) {
     return withQuestion(nav, { _tag: "Wifi", entry: editEntry(entry, draft => change(draft, entryMaxLength(entry))) })
   }
+  // The store's keyboard, when it is the one on screen.
+  const typing = nav.storePlace.typing
+  if (topLayer(nav) === "Store" && typing !== undefined) {
+    return withStore(nav, { ...nav.storePlace, typing: change(typing, PICO_STORE_QUERY_MAX) })
+  }
   const editor = openEditor(nav)
   if (editor?._tag !== "EditingText") return nav
   const row = textRow(korri, editor.settingId)
@@ -502,6 +579,21 @@ function settleIdle(nav: PicoNavigation, korri: SurfaceModel): PicoNavigation {
   return nav.idle._tag === "Attracting" && !canAttract(nav, korri)
     ? { ...nav, idle: { _tag: "Awake", activity: nav.idle.activity } }
     : nav
+}
+
+const withStore = (nav: PicoNavigation, place: StorePlace): PicoNavigation => ({ ...nav, storePlace: place })
+
+/** Whether Korri publishes this store action now, enabled. */
+function storeActionPublished(korri: SurfaceModel, actionId: string): boolean {
+  const store = korri.store
+  if (store === undefined) return false
+  const lists = [
+    store.providers._tag === "Problem" ? store.providers.actions : [],
+    store.search._tag === "Problem" ? store.search.actions : [],
+    store.details._tag === "Problem" ? store.details.actions : [],
+    store.details._tag === "Ready" && "actions" in store.details.get ? store.details.get.actions : [],
+  ]
+  return lists.some(actions => actions.some(action => action.id === actionId && action.enabled))
 }
 
 const closeMenu = (home: Home): Home => (home.menu === "Closed" ? home : { ...home, menu: "Closed" })
