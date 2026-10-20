@@ -283,10 +283,10 @@ fn evaluate_module(
             })?;
         }
         // An explicit providers export is an acquisition provider (ADR 0013).
-        if declaration
+        if let Some(providers) = declaration
             .get("providers")
             .and_then(serde_json::Value::as_object)
-            .is_some_and(|providers| !providers.is_empty())
+            .filter(|providers| !providers.is_empty())
         {
             for operation in [
                 "claims.search",
@@ -296,6 +296,20 @@ fn evaluate_module(
                 handler(&exports, operation).map_err(|_| {
                     format!("acquisition provider has no callable {operation} handler")
                 })?;
+            }
+            // ADR 0012 artifacts and ADR 0013 provider staging share the cache
+            // grammar `cache/<plugin>/<key>/`; one key must not name both.
+            let artifacts = declaration
+                .get("artifacts")
+                .and_then(serde_json::Value::as_object);
+            for provider_id in providers.keys() {
+                let key = provider_id.rsplit(':').next().unwrap_or(provider_id);
+                if artifacts.is_some_and(|artifacts| artifacts.contains_key(key)) {
+                    return Err(format!(
+                        "artifact {key} has the same name as provider {provider_id}; they would share one cache directory"
+                    )
+                    .into());
+                }
             }
         }
         let result = if let Some(invocation) = invocation {

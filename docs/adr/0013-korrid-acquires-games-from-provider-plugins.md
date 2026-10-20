@@ -109,7 +109,7 @@ bound, and the heap must hold the input. A 3.5 MiB page fits, as tested.
   `Staged` although the game may appear later.
 - A system whose header rule strips bytes costs one file hash on the next scan.
 - Ports in provider URLs are not restricted; only the host name is declared.
-- A plugin whose artifact key equals a provider's name shares that
-  `.downloads` directory; publishing the artifact removes it, which would fail
-  an in-flight game download.
+- Declaration evaluation refuses a plugin whose artifact key equals one of
+  its provider names, so ADR 0012 artifact caches and ADR 0013 provider
+  staging never share `cache/<plugin>/<key>/`.
 - Device evidence is still owed; the Mini V2 was unreachable during this work.

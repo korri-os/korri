@@ -2208,6 +2208,34 @@ mod acquisition_provider_tests {
         // A plugin without providers needs none of these handlers.
         load_plugin_source("@korri", "export const name = 'plain';").unwrap();
     }
+
+    #[test]
+    fn an_artifact_key_cannot_equal_a_provider_name() {
+        let artifact = |key: &str| {
+            format!("export const artifacts = {{{key}: {{id: '@korri:pico8/{key}', version: 'v1', files: [{{url: 'https://example.com/a', sha256: 'sha256:{}'}}]}}}};", "a".repeat(64))
+        };
+        let provider =
+            "export const providers = {'@korri:pico8': {id: '@korri:pico8', title: 'PICO-8 BBS'}};";
+        let error = load_plugin_source(
+            "@korri",
+            &format!(
+                "export const name = 'pico8'; {provider} {} {HANDLERS}",
+                artifact("pico8")
+            ),
+        )
+        .err()
+        .unwrap()
+        .to_string();
+        assert!(error.contains("share one cache directory"), "{error}");
+        load_plugin_source(
+            "@korri",
+            &format!(
+                "export const name = 'pico8'; {provider} {} {HANDLERS}",
+                artifact("runtime")
+            ),
+        )
+        .unwrap();
+    }
 }
 
 #[cfg(test)]
