@@ -9,6 +9,8 @@ use typeshare::typeshare;
 #[serde(tag = "_tag")]
 pub enum ArtifactState {
     Missing,
+    /// Waiting for its turn: one job runs at a time (ADR 0013).
+    Queued,
     Downloading {
         file: u32,
         #[serde(rename = "fileCount")]
@@ -42,6 +44,10 @@ pub struct ArtifactStatus {
     #[typeshare(serialized_as = "Option<number>")]
     pub bytes_total: Option<u64>,
     pub state: ArtifactState,
+    /// Present, and `true`, only in a game-scoped result, on an artifact that
+    /// one of the game's declared releases names. Runner artifacts omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release: Option<bool>,
 }
 
 #[typeshare]
@@ -64,6 +70,20 @@ pub struct AcquisitionStartRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AcquisitionCancelRequest {
     pub artifact_id: String,
+}
+/// Queue every download of the game's default route, behind earlier ones.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcquisitionDownloadRequest {
+    pub game_id: String,
+}
+/// Remove the ready directories of the game's own release artifacts.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcquisitionRemoveRequest {
+    pub game_id: String,
 }
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]

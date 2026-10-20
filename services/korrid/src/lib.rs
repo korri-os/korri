@@ -1196,6 +1196,10 @@ pub enum RpcRequest {
     AcquisitionStart(acquisition::AcquisitionStartRequest),
     #[serde(rename = "app.acquisition.cancel")]
     AcquisitionCancel(acquisition::AcquisitionCancelRequest),
+    #[serde(rename = "app.acquisition.download")]
+    AcquisitionDownload(acquisition::AcquisitionDownloadRequest),
+    #[serde(rename = "app.acquisition.remove")]
+    AcquisitionRemove(acquisition::AcquisitionRemoveRequest),
     #[serde(rename = "system.onboarding.finish")]
     OnboardingFinish(onboarding::OnboardingFinishRequest),
     #[serde(rename = "system.onboarding.status")]
@@ -1300,6 +1304,10 @@ pub enum RpcResponse {
     AcquisitionStart(acquisition::AcquisitionOutcome),
     #[serde(rename = "app.acquisition.cancel")]
     AcquisitionCancel(acquisition::AcquisitionOutcome),
+    #[serde(rename = "app.acquisition.download")]
+    AcquisitionDownload(acquisition::AcquisitionOutcome),
+    #[serde(rename = "app.acquisition.remove")]
+    AcquisitionRemove(acquisition::AcquisitionOutcome),
     #[serde(rename = "system.onboarding.finish")]
     OnboardingFinish(onboarding::OnboardingStatusOutcome),
     #[serde(rename = "system.onboarding.status")]
@@ -1458,7 +1466,10 @@ struct AppState {
 impl AppState {
     fn recover_acquisition(&self) {
         if let Ok((root, registry)) = self.acquisition_context() {
-            if let Err(failure) = self.acquisition.recover(root, &registry) {
+            if let Err(failure) =
+                self.acquisition
+                    .recover(root, self.private_state_root(), &registry)
+            {
                 eprintln!("korrid acquisition recovery: {}", failure.message);
             }
         }
@@ -2144,6 +2155,43 @@ fn local_launch_caller<'a>(
     })
 }
 
+/// Remove download refuses while the game runs on this device. A session
+/// whose game is unknown also refuses: its files might be the ones in use.
+async fn acquisition_remove(
+    state: &AppState,
+    game_id: &str,
+) -> Result<acquisition::AcquisitionSnapshot, RpcFailure> {
+    if let ServerMode::Host(host) = &state.mode {
+        use host::control::HostSessionStatus;
+        match host.session_status().await? {
+            HostSessionStatus::Running {
+                game_id: active, ..
+            }
+            | HostSessionStatus::Frozen {
+                game_id: active, ..
+            }
+            | HostSessionStatus::FocusFailed {
+                game_id: active, ..
+            }
+            | HostSessionStatus::Stopping {
+                game_id: active, ..
+            } if active.as_deref().is_none_or(|active| active == game_id) => {
+                return Err(RpcFailure {
+                    code: "ActiveSessionConflict".into(),
+                    message: "This game is running. Stop it before removing its download.".into(),
+                });
+            }
+            _ => (),
+        }
+    }
+    let (root, registry) = state.acquisition_context()?;
+    let game = acquisition::game_artifacts_for_removal(root, &registry, game_id)?;
+    state
+        .acquisition
+        .remove(root, &registry, game_id, &game)
+        .await
+}
+
 async fn dispatch(
     state: &AppState,
     authorization: &authorization::AuthorizationContext,
@@ -2154,19 +2202,18 @@ async fn dispatch(
         RpcRequest::AcquisitionStatus(request) => {
             let outcome = (|| {
                 let (root, registry) = state.acquisition_context()?;
-                let ids = request
-                    .game_id
-                    .as_ref()
-                    .map(|id| {
-                        acquisition::game_artifact_ids(
+                match &request.game_id {
+                    Some(id) => {
+                        let game = acquisition::game_artifacts(
                             root,
                             &registry,
                             id,
                             request.runner_id.as_deref(),
-                        )
-                    })
-                    .transpose()?;
-                state.acquisition.status(root, &registry, ids.as_deref())
+                        )?;
+                        state.acquisition.game_status(root, &registry, &game)
+                    }
+                    None => state.acquisition.status(root, &registry, None),
+                }
             })();
             RpcResponse::AcquisitionStatus(
                 outcome
@@ -2200,6 +2247,27 @@ async fn dispatch(
                 Err(error) => Err(error),
             };
             RpcResponse::AcquisitionCancel(
+                outcome
+                    .map(acquisition::AcquisitionOutcome::Ok)
+                    .unwrap_or_else(acquisition::AcquisitionOutcome::Err),
+            )
+        }
+        RpcRequest::AcquisitionDownload(request) => {
+            let outcome = state.acquisition_context().and_then(|(root, registry)| {
+                let game = acquisition::game_artifacts(root, &registry, &request.game_id, None)?;
+                state
+                    .acquisition
+                    .download(root, state.private_state_root(), &registry, &game)
+            });
+            RpcResponse::AcquisitionDownload(
+                outcome
+                    .map(acquisition::AcquisitionOutcome::Ok)
+                    .unwrap_or_else(acquisition::AcquisitionOutcome::Err),
+            )
+        }
+        RpcRequest::AcquisitionRemove(request) => {
+            let outcome = acquisition_remove(state, &request.game_id).await;
+            RpcResponse::AcquisitionRemove(
                 outcome
                     .map(acquisition::AcquisitionOutcome::Ok)
                     .unwrap_or_else(acquisition::AcquisitionOutcome::Err),

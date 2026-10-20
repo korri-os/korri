@@ -3,6 +3,7 @@
 mod download;
 mod placement;
 mod policy;
+mod sleep;
 mod types;
 mod unit;
 
@@ -11,7 +12,7 @@ use crate::{
     RpcFailure,
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
@@ -19,24 +20,66 @@ use std::{
 use tokio::sync::watch;
 use types::Failure;
 pub use types::{
-    AcquisitionCancelRequest, AcquisitionOutcome, AcquisitionSnapshot, AcquisitionStartRequest,
+    AcquisitionCancelRequest, AcquisitionDownloadRequest, AcquisitionOutcome,
+    AcquisitionRemoveRequest, AcquisitionSnapshot, AcquisitionStartRequest,
     AcquisitionStatusRequest, ArtifactState, ArtifactStatus,
 };
 
+/// One job runs at a time. `waiting` is the person's order, front first; a
+/// launch moves its artifacts to the front and pauses a background job,
+/// which later resumes with `Range`. A queued contribution always has a
+/// `.part` marker, so a restart can rebuild the queue from the cache alone.
 #[derive(Clone, Default)]
 pub struct AcquisitionCoordinator {
-    jobs: Arc<Mutex<BTreeMap<PathBuf, Arc<Mutex<Job>>>>>,
+    queue: Arc<Mutex<Queue>>,
     engine: download::DownloadEngine,
+    sleep: sleep::SleepBlock,
+}
+#[derive(Default)]
+struct Queue {
+    jobs: BTreeMap<PathBuf, Job>,
+    waiting: VecDeque<PathBuf>,
+    running: Option<Running>,
+    worker: bool,
 }
 struct Job {
-    version: String,
+    artifact: ArtifactRecord,
+    unpack: Option<PathBuf>,
+    root: PathBuf,
+    private_root: PathBuf,
     state: ArtifactState,
-    cancel: watch::Sender<bool>,
+}
+struct Running {
+    base: PathBuf,
+    stop: watch::Sender<Stop>,
     done: watch::Receiver<bool>,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stop {
+    Run,
+    Pause,
+    Cancel,
+}
+
+/// The artifacts of one game's default route, release artifacts first.
+pub(crate) struct GameArtifacts {
+    pub ids: Vec<String>,
+    /// Every artifact that one of the game's declared releases names.
+    pub release: BTreeSet<String>,
 }
 
 impl AcquisitionCoordinator {
-    pub(crate) fn recover(&self, root: &Path, registry: &PluginRegistry) -> Result<(), RpcFailure> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Queue> {
+        self.queue.lock().expect("acquisition queue mutex poisoned")
+    }
+
+    pub(crate) fn recover(
+        &self,
+        root: &Path,
+        private_root: &Path,
+        registry: &PluginRegistry,
+    ) -> Result<(), RpcFailure> {
+        let mut interrupted = Vec::new();
         for artifact in registry.artifacts().values() {
             let base = placement::contribution(root, artifact);
             if !placement::is_ready(&base) {
@@ -45,19 +88,31 @@ impl AcquisitionCoordinator {
             let recovery = (|| {
                 // Another live daemon owns this contribution; leave it alone.
                 let Some(_guard) = placement::lock(&base)? else {
-                    return Ok(());
+                    return Ok(false);
                 };
                 unit::reclaim(artifact)?;
                 placement::clean_work(&base)?;
-                if placement::is_ready(&placement::ready_path(root, artifact))
-                    && base.join(".downloads").is_dir()
-                {
-                    std::fs::remove_dir_all(base.join(".downloads"))?;
+                if placement::is_ready(&placement::ready_path(root, artifact)) {
+                    if base.join(".downloads").is_dir() {
+                        std::fs::remove_dir_all(base.join(".downloads"))?;
+                    }
+                    return Ok(false);
                 }
-                Ok::<(), Failure>(())
+                Ok::<bool, Failure>(true)
             })();
-            recovery.map_err(Failure::rpc)?;
+            if recovery.map_err(Failure::rpc)? {
+                // A .part with no ready directory always means interrupted.
+                if let Some(since) = placement::interrupted_since(&base) {
+                    interrupted.push((since, artifact));
+                }
+            }
         }
+        interrupted.sort_by_key(|(since, _)| *since);
+        let ids: Vec<_> = interrupted
+            .into_iter()
+            .map(|(_, artifact)| artifact.id.clone())
+            .collect();
+        self.enqueue(root, private_root, registry, &ids, false)?;
         Ok(())
     }
 
@@ -75,7 +130,8 @@ impl AcquisitionCoordinator {
                 .map_err(|_| unknown_artifact())?,
             None => registry.artifacts().values().collect(),
         };
-        let jobs = self.jobs.lock().expect("acquisition jobs mutex poisoned");
+        self.ensure_worker();
+        let queue = self.lock();
         Ok(AcquisitionSnapshot {
             artifacts: artifacts
                 .into_iter()
@@ -86,17 +142,14 @@ impl AcquisitionCoordinator {
                             path: path.display().to_string(),
                         }
                     } else {
-                        jobs.get(&placement::contribution(root, artifact))
-                            .map(|job| {
-                                let job = job.lock().expect("acquisition job mutex poisoned");
-                                if job.version == artifact.version
+                        queue
+                            .jobs
+                            .get(&placement::contribution(root, artifact))
+                            .filter(|job| {
+                                job.artifact.version == artifact.version
                                     && !matches!(job.state, ArtifactState::Ready { .. })
-                                {
-                                    job.state.clone()
-                                } else {
-                                    ArtifactState::Missing
-                                }
                             })
+                            .map(|job| job.state.clone())
                             .unwrap_or(ArtifactState::Missing)
                     };
                     ArtifactStatus {
@@ -105,12 +158,30 @@ impl AcquisitionCoordinator {
                         version: artifact.version.clone(),
                         bytes_total: declared_bytes(artifact),
                         state,
+                        release: None,
                     }
                 })
                 .collect(),
         })
     }
 
+    /// Status of one game's artifacts, marking those its releases name.
+    pub(crate) fn game_status(
+        &self,
+        root: &Path,
+        registry: &PluginRegistry,
+        game: &GameArtifacts,
+    ) -> Result<AcquisitionSnapshot, RpcFailure> {
+        let mut snapshot = self.status(root, registry, Some(&game.ids))?;
+        for status in &mut snapshot.artifacts {
+            if game.release.contains(&status.id) {
+                status.release = Some(true);
+            }
+        }
+        Ok(snapshot)
+    }
+
+    /// A launch is waiting for these: they go to the front, in this order.
     pub fn start(
         &self,
         root: &Path,
@@ -118,6 +189,30 @@ impl AcquisitionCoordinator {
         registry: &PluginRegistry,
         ids: &[String],
     ) -> Result<AcquisitionSnapshot, RpcFailure> {
+        self.enqueue(root, private_root, registry, ids, true)?;
+        self.status(root, registry, Some(ids))
+    }
+
+    /// The Download action: every artifact of the route, behind earlier ones.
+    pub(crate) fn download(
+        &self,
+        root: &Path,
+        private_root: &Path,
+        registry: &PluginRegistry,
+        game: &GameArtifacts,
+    ) -> Result<AcquisitionSnapshot, RpcFailure> {
+        self.enqueue(root, private_root, registry, &game.ids, false)?;
+        self.game_status(root, registry, game)
+    }
+
+    fn enqueue(
+        &self,
+        root: &Path,
+        private_root: &Path,
+        registry: &PluginRegistry,
+        ids: &[String],
+        front: bool,
+    ) -> Result<(), RpcFailure> {
         // Resolve every id before starting any effects for this request.
         let artifacts = ids
             .iter()
@@ -136,69 +231,178 @@ impl AcquisitionCoordinator {
             })
             .collect::<Result<Vec<_>, RpcFailure>>()?;
         {
-            let mut jobs = self.jobs.lock().expect("acquisition jobs mutex poisoned");
+            let mut queue = self.lock();
+            let mut first = Vec::new();
             for (artifact, unpack) in artifacts {
                 let base = placement::contribution(root, &artifact);
                 if placement::is_ready(&placement::ready_path(root, &artifact)) {
                     continue;
                 }
-                if jobs.get(&base).is_some_and(|job| {
-                    !*job
-                        .lock()
-                        .expect("acquisition job mutex poisoned")
-                        .done
-                        .borrow()
-                }) {
+                let running = queue.running.as_ref().is_some_and(|run| run.base == base);
+                if running || first.contains(&base) {
+                    if running && front {
+                        first.push(base);
+                    }
                     continue;
                 }
-                let (cancel, cancel_rx) = watch::channel(false);
-                let (done_tx, done) = watch::channel(false);
-                let job = Arc::new(Mutex::new(Job {
-                    version: artifact.version.clone(),
-                    state: ArtifactState::Downloading {
-                        file: 1,
-                        file_count: artifact.files.len() as u32,
-                        bytes_done: 0,
-                        bytes_total: declared_bytes(&artifact),
-                        bytes_per_second: None,
+                if let Some(position) = queue.waiting.iter().position(|item| *item == base) {
+                    if front {
+                        queue.waiting.remove(position);
+                        first.push(base);
+                    }
+                    continue;
+                }
+                let state = match placement::mark_queued(root, &artifact) {
+                    Ok(()) => ArtifactState::Queued,
+                    Err(error) => ArtifactState::Failed {
+                        reason: error.rpc(),
                     },
-                    cancel,
-                    done,
-                }));
-                jobs.insert(base, job.clone());
-                let root = root.to_path_buf();
-                let private_root = private_root.to_path_buf();
-                let engine = self.engine.clone();
-                tokio::spawn(async move {
-                    let result = acquire(
-                        &root,
-                        &private_root,
-                        &artifact,
+                };
+                let queued = matches!(state, ArtifactState::Queued);
+                queue.jobs.insert(
+                    base.clone(),
+                    Job {
+                        artifact,
                         unpack,
-                        engine,
-                        &job,
-                        cancel_rx,
-                    )
-                    .await;
-                    let state = match result {
-                        Ok(()) => ArtifactState::Ready {
-                            path: placement::ready_path(&root, &artifact)
-                                .display()
-                                .to_string(),
-                        },
-                        Err(Failure::Cancelled) => ArtifactState::Missing,
-                        Err(error) => ArtifactState::Failed {
-                            reason: error.rpc(),
-                        },
-                    };
-                    job.lock().expect("acquisition job mutex poisoned").state = state;
-                    let _ = done_tx.send(true);
-                });
+                        root: root.to_path_buf(),
+                        private_root: private_root.to_path_buf(),
+                        state,
+                    },
+                );
+                if !queued {
+                    continue;
+                }
+                if front {
+                    first.push(base);
+                } else {
+                    queue.waiting.push_back(base);
+                }
+            }
+            if front && !first.is_empty() {
+                // A background download pauses for the launch and resumes
+                // next, before anything else that was waiting.
+                let mut paused = None;
+                if let Some(running) = &queue.running {
+                    if !first.contains(&running.base)
+                        && queue.jobs.get(&running.base).is_some_and(|job| {
+                            matches!(job.state, ArtifactState::Downloading { .. })
+                        })
+                    {
+                        let _ = running.stop.send(Stop::Pause);
+                        paused = Some(running.base.clone());
+                    }
+                }
+                let running = queue.running.as_ref().map(|run| run.base.clone());
+                let mut order: VecDeque<_> = first
+                    .into_iter()
+                    .filter(|base| Some(base) != running.as_ref())
+                    .collect();
+                order.extend(paused);
+                order.extend(queue.waiting.drain(..));
+                queue.waiting = order;
             }
         }
-        self.status(root, registry, Some(ids))
+        self.ensure_worker();
+        Ok(())
     }
 
+    fn ensure_worker(&self) {
+        let mut queue = self.lock();
+        if queue.worker || queue.waiting.is_empty() {
+            return;
+        }
+        // Startup may run outside a runtime; the next request starts it then.
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        queue.worker = true;
+        handle.spawn(self.clone().work());
+    }
+
+    async fn work(self) {
+        let mut sleep_guard = None;
+        loop {
+            let (base, artifact, unpack, root, private_root, stop, done) = {
+                let mut queue = self.lock();
+                let Some(base) = queue.waiting.pop_front() else {
+                    queue.worker = false;
+                    break;
+                };
+                let Some(job) = queue.jobs.get_mut(&base) else {
+                    continue;
+                };
+                job.state = ArtifactState::Downloading {
+                    file: 1,
+                    file_count: job.artifact.files.len() as u32,
+                    bytes_done: 0,
+                    bytes_total: declared_bytes(&job.artifact),
+                    bytes_per_second: None,
+                };
+                let next = (
+                    base.clone(),
+                    job.artifact.clone(),
+                    job.unpack.clone(),
+                    job.root.clone(),
+                    job.private_root.clone(),
+                );
+                let (stop, stop_rx) = watch::channel(Stop::Run);
+                let (done, done_rx) = watch::channel(false);
+                queue.running = Some(Running {
+                    base,
+                    stop,
+                    done: done_rx,
+                });
+                (next.0, next.1, next.2, next.3, next.4, stop_rx, done)
+            };
+            if sleep_guard.is_none() {
+                sleep_guard = Some(self.sleep.block().await);
+            }
+            let result = acquire(
+                &root,
+                &private_root,
+                &artifact,
+                unpack,
+                self.engine.clone(),
+                &self.queue,
+                &base,
+                stop.clone(),
+            )
+            .await;
+            let stopped = *stop.borrow();
+            {
+                let mut queue = self.lock();
+                queue.running = None;
+                let state = match result {
+                    Ok(()) => ArtifactState::Ready {
+                        path: placement::ready_path(&root, &artifact)
+                            .display()
+                            .to_string(),
+                    },
+                    Err(Failure::Cancelled) if stopped == Stop::Pause => ArtifactState::Queued,
+                    Err(Failure::Cancelled) => ArtifactState::Missing,
+                    Err(error) => ArtifactState::Failed {
+                        reason: error.rpc(),
+                    },
+                };
+                if let Some(job) = queue.jobs.get_mut(&base) {
+                    job.state = state;
+                }
+            }
+            if stopped == Stop::Cancel {
+                if let Err(error) = discard_partials(&base).await {
+                    eprintln!(
+                        "korrid acquisition: partial files stayed after cancel: {}",
+                        error.message
+                    );
+                }
+            }
+            let _ = done.send(true);
+        }
+        drop(sleep_guard);
+    }
+
+    /// Stop one download, delete its partial files and leave the queue.
+    /// Unpacking cannot be cancelled.
     pub async fn cancel(
         &self,
         root: &Path,
@@ -206,47 +410,146 @@ impl AcquisitionCoordinator {
         id: &str,
     ) -> Result<AcquisitionSnapshot, RpcFailure> {
         let artifact = registry.artifact(id).map_err(|_| unknown_artifact())?;
-        let job = self
-            .jobs
-            .lock()
-            .expect("acquisition jobs mutex poisoned")
-            .get(&placement::contribution(root, artifact))
-            .cloned();
-        if let Some(job) = job {
-            let done = {
-                let job = job.lock().expect("acquisition job mutex poisoned");
-                if matches!(job.state, ArtifactState::Downloading { .. }) {
-                    let _ = job.cancel.send(true);
-                    Some(job.done.clone())
-                } else {
-                    None
+        let base = placement::contribution(root, artifact);
+        let waiting = {
+            let mut queue = self.lock();
+            let unpacking = queue
+                .jobs
+                .get(&base)
+                .is_some_and(|job| matches!(job.state, ArtifactState::Unpacking));
+            if unpacking {
+                None
+            } else if let Some(running) = queue.running.as_ref().filter(|run| run.base == base) {
+                let _ = running.stop.send(Stop::Cancel);
+                Some(Some(running.done.clone()))
+            } else {
+                queue.waiting.retain(|item| *item != base);
+                if let Some(job) = queue.jobs.get_mut(&base) {
+                    if matches!(job.state, ArtifactState::Queued) {
+                        job.state = ArtifactState::Missing;
+                    }
                 }
-            };
-            if let Some(mut done) = done {
+                Some(None)
+            }
+        };
+        match waiting {
+            None => (),
+            Some(Some(mut done)) => {
                 while !*done.borrow() {
                     if done.changed().await.is_err() {
                         break;
                     }
                 }
             }
+            Some(None) => discard_partials(&base).await?,
         }
         self.status(root, registry, None)
     }
+
+    /// Remove download (ADR 0013): only the game's own release artifacts,
+    /// never a runner's, and never one another game in the library names.
+    pub(crate) async fn remove(
+        &self,
+        root: &Path,
+        registry: &PluginRegistry,
+        game_id: &str,
+        game: &GameArtifacts,
+    ) -> Result<AcquisitionSnapshot, RpcFailure> {
+        let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
+            .map_err(crate::game_routes::settings_failure)?;
+        let runner_artifacts: BTreeSet<&str> = registry
+            .runners()
+            .values()
+            .flat_map(|runner| runner.artifacts.iter().map(String::as_str))
+            .collect();
+        let shared: BTreeSet<String> = snapshot
+            .library
+            .keys()
+            .filter(|id| *id != game_id)
+            .flat_map(|id| release_artifacts(&snapshot, registry, id))
+            .collect();
+        {
+            let queue = self.lock();
+            let busy = game.ids.iter().chain(&game.release).any(|id| {
+                // Ready is the directory, even while the worker finishes up.
+                registry.artifact(id).is_ok_and(|artifact| {
+                    let base = placement::contribution(root, artifact);
+                    !placement::is_ready(&placement::ready_path(root, artifact))
+                        && (queue.running.as_ref().is_some_and(|run| run.base == base)
+                            || queue.waiting.contains(&base))
+                })
+            });
+            if busy {
+                return Err(busy_failure());
+            }
+        }
+        for id in &game.release {
+            if runner_artifacts.contains(id.as_str()) || shared.contains(id) {
+                continue;
+            }
+            let Ok(artifact) = registry.artifact(id) else {
+                continue;
+            };
+            let ready = placement::ready_path(root, artifact);
+            if !placement::is_ready(&ready) {
+                continue;
+            }
+            let base = placement::contribution(root, artifact);
+            // Publication holds .lock a moment after the rename to Ready.
+            let mut guard = None;
+            for _ in 0..100 {
+                guard = placement::lock(&base).map_err(Failure::rpc)?;
+                if guard.is_some() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            if guard.is_none() {
+                return Err(busy_failure());
+            }
+            placement::discard_work(&ready).map_err(Failure::rpc)?;
+        }
+        self.game_status(root, registry, game)
+    }
 }
 
+/// A writer that just stopped, or a process it forked, can hold `.lock` for
+/// a moment. Wait briefly; a live writer elsewhere keeps its files.
+async fn discard_partials(base: &Path) -> Result<(), RpcFailure> {
+    for _ in 0..100 {
+        if placement::discard_partials(base).map_err(Failure::rpc)? {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn acquire(
     root: &Path,
     private_root: &Path,
     artifact: &ArtifactRecord,
     unpack: Option<PathBuf>,
     engine: download::DownloadEngine,
-    job: &Arc<Mutex<Job>>,
-    mut cancelled: watch::Receiver<bool>,
+    queue: &Arc<Mutex<Queue>>,
+    job: &Path,
+    mut stopped: watch::Receiver<Stop>,
 ) -> Result<(), Failure> {
+    let set_state = |state: ArtifactState| {
+        if let Some(job) = queue
+            .lock()
+            .expect("acquisition queue mutex poisoned")
+            .jobs
+            .get_mut(job)
+        {
+            job.state = state;
+        }
+    };
     let base = placement::prepare(root, artifact)?;
     let guard;
     loop {
-        if *cancelled.borrow() {
+        if *stopped.borrow() != Stop::Run {
             return Err(Failure::Cancelled);
         }
         if let Some(lock) = placement::lock(&base)? {
@@ -254,7 +557,7 @@ async fn acquire(
             break;
         }
         tokio::select! {
-            _ = cancelled.changed() => return Err(Failure::Cancelled),
+            _ = stopped.changed() => return Err(Failure::Cancelled),
             _ = tokio::time::sleep(Duration::from_millis(100)) => (),
         }
     }
@@ -273,13 +576,13 @@ async fn acquire(
     for (index, file) in artifact.files.iter().enumerate() {
         let path = tokio::select! {
             biased;
-            _ = cancelled.changed() => return Err(Failure::Cancelled),
+            _ = stopped.changed() => return Err(Failure::Cancelled),
             path = engine.fetch(file, &downloads, |progress| {
                 if sizes[index].is_none() { sizes[index] = progress.total; }
-                job.lock().expect("acquisition job mutex poisoned").state = ArtifactState::Downloading {
+                set_state(ArtifactState::Downloading {
                     file: index as u32 + 1, file_count: artifact.files.len() as u32,
                     bytes_done: completed + progress.done, bytes_total: total_bytes(&sizes), bytes_per_second: progress.rate,
-                };
+                });
             }) => path?,
         };
         let bytes = std::fs::metadata(&path)?.len();
@@ -288,11 +591,15 @@ async fn acquire(
         files.push(path);
     }
     {
-        let mut job = job.lock().expect("acquisition job mutex poisoned");
-        if *cancelled.borrow() {
+        // Pause and cancel decide under the same lock, so a stop that saw
+        // Downloading is never lost once unpacking starts.
+        let mut queue = queue.lock().expect("acquisition queue mutex poisoned");
+        if *stopped.borrow() != Stop::Run {
             return Err(Failure::Cancelled);
         }
-        job.state = ArtifactState::Unpacking;
+        if let Some(job) = queue.jobs.get_mut(job) {
+            job.state = ArtifactState::Unpacking;
+        }
     }
     let private_root = private_root.to_path_buf();
     let artifact = artifact.clone();
@@ -344,6 +651,13 @@ fn unknown_artifact() -> RpcFailure {
     RpcFailure {
         code: "AcquisitionUnknownArtifact".into(),
         message: "The requested download is not available.".into(),
+    }
+}
+
+fn busy_failure() -> RpcFailure {
+    RpcFailure {
+        code: "AcquisitionBusy".into(),
+        message: "This game is still downloading. Cancel the download first.".into(),
     }
 }
 
@@ -451,19 +765,88 @@ pub(crate) fn launch_artifacts(
 #[cfg(test)]
 mod tests;
 
-pub(crate) fn game_artifact_ids(
+/// The artifacts that this game's declared releases name, in library order.
+fn release_artifacts(
+    snapshot: &crate::config::ConfigSnapshot,
+    registry: &PluginRegistry,
+    game_id: &str,
+) -> Vec<String> {
+    let mut ids = Vec::new();
+    for release in snapshot
+        .library
+        .get(game_id)
+        .into_iter()
+        .flat_map(|game| &game.releases)
+    {
+        let Some(identity) = &release.identity else {
+            continue;
+        };
+        for declared in registry.declared_hash(identity.value()) {
+            for id in &declared.release.artifacts {
+                if !ids.contains(id) {
+                    ids.push(id.clone());
+                }
+            }
+        }
+    }
+    ids
+}
+
+/// Resolve the game's default route exactly as `app.session.start` does.
+pub(crate) fn game_artifacts(
     root: &Path,
     registry: &PluginRegistry,
     game_id: &str,
     runner_id: Option<&str>,
-) -> Result<Vec<String>, RpcFailure> {
+) -> Result<GameArtifacts, RpcFailure> {
     let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
         .map_err(crate::game_routes::settings_failure)?;
     let route =
         crate::config::resolver::resolve_linux_route(root, &snapshot, registry, game_id, runner_id)
             .map_err(|error| crate::route_diagnostic_failure(&error))?;
-    route_artifact_ids(registry, &route)
+    Ok(GameArtifacts {
+        ids: route_artifact_ids(registry, &route)?,
+        release: release_artifacts(&snapshot, registry, game_id)
+            .into_iter()
+            .collect(),
+    })
 }
 
+/// Remove download does not need a route: a disabled runner must not keep
+/// a person from freeing space. Without a route, only release artifacts show.
+pub(crate) fn game_artifacts_for_removal(
+    root: &Path,
+    registry: &PluginRegistry,
+    game_id: &str,
+) -> Result<GameArtifacts, RpcFailure> {
+    let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
+        .map_err(crate::game_routes::settings_failure)?;
+    if !snapshot.library.contains_key(game_id) {
+        return Err(RpcFailure {
+            code: "LocalRouteUnavailable".into(),
+            message: format!("game {game_id} is unavailable"),
+        });
+    }
+    let release = release_artifacts(&snapshot, registry, game_id);
+    let mut ids =
+        crate::config::resolver::resolve_linux_route(root, &snapshot, registry, game_id, None)
+            .ok()
+            .and_then(|route| route_artifact_ids(registry, &route).ok())
+            .unwrap_or_default();
+    for id in &release {
+        if !ids.contains(id) {
+            ids.push(id.clone());
+        }
+    }
+    Ok(GameArtifacts {
+        ids,
+        release: release.into_iter().collect(),
+    })
+}
+
+#[cfg(test)]
+mod game_tests;
+#[cfg(test)]
+mod queue_tests;
 #[cfg(test)]
 mod rpc_tests;

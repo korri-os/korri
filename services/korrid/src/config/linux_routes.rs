@@ -74,8 +74,8 @@ fn linux_route_candidates_for_runner(
                         .get(system_id)
                         .and_then(|system| system.title.clone().or_else(|| system.name.clone()))
                 });
-            let route = |file_target, provider_target, artifact_target, flattened_target| {
-                ResolvedRoute {
+            let route =
+                |file_target, provider_target, artifact_target, flattened_target| ResolvedRoute {
                     playable_id: game_id.into(),
                     title: game.title.clone(),
                     release_id: key.into(),
@@ -97,8 +97,7 @@ fn linux_route_candidates_for_runner(
                     file_target,
                     provider_target,
                     artifact_target,
-                }
-            };
+                };
             // A saved location is tried before the declaration's artifact.
             let mut routed = false;
             for location in snapshot.locations.get(key).into_iter().flatten() {
@@ -214,14 +213,17 @@ fn linux_route_candidates_for_runner(
 /// The first enabled declaration of this release key whose file is in an
 /// artifact. Readiness is not checked here; the launch gate checks it.
 fn artifact_target(registry: &PluginRegistry, key: &str) -> Option<ResolvedArtifactTarget> {
-    registry.declared_hash(key).into_iter().find_map(|declared| {
-        let file = declared.release.artifact_file()?;
-        Some(ResolvedArtifactTarget {
-            artifact_id: file.artifact.clone(),
-            path: file.path.clone(),
-            release_artifacts: declared.release.artifacts.clone(),
+    registry
+        .declared_hash(key)
+        .into_iter()
+        .find_map(|declared| {
+            let file = declared.release.artifact_file()?;
+            Some(ResolvedArtifactTarget {
+                artifact_id: file.artifact.clone(),
+                path: file.path.clone(),
+                release_artifacts: declared.release.artifacts.clone(),
+            })
         })
-    })
 }
 
 pub fn stored_runner<'a>(snapshot: &'a ConfigSnapshot, route: &ResolvedRoute) -> Option<&'a str> {
