@@ -1,5 +1,7 @@
 # Mania — zone select
 
+> **Superseded in part (2026-10-20).** The refinement brief, `docs/design/surfaces/zone/REFINEMENT.md`, supersedes this document's **Palette** (the "eight colours" rule: each screen group now has its own sampled palette, switched by `data-ground`) and its **Type** ("one face: Anton": Zone draws its own pixel capitals, Zone Caps, and sets Korri's facts in Jersey 10), and restates every length and the plan's thresholds on an integer art-pixel grid. Where the two disagree, the refinement brief wins. The rest stands as the record of the mockup.
+
 **Artifact.** Sonic Mania's menus (TIME ATTACK, MANIA MODE, OPTIONS): a mint ground with orbit rings and dots, thick diagonal bands top-left to bottom-right, black parallelogram panels with white chunky caps, a pink offset underline on the current item, red triangles as the cursor, one yellow-on-blue hexagonal title banner. Vector shapes at any size; pixel art only inside the cover wells.
 
 **Palette (8, picked from the references).** mint `#3fe0a0` (ground, stripe band, signal bars); black `#000000` (every panel, card body, cover well); white `#ffffff` (caps); yellow `#ffd21e` (GAMES banner lettering, HERE tag, TIME label, A keycap); blue `#2d5be8` (banner, orbit rings, system tag, well border, lettering edge); orange `#f7931e` (big orbit ring and its dots, bands); red `#e8322a` (cursor triangles, ZAO tag, ribbon rule); pink `#e889b0` (focused card edge, lit underline, B keycap). Drop shadows are black at 45%.
