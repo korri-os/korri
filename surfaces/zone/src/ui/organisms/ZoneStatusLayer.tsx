@@ -12,7 +12,11 @@ import { ZoneDialog } from "../molecules/ZoneDialog"
 /** The problem dialog's two ways out, left to right. */
 export type ZoneStatusProblemButton = "dismiss" | "retry"
 
-/** The index of the button that took DOM focus among the layer's buttons. */
+/**
+ * The index of the button that took DOM focus among the busy strip's
+ * buttons. ZoneBusyStrip has no focus callback of its own; the problem
+ * dialog reports through ZoneDialog's `onFocusAction`.
+ */
 function focusedIndex(event: FocusEvent<HTMLElement>): number | undefined {
   const buttons = [...event.currentTarget.querySelectorAll("button")]
   const at = buttons.indexOf(event.target as HTMLButtonElement)
@@ -110,7 +114,7 @@ export function ZoneStatusLayer({
         </div>
       ) : null}
       {status._tag === "Problem" ? (
-        <div className="zone-status-layer-problem" data-block-exit onFocus={onFocus} ref={layer}>
+        <div className="zone-status-layer-problem" data-block-exit ref={layer}>
           <ZoneDialog
             actions={[
               { label: "Dismiss", onPress: onProblemButton === undefined ? undefined : () => onProblemButton("dismiss") },
@@ -121,6 +125,7 @@ export function ZoneStatusLayer({
             focused={focus}
             headline={status.kicker}
             lines={[status.reason]}
+            onFocusAction={onFocusButton}
             title={gameTitle}
           />
         </div>

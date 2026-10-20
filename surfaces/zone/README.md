@@ -598,3 +598,14 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   a retired key, so it does not jump; on a strip 4 times wider than tall
   the row stands at the band's end instead of under it. The backup view
   does not say which key it holds; the person chose it one step before.
+- **ZoneKeyboard and ZoneDialog report focus themselves.** Supersedes the
+  glyph and index reading noted under GAMES, SAVE DATA and OPTIONS:
+  `ZoneKeyboard` calls `onFocusKey(id)` (the `zoneKeyId`) and `ZoneDialog`
+  calls `onFocusAction(index)` from each button's `onFocus`. GAMES,
+  OPTIONS, SAVE DATA, PAUSED, `ZoneStatusLayer`'s problem dialog,
+  `ZoneOptionsEntry` and `ZoneSaveEntry` use them. GAMES moved DOM focus to
+  a key by reading its glyph; each key now carries `data-key-id`, and the
+  page finds it by that. The busy strip still reports by button index,
+  since `ZoneBusyStrip` has no callback (out of this fix). The onboarding
+  keyboard still lights the last pressed key: its model has no focus
+  message, and the fix was to keep behaviour identical.

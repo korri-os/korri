@@ -59,7 +59,9 @@ const DOT = "•"
  * character and never the characters.
  *
  * Rows wrap before a key gets too small to read, so no key is ever lost at
- * a narrow width. Focus is a prop: `focusedKey` is a key's id.
+ * a narrow width. Focus is a prop: `focusedKey` is a key's id. When the
+ * host moves DOM focus onto a key, `onFocusKey` reports that key's id; a
+ * page that moves DOM focus to a key finds it by `data-key-id`.
  *
  * The parallelograms and the underline are drawn here; they become
  * ZonePanel and ZoneUnderline after the merge.
@@ -72,6 +74,7 @@ export function ZoneKeyboard({
   focusedKey,
   maxLength,
   onKey,
+  onFocusKey,
 }: {
   readonly draft: string
   /** The insertion point: 0 to draft.length. */
@@ -82,6 +85,8 @@ export function ZoneKeyboard({
   readonly focusedKey?: string
   readonly maxLength?: number
   readonly onKey?: (key: ZoneKey) => void
+  /** The host's cursor arrived on a key: its id, as `zoneKeyId` names it. */
+  readonly onFocusKey?: (id: string) => void
 }) {
   const panel = useRef<HTMLDivElement | null>(null)
   const slab = useRef<HTMLDivElement | null>(null)
@@ -116,9 +121,11 @@ export function ZoneKeyboard({
         className="zone-keyboard-key"
         data-current={value.kind === "layer" && value.layer === layer ? true : undefined}
         data-focused={id === focusedKey || undefined}
+        data-key-id={id}
         data-role={extra}
         key={id}
         onClick={onKey === undefined ? undefined : () => onKey(value)}
+        onFocus={onFocusKey === undefined ? undefined : () => onFocusKey(id)}
         type="button"
       >
         {label}

@@ -16,7 +16,8 @@ export interface ZoneDialogAction {
  *
  * The dialog fills the width it is given and no more than the height; a
  * long body scrolls between the headline and the buttons, so the way out
- * is never below the fold. Focus is a prop.
+ * is never below the fold. Focus is a prop; when the host moves DOM focus
+ * onto a button, `onFocusAction` reports its index.
  *
  * The button parallelograms and the underline are drawn here; they become
  * ZoneButton and ZoneUnderline after the merge.
@@ -27,6 +28,7 @@ export function ZoneDialog({
   title,
   actions,
   focused = 0,
+  onFocusAction,
 }: {
   readonly headline: string
   readonly lines: readonly string[]
@@ -36,6 +38,8 @@ export function ZoneDialog({
   readonly actions: readonly ZoneDialogAction[]
   /** The index of the focused button. */
   readonly focused?: number
+  /** The host's cursor arrived on a button: its index, left to right. */
+  readonly onFocusAction?: (index: number) => void
 }) {
   return (
     <section aria-label={headline} className="zone-dialog" role="dialog">
@@ -55,6 +59,7 @@ export function ZoneDialog({
             data-focused={index === focused || undefined}
             key={action.label}
             onClick={action.onPress}
+            onFocus={onFocusAction === undefined ? undefined : () => onFocusAction(index)}
             type="button"
           >
             {action.label}

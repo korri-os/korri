@@ -1,6 +1,6 @@
 import "./ZoneGames.css"
 import type { SurfaceAction, SurfaceNetworkConnection, SurfaceSettingItem } from "@contracts/surface/korri-surface"
-import { useLayoutEffect, useRef, type FocusEvent } from "react"
+import { useLayoutEffect, useRef } from "react"
 import { ZoneButton } from "../ui/atoms/ZoneButton"
 import { ZoneCaps } from "../ui/atoms/ZoneCaps"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
@@ -151,24 +151,9 @@ export const launchLabel = (launch: ZoneGamesLaunch): string => {
   return launch.place.here ? `${verb} here` : `${verb} on ${launch.place.label}`
 }
 
-/** A keyboard key's id from the button that drew it: its glyph, or the control it names. */
-const KEY_CONTROLS: Readonly<Record<string, string>> = {
-  Space: "space",
-  Delete: "delete",
-  Done: "done",
-  abc: "layer:letters",
-  ABC: "layer:shift",
-  "#?!": "layer:symbols",
-  "://": "layer:uri",
-}
-const keyIdOf = (text: string): string => KEY_CONTROLS[text] ?? text
-
 /** The buttons in a region, in order: the page's handle on DOM focus. */
 const buttonsIn = (region: Element | null): HTMLButtonElement[] =>
   region === null ? [] : [...region.querySelectorAll("button")]
-
-const indexIn = (region: Element, target: EventTarget): number =>
-  buttonsIn(region).findIndex(button => button === target || button.contains(target as Node))
 
 /**
  * The GAMES page: Zone's home and the zone select a person sees on power-on.
@@ -228,7 +213,7 @@ export function ZoneGames(props: ZoneGamesProps) {
     const buttons = buttonsIn(root.current.querySelector(`[data-games-region="${region}"]`))
     const button = typeof at === "number"
       ? buttons[Math.min(at, buttons.length - 1)]
-      : buttons.find(candidate => keyIdOf(candidate.textContent ?? "") === at) ?? buttons[0]
+      : buttons.find(candidate => candidate.dataset["keyId"] === at) ?? buttons[0]
     if (button === undefined || document.activeElement === button) return
     syncing.current = true
     button.focus({ preventScroll: true })
@@ -256,15 +241,6 @@ export function ZoneGames(props: ZoneGamesProps) {
   // lit until the cursor is on one.
   const lit = choice ? focusedLaunch : launches[0]?.id
 
-  const onKeysFocus = (event: FocusEvent<HTMLDivElement>) => {
-    const button = (event.target as Element).closest("button")
-    if (button !== null) report({ _tag: "FocusedKey", id: keyIdOf(button.textContent ?? "") })
-  }
-  const onAnswerFocus = (event: FocusEvent<HTMLDivElement>) => {
-    const index = indexIn(event.currentTarget, event.target)
-    if (index >= 0) report({ _tag: "FocusedAnswer", index })
-  }
-
   const factLines = facts === undefined ? [] : [
     ...(facts.lastPlayedAt === undefined ? [] : [["Last played", day(facts.lastPlayedAt)] as const]),
     ...(facts.playCount === undefined ? [] : [["Plays", String(facts.playCount)] as const]),
@@ -284,12 +260,13 @@ export function ZoneGames(props: ZoneGamesProps) {
   )
 
   const keyboard = (
-    <div className="zone-games-keys" data-block-exit="" data-games-region="keys" data-keys={keysAt} onFocus={onKeysFocus}>
+    <div className="zone-games-keys" data-block-exit="" data-games-region="keys" data-keys={keysAt}>
       <ZoneKeyboard
         caret={find.caret}
         draft={find.draft}
         focusedKey={find.key}
         layer={find.layer}
+        onFocusKey={id => report({ _tag: "FocusedKey", id })}
         onKey={key => onEvent({ _tag: "PressedKey", key })}
       />
     </div>
@@ -414,7 +391,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                   />
                 </div>
                 {opts.asking === undefined ? null : (
-                  <div className="zone-games-ask" data-games-region="answer" onFocus={onAnswerFocus}>
+                  <div className="zone-games-ask" data-games-region="answer">
                     <div className="zone-games-dialog">
                       <ZoneDialog
                         actions={[
@@ -423,6 +400,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                         ]}
                         focused={opts.answer}
                         headline={opts.asking.label}
+                        onFocusAction={index => report({ _tag: "FocusedAnswer", index })}
                         lines={opts.asking.description === undefined ? [] : [opts.asking.description]}
                         title={opts.gameTitle}
                       />

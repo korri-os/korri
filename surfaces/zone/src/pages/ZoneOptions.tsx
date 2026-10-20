@@ -1,5 +1,5 @@
 import "./ZoneOptions.css"
-import { useEffect, useRef, type FocusEvent } from "react"
+import { useEffect, useRef } from "react"
 import { entryHeading, focusedRow, optionsPlan, type ZoneOptionsSlices, type ZoneOptionsView } from "../plan/options"
 import { ZoneBanner } from "../ui/atoms/ZoneBanner"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
@@ -107,14 +107,6 @@ export function ZoneOptions({
     // Only on opening: the host moves the cursor after that.
   }, [dialogOpen])
 
-  const followDialogFocus = (event: FocusEvent<HTMLDivElement>) => {
-    const box = dialogBox.current
-    const target = event.target
-    if (box === null || onDialogFocus === undefined || !(target instanceof HTMLButtonElement)) return
-    const index = [...box.querySelectorAll("button")].indexOf(target)
-    if (index === 0 || index === 1) onDialogFocus(index)
-  }
-
   const heading = keyboard === undefined ? undefined : entryHeading(keyboard.entry)
   // A password asked again after Korri rejected it carries Korri's reason,
   // which the keyboard would otherwise cover on the row.
@@ -190,7 +182,6 @@ export function ZoneOptions({
             className="zone-options-layer"
             data-block-exit="true"
             data-kind="dialog"
-            onFocus={followDialogFocus}
             ref={dialogBox}
           >
             <div className="zone-options-dialog">
@@ -202,6 +193,9 @@ export function ZoneOptions({
                 focused={dialog.focused}
                 headline={dialog.confirm.headline}
                 lines={dialog.confirm.lines}
+                onFocusAction={index => {
+                  if (index === 0 || index === 1) onDialogFocus?.(index)
+                }}
               />
             </div>
           </div>

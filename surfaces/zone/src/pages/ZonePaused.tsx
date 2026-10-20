@@ -5,7 +5,7 @@ import type {
   SurfaceGameplayControlValue,
   SurfaceGameplayOverlayPresentation,
 } from "@contracts/surface/korri-surface"
-import { type FocusEvent, useRef } from "react"
+import { useRef } from "react"
 import { useZoneLayerFocus } from "../use-zone-layer-focus"
 import { ZoneCaps } from "../ui/atoms/ZoneCaps"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
@@ -93,8 +93,7 @@ export function ZonePaused({
     />
   )
 
-  const onQuestionFocus = onFocusAnswer === undefined ? undefined : (event: FocusEvent<HTMLElement>) => {
-    const at = [...event.currentTarget.querySelectorAll("button")].indexOf(event.target as HTMLButtonElement)
+  const onQuestionFocus = onFocusAnswer === undefined ? undefined : (at: number) => {
     if (at === 0 || at === 1) onFocusAnswer(at)
   }
 
@@ -132,7 +131,7 @@ export function ZonePaused({
         <ZoneKeycap button="B" word="Back" />
       </span>
       {asked === undefined ? null : (
-        <div className="zone-paused-question" data-block-exit onFocus={onQuestionFocus} ref={question}>
+        <div className="zone-paused-question" data-block-exit ref={question}>
           <ZoneDialog
             actions={[
               { label: "No", onPress: onAnswer === undefined ? undefined : () => onAnswer(false) },
@@ -141,6 +140,7 @@ export function ZonePaused({
             focused={answer}
             headline={asked.label}
             lines={asked.description === undefined ? [] : [asked.description]}
+            onFocusAction={onQuestionFocus}
             title={valueText(asked, asking?.value)}
           />
         </div>

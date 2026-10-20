@@ -3,7 +3,7 @@ import type {
   SurfaceIdentityDisposition,
   SurfaceIdentityManagement,
 } from "@contracts/surface/korri-surface"
-import { useEffect, useRef, type FocusEvent, type ReactNode } from "react"
+import { useEffect, useRef, type ReactNode } from "react"
 import { shortKey } from "../plan/save-data"
 import { ZoneBanner } from "../ui/atoms/ZoneBanner"
 import { ZoneQrWell } from "../ui/atoms/ZoneQrWell"
@@ -193,16 +193,21 @@ export function ZoneSaveData({
     target?.focus()
   }, [scene])
 
-  // The host moved the cursor across a dialog's buttons.
-  const heardChoice = (event: FocusEvent<HTMLDivElement>) => {
-    const buttons = [...event.currentTarget.querySelectorAll("[role='dialog'] button")]
-    const index = buttons.indexOf(event.target)
-    if (buttons.length === 2 && (index === 0 || index === 1)) send({ _tag: "FocusedChoice", index })
+  // The host moved the cursor across a two-button dialog.
+  const heardChoice = (count: number) => (index: number) => {
+    if (count === 2 && (index === 0 || index === 1)) send({ _tag: "FocusedChoice", index })
   }
 
   const dialog = (headline: string, lines: readonly string[], actions: readonly ZoneDialogAction[], focus: number, title?: string) => (
-    <div className="zone-save-data-layer" data-layer="dialog" onFocus={heardChoice}>
-      <ZoneDialog actions={actions} focused={focus} headline={headline} lines={lines} title={title} />
+    <div className="zone-save-data-layer" data-layer="dialog">
+      <ZoneDialog
+        actions={actions}
+        focused={focus}
+        headline={headline}
+        lines={lines}
+        onFocusAction={heardChoice(actions.length)}
+        title={title}
+      />
     </div>
   )
 
