@@ -45,6 +45,16 @@ import type {
   SettingsUpdateOutcome,
   SourceStatusOutcome,
   PeerListOutcome,
+  PluginCatalog,
+  PluginCatalogEntry,
+  PluginCatalogOutcome,
+  PluginChangeOutcome,
+  PluginInspectOutcome,
+  PluginInspection,
+  PluginRepositories,
+  PluginRepositoriesOutcome,
+  PluginRepositoryAddOutcome,
+  PluginRepositoryRemoveOutcome,
   AcquisitionOutcome,
   ArtifactStatus,
   RpcRequest,
@@ -53,6 +63,9 @@ import type {
 import {
   FocusOwnership,
   InitialHandoff,
+  PluginInstalledState,
+  PluginRepositoryAddResult,
+  PluginRepositoryRemoveResult,
   PendingLaunchPhase,
   LaunchContributorKind,
   SecretSettingStatus,
@@ -158,9 +171,36 @@ export interface KorridClient {
   /** Delete the release's own artifacts that nothing else in the library names.
    * Refused while the game runs (ActiveSessionConflict) or downloads. */
   acquisitionRemove(gameId: string): Promise<AcquisitionOutcome>
+  /** The official repository (absent until configured), the person's added
+   * repositories, and every installed plugin that came from a repository,
+   * including one whose repository was later removed. */
+  pluginRepositories(): Promise<PluginRepositoriesOutcome>
+  /** The host fetches and validates the catalog before it saves the address. */
+  addPluginRepository(url: string): Promise<PluginRepositoryAddOutcome>
+  /** The host refuses the official repository. */
+  removePluginRepository(url: string): Promise<PluginRepositoryRemoveOutcome>
+  /** This device's platform only, in catalog order. */
+  pluginCatalog(url: string): Promise<PluginCatalogOutcome>
+  /** The host's approval report for one exact release. Nothing is installed. */
+  inspectPlugin(url: string, pluginId: string, releaseVersion: string): Promise<PluginInspectOutcome>
+  /** Installs the release only if the host re-derives this exact approval.
+   * The plugin starts off. */
+  installPlugin(
+    url: string,
+    pluginId: string,
+    releaseVersion: string,
+    approval: string,
+  ): Promise<PluginChangeOutcome>
+  /** Any installed plugin. A stale stored approval answers PluginNeedsReview. */
+  setPluginEnabled(id: string, enabled: boolean): Promise<PluginChangeOutcome>
 }
 
 const RPC_TIMEOUT_MS = 25_000
+// The host bounds a catalog fetch to 10 s to connect plus 30 s to transfer.
+const PLUGIN_CATALOG_TIMEOUT_MS = 60_000
+// Inspect and install download a whole plugin archive with no size limit; the
+// host fails only a stalled transfer. This is the portal's wait, not the host's.
+const PLUGIN_PACKAGE_TIMEOUT_MS = 900_000
 const IDENTITY_SWITCH_TIMEOUT_MS = 180_000
 
 class KorridHttpError extends Error {
@@ -720,6 +760,224 @@ export function createHttpKorridClient(
         return response.outcome
       } catch (error) { return routeUnavailable(error) }
     },
+    async pluginRepositories() {
+      try {
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.repositories", payload: {} })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async addPluginRepository(url) {
+      try {
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.repository.add", payload: { url } }, PLUGIN_CATALOG_TIMEOUT_MS)).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async removePluginRepository(url) {
+      try {
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.repository.remove", payload: { url } })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async pluginCatalog(url) {
+      try {
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.catalog", payload: { url } }, PLUGIN_CATALOG_TIMEOUT_MS)).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async inspectPlugin(url, pluginId, releaseVersion) {
+      try {
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.inspect", payload: { url, pluginId, releaseVersion } }, PLUGIN_PACKAGE_TIMEOUT_MS)).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async installPlugin(url, pluginId, releaseVersion, approval) {
+      try {
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.install", payload: { url, pluginId, releaseVersion, approval } }, PLUGIN_PACKAGE_TIMEOUT_MS)).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async setPluginEnabled(id, enabled) {
+      try {
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.setEnabled", payload: { id, enabled } })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+  }
+}
+
+/** One repository the in-memory plugin host can fetch. */
+export interface InMemoryPluginRepository {
+  readonly url: string
+  readonly entries: readonly PluginCatalogEntry[]
+}
+
+/** In-memory plugin host state. Every field mirrors a host producer:
+ * configured sources, catalogs, receipts and the inspect report. */
+export interface InMemoryPluginHostConfig {
+  readonly official?: string
+  readonly userAdded: readonly string[]
+  /** Every catalog the fake can reach, configured or not. */
+  readonly repositories: readonly InMemoryPluginRepository[]
+  /** Installed receipts: repository installs and their on/off state. */
+  readonly installs: readonly { id: string, sourceUrl: string, releaseVersion: string, enabled: boolean }[]
+  /** Installed plugins whose stored approval the host now finds stale. */
+  readonly staleApprovals?: readonly string[]
+  readonly inspections?: Readonly<Record<string, Omit<PluginInspection, "approval">>>
+}
+
+const samplePluginHost: InMemoryPluginHostConfig = {
+  official: "https://official.example/catalog.json",
+  userAdded: ["https://community.example/catalog.json"],
+  repositories: [
+    {
+      url: "https://official.example/catalog.json",
+      entries: [
+        { pluginId: "@korri:ppsspp", title: "PPSSPP", description: "PlayStation Portable games.", releaseVersion: "1.18.1", publisherTrusted: true },
+        { pluginId: "@korri:sunshine", title: "Sunshine", description: "Stream games from this device.", releaseVersion: "2026.10.1", publisherTrusted: true },
+        { pluginId: "@korri:sunshine", title: "Sunshine", description: "Stream games from this device.", releaseVersion: "2026.09.2", publisherTrusted: true },
+        { pluginId: "@korri:tailscale", title: "Tailscale", releaseVersion: "1.84.0", installed: PluginInstalledState.Disabled, publisherTrusted: true },
+      ],
+    },
+    {
+      url: "https://community.example/catalog.json",
+      entries: [
+        { pluginId: "@korri:syncthing", title: "Syncthing", releaseVersion: "1.30.0", installed: PluginInstalledState.Enabled, publisherTrusted: true },
+        { pluginId: "@community:clock", title: "Clock", description: "From a publisher this device does not trust.", releaseVersion: "0.3.0", publisherTrusted: false },
+      ],
+    },
+    {
+      url: "https://more.example/catalog.json",
+      entries: [
+        { pluginId: "@korri:moonlight", title: "Moonlight", releaseVersion: "6.1.0", publisherTrusted: true },
+      ],
+    },
+  ],
+  installs: [
+    { id: "@korri:tailscale", sourceUrl: "https://official.example/catalog.json", releaseVersion: "1.84.0", enabled: false },
+    { id: "@korri:syncthing", sourceUrl: "https://community.example/catalog.json", releaseVersion: "1.30.0", enabled: true },
+    { id: "@korri:retro-clock", sourceUrl: "https://old.example/catalog.json", releaseVersion: "2.0.0", enabled: false },
+  ],
+  staleApprovals: ["@korri:tailscale"],
+  inspections: {
+    "@korri:sunshine": {
+      id: "@korri:sunshine",
+      title: "Sunshine",
+      warning: "Runs a native service as root with device-wide authority.",
+      allowedTCPPorts: [47984, 47989, 48010],
+      allowedUDPPorts: [47998, 47999, 48000],
+      nativeUnits: ["sunshine.service"],
+      brings: [{ id: "@korri:sunshine-runtime", title: "Sunshine runtime", warning: "Adds the streaming runtime.", alreadyApproved: false }],
+    },
+  },
+}
+
+const pluginFailure = (code: string, message: string) => ({ _tag: "Err" as const, payload: { code, message } })
+
+/** The host's https_url::parse policy and SourceUrl normal form. */
+function pluginSourceUrl(raw: string): string | undefined {
+  let url: URL
+  try { url = new URL(raw) } catch { return undefined }
+  if (url.protocol !== "https:" || url.hostname === "" || url.username !== "" || url.password !== "" || url.hash !== "") return undefined
+  return url.toString()
+}
+
+function createInMemoryPluginHost(
+  seed: InMemoryPluginHostConfig,
+  imagePlugins: { has(id: string): boolean, set(id: string, enabled: boolean): void },
+): Pick<KorridClient, "pluginRepositories" | "addPluginRepository" | "removePluginRepository" | "pluginCatalog" | "inspectPlugin" | "installPlugin" | "setPluginEnabled"> {
+  const official = seed.official
+  let userAdded = [...seed.userAdded]
+  const installs = structuredClone([...seed.installs])
+  const stale = new Set(seed.staleApprovals ?? [])
+  const catalogs = new Map(seed.repositories.map(repository => [repository.url, repository.entries]))
+  const approval = (pluginId: string, releaseVersion: string) => `in-memory-approval:${pluginId}@${releaseVersion}`
+  const invalidUrl = () => pluginFailure("PluginRepositoryUrlInvalid", "URL must use HTTPS with a non-empty host")
+  const configured = (url: string) => url === official || userAdded.includes(url)
+  const entry = (url: string, pluginId: string, releaseVersion: string) =>
+    catalogs.get(url)?.find(item => item.pluginId === pluginId && item.releaseVersion === releaseVersion)
+  const notInCatalog = (pluginId: string, releaseVersion: string) =>
+    pluginFailure("PluginHostRefused", `no catalog record for ${pluginId} version ${releaseVersion}`)
+  const untrusted = (pluginId: string) =>
+    pluginFailure("PluginHostRefused", `publisher ${pluginId.split(":")[0]} is not bound on this device`)
+  return {
+    async pluginRepositories() {
+      const payload: PluginRepositories = {
+        ...(official === undefined ? {} : { official }),
+        userAdded: [...userAdded],
+        repositoryInstalls: structuredClone(installs),
+      }
+      return { _tag: "Ok", payload }
+    },
+    async addPluginRepository(raw) {
+      const url = pluginSourceUrl(raw)
+      if (url === undefined) return invalidUrl()
+      if (configured(url)) return { _tag: "Ok", payload: PluginRepositoryAddResult.AlreadyPresent }
+      if (!catalogs.has(url)) return pluginFailure("PluginHostRefused", "HTTPS fetch failed: Could not resolve host")
+      userAdded = [...userAdded, url]
+      return { _tag: "Ok", payload: PluginRepositoryAddResult.Added }
+    },
+    async removePluginRepository(raw) {
+      const url = pluginSourceUrl(raw)
+      if (url === undefined) return invalidUrl()
+      if (url === official) return pluginFailure("PluginHostRefused", "official source is managed by trusted host configuration")
+      if (!userAdded.includes(url)) return { _tag: "Ok", payload: PluginRepositoryRemoveResult.NotFound }
+      userAdded = userAdded.filter(source => source !== url)
+      return { _tag: "Ok", payload: PluginRepositoryRemoveResult.Removed }
+    },
+    async pluginCatalog(raw) {
+      const url = pluginSourceUrl(raw)
+      if (url === undefined) return invalidUrl()
+      if (!configured(url)) return pluginFailure("PluginHostRefused", `repository not configured: ${url}`)
+      const entries = (catalogs.get(url) ?? []).map(item => {
+        const installed = installs.find(install => install.id === item.pluginId)
+        const { installed: _seeded, ...rest } = item
+        return installed === undefined
+          ? { ...rest }
+          : { ...rest, installed: installed.enabled ? PluginInstalledState.Enabled : PluginInstalledState.Disabled }
+      })
+      const payload: PluginCatalog = { entries }
+      return { _tag: "Ok", payload }
+    },
+    async inspectPlugin(raw, pluginId, releaseVersion) {
+      const url = pluginSourceUrl(raw)
+      if (url === undefined) return invalidUrl()
+      if (!configured(url)) return pluginFailure("PluginHostRefused", `repository not configured: ${url}`)
+      const item = entry(url, pluginId, releaseVersion)
+      if (item === undefined) return notInCatalog(pluginId, releaseVersion)
+      if (!item.publisherTrusted) return untrusted(pluginId)
+      const report = seed.inspections?.[pluginId] ?? {
+        id: pluginId,
+        ...(item.title === undefined ? {} : { title: item.title }),
+        warning: "",
+        allowedTCPPorts: [],
+        allowedUDPPorts: [],
+        nativeUnits: [],
+        brings: [],
+      }
+      const payload: PluginInspection = { ...structuredClone(report), approval: approval(pluginId, releaseVersion) }
+      return { _tag: "Ok", payload }
+    },
+    async installPlugin(raw, pluginId, releaseVersion, digest) {
+      const url = pluginSourceUrl(raw)
+      if (url === undefined) return invalidUrl()
+      if (!configured(url)) return pluginFailure("PluginHostRefused", `repository not configured: ${url}`)
+      const item = entry(url, pluginId, releaseVersion)
+      if (item === undefined) return notInCatalog(pluginId, releaseVersion)
+      if (!item.publisherTrusted) return untrusted(pluginId)
+      if (digest !== approval(pluginId, releaseVersion)) {
+        return pluginFailure("PluginHostRefused", "approval does not match this package and its execution policy; inspect it first")
+      }
+      if (installs.some(install => install.id === pluginId)) {
+        return pluginFailure("PluginHostRefused", "plugin is installed; use update or explicit source switch")
+      }
+      installs.push({ id: pluginId, sourceUrl: url, releaseVersion, enabled: false })
+      return { _tag: "Ok", payload: {} }
+    },
+    async setPluginEnabled(id, enabled) {
+      // Image-seeded plugins are raw-cache receipts: installed, but not from
+      // a repository. The host toggles both kinds the same way.
+      const install = installs.find(item => item.id === id)
+      if (install === undefined && !imagePlugins.has(id)) return pluginFailure("PluginHostRefused", "plugin is not installed")
+      if (enabled && stale.has(id)) {
+        return pluginFailure("PluginNeedsReview", "installed package or host policy no longer matches its approval")
+      }
+      if (install !== undefined) install.enabled = enabled
+      if (imagePlugins.has(id)) imagePlugins.set(id, enabled)
+      return { _tag: "Ok", payload: {} }
+    },
   }
 }
 
@@ -737,6 +995,8 @@ export interface InMemoryArtifact {
 }
 
 export interface InMemoryKorridClientConfig {
+  /** Plugin repositories, catalogs and installs. Defaults to a sample set. */
+  readonly pluginHost?: InMemoryPluginHostConfig
   /** Artifacts every loaded plugin declares, and which games need which:
    * keyed by game id, or `<gameId>@<runnerId>` for one runner of a game. */
   readonly artifacts?: readonly InMemoryArtifact[]
@@ -1083,7 +1343,17 @@ export function createInMemoryKorridClient(
     }
     return { _tag: "Ok", payload: structuredClone(network) }
   }
+  const pluginHost = createInMemoryPluginHost(config.pluginHost ?? samplePluginHost, {
+    has: id => settings.plugins.some(plugin => plugin.id === id),
+    set: (id, enabled) => {
+      settings = {
+        ...settings,
+        plugins: settings.plugins.map(plugin => plugin.id === id ? { ...plugin, enabled } : plugin),
+      }
+    },
+  })
   return {
+    ...pluginHost,
     async networkStatus() { return { _tag: "Ok", payload: structuredClone(network) } },
     async scanWifi() { return { _tag: "Ok", payload: structuredClone(network) } },
     async connectWifi(networkId) {
