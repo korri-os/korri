@@ -35,3 +35,17 @@
   overflow-clip-margin: calc(0.3em + var(--zone-caps-room) * var(--zone-px));
   line-height: 1;
 }
+
+/* Chromium rejects a calc() in overflow-clip-margin, so the rule above
+ * clips each word at its own box, the cap: a Zone Caps word loses the top
+ * row of its ring (as on main, kept so Retro's pixels stay main's). Anton's
+ * round letters rise past the cap and lost a pixel of their tops, so where
+ * a word is Anton (every word in Modern, Korri's words in Blend) the box
+ * reaches 0.2 em over and under the cap, to the line's own edges, and
+ * gives the room back with equal negative margins: the clip takes in the
+ * overshoot and the ring, and nothing moves or overflows its line. */
+[data-look="modern"] .zone-words-word,
+[data-look="blend"] .zone-words[data-face="korri"] .zone-words-word {
+  margin-block: -0.2em;
+  padding-block: 0.2em;
+}

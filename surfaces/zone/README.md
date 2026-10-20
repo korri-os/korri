@@ -1899,7 +1899,7 @@ art and the drawn emblems stay pixel art in every look.
   band's travel rounds to `--zone-motion-snap` (a 1/64 CSS px layout unit
   in Modern, `--zone-px` otherwise). The cursor triangles' nudge eases.
   Blinks, the static and the tally's 60-step count stay: they are not
-  travel. No motion take was recorded for Modern (see Not done).
+  travel. Modern's takes are under "Modern's motion" below.
 - **Faces sized to the pixel face they replace.** One Anton file, two
   `@font-face` families: Zone Anton Caps (`size-adjust` 116.3636%, so its
   cap of 1760/2048 is the em, as Zone Caps' is; ascent and descent
@@ -1983,10 +1983,57 @@ art and the drawn emblems stay pixel art in every look.
   checker are the window's contents, like cover art, not edges or
   dimming; they stay pixel in Modern.
 
+### Review round 1 (decided without asking: looks)
+
+- **Korri's names at the caps' size follow the look.** A game's title
+  (card, title card, tally, PAUSED, RUN WITH, a dialog's yellow line, the
+  status HUD and the busy strip's game), Korri's kicker (the busy strip,
+  the status layer's problem and question headlines, an OPTIONS
+  confirmation's title), the system and device tags on a card or the
+  title card, and the foot's clock are Korri's, not Zone's words. They
+  take three look tokens: `--zone-korri-font`, `--zone-korri-case`,
+  `--zone-korri-shade` (and `--zone-korri-lower` for RUN WITH's
+  gradient-drawn title). Retro's values are Zone's own (Zone Caps, upper
+  case, two-tone), so **Retro stays pixel-identical to main**: titles stay
+  Zone Caps in upper case there. Blend and Modern set them in Anton (Zone
+  Anton Caps, sized to the caps' cap) in Korri's own case, flat. ZoneCaps
+  and ZoneWords take `korri`, ZoneTag takes `korri`, ZoneDialog
+  `korriHeadline`, ZoneBusyStrip `korri`.
+- **What stays Zone's words in every look:** Korri's action labels (GO
+  rows, dialog buttons, RUN WITH's actions), settings group titles
+  (DEVICE, SYSTEM), row labels, PAUSED's control and group labels (ALLOW
+  CONTROLLERS, DISPLAY), section spines' captions, and a dialog headline
+  that is a row's label (POWER OFF). Zone's own words (GAMES, PAUSED with
+  no title of Korri's, LOADING, HERE, the LOOK row's MODERN / BLEND /
+  RETRO) are Zone's words by definition. The rule: a label that names a
+  control is Zone's word; a name or sentence that tells the person a
+  fact is Korri's.
+- **The clock is Korri's.** The foot drew it as Zone's word and the
+  attract as a fact; it is now `korri` in the foot (Zone Caps in Retro,
+  as main; Anton in Blend and Modern), and stays a fact in the attract.
+- **The LOOK row's values are Zone's words.** They render in Zone's face
+  (no `data-case`), proved per look by `test/zone-look-faces.test.tsx`,
+  which reads the computed face and case of a card's title and tags, a
+  dialog's game title, Korri's and Zone's headlines and the LOOK value
+  under Zone's real stylesheets.
+- **A word's clip, in the Anton looks.** `.zone-words-word` asks for
+  `overflow-clip-margin: calc(…)`, which Chromium rejects, so every word is
+  clipped at its cap: on main a Zone Caps word loses the top row of its
+  ring (a known main issue, kept so Retro stays main's pixels). Anton's
+  round letters rise past the cap, so in Modern (every word) and Blend
+  (Korri's words) a word's box reaches 0.2 em over and under the cap,
+  given back by negative margins: PAUSED's title and rows (OnTheGame at
+  640x480 and 1280x720) keep their tops and ring. A plain-length clip
+  margin was tried first: Chromium counted it as overflow and the fit
+  stepped PAUSED's title down to caps-1.
+- **No silent Retro default.** Every stair, wipe, moment and dialog frame
+  function, `zoneGroundDot` and `zoneSurfaceStart` take their edges, grid
+  or look as a required argument; tests pass Retro's explicitly.
+- **One list of looks.** `vite.config.ts` imports `ZONE_LOOKS`,
+  `isZoneLook` and `ZONE_DEFAULT_LOOK` from `src/plan/look.ts`.
+
 ### Not done (looks)
 
-- No motion take (motion-mockup's recorded filmstrip) for Modern's
-  eased moments; the frame functions are tested, the stills rendered.
 - The keyboard's keys still lean by a token, not 45 degrees, in every
   look (unchanged from the refinement).
 - ZoneSignal's part throws "ResizeObserver loop" at 640x480 in every
