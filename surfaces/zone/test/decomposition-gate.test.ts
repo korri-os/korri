@@ -313,9 +313,7 @@ describe("every component has a consumer", () => {
    * that names a component some page already imports is itself a failure.
    */
   const AWAITING_PAGE: readonly string[] = [
-    // The status layer (C7 to C10) sits over every page; the wire stage
-    // mounts it in ZoneSurface, which is the only file that may.
-    "ZoneStatusLayer",
+    // 2026-10-20, the wire stage: ZoneStatusLayer is mounted over every page.
   ]
 
   test("no atom, molecule, organism or template is imported by nothing", () => {
@@ -336,14 +334,8 @@ describe("every component has a consumer", () => {
    * goes. An entry the binding already reaches is itself a failure.
    */
   const AWAITING_MOUNT: readonly string[] = [
-    // 2026-10-20, the options worker: OPTIONS and RUN WITH take plain props
-    // and report through callbacks; the wire stage mounts them.
-    "ZoneOptions",
-    "ZoneRunWith",
-    "ZoneSaveData",
-    // the layers worker: the PAUSED overlay and onboarding pages.
-    "ZonePaused",
-    "ZoneOnboarding",
+    // 2026-10-20, the wire stage: ZoneSurface mounts OPTIONS, RUN WITH,
+    // SAVE DATA, PAUSED and first boot; nothing awaits its mount.
   ]
 
   test("every page is reached from the surface binding", () => {

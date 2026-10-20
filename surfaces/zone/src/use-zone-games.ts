@@ -1,10 +1,11 @@
 /**
- * The home program: Zone's navigation run against Korri's model, with its
- * subscriptions, and the GAMES page's props read from it.
+ * Zone's program: every model composed (src/state/surface.ts) and run
+ * against Korri's model with one useZoneProgram, its subscriptions, and the
+ * GAMES page's props read from it.
  *
  * - The host's four buttons, registered once per host.
  * - Korri's model: every model Korri publishes is a message, so the layers
- *   Korri owns are settled against it.
+ *   Korri owns are settled against it in every model.
  * - The idle timer, and while idle shows, the title card's four-second cycle.
  *
  * The props are plain values: the band's cards with their sections, the
@@ -20,20 +21,21 @@ import { useCallback, useEffect, type RefObject } from "react"
 import type { ZoneGamesProps } from "./pages/ZoneGames"
 import type { ZoneMessage } from "./state/messages"
 import { catalogGames, launchChoices, playtime, sectionStarts } from "./state/games"
-import {
-  bandGames,
-  topLayer,
-  update,
-  ZONE_IDLE_CYCLE_MS,
-  ZONE_START,
-  type ZoneNavigation,
-} from "./state/navigation"
+import { bandGames, topLayer, ZONE_IDLE_CYCLE_MS, type ZoneNavigation } from "./state/navigation"
+import { deviceNameSetting } from "./state/onboarding"
 import type { ZoneRequest } from "./state/requests"
+import {
+  update,
+  zoneSurfaceStart,
+  type ZoneSurfaceMessage,
+  type ZoneSurfaceState,
+} from "./state/surface"
 import type { ZoneBandCard } from "./ui/molecules/ZoneCardBand"
 import type { ZonePlace } from "./ui/molecules/ZoneCard"
 import { performZoneRequest, readZoneGameActions, subscribeZoneHostButtons } from "./zone-host"
 import { useZoneIdle } from "./use-zone-idle"
 import { useZonePlan } from "./use-zone-plan"
+import type { ZonePlan } from "./plan/zone-select"
 import { useZoneProgram } from "./use-zone-program"
 
 /**
@@ -60,6 +62,12 @@ export function zoneBandCards(games: readonly SurfaceGame[]): readonly ZoneBandC
     section: sections[index],
   }))
 }
+
+/**
+ * The device's name for the foot: the value of Korri's device-name setting,
+ * found as first boot finds it (by its label). Absent, the tag is empty.
+ */
+export const zoneDeviceName = (korri: SurfaceModel): string | undefined => deviceNameSetting(korri)?.value
 
 /** The GAMES page's props from the navigation and Korri's model. */
 export function zoneGamesProps(
@@ -101,9 +109,70 @@ export function zoneGamesProps(
     } : undefined,
     idle: idleGame === undefined ? undefined : { title: idleGame.title, act: idleGame.subtitle },
     clock: korri.clockLabel,
+    device: zoneDeviceName(korri),
     connection: korri.network?.connection,
     build: korri.buildLabel,
     onEvent: dispatch,
+  }
+}
+
+export interface ZoneSurfaceProgram {
+  readonly state: ZoneSurfaceState
+  readonly dispatch: (message: ZoneSurfaceMessage) => void
+  /** Navigation's own messages: the GAMES page, the tabs and idle report in them. */
+  readonly dispatchNav: (message: ZoneMessage) => void
+  readonly layout: ZonePlan
+}
+
+/**
+ * The program behind ZoneSurface. `opening` replays messages over the start
+ * without performing their requests, so a Caliper part can open mid-way.
+ */
+export function useZoneSurface(
+  korri: SurfaceModel,
+  host: SurfaceHost,
+  root: RefObject<HTMLElement | null>,
+  opening: readonly ZoneSurfaceMessage[] = [],
+): ZoneSurfaceProgram {
+  const perform = useCallback((request: ZoneRequest) => performZoneRequest(host, request), [host])
+  const { model: state, dispatch } = useZoneProgram<ZoneSurfaceState, ZoneSurfaceMessage, SurfaceModel>(
+    () => opening.reduce((current, message) => update(current, message, korri).model, zoneSurfaceStart(korri)),
+    update,
+    korri,
+    perform,
+  )
+  const dispatchNav = useCallback((message: ZoneMessage) => dispatch({ _tag: "Games", message }), [dispatch])
+
+  useEffect(() => subscribeZoneHostButtons(host, dispatch), [host, dispatch])
+  useEffect(() => {
+    dispatch({ _tag: "KorriPublished" })
+  }, [korri, dispatch])
+  useZoneIdle(root, state.nav, dispatchNav)
+
+  const idle = topLayer(state.nav) === "idle"
+  useEffect(() => {
+    if (!idle) return
+    const cycle = setInterval(() => dispatchNav({ _tag: "IdleTicked" }), ZONE_IDLE_CYCLE_MS)
+    return () => clearInterval(cycle)
+  }, [idle, dispatchNav])
+
+  const layout = useZonePlan(root)
+  return { state, dispatch, dispatchNav, layout }
+}
+
+/** The GAMES page's whole props, the plan's answers included. */
+export function zoneGamesPage(
+  program: ZoneSurfaceProgram,
+  korri: SurfaceModel,
+  host: SurfaceHost,
+): ZoneGamesProps {
+  const { state, dispatchNav, layout } = program
+  return {
+    ...zoneGamesProps(state.nav, korri, host, dispatchNav),
+    strips: layout.strips,
+    band: layout.band,
+    factsAt: layout.facts,
+    keysAt: layout.keys,
   }
 }
 
@@ -113,37 +182,16 @@ export interface ZoneGamesProgram {
   readonly page: ZoneGamesProps
 }
 
+/**
+ * The GAMES page alone, for its Caliper part: the same program, opened by
+ * navigation messages, with only the page's props handed out.
+ */
 export function useZoneGames(
   korri: SurfaceModel,
   host: SurfaceHost,
   root: RefObject<HTMLElement | null>,
   opening: readonly ZoneMessage[] = [],
 ): ZoneGamesProgram {
-  const perform = useCallback((request: ZoneRequest) => performZoneRequest(host, request), [host])
-  const { model: nav, dispatch } = useZoneProgram<ZoneNavigation, ZoneMessage, SurfaceModel>(
-    () => opening.reduce((current, message) => update(current, message, korri).model, update(ZONE_START, { _tag: "KorriPublished" }, korri).model),
-    update,
-    korri,
-    perform,
-  )
-
-  useEffect(() => subscribeZoneHostButtons(host, dispatch), [host, dispatch])
-  useEffect(() => {
-    dispatch({ _tag: "KorriPublished" })
-  }, [korri, dispatch])
-  useZoneIdle(root, nav, dispatch)
-
-  const idle = topLayer(nav) === "idle"
-  useEffect(() => {
-    if (!idle) return
-    const cycle = setInterval(() => dispatch({ _tag: "IdleTicked" }), ZONE_IDLE_CYCLE_MS)
-    return () => clearInterval(cycle)
-  }, [idle, dispatch])
-
-  const layout = useZonePlan(root)
-  return {
-    nav,
-    dispatch,
-    page: { ...zoneGamesProps(nav, korri, host, dispatch), strips: layout.strips, band: layout.band, factsAt: layout.facts, keysAt: layout.keys },
-  }
+  const program = useZoneSurface(korri, host, root, opening.map(message => ({ _tag: "Games", message }) as const))
+  return { nav: program.state.nav, dispatch: program.dispatchNav, page: zoneGamesPage(program, korri, host) }
 }

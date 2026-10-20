@@ -292,14 +292,15 @@ describe("C28: the host's buttons", () => {
     press("back")
     press("system")
     expect(document.querySelector(".zone-tab[aria-current='page']")?.textContent).toContain("Options")
-    expect(document.querySelector(".zone-games-elsewhere")?.textContent).toBe("Options")
+    expect(document.querySelector(".zone-options")).not.toBeNull()
   })
 
   test("on the tabs, A on OPTIONS opens it and A on GAMES comes back to the cards", () => {
     mount()
     focus(button("Save data"))
     click(button("Save data"))
-    expect(document.querySelector(".zone-games-elsewhere")?.textContent).toBe("Save data")
+    expect(document.querySelector(".zone-save-data")).not.toBeNull()
+    expect(active()).toContain("Save data")
     click(button("Games"))
     expect(focusedCard()).toBe("Celeste Classic")
   })
