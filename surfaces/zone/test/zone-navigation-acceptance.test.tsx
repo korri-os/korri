@@ -250,12 +250,20 @@ const currentTab = () => document.querySelector("[role='tablist'] [aria-current=
 const cardTitles = () => [...document.querySelectorAll(".zone-card-title")].map(node => node.textContent)
 const calls = (host: FakeHost) => host.calls.map(call => [call.method, ...call.args])
 
+/** The yellow-on-blue banner is drawn once: on the active tab. */
+const oneBanner = (tab: string) => {
+  const banners = [...document.querySelectorAll(".zone-banner")]
+  expect(banners).toHaveLength(1)
+  expect(banners[0]?.closest("[role='tablist']")?.querySelector("[aria-current='page']")?.textContent).toContain(tab)
+}
+
 /** From home to OPTIONS with the d-pad: menu to the tabs, right, A. */
 function openOptions(press: (action: SurfaceInputAction) => void) {
   press("menu")
   moveTo(button("Options"))
   confirm()
   expect(currentTab()).toContain("Options")
+  oneBanner("Options")
 }
 
 /** From home to SAVE DATA with the d-pad. */
@@ -264,6 +272,7 @@ function openSaveData(press: (action: SurfaceInputAction) => void) {
   moveTo(button("Save data"))
   confirm()
   expect(currentTab()).toContain("Save data")
+  oneBanner("Save data")
 }
 
 /** An OPTIONS row by its label. */

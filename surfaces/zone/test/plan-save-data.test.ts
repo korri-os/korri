@@ -11,7 +11,7 @@ import {
   secretLines,
   shortKey,
   ZONE_KEY_END,
-  ZONE_SAVE_BANNER_FOLD_ASPECT,
+  ZONE_SAVE_ROW_BESIDE_ASPECT,
   ZONE_SAVE_BACKUP_BESIDE_ASPECT,
   ZONE_SECRET_GROUP,
   ZONE_SECRET_LINE,
@@ -45,25 +45,25 @@ describe("planSaveData", () => {
   })
 })
 
-describe("the banner", () => {
+describe("a retired key's row", () => {
   const height = 200
-  const edge = height * ZONE_SAVE_BANNER_FOLD_ASPECT
-  test("stays one pixel under the fold and folds at it and past it", () => {
-    expect(planSaveData(edge - 1, height).banner).toBe(true)
-    expect(planSaveData(edge, height).banner).toBe(false)
-    expect(planSaveData(edge + 1, height).banner).toBe(false)
+  const edge = height * ZONE_SAVE_ROW_BESIDE_ASPECT
+  test("stands under the band one pixel short of the aspect and beside it at it and past it", () => {
+    expect(planSaveData(edge - 1, height).row).toBe("under")
+    expect(planSaveData(edge, height).row).toBe("beside")
+    expect(planSaveData(edge + 1, height).row).toBe("beside")
   })
-  test("the ladder: only the 1280x300 strip folds it", () => {
-    expect(planSaveData(1280, 720 - 74 - 58).banner).toBe(true)
-    expect(planSaveData(640, 480 - 56 - 46).banner).toBe(true)
-    expect(planSaveData(480, 800 - 74 - 58).banner).toBe(true)
-    expect(planSaveData(1280, 300 - 56 - 46).banner).toBe(false)
+  test("the ladder: only the 1280x300 strip puts it beside", () => {
+    expect(planSaveData(1280, 720 - 74 - 58).row).toBe("under")
+    expect(planSaveData(640, 480 - 56 - 46).row).toBe("under")
+    expect(planSaveData(480, 800 - 74 - 58).row).toBe("under")
+    expect(planSaveData(1280, 300 - 56 - 46).row).toBe("beside")
   })
   test("the page's container query holds the same number", () => {
     const css = readFileSync(join(import.meta.dir, "..", "src", "pages", "ZoneSaveData.css"), "utf8")
-    const queries = [...css.matchAll(/@container zone-save-data \(min-aspect-ratio: (\d+) \/ (\d+)\) \{\s*\.zone-save-data-banner/g)]
+    const queries = [...css.matchAll(/@container zone-save-data \(min-aspect-ratio: (\d+) \/ (\d+)\) \{\s*\.zone-save-data-band\[data-row="kept"\]/g)]
     expect(queries.length).toBe(1)
-    expect(Number(queries[0]?.[1]) / Number(queries[0]?.[2])).toBe(ZONE_SAVE_BANNER_FOLD_ASPECT)
+    expect(Number(queries[0]?.[1]) / Number(queries[0]?.[2])).toBe(ZONE_SAVE_ROW_BESIDE_ASPECT)
   })
 })
 

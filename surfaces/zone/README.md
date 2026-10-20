@@ -14,8 +14,8 @@ stylesheet, and it is built to ship from another repository unchanged.
   card is the one you are about to enter. The action row under it says what
   entering means: PLAY, CONTINUE, PLAY ON a named device, then OPTS. for
   GAME OPTS.
-- **Three tabs** across the top: GAMES, OPTIONS, SAVE DATA. GAMES wears the
-  one yellow-on-blue hexagonal banner. OPTIONS holds settings and Wi-Fi. SAVE
+- **Three tabs** across the top: GAMES, OPTIONS, SAVE DATA. The active tab
+  wears the one yellow-on-blue hexagonal banner. OPTIONS holds settings and Wi-Fi. SAVE
   DATA holds identity.
 - A **foot strip**: TIME as a stage timer (Korri's `clockLabel`), the Wi-Fi
   badge, the device name tag and the build string.
@@ -354,9 +354,10 @@ bun run lint
   nothing on A** (as Pico). A rejected key reopens the keyboard once per
   failure; Korri's reason stands in red in the keyboard's heading, since
   the keyboard covers the row.
-- **The body banner yields.** The brief puts a ZoneBanner reading OPTIONS
-  in the body although the active tab already wears one; its type follows
-  the body's height (`4cqb`, clamped) so a short screen gives it little.
+- **No body banner.** The active tab wears the one yellow-on-blue banner
+  and names the page, as DIRECTION uses the banner once. OPTIONS and SAVE
+  DATA draw none in their bodies; the rows and the band take the room.
+  RUN WITH, which has no tabs, keeps its own.
 - **RUN WITH keeps case for programs and builds** (a build is a package
   path) and for SSIDs on OPTIONS; Zone's own words there are written in
   caps. Its state tag: Ready blue, Busy yellow, Stale and Warnings orange,
@@ -407,9 +408,6 @@ bun run lint
   Tags: NEW is orange (`open`), BACKED UP mint (`saved`), DELETE red
   (`remote`). A key in a card or a dialog is upper case like every Zone word:
   bech32 and hex are case-insensitive, so the shortened key still compares.
-- **NOT AVAILABLE keeps the banner.** "One card and nothing else" is read as
-  the body's content; the banner is the page's title and stays so the page
-  does not jump between states.
 - **The bunker step opens with `bunker://` typed** on the URI layer. Every
   NIP-46 bunker URI starts with it; DONE with only the prefix goes nowhere.
 - **Whitespace is stripped from a typed backup secret.** NIP-49 backups are
@@ -437,9 +435,9 @@ bun run lint
   1.25** (`ZONE_SAVE_SLAB_BESIDE_ASPECT`), and under it, two shares to one,
   in a column. The band's height is what makes the QR code scannable, so
   width pays for the slab wherever it can. On a strip 4 times wider than
-  tall (`ZONE_SAVE_BANNER_FOLD_ASPECT`, 1280x300) the banner folds: the tab
-  strip already names the page. Both are aspect-ratio container queries,
-  held equal to the constants by `test/plan-save-data.test.ts`.
+  tall (`ZONE_SAVE_ROW_BESIDE_ASPECT`, 1280x300) a retired key's row
+  stands at the band's end. Both are aspect-ratio container queries, held
+  equal to the constants by `test/plan-save-data.test.ts`.
 - **Edge triangles show the band runs on.** Cut cards alone failed at
   1280x720, where five cards ended flush with both edges; a red triangle at
   each edge points the way more cards lie and dims on a side with none.

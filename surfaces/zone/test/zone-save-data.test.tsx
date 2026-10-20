@@ -89,7 +89,8 @@ const dialog = () => screen.getByRole("dialog")
 describe("the band", () => {
   test("BACK UP, two SWITCH cards, then one RETIRED card per key, shortened", () => {
     mount(identityOf())
-    expect(screen.getByText("Save data")).toBeTruthy()
+    // The active tab names the page; the body draws no banner of its own.
+    expect(document.querySelector(".zone-save-data .zone-banner")).toBeNull()
     expect(card(/Back up/)).toBeTruthy()
     expect(card(/From backup/)).toBeTruthy()
     expect(card(/Bunker/)).toBeTruthy()

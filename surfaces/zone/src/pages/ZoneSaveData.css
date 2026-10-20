@@ -1,12 +1,13 @@
-/* The page fills the shell's body and is its own size container: the
- * banner, Korri's busy strip when it works, then the band and the backup's
- * slab sharing what is left. A step of a flow stands over all of it. */
+/* The page fills the shell's body and is its own size container: Korri's
+ * busy strip when it works, then the band and the backup's slab sharing
+ * what is left. The active tab names the page, so the body has no banner.
+ * A step of a flow stands over all of it. */
 .zone-save-data {
   --zone-save-data-margin: clamp(var(--zone-row-gap), 2cqw, var(--zone-band-margin));
   --zone-save-data-space: clamp(var(--zone-row-space), 1.6cqh, var(--zone-row-gap));
   position: relative;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   row-gap: var(--zone-save-data-space);
   width: 100%;
   height: 100%;
@@ -14,22 +15,14 @@
   container: zone-save-data / size;
 }
 
-.zone-save-data-banner {
-  display: flex;
-  justify-content: center;
-  min-width: 0;
-  padding: 0 var(--zone-save-data-margin);
+.zone-save-data[data-busy] {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
-/* A strip much wider than tall (ZONE_SAVE_BANNER_FOLD_ASPECT): the tab
- * strip names the page, so the banner folds and the band takes the room. */
+/* A strip much wider than tall (ZONE_SAVE_ROW_BESIDE_ASPECT) is too short
+ * to give a row under the band: a retired key's row stands at the band's
+ * end instead, where the width is. */
 @container zone-save-data (min-aspect-ratio: 4 / 1) {
-  .zone-save-data-banner {
-    display: none;
-  }
-
-  /* The same strip is too short to give a row under the band: a retired
-   * key's row stands at the band's end instead, where the width is. */
   .zone-save-data-band[data-row="kept"] {
     grid-template-rows: minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr) max-content;
@@ -43,15 +36,15 @@
 
 .zone-save-data-busy {
   display: flex;
-  grid-row: 2;
+  grid-row: 1;
   padding: 0 var(--zone-save-data-margin);
 }
 
 /* The band, or Korri's backup in its place. A size container: the backup
- * sizes its square against the room the banner leaves. */
+ * sizes its square against the room the busy strip leaves. */
 .zone-save-data-main {
   display: grid;
-  grid-row: 3;
+  grid-row: -2;
   grid-template-rows: minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
   min-height: 0;

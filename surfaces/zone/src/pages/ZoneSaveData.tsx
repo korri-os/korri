@@ -5,7 +5,6 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { useEffect, useRef, type ReactNode } from "react"
 import { shortKey } from "../plan/save-data"
-import { ZoneBanner } from "../ui/atoms/ZoneBanner"
 import { ZoneQrWell } from "../ui/atoms/ZoneQrWell"
 import { ZoneBusyStrip } from "../ui/molecules/ZoneBusyStrip"
 import { ZoneActionRow } from "../ui/molecules/ZoneActionRow"
@@ -121,8 +120,8 @@ function cardsOf(identity: SurfaceIdentityManagement | undefined): readonly Zone
 /**
  * The SAVE DATA page: identity on MANIA MODE's save select.
  *
- * The shell with SAVE DATA as its tab; in the body the SAVE DATA banner and
- * a band of vertical save cards: BACK UP (tagged NEW, or BACKED UP once a
+ * The shell with SAVE DATA as its tab (the active tab, the one banner,
+ * names the page); in the body a band of vertical save cards: BACK UP (tagged NEW, or BACKED UP once a
  * local backup exists), SWITCH from a backup, SWITCH to a bunker, then one
  * RETIRED card per retired key. While a retired key is focused, a row under
  * the band offers BACK UP and DELETE for it; A on the card drops into the
@@ -266,10 +265,7 @@ export function ZoneSaveData({
 
   return (
     <ZoneShell {...frame}>
-      <div className="zone-save-data" ref={root}>
-        <div className="zone-save-data-banner">
-          <ZoneBanner>Save data</ZoneBanner>
-        </div>
+      <div className="zone-save-data" data-busy={status?._tag === "Working" || undefined} ref={root}>
         {status?._tag === "Working" ? (
           <div className="zone-save-data-busy">
             <ZoneBusyStrip kicker={status.operation} />

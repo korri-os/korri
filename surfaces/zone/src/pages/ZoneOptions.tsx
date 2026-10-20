@@ -9,7 +9,6 @@ import {
   type ZoneOptionsView,
 } from "../plan/options"
 import { ZoneBars } from "../ui/atoms/ZoneBars"
-import { ZoneBanner } from "../ui/atoms/ZoneBanner"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
 import { ZoneSignal } from "../ui/atoms/ZoneSignal"
 import { ZoneDialog } from "../ui/molecules/ZoneDialog"
@@ -46,8 +45,9 @@ function drawnRow(row: ZoneOptionsRow): ZoneOptionGroupRow {
 }
 
 /**
- * The OPTIONS tab: Mania's OPTIONS screen. Under the OPTIONS banner, one
- * vertical scroll of groups: every settings group Korri publishes, in its
+ * The OPTIONS tab: Mania's OPTIONS screen. The active tab, the one
+ * yellow-on-blue banner, names the page; the body is one vertical scroll
+ * of groups: every settings group Korri publishes, in its
  * order, then SYSTEM (Korri's device actions), then WI-FI. Up and down walk
  * the rows across the groups; the focused row scrolls into view and a row
  * cut off at the bottom shows there is more.
@@ -166,9 +166,6 @@ export function ZoneOptions({
       )}
     >
       <div className="zone-options" data-layer={layer} ref={body}>
-        <div className="zone-options-head">
-          <ZoneBanner>Options</ZoneBanner>
-        </div>
         <div className="zone-options-scroll" inert={layer !== "none"}>
           <div className="zone-options-groups">
             {plan.groups.map(group => (
