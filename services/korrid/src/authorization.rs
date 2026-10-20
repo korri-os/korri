@@ -1329,6 +1329,7 @@ mod tests {
             ),
             ("system.onboarding.status", serde_json::json!({})),
             ("system.onboarding.finish", serde_json::json!({})),
+            ("system.onboarding.restart", serde_json::json!({})),
         ] {
             let request = request(serde_json::json!({"_tag":tag,"payload":payload}));
             assert_eq!(policy_for(&request), PeerPolicy::LocalPortalOnly);

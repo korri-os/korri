@@ -126,6 +126,8 @@ mod tests {
             OnboardingStatusOutcome::Ok(OnboardingStatus { needed: true })
         ));
         finish(&root);
+        let unrelated = root.join("unrelated-test-data");
+        fs::write(&unrelated, b"preserve these bytes").unwrap();
         for _ in 0..2 {
             assert!(matches!(
                 restart(&root),
@@ -136,7 +138,8 @@ mod tests {
             status(&root),
             OnboardingStatusOutcome::Ok(OnboardingStatus { needed: true })
         ));
-        assert!(fs::read_dir(&root).unwrap().next().is_none());
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        assert_eq!(fs::read(&unrelated).unwrap(), b"preserve these bytes");
         // Setup can be finished again afterwards.
         assert!(matches!(
             finish(&root),
