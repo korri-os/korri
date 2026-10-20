@@ -14,6 +14,7 @@
 import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { basename, join, relative } from "node:path"
+import { parseModule, visitNodes, type Node } from "./source-ast"
 
 const SRC = join(import.meta.dir, "..", "src")
 
@@ -360,6 +361,71 @@ describe("the ground is the one drawing", () => {
     for (const file of CANVAS_ALLOWANCE) {
       expect(/getContext\(|requestAnimationFrame\(|<canvas\b/.test(read(join(SRC, file)))).toBe(true)
     }
+  })
+})
+
+describe("one clock", () => {
+  /**
+   * The time is read in one place: the moments' seekable clock
+   * (use-zone-moment.ts: `startZoneClock`, which every moment and the
+   * ground's drift run on, and the M2 transition's mark). A second reading
+   * of the time is a clock `window.seek` cannot hold (the ground's drift
+   * was one), and a value drawn from the time is a fact Korri did not
+   * publish (Zone shows Korri's `clockLabel`, never its own). So no other
+   * file under src/ (parts and fixtures included) reads `Date.now()`,
+   * `performance.now()`, `new Date()` with no argument or `Date()`.
+   */
+  const CLOCK_SEAMS = ["use-zone-moment.ts"]
+
+  const readsTheTime = (node: Node): boolean => {
+    const named = (value: unknown, name: string) =>
+      typeof value === "object" && value !== null && (value as { type?: string; name?: string }).type === "Identifier"
+      && (value as { name?: string }).name === name
+    if (node.type === "MemberExpression") {
+      const { object, property } = node as unknown as { object: Node; property: Node }
+      if (!named(property, "now")) return false
+      if (named(object, "Date") || named(object, "performance")) return true
+      return object.type === "MemberExpression" && named((object as unknown as { property: Node }).property, "performance")
+    }
+    if (node.type === "NewExpression") {
+      const { callee, arguments: args } = node as unknown as { callee: Node; arguments: readonly Node[] }
+      return named(callee, "Date") && args.length === 0
+    }
+    if (node.type === "CallExpression") return named((node as unknown as { callee: Node }).callee, "Date")
+    return false
+  }
+
+  const timeReaders = (files: readonly string[]) =>
+    files
+      .filter((file) => {
+        let found = false
+        visitNodes(parseModule(file, read(file)), (node) => {
+          if (readsTheTime(node)) found = true
+        })
+        return found
+      })
+      .map(rel)
+      .sort()
+
+  test("no file outside the clock seam reads the time", () => {
+    expect(timeReaders(tsxFiles).filter((file) => !CLOCK_SEAMS.includes(file))).toEqual([])
+  })
+
+  test("the seam is named because it reads the time", () => {
+    expect(timeReaders(CLOCK_SEAMS.map((file) => join(SRC, file)))).toEqual(CLOCK_SEAMS)
+  })
+
+  test("the rule sees every way to read the time, and lets a given date pass", () => {
+    const probe = (text: string) => {
+      let found = false
+      visitNodes(parseModule("probe.ts", text), (node) => {
+        if (readsTheTime(node)) found = true
+      })
+      return found
+    }
+    expect(["Date.now()", "performance.now()", "window.performance.now()", "new Date()", "Date()"].map(probe))
+      .toEqual([true, true, true, true, true])
+    expect(["new Date(at)", "date.getDate()", "now()"].map(probe)).toEqual([false, false, false])
   })
 })
 

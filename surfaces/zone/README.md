@@ -67,6 +67,7 @@ one has been seen to fail on a planted defect.
 | Every component file has exactly one component | `test/atomic-gate.test.ts` |
 | Every lettering pair reaches contrast; outlined lettering is judged face against outline, on every screen group's ground | `test/contrast-gate.test.ts` |
 | Only the ground draws on a canvas or runs a frame clock; gradients are hard-stop stripes or dither; no word breaks inside itself | `test/authoring-gate.test.ts` |
+| The time is read only by the one seekable clock (`use-zone-moment.ts`): no other file reads `Date.now()`, `performance.now()`, `new Date()` or `Date()` | `test/authoring-gate.test.ts` |
 | Zone Caps is the grid, built: coverage, metrics, outlines and a reproducible build | `test/zone-caps-font.test.ts` |
 | Layout is `plan(width, height)` on the art grid (`planArt(wArt, hArt)`), thresholds are named constants in art px, tested one art pixel either side | `test/plan-zone-select.test.ts` |
 
@@ -1700,3 +1701,12 @@ one holds.
   `test/zone-clock.test.tsx` holds it (it failed against the old hook).
   Parts that hold a moment (`useFixtureHold`) now hold the rings too, so
   their stills no longer vary with the drift.
+- **The clock gate reads the time, not only the frames.** The authoring
+  gate checked `requestAnimationFrame` and the canvas, so a second
+  `performance.now` (the ground's) passed. "One clock" in
+  `test/authoring-gate.test.ts` parses every file under `src/` (parts and
+  fixtures too) and fails one outside `use-zone-moment.ts` that reads
+  `Date.now()`, `performance.now()` (also through `window.`), `new Date()`
+  with no argument, or `Date()`; `new Date(at)` from Korri's own time
+  passes. Planted `Date.now()` in `src/plan/` and `new Date()` in
+  `src/fixtures/`: each failed it; removed, it passes.
