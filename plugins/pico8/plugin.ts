@@ -522,12 +522,14 @@ function decodeHtml(value: string): string {
     apos: "'",
     nbsp: " ",
   }
+  // A numeric reference beyond U+10FFFF stays literal text; fromCodePoint
+  // would throw and fail the whole search.
+  const codePoint = (match: string, code: number) =>
+    code <= 0x10ffff ? String.fromCodePoint(code) : match
   return value
-    .replaceAll(/&#(\d+);/g, (_, code: string) =>
-      String.fromCodePoint(Number(code)),
-    )
-    .replaceAll(/&#x([0-9a-f]+);/gi, (_, code: string) =>
-      String.fromCodePoint(Number.parseInt(code, 16)),
+    .replaceAll(/&#(\d+);/g, (match, code: string) => codePoint(match, Number(code)))
+    .replaceAll(/&#x([0-9a-f]+);/gi, (match, code: string) =>
+      codePoint(match, Number.parseInt(code, 16)),
     )
     .replaceAll(/&([a-z]+);/gi, (match, name: string) => named[name] ?? match)
 }

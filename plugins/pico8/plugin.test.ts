@@ -118,6 +118,12 @@ describe("claims.search", () => {
     expect(claims.find(claim => claim.id === "74540")?.title).toBe("Pico de Pon")
   })
 
+  test("decodes character references and keeps an out-of-range one as text", () => {
+    const page = searchPage.replace("`Celeste`", "`Celeste &#x41;&#66; &#1114112; &#x110000;`")
+    const claims = search("celeste", [ok(page)]) as Array<{ id: string; title: string }>
+    expect(claims[0].title).toBe("Celeste AB &#1114112; &#x110000;")
+  })
+
   test("reads the BBS's own empty answer as no results", () => {
     expect(search("zzqxjvkw", [ok(emptySearchPage)])).toStrictEqual([])
   })

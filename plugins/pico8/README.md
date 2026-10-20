@@ -28,7 +28,9 @@ Changes from legacy, all forced by the current BBS:
   Legacy then invented a "PICO-8 Cart <id>" result. A post page must now carry
   a cart link or the post container `<div id=p<id>`.
 - Legacy preferred the cart label as the title; it is often a file slug
-  (`violet`, `farlandv2`, `ccbtt`), so the thread title wins now.
+  (`violet`, `farlandv2`, `ccbtt`), so the thread title wins now. A numeric
+  character reference beyond U+10FFFF stays literal text instead of failing
+  the search.
 - Legacy read any page without the cart list as no results. That hides a
   markup change, so only `[no posts found]` is empty now.
 
