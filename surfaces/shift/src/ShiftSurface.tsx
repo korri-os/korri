@@ -26,9 +26,11 @@ import { ShiftHomeLoadingBody } from "./pages/ShiftHomeLoadingBody"
 import { ShiftDetailSplit } from "./pages/ShiftDetailSplit"
 import { ShiftLibraryLens } from "./pages/ShiftLibraryLens"
 import { playtimeLabel, relativeLastPlayed } from "./play-labels"
+import { shiftDownloadLabel } from "./shift-download-label"
 import type { ShiftLibraryGame } from "./pages/shift-library-game"
 import type { ShiftGameDetailView } from "./pages/shift-game-detail-view"
 import { ShiftSettings } from "./pages/ShiftSettings"
+import { ShiftGameActionConfirmSheet } from "./ui/organisms/ShiftGameActionConfirmSheet"
 import { ShiftGameActionsSheet } from "./ui/organisms/ShiftGameActionsSheet"
 import { ShiftGameplayOverlaySheet } from "./ui/organisms/ShiftGameplayOverlaySheet"
 import {
@@ -57,10 +59,12 @@ export function shiftGameFromSurfaceGame(
   now: Date = new Date(),
 ): ShiftCinematicGame {
   const labels = playLabels(game, now)
+  const download = shiftDownloadLabel(game.download)
   return {
     id: game.id,
     title: game.title,
     tileArtUrl: game.coverArtUrl ?? "",
+    ...(download === undefined ? {} : { download }),
     wideArtUrl: game.wideArtUrl ?? "",
     ...(game.section === undefined ? {} : { section: game.section }),
     ...(game.subtitle === undefined ? {} : { subtitle: game.subtitle }),
@@ -95,11 +99,13 @@ export function shiftDetailGameFromSurfaceGame(
   now: Date = new Date(),
 ): ShiftGameDetailView {
   const labels = playLabels(game, now)
+  const download = shiftDownloadLabel(game.download)
   return {
     id: game.id,
     title: game.title,
     artUrl: game.coverArtUrl ?? "",
     ...labels,
+    ...(download === undefined ? {} : { download }),
     // A running session outranks history: it is the thing you continue.
     ...(game.resumable ? { lastPlayedLabel: "Ready to continue" } : {}),
   }
@@ -189,6 +195,12 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
   const [launchGameId, setLaunchGameId] = useState<string | null>(null)
   const [detailGameId, setDetailGameId] = useState<string | null>(null)
   const [identityAction, setIdentityAction] = useState<string | null>(null)
+  /** A destructive game action awaiting the person's yes. */
+  const [confirming, setConfirming] = useState<{
+    readonly gameId: string
+    readonly gameTitle: string
+    readonly action: SurfaceAction
+  } | null>(null)
   const [screen, setScreen] = useState<
     "home" | "library" | "detail" | "settings"
   >("home")
@@ -344,7 +356,7 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
         onPlay={() => requestLaunch(detailGame.id)}
         {...(host.gameActions(detailGame.id).length ? { onOptions: setSheetGameId } : {})}
         onBack={() => {
-          if (!runnerOpen && !launchChooserOpen && sheetGameId === null) setScreen("home")
+          if (!runnerOpen && !launchChooserOpen && sheetGameId === null && confirming === null) setScreen("home")
         }}
       />
     ) : shownScreen === "detail" ? (
@@ -420,9 +432,26 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
             actions={sheetActions}
             onSelect={actionId => {
               closeSheet()
+              // The treaty: a destructive action is confirmed before it is sent.
+              const action = sheetActions.find(candidate => candidate.id === actionId)
+              if (action?.destructive === true) {
+                setConfirming({ gameId: sheetGame.id, gameTitle: sheetGame.title, action })
+                return
+              }
               host.runGameAction(sheetGame.id, actionId)
             }}
             onClose={closeSheet}
+          />
+        ) : null}
+        {confirming ? (
+          <ShiftGameActionConfirmSheet
+            gameTitle={confirming.gameTitle}
+            action={confirming.action}
+            onCancel={() => setConfirming(null)}
+            onConfirm={() => {
+              setConfirming(null)
+              host.runGameAction(confirming.gameId, confirming.action.id)
+            }}
           />
         ) : null}
         <ShiftIdentitySheet
