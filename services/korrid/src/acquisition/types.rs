@@ -293,6 +293,13 @@ pub(super) enum Failure {
     NoSpace,
     Unpack,
     Cancelled,
+    /// A request or redirect hop outside the plugin's declared hosts.
+    UndeclaredHost,
+    TooLarge,
+    WebPage,
+    Empty,
+    /// The file does not match the target system's declared content rules.
+    NotSystemFile,
 }
 impl Failure {
     pub(super) fn rpc(self) -> RpcFailure {
@@ -307,6 +314,11 @@ impl Failure {
             Self::NoSpace => "There is not enough space for this download.",
             Self::Unpack => "The downloaded files could not be unpacked.",
             Self::Cancelled => "The download was cancelled.",
+            Self::UndeclaredHost => "The download address is not allowed.",
+            Self::TooLarge => "The download is larger than 2 GiB.",
+            Self::WebPage => "The source sent a web page instead of the game file.",
+            Self::Empty => "The source sent an empty file.",
+            Self::NotSystemFile => "The downloaded file is not a game for this system.",
         };
         RpcFailure {
             code: "AcquisitionFailed".into(),
