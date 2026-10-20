@@ -652,3 +652,24 @@
   /** @label Controller heard frame */
   --zone-controller-heard: var(--zone-red);
 }
+
+/* ---- polish ---- */
+/* The fixes after the four pages met: the narrow top strip's least sizes,
+ * and the part frames that prove it. Appended by the polish worker; the
+ * lines above are untouched. */
+.zone-theme {
+  /** A tab's caps once a narrow top strip has yielded its gaps (plan: planTopStrip, tight). @label Tab type, least @min 8 @max 30 @step 1 */
+  --zone-type-tab-least: 14px;
+  /** A keycap hint's caps likewise. @label Hint type, least @min 8 @max 30 @step 1 */
+  --zone-type-hint-least: 13px;
+  /** The gap between items in a narrow top strip, and its panels' padding. @label Strip gap, least @min 0 @max 20 @step 1 */
+  --zone-strip-gap-least: 4px;
+  /** The least slant of a panel in a narrow strip; a bigger type still leans by its own size. @label Panel slant, least @min 0 @max 32 @step 1 */
+  --zone-slant-least: 6px;
+  /** A part frame 480 wide, for the top strip's ladder. @label Part frame, 480 @min 120px @max 1280px @step 10px */
+  --zone-part-w480: 480px;
+  /** A part frame 360 wide. @label Part frame, 360 @min 120px @max 1280px @step 10px */
+  --zone-part-w360: 360px;
+  /** A part frame 260 wide. @label Part frame, 260 @min 120px @max 1280px @step 10px */
+  --zone-part-w260: 260px;
+}

@@ -1,10 +1,11 @@
 /* The hexagon: two points, each as deep as the banner point times the type.
- * The type is the tab's (the shell's, or the wide token alone) times the
+ * The type is the tab's (a fitted tab's, the shell's, or the wide token
+ * alone) times the
  * banner scale, so the banner rises above the tabs beside it. The band is a
  * white parallelogram through the middle at the band opacity; it is the
  * ground's kind of drawing, with no edge to blur. */
 .zone-banner {
-  --zone-banner-type: calc(var(--zone-type-banner-scale) * var(--zone-shell-tab-type, var(--zone-type-tab-wide)));
+  --zone-banner-type: calc(var(--zone-type-banner-scale) * var(--zone-banner-base, var(--zone-shell-tab-type, var(--zone-type-tab-wide))));
   --zone-banner-point-depth: calc(var(--zone-banner-point) * var(--zone-banner-type));
   position: relative;
   isolation: isolate;

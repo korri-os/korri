@@ -1,4 +1,6 @@
 import "./ZoneTabStrip.css"
+import { useRef } from "react"
+import { useZoneFit } from "../../use-zone-fit"
 import { ZoneTab } from "../atoms/ZoneTab"
 
 export interface ZoneTabItem {
@@ -10,8 +12,9 @@ export interface ZoneTabItem {
 
 /**
  * The three tabs shoulder to shoulder, the current one as the banner. The
- * gap yields first when the strip is squeezed, then each tab's label
- * truncates; no tab is ever dropped.
+ * gap yields first when the strip is squeezed, then the tabs' type shrinks
+ * to fit the row (to half, as a card title does), and only then does each
+ * tab's label truncate; no tab is ever dropped.
  */
 export function ZoneTabStrip({
   tabs,
@@ -28,8 +31,10 @@ export function ZoneTabStrip({
   readonly onSelect: (id: string) => void
   readonly onFocus?: (id: string) => void
 }) {
+  const strip = useRef<HTMLDivElement>(null)
+  useZoneFit(strip, [strip], tabs.map(tab => `${tab.label}|${tab.sub ?? ""}`).join("\n"))
   return (
-    <div className="zone-tab-strip" role="tablist">
+    <div className="zone-tab-strip" ref={strip} role="tablist">
       {tabs.map(tab => (
         <ZoneTab
           active={tab.id === active}

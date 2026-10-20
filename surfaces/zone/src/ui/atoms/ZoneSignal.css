@@ -1,12 +1,12 @@
-/* The badge is the foot's small type and may take the badge share of its
- * row. Squeezed, the name gives; the bars and the strength keep their
+/* The badge is the foot's small type (scaled with a fitted foot) and may
+ * take the badge share of its row. Squeezed, the name gives; the bars and the strength keep their
  * width. */
 .zone-signal {
   display: inline-flex;
   flex: 0 1 auto;
   min-width: 0;
   max-width: var(--zone-badge-share);
-  font-size: calc(var(--zone-type-badge-scale) * var(--zone-shell-foot-type, var(--zone-type-foot-tall)));
+  font-size: calc(var(--zone-type-badge-scale) * var(--zone-shell-foot-type, var(--zone-type-foot-tall)) * var(--zone-foot-fit, 1));
 }
 
 .zone-signal-name {

@@ -34,3 +34,16 @@
   width: min(100%, var(--zone-part-handheld-width));
   height: min(100%, var(--zone-part-handheld-height));
 }
+
+/* Fixed widths at the device's full height: the top strip's ladder. */
+.zone-part-frame[data-shape="w480"] {
+  width: min(100%, var(--zone-part-w480));
+}
+
+.zone-part-frame[data-shape="w360"] {
+  width: min(100%, var(--zone-part-w360));
+}
+
+.zone-part-frame[data-shape="w260"] {
+  width: min(100%, var(--zone-part-w260));
+}

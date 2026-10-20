@@ -43,10 +43,12 @@
   color: var(--zone-key-y-ink);
 }
 
-/* The word's tab: starts under the key, trails past the word, and is cut
+/* The word's tab. A hint in a narrow top strip drops it (the shell sets
+ * --zone-keycap-words); the word stays the hint's accessible name. The
+ * word's tab: starts under the key, trails past the word, and is cut
  * on the slant at its far end. */
 .zone-keycap-word {
-  display: inline-flex;
+  display: var(--zone-keycap-words, inline-flex);
   align-items: center;
   min-width: 0;
   height: calc(var(--zone-keycap-diameter) * 0.75);

@@ -1,5 +1,7 @@
 import "./ZoneFoot.css"
 import type { SurfaceNetworkConnection } from "@contracts/surface/korri-surface"
+import { useRef } from "react"
+import { useZoneFit } from "../../use-zone-fit"
 import { ZoneCaps } from "../atoms/ZoneCaps"
 import { ZonePanel } from "../atoms/ZonePanel"
 import { ZoneSignal } from "../atoms/ZoneSignal"
@@ -18,10 +20,10 @@ export type ZoneFootStrips = "tall" | "short"
  * and type for a part; without it the foot follows the shell.
  *
  * Yield order when squeezed: the room between the two ends, then the SSID
- * (an ellipsis, with the badge capped at its share of the foot). The timer,
- * the device tag, the bars and the build string keep their width; a foot
- * narrower than those four together overflows at its end, and no device
- * Zone plans for is that narrow.
+ * (an ellipsis, with the badge capped at its share of the foot), then the
+ * whole foot's type, which shrinks to fit (to half, as a card title does).
+ * The timer, the device tag, the bars and the build string keep their
+ * words; a foot too narrow for them at half size overflows at its end.
  */
 export function ZoneFoot({
   clock,
@@ -39,8 +41,10 @@ export function ZoneFoot({
   readonly build?: string
   readonly strips?: ZoneFootStrips
 }) {
+  const foot = useRef<HTMLDivElement>(null)
+  useZoneFit(foot, [foot], [clock, device, connection?._tag, connection?._tag === "Wifi" ? connection.ssid : "", build, strips].join("|"))
   return (
-    <div className="zone-foot" data-strips={strips ?? "shell"}>
+    <div className="zone-foot" data-strips={strips ?? "shell"} ref={foot}>
       {clock === undefined ? null : (
         <span className="zone-foot-timer">
           <ZonePanel edge={false}>

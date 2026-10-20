@@ -10,6 +10,9 @@ export type ZoneKey = "A" | "B" | "X" | "Y"
  * right and is cut on the slant, as in the top corners of Mania's menus.
  * The keycap sits a little over the tab's start. With no word it is the
  * keycap alone, for a row that names the key beside its own label.
+ *
+ * The keycap and its word are one image named by both, so a hint whose word
+ * a narrow strip has dropped still reads B BACK to a screen reader.
  */
 export function ZoneKeycap({
   button,
@@ -19,10 +22,15 @@ export function ZoneKeycap({
   readonly word?: string
 }) {
   return (
-    <span className="zone-keycap" data-key={button}>
-      <span className="zone-keycap-key">{button}</span>
+    <span
+      aria-label={word === undefined ? button : `${button} ${word}`}
+      className="zone-keycap"
+      data-key={button}
+      role="img"
+    >
+      <span aria-hidden="true" className="zone-keycap-key">{button}</span>
       {word === undefined ? null : (
-        <span className="zone-keycap-word">
+        <span aria-hidden="true" className="zone-keycap-word">
           <ZoneCaps>{word}</ZoneCaps>
         </span>
       )}

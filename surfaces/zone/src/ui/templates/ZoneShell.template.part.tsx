@@ -1,4 +1,5 @@
 import type { SurfaceNetworkConnection } from "@contracts/surface/korri-surface"
+import { ZonePartFrame } from "../../fixtures/ZonePartFrame"
 import { ZoneShell } from "./ZoneShell"
 import { ZoneKeycap } from "../atoms/ZoneKeycap"
 import { ZoneFoot } from "../molecules/ZoneFoot"
@@ -75,4 +76,31 @@ export function Short() {
       {body}
     </ZoneShell>
   )
+}
+
+/* The top strip's ladder (planTopStrip): the real hints and tabs at the
+ * narrow type a screen under 1000 wide gets, in a frame of a fixed width. */
+function Ladder({ shape }: { readonly shape: "w480" | "w360" | "w260" }) {
+  return (
+    <ZonePartFrame shape={shape}>
+      <ZoneShell band="narrow" foot={foot} hintBack={hintBack} hintConfirm={hintConfirm} strips="short" tabs={tabs}>
+        {body}
+      </ZoneShell>
+    </ZonePartFrame>
+  )
+}
+
+/** 480 wide: least gaps and type, the hints keep only their keycaps. */
+export function Width480() {
+  return <Ladder shape="w480" />
+}
+
+/** 360 wide: two rows, the hints with their words over the tabs. */
+export function Width360() {
+  return <Ladder shape="w360" />
+}
+
+/** 260 wide: two rows, the tabs' type fitted to the row. */
+export function Width260() {
+  return <Ladder shape="w260" />
 }

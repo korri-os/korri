@@ -533,3 +533,24 @@ model's message, and the model's `update` returns `ZoneRequest`s.
 
 ### Polish (decided without asking)
 
+- **The shell measures its own width for the top strip.** The brief wants
+  the strip's ladder as `planTopStrip(width)` with CSS following a data
+  attribute, and `ZoneSurface.tsx` (which passes `strips` and `band`) is
+  the wire worker's. So `useZoneTopStrip` observes the shell's box and
+  writes `data-top` on it, as `use-zone-fit` writes `--zone-fit`: no
+  re-render, no state. A box of width 0 (a test DOM) keeps no attribute.
+  The shell is the container whose width matters, so this also holds for
+  a shell drawn in a pane.
+- **The top strip's ladder** is `inline` (620 and up), `tight` (530: gaps,
+  margins, panel padding and type at their least), `keys` (400: hints keep
+  only the round keycap; `role="img"` with `aria-label` "B Back" keeps the
+  word), then `stacked` (two rows; the hints take their words back while
+  the row is 240 wide or more). Thresholds measured in Chromium at the
+  narrow type with today's tab words; a longer tab word needs them moved.
+- **The tabs and the foot fit their type to their row.** In two rows the
+  tabs still want about 300 px at the least type, so `ZoneTabStrip` uses
+  `useZoneFit` (to half) and the banner follows the fitted tab type; a tab
+  only shrinks and truncates at the fit's floor. The foot overlapped
+  itself at 360, so `ZoneFoot` fits its type the same way after the SSID
+  has given way. At 260 the foot reaches the floor and the build string is
+  tiny; that is the weakest size.

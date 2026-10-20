@@ -1,9 +1,11 @@
-/* Along the bottom of its holder, at the strip height. Inside the shell the
+/* Along the bottom of its holder, at the strip height. A foot too narrow
+ * for its readouts scales its type by the fit its hook sets (--zone-fit). Inside the shell the
  * shell's values win; alone, or when a part pins them, the tokens. */
 .zone-foot {
   --zone-foot-height: var(--zone-shell-foot, var(--zone-foot-strip-tall));
   --zone-foot-type: var(--zone-shell-foot-type, var(--zone-type-foot-tall));
   --zone-foot-margin: var(--zone-shell-margin, var(--zone-strip-margin));
+  --zone-foot-fit: var(--zone-fit, 1);
   position: absolute;
   right: 0;
   bottom: 0;
@@ -13,7 +15,7 @@
   gap: clamp(var(--zone-strip-margin-min), 1.6cqw, var(--zone-strip-gap));
   height: var(--zone-foot-height);
   padding: var(--zone-foot-inset) var(--zone-foot-margin);
-  font-size: var(--zone-foot-type);
+  font-size: calc(var(--zone-foot-type) * var(--zone-foot-fit));
   line-height: 1;
 }
 
