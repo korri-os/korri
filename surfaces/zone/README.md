@@ -112,8 +112,8 @@ comes in as a prop and a change goes out through a callback.
 - `opts`: the focused GAME OPTS. row and the destructive action awaiting
   NO / YES
 - `idleCard`: the game the idle title card shows, in catalog order
-- `optionsGroup`, `optionsRunWith`: where OPTIONS lands when `system` or RUN
-  WITH took the person there
+- `optionsGroup`: where OPTIONS lands when `system` took the person there
+  (its SYSTEM group)
 - `layers`: a stack over the page, each one of
   `gameopts | keyboard | busy | problem | overlay | onboarding | idle`.
   An empty stack is `none`. Back pops the top layer; a host status pushes
@@ -202,8 +202,6 @@ bun run lint
 - **Host door is a plain function pair** (`performZoneRequest`,
   `subscribeZoneHostButtons`), as in Pico. The oxlint rule names `host`, so
   a renamed host parameter would get past it; review must catch that.
-- **Catalog titles for now.** Superseded: `ZoneSurface` renders the GAMES
-  page as home.
 
 ### GAMES page (decided without asking)
 
@@ -244,10 +242,6 @@ bun run lint
   action and YES close GAME OPTS. The question's headline is the action's
   label, its line the description, its yellow title the game; NO has the
   cursor first and B is NO.
-- **RUN WITH is a row whose value is CHOOSE.** It dispatches
-  `OpenedRunWith`, which closes GAME OPTS., opens OPTIONS and records
-  `optionsRunWith: gameId` for the OPTIONS page to read and clear. B from
-  OPTIONS forgets it.
 - **The catalog's error dialog is headed GAMES.** Korri's `Error` carries
   only a message; the headline names the place that failed rather than
   inventing a sentence, and the message is the body.
@@ -310,10 +304,6 @@ bun run lint
 - **The intrinsic ladder was rendered with two Caliper devices added for the
   run and not committed** (480x800, 1280x300), so every other part keeps its
   two devices.
-
-- **Catalog titles for now.** `ZoneSurface` lists the catalog's game titles
-  as plain text in the shell's body until the card band lands, so the
-  package renders end to end with a real `SurfaceModel`.
 
 ### OPTIONS and RUN WITH (the options worker)
 
@@ -479,8 +469,10 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   nothing while Browsing; Busy drops the busy strip over the dimmed, inert
   page with the game's title in yellow above it; Running is a small strip
   at the top (kicker, OPEN, title) that leaves the page usable; Problem is
-  the blue dialog, DISMISS lit before RETRY. `reloadRequest()` in
-  `status.ts` is C10, for the catalog's Error state and the SYSTEM group.
+  the blue dialog, DISMISS lit before RETRY. Korri's Problem never offers
+  a reload. C10 is RELOAD in the catalog's Error dialog on GAMES: the
+  page reports `ChoseReload` and navigation asks `Reload`. The SYSTEM
+  group lists Korri's own device actions and has no reload of its own.
 - **PAUSED.** The red band with Korri's title (PAUSED when absent), the
   ground greyed and striped as the game's stand-in, the yellow wedge of
   flat controls then groups. Left and right arrive as the portal's
@@ -604,10 +596,8 @@ and system do nothing there.
   portal opens it itself on a launch and on its own game action (RUNNERS ON
   THIS DEVICE, which GAME OPTS. lists as Korri's), and while it is open the
   portal sends Back to its own cancel and no other button to Zone. So the
-  page follows `model.runnerChoice`, not `nav.optionsRunWith`. GAME OPTS.'
-  own RUN WITH row (`OpenedRunWith`) still takes the person to OPTIONS as the
-  GAMES page decided; it cannot open a choice Korri has not published.
-  C11 is proved through Korri's action.
+  page follows `model.runnerChoice`. GAME OPTS. has no RUN WITH row of its
+  own (see Polish); C11 is proved through Korri's action.
 - **Navigation took two messages of the wire stage's**, in
   `ZoneNavMessage` beside `ZoneMessage` (so `messages.ts` is untouched):
   `FocusedPage` (the cursor left the tabs for OPTIONS' rows or SAVE DATA's
@@ -741,8 +731,6 @@ C30 the pink edge and underline on whatever holds DOM focus, on every page and l
   317 px at 640x480 (5.2 px a module), 168 px at 1280x300 (2.75 px a
   module), 454 px at 480x800 and 502 px at 1280x720. This supersedes the
   QR in BACK UP's well, the `data-clear` padding and BackupReadyOnCard.
-  `--zone-save-band-share` and `--zone-save-slab-share` are now unused and
-  left in the savedata block for its owner to remove.
 - **A retired key offers BACK UP and DELETE.** Supersedes "Retired keys
   are deleted, never backed up". While a retired card has the cursor a
   `ZoneActionRow` under the band offers both, BACK UP lit. A on the card
@@ -783,9 +771,7 @@ C30 the pink edge and underline on whatever holds DOM focus, on every page and l
   choice: the RUN WITH page shows only when Korri itself publishes
   `model.runnerChoice` (usually after the person runs Korri's own game
   action for runners, which GAME OPTS. lists). The row could never do
-  what its label said, so it, the page's `OpenedRunWith` event and their
-  tests are gone. `navigation.ts` still holds the message for the wire
-  worker to remove; its update test went with the row.
+  what its label said, so the row, its message and their tests are gone.
 - **The status layer's dim covers the page's own layers.** The page under
   `ZoneStatusLayer` now sits in `.zone-status-layer-content`, its own
   stacking context (`isolation: isolate`, `z-index: 0`) inside the
