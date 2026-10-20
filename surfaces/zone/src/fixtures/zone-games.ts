@@ -112,3 +112,14 @@ export function createGamesFixtureHost(actions: readonly SurfaceAction[] = fixtu
   const base = createFixtureHost()
   return Object.assign(base, { gameActions: () => actions })
 }
+
+/**
+ * Two games need a download before their first launch (the treaty's
+ * `SurfaceGame.download`): Hollow Knight's runtime is 1.5 GB, and Korri does
+ * not know the size of Spelunky's.
+ */
+export const fixtureDownloadGames: readonly SurfaceGame[] = fixtureLibrary.map(game =>
+  game.id === "hollow-knight" ? { ...game, download: { bytes: 1_500_000_000 } }
+    : game.id === "spelunky" ? { ...game, download: {} }
+    : game)
+export const fixtureDownloadModel = gamesModel({ _tag: "Ready", games: fixtureDownloadGames })

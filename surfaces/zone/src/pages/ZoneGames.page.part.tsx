@@ -4,6 +4,7 @@ import { fixtureTitleOf, statusBusyDetail } from "../fixtures/fixture-layers"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import {
   createGamesFixtureHost,
+  fixtureDownloadModel,
   fixtureEmptyModel,
   fixtureErrorModel,
   fixtureFortyModel,
@@ -46,6 +47,7 @@ export const composition = {
   FindOpen: [{ part: "src/ui/molecules/ZoneKeyboard.molecule.part.tsx", state: "default" }],
   Idle: [{ part: "src/ui/molecules/ZoneTitleCard.molecule.part.tsx", state: "default" }],
   Narrow: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "Narrow" }],
+  DownloadFocused: [{ part: "src/ui/molecules/ZoneCard.molecule.part.tsx", state: "Download" }],
 } as const
 
 type Opening = NonNullable<Parameters<typeof useZoneGames>[3]>
@@ -132,6 +134,15 @@ export function Resumable() {
  */
 export function BusyOverHome() {
   return <Games model={fixtureReadyModel} status={statusBusyDetail} />
+}
+
+/**
+ * Hollow Knight needs a 1.5 GB download first: the orange DOWNLOAD tag on its
+ * card and DOWNLOAD 1.5 GB at the end of its facts. Spelunky, two cards on,
+ * needs one of a size Korri does not know: DOWNLOAD alone.
+ */
+export function DownloadFocused() {
+  return <Games model={fixtureDownloadModel} opening={[{ _tag: "FocusedCard", index: 1 }]} />
 }
 
 /** options on Spelunky: Korri's actions, the disabled one dimmed with its reason. */

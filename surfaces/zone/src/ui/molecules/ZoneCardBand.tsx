@@ -112,6 +112,7 @@ export function ZoneCardBand({
             >
               <ZoneCard
                 art={card.art}
+                download={card.download}
                 focused={index === focus}
                 onFocus={onFocus === undefined ? undefined : () => onFocus(index)}
                 onPress={onChoose === undefined ? undefined : () => onChoose(index)}

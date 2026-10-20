@@ -60,6 +60,7 @@ export function zoneBandCards(games: readonly SurfaceGame[]): readonly ZoneBandC
     resumable: game.resumable === true,
     // A game with only wide art wears it, letterboxed in the cover well like any art.
     art: game.coverArtUrl ?? game.wideArtUrl,
+    ...(game.download === undefined ? {} : { download: game.download }),
     section: sections[index],
   }))
 }
@@ -97,6 +98,7 @@ export function zoneGamesProps(
       lastPlayedAt: game.lastPlayedAt,
       playCount: game.playCount,
       playtime: game.totalPlaytimeSeconds === undefined ? undefined : playtime(game.totalPlaytimeSeconds),
+      download: game.download,
     },
     launches: game === undefined ? [] : launchChoices(game),
     focusedAction: nav.action,

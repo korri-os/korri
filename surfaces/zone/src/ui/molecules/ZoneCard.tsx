@@ -2,6 +2,7 @@ import "./ZoneCard.css"
 import "../../zone-motion.css"
 import { useRef } from "react"
 import { useZoneFit } from "../../use-zone-fit"
+import { formatZoneBytes } from "../../plan/bytes"
 import { ZoneCoverWell } from "../atoms/ZoneCoverWell"
 import type { ZoneTagItem } from "../atoms/ZoneTag"
 import { ZoneTagRow } from "./ZoneTagRow"
@@ -21,6 +22,11 @@ export interface ZoneCardFacts {
   readonly resumable?: boolean
   /** The cover art's URL. Absent: the well wears stripes and initials. */
   readonly art?: string
+  /**
+   * Korri's `download`: launching first fetches something to this device.
+   * `bytes` is the size still to fetch, absent when Korri does not know it.
+   */
+  readonly download?: { readonly bytes?: number }
 }
 
 /** Where the card sits in the band: an end card dims the triangle beyond it. */
@@ -28,18 +34,25 @@ export type ZoneCardPosition = "first" | "middle" | "last" | "only"
 /** The focused card is the big one; a side card is the plan's share of it. */
 export type ZoneCardSize = "focus" | "side"
 
-export const cardTags = ({ system, places, resumable }: ZoneCardFacts): readonly ZoneTagItem[] => [
+/** The download tag's words: DOWNLOAD and the size when Korri knows it. */
+export const downloadLabel = (download: { readonly bytes?: number }): string =>
+  download.bytes === undefined ? "Download" : `Download ${formatZoneBytes(download.bytes)}`
+
+export const cardTags = ({ system, places, resumable, download }: ZoneCardFacts): readonly ZoneTagItem[] => [
   ...(system === undefined ? [] : [{ kind: "system", label: system } as const]),
   ...places.map(place => place.here
     ? { kind: "here", label: "Here" } as const
     : { kind: "remote", label: place.label } as const),
   ...(resumable === true ? [{ kind: "continue", label: "Continue" } as const] : []),
+  ...(download === undefined ? [] : [{ kind: "download", label: downloadLabel(download) } as const]),
 ]
 
 /**
  * The zone card: a black body with a hard drop edge, the cover in its well,
  * the title in two lines of white caps that shrink to fit, the orange, blue
- * and mint diagonal band, and the tag row. Focused, it wears the pink edge
+ * and mint diagonal band, and the tag row. A game that needs a download
+ * before its first launch closes the row with an orange DOWNLOAD tag and
+ * the size when Korri knows it. Focused, it wears the pink edge
  * and the two red triangles that point at it; at an end of the band, the
  * triangle with nothing beyond it dims.
  *
@@ -53,6 +66,7 @@ export function ZoneCard({
   places,
   resumable = false,
   art,
+  download,
   focused = false,
   position = "middle",
   size = "focus",
@@ -86,7 +100,7 @@ export function ZoneCard({
       <span className="zone-card-body">
         <span className="zone-card-title" ref={heading}>{title}</span>
         <i aria-hidden="true" className="zone-card-stripe" />
-        <ZoneTagRow tags={cardTags({ title, system, places, resumable })} />
+        <ZoneTagRow tags={cardTags({ title, system, places, resumable, download })} />
       </span>
     </button>
   )

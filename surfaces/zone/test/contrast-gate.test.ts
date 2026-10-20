@@ -61,6 +61,7 @@ const PAIRS: readonly (readonly [ink: string, ground: string, floor: number])[] 
   ["--zone-tag-dark-ink", "--zone-tag-saved", LARGE],
   ["--zone-tag-dark-ink", "--zone-tag-open", LARGE],
   ["--zone-tag-dark-ink", "--zone-tag-continue", LARGE],
+  ["--zone-tag-dark-ink", "--zone-tag-download", LARGE],
   ["--zone-save-header-ink", "--zone-save-header-band", LARGE],
   ["--zone-timer-label", "--zone-panel", LARGE],
   ["--zone-badge-strength", "--zone-panel", LARGE],

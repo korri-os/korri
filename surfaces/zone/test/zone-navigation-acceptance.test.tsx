@@ -462,6 +462,52 @@ describe("status", () => {
     expect(focusedText()).toContain("Spelunky")
   })
 
+  test("C33 download", () => {
+    const needing = withGames(GAMES.map(game =>
+      game.id === "hollow" ? { ...game, download: { bytes: 1_500_000_000 } }
+        : game.id === "spelunky" ? { ...game, download: {} }
+        : game))
+    const { host, publish } = mount(needing)
+    const tags = (title: string) => [...button(title).querySelectorAll(".zone-tag")].map(tag => tag.textContent)
+    const facts = () => document.querySelector(".zone-games-facts")?.textContent ?? ""
+    // The card says so, with Korri's size formatted; a size Korri does not know is the word alone.
+    expect(tags("Hollow Knight")).toEqual(["Switch", "Here", "Download 1.5 GB"])
+    expect(tags("Spelunky")).toEqual(["PC", "Here", "zao", "Download"])
+    expect(tags("Celeste Classic")).not.toContain("Download")
+    // The facts line under the band adds it for the focused game.
+    moveTo(button("Hollow Knight"))
+    expect(facts()).toBe("Download1.5 GB")
+    expect(document.querySelector(".zone-games-facts")?.hasAttribute("data-empty")).toBe(false)
+    moveTo(button("Spelunky"))
+    expect(facts()).toBe("Download")
+    moveTo(button("Celeste Classic"))
+    expect(facts()).not.toContain("Download")
+    // Nothing else changes: A launches as before, and the portal raises its question.
+    moveTo(button("Hollow Knight"))
+    confirm()
+    expect(calls(host)).toEqual([["launchGame", "hollow"]])
+    publish({
+      ...needing,
+      status: {
+        _tag: "Confirm",
+        kicker: "Needs a download",
+        detail: "FEX rootfs and Proton-CachyOS, 1.5 GB",
+        gameId: "hollow",
+        actions: [
+          { id: "acquisition:1:download", label: "Download", enabled: true },
+          { id: "acquisition:1:cancel", label: "Cancel", enabled: true },
+        ],
+      },
+    })
+    expect(focusedText()).toBe("Download")
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "acquisition:1:download"])
+    // Korri fetched it: the game no longer carries `download`, and the tag and fact go.
+    publish(withGames(GAMES))
+    expect(tags("Hollow Knight")).toEqual(["Switch", "Here"])
+    expect(facts()).not.toContain("Download")
+  })
+
   test("C10 reload", () => {
     const { host, publish } = mount()
     publish({ ...HOME, catalog: { _tag: "Error", message: "The disk did not answer." } })

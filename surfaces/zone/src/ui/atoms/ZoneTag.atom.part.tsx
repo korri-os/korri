@@ -1,7 +1,7 @@
 import { ZoneTag } from "./ZoneTag"
 
 export const name = "Tag"
-export const note = "A coloured slab with caps: system, HERE, a remote device, SAVED, OPEN, CONTINUE"
+export const note = "A coloured slab with caps: system, HERE, a remote device, SAVED, OPEN, CONTINUE, DOWNLOAD"
 
 export default function Default() {
   return <ZoneTag kind="system" label="PICO-8" />
@@ -35,6 +35,11 @@ export function Open() {
 /** The continue mark: white with black ink, as the NEW header. */
 export function Continue() {
   return <ZoneTag kind="continue" label="Continue" />
+}
+
+/** A game that needs a download before it launches: orange with black ink, the size beside the word. */
+export function Download() {
+  return <ZoneTag kind="download" label="Download 1.5 GB" />
 }
 
 /** A tag cut on its right, as the first of a row. */

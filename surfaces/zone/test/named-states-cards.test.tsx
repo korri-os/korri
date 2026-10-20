@@ -39,6 +39,7 @@ describe("ZoneTag", () => {
     ["First", "GBA", "system"],
     ["Middle", "Here", "here"],
     ["LongText", "hummingbird-lake-living-room", "remote"],
+    ["Download", "Download 1.5 GB", "download"],
   ])("%s reads %s as a %s tag", (state, text, kind) => {
     const State = (tag as Part)[state] as ComponentType
     render(<State />)
@@ -61,7 +62,7 @@ describe("ZoneTag", () => {
 
   test("every state is covered", () => {
     expect(statesOf(tag as Part).map(([key]) => key).sort()).toEqual(
-      ["Continue", "First", "Here", "LongText", "Middle", "Open", "Remote", "Saved", "System"].sort(),
+      ["Continue", "Download", "First", "Here", "LongText", "Middle", "Open", "Remote", "Saved", "System"].sort(),
     )
   })
 })
@@ -217,9 +218,20 @@ describe("ZoneCard", () => {
     expect(cardNode().tagName).toBe("BUTTON")
   })
 
+  test("Download: Hollow Knight closes its row with DOWNLOAD and Korri's size, formatted", () => {
+    render(<card.Download />)
+    expect(tagsIn()).toEqual(["Switch", "Here", "Download 1.5 GB"])
+    expect(screen.getByText("Download 1.5 GB").getAttribute("data-kind")).toBe("download")
+  })
+
+  test("DownloadUnknownSize: DOWNLOAD alone after two places; every tag kept", () => {
+    render(<card.DownloadUnknownSize />)
+    expect(tagsIn()).toEqual(["PC", "Here", "zao", "Download"])
+  })
+
   test("every state is covered", () => {
     expect(statesOf(card as Part).map(([key]) => key).sort()).toEqual(
-      ["First", "FocusedTwoPlace", "Last", "LongTitle", "NoCover", "Resumable", "SideSize", "UnfocusedOnePlace"].sort(),
+      ["Download", "DownloadUnknownSize", "First", "FocusedTwoPlace", "Last", "LongTitle", "NoCover", "Resumable", "SideSize", "UnfocusedOnePlace"].sort(),
     )
   })
 })

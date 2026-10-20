@@ -1,6 +1,7 @@
 import "./ZoneGames.css"
 import type { SurfaceAction, SurfaceNetworkConnection, SurfaceSettingItem } from "@contracts/surface/korri-surface"
 import { useLayoutEffect, useRef } from "react"
+import { formatZoneBytes } from "../plan/bytes"
 import { ZoneButton } from "../ui/atoms/ZoneButton"
 import { ZoneCaps } from "../ui/atoms/ZoneCaps"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
@@ -39,6 +40,8 @@ export interface ZoneGamesFacts {
   readonly lastPlayedAt?: number
   readonly playCount?: number
   readonly playtime?: { readonly hours: number; readonly minutes: number }
+  /** Korri's `download`: the first launch fetches something; `bytes` when known. */
+  readonly download?: { readonly bytes?: number }
 }
 
 export interface ZoneGamesFind {
@@ -249,6 +252,9 @@ export function ZoneGames(props: ZoneGamesProps) {
     ...(facts.lastPlayedAt === undefined ? [] : [["Last played", day(facts.lastPlayedAt)] as const]),
     ...(facts.playCount === undefined ? [] : [["Plays", String(facts.playCount)] as const]),
     ...(facts.playtime === undefined ? [] : [["Time", hoursAndMinutes(facts.playtime)] as const]),
+    // DOWNLOAD and its size, or the word alone when Korri does not know it.
+    ...(facts.download === undefined ? []
+      : [["Download", facts.download.bytes === undefined ? undefined : formatZoneBytes(facts.download.bytes)] as const]),
   ]
 
   const tabsSlot = (
@@ -335,7 +341,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                         {factLines.map(([label, value]) => (
                           <span className="zone-games-fact" key={label}>
                             <span className="zone-games-fact-label">{label}</span>
-                            <ZoneCaps>{value}</ZoneCaps>
+                            {value === undefined ? null : <ZoneCaps>{value}</ZoneCaps>}
                           </span>
                         ))}
                       </span>
