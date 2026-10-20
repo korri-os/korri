@@ -1,147 +1,188 @@
-/* The blue panel. Headline, body, buttons: the body is the one row that
- * gives way, so the buttons stay on screen however long Korri's reason is. */
+/* The sky panel. Headline, body, buttons: the body is the one row that
+ * gives way, so the buttons stay on screen however long Korri's reason is.
+ * Every length is whole art px. */
 .zone-dialog {
-  --zone-dialog-type-headline: clamp(calc(var(--zone-type-dialog-line) * var(--zone-px)), 4cqi, calc(var(--zone-type-dialog-headline) * var(--zone-px)));
-  --zone-dialog-type-line: clamp(calc(var(--zone-type-note) * var(--zone-px)), 2.6cqi, calc(var(--zone-type-dialog-line) * var(--zone-px)));
-  --zone-dialog-type-button: clamp(calc(var(--zone-type-row) * var(--zone-px)), 3.6cqi, calc(var(--zone-type-dialog-button) * var(--zone-px)));
-  --zone-dialog-space: clamp(calc(var(--zone-row-space) * var(--zone-px)), 5cqb, calc(var(--zone-dialog-pad) * var(--zone-px)));
-  --zone-dialog-shape: polygon(
-    calc(var(--zone-slant) * var(--zone-px)) 0,
-    100% 0,
-    calc(100% - calc(var(--zone-slant) * var(--zone-px))) 100%,
-    0 100%
-  );
+  --zone-dialog-space: calc(var(--zone-dialog-gap) * var(--zone-px));
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template: auto minmax(0, 1fr) auto / minmax(0, 1fr);
+  justify-items: center;
   row-gap: var(--zone-dialog-space);
   width: 100%;
   max-height: 100%;
-  padding: var(--zone-dialog-space) calc(calc(var(--zone-dialog-pad) * var(--zone-px)) + calc(var(--zone-slant) * var(--zone-px)));
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-width: none;
+  padding: calc(var(--zone-dialog-pad-block) * var(--zone-px)) calc(var(--zone-dialog-pad) * var(--zone-px));
+  overflow: hidden;
   background: var(--zone-dialog-panel);
   color: var(--zone-cap);
   text-align: center;
 }
 
-/* The two black wedges, cut from the top-left and bottom-right corners.
- * They sit under the words, so a long line may run across them. */
+/* A line as wide as the panel and no height: the fit watches it, since the
+ * panel's own height moves as its type steps. */
+.zone-dialog-ruler {
+  position: absolute;
+  inset: 0 0 auto;
+  display: block;
+  height: 0;
+  pointer-events: none;
+}
+
+/* The two black wedges, each a right-angled stair in its corner of the
+ * panel (useZoneDialogShape cuts them on the art grid; until measured they
+ * are smooth). They sit under the words, so a line may run across them,
+ * white on black inside its own black ring. */
 .zone-dialog-wedge {
   position: absolute;
+  inset: 0;
   z-index: -1;
-  width: var(--zone-dialog-wedge-reach);
-  height: var(--zone-dialog-wedge-depth);
   background: var(--zone-dialog-wedge);
   pointer-events: none;
 }
 
-.zone-dialog-wedge-start {
-  top: 0;
-  left: 0;
-  clip-path: polygon(0 0, 100% 0, 0 100%);
+.zone-dialog-wedge[data-wedge="start"] {
+  clip-path: var(--zone-dialog-wedge-start-shape, polygon(0 0, 40% 0, 0 78%));
 }
 
-.zone-dialog-wedge-end {
-  right: 0;
-  bottom: 0;
-  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+.zone-dialog-wedge[data-wedge="end"] {
+  clip-path: var(--zone-dialog-wedge-end-shape, polygon(100% 22%, 100% 100%, 60% 100%));
 }
 
+/* The headline: white caps-2, a whole step smaller when its line is too
+ * narrow (useZoneFit), and only then wrapping between words. */
 .zone-dialog-headline {
+  max-width: 100%;
   margin: 0;
   font: inherit;
-  font-size: var(--zone-dialog-type-headline);
-  line-height: 1.05;
-  overflow-wrap: normal;
+  font-size: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
+  line-height: 1;
+  white-space: nowrap;
 }
 
-/* Korri's reason, line by line. It scrolls when the panel is short, and
- * keeps one line's height so a short panel still shows there is a reason. */
+.zone-dialog-headline[data-zone-fit-floor] {
+  white-space: normal;
+}
+
+/* Korri's lines: Jersey 10 as written, the warm white inside a black ring
+ * one art px wide, at most about 52 characters a line. They scroll when the panel is short, and keep one line's height
+ * so a short panel still shows there is a reason. */
 .zone-dialog-body {
-  min-height: calc(var(--zone-dialog-type-line) * 1.3);
+  max-width: 100%;
+  min-height: calc(var(--zone-dialog-line-leading) * var(--zone-px));
   overflow-y: auto;
   scrollbar-width: none;
-  font-size: var(--zone-dialog-type-line);
-  line-height: 1.3;
+}
+
+.zone-dialog-line,
+.zone-dialog-title[data-case="verbatim"] {
+  /* The ring at this element's own art pixel (a dialog in a part frame has
+   * a smaller one than the screen around it). */
+  --zone-dialog-ring: calc(var(--zone-cap-outline) * var(--zone-px));
+  text-shadow:
+    calc(var(--zone-dialog-ring) * -1) calc(var(--zone-dialog-ring) * -1) 0 var(--zone-ink-white-outline),
+    0 calc(var(--zone-dialog-ring) * -1) 0 var(--zone-ink-white-outline),
+    var(--zone-dialog-ring) calc(var(--zone-dialog-ring) * -1) 0 var(--zone-ink-white-outline),
+    calc(var(--zone-dialog-ring) * -1) 0 0 var(--zone-ink-white-outline),
+    var(--zone-dialog-ring) 0 0 var(--zone-ink-white-outline),
+    calc(var(--zone-dialog-ring) * -1) var(--zone-dialog-ring) 0 var(--zone-ink-white-outline),
+    0 var(--zone-dialog-ring) 0 var(--zone-ink-white-outline),
+    var(--zone-dialog-ring) var(--zone-dialog-ring) 0 var(--zone-ink-white-outline);
 }
 
 .zone-dialog-line {
-  margin: 0;
+  max-inline-size: var(--zone-dialog-measure);
+  margin: 0 auto;
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) * var(--zone-px));
+  line-height: calc(var(--zone-dialog-line-leading) * var(--zone-px));
+  color: var(--zone-dialog-line-ink);
+  text-transform: none;
   overflow-wrap: break-word;
   hyphens: auto;
 }
 
-/* The game the trouble belongs to, in yellow. */
+/* The game the trouble belongs to, in the HUD's yellow caps-1, wrapping
+ * between words. */
 .zone-dialog-title {
-  margin: calc(var(--zone-row-space) * var(--zone-px)) 0 0;
-  color: var(--zone-dialog-title-ink);
-  --zone-caps-shade: currentColor;
-  overflow-wrap: normal;
+  margin: calc(var(--zone-dialog-gap) * var(--zone-px)) 0 0;
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+  line-height: 1;
 }
 
-/* A key keeps its own case. */
+/* A key keeps its own case: Jersey 10 in the HUD's yellow. A key is one
+ * long fact, so it may break at a line's end. */
 .zone-dialog-title[data-case="verbatim"] {
   font-family: var(--zone-font-fact);
-  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
+  font-size: calc(var(--zone-fact) * var(--zone-px));
+  line-height: calc(var(--zone-dialog-line-leading) * var(--zone-px));
+  color: var(--zone-dialog-title-ink);
   text-transform: none;
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
-/* NO and YES, or the one way out. They wrap to two rows before either
- * shrinks below its least width. */
+/* NO and YES, or Korri's actions: one row at caps-2, then caps-1, and only
+ * then a second row; no button ever shrinks under its words. The row keeps
+ * clear of the bottom-right wedge at its widest (its leg is never more than
+ * --zone-dialog-wedge-reach of the width): a slab's top-right corner is its
+ * rightmost point, and the wedge reaches its leg less the row's height and
+ * the panel's foot there, so no black slab stands on black. The clearance
+ * reads no measurement, so the buttons cannot move the wedges that move
+ * them. */
 .zone-dialog-actions {
+  --zone-dialog-actions-clear: calc((var(--zone-dialog-pad-block) + var(--zone-drop-focus) + var(--zone-slab-pad) * 2) * var(--zone-px) + 1em);
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
   gap: var(--zone-dialog-space) calc(var(--zone-dialog-button-gap) * var(--zone-px));
-  font-size: var(--zone-dialog-type-button);
+  max-width: 100%;
+  margin-right: max(0%, var(--zone-dialog-wedge-reach) - var(--zone-dialog-actions-clear));
+  padding-bottom: calc(var(--zone-drop-focus) * var(--zone-px));
+  font-size: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
 }
 
-/* A button: caps with the blue edge on a black parallelogram. */
+.zone-dialog-actions[data-zone-fit-floor] {
+  flex-wrap: wrap;
+}
+
+/* A button: its black slab (ZoneSlab) as big as the button, leaning as far
+ * as it is tall, the lit one on the pink drop, 3 art px deep. */
 .zone-dialog-action {
+  --zone-dialog-action-pad: calc(var(--zone-slab-pad) * var(--zone-px));
   position: relative;
   isolation: isolate;
-  flex: 0 1 auto;
-  min-width: min(calc(var(--zone-dialog-button-width) * var(--zone-px)), 100%);
-  padding: var(--zone-dialog-space) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)) * 2);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  padding: var(--zone-dialog-action-pad) calc(1em + var(--zone-dialog-action-pad) * 2 + calc(var(--zone-panel-pad) * var(--zone-px)));
   line-height: 1;
-  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
+  min-width: calc(var(--zone-dialog-button-width) * var(--zone-px));
+  max-width: 100%;
+  --zone-underline-depth: var(--zone-drop-focus);
   transition: translate var(--zone-press-time) var(--zone-bounce);
-}
-
-.zone-dialog-action::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--zone-panel);
-  clip-path: var(--zone-dialog-shape);
-}
-
-/* The lit one: the pink underline, offset down and left. */
-.zone-dialog-action[data-focused]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  background: var(--zone-focus);
-  clip-path: var(--zone-dialog-shape);
-  translate: calc(calc(var(--zone-drop) * var(--zone-px)) * -1) calc(var(--zone-drop) * var(--zone-px));
 }
 
 .zone-dialog-action:active {
   translate: calc(var(--zone-press-sink) * var(--zone-px)) calc(var(--zone-press-sink) * var(--zone-px));
 }
 
-/* Present but inert: Korri's rule is dimmed, never hidden. */
+/* Present but inert: Korri's rule is drawn in the inert grey-blue, never
+ * hidden and never see-through. */
 .zone-dialog-action:disabled {
-  opacity: var(--zone-triangle-dim);
+  color: var(--zone-inert-ink);
+  --zone-caps-shade: currentColor;
 }
 
-/* A destructive action's caps are red, as the busy strip's are. */
-.zone-dialog-action[data-destructive] {
-  color: var(--zone-destructive-ink);
-  --zone-caps-shade: currentColor;
+/* M4's closing copy (useZoneDialogMotion): pinned where the dialog stood,
+ * over the page, deaf to the pointer, gone when its frames end. */
+.zone-dialog[data-leaving] {
+  position: absolute;
+  top: var(--zone-dialog-leave-y);
+  left: var(--zone-dialog-leave-x);
+  z-index: var(--zone-dialog-leave-layer);
+  width: var(--zone-dialog-leave-w);
+  height: var(--zone-dialog-leave-h);
+  max-height: none;
+  margin: 0;
+  pointer-events: none;
 }

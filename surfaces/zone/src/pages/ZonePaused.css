@@ -1,13 +1,9 @@
-/* The page is its own size container. Height sets the band; width sets the
- * wedge: at least its least width (all of a narrow page), at most its share
- * of a wide one. The rows always clear the band. */
+/* The page is its own size container. Its band, its wedge and the rows'
+ * column come from planPaused (useZonePausedPlan writes them as custom
+ * properties); until the page is measured they fall back to shares. */
 .zone-paused {
-  --zone-paused-band-h: clamp(calc(var(--zone-paused-band-min) * var(--zone-px)), 19cqb, calc(var(--zone-paused-band-max) * var(--zone-px)));
-  --zone-paused-band-cut: min(calc(var(--zone-paused-band-h) * var(--zone-paused-band-lean)), 15cqi);
-  --zone-paused-wedge-w: clamp(min(100cqi, calc(var(--zone-paused-wedge-min) * var(--zone-px))), calc(var(--zone-paused-wedge-share) * 100cqi), 100cqi);
-  --zone-paused-wedge-cut: calc(var(--zone-paused-wedge-w) * var(--zone-paused-wedge-lean));
-  --zone-paused-margin: clamp(calc(var(--zone-strip-margin-min) * var(--zone-px)), 3cqi, calc(var(--zone-strip-margin) * var(--zone-px)));
-  --zone-paused-row-type: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), min(4.4cqi, 6cqb), calc(var(--zone-type-paused-row) * var(--zone-px)));
+  --zone-paused-margin: calc(var(--zone-paused-edge) * var(--zone-px));
+  --zone-paused-band-at: var(--zone-paused-band-h, 25cqb);
   position: relative;
   width: 100%;
   height: 100%;
@@ -15,28 +11,39 @@
   container: zone-paused / size;
 }
 
-/* The game stand-in: the ground drained of colour, with a hard stripe
- * field over it. */
+/* The game's stand-in, in grey: a checker of 16 art px squares, and over
+ * it the running game's own art drained of colour, when there is art. */
 .zone-paused-behind {
   position: absolute;
   inset: 0;
-  background: var(--zone-ground);
-  filter: grayscale(1);
 }
 
-.zone-paused-stripes {
+.zone-paused-checker {
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(
-    var(--zone-paused-stripe-angle),
-    var(--zone-paused-stripe) 0% 2%,
-    transparent 2% 4%
-  );
-  opacity: var(--zone-paused-stripe-opacity);
+  display: block;
+  background: conic-gradient(
+    var(--zone-paused-checker-dark) 0% 25%,
+    var(--zone-paused-checker-light) 25% 50%,
+    var(--zone-paused-checker-dark) 50% 75%,
+    var(--zone-paused-checker-light) 75% 100%
+  ) 0 0 / calc(var(--zone-paused-checker) * 2 * var(--zone-px)) calc(var(--zone-paused-checker) * 2 * var(--zone-px));
 }
 
-/* The red band across the top-left, cut on Mania's diagonal. It is at
- * least its share of the page and widens for a long title, up to the page. */
+.zone-paused-art {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(1);
+  image-rendering: pixelated;
+}
+
+/* The red band across the top-left, its right end a 45 degree stair. It
+ * is at least its share of the page and widens for a long title, up to the
+ * page. */
 .zone-paused-band {
   position: absolute;
   top: 0;
@@ -45,83 +52,158 @@
   display: flex;
   align-items: center;
   width: fit-content;
-  min-width: clamp(min(100cqi, calc(var(--zone-paused-band-least) * var(--zone-px))), calc(var(--zone-paused-band-share) * 100cqi), 100cqi);
+  min-width: min(100cqi, calc(var(--zone-paused-band-share) * 100cqi));
   max-width: 100cqi;
-  height: var(--zone-paused-band-h);
-  padding: 0 calc(var(--zone-paused-band-cut) + var(--zone-paused-margin)) 0 var(--zone-paused-margin);
+  height: var(--zone-paused-band-at);
+  padding: 0 calc(var(--zone-paused-band-at) + var(--zone-paused-margin)) 0 var(--zone-paused-margin);
   background: var(--zone-paused-band);
-  clip-path: polygon(0 0, 100% 0, calc(100% - var(--zone-paused-band-cut)) 100%, 0 100%);
-  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
+  clip-path: var(--zone-panel-shape, polygon(0 0, 100% 0, calc(100% - var(--zone-paused-band-at)) 100%, 0 100%));
 }
 
+/* The title: caps-3, stepping to caps-2 then caps-1 when the band is too
+ * narrow, and only then wrapping between words. Its black slab (ZoneSlab)
+ * starts 4 art px under the cap's top (the cap stands from 0.2 of its 1.4
+ * line), so the caps rise over it, and leans as far as it is tall. */
 .zone-paused-title {
+  --zone-paused-overhang-at: calc(var(--zone-paused-overhang) * var(--zone-px));
+  --zone-paused-slab-foot-at: calc(var(--zone-paused-slab-foot) * var(--zone-px));
+  --zone-slab-top: calc(0.2em + var(--zone-paused-overhang-at));
+  position: relative;
+  isolation: isolate;
   display: flex;
   min-width: 0;
+  max-width: 100%;
   margin: 0;
+  padding: 0 calc(1.2em - var(--zone-paused-overhang-at) + var(--zone-paused-slab-foot-at) + calc(var(--zone-panel-pad) * var(--zone-px))) var(--zone-paused-slab-foot-at);
   font: inherit;
-  font-size: clamp(calc(var(--zone-type-paused-title-min) * var(--zone-px)), min(calc(var(--zone-paused-band-h) * 0.5), 9cqi), calc(var(--zone-type-paused-title) * var(--zone-px)));
+  font-size: calc(var(--zone-caps-3) * var(--zone-px) * var(--zone-fit, 1));
+  line-height: 1;
+  white-space: nowrap;
 }
 
-/* The yellow wedge: full height on the right, its left edge on the slant. */
+.zone-paused-title[data-zone-fit-floor] {
+  white-space: normal;
+}
+
+.zone-paused-title-text {
+  min-width: 0;
+}
+
+/* The yellow wedge: a triangle standing in the bottom-right corner, its
+ * long edge a 45 degree stair (planPaused's leg, cut by zoneStairWedge).
+ * It holds the rows' column. */
 .zone-paused-wedge {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 1;
-  width: var(--zone-paused-wedge-w);
-  background: var(--zone-paused-wedge);
-  clip-path: polygon(var(--zone-paused-wedge-cut) 0, 100% 0, 100% 100%, 0 100%);
-  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
 }
 
-/* The rows' column: under the band, right of the slant's top, sitting at
- * the bottom when few and scrolling when many. A row scrolled up passes
- * under the band; the focused one is always brought out below it. */
-.zone-paused-list {
+.zone-paused-wedge::before {
+  content: "";
   position: absolute;
   inset: 0;
+  background: var(--zone-paused-wedge);
+  clip-path: var(--zone-paused-wedge-shape, polygon(100% 4%, 100% 100%, calc(100% - 96cqb) 100%));
+  pointer-events: none;
+}
+
+/* The rows' column: under the band, from planPaused's left to the right
+ * margin, resting at the bottom when few and scrolling when many. A row
+ * scrolled up is cut on one straight line under the band, so the cut row
+ * says there is more; the focused one is always brought into view. */
+.zone-paused-list {
+  position: absolute;
+  inset: calc(var(--zone-paused-band-at) + var(--zone-paused-margin)) 0 0 var(--zone-paused-rows-left, 40cqi);
   display: flex;
   flex-direction: column;
-  padding:
-    calc(var(--zone-paused-band-h) + var(--zone-paused-margin))
-    calc(var(--zone-paused-margin) + calc(var(--zone-drop) * var(--zone-px)))
-    calc(var(--zone-paused-margin) * 2 + calc(var(--zone-drop) * var(--zone-px)) + calc(var(--zone-type-hint-wide) * var(--zone-px)) * var(--zone-keycap-scale))
-    calc(var(--zone-paused-wedge-cut) * var(--zone-paused-list-inset));
+  padding: 0 var(--zone-paused-margin) calc(var(--zone-paused-margin) + calc(var(--zone-drop-focus) * var(--zone-px)) + var(--zone-paused-rows-foot, 0%));
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
-  scroll-padding: calc(var(--zone-paused-band-h) + var(--zone-paused-margin)) 0 var(--zone-paused-margin);
+  scroll-padding: 0 0 var(--zone-paused-margin);
 }
 
-/* Auto margin above, so a short list rests at the bottom and a long one
- * still scrolls from its first row. */
+/* The rows at caps-2, a whole step smaller together when the column is
+ * too narrow (useZoneFit). Auto margin above, so a short list rests at the
+ * bottom and a long one still scrolls from its first row. One em is one
+ * cap, the stair's step. */
 .zone-paused-rows {
+  --zone-paused-row-type: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
+  --zone-paused-steps: 0;
   display: grid;
   gap: calc(var(--zone-paused-row-gap) * var(--zone-px));
   margin-top: auto;
-  padding-left: calc(var(--zone-drop) * var(--zone-px));
+  font-size: var(--zone-paused-row-type);
+}
+
+/* Above caps-1 each row holds one line, so a row too narrow overflows and
+ * the fit steps the caps down; at caps-1 rows wrap (the rows' default). */
+.zone-paused-rows:not([data-zone-fit-floor]) {
+  --zone-paused-label-wrap: nowrap;
+  --zone-paused-face-wrap: nowrap;
+}
+
+.zone-paused-rows[data-steps="1"] {
+  --zone-paused-steps: 1;
+}
+
+.zone-paused-rows[data-steps="2"] {
+  --zone-paused-steps: 2;
+}
+
+.zone-paused-rows[data-steps="3"] {
+  --zone-paused-steps: 3;
+}
+
+.zone-paused-rows[data-steps="4"] {
+  --zone-paused-steps: 4;
 }
 
 .zone-paused-group {
   display: grid;
   gap: calc(var(--zone-paused-row-gap) * var(--zone-px));
-  margin-top: calc(var(--zone-paused-row-gap) * var(--zone-px));
 }
 
+/* A group's label: Korri's word on a blue tag in caps-1, on the stair. */
 .zone-paused-group-label {
+  --zone-paused-step: 0;
   display: flex;
   min-width: 0;
-  margin: 0;
+  margin: calc(var(--zone-paused-row-gap) * var(--zone-px)) calc(var(--zone-paused-step) * 1em) 0 calc((var(--zone-paused-steps) - var(--zone-paused-step)) * 1em);
   font: inherit;
-  font-size: calc(var(--zone-paused-row-type) * var(--zone-paused-group-scale));
+  font-size: inherit;
 }
 
-.zone-paused-group-text {
+.zone-paused-group-label[data-step="1"] {
+  --zone-paused-step: 1;
+}
+
+.zone-paused-group-label[data-step="2"] {
+  --zone-paused-step: 2;
+}
+
+.zone-paused-group-label[data-step="3"] {
+  --zone-paused-step: 3;
+}
+
+.zone-paused-group-label[data-step="4"] {
+  --zone-paused-step: 4;
+}
+
+/* The tag: Korri's word in caps-1 on a blue slab, wrapping between words
+ * rather than losing any. */
+.zone-paused-group-tag {
+  --zone-slab-colour: var(--zone-panel-blue);
+  --zone-paused-tag-pad: calc(var(--zone-slab-pad) * var(--zone-px));
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
   min-width: 0;
-  overflow-wrap: normal;
+  max-width: 100%;
+  padding: var(--zone-paused-tag-pad) calc(1em + var(--zone-paused-tag-pad) * 2 + calc(var(--zone-panel-pad) * var(--zone-px)));
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+  line-height: 1;
   white-space: normal;
-  line-height: 1.05;
 }
 
 /* B BACK, bottom-left over the grey. */
@@ -133,7 +215,8 @@
   display: flex;
 }
 
-/* The question: the dialog over everything, in the page's middle. */
+/* The question: the page under the veil, the sky dialog from edge to edge
+ * across its middle. */
 .zone-paused-question {
   position: absolute;
   inset: 0;
@@ -141,7 +224,5 @@
   display: grid;
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   align-items: center;
-  padding: var(--zone-paused-margin)
-    max(var(--zone-paused-margin), calc((100cqi - calc(var(--zone-layer-dialog-width) * var(--zone-px))) / 2));
-  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
+  padding: var(--zone-paused-margin) 0;
 }

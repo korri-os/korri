@@ -644,20 +644,24 @@ model's message, and the model's `update` returns `ZoneRequest`s.
 | `pages/ZoneOnboarding` (+ `ZoneControllerCard`) | `onboarding.ts` (`updateOnboarding`) | `onboarding`, `network`, `settings`, `settingsStatus` | C25 |
 
 - **Status layer.** Takes the page as its `page` prop and covers it:
-  nothing while Browsing; Busy drops the busy strip over the dimmed, inert
-  page with the game's title in yellow above it; Running is a small strip
-  at the top (kicker, OPEN, title) that leaves the page usable; Problem is
-  the blue dialog, DISMISS lit before RETRY; Confirm is the same dialog
-  with Korri's own actions in its order, the first lit, Back answering
-  nothing. Busy with Korri's progress draws a red slanted meter under the
-  detail. Korri's Problem never offers
-  a reload. C10 is RELOAD in the catalog's Error dialog on GAMES: the
-  page reports `ChoseReload` and navigation asks `Reload`. The SYSTEM
+  nothing while Browsing; Busy puts the page under the veil (a 1-art-px
+  black dither, `ZoneVeil`) and inert, with the busy strip over it and the
+  game's title in the HUD's yellow on a black tab; Running is a HUD stack
+  at the top left under the page's header (kicker, title, OPEN) that
+  leaves the page usable; Problem is the sky dialog, DISMISS lit before
+  RETRY; Confirm is the same dialog with Korri's own actions in its order,
+  the first lit, Back answering nothing. Busy with Korri's progress draws
+  SPECIAL STAGE's 4-art-px meter under the detail. A `stage` (the launch
+  title card) stands over the veil and under the status's panels; the
+  busy strip then stands at its foot (`busyAt`). Korri's Problem never
+  offers a reload. C10 is RELOAD in the catalog's Error dialog on GAMES:
+  the page reports `ChoseReload` and navigation asks `Reload`. The SYSTEM
   group lists Korri's own device actions and has no reload of its own.
-- **PAUSED.** The red band with Korri's title (PAUSED when absent), the
-  ground greyed and striped as the game's stand-in, the yellow wedge of
-  flat controls then groups. Left and right arrive as the portal's
-  `korri-semantic-direction` event on rows marked
+- **PAUSED.** The red band with Korri's title (PAUSED when absent) in
+  caps-3 rising over its slab, the running game's art in grey behind it
+  (else a grey checker), the yellow 45 degree wedge with Korri's controls
+  then groups stepping down-left along it. Left and right arrive as the
+  portal's `korri-semantic-direction` event on rows marked
   `data-korri-horizontal-control`, never as keys.
 - **First boot.** CONTROLLERS, WI-FI, NAME, IDENTITY under a strip of four
   tags; NEXT on the first three, FINISH on the last. The controller cards'
@@ -1341,3 +1345,141 @@ New pieces: `ZoneEmblem` (Zone's own 16x16 drawings), `ZoneStepStrip`,
 - **The WI-FI step's group keeps its WI-FI title** under a banner that
   now also says WI-FI. The brief allows no new strings; a second word for
   the group would be one. Left as is, noted as a duplicate.
+
+## The pixel refinement: the layers (refine-layers)
+
+PAUSED, the status layer (Busy with progress, Running, Problem, Confirm)
+and the sky dialog in the refinement's register (REFINEMENT.md 3, 4 and
+M4 of 2d). Parts: `ZoneStatusLayer` (`RunningUnderHeader`,
+`BusyUnderStage`, `ConfirmOverStage`, `OpenAndClose` beside the old
+states), `ZonePaused` (`OnTheGame`, `OnTheCover`), and the new atoms
+`ZoneVeil`, `ZoneWords`, `ZoneSlab`.
+
+### Decided without asking: the layers' refinement
+
+- **The veil is an atom, `ZoneVeil`.** A conic hard-stop checker on a
+  2-art-px tile: half the page's pixels black, none blended. The status
+  layer draws it over the page under Busy, Problem and Confirm (it
+  replaces the flat 55% sheet and its tokens), and PAUSED draws it under
+  its NO / YES question. A page's own dialogs (OPTIONS, GAME OPTS., SAVE
+  DATA) are their workers'; `ZoneVeil` is there for them.
+- **Caps that wrap are one text, `ZoneWords`.** A headline, a title on a
+  tab or a PAUSED label must wrap between words once its caps are at
+  caps-1, and `ZoneCaps` is one line by design. `ZoneWords` draws the
+  white, HUD or danger ink over several lines: the ring and drop are a copy
+  under the words and the shade a repeated hard-stop band over them, both
+  generated, both breaking where the words break. Its lines are 1.4 caps
+  apart (the cap from 0.2 to 1.2), so a ring never touches the next line.
+  It is one text node, so `getByText` and a screen reader read it whole.
+- **Slabs behind words are `ZoneSlab`, not `ZonePanel`.** A slab takes no
+  room and sets no padding; its parent leaves the lean's room in ems. A
+  `ZonePanel` re-pads itself from its measured height, and inside a
+  `useZoneFit` that steps the type that set off a ResizeObserver loop
+  (Caliper reported it on every dialog). One line tall a slab is the 45
+  degree parallelogram; once its words wrap it keeps the lean one line
+  deep, its top-left and bottom-right corners cut (`zoneStairChamfer`,
+  `src/plan/slab.ts`), so a wrapped label never shows the wedge through its
+  letters. The busy strip's panel is the same chamfer, cut at most 22 art
+  px (`ZONE_BUSY_CUT`, held equal to `--zone-busy-cut`).
+- **Inert is a colour, not an opacity.** A disabled dialog button, busy
+  action or PAUSED row draws its words in `--zone-inert-ink` (`#84A2B5`,
+  the OPTIONS ring) on its black slab; a disabled destructive control
+  loses the danger ink. No layer is see-through.
+- **The sky dialog spans its layer edge to edge** in the status layer and
+  in PAUSED, as Mania's does. Each wedge's legs are 0.78 of the panel's
+  height and never more than a quarter of its width (`zoneDialogWedgeArt`,
+  measured on the reference: 505 of 645 px). The buttons keep clear of the
+  bottom-right wedge at its widest (`--zone-dialog-wedge-reach`, a quarter
+  of the width, held equal to the plan), so no black slab stands on black.
+  The clearance reads no measurement: an earlier cut read the measured leg,
+  the leg moved with the panel's height, the buttons moved the height, and
+  Caliper reported a ResizeObserver loop. Korri's lines are Jersey 10 as written in
+  the warm white with the screen's black ring, 16 art px apart, at most
+  46ch wide: about 44 to 50 characters of Korri's real sentences a line,
+  under the brief's 52. The headline and the buttons stand at caps-2 and
+  step to caps-1 when they do not fit; only then does the headline wrap and
+  the buttons take a second row. The dialog's fit watches a zero-height
+  ruler the panel's width, since the panel's own height moves as the type
+  steps.
+- **M4 is the Web Animations API, driven by the plan's frames.**
+  `src/plan/dialog.ts` is the render(t): `zoneDialogFrame(t, wArt,
+  phase)`, six hard steps, scaleY from the middle, the wedges travelling
+  from ±the panel's width in whole art px. `useZoneDialogMotion` plays
+  `zoneDialogKeyframes` (each frame held to the next) on open; on close,
+  since React removes the dialog the moment Korri moves on, it copies the
+  panel into `.zone-screen` where it stood (no role, `aria-hidden`,
+  `inert`, deaf to the pointer), plays the close on the copy and removes
+  it. Every dialog in Zone moves this way. No frame clock: the authoring
+  gate's canvas allowance is unchanged. Under reduced motion, and on a box
+  never laid out (a test DOM), neither runs. `OpenAndClose` toggles on T
+  and exposes `window.seek(ms)` for takes. Measured on the takes'
+  filmstrips (100 ms a cell): the open's mid frames fill 1 to 2 cells
+  (180 ms), the close's 1 to 2 (140 ms); `window.seek(95)` holds the open
+  at three sixths and `seek(70)` the close at three sixths; the
+  reduced-motion takes show end states only.
+- **The busy strip has one fit for itself.** The kicker and Korri's
+  actions step to caps-1 together (CANCEL never towers over the kicker),
+  and only then does the kicker wrap and the actions drop under the panel.
+  The meter is 4 art px (`--zone-meter-height` 7 to 4, its least token
+  gone), the fill `#C64100` under a 1-px `#F75131` lip on `#3A313A`, both
+  ends 45 degree stairs; the figures are white caps-1 at its right end,
+  the done size in 56 art px of its own (`--zone-meter-figures`, now art
+  px). The strip is positioned by its parent only.
+- **The launch title card is a `stage`.** `ZoneStatusLayer` takes `stage`
+  (any node) and `busyAt` (`middle` or `foot`, `foot` by default under a
+  stage). The stage stands over the veil and under the busy strip, the
+  problem and the question, so Confirm covers the title card. The games
+  worker passes the card; nothing passes it yet.
+- **The running HUD stands under the page's header.** `useZoneStatusHud`
+  measures the first `header` in the page (the shell's top strip,
+  PAUSED's band) on every render and writes its bottom as
+  `--zone-status-layer-hud-top`; the HUD's kicker is HUD caps-1 on the
+  ground, the title white caps-1 on a black slab (it truncates with "…",
+  the card says it whole), then the OPEN tag. On PAUSED the HUD is off
+  (`runningHud`): the band already names the game.
+- **PAUSED's stand-in is the running game, in grey.** `ZoneSurface`
+  passes `art`: when Korri's status is Running with a `gameId` its catalog
+  lists, that game's `wideArtUrl ?? coverArtUrl`, else nothing. The art
+  covers the page (cropped, never stretched), `grayscale(1)`, drawn
+  `pixelated` because Korri's games are pixel art; under it, always, the
+  checker of 16 art px squares in `#5A5A5A` / `#8C8C8C`, which is all
+  that shows with no art or a picture that fails to load.
+- **PAUSED's layout is `planPaused(wArt, hArt)`** (`src/plan/paused.ts`):
+  the band a quarter of the height (40 to 72 art px); the wedge a
+  right-angled triangle in the bottom-right corner with legs 8 art px
+  short of the height, its edge `zoneStairWedge`; the rows' column from 8
+  art px inside the wedge's corner, at least 200 wide, resting above B
+  BACK when it starts left of the hint's 80 art px.
+- **The rows' stair is anchored at the foot.** Each row stands one cap
+  left of the row above, over at most 4 steps; in a longer list the upper
+  rows stand in line with the top step. A short list rests at the bottom,
+  so the stair is always where it shows, and a long one never walks off
+  the page. Group tags (blue, caps-1, wrapping) take their place on the
+  stair. The rows stand at caps-2 and step to caps-1 together. A scrolled
+  row is cut on one straight line under the band.
+- **PAUSED's lettering overhangs.** Each row's caps and the title rise 4
+  art px over their slab's top edge (`--zone-paused-overhang`). Values
+  (toggle, choice and range labels) are Korri's words in Jersey 10 as
+  written; the range bar is `#C64100` on `#3A313A`; destructive labels keep
+  the danger ink.
+- **Dead tokens went with the old look:** the dim (`--zone-layer-dim`,
+  `-opacity`), the dialog's type and wedge shares, `--zone-type-detail`,
+  PAUSED's band, wedge, stripe and type tokens, `--zone-meter-height-least`.
+- **Shared files touched:** `ZoneSurface.tsx` (two props: PAUSED's `art`
+  from `runningArt(model)`, and `runningHud={shown !== "paused"}`);
+  `zone-tokens.css` (the `refine-layers` block, the meter's and PAUSED
+  meter's values in place, the dead tokens removed);
+  `test/zone-status.test.tsx` (the veil replaces the dim; the yellow
+  title is HUD ink).
+
+### Known gaps, after the layers
+
+- **Pages' own dialogs** (OPTIONS' confirmation, GAME OPTS.' NO / YES,
+  SAVE DATA's steps) now have the sky look and M4, but no veil under them:
+  their pages place them.
+- **The launch title card is not passed yet.** `ZoneStatusLayer` takes
+  `stage` and `busyAt`; the games worker's card is the stage, and
+  `ZoneSurface` passes nothing until that card lands.
+- **The 52-character measure is in `ch`.** Jersey 10 is proportional, so
+  46ch holds 44 to 50 characters of Korri's real sentences; a line of
+  narrow letters (i, l, t) could pass 52.

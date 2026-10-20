@@ -12,14 +12,16 @@ import {
   overlayToggle,
 } from "../fixtures/fixture-layers"
 import { useFixtureDirections } from "../fixtures/fixture-directions"
+import { ZONE_ART_BRAMBLE, ZONE_ART_KNIGHT } from "../fixtures/sample-art"
 import { createOverlayProgram } from "../fixtures/layer-program"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import { ZonePaused } from "./ZonePaused"
 
 export const name = "Paused"
-export const note = "Mania's pause screen: the red band, the greyed ground, the yellow wedge of Korri's controls"
+export const note = "Mania's pause screen: the red band, the running game greyed (or a grey checker), the yellow wedge of Korri's controls stepping down-left"
 
 export const composition = {
+  OnTheGame: [{ part: "src/ui/organisms/ZonePausedControl.organism.part.tsx", state: "default" }],
   default: [
     { part: "src/ui/organisms/ZonePausedControl.organism.part.tsx", state: "default" },
     { part: "src/ui/organisms/ZonePausedControl.organism.part.tsx", state: "Destructive" },
@@ -47,11 +49,14 @@ export const composition = {
 /** Unexported: the real page on the real overlay model, a pretend Korri applying each value. */
 function Scenario({
   overlay,
+  art,
   focus,
   moving,
   asking = false,
 }: {
   readonly overlay: SurfaceGameplayOverlayPresentation
+  /** The running game's art, greyed behind the page. */
+  readonly art?: string
   /** The control the cursor starts on; the first when absent. */
   readonly focus?: string
   /** A range's value ahead of Korri, for the focused control. */
@@ -71,6 +76,7 @@ function Scenario({
   return (
     <ZonePaused
       answer={model.answer}
+      art={art}
       asking={model.asking}
       focusedId={model.focusedId}
       moving={model.moving}
@@ -87,6 +93,16 @@ function Scenario({
 /** CONTINUE, RESTART, EXIT: the cursor on CONTINUE. */
 export default function Default() {
   return <Scenario overlay={overlayDefault} />
+}
+
+/** Korri names the running game and its catalog has wide art: the game stands behind PAUSED in grey. */
+export function OnTheGame() {
+  return <Scenario art={ZONE_ART_BRAMBLE} overlay={overlayDefault} />
+}
+
+/** Only a cover, taller than wide: it fills the page in grey, cropped, never stretched. */
+export function OnTheCover() {
+  return <Scenario art={ZONE_ART_KNIGHT} focus="restart" overlay={overlayDestructive} />
 }
 
 /** A toggle focused: OFF between the red triangles. */

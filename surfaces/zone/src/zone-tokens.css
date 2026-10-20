@@ -429,18 +429,8 @@
   --zone-hint-keycap: 10;
 
   /* The dialog. */
-  /** The headline's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Dialog headline @min 10 @max 30 @step 10 */
-  --zone-type-dialog-headline: 20;
-  /** A body line's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Dialog line @min 10 @max 30 @step 10 */
-  --zone-type-dialog-line: 10;
-  /** A dialog button's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Dialog button @min 10 @max 30 @step 10 */
-  --zone-type-dialog-button: 20;
   /** The room inside the dialog panel. Art px. @label Dialog padding @min 0 @max 80 @step 1 */
   --zone-dialog-pad: 14;
-  /** How far across the panel each black wedge reaches. @label Wedge reach @min 0 @max 50 @step 1 */
-  --zone-dialog-wedge-reach: 26%;
-  /** How far down the panel each black wedge reaches. @label Wedge depth @min 0 @max 100 @step 1 */
-  --zone-dialog-wedge-depth: 72%;
   /** The room between the two buttons. Art px. @label Dialog button gap @min 0 @max 120 @step 1 */
   --zone-dialog-button-gap: 24;
   /** A dialog button's least width. Art px. @label Dialog button width @min 60 @max 400 @step 1 */
@@ -449,8 +439,6 @@
   /* The busy strip. */
   /** The kicker's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Kicker type @min 10 @max 30 @step 10 */
   --zone-type-kicker: 20;
-  /** The detail's caps under the kicker. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Detail type @min 10 @max 30 @step 10 */
-  --zone-type-detail: 10;
   /** The strip's least height. Art px. @label Busy strip height @min 32 @max 140 @step 1 */
   --zone-busy-height: 30;
 
@@ -593,66 +581,30 @@
  * the lines above are untouched. */
 .zone-theme {
   /* The status layer. */
-  /** How much a covered page dims. @label Covered page dim @min 0 @max 1 @step 0.05 */
-  --zone-layer-dim-opacity: 0.55;
   /** The busy strip's widest. Art px. @label Busy strip width @min 320 @max 1600 @step 10 */
   --zone-layer-busy-width: 440;
   /** The problem dialog's widest. Art px. @label Problem dialog width @min 320 @max 1600 @step 10 */
   --zone-layer-dialog-width: 480;
-  /** @label Covered page sheet */
-  --zone-layer-dim: var(--zone-black);
 
   /* PAUSED. */
-  /** The red band's least height. Art px. @label Paused band, least @min 32 @max 200 @step 1 */
-  --zone-paused-band-min: 28;
-  /** The red band's greatest height. Art px. @label Paused band, most @min 40 @max 300 @step 1 */
-  --zone-paused-band-max: 75;
-  /** The band's diagonal cut, as a share of its height. @label Paused band lean @min 0 @max 2 @step 0.05 */
-  --zone-paused-band-lean: 1;
   /** The band's width as a share of the page. @label Paused band share @min 0.2 @max 1 @step 0.01 */
   --zone-paused-band-share: 0.58;
-  /** The band's least width. Art px. @label Paused band, least width @min 120 @max 800 @step 10 */
-  --zone-paused-band-least: 150;
-  /** The yellow wedge's least width (all of a page narrower than it). Art px. @label Paused wedge, least @min 200 @max 900 @step 10 */
-  --zone-paused-wedge-min: 220;
-  /** The wedge's width as a share of the page. @label Paused wedge share @min 0.3 @max 1 @step 0.01 */
-  --zone-paused-wedge-share: 0.56;
-  /** The wedge's slanted edge: how far its top starts in, as a share of its width. @label Paused wedge lean @min 0 @max 0.8 @step 0.01 */
-  --zone-paused-wedge-lean: 0.34;
-  /** How far the rows sit in from the wedge's left, as a share of the slant. @label Paused rows inset @min 0 @max 1 @step 0.05 */
-  --zone-paused-list-inset: 0.6;
-  /** A row's caps at most. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Paused row type @min 10 @max 30 @step 10 */
-  --zone-type-paused-row: 20;
-  /** The title's caps at most. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Paused title type @min 10 @max 30 @step 10 */
-  --zone-type-paused-title: 30;
-  /** The title's caps at least. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Paused title type, least @min 10 @max 30 @step 10 */
-  --zone-type-paused-title-min: 10;
   /** Room between rows. Art px. @label Paused row gap @min 0 @max 40 @step 1 */
   --zone-paused-row-gap: 5;
-  /** A group label's caps against a row's. @label Paused group label scale @min 0.4 @max 1.2 @step 0.05 */
-  --zone-paused-group-scale: 0.75;
   /** The room a label keeps beside its value before the value drops under it. @label Paused label room @min 1em @max 20em @step 0.5 */
   --zone-paused-label-least: 4em;
   /** A range meter's length, in the row's type. @label Paused meter length @min 1 @max 10 @step 0.25 */
   --zone-paused-meter-length: 3.5;
-  /** A range meter's height, in the row's type. @label Paused meter height @min 0.2 @max 1 @step 0.05 */
-  --zone-paused-meter-height: 0.55;
-  /** The stripe field's lean. @label Paused stripe angle @min -90 @max 90 @step 1 */
-  --zone-paused-stripe-angle: -45deg;
-  /** How dark the stripe field lies over the greyed ground. @label Paused stripes @min 0 @max 1 @step 0.05 */
-  --zone-paused-stripe-opacity: 0.3;
   /** @label Paused band */
   --zone-paused-band: var(--zone-key-b);
   /** @label Paused wedge */
   --zone-paused-wedge: var(--zone-yellow);
-  /** @label Paused stripe */
-  --zone-paused-stripe: var(--zone-black);
   /** @label Paused moving value */
   --zone-paused-moving-ink: var(--zone-yellow);
   /** @label Paused meter */
-  --zone-paused-meter: var(--zone-blue);
+  --zone-paused-meter: var(--zone-track);
   /** @label Paused meter fill */
-  --zone-paused-meter-fill: var(--zone-yellow);
+  --zone-paused-meter-fill: var(--zone-danger-shade);
   /** @label Paused note ink */
   --zone-paused-note-ink: var(--zone-black);
 
@@ -708,14 +660,12 @@
  * treaty worker; the lines above are untouched. */
 .zone-theme {
   /* The busy strip's meter: SPECIAL STAGE's red slanted bar. */
-  /** The bar's thickness at its largest. Art px. @label Meter height @min 4 @max 40 @step 1 */
-  --zone-meter-height: 7;
-  /** The bar's thickness at its least, on a small page. Art px. @label Meter height, least @min 2 @max 30 @step 1 */
-  --zone-meter-height-least: 4;
+  /** The bar's thickness: 4 art px, a 1-px lip over 3 of fill. Art px. @label Meter height @min 4 @max 4 @step 1 */
+  --zone-meter-height: 4;
   /** The shortest the bar gets before the sizes drop under it. Art px. @label Meter, least length @min 40 @max 400 @step 10 */
   --zone-meter-least: 60;
-  /** Room for the size done, so the figures do not jump as they count (Zone Caps' digits are tabular; the room keeps the bar still). @label Meter figures width @min 4 @max 14 @step 0.5 */
-  --zone-meter-figures: 8.5ch;
+  /** Room for the size done, so the figures do not jump as they count: eight caps-1 cells of 7. Art px. @label Meter figures width @min 20 @max 120 @step 1 */
+  --zone-meter-figures: 56;
   /** One pass of the moving stripe when Korri knows no end. @label Meter sweep time @min 100 @max 4000 @step 50 */
   --zone-meter-sweep-time: 700ms;
   /** @label Meter track */
@@ -1212,4 +1162,76 @@
   --zone-seat-stripe-blue: var(--zone-blue);
   /** @label Seat tab */
   --zone-seat-tab: var(--zone-black);
+}
+
+/* ---- refine-layers ----
+ * PAUSED, the status layer and the sky dialog in the refinement's register
+ * (REFINEMENT.md, 3 and 4: PAUSED, Busy with progress, Problem and
+ * Confirm, Running). Appended by the layers worker. */
+.zone-theme {
+  /* The veil (ZoneVeil): a checker of single art pixels. */
+  /** The dither's tile: 2 art px, one black pixel in each row and column. Art px. @label Veil tile @min 2 @max 2 @step 2 */
+  --zone-veil-tile: 2;
+
+  /* The slab behind a control's words (ZoneSlab). */
+  /** The room above and below a slab's caps. Art px. @label Slab padding @min 0 @max 12 @step 1 */
+  --zone-slab-pad: 4;
+
+  /* The sky dialog. */
+  /** The room above and below the dialog's words. Art px. @label Dialog padding, block @min 0 @max 40 @step 1 */
+  --zone-dialog-pad-block: 12;
+  /** The room between headline, lines and buttons. Art px. @label Dialog gap @min 0 @max 24 @step 1 */
+  --zone-dialog-gap: 8;
+  /** A line of Korri's words: Jersey 10's cap and descender with a row between lines. Art px. @label Fact leading @min 12 @max 24 @step 1 */
+  --zone-dialog-line-leading: 16;
+  /** The longest line of Korri's words: about 52 characters. @label Fact measure @min 20ch @max 80ch @step 1ch */
+  --zone-dialog-measure: 46ch;
+  /** The widest a wedge's leg gets, as a share of the panel's width (plan: ZONE_DIALOG_WEDGE_WIDTH_SHARE). @label Wedge reach @min 25% @max 25% @step 1% */
+  --zone-dialog-wedge-reach: 25%;
+  /** The closing copy's place over the page. @label Dialog leaving layer @min 1 @max 100 @step 1 */
+  --zone-dialog-leave-layer: 20;
+  /** @label Dialog line ink */
+  --zone-dialog-line-ink: var(--zone-white);
+
+  /* The busy strip. */
+  /** The deepest corner cut, which the words stand clear of (plan: ZONE_BUSY_CUT). Art px. @label Busy cut @min 22 @max 22 @step 1 */
+  --zone-busy-cut: 22;
+  /** The room between the kicker, the detail and the meter. Art px. @label Busy gap @min 0 @max 16 @step 1 */
+  --zone-busy-gap: 4;
+  /** The panel's least width before the actions drop under it. Art px. @label Busy panel, least @min 60 @max 300 @step 1 */
+  --zone-busy-least: 120;
+  /** The room above and below the panel's words. Art px. @label Busy padding, block @min 0 @max 24 @step 1 */
+  --zone-busy-pad-block: 6;
+  /** The room either side of the panel's words. Art px. @label Busy padding @min 0 @max 40 @step 1 */
+  --zone-busy-pad: 10;
+
+  /* The status layer. */
+  /** The room round the layer's panels. Art px. @label Layer margin @min 0 @max 40 @step 1 */
+  --zone-layer-margin: 10;
+  /** The room between the HUD's two lines. Art px. @label HUD gap @min 0 @max 12 @step 1 */
+  --zone-layer-hud-gap: 3;
+  /** The HUD's widest. Art px. @label HUD width @min 100 @max 600 @step 10 */
+  --zone-layer-hud-width: 220;
+  /** How far in from the strip's left the game's tab stands. Art px. @label Busy tab inset @min 0 @max 60 @step 1 */
+  --zone-layer-tab-inset: 12;
+
+  /* PAUSED. */
+  /** The room at the page's edges. Art px. @label Paused margin @min 0 @max 40 @step 1 */
+  --zone-paused-edge: 10;
+  /** How far the caps rise over their slab's top edge. Art px. @label Paused overhang @min 0 @max 10 @step 1 */
+  --zone-paused-overhang: 4;
+  /** The slab under the caps' baseline. Art px. @label Paused slab foot @min 0 @max 12 @step 1 */
+  --zone-paused-slab-foot: 4;
+  /** The room between a row's label and its value when they stack. Art px. @label Paused gap @min 0 @max 12 @step 1 */
+  --zone-paused-gap: 3;
+  /** A range meter's thickness. Art px. @label Paused meter thickness @min 2 @max 12 @step 1 */
+  --zone-paused-meter-rows: 6;
+  /** One square of the grey checker. Art px. @label Paused checker @min 4 @max 32 @step 1 */
+  --zone-paused-checker: 16;
+  /** An inert control's words (a disabled row, button or action): the grey-blue of Mania's OPTIONS rings, never an opacity. @label Inert ink */
+  --zone-inert-ink: #84a2b5;
+  /** @label Paused checker, dark */
+  --zone-paused-checker-dark: var(--zone-grey-dark);
+  /** @label Paused checker, light */
+  --zone-paused-checker-light: var(--zone-grey-light);
 }
