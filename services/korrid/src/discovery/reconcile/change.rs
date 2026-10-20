@@ -256,6 +256,7 @@ pub fn reconcile(report: &ScanReport, current: &ConfigSnapshot, now: &str) -> Ca
             }
         }
     }
+    reconcile_artifact_releases(report, &mut next, &mut change, &mut release_games);
     reconcile_providers(report, &mut next, &mut change, &mut release_games);
     change.added_games = next
         .library
@@ -281,6 +282,110 @@ pub fn reconcile(report: &ScanReport, current: &ConfigSnapshot, now: &str) -> Ca
             Some(serde_yaml::to_string(&next_device).expect("serializable device"));
     }
     change
+}
+
+/// ADR 0013: a release that comes from artifacts is in the library before its
+/// download. It uses only the existing declared-game records (library item,
+/// release keyed by its first hash, provider link) and saves no location: the
+/// route comes from the declaration and readiness from the cache. A release
+/// that is no longer declared is never removed here; it stays unavailable.
+fn reconcile_artifact_releases(
+    report: &ScanReport,
+    next: &mut ConfigSnapshot,
+    change: &mut CatalogChange,
+    release_games: &mut BTreeMap<String, String>,
+) {
+    for (declared_id, declared) in &report.declared_games {
+        for (index, (release_key, release)) in declared.releases.iter().enumerate() {
+            if release.artifact_file().is_none() {
+                continue;
+            }
+            let Some(key) = release.hashes.first() else {
+                continue;
+            };
+            // A discovered copy may already carry this release under any of
+            // its declared hashes; it is then the same release.
+            if let Some(game_id) = release
+                .hashes
+                .iter()
+                .find_map(|hash| release_games.get(hash))
+                .cloned()
+            {
+                next.provider_links
+                    .entry(declared_id.clone())
+                    .or_insert_with(|| declared_link(declared, &game_id));
+                continue;
+            }
+            let game_id = next
+                .provider_links
+                .get(declared_id)
+                .map(|link| link.playable.0.clone())
+                .filter(|id| next.library.contains_key(id))
+                .unwrap_or_else(|| {
+                    let id = unique_id(&slug(&declared.title), |id| next.library.contains_key(id));
+                    next.library.insert(
+                        id.clone(),
+                        LibraryItemPayload {
+                            modifiers: Default::default(),
+                            title: Some(declared.title.clone()),
+                            version_of: None,
+                            relation: None,
+                            contains: None,
+                            display: None,
+                            metadata: None,
+                            runner: None,
+                            families: BTreeMap::new(),
+                            runners: BTreeMap::new(),
+                            releases: Vec::new(),
+                        },
+                    );
+                    id
+                });
+            let game = next.library.get_mut(&game_id).expect("target game");
+            // Keep declaration order: go before the first release that this
+            // game declares later. Other releases keep their places.
+            let position = game
+                .releases
+                .iter()
+                .position(|existing| {
+                    existing.identity.as_ref().is_some_and(|identity| {
+                        declared.releases.values().position(|other| {
+                            other.hashes.iter().any(|hash| hash == identity.value())
+                        }) > Some(index)
+                    })
+                })
+                .unwrap_or(game.releases.len());
+            let id = unique_id(release_key, |id| game.releases.iter().any(|r| r.id.0 == id));
+            game.releases.insert(
+                position,
+                LibraryReleasePayload {
+                    id: NonEmptyString(id),
+                    system: release.system.clone().map(NonEmptyString),
+                    identity: Some(LibraryIdentity::Hash { value: key.clone() }),
+                    display: None,
+                    inheritable: InheritableLayer::default(),
+                },
+            );
+            change.added_releases += 1;
+            release_games.insert(key.clone(), game_id.clone());
+            next.provider_links
+                .insert(declared_id.clone(), declared_link(declared, &game_id));
+        }
+    }
+}
+
+fn declared_link(game: &crate::plugin::DeclaredGame, playable: &str) -> ProviderLinkPayload {
+    ProviderLinkPayload {
+        provider: NonEmptyString(game.provider.clone()),
+        playable: NonEmptyString(playable.into()),
+        release: None,
+        refs: vec![ProviderLinkRef {
+            kind: ProviderLinkRefKind::ProviderItemId,
+            value: NonEmptyString(game.key.clone()),
+            scope: None,
+            target_part: None,
+        }],
+    }
 }
 
 fn reconcile_providers(
@@ -464,23 +569,11 @@ fn add_unit(
             }
         }
     }
-    if let Some((id, release)) = &declared {
-        let game = &report.declared_games[id];
+    if let Some((id, _)) = &declared {
         next.provider_links.insert(
             id.clone(),
-            ProviderLinkPayload {
-                provider: NonEmptyString(game.provider.clone()),
-                playable: NonEmptyString(game_id.clone()),
-                release: None,
-                refs: vec![ProviderLinkRef {
-                    kind: ProviderLinkRefKind::ProviderItemId,
-                    value: NonEmptyString(game.key.clone()),
-                    scope: None,
-                    target_part: None,
-                }],
-            },
+            declared_link(&report.declared_games[id], &game_id),
         );
-        let _ = release;
     }
     if !release_games.contains_key(&key) {
         let game = next.library.get_mut(&game_id).expect("target game");
