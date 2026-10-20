@@ -950,10 +950,14 @@
   --zone-option-cell: 14;
   /** A one-line cell's slant, its height less one: 45 degrees. Art px. @label Option slant @min 13 @max 13 @step 1 */
   --zone-option-slant: 13;
-  /** The room over and under a caps cell's words. Art px. @label Option pad @min 0 @max 6 @step 1 */
+  /** The room over and under a note's words, and the small gaps. Art px. @label Option pad @min 0 @max 6 @step 1 */
   --zone-option-pad: 2;
-  /** Where a cell's words start: its slant and two art px. Art px. @label Option text inset @min 0 @max 30 @step 1 */
-  --zone-option-text-inset: 15;
+  /** A caps cell's padding over and under its 12-art-px line: with the line's half-leading, 2 art px round the cap. Art px. @label Option caps pad @min 0 @max 6 @step 1 */
+  --zone-option-caps-pad: 1;
+  /** A caps line in a row: 1.2 of the cap, 12 art px at caps-1, so wrapped lines stand 2 art px apart. @label Option line @min 1.2 @max 1.2 @step 0.1 */
+  --zone-option-line: 1.2;
+  /** Where a cell's words start: its one-line slant, which leaves 2 art px clear of the stair at the cap's top and foot. Art px. @label Option text inset @min 0 @max 30 @step 1 */
+  --zone-option-text-inset: 13;
   /** The room between a row's label and value panels. Art px. @label Option gap @min 0 @max 30 @step 1 */
   --zone-option-gap: 10;
   /** The room between two rows (holds the focused drop). Art px. @label Option row space @min 0 @max 12 @step 1 */
@@ -982,4 +986,6 @@
   --zone-bar-step: 2;
   /** The share of a RUN WITH route the program takes; the build takes the rest. @label Route label share @min 0.2 @max 0.8 @step 0.01 */
   --zone-run-with-label-share: 0.45;
+  /** The share of a WI-FI row the SSID takes; bars, strength and words take the rest. @label Wi-Fi label share @min 0.2 @max 0.8 @step 0.01 */
+  --zone-options-wifi-label-share: 0.46;
 }

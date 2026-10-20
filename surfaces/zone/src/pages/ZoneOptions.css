@@ -59,6 +59,12 @@
   pointer-events: none;
 }
 
+/* WI-FI's values carry bars, a strength and two words: its value panels
+ * take the larger share. */
+.zone-options-group[data-group="wifi"] {
+  --zone-row-label-share: var(--zone-options-wifi-label-share);
+}
+
 /* A layer covers the page body. The keyboard rises from the foot and may
  * take all of the body's height; the dialog sits in the middle. */
 .zone-options-layer {
@@ -102,7 +108,7 @@
 .zone-options-network {
   display: inline-flex;
   align-items: center;
-  gap: calc(var(--zone-option-pad) * var(--zone-px) * 2);
+  gap: calc(var(--zone-option-pad) * var(--zone-px));
   min-width: 0;
 }
 

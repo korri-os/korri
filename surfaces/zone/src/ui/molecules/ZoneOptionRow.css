@@ -62,7 +62,7 @@
   align-items: center;
   min-width: 0;
   min-height: calc(var(--zone-option-cell) * var(--zone-px));
-  padding: var(--zone-option-row-pad) var(--zone-option-row-inset);
+  padding: calc(var(--zone-option-caps-pad) * var(--zone-px)) var(--zone-option-row-inset);
 }
 
 .zone-option-row-label::before,
@@ -89,13 +89,18 @@
 }
 
 /* Zone Caps in the white ink on black: the face over its lower three rows
- * of lavender, a hard stop every line (the line is the cap). No ring: on
- * black the ring vanishes. Wraps between words, never inside one. */
+ * of lavender, a hard stop every line. The line is 12 art px, the cap 10
+ * in its middle, so two lines stand 2 art px apart and the stops land at
+ * row 8 of 12. No ring: on black the ring vanishes. Wraps between words,
+ * never inside one; a word longer than the line ends in "…". */
 .zone-option-row-words {
   display: block;
   min-width: 0;
+  overflow: hidden;
+  line-height: var(--zone-option-line);
+  text-overflow: ellipsis;
   color: var(--zone-option-row-face);
-  background: linear-gradient(to bottom, var(--zone-option-row-face) 0% 70%, var(--zone-option-row-shade) 70% 100%) 0 0 / 100% 1em repeat-y;
+  background: linear-gradient(to bottom, var(--zone-option-row-face) 0% 66.6667%, var(--zone-option-row-shade) 66.6667% 100%) 0 0 / 100% calc(var(--zone-option-line) * 1em) repeat-y;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   overflow-wrap: normal;
@@ -130,8 +135,9 @@
 }
 
 .zone-option-row-value:not([data-case="verbatim"]) .zone-option-row-whole {
+  line-height: var(--zone-option-line);
   color: var(--zone-option-row-face);
-  background: linear-gradient(to bottom, var(--zone-option-row-face) 0% 70%, var(--zone-option-row-shade) 70% 100%) 0 0 / 100% 1em repeat-y;
+  background: linear-gradient(to bottom, var(--zone-option-row-face) 0% 66.6667%, var(--zone-option-row-shade) 66.6667% 100%) 0 0 / 100% calc(var(--zone-option-line) * 1em) repeat-y;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -278,6 +284,15 @@
   text-transform: none;
   overflow-wrap: break-word;
   hyphens: auto;
+}
+
+/* A label of Zone Caps shown whole stays in caps. */
+.zone-option-row-whole-line[data-face="caps"] {
+  padding-block: var(--zone-option-row-pad);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: var(--zone-option-line);
+  text-transform: uppercase;
 }
 
 /* Shown only while the row has cut the fact it names. */

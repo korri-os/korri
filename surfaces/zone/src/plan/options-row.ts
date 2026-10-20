@@ -74,7 +74,7 @@ export function zoneCutValue(text: string, keep: number, mode: ZoneCutMode): str
   if (mode === "end") return `${chars.slice(0, kept).join("")}…`
   const slash = text.lastIndexOf("/")
   const tail = slash < 0 ? chars.length : [...text.slice(slash + 1)].length
-  if (kept <= tail) {
+  if (kept < tail) {
     const segment = chars.slice(chars.length - tail)
     const whole = segment
       .map((char, at) => (at > 0 && /[-.]/.test(segment[at - 1] ?? "") ? segment.length - at : 0))

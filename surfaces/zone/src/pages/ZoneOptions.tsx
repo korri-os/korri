@@ -4,6 +4,7 @@ import {
   entryHeading,
   focusedRow,
   optionsPlan,
+  ZONE_OPTIONS_WIFI,
   type ZoneOptionsRow,
   type ZoneOptionsSlices,
   type ZoneOptionsView,
@@ -182,7 +183,7 @@ export function ZoneOptions({
           <div className="zone-options-scroll">
             <div className="zone-options-groups">
               {plan.groups.map(group => (
-                <div className="zone-options-group" key={group.key}>
+                <div className="zone-options-group" data-group={group.key === ZONE_OPTIONS_WIFI ? "wifi" : undefined} key={group.key}>
                   <ZoneOptionGroup
                     focusedId={rowId}
                     onFocus={onRowFocus}

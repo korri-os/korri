@@ -100,8 +100,9 @@ export function ZoneOptionRow({
 }) {
   const row = useRef<HTMLDivElement | null>(null)
   const control = useRef<HTMLButtonElement | null>(null)
+  // The whole row, so its notes (the whole fact, the description) come into view with it.
   useEffect(() => {
-    if (focused) control.current?.scrollIntoView({ block: "nearest" })
+    if (focused) row.current?.scrollIntoView({ block: "nearest" })
   }, [focused])
 
   const kind = interaction?.kind ?? "readonly"
@@ -140,7 +141,9 @@ export function ZoneOptionRow({
             <span className="zone-option-row-fit" data-cut-for="label" data-cut-mode={zoneCutMode(label)}>
               <span className="zone-option-row-whole" data-whole-words="">{label}</span>
             </span>
-          ) : <span className="zone-option-row-words">{label}</span>}
+          ) : (
+            <span className="zone-option-row-words" data-cut-for="label" data-cut-mode="end" data-whole-words="">{label}</span>
+          )}
         </span>
         <span
           className="zone-option-row-value"
@@ -176,8 +179,15 @@ export function ZoneOptionRow({
           {clearLabel}
         </span>
       ) : null}
-      {focused && verbatimLabel ? (
-        <span aria-hidden="true" className="zone-option-row-whole-line" data-for="label" data-option-clip="slash" data-whole={zoneWholeLine(label)} />
+      {focused ? (
+        <span
+          aria-hidden="true"
+          className="zone-option-row-whole-line"
+          data-face={verbatimLabel ? undefined : "caps"}
+          data-for="label"
+          data-option-clip="slash"
+          data-whole={verbatimLabel ? zoneWholeLine(label) : label}
+        />
       ) : null}
       {focused && cutValue ? (
         <span aria-hidden="true" className="zone-option-row-whole-line" data-for="value" data-option-clip="slash" data-whole={zoneWholeLine(shown)} />

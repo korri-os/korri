@@ -50,6 +50,9 @@ export function applyOptionClips(root: HTMLElement): void {
 
 /** Cut one fact cell to its box; true when it no longer shows whole. */
 function cutCell(cell: HTMLElement): boolean {
+  // Zone Caps words that wrap are their own cell: they are cut only when
+  // one word is longer than the line, and only at the end.
+  if (cell.dataset.wholeWords !== undefined) return cell.clientWidth > 0 && cell.scrollWidth > cell.clientWidth + 1
   const whole = cell.querySelector<HTMLElement>(":scope > [data-whole-words]")
   delete cell.dataset.cut
   const available = cell.clientWidth
