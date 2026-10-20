@@ -281,10 +281,11 @@ async fn acquisition_status_resolves_the_same_explicit_runner_as_session_start()
 }
 
 /// The six game acquisition methods decode at the production `/rpc` boundary
-/// with the portal capability. Only the local brain runs discovery, so a
-/// host-mode device answers each with `AcquisitionUnavailable`, never a panic.
+/// with the portal capability. A device with no installed library answers
+/// each with `AcquisitionUnavailable`, and discovery with
+/// `OperationUnsupported`, never a panic.
 #[tokio::test]
-async fn game_acquisition_methods_decode_and_need_the_local_brain() {
+async fn game_acquisition_methods_decode_and_need_a_device_library() {
     use axum::body::{to_bytes, Body};
     use axum::http::Request;
     use tower::ServiceExt;
@@ -292,9 +293,11 @@ async fn game_acquisition_methods_decode_and_need_the_local_brain() {
     let root = tempfile::tempdir().unwrap();
     let config = root.path().join("host.toml");
     fs::write(&config, "label = \"acquisition\"\ngames = []\n").unwrap();
+    // ADR 0015: a host with no installed library root has no discovery and
+    // no store; one with a library runs both (provider_tests.rs).
     let runtime = host::HostRuntime::from_paths_with_backend(
         &config,
-        Some(root.path().into()),
+        None,
         root.path().join("private"),
         Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
     );
@@ -324,6 +327,8 @@ async fn game_acquisition_methods_decode_and_need_the_local_brain() {
         ),
         ("app.acquisition.acquire-status", json!({"jobId":"x"})),
         ("app.acquisition.acquire-cancel", json!({"jobId":"x"})),
+        ("app.discovery.snapshot", json!({})),
+        ("app.attention.list", json!({})),
     ] {
         let response = app
             .clone()
@@ -346,9 +351,11 @@ async fn game_acquisition_methods_decode_and_need_the_local_brain() {
             serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
                 .unwrap();
         assert_eq!(body["outcome"]["_tag"], "Err", "{tag}: {body}");
-        assert_eq!(
-            body["outcome"]["payload"]["code"], "AcquisitionUnavailable",
-            "{tag}"
-        );
+        let code = if tag.starts_with("app.acquisition.") {
+            "AcquisitionUnavailable"
+        } else {
+            "OperationUnsupported"
+        };
+        assert_eq!(body["outcome"]["payload"]["code"], code, "{tag}");
     }
 }

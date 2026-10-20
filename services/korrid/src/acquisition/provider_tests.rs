@@ -12,19 +12,13 @@ use super::{
     },
     AcquisitionCoordinator, ArtifactState,
 };
-use crate::{
-    config,
-    discovery::{DiscoveryLifecycleCoordinator, FolderSelectionGrantStore},
-    plugin::PluginRegistry,
-    plugin_installation::EnabledPackage,
-    plugin_policy::RegistrySource,
-};
+use crate::{config, plugin::PluginRegistry, plugin_installation::EnabledPackage};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::{atomic::Ordering, Arc},
     time::Duration,
 };
 
@@ -81,8 +75,12 @@ export const handlers = {
 /// The system and a runner for it. `PINNED` adds an ADR 0012/0013 artifact
 /// so the queue can be shared with a pinned download.
 fn core_source(pinned: Option<(&str, &str)>) -> String {
+    // With a pinned artifact the plugin also declares an ADR 0013 game whose
+    // content file is that artifact's file.
     let artifacts = pinned.map_or(String::new(), |(url, sha256)| {
-        format!("export const artifacts = {{ big: {{ id: '@test:core/big', version: 'v1', files: [{{ url: '{url}', sha256: '{sha256}' }}] }} }};")
+        format!("export const artifacts = {{ big: {{ id: '@test:core/big', version: 'v1', files: [{{ url: '{url}', sha256: '{sha256}' }}] }} }};
+export const games = {{ big: {{ title: 'Big Game', releases: {{ v1: {{ hashes: ['{sha256}'],
+  artifacts: ['@test:core/big'], file: {{ artifact: '@test:core/big', path: 'big.bin' }} }} }} }} }};")
     });
     format!(
         r#"
@@ -189,6 +187,8 @@ struct World {
     context: GameContext,
     coordinator: AcquisitionCoordinator,
     blocks: Arc<sleep::InMemoryBlocks>,
+    /// The device's local `/rpc` with the portal capability.
+    app: axum::Router,
 }
 
 fn engine() -> DownloadEngine {
@@ -205,15 +205,38 @@ fn world_with(server: HttpFixture, pinned: Option<(&str, &str)>) -> World {
         package(dirs[2].path(), "core", &core_source(pinned), vec![]),
     ])
     .unwrap();
-    let discovery = DiscoveryLifecycleCoordinator::new_with_registry_source(
-        &root,
-        &private,
-        Arc::new(Mutex::new(())),
-        FolderSelectionGrantStore::default(),
-        RegistrySource::Selected(Arc::new(registry.clone())),
-    );
+    // ADR 0015: the device korrid (host mode, installed library root) runs
+    // discovery and the store on its own library.
+    let config = root.join("host.toml");
+    fs::write(&config, "label = \"device\"\ngames = []\n").unwrap();
+    let runtime = crate::host::HostRuntime::from_paths_with_backend(
+        &config,
+        Some(root.clone()),
+        private.clone(),
+        Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
+    )
+    .with_route_registry(root.clone(), registry.clone())
+    .with_library_discovery();
+    let discovery = runtime.library_discovery().unwrap().clone();
     discovery.wait_until_idle(Duration::from_secs(10));
     let blocks = Arc::new(sleep::InMemoryBlocks::default());
+    let coordinator = AcquisitionCoordinator {
+        engine: DownloadEngine::for_test(Duration::from_secs(5)),
+        sleep: sleep::SleepBlock::InMemory(blocks.clone()),
+        games: GameAcquisition::with_engine(engine()),
+        ..Default::default()
+    };
+    let app = crate::secure_host_routers_with_acquisition(
+        runtime,
+        &private,
+        Some(crate::PortalAccess::new(
+            "device",
+            "http://127.0.0.1:8099",
+            crate::PortalPermission::Full,
+        )),
+        coordinator.clone(),
+    )
+    .0;
     World {
         _dirs: dirs,
         root: root.clone(),
@@ -223,13 +246,9 @@ fn world_with(server: HttpFixture, pinned: Option<(&str, &str)>) -> World {
             registry,
             discovery,
         },
-        coordinator: AcquisitionCoordinator {
-            engine: DownloadEngine::for_test(Duration::from_secs(5)),
-            sleep: sleep::SleepBlock::InMemory(blocks.clone()),
-            games: GameAcquisition::with_engine(engine()),
-            ..Default::default()
-        },
+        coordinator,
         blocks,
+        app,
     }
 }
 
@@ -238,6 +257,43 @@ fn world() -> World {
 }
 
 impl World {
+    async fn call(&self, tag: &str, payload: serde_json::Value) -> serde_json::Value {
+        use axum::body::{to_bytes, Body};
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
+        let response = self
+            .app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/rpc")
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer device")
+                    .header("Origin", "http://127.0.0.1:8099")
+                    .body(Body::from(
+                        serde_json::json!({"_tag": tag, "payload": payload}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{tag}");
+        serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap()
+    }
+    async fn launch(&self, game_id: &str) -> serde_json::Value {
+        let reserved = self
+            .call(
+                "app.session.reserve",
+                serde_json::json!({"gameId": game_id}),
+            )
+            .await;
+        self.call(
+            "app.session.start",
+            serde_json::json!({"gameId": game_id, "expectedLaunchId": reserved["outcome"]["payload"]["launchId"]}),
+        )
+        .await
+    }
     fn api(&self) -> &GameAcquisition {
         &self.coordinator.games
     }
@@ -784,70 +840,20 @@ async fn a_restart_drops_jobs_cleans_staging_and_get_answers_play_through_the_li
     );
 }
 
-/// The local RPC refuses Remove download while the download's game runs, and
-/// the launch reaches the download through the route (host-mode device).
+/// The device's local RPC refuses Remove download while the game runs.
 #[tokio::test(flavor = "multi_thread")]
 async fn remove_download_refuses_while_the_game_runs() {
-    use axum::body::{to_bytes, Body};
-    use axum::http::{Request, StatusCode};
-    use serde_json::{json, Value};
-    use tower::ServiceExt;
-
     let world = world();
     world.search().await;
     let game_id = imported(&world.finish(world.acquire("2048").await.unwrap()).await);
-    let config = world.root.join("host.toml");
-    fs::write(&config, "label = \"downloads\"\ngames = []\n").unwrap();
-    let runtime = crate::host::HostRuntime::from_paths_with_backend(
-        &config,
-        Some(world.root.clone()),
-        world.root.join("private"),
-        Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
-    )
-    .with_route_registry(world.root.clone(), world.context.registry.clone());
-    let app = crate::secure_host_routers(
-        runtime,
-        &world.root.join("private"),
-        Some(crate::PortalAccess::new(
-            "downloads",
-            "http://127.0.0.1:8099",
-            crate::PortalPermission::LocalSessions,
-        )),
-    )
-    .0;
-    let call = |tag: &'static str, payload: Value| {
-        let app = app.clone();
-        async move {
-            let response = app
-                .oneshot(
-                    Request::builder()
-                        .method("POST")
-                        .uri("/rpc")
-                        .header("Content-Type", "application/json")
-                        .header("Authorization", "Bearer downloads")
-                        .header("Origin", "http://127.0.0.1:8099")
-                        .body(Body::from(
-                            json!({"_tag":tag, "payload":payload}).to_string(),
-                        ))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::OK);
-            serde_json::from_slice::<Value>(
-                &to_bytes(response.into_body(), usize::MAX).await.unwrap(),
-            )
-            .unwrap()
-        }
-    };
-    let reserved = call("app.session.reserve", json!({"gameId": game_id})).await;
-    let started = call(
-        "app.session.start",
-        json!({"gameId": game_id, "expectedLaunchId": reserved["outcome"]["payload"]["launchId"]}),
-    )
-    .await;
+    let started = world.launch(&game_id).await;
     assert_eq!(started["outcome"]["_tag"], "Ok", "{started}");
-    let refused = call("app.acquisition.remove", json!({"gameId": game_id})).await;
+    let refused = world
+        .call(
+            "app.acquisition.remove",
+            serde_json::json!({"gameId": game_id}),
+        )
+        .await;
     assert_eq!(
         refused["outcome"]["payload"]["code"], "ActiveSessionConflict",
         "{refused}"
@@ -891,4 +897,142 @@ async fn a_link_moves_to_the_game_that_already_holds_the_bytes() {
     assert_eq!(snapshot.library[&holder].releases.len(), 1);
     // The other game keeps its own release as history.
     assert_eq!(snapshot.library[&linked].releases.len(), 1);
+}
+
+/// ADR 0015 end to end over the device's own RPC: the store finds a game,
+/// downloads it and the same process launches it, with no restart.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_device_finds_downloads_and_launches_a_store_game_over_its_rpc() {
+    let world = world();
+    let providers = world
+        .call("app.acquisition.providers", serde_json::json!({}))
+        .await;
+    assert_eq!(
+        providers["outcome"]["payload"]["providers"][0]["id"], PROVIDER,
+        "{providers}"
+    );
+    let search = world
+        .call(
+            "app.acquisition.search",
+            serde_json::json!({"query": "2048", "providerIds": [PROVIDER]}),
+        )
+        .await;
+    assert_eq!(
+        search["outcome"]["payload"]["claims"][0]["title"], TITLE,
+        "{search}"
+    );
+    let started = world
+        .call(
+            "app.acquisition.acquire",
+            serde_json::json!({"providerId": PROVIDER, "id": "2048"}),
+        )
+        .await;
+    let job = started["outcome"]["payload"]["jobId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let done = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let status = world
+                .call(
+                    "app.acquisition.acquire-status",
+                    serde_json::json!({"jobId": job}),
+                )
+                .await;
+            if status["outcome"]["payload"]["state"]["_tag"] == "Imported" {
+                break status;
+            }
+            assert_ne!(
+                status["outcome"]["payload"]["state"]["_tag"], "Failed",
+                "{status}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let game_id = done["outcome"]["payload"]["state"]["gameId"]
+        .as_str()
+        .unwrap();
+    let launched = world.launch(game_id).await;
+    assert_eq!(launched["outcome"]["_tag"], "Ok", "{launched}");
+}
+
+/// ADR 0015: the device pairs a folder and rescans its own library, and the
+/// game discovery found is launchable by the same process.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_device_pairs_and_rescans_its_library_and_launches_what_it_found() {
+    let world = world();
+    let folder = tempfile::tempdir().unwrap();
+    let rom = b"\x00\x03 found in a folder".to_vec();
+    fs::write(folder.path().join("Found.gba"), &rom).unwrap();
+    let receipt = world
+        .context
+        .discovery
+        .grants()
+        .issue_approved_path(folder.path())
+        .unwrap()
+        .token;
+    let paired = world
+        .call(
+            "app.discovery.pair",
+            serde_json::json!({"receipt": receipt, "system": "gba"}),
+        )
+        .await;
+    assert_eq!(paired["outcome"]["_tag"], "Ok", "{paired}");
+    let idle = || async {
+        tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                let snapshot = world
+                    .call("app.discovery.snapshot", serde_json::json!({}))
+                    .await;
+                if snapshot["outcome"]["payload"]["state"]["_tag"] == "Idle" {
+                    break snapshot;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap()
+    };
+    let snapshot = idle().await;
+    assert_eq!(
+        snapshot["outcome"]["payload"]["sources"][0]["system"], "gba",
+        "{snapshot}"
+    );
+    let key = format!("sha256:{}", sha_hex(&rom));
+    let library = world.snapshot();
+    let (game_id, _) = library
+        .library
+        .iter()
+        .find(|(_, game)| {
+            game.releases
+                .iter()
+                .any(|r| r.identity.as_ref().is_some_and(|i| i.value() == key))
+        })
+        .expect("discovery recorded the found game");
+    let launched = world.launch(game_id).await;
+    assert_eq!(launched["outcome"]["_tag"], "Ok", "{launched}");
+    let rescan = world
+        .call("app.discovery.rescan", serde_json::json!({}))
+        .await;
+    assert_eq!(rescan["outcome"]["_tag"], "Ok", "{rescan}");
+    idle().await;
+}
+
+/// ADR 0015 with ADR 0013: a declared-artifact game is in the device's
+/// library after the startup scan, before its download.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_declared_artifact_game_appears_in_the_device_library() {
+    let big = b"big content".to_vec();
+    let sha256 = format!("sha256:{}", sha_hex(&big));
+    let world = world_with(site(), Some(("https://example.com/big.bin", &sha256)));
+    let library = world.snapshot();
+    let game = library
+        .library
+        .values()
+        .find(|game| game.title.as_deref() == Some("Big Game"))
+        .expect("the declared game is in the library");
+    assert_eq!(game.releases[0].identity.as_ref().unwrap().value(), sha256);
+    assert!(library.locations.is_empty());
 }

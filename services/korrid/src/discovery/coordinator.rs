@@ -294,6 +294,11 @@ impl DiscoveryLifecycleCoordinator {
         coordinator
     }
 
+    /// The folder-selection receipts `pair` consumes.
+    pub fn grants(&self) -> &FolderSelectionGrantStore {
+        &self.grants
+    }
+
     pub fn with_options(mut self, options: DiscoveryOptions) -> Self {
         self.options = options;
         self
