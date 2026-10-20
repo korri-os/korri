@@ -241,7 +241,7 @@ describe("ZoneCard", () => {
   ])("the tag ladder: %s draws every tag whole, in order; a row too narrow only hides its last", (state, tags) => {
     const State = (card as Part)[state] as ComponentType
     render(<State />)
-    expect(tagsIn()).toEqual(tags)
+    expect(tagsIn()).toEqual([...tags])
     // No tag is ever cut: every tag stays in the row, its label entire, and
     // only a hidden mark (never a shorter word) answers a narrow row.
     const drawn = [...document.querySelectorAll(".zone-tag")]
