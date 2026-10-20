@@ -71,7 +71,20 @@ function homeViewFrom(catalog: SurfaceCatalog): PicoHomeView {
                 : { totalPlaytimeSeconds: game.totalPlaytimeSeconds }),
               ...(game.download === undefined
                 ? {}
-                : { download: game.download.bytes === undefined ? {} : { bytes: game.download.bytes } }),
+                : {
+                    download: {
+                      ...(game.download.bytes === undefined ? {} : { bytes: game.download.bytes }),
+                      ...(game.download.queued === true ? { queued: true as const } : {}),
+                      ...(game.download.progress === undefined
+                        ? {}
+                        : {
+                            progress: {
+                              done: game.download.progress.done,
+                              ...(game.download.progress.total === undefined ? {} : { total: game.download.progress.total }),
+                            },
+                          }),
+                    },
+                  }),
               ...(game.launchLocations === undefined
                 ? {}
                 : {

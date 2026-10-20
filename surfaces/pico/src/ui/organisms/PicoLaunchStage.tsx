@@ -1,12 +1,17 @@
 import "../../pico-motion.css"
 import "./PicoLaunchStage.css"
 import { useLayoutEffect, useRef } from "react"
+import { picoMeterCells } from "../atoms/PicoDownloadBar"
 import { PicoRow } from "../atoms/PicoRow"
 import type { PicoLaunchCart } from "../../pico-screen-view"
 import { PicoCart } from "../molecules/PicoCart"
 
 /** Cells in the meter: one per palette colour, the way PICO-8 counts. */
 const METER = Array.from({ length: 16 }, (_, index) => index)
+
+/** The download bar's arithmetic, so a launch and a background download
+ * light the same cells for the same bytes. */
+export { picoMeterCells }
 
 /**
  * How the meter reads: on a `clock` the cells fill once and hold, because
@@ -15,12 +20,6 @@ const METER = Array.from({ length: 16 }, (_, index) => index)
  * gave a position but no end.
  */
 export type PicoMeterMode = "clock" | "progress" | "indeterminate"
-
-/** Cells lit for `done` of `total`: whole sixteenths, never rounded up. */
-export function picoMeterCells(progress: { readonly done: number; readonly total: number }): number {
-  if (progress.total <= 0) return 0
-  return Math.max(0, Math.min(METER.length, Math.floor((progress.done / progress.total) * METER.length)))
-}
 
 /**
  * The seconds between a press and a game, and the screen while one runs.

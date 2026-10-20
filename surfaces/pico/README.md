@@ -250,6 +250,17 @@ needs a download wears its size as a chip beside its play facts, formatted by
 Pico (`picoDownloadLabel`). Back during the question and the download is the
 host's to deliver as Cancel; Pico sends only the actions Korri published.
 
+A game can also be downloaded from its own screen, without playing it (ADR
+0013). Korri publishes Download, Cancel download and Remove download as game
+actions, and the download state in `SurfaceGame.download`: the chip reads the
+size, QUEUED while it waits behind another download, or DOWNLOADING with a
+whole percent. While it runs, the game's screen draws a sixteen-cell bar
+(`PicoDownloadBar`) above PLAY, from the same bytes; a bar with no known end
+walks. The bar stays on screens too short for the chip, and its label carries
+the chip's words. Remove download is destructive, so it asks first with
+Korri's description. When Korri replaces the pressed row (DOWNLOAD becomes
+CANCEL DOWNLOAD), the cursor stays on the row that took its place.
+
 Everything is reachable with the d-pad, A and B alone, because many handhelds
 send the surface no `system`, `options` or `menu` button. Home's MENU key on
 the floor row opens FIND, SETTINGS and VIEW; those three buttons remain
@@ -270,7 +281,7 @@ bun install
 bun run caliper   # then open http://localhost:5173/__caliper/
 ```
 
-Caliper finds everything else from the source: the 73 `*.part.tsx` files, the
+Caliper finds everything else from the source: the 74 `*.part.tsx` files, the
 entry (`package.json` `exports["."]`), stylesheets and the wrapper
 (`<div className="pico-theme pico-screen">` in `src/PicoSurface.tsx`). Its Setup
 panel shows where each came from.
@@ -291,7 +302,7 @@ meaningful alternate inputs of the same real component. Caliper lists these
 states under the part; **All states** shows them together. Fixtures use the
 existing surface treaty and component props, with no backend or request swapping.
 
-The audit covers all 73 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
+The audit covers all 74 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
 so their default examples are their only states. A second export would duplicate
 the same output. Other parts include alternate inputs such as missing artwork,
 long content, disabled actions, loading, errors, and empty collections where

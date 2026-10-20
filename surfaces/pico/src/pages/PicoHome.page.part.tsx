@@ -165,6 +165,18 @@ export function ShelfWithDownload() {
     },
   })
 }
+/** A shelf where the chosen cart downloads in the background, another waits its turn. */
+export function ShelfDownloading() {
+  return home({
+    ...fixtureModel,
+    catalog: fixtureModel.catalog._tag !== "Ready" ? fixtureModel.catalog : {
+      _tag: "Ready",
+      games: fixtureModel.catalog.games.map(game =>
+        game.id === "celeste" ? { ...game, download: { bytes: 1_500_000_000, progress: { done: 615_000_000, total: 1_500_000_000 } } }
+          : game.id === "petal" ? { ...game, download: { bytes: 20_000_000, queued: true } } : game),
+    },
+  })
+}
 export function RetryableProblem() {
   return home({ ...fixtureModel, status: { _tag: "Problem", kicker: "COULD NOT START", reason: "The device did not respond.", canRetry: true, gameTitle: "Tetris" } })
 }

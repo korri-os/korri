@@ -2,6 +2,7 @@ import "./PicoGameDetail.css"
 import type { SurfaceAction } from "@contracts/surface/korri-surface"
 import type { PicoDetailView } from "../../pico-detail-view"
 import { PicoButton } from "../atoms/PicoButton"
+import { PicoDownloadBar } from "../atoms/PicoDownloadBar"
 import { PicoGameActions } from "./PicoGameActions"
 import { PicoGameStage } from "./PicoGameStage"
 
@@ -12,6 +13,10 @@ import { PicoGameStage } from "./PicoGameStage"
  * Play (or Continue) is the only `go` button; Korri's own game actions sit
  * below it as a quieter list, so the thing people open a game to do is the
  * thing the cursor lands on.
+ *
+ * A download running in the background draws its bar above Play. The bar is
+ * a few virtual pixels tall, so it stays on a screen too short for the chip
+ * that words it, and its label carries the same words.
  */
 export function PicoGameDetail({
   game,
@@ -35,6 +40,9 @@ export function PicoGameDetail({
         subtitle={game.subtitle}
         title={game.title}
       >
+        {game.downloadProgress === undefined ? null : (
+          <PicoDownloadBar label={game.download ?? "DOWNLOADING"} progress={game.downloadProgress} />
+        )}
         <div className="pico-game-detail-actions">
           <PicoButton label={`▶ ${game.primaryLabel}`} onPress={onPlay} />
         </div>

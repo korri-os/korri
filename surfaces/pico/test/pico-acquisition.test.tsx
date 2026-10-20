@@ -5,9 +5,9 @@
  */
 import { afterEach, describe, expect, test } from "bun:test"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
-import type { SurfaceModel, SurfaceStatus } from "@contracts/surface/korri-surface"
+import type { SurfaceAction, SurfaceGame, SurfaceModel, SurfaceStatus } from "@contracts/surface/korri-surface"
 import { createFixtureHost, fixtureModel } from "../src/fixtures/fixture-host"
-import { picoBytesLabel, picoDownloadLabel } from "../src/pico-detail-view"
+import { picoBytesLabel, picoDownloadLabel, picoPercent } from "../src/pico-detail-view"
 import { PicoSurface } from "../src/PicoSurface"
 import { picoMeterCells } from "../src/ui/organisms/PicoLaunchStage"
 
@@ -226,5 +226,98 @@ describe("a game that needs a download", () => {
     expect(picoDownloadLabel({})).toBeUndefined()
     expect(picoDownloadLabel({ download: {} })).toBe("DOWNLOAD NEEDED")
     expect(picoDownloadLabel({ download: { bytes: 0 } })).toBe("0 B DOWNLOAD")
+  })
+})
+
+describe("a download asked for from the game (ADR 0013)", () => {
+  const withDownload = (download: SurfaceGame["download"]): SurfaceModel => ({
+    ...fixtureModel,
+    catalog: fixtureModel.catalog._tag !== "Ready" ? fixtureModel.catalog : {
+      _tag: "Ready",
+      games: fixtureModel.catalog.games.map(game => game.id === "celeste" ? { ...game, download } : game),
+    },
+  })
+  const hostWith = (actions: () => readonly SurfaceAction[]) => ({ ...createFixtureHost(), gameActions: (gameId: string) => gameId === "celeste" ? actions() : [] })
+  const download: SurfaceAction = { id: "download", label: "Download", enabled: true }
+  const cancel: SurfaceAction = { id: "cancel-download", label: "Cancel download", enabled: true }
+  const remove: SurfaceAction = {
+    id: "remove-download", label: "Remove download", enabled: true, destructive: true,
+    description: "Deletes its downloaded files from this device. Your saves stay.",
+  }
+
+  test("words each state as one chip: the size, QUEUED, DOWNLOADING with whole percent, or with no end", () => {
+    expect(picoDownloadLabel({ download: { bytes: 840_000_000 } })).toBe("840 MB DOWNLOAD")
+    expect(picoDownloadLabel({ download: { bytes: 840_000_000, queued: true } })).toBe("QUEUED")
+    expect(picoDownloadLabel({ download: { bytes: 840_000_000, progress: { done: 344_400_000, total: 840_000_000 } } })).toBe("DOWNLOADING 41%")
+    expect(picoDownloadLabel({ download: { progress: { done: 839_999_999, total: 840_000_000 } } })).toBe("DOWNLOADING 99%")
+    expect(picoDownloadLabel({ download: { progress: { done: 0 } } })).toBe("DOWNLOADING")
+    expect(picoPercent({ done: 5, total: 0 })).toBeUndefined()
+    expect(picoPercent({ done: 200, total: 100 })).toBe(100)
+  })
+
+  test("queued: the chip on the shelf and on the game, no bar, and Cancel download in its actions", () => {
+    const { unmount } = render(<PicoSurface host={createFixtureHost()} model={withDownload({ bytes: 840_000_000, queued: true })} />)
+    expect(screen.getByText("QUEUED")).toBeTruthy()
+    unmount()
+    render(<PicoSurface host={hostWith(() => [cancel])} initialView={{ _tag: "Detail", gameId: "celeste" }}
+      model={withDownload({ bytes: 840_000_000, queued: true })} />)
+    expect(screen.getByText("QUEUED")).toBeTruthy()
+    expect(screen.queryByRole("progressbar")).toBeNull()
+    expect(screen.getByRole("button", { name: "Cancel download" })).toBeTruthy()
+  })
+
+  test("downloading: a real bar above PLAY from Korri's bytes, named with the same words as the chip", () => {
+    render(<PicoSurface host={hostWith(() => [cancel])} initialView={{ _tag: "Detail", gameId: "celeste" }}
+      model={withDownload({ bytes: 840_000_000, progress: { done: 344_400_000, total: 840_000_000 } })} />)
+    expect(screen.getByText("DOWNLOADING 41%")).toBeTruthy()
+    const bar = screen.getByRole("progressbar", { name: "DOWNLOADING 41%" })
+    expect(bar.getAttribute("data-meter")).toBe("progress")
+    expect(bar.getAttribute("aria-valuenow")).toBe("41")
+    expect(bar.querySelectorAll('[data-lit="on"]')).toHaveLength(6)
+    expect(bar.querySelectorAll('[data-lit="next"]')).toHaveLength(1)
+    expect(screen.getByRole("button", { name: /▶ (PLAY|CONTINUE)/ })).toBeTruthy()
+  })
+
+  test("with no known end the bar walks and claims no fraction", () => {
+    render(<PicoSurface host={hostWith(() => [{ ...cancel, enabled: false, description: "Unpacking cannot be stopped. It ends on its own." }])}
+      initialView={{ _tag: "Detail", gameId: "celeste" }} model={withDownload({ progress: { done: 0 } })} />)
+    const bar = screen.getByRole("progressbar", { name: "DOWNLOADING" })
+    expect(bar.getAttribute("data-meter")).toBe("indeterminate")
+    expect(bar.hasAttribute("aria-valuenow")).toBe(false)
+    expect(screen.getByRole("button", { name: "Cancel download" }).hasAttribute("disabled")).toBe(true)
+    expect(screen.getByText("Unpacking cannot be stopped. It ends on its own.")).toBeTruthy()
+  })
+
+  test("Download and Cancel download go to Korri at once; Remove download asks first in Korri's words", () => {
+    const host = hostWith(() => [download, cancel, remove])
+    render(<PicoSurface host={host} initialView={{ _tag: "Detail", gameId: "celeste" }} model={withDownload({ bytes: 840_000_000 })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Download" }))
+    fireEvent.click(screen.getByRole("button", { name: "Cancel download" }))
+    expect(host.calls).toEqual(["gameAction:celeste:download", "gameAction:celeste:cancel-download"])
+    fireEvent.click(screen.getByRole("button", { name: "Remove download" }))
+    expect(host.calls).toHaveLength(2)
+    const dialog = screen.getByRole("dialog")
+    expect(dialog.textContent).toContain("REMOVE DOWNLOAD?")
+    expect(dialog.textContent).toContain("Deletes its downloaded files from this device. Your saves stay.")
+    fireEvent.click(screen.getByRole("button", { name: "REMOVE DOWNLOAD" }))
+    expect(host.calls).toEqual(["gameAction:celeste:download", "gameAction:celeste:cancel-download", "gameAction:celeste:remove-download"])
+  })
+
+  test("when Korri swaps the pressed row for the next one, the cursor stays on it", () => {
+    let actions: readonly SurfaceAction[] = [download]
+    const host = hostWith(() => actions)
+    const view = render(<PicoSurface host={host} initialView={{ _tag: "Detail", gameId: "celeste" }} model={withDownload({ bytes: 840_000_000 })} />)
+    const row = screen.getByRole("button", { name: "Download" })
+    row.focus()
+    fireEvent.click(row)
+    actions = [cancel]
+    view.rerender(<PicoSurface host={host} initialView={{ _tag: "Detail", gameId: "celeste" }} model={withDownload({ bytes: 840_000_000, queued: true })} />)
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel download" }))
+    // A cursor the person moved away is left where they put it.
+    const play = screen.getByRole("button", { name: /▶ (PLAY|CONTINUE)/ })
+    play.focus()
+    actions = [download]
+    view.rerender(<PicoSurface host={host} initialView={{ _tag: "Detail", gameId: "celeste" }} model={withDownload({ bytes: 840_000_000 })} />)
+    expect(document.activeElement).toBe(play)
   })
 })
