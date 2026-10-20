@@ -17,6 +17,7 @@ import { initialsOf, stripeSetOf } from "../src/ui/atoms/ZoneCoverWell"
 import { ZoneCardBand } from "../src/ui/molecules/ZoneCardBand"
 import { fixtureCards } from "../src/fixtures/zone-cards"
 import { fitZoneType, zoneFitSteps } from "../src/use-zone-fit"
+import { readText } from "./read-text"
 
 afterEach(cleanup)
 
@@ -322,7 +323,7 @@ describe("ZoneSaveCard", () => {
 
 describe("ZoneCardBand", () => {
   const titles = () => [...document.querySelectorAll(".zone-card-title")].map((node) => node.textContent)
-  const focusedTitle = () => document.querySelector('.zone-card[data-focused="true"] .zone-card-title')?.textContent
+  const focusedTitle = () => readText(document.querySelector('.zone-card[data-focused="true"] .zone-card-title'))
   const slots = () => [...document.querySelectorAll(".zone-card-band-slot")]
 
   test("TwelveFocusThree: twelve cards, Spelunky focused in the middle, two shown either side", () => {

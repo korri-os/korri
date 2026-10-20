@@ -32,6 +32,7 @@ import {
   type ZoneOverlayMessage,
   type ZoneOverlayModel,
 } from "../src/state/overlay"
+import { readText } from "./read-text"
 
 afterEach(cleanup)
 
@@ -219,15 +220,15 @@ const portalStep = (element: HTMLElement, direction: "left" | "right") =>
 describe("ZonePaused", () => {
   test("C24: Korri's title in the band, or PAUSED when it gives none", () => {
     mount({ ...overlayDefault, title: "Celeste Classic" })
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Celeste Classic")
+    expect(readText(screen.getByRole("heading", { level: 1 }))).toBe("Celeste Classic")
     cleanup()
     mount(overlayNoTitle)
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Paused")
+    expect(readText(screen.getByRole("heading", { level: 1 }))).toBe("Paused")
   })
 
   test("C24: flat controls first, then each group under its label", () => {
     mount(overlayGroups)
-    const labels = screen.getAllByRole("button").map(button => button.textContent)
+    const labels = screen.getAllByRole("button").map(button => readText(button))
     expect(labels).toEqual(["Continue", "Exit", "Fill screenOff", "Screen filterSharp", "Volume60"])
     const display = screen.getByRole("region", { name: "Display" })
     expect(within(display).getByText("Fill screen")).toBeDefined()

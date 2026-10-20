@@ -283,9 +283,12 @@ describe("ZoneStatusLayer", () => {
   test("C31: the game the question belongs to stands in yellow", () => {
     mount(statusConfirmForGame)
     const dialog = screen.getByRole("dialog", { name: "Needs a download" })
-    const title = within(dialog).getByText("Hollow Knight")
-    expect(title.closest(".zone-dialog-title")).not.toBeNull()
-    expect(title.getAttribute("data-ink")).toBe("hud")
+    const title = within(dialog).getByText("Hollow Knight").closest<HTMLElement>(".zone-dialog-title")
+    expect(title).not.toBeNull()
+    // Each drawn word is HUD caps.
+    const words = [...title!.querySelectorAll(".zone-caps")]
+    expect(words.map(word => word.textContent)).toEqual(["Hollow", "Knight"])
+    expect(words.every(word => word.getAttribute("data-ink") === "hud")).toBe(true)
   })
 
   test("C31: any action, the last as well, is reported by its id; none is treated as no", () => {

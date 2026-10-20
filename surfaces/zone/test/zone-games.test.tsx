@@ -19,6 +19,7 @@ import {
   fixtureSectionsModel,
 } from "../src/fixtures/zone-games"
 import { ZONE_IDLE_AFTER_MS, ZONE_IDLE_CYCLE_MS } from "../src/state/navigation"
+import { readText } from "./read-text"
 
 afterEach(() => {
   cleanup()
@@ -40,8 +41,8 @@ const button = (text: string): HTMLButtonElement => {
 const card = (title: string) => button(title)
 const focus = (element: HTMLElement) => act(() => element.focus())
 const click = (element: HTMLElement) => act(() => element.click())
-const cardTitles = () => [...document.querySelectorAll(".zone-card-title")].map(node => node.textContent)
-const focusedCard = () => document.querySelector(".zone-card[data-focused='true'] .zone-card-title")?.textContent
+const cardTitles = () => [...document.querySelectorAll(".zone-card-title")].map(node => readText(node))
+const focusedCard = () => readText(document.querySelector(".zone-card[data-focused='true'] .zone-card-title"))
 const active = () => document.activeElement?.textContent ?? ""
 const launches = () => [...document.querySelectorAll(".zone-games-actions .zone-button")]
   .map(node => ({ label: node.textContent, lit: node.getAttribute("data-lit") === "on" }))
@@ -273,7 +274,7 @@ describe("C27: idle", () => {
     mount()
     focus(card("Spelunky"))
     act(() => jest.advanceTimersByTime(ZONE_IDLE_AFTER_MS))
-    const titleCard = () => document.querySelector(".zone-title-card-title")?.textContent
+    const titleCard = () => readText(document.querySelector(".zone-title-card-title"))
     expect(titleCard()).toBe("Spelunky")
     expect(screen.getAllByText("PC").length).toBeGreaterThan(0)
     act(() => jest.advanceTimersByTime(ZONE_IDLE_CYCLE_MS))

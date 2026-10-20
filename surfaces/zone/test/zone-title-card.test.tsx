@@ -9,10 +9,12 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { planTitleCard, ZONE_TITLE_STACK_ASPECT } from "../src/plan/title-card"
 import * as part from "../src/ui/molecules/ZoneTitleCard.molecule.part"
+import { readText } from "./read-text"
 
 afterEach(cleanup)
 
 const css = readFileSync(join(import.meta.dir, "..", "src", "ui", "molecules", "ZoneTitleCard.css"), "utf8")
+const wordsCss = readFileSync(join(import.meta.dir, "..", "src", "ui", "atoms", "ZoneWords.css"), "utf8")
   .replace(/\/\*[\s\S]*?\*\//g, "")
 
 describe("planTitleCard", () => {
@@ -45,17 +47,20 @@ describe("planTitleCard", () => {
 
 describe("the title never breaks inside a word", () => {
   const titleRule = /\.zone-title-card-title \{([^}]*)\}/.exec(css)?.[1] ?? ""
+  const wordsRule = /\.zone-words \{([^}]*)\}/.exec(wordsCss)?.[1] ?? ""
   test("no break anywhere; words are kept whole", () => {
     expect(titleRule).not.toContain("anywhere")
-    expect(titleRule).toContain("overflow-wrap: normal")
-    expect(titleRule).toContain("word-break: keep-all")
+    expect(titleRule).not.toContain("break-word")
+    // The title is ZoneWords, whose words never break inside themselves.
+    expect(wordsRule).toContain("overflow-wrap: normal")
+    expect(wordsRule).toContain("word-break: keep-all")
   })
   test("the title's type follows the card's fit", () => {
     expect(titleRule).toContain("var(--zone-fit, 1)")
   })
   test("NarrowTall and LongWord draw the whole title and the act", () => {
     render(<part.NarrowTall />)
-    expect(screen.getByRole("heading").textContent).toBe("The Legend of Zelda: Oracle of Seasons")
+    expect(readText(screen.getByRole("heading"))).toBe("The Legend of Zelda: Oracle of Seasons")
     expect(screen.getByText("GBC")).toBeTruthy()
     cleanup()
     render(<part.LongWord />)

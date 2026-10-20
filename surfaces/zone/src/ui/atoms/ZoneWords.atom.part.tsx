@@ -6,14 +6,14 @@ export const note = "Zone Caps over more than one line, each word its own ZoneCa
 
 /** A kicker that fits on one line. */
 export default function Default() {
-  return <ZoneWords>Needs a download</ZoneWords>
+  return <ZoneWords children="Needs a download" />
 }
 
 /** The longest title in a side card's width: it wraps between words. */
 export function LongTitle() {
   return (
     <ZonePartFrame shape="card">
-      <ZoneWords>The Legend of Zelda: Oracle of Seasons</ZoneWords>
+      <ZoneWords children="The Legend of Zelda: Oracle of Seasons" />
     </ZonePartFrame>
   )
 }
@@ -22,7 +22,7 @@ export function LongTitle() {
 export function LongHud() {
   return (
     <ZonePartFrame shape="card">
-      <ZoneWords ink="hud">The Legend of Zelda: Oracle of Seasons, the linked game with the second quest</ZoneWords>
+      <ZoneWords ink="hud" children="The Legend of Zelda: Oracle of Seasons, the linked game with the second quest" />
     </ZonePartFrame>
   )
 }
@@ -31,17 +31,17 @@ export function LongHud() {
 export function LongWord() {
   return (
     <ZonePartFrame shape="card">
-      <ZoneWords>Supercalifragilisticexpialidocious</ZoneWords>
+      <ZoneWords children="Supercalifragilisticexpialidocious" />
     </ZonePartFrame>
   )
 }
 
 /** HUD ink, as a label on the facts line. */
 export function Hud() {
-  return <ZoneWords ink="hud">Last played</ZoneWords>
+  return <ZoneWords ink="hud" children="Last played" />
 }
 
 /** A destructive verb in the danger ink. */
 export function Danger() {
-  return <ZoneWords ink="danger">Delete this key</ZoneWords>
+  return <ZoneWords ink="danger" children="Delete this key" />
 }

@@ -20,9 +20,9 @@ import { ZoneCaps, type ZoneInk } from "./ZoneCaps"
  * A word wider than its line stands whole past it; a holder that cannot
  * show it whole decides what to do (useZoneWordsFit marks it).
  *
- * Words of several words are read once, whole, from a hidden copy, and
- * their drawn words are hidden from a screen reader; a single word is read
- * from its ZoneCaps.
+ * Several words are read once, whole, from a hidden copy, and the drawn
+ * words are hidden from a screen reader, so a reader and a text query
+ * meet one string; a single word is read from its ZoneCaps.
  */
 export function ZoneWords({
   ink = "white",
@@ -36,7 +36,7 @@ export function ZoneWords({
   return (
     <span className="zone-words">
       {several ? <span className="zone-words-read">{words.join(" ")}</span> : null}
-      <span aria-hidden={several || undefined} className="zone-words-drawn">
+      <span aria-hidden={several || undefined}>
         {words.map((word, index) => (
           <Fragment key={`${index}:${word}`}>
             {index === 0 ? null : " "}
