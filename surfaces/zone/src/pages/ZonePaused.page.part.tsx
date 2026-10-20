@@ -46,6 +46,96 @@ export const composition = {
   ],
 } as const
 
+/* The helpers Caliper hands an authored check, typed locally: Zone imports
+ * nothing from Caliper (test/authoring-gate.test.ts). */
+interface CheckTools {
+  readonly canvas: { getByRole(role: string, options: { name: RegExp }): HTMLElement }
+  readonly expect: (value: unknown) => { toBe(expected: unknown): void }
+  readonly waitFor: (assertion: () => void) => Promise<void>
+}
+
+/**
+ * What the wedge shows, read off the real page in Chromium: how far it is
+ * scrolled, the rows (controls and group tags) not whole inside its view,
+ * whether the focused row and its pink drop stand whole, and how each edge
+ * meets the rows. An edge is "clear" when nothing is hidden past it,
+ * "letters" when it cuts a line of words with a quarter of the line or more
+ * on the shown side, else "bad": a sliver with no letters, or a cut that
+ * falls in a gap and says nothing about what is past it.
+ */
+function wedgeView(button: HTMLElement) {
+  const list = button.closest<HTMLElement>(".zone-paused-list")
+  if (list === null) throw new Error("no wedge list")
+  const view = list.getBoundingClientRect()
+  const rows = Array.from(list.querySelectorAll<HTMLElement>(".zone-paused-control, .zone-paused-group-label"))
+  const hidden = rows.filter(row => {
+    const box = row.getBoundingClientRect()
+    return box.top < view.top - 0.5 || box.bottom > view.bottom + 0.5
+  })
+  const lines: DOMRect[] = []
+  const walk = document.createTreeWalker(list, NodeFilter.SHOW_TEXT)
+  for (let node = walk.nextNode(); node !== null; node = walk.nextNode()) {
+    if ((node.textContent ?? "").trim() === "") continue
+    const range = document.createRange()
+    range.selectNodeContents(node)
+    lines.push(...Array.from(range.getClientRects()))
+  }
+  const edge = (at: number, shown: (line: DOMRect) => number, past: (box: DOMRect) => boolean) => {
+    if (!rows.some(row => past(row.getBoundingClientRect()))) return "clear"
+    return lines.some(line => line.top < at && line.bottom > at && shown(line) >= line.height / 4) ? "letters" : "bad"
+  }
+  const focused = list.querySelector<HTMLElement>(".zone-paused-control[data-focused]")
+  const drop = 3 * Number.parseFloat(getComputedStyle(list).getPropertyValue("--zone-px") || "1")
+  const whole = focused === null ? false : (() => {
+    const box = focused.getBoundingClientRect()
+    return box.top >= view.top - 0.5 && box.bottom + drop <= view.bottom + 0.5
+  })()
+  return {
+    scrolled: list.scrollTop,
+    hidden: hidden.map(row => row.textContent ?? "").join(", "),
+    focusedWhole: whole,
+    top: edge(view.top, line => line.bottom - view.top, box => box.top < view.top - 0.5),
+    bottom: edge(view.bottom, line => view.bottom - line.top, box => box.bottom > view.bottom + 0.5),
+  }
+}
+
+/* The wedge scrolls only when its rows do not fit; when it scrolls, the
+ * focused row stands whole and each edge either hides nothing or cuts a
+ * line of words, never a letterless sliver or a gap. */
+export const checks = {
+  Groups: {
+    "seven rows fit the wedge: none scrolled away, none cut": async ({ canvas, expect, waitFor }: CheckTools) => {
+      await waitFor(() => {
+        const seen = wedgeView(canvas.getByRole("button", { name: /Screen filter/ }))
+        expect(seen.hidden).toBe("")
+        expect(seen.scrolled).toBe(0)
+        expect(seen.focusedWhole).toBe(true)
+      })
+    },
+  },
+  ManyControls: {
+    "the deep focus stands whole and the cut edge shows letters": async ({ canvas, expect, waitFor }: CheckTools) => {
+      await waitFor(() => {
+        const seen = wedgeView(canvas.getByRole("button", { name: /Cheat codes/ }))
+        expect(seen.scrolled > 0).toBe(true)
+        expect(seen.focusedWhole).toBe(true)
+        expect(seen.top).toBe("letters")
+        expect(seen.bottom === "bad").toBe(false)
+      })
+    },
+  },
+  Narrow: {
+    "the focus stands whole and neither edge is a letterless sliver": async ({ canvas, expect, waitFor }: CheckTools) => {
+      await waitFor(() => {
+        const seen = wedgeView(canvas.getByRole("button", { name: /Volume/ }))
+        expect(seen.focusedWhole).toBe(true)
+        expect(seen.top === "bad").toBe(false)
+        expect(seen.bottom === "bad").toBe(false)
+      })
+    },
+  },
+}
+
 /** Unexported: the real page on the real overlay model, a pretend Korri applying each value. */
 function Scenario({
   overlay,
