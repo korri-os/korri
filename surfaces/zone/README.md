@@ -30,7 +30,13 @@ stylesheet, and it is built to ship from another repository unchanged.
 - **Two faces on one art-pixel grid**: Zone Caps, Zone's own outlined pixel
   capitals, for every word Zone writes; Jersey 10 for every fact and
   sentence Korri publishes, in its own case. (Supersedes "one face:
-  Anton".)
+  Anton".) That is the Retro look; see the next point.
+- **Three looks on one axis, from modern to retro**: Modern, Blend (the
+  default) and Retro, picked on OPTIONS › SYSTEM › LOOK and kept on the
+  device as `zone.look`. Zone's identity never changes; only how finely it
+  is drawn. Retro is the pixel refinement exactly; Blend sets Korri's facts
+  in Anton; Modern also sets Zone's words in Anton and draws edges, rings,
+  the dim and motion smooth. See "The three looks" below.
 
 ## What Zone never does
 
@@ -65,7 +71,9 @@ one has been seen to fail on a planted defect.
 | No blur, blend, soft shadow or smooth gradient; a `linear-gradient` is a hard-stop stripe | `test/authoring-gate.test.ts` |
 | Shapes read no state: nothing under `src/ui/` or `src/pages/` imports `src/state/` or reads the host | `test/atomic-gate.test.ts` |
 | Every component file has exactly one component | `test/atomic-gate.test.ts` |
-| Every lettering pair reaches contrast; outlined lettering is judged face against outline, on every screen group's ground | `test/contrast-gate.test.ts` |
+| Every lettering pair reaches contrast in every look; outlined lettering is judged face against outline, on every screen group's ground; Anton earns the large-text floor | `test/contrast-gate.test.ts` |
+| No opacity under 1 (no see-through) except the one named exception, Modern's veil (`[data-look="modern"] .zone-veil`); the same opacity anywhere else fails | `test/authoring-gate.test.ts` "no see-through" |
+| Every capability, C1 to C33, works in every look | `test/zone-navigation-acceptance.test.tsx` (once per look) |
 | Only the ground draws on a canvas or runs a frame clock; gradients are hard-stop stripes or dither; no word breaks inside itself | `test/authoring-gate.test.ts` |
 | The time is read only by the one seekable clock (`use-zone-moment.ts`): no other file reads `Date.now()`, `performance.now()`, `new Date()` or `Date()` | `test/authoring-gate.test.ts` |
 | Zone Caps is the grid, built: coverage, metrics, outlines and a reproducible build | `test/zone-caps-font.test.ts` |
@@ -81,15 +89,19 @@ those reports.
 src/
   zone-tokens.css     the only file with a raw colour or pixel value; every
                       value is a literal custom property with a knob comment
-  zone-fonts.css      Zone Caps and Jersey 10, embedded from src/fonts/
+  zone-fonts.css      Zone Caps, Jersey 10 and Anton (two size-matched
+                      families from one file), embedded from src/fonts/
                       (SIL OFL 1.1)
   zone-motion.css     the one-bounce snap, the triangle nudge, the ring drift;
                       imported by each component whose stylesheet names one
   zone.css            reset, screen scope and reduced motion; imports nothing
   fonts/              zone-caps.grid (Zone Caps, drawn by hand), its build
                       ZoneCaps.woff2 and .ttf, ZoneCaps-OFL.txt;
-                      Jersey10-latin.woff2 and its OFL.txt
-  fixtures/           the fixture host and model, and the part frame
+                      Jersey10-latin.woff2 and its OFL.txt;
+                      Anton-latin.woff2 (scripts/build-anton.py, from
+                      commit e05b1790f) and Anton-OFL.txt
+  fixtures/           the fixture host and model, the part frame, and
+                      fixture-look.ts (the look a Caliper frame shows)
   plan/               plan(width, height) per page: pure, thresholds named
   state/              every model, messages, requests, and surface.ts, which
                       composes them and routes each message; pure
@@ -100,6 +112,13 @@ src/
                       props
   use-zone-plan.ts    measures the root and returns plan(width, height)
   use-zone-idle.ts    the idle timer, a subscription
+  use-zone-look.ts    the look an element is drawn in (its --zone-look), the
+                      context that re-runs a drawing hook when it changes,
+                      and the refit when Anton finishes loading
+  zone-look-preference.ts  zone.look in local storage: read once, kept on
+                      every step (mirrors Pico's pico.font)
+  plan/look.ts        the three looks and how TypeScript draws each
+  state/look.ts       the look model: a step, and the request to keep it
   ZoneSurface.tsx     the composition root: the only file below the host door
                       that reads the treaty's model; picks the page
   ui/atoms|molecules|organisms|templates
@@ -145,6 +164,12 @@ caliper-render --url http://localhost:5173 --part src/ui/templates/ZoneShell.tem
 
 Devices: `rg353m` (640x480) and `screen-720p` (1280x720), the two sizes the
 mockup was proven at.
+
+Looks: `ZONE_LOOK=modern bun run caliper` (or `blend`, `retro`; Blend
+without it). The dev server names the look on every frame's `<html>`
+before a part runs (vite.config.ts), so every part and state shows in that
+look; one server per look renders all three side by side. The OPTIONS
+part's `LookFocused` state steps the frame's look live.
 
 ## Verification
 
@@ -831,6 +856,7 @@ and system do nothing there.
 Every line names Zone's own answer and the test in
 `test/zone-navigation-acceptance.test.tsx` that reaches it from home with
 d-pad, confirm and back, through `ZoneSurface` and a host that records calls.
+Every line runs once per look (Modern, Blend, Retro): 111 tests.
 
 ```
 C1  GAMES band: three stripe wells and LOADING, Korri's message under GAMES with RELOAD, NO GAMES, the cards — test: zone-navigation-acceptance "C1 catalog states"
@@ -847,7 +873,7 @@ C11 RUN WITH page: state tag, message, warnings, a row per route (program, build
 C12 OPTIONS: Korri's groups under their titles, rows with label and value, the description under the focused row — test: zone-navigation-acceptance "C12 groups and items"
 C13 OPTIONS rows: choice steps left/right, text and secret on the keyboard, CLEAR, Korri's confirmation dialog — test: zone-navigation-acceptance "C13 interactions"
 C14 OPTIONS: the Saving caret on the row, Korri's message in red and a DISMISS row — test: zone-navigation-acceptance "C14 saving and problem"
-C15 OPTIONS SYSTEM group (system button): Korri's device actions, NO / YES before a destructive one — test: zone-navigation-acceptance "C15 device actions"
+C15 OPTIONS SYSTEM group (system button): Korri's device actions, NO / YES before a destructive one, then Zone's own LOOK row (MODERN / BLEND / RETRO, never sent to Korri) — test: zone-navigation-acceptance "C15 device actions"; the LOOK row: zone-look.test.tsx "OPTIONS › SYSTEM › LOOK"
 C16 SAVE DATA BACK UP card: password keyboard, the busy strip, the QR code in the well and the secret on its slab — test: zone-navigation-acceptance "C16 export backup"
 C17 SAVE DATA SWITCH FROM BACKUP: secret, password, LOCAL RECORDS TRANSFER / DELETE, SWITCH KEY? — test: zone-navigation-acceptance "C17 switch from backup"
 C18 SAVE DATA SWITCH BUNKER: the URI keyboard from bunker://, disposition, SWITCH KEY? — test: zone-navigation-acceptance "C18 switch by bunker"
@@ -1789,3 +1815,180 @@ one holds.
   Cost: a detail of Korri's that names no sizes leaves the sizes to the
   bar's fill and its value text. At 640x480 the game's tab still meets the
   focused card's foot, over the veil.
+
+## The three looks (decided without asking: looks)
+
+The approved contract gives Zone three named looks on one axis: Modern,
+Blend (the default) and Retro. Zone's identity (layout structure,
+palette, per-menu grounds, banner, cards, dialogs, title card, tally,
+HUD, attract, focus language, C1 to C33) is the same in all three; cover
+art and the drawn emblems stay pixel art in every look.
+
+| Axis | Modern | Blend (default) | Retro |
+|---|---|---|---|
+| Zone's own words | Anton caps, flat face, the ink's ring and drop | Zone Caps | Zone Caps |
+| Korri's facts | Anton, own case | Anton, own case | Jersey 10 |
+| Pixel grid | sizes on `--zone-px`, drawing smooth | whole art px | whole art px |
+| Edges | one smooth 45 degree line | stairs | stairs |
+| Dim under dialogs | black, see-through (0.5) | dither | dither |
+| Rings | antialiased arcs, 60 fps | pixel, 15 fps | pixel, 15 fps |
+| Motion | eased, sub-pixel | whole art px | whole art px |
+
+| Piece | Where |
+|---|---|
+| The looks as data, and how TS draws each | `src/plan/look.ts` (`ZONE_LOOKS`, `zoneLookStep`, `zoneLookDrawing`) |
+| The device's choice | `src/zone-look-preference.ts` (`zone.look`), `src/state/look.ts`, `RememberLook` in `src/zone-host.ts` |
+| The LOOK row | `lookRow` in `src/plan/options.ts`; routed by `lookRow` in `src/state/surface.ts` |
+| One attribute | `data-look` on the root (`ZoneSurface.tsx`); "the looks" blocks in `zone-tokens.css` |
+| What TS reads | `src/use-zone-look.ts` (`zoneLookOf`, `zoneDrawingOf`, `ZoneLookContext`, `onZoneAntonLoaded`) |
+| The faces | `zone-fonts.css` (Zone Anton Caps, Zone Anton Fact), `scripts/build-anton.py` |
+| Proof | `test/zone-look.test.tsx`, the acceptance suite per look, the contrast gate per look, "no see-through" |
+
+- **Storage mirrors Pico exactly.** One localStorage key, `zone.look`,
+  holding `modern`, `blend` or `retro`; missing, unreadable, blocked or
+  unknown is Blend; a failed write is swallowed (the look still applies
+  until Zone reloads). Grounded in `pico.font`
+  (`surfaces/pico/src/pico-font-preference.ts`), the one existing producer
+  of this kind of data; no new schema. Korri is never told: no treaty
+  change. The look is read once when the program starts
+  (`readZoneLook()` in `useZoneSurface`) and kept by a request on every
+  step, as Pico reads and keeps its face.
+- **The look lives in the surface's state, not in OPTIONS'.** `look` is a
+  model beside the others in `src/state/surface.ts`. OPTIONS' plan takes
+  it as a slice (`withLook`), so its LOOK row shows the look in use; a
+  press or a step on the row goes to the look model and OPTIONS' own
+  update leaves the row alone (its press is `Look`, never a
+  `ChangeSetting`). Under OPTIONS' keyboard or dialog the row is inert.
+- **LOOK sits in SYSTEM after Korri's device actions and before BUILD.**
+  `system` still lands on Korri's first action (C15 unchanged). SYSTEM now
+  always stands, holding LOOK alone when Korri publishes neither actions
+  nor a build. The values are Zone's own words in caps, MODERN, BLEND,
+  RETRO, in the axis' order; right steps toward Retro, left toward Modern,
+  round the ends; A steps right, as on every choice. The row is a choice,
+  so ZoneOptionRow marks it `data-korri-horizontal-control` and draws its
+  triangles; nothing new was drawn for it.
+- **One attribute, keyed alone.** The root wears `data-look`; the look
+  blocks are `.zone-theme[data-look=X], [data-look=X] .zone-theme`, so a
+  look never touches a ground's palette and a part shown alone follows a
+  marked ancestor. Component rules that only Modern needs (the veil, the
+  smooth lip notches, keycap tail, choice triangles and caret, the
+  triangles' alternate nudge) are `[data-look="modern"] .x` rules beside
+  their component; no component has a second implementation. Retro's
+  block declares only `--zone-look`: everything above it in the tokens is
+  Retro.
+- **TS reads the look from the element it draws, like `--zone-px`.**
+  `zoneLookOf(element)` reads `--zone-look`, else the nearest `data-look`,
+  else Blend. ZoneSurface also provides the look as React context, only so
+  drawing and fitting hooks re-run when it changes; what they draw comes
+  from the element. That keeps one source and lets a Caliper part draw
+  the look of its frame.
+- **Stairs, smooth.** Every stair helper takes the look's edges:
+  `zoneStairClip`, `zoneStairWedge`, `zoneStairCircle` (`circle(50%)`),
+  `zoneStairChamfer`, `zoneOptionClip`, `zoneTitleBandClip`,
+  `zoneWipeClip`. Smooth draws the same box with each slanted run as one
+  straight line between the stair's first and last rows (a point's tip
+  kept), so no box moves between looks.
+- **Rings, smooth.** In Modern the ground's canvas is CSS px, not art px,
+  and `renderZoneGroundSmooth` draws the same rings and dots as
+  antialiased arcs, the dots unrounded; `--zone-ground-fps` is 60 there.
+  The palette, the ring geometry and the seekable clock are shared.
+- **Motion.** The moments' box carries the look's drawing; every frame
+  function takes the motion grid (`art` rounds to whole art px, `free`
+  does not, and the act disc's `steps(4)` becomes an ease). The dialog's
+  M4 plays two eased keyframes in Modern instead of six held steps. The
+  band's travel rounds to `--zone-motion-snap` (a 1/64 CSS px layout unit
+  in Modern, `--zone-px` otherwise). The cursor triangles' nudge eases.
+  Blinks, the static and the tally's 60-step count stay: they are not
+  travel. No motion take was recorded for Modern (see Not done).
+- **Faces sized to the pixel face they replace.** One Anton file, two
+  `@font-face` families: Zone Anton Caps (`size-adjust` 116.3636%, so its
+  cap of 1760/2048 is the em, as Zone Caps' is; ascent and descent
+  overridden to Zone Caps' 1.3 and 0.3 em) and Zone Anton Fact (62.3377%,
+  Jersey 10's cap of 0.5357 em; Jersey's ascent and descent). A look
+  changes the face and never a font-size token, so every layout token,
+  `--zone-fact`, the line boxes and the baselines stay put. Anton is
+  narrower than either pixel face, so anything that fitted still fits.
+- **Modern's face is flat.** "Anton caps with outline and shadow, the
+  pre-refinement look": the ink's ring and drop stay (same colours, the
+  palette never changes), the lower-rows shade is the face
+  (`--zone-ink-white-shade`, `--zone-ink-danger-shade`). The banner keeps
+  its white band, since the banner never changes.
+- **Anton's subset is reproducible.** `scripts/build-anton.py` reads
+  Anton from `e05b1790f` (sha256-checked), keeps Google Fonts' latin and
+  latin-ext ranges plus × … ▲ and every layout feature, and writes
+  `Anton-latin.woff2` (45 KB, 1119 glyphs); two runs write the same bytes.
+  Its licence is `Anton-OFL.txt`; `OFL.txt` stays Jersey 10's. The portal
+  bundle copies it as `licenses/zone-fonts/anton-OFL.txt` and greps it.
+- **Anton has no tabular figures, and the glyphs were not changed.** Its
+  digits are 1012 units wide except "1" (677). Adding a `tnum` feature
+  would make a modified font; instead every figure that changes while
+  watched already stands where a narrower "1" cannot move what matters:
+  the meter's done size has its own right-aligned room
+  (`--zone-meter-figures`), the tally's values are right-aligned at their
+  bars' end, the FIND count already changed width with its digit count,
+  and the clock changes once a minute (its `tabular-nums` still serves
+  Zone Caps and Jersey). Cost: in Modern a "1" in the foot's clock moves
+  what follows it by a third of a digit once a minute.
+- **The fit planners measure the active face.** Every measuring hook
+  (`useZoneFit`, `useZoneWordsFit`, `useZoneSaveBandFit`,
+  `useZoneKeyboardFit`, `useZoneFindPlan`, `useZonePausedList`,
+  `useZoneStickyHold`, the option row and clips) re-runs on a look
+  change. Anton loads on demand, so `useZoneFit` and `useZoneSaveBandFit`
+  also refit when an Anton face finishes loading, and only then: the
+  pixel faces load exactly as they did, so Retro's fits are main's to the
+  pixel (a refit on every face load changed a Retro save card's header
+  from caps-2 to caps-1). Suggested issue: main measures the pixel faces'
+  first fit before they load. Two plans keep Zone Caps' measured widths
+  as constants (the top strip's ladder, `planZoneFind`'s control keys);
+  Anton is narrower, so in Modern they leave room to spare, never cut.
+- **A fit re-cuts the panel it stands in at each step.** A ZonePanel's
+  padding is its slant, its measured height. RUN WITH's title fitted
+  caps-2 with caps-1's padding, then overflowed once the panel caught up,
+  and the two steps took turns every frame (a ResizeObserver loop in
+  Modern's OneRoute and Saved). `fitZoneType` now re-cuts the nearest
+  panel before each test; the Retro renders did not change.
+- **The see-through exception is named, not general.** The gate allows
+  `opacity: var(--zone-veil-see-through)` only in the rule
+  `[data-look="modern"] .zone-veil` of ZoneVeil.css. A test plants the
+  same opacity under Retro, Blend, a bare `.zone-veil`, another value, a
+  media query and another file, and each fails; another lists every
+  opacity under 1 in the stylesheets and finds that rule alone. 0.5 keeps
+  the dither's darkness, so nothing under a dialog changes contrast.
+- **Contrast in every look.** The gate parses the look blocks apart from
+  the theme and judges every pair in each look's tokens. Where a look
+  sets a face in Anton it also checks that Anton's least size (caps-1 at
+  2 CSS px an art px, times its size-adjust: 23.27 CSS px) reaches WCAG's
+  large bold text (18.66 px), so the 3:1 floor is earned. Anton counts as
+  bold: a heavy display face whose strokes match a bold grotesque's.
+- **Caliper shows each look by its server.** `ZONE_LOOK=…` makes
+  vite.config.ts inject one script into every frame that names the look
+  on `<html>`; no part changed for it. A frame's `<html>` cannot be
+  reached by a part state (Caliper builds the wrapper from class names
+  only), and per-look copies of every state would triple the parts.
+  `LookFocused` on the OPTIONS part steps the frame's look live.
+- **What Retro adds.** Retro is main's rendering, with two expected
+  differences: OPTIONS shows SYSTEM's new LOOK row, so its states that
+  show SYSTEM (or scroll past it) differ; and the OPTIONS part has a new
+  state, `LookFocused`. Measured on 2026-10-20 against main at 8c2f8129a,
+  every part, state and device rendered with reduced motion (Caliper's
+  own renders differ run to run wherever a triangle nudges or a dot
+  drifts): of 878 Retro renders, 849 match main exactly and 2 match one of
+  main's two runs (main's own RUN WITH scroll varies); 23 OPTIONS states
+  differ only by the LOOK row, 2 are `LookFocused`, one is ZoneSignal's
+  "ResizeObserver loop" overlay, which main shows too, and one (first
+  boot's NameTyping at 1280x720, 27 pixels of the ring under the
+  keyboard's edge) matched main exactly when rendered again.
+- **The static stays.** A loading card's noise well and a greyed well's
+  checker are the window's contents, like cover art, not edges or
+  dimming; they stay pixel in Modern.
+
+### Not done (looks)
+
+- No motion take (motion-mockup's recorded filmstrip) for Modern's
+  eased moments; the frame functions are tested, the stills rendered.
+- The keyboard's keys still lean by a token, not 45 degrees, in every
+  look (unchanged from the refinement).
+- ZoneSignal's part throws "ResizeObserver loop" at 640x480 in every
+  look, main included (baseline): not caused or fixed here. Suggested
+  issue.
+
