@@ -62,8 +62,8 @@ export const cardTags = ({ system, places, resumable, download }: ZoneCardFacts)
  * No letter is ever cut. The focused title is caps-2 and steps to caps-1,
  * then wraps between words, the well giving way; a word longer than the
  * card stands whole past its edge. A side card's title is caps-1, wraps the
- * same way, and cuts only a word wider than the card, with "…" (whole once
- * focused). The tag row steps its caps, then drops its last tags; the
+ * same way, and draws no title at all when one word is wider than the card
+ * (whole once focused): never a cut word. The tag row steps its caps, then drops its last tags; the
  * focused card reports how many it kept (`onTagsShown`), so the page shows
  * the rest on the facts line.
  *

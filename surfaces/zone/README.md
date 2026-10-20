@@ -1111,7 +1111,8 @@ left open is recorded here.
   strip, whose holders ask for shares). Each tag starts at its word's
   width (`flex: 1 1 auto`, was equal shares). A row that still cuts a tag
   at caps-1 hides its last tags one by one, keeping the system first, then
-  the places. The focused card reports how many it kept, and the facts
+  the places, down to none when even the system's tag would be cut. The
+  focused card reports how many it kept, and the facts
   line shows the rest (not DOWNLOAD, which is a fact there already). The
   spill is written on the next task, outside the resize notification, so
   no observer loop.
@@ -1120,8 +1121,9 @@ left open is recorded here.
   ring and two-tone face. `useZoneWordsFit` adds up the words' letters and
   gaps (a scroll width misses words that run out past a right-aligned
   line's start, and counts the ring room). A focused card's word longer
-  than the card stands whole past its edge; a side card's is cut with "…"
-  and is whole once focused. A title of several words is read once, whole,
+  than the card stands whole past its edge; a side card with such a word
+  draws no title at all (its cover and its name still say which game it
+  is) and shows it whole once focused. No title ever loses a letter. A title of several words is read once, whole,
   from a hidden copy, and its drawn words are hidden from a screen reader.
 - **The facts line is one strip with a one-line lean.** A wrapped line
   keeps 45 degree ends one line tall, so wrapping never widens the ends and

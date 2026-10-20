@@ -16,8 +16,9 @@ const cut = (row: HTMLElement): boolean =>
  * Fit a row of tags without ever losing a letter: the row's caps step down
  * a whole cap at a time (useZoneFit's ladder); at caps-1 a row that still
  * cuts a tag drops its last tags, one by one, so the ones left are wider
- * and whole. The first tag (the system) always stays. Returns how many
- * tags show. A measurement on the DOM, as the fit is: no state.
+ * and whole, down to none when even the system's tag would be cut (the
+ * focused card's facts line then shows them all). Returns how many tags
+ * show. A measurement on the DOM, as the fit is: no state.
  */
 export function fitZoneTagRow(row: HTMLElement): number {
   const tags = [...row.querySelectorAll<HTMLElement>(".zone-tag")]
@@ -36,7 +37,7 @@ export function fitZoneTagRow(row: HTMLElement): number {
   }
   if (!fits) row.setAttribute("data-zone-fit-floor", "")
   let shown = tags.length
-  while (shown > 1 && !fits && cut(row)) {
+  while (shown > 0 && !fits && cut(row)) {
     shown -= 1
     tags[shown]?.setAttribute("data-tag-hidden", "")
   }

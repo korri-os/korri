@@ -3,7 +3,8 @@
  * caps-3, caps-2, caps-1, the largest at or under the holder's own size
  * whose words stand on one line; at caps-1, when even that is too wide,
  * the holder is marked `data-zone-fit-floor` and its stylesheet lets the
- * words wrap between them. A word is never broken and never shrunk off
+ * words wrap between them; a word wider than the line even then marks it
+ * `data-zone-words-long` too. A word is never broken and never shrunk off
  * the grid.
  *
  * useZoneFit measures a box's scrollable overflow, which misses words that
@@ -23,11 +24,15 @@ import { zoneArtPxOf } from "./use-zone-plan"
 /** The room Zone Caps keeps either side of a word, in art px (--zone-caps-room). */
 const CAPS_ROOM = 3
 
-/** The width the words want on one line: each word's letters, and the gaps between them. */
-function lineWidth(words: HTMLElement, room: number): number {
-  const each = [...words.querySelectorAll<HTMLElement>(".zone-words-word")]
+/** Each word's own letters, without the room its ink keeps round them. */
+const wordWidths = (words: HTMLElement, room: number): readonly number[] =>
+  [...words.querySelectorAll<HTMLElement>(".zone-words-word")]
     .map(word => (word.firstElementChild as HTMLElement | null)?.scrollWidth ?? word.scrollWidth)
     .map(width => Math.max(0, width - 2 * room))
+
+/** The width the words want on one line: each word's letters, and the gaps between them. */
+function lineWidth(words: HTMLElement, room: number): number {
+  const each = wordWidths(words, room)
   const gap = Number.parseFloat(getComputedStyle(words).columnGap) || 0
   return each.reduce((sum, width) => sum + width, 0) + gap * Math.max(0, each.length - 1)
 }
@@ -35,6 +40,7 @@ function lineWidth(words: HTMLElement, room: number): number {
 export function fitZoneWords(holder: HTMLElement): void {
   holder.style.setProperty("--zone-fit", "1")
   holder.removeAttribute("data-zone-fit-floor")
+  holder.removeAttribute("data-zone-words-long")
   const words = holder.querySelector<HTMLElement>(".zone-words")
   const px = zoneArtPxOf(holder)
   const fontSize = Number.parseFloat(getComputedStyle(holder).fontSize)
@@ -45,6 +51,11 @@ export function fitZoneWords(holder: HTMLElement): void {
     if (words === null || lineWidth(words, room) <= holder.clientWidth + 1) return
   }
   holder.setAttribute("data-zone-fit-floor", "")
+  // Even wrapped, one word is wider than the line: the holder decides what
+  // to do with a word it cannot show whole (never cut it).
+  if (words !== null && wordWidths(words, room).some(width => width > holder.clientWidth + 1)) {
+    holder.setAttribute("data-zone-words-long", "")
+  }
 }
 
 export function useZoneWordsFit(

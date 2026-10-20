@@ -60,7 +60,7 @@
 /* The title in white ink at a whole caps step: on one line while the fit
  * can still step down, then (at caps-1, the floor) wrapping between words.
  * A focused card lets a word longer than itself stand whole past its edge;
- * a side card cuts only such a word, with "…". */
+ * a side card draws no title rather than cut such a word. */
 .zone-card-title {
   --zone-words-wrap: nowrap;
   --zone-words-line-gap: calc(var(--zone-games-title-leading) * var(--zone-px));
@@ -77,6 +77,14 @@
 
 .zone-card[data-size="focus"] .zone-card-title {
   --zone-words-max: none;
+}
+
+/* A side card too narrow for one of its title's words at caps-1 draws no
+ * title rather than a cut one: the cover names the game, the card is read
+ * by its name, and the title stands whole once the card is focused. */
+.zone-card[data-size="side"] .zone-card-title[data-zone-words-long] {
+  max-height: 0;
+  overflow: hidden;
 }
 
 /* The whole title, read and never drawn. */
