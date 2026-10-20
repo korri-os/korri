@@ -17,12 +17,12 @@
  * one gap, then half a width. */
 .zone-save-band-track {
   --zone-save-band-gap: clamp(calc(var(--zone-card-gap-narrow) * var(--zone-px)), 1.6cqw, calc(var(--zone-card-gap-wide) * var(--zone-px)));
-  --zone-card-h: min(
+  --zone-card-h: round(down, min(
     calc(var(--zone-card-focus-max) * var(--zone-px)),
     calc(100cqh - 2 * calc(var(--zone-band-pad) * var(--zone-px))),
-    calc((100cqw - 2 * calc(var(--zone-band-margin) * var(--zone-px))) / var(--zone-save-card-ratio))
-  );
-  --zone-save-band-w: calc(var(--zone-card-h) * var(--zone-save-card-ratio));
+    calc((100cqw - 2 * calc(var(--zone-band-margin) * var(--zone-px))) / var(--zone-save-card-aspect))
+  ), var(--zone-px));
+  --zone-save-band-w: round(down, calc(var(--zone-card-h) * var(--zone-save-card-aspect)), var(--zone-px));
   --zone-save-band-centre: calc(
     var(--zone-save-band-focus, 0) * (var(--zone-save-band-w) + var(--zone-save-band-gap))
     + var(--zone-save-band-w) / 2
@@ -33,7 +33,7 @@
   display: flex;
   align-items: center;
   gap: var(--zone-save-band-gap);
-  translate: calc(50cqw - var(--zone-save-band-centre)) -50%;
+  translate: round(calc(50cqw - var(--zone-save-band-centre)), var(--zone-px)) -50%;
   transition: translate var(--zone-snap-time) var(--zone-bounce);
   will-change: translate;
 }

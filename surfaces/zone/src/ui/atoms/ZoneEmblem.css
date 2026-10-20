@@ -1,0 +1,58 @@
+/* An emblem: its own 16-pixel grid, scaled by whole art px. The box it
+ * stands in names its size (--zone-emblem-size); alone it is 16 art px. */
+.zone-emblem {
+  display: block;
+  flex: 0 0 auto;
+  width: var(--zone-emblem-size, calc(var(--zone-emblem-side) * var(--zone-px)));
+  height: var(--zone-emblem-size, calc(var(--zone-emblem-side) * var(--zone-px)));
+  shape-rendering: crispEdges;
+  pointer-events: none;
+}
+
+.zone-emblem-ink[data-ink="k"] {
+  fill: var(--zone-emblem-k);
+}
+
+.zone-emblem-ink[data-ink="w"] {
+  fill: var(--zone-emblem-w);
+}
+
+.zone-emblem-ink[data-ink="s"] {
+  fill: var(--zone-emblem-s);
+}
+
+.zone-emblem-ink[data-ink="y"] {
+  fill: var(--zone-emblem-y);
+}
+
+.zone-emblem-ink[data-ink="o"] {
+  fill: var(--zone-emblem-o);
+}
+
+.zone-emblem-ink[data-ink="r"] {
+  fill: var(--zone-emblem-r);
+}
+
+.zone-emblem-ink[data-ink="b"] {
+  fill: var(--zone-emblem-b);
+}
+
+.zone-emblem-ink[data-ink="l"] {
+  fill: var(--zone-emblem-l);
+}
+
+.zone-emblem-ink[data-ink="m"] {
+  fill: var(--zone-emblem-m);
+}
+
+.zone-emblem-ink[data-ink="d"] {
+  fill: var(--zone-emblem-d);
+}
+
+.zone-emblem-ink[data-ink="p"] {
+  fill: var(--zone-emblem-p);
+}
+
+.zone-emblem-ink[data-ink="g"] {
+  fill: var(--zone-emblem-g);
+}

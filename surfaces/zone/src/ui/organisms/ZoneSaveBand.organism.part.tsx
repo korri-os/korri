@@ -8,15 +8,14 @@ export const name = "Save band"
 export const note = "MANIA MODE's save select: vertical save cards in a band, the focused one centred, the rest cut at the edges"
 
 const fixed: readonly ZoneSaveBandCard[] = [
-  { id: "backup", header: "Back up", body: { kind: "text", text: "This key" }, tag: { kind: "open", label: "New" } },
-  { id: "switch-backup", header: "Switch", body: { kind: "text", text: "From backup" } },
-  { id: "switch-bunker", header: "Switch", body: { kind: "text", text: "Bunker" } },
+  { id: "backup", header: "Back up", body: { kind: "text", text: "This key", emblem: "key" }, tag: { kind: "open", label: "New" } },
+  { id: "switch-backup", header: "Switch", body: { kind: "text", text: "From backup", emblem: "restore" } },
+  { id: "switch-bunker", header: "Switch", body: { kind: "text", text: "Bunker", emblem: "link" } },
 ]
 const retired = (keys: readonly string[]): readonly ZoneSaveBandCard[] => keys.map(key => ({
   id: key,
   header: "Retired",
-  body: { kind: "text", text: shortKey(key) },
-  tag: { kind: "remote", label: "Delete" },
+  body: { kind: "text", text: shortKey(key), verbatim: true, emblem: "retired" },
 }))
 
 /** A ref-backed store so the preview's cursor answers focus; the product keeps it in src/state/identity.ts. */
@@ -63,7 +62,7 @@ export function Many() {
 
 /** One card: NOT AVAILABLE. */
 export function One() {
-  return <Moving cards={[{ id: "unavailable", header: "Identity", body: { kind: "text", text: "Not available" } }]} initial={0} />
+  return <Moving cards={[{ id: "unavailable", header: "Identity", body: { kind: "text", text: "Not available", emblem: "retired" } }]} initial={0} />
 }
 
 /** A column: one whole card, its neighbours cut. */
