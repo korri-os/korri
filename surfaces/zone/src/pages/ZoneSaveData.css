@@ -1,0 +1,82 @@
+/* The page fills the shell's body and is its own size container: the
+ * banner, Korri's busy strip when it works, then the band and the backup's
+ * slab sharing what is left. A step of a flow stands over all of it. */
+.zone-save-data {
+  --zone-save-data-margin: clamp(var(--zone-row-gap), 2cqw, var(--zone-band-margin));
+  --zone-save-data-space: clamp(var(--zone-row-space), 1.6cqh, var(--zone-row-gap));
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  row-gap: var(--zone-save-data-space);
+  width: 100%;
+  height: 100%;
+  padding-top: var(--zone-save-data-space);
+  container: zone-save-data / size;
+}
+
+.zone-save-data-banner {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 var(--zone-save-data-margin);
+}
+
+.zone-save-data-busy {
+  display: flex;
+  padding: 0 var(--zone-save-data-margin);
+}
+
+/* The band alone, or the band and the slab. The slab stands under the band
+ * while the page is not a wide strip; the band keeps the larger share. */
+.zone-save-data-main {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--zone-save-data-space);
+  min-height: 0;
+}
+
+.zone-save-data-main[data-slab="shown"] {
+  grid-template-rows: minmax(0, var(--zone-save-band-share)) minmax(0, var(--zone-save-slab-share));
+  padding-bottom: var(--zone-save-data-space);
+}
+
+/* A wide strip (src/plan/save-data.ts, ZONE_SAVE_SLAB_BESIDE_ASPECT): the
+ * width pays for the slab, beside the band, instead of the height. */
+@container zone-save-data (min-aspect-ratio: 3 / 1) {
+  .zone-save-data-main[data-slab="shown"] {
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, var(--zone-save-band-share)) minmax(0, var(--zone-save-slab-share));
+    padding-right: var(--zone-save-data-margin);
+  }
+}
+
+.zone-save-data-band {
+  min-width: 0;
+  min-height: 0;
+}
+
+.zone-save-data-slab {
+  min-width: 0;
+  min-height: 0;
+  padding: 0 var(--zone-save-data-margin);
+}
+
+/* A step of a flow: the keyboard rises from the foot of the page, a dialog
+ * stands in its middle. Both cover the band; neither leaves the page. */
+.zone-save-data-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  padding: var(--zone-save-data-space) var(--zone-save-data-margin);
+  container-type: size;
+}
+
+.zone-save-data-layer[data-layer="keyboard"] {
+  align-content: end;
+}
+
+.zone-save-data-layer[data-layer="dialog"] {
+  align-content: center;
+}

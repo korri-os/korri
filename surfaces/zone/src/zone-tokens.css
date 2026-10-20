@@ -510,3 +510,20 @@
   /** @label Act ink */
   --zone-act-ink: var(--zone-black);
 }
+
+/* ---- savedata ---- */
+/* The SAVE DATA page: the shares of the band and the backup's slab, and the
+ * slab's lettering. Appended by the save-data worker; the lines above are
+ * untouched. */
+.zone-theme {
+  /** The band's share of the page while the backup's slab shows. @label Save band share */
+  --zone-save-band-share: 3fr;
+  /** The slab's share of the page beside the band's. @label Secret slab share */
+  --zone-save-slab-share: 2fr;
+  /** One line of the secret, 32 characters in 8 groups, in ems of its type. @label Secret line width @min 12 @max 40 @step 0.5 */
+  --zone-secret-line-ems: 21;
+  /** Line height of the secret, as a multiple of its type. @label Secret leading @min 1 @max 2 @step 0.05 */
+  --zone-secret-leading: 1.25;
+  /** The room between two groups of the secret. @label Secret group gap */
+  --zone-secret-group-gap: 0.5em;
+}

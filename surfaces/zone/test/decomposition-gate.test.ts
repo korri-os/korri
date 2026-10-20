@@ -315,8 +315,6 @@ describe("every component has a consumer", () => {
   const AWAITING_PAGE: readonly string[] = [
     // The games page: the band replaces the plain title list in ZoneSurface.
     "ZoneCardBand",
-    // The save-data page: the vertical save-card select (DIRECTION C16).
-    "ZoneSaveCard",
     // The games page: hints in the shell, the tab strip, the action row
     // under the focused card, the foot, GAME OPTS. over the band, the keyboard
     // for find-by-text, and the idle title card (C1 to C6, C26 to C29).
@@ -325,13 +323,7 @@ describe("every component has a consumer", () => {
     "ZoneActionRow",
     "ZoneFoot",
     "ZoneOptionGroup",
-    "ZoneKeyboard",
     "ZoneTitleCard",
-    // The save-data page: the QR in a save card's well (C16).
-    "ZoneQrWell",
-    // The layers organism: the busy strip and the problem dialog (C7, C9).
-    "ZoneBusyStrip",
-    "ZoneDialog",
   ]
 
   test("no atom, molecule, organism or template is imported by nothing", () => {
@@ -346,11 +338,19 @@ describe("every component has a consumer", () => {
     expect(AWAITING_PAGE.filter((name) => importedNames.has(name))).toEqual([])
   })
 
-  test("every page is reached from the surface binding", () => {
+  /**
+   * Pages built as shapes before the stage that mounts them. Each entry is a
+   * decision with a date, as AWAITING_PAGE is: when ZoneSurface reaches the
+   * page, the entry goes, and an entry the binding already reaches fails.
+   */
+  const AWAITING_MOUNT: readonly string[] = [
+    // 2026-10-20: the SAVE DATA page (C16 to C20); ZoneSurface belongs to the
+    // GAMES worker, and a later stage mounts every page at once.
+    "ZoneSaveData",
+  ]
+
+  function reachedFromBinding(): Set<string> {
     const binding = readFileSync(join(SRC, "ZoneSurface.tsx"), "utf8")
-    const pages = componentFiles
-      .filter((file) => file.includes("/pages/"))
-      .map((file) => basename(file, ".tsx"))
     const reachable = new Set<string>()
     const queue = [binding]
     while (queue.length > 0) {
@@ -364,7 +364,20 @@ describe("every component has a consumer", () => {
         if (hit) queue.push(readFileSync(hit, "utf8"))
       }
     }
-    expect(pages.filter((p) => !reachable.has(p))).toEqual([])
+    return reachable
+  }
+
+  test("a page awaiting its mount is not already mounted", () => {
+    const reachable = reachedFromBinding()
+    expect(AWAITING_MOUNT.filter((name) => reachable.has(name))).toEqual([])
+  })
+
+  test("every page is reached from the surface binding", () => {
+    const pages = componentFiles
+      .filter((file) => file.includes("/pages/"))
+      .map((file) => basename(file, ".tsx"))
+    const reachable = reachedFromBinding()
+    expect(pages.filter((p) => !reachable.has(p) && !AWAITING_MOUNT.includes(p))).toEqual([])
   })
 })
 
