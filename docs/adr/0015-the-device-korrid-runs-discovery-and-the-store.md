@@ -81,14 +81,23 @@ toward retiring the host/brain split.
   scan runs: the snapshot reports `Scanning`, and launches use the documents
   as they are.
 - **Concurrent writers.** Discovery, settings and runner choice share the
-  host's publication lock. Writes from outside korrid are still detected by
-  revision, as in brain mode.
+  host's publication lock (`route_write_lock`). Writes from outside korrid are
+  still detected by revision, as in brain mode. A scan holds that lock for its
+  whole run. While the first scan runs, the player-count setting, a runner
+  choice and a store job's `Placing` step wait for it. On a large card that
+  has never been scanned, the wait can last minutes.
 - **Folder receipts.** A device korrid has no folder picker that issues
   folder-selection receipts (the brain's embedding API
   `issue_folder_selection_receipt` is the only issuer). Until one exists,
   `app.discovery.pair` on a device can only consume receipts that something
-  else issued. Sources written by `korrid catalog migrate`, rescan, change,
-  unpair and attention all work.
+  else issued.
+- **Local permissions.** The device portal has
+  `PortalPermission::LocalSessions` (`portal_access.rs`). It permits the
+  discovery snapshot and the attention list, and refuses rescan, pair,
+  change, unpair, assign and ignore. On the device itself, only the startup
+  scan and those two reads run. The mutations work for a peer that acts for
+  the device's owner (an owner device). Sources written by
+  `korrid catalog migrate` are scanned at startup.
 - ADR 0013 declared-artifact games appear in a device's library after the
   first scan. ADR 0014 store downloads are recorded on the device and launch
   from its cache.
