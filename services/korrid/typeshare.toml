@@ -25,3 +25,21 @@ ProviderReleaseConfidenceWire = '"high"'
 
 # Exact ADR 0012 internally tagged union with ADR 0013's Queued, enforced by acquisition/types.rs.
 ArtifactStateWire = '{ _tag: "Missing" } | { _tag: "Queued" } | { _tag: "Downloading"; file: number; fileCount: number; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number } | { _tag: "Unpacking" } | { _tag: "Ready"; path: string } | { _tag: "Failed"; reason: RpcFailure }'
+
+# Exact ADR 0013 provider protocol literals and unions, enforced by
+# acquisition/claims.rs, acquisition/turns.rs and acquisition/types.rs.
+ProviderClaimTagWire = '"ProviderClaim"'
+ProviderClaimDetailsTagWire = '"ProviderClaimDetails"'
+ArtifactKindWire = '"content" | "patch"'
+FinalDownloadTagWire = '"FinalDownload"'
+NonFinalDownloadTagWire = '"NonFinalDownload"'
+FailedDownloadTagWire = '"FailedDownload"'
+NonFinalDownloadReasonWire = '"interstitial" | "requires-user-action" | "unsupported"'
+FailedDownloadReasonWire = '"provider-error" | "configuration" | "not-found" | "defective-provider"'
+DownloadResolutionWire = "FinalDownload | NonFinalDownload | FailedDownload"
+PluginHttpQueryValueWire = "string | number | boolean"
+PluginHttpRequestsTagWire = '"HttpRequests"'
+PluginSearchOutputWire = "PluginHttpRequests | ProviderClaim[]"
+PluginDetailsOutputWire = "PluginHttpRequests | ProviderClaimDetails"
+PluginResolveDownloadOutputWire = "PluginHttpRequests | DownloadResolution"
+AcquireJobStateWire = '{ _tag: "Resolving" } | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number } | { _tag: "Placing" } | { _tag: "Imported"; gameId: string } | { _tag: "Staged"; message: string } | { _tag: "Failed"; reason: RpcFailure } | { _tag: "Cancelled" }'

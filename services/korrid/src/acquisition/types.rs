@@ -98,6 +98,174 @@ pub enum AcquisitionOutcome {
     Err(RpcFailure),
 }
 
+// Game acquisition RPC (ADR 0013). Legacy portal acquisition RPC names and
+// fields, with korrid holding the claim the portal names.
+
+/// Legacy `AcquisitionPluginsPayload`.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AcquisitionPluginsPayload {}
+
+/// An enabled plugin's explicit `providers` record (`ProviderRecord`) and its
+/// owner. Replaces legacy `PluginMetadata`.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcquisitionProvider {
+    pub id: String,
+    pub title: String,
+    pub plugin_id: String,
+}
+
+/// Legacy `PluginListResponse`.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PluginListResponse {
+    pub providers: Vec<AcquisitionProvider>,
+}
+
+/// Legacy `SearchRequest` without `platforms`. Exactly one provider id.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SearchRequest {
+    pub query: String,
+    pub provider_ids: Vec<String>,
+}
+
+/// Legacy `SearchResponse`.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SearchResponse {
+    pub claims: Vec<super::claims::ProviderClaim>,
+}
+
+/// Legacy `DetailsRequest`.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DetailsRequest {
+    pub provider_id: String,
+    pub id: String,
+}
+
+/// Legacy `AcquireArtifactRequest` minus `url`, `size`, `artifactFormat`,
+/// `system`, `title` and `artUrl`: korrid takes those from the claim it holds.
+/// `sourceId` chooses among several eligible paired sources.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcquireArtifactRequest {
+    pub provider_id: String,
+    pub id: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::plugin::deserialize_optional_non_null"
+    )]
+    pub file_name: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::plugin::deserialize_optional_non_null"
+    )]
+    pub source_id: Option<String>,
+}
+
+/// Legacy `AcquireStatusRequest`.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcquireStatusRequest {
+    pub job_id: String,
+}
+
+/// Follows `AcquireStatusRequest`; legacy had no cancel.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcquireCancelRequest {
+    pub job_id: String,
+}
+
+/// Legacy job states as a tagged union with ADR 0012 progress fields.
+#[typeshare(serialized_as = "AcquireJobStateWire")]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag")]
+pub enum AcquireJobState {
+    Resolving,
+    Downloading {
+        #[serde(rename = "bytesDone")]
+        #[typeshare(serialized_as = "number")]
+        bytes_done: u64,
+        #[serde(rename = "bytesTotal", skip_serializing_if = "Option::is_none")]
+        #[typeshare(serialized_as = "Option<number>")]
+        bytes_total: Option<u64>,
+        #[serde(rename = "bytesPerSecond", skip_serializing_if = "Option::is_none")]
+        bytes_per_second: Option<f64>,
+    },
+    Placing,
+    Imported {
+        #[serde(rename = "gameId")]
+        game_id: String,
+    },
+    Staged {
+        message: String,
+    },
+    Failed {
+        reason: RpcFailure,
+    },
+    Cancelled,
+}
+
+/// Legacy `AcquireJobStatus` without `stagedPath`/`placedPath`: paths never
+/// leave korrid, and the game id is the handle for a placed game.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcquireJobStatus {
+    pub job_id: String,
+    pub provider_id: String,
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    pub state: AcquireJobState,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum PluginListOutcome {
+    Ok(PluginListResponse),
+    Err(RpcFailure),
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum SearchOutcome {
+    Ok(SearchResponse),
+    Err(RpcFailure),
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum DetailsOutcome {
+    Ok(super::claims::ProviderClaimDetails),
+    Err(RpcFailure),
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum AcquireJobOutcome {
+    Ok(AcquireJobStatus),
+    Err(RpcFailure),
+}
+
 /// Never send transport, filesystem or unpack stderr strings to the portal.
 /// A closed vocabulary is stronger than trying to redact arbitrary diagnostics.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

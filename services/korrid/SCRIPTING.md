@@ -380,35 +380,46 @@ releases names. Runner artifacts and device-wide status omit the field.
 
 ADR 0013 records the decision. A provider plugin finds games on one site and
 says where their files are. It performs no I/O: korrid makes every HTTP request
-and every download, and the plugin only reads what korrid fetched. The legacy
-names are `product/platform/protocol/acquisition/*.ts` and
-`product/platform/plugin/services.ts` on the `legacy` branch.
+and every download, and the plugin only reads what korrid fetched. Legacy
+names come from `product/platform/protocol/acquisition/*.ts`,
+`product/platform/plugin/services.ts` and
+`product/apps/portal/api/acquisition/*.rpc.ts` on the `legacy` branch. Every
+type named below is a Rust type exported through Typeshare into
+`contracts/generated/korrid.ts`; that file is the exact wire.
 
 #### Declaration
 
 ```ts
+import type {
+  PluginDetailsInput, PluginDetailsOutput,
+  PluginResolveDownloadInput, PluginResolveDownloadOutput,
+  PluginSearchInput, PluginSearchOutput,
+} from "korrid"
+
 export const name = "pico8"
 export const title = "PICO-8 BBS"
 export const providers = {
   "@korri:pico8": { id: "@korri:pico8", title: "PICO-8 BBS" },
 }
 export const handlers = {
-  "claims.search": (input) => { /* ... */ },
-  "claims.details": (input) => { /* ... */ },
-  "artifact.resolve-download": (input) => { /* ... */ },
+  "claims.search": (input: PluginSearchInput): PluginSearchOutput => { /* ... */ },
+  "claims.details": (input: PluginDetailsInput): PluginDetailsOutput => { /* ... */ },
+  "artifact.resolve-download": (input: PluginResolveDownloadInput): PluginResolveDownloadOutput => { /* ... */ },
 }
 ```
 
 An explicit `providers` export declares acquisition providers (the existing
-`ProviderRecord { id, title }`). Each record needs a non-empty `title`. A plugin
-that exports `providers` must carry callable `claims.search`, `claims.details`
-and `artifact.resolve-download` handlers; evaluation checks that they exist
-and never calls them. The implicit own-id provider that every plugin receives
-is not an acquisition provider. `app.acquisition.providers` lists only the
-explicit records of enabled plugins, each with its owning `pluginId`.
+`ProviderRecord { id, title }`). Each explicit record needs a non-empty
+`title`. A plugin that exports `providers` must carry callable
+`claims.search`, `claims.details` and `artifact.resolve-download` handlers;
+evaluation checks that they exist and never calls them. The implicit own-id
+provider that every plugin receives is not an acquisition provider.
+`app.acquisition.providers` lists only the explicit records of enabled
+plugins, each with its owning `pluginId`.
 
-The package manifest carries `hosts`: the exact DNS names the plugin may
-reach, beside `ports` in `plugin.nix`:
+#### Declared hosts
+
+`plugin.nix` gains `hosts`, a list of strings beside `ports`:
 
 ```nix
 {
@@ -416,64 +427,67 @@ reach, beside `ports` in `plugin.nix`:
 }
 ```
 
+The name follows the existing manifest style (`ports`, `requires`). The
+builder copies the list into `manifest.json` as `hosts`, and, like
+`requires`, omits the key when the list is empty, so a package without hosts
+keeps its manifest bytes and approval. The administrator validates it, shows it
+as the report field `hosts` in `inspect`, binds it in the approval digest
+through the manifest bytes, and projects it into `enabled-packages` as
+`EnabledPackage.hosts` (always present; `[]` when none). korrid reads it only
+from that projection.
+
 Each entry is a lowercase DNS name of at least two labels (`[a-z0-9]`, inner
 `-`, each label 1 to 63 bytes, 253 bytes in total), no trailing dot, no
-wildcard, no port, no scheme, no IP literal. At most 128 distinct names, the
-`ports` bound. `hosts` needs a `providers` export, as `ports` needs a service.
-The administrator shows `hosts` in the `inspect` report, binds the list in the
-approval digest through the manifest bytes, and projects it into
-`enabled-packages`. korrid refuses any request or redirect hop whose host is
-not in the owning plugin's list, both for provider turns and for the game
-download. An empty list means no network. The SSRF and redirect policy in
+wildcard, no port, no scheme, no IP literal. Entries are distinct; at most 128,
+the `ports` bound. A non-empty `hosts` needs a `providers` export, as `ports`
+needs a service. korrid refuses any request and any redirect hop whose host is
+not exactly in the owning plugin's list, both for provider turns and for the
+game download. An empty list means no network. The SSRF and redirect policy in
 `acquisition/policy.rs` still applies to every hop.
 
 #### Request and response turns
 
-A handler cannot fetch. It returns either its result or a list of requests,
-and korrid calls it again with the responses. The shape follows
+A handler cannot fetch. It returns either its result or the HTTP requests it
+needs, and korrid calls it again with the responses. The shape follows
 `discovery.discover` (host-read text in, pure result out) and the legacy
-`services.http.request(url, PluginHttpRequestOptions)` /
-`PluginHttpResponse` pair, with the call turned into a returned value.
+`services.http.request(url, PluginHttpRequestOptions)` / `PluginHttpResponse`
+pair, with the call turned into a returned value.
 
-Input is the legacy request for the operation plus `responses`:
+| Operation | Input type | Output type |
+|---|---|---|
+| `claims.search` | `PluginSearchInput { providerId, query, responses }` | `PluginSearchOutput = PluginHttpRequests \| ProviderClaim[]` |
+| `claims.details` | `PluginDetailsInput { providerId, id, responses }` | `PluginDetailsOutput = PluginHttpRequests \| ProviderClaimDetails` |
+| `artifact.resolve-download` | `PluginResolveDownloadInput { providerId, candidateUrl, fileName?, responses }` | `PluginResolveDownloadOutput = PluginHttpRequests \| DownloadResolution` |
 
-| Operation | Input |
-|---|---|
-| `claims.search` | `{ providerId, query, responses }` (legacy `SearchRequest.query`; `platforms` is not carried) |
-| `claims.details` | `{ providerId, id, responses }` (legacy `DetailsRequest`) |
-| `artifact.resolve-download` | `{ providerId, candidateUrl, fileName?, responses }` (legacy `ResolveDownloadRequest`; `size` and `artifactFormat` are not carried) |
-
+Inputs are the legacy request for the operation plus `responses`.
 `providerId` is the provider korrid asks for (legacy `context.provider`).
-`candidateUrl` is the held claim's `url`. `fileName` is the `acquire`
-request's `fileName`.
+`query` is legacy `SearchRequest.query`; `platforms` is not carried. `id` is
+legacy `DetailsRequest.id`. `candidateUrl` and `fileName` are legacy
+`ResolveDownloadRequest` fields: `candidateUrl` is the held claim's `url`, and
+`fileName` is the `acquire` request's `fileName`. `size` and
+`artifactFormat` are not carried.
 
-`responses` is every response to the plugin's earlier requests in this
-operation, in request order across turns. Each one carries the legacy
-`PluginHttpResponse` data fields:
-
-```ts
-interface PluginHttpResponse {
-  status: number
-  ok: boolean            // 200 to 299
-  url: string            // final URL after redirects
-  headers: Record<string, string>  // lower-cased names; repeated headers joined with ", "
-  text: string           // body decoded as UTF-8; invalid sequences become U+FFFD
-}
-```
-
-`setCookies` and `bytes` are not carried. An HTTP error status is a response
-with `ok: false`; the plugin decides what it means.
-
-Output is either the operation's legacy result or a request for more data:
+**The tag.** An output object whose `_tag` is `"HttpRequests"` asks for more
+data. Anything else is the operation's result: a JSON array for
+`claims.search`, and an object tagged `ProviderClaimDetails`,
+`FinalDownload`, `NonFinalDownload` or `FailedDownload` for the others.
 
 ```ts
-{ _tag: "HttpRequests", requests: PluginHttpRequest[] }
+interface PluginHttpRequests { _tag: "HttpRequests"; requests: PluginHttpRequest[] }
 
 interface PluginHttpRequest {
-  url: string                                   // absolute http(s), no credentials
-  query?: Record<string, string | number | boolean>  // set on the URL, replacing a same-named parameter
+  url: string                                     // absolute http(s), no credentials
+  query?: Record<string, string | number | boolean>  // PluginHttpQueryValue
   headers?: Record<string, string>
-  timeoutMs?: number                            // whole request, positive integer milliseconds
+  timeoutMs?: number                              // whole request, positive integer milliseconds
+}
+
+interface PluginHttpResponse {
+  status: number
+  ok: boolean                       // 200 to 299
+  url: string                       // final URL after redirects
+  headers: Record<string, string>   // lower-cased names; repeated headers joined with ", "
+  text: string                      // body decoded as UTF-8; invalid sequences become U+FFFD
 }
 ```
 
@@ -483,53 +497,70 @@ follows legacy `withQuery` (`searchParams.set`). Legacy had no default
 timeout, so none is invented: without `timeoutMs` the download policy's
 connect timeout and stall detection still end a dead request. `method` and
 `body` are not carried: every request is a GET. korrid refuses `cookie`,
-`set-cookie`, `authorization`, `proxy-authorization` and `host` headers.
+`set-cookie`, `authorization`, `proxy-authorization` and `host` request
+headers.
+
+korrid follows redirects itself (at most 5, no https to http, every hop
+host-checked), so a response never has a 3xx status. An HTTP error status is a
+response with `ok: false`; the plugin decides what it means. `setCookies` and
+`bytes` are not carried.
+
+`responses` holds every response to the plugin's earlier requests in this
+operation, in request order across turns. korrid calls the handler again with
+all responses so far; there is no opaque continuation state. Bounds per
+operation: at most 4 handler calls (the fourth must return a result), 8
+requests per turn, 4 MiB of body text per response, and 4 MiB of serialized
+handler input in total (the 512 KiB launch input bound does not apply; the
+existing 16 MiB interpreter heap must hold that input). The existing 1000 ms
+deadline, 16 MiB heap and output budget apply to each call. A request for zero
+requests, exceeding any bound, a thrown error, a request to an undeclared host,
+or an invalid result is a provider failure (`ProviderFailed`). A transport
+failure (DNS, connect, timeout, stall, oversize body, refused redirect) fails
+the operation as `ProviderUnreachable`; it is never delivered to the plugin.
+Neither crashes korrid.
+
+#### Results
 
 The legacy results are preserved verbatim with these deltas: `ref`, `playable`
 and `facets` are dropped (their only consumer authored library entries;
-discovery owns library records on main), and `requestHeaders` on
-`FinalDownload` is dropped (no in-scope provider forwards Referer or Cookie).
-
-| Operation | Result |
-|---|---|
-| `claims.search` | `ProviderClaim[]` |
-| `claims.details` | `ProviderClaimDetails` |
-| `artifact.resolve-download` | `DownloadResolution` = `FinalDownload` \| `NonFinalDownload` \| `FailedDownload` |
+discovery owns library records on main), and `FinalDownload.requestHeaders` is
+dropped (no in-scope provider forwards Referer or Cookie).
 
 ```ts
 interface ProviderClaim {
   _tag: "ProviderClaim"
-  providerId: string      // must equal the asked provider
-  id: string              // 1 to 2048 characters
-  title: string           // SafeText: at most 8192 characters
-  url: string             // SafeUrl: absolute http(s), no credentials
-  platform?: string       // SafeText
-  thumbnailUrl?: string   // SafeUrl
+  providerId: string        // must equal the asked provider
+  id: string                // 1 to 2048 characters
+  title: string             // SafeText: at most 8192 characters
+  url: string               // SafeUrl: absolute http(s), no credentials
+  platform?: string         // SafeText
+  thumbnailUrl?: string     // SafeUrl
   artifact?: ArtifactAcquisitionHint
   fetchedAt?: string
 }
 interface ProviderClaimDetails {
   _tag: "ProviderClaimDetails"
   providerId: string
-  id: string
+  id: string                // must equal the asked id
   title: string
   url: string
-  description?: string    // SafeText
+  description?: string      // SafeText
   downloadPageUrl?: string  // SafeUrl
   artifact?: ArtifactAcquisitionHint
   fetchedAt?: string
 }
 interface ArtifactAcquisitionHint {
-  kind: "content" | "patch"
-  system?: string         // the Korri system id, e.g. "gb"; decides where the file goes
-  format: { id: string; version?: string }  // id: /^[a-z0-9][a-z0-9._-]{0,63}$/
-  file?: { name: string; extension?: string; mediaType?: string; sizeBytes?: number }
+  kind: "content" | "patch"                  // ArtifactKind
+  system?: string        // the Korri system id, e.g. "gb"; decides where the file goes
+  format: SemanticFormat  // { id: /^[a-z0-9][a-z0-9._-]{0,63}$/, version?: non-empty }
+  file?: ArtifactFile     // { name, extension?, mediaType?, sizeBytes? }
 }
+type DownloadResolution = FinalDownload | NonFinalDownload | FailedDownload
 interface FinalDownload {
   _tag: "FinalDownload"
   providerId: string
-  url: string             // SafeUrl, host must be declared
-  filename?: string
+  url: string             // SafeUrl; its host must be declared
+  filename?: string       // SafeFileName
   contentType?: string
 }
 interface NonFinalDownload {
@@ -537,53 +568,46 @@ interface NonFinalDownload {
   providerId: string
   reason: "interstitial" | "requires-user-action" | "unsupported"
   url?: string
-  choices?: DownloadChoice[]
+  choices?: DownloadChoice[]  // { id, fileName?, size?, platforms? }
 }
-interface DownloadChoice { id: string; fileName?: string; size?: string; platforms?: string[] }
 interface FailedDownload {
   _tag: "FailedDownload"
   providerId: string
   reason: "provider-error" | "configuration" | "not-found" | "defective-provider"
-  message: string
+  message: string           // diagnostics only; never shown to the person
 }
 ```
 
-A claim whose `artifact.system` is absent or names no enabled system is shown
-but cannot be acquired (the legacy Shift "ungetable" guard). Unknown fields
-and explicit `null` values fail admission. `file.name` must not contain `/`,
-`\`, NUL, or be `.` or `..`; `file.extension` is lowercase
-`[a-z0-9][a-z0-9-]{0,31}`.
-
-Bounds per operation: at most 4 turns (handler calls), 8 requests per turn, 4
-MiB of text per response, and 4 MiB of handler input in total (the 512 KiB
-launch bound does not apply here); the existing 1000 ms deadline, 16 MiB heap
-and output budget apply to each call. The fourth call must return a result.
-Exceeding any bound, a thrown error, a request to an undeclared host, or an
-invalid result is a provider failure reported to the caller; it never crashes
-korrid. A transport failure (DNS, connect, timeout, oversize body) fails the
-operation as unreachable rather than being delivered to the plugin.
+Unknown fields and explicit `null` values fail admission. `file.name` follows
+legacy `SafeFileName` (no `/`, `\`, NUL, `.` or `..`); `file.extension` is
+lowercase `[a-z0-9][a-z0-9-]{0,31}`; `sizeBytes` is a positive integer. A
+claim whose `artifact.system` is absent or names no enabled system is shown but
+cannot be acquired (the legacy Shift "ungetable" guard). No provider result
+carries an expected digest: legacy carried `expectedDigests` only on
+`artifact.acquire` output, which main does not carry.
 
 #### RPC
 
-Local `/rpc`, portal capability, legacy method names. Every method answers
-`{ _tag: "Ok", payload }` or `{ _tag: "Err", payload: RpcFailure }`.
+Local `/rpc`, portal capability only (like `app.acquisition.status`), legacy
+method names. Every answer is `{ _tag: "Ok", payload }` or
+`{ _tag: "Err", payload: RpcFailure }`.
 
-| Method | Request | `Ok` payload |
-|---|---|---|
-| `app.acquisition.providers` | `{}` | `{ providers: [{ id, title, pluginId }] }` |
-| `app.acquisition.search` | `{ query, providerIds }` — exactly one id | `{ claims: ProviderClaim[] }` |
-| `app.acquisition.details` | `{ providerId, id }` | `ProviderClaimDetails` |
-| `app.acquisition.acquire` | `{ providerId, id, fileName?, sourceId? }` | `AcquireJobStatus` |
-| `app.acquisition.acquire-status` | `{ jobId }` | `AcquireJobStatus` |
-| `app.acquisition.acquire-cancel` | `{ jobId }` | `AcquireJobStatus` |
+| Method | Request type | Outcome type | `Ok` payload |
+|---|---|---|---|
+| `app.acquisition.providers` | `AcquisitionPluginsPayload {}` | `PluginListOutcome` | `PluginListResponse { providers: AcquisitionProvider[] }`, `AcquisitionProvider { id, title, pluginId }` |
+| `app.acquisition.search` | `SearchRequest { query, providerIds }` (exactly one id) | `SearchOutcome` | `SearchResponse { claims: ProviderClaim[] }` |
+| `app.acquisition.details` | `DetailsRequest { providerId, id }` | `DetailsOutcome` | `ProviderClaimDetails` |
+| `app.acquisition.acquire` | `AcquireArtifactRequest { providerId, id, fileName?, sourceId? }` | `AcquireJobOutcome` | `AcquireJobStatus` |
+| `app.acquisition.acquire-status` | `AcquireStatusRequest { jobId }` | `AcquireJobOutcome` | `AcquireJobStatus` |
+| `app.acquisition.acquire-cancel` | `AcquireCancelRequest { jobId }` | `AcquireJobOutcome` | `AcquireJobStatus` |
 
 ```ts
 interface AcquireJobStatus {
   jobId: string
   providerId: string
   id: string
-  fileName?: string
-  system?: string
+  fileName?: string     // the request's fileName, then the downloaded file's name
+  system?: string       // the claim's artifact.system
   message?: string      // the Staged message or the Failed reason message, else absent
   state: AcquireJobState
 }
@@ -599,22 +623,48 @@ type AcquireJobState =
 
 `acquire` needs a claim that `search` or `details` returned in this process:
 korrid takes the URL, title and system from the claim it holds, never from the
-caller. A repeated `acquire` for a claim with a live job returns that job.
-Jobs and claims live in memory only; after a restart `acquire-status` answers
-`AcquisitionUnknownJob` and startup removes leftover staging files.
+caller. `details` replaces the held claim's fields. A repeated `acquire` for a
+claim whose newest job is live (`Resolving`, `Downloading`, `Placing`) or
+`Imported` returns that job (legacy `activeByClaim`); after `Failed`,
+`Cancelled` or `Staged` it starts a new job. `acquire-cancel` stops a
+`Resolving` or `Downloading` job and removes its staging file; a `Placing` or
+finished job is returned unchanged. Jobs and claims live in memory only. After
+a restart `acquire-status` answers `AcquisitionUnknownJob`, startup removes
+leftover staging files, and Retry starts the download from zero.
 
-`RpcFailure.code` values: `AcquisitionCaller` (malformed request, several or
-zero provider ids, `fileName` or `sourceId` not usable), `AcquisitionUnknownProvider`,
-`AcquisitionUnknownClaim`, `AcquisitionUnknownJob`, `AcquisitionSystemUnknown`
-(the claim cannot be acquired), `AcquisitionNoSource` (no paired source holds
-the claim's system, refused before any download), `AcquisitionSourceChoice`
-(several eligible sources; call `acquire` again with `sourceId`),
-`ProviderUnreachable` (transport), `ProviderFailed` (plugin error, invalid
-output, exceeded bound). Job `Failed.reason.code` values: `DownloadNotFinal`
+Placement is decided before any network request. korrid finds the paired file
+sources whose system, or system group, contains the claim's system. None
+answers `AcquisitionNoSource`. Several answer `AcquisitionSourceChoice`; the
+host asks the person and calls `acquire` again with `sourceId`, the
+`DiscoverySource.id` from `app.discovery.snapshot`. A `sourceId` that is not
+an eligible source answers `AcquisitionCaller`.
+
+`RpcFailure.code` values for `Err`: `AcquisitionUnavailable` (no local
+registry or discovery on this device), `AcquisitionCaller` (malformed request,
+several or zero provider ids, `fileName` or `sourceId` not usable),
+`AcquisitionUnknownProvider`, `AcquisitionUnknownClaim`,
+`AcquisitionUnknownJob`, `AcquisitionSystemUnknown` (the claim cannot be
+acquired), `AcquisitionNoSource`, `AcquisitionSourceChoice`,
+`ProviderUnreachable` (transport) and `ProviderFailed` (plugin error, invalid
+output, exceeded bound). `Failed.reason.code` values: `DownloadNotFinal`
 (`NonFinalDownload`), `DownloadResolutionFailed` (`FailedDownload`),
-`ProviderUnreachable`, `ProviderFailed`, and `AcquisitionFailed` for the
-download, validation and placement failures with the existing plain messages.
-No message contains a URL, path, header value or HTTP status.
+`ProviderUnreachable`, `ProviderFailed`, `AcquisitionNoSource` (the source
+disappeared before placement) and `AcquisitionFailed` for download, validation
+and placement failures. Every message is fixed plain copy: none contains a
+URL, path, query, header value, HTTP status or plugin-supplied text.
+
+The game download stages under the provider plugin's reconstructible cache,
+`<storage-root>/cache/<plugin short name>/<provider name>/.downloads/`
+(ADR 0012 grammar; the provider name is the part of the provider id after
+`:`), private (0700), with a random temporary name. It follows the declared
+hosts and the SSRF/redirect policy, ADR 0012's connect timeout and stall
+detection, and a 2 GiB cap (legacy `MAX_FALLBACK_DOWNLOAD_BYTES`). It refuses
+an empty body and a web page (legacy `rejectNonArtifactPayload`: an HTML
+content type or an HTML lead tag), then the target system's declared content
+rules: the file name must end in one of its extensions (longest suffix,
+ignoring case), and a matching header rule must leave content after the
+header. SHA-256 is computed while writing; it is byte identity, not
+authentication. Placement and the library import follow ADR 0013.
 
 ### Native runners for specific content
 
