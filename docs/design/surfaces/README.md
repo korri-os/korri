@@ -29,6 +29,8 @@ summarised at the end of this file.
 | `teletext/` | Broadcast teletext service | Numbered pages, 40×24 cells, Fastext colour row as the last focus stop | Usable |
 | `catalogue/` | Mail-order catalogue | Paper spreads, item numbers, order form at the back | Usable; refined 2026-10-19 (print texture, plates, A–Z order, loop clearance, vector covers) |
 | `workbench/` | Amiga Workbench 2.x desktop | Overlapping windows and drawers; tile at small sizes | Usable. Cover-derived icons are ruled out (see below); use per-system chassis icons with the title as label |
+| `workbench-system7/` | Workbench skeleton in System 7 Finder language (2026-10-19) | Same desktop, windows, Get Info, alerts, Key Caps keyboard; 1-bit chrome, hand-made 32×32 colour chassis icons, pop-up window tabs at small sizes | Under review; sibling of `workbench/`, not a revision |
+| `workbench-platinum/` | Workbench skeleton in Mac OS 8/9 Platinum language (2026-10-19) | Same skeleton; grey bevelled chrome lit from the top-left, lavender selection, isometric lit chassis icons, WindowShade-collapsed windows at small sizes; Chicago stands in for Charcoal (no libre clone) | Under review; sibling of `workbench/`, not a revision |
 | `adventure/` | LucasArts SCUMM room | One painted scene, 3×3 verb grid, inventory; sentence line "Use X with Y" | Under review |
 | `house/` | Little Computer People cutaway | Side-view rooms, a figure walks; one capability per room | Under review |
 | `prevue/` | Prevue Guide | Fixed split: preview above, grid below | Look kept, grid rejected: a time axis makes no sense for a launcher. Needs a grid whose axes are things a person scans a library by |
