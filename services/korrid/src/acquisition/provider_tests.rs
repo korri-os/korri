@@ -737,6 +737,18 @@ async fn a_restart_drops_jobs_cleans_staging_and_get_answers_play_through_the_li
         games: GameAcquisition::with_engine(engine()),
         ..Default::default()
     };
+    // A folder published just before a crash, with no library record yet:
+    // recovery reports it and deletes nothing.
+    let unrecorded = world.cache().join("b".repeat(64));
+    fs::create_dir(&unrecorded).unwrap();
+    assert_eq!(
+        restarted
+            .games
+            .recover(&world.root, &world.context.registry)
+            .unwrap(),
+        [(PROVIDER.to_owned(), "b".repeat(64))]
+    );
+    assert!(unrecorded.is_dir());
     restarted
         .recover(
             &world.root,
