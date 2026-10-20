@@ -668,6 +668,14 @@
   --zone-slant-least: 6px;
   /** A section divider's width on the narrow band (three visible): a hairline spine. @label Section hairline @min 2 @max 24 @step 1 */
   --zone-section-hairline: 6px;
+  /** The least width the backup's slab keeps beside its QR code. @label Backup slab, least width @min 120px @max 600px @step 10px */
+  --zone-save-slab-least: 220px;
+  /** The widest the backup's slab grows beside its QR code: one line of the secret at the slab type, with room. @label Backup slab, widest @min 240px @max 1200px @step 10px */
+  --zone-save-slab-most: 640px;
+  /** The least height the backup's slab keeps under its QR code. @label Backup slab, least height @min 60px @max 400px @step 10px */
+  --zone-save-slab-least-block: 130px;
+  /** A part frame 300 tall, for a 1280x300 strip inside the 720p device. @label Part frame, strip height @min 120px @max 720px @step 10px */
+  --zone-part-strip-height: 300px;
   /** A part frame 480 wide, for the top strip's ladder. @label Part frame, 480 @min 120px @max 1280px @step 10px */
   --zone-part-w480: 480px;
   /** A part frame 360 wide. @label Part frame, 360 @min 120px @max 1280px @step 10px */

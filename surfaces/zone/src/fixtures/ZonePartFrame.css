@@ -47,3 +47,8 @@
 .zone-part-frame[data-shape="w260"] {
   width: min(100%, var(--zone-part-w260));
 }
+
+/* A strip 300 tall at the device's full width: 1280x300 inside the 720p device. */
+.zone-part-frame[data-shape="strip-300"] {
+  height: min(100%, var(--zone-part-strip-height));
+}

@@ -47,12 +47,20 @@ function subscribeScreen(listener: () => void) {
 const screenSize = () => `${window.innerWidth}x${window.innerHeight}`
 
 /** Unexported: the real page around the real identity model, with a stand-in Korri behind it. */
-function Scene({ initial, narrow = false }: { initial: SaveDataScene; narrow?: boolean }) {
+function Scene({ initial, narrow = false, screen }: {
+  initial: SaveDataScene
+  narrow?: boolean
+  /** The frame's size, when the part draws the page in a frame of a fixed size: at most this. */
+  screen?: readonly [number, number]
+}) {
   const store = useRef<SaveDataStore | null>(null)
   store.current ??= createSaveDataStore(initial)
   const scene = useSyncExternalStore(store.current.subscribe, store.current.get)
   const size = useSyncExternalStore(subscribeScreen, screenSize, () => "1280x720")
-  const [width = 1280, height = 720] = size.split("x").map(Number)
+  const [windowWidth = 1280, windowHeight = 720] = size.split("x").map(Number)
+  const [width, height] = screen === undefined
+    ? [windowWidth, windowHeight]
+    : [Math.min(windowWidth, screen[0]), Math.min(windowHeight, screen[1])]
   const layout = plan(narrow ? width * 0.36 : width, height)
   return (
     <ZoneSaveData
@@ -104,27 +112,31 @@ export function Password() {
   return <Scene initial={sceneOf(idle, { card: 0, flow: { _tag: "password", for: { kind: "export" }, draft: draft("hummingbird", "letters", "d") } })} />
 }
 
-/** C16: Korri's backup: the QR in BACK UP's well and the secret on the slab, the cursor on the slab. B closes it. */
+const backupReady = sceneOf(
+  fixtureIdentity({ _tag: "BackupReady", encryptedSecret: fixtureEncryptedSecret }, { localBackupAvailable: true, retiredPublicKeys: fixtureRetiredKeys }),
+  { card: 0, flow: { _tag: "showSecret", onSlab: true } },
+)
+
+/** C16: Korri's backup in the band's room: the QR as the largest square, the secret on the slab, the cursor on the slab. B closes it. */
 export function BackupReady() {
+  return <Scene initial={backupReady} />
+}
+
+/** C16 on a 640x480 handheld: the square takes the room's height, the slab beside it. */
+export function BackupReadyHandheld() {
   return (
-    <Scene
-      initial={sceneOf(
-        fixtureIdentity({ _tag: "BackupReady", encryptedSecret: fixtureEncryptedSecret }, { localBackupAvailable: true, retiredPublicKeys: fixtureRetiredKeys }),
-        { card: 0, flow: { _tag: "showSecret", onSlab: true } },
-      )}
-    />
+    <ZonePartFrame shape="handheld">
+      <Scene initial={backupReady} screen={[640, 480]} />
+    </ZonePartFrame>
   )
 }
 
-/** C16: the cursor moved back to the band: BACK UP wears it, and its QR stands clear of the triangles. */
-export function BackupReadyOnCard() {
+/** C16 on a 1280x300 strip: the banner folds and the square takes the body's height. */
+export function BackupReadyStrip() {
   return (
-    <Scene
-      initial={sceneOf(
-        fixtureIdentity({ _tag: "BackupReady", encryptedSecret: fixtureEncryptedSecret }, { localBackupAvailable: true, retiredPublicKeys: fixtureRetiredKeys }),
-        { card: 0, flow: { _tag: "showSecret", onSlab: false } },
-      )}
-    />
+    <ZonePartFrame shape="strip-300">
+      <Scene initial={backupReady} screen={[1280, 300]} />
+    </ZonePartFrame>
   )
 }
 

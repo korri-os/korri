@@ -12,18 +12,18 @@ import {
   shortKey,
   ZONE_KEY_END,
   ZONE_SAVE_BANNER_FOLD_ASPECT,
-  ZONE_SAVE_SLAB_BESIDE_ASPECT,
+  ZONE_SAVE_BACKUP_BESIDE_ASPECT,
   ZONE_SECRET_GROUP,
   ZONE_SECRET_LINE,
 } from "../src/plan/save-data"
 
 describe("planSaveData", () => {
   const height = 400
-  const edge = height * ZONE_SAVE_SLAB_BESIDE_ASPECT
-  test("one pixel under the threshold the slab stands under the band", () => {
+  const edge = height * ZONE_SAVE_BACKUP_BESIDE_ASPECT
+  test("one pixel under the threshold the slab stands under the QR code", () => {
     expect(planSaveData(edge - 1, height).slab).toBe("under")
   })
-  test("at the threshold and one pixel over it the slab stands beside the band", () => {
+  test("at the threshold and one pixel over it the slab stands beside the QR code", () => {
     expect(planSaveData(edge, height).slab).toBe("beside")
     expect(planSaveData(edge + 1, height).slab).toBe("beside")
   })
@@ -39,9 +39,9 @@ describe("planSaveData", () => {
   })
   test("the page's container query holds the same number", () => {
     const css = readFileSync(join(import.meta.dir, "..", "src", "pages", "ZoneSaveData.css"), "utf8")
-    const match = /@container zone-save-data \(min-aspect-ratio: (\d+) \/ (\d+)\) \{\s*\.zone-save-data-main/.exec(css)
+    const match = /@container zone-save-data \(aspect-ratio < ([\d.]+)\) \{\s*\.zone-save-data-backup/.exec(css)
     expect(match).not.toBeNull()
-    expect(Number(match?.[1]) / Number(match?.[2])).toBe(ZONE_SAVE_SLAB_BESIDE_ASPECT)
+    expect(Number(match?.[1])).toBe(ZONE_SAVE_BACKUP_BESIDE_ASPECT)
   })
 })
 

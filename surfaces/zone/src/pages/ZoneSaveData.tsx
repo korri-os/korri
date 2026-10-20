@@ -81,24 +81,14 @@ const keyEvent = (key: ZoneKey): ZoneSaveDataEvent => {
 const CAPTIONS = { password: "Password", secret: "Backup", bunker: "Bunker" } as const
 
 /** The cards, in band order. The words are the page's labels; the keys are Korri's. */
-function cardsOf(identity: SurfaceIdentityManagement | undefined, marked: boolean): readonly ZoneSaveBandCard[] {
+function cardsOf(identity: SurfaceIdentityManagement | undefined): readonly ZoneSaveBandCard[] {
   if (identity === undefined) {
     return [{ id: "unavailable", header: "Identity", body: { kind: "text", text: "Not available" } }]
   }
-  const { status } = identity
   const backup: ZoneSaveBandCard = {
     id: "backup",
     header: "Back up",
-    body: status._tag === "BackupReady"
-      ? {
-        kind: "node",
-        node: (
-          <span className="zone-save-data-qr" data-clear={marked ? "triangles" : undefined}>
-            <ZoneQrWell label="Backup QR code" value={status.encryptedSecret} />
-          </span>
-        ),
-      }
-      : { kind: "text", text: "This key" },
+    body: { kind: "text", text: "This key" },
     tag: identity.localBackupAvailable ? { kind: "saved", label: "Backed up" } : { kind: "open", label: "New" },
   }
   return [
@@ -125,10 +115,11 @@ function cardsOf(identity: SurfaceIdentityManagement | undefined, marked: boolea
  * dialog.
  *
  * Korri's status is drawn as Korri states it. Working is the busy strip
- * over the band with the operation as its kicker. BackupReady turns the
- * BACK UP card's well into the QR code and lays the secret on a white slab
- * beside or under the band; the cursor goes to the slab, and the band goes
- * unmarked so the QR code can take the whole well. Problem and Switched are
+ * over the band with the operation as its kicker. BackupReady takes the
+ * band's room: the QR code as the largest square it allows, so a phone can
+ * read it, and the secret on a white slab beside it (under it on a page
+ * taller than wide). The cursor goes to the slab; B closes the backup and
+ * the band returns with its cursor where it was. Problem and Switched are
  * dialogs.
  *
  * A shape: it takes Korri's identity slice and the identity model's value
@@ -161,7 +152,7 @@ export function ZoneSaveData({
   const layered = status?._tag === "Problem" || status?._tag === "Switched"
     || (flow._tag !== "idle" && flow._tag !== "showSecret")
   const marked = !onSlab && !layered
-  const cards = cardsOf(identity, marked)
+  const cards = cardsOf(identity)
 
   // When a step opens or closes, the cursor goes to it: DOM mechanics only.
   // The first render leaves focus where the host has it.
@@ -255,19 +246,27 @@ export function ZoneSaveData({
             <ZoneBusyStrip kicker={status.operation} />
           </div>
         ) : null}
-        <div className="zone-save-data-main" data-slab={backup === undefined ? undefined : "shown"}>
-          <div className="zone-save-data-band">
-            <ZoneSaveBand
-              cards={cards}
-              focusedIndex={card}
-              marked={marked}
-              onChoose={index => send({ _tag: "ChoseSaveCard", index })}
-              onFocus={index => send({ _tag: "FocusedSaveCard", index })}
-            />
-          </div>
-          {backup === undefined ? null : (
-            <div className="zone-save-data-slab">
-              <ZoneSecretSlab focused={onSlab && !layered} label="Backup secret" onFocus={() => send({ _tag: "FocusedSecret" })} secret={backup} />
+        <div className="zone-save-data-main">
+          {backup === undefined ? (
+            <div className="zone-save-data-band">
+              <ZoneSaveBand
+                cards={cards}
+                focusedIndex={card}
+                marked={marked}
+                onChoose={index => send({ _tag: "ChoseSaveCard", index })}
+                onFocus={index => send({ _tag: "FocusedSaveCard", index })}
+              />
+            </div>
+          ) : (
+            <div className="zone-save-data-backup">
+              <div className="zone-save-data-qr">
+                <span className="zone-save-data-qr-square">
+                  <ZoneQrWell label="Backup QR code" value={backup} />
+                </span>
+              </div>
+              <div className="zone-save-data-slab">
+                <ZoneSecretSlab focused={onSlab && !layered} label="Backup secret" onFocus={() => send({ _tag: "FocusedSecret" })} secret={backup} />
+              </div>
             </div>
           )}
         </div>

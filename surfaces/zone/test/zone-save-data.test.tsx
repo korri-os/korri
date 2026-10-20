@@ -145,17 +145,44 @@ describe("C16 back up", () => {
     expect(calls).toEqual([["exportIdentityBackup", "hi", undefined]])
 
     publish(identityOf({ _tag: "BackupReady", encryptedSecret: SECRET }, { localBackupAvailable: true }))
-    expect(screen.getByRole("img", { name: "Backup QR code" })).toBeTruthy()
-    // The cursor rests on the slab; the band goes unmarked so the QR takes the well.
+    // The QR leaves the card's well and takes the band's room, beside the slab.
+    const qr = screen.getByRole("img", { name: "Backup QR code" })
+    expect(qr.closest(".zone-save-data-backup")).not.toBeNull()
+    expect(qr.closest(".zone-save-card")).toBeNull()
+    expect(screen.queryByRole("button", { name: /Back up/ })).toBeNull()
+    // The cursor rests on the slab.
     expect(document.activeElement).toBe(screen.getByRole("region", { name: "Backup secret" }))
-    expect(card(/Back up/).dataset["focused"]).toBeUndefined()
     const text = screen.getByRole("region", { name: "Backup secret" })
     expect(text.textContent).toContain("ncry")
     expect(within(text).getByText("ptse")).toBeTruthy()
-    expect(within(card(/Back up/)).getByText("Backed up")).toBeTruthy()
 
     back()
     expect(calls.at(-1)).toEqual(["dismissIdentityStatus"])
+    publish(identityOf({ _tag: "Idle" }, { localBackupAvailable: true }))
+    expect(within(card(/Back up/)).getByText("Backed up")).toBeTruthy()
+    expect(screen.queryByRole("img", { name: "Backup QR code" })).toBeNull()
+  })
+
+  test("the QR code's paper keeps a quiet zone of four modules on every side", () => {
+    render(<page.BackupReady />)
+    const svg = screen.getByRole("img", { name: "Backup QR code" })
+    const span = Number(svg.getAttribute("viewBox")?.split(" ")[2])
+    const marks = [...(svg.querySelector("path")?.getAttribute("d") ?? "").matchAll(/M(\d+) (\d+)/g)]
+      .map(match => [Number(match[1]), Number(match[2])] as const)
+    expect(marks.length).toBeGreaterThan(0)
+    expect(Math.min(...marks.map(([x]) => x))).toBe(4)
+    expect(Math.min(...marks.map(([, y]) => y))).toBe(4)
+    expect(Math.max(...marks.map(([x]) => x))).toBe(span - 5)
+    expect(Math.max(...marks.map(([, y]) => y))).toBe(span - 5)
+  })
+
+  test("the 640x480 and 1280x300 states draw the backup in the band's room", () => {
+    for (const State of [page.BackupReadyHandheld, page.BackupReadyStrip]) {
+      render(<State />)
+      expect(screen.getByRole("img", { name: "Backup QR code" }).closest(".zone-save-data-qr-square")).not.toBeNull()
+      expect(screen.getByRole("region", { name: "Backup secret" })).toBeTruthy()
+      cleanup()
+    }
   })
 
   test("an empty password sends nothing", () => {

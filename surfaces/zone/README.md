@@ -572,3 +572,17 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   cursor crosses a section. Cost: on a sectioned catalog the cards are a
   little smaller at width-bound sizes (about 5% at 640x480, about 15% at
   1280x720 when a side can hold two full spines).
+- **Korri's backup takes the band's room.** BackupReady replaces the band
+  with the QR code (the largest square left after the slab's least room,
+  `--zone-save-slab-least` 220 px across or `--zone-save-slab-least-block`
+  130 px down) and the slab beside it, or under it when the page is taller
+  than wide (`ZONE_SAVE_BACKUP_BESIDE_ASPECT`, 1, which replaces the old
+  1.25 band-and-slab rule). The cards come back when B dismisses the
+  backup, with the cursor where it was; that is one press, and the B hint
+  says so. The well keeps a hairline of black, not 10 px, round the
+  code's own four-module quiet zone. Measured in Chromium, the code is
+  317 px at 640x480 (5.2 px a module), 168 px at 1280x300 (2.75 px a
+  module), 454 px at 480x800 and 502 px at 1280x720. This supersedes the
+  QR in BACK UP's well, the `data-clear` padding and BackupReadyOnCard.
+  `--zone-save-band-share` and `--zone-save-slab-share` are now unused and
+  left in the savedata block for its owner to remove.
