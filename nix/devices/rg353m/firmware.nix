@@ -30,9 +30,12 @@
           find . -maxdepth 1 -type f \
             \( -name 'LICEN*' -o -name 'COPYING*' -o -name WHENCE \) \
             -exec cp -- {} "$notices/" \;
+          # The pinned 20260916 source moved the license texts into LICENSES/.
+          # Preserve that layout so WHENCE's relative license paths still work.
+          cp -r LICENSES "$notices/"
           test -f "$notices/WHENCE"
-          test -f "$notices/LICENCE.rtlwifi_firmware.txt"
-          test -f "$notices/LICENCE.rockchip"
+          test -f "$notices/LICENSES/LICENCE.rtlwifi_firmware.txt"
+          test -f "$notices/LICENSES/LICENCE.rockchip"
         '';
         disallowedReferences = (old.disallowedReferences or [ ]) ++ [
           prev.linux-firmware

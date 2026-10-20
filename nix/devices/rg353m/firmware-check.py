@@ -29,14 +29,24 @@ def kept(path):
 
 expected = {path for path in entries(original) if kept(path)}
 notices = {
-    p.name
+    Path(p.name)
     for p in source.iterdir()
     if p.is_file() and (p.name.startswith(("LICEN", "COPYING")) or p.name == "WHENCE")
 }
-notice_root = Path("share/licenses/linux-firmware-rg353m")
-extra = {Path("share"), Path("share/licenses"), notice_root} | {
-    notice_root / name for name in notices
+notices |= {
+    Path("LICENSES") / p.name for p in (source / "LICENSES").iterdir() if p.is_file()
 }
+assert {
+    Path("LICENSES/LICENCE.rtlwifi_firmware.txt"),
+    Path("LICENSES/LICENCE.rockchip"),
+} <= notices
+notice_root = Path("share/licenses/linux-firmware-rg353m")
+extra = {
+    Path("share"),
+    Path("share/licenses"),
+    notice_root,
+    notice_root / "LICENSES",
+} | {notice_root / name for name in notices}
 actual = entries(trimmed)
 assert actual == expected | extra, (
     f"unexpected entries: {sorted(actual - expected - extra)}; "
