@@ -201,7 +201,10 @@ function published(steps: Steps, korri: SurfaceModel): void {
   steps.put("overlay", korri.presentation.kind === "gameplay-overlay"
     ? updateOverlay(state.overlay, message, korri.presentation)
     : { model: ZONE_OVERLAY_START, requests: [] })
-  if (korri.onboarding !== undefined) steps.put("onboarding", updateOnboarding(state.onboarding, message, korri))
+  // First boot starts at CONTROLLERS whenever Korri asks for it again.
+  steps.put("onboarding", korri.onboarding !== undefined
+    ? updateOnboarding(state.onboarding, message, korri)
+    : { model: ZONE_ONBOARDING_START, requests: [] })
 }
 
 /** Back: Korri's problem, then the page's own rule, then the GAMES tab. */
