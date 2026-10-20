@@ -116,17 +116,11 @@ pub(super) fn interrupted_since(base: &Path) -> Option<std::time::SystemTime> {
 }
 
 /// Cancel deletes partial bytes (ADR 0013 amends ADR 0012). Verified whole
-/// files stay. Returns `false` while another holder has `.lock`.
-pub(super) fn discard_partials(base: &Path) -> Result<bool, Failure> {
-    if !is_ready(base) {
-        return Ok(true);
-    }
-    let Some(_guard) = lock(base)? else {
-        return Ok(false);
-    };
+/// files stay. The caller holds the contribution's `.lock`.
+pub(super) fn remove_partials(base: &Path) -> Result<(), Failure> {
     let entries = match fs::read_dir(base.join(".downloads")) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(error.into()),
     };
     for entry in entries {
@@ -135,7 +129,7 @@ pub(super) fn discard_partials(base: &Path) -> Result<bool, Failure> {
             fs::remove_file(entry.path())?;
         }
     }
-    Ok(true)
+    Ok(())
 }
 
 pub(super) fn publish(

@@ -1,7 +1,7 @@
 use super::resolver::*;
 use crate::{
     config::{ConfigSnapshot, Location},
-    plugin::PluginRegistry,
+    plugin::{DeclaredReleaseFile, PluginRegistry},
 };
 use std::{collections::BTreeSet, path::Path};
 
@@ -217,7 +217,12 @@ fn artifact_target(registry: &PluginRegistry, key: &str) -> Option<ResolvedArtif
         .declared_hash(key)
         .into_iter()
         .find_map(|declared| {
-            let file = declared.release.artifact_file()?;
+            let file = match &declared.release.file {
+                Some(DeclaredReleaseFile::Artifact(file)) => file,
+                // A prepared file reaches the library as a saved location,
+                // which the location loop has already tried.
+                Some(DeclaredReleaseFile::AccountRoot(_)) | None => return None,
+            };
             Some(ResolvedArtifactTarget {
                 artifact_id: file.artifact.clone(),
                 path: file.path.clone(),

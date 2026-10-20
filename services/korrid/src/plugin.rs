@@ -166,35 +166,6 @@ pub struct ArtifactContentFile {
     pub path: String,
 }
 
-impl DeclaredReleaseFile {
-    /// The account-root path, or `None` for an artifact file.
-    pub fn account_root(&self) -> Option<&str> {
-        match self {
-            Self::AccountRoot(path) => Some(path),
-            Self::Artifact(_) => None,
-        }
-    }
-    pub fn artifact(&self) -> Option<&ArtifactContentFile> {
-        match self {
-            Self::AccountRoot(_) => None,
-            Self::Artifact(file) => Some(file),
-        }
-    }
-}
-
-impl DeclaredRelease {
-    /// The content file inside an artifact, when this release comes from one.
-    pub fn artifact_file(&self) -> Option<&ArtifactContentFile> {
-        self.file.as_ref().and_then(DeclaredReleaseFile::artifact)
-    }
-    /// The prepared account-root file, when this release names one.
-    pub fn account_root_file(&self) -> Option<&str> {
-        self.file
-            .as_ref()
-            .and_then(DeclaredReleaseFile::account_root)
-    }
-}
-
 /// A declared release found by one of its hashes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeclaredReleaseRef<'a> {
@@ -2096,8 +2067,8 @@ mod tests {
         assert_eq!(game.key, "jak1");
         assert_eq!(game.releases["prepared"].system, None);
         assert_eq!(
-            game.releases["prepared"].account_root_file(),
-            Some("opengoal/GAME.CGO")
+            game.releases["prepared"].file,
+            Some(DeclaredReleaseFile::AccountRoot("opengoal/GAME.CGO".into()))
         );
         assert_eq!(registry.declared_hash(&hash).len(), 4);
         // Declaration order, not key order: `prepared` is declared first.
@@ -2215,8 +2186,10 @@ mod release_artifact_tests {
         ))
         .unwrap();
         let release = &prepared.declared_games["@test:game/rocknroll"].releases["v1"];
-        assert_eq!(release.account_root_file(), Some("prepared/data.pck"));
-        assert_eq!(release.artifact_file(), None);
+        assert_eq!(
+            release.file,
+            Some(DeclaredReleaseFile::AccountRoot("prepared/data.pck".into()))
+        );
         assert!(release.artifacts.is_empty());
 
         let downloaded = decode(content(json!({
@@ -2225,13 +2198,12 @@ mod release_artifact_tests {
         })))
         .unwrap();
         let release = &downloaded.declared_games["@test:game/rocknroll"].releases["v1"];
-        assert_eq!(release.account_root_file(), None);
         assert_eq!(
-            release.artifact_file(),
-            Some(&ArtifactContentFile {
+            release.file,
+            Some(DeclaredReleaseFile::Artifact(ArtifactContentFile {
                 artifact: "@test:game/content".into(),
                 path: "Mega Man/data.pck".into()
-            })
+            }))
         );
         assert_eq!(release.hashes, [HASH.to_lowercase()]);
         let registry = PluginRegistry::new(vec![downloaded], ["@test:game".into()]).unwrap();

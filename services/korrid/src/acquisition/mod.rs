@@ -11,6 +11,7 @@ use crate::{
     plugin::{ArtifactRecord, PluginRegistry},
     RpcFailure,
 };
+use indexmap::IndexSet;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Path, PathBuf},
@@ -416,20 +417,28 @@ impl AcquisitionCoordinator {
     ) -> Result<AcquisitionSnapshot, RpcFailure> {
         let artifact = registry.artifact(id).map_err(|_| unknown_artifact())?;
         let base = placement::contribution(root, artifact);
-        let waiting = {
+        enum Cancel {
+            /// Unpacking cannot be cancelled.
+            Unpacking,
+            /// The worker stops the job and deletes its partial files.
+            Running(watch::Receiver<bool>),
+            /// Nothing runs: delete the partial files here.
+            Idle,
+        }
+        let cancel = {
             let mut queue = self.lock();
             let unpacking = queue
                 .jobs
                 .get(&base)
                 .is_some_and(|job| matches!(job.state, ArtifactState::Unpacking));
             if unpacking {
-                None
+                Cancel::Unpacking
             } else if let Some(running) = queue.running.as_ref().filter(|run| run.base == base) {
                 let _ = running.stop.send(Stop::Cancel);
                 let done = running.done.clone();
                 // A job a launch just paused is also back in the queue.
                 queue.waiting.retain(|item| *item != base);
-                Some(Some(done))
+                Cancel::Running(done)
             } else {
                 queue.waiting.retain(|item| *item != base);
                 if let Some(job) = queue.jobs.get_mut(&base) {
@@ -437,19 +446,19 @@ impl AcquisitionCoordinator {
                         job.state = ArtifactState::Missing;
                     }
                 }
-                Some(None)
+                Cancel::Idle
             }
         };
-        match waiting {
-            None => (),
-            Some(Some(mut done)) => {
+        match cancel {
+            Cancel::Unpacking => (),
+            Cancel::Running(mut done) => {
                 while !*done.borrow() {
                     if done.changed().await.is_err() {
                         break;
                     }
                 }
             }
-            Some(None) => discard_partials(&base).await?,
+            Cancel::Idle => discard_partials(&base).await?,
         }
         self.status(root, registry, None)
     }
@@ -503,34 +512,37 @@ impl AcquisitionCoordinator {
                 continue;
             }
             let base = placement::contribution(root, artifact);
-            // Publication holds .lock a moment after the rename to Ready.
-            let mut guard = None;
-            for _ in 0..100 {
-                guard = placement::lock(&base).map_err(Failure::rpc)?;
-                if guard.is_some() {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-            if guard.is_none() {
+            let Some(_guard) = lock_briefly(&base).await? else {
                 return Err(busy_failure());
-            }
+            };
             placement::discard_work(&ready).map_err(Failure::rpc)?;
         }
         self.game_status(root, registry, game)
     }
 }
 
-/// A writer that just stopped, or a process it forked, can hold `.lock` for
-/// a moment. Wait briefly; a live writer elsewhere keeps its files.
-async fn discard_partials(base: &Path) -> Result<(), RpcFailure> {
+/// Take `.lock`, waiting up to two seconds. A writer that just stopped,
+/// publication right after its rename, or a process that one of them forked
+/// can hold it for a moment. `None` means another live holder keeps it.
+async fn lock_briefly(base: &Path) -> Result<Option<std::fs::File>, RpcFailure> {
     for _ in 0..100 {
-        if placement::discard_partials(base).map_err(Failure::rpc)? {
-            return Ok(());
+        if let Some(guard) = placement::lock(base).map_err(Failure::rpc)? {
+            return Ok(Some(guard));
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    Ok(())
+    Ok(None)
+}
+
+/// Cancel deletes partial files; a live writer elsewhere keeps its own.
+async fn discard_partials(base: &Path) -> Result<(), RpcFailure> {
+    if !placement::is_ready(base) {
+        return Ok(());
+    }
+    let Some(_guard) = lock_briefly(base).await? else {
+        return Ok(());
+    };
+    placement::remove_partials(base).map_err(Failure::rpc)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -674,20 +686,19 @@ pub(crate) fn route_artifact_ids(
     registry: &PluginRegistry,
     route: &crate::config::resolver::ResolvedRoute,
 ) -> Result<Vec<String>, RpcFailure> {
-    let mut ids: Vec<String> = route
+    let mut ids: IndexSet<String> = route
         .artifact_target
-        .as_ref()
-        .map(|target| target.release_artifacts.clone())
-        .unwrap_or_default();
-    for artifact in registry
-        .artifacts_for_runner(&route.runner_id)
-        .map_err(|_| unknown_artifact())?
-    {
-        if !ids.contains(&artifact.id) {
-            ids.push(artifact.id.clone());
-        }
-    }
-    Ok(ids)
+        .iter()
+        .flat_map(|target| target.release_artifacts.iter().cloned())
+        .collect();
+    ids.extend(
+        registry
+            .artifacts_for_runner(&route.runner_id)
+            .map_err(|_| unknown_artifact())?
+            .into_iter()
+            .map(|artifact| artifact.id.clone()),
+    );
+    Ok(ids.into_iter().collect())
 }
 
 /// Used by both the launch gate and launch input: one directory-based truth.
@@ -778,26 +789,16 @@ fn release_artifacts(
     snapshot: &crate::config::ConfigSnapshot,
     registry: &PluginRegistry,
     game_id: &str,
-) -> Vec<String> {
-    let mut ids = Vec::new();
-    for release in snapshot
+) -> IndexSet<String> {
+    snapshot
         .library
         .get(game_id)
         .into_iter()
         .flat_map(|game| &game.releases)
-    {
-        let Some(identity) = &release.identity else {
-            continue;
-        };
-        for declared in registry.declared_hash(identity.value()) {
-            for id in &declared.release.artifacts {
-                if !ids.contains(id) {
-                    ids.push(id.clone());
-                }
-            }
-        }
-    }
-    ids
+        .filter_map(|release| release.identity.as_ref())
+        .flat_map(|identity| registry.declared_hash(identity.value()))
+        .flat_map(|declared| declared.release.artifacts.iter().cloned())
+        .collect()
 }
 
 /// Resolve the game's default route exactly as `app.session.start` does.
@@ -830,24 +831,21 @@ pub(crate) fn game_artifacts_for_removal(
     let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
         .map_err(crate::game_routes::settings_failure)?;
     if !snapshot.library.contains_key(game_id) {
-        return Err(RpcFailure {
-            code: "LocalRouteUnavailable".into(),
-            message: format!("game {game_id} is unavailable"),
-        });
+        return Err(crate::game_routes::unavailable(format!(
+            "game {game_id} is unavailable"
+        )));
     }
     let release = release_artifacts(&snapshot, registry, game_id);
-    let mut ids =
+    let mut ids: IndexSet<String> =
         crate::config::resolver::resolve_linux_route(root, &snapshot, registry, game_id, None)
             .ok()
             .and_then(|route| route_artifact_ids(registry, &route).ok())
-            .unwrap_or_default();
-    for id in &release {
-        if !ids.contains(id) {
-            ids.push(id.clone());
-        }
-    }
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+    ids.extend(release.iter().cloned());
     Ok(GameArtifacts {
-        ids,
+        ids: ids.into_iter().collect(),
         release: release.into_iter().collect(),
     })
 }

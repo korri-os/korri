@@ -22,7 +22,7 @@ use crate::{
         scanner::{DiscoveryDiagnosticCode, TraversalBudget},
         title,
     },
-    plugin::{ContentRules, DeclaredGame, PairingTarget, PluginRegistry},
+    plugin::{ContentRules, DeclaredGame, DeclaredReleaseFile, PairingTarget, PluginRegistry},
 };
 use disc::{Identified, MappedFiles, ReadScope};
 use layout::Captures;
@@ -538,10 +538,13 @@ fn resolve_declared_files(
         let root = account.root.canonicalize();
         for (game_key, game) in games {
             for (release_key, release) in &game.releases {
-                // Only account-root files are hashed here. An artifact file
-                // lives in korrid's cache, which discovery never scans.
-                let Some(file) = release.account_root_file() else {
-                    continue;
+                let file = match &release.file {
+                    Some(DeclaredReleaseFile::AccountRoot(file)) => file,
+                    // An artifact file lives in korrid's cache, which discovery
+                    // never scans. Read as an account-root path, it would hash
+                    // a wrong file or fail without any error (ADR 0013).
+                    Some(DeclaredReleaseFile::Artifact(_)) => continue,
+                    None => continue,
                 };
                 let result = match &root {
                     Ok(root) => declared_identity(root, Path::new(file), cache, paths),

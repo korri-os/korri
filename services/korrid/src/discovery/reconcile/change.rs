@@ -10,6 +10,7 @@ use crate::config::{
     NonEmptyUniqueFileSetParts, StoragePayload, TargetString,
 };
 use crate::discovery::identify::{ContentIdentity, FoundUnit, PathRecord, ScanReport};
+use crate::plugin::DeclaredReleaseFile;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CatalogChange {
@@ -297,8 +298,11 @@ fn reconcile_artifact_releases(
 ) {
     for (declared_id, declared) in &report.declared_games {
         for (index, (release_key, release)) in declared.releases.iter().enumerate() {
-            if release.artifact_file().is_none() {
-                continue;
+            match &release.file {
+                Some(DeclaredReleaseFile::Artifact(_)) => (),
+                // A prepared file joins the library only when resolve_declared
+                // finds and verifies it under an account root (ADR 0003).
+                Some(DeclaredReleaseFile::AccountRoot(_)) | None => continue,
             }
             let Some(key) = release.hashes.first() else {
                 continue;

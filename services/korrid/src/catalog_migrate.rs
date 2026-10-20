@@ -15,7 +15,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::plugin::{ContentRules, DeclaredGame, DeclaredRelease, GroupRecord, PluginRegistry};
+use crate::plugin::{
+    ContentRules, DeclaredGame, DeclaredRelease, DeclaredReleaseFile, GroupRecord, PluginRegistry,
+};
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -315,9 +317,14 @@ fn plan_with_rules(
                 };
                 let mut targets = BTreeSet::new();
                 for release in hashes.iter().flat_map(|hash| registry.declared(hash)) {
-                    if let Some(relative) = release.account_root_file() {
-                        safe_relative(Path::new(relative))?;
-                        targets.insert(account.join(relative));
+                    match &release.file {
+                        Some(DeclaredReleaseFile::AccountRoot(relative)) => {
+                            safe_relative(Path::new(relative))?;
+                            targets.insert(account.join(relative));
+                        }
+                        // Artifact content lives in korrid's cache, never under
+                        // an account root, so it gives no migration target.
+                        Some(DeclaredReleaseFile::Artifact(_)) | None => (),
                     }
                 }
                 match targets.len() {
@@ -705,11 +712,15 @@ fn prospective_catalog(
             .values()
             .flat_map(|game| game.releases.values())
         {
-            if let Some(file) = release.account_root_file() {
-                let future = account_root.join(file);
-                if let Some(physical) = previous_path(&plan.moves, &future) {
-                    files.insert(future, physical);
+            match &release.file {
+                Some(DeclaredReleaseFile::AccountRoot(file)) => {
+                    let future = account_root.join(file);
+                    if let Some(physical) = previous_path(&plan.moves, &future) {
+                        files.insert(future, physical);
+                    }
                 }
+                // A planned move never touches korrid's cache.
+                Some(DeclaredReleaseFile::Artifact(_)) | None => (),
             }
         }
     }
@@ -1842,8 +1853,18 @@ mod tests {
                     .iter()
                     .map(|(key, release)| {
                         let mut value = serde_json::json!({"hashes":release.hashes});
-                        if let Some(file) = release.account_root_file() {
-                            value["file"] = file.into();
+                        match &release.file {
+                            Some(DeclaredReleaseFile::AccountRoot(file)) => {
+                                value["file"] = file.clone().into();
+                            }
+                            Some(DeclaredReleaseFile::Artifact(file)) => {
+                                value["artifacts"] = release.artifacts.clone().into();
+                                value["file"] = serde_json::json!({
+                                    "artifact": file.artifact,
+                                    "path": file.path,
+                                });
+                            }
+                            None => (),
                         }
                         if let Some(system) = &release.system {
                             value["system"] = system.clone().into();
