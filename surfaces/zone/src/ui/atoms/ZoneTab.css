@@ -1,13 +1,14 @@
 /* The tab is as tall as two lines of its type, whatever the strip's height,
  * so the label and the sub-line sit inside it with room. The shell sets the
  * type on the strip; alone, the wide tab token. A strip that fits its tabs
- * to its width scales the type by --zone-tab-fit; a tab keeps its whole
- * width until that fit reaches its floor (0.5), and only then shrinks. */
+ * to its width steps the type down whole caps by --zone-tab-fit; a tab
+ * keeps its whole width until that fit reaches caps-1 and still overflows
+ * (the strip sets --zone-tab-shrink), and only then shrinks and truncates. */
 .zone-tab {
   position: relative;
   display: inline-flex;
   --zone-tab-type: calc(var(--zone-shell-tab-type, calc(var(--zone-type-tab-wide) * var(--zone-px))) * var(--zone-tab-fit, 1));
-  flex: 0 max(0, calc((0.51 - var(--zone-tab-fit, 1)) * 100)) auto;
+  flex: 0 var(--zone-tab-shrink, 0) auto;
   align-items: stretch;
   min-width: 0;
   height: 2em;

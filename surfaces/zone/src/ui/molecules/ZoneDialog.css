@@ -84,6 +84,8 @@
 
 /* A key keeps its own case. */
 .zone-dialog-title[data-case="verbatim"] {
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
   text-transform: none;
 }
 

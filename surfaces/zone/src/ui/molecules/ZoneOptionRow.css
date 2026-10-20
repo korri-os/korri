@@ -176,6 +176,8 @@
 /* A fact Korri publishes keeps its own case; Zone's own words stay in caps. */
 .zone-option-row-label[data-case="verbatim"],
 .zone-option-row-value[data-case="verbatim"] {
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
   text-transform: none;
 }
 

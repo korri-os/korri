@@ -130,8 +130,11 @@
   overflow-wrap: normal;
 }
 
-/* A key is a fact Korri publishes: it keeps its own case. */
+/* A key is a fact Korri publishes: it keeps its own case, in Jersey 10,
+ * as tall as the caps around it. */
 .zone-save-card-text[data-case="verbatim"] {
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
   text-transform: none;
 }
 
