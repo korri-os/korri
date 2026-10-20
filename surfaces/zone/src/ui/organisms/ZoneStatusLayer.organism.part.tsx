@@ -16,6 +16,7 @@ import {
   statusProgressKnown,
   statusRunning,
 } from "../../fixtures/fixture-layers"
+import { useFixtureTake } from "../../fixtures/fixture-take"
 import { createStatusProgram } from "../../fixtures/layer-program"
 import { fixtureCards } from "../../fixtures/zone-cards"
 import { ZoneKeycap } from "../atoms/ZoneKeycap"
@@ -169,4 +170,14 @@ export function ConfirmOverStage() {
 /** Korri's download with a known end over the page: the red bar under the detail, CANCEL lit. */
 export function BusyProgress() {
   return <Scenario page={standInPage} status={statusProgressKnown} />
+}
+
+/**
+ * M4's take: T opens Korri's problem over the page and shuts it again, so
+ * the dialog plays its open (six steps, 180 ms) and its close (140 ms);
+ * `window.seek(ms)` holds a frame.
+ */
+export function OpenAndClose() {
+  const open = useFixtureTake()
+  return <ZoneStatusLayer page={standInPage} status={open ? statusProblem : statusBrowsing} titleOf={fixtureTitleOf} />
 }

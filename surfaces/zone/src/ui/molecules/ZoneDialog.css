@@ -108,10 +108,11 @@
 
 /* NO and YES, or Korri's actions: one row at caps-2, then caps-1, and only
  * then a second row; no button ever shrinks under its words. The row keeps
- * clear of the bottom-right wedge where it crosses the row's foot, so no
- * black slab stands on black. */
+ * clear of the bottom-right wedge: a slab's top-right corner is its right-
+ * most point, and the wedge reaches its leg less the row's height and the
+ * panel's foot there, so no black slab stands on black. */
 .zone-dialog-actions {
-  --zone-dialog-actions-clear: calc((var(--zone-dialog-pad-block) + var(--zone-drop-focus)) * var(--zone-px));
+  --zone-dialog-actions-clear: calc((var(--zone-dialog-pad-block) + var(--zone-drop-focus) + var(--zone-slab-pad) * 2) * var(--zone-px) + 1em);
   display: flex;
   flex-wrap: nowrap;
   justify-content: center;
