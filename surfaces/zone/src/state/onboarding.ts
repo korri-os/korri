@@ -70,6 +70,9 @@ export const TARGET = {
 /** A network row's focus target. */
 export const networkTarget = (networkId: string): string => `net:${networkId}`
 
+/** A heard controller's seat as a focus target: focused, its name stands whole under the row. */
+export const seatTarget = (controllerId: string): string => `seat:${controllerId}`
+
 export const ZONE_ONBOARDING_START: ZoneOnboardingModel = {
   step: "controllers",
   focus: TARGET.next,
@@ -152,7 +155,10 @@ export function canGoOn(step: ZoneOnboardingStep, korri: SurfaceModel): boolean 
 export function onboardingTargets(model: ZoneOnboardingModel, korri: SurfaceModel): readonly string[] {
   switch (model.step) {
     case "controllers":
-      return [TARGET.next]
+      return [
+        ...(korri.onboarding?.controllers ?? []).filter(controller => controller.heard).map(controller => seatTarget(controller.id)),
+        TARGET.next,
+      ]
     case "wifi": {
       const network = korri.network
       const wifi = network?.wifi

@@ -11,7 +11,7 @@ import { canGoOn, createOnboardingProgram, deviceNameSetting } from "../fixtures
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import { plan } from "../plan/zone-select"
 import type { ZoneBand, ZoneStrips } from "../ui/templates/ZoneShell"
-import { ZoneOnboarding, type ZoneOnboardingStepId } from "./ZoneOnboarding"
+import { onboardingSeatTarget, ZoneOnboarding, type ZoneOnboardingStepId } from "./ZoneOnboarding"
 
 export const name = "Onboarding"
 export const note = "First boot: controllers, Wi-Fi, the device name, a new save; the banner names the step, four pips count the way"
@@ -26,6 +26,7 @@ export const composition = {
     { part: "src/ui/atoms/ZoneVersus.atom.part.tsx", state: "default" },
   ],
   OneHeard: [{ part: "src/ui/organisms/ZoneControllerCard.organism.part.tsx", state: "Heard" }],
+  SeatFocused: [{ part: "src/ui/organisms/ZoneControllerCard.organism.part.tsx", state: "Heard" }],
   FourControllers: [
     { part: "src/ui/organisms/ZoneControllerCard.organism.part.tsx", state: "Heard" },
     { part: "src/ui/organisms/ZoneControllerCard.organism.part.tsx", state: "SecondSeat" },
@@ -46,8 +47,11 @@ function Scenario({
   typing = false,
   strips,
   band,
+  focus,
 }: {
   readonly korri: SurfaceModel
+  /** Where the cursor starts, when not the step's own first stop. */
+  readonly focus?: string
   readonly step?: ZoneOnboardingStepId
   readonly started?: boolean
   /** Start on the NAME step with the keyboard up. */
@@ -60,7 +64,7 @@ function Scenario({
     step,
     started,
     // An empty cursor lands on the step's first row, as opening the step does.
-    focus: started ? "finish" : step === "controllers" ? "next" : "",
+    focus: focus ?? (started ? "finish" : step === "controllers" ? "next" : ""),
     entry: typing ? { draft: "mini", caret: 4, layer: "letters", focusedKey: "i" } : undefined,
   })
   const { dispatch, subscribe, get } = program.current
@@ -119,6 +123,11 @@ export function OneOfTwo() {
 /** Four controllers, three heard: 1P, 2P, 3P and one still WAITING. */
 export function FourControllers() {
   return <Scenario korri={onboardingModel(controllersFour)} />
+}
+
+/** The cursor on 1P: its name, cut on the card's foot, stands whole under the row. */
+export function SeatFocused() {
+  return <Scenario focus={onboardingSeatTarget(controllersFour[0]?.id ?? "")} korri={onboardingModel(controllersFour)} />
 }
 
 /** Wi-Fi: offline, three networks, SCAN and SKIP. A on a saved or open network joins it. */

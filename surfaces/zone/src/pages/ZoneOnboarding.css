@@ -19,6 +19,12 @@
   padding: calc(var(--zone-strip-inset) * var(--zone-px)) clamp(calc(var(--zone-strip-margin-min) * var(--zone-px)), 3cqi, calc(var(--zone-strip-margin) * var(--zone-px)));
 }
 
+/* CONTROLLERS with a heard seat: the seat's name line between the cards
+ * and NEXT. */
+.zone-onboarding-body[data-seat-line] {
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
+
 /* A size container, so the save card and the controller cards size to the
  * room the step has. A step taller than its room scrolls. */
 .zone-onboarding-stage {
@@ -70,6 +76,35 @@
 
 .zone-onboarding-save {
   display: flex;
+}
+
+/* The focused seat's name, whole, as Korri writes it: Jersey 10 on a black
+ * slab under the cards. Its line is there (empty, unseen) whenever a seat
+ * can be focused, so nothing moves as the cursor comes and goes. */
+.zone-onboarding-seat-name {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  margin: 0;
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+  visibility: hidden;
+}
+
+.zone-onboarding-seat-name[data-shown] {
+  visibility: visible;
+}
+
+.zone-onboarding-seat-name-text {
+  min-width: 0;
+  max-width: 100%;
+  padding: calc(var(--zone-games-fact-pad-y) * var(--zone-px)) calc(var(--zone-games-fact-gap) * var(--zone-px));
+  background: var(--zone-panel);
+  color: var(--zone-cap);
+  font-family: var(--zone-font-fact);
+  font-size: calc(1em * var(--zone-fact) / var(--zone-caps-1));
+  line-height: 0.75;
+  text-align: center;
+  text-transform: none;
 }
 
 .zone-onboarding-actions {

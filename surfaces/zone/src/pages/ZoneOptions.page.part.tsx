@@ -22,7 +22,7 @@ import { useFixtureDirections } from "../fixtures/fixture-directions"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import { plan } from "../plan/zone-select"
 import { ZoneGround } from "../ui/organisms/ZoneGround"
-import type { ZoneOptionsSlices } from "../plan/options"
+import { ZONE_SYSTEM_BUILD, ZONE_WIFI_CONNECTION, type ZoneOptionsSlices } from "../plan/options"
 import { ZoneOptions } from "./ZoneOptions"
 
 export const name = "Options"
@@ -54,6 +54,8 @@ export const composition = {
   WifiSecuredJoin: [{ part: "src/ui/organisms/ZoneOptionsEntry.organism.part.tsx", state: "WifiPassword" }],
   WifiFailedPassword: [{ part: "src/ui/organisms/ZoneOptionsEntry.organism.part.tsx", state: "Rejected" }],
   Hidden: [{ part: "src/ui/organisms/ZoneOptionsEntry.organism.part.tsx", state: "HiddenName" }],
+  ConnectionFocused: [{ part: "src/ui/atoms/ZoneSignal.atom.part.tsx", state: "default" }],
+  BuildFocused: [{ part: "src/ui/molecules/ZoneOptionRow.molecule.part.tsx", state: "LongPathValue" }],
 } as const
 
 const type = (text: string): OptionsScript[] =>
@@ -177,6 +179,16 @@ export function WifiScanning() {
 }
 
 /** Eight networks strongest first; a name with no break in it wraps. */
+/** The cursor on CONNECTION: the SSID the badge and the foot cut stands whole under the row. */
+export function ConnectionFocused() {
+  return <Live korri={{ ...fixtureOptions, settings: [] }} script={[{ _tag: "FocusedRow", rowId: ZONE_WIFI_CONNECTION }]} />
+}
+
+/** The cursor on SYSTEM's BUILD: Korri's build string, whole on the row or on its own line. */
+export function BuildFocused() {
+  return <Live korri={{ ...fixtureOptions, settings: [] }} script={[{ _tag: "FocusedRow", rowId: ZONE_SYSTEM_BUILD }]} />
+}
+
 export function WifiList() {
   return (
     <Live

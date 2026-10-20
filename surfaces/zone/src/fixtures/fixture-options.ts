@@ -239,6 +239,7 @@ export const fixtureOptions: ZoneOptionsSlices = {
   settingsStatus: { _tag: "Idle" },
   actions: fixtureSystemActions,
   network: fixtureNetworkConnected,
+  buildLabel: "korri 0.4.1 · 9a1fb22",
 }
 
 // ---- Runner choices, as the portal's chooser publishes them ----

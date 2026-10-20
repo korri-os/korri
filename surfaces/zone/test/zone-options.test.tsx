@@ -175,9 +175,17 @@ describe("C15 device actions", () => {
     const host = mount()
     const system = screen.getByRole("region", { name: "System" })
     expect(within(system).getAllByRole("button").map(button => button.textContent))
-      .toEqual(["Allow controllersGo", "Restart KorriGo", "SleepGo", "Power offGo"])
+      .toEqual(["Allow controllersGo", "Restart KorriGo", "SleepGo", "Power offGo", "Buildkorri 0.4.1 · 9a1fb22"])
     fireEvent.click(row("Restart Korri"))
     expect(host.calls).toEqual(["action:restart-korri"])
+  })
+  test("SYSTEM ends with BUILD: Korri's build string whole, read-only", () => {
+    const host = mount()
+    const build = row("Build")
+    expect(build.querySelector(".zone-option-row-value")?.textContent).toBe("korri 0.4.1 · 9a1fb22")
+    expect(build.querySelector(".zone-option-row-value")?.getAttribute("data-case")).toBe("verbatim")
+    fireEvent.click(build)
+    expect(host.calls).toEqual([])
   })
   test("an inert action is drawn disabled, says why, and does nothing", () => {
     const host = mount()
@@ -213,6 +221,14 @@ describe("C21 connection", () => {
     expect(badge?.textContent).toBe("hummingbird-lake72%")
     expect(badge?.querySelectorAll(".zone-bars-bar[data-lit='on']").length).toBe(3)
     expect(first.textContent).not.toMatch(/[▁▂▄▆█]/)
+  })
+  test("focused, the connection row shows the SSID whole under it: the foot cuts it first", () => {
+    mount()
+    const wifi = screen.getByRole("region", { name: "WI-FI" })
+    const first = within(wifi).getAllByRole("button")[0]!
+    expect(first.closest(".zone-option-row")?.querySelector(".zone-option-row-description")).toBeNull()
+    fireEvent.focus(first)
+    expect(first.closest(".zone-option-row")?.querySelector(".zone-option-row-description")?.textContent).toBe("hummingbird-lake")
   })
   test("WIRED and OFFLINE", () => {
     mount({ ...fixtureOptions, network: fixtureNetworkWired })

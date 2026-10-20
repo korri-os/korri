@@ -1740,3 +1740,26 @@ one holds.
   whose last frame is `opacity: 1` or a `prefers-reduced-motion` rule.
   Planted `opacity: 0.5` in ZoneButton.css and the old fade-out blink:
   each failed it; removed, it passes.
+- **Facts the screen cuts are whole somewhere.** A readout may shrink or
+  truncate; its information must survive. The SSID, which the foot cuts
+  first ("hummi…" at 640x480) and drops on a narrow screen (480x800), is
+  the OPTIONS connection row's description, so it stands whole under the
+  row while the row is focused (the foot still shows it whenever it fits).
+  Korri's build string, which the foot cuts last ("korri 0.4.1 · …"), is
+  SYSTEM's last row, read-only, labelled BUILD, in its own case; the row
+  shows it whole or cuts it and shows it whole on the focused row's line.
+  SYSTEM now stands when Korri publishes a build and no device actions,
+  holding BUILD alone (supersedes "SYSTEM and WI-FI are omitted when
+  empty" for SYSTEM). `ZoneOptionsSlices` takes `buildLabel` from the
+  model; the OPTIONS part has ConnectionFocused and BuildFocused.
+- **A heard seat takes the cursor.** Supersedes "Not a control" on
+  ZoneControllerCard and "The full name stays in the card's label" (the
+  card's foot cut "Xbox Wireless Controller" to "Xbox …" at 1280x720). On
+  CONTROLLERS each heard seat is a read-only stop before NEXT
+  (`seatTarget` in `state/onboarding.ts`, `onboardingSeatTarget` on the
+  page, held equal by test), drawn as a button with the pink drop when
+  focused; the cursor still opens on NEXT and A on a seat does nothing.
+  Under the cards, a line shows the focused seat's name whole in Jersey 10
+  on black; it keeps its height (unseen) while no seat is focused, so the
+  cards do not move. A waiting seat takes no focus. Part state
+  SeatFocused.

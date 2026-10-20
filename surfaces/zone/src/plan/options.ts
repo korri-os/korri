@@ -7,8 +7,10 @@
  *
  *     every SurfaceSettingGroup, in Korri's order, a DISMISS row under the
  *       one Korri has a problem with
- *     SYSTEM: SurfaceModel.actions as action rows (absent when there are none)
- *     WI-FI: the connection, then NO WI-FI ADAPTER, or SCAN, the networks
+ *     SYSTEM: SurfaceModel.actions as action rows, then BUILD, Korri's build
+ *       string read-only (absent when there is neither)
+ *     WI-FI: the connection (its SSID whole as its description), then NO
+ *       WI-FI ADAPTER, or SCAN, the networks
  *       strongest first and HIDDEN NETWORK (absent when Korri cannot manage
  *       the network)
  *
@@ -32,7 +34,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 
 /** The parts of Korri's model the OPTIONS page reads. */
-export type ZoneOptionsSlices = Pick<SurfaceModel, "settings" | "settingsStatus" | "actions" | "network">
+export type ZoneOptionsSlices = Pick<SurfaceModel, "settings" | "settingsStatus" | "actions" | "network" | "buildLabel">
 
 /** What A does on a row. */
 export type ZoneOptionsPress =
@@ -113,6 +115,8 @@ export const ZONE_OPTIONS_WIFI = "zone:wifi"
 /** Row ids Zone makes. */
 export const ZONE_OPTIONS_DISMISS = "zone:dismiss"
 export const ZONE_WIFI_CONNECTION = "zone:wifi:connection"
+/** SYSTEM's read-only BUILD row: Korri's build string, whole (the foot cuts it). */
+export const ZONE_SYSTEM_BUILD = "zone:system-build"
 export const ZONE_WIFI_ADAPTER = "zone:wifi:adapter"
 export const ZONE_WIFI_SCAN = "zone:wifi:scan"
 export const ZONE_WIFI_HIDDEN = "zone:wifi:hidden"
@@ -282,12 +286,28 @@ function systemRow(action: SurfaceAction): ZoneOptionsRow {
   }
 }
 
+/**
+ * Korri's build string as a read-only row. The foot draws it last and cuts
+ * it first ("korri 0.4.1 · …" at 640x480); here it stands whole, or cut by
+ * the row and whole on the focused row's own line. A fact: its own case.
+ */
+function buildRow(build: string): ZoneOptionsRow {
+  return {
+    id: ZONE_SYSTEM_BUILD,
+    group: ZONE_OPTIONS_SYSTEM,
+    item: { id: ZONE_SYSTEM_BUILD, label: "Build", value: build },
+    press: { _tag: "Nothing" },
+    keepCase: { value: true },
+  }
+}
+
 function systemGroup(slices: ZoneOptionsSlices): ZoneOptionsGroup[] {
-  if (slices.actions.length === 0) return []
+  const build = slices.buildLabel === undefined || slices.buildLabel === "" ? [] : [buildRow(slices.buildLabel)]
+  if (slices.actions.length === 0 && build.length === 0) return []
   return [{
     key: ZONE_OPTIONS_SYSTEM,
     title: "System",
-    rows: slices.actions.map(systemRow),
+    rows: [...slices.actions.map(systemRow), ...build],
     status: { _tag: "Idle" },
     verbatim: false,
   }]
@@ -299,10 +319,13 @@ const wifiRow = (id: string, item: Omit<SurfaceSettingItem, "id">, press: ZoneOp
 function wifiGroup(slices: ZoneOptionsSlices): ZoneOptionsGroup[] {
   const network = slices.network
   if (network === undefined) return []
+  // The SSID whole under the focused row: the foot cuts it first and drops
+  // it on a narrow screen, and the row's badge may cut it too.
+  const ssid = network.connection._tag === "Wifi" ? { description: network.connection.ssid } : {}
   const connection: ZoneOptionsRow = {
     ...wifiRow(
       ZONE_WIFI_CONNECTION,
-      { label: "CONNECTION", value: zoneConnectionValue(network.connection) },
+      { label: "CONNECTION", value: zoneConnectionValue(network.connection), ...ssid },
       { _tag: "Nothing" },
     ),
     signal: { _tag: "Connection", connection: network.connection },

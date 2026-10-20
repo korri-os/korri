@@ -13,6 +13,19 @@
   animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
 }
 
+/* A seat that takes the cursor is a button: no button look of its own. */
+button.zone-controller-card {
+  padding: 0;
+  font: inherit;
+  text-align: inherit;
+  cursor: default;
+}
+
+/* Focused: the pink drop under the frame, one art px deeper. */
+.zone-controller-card[data-focused="true"] {
+  box-shadow: calc(var(--zone-drop-focus) * var(--zone-px)) calc(var(--zone-drop-focus) * var(--zone-px)) 0 var(--zone-focus);
+}
+
 /* Heard: the frame turns red, as COMPETITION's chosen seat. */
 .zone-controller-card[data-heard] {
   border-color: var(--zone-controller-heard);

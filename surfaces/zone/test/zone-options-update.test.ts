@@ -11,6 +11,7 @@ import {
   fixtureNetworkNoAdapter,
   fixtureNetworkRejected,
   fixtureNetworkScanning,
+  fixtureNetworkWired,
   fixtureOptions,
   fixtureSeatsId,
 } from "../src/fixtures/fixture-options"
@@ -18,6 +19,8 @@ import {
   optionsPlan,
   ZONE_OPTIONS_DISMISS,
   ZONE_OPTIONS_SYSTEM,
+  ZONE_SYSTEM_BUILD,
+  ZONE_WIFI_CONNECTION,
   ZONE_WIFI_HIDDEN,
   ZONE_WIFI_SCAN,
   zoneNetworkRowId,
@@ -59,10 +62,23 @@ describe("the plan the state walks", () => {
     expect(optionsPlan(korri).groups.map(group => group.title))
       .toEqual(["Device", "Controllers", "Metadata", "Games", "System information", "System", "WI-FI"])
   })
-  test("SYSTEM is absent with no device actions, WI-FI absent with no network", () => {
-    const titles = optionsPlan({ ...korri, actions: [], network: undefined }).groups.map(group => group.title)
+  test("SYSTEM is absent with no device actions and no build, WI-FI absent with no network", () => {
+    const titles = optionsPlan({ ...korri, actions: [], network: undefined, buildLabel: undefined }).groups.map(group => group.title)
     expect(titles).not.toContain("System")
     expect(titles).not.toContain("WI-FI")
+  })
+  test("SYSTEM ends with BUILD, Korri's build string read-only in its own case; the build alone makes SYSTEM", () => {
+    const system = (slices: typeof korri) => optionsPlan(slices).groups.find(group => group.title === "System")
+    const last = system(korri)?.rows.at(-1)
+    expect(last?.id).toBe(ZONE_SYSTEM_BUILD)
+    expect([last?.item.label, last?.item.value, last?.item.interaction, last?.press, last?.keepCase])
+      .toEqual(["Build", "korri 0.4.1 · 9a1fb22", undefined, { _tag: "Nothing" }, { value: true }])
+    expect(system({ ...korri, actions: [] })?.rows.map(row => row.id)).toEqual([ZONE_SYSTEM_BUILD])
+  })
+  test("the connection row's description is the SSID whole; WIRED and OFFLINE have none", () => {
+    const connection = (slices: typeof korri) => optionsPlan(slices).rows.find(row => row.id === ZONE_WIFI_CONNECTION)
+    expect(connection(korri)?.item.description).toBe("hummingbird-lake")
+    expect(connection({ ...korri, network: fixtureNetworkWired })?.item.description).toBeUndefined()
   })
   test("a problem adds DISMISS under its row", () => {
     const rows = optionsPlan({ ...korri, settingsStatus: { _tag: "Problem", settingId: "device-name", message: "No." } }).rows
@@ -331,7 +347,7 @@ describe("focusSystemGroup", () => {
     expect(after(next, { _tag: "KorriPublished" }).model.focused).toBe(zoneSystemRowId("controllers-permission"))
   })
   test("lands on the first row when there is no SYSTEM group", () => {
-    const next = after(focusSystemGroup(OPTIONS_START), { _tag: "KorriPublished" }, { ...korri, actions: [] }).model
+    const next = after(focusSystemGroup(OPTIONS_START), { _tag: "KorriPublished" }, { ...korri, actions: [], buildLabel: undefined }).model
     expect(next.focused).toBe("device-name")
   })
   test("leaves an open keyboard alone", () => {

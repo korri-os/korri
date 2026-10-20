@@ -18,22 +18,39 @@ import { ZoneTriangle } from "../atoms/ZoneTriangle"
  * them gives their room to the name: `--zone-seat-arrows`). The name is Korri's, in
  * its own case in Jersey 10, on one line; a long one ends in "…".
  *
- * Not a control: the card shows who has been heard and takes no focus.
+ * A heard seat takes the cursor when its holder hears focus (`onFocus`):
+ * a read-only stop, as OPTIONS' read-only rows are, so a name the foot bar
+ * cuts can be read whole where the holder shows it. Focused, it wears the
+ * pink drop. A waiting seat takes no focus.
  */
 export function ZoneControllerCard({
   name,
   seat,
+  focused = false,
+  onFocus,
 }: {
   /** The controller's name; absent while it has not been heard. */
   readonly name?: string
   /** The seat a heard controller takes, from 1. */
   readonly seat?: number
+  readonly focused?: boolean
+  /** The host's cursor arrived on a heard seat. */
+  readonly onFocus?: () => void
 }) {
   const tab = useRef<HTMLSpanElement>(null)
   useZoneStairClip(tab, { left: "backslash", right: "straight" })
   const heard = name !== undefined
+  const Root = heard && onFocus !== undefined ? "button" : "div"
   return (
-    <div aria-label={heard ? name : "Waiting"} className="zone-controller-card" data-heard={heard || undefined} role="group">
+    <Root
+      aria-label={heard ? name : "Waiting"}
+      className="zone-controller-card"
+      data-focused={heard && focused ? "true" : undefined}
+      data-heard={heard || undefined}
+      onFocus={heard ? onFocus : undefined}
+      role={Root === "div" ? "group" : undefined}
+      type={Root === "button" ? "button" : undefined}
+    >
       <span className="zone-controller-card-body">
         {heard ? (
           <span className="zone-controller-card-portrait">
@@ -69,6 +86,6 @@ export function ZoneControllerCard({
           </>
         ) : null}
       </span>
-    </div>
+    </Root>
   )
 }

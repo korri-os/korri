@@ -48,6 +48,7 @@ export const ONBOARDING_TARGET = {
 } as const
 
 export const onboardingNetworkTarget = (networkId: string): string => `net:${networkId}`
+export const onboardingSeatTarget = (controllerId: string): string => `seat:${controllerId}`
 
 /** The steps, in order: the banner names the one you are on. */
 const STEPS: readonly { readonly id: ZoneOnboardingStepId; readonly label: string }[] = [
@@ -227,6 +228,10 @@ export function ZoneOnboarding({
     ? { id: ONBOARDING_TARGET.finish, label: "Finish", disabled: !started }
     : { id: ONBOARDING_TARGET.next, label: "Next", disabled: !canGoOn }
 
+  const focusedSeat = step === "controllers"
+    ? controllers.find(controller => controller.heard && onboardingSeatTarget(controller.id) === focus)
+    : undefined
+
   const onRow = (target: string) => {
     if (target === ONBOARDING_TARGET.skip) onSkip?.()
     else if (target === ONBOARDING_TARGET.scan) onScan?.()
@@ -244,14 +249,28 @@ export function ZoneOnboarding({
         strips={strips}
         tabs={<ZoneStepStrip current={STEPS.findIndex(item => item.id === step)} steps={STEP_LABELS} />}
       >
-        <div className="zone-onboarding-body" inert={entry !== undefined} ref={body}>
+        <div
+          className="zone-onboarding-body"
+          data-seat-line={step === "controllers" && heardOrder.length > 0 ? "" : undefined}
+          inert={entry !== undefined}
+          ref={body}
+        >
           <div className="zone-onboarding-stage" ref={stage}>
             {step === "controllers" ? (
               <div className="zone-onboarding-cards" ref={cards}>
                 {controllers.length === 0 ? <ZoneControllerCard /> : controllers.map((controller, index) => {
                   const seat = heardOrder.indexOf(controller.id)
+                  const target = onboardingSeatTarget(controller.id)
                   const card = controller.heard
-                    ? <ZoneControllerCard key={controller.id} name={controller.name} seat={seat + 1} />
+                    ? (
+                      <ZoneControllerCard
+                        focused={focus === target}
+                        key={controller.id}
+                        name={controller.name}
+                        onFocus={onFocusTarget === undefined ? undefined : () => onFocusTarget(target)}
+                        seat={seat + 1}
+                      />
+                    )
                     : <ZoneControllerCard key={controller.id} />
                   return versus && index === 1 ? [
                     <span className="zone-onboarding-versus" key="versus">
@@ -298,6 +317,14 @@ export function ZoneOnboarding({
               </span>
             ) : null}
           </div>
+          {step === "controllers" && heardOrder.length > 0 ? (
+            // The focused seat's name whole: a card's foot cuts a long one
+            // ("Xbox …" at 720p). The line keeps its height with no seat
+            // focused, so the cards do not move as the cursor comes and goes.
+            <p className="zone-onboarding-seat-name" data-shown={focusedSeat === undefined ? undefined : ""}>
+              <span className="zone-onboarding-seat-name-text">{focusedSeat?.name ?? "\u00a0"}</span>
+            </p>
+          ) : null}
           <div className="zone-onboarding-actions">
             <ZoneActionRow
               actions={[forward]}

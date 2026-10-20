@@ -18,7 +18,7 @@ import {
   onboardingModel,
 } from "../src/fixtures/fixture-layers"
 import { createOnboardingProgram } from "../src/fixtures/layer-program"
-import { ONBOARDING_TARGET, onboardingNetworkTarget, ZoneOnboarding } from "../src/pages/ZoneOnboarding"
+import { ONBOARDING_TARGET, onboardingNetworkTarget, onboardingSeatTarget, ZoneOnboarding } from "../src/pages/ZoneOnboarding"
 import {
   planControllerCards,
   ZONE_CONTROLLER_ARROWS_LEAST,
@@ -32,6 +32,7 @@ import {
   canGoOn,
   deviceNameSetting,
   networkTarget,
+  seatTarget,
   onboardingJoin,
   onboardingTargets,
   TARGET,
@@ -182,6 +183,7 @@ describe("updateOnboarding", () => {
   test("the page draws the model's targets by the same ids", () => {
     expect(ONBOARDING_TARGET).toEqual(TARGET)
     expect(onboardingNetworkTarget("x")).toBe(networkTarget("x"))
+    expect(onboardingSeatTarget("x")).toBe(seatTarget("x"))
     expect(onboardingTargets(at("wifi"), heard)).toEqual([
       TARGET.connection, networkTarget("net-home"), networkTarget("net-cafe"), networkTarget("net-neighbour"),
       TARGET.scan, TARGET.skip, TARGET.next,
@@ -329,6 +331,25 @@ describe("ZoneOnboarding", () => {
     expect(screen.getAllByRole("group", { name: "Waiting" })).toHaveLength(1)
     // Three or four seats: Mania's four-up, no VS.
     expect(screen.queryByText("VS")).toBeNull()
+  })
+
+  test("C25: a heard seat takes the cursor and its name stands whole under the row; a waiting one does not", () => {
+    const program = mount(onboardingModel(controllersFour))
+    const heardSeats = controllersFour.filter(controller => controller.heard)
+    expect(onboardingTargets(program.get().model, program.get().context))
+      .toEqual([...heardSeats.map(controller => seatTarget(controller.id)), TARGET.next])
+    const line = document.querySelector<HTMLElement>(".zone-onboarding-seat-name")
+    expect(line?.hasAttribute("data-shown")).toBe(false)
+    const first = heardSeats[0]!
+    const seat = screen.getByRole("button", { name: first.name })
+    fireEvent.focus(seat)
+    expect(program.get().model.focus).toBe(seatTarget(first.id))
+    expect(seat.dataset.focused).toBe("true")
+    expect(line?.hasAttribute("data-shown")).toBe(true)
+    expect(line?.textContent).toBe(first.name)
+    expect(screen.getAllByRole("group", { name: "Waiting" })).toHaveLength(1)
+    fireEvent.focus(screen.getByRole("button", { name: "Next" }))
+    expect(line?.hasAttribute("data-shown")).toBe(false)
   })
 
   test("C25: every seat wears the same black corner tab; no seat has a colour of its own", () => {
