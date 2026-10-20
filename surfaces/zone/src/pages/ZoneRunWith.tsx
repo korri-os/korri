@@ -1,7 +1,7 @@
 import "./ZoneRunWith.css"
 import type { SurfaceRunnerChoice } from "@contracts/surface/korri-surface"
 import { useEffect, useRef } from "react"
-import { runWithPlan, type ZoneRunWithState } from "../plan/options-run-with"
+import { runWithPlan, zoneSavedRowId, type ZoneRunWithState } from "../plan/options-run-with"
 import { ZoneBanner } from "../ui/atoms/ZoneBanner"
 import { ZoneCaps } from "../ui/atoms/ZoneCaps"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
@@ -9,17 +9,17 @@ import { ZonePanel } from "../ui/atoms/ZonePanel"
 import { ZoneTag, type ZoneTagKind } from "../ui/atoms/ZoneTag"
 import { ZoneActionRow } from "../ui/molecules/ZoneActionRow"
 import { ZoneFoot } from "../ui/molecules/ZoneFoot"
-import { ZoneOptionRow } from "../ui/molecules/ZoneOptionRow"
 import { ZoneRunWithRoute } from "../ui/organisms/ZoneRunWithRoute"
 import { ZoneWarningLines } from "../ui/organisms/ZoneWarningLines"
 import { ZoneShell, type ZoneBand, type ZoneStrips } from "../ui/templates/ZoneShell"
 
 /** Each state of Korri's runner choice wears a tag colour Zone already uses
- * for that kind of news: mint for settled, yellow for at work, orange for
- * needs a look, red for stopped, white for not yet. */
+ * for that kind of news: blue for settled, yellow for at work, orange for
+ * needs a look, red for stopped, white for not yet. Mint is the ground, so
+ * no tag on the ground wears it. */
 const STATE_TAGS: Record<ZoneRunWithState, ZoneTagKind> = {
   Loading: "continue",
-  Ready: "saved",
+  Ready: "system",
   Stale: "open",
   Warnings: "open",
   Busy: "here",
@@ -34,7 +34,9 @@ const STATE_TAGS: Record<ZoneRunWithState, ZoneTagKind> = {
  * them: Korri's warnings for the whole choice in red, its message as one
  * caps line, one row per route (program, then the exact build) with SAVED
  * on the route a saved choice picks, and Korri's actions as buttons: each
- * route's under it, the choice's own at the bottom.
+ * route's under it, the choice's own at the bottom. A saved choice whose
+ * runner no route offers (Stale) is drawn as a route of its own: SAVED, the
+ * runner's id, and UNAVAILABLE where a build would be.
  *
  * Every id goes back unchanged through `onAction`; the host bound it to
  * this read. Closed renders nothing. The page traps the cursor in its rows
@@ -101,10 +103,20 @@ export function ZoneRunWith({
             <ZoneWarningLines lines={choice.warnings} />
             {choice.message === "" ? null : <p className="zone-run-with-message">{choice.message}</p>}
             {plan.orphans.map(orphan => (
-              <ZoneOptionRow
+              <ZoneRunWithRoute
+                focused={focused}
                 key={`${orphan.label}:${orphan.runnerId}`}
-                label={`Saved: ${orphan.label}`}
-                value={orphan.runnerId}
+                onAction={run}
+                route={{
+                  runnerId: orphan.runnerId,
+                  systemId: "",
+                  program: orphan.runnerId,
+                  runnerBuild: "UNAVAILABLE",
+                  warnings: [],
+                  actions: [],
+                }}
+                rowId={zoneSavedRowId(orphan.label)}
+                saved={[orphan.label]}
               />
             ))}
             {plan.routes.map(entry => (

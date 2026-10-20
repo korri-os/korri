@@ -14,6 +14,7 @@ export const composition = {
     { part: "src/ui/atoms/ZoneButton.atom.part.tsx", state: "default" },
   ],
   LongDraft: [{ part: "src/ui/molecules/ZoneKeyboard.molecule.part.tsx", state: "LongDraft" }],
+  Rejected: [{ part: "src/ui/organisms/ZoneWarningLines.organism.part.tsx", state: "One" }],
 } as const
 
 interface Typed {
@@ -65,6 +66,7 @@ function Typing({
   secret = false,
   maxLength,
   clearLabel,
+  problem,
 }: {
   readonly initial: Typed
   readonly title: string
@@ -72,6 +74,7 @@ function Typing({
   readonly secret?: boolean
   readonly maxLength?: number
   readonly clearLabel?: string
+  readonly problem?: string
 }) {
   const store = useRef<ReturnType<typeof createTypedStore> | null>(null)
   store.current ??= createTypedStore(initial)
@@ -89,6 +92,7 @@ function Typing({
       onClear={live.clear}
       onFocusKey={live.focus}
       onKey={live.key}
+      problem={problem}
       secret={secret}
       title={title}
     />
@@ -116,6 +120,20 @@ export function SecretWithClear() {
 /** A network's password: PASSWORD and the SSID in its own case. */
 export function WifiPassword() {
   return <Typing initial={{ draft: "", caret: 0, layer: "letters" }} maxLength={63} name="Attic 5G" secret title="Password" />
+}
+
+/** Korri rejected the key: its reason in red, the keyboard back and empty. */
+export function Rejected() {
+  return (
+    <Typing
+      initial={{ draft: "", caret: 0, layer: "letters" }}
+      maxLength={63}
+      name="Attic 5G"
+      problem="The password for Attic 5G was not accepted."
+      secret
+      title="Password"
+    />
+  )
 }
 
 /** A hidden network's name, typed in clear. */

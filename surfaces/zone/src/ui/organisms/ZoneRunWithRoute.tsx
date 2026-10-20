@@ -7,8 +7,9 @@ import { ZoneWarningLines } from "./ZoneWarningLines"
 
 /**
  * One installed route on the RUN WITH page: the program as the row's label
- * and the exact runner build as its value, SAVED and the saved choice's name
- * over it when a saved choice picks it, Korri's warnings for it in red, and
+ * and the exact runner build as its value, both in their own case (a build
+ * is a package path, and a path is not a label), SAVED in yellow and the
+ * saved choice's name over it when a saved choice picks it, Korri's warnings for it in red, and
  * its actions as buttons under it.
  *
  * The row and every action are native buttons; the host moves focus and the
@@ -38,16 +39,18 @@ export function ZoneRunWithRoute({
       {saved.length === 0 ? null : (
         <span className="zone-run-with-route-tags">
           <ZoneTagRow
-            tags={[{ kind: "saved", label: "Saved" }, ...saved.map(label => ({ kind: "system" as const, label }))]}
+            tags={[{ kind: "here", label: "Saved" }, ...saved.map(label => ({ kind: "system" as const, label }))]}
           />
         </span>
       )}
-      <ZoneOptionRow
-        focused={focused === rowId}
-        label={route.program}
-        onFocus={onFocus === undefined ? undefined : () => onFocus(rowId)}
-        value={route.runnerBuild}
-      />
+      <span className="zone-run-with-route-row">
+        <ZoneOptionRow
+          focused={focused === rowId}
+          label={route.program}
+          onFocus={onFocus === undefined ? undefined : () => onFocus(rowId)}
+          value={route.runnerBuild}
+        />
+      </span>
       <ZoneWarningLines lines={route.warnings} />
       {route.actions.length === 0 ? null : (
         <ZoneActionRow

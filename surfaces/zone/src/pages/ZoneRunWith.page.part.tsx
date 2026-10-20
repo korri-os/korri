@@ -15,6 +15,7 @@ import {
   runWithCallbacks,
 } from "../fixtures/fixture-options"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
+import { plan } from "../plan/zone-select"
 import { ZoneRunWith } from "./ZoneRunWith"
 
 export const name = "Run with"
@@ -38,13 +39,17 @@ export const composition = {
 } as const
 
 /** Unexported: the real page on a live program, so focus and actions answer. */
-function Live({ choice }: { readonly choice: SurfaceRunnerChoice }) {
+function Live({ choice, share = 1 }: { readonly choice: SurfaceRunnerChoice; readonly share?: number }) {
   const program = useRef<ReturnType<typeof createRunWithProgram> | null>(null)
   program.current ??= createRunWithProgram(choice)
   const live = program.current
   const snapshot = useSyncExternalStore(live.subscribe, live.get)
+  // The binding measures its root; a preview reads the frame once.
+  const layout = plan(innerWidth * share, innerHeight)
   return (
     <ZoneRunWith
+      band={layout.band}
+      strips={layout.strips}
       build="korri 0.4.1 · 9a1fb22"
       choice={snapshot.choice}
       clock="21:47"
@@ -108,7 +113,7 @@ export function ManyRoutes() {
 export function Narrow() {
   return (
     <ZonePartFrame shape="narrow-tall">
-      <Live choice={fixtureRunnerSaved} />
+      <Live choice={fixtureRunnerSaved} share={0.36} />
     </ZonePartFrame>
   )
 }

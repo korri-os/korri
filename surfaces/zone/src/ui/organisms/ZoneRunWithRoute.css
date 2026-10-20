@@ -6,11 +6,19 @@
   min-width: 0;
 }
 
-/* The tag strip takes the note size and only the width its words need. */
+/* The tag strip at the note size, as wide as a dozen of its letters or
+ * the row, whichever is less; a long saved name truncates in its tag. */
 .zone-run-with-route-tags {
   --zone-tag-row-base: var(--zone-type-note);
   display: flex;
   justify-self: start;
-  max-width: 100%;
+  width: min(100%, calc(var(--zone-type-note) * 16));
   padding-left: var(--zone-slant);
+}
+
+/* A program's name and a build's path are data: they keep their case. */
+.zone-run-with-route-row {
+  display: block;
+  min-width: 0;
+  text-transform: none;
 }

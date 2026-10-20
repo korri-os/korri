@@ -10,7 +10,11 @@
   padding: var(--zone-options-head-space) var(--zone-strip-margin-min) 0;
 }
 
+/* The banner repeats the tab above it, so it is the first thing to give
+ * way: its type follows the body's height, from the tab's size on a tall
+ * body down to a row's least size on a short one. */
 .zone-options-head {
+  --zone-shell-tab-type: clamp(var(--zone-type-row-min), 4cqb, var(--zone-type-tab-wide));
   display: flex;
   justify-content: center;
   min-width: 0;
@@ -25,6 +29,7 @@
   overflow-y: auto;
   scrollbar-width: none;
   overscroll-behavior: contain;
+  scroll-padding-block: var(--zone-row-height);
 }
 
 .zone-options-groups {

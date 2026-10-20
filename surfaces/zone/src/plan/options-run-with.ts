@@ -12,6 +12,7 @@ export type ZoneRunWithOpen = Exclude<SurfaceRunnerChoice, { readonly _tag: "Clo
 export type ZoneRunWithState = ZoneRunWithOpen["_tag"]
 
 export const zoneRouteRowId = (runnerId: string) => `route:${runnerId}`
+export const zoneSavedRowId = (label: string) => `saved:${label}`
 
 /** A route and how the saved choices name it. */
 export interface ZoneRunWithRoute {
@@ -40,6 +41,7 @@ export function runWithPlan(choice: ZoneRunWithOpen): ZoneRunWithPlan {
   const orphans = choice.saved.filter(saved => !choice.routes.some(route => route.runnerId === saved.runnerId))
   const all = [...choice.routes.flatMap(route => route.actions), ...choice.actions]
   const ids = [
+    ...orphans.map(orphan => zoneSavedRowId(orphan.label)),
     ...routes.flatMap(entry => [entry.id, ...entry.route.actions.map(action => action.id)]),
     ...choice.actions.map(action => action.id),
   ]

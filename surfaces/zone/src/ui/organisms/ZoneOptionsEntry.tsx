@@ -4,6 +4,7 @@ import { ZoneCaps } from "../atoms/ZoneCaps"
 import { ZonePanel } from "../atoms/ZonePanel"
 import { ZoneButton } from "../atoms/ZoneButton"
 import { ZoneKeyboard, type ZoneKey, type ZoneKeyboardLayer } from "../molecules/ZoneKeyboard"
+import { ZoneWarningLines } from "./ZoneWarningLines"
 
 /** The focus id of the clear key, beside the keyboard's own key ids. */
 export const ZONE_ENTRY_CLEAR = "zone:clear"
@@ -34,7 +35,8 @@ function keyIdOf(button: HTMLElement): string | undefined {
  * What is being typed, over the OPTIONS page: a black heading naming it (a
  * setting's label, PASSWORD and the network's name, NETWORK NAME), the
  * keyboard panel under it, and, for a secret Korri can clear, one more
- * button with Korri's clear label.
+ * button with Korri's clear label. When Korri refused what was typed last
+ * (a rejected Wi-Fi key), its reason stands in red under the heading.
  *
  * The heading's name keeps its own case: an SSID is data. The draft, the
  * caret and the layer are props; every key reports through `onKey`. The
@@ -52,6 +54,7 @@ export function ZoneOptionsEntry({
   focusedKey,
   maxLength,
   clearLabel,
+  problem,
   onKey,
   onFocusKey,
   onClear,
@@ -66,6 +69,8 @@ export function ZoneOptionsEntry({
   readonly maxLength?: number
   /** Korri's words for clearing a saved secret. */
   readonly clearLabel?: string
+  /** Korri's reason the last try failed, verbatim. */
+  readonly problem?: string
   readonly onKey: (key: ZoneKey) => void
   readonly onFocusKey?: (keyId: string) => void
   readonly onClear?: () => void
@@ -100,6 +105,11 @@ export function ZoneOptionsEntry({
               onFocus={onFocusKey === undefined ? undefined : () => onFocusKey(ZONE_ENTRY_CLEAR)}
               onPress={onClear}
             />
+          </span>
+        )}
+        {problem === undefined ? null : (
+          <span className="zone-options-entry-problem" role="alert">
+            <ZoneWarningLines lines={[problem]} />
           </span>
         )}
       </div>

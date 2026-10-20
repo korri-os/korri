@@ -116,6 +116,10 @@ export function ZoneOptions({
   }
 
   const heading = keyboard === undefined ? undefined : entryHeading(keyboard.entry)
+  // A password asked again after Korri rejected it carries Korri's reason,
+  // which the keyboard would otherwise cover on the row.
+  const attempt = korri.network?.wifi._tag === "Available" ? korri.network.wifi.attempt : undefined
+  const entryProblem = attempt?._tag === "Failed" && heading?.name === attempt.ssid ? attempt.message : undefined
 
   return (
     <ZoneShell
@@ -150,7 +154,7 @@ export function ZoneOptions({
             {plan.groups.map(group => (
               <div className="zone-options-group" data-verbatim={group.verbatim || undefined} key={group.key}>
                 <ZoneOptionGroup
-                  focusedId={layer === "none" ? rowId : undefined}
+                  focusedId={rowId}
                   onFocus={onRowFocus}
                   onPress={onRowPress}
                   onStep={onRowStep}
@@ -175,6 +179,7 @@ export function ZoneOptions({
               onClear={onClear}
               onFocusKey={onKeyFocus}
               onKey={onKey ?? (() => undefined)}
+              problem={entryProblem}
               secret={heading.secret}
               title={heading.title}
             />

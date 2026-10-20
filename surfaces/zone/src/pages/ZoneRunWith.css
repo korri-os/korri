@@ -10,6 +10,7 @@
 }
 
 .zone-run-with-head {
+  --zone-shell-tab-type: clamp(var(--zone-type-row-min), 4cqb, var(--zone-type-tab-wide));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -39,9 +40,11 @@
   overflow-y: auto;
   scrollbar-width: none;
   overscroll-behavior: contain;
+  scroll-padding-block: var(--zone-row-height);
 }
 
 .zone-run-with-rows {
+  --zone-shell-button-type: clamp(var(--zone-type-row-min), 2.4cqi, var(--zone-type-button-short));
   display: grid;
   row-gap: var(--zone-options-group-gap);
   width: min(100%, var(--zone-options-measure));

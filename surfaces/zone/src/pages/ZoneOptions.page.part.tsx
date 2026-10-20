@@ -18,6 +18,7 @@ import {
   type OptionsScript,
 } from "../fixtures/fixture-options"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
+import { plan } from "../plan/zone-select"
 import type { ZoneOptionsSlices } from "../plan/options"
 import { ZoneOptions } from "./ZoneOptions"
 
@@ -47,7 +48,7 @@ export const composition = {
   Problem: [{ part: "src/ui/molecules/ZoneOptionRow.molecule.part.tsx", state: "Problem" }],
   ManyRows: [{ part: "src/ui/molecules/ZoneOptionGroup.molecule.part.tsx", state: "TwelveRows" }],
   WifiSecuredJoin: [{ part: "src/ui/organisms/ZoneOptionsEntry.organism.part.tsx", state: "WifiPassword" }],
-  WifiFailedPassword: [{ part: "src/ui/organisms/ZoneOptionsEntry.organism.part.tsx", state: "WifiPassword" }],
+  WifiFailedPassword: [{ part: "src/ui/organisms/ZoneOptionsEntry.organism.part.tsx", state: "Rejected" }],
   Hidden: [{ part: "src/ui/organisms/ZoneOptionsEntry.organism.part.tsx", state: "HiddenName" }],
 } as const
 
@@ -55,13 +56,26 @@ const type = (text: string): OptionsScript[] =>
   [...text].map(char => ({ _tag: "PressedKey", key: char === " " ? { kind: "space" } : { kind: "char", char } }))
 
 /** Unexported: the real page on a live program, so every button answers. */
-function Live({ korri, script = [] }: { readonly korri: ZoneOptionsSlices; readonly script?: readonly OptionsScript[] }) {
+function Live({
+  korri,
+  script = [],
+  share = 1,
+}: {
+  readonly korri: ZoneOptionsSlices
+  readonly script?: readonly OptionsScript[]
+  /** The share of the frame's width the page is given. */
+  readonly share?: number
+}) {
   const program = useRef<ReturnType<typeof createOptionsProgram> | null>(null)
   program.current ??= createOptionsProgram(korri, script)
   const live = program.current
   const snapshot = useSyncExternalStore(live.subscribe, live.get)
+  // The binding measures its root; a preview reads the frame once.
+  const layout = plan(innerWidth * share, innerHeight)
   return (
     <ZoneOptions
+      band={layout.band}
+      strips={layout.strips}
       build="korri 0.4.1 · 9a1fb22"
       clock="21:47"
       device="Mini"
@@ -248,7 +262,7 @@ export function ManyRows() {
 export function Narrow() {
   return (
     <ZonePartFrame shape="narrow-tall">
-      <Live korri={fixtureOptions} script={[{ _tag: "FocusedRow", rowId: "game-folder:roms" }]} />
+      <Live korri={fixtureOptions} script={[{ _tag: "FocusedRow", rowId: "game-folder:roms" }]} share={0.36} />
     </ZonePartFrame>
   )
 }

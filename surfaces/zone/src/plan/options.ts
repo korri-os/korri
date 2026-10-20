@@ -124,13 +124,13 @@ export function zoneConnectionValue(connection: SurfaceNetworkConnection): strin
   }
 }
 
-/** A listed network's value: bars, then LOCK and KNOWN when they hold, or JOINED for the one in use. */
-export function zoneNetworkValue(network: SurfaceWifiNetwork, joined: boolean): string {
+/** A listed network's value: bars and strength, then LOCK and KNOWN when they hold. */
+export function zoneNetworkValue(network: SurfaceWifiNetwork): string {
   return [
     zoneBars(network.strengthPercent),
+    `${network.strengthPercent}%`,
     ...(network.secured ? ["LOCK"] : []),
     ...(network.known ? ["KNOWN"] : []),
-    ...(joined ? ["JOINED"] : []),
   ].join(" ")
 }
 
@@ -274,14 +274,13 @@ function wifiGroup(slices: ZoneOptionsSlices): ZoneOptionsGroup[] {
       verbatim: true,
     }]
   }
-  const inUse = network.connection._tag === "Wifi" ? network.connection.ssid : undefined
   const networks = [...wifi.networks].sort((a, b) => b.strengthPercent - a.strengthPercent)
   const attempt = wifi.attempt
   const networkRows = networks.map(item => wifiRow(
     zoneNetworkRowId(item.id),
     {
       label: item.ssid,
-      value: zoneNetworkValue(item, item.ssid === inUse),
+      value: zoneNetworkValue(item),
       ...(attempt._tag === "Connecting" && attempt.ssid === item.ssid ? { description: "CONNECTING" } : {}),
       interaction: { kind: "action", actionId: zoneNetworkRowId(item.id) },
     },
