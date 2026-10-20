@@ -16,6 +16,7 @@ let
   system = pkgs.stdenv.hostPlatform.system;
   serviceUser = "korrid";
   serviceGroup = "korrid";
+  pluginHostCfg = config.services.korri.pluginHost or { enable = false; };
   signerUser = "korri-local-signer";
   signerGroup = "korri-local-signer";
   controlGroup = "korri-control";
@@ -806,6 +807,9 @@ in
         KORRID_UPSTREAMS = nativePeersJson;
         KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
         KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
+      }
+      // lib.optionalAttrs pluginHostCfg.enable {
+        KORRID_PLUGIN_ADMIN_SOCKET = pluginHostCfg.adminSocket;
       }
       // lib.optionalAttrs (cfg.initialModifiers != { }) {
         KORRID_INITIAL_MODIFIERS = builtins.toJSON cfg.initialModifiers;

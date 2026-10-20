@@ -589,6 +589,7 @@ pkgs.testers.runNixOSTest {
           pkgs.jq
           pkgs.iptables
           pkgs.curl
+          pkgs.socat
           gcBlock
           gcReject
           interruptedRemove
@@ -1191,6 +1192,91 @@ pkgs.testers.runNixOSTest {
     write_catalog("a", [dict(records[0], platform="unsupported-linux")])
     machine.fail("korri-plugin repository inspect " + source_a + " @korri:tailscale v1")
     write_catalog("a", records)
+
+    # korrid reaches the same Host methods through its admin socket. systemd
+    # limits the socket to root and korrid's group; the server serves only
+    # korrid's uid (SO_PEERCRED) and only seven requests.
+    admin_socket = "/run/korri-plugin-admin/admin.sock"
+    assert machine.succeed("stat -c '%U:%G:%a' " + admin_socket).strip() == "root:korrid:660"
+    def admin_raw(request, user=None):
+        command = "printf %s " + shlex.quote(request) + " | socat -t 60 - UNIX-CONNECT:" + admin_socket
+        if user is not None:
+            command = "runuser -u " + user + " -- sh -c " + shlex.quote(command)
+        return machine.execute(command)
+    status, output = admin_raw('{"_tag":"Repositories","payload":{}}', user="plugin-user")
+    assert status != 0 and output.strip() == "", output
+    # Root may open the file, but it is not korrid's uid: no answer at all.
+    status, output = admin_raw('{"_tag":"Repositories","payload":{}}')
+    assert output.strip() == "", output
+    status, output = admin_raw('{"_tag":"Repositories","payload":{}}', user="korrid")
+    assert status == 0 and json.loads(output)["_tag"] == "Repositories", output
+    for unexposed in ['{"_tag":"Remove","payload":{"id":"@korri:tailscale"}}', '{"_tag":"EnabledPackages","payload":{}}']:
+        status, output = admin_raw(unexposed, user="korrid")
+        assert json.loads(output)["_tag"] == "Refused", output
+
+    def plugin_rpc(tag, payload):
+        request = json.dumps({"_tag": tag, "payload": payload})
+        response = json.loads(machine.succeed(
+            "curl --fail --silent --max-time 900 http://127.0.0.1:49117/rpc"
+            " -H 'content-type: application/json'"
+            " -H " + shlex.quote("authorization: Bearer " + capability)
+            + " -d " + shlex.quote(request)
+        ))
+        assert response["_tag"] == tag, response
+        return response["outcome"]
+    def plugin_ok(tag, payload):
+        outcome = plugin_rpc(tag, payload)
+        assert outcome["_tag"] == "Ok", outcome
+        return outcome["payload"]
+    def plugin_err(tag, payload):
+        outcome = plugin_rpc(tag, payload)
+        assert outcome["_tag"] == "Err", outcome
+        return outcome["payload"]
+
+    repositories = plugin_ok("system.plugins.repositories", {})
+    assert repositories["official"] == "https://cache/repositories/official.json", repositories
+    assert repositories["userAdded"] == [source_a, source_b], repositories
+    assert plugin_ok("system.plugins.repository.remove", {"url": source_b}) == "Removed"
+    assert plugin_ok("system.plugins.repository.remove", {"url": source_b}) == "NotFound"
+    assert plugin_ok("system.plugins.repository.add", {"url": source_b}) == "Added"
+    assert plugin_ok("system.plugins.repository.add", {"url": source_b}) == "AlreadyPresent"
+    assert plugin_err("system.plugins.repository.add", {"url": "http://cache/repositories/b.json"})["code"] == "PluginRepositoryUrlInvalid"
+    # An unreachable catalog is refused and nothing is saved.
+    assert plugin_err("system.plugins.repository.add", {"url": "https://cache/repositories/missing.json"})["code"] == "PluginHostRefused"
+    official_error = plugin_err("system.plugins.repository.remove", {"url": "https://cache/repositories/official.json"})
+    assert "official source" in official_error["message"], official_error
+    assert plugin_ok("system.plugins.repositories", {})["userAdded"] == [source_a, source_b]
+
+    catalog = plugin_ok("system.plugins.catalog", {"url": source_a})["entries"]
+    assert [entry["releaseVersion"] for entry in catalog] == [record["release_version"] for record in records], catalog
+    assert all(entry["pluginId"] == "@korri:tailscale" and entry["publisherTrusted"] and "installed" not in entry for entry in catalog), catalog
+
+    inspection = plugin_ok("system.plugins.inspect", {"url": source_a, "pluginId": "@korri:tailscale", "releaseVersion": "v1"})
+    assert inspection["approval"] == report["approval"], inspection
+    assert "CAP_NET_ADMIN" in inspection["warning"], inspection
+    install = {"url": source_a, "pluginId": "@korri:tailscale", "releaseVersion": "v1"}
+    for wrong in ["", alternative["approval"]]:
+        refused = plugin_err("system.plugins.install", dict(install, approval=wrong))
+        assert "approval does not match" in refused["message"], refused
+    machine.fail("korri-plugin status @korri:tailscale")
+    assert plugin_ok("system.plugins.install", dict(install, approval=inspection["approval"])) == {}
+    assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["desired"] == {"state": "Disabled"}
+    machine.fail("systemctl is-active " + report["unit"])
+    assert [entry.get("installed") for entry in plugin_ok("system.plugins.catalog", {"url": source_a})["entries"]] == ["Disabled"] * len(records)
+    assert plugin_ok("system.plugins.setEnabled", {"id": "@korri:tailscale", "enabled": True}) == {}
+    machine.wait_for_unit(report["unit"])
+    assert plugin_ok("system.plugins.repositories", {})["repositoryInstalls"] == [
+        {"id": "@korri:tailscale", "sourceUrl": source_a, "releaseVersion": "v1", "enabled": True}
+    ]
+    # The install outlives its repository and keeps working on and off.
+    assert plugin_ok("system.plugins.repository.remove", {"url": source_a}) == "Removed"
+    assert plugin_ok("system.plugins.setEnabled", {"id": "@korri:tailscale", "enabled": False}) == {}
+    machine.fail("systemctl is-active " + report["unit"])
+    assert plugin_ok("system.plugins.repositories", {})["repositoryInstalls"][0]["enabled"] is False
+    assert plugin_ok("system.plugins.repository.add", {"url": source_a}) == "Added"
+    machine.succeed("korri-plugin remove @korri:tailscale --purge")
+    assert plugin_ok("system.plugins.repositories", {})["userAdded"] == [source_b, source_a]
+
     machine.succeed("korri-plugin repository install " + source_a + " @korri:tailscale v1 " + report["approval"])
     unit = report["unit"]
     machine.fail("systemctl is-active " + unit)

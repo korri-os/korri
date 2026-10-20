@@ -27,7 +27,8 @@ impl PortalPermission {
             | RpcRequest::PeerList(_)
             | RpcRequest::AcquisitionStatus(_)
             | RpcRequest::SessionStatus(_)
-            | RpcRequest::SessionControls(_) => true,
+            | RpcRequest::SessionControls(_)
+            | RpcRequest::PluginRepositories(_) => true,
             RpcRequest::WifiScan(_)
             | RpcRequest::WifiConnect(_)
             | RpcRequest::WifiConnectHidden(_)
@@ -64,7 +65,15 @@ impl PortalPermission {
             | RpcRequest::IdentityLocalSwitch(_)
             | RpcRequest::IdentityNip46Switch(_)
             | RpcRequest::IdentityRetiredExport(_)
-            | RpcRequest::IdentityRetiredDelete(_) => false,
+            | RpcRequest::IdentityRetiredDelete(_)
+            // Catalog and inspect fetch over the network and import into the
+            // store as root; they need the full portal permission.
+            | RpcRequest::PluginRepositoryAdd(_)
+            | RpcRequest::PluginRepositoryRemove(_)
+            | RpcRequest::PluginCatalog(_)
+            | RpcRequest::PluginInspect(_)
+            | RpcRequest::PluginInstall(_)
+            | RpcRequest::PluginSetEnabled(_) => false,
         };
         match self {
             Self::Full => true,

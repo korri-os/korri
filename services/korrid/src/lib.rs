@@ -42,12 +42,15 @@ pub mod network;
 pub mod onboarding;
 mod peer_rpc;
 pub mod play_log;
+pub mod plugin_admin;
+pub mod plugin_repositories;
 pub mod portal_access;
 pub mod portal_input;
 pub mod relay;
 pub mod remote_signer;
 
 pub use play_log::{PlayEntry, PlayLog};
+use plugin_admin::{PluginAdminRequest, PluginAdminResponse};
 use portal_access::{PortalAccess, PortalPermission};
 
 fn installed_routes_unsupported() -> RpcFailure {
@@ -1184,6 +1187,56 @@ pub enum IdentityRetiredDeleteOutcome {
     Err(RpcFailure),
 }
 
+// Plugin repository outcomes. Payloads are the plugin host's own projections
+// (plugin_admin.rs); korrid forwards them unchanged.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum PluginRepositoriesOutcome {
+    Ok(plugin_admin::PluginRepositories),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum PluginRepositoryAddOutcome {
+    Ok(plugin_admin::PluginRepositoryAddResult),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum PluginRepositoryRemoveOutcome {
+    Ok(plugin_admin::PluginRepositoryRemoveResult),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum PluginCatalogOutcome {
+    Ok(plugin_admin::PluginCatalog),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum PluginInspectOutcome {
+    Ok(plugin_admin::PluginInspection),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum PluginChangeOutcome {
+    Ok(plugin_admin::PluginChangeApplied),
+    Err(RpcFailure),
+}
+
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
@@ -1290,6 +1343,20 @@ pub enum RpcRequest {
     IdentityRetiredExport(IdentityRetiredExportRequest),
     #[serde(rename = "system.identity.retired.delete")]
     IdentityRetiredDelete(IdentityRetiredDeleteRequest),
+    #[serde(rename = "system.plugins.repositories")]
+    PluginRepositories(plugin_admin::PluginRepositoriesRequest),
+    #[serde(rename = "system.plugins.repository.add")]
+    PluginRepositoryAdd(plugin_admin::PluginRepositoryRequest),
+    #[serde(rename = "system.plugins.repository.remove")]
+    PluginRepositoryRemove(plugin_admin::PluginRepositoryRequest),
+    #[serde(rename = "system.plugins.catalog")]
+    PluginCatalog(plugin_admin::PluginRepositoryRequest),
+    #[serde(rename = "system.plugins.inspect")]
+    PluginInspect(plugin_admin::PluginInspectRequest),
+    #[serde(rename = "system.plugins.install")]
+    PluginInstall(plugin_admin::PluginInstallRequest),
+    #[serde(rename = "system.plugins.setEnabled")]
+    PluginSetEnabled(plugin_admin::PluginSetEnabledRequest),
 }
 
 #[typeshare]
@@ -1399,6 +1466,20 @@ pub enum RpcResponse {
     IdentityRetiredExport(IdentityBackupOutcome),
     #[serde(rename = "system.identity.retired.delete")]
     IdentityRetiredDelete(IdentityRetiredDeleteOutcome),
+    #[serde(rename = "system.plugins.repositories")]
+    PluginRepositories(PluginRepositoriesOutcome),
+    #[serde(rename = "system.plugins.repository.add")]
+    PluginRepositoryAdd(PluginRepositoryAddOutcome),
+    #[serde(rename = "system.plugins.repository.remove")]
+    PluginRepositoryRemove(PluginRepositoryRemoveOutcome),
+    #[serde(rename = "system.plugins.catalog")]
+    PluginCatalog(PluginCatalogOutcome),
+    #[serde(rename = "system.plugins.inspect")]
+    PluginInspect(PluginInspectOutcome),
+    #[serde(rename = "system.plugins.install")]
+    PluginInstall(PluginChangeOutcome),
+    #[serde(rename = "system.plugins.setEnabled")]
+    PluginSetEnabled(PluginChangeOutcome),
 }
 
 #[derive(Clone)]
@@ -1455,6 +1536,8 @@ struct AppState {
     federation: Option<federation::FederationDirectory>,
     federation_wake: Option<DiscoveryControl>,
     identity_switch: Option<Arc<identity_switch::IdentitySwitchCoordinator>>,
+    /// korrid's only route to the root plugin host, when this device has one.
+    plugin_admin: Option<plugin_repositories::PluginAdminSocket>,
     mode: ServerMode,
     portal_access: Option<PortalAccess>,
     rpc_surface: RpcSurface,
@@ -3202,6 +3285,75 @@ async fn dispatch(
             };
             RpcResponse::IdentityRetiredDelete(outcome)
         }
+        RpcRequest::PluginRepositories(request) => RpcResponse::PluginRepositories(
+            plugin_admin_call(
+                state,
+                PluginAdminRequest::Repositories(request),
+                |r| match r {
+                    PluginAdminResponse::Repositories(payload) => Some(payload),
+                    _ => None,
+                },
+            )
+            .await
+            .map(PluginRepositoriesOutcome::Ok)
+            .unwrap_or_else(PluginRepositoriesOutcome::Err),
+        ),
+        RpcRequest::PluginRepositoryAdd(request) => RpcResponse::PluginRepositoryAdd(
+            plugin_admin_call(
+                state,
+                PluginAdminRequest::RepositoryAdd(request),
+                |r| match r {
+                    PluginAdminResponse::RepositoryAdded(payload) => Some(payload),
+                    _ => None,
+                },
+            )
+            .await
+            .map(PluginRepositoryAddOutcome::Ok)
+            .unwrap_or_else(PluginRepositoryAddOutcome::Err),
+        ),
+        RpcRequest::PluginRepositoryRemove(request) => RpcResponse::PluginRepositoryRemove(
+            plugin_admin_call(
+                state,
+                PluginAdminRequest::RepositoryRemove(request),
+                |r| match r {
+                    PluginAdminResponse::RepositoryRemoved(payload) => Some(payload),
+                    _ => None,
+                },
+            )
+            .await
+            .map(PluginRepositoryRemoveOutcome::Ok)
+            .unwrap_or_else(PluginRepositoryRemoveOutcome::Err),
+        ),
+        RpcRequest::PluginCatalog(request) => RpcResponse::PluginCatalog(
+            plugin_admin_call(state, PluginAdminRequest::Catalog(request), |r| match r {
+                PluginAdminResponse::Catalog(payload) => Some(payload),
+                _ => None,
+            })
+            .await
+            .map(PluginCatalogOutcome::Ok)
+            .unwrap_or_else(PluginCatalogOutcome::Err),
+        ),
+        RpcRequest::PluginInspect(request) => RpcResponse::PluginInspect(
+            plugin_admin_call(state, PluginAdminRequest::Inspect(request), |r| match r {
+                PluginAdminResponse::Inspection(payload) => Some(payload),
+                _ => None,
+            })
+            .await
+            .map(PluginInspectOutcome::Ok)
+            .unwrap_or_else(PluginInspectOutcome::Err),
+        ),
+        RpcRequest::PluginInstall(request) => RpcResponse::PluginInstall(
+            plugin_admin_call(state, PluginAdminRequest::Install(request), applied)
+                .await
+                .map(PluginChangeOutcome::Ok)
+                .unwrap_or_else(PluginChangeOutcome::Err),
+        ),
+        RpcRequest::PluginSetEnabled(request) => RpcResponse::PluginSetEnabled(
+            plugin_admin_call(state, PluginAdminRequest::SetEnabled(request), applied)
+                .await
+                .map(PluginChangeOutcome::Ok)
+                .unwrap_or_else(PluginChangeOutcome::Err),
+        ),
     };
     match &mut response {
         RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Ok(snapshot))
@@ -3211,6 +3363,27 @@ async fn dispatch(
         _ => {}
     }
     Ok(response)
+}
+
+/// Forward one request to the root plugin host and keep only the response kind
+/// that answers it. Refusals carry the host's code and text unchanged.
+async fn plugin_admin_call<T>(
+    state: &AppState,
+    request: PluginAdminRequest,
+    answer: impl FnOnce(PluginAdminResponse) -> Option<T>,
+) -> Result<T, RpcFailure> {
+    let socket = state
+        .plugin_admin
+        .as_ref()
+        .ok_or_else(plugin_repositories::not_configured)?;
+    answer(socket.request(&request).await?).ok_or_else(plugin_repositories::wrong_response)
+}
+
+fn applied(response: PluginAdminResponse) -> Option<plugin_admin::PluginChangeApplied> {
+    match response {
+        PluginAdminResponse::Applied(payload) => Some(payload),
+        _ => None,
+    }
 }
 
 /// Support comes from the implemented handlers, not the list of stored values.
@@ -3737,6 +3910,7 @@ fn brain_app_state(
         federation: resources.map(|resources| resources.directory),
         federation_wake,
         identity_switch: None,
+        plugin_admin: plugin_repositories::PluginAdminSocket::from_env(),
         mode: ServerMode::Brain(BrainRuntime {
             upstream,
             local_storage_root,
@@ -3939,6 +4113,7 @@ fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
         federation: None,
         federation_wake: None,
         identity_switch: None,
+        plugin_admin: plugin_repositories::PluginAdminSocket::from_env(),
         mode: ServerMode::Host(runtime.clone()),
         portal_access: None,
         rpc_surface: RpcSurface::Lan,
@@ -3950,6 +4125,7 @@ fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
         federation: None,
         federation_wake: None,
         identity_switch: None,
+        plugin_admin: plugin_repositories::PluginAdminSocket::from_env(),
         mode: ServerMode::Host(runtime),
         portal_access: None,
         rpc_surface: RpcSurface::LocalControl,
@@ -4361,6 +4537,8 @@ pub mod plugin_discovery;
 pub mod plugin_installation;
 pub mod plugin_policy;
 mod plugin_references;
+#[cfg(test)]
+mod plugin_repositories_tests;
 /// Real plugin declarations used as test data. Shipped with the library so
 /// that integration tests can build the same registry a unit test builds.
 pub mod plugin_test_fixtures;

@@ -231,6 +231,14 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::IdentityNip46Switch(_)
         | RpcRequest::IdentityRetiredExport(_)
         | RpcRequest::IdentityRetiredDelete(_) => PeerPolicy::LocalOnly,
+        // Root plugin administration belongs to the person at this device.
+        RpcRequest::PluginRepositories(_)
+        | RpcRequest::PluginRepositoryAdd(_)
+        | RpcRequest::PluginRepositoryRemove(_)
+        | RpcRequest::PluginCatalog(_)
+        | RpcRequest::PluginInspect(_)
+        | RpcRequest::PluginInstall(_)
+        | RpcRequest::PluginSetEnabled(_) => PeerPolicy::LocalPortalOnly,
     }
 }
 
@@ -298,6 +306,11 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::IdentityNip46Switch(_)
             | RpcRequest::IdentityRetiredExport(_)
             | RpcRequest::IdentityRetiredDelete(_)
+            | RpcRequest::PluginRepositoryAdd(_)
+            | RpcRequest::PluginRepositoryRemove(_)
+            | RpcRequest::PluginInspect(_)
+            | RpcRequest::PluginInstall(_)
+            | RpcRequest::PluginSetEnabled(_)
     )
 }
 

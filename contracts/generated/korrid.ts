@@ -593,6 +593,29 @@ export interface PlayLog {
 	entries: PlayEntry[];
 }
 
+export enum PluginInstalledState {
+	Disabled = "Disabled",
+	Enabled = "Enabled",
+}
+
+export interface PluginCatalogEntry {
+	pluginId: string;
+	title?: string;
+	description?: string;
+	releaseVersion: string;
+	installed?: PluginInstalledState;
+	publisherTrusted: boolean;
+}
+
+export interface PluginCatalog {
+	/** Records for this host's platform only, in catalog order. */
+	entries: PluginCatalogEntry[];
+}
+
+/** The host committed the change. Install leaves the plugin Disabled. */
+export interface PluginChangeApplied {
+}
+
 export interface ProvisionedFile {
 	path: string;
 	content: string;
@@ -630,6 +653,38 @@ export interface PluginComposeInput {
 	display?: PluginDisplay;
 }
 
+export interface PluginDependency {
+	id: string;
+	title?: string;
+	warning: string;
+	alreadyApproved: boolean;
+}
+
+export interface PluginInspectRequest {
+	url: string;
+	pluginId: string;
+	releaseVersion: string;
+}
+
+export interface PluginInspection {
+	id: string;
+	title?: string;
+	approval: string;
+	warning: string;
+	allowedTCPPorts: number[];
+	allowedUDPPorts: number[];
+	nativeUnits: string[];
+	brings: PluginDependency[];
+}
+
+export interface PluginInstallRequest {
+	url: string;
+	pluginId: string;
+	releaseVersion: string;
+	/** The exact approval digest the person reviewed from PluginInspection. */
+	approval: string;
+}
+
 export interface PluginLaunchOverrides {
 	settings?: Record<string, LaunchSettingValue>;
 	config?: LaunchConfigOverrides;
@@ -655,6 +710,35 @@ export interface PluginLaunchInput {
 	/** Ready runtime paths, under own bare keys or full foreign artifact ids. */
 	artifacts: Record<string, string>;
 	overrides?: PluginLaunchOverrides;
+}
+
+export interface PluginRepositoryInstall {
+	id: string;
+	sourceUrl: string;
+	releaseVersion: string;
+	enabled: boolean;
+}
+
+export interface PluginRepositories {
+	/**
+	 * Absent until the device's trusted configuration names an official
+	 * catalog (`services.korri.pluginHost.officialCatalogUrl`).
+	 */
+	official?: string;
+	userAdded: string[];
+	repositoryInstalls: PluginRepositoryInstall[];
+}
+
+export interface PluginRepositoriesRequest {
+}
+
+export interface PluginRepositoryRequest {
+	url: string;
+}
+
+export interface PluginSetEnabledRequest {
+	id: string;
+	enabled: boolean;
 }
 
 export interface PluginSetting {
@@ -1033,6 +1117,40 @@ export type PeerListOutcome =
 	| { _tag: "Ok", payload: PeerList }
 	| { _tag: "Err", payload: RpcFailure };
 
+export type PluginCatalogOutcome =
+	| { _tag: "Ok", payload: PluginCatalog }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type PluginChangeOutcome =
+	| { _tag: "Ok", payload: PluginChangeApplied }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type PluginInspectOutcome =
+	| { _tag: "Ok", payload: PluginInspection }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type PluginRepositoriesOutcome =
+	| { _tag: "Ok", payload: PluginRepositories }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type PluginRepositoryAddOutcome =
+	| { _tag: "Ok", payload: PluginRepositoryAddResult }
+	| { _tag: "Err", payload: RpcFailure };
+
+export enum PluginRepositoryAddResult {
+	Added = "Added",
+	AlreadyPresent = "AlreadyPresent",
+}
+
+export type PluginRepositoryRemoveOutcome =
+	| { _tag: "Ok", payload: PluginRepositoryRemoveResult }
+	| { _tag: "Err", payload: RpcFailure };
+
+export enum PluginRepositoryRemoveResult {
+	Removed = "Removed",
+	NotFound = "NotFound",
+}
+
 export type RpcRequest =
 	| { _tag: "system.onboarding.restart", payload: OnboardingRestartRequest }
 	| { _tag: "app.acquisition.status", payload: AcquisitionStatusRequest }
@@ -1084,7 +1202,14 @@ export type RpcRequest =
 	| { _tag: "system.identity.switch.local", payload: IdentityLocalSwitchRequest }
 	| { _tag: "system.identity.switch.nip46", payload: IdentityNip46SwitchRequest }
 	| { _tag: "system.identity.retired.export", payload: IdentityRetiredExportRequest }
-	| { _tag: "system.identity.retired.delete", payload: IdentityRetiredDeleteRequest };
+	| { _tag: "system.identity.retired.delete", payload: IdentityRetiredDeleteRequest }
+	| { _tag: "system.plugins.repositories", payload: PluginRepositoriesRequest }
+	| { _tag: "system.plugins.repository.add", payload: PluginRepositoryRequest }
+	| { _tag: "system.plugins.repository.remove", payload: PluginRepositoryRequest }
+	| { _tag: "system.plugins.catalog", payload: PluginRepositoryRequest }
+	| { _tag: "system.plugins.inspect", payload: PluginInspectRequest }
+	| { _tag: "system.plugins.install", payload: PluginInstallRequest }
+	| { _tag: "system.plugins.setEnabled", payload: PluginSetEnabledRequest };
 
 export type RpcResponse =
 	| { _tag: "system.onboarding.restart", outcome: OnboardingStatusOutcome }
@@ -1137,7 +1262,14 @@ export type RpcResponse =
 	| { _tag: "system.identity.switch.local", outcome: IdentitySwitchOutcome }
 	| { _tag: "system.identity.switch.nip46", outcome: IdentitySwitchOutcome }
 	| { _tag: "system.identity.retired.export", outcome: IdentityBackupOutcome }
-	| { _tag: "system.identity.retired.delete", outcome: IdentityRetiredDeleteOutcome };
+	| { _tag: "system.identity.retired.delete", outcome: IdentityRetiredDeleteOutcome }
+	| { _tag: "system.plugins.repositories", outcome: PluginRepositoriesOutcome }
+	| { _tag: "system.plugins.repository.add", outcome: PluginRepositoryAddOutcome }
+	| { _tag: "system.plugins.repository.remove", outcome: PluginRepositoryRemoveOutcome }
+	| { _tag: "system.plugins.catalog", outcome: PluginCatalogOutcome }
+	| { _tag: "system.plugins.inspect", outcome: PluginInspectOutcome }
+	| { _tag: "system.plugins.install", outcome: PluginChangeOutcome }
+	| { _tag: "system.plugins.setEnabled", outcome: PluginChangeOutcome };
 
 export type SelectedGameLaunchOutcome =
 	| { _tag: "Ok", payload: SelectedGameLaunch }
