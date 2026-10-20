@@ -212,11 +212,11 @@ fn linux_route_candidates_for_runner(
                 }
             }
             // ADR 0014: no location and no declaration, but a provider linked
-            // to this game holds the release's cart in its cache.
+            // to this game holds the release's download in its cache.
             if !routed {
-                if let Some(path) =
-                    crate::acquisition::cart_content(root, registry, snapshot, game_id, key)
-                {
+                if let Some(path) = crate::acquisition::acquired_game_content(
+                    root, registry, snapshot, game_id, key,
+                ) {
                     let flattened = format!("cache:{}", path.display());
                     emitted.insert(runner.id.clone());
                     candidates.push(route(None, None, None, Some(path), flattened));

@@ -265,13 +265,13 @@ pub(super) fn remove_game_staging(directory: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
-/// ADR 0014: publish a downloaded cart into its ready directory,
+/// ADR 0014: publish a downloaded game into its ready directory,
 /// `<provider cache>/<sha256 hex>/<URL basename>` (ADR 0012 grammar: the
 /// version directory holds the file named by the URL's last segment). The
 /// file moves into a `.tmp-*` work directory, is frozen and synced, and the
 /// directory is renamed atomically. Identical bytes already published are
 /// reused. Returns the ready directory.
-pub(super) fn publish_cart(
+pub(super) fn publish_acquired_game(
     provider_cache: &Path,
     staged: &Path,
     name: &str,
@@ -306,8 +306,8 @@ pub(super) fn publish_cart(
     outcome.map(|()| ready)
 }
 
-/// The one file in a cart's ready directory, when the directory is ready.
-pub(crate) fn cart_file(ready: &Path) -> Option<PathBuf> {
+/// The one file in an acquired game's ready directory, when the directory is ready.
+pub(crate) fn ready_game_file(ready: &Path) -> Option<PathBuf> {
     if !is_ready(ready) {
         return None;
     }

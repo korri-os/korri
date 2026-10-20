@@ -58,13 +58,13 @@ pub(super) struct TextResponse {
 
 /// A downloaded game in its private staging directory. Dropping it removes
 /// the file, so every failure and cancellation leaves no partial bytes.
-pub(super) struct StagedGame {
+pub(super) struct DownloadedGame {
     pub path: PathBuf,
     pub bytes: u64,
     pub sha256: String,
     pub sha1: String,
 }
-impl Drop for StagedGame {
+impl Drop for DownloadedGame {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.path);
     }
@@ -252,7 +252,7 @@ impl DownloadEngine {
         hosts: &[String],
         directory: &Path,
         mut progress: impl FnMut(Progress),
-    ) -> Result<StagedGame, Failure> {
+    ) -> Result<DownloadedGame, Failure> {
         let url = Url::parse(url).map_err(|_| Failure::UnsafeUrl)?;
         let (_, mut response) = self.send(url, policy::Hosts::Only(hosts), |b| b).await?;
         if !response.status().is_success() || response.status() == StatusCode::PARTIAL_CONTENT {
@@ -273,7 +273,7 @@ impl DownloadEngine {
         }
         let mut name = [0u8; 12];
         rand::RngCore::fill_bytes(&mut rand::rng(), &mut name);
-        let mut staged = StagedGame {
+        let mut staged = DownloadedGame {
             path: directory.join(format!("{STAGING_PREFIX}{}", hex::encode(name))),
             bytes: 0,
             sha256: String::new(),
