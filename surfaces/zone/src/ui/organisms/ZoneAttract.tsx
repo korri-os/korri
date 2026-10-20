@@ -51,9 +51,9 @@ export function ZoneAttract({
       const frame = zoneAttractFrame(t, size.wArt, size.hArt)
       return {
         ...zoneTitleVars(frame.card),
-        "--zone-attract-card": frame.card === undefined ? 0 : 1,
+        "--zone-attract-card": frame.card === undefined ? "hidden" : "visible",
         "--zone-attract-pan": frame.panX,
-        "--zone-attract-prompt": frame.prompt ? 1 : 0,
+        "--zone-attract-prompt": frame.prompt ? "visible" : "hidden",
       }
     },
   })

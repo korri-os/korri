@@ -19,7 +19,8 @@
   justify-content: center;
   min-width: 0;
   padding: 0.3em calc(var(--zone-panel-slant) + calc(var(--zone-panel-pad) * var(--zone-px)));
-  color: var(--zone-cap);
+  /* A holder may ink the words (a disabled button: the inert steel). */
+  color: var(--zone-panel-ink, var(--zone-cap));
   white-space: nowrap;
 }
 

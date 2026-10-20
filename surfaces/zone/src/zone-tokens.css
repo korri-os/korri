@@ -235,12 +235,6 @@
   /** The ground's frame rate: its dots step, never glide (M7). @label Ground frames a second @min 1 @max 60 @step 1 */
   --zone-ground-fps: 15;
 
-  /* ---- Dimmed things ---- */
-  /** The end triangle at the first or last card. @label Dimmed triangle @min 0 @max 1 @step 0.05 */
-  --zone-triangle-dim: 0.3;
-  /** The build string on the ground. @label Build opacity @min 0 @max 1 @step 0.05 */
-  --zone-build-opacity: 0.75;
-
   /* ---- 3. Roles ---- */
   /** @label Panel */
   --zone-panel: var(--zone-black);
@@ -300,8 +294,6 @@
    * remote; the no-art well's stripes; the save card's proportions. */
   /** The angle of the stripes in a well with no art. @label Well stripe angle @min -90 @max 90 @step 1 */
   --zone-well-stripe-angle: -28deg;
-  /** How much a greyed well shows through. @label Greyed well @min 0 @max 1 @step 0.05 */
-  --zone-well-greyed-opacity: 0.45;
   /** The gutter between a tag's slant and its caps. Art px. @label Tag padding @min 0 @max 16 @step 1 */
   --zone-tag-pad: 3;
   /** A tag's caps as a share of the card's title size. @label Tag type share @min 0.3 @max 1 @step 0.01 */
@@ -357,10 +349,6 @@
   --zone-triangle-inline: 0.7;
   /** A disabled button's reason line as a share of its label. @label Reason scale @min 0.3 @max 1 @step 0.05 */
   --zone-type-reason-scale: 0.5;
-  /** How much of a disabled button's panel shows. @label Disabled opacity @min 0 @max 1 @step 0.05 */
-  --zone-disabled-opacity: 0.5;
-  /** How much of Korri's placeholder shows, in a row's value and on the keyboard's slab. @label Placeholder opacity @min 0.3 @max 1 @step 0.05 */
-  --zone-placeholder-opacity: 0.6;
   /** The TIME label as a share of the foot's type. @label Timer label scale @min 0.3 @max 1 @step 0.02 */
   --zone-type-timer-label-scale: 0.74;
   /** The device tag as a share of the foot's type. @label Device tag scale @min 0.3 @max 1 @step 0.02 */
@@ -379,8 +367,6 @@
   --zone-bar-gap: 1;
   /** The tallest signal bar. Art px. @label Bars height @min 4 @max 40 @step 1 */
   --zone-bars-height: 8;
-  /** How much an unlit signal bar shows. @label Unlit bar opacity @min 0 @max 1 @step 0.05 */
-  --zone-bar-off-opacity: 0.3;
   /** The foot's panels keep this much room above and below. Art px. @label Foot inset @min 0 @max 24 @step 1 */
   --zone-foot-inset: 4;
   /** @label X keycap ink */
@@ -529,10 +515,6 @@
   --zone-section-stripe-share: 0.16;
   /** A section caption's size as a share of the divider's width. @label Section caption share @min 0.2 @max 0.8 @step 0.01 */
   --zone-section-type-share: 0.5;
-  /** How much of the band shows under GAME OPTS. or a dialog. @label Band behind opacity @min 0 @max 1 @step 0.05 */
-  --zone-games-behind-opacity: 0.35;
-  /** How much of the stripe-well cards shows while Korri loads. @label Loading cards opacity @min 0 @max 1 @step 0.05 */
-  --zone-games-loading-opacity: 0.45;
   /** The widest GAME OPTS. grows. Art px. @label GAME OPTS. width @min 240 @max 1200 @step 10 */
   --zone-games-opts-max: 320;
   /** The widest a dialog over the games page grows. Art px. @label Games dialog width @min 240 @max 1200 @step 10 */

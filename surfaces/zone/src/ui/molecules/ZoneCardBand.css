@@ -77,14 +77,12 @@
 }
 
 /* A slot holds one card. The focused slot keeps the triangles' room either
- * side; a slot beyond the visible count fades out. */
+ * side; a slot beyond the visible count is not drawn (no fade: no blend). */
 .zone-card-band-slot {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  transition:
-    margin var(--zone-snap-time) var(--zone-bounce),
-    opacity var(--zone-lift-time) linear;
+  transition: margin var(--zone-snap-time) var(--zone-bounce);
 }
 
 .zone-card-band-slot[data-focus="true"] {
@@ -92,7 +90,7 @@
 }
 
 .zone-card-band-slot[data-beyond="true"] {
-  opacity: 0;
+  visibility: hidden;
 }
 
 /* No cards: one card in the middle of the band, as tall as a focused card,

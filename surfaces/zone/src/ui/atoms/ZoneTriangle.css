@@ -43,6 +43,7 @@
   animation: zone-nudge-right var(--zone-nudge-time) ease-in-out infinite alternate;
 }
 
+/* Dim: the inert steel, solid, still. */
 .zone-triangle[data-dimmed="on"] {
-  opacity: var(--zone-triangle-dim);
+  background: var(--zone-inert-ink);
 }

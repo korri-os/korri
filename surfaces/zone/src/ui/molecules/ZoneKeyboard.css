@@ -78,9 +78,10 @@
   display: inline-block;
 }
 
-/* Korri's hint while nothing is typed: the slab's ink, dimmed, after the caret. */
+/* Korri's hint while nothing is typed: the steel face (as a row's
+ * placeholder), never a dimmed ink, after the caret. */
 .zone-keyboard-placeholder {
-  opacity: var(--zone-placeholder-opacity);
+  color: var(--zone-steel);
   overflow: hidden;
   text-overflow: ellipsis;
 }

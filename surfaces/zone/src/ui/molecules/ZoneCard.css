@@ -107,7 +107,7 @@
 
 /* The cursor: two red triangles outside the card, shown when it is focused,
  * breathing toward it. At an end of the band, the triangle with nothing
- * beyond it dims and stands still. */
+ * beyond it turns the inert steel and stands still. */
 .zone-card-tri {
   position: absolute;
   top: 50%;
@@ -140,6 +140,6 @@
 .zone-card[data-position="first"] .zone-card-tri[data-side="left"],
 .zone-card[data-position="last"] .zone-card-tri[data-side="right"],
 .zone-card[data-position="only"] .zone-card-tri {
-  opacity: var(--zone-triangle-dim);
+  background: var(--zone-inert-ink);
   animation: none;
 }

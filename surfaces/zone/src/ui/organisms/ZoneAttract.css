@@ -10,8 +10,7 @@
 .zone-attract-card {
   position: absolute;
   inset: 0;
-  visibility: var(--zone-attract-card-visibility, visible);
-  opacity: var(--zone-attract-card, 1);
+  visibility: var(--zone-attract-card, visible);
 }
 
 /* The stage: the art letterboxed on black, panning by whole art px. */
@@ -77,5 +76,5 @@
   justify-content: center;
   margin: 0;
   font-size: calc(var(--zone-caps-1) * var(--zone-px));
-  opacity: var(--zone-attract-prompt, 1);
+  visibility: var(--zone-attract-prompt, visible);
 }

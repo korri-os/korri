@@ -40,9 +40,11 @@
   max-width: 100%;
 }
 
-/* Disabled dims the panel and its words, not the cursor beside it. */
+/* Disabled draws its words in the inert steel on the black panel, never
+ * see-through; the cursor beside it keeps its red. */
 .zone-button[data-disabled="on"] .zone-button-body {
-  opacity: var(--zone-disabled-opacity);
+  --zone-panel-ink: var(--zone-inert-ink);
+  --zone-caps-shade: currentColor;
 }
 
 /* The cursor: a triangle at each end, pointing in, centred on the face. */

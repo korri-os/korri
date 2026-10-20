@@ -86,13 +86,13 @@
 .zone-tally-label,
 .zone-tally-bar,
 .zone-tally-count {
-  opacity: var(--zone-tally-shown);
+  visibility: var(--zone-tally-shown);
   translate: calc(var(--zone-tally-x) * var(--zone-px)) 0;
 }
 
-.zone-tally-row[data-row="0"] { --zone-tally-x: var(--zone-tally-row-0-x, 0); --zone-tally-shown: var(--zone-tally-row-0-shown, 1); --zone-tally-share: var(--zone-tally-row-0-bar, 1); }
-.zone-tally-row[data-row="1"] { --zone-tally-x: var(--zone-tally-row-1-x, 0); --zone-tally-shown: var(--zone-tally-row-1-shown, 1); --zone-tally-share: var(--zone-tally-row-1-bar, 1); }
-.zone-tally-row[data-row="2"] { --zone-tally-x: var(--zone-tally-row-2-x, 0); --zone-tally-shown: var(--zone-tally-row-2-shown, 1); --zone-tally-share: var(--zone-tally-row-2-bar, 1); }
+.zone-tally-row[data-row="0"] { --zone-tally-x: var(--zone-tally-row-0-x, 0); --zone-tally-shown: var(--zone-tally-row-0-shown, visible); --zone-tally-share: var(--zone-tally-row-0-bar, 1); }
+.zone-tally-row[data-row="1"] { --zone-tally-x: var(--zone-tally-row-1-x, 0); --zone-tally-shown: var(--zone-tally-row-1-shown, visible); --zone-tally-share: var(--zone-tally-row-1-bar, 1); }
+.zone-tally-row[data-row="2"] { --zone-tally-x: var(--zone-tally-row-2-x, 0); --zone-tally-shown: var(--zone-tally-row-2-shown, visible); --zone-tally-share: var(--zone-tally-row-2-bar, 1); }
 
 /* The bar: red over a black underside one art px deep, cut at 45 degrees
  * at its end, growing with its count. */

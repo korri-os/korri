@@ -71,7 +71,7 @@ export function ZoneTally({
           const frame = zoneTallyRowFrame(at, index)
           return {
             [`--zone-tally-row-${index}-x`]: frame.x,
-            [`--zone-tally-row-${index}-shown`]: frame.shown ? 1 : 0,
+            [`--zone-tally-row-${index}-shown`]: frame.shown ? "visible" : "hidden",
             [`--zone-tally-row-${index}-bar`]: Number((frame.count * row.share).toFixed(4)),
             ...zoneTallyCounts(row.kind, facts, frame.count),
           }

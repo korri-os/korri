@@ -89,7 +89,6 @@
 .zone-games-band {
   position: relative;
   min-height: 0;
-  transition: opacity var(--zone-lift-time) linear;
 }
 
 /* Under the error dialog there is nothing to show: no band, no FIND; the

@@ -1720,3 +1720,23 @@ one holds.
   under 240 art rows (1280x200), where the facts join the action strip,
   the line now starts at the strip's start (its panel at x 4) instead of
   centred in its column (x 89), as the rule's comment says.
+- **No opacity under 1.** Supersedes "inert action is drawn dimmed"
+  (treaty), "the triangle with nothing beyond it dims" and the dimmed
+  placeholder of the first options section. Every blend went: a disabled
+  ZoneButton's words are the inert steel `#84A2B5` on its black panel
+  (ZonePanel reads `--zone-panel-ink` from its holder); a dim triangle
+  (ZoneTriangle, the card's end triangle) is solid steel and still; the
+  keyboard's placeholder is steel, as a row's is; a greyed well keeps its
+  grayscale and wears the veil's 1-art-px black checker instead of 0.45;
+  a band slot beyond the visible count is `visibility: hidden` (no fade);
+  the attract's card and prompt and the tally's rows show and hide by
+  `visibility`; the blink keyframe turns `visibility` off and on. Eight
+  opacity tokens are gone with their uses (`--zone-triangle-dim`,
+  `--zone-build-opacity`, `--zone-well-greyed-opacity`,
+  `--zone-disabled-opacity`, `--zone-placeholder-opacity`,
+  `--zone-bar-off-opacity`, `--zone-games-behind-opacity`,
+  `--zone-games-loading-opacity`). "No see-through" in the authoring gate
+  fails any `opacity` under 1 (or by `var()`) outside a keyframe list
+  whose last frame is `opacity: 1` or a `prefers-reduced-motion` rule.
+  Planted `opacity: 0.5` in ZoneButton.css and the old fade-out blink:
+  each failed it; removed, it passes.

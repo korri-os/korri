@@ -50,10 +50,10 @@
  * Added by the dialogs worker; the three movements above are unchanged. */
 @keyframes zone-blink {
   from {
-    opacity: 1;
+    visibility: visible;
   }
   to {
-    opacity: 0;
+    visibility: hidden;
   }
 }
 

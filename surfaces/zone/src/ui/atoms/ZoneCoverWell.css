@@ -115,9 +115,23 @@
     calc(calc(var(--zone-cap-outline) * var(--zone-px)) * 1.5) calc(calc(var(--zone-cap-outline) * var(--zone-px)) * 1.5) 0 var(--zone-cap-outline-colour);
 }
 
-/* Greyed: the colour drains and the well dims. The edge stays blue so the
- * well is still a well. */
+/* Greyed: the colour drains and a 1-art-px checker of black lies over the
+ * art (the veil's dither, no blend). The edge stays so the well is still
+ * a well. */
 .zone-cover-well[data-greyed="true"] {
   filter: grayscale(1);
-  opacity: var(--zone-well-greyed-opacity);
+}
+
+.zone-cover-well[data-greyed="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: conic-gradient(
+    var(--zone-veil) 0% 25%,
+    transparent 25% 50%,
+    var(--zone-veil) 50% 75%,
+    transparent 75% 100%
+  ) 0 0 / calc(var(--zone-veil-tile) * var(--zone-px)) calc(var(--zone-veil-tile) * var(--zone-px));
+  pointer-events: none;
 }

@@ -315,6 +315,79 @@ describe("hard edges: flat colours, stairs and dither", () => {
   })
 })
 
+describe("no see-through", () => {
+  /**
+   * An opacity under 1 is a blend: the brief allows dither and hard stops
+   * only (REFINEMENT.md, 5). A dimmed thing is a solid colour (the inert
+   * steel) or the 1-art-px dither; a thing not shown is `visibility:
+   * hidden`. The one place a value under 1 may stand is motion that ends
+   * whole: a keyframe list whose last frame is `opacity: 1`, or a rule
+   * under `prefers-reduced-motion`. A `var()` is not read, so it is not
+   * allowed either.
+   */
+  interface Opacity {
+    readonly file: string
+    readonly value: string
+    /** The block preludes it stands in, outermost first. */
+    readonly within: readonly string[]
+  }
+
+  const opacities = (file: string, text: string): Opacity[] => {
+    const found: Opacity[] = []
+    const stack: string[] = []
+    let buffer = ""
+    const declare = () => {
+      const match = /^opacity\s*:\s*([^;]+?)\s*$/.exec(buffer.trim())
+      if (match !== null) found.push({ file, value: match[1] ?? "", within: [...stack] })
+      buffer = ""
+    }
+    for (const char of text.replace(/\/\*[\s\S]*?\*\//g, "")) {
+      if (char === "{") {
+        stack.push(buffer.trim())
+        buffer = ""
+      } else if (char === "}") {
+        declare()
+        stack.pop()
+      } else if (char === ";") {
+        declare()
+      } else {
+        buffer += char
+      }
+    }
+    return found
+  }
+
+  const seeThrough = (file: string, text: string): string[] => {
+    const all = opacities(file, text)
+    return all.flatMap((entry) => {
+      if (entry.value === "1") return []
+      if (entry.within.some((prelude) => /^@media\b.*prefers-reduced-motion/.test(prelude))) return []
+      const keyframes = entry.within.findIndex((prelude) => prelude.startsWith("@keyframes"))
+      if (keyframes >= 0) {
+        // The list's last frame (`to` or 100%) must stand whole.
+        const name = entry.within[keyframes]
+        const last = all.filter((other) => other.within[keyframes] === name && /(?:^|,\s*)(?:to|100%)\s*$/.test(other.within[keyframes + 1] ?? ""))
+        if (last.length > 0 && last.every((other) => other.value === "1")) return []
+      }
+      return [`${rel(file)}: opacity: ${entry.value} in ${entry.within.join(" > ") || "top level"}`]
+    })
+  }
+
+  test("no stylesheet uses an opacity under 1, but in motion that ends whole", () => {
+    expect(cssFiles.flatMap((file) => seeThrough(file, read(file))).sort()).toEqual([])
+  })
+
+  test("the rule sees a dim, a dim by token, and a fade that ends unseen; it lets a fade-in and reduced motion pass", () => {
+    const at = join(SRC, "probe.css")
+    expect(seeThrough(at, ".a { opacity: 0.5; }")).toHaveLength(1)
+    expect(seeThrough(at, ".a { opacity: var(--zone-dim); }")).toHaveLength(1)
+    expect(seeThrough(at, "@keyframes out { from { opacity: 1; } to { opacity: 0; } }")).toHaveLength(1)
+    expect(seeThrough(at, "@keyframes in { from { opacity: 0; } to { opacity: 1; } }")).toEqual([])
+    expect(seeThrough(at, "@media (prefers-reduced-motion: reduce) { .a { opacity: 0.5; } }")).toEqual([])
+    expect(seeThrough(at, ".a { opacity: 1; }")).toEqual([])
+  })
+})
+
 describe("fixtures stay out of the product", () => {
   /**
    * src/fixtures holds stand-in data and a fixture d-pad that reads arrow keys
