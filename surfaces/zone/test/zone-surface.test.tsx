@@ -10,11 +10,14 @@ import { ZoneSurface, zoneSurface } from "../src/index"
 afterEach(cleanup)
 
 describe("ZoneSurface", () => {
-  test("lists every catalog title over the ground inside the shell", () => {
+  test("is the GAMES page on power-on: every catalog card in the band, the first focused, over the ground", () => {
     render(<ZoneSurface host={createFixtureHost()} model={fixtureModel} />)
     expect(screen.getByText("Spelunky")).toBeTruthy()
     expect(screen.getByText("The Legend of Zelda: Oracle of Seasons")).toBeTruthy()
-    expect(screen.getByText("Time 21:47")).toBeTruthy()
+    expect(document.querySelectorAll(".zone-card")).toHaveLength(12)
+    expect(document.activeElement?.textContent).toContain("Celeste Classic")
+    expect(document.querySelector(".zone-tab[aria-current='page']")?.textContent).toBe("Games")
+    expect(screen.getByText("21:47")).toBeTruthy()
     expect(screen.getByText("korri 0.4.1 · 9a1fb22")).toBeTruthy()
     expect(document.querySelector(".zone-ground")).not.toBeNull()
     expect(document.querySelector(".zone-shell")).not.toBeNull()

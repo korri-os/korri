@@ -28,3 +28,9 @@
   width: 22%;
   height: 40%;
 }
+
+/* A handheld's screen inside a bigger device: 640 by 480 where it fits. */
+.zone-part-frame[data-shape="handheld"] {
+  width: min(100%, var(--zone-part-handheld-width));
+  height: min(100%, var(--zone-part-handheld-height));
+}

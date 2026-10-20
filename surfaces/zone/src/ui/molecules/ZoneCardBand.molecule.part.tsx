@@ -42,3 +42,12 @@ export function FortyCards() {
 export function Narrow() {
   return <ZoneCardBand cards={fixtureCards} focusedIndex={3} visible={3} />
 }
+
+/** Korri's sections: a spine with the caption opens each run; it takes no focus. */
+export function Sections() {
+  const sectioned = fixtureCards.map((card, index) => ({
+    ...card,
+    section: index === 0 ? "Continue" : index === 1 ? "This device" : index === 6 ? "zao" : undefined,
+  }))
+  return <ZoneCardBand cards={sectioned} focusedIndex={1} />
+}

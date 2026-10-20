@@ -28,7 +28,7 @@ type Layer = (typeof LAYERS)[number]
  * worker that adds one adds it here. A layer listed here with no part is a
  * gate failure, not a plan.
  */
-const REQUIRED_LAYERS: Layer[] = ["template", "organism", "molecule", "atom"]
+const REQUIRED_LAYERS: Layer[] = ["page", "template", "organism", "molecule", "atom"]
 
 /**
  * Files that render no surface of their own and therefore own no part.
@@ -313,25 +313,10 @@ describe("every component has a consumer", () => {
    * that names a component some page already imports is itself a failure.
    */
   const AWAITING_PAGE: readonly string[] = [
-    // The games page: the band replaces the plain title list in ZoneSurface.
-    "ZoneCardBand",
     // The save-data page: the vertical save-card select (DIRECTION C16).
     "ZoneSaveCard",
-    // The games page: hints in the shell, the tab strip, the action row
-    // under the focused card, the foot, GAME OPTS. over the band, the keyboard
-    // for find-by-text, and the idle title card (C1 to C6, C26 to C29).
-    "ZoneKeycap",
-    "ZoneTabStrip",
-    "ZoneActionRow",
-    "ZoneFoot",
-    "ZoneOptionGroup",
-    "ZoneKeyboard",
-    "ZoneTitleCard",
     // The save-data page: the QR in a save card's well (C16).
     "ZoneQrWell",
-    // The layers organism: the busy strip and the problem dialog (C7, C9).
-    "ZoneBusyStrip",
-    "ZoneDialog",
   ]
 
   test("no atom, molecule, organism or template is imported by nothing", () => {

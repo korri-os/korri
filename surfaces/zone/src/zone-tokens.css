@@ -510,3 +510,29 @@
   /** @label Act ink */
   --zone-act-ink: var(--zone-black);
 }
+
+/* ---- games ---- */
+.zone-theme {
+  /** A section divider's width as a share of the focused card's height. @label Section card width @min 0.1 @max 0.4 @step 0.01 */
+  --zone-section-share: 0.2;
+  /** The spine stripe's share of a section divider's width. @label Section stripe share @min 0.05 @max 0.4 @step 0.01 */
+  --zone-section-stripe-share: 0.16;
+  /** A section caption's size as a share of the divider's width. @label Section caption share @min 0.2 @max 0.8 @step 0.01 */
+  --zone-section-type-share: 0.5;
+  /** How much of the band shows under GAME OPTS. or a dialog. @label Band behind opacity @min 0 @max 1 @step 0.05 */
+  --zone-games-behind-opacity: 0.35;
+  /** How much of the stripe-well cards shows while Korri loads. @label Loading cards opacity @min 0 @max 1 @step 0.05 */
+  --zone-games-loading-opacity: 0.45;
+  /** The widest GAME OPTS. grows. @label GAME OPTS. width @min 240px @max 1200px @step 10px */
+  --zone-games-opts-max: 640px;
+  /** The widest a dialog over the games page grows. @label Games dialog width @min 240px @max 1200px @step 10px */
+  --zone-games-dialog-max: 620px;
+  /** The widest the find keyboard grows. @label Find keyboard width @min 320px @max 1280px @step 10px */
+  --zone-games-keys-max: 900px;
+  /** The band height the find keyboard always leaves. @label Band kept while finding @min 60px @max 400px @step 10px */
+  --zone-games-band-min: 120px;
+  /** A handheld screen's width, for a part shown inside a bigger device. @label Handheld width @min 320px @max 1280px @step 10px */
+  --zone-part-handheld-width: 640px;
+  /** A handheld screen's height, likewise. @label Handheld height @min 240px @max 720px @step 10px */
+  --zone-part-handheld-height: 480px;
+}

@@ -6,7 +6,7 @@
  * update function or dispatches a message, so every effect Zone has on Korri
  * is visible in one switch.
  */
-import type { SurfaceHost } from "@contracts/surface/korri-surface"
+import type { SurfaceAction, SurfaceHost } from "@contracts/surface/korri-surface"
 import type { ZoneHostButton } from "./state/messages"
 import type { ZoneRequest } from "./state/requests"
 
@@ -61,6 +61,11 @@ export function performZoneRequest(host: SurfaceHost, request: ZoneRequest): voi
     case "FinishOnboarding":
       return host.finishOnboarding()
   }
+}
+
+/** Korri's actions for one game: a read, not a command. Empty when it has none. */
+export function readZoneGameActions(host: SurfaceHost, gameId: string): readonly SurfaceAction[] {
+  return host.gameActions(gameId)
 }
 
 /** Deliver the host's four buttons as messages. Returns the unsubscribe. */

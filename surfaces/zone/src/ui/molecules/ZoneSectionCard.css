@@ -1,0 +1,43 @@
+/* A side card's height and a share of the focused card's height across,
+ * so the spine scales with the band. In the band, the band hands down both;
+ * standing alone it takes the plan's focused height from its container. */
+.zone-section-card {
+  --zone-section-base: var(--zone-card-h, min(var(--zone-card-focus-max), calc(100cqh - 2 * var(--zone-band-pad))));
+  --zone-section-width: var(--zone-band-section-w, calc(var(--zone-section-base) * var(--zone-section-share)));
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  gap: var(--zone-card-pad);
+  width: var(--zone-section-width);
+  height: calc(var(--zone-section-base) * var(--zone-card-side-scale));
+  padding: var(--zone-card-pad);
+  background: var(--zone-panel);
+  box-shadow: var(--zone-drop-edge) var(--zone-drop-edge) 0 var(--zone-panel-edge);
+}
+
+/* The three stripe colours down the spine's edge, meeting on hard lines. */
+.zone-section-card-stripe {
+  flex: 0 0 calc(var(--zone-section-width) * var(--zone-section-stripe-share));
+  background: linear-gradient(
+    to bottom,
+    var(--zone-stripe-1) 0 24%,
+    var(--zone-stripe-2) 24% 46%,
+    var(--zone-stripe-3) 46% 100%
+  );
+}
+
+/* The caption reads up the spine, bottom to top, at a share of the width. */
+.zone-section-card-caption {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  font-size: calc(var(--zone-section-width) * var(--zone-section-type-share));
+  line-height: 1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  writing-mode: vertical-rl;
+  rotate: 180deg;
+  text-align: start;
+  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+}

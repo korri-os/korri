@@ -12,7 +12,7 @@ export function ZonePartFrame({
   shape,
   children,
 }: {
-  readonly shape: "narrow-tall" | "wide-short" | "tiny" | "card"
+  readonly shape: "narrow-tall" | "wide-short" | "tiny" | "card" | "handheld"
   readonly children: ReactNode
 }) {
   return (

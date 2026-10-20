@@ -325,6 +325,15 @@ describe("ZoneCardBand", () => {
     expect(slots().filter((slot) => slot.getAttribute("data-beyond") === null)).toHaveLength(5)
   })
 
+  test("Sections: a spine opens each section, carries its caption and takes no focus", () => {
+    render(<band.Sections />)
+    const spines = [...document.querySelectorAll(".zone-section-card")]
+    expect(spines.map((spine) => spine.textContent)).toEqual(["Continue", "This device", "zao"])
+    expect(spines.every((spine) => spine.querySelector("button") === null && spine.getAttribute("tabindex") === null)).toBe(true)
+    expect(titles()).toHaveLength(12)
+    expect(focusedTitle()).toBe("Hollow Knight")
+  })
+
   test("Narrow: three visible, one side card either side", () => {
     render(<band.Narrow />)
     expect(document.querySelector(".zone-card-band")?.getAttribute("data-visible")).toBe("3")
@@ -346,7 +355,7 @@ describe("ZoneCardBand", () => {
 
   test("every state is covered", () => {
     expect(statesOf(band as Part).map(([key]) => key).sort()).toEqual(
-      ["FocusFirst", "FocusLast", "FortyCards", "Narrow", "NoCards", "OneCard", "TwelveFocusThree"].sort(),
+      ["FocusFirst", "FocusLast", "FortyCards", "Narrow", "NoCards", "OneCard", "Sections", "TwelveFocusThree"].sort(),
     )
   })
 })

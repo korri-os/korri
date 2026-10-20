@@ -1,11 +1,14 @@
 import "./ZoneCardBand.css"
 import "../../zone-motion.css"
-import { useLayoutEffect, useRef } from "react"
+import { Fragment, useLayoutEffect, useRef } from "react"
 import { ZoneCard, type ZoneCardFacts, type ZoneCardPosition } from "./ZoneCard"
+import { ZoneSectionCard } from "./ZoneSectionCard"
 
 export interface ZoneBandCard extends ZoneCardFacts {
   /** Korri's opaque game id: the card's key. */
   readonly id: string
+  /** A section opens before this card: a divider carries its caption. */
+  readonly section?: string
 }
 
 const positionOf = (index: number, count: number): ZoneCardPosition =>
@@ -23,6 +26,11 @@ const positionOf = (index: number, count: number): ZoneCardPosition =>
  * The one number the stylesheet cannot know is which card is focused; the
  * band writes it to `--zone-band-focus` on the track, and the track's
  * translation follows with the one-bounce snap.
+ *
+ * A card that opens a section has a divider before it: a narrow spine with
+ * the caption, never focusable. The band writes how many dividers stand
+ * before the focused card to `--zone-band-dividers`, so the centring sum
+ * stays exact.
  *
  * With no cards it is an empty band with one caps line.
  */
@@ -42,33 +50,46 @@ export function ZoneCardBand({
   const focus = Math.min(Math.max(0, focusedIndex), Math.max(0, cards.length - 1))
   const half = Math.floor(visible / 2)
 
+  const dividers = cards.slice(0, focus + 1).filter(card => card.section !== undefined).length
+
   useLayoutEffect(() => {
     track.current?.style.setProperty("--zone-band-focus", String(focus))
-  }, [focus])
+    track.current?.style.setProperty("--zone-band-dividers", String(dividers))
+  }, [focus, dividers])
 
   return (
     <div className="zone-card-band" data-visible={visible}>
       {cards.length === 0 ? <p className="zone-card-band-empty">No games</p> : null}
       <div className="zone-card-band-track" ref={track}>
         {cards.map((card, index) => (
-          <div
-            className="zone-card-band-slot"
-            data-beyond={Math.abs(index - focus) > half ? "true" : undefined}
-            data-focus={index === focus ? "true" : undefined}
-            key={card.id}
-          >
-            <ZoneCard
-              art={card.art}
-              focused={index === focus}
-              onFocus={onFocus === undefined ? undefined : () => onFocus(index)}
-              places={card.places}
-              position={positionOf(index, cards.length)}
-              resumable={card.resumable}
-              size={index === focus ? "focus" : "side"}
-              system={card.system}
-              title={card.title}
-            />
-          </div>
+          <Fragment key={card.id}>
+            {card.section === undefined ? null : (
+              <div
+                className="zone-card-band-slot"
+                data-beyond={index - focus > half || focus - index >= half ? "true" : undefined}
+                data-section="true"
+              >
+                <ZoneSectionCard caption={card.section} />
+              </div>
+            )}
+            <div
+              className="zone-card-band-slot"
+              data-beyond={Math.abs(index - focus) > half ? "true" : undefined}
+              data-focus={index === focus ? "true" : undefined}
+            >
+              <ZoneCard
+                art={card.art}
+                focused={index === focus}
+                onFocus={onFocus === undefined ? undefined : () => onFocus(index)}
+                places={card.places}
+                position={positionOf(index, cards.length)}
+                resumable={card.resumable}
+                size={index === focus ? "focus" : "side"}
+                system={card.system}
+                title={card.title}
+              />
+            </div>
+          </Fragment>
         ))}
       </div>
     </div>
