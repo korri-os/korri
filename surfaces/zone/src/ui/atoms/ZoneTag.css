@@ -76,3 +76,10 @@
   color: var(--zone-tag-dark-ink);
   text-shadow: none;
 }
+
+/* A game that needs a download first: orange with black ink. */
+.zone-tag[data-kind="download"] {
+  background: var(--zone-tag-download);
+  color: var(--zone-tag-dark-ink);
+  text-shadow: none;
+}

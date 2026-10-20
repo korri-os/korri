@@ -7,9 +7,13 @@ import {
   statusBusyDetail,
   statusBusyKicker,
   statusBusyTwo,
+  statusConfirm,
+  statusConfirmForGame,
+  statusConfirmThree,
   statusProblem,
   statusProblemLong,
   statusProblemNoRetry,
+  statusProgressKnown,
   statusRunning,
 } from "../../fixtures/fixture-layers"
 import { createStatusProgram } from "../../fixtures/layer-program"
@@ -19,7 +23,7 @@ import { ZoneGround } from "./ZoneGround"
 import { ZoneStatusLayer } from "./ZoneStatusLayer"
 
 export const name = "Status layer"
-export const note = "Korri's status over any page: the busy strip, the running strip, the problem dialog"
+export const note = "Korri's status over any page: the busy strip, the running strip, the problem dialog, Korri's question"
 
 /** Unexported: the real layer on the real status model, a pretend Korri answering. */
 function Scenario({ status, page }: { readonly status: SurfaceStatus; readonly page?: ReactNode }) {
@@ -31,6 +35,7 @@ function Scenario({ status, page }: { readonly status: SurfaceStatus; readonly p
     <ZoneStatusLayer
       focus={model.focus}
       onBusyAction={(actionId) => dispatch({ _tag: "ChoseBusyAction", actionId })}
+      onConfirmAction={(actionId) => dispatch({ _tag: "ChoseConfirmAction", actionId })}
       onFocusButton={(index) => dispatch({ _tag: "FocusedStatusButton", index })}
       onProblemButton={(button) => dispatch({ _tag: "ChoseProblemButton", button })}
       page={page}
@@ -102,4 +107,24 @@ export function ProblemLongReason() {
 /** Busy over the games page: the page dims and goes inert under the strip. */
 export function OverPage() {
   return <Scenario page={standInPage} status={statusBusyCancel} />
+}
+
+/** Korri's question: its kicker and detail, one button per host action, the first lit. */
+export function Confirm() {
+  return <Scenario page={standInPage} status={statusConfirm} />
+}
+
+/** Three host actions in the host's order; the long one wraps the row before any button shrinks. */
+export function ConfirmThreeActions() {
+  return <Scenario page={standInPage} status={statusConfirmThree} />
+}
+
+/** The question belongs to one game: its title in yellow under the detail. */
+export function ConfirmForGame() {
+  return <Scenario page={standInPage} status={statusConfirmForGame} />
+}
+
+/** Korri's download with a known end over the page: the red bar under the detail, CANCEL lit. */
+export function BusyProgress() {
+  return <Scenario page={standInPage} status={statusProgressKnown} />
 }

@@ -62,3 +62,15 @@
     opacity: 0;
   }
 }
+
+/* The sweep: a stripe pattern slides one tile along, over and over, for work
+ * with no known end. The element states the tile as --zone-sweep-tile.
+ * Added for the treaty's progress; the movements above are unchanged. */
+@keyframes zone-sweep {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: var(--zone-sweep-tile) 0;
+  }
+}

@@ -97,6 +97,7 @@ export function ZoneSurface({ model, host }: { readonly model: SurfaceModel; rea
       <ZoneStatusLayer
         focus={state.status.focus}
         onBusyAction={actionId => send.status({ _tag: "ChoseBusyAction", actionId })}
+        onConfirmAction={actionId => send.status({ _tag: "ChoseConfirmAction", actionId })}
         onFocusButton={index => send.status({ _tag: "FocusedStatusButton", index })}
         onProblemButton={button => send.status({ _tag: "ChoseProblemButton", button })}
         page={zonePage(shown, program, model, host, send)}

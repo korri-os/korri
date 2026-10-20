@@ -130,3 +130,13 @@
 .zone-dialog-action:active {
   translate: var(--zone-press-sink) var(--zone-press-sink);
 }
+
+/* Present but inert: Korri's rule is dimmed, never hidden. */
+.zone-dialog-action:disabled {
+  opacity: var(--zone-triangle-dim);
+}
+
+/* A destructive action's caps are red, as the busy strip's are. */
+.zone-dialog-action[data-destructive] {
+  color: var(--zone-destructive-ink);
+}

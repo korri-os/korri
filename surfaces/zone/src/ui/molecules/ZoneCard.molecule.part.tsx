@@ -54,3 +54,13 @@ export function Last() {
 export function SideSize() {
   return <ZoneCard {...tetris} size="side" />
 }
+
+/** Needs a download before its first launch: the orange DOWNLOAD tag with Korri's size closes the row. */
+export function Download() {
+  return <ZoneCard {...hollowKnight} download={{ bytes: 1_500_000_000 }} focused />
+}
+
+/** Korri does not know the size: DOWNLOAD alone, after two places, the row's caps shrinking to keep all four. */
+export function DownloadUnknownSize() {
+  return <ZoneCard {...spelunky} download={{}} focused />
+}

@@ -3,10 +3,11 @@ import "./ZoneTag.css"
 /**
  * What a tag says about a game or a save, and so what colour it wears:
  * the system in blue, HERE in yellow, a remote device in red, SAVED in
- * mint, OPEN in orange, CONTINUE in white. White caps keep the black
- * outline; a light tag takes black ink.
+ * mint, OPEN in orange, CONTINUE in white, DOWNLOAD in orange (OPEN is
+ * only ever on a save or the running strip, never on a game card). White
+ * caps keep the black outline; a light tag takes black ink.
  */
-export type ZoneTagKind = "system" | "here" | "remote" | "saved" | "open" | "continue"
+export type ZoneTagKind = "system" | "here" | "remote" | "saved" | "open" | "continue" | "download"
 
 /** Where a tag sits in a row, which decides which of its ends is cut. */
 export type ZoneTagJoin = "only" | "first" | "middle" | "last"

@@ -1,6 +1,6 @@
 /**
  * Zone as a whole, from home, the way the portal drives it: one test per
- * capability item (docs/design/surfaces/CAPABILITIES.md, C1 to C30).
+ * capability item (docs/design/surfaces/CAPABILITIES.md, C1 to C33).
  *
  * ZoneSurface is rendered with a fake host that records every call and its
  * arguments. The test drives it as the portal does: it moves DOM focus to
@@ -462,12 +462,155 @@ describe("status", () => {
     expect(focusedText()).toContain("Spelunky")
   })
 
+  test("C33 download", () => {
+    const needing = withGames(GAMES.map(game =>
+      game.id === "hollow" ? { ...game, download: { bytes: 1_500_000_000 } }
+        : game.id === "spelunky" ? { ...game, download: {} }
+        : game))
+    const { host, publish } = mount(needing)
+    const tags = (title: string) => [...button(title).querySelectorAll(".zone-tag")].map(tag => tag.textContent)
+    const facts = () => document.querySelector(".zone-games-facts")?.textContent ?? ""
+    // The card says so, with Korri's size formatted; a size Korri does not know is the word alone.
+    expect(tags("Hollow Knight")).toEqual(["Switch", "Here", "Download 1.5 GB"])
+    expect(tags("Spelunky")).toEqual(["PC", "Here", "zao", "Download"])
+    expect(tags("Celeste Classic")).not.toContain("Download")
+    // The facts line under the band adds it for the focused game.
+    moveTo(button("Hollow Knight"))
+    expect(facts()).toBe("Download1.5 GB")
+    expect(document.querySelector(".zone-games-facts")?.hasAttribute("data-empty")).toBe(false)
+    moveTo(button("Spelunky"))
+    expect(facts()).toBe("Download")
+    moveTo(button("Celeste Classic"))
+    expect(facts()).not.toContain("Download")
+    // Nothing else changes: A launches as before, and the portal raises its question.
+    moveTo(button("Hollow Knight"))
+    confirm()
+    expect(calls(host)).toEqual([["launchGame", "hollow"]])
+    publish({
+      ...needing,
+      status: {
+        _tag: "Confirm",
+        kicker: "Needs a download",
+        detail: "FEX rootfs and Proton-CachyOS, 1.5 GB",
+        gameId: "hollow",
+        actions: [
+          { id: "acquisition:1:download", label: "Download", enabled: true },
+          { id: "acquisition:1:cancel", label: "Cancel", enabled: true },
+        ],
+      },
+    })
+    expect(focusedText()).toBe("Download")
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "acquisition:1:download"])
+    // Korri fetched it: the game no longer carries `download`, and the tag and fact go.
+    publish(withGames(GAMES))
+    expect(tags("Hollow Knight")).toEqual(["Switch", "Here"])
+    expect(facts()).not.toContain("Download")
+  })
+
   test("C10 reload", () => {
     const { host, publish } = mount()
     publish({ ...HOME, catalog: { _tag: "Error", message: "The disk did not answer." } })
     expect(focusedText()).toBe("Reload")
     confirm()
     expect(calls(host)).toEqual([["reload"]])
+  })
+
+  test("C31 confirm", () => {
+    const { host, publish, press } = mount()
+    moveTo(button("Hollow Knight"))
+    confirm()
+    const question: SurfaceModel = {
+      ...HOME,
+      status: {
+        _tag: "Confirm",
+        kicker: "Needs a download",
+        detail: "FEX rootfs and Proton-CachyOS, 1.5 GB",
+        gameId: "hollow",
+        actions: [
+          { id: "acquisition:1:download", label: "Download", enabled: true },
+          { id: "acquisition:1:cancel", label: "Cancel", enabled: true },
+        ],
+      },
+    }
+    publish(question)
+    const dialog = screen.getByRole("dialog", { name: "Needs a download" })
+    expect(dialog.textContent).toContain("FEX rootfs and Proton-CachyOS, 1.5 GB")
+    expect(dialog.textContent).toContain("Hollow Knight")
+    expect(within(dialog).getAllByRole("button").map(node => node.textContent)).toEqual(["Download", "Cancel"])
+    // The page is inert and dimmed under it; the cursor is on the host's first action.
+    expect(document.querySelector(".zone-status-layer-page")?.hasAttribute("inert")).toBe(true)
+    expect(document.querySelector(".zone-status-layer-page")?.hasAttribute("data-covered")).toBe(true)
+    expect(focusedText()).toBe("Download")
+    // B answers nothing, and the other buttons leave the question up.
+    press("back")
+    press("menu")
+    press("options")
+    press("system")
+    expect(calls(host)).toEqual([["launchGame", "hollow"]])
+    expect(screen.getByRole("dialog", { name: "Needs a download" })).toBeTruthy()
+    // The last action is reported by its id like any other: none is read as no.
+    moveTo(button("Cancel", dialog))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "acquisition:1:cancel"])
+    // Korri answers: the cursor goes back to the card.
+    publish(HOME)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(focusedText()).toContain("Hollow Knight")
+    // Asked again, A on the lit first action runs it.
+    publish(question)
+    expect(focusedText()).toBe("Download")
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "acquisition:1:download"])
+  })
+
+  test("C32 progress", () => {
+    const { host, publish, press } = mount()
+    moveTo(button("Hollow Knight"))
+    confirm()
+    const cancel = { id: "acquisition:1:cancel", label: "Cancel", enabled: true }
+    const busy = (progress?: { readonly done: number; readonly total?: number }, detail?: string): SurfaceModel => ({
+      ...HOME,
+      status: {
+        _tag: "Busy",
+        kicker: "Downloading FEX rootfs",
+        gameId: "hollow",
+        actions: [cancel],
+        ...(detail === undefined ? {} : { detail }),
+        ...(progress === undefined ? {} : { progress }),
+      },
+    })
+    // A known end: a real bar, its share and both sizes.
+    publish(busy({ done: 612_000_000, total: 1_160_000_000 }, "612 MB of 1.2 GB · 6.4 MB/s · 1:30 left"))
+    const strip = screen.getByRole("status")
+    expect(strip.textContent).toContain("Downloading FEX rootfs")
+    expect(strip.textContent).toContain("612 MB of 1.2 GB · 6.4 MB/s · 1:30 left")
+    expect(document.querySelector(".zone-status-layer-busy")?.textContent).toContain("Hollow Knight")
+    const bar = within(strip).getByRole("progressbar")
+    expect(bar.getAttribute("data-meter")).toBe("progress")
+    expect(bar.getAttribute("aria-valuenow")).toBe("52")
+    expect(bar.textContent).toBe("612.0 MB/1.2 GB")
+    // Korri counts on: the same strip, the bar moves, the cursor stays on CANCEL.
+    publish(busy({ done: 1_154_000_000, total: 1_160_000_000 }))
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("99")
+    expect(screen.getByRole("progressbar").textContent).toBe("1.2 GB/1.2 GB")
+    expect(focusedText()).toBe("Cancel")
+    // How far, with no end: the size so far and no share claimed.
+    publish(busy({ done: 212_400_000 }))
+    expect(screen.getByRole("progressbar").getAttribute("data-meter")).toBe("indeterminate")
+    expect(screen.getByRole("progressbar").hasAttribute("aria-valuenow")).toBe(false)
+    expect(screen.getByRole("progressbar").textContent).toBe("212.4 MB")
+    // B cancels nothing; Korri's CANCEL is reported by its id.
+    press("back")
+    expect(calls(host)).toEqual([["launchGame", "hollow"]])
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "acquisition:1:cancel"])
+    // Without progress the strip says only that work is under way.
+    publish(busy(undefined, "Keeping what was downloaded so far"))
+    expect(screen.queryByRole("progressbar")).toBeNull()
+    expect(screen.getByRole("status").textContent).toContain("Keeping what was downloaded so far")
+    publish(HOME)
+    expect(focusedText()).toContain("Hollow Knight")
   })
 })
 

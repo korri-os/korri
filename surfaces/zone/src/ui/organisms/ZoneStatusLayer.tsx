@@ -19,7 +19,8 @@ export type ZoneStatusProblemButton = "dismiss" | "retry"
  *  - Browsing: nothing. The page is the page.
  *  - Busy (C7): the busy strip drops over the page's middle with Korri's
  *    kicker and detail, the game it belongs to in yellow above it, and
- *    Korri's actions (CANCEL) beside it. The page dims and goes inert;
+ *    Korri's actions (CANCEL) beside it. With Korri's progress (C32) the
+ *    strip's meter shows how far the work has got. The page dims and goes inert;
  *    focus moves into the strip when it has an action.
  *  - Running (C8): a small black parallelogram at the top of the page:
  *    the kicker, an OPEN tag and the game's title. It takes no focus and
@@ -27,6 +28,12 @@ export type ZoneStatusProblemButton = "dismiss" | "retry"
  *  - Problem (C9): Mania's blue dialog over the dimmed page: the kicker as
  *    headline, the reason under it, the game's title in yellow, DISMISS and
  *    RETRY (when Korri can) with DISMISS lit first.
+ *  - Confirm (C31): the same blue dialog asks Korri's question: the kicker
+ *    as headline, the detail under it, the game's title in yellow when
+ *    `gameId` names one, and one button per host action in the host's
+ *    order, labels as given, the first lit. No button is read as yes or no
+ *    by its label, and Back answers nothing: Korri's actions are the only
+ *    ways out.
  *
  * Every word is Korri's except DISMISS, RETRY and OPEN. `focus` is the
  * model's lit button; focus returns to the page when the layer closes.
@@ -41,6 +48,7 @@ export function ZoneStatusLayer({
   onFocusButton,
   onBusyAction,
   onProblemButton,
+  onConfirmAction,
 }: {
   readonly status: SurfaceStatus
   /** The catalog's title for a game id; undefined when the catalog has none. */
@@ -52,12 +60,15 @@ export function ZoneStatusLayer({
   readonly onFocusButton?: (index: number) => void
   readonly onBusyAction?: (actionId: string) => void
   readonly onProblemButton?: (button: ZoneStatusProblemButton) => void
+  /** A on one of Korri's answers to its question: the action's id. */
+  readonly onConfirmAction?: (actionId: string) => void
 }) {
   const layer = useRef<HTMLDivElement | null>(null)
   const holdsFocus = (status._tag === "Busy" && (status.actions?.length ?? 0) > 0) || status._tag === "Problem"
+    || (status._tag === "Confirm" && status.actions.length > 0)
   useZoneLayerFocus(layer, holdsFocus ? `${status._tag}:${focus}` : undefined, true)
 
-  const covers = status._tag === "Busy" || status._tag === "Problem"
+  const covers = status._tag === "Busy" || status._tag === "Problem" || status._tag === "Confirm"
   const gameTitle = status._tag === "Problem"
     ? status.gameTitle ?? (status.gameId === undefined ? undefined : titleOf(status.gameId))
     : status._tag === "Browsing" || status.gameId === undefined ? undefined : titleOf(status.gameId)
@@ -95,6 +106,7 @@ export function ZoneStatusLayer({
             focused={(status.actions?.length ?? 0) > 0 ? focus : undefined}
             kicker={status.kicker}
             onAction={onBusyAction}
+            progress={status.progress}
             onFocusAction={onFocusButton}
           />
         </div>
@@ -111,6 +123,24 @@ export function ZoneStatusLayer({
             focused={focus}
             headline={status.kicker}
             lines={[status.reason]}
+            onFocusAction={onFocusButton}
+            title={gameTitle}
+          />
+        </div>
+      ) : null}
+      {status._tag === "Confirm" ? (
+        <div className="zone-status-layer-confirm" data-block-exit ref={layer}>
+          <ZoneDialog
+            actions={status.actions.map(action => ({
+              id: action.id,
+              label: action.label,
+              disabled: !action.enabled,
+              destructive: action.destructive,
+              onPress: onConfirmAction === undefined ? undefined : () => onConfirmAction(action.id),
+            }))}
+            focused={focus}
+            headline={status.kicker}
+            lines={status.detail === undefined ? [] : [status.detail]}
             onFocusAction={onFocusButton}
             title={gameTitle}
           />

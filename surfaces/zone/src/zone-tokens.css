@@ -681,3 +681,31 @@
   /** A part frame 260 wide. @label Part frame, 260 @min 120px @max 1280px @step 10px */
   --zone-part-w260: 260px;
 }
+
+/* ---- treaty ---- */
+/* What the treaty gained while Zone was built: Korri's question (C31),
+ * Busy.progress (C32) and SurfaceGame.download (C33). Appended by the
+ * treaty worker; the lines above are untouched. */
+.zone-theme {
+  /* The busy strip's meter: SPECIAL STAGE's red slanted bar. */
+  /** The bar's thickness at its largest. @label Meter height @min 4 @max 40 @step 1 */
+  --zone-meter-height: 14px;
+  /** The bar's thickness at its least, on a small page. @label Meter height, least @min 2 @max 30 @step 1 */
+  --zone-meter-height-least: 8px;
+  /** The shortest the bar gets before the sizes drop under it. @label Meter, least length @min 40 @max 400 @step 10 */
+  --zone-meter-least: 120px;
+  /** Room for the size done, so the figures do not jump as they count (Anton has no tabular figures). @label Meter figures width @min 4 @max 14 @step 0.5 */
+  --zone-meter-figures: 8.5ch;
+  /** One pass of the moving stripe when Korri knows no end. @label Meter sweep time @min 100 @max 4000 @step 50 */
+  --zone-meter-sweep-time: 700ms;
+  /** @label Meter track */
+  --zone-meter-track: var(--zone-blue);
+  /** @label Meter fill */
+  --zone-meter-fill: var(--zone-red);
+  /** @label Meter fill lip */
+  --zone-meter-lip: var(--zone-orange);
+
+  /* The download tag on a card. */
+  /** @label Download tag */
+  --zone-tag-download: var(--zone-orange);
+}

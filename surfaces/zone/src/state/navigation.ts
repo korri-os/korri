@@ -38,7 +38,7 @@ import { ask, stay, type ZoneStep } from "./requests"
 
 export type ZoneTab = "games" | "options" | "savedata"
 export type ZoneFocusZone = "tabs" | "find" | "cards" | "actions"
-export type ZoneLayer = "gameopts" | "keyboard" | "busy" | "problem" | "overlay" | "onboarding" | "idle"
+export type ZoneLayer = "gameopts" | "keyboard" | "busy" | "problem" | "confirm" | "overlay" | "onboarding" | "idle"
 
 /** The tabs in strip order. */
 export const ZONE_TABS: readonly ZoneTab[] = ["games", "options", "savedata"]
@@ -250,6 +250,9 @@ function back(nav: ZoneNavigation, korri: SurfaceModel): ZoneStep<ZoneNavigation
     case "busy":
       // Korri's work is cancelled by the action it publishes, never by Back.
       return stay(nav)
+    case "confirm":
+      // Korri's question is answered by its own actions, never by Back.
+      return stay(nav)
     case "onboarding":
       return stay(nav)
     case "gameopts":
@@ -286,7 +289,7 @@ function clampCard(index: number, nav: ZoneNavigation, korri: SurfaceModel): num
 
 /**
  * Korri's layers follow its model: `onboarding` under everything while first
- * boot is unfinished, `busy` or `problem` over the page while its status
+ * boot is unfinished, `busy`, `problem` or `confirm` over the page while its status
  * says so, `overlay` over everything while it presents gameplay. Zone's own
  * layers keep their order between them. A card index past the catalog is
  * brought back in.
@@ -299,6 +302,7 @@ function settle(nav: ZoneNavigation, korri: SurfaceModel): ZoneNavigation {
     ...own.filter(layer => layer !== "idle"),
     ...(status === "Busy" ? ["busy" as const] : []),
     ...(status === "Problem" ? ["problem" as const] : []),
+    ...(status === "Confirm" ? ["confirm" as const] : []),
     ...(korri.presentation.kind === "gameplay-overlay" ? ["overlay" as const] : []),
     ...(own.includes("idle") && own.length === 1 && status === "Browsing"
       && korri.presentation.kind === "catalog" && korri.onboarding === undefined ? ["idle" as const] : []),

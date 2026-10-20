@@ -17,7 +17,7 @@
  * every model. The host's four buttons are routed here, by what is shown:
  *
  *     back     the status layer's Problem first; Busy is never cancelled
- *              by it. Then the shown page's own rule; on OPTIONS and SAVE
+ *              by it and Confirm is never answered by it. Then the shown page's own rule; on OPTIONS and SAVE
  *              DATA, when the page has nothing to close, to the GAMES tab;
  *              on GAMES, navigation's rule; then nothing.
  *     menu     the cursor to the tabs. A keyboard on OPTIONS commits its
@@ -105,8 +105,9 @@ export function zoneShown(state: ZoneSurfaceState, korri: SurfaceModel): ZoneSho
   return state.nav.tab
 }
 
-/** Korri's status covers the page: Busy and Problem make it inert. */
-const covered = (korri: SurfaceModel): boolean => korri.status._tag === "Busy" || korri.status._tag === "Problem"
+/** Korri's status covers the page: Busy, Problem and Confirm make it inert. */
+const covered = (korri: SurfaceModel): boolean =>
+  korri.status._tag === "Busy" || korri.status._tag === "Problem" || korri.status._tag === "Confirm"
 
 export function zoneSurfaceStart(korri: SurfaceModel): ZoneSurfaceState {
   const start: ZoneSurfaceState = {
@@ -215,8 +216,9 @@ function back(steps: Steps, korri: SurfaceModel): void {
     steps.put("status", updateStatus(state.status, message, korri.status))
     return
   }
-  // Korri's work is cancelled by the action it publishes, never by Back.
-  if (korri.status._tag === "Busy") return
+  // Korri's work is cancelled by the action it publishes, never by Back,
+  // and its question is answered only by its own actions.
+  if (korri.status._tag === "Busy" || korri.status._tag === "Confirm") return
   switch (zoneShown(state, korri)) {
     case "paused":
       if (korri.presentation.kind === "gameplay-overlay") {
