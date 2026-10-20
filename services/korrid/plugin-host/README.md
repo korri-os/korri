@@ -45,6 +45,24 @@ A repository archive must now also identify an output signed by the namespace's 
 
 The cost is a complete per-release archive and temporary disk use: the whole archive plus its extracted compressed cache, in addition to imported store paths. Plugins have no size limit. Archive download, cache path-info, Nix import and store verification have no deadline. Nix output that grows with a closure (recursive path-info, and per-path build, copy and verify lines) has no output cap; other helpers keep their 1 MiB cap. The boot store-metadata query and closure listing keep their local deadlines (60 and 30 seconds). Publisher content-address conversion and cache export have no deadline. The archive keeps its 100,000-entry bound. Catalogs, release evidence and plugin source manifests keep their bounds. Downloads and validation hold the exclusive host lock, so concurrent commands fail as busy. A large package holds that lock until it finishes. Stall detection ends a stalled archive transfer, so it releases the lock. A lost connection requires a new download; there is no partial resume.
 
+## korrid's admin socket
+
+The portal manages repositories through korrid, which stays unprivileged. When the device also runs korrid (`services.korridLinuxDevice`), the module adds `korri-plugin-admin.socket` at `services.korri.pluginHost.adminSocket` (`/run/korri-plugin-admin/admin.sock`, `root:korrid`, mode 0660). It activates `korri-plugin serve-admin` as root with the restore unit's hardening. The server reads `SO_PEERCRED` and answers only `KORRI_PLUGIN_ADMIN_PEER_UID`, korrid's uid; any other peer gets no answer. One request at a time opens the host, so each request takes the host lock exactly like a CLI command.
+
+The socket accepts seven JSON requests (`services/korrid/src/plugin_admin.rs`). Each calls the same `Host` method as one CLI command:
+
+| Request | CLI command |
+|---|---|
+| `Repositories` | `repository list`, plus the installed receipts with `Repository` provenance |
+| `RepositoryAdd` | `repository add URL` |
+| `RepositoryRemove` | `repository remove URL` |
+| `Catalog` | `repository catalog URL`, this platform only, with each plugin's receipt state and whether its namespace is bound |
+| `Inspect` | `repository inspect URL ID RELEASE` |
+| `Install` | `repository install URL ID RELEASE APPROVAL` |
+| `SetEnabled` | `enable ID` / `disable ID` |
+
+Raw-cache install, update, switch, remove, purge, restore and `enabled-packages` are not reachable through the socket. Any other request is refused. Install re-inspects and refuses an approval that does not match, exactly as the CLI does. Refusals carry the host's own text. Codes: `PluginRepositoryUrlInvalid` for an address that fails the HTTPS URL policy, `PluginNeedsReview` when enable finds that the stored approval no longer matches the package or host policy, and `PluginHostRefused` for every other refusal.
+
 ## Raw-cache installation and approval
 
 The existing explicit raw-cache route is separate from repository selection. Use the exact output published for this device architecture. The plugin cache can host only custom outputs; the rest of the closure must already exist locally or be available from configured trusted substituters. Every path requires a trusted signature for ordinary input-addressed paths or a verified content-addressed identity. A missing or untrusted dependency fails installation without a build. Adding the plugin cache does not add signing keys or change source identity or approval. The cost is dependence on configured cache availability: Nix can fail an import when it cannot initialize a cache, even if another cache has the needed output. HTTPS repository archives still require their complete content-addressed closure during preflight; this importer change does not change the archive or publisher contract.
