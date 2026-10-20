@@ -200,10 +200,18 @@ describe("FocusedCard", () => {
 })
 
 describe("ChoseCard", () => {
-  test("drops into the card's action row", () => {
-    const next = after(at({ card: 1 }), { _tag: "ChoseCard", index: 1 }).model
-    expect(next.zone).toBe("actions")
-    expect(next.action).toBe(0)
+  test("drops into the action row when the game has a choice of places, and launches nothing", () => {
+    const step = after(at({ card: 3 }), { _tag: "ChoseCard", index: 3 })
+    expect(step.model.zone).toBe("actions")
+    expect(step.model.action).toBe(0)
+    expect(step.requests).toEqual([])
+  })
+  test("launches a one-place game: A on the card is A on its one lit button", () => {
+    expect(after(at({ card: 1 }), { _tag: "ChoseCard", index: 1 }).requests).toEqual([{ _tag: "LaunchGame", gameId: "hollow-knight" }])
+  })
+  test("launches a game with one published place at that place", () => {
+    expect(after(at({ card: 2 }), { _tag: "ChoseCard", index: 2 }).requests)
+      .toEqual([{ _tag: "LaunchGame", gameId: "tetris", locationId: "zao" }])
   })
 })
 
