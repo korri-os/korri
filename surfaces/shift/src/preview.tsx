@@ -13,6 +13,8 @@ import { ShiftLibraryCount } from "./pages/ShiftLibraryCount"
 import type { ShiftLibraryGame } from "./pages/shift-library-game"
 import { ShiftLibraryLens } from "./pages/ShiftLibraryLens"
 import { ShiftSettings } from "./pages/ShiftSettings"
+import { ShiftStore, type ShiftStorePlace } from "./pages/ShiftStore"
+import { STORE_GETS, storeDetails, storeFixture } from "./fixtures/store-fixtures"
 import {
   SHIFT_DESIGN_PARTS,
   type ShiftDesignPartLayer,
@@ -48,6 +50,10 @@ type PreviewScene =
   | "cover-art"
   | "network"
   | "library-count"
+  | "store-providers"
+  | "store-results"
+  | "store-searching"
+  | "store-detail"
 
 const SCENE_BY_PART = {
   backdrop: "home",
@@ -98,6 +104,14 @@ const SCENE_BY_PART = {
   sheetGroup: "sheet",
   sheetPanel: "sheet",
   statusBar: "home",
+  store: "store-providers",
+  storeBrowseTile: "store-results",
+  storeDetail: "store-detail",
+  storeEmpty: "store-searching",
+  storeFinder: "store-results",
+  storeGet: "store-detail",
+  storeIndexRow: "store-providers",
+  storeProgress: "store-detail",
   tile: "home",
 } as const satisfies Partial<
   Record<keyof typeof SHIFT_DESIGN_PARTS, PreviewScene>
@@ -310,6 +324,30 @@ function sceneNode(scene: PreviewScene): ReactNode {
           <ShiftNetworkIcon network={DEFAULT_SHIFT_NETWORK_READING} />
         </div>
       )
+    case "store-providers":
+    case "store-results":
+    case "store-searching":
+    case "store-detail": {
+      const place: ShiftStorePlace = scene === "store-providers"
+        ? { view: "providers", text: "" }
+        : { view: scene === "store-detail" ? "detail" : "results", providerId: "@korri:homebrewhub", text: "2048" }
+      const store = storeFixture({
+        ...(scene === "store-searching" ? { search: { _tag: "Searching", providerId: "@korri:homebrewhub", query: "2048" } } : {}),
+        ...(scene === "store-detail" ? { details: storeDetails(STORE_GETS.downloading) } : {}),
+      })
+      return (
+        <ShiftStore
+          store={store}
+          place={place}
+          onPlace={() => undefined}
+          onSearch={() => undefined}
+          onOpenEntry={() => undefined}
+          onAction={() => undefined}
+          onPlay={() => undefined}
+          onClose={() => undefined}
+        />
+      )
+    }
     case "library-count":
       return (
         <div data-shift-library>
@@ -414,7 +452,8 @@ const PREVIEW_STYLE = `
   .shift-part-preview-scene > [data-shift-home],
   .shift-part-preview-scene > [data-shift-settings],
   .shift-part-preview-scene > [data-shift-detail],
-  .shift-part-preview-scene > [data-shift-library] {
+  .shift-part-preview-scene > [data-shift-library],
+  .shift-part-preview-scene > [data-shift-store] {
     width: 100%;
     height: 100%;
     min-height: 540px;

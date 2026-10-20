@@ -1636,7 +1636,7 @@ describe("Shift settings", () => {
   })
 
   test("publishes every currently rendered design part as a preview", () => {
-    expect(shiftPartPreviews).toHaveLength(49)
+    expect(shiftPartPreviews).toHaveLength(57)
     expect(shiftPartPreviews.map(part => part.id)).toContain("shift.clock")
     expect(shiftPartPreviews.map(part => part.id)).toContain(
       "shift.library-tile",
