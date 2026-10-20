@@ -6,11 +6,8 @@ Face `#DDDDDD`, highlight `#FFFFFF`, shadow `#777777`, trough `#AAAAAA`, border 
 Desktop: an 8x8 woven tile in `#666699`, `#7777AA`, `#5C5C8F`, drawn in CSS. Every bevel is lit from
 the top-left: 1px white top/left, 1px `#777777` bottom/right, 1px black outside. Charcoal has no libre
 clone, so the system font is Chicago (Mac OS 8's Appearance panel offers it beside Charcoal):
-ChiKareGo2 at `font-size:16px; line-height:15px` (ascent 12 + descent 3; a 16px line puts every
-glyph half a pixel down): the face is drawn on a 16px cell, and 16px measures cap 9 / x-height 7. Bold is the Mac smear, `text-shadow: 1px 0`.
-Geneva 9 (FindersKeepers) at `font-size:16px; line-height:12px` for the same reason: 9px measures an
-x-height of 0; 16px measures x-height 5 / cap 7. Both inlined as base64, `-webkit-font-smoothing:
-none`, integer zoom of the whole screen.
+ChiKareGo2 at `16px/15px` (its 16px cell gives cap 9, x-height 7; bold is the Mac smear,
+`text-shadow: 1px 0`); Geneva 9 is FindersKeepers at `16px/12px` (x-height 5, cap 7). Both base64, no smoothing.
 
 ## Skeleton (one sentence)
 A hard disk "Games", a folder "Control Panels" and the Trash at the desktop's right edge open into
@@ -21,7 +18,9 @@ Scale is the largest whole number that keeps 320x240, one step less if that buys
 Overlap: Games (4x64 grid) centred, Control Panels partly behind, the Keyboard windoid centred at the
 bottom. Stack: the front window fills the width under the menu bar; the others collapse WindowShade-
 style to 21px bars at the bottom edge; confirm on a bar brings it to front. A dialog keeps its size
-(min 80% width in stack), centred above the Keyboard. State survives a resize. Icons: 32x32, 2:1 steps.
+(min 80% width in stack), centred above the Keyboard. State survives a resize. Icons: 32x32 in the 8.5
+32-bit style: boxes in three-quarter view (top face lit at its front-left, right side darkest), faces
+shaded in true colour, outlines in shades not black, a soft two-step shadow cast from each silhouette.
 
 ## Memorable element
 The 19px striped title bar: six etched lines that stop around the centred name and vanish the moment the window goes behind.
@@ -34,8 +33,8 @@ Cancel and Use end the last row; Use sends. With a d-pad a 40-character identity
 
 ## States (`?state=`; `?fixture=empty|one|many|long`)
 idle: Games front, Spelunky selected, the header's second line. game: "Spelunky Info", cover 2x in
-overlap and 1x in stack (quantised at load: 4x4 Bayer, then the nearest 00/33/66/99/CC/FF step per
-channel; a near-grey pixel may take a Platinum grey); it read well, so no hand-drawn cover. wifi: the
+overlap and 1x in stack, with its own pixels: Mac OS 8.5+ ran in millions of colours, so no dither
+(a 216-colour dither was tried first and turned the brick muddy). wifi: the
 sunk list (rows below hummingbird-lake are illustrative; the screen does not say so), "Join Kestrel" right
 of centre over it (right-aligned, 60% wide in stack, where the bars behind step aside), the Keyboard below. problem: a Stop alert, Retry ringed; Games inactive, "Spelunky: could not start on zao."
 ## Capability map

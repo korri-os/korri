@@ -138,6 +138,7 @@ svg.px { display: block; shape-rendering: crispEdges; }
 
 .fhead { flex: none; text-align: center; padding: 2px 6px 2px; border-top: 1px solid var(--g5); box-shadow: inset 0 1px var(--w); min-height: 16px; }
 .fhead .status { display: block; }
+.footstack .fhead { padding-bottom: 5px; }   /* the last line in a window: Geneva's descent needs room above the frame */
 [data-mode="stack"] .fhead .status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* FindersKeepers draws U+00B7 as a bullet, so the build label's middle dot is painted: one pixel, mid x-height */
 .mdot { display: inline-block; width: 5px; height: 12px; color: transparent; vertical-align: top;
@@ -499,7 +500,7 @@ const NETWORKS = [
   { ssid: "PLUSNET-R3", pct: 20, secured: true },
 ];
 
-/* The Spelunky picture (Pico's PICO_ART_CAVERN, 128x60), quantised to the colour cube at load */
+/* The Spelunky picture (Pico's PICO_ART_CAVERN, 128x60), shown with its own pixels in Get Info */
 const SPELUNKY_PIC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAAA8CAMAAACZ6EL3AAAAkFBMVEX/+sj/3Fr/1yj/vjzSlm6gWih4UChaOCRaHhQ8JBg7JBg7Ixg6Ixc5Ihc4Ihc4IRY3IRY2IBY1IBU0HxUzHxUzHhQyHhQxHRQwHRMvHBMuGxMtGxIsGhIrGhEqGREpGBEoGBAnFxAmFw8lFg8kFQ8jFQ4iFA4eFA4dEQwcEQwcEAsbEAsaDwsZDwoZDgoYDgqBxl/sAAACyUlEQVR42u2U63LTMBCF5QRsLgFap0lpm6RAW6C58f5vh3VbHa9kSaZh1B85M7GP12dXn62JReP0voQXUPxQwiPAxxIeAWYlfA5A1Ukfq2pmzvJ6Zu5qr6vWu3oK4FNacrQ+9s/2rv3pirt2mYjEZyVg414+ybtOVeV+9lo/Md7j1zoTmS++KEGR+1MAROaLCyUocu/2XEoOraoLs7APoO9LZJsPzQRfHuBSCYq+91+9HDsMoLfisnFbEJkv2rRCAG0rz/JuGMD1JYbjd6ANevdK5dO0bEtsIgThtiAyHwHm6jjtZL0PMH8BwNzMdmsxgCu7fpe6grrec3nWGb0V7txM5Xna6Br+bKeZb2bTWhxgoQGE6EKLAYDFCwAWZjatxQGWZn2ZWrJ6zNueVB5zVBfLvghghHJ7gjlxrRSkbJpr4B/2riee529K1cVXpf57ogzUY556EvnebFMPALj/Sj6A6UkCwGwLcKPU9Amsx3rM255UXuZY3Qe4qetmLEBjepL5LscBbj3V9e1o5fb4OfwO3BEleazHPLy1aJ5yd6EPUXGAFQxb+fXmrVOvzgFWw55yq1cJsIZha7/uAawHANbDnnJUFxtPdb0JCwCye5I5AwCcG3iaXt17A5AxPRte577Lsbq4V4JixL+xysznePFNCYoRTwCZ+RxfHuC7EhQjngAy8zneAOTJAZxO+B34kfIEkJnP8QjwkPIM4GFM75B/VQCPKc8AHsf0DvnyAE8jRABPp5P4qQRsEU8AmfkcXx7gV2GdAc4AZwD8FP8u4RHgWR0nkwl5V1fV7vDs5cnrRlanYmCmBthydS3bbbjqDqGOYGN4GkjslIAt5eUz7eDxdhP3lLsGvbuIzBR7JSiO8GqBPbzlPQDsAQA3gs35ZwCamZOf9CD7AAclCByg6wBh5qkjknE+NF97cVSCwBEAjhD+T178Kay/As27EeaLmSwAAAAASUVORK5CYII=";
 
 /* ======================================================================
@@ -528,30 +529,63 @@ function svg(c, label, k = 1) { /* k: whole-number scale, so a 128x60 picture ca
   const body = Object.entries(paths).map(([col, d]) => `<path fill="${col}" d="${d}"/>`).join("");
   return `<svg class="px" width="${c.w * k}" height="${c.h * k}" viewBox="0 0 ${c.w} ${c.h}" ${label ? `role="img" aria-label="${label}"` : 'aria-hidden="true"'}>${body}</svg>`;
 }
-/* A box in three-quarter view: front face w x h at (x,y), the top face climbing dz rows at two columns a row,
-   lit from the top-left: top lightest, front mid, right side dark, outline in a shade not black. */
-function iso(c, x, y, w, h, dz, f, t, r, o) {
-  rect(c, x + w + 1, y + 2 - dz, 2 * dz, h, "s"); rect(c, x + 2, y + h, w + 2 * dz, 2, "s");   /* drop shadow, bottom-right */
-  rect(c, x, y, w, h, f);
-  for (let k = 1; k <= dz; k++) { rect(c, x + 2 * k, y - k, w, 1, t); rect(c, x + w + 2 * k - 2, y - k, 2, h, r); }
-  frame(c, x, y, w, h, o);                                                  /* front outline */
-  rect(c, x + 2 * dz, y - dz, w, 1, o);                                     /* top edge */
-  for (let k = 1; k <= dz; k++) { rect(c, x + 2 * k - 1, y - k, 2, 1, o); rect(c, x + w + 2 * k - 2, y + h - k, 2, 1, o); }
-  rect(c, x + w + 2 * dz - 1, y - dz, 1, h, o);                            /* far right edge */
-  rect(c, x + 1, y + 1, w - 2, 1, t); rect(c, x + 1, y + 1, 1, h - 2, t);   /* highlight inside the front's top-left */
+/* Mac OS 8.5 icons are 32-bit: faces carry smooth shading and the mask is 8-bit alpha. The helpers below
+   shade in true colour (a pen may be a key of PAL or any #rrggbb). */
+const hexOf = p => (PAL[p] && PAL[p][0] === "#") ? PAL[p] : p;
+function mix(a, b, t) {
+  const pa = parseInt(hexOf(a).slice(1), 16), pb = parseInt(hexOf(b).slice(1), 16);
+  const ch = s => Math.round(((pa >> s) & 255) * (1 - t) + ((pb >> s) & 255) * t);
+  return "#" + [16, 8, 0].map(s => ch(s).toString(16).padStart(2, "0")).join("");
 }
-function soften(c) { /* a 1px soft edge under the whole shape, bottom-right, for drawings that did not use iso() */ return c; }
+const lighten = (h, t) => mix(h, "#FFFFFF", t), darken = (h, t) => mix(h, "#000000", t);
+function vgrad(c, x, y, w, h, top, bottom) { for (let j = 0; j < h; j++) rect(c, x, y + j, w, 1, mix(top, bottom, h > 1 ? j / (h - 1) : 0)); }
+
+/* A box in three-quarter view: front face w x h at (x,y), the top face climbing dz rows at two columns a row.
+   Light from the top-left: the top face is brightest at its left, the front is lit at its top and falls off
+   downward, the right side is darkest and darkens downward. Outlines are shades of the faces, not black. */
+function iso(c, x, y, w, h, dz, f, t, r, o, sl = 1) {   /* sl: columns the depth moves right per row */
+  const F = hexOf(f), T = hexOf(t), R = hexOf(r), O = hexOf(o);
+  /* top face: brightest at its front-left corner, falling off to the back-right */
+  for (let k = 1; k <= dz; k++) for (let i = 0; i < w; i++) dot(c, x + sl * k + i, y - k, mix(lighten(T, 0.45), darken(T, 0.06), (i / Math.max(1, w - 1)) * 0.7 + (k / dz) * 0.3));
+  /* right side: darkest face, darkening downward */
+  for (let k = 1; k <= dz; k++) for (let j = 0; j < h; j++) rect(c, x + w + sl * (k - 1), y - k + j + 1, sl, 1, mix(R, darken(R, 0.32), j / Math.max(1, h - 1)));
+  vgrad(c, x, y, w, h, lighten(F, 0.2), darken(F, 0.14));   /* front, lit at its top */
+  const edgeLit = darken(T, 0.22), edgeDark = O;
+  rect(c, x, y, w, 1, lighten(F, 0.6));                                            /* the lit front edge where top meets front */
+  rect(c, x, y, 1, h, mix(F, O, 0.4));                                             /* left edge: soft */
+  rect(c, x, y + h - 1, w, 1, edgeDark); rect(c, x + w - 1, y, 1, h, mix(F, O, 0.6));
+  rect(c, x + sl * dz, y - dz, w, 1, edgeLit);                                     /* far edge of the top */
+  for (let k = 1; k <= dz; k++) {
+    rect(c, x + sl * (k - 1), y - k, sl, 1, edgeLit);                              /* left slope of the top */
+    rect(c, x + w + sl * (k - 1), y + h - k, sl, 1, edgeDark);                     /* bottom slope of the side */
+  }
+  rect(c, x + w + sl * dz - 1, y - dz, 1, h, edgeDark);                           /* far right edge */
+  rect(c, x + 1, y + 1, 1, h - 2, lighten(F, 0.3));                                /* specular rim down the left */
+}
+
+/* The soft shadow every 8.5 icon casts: taken from the icon's own silhouette, offset down-right, two alpha
+   steps. Hand-drawn 's' pixels are ignored, so no shadow is ever a pasted slab. */
+function dropShadow(c) {
+  const solid = (x, y) => { const p = c.d[y] && c.d[y][x]; return !!p && p !== "." && p !== "s" && !String(p).startsWith("rgba"); };
+  const out = canvas(c.w, c.h);
+  for (let y = 0; y < c.h; y++) for (let x = 0; x < c.w; x++) {
+    if (solid(x, y)) { out.d[y][x] = c.d[y][x]; continue; }
+    const a = solid(x - 1, y - 1) ? 0.34 : solid(x - 2, y - 2) ? 0.2 : (solid(x - 1, y - 2) || solid(x - 2, y - 1)) ? 0.14 : solid(x - 3, y - 3) ? 0.08 : 0;
+    if (a) out.d[y][x] = `rgba(0,0,0,${a})`;
+  }
+  return out;
+}
 
 /* ---- 32x32 chassis icons. The medium the game came on; never the cover at icon size. ---- */
 const ICON = {
   pico() { /* a PICO-8 cart: a pink floppy with a white label */
-    const c = canvas(32, 32); iso(c, 4, 8, 20, 21, 3, "P", "p", "m", "m");
+    const c = canvas(32, 32); iso(c, 4, 9, 21, 20, 4, "P", "p", "m", "m");
     rect(c, 7, 11, 14, 11, "w"); frame(c, 7, 11, 14, 11, "3"); rect(c, 9, 13, 10, 1, "4"); rect(c, 9, 15, 7, 1, "4"); rect(c, 9, 17, 9, 1, "4");
     rect(c, 9, 24, 10, 4, "6"); rect(c, 11, 25, 2, 2, "3");
     return c;
   },
   gb(bodyF = "3", bodyT = "1", bodyR = "4", o = "5", screen = "i") { /* a Game Boy brick */
-    const c = canvas(32, 32); iso(c, 5, 9, 16, 22, 3, bodyF, bodyT, bodyR, o);
+    const c = canvas(32, 32); iso(c, 5, 9, 17, 21, 6, bodyF, bodyT, bodyR, o);
     rect(c, 7, 11, 12, 10, "6"); rect(c, 8, 12, 10, 8, screen); rect(c, 9, 13, 3, 1, "w");
     rect(c, 8, 23, 1, 5, "6"); rect(c, 7, 25, 3, 1, "6"); rect(c, 15, 24, 2, 2, "R"); rect(c, 18, 23, 2, 2, "R");
     rect(c, 10, 29, 6, 1, "5");
@@ -559,32 +593,32 @@ const ICON = {
   },
   gbc() { return ICON.gb("l", "L", "b", "n", "c"); },
   gba() { /* a wide slab */
-    const c = canvas(32, 32); iso(c, 1, 12, 26, 14, 3, "3", "1", "4", "5");
+    const c = canvas(32, 32); iso(c, 1, 13, 26, 13, 5, "3", "1", "4", "5");
     rect(c, 8, 14, 12, 9, "6"); rect(c, 9, 15, 10, 7, "i"); rect(c, 10, 16, 3, 1, "w");
     rect(c, 4, 16, 1, 5, "6"); rect(c, 2, 18, 5, 1, "6"); rect(c, 22, 17, 2, 2, "n"); rect(c, 24, 15, 2, 2, "n");
     return c;
   },
   snes() { /* a wide grey cartridge */
-    const c = canvas(32, 32); iso(c, 2, 10, 24, 17, 3, "3", "1", "4", "5");
+    const c = canvas(32, 32); iso(c, 2, 11, 24, 16, 5, "3", "1", "4", "5");
     rect(c, 4, 12, 20, 9, "2"); frame(c, 4, 12, 20, 9, "4"); rect(c, 6, 14, 16, 5, "w"); rect(c, 8, 16, 9, 1, "4");
     rect(c, 3, 23, 22, 3, "4"); for (let i = 5; i < 24; i += 4) rect(c, i, 23, 2, 3, "3");
     return c;
   },
   md() { /* a tall black cartridge */
-    const c = canvas(32, 32); iso(c, 6, 6, 16, 24, 3, "6", "5", "k", "k");
+    const c = canvas(32, 32); iso(c, 6, 7, 17, 23, 5, "6", "5", "k", "k");
     rect(c, 8, 8, 12, 3, "e"); rect(c, 8, 12, 12, 9, "w"); frame(c, 8, 12, 12, 9, "4"); rect(c, 10, 14, 8, 2, "R"); rect(c, 10, 17, 6, 1, "4");
     rect(c, 8, 23, 12, 5, "k"); for (let i = 9; i < 20; i += 2) rect(c, i, 23, 1, 5, "5");
     return c;
   },
   switch() { /* a small red and blue unit */
-    const c = canvas(32, 32); iso(c, 4, 14, 22, 12, 3, "6", "5", "k", "k");
+    const c = canvas(32, 32); iso(c, 3, 14, 23, 12, 4, "6", "5", "k", "k");
     rect(c, 4, 14, 5, 12, "r"); rect(c, 5, 15, 3, 1, "p"); rect(c, 21, 14, 5, 12, "c"); rect(c, 22, 15, 3, 1, "L"); rect(c, 21, 14, 1, 12, "C");
     rect(c, 10, 16, 10, 8, "k"); rect(c, 11, 17, 8, 6, "d"); rect(c, 12, 18, 3, 1, "c");
     rect(c, 6, 18, 1, 3, "k"); rect(c, 5, 19, 3, 1, "k"); rect(c, 23, 19, 1, 1, "k"); rect(c, 22, 20, 1, 1, "k"); rect(c, 24, 20, 1, 1, "k"); rect(c, 23, 21, 1, 1, "k");
     return c;
   },
   pc() { /* a CD in a jewel case */
-    const c = canvas(32, 32); iso(c, 2, 8, 24, 20, 3, "L", "w", "l", "b");
+    const c = canvas(32, 32); iso(c, 3, 9, 23, 20, 4, "L", "w", "l", "b");
     rect(c, 4, 10, 20, 16, "1");
     const cx = 14, cy = 18; for (let j = -7; j <= 7; j++) for (let i = -7; i <= 7; i++) { const d = i * i + j * j; if (d <= 49 && d > 2) dot(c, cx + i, cy + j, d > 30 ? "3" : d > 12 ? "2" : "w"); }
     dot(c, 10, 14, "c"); dot(c, 11, 13, "c"); dot(c, 12, 13, "y"); dot(c, 17, 22, "p"); dot(c, 18, 21, "p"); dot(c, 19, 21, "c");
@@ -601,36 +635,53 @@ const ICON = {
     return c;
   },
   disk() { /* a hard disk */
-    const c = canvas(32, 32); iso(c, 2, 16, 24, 10, 4, "3", "1", "4", "5");
+    const c = canvas(32, 32); iso(c, 2, 17, 22, 9, 9, "3", "1", "4", "5");
     rect(c, 5, 19, 2, 2, "g"); rect(c, 9, 20, 13, 1, "4"); rect(c, 9, 22, 8, 1, "4");
     rect(c, 6, 12, 18, 2, "2"); rect(c, 7, 11, 18, 1, "1");
     return c;
   },
-  folder() { /* the Platinum folder: lilac-blue, tab at the back-left */
+  folder() { /* the Mac OS 9 folder: turned three-quarters, its face leaning back to the right, the tab on the
+                back leaf at top-left, lilac lit from the top-left and falling to slate at the bottom-right */
     const c = canvas(32, 32);
-    rect(c, 5, 10, 24, 18, "s");
-    rect(c, 3, 8, 10, 3, "l"); frame(c, 3, 8, 10, 3, "b"); rect(c, 4, 9, 8, 1, "L");
-    rect(c, 3, 10, 26, 16, "b"); rect(c, 6, 12, 23, 14, "l"); frame(c, 3, 10, 26, 16, "n"); frame(c, 6, 12, 23, 14, "b");
-    rect(c, 7, 13, 21, 1, "L"); rect(c, 7, 13, 1, 12, "L");
+    const x0 = 4, x1 = 23;                                     /* front leaf spans x0..x1 */
+    const top = x => 10 + Math.floor((x - x0) / 4), bot = x => 28 - Math.floor((x - x0) / 7);
+    /* back leaf: the same shape set back up and to the right; its top-left carries the tab */
+    const bx = 2, by = -2;
+    for (let x = x0 + bx; x <= x1 + bx; x++) { const t = top(x - bx) + by, b = bot(x - bx) + by;
+      for (let y = t; y <= b; y++) dot(c, x, y, mix("#B4B4EE", "#5E5EB4", (x - x0) / (x1 - x0 + bx) * 0.7 + (y - t) / (b - t) * 0.3));
+      dot(c, x, t, "#5555AA"); }
+    rect(c, x1 + bx, top(x1) + by, 1, bot(x1) - top(x1) + 1, "#3E3E80");
+    const tx = x0 + bx, ty = top(x0) + by;                      /* the tab */
+    for (let i = 0; i < 10; i++) { const t = ty - 3 + Math.floor(i / 4); for (let y = t; y < ty; y++) dot(c, tx + i, y, mix("#C8C8FA", "#8A8AD8", i / 9)); dot(c, tx + i, t, "#5555AA"); }
+    dot(c, tx + 10, ty - 1, "#5555AA"); rect(c, tx, ty - 3, 1, 3, "#7777CC");
+    /* front leaf */
+    for (let x = x0; x <= x1; x++) { const t = top(x), b = bot(x);
+      for (let y = t; y <= b; y++) dot(c, x, y, mix("#D6D6FF", "#6E6EC8", (x - x0) / (x1 - x0) * 0.55 + (y - t) / (b - t) * 0.45));
+      dot(c, x, t, "#EEEEFF"); dot(c, x, b, "#444488"); }
+    rect(c, x0, top(x0), 1, bot(x0) - top(x0) + 1, "#8888DD");
+    for (let x = x1 - 1; x <= x1 + 1; x++) rect(c, x, top(x1) + (x - x1 + 1), 1, bot(x1) - top(x1) - 1, x === x1 + 1 ? "#33336E" : "#4A4A96");   /* the leaf's thickness */
     return c;
   },
-  trash() { /* a wire basket */
+  trash() { /* the Mac OS 9 can: a ribbed cylinder lit from the left, a domed lid with a handle */
     const c = canvas(32, 32);
-    rect(c, 9, 8, 16, 22, "s");
-    rect(c, 8, 7, 16, 21, "3"); frame(c, 8, 7, 16, 21, "5"); rect(c, 9, 8, 14, 1, "1");
-    for (let i = 10; i < 23; i += 3) rect(c, i, 10, 1, 16, "5"); for (let i = 11; i < 23; i += 3) rect(c, i, 10, 1, 16, "1");
-    rect(c, 6, 5, 20, 3, "2"); frame(c, 6, 5, 20, 3, "5"); rect(c, 13, 3, 6, 2, "4"); frame(c, 13, 3, 6, 2, "5");
+    const L = 9, R = 23, shade = x => mix("#F4F4F4", "#6A6A6A", Math.pow((x - L) / (R - L), 1.3));
+    for (let x = L; x <= R; x++) { for (let y = 10; y <= 28; y++) dot(c, x, y, shade(x)); }
+    for (let x = L + 2; x < R; x += 3) for (let y = 12; y <= 26; y++) { dot(c, x, y, darken(shade(x), 0.28)); dot(c, x + 1, y, lighten(shade(x + 1), 0.25)); }
+    rect(c, L + 1, 29, R - L - 1, 1, "#555555"); rect(c, L, 10, 1, 19, "#999999"); rect(c, R, 10, 1, 19, "#444444");
+    for (let x = L - 2; x <= R + 2; x++) { rect(c, x, 7, 1, 3, mix("#FFFFFF", "#777777", (x - L + 2) / (R - L + 4))); }
+    rect(c, L - 2, 6, R - L + 5, 1, "#999999"); rect(c, L - 2, 10, R - L + 5, 1, "#555555"); dot(c, L - 2, 7, "#999999"); dot(c, R + 2, 9, "#555555");
+    rect(c, 13, 4, 7, 2, "#DDDDDD"); rect(c, 13, 3, 7, 1, "#999999"); dot(c, 12, 4, "#999999"); dot(c, 20, 4, "#666666"); rect(c, 13, 5, 7, 1, "#888888");
     return c;
   },
   device() { /* the handheld Korri runs on */
-    const c = canvas(32, 32); iso(c, 2, 10, 26, 14, 2, "3", "1", "4", "5");
+    const c = canvas(32, 32); iso(c, 2, 12, 26, 13, 4, "3", "1", "4", "5");
     rect(c, 9, 12, 12, 10, "6"); rect(c, 10, 13, 10, 8, "d"); rect(c, 11, 14, 3, 1, "c");
     rect(c, 4, 15, 1, 5, "6"); rect(c, 3, 17, 3, 1, "6"); rect(c, 23, 16, 2, 2, "R"); rect(c, 25, 14, 2, 2, "y");
     return c;
   },
   wifi() { /* the Wi-Fi control panel: arcs over a base */
     const c = canvas(32, 32);
-    iso(c, 8, 22, 14, 6, 2, "3", "1", "4", "5"); rect(c, 14, 15, 3, 7, "5");
+    iso(c, 8, 23, 14, 6, 4, "3", "1", "4", "5"); rect(c, 14, 15, 3, 7, "5");
     [[15, 11, 1], [14, 10, 3], [13, 9, 5]].forEach(([x, y, w], i) => { });
     rect(c, 13, 13, 5, 1, "d"); rect(c, 12, 12, 1, 1, "d"); rect(c, 18, 12, 1, 1, "d");
     rect(c, 11, 10, 9, 1, "d"); rect(c, 10, 9, 1, 1, "d"); rect(c, 20, 9, 1, 1, "d"); rect(c, 9, 8, 1, 1, "d"); rect(c, 21, 8, 1, 1, "d");
@@ -665,6 +716,8 @@ const ICON = {
     return c;
   },
 };
+/* Every icon casts its own soft shadow from its silhouette. */
+for (const k of Object.keys(ICON)) { const draw = ICON[k]; ICON[k] = (...a) => dropShadow(draw(...a)); }
 const APPLE = `
   .........gg.....
   ........gg......
@@ -741,26 +794,16 @@ const GADGET = {
     .kww......`,
 };
 
-/* Quantisation of a picture to the colour cube plus the Platinum greys: a 4x4 Bayer ordered
-   dither, then the nearest cube step per channel; a near-grey pixel may take a system grey. Runs once, at load. */
-const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
-const GREYS = [0xEE, 0xDD, 0xCC, 0xAA, 0x77, 0x39];
-function quantise(url, w, h, done) {
+/* The cover in Get Info. Mac OS 8.5+ ran in millions of colours, so the picture keeps its own pixels:
+   drawn at its native 128x60 with no smoothing and no dither, then shown at a whole-number scale.
+ */
+function native(url, w, h, done) {
   const img = new Image();
   img.onload = () => {
     const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-    const ctx = cv.getContext("2d"); ctx.imageSmoothingEnabled = true; ctx.drawImage(img, 0, 0, w, h);
-    const d = ctx.getImageData(0, 0, w, h).data;
-    const c = canvas(w, h);
-    const hex = v => v.toString(16).padStart(2, "0");
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4, t = (BAYER[y % 4][x % 4] / 16 - 0.5) * 0x33;
-      const px = [0, 1, 2].map(ch => Math.max(0, Math.min(255, d[i + ch] + t)));
-      const cube = px.map(v => Math.round(v / 0x33) * 0x33);
-      let best = cube, bd = cube.reduce((s, v, j) => s + (v - px[j]) ** 2, 0);
-      if (Math.max(...px) - Math.min(...px) < 24) for (const g of GREYS) { const dd = px.reduce((s, v) => s + (g - v) ** 2, 0); if (dd < bd) { bd = dd; best = [g, g, g]; } }
-      c.d[y][x] = "#" + best.map(hex).join("");
-    }
+    const ctx = cv.getContext("2d"); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data, c = canvas(w, h), hex = v => v.toString(16).padStart(2, "0");
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4; c.d[y][x] = "#" + hex(d[i]) + hex(d[i + 1]) + hex(d[i + 2]); }
     done(c);
   };
   img.src = url;
@@ -1221,7 +1264,7 @@ document.fonts.ready.then(() => {
   if (STATE === "game") { raise("game"); layout(); focus(wins.game.querySelector('[data-place="This device"]')); }
   else if (STATE === "wifi") { raise("prefs"); raise("wifi"); activate(netrows.children[3]); focus(keysEl.querySelector('[data-ch="k"]')); }
   else if (STATE === "problem") { setStatus("games", "Spelunky", "could not start on zao."); openReq("problem"); }
-  quantise(SPELUNKY_PIC, 128, 60, c => { COVER = c; layout(); });
+  native(SPELUNKY_PIC, 128, 60, c => { COVER = c; layout(); });
 });
 </script>
 </body>
