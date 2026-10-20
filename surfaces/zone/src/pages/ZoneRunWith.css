@@ -1,12 +1,13 @@
-/* The banner row over the scroll. The scroll gives way; the banner row
- * wraps its title and tag under the banner before any of them is cut. */
+/* The banner row over the band. The band gives way; the banner row wraps
+ * its title and tag under the banner before any of them is cut. */
 .zone-run-with {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
-  row-gap: calc(var(--zone-options-head-space) * var(--zone-px));
+  row-gap: calc(var(--zone-options-band-room) * var(--zone-px));
   height: 100%;
   min-height: 0;
-  padding: calc(var(--zone-options-head-space) * var(--zone-px)) calc(var(--zone-strip-margin-min) * var(--zone-px)) 0;
+  padding: calc(var(--zone-options-head-space) * var(--zone-px)) 0 calc(var(--zone-options-band-room) * var(--zone-px));
 }
 
 .zone-run-with-head {
@@ -15,16 +16,18 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: calc(var(--zone-row-space) * var(--zone-px)) calc(var(--zone-strip-gap) * var(--zone-px));
+  gap: calc(var(--zone-option-group-space) * var(--zone-px)) calc(var(--zone-strip-gap) * var(--zone-px));
   min-width: 0;
+  padding: 0 calc(var(--zone-strip-margin-min) * var(--zone-px));
 }
 
-/* The game's title: a readout, so it truncates before the banner does. */
+/* The game's title: caps-2 on a black panel, caps-1 when caps-2 does not
+ * fit; a readout, so at caps-1 it truncates before the banner does. */
 .zone-run-with-title {
   display: inline-flex;
   flex: 0 1 auto;
   min-width: 0;
-  font-size: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 3.2cqi, calc(var(--zone-type-row) * var(--zone-px)));
+  font-size: calc(calc(var(--zone-caps-2) * var(--zone-px)) * var(--zone-fit, 1));
 }
 
 .zone-run-with-state {
@@ -34,34 +37,68 @@
   --zone-tag-type: calc(var(--zone-type-note) * var(--zone-px));
 }
 
+/* The OPTIONS band: sky, the full width, a black lip over and under it,
+ * so a row it cannot hold is cut by a lip. */
+.zone-run-with-band {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  border-block: calc(var(--zone-options-lip) * var(--zone-px)) solid var(--zone-options-lip-colour);
+  background: var(--zone-options-band);
+}
+
 .zone-run-with-scroll {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
   overscroll-behavior: contain;
-  scroll-padding-block: calc(var(--zone-row-height) * var(--zone-px));
+  scroll-padding-block: calc(var(--zone-options-band-pad) * var(--zone-px));
 }
 
+/* The column: the rows' measure, inset from the band's sides. */
 .zone-run-with-rows {
-  --zone-shell-button-type: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 2.4cqi, calc(var(--zone-type-button-short) * var(--zone-px)));
+  --zone-shell-button-type: calc(var(--zone-caps-1) * var(--zone-px));
   display: grid;
-  row-gap: calc(var(--zone-options-group-gap) * var(--zone-px));
-  width: min(100%, calc(var(--zone-options-measure) * var(--zone-px)));
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: calc(var(--zone-option-group-gap) * var(--zone-px));
+  width: min(calc(100% - calc(var(--zone-options-band-inset) * var(--zone-px)) * 2), calc(var(--zone-options-measure) * var(--zone-px)));
   margin: 0 auto;
-  padding-bottom: calc(var(--zone-options-group-gap) * var(--zone-px));
-  font-size: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 3.2cqi, calc(var(--zone-type-row) * var(--zone-px)));
+  padding: calc(var(--zone-options-band-pad) * var(--zone-px)) 0;
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
 }
 
-/* Korri's message: one line of white caps on the ground, wrapped when it is
- * longer than the column, never cut. */
+/* Korri's message: Jersey 10 as written, white on a black panel leaning
+ * at its one-line slant, wrapped when it is longer than the column. A word
+ * breaks only at a line's end, with a hyphen. */
 .zone-run-with-message {
+  position: relative;
+  isolation: isolate;
+  justify-self: start;
+  max-width: 100%;
   margin: 0;
-  padding: 0 calc(var(--zone-slant) * var(--zone-px));
-  font-size: calc(var(--zone-type-note) * var(--zone-px));
-  line-height: 1.3;
+  padding: 0 calc(var(--zone-option-text-inset) * var(--zone-px));
+  color: var(--zone-cap);
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
+  line-height: 0.75;
+  text-transform: none;
+  text-shadow: none;
   overflow-wrap: break-word;
   hyphens: auto;
+}
+
+.zone-run-with-message::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: var(
+    --zone-option-clip,
+    polygon(calc(var(--zone-option-slant) * var(--zone-px)) 0, 100% 0, calc(100% - calc(var(--zone-option-slant) * var(--zone-px))) 100%, 0 100%)
+  );
 }
 
 .zone-run-with-actions {

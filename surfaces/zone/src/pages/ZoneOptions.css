@@ -1,38 +1,61 @@
-/* The scroll fills the body; the active tab above names the page. The
- * layers lie over the scroll. */
+/* The body: the row band between the strips, a little ground over and
+ * under it. The layers lie over the band. */
 .zone-options {
   position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
-  padding: calc(var(--zone-options-head-space) * var(--zone-px)) calc(var(--zone-strip-margin-min) * var(--zone-px)) 0;
+  padding: calc(var(--zone-options-band-room) * var(--zone-px)) 0;
 }
 
-/* The groups scroll in a column no wider than the measure, centred, as
- * Mania's OPTIONS rows sit in the middle of the screen. No scrollbar: a row
- * cut off at the bottom edge says there is more. */
+/* Mania's OPTIONS band: sky, the full width of the screen, a black lip
+ * over and under it. The lips stand outside the scroll, so a row the band
+ * cannot hold is cut by a lip, never by the tabs. */
+.zone-options-band {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  border-block: calc(var(--zone-options-lip) * var(--zone-px)) solid var(--zone-options-lip-colour);
+  background: var(--zone-options-band);
+}
+
+/* The one scroll. No scrollbar: a row cut off by a lip says there is
+ * more. The sticky group title covers the top of the box, so the focused
+ * row is brought into view under it. */
 .zone-options-scroll {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
   overscroll-behavior: contain;
-  scroll-padding-block: calc(var(--zone-row-height) * var(--zone-px));
+  scroll-padding-top: calc(calc(var(--zone-caps-2) + var(--zone-option-group-pad) * 2 + var(--zone-option-group-space)) * var(--zone-px));
+  scroll-padding-bottom: calc(var(--zone-options-band-pad) * var(--zone-px));
 }
 
+/* The groups take the band's width, so each title is flush with its left
+ * edge; the rows stand in the measure, centred, inset from the band's
+ * sides. */
 .zone-options-groups {
+  --zone-option-group-rows: min(calc(100% - calc(var(--zone-options-band-inset) * var(--zone-px)) * 2), calc(var(--zone-options-measure) * var(--zone-px)));
   display: grid;
-  row-gap: calc(var(--zone-options-group-gap) * var(--zone-px));
-  width: min(100%, calc(var(--zone-options-measure) * var(--zone-px)));
-  margin: 0 auto;
-  padding-bottom: calc(var(--zone-options-group-gap) * var(--zone-px));
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: calc(var(--zone-option-group-gap) * var(--zone-px));
+  padding-bottom: calc(var(--zone-options-band-pad) * var(--zone-px));
 }
 
-/* WI-FI lists SSIDs, which are names: its words keep their own case, and
- * Zone's own words in it are written in caps. */
-.zone-options-group[data-verbatim] {
-  text-transform: none;
+/* While a layer is open the band behind it is inert, and veiled with the
+ * Mega Drive's dither: a checker of black art pixels, no alpha. The sky
+ * dialog and keyboard then stand clear of the sky band. */
+.zone-options:not([data-layer="none"]) .zone-options-band::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: conic-gradient(var(--zone-options-lip-colour) 0deg 90deg, transparent 90deg 180deg, var(--zone-options-lip-colour) 180deg 270deg, transparent 270deg 360deg) 0 0 / calc(var(--zone-px) * 2) calc(var(--zone-px) * 2);
+  pointer-events: none;
 }
 
 /* A layer covers the page body. The keyboard rises from the foot and may
@@ -40,7 +63,7 @@
 .zone-options-layer {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 2;
   display: grid;
   min-height: 0;
   padding: calc(var(--zone-options-head-space) * var(--zone-px)) calc(var(--zone-strip-margin-min) * var(--zone-px));
@@ -70,16 +93,24 @@
   --zone-signal-share: 100%;
   display: flex;
   justify-content: center;
-  width: 100%;
   min-width: 0;
 }
 
-/* A network's bars, then its strength, LOCKED or OPEN, and SAVED. */
+/* A network's bars, then its strength (Korri's, in Jersey 10), then
+ * LOCKED or OPEN, and SAVED (Zone's, in caps). */
 .zone-options-network {
   display: inline-flex;
   align-items: center;
-  gap: calc(var(--zone-row-gap) * var(--zone-px));
+  gap: calc(var(--zone-option-pad) * var(--zone-px) * 2);
   min-width: 0;
+}
+
+.zone-options-network-strength {
+  flex: 0 0 auto;
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
+  line-height: calc(var(--zone-caps-1) / var(--zone-fact));
+  font-variant-numeric: tabular-nums;
 }
 
 .zone-options-network-words {

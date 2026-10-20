@@ -646,7 +646,8 @@ describe("runner choice", () => {
     publish({ ...HOME, runnerChoice: choice("Loading") })
     expect(onScreen("Loading")).toBe(true)
     publish({ ...HOME, runnerChoice: choice("Ready") })
-    const page = document.querySelector<HTMLElement>(".zone-run-with")!
+    // The banner stands where the tabs stand on every other page: the page is its whole shell.
+    const page = document.querySelector<HTMLElement>(".zone-run-with")!.closest<HTMLElement>(".zone-shell")!
     for (const words of ["Run with", "Wario Land 4", "Ready", "Choose what plays it", "Two runners are installed",
       "mGBA", "/nix/store/abc-mgba-0.10.3", "BIOS missing: games may not boot", "VBA-M", "This game"]) {
       expect(page.textContent).toContain(words)

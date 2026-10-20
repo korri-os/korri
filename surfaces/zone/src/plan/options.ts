@@ -70,7 +70,7 @@ export interface ZoneOptionsConfirm {
  */
 export type ZoneOptionsSignal =
   | { readonly _tag: "Connection"; readonly connection: SurfaceNetworkConnection }
-  | { readonly _tag: "Network"; readonly strengthPercent: number }
+  | { readonly _tag: "Network"; readonly strengthPercent: number; readonly words: readonly string[] }
 
 export interface ZoneOptionsRow {
   /** Korri's setting id, or a `zone:` id for a row Zone makes. */
@@ -86,6 +86,8 @@ export interface ZoneOptionsRow {
   readonly disabled?: boolean
   /** Which of the row's words are facts Korri publishes, kept in their own case. */
   readonly keepCase?: { readonly label?: boolean; readonly value?: boolean }
+  /** The description is Zone's own word (CONNECTING), not Korri's sentence. */
+  readonly ownDescription?: boolean
 }
 
 export interface ZoneOptionsGroup {
@@ -318,6 +320,9 @@ function wifiGroup(slices: ZoneOptionsSlices): ZoneOptionsGroup[] {
   const networks = [...wifi.networks].sort((a, b) => b.strengthPercent - a.strengthPercent)
   const attempt = wifi.attempt
   const networkRows = networks.map((item): ZoneOptionsRow => ({
+    // An SSID is a name Korri publishes: it keeps its case.
+    keepCase: { label: true },
+    ...(attempt._tag === "Connecting" && attempt.ssid === item.ssid ? { ownDescription: true } : {}),
     ...wifiRow(
       zoneNetworkRowId(item.id),
       {
@@ -328,7 +333,7 @@ function wifiGroup(slices: ZoneOptionsSlices): ZoneOptionsGroup[] {
       },
       { _tag: "Join", networkId: item.id },
     ),
-    signal: { _tag: "Network", strengthPercent: item.strengthPercent },
+    signal: { _tag: "Network", strengthPercent: item.strengthPercent, words: zoneWifiWords(item) },
   }))
   const rows: ZoneOptionsRow[] = [
     connection,

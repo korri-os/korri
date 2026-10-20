@@ -14,9 +14,9 @@ export function zoneBarsLit(strengthPercent: number | undefined, connected = tru
 }
 
 /**
- * Four signal bars rising left to right, lit in mint, the rest white and
- * faint: the network badge's bars, standing alone for a row that names a
- * network. A picture of a number the caller also writes, so it is hidden
+ * Four pixel signal bars rising left to right, 2 to 8 art px tall, lit
+ * white and unlit dark: the network badge's bars, standing alone for a row
+ * that names a network. A picture of a number the caller also writes, so it is hidden
  * from assistive tech.
  */
 export function ZoneBars({

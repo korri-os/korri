@@ -16,6 +16,7 @@ import {
 } from "../fixtures/fixture-options"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import { plan } from "../plan/zone-select"
+import { ZoneGround } from "../ui/organisms/ZoneGround"
 import { ZoneRunWith } from "./ZoneRunWith"
 
 export const name = "Run with"
@@ -47,15 +48,18 @@ function Live({ choice, share = 1 }: { readonly choice: SurfaceRunnerChoice; rea
   // The binding measures its root; a preview reads the frame once.
   const layout = plan(innerWidth * share, innerHeight)
   return (
-    <ZoneRunWith
-      band={layout.band}
-      strips={layout.strips}
-      build="korri 0.4.1 · 9a1fb22"
-      choice={snapshot.choice}
-      clock="21:47"
-      focused={snapshot.state.focused}
-      {...runWithCallbacks(live.dispatch)}
-    />
+    <div className="zone-theme zone-screen" data-ground="options">
+      <ZoneGround />
+      <ZoneRunWith
+        band={layout.band}
+        strips={layout.strips}
+        build="korri 0.4.1 · 9a1fb22"
+        choice={snapshot.choice}
+        clock="21:47"
+        focused={snapshot.state.focused}
+        {...runWithCallbacks(live.dispatch)}
+      />
+    </div>
   )
 }
 

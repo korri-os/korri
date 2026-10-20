@@ -1,50 +1,68 @@
-/* A row is a grid of two cells, label and value, with the notes under it.
- * The label's share is a token; the value takes the rest. Both cells wrap
- * their words rather than cut them, so a long label makes a taller row and
- * never a shorter one. */
+/* A row: the control (label panel, value panel) and the notes under it.
+ * Every length is art px on the grid; the type is caps-1. The label takes
+ * its share of the row, the value the rest, so every row of a group lines
+ * its value panels up, as Mania's OPTIONS columns do. */
 .zone-option-row {
-  --zone-option-row-type: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 3.2cqi, calc(var(--zone-type-row) * var(--zone-px)));
-  --zone-option-row-label-width: calc((100% - calc(var(--zone-row-gap) * var(--zone-px))) * var(--zone-row-label-share));
+  --zone-option-row-gap: calc(var(--zone-option-gap) * var(--zone-px));
+  --zone-option-row-label-width: calc((100% - var(--zone-option-row-gap)) * var(--zone-row-label-share));
+  --zone-option-row-inset: calc(var(--zone-option-text-inset) * var(--zone-px));
+  --zone-option-row-pad: calc(var(--zone-option-pad) * var(--zone-px));
+  /* The shape a panel takes before it is measured: a smooth lean of its
+   * one-line slant. Measured, it is the stair polygon. */
   --zone-option-row-shape: polygon(
-    calc(var(--zone-slant) * var(--zone-px)) 0,
+    calc(var(--zone-option-slant) * var(--zone-px)) 0,
     100% 0,
-    calc(100% - calc(var(--zone-slant) * var(--zone-px))) 100%,
+    calc(100% - calc(var(--zone-option-slant) * var(--zone-px))) 100%,
     0 100%
   );
+  --zone-option-row-face: var(--zone-cap);
+  --zone-option-row-shade: var(--zone-ink-white-shade);
   display: grid;
-  grid-template-columns: minmax(0, var(--zone-option-row-label-width)) minmax(0, 1fr);
-  column-gap: calc(var(--zone-row-gap) * var(--zone-px));
-  row-gap: calc(var(--zone-drop) * var(--zone-px));
-  padding-bottom: calc(var(--zone-row-space) * var(--zone-px));
-  font-size: var(--zone-option-row-type);
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: calc(var(--zone-option-stack-gap) * var(--zone-px));
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+  line-height: 1;
   color: var(--zone-cap);
+  text-shadow: none;
 }
 
-/* The control is the whole row: one focusable thing per setting. It lays
- * its two cells on the same columns as the notes under it. */
+/* The focused row's drop hangs under its label: its notes stand clear of it. */
+.zone-option-row[data-focused] {
+  row-gap: calc(calc(var(--zone-drop-focus) + var(--zone-option-stack-gap)) * var(--zone-px));
+}
+
+/* The control is the whole row: one focusable thing per setting. */
 .zone-option-row-control {
   display: grid;
-  grid-column: 1 / -1;
   grid-template-columns: minmax(0, var(--zone-option-row-label-width)) minmax(0, 1fr);
-  column-gap: calc(var(--zone-row-gap) * var(--zone-px));
+  column-gap: var(--zone-option-row-gap);
+  row-gap: calc(var(--zone-option-stack-gap) * var(--zone-px));
   align-items: stretch;
   width: 100%;
   text-align: left;
+  text-shadow: none;
 }
 
-/* A cell: white caps with the blue edge on a black parallelogram, a
- * hairline over it as Mania rules its option rows. */
+/* Narrow: the label over the value, each across the row. */
+.zone-option-row[data-stack] .zone-option-row-control {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* A press sinks both panels by the press sink. */
+.zone-option-row-control:active :is(.zone-option-row-label, .zone-option-row-value) {
+  translate: calc(var(--zone-press-sink) * var(--zone-px)) calc(var(--zone-press-sink) * var(--zone-px));
+}
+
+/* A panel: black, leaning, its words clear of both slants. */
 .zone-option-row-label,
 .zone-option-row-value {
   position: relative;
   isolation: isolate;
   display: flex;
   align-items: center;
-  min-height: calc(var(--zone-row-height) * var(--zone-px));
-  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)));
-  border-top: calc(var(--zone-hairline) * var(--zone-px)) solid var(--zone-panel);
-  overflow-wrap: normal;
-  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
+  min-width: 0;
+  min-height: calc(var(--zone-option-cell) * var(--zone-px));
+  padding: var(--zone-option-row-pad) var(--zone-option-row-inset);
 }
 
 .zone-option-row-label::before,
@@ -54,85 +72,257 @@
   inset: 0;
   z-index: -1;
   background: var(--zone-panel);
-  clip-path: var(--zone-option-row-shape);
+  clip-path: var(--zone-option-clip, var(--zone-option-row-shape));
+}
+
+/* A fact's line is its own (Jersey 10's 14 art px), so its panel needs no
+ * padding over and under it to stand one cell tall. */
+.zone-option-row-label[data-case="verbatim"],
+.zone-option-row-value[data-case="verbatim"],
+.zone-option-row-value[data-drawn] {
+  padding-block: 0;
 }
 
 .zone-option-row-value {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  justify-items: center;
+  justify-content: center;
   text-align: center;
 }
 
-.zone-option-row-text {
-  grid-column: 2;
+/* Zone Caps in the white ink on black: the face over its lower three rows
+ * of lavender, a hard stop every line (the line is the cap). No ring: on
+ * black the ring vanishes. Wraps between words, never inside one. */
+.zone-option-row-words {
+  display: block;
   min-width: 0;
+  color: var(--zone-option-row-face);
+  background: linear-gradient(to bottom, var(--zone-option-row-face) 0% 70%, var(--zone-option-row-shade) 70% 100%) 0 0 / 100% 1em repeat-y;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  overflow-wrap: normal;
 }
 
-/* Focus: the pink offset underline under the label, as a lit button wears.
- * It sits one layer under the black so the slant stays sharp. */
-.zone-option-row[data-focused] .zone-option-row-label::after {
+/* A fact's box: one line, cut by the row when it does not fit. A flex
+ * box, so a drawn value (bars, a badge) sets the line's height and no
+ * strut of the caps around it adds to it. */
+.zone-option-row-fit,
+.zone-option-row-text {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.zone-option-row-label .zone-option-row-fit {
+  justify-content: start;
+}
+
+/* The words themselves: ended with "…" by the stylesheet when cut at the
+ * end; hidden from sight (still read) when the row wrote a middle cut. */
+.zone-option-row-whole {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zone-option-row-value:not([data-case="verbatim"]) .zone-option-row-whole {
+  color: var(--zone-option-row-face);
+  background: linear-gradient(to bottom, var(--zone-option-row-face) 0% 70%, var(--zone-option-row-shade) 70% 100%) 0 0 / 100% 1em repeat-y;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.zone-option-row-fit[data-cut] > .zone-option-row-whole {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.zone-option-row-fit[data-cut]::after {
+  content: attr(data-cut) / "";
+}
+
+/* The measuring copy the row lays out while it searches for a cut. */
+.zone-option-row-fit > [data-probe] {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
+}
+
+/* A fact Korri publishes keeps its own case, in Jersey 10 at the caps'
+ * height: one Jersey pixel per art pixel, its line 14 art px. */
+.zone-option-row-label[data-case="verbatim"],
+.zone-option-row-value[data-case="verbatim"] {
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
+  line-height: 0.75;
+  text-transform: none;
+}
+
+/* Focus: the pink drop under the label panel, one layer under the black so
+ * the stairs stay sharp, as a lit button wears it. Stacked, the value panel
+ * is the row's foot, and the drop hangs under it. */
+.zone-option-row[data-focused]:not([data-stack]) .zone-option-row-label::after,
+.zone-option-row[data-focused][data-stack] .zone-option-row-value::after {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -2;
   background: var(--zone-focus);
-  clip-path: var(--zone-option-row-shape);
-  translate: calc(calc(var(--zone-drop) * var(--zone-px)) * -1) calc(var(--zone-drop) * var(--zone-px));
+  clip-path: var(--zone-option-clip, var(--zone-option-row-shape));
+  translate: calc(calc(var(--zone-drop-focus) * var(--zone-px)) * -1) calc(var(--zone-drop-focus) * var(--zone-px));
 }
 
-/* A choice's red triangles, breathing toward the value they step. */
+/* A choice's red triangles, inside the value panel at its two ends, pixel
+ * stairs 4 by 7 art px, breathing toward the value in two steps. */
 .zone-option-row-step {
-  width: calc(var(--zone-choice-triangle) * var(--zone-px));
-  height: calc(calc(var(--zone-choice-triangle) * var(--zone-px)) * var(--zone-triangle-aspect));
+  position: absolute;
+  top: 50%;
+  width: calc(var(--zone-option-triangle-width) * var(--zone-px));
+  height: calc(var(--zone-option-triangle-height) * var(--zone-px));
+  margin-top: calc(var(--zone-option-triangle-height) * var(--zone-px) / -2);
   background: var(--zone-cursor);
+  animation-duration: var(--zone-nudge-time);
+  animation-timing-function: steps(2);
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
 }
 
-.zone-option-row-step-back {
-  grid-column: 1;
-  clip-path: polygon(100% 0, 0 50%, 100% 100%);
-  animation: zone-nudge-left var(--zone-nudge-time) ease-in-out infinite alternate;
+.zone-option-row-step[data-way="back"] {
+  left: calc(var(--zone-option-triangle-at) * var(--zone-px));
+  clip-path: polygon(100% 0, 75% 0, 75% 14.2857%, 50% 14.2857%, 50% 28.5714%, 25% 28.5714%, 25% 42.8571%, 0 42.8571%, 0 57.1429%, 25% 57.1429%, 25% 71.4286%, 50% 71.4286%, 50% 85.7143%, 75% 85.7143%, 75% 100%, 100% 100%);
+  animation-name: zone-nudge-right;
 }
 
-.zone-option-row-step-forward {
-  grid-column: 3;
-  clip-path: polygon(0 0, 100% 50%, 0 100%);
-  animation: zone-nudge-right var(--zone-nudge-time) ease-in-out infinite alternate;
+.zone-option-row-step[data-way="forward"] {
+  right: calc(var(--zone-option-triangle-at) * var(--zone-px));
+  clip-path: polygon(0 0, 25% 0, 25% 14.2857%, 50% 14.2857%, 50% 28.5714%, 75% 28.5714%, 75% 42.8571%, 100% 42.8571%, 100% 57.1429%, 75% 57.1429%, 75% 71.4286%, 50% 71.4286%, 50% 85.7143%, 25% 85.7143%, 25% 100%, 0 100%);
+  animation-name: zone-nudge-left;
 }
 
-/* Saving: the value is a red caret that blinks until Korri answers. */
+/* Saving: a red caret blinks at the value panel's end; the value stays. */
 .zone-option-row-caret {
-  grid-column: 2;
-  width: calc(var(--zone-caret) * var(--zone-px));
-  height: calc(calc(var(--zone-caret) * var(--zone-px)) * var(--zone-triangle-aspect));
+  position: absolute;
+  top: 50%;
+  right: calc(var(--zone-option-triangle-at) * var(--zone-px));
+  width: calc(var(--zone-option-triangle-height) * var(--zone-px));
+  height: calc(var(--zone-option-triangle-width) * var(--zone-px));
+  margin-top: calc(var(--zone-option-triangle-width) * var(--zone-px) / -2);
   background: var(--zone-caret-colour);
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
-  animation: zone-blink var(--zone-blink-time) steps(1) infinite alternate;
+  clip-path: polygon(42.8571% 0, 57.1429% 0, 57.1429% 25%, 71.4286% 25%, 71.4286% 50%, 85.7143% 50%, 85.7143% 75%, 100% 75%, 100% 100%, 0 100%, 0 75%, 14.2857% 75%, 14.2857% 50%, 28.5714% 50%, 28.5714% 25%, 42.8571% 25%);
+  animation: zone-blink var(--zone-option-blink-time) steps(1) infinite alternate;
 }
 
-/* A destructive action's value is red. */
+/* A destructive action's value is the danger ink. */
 .zone-option-row[data-destructive] .zone-option-row-value {
-  color: var(--zone-destructive-ink);
-  --zone-caps-shade: currentColor;
+  --zone-option-row-face: var(--zone-ink-danger-face);
+  --zone-option-row-shade: var(--zone-ink-danger-shade);
+  color: var(--zone-ink-danger-face);
 }
 
-/* The notes under the row: the description on the label's side, Korri's
- * problem in red across both, each on its own black parallelogram; the
- * clear hint on the value's side stands on the ground. */
+/* Korri's placeholder in an empty value's place: the steel face, so it
+ * never reads as the value. */
+.zone-option-row-text[data-placeholder] {
+  --zone-option-row-face: var(--zone-option-steel);
+  --zone-option-row-shade: var(--zone-option-steel);
+  color: var(--zone-option-steel);
+}
+
+/* A disabled row: the steel face on both panels; still focusable, so
+ * Korri's reason under it can be read. */
+.zone-option-row[data-disabled] {
+  --zone-option-row-face: var(--zone-option-steel);
+  --zone-option-row-shade: var(--zone-option-steel);
+  color: var(--zone-option-steel);
+}
+
+/* The notes under the row, each on its own black panel, as wide as its
+ * words up to the row: the whole fact while the focused row has cut it,
+ * Korri's description, Korri's problem with a red bar at its start. */
+.zone-option-row-whole-line,
 .zone-option-row-description,
 .zone-option-row-problem {
   position: relative;
   isolation: isolate;
   justify-self: start;
-  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)));
-  font-size: calc(var(--zone-type-note) * var(--zone-px));
-  line-height: 1.15;
-  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
+  max-width: 100%;
+  padding: var(--zone-option-row-pad) var(--zone-option-row-inset);
+  color: var(--zone-cap);
+  text-shadow: none;
 }
 
+.zone-option-row-whole-line::before,
 .zone-option-row-description::before,
 .zone-option-row-problem::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: var(--zone-option-clip, var(--zone-option-row-shape));
+}
+
+/* Korri's sentences and facts: Jersey 10 as written. A sentence may break
+ * a word only at a line's end, with a hyphen. */
+.zone-option-row-whole-line,
+.zone-option-row-description[data-case="sentence"],
+.zone-option-row-problem {
+  padding-block: 0;
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
+  line-height: 0.75;
+  text-transform: none;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+/* Shown only while the row has cut the fact it names. */
+.zone-option-row-whole-line {
+  display: none;
+}
+
+.zone-option-row[data-truncated~="label"] .zone-option-row-whole-line[data-for="label"],
+.zone-option-row[data-truncated~="value"] .zone-option-row-whole-line[data-for="value"] {
+  display: block;
+}
+
+.zone-option-row-whole-line::after {
+  content: attr(data-whole) / "";
+}
+
+/* Korri's problem: a panel flush at its start, where a bar of danger red
+ * 2 art px wide stands, and leaning at its end. */
+.zone-option-row-problem {
+  padding-left: calc(calc(var(--zone-option-note-bar) + var(--zone-option-pad) * 2) * var(--zone-px));
+}
+
+.zone-option-row-problem::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(var(--zone-option-note-bar) * var(--zone-px));
+  background: var(--zone-danger);
+}
+
+/* The clear hint stands on the value's side, on its own black panel. */
+.zone-option-row-clear {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: calc(var(--zone-option-pad) * var(--zone-px) * 2);
+  padding: var(--zone-option-row-pad) var(--zone-option-row-inset);
+  text-shadow: none;
+}
+
+.zone-option-row-clear::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -141,53 +331,14 @@
   clip-path: var(--zone-option-row-shape);
 }
 
-.zone-option-row-description {
-  grid-column: 1;
-}
-
-.zone-option-row-problem {
-  grid-column: 1 / -1;
-  color: var(--zone-problem-ink);
-  --zone-caps-shade: currentColor;
-  text-shadow: none;
-}
-
-.zone-option-row-clear {
-  grid-column: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: calc(calc(var(--zone-row-gap) * var(--zone-px)) / 2);
-  font-size: calc(var(--zone-type-note) * var(--zone-px));
-}
-
+/* The X keycap: the dark disc with a black rim, its letter in white. */
 .zone-option-row-keycap {
   display: inline-grid;
   place-items: center;
-  width: calc(var(--zone-hint-keycap) * var(--zone-px));
-  height: calc(var(--zone-hint-keycap) * var(--zone-px));
+  width: calc(var(--zone-option-keycap) * var(--zone-px));
+  height: calc(var(--zone-option-keycap) * var(--zone-px));
   border: calc(var(--zone-keycap-ring) * var(--zone-px)) solid var(--zone-key-ring);
   border-radius: 50%;
   background: var(--zone-key);
-  font-size: calc(calc(var(--zone-hint-keycap) * var(--zone-px)) * 0.6);
-  text-shadow: none;
-}
-
-/* A fact Korri publishes keeps its own case; Zone's own words stay in caps. */
-.zone-option-row-label[data-case="verbatim"],
-.zone-option-row-value[data-case="verbatim"] {
-  font-family: var(--zone-font-fact);
-  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
-  text-transform: none;
-}
-
-/* Korri's placeholder in place of an empty value: dimmed, so it never reads as the value. */
-.zone-option-row-text[data-placeholder] {
-  opacity: var(--zone-placeholder-opacity);
-}
-
-/* A disabled row: dimmed like a disabled button, still focusable so Korri's
- * reason under it can be read. */
-.zone-option-row[data-disabled] .zone-option-row-control {
-  opacity: var(--zone-disabled-opacity);
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
 }

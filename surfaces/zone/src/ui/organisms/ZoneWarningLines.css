@@ -1,26 +1,29 @@
-/* A run of red lines, each only as wide as its words up to the run's width,
- * so a short warning is a short slab and a long one wraps inside it. */
+/* A run of warnings, each only as wide as its words up to the run's width,
+ * so a short warning is a short panel and a long one wraps inside it. */
 .zone-warning-lines {
   display: grid;
   justify-items: start;
-  row-gap: calc(var(--zone-drop) * var(--zone-px));
+  row-gap: calc(var(--zone-option-stack-gap) * var(--zone-px));
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* White Jersey 10 on black, the bar of danger red at its start. A word
+ * breaks only at a line's end, with a hyphen. */
 .zone-warning-line {
   position: relative;
   isolation: isolate;
   max-width: 100%;
-  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)));
-  color: var(--zone-problem-ink);
-  --zone-caps-shade: currentColor;
-  font-size: calc(var(--zone-type-note) * var(--zone-px));
-  line-height: 1.15;
+  padding: 0 calc(var(--zone-option-text-inset) * var(--zone-px)) 0 calc(calc(var(--zone-option-note-bar) + var(--zone-option-pad) * 2) * var(--zone-px));
+  color: var(--zone-cap);
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
+  line-height: 0.75;
+  text-transform: none;
+  text-shadow: none;
   overflow-wrap: break-word;
   hyphens: auto;
-  text-shadow: none;
 }
 
 .zone-warning-line::before {
@@ -29,5 +32,18 @@
   inset: 0;
   z-index: -1;
   background: var(--zone-panel);
-  clip-path: polygon(calc(var(--zone-slant) * var(--zone-px)) 0, 100% 0, calc(100% - calc(var(--zone-slant) * var(--zone-px))) 100%, 0 100%);
+  clip-path: var(
+    --zone-option-clip,
+    polygon(0 0, 100% 0, calc(100% - calc(var(--zone-option-slant) * var(--zone-px))) 100%, 0 100%)
+  );
+}
+
+.zone-warning-line::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(var(--zone-option-note-bar) * var(--zone-px));
+  background: var(--zone-danger);
 }

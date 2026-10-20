@@ -919,3 +919,67 @@
   /** @label Rings @min 0 @max 1 @step 1 */
   --zone-ground-rings: 1;
 }
+
+/* ---- refine-options ---- */
+/* OPTIONS and RUN WITH, refined (REFINEMENT.md 4): the sky row band, its
+ * lips, the rows' cells on the art grid, the steel face and the bars.
+ * Appended by the options refinement worker; the lines above are
+ * untouched. */
+.zone-theme {
+  /** The steel face: a disabled row, a placeholder (Mania's OPTIONS ring). @label Steel */
+  --zone-steel: #84a2b5;
+  /** The row band OPTIONS and RUN WITH stand on. @label Options band */
+  --zone-options-band: var(--zone-sky);
+  /** The band's lips, top and bottom. @label Options band lip */
+  --zone-options-lip-colour: var(--zone-black);
+  /** The face of a disabled row and of a placeholder. @label Option steel */
+  --zone-option-steel: var(--zone-steel);
+  /** A lit signal bar. @label Bar, lit */
+  --zone-bar-lit: var(--zone-white);
+  /** An unlit signal bar. @label Bar, unlit */
+  --zone-bar-unlit: var(--zone-track);
+  /** The black lip over and under the band. Art px. @label Band lip @min 0 @max 8 @step 1 */
+  --zone-options-lip: 3;
+  /** The room between the band and the strips. Art px. @label Band room @min 0 @max 16 @step 1 */
+  --zone-options-band-room: 4;
+  /** The band's inset at each side of the rows (plan: ZONE_OPTIONS_BAND_INSET). Art px. @label Band inset @min 8 @max 8 @step 1 */
+  --zone-options-band-inset: 8;
+  /** The room under the band's last row and over its first. Art px. @label Band pad @min 0 @max 16 @step 1 */
+  --zone-options-band-pad: 4;
+  /** A row cell's height for one line (plan: ZONE_OPTION_CELL). Art px. @label Option cell @min 14 @max 14 @step 1 */
+  --zone-option-cell: 14;
+  /** A one-line cell's slant, its height less one: 45 degrees. Art px. @label Option slant @min 13 @max 13 @step 1 */
+  --zone-option-slant: 13;
+  /** The room over and under a caps cell's words. Art px. @label Option pad @min 0 @max 6 @step 1 */
+  --zone-option-pad: 2;
+  /** Where a cell's words start: its slant and two art px. Art px. @label Option text inset @min 0 @max 30 @step 1 */
+  --zone-option-text-inset: 15;
+  /** The room between a row's label and value panels. Art px. @label Option gap @min 0 @max 30 @step 1 */
+  --zone-option-gap: 10;
+  /** The room between two rows (holds the focused drop). Art px. @label Option row space @min 0 @max 12 @step 1 */
+  --zone-option-row-space: 4;
+  /** The room between a stacked label and value, and a row and its notes. Art px. @label Option stack gap @min 0 @max 8 @step 1 */
+  --zone-option-stack-gap: 2;
+  /** The room over and under a group title's caps. Art px. @label Group title pad @min 0 @max 8 @step 1 */
+  --zone-option-group-pad: 3;
+  /** The room between a group title and its first row. Art px. @label Group space @min 0 @max 16 @step 1 */
+  --zone-option-group-space: 4;
+  /** The room between two groups. Art px. @label Group gap @min 0 @max 24 @step 1 */
+  --zone-option-group-gap: 8;
+  /** A choice triangle's width. Art px. @label Option triangle width @min 4 @max 4 @step 1 */
+  --zone-option-triangle-width: 4;
+  /** A choice triangle's height. Art px. @label Option triangle height @min 7 @max 7 @step 1 */
+  --zone-option-triangle-height: 7;
+  /** How far in from its panel's side a triangle or the caret stands. Art px. @label Option triangle at @min 0 @max 16 @step 1 */
+  --zone-option-triangle-at: 8;
+  /** Half the caret's blink: shown, then hidden. @label Option blink @min 100ms @max 2000ms @step 50ms */
+  --zone-option-blink-time: 500ms;
+  /** The danger bar at a problem's or a warning's start. Art px. @label Note bar @min 1 @max 6 @step 1 */
+  --zone-option-note-bar: 2;
+  /** The X keycap's disc. Art px. @label Option keycap @min 10 @max 20 @step 1 */
+  --zone-option-keycap: 14;
+  /** One step of a signal bar's height: 2, 4, 6, 8. Art px. @label Bar step @min 1 @max 4 @step 1 */
+  --zone-bar-step: 2;
+  /** The share of a RUN WITH route the program takes; the build takes the rest. @label Route label share @min 0.2 @max 0.8 @step 0.01 */
+  --zone-run-with-label-share: 0.4;
+}

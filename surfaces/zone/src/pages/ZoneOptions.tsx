@@ -28,17 +28,19 @@ const TABS: readonly ZoneTabItem[] = [
 /**
  * A plan row as the group draws it. A Wi-Fi row's signal is drawn, not
  * spelt: the connection as the foot's badge, a network's bars before its
- * words. A disabled row stays focusable so Korri's reason can be read.
+ * strength (Korri's, in Jersey 10) and its words (Zone's, in caps). A
+ * disabled row stays focusable so Korri's reason can be read.
  */
 function drawnRow(row: ZoneOptionsRow): ZoneOptionGroupRow {
   const signal = row.signal
   const valueNode = signal === undefined ? undefined
     : signal._tag === "Connection"
-      ? <span className="zone-options-connection"><ZoneSignal connection={signal.connection} /></span>
+      ? <span className="zone-options-connection"><ZoneSignal connection={signal.connection} panel={false} /></span>
       : (
         <span className="zone-options-network">
           <ZoneBars strengthPercent={signal.strengthPercent} />
-          <span className="zone-options-network-words">{row.item.value}</span>
+          <span className="zone-options-network-strength">{`${signal.strengthPercent}%`}</span>
+          <span className="zone-options-network-words">{signal.words.join(" ")}</span>
         </span>
       )
   return {
@@ -47,16 +49,20 @@ function drawnRow(row: ZoneOptionsRow): ZoneOptionGroupRow {
     ...(row.disabled ? { disabled: true } : {}),
     ...(row.keepCase?.label === true ? { verbatimLabel: true } : {}),
     ...(row.keepCase?.value === true ? { verbatimValue: true } : {}),
+    ...(row.ownDescription === true ? { descriptionCaps: true } : {}),
   }
 }
 
 /**
  * The OPTIONS tab: Mania's OPTIONS screen. The active tab, the one
- * yellow-on-blue banner, names the page; the body is one vertical scroll
- * of groups: every settings group Korri publishes, in its
- * order, then SYSTEM (Korri's device actions), then WI-FI. Up and down walk
- * the rows across the groups; the focused row scrolls into view and a row
- * cut off at the bottom shows there is more.
+ * yellow-on-blue banner, names the page over the yellow OPTIONS ground. The
+ * body is Mania's sky row band, the full width of the screen with a black
+ * lip over and under it, and the band is the one scroll: every settings
+ * group Korri publishes, in its order, then SYSTEM (Korri's device
+ * actions), then WI-FI. Each group's title is the black wedge at the
+ * band's left and holds there while its rows pass. Up and down walk the
+ * rows across the groups; the focused row scrolls into view, and a row cut
+ * off by a lip shows there is more. The tabs never cut a row.
  *
  * Over the page, at most one of: the keyboard, rising from the foot, for a
  * text setting, a secret, a Wi-Fi password or a hidden network; or the blue
@@ -172,21 +178,23 @@ export function ZoneOptions({
       )}
     >
       <div className="zone-options" data-layer={layer} ref={body}>
-        <div className="zone-options-scroll" inert={layer !== "none"}>
-          <div className="zone-options-groups">
-            {plan.groups.map(group => (
-              <div className="zone-options-group" data-verbatim={group.verbatim || undefined} key={group.key}>
-                <ZoneOptionGroup
-                  focusedId={rowId}
-                  onFocus={onRowFocus}
-                  onPress={onRowPress}
-                  onStep={onRowStep}
-                  rows={group.rows.map(drawnRow)}
-                  status={group.status}
-                  title={group.title}
-                />
-              </div>
-            ))}
+        <div className="zone-options-band" inert={layer !== "none"}>
+          <div className="zone-options-scroll">
+            <div className="zone-options-groups">
+              {plan.groups.map(group => (
+                <div className="zone-options-group" key={group.key}>
+                  <ZoneOptionGroup
+                    focusedId={rowId}
+                    onFocus={onRowFocus}
+                    onPress={onRowPress}
+                    onStep={onRowStep}
+                    rows={group.rows.map(drawnRow)}
+                    status={group.status}
+                    title={group.title}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
         {keyboard === undefined || heading === undefined ? null : (

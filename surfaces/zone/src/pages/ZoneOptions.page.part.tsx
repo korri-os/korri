@@ -20,6 +20,7 @@ import {
 import { useFixtureDirections } from "../fixtures/fixture-directions"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import { plan } from "../plan/zone-select"
+import { ZoneGround } from "../ui/organisms/ZoneGround"
 import type { ZoneOptionsSlices } from "../plan/options"
 import { ZoneOptions } from "./ZoneOptions"
 
@@ -75,16 +76,19 @@ function Live({
   // The binding measures its root; a preview reads the frame once.
   const layout = plan(innerWidth * share, innerHeight)
   return (
-    <ZoneOptions
-      band={layout.band}
-      strips={layout.strips}
-      build="korri 0.4.1 · 9a1fb22"
-      clock="21:47"
-      device="Mini"
-      korri={snapshot.korri}
-      view={snapshot.state}
-      {...optionsCallbacks(live.dispatch)}
-    />
+    <div className="zone-theme zone-screen" data-ground="options">
+      <ZoneGround />
+      <ZoneOptions
+        band={layout.band}
+        strips={layout.strips}
+        build="korri 0.4.1 · 9a1fb22"
+        clock="21:47"
+        device="Mini"
+        korri={snapshot.korri}
+        view={snapshot.state}
+        {...optionsCallbacks(live.dispatch)}
+      />
+    </div>
   )
 }
 
