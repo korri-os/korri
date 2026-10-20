@@ -315,20 +315,16 @@ describe("every component has a consumer", () => {
   const AWAITING_PAGE: readonly string[] = [
     // The games page: the band replaces the plain title list in ZoneSurface.
     "ZoneCardBand",
-    // The save-data page: the vertical save-card select (DIRECTION C16).
-    "ZoneSaveCard",
-    // The games page: hints in the shell, the tab strip, the action row
-    // under the focused card, the foot, GAME OPTS. over the band, the keyboard
-    // for find-by-text, and the idle title card (C1 to C6, C26 to C29).
-    "ZoneKeycap",
+    // The games page: the tab strip, the foot and the idle title card
+    // (C1 to C6, C26 to C29).
     "ZoneTabStrip",
-    "ZoneActionRow",
     "ZoneFoot",
-    "ZoneOptionGroup",
-    "ZoneKeyboard",
     "ZoneTitleCard",
     // The save-data page: the QR in a save card's well (C16).
     "ZoneQrWell",
+    // The status layer (C7 to C9) wraps every page; the binding mounts it
+    // when ZoneSurface lands its pages.
+    "ZoneStatusLayer",
   ]
 
   test("no atom, molecule, organism or template is imported by nothing", () => {
@@ -342,6 +338,17 @@ describe("every component has a consumer", () => {
   test("a component awaiting its page is not already consumed", () => {
     expect(AWAITING_PAGE.filter((name) => importedNames.has(name))).toEqual([])
   })
+
+  /**
+   * Pages built ahead of their mount. The binding (ZoneSurface.tsx) belongs
+   * to the games worker; when it mounts one of these, the entry goes.
+   */
+  const AWAITING_BINDING: readonly string[] = [
+    // PAUSED, for presentation.kind gameplay-overlay (C24).
+    "ZonePaused",
+    // First boot, while model.onboarding exists (C25).
+    "ZoneOnboarding",
+  ]
 
   test("every page is reached from the surface binding", () => {
     const binding = readFileSync(join(SRC, "ZoneSurface.tsx"), "utf8")
@@ -361,7 +368,8 @@ describe("every component has a consumer", () => {
         if (hit) queue.push(readFileSync(hit, "utf8"))
       }
     }
-    expect(pages.filter((p) => !reachable.has(p))).toEqual([])
+    expect(pages.filter((p) => !reachable.has(p) && !AWAITING_BINDING.includes(p))).toEqual([])
+    expect(AWAITING_BINDING.filter((p) => reachable.has(p))).toEqual([])
   })
 })
 
