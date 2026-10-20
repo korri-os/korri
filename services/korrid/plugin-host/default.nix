@@ -154,6 +154,8 @@ in
         Manage independently packaged Linux plugins with explicit administrator approval.
     nix run .#korri-publish -- STORE_PATH RELEASE_VERSION PLATFORM ARCHIVE_URL OUTPUT_DIR
         Convert a built plugin package to a content-addressed archive and emit a catalog record.
+    nix run .#korri-publish -- declaration NAMESPACE SOURCE_ROOT SOURCE...
+        Evaluate a closed source inventory as JSON for build-time metadata; grants no admission or effect authority.
     nix run .#korri-publish -- archive-name STORE_PATH RELEASE PLATFORM
         Derive the upload name from the actual plugin declaration and publisher naming contract.
     nix run .#korri-publish -- catalog RECORD_FILE...

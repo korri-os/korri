@@ -19,6 +19,27 @@ fn run(args: Vec<String>) -> Result<(), String> {
         .collect::<Vec<_>>()
         .as_slice()
     {
+        ["declaration", namespace, source_root, sources @ ..] => {
+            // Build-side metadata from an explicit, closed source inventory.
+            // This evaluates no native files and grants no installation authority.
+            let sources = sources
+                .iter()
+                .map(|name| name.to_string())
+                .collect::<Vec<_>>();
+            let snapshot = korri_plugin_host::script::source::SourceSnapshot::package_plugin(
+                Path::new(source_root),
+                "plugin.ts",
+                &sources,
+            )?;
+            let declaration = korri_plugin_host::declaration::Declaration::evaluate_snapshot(
+                namespace, &snapshot,
+            )?;
+            println!(
+                "{}",
+                serde_json::to_string(&declaration).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
         ["archive-name", store_path, release, platform] => {
             let declaration = package::load_declaration(Path::new(store_path))?;
             println!(
@@ -69,6 +90,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         }
         _ => Err(concat!(
             "usage: korri-publish STORE_PATH RELEASE PLATFORM ARCHIVE_URL OUTPUT_DIR\n",
+            "       korri-publish declaration NAMESPACE SOURCE_ROOT SOURCE...\n",
             "       korri-publish archive-name STORE_PATH RELEASE PLATFORM\n",
             "       korri-publish catalog RECORD_FILE...\n",
             "       korri-publish verify-release CATALOG ASSET_DIR BASE_URL ID RELEASE PLATFORM..."
