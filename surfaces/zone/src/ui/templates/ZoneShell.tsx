@@ -77,9 +77,9 @@ export function ZoneShell({
     key: entrance.current.count === 0 ? undefined : String(entrance.current.count),
     duration: ZONE_MENU_MS,
     frame: (t, size) => {
-      const frame = zoneMenuFrame(t, size.wArt)
+      const frame = zoneMenuFrame(t, size.wArt, size.drawing.motion)
       return {
-        "--zone-shell-wipe": zoneWipeClip(frame.wipe, size.wArt, size.hArt),
+        "--zone-shell-wipe": zoneWipeClip(frame.wipe, size.wArt, size.hArt, size.drawing.edges),
         "--zone-shell-wipe-ground": entrance.current.from === "" ? "transparent" : entrance.current.from,
         "--zone-shell-banner-y": frame.bannerY,
         "--zone-shell-body-x": frame.rowsX[0] ?? 0,

@@ -22,8 +22,11 @@
  * loop; marking it stuck changes only its background.
  */
 import { useLayoutEffect, type RefObject } from "react"
+import { useZoneLookKey } from "./use-zone-look"
 
 export function useZoneStickyHold(group: RefObject<HTMLElement | null>, title: RefObject<HTMLElement | null>): void {
+  // A look changes the faces: measure again in the one now drawn.
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const box = group.current
     const head = title.current
@@ -46,5 +49,5 @@ export function useZoneStickyHold(group: RefObject<HTMLElement | null>, title: R
       observer.disconnect()
       scroller?.removeEventListener("scroll", stuck)
     }
-  }, [group, title])
+  }, [group, title, look])
 }

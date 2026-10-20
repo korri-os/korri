@@ -22,6 +22,8 @@
  * as the only places that run a frame clock).
  */
 import { useLayoutEffect, useRef, type RefObject } from "react"
+import type { ZoneLookDrawing } from "./plan/look"
+import { useZoneLookKey, zoneDrawingOf } from "./use-zone-look"
 import { zoneArtPxOf } from "./use-zone-plan"
 
 export type ZoneMomentVars = Readonly<Record<string, string | number>>
@@ -29,6 +31,8 @@ export type ZoneMomentVars = Readonly<Record<string, string | number>>
 export interface ZoneMomentBox {
   readonly wArt: number
   readonly hArt: number
+  /** How the look the box stands in draws: its edges and its motion grid. */
+  readonly drawing: ZoneLookDrawing
 }
 
 export interface ZoneMoment {
@@ -152,14 +156,17 @@ export function useZoneMoment(element: RefObject<HTMLElement | null>, moment: Zo
   const latest = useRef(moment)
   latest.current = moment
   const { key } = moment
+  // A look changes the drawing (stairs or smooth, art px or free): measure again.
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const box = element.current
     if (box === null || key === undefined) return
-    let size: ZoneMomentBox = { wArt: 0, hArt: 0 }
+    let size: ZoneMomentBox = { wArt: 0, hArt: 0, drawing: zoneDrawingOf(box) }
     const measure = (): boolean => {
       const px = zoneArtPxOf(box)
-      const next = { wArt: Math.floor(box.clientWidth / px), hArt: Math.floor(box.clientHeight / px) }
-      if (next.wArt === size.wArt && next.hArt === size.hArt) return false
+      const next = { wArt: Math.floor(box.clientWidth / px), hArt: Math.floor(box.clientHeight / px), drawing: zoneDrawingOf(box) }
+      if (next.wArt === size.wArt && next.hArt === size.hArt && next.drawing.edges === size.drawing.edges
+        && next.drawing.motion === size.drawing.motion) return false
       size = next
       const layout = latest.current.layout
       if (layout !== undefined) write(box, layout(size))
@@ -179,7 +186,7 @@ export function useZoneMoment(element: RefObject<HTMLElement | null>, moment: Zo
       clock.stop()
       observer?.disconnect()
     }
-  }, [element, key])
+  }, [element, key, look])
 }
 
 /**

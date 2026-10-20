@@ -8,6 +8,7 @@
  * ZoneTitleCard.css holds the same number in its container query;
  * test/zone-title-card.test.tsx holds the two equal.
  */
+import type { ZoneEdges } from "./look"
 
 /** Card width over height under which the circle moves below the title. */
 export const ZONE_TITLE_STACK_ASPECT = 1
@@ -38,15 +39,24 @@ export const ZONE_TITLE_DISC = 52
 /**
  * One band as a stair polygon on a card `wArt` by `hArt`: from its start
  * row to the card's foot, its two edges moving one art px right a row, so
- * the 45 degree edges are stairs with one step per art px.
+ * the 45 degree edges are stairs with one step per art px. Smooth
+ * (Modern), each edge is one straight 45 degree line.
  */
-export function zoneTitleBandClip(band: { readonly x: number; readonly y: number; readonly thickness: number }, wArt: number, hArt: number): string {
+export function zoneTitleBandClip(
+  band: { readonly x: number; readonly y: number; readonly thickness: number },
+  wArt: number,
+  hArt: number,
+  edges: ZoneEdges = "stairs",
+): string {
   const px = (value: number) => (value === 0 ? "0" : `calc(${value} * var(--zone-px))`)
   const top = Math.round(band.y * hArt)
   const left = Math.round(band.x * wArt)
   const thick = Math.max(1, Math.round(band.thickness * wArt))
   const rows = Math.max(0, hArt - top)
   if (rows === 0 || wArt <= 0) return "polygon(0 0, 0 0, 0 0)"
+  if (edges === "smooth") {
+    return `polygon(${px(left)} ${px(top)}, ${px(left + thick)} ${px(top)}, ${px(left + thick + rows)} ${px(hArt)}, ${px(left + rows)} ${px(hArt)})`
+  }
   const leftEdge: string[] = []
   const rightEdge: string[] = []
   for (let row = 0; row < rows; row += 1) {

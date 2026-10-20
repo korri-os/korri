@@ -13,6 +13,7 @@ import { useLayoutEffect, type RefObject } from "react"
 import { planZoneFind } from "./plan/keyboard"
 import { clearZoneKeyboardPlan, writeZoneKeyboardPlan } from "./use-zone-keyboard-fit"
 import { zoneArtPxOf } from "./use-zone-plan"
+import { useZoneLookKey } from "./use-zone-look"
 
 /** Write the plan for a box `width` by `height` CSS px on `root`. */
 export function writeZoneFindPlan(root: HTMLElement, width: number, height: number, band: boolean): void {
@@ -41,6 +42,8 @@ export function useZoneFindPlan(
   keys: RefObject<HTMLElement | null>,
   at: "body" | "screen" | undefined,
 ): void {
+  // A look changes the faces: measure again in the one now drawn.
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const page = root.current
     if (page === null) return
@@ -62,5 +65,5 @@ export function useZoneFindPlan(
     observer.observe(box)
     if (at === "screen") observer.observe(page)
     return () => observer.disconnect()
-  }, [root, body, keys, at])
+  }, [root, body, keys, at, look])
 }

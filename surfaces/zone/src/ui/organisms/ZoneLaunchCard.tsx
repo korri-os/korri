@@ -33,7 +33,9 @@ export function ZoneLaunchCard({
   useZoneMoment(box, {
     key: `${title}:${act}:${leaving ? "out" : "in"}`,
     duration: leaving ? ZONE_TITLE_OUT_MS : ZONE_TITLE_IN_MS,
-    frame: (t, size) => zoneTitleVars(leaving ? zoneTitleOutFrame(t, size.wArt, size.hArt) : zoneTitleInFrame(t, size.wArt, size.hArt)),
+    frame: (t, size) => zoneTitleVars(leaving
+      ? zoneTitleOutFrame(t, size.wArt, size.hArt, size.drawing.motion)
+      : zoneTitleInFrame(t, size.wArt, size.hArt, size.drawing.motion)),
   })
   return (
     <div className="zone-launch-card" data-leaving={leaving || undefined} ref={box}>

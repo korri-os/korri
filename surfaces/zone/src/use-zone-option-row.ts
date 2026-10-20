@@ -24,6 +24,7 @@
 import { useLayoutEffect, type RefObject } from "react"
 import { optionRowStacked, zoneLongestCut, zoneOptionClip, type ZoneCutMode } from "./plan/options-row"
 import type { ZoneStairEdge } from "./plan/stair-clip"
+import { useZoneLookKey, zoneDrawingOf } from "./use-zone-look"
 import { zoneArtPxOf } from "./use-zone-plan"
 
 /** The edges a `data-option-clip` value names: `slash` (both) or `flush` (straight left). */
@@ -37,7 +38,7 @@ export function applyOptionClip(element: HTMLElement, px = zoneArtPxOf(element))
   if (width <= 0 || height <= 0) return
   element.style.setProperty(
     "--zone-option-clip",
-    zoneOptionClip(Math.round(width / px), Math.round(height / px), edgesOf(element.dataset.optionClip)),
+    zoneOptionClip(Math.round(width / px), Math.round(height / px), edgesOf(element.dataset.optionClip), zoneDrawingOf(element).edges),
   )
 }
 
@@ -102,6 +103,8 @@ export function applyOptionRow(row: HTMLElement): void {
  * measured in the fallback face is wrong in Jersey 10).
  */
 export function useZoneOptionRow(row: RefObject<HTMLElement | null>, key: string): void {
+  // A look changes the faces: measure again in the one now drawn.
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const element = row.current
     if (element === null) return
@@ -115,11 +118,13 @@ export function useZoneOptionRow(row: RefObject<HTMLElement | null>, key: string
       observer?.disconnect()
       fonts?.removeEventListener?.("loadingdone", apply)
     }
-  }, [row, key])
+  }, [row, key, look])
 }
 
 /** Keep the panels under `root` stepped (a note, a message, a warning). */
 export function useZoneOptionClips(root: RefObject<HTMLElement | null>, key: string): void {
+  // A look changes the faces: measure again in the one now drawn.
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const element = root.current
     if (element === null) return
@@ -128,5 +133,5 @@ export function useZoneOptionClips(root: RefObject<HTMLElement | null>, key: str
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(apply)
     observer?.observe(element)
     return () => observer?.disconnect()
-  }, [root, key])
+  }, [root, key, look])
 }

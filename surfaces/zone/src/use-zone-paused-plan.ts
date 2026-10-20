@@ -13,9 +13,11 @@
 import { useLayoutEffect, type RefObject } from "react"
 import { planPaused } from "./plan/paused"
 import { zoneStairWedge } from "./plan/stair-clip"
+import { useZoneLookKey, zoneDrawingOf } from "./use-zone-look"
 import { zoneArtPxOf } from "./use-zone-plan"
 
 export function useZonePausedPlan(page: RefObject<HTMLElement | null>): void {
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const element = page.current
     if (element === null) return
@@ -26,12 +28,12 @@ export function useZonePausedPlan(page: RefObject<HTMLElement | null>): void {
       element.style.setProperty("--zone-paused-band-h", `calc(${plan.bandArt} * var(--zone-px))`)
       element.style.setProperty("--zone-paused-rows-left", `calc(${plan.rowsLeftArt} * var(--zone-px))`)
       element.style.setProperty("--zone-paused-rows-foot", `calc(${plan.rowsFootArt} * var(--zone-px))`)
-      element.style.setProperty("--zone-paused-wedge-shape", zoneStairWedge(plan.wedgeArt, "bottom-right"))
+      element.style.setProperty("--zone-paused-wedge-shape", zoneStairWedge(plan.wedgeArt, "bottom-right", zoneDrawingOf(element).edges))
     }
     apply(element.clientWidth, element.clientHeight)
     if (typeof ResizeObserver === "undefined") return
     const observer = new ResizeObserver(() => apply(element.clientWidth, element.clientHeight))
     observer.observe(element)
     return () => observer.disconnect()
-  }, [page])
+  }, [page, look])
 }

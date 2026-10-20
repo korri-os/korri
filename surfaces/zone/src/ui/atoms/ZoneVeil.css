@@ -13,3 +13,11 @@
   ) 0 0 / calc(var(--zone-veil-tile) * var(--zone-px)) calc(var(--zone-veil-tile) * var(--zone-px));
   pointer-events: none;
 }
+
+/* Modern draws the dim smooth: the same black over the whole page, half
+ * see-through, the darkness the checker gives. The one see-through in Zone
+ * (test/authoring-gate.test.ts, "no see-through", names this rule). */
+[data-look="modern"] .zone-veil {
+  background: var(--zone-veil);
+  opacity: var(--zone-veil-see-through);
+}

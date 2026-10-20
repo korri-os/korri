@@ -97,3 +97,23 @@
   );
   pointer-events: none;
 }
+
+/* Modern: the same lip and four notches, their sides smooth 45 degree
+ * lines instead of stairs. */
+[data-look="modern"] .zone-banner-lip {
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% calc(2 * var(--zone-px)),
+    calc(50% + 8 * var(--zone-px)) calc(2 * var(--zone-px)),
+    calc(50% + 6 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(50% + 4 * var(--zone-px)) calc(2 * var(--zone-px)),
+    calc(50% + 2 * var(--zone-px)) calc(4 * var(--zone-px)),
+    50% calc(2 * var(--zone-px)),
+    calc(50% - 2 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(50% - 4 * var(--zone-px)) calc(2 * var(--zone-px)),
+    calc(50% - 6 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(50% - 8 * var(--zone-px)) calc(2 * var(--zone-px)),
+    0 calc(2 * var(--zone-px))
+  );
+}

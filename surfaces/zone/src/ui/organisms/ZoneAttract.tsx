@@ -48,7 +48,7 @@ export function ZoneAttract({
     // Reduced motion: the title card at rest.
     rest: 1000,
     frame: (t, size) => {
-      const frame = zoneAttractFrame(t, size.wArt, size.hArt)
+      const frame = zoneAttractFrame(t, size.wArt, size.hArt, size.drawing.motion)
       return {
         ...zoneTitleVars(frame.card),
         "--zone-attract-card": frame.card === undefined ? "hidden" : "visible",

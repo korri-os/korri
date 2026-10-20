@@ -11,8 +11,9 @@ import { ZoneWords } from "../atoms/ZoneWords"
 
 /** The card's drawing that depends on its size alone: the bands' stairs and the disc. */
 const layout = (box: ZoneMomentBox) => ({
-  ...Object.fromEntries(ZONE_TITLE_BANDS.map((band, index) => [`--zone-tc-band-${index}-shape`, zoneTitleBandClip(band, box.wArt, box.hArt)])),
-  "--zone-tc-disc-shape": zoneStairCircle(ZONE_TITLE_DISC),
+  ...Object.fromEntries(ZONE_TITLE_BANDS.map((band, index) =>
+    [`--zone-tc-band-${index}-shape`, zoneTitleBandClip(band, box.wArt, box.hArt, box.drawing.edges)])),
+  "--zone-tc-disc-shape": zoneStairCircle(ZONE_TITLE_DISC, box.drawing.edges),
 })
 
 /**

@@ -20,6 +20,7 @@
 import { useLayoutEffect, useRef, type RefObject } from "react"
 import { zoneFitSteps } from "./use-zone-fit"
 import { zoneArtPxOf } from "./use-zone-plan"
+import { useZoneLookKey } from "./use-zone-look"
 
 /** The room Zone Caps keeps either side of a word, in art px (--zone-caps-room). */
 const CAPS_ROOM = 3
@@ -76,6 +77,8 @@ export function useZoneWordsFit(
 ): void {
   const then = useRef(after)
   then.current = after
+  // A look changes the faces: measure again in the one now drawn.
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const fit = () => {
       if (holder.current === null) return
@@ -100,5 +103,5 @@ export function useZoneWordsFit(
       observer.disconnect()
     }
     // The refs never change identity; `key` (the words) re-runs the fit.
-  }, [box, holder, key])
+  }, [box, holder, key, look])
 }

@@ -398,11 +398,17 @@ describe("the veil covers the whole page", () => {
     const covered = document.querySelector(".zone-status-layer-page[data-covered]")!
     expect([...covered.children].map(child => child.className)).toEqual(["zone-status-layer-content", "zone-veil"])
   })
-  test("the veil is a dither of single art pixels: a hard-stop checker, no opacity", () => {
+  test("the veil is a dither of single art pixels: a hard-stop checker, no opacity but Modern's", () => {
     const veil = read("ui", "atoms", "ZoneVeil.css")
     expect(veil).toMatch(/conic-gradient\(/)
     expect(veil).toMatch(/var\(--zone-veil-tile\) \* var\(--zone-px\)/)
-    expect(veil).not.toMatch(/opacity/)
+    // The checker's own rule draws no opacity; the one see-through is the
+    // Modern look's rule, which the authoring gate names.
+    const checker = /\.zone-veil \{[^}]*\}/.exec(veil)?.[0] ?? ""
+    expect(checker).toMatch(/conic-gradient/)
+    expect(checker).not.toMatch(/opacity/)
+    expect([...veil.matchAll(/([^{}]+)\{[^}]*opacity/g)].map(match => match[1]?.trim().split("\n").at(-1)))
+      .toEqual(['[data-look="modern"] .zone-veil'])
     expect(read("zone-tokens.css")).toMatch(/--zone-veil-tile: 2;/)
   })
   test("busy over home: FIND is inside the covered, inert content", async () => {

@@ -33,7 +33,7 @@
   display: flex;
   align-items: center;
   gap: var(--zone-save-band-gap);
-  translate: round(calc(50cqw - var(--zone-save-band-centre)), var(--zone-px)) -50%;
+  translate: round(calc(50cqw - var(--zone-save-band-centre)), var(--zone-motion-snap, var(--zone-px))) -50%;
   transition: translate var(--zone-snap-time) var(--zone-bounce);
   will-change: translate;
 }

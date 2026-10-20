@@ -19,8 +19,11 @@
  *
  * Durations and curves are the brief's. Distances follow the container
  * (wArt, hArt); durations do not. Translates are rounded to whole art px
- * here, so no frame ever sits between the screen's art pixels.
+ * here, so no frame ever sits between the screen's art pixels, on the art
+ * grid of the Blend and Retro looks; in Modern (`grid` "free") they fall
+ * where the easing puts them, and the hard steps of the act disc are eased.
  */
+import type { ZoneEdges, ZoneMotionGrid } from "./look"
 
 /** A cubic Bézier easing, as CSS defines it: x is time, y is progress. */
 export function cubicBezier(x1: number, y1: number, x2: number, y2: number): (t: number) => number {
@@ -61,8 +64,15 @@ export function along(t: number, start: number, duration: number, ease: (t: numb
   return ease(Math.min(1, Math.max(0, (t - start) / duration)))
 }
 
-/** A distance in art px, rounded to a whole art px. */
-const art = (value: number): number => Math.round(value) || 0
+/**
+ * A distance in art px: rounded to a whole art px on the art grid (Blend,
+ * Retro), left where it falls in Modern, whose motion is sub-pixel.
+ */
+const art = (value: number, grid: ZoneMotionGrid = "art"): number => (grid === "art" ? Math.round(value) || 0 : value || 0)
+
+/** A move in hard steps on the art grid, eased smooth in Modern. */
+const stepped = (count: number, grid: ZoneMotionGrid, smooth: (t: number) => number) =>
+  grid === "art" ? steps(count) : smooth
 
 export const ZONE_EASE = {
   /** The one-bounce snap: focus travel, the banner. */
@@ -105,12 +115,12 @@ export interface ZoneMenuFrame {
 }
 
 /** M2 at `t` on a canvas `wArt` wide: the new page arriving. */
-export function zoneMenuFrame(t: number, wArt: number): ZoneMenuFrame {
+export function zoneMenuFrame(t: number, wArt: number, grid: ZoneMotionGrid = "art"): ZoneMenuFrame {
   return {
     wipe: along(t, MENU_WIPE.start, MENU_WIPE.duration, ZONE_EASE.wipe),
-    bannerY: art(-MENU_BANNER.rise * (1 - along(t, MENU_BANNER.start, MENU_BANNER.duration, ZONE_EASE.snap))),
+    bannerY: art(-MENU_BANNER.rise * (1 - along(t, MENU_BANNER.start, MENU_BANNER.duration, ZONE_EASE.snap)), grid),
     rowsX: Array.from({ length: MENU_ROWS.most }, (_, index) =>
-      art(wArt * (1 - along(t, MENU_ROWS.start + index * MENU_ROWS.stagger, MENU_ROWS.duration, ZONE_EASE.rows)))),
+      art(wArt * (1 - along(t, MENU_ROWS.start + index * MENU_ROWS.stagger, MENU_ROWS.duration, ZONE_EASE.rows)), grid)),
   }
 }
 
@@ -118,21 +128,27 @@ export function zoneMenuFrame(t: number, wArt: number): ZoneMenuFrame {
 export const ZONE_SHEET_MS = MENU_ROWS.duration
 
 /** The sheet's offset from rest at `t`, art px to the right. */
-export const zoneSheetFrame = (t: number, wArt: number): number =>
-  art(wArt * (1 - along(t, 0, MENU_ROWS.duration, ZONE_EASE.rows)))
+export const zoneSheetFrame = (t: number, wArt: number, grid: ZoneMotionGrid = "art"): number =>
+  art(wArt * (1 - along(t, 0, MENU_ROWS.duration, ZONE_EASE.rows)), grid)
 
 /**
  * The stair the old ground keeps at wipe `share`: everything below and left
  * of a 45 degree line that has swept in from the top right corner. Rows of
  * 4 art px, so the wipe reads as stairs and the polygon stays short.
+ * Smooth (Modern), the line itself, cut where it meets the box.
  */
-export function zoneWipeClip(share: number, wArt: number, hArt: number): string {
+export function zoneWipeClip(share: number, wArt: number, hArt: number, edges: ZoneEdges = "stairs"): string {
   if (share <= 0) return "none"
   if (share >= 1) return "polygon(0 0, 0 0, 0 0)"
   // Kept: every point with x + (hArt - y) at most `reach` from the bottom left.
   const reach = (wArt + hArt) * (1 - share)
   const step = 4
-  const px = (value: number) => (value === 0 ? "0" : `calc(${value} * var(--zone-px))`)
+  const px = (value: number) => (value === 0 ? "0" : `calc(${Number(value.toFixed(4))} * var(--zone-px))`)
+  if (edges === "smooth") {
+    const at = (y: number) => Math.max(0, Math.min(wArt, reach - hArt + y))
+    const rows = [0, hArt - reach, wArt + hArt - reach, hArt].filter(y => y >= 0 && y <= hArt).sort((a, b) => a - b)
+    return `polygon(0 0, ${rows.map(y => `${px(at(y))} ${px(y)}`).join(", ")}, 0 ${px(hArt)})`
+  }
   const points: string[] = ["0 0"]
   for (let y = 0; y < hArt; y += step) {
     const x = Math.max(0, Math.min(wArt, Math.floor(reach - hArt + y)))
@@ -163,34 +179,34 @@ export interface ZoneTitleFrame {
 }
 
 /** M3 in at `t`: everything from the top right (bands), left (name) and right (bar). */
-export function zoneTitleInFrame(t: number, wArt: number, hArt: number): ZoneTitleFrame {
+export function zoneTitleInFrame(t: number, wArt: number, hArt: number, grid: ZoneMotionGrid = "art"): ZoneTitleFrame {
   const band = (index: number): readonly [number, number] => {
     const left = 1 - along(t, TITLE_BANDS.start + index * TITLE_BANDS.stagger, TITLE_BANDS.duration, ZONE_EASE.bands)
-    return [art(wArt * left), art(-hArt * left)]
+    return [art(wArt * left, grid), art(-hArt * left, grid)]
   }
   const ground = 1 - along(t, 0, TITLE_BANDS.duration - 80, ZONE_EASE.bands)
   return {
-    ground: [art(wArt * ground), art(-hArt * ground)],
+    ground: [art(wArt * ground, grid), art(-hArt * ground, grid)],
     bands: Array.from({ length: TITLE_BANDS.count }, (_, index) => band(index)),
-    nameX: art(-wArt * (1 - along(t, TITLE_NAME.start, TITLE_NAME.duration, ZONE_EASE.land))),
-    barX: art(wArt * (1 - along(t, TITLE_BAR.start, TITLE_BAR.duration, ZONE_EASE.land))),
-    disc: along(t, TITLE_DISC.start, TITLE_DISC.duration, steps(4)),
+    nameX: art(-wArt * (1 - along(t, TITLE_NAME.start, TITLE_NAME.duration, ZONE_EASE.land)), grid),
+    barX: art(wArt * (1 - along(t, TITLE_BAR.start, TITLE_BAR.duration, ZONE_EASE.land)), grid),
+    disc: along(t, TITLE_DISC.start, TITLE_DISC.duration, stepped(4, grid, ZONE_EASE.snap)),
   }
 }
 
 /** M3 out at `t`: the reverse, the bands leaving toward the bottom left. */
-export function zoneTitleOutFrame(t: number, wArt: number, hArt: number): ZoneTitleFrame {
+export function zoneTitleOutFrame(t: number, wArt: number, hArt: number, grid: ZoneMotionGrid = "art"): ZoneTitleFrame {
   const gone = along(t, 0, ZONE_TITLE_OUT_MS, ZONE_EASE.leave)
   const band = (index: number): readonly [number, number] => {
     const share = along(t, index * TITLE_BANDS.stagger, ZONE_TITLE_OUT_MS - 3 * TITLE_BANDS.stagger, ZONE_EASE.leave)
-    return [art(-wArt * share), art(hArt * share)]
+    return [art(-wArt * share, grid), art(hArt * share, grid)]
   }
   return {
-    ground: [art(-wArt * gone), art(hArt * gone)],
+    ground: [art(-wArt * gone, grid), art(hArt * gone, grid)],
     bands: Array.from({ length: TITLE_BANDS.count }, (_, index) => band(index)),
-    nameX: art(-wArt * gone),
-    barX: art(wArt * gone),
-    disc: 1 - along(t, 0, ZONE_TITLE_OUT_MS / 2, steps(4)),
+    nameX: art(-wArt * gone, grid),
+    barX: art(wArt * gone, grid),
+    disc: 1 - along(t, 0, ZONE_TITLE_OUT_MS / 2, stepped(4, grid, ZONE_EASE.leave)),
   }
 }
 
@@ -215,17 +231,18 @@ export interface ZoneTallyRowFrame {
 }
 
 /** M5 at `t` for row `index`. A skipped count-up is `t` at or past its end. */
-export function zoneTallyRowFrame(t: number, index: number): ZoneTallyRowFrame {
+export function zoneTallyRowFrame(t: number, index: number, grid: ZoneMotionGrid = "art"): ZoneTallyRowFrame {
   const start = index * ZONE_TALLY_ROW_STAGGER_MS
   return {
-    x: art(TALLY_ROW_ENTER.from * (1 - along(t, start, TALLY_ROW_ENTER.duration, ZONE_EASE.rows))),
+    x: art(TALLY_ROW_ENTER.from * (1 - along(t, start, TALLY_ROW_ENTER.duration, ZONE_EASE.rows)), grid),
     shown: t >= start,
     count: along(t, start, ZONE_TALLY_COUNT_MS, steps(ZONE_TALLY_STEPS)),
   }
 }
 
 /** The tally leaving at `t`: its panel slides down off the canvas. */
-export const zoneTallyOutFrame = (t: number, hArt: number): number => art(hArt * along(t, 0, ZONE_TALLY_OUT_MS, ZONE_EASE.leave))
+export const zoneTallyOutFrame = (t: number, hArt: number, grid: ZoneMotionGrid = "art"): number =>
+  art(hArt * along(t, 0, ZONE_TALLY_OUT_MS, ZONE_EASE.leave), grid)
 
 // ---- M6 idle attract ----
 
@@ -248,16 +265,16 @@ export interface ZoneAttractFrame {
  * 2900, then the stage pans linearly to 5600 and holds to 6000, when the
  * next game's turn starts at 0 with its own M3.
  */
-export function zoneAttractFrame(t: number, wArt: number, hArt: number): ZoneAttractFrame {
+export function zoneAttractFrame(t: number, wArt: number, hArt: number, grid: ZoneMotionGrid = "art"): ZoneAttractFrame {
   const at = Math.max(0, Math.min(ZONE_ATTRACT_MS, t))
   const stage = at >= ATTRACT.holdUntil
-  const card = at < ATTRACT.holdUntil ? zoneTitleInFrame(at, wArt, hArt)
-    : at < ATTRACT.outUntil ? zoneTitleOutFrame(at - ATTRACT.holdUntil, wArt, hArt) : undefined
+  const card = at < ATTRACT.holdUntil ? zoneTitleInFrame(at, wArt, hArt, grid)
+    : at < ATTRACT.outUntil ? zoneTitleOutFrame(at - ATTRACT.holdUntil, wArt, hArt, grid) : undefined
   const pan = along(at, ATTRACT.outUntil, ATTRACT.panUntil - ATTRACT.outUntil, ZONE_EASE.linear)
   return {
     ...(card === undefined ? {} : { card }),
     stage,
-    panX: art(-ATTRACT.pan * pan),
+    panX: art(-ATTRACT.pan * pan, grid),
     prompt: stage && Math.floor(at / (ATTRACT.blink / 2)) % 2 === 0,
   }
 }

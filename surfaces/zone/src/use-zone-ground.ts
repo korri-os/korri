@@ -11,9 +11,14 @@
  * clock). The canvas is `wArt` by `hArt` pixels and is shown at exactly
  * `--zone-px` CSS px a pixel, so the browser scales it by a whole number;
  * the CSS px left over at the right and bottom show the ground's colour.
+ * In the Modern look (rings "smooth") the canvas is CSS px instead and the
+ * rings are antialiased arcs (`renderZoneGroundSmooth`); the box and the
+ * palette are the same.
  */
 import { useLayoutEffect, type RefObject } from "react"
-import { renderZoneGround, zoneGroundFrame, type ZoneGroundPalette } from "./plan/ground"
+import type { ZoneRings } from "./plan/look"
+import { renderZoneGround, renderZoneGroundSmooth, zoneGroundFrame, type ZoneGroundPalette } from "./plan/ground"
+import { useZoneLookKey, zoneDrawingOf } from "./use-zone-look"
 import { startZoneClock } from "./use-zone-moment"
 import { zoneArtPxOf } from "./use-zone-plan"
 
@@ -43,21 +48,26 @@ const samePalette = (a: ZoneGroundPalette | undefined, b: ZoneGroundPalette): bo
   a !== undefined && (Object.keys(b) as (keyof ZoneGroundPalette)[]).every(key => a[key] === b[key])
 
 export function useZoneGround(box: RefObject<HTMLElement | null>, canvas: RefObject<HTMLCanvasElement | null>): void {
+  // A look changes the rings (pixel or smooth): size and paint again.
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const holder = box.current
     const surface = canvas.current
     const context = surface?.getContext("2d") ?? null
     if (holder === null || surface === null || context === null) return
-    let size = { wArt: 0, hArt: 0 }
+    let size: { wArt: number; hArt: number; px: number; rings: ZoneRings } = { wArt: 0, hArt: 0, px: 1, rings: "pixel" }
     let painted: { frame: number; palette: ZoneGroundPalette | undefined; wArt: number } = { frame: -1, palette: undefined, wArt: 0 }
     const resize = () => {
       const px = zoneArtPxOf(holder)
       const wArt = Math.floor(holder.clientWidth / px)
       const hArt = Math.floor(holder.clientHeight / px)
-      if (wArt === size.wArt && hArt === size.hArt) return
-      size = { wArt, hArt }
-      surface.width = wArt
-      surface.height = hArt
+      const { rings } = zoneDrawingOf(holder)
+      if (wArt === size.wArt && hArt === size.hArt && px === size.px && rings === size.rings) return
+      size = { wArt, hArt, px, rings }
+      // Pixel rings: one canvas pixel an art px. Smooth rings: one a CSS px.
+      const scale = rings === "smooth" ? px : 1
+      surface.width = wArt * scale
+      surface.height = hArt * scale
       surface.style.setProperty("--zone-ground-w", `${wArt * px}px`)
       surface.style.setProperty("--zone-ground-h", `${hArt * px}px`)
       painted = { frame: -1, palette: undefined, wArt: 0 }
@@ -66,7 +76,8 @@ export function useZoneGround(box: RefObject<HTMLElement | null>, canvas: RefObj
       const palette = zoneGroundPalette(surface)
       const frame = zoneGroundFrame(t, palette.fps)
       if (frame === painted.frame && samePalette(painted.palette, palette) && painted.wArt === size.wArt) return
-      renderZoneGround(context, frame, palette, size.wArt, size.hArt)
+      if (size.rings === "smooth") renderZoneGroundSmooth(context, frame, palette, size.wArt, size.hArt, size.px)
+      else renderZoneGround(context, frame, palette, size.wArt, size.hArt)
       painted = { frame, palette, wArt: size.wArt }
     }
     resize()
@@ -82,5 +93,5 @@ export function useZoneGround(box: RefObject<HTMLElement | null>, canvas: RefObj
       clock.stop()
       observer?.disconnect()
     }
-  }, [box, canvas])
+  }, [box, canvas, look])
 }

@@ -239,7 +239,7 @@ export function ZoneGames(props: ZoneGamesProps) {
   useZoneMoment(sheet, {
     key: opts === undefined ? undefined : "open",
     duration: ZONE_SHEET_MS,
-    frame: (t, size) => ({ "--zone-games-sheet-x": zoneSheetFrame(t, size.wArt) }),
+    frame: (t, size) => ({ "--zone-games-sheet-x": zoneSheetFrame(t, size.wArt, size.drawing.motion) }),
   })
   // True while the page itself moves DOM focus to where the props say it is:
   // that move is not news, and reporting it would wake idle.

@@ -1,12 +1,34 @@
 // Development only: `bun run caliper` shows Zone's parts at true device size.
 // The portal builds Zone from source with its own Vite config, not this one.
 import { caliper } from "@simonwjackson/caliper"
-import { defineConfig } from "vite"
+import { defineConfig, type Plugin } from "vite"
+
+const LOOKS = ["modern", "blend", "retro"] as const
+
+/**
+ * The look every Caliper frame shows: `ZONE_LOOK=modern bun run caliper`
+ * (or blend, retro; Blend, Zone's default, without it). The frame names it
+ * on `<html>` before any part runs, so a part drawn alone (an atom, a page)
+ * is drawn in that look, as the product's root `data-look` draws it
+ * (src/fixtures/fixture-look.ts). Development only, as this file is.
+ */
+function zoneFrameLook(): Plugin {
+  const asked = process.env.ZONE_LOOK ?? "blend"
+  const look = LOOKS.find(id => id === asked)
+  if (look === undefined) throw new Error(`ZONE_LOOK must be one of ${LOOKS.join(", ")}; got ${asked}`)
+  return {
+    name: "zone-frame-look",
+    apply: "serve",
+    transformIndexHtml: () => [
+      { tag: "script", injectTo: "head-prepend", children: `document.documentElement.dataset.look = ${JSON.stringify(look)}` },
+    ],
+  }
+}
 
 export default defineConfig({
   // Zone targets the handhelds and the two sizes the mockup was proven at:
   // 640x480 (the RG353M) and 1280x720 (a 720p screen).
-  plugins: [caliper({
+  plugins: [zoneFrameLook(), caliper({
     devices: ["rg353m", {
       id: "screen-720p",
       name: "720p screen",

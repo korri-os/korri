@@ -15,9 +15,11 @@
 import { useLayoutEffect, type RefObject } from "react"
 import { zoneDialogWedgeArt } from "./plan/dialog"
 import { zoneStairWedge } from "./plan/stair-clip"
+import { useZoneLookKey, zoneDrawingOf } from "./use-zone-look"
 import { zoneArtPxOf } from "./use-zone-plan"
 
 export function useZoneDialogShape(panel: RefObject<HTMLElement | null>): void {
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const element = panel.current
     if (element === null) return
@@ -25,8 +27,9 @@ export function useZoneDialogShape(panel: RefObject<HTMLElement | null>): void {
       if (!(width > 0) || !(height > 0)) return
       const px = zoneArtPxOf(element)
       const leg = zoneDialogWedgeArt(Math.round(width / px), Math.round(height / px))
-      element.style.setProperty("--zone-dialog-wedge-start-shape", zoneStairWedge(leg, "top-left"))
-      element.style.setProperty("--zone-dialog-wedge-end-shape", zoneStairWedge(leg, "bottom-right"))
+      const { edges } = zoneDrawingOf(element)
+      element.style.setProperty("--zone-dialog-wedge-start-shape", zoneStairWedge(leg, "top-left", edges))
+      element.style.setProperty("--zone-dialog-wedge-end-shape", zoneStairWedge(leg, "bottom-right", edges))
     }
     apply(element.offsetWidth, element.offsetHeight)
     if (typeof ResizeObserver === "undefined") return
@@ -38,5 +41,5 @@ export function useZoneDialogShape(panel: RefObject<HTMLElement | null>): void {
     })
     observer.observe(element)
     return () => observer.disconnect()
-  }, [panel])
+  }, [panel, look])
 }

@@ -20,7 +20,13 @@
  *  - `point`      `<` on the left, `>` on the right: the end moves out one
  *                 art px a row to the middle row, then back in. The
  *                 banner's two points.
+ *
+ * Every helper takes the look's edges (src/plan/look.ts): `stairs` draws
+ * the stair above (Blend, Retro); `smooth` draws the same shape with each
+ * slanted run as one straight line between the stair's first and last
+ * rows (Modern), so a look changes the edge and never the box.
  */
+import type { ZoneEdges } from "./look"
 
 export type ZoneStairEdge = "straight" | "slash" | "backslash" | "point"
 
@@ -70,6 +76,35 @@ function polygonOfRows(rows: readonly (readonly [left: Length, right: Length])[]
   return `polygon(${kept.map(([x, y]) => `${css(x)} ${css(y)}`).join(", ")})`
 }
 
+/**
+ * The smooth outline round the same rows: down the left ends, up the right
+ * ends, one point where a side starts and ends and one at each row where
+ * its run turns (a point's tip), so each slanted run is one straight line.
+ */
+function smoothOfRows(rows: readonly (readonly [left: Length, right: Length])[], top: (row: number) => Length): string {
+  const last = rows.length - 1
+  const turns = (side: 0 | 1): number[] => {
+    const at: number[] = []
+    for (let row = 1; row < last; row += 1) {
+      const before = rows[row]![side].art - rows[row - 1]![side].art
+      const after = rows[row + 1]![side].art - rows[row]![side].art
+      if (before !== after) at.push(row)
+    }
+    return at
+  }
+  const middle = (row: number): Length => ({ from: "start", art: row + 0.5 })
+  const points: Point[] = [[rows[0]![0], top(0)]]
+  for (const row of turns(0)) points.push([rows[row]![0], middle(row)])
+  points.push([rows[last]![0], top(last + 1)], [rows[last]![1], top(last + 1)])
+  for (const row of turns(1).reverse()) points.push([rows[row]![1], middle(row)])
+  points.push([rows[0]![1], top(0)])
+  const kept = points.filter((point, index) => {
+    const before = points[(index - 1 + points.length) % points.length]!
+    return !(same(before[0], point[0]) && same(before[1], point[1]))
+  })
+  return `polygon(${kept.map(([x, y]) => `${css(x)} ${css(y)}`).join(", ")})`
+}
+
 /** Row `row` of `rows`, from the top, as a length from the top; the last row ends at 100%. */
 const fromTop = (rows: number) => (row: number): Length => (row >= rows ? end(0) : start(row))
 
@@ -84,6 +119,7 @@ export function zoneStairClip(
   wArt: number,
   hArt: number,
   edges: { readonly left?: ZoneStairEdge; readonly right?: ZoneStairEdge } = {},
+  drawn: ZoneEdges = "stairs",
 ): string {
   const left = edges.left ?? "slash"
   const right = edges.right ?? "slash"
@@ -111,7 +147,7 @@ export function zoneStairClip(
     }
   }
   const stack = Array.from({ length: rows }, (_, row) => [leftAt(row), rightAt(row)] as const)
-  return polygonOfRows(stack, fromTop(rows))
+  return drawn === "smooth" ? smoothOfRows(stack, fromTop(rows)) : polygonOfRows(stack, fromTop(rows))
 }
 
 /** A box corner a wedge stands in. */
@@ -122,10 +158,17 @@ export type ZoneStairCorner = "top-left" | "top-right" | "bottom-left" | "bottom
  * corner of its box, its long edge a 45 degree stair: the dialog's black
  * wedges and PAUSED's wedge cut.
  */
-export function zoneStairWedge(sizeArt: number, corner: ZoneStairCorner): string {
+export function zoneStairWedge(sizeArt: number, corner: ZoneStairCorner, drawn: ZoneEdges = "stairs"): string {
   const size = Math.max(1, Math.round(sizeArt))
   const top = corner.startsWith("top")
   const leftSide = corner.endsWith("left")
+  if (drawn === "smooth") {
+    // The right-angled triangle itself: its two legs along the box's edges.
+    const x = (art: number): Length => (leftSide ? start(art) : end(art))
+    const y = (art: number): Length => (top ? start(art) : end(art))
+    const corners: Point[] = [[x(0), y(0)], [x(size), y(0)], [x(0), y(size)]]
+    return `polygon(${corners.map(([px, py]) => `${css(px)} ${css(py)}`).join(", ")})`
+  }
   // Row 0 is the row on the box's edge, which is the wedge's full width.
   const width = (row: number) => size - row
   const rows = Array.from({ length: size }, (_, row) => {
@@ -141,7 +184,8 @@ export function zoneStairWedge(sizeArt: number, corner: ZoneStairCorner): string
  * own box: a box that many art px square draws every stair on an art px.
  * Each row spans the pixels whose centres fall inside the circle.
  */
-export function zoneStairCircle(diameterArt: number): string {
+export function zoneStairCircle(diameterArt: number, drawn: ZoneEdges = "stairs"): string {
+  if (drawn === "smooth") return "circle(50%)"
   const d = Math.max(1, Math.round(diameterArt))
   const r = d / 2
   const share = (n: number): string => (n === 0 ? "0" : n === d ? "100%" : `${Number(((n / d) * 100).toFixed(4))}%`)

@@ -12,12 +12,14 @@
  */
 import { useLayoutEffect, type RefObject } from "react"
 import { zoneSlabCut, zoneStairChamfer } from "./plan/slab"
+import { useZoneLookKey, zoneDrawingOf } from "./use-zone-look"
 import { zoneArtPxOf } from "./use-zone-plan"
 
 /** One line of words, in ems of the slab's font size. */
 export const ZONE_SLAB_LINE_EM = 1.4
 
 export function useZoneSlabShape(slab: RefObject<HTMLElement | null>): void {
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const element = slab.current
     if (element === null) return
@@ -27,7 +29,7 @@ export function useZoneSlabShape(slab: RefObject<HTMLElement | null>): void {
       const font = Number.parseFloat(getComputedStyle(element).fontSize) || 0
       const hArt = Math.round(height / px)
       const cut = zoneSlabCut(hArt, (font * ZONE_SLAB_LINE_EM) / px)
-      element.style.setProperty("--zone-panel-shape", zoneStairChamfer(hArt, cut))
+      element.style.setProperty("--zone-panel-shape", zoneStairChamfer(hArt, cut, zoneDrawingOf(element).edges))
     }
     apply(element.offsetHeight)
     if (typeof ResizeObserver === "undefined") return
@@ -36,5 +38,5 @@ export function useZoneSlabShape(slab: RefObject<HTMLElement | null>): void {
     })
     observer.observe(element)
     return () => observer.disconnect()
-  }, [slab])
+  }, [slab, look])
 }

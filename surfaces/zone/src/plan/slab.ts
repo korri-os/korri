@@ -11,6 +11,7 @@
  * is then a panel with its two leading corners cut, never a wider and
  * wider rhombus.
  */
+import type { ZoneEdges } from "./look"
 
 /** The busy strip's deepest corner cut, art px: about one caps-2 kicker line. */
 export const ZONE_BUSY_CUT = 22
@@ -33,11 +34,16 @@ const far = (art: number): string => (art === 0 ? "100%" : `calc(100% - ${art} *
  * bottom-right corners are cut `cutArt` deep at 45 degrees. Lengths on the
  * far side are written from 100%, so the shape follows its box's width; the
  * last row ends at 100% of the height, so a box a fraction taller still
- * closes.
+ * closes. Smooth (Modern), each cut is one straight line.
  */
-export function zoneStairChamfer(hArt: number, cutArt: number): string {
+export function zoneStairChamfer(hArt: number, cutArt: number, drawn: ZoneEdges = "stairs"): string {
   const rows = Math.max(1, Math.round(hArt))
   const cut = Math.max(0, Math.min(rows, Math.round(cutArt)))
+  if (drawn === "smooth") {
+    // The same two corners cut by one straight 45 degree line each.
+    const fromBottom = (art: number) => (art === 0 ? "100%" : `calc(100% - ${art} * var(--zone-px))`)
+    return `polygon(${near(cut)} 0, 100% 0, 100% ${fromBottom(cut)}, ${far(cut)} 100%, 0 100%, 0 ${near(cut)})`
+  }
   const left = (row: number) => (row < cut ? cut - 1 - row : 0)
   const right = (row: number) => (row >= rows - cut ? row - (rows - cut) : 0)
   const y = (row: number) => (row >= rows ? "100%" : near(row))

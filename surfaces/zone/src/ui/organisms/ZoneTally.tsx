@@ -66,9 +66,9 @@ export function ZoneTally({
     frame: (t, size) => {
       const at = counted || leaving ? end : t
       return {
-        "--zone-tally-out": leaving ? zoneTallyOutFrame(t, size.hArt) : 0,
+        "--zone-tally-out": leaving ? zoneTallyOutFrame(t, size.hArt, size.drawing.motion) : 0,
         ...Object.assign({}, ...rows.map((row, index) => {
-          const frame = zoneTallyRowFrame(at, index)
+          const frame = zoneTallyRowFrame(at, index, size.drawing.motion)
           return {
             [`--zone-tally-row-${index}-x`]: frame.x,
             [`--zone-tally-row-${index}-shown`]: frame.shown ? "visible" : "hidden",

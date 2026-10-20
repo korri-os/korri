@@ -11,16 +11,18 @@
  */
 import { useLayoutEffect, type RefObject } from "react"
 import { zoneBusyCut, zoneStairChamfer } from "./plan/slab"
+import { useZoneLookKey, zoneDrawingOf } from "./use-zone-look"
 import { zoneArtPxOf } from "./use-zone-plan"
 
 export function useZoneBusyShape(panel: RefObject<HTMLElement | null>): void {
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const element = panel.current
     if (element === null) return
     const apply = (height: number) => {
       if (!(height > 0)) return
       const hArt = Math.round(height / zoneArtPxOf(element))
-      element.style.setProperty("--zone-busy-strip-shape", zoneStairChamfer(hArt, zoneBusyCut(hArt)))
+      element.style.setProperty("--zone-busy-strip-shape", zoneStairChamfer(hArt, zoneBusyCut(hArt), zoneDrawingOf(element).edges))
     }
     apply(element.offsetHeight)
     if (typeof ResizeObserver === "undefined") return
@@ -29,5 +31,5 @@ export function useZoneBusyShape(panel: RefObject<HTMLElement | null>): void {
     })
     observer.observe(element)
     return () => observer.disconnect()
-  }, [panel])
+  }, [panel, look])
 }

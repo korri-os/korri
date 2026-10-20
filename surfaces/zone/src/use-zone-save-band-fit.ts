@@ -12,6 +12,7 @@
 import { useLayoutEffect, type RefObject } from "react"
 import { zoneFitSteps } from "./use-zone-fit"
 import { zoneArtPxOf } from "./use-zone-plan"
+import { useZoneLookKey } from "./use-zone-look"
 
 const HEADING = ".zone-save-card-heading"
 
@@ -44,6 +45,8 @@ export function useZoneSaveBandFit(
   track: RefObject<HTMLElement | null>,
   key: string,
 ): void {
+  // A look changes the faces: measure again in the one now drawn.
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const fit = () => {
       if (track.current !== null) fitZoneSaveBand(track.current)
@@ -54,5 +57,5 @@ export function useZoneSaveBandFit(
     const observer = new ResizeObserver(fit)
     observer.observe(element)
     return () => observer.disconnect()
-  }, [box, track, key])
+  }, [box, track, key, look])
 }

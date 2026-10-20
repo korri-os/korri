@@ -23,6 +23,8 @@
  *
  * Reduced motion shows the end state: the caller does not animate.
  */
+import type { ZoneMotionGrid } from "./look"
+
 
 /** A wedge's leg as a share of the panel's height... */
 export const ZONE_DIALOG_WEDGE_SHARE = 0.78
@@ -67,14 +69,34 @@ export function zoneDialogFrame(t: number, wArt: number, phase: ZoneDialogPhase)
   return { scaleY: share, wedgeArt: Math.round((1 - share) * Math.max(0, wArt)) }
 }
 
+/**
+ * The easing between two keyframes: each step held to the next on the art
+ * grid; in Modern the open decelerates in and the close accelerates out,
+ * M2's landing and leaving curves.
+ */
+export function zoneDialogEasing(phase: ZoneDialogPhase, grid: ZoneMotionGrid = "art"): string {
+  if (grid === "art") return "steps(1, end)"
+  return phase === "open" ? "cubic-bezier(0.2, 0.8, 0.2, 1)" : "cubic-bezier(0.5, 0, 0.9, 0.4)"
+}
+
 export interface ZoneDialogKeyframe {
   readonly offset: number
   readonly scaleY: number
   readonly wedgeArt: number
 }
 
-/** The frames at each step boundary, 0 to 1, for an animation of zoneDialogDuration(phase). */
-export function zoneDialogKeyframes(wArt: number, phase: ZoneDialogPhase): readonly ZoneDialogKeyframe[] {
+/**
+ * The frames at each step boundary, 0 to 1, for an animation of
+ * zoneDialogDuration(phase). Off the art grid (Modern) there are no steps:
+ * the two ends, eased between by `zoneDialogEasing`, the wedges anywhere.
+ */
+export function zoneDialogKeyframes(wArt: number, phase: ZoneDialogPhase, grid: ZoneMotionGrid = "art"): readonly ZoneDialogKeyframe[] {
+  if (grid === "free") {
+    const width = Math.max(0, wArt)
+    const shut = { scaleY: 0, wedgeArt: width }
+    const open = { scaleY: 1, wedgeArt: 0 }
+    return phase === "open" ? [{ offset: 0, ...shut }, { offset: 1, ...open }] : [{ offset: 0, ...open }, { offset: 1, ...shut }]
+  }
   const duration = zoneDialogDuration(phase)
   return Array.from({ length: ZONE_DIALOG_STEPS + 1 }, (_, index) => {
     const offset = index / ZONE_DIALOG_STEPS

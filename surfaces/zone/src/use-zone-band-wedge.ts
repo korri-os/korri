@@ -14,6 +14,7 @@
 import { useLayoutEffect, type RefObject } from "react"
 import { zoneDialogWedgeArt } from "./plan/dialog"
 import { zoneStairWedge } from "./plan/stair-clip"
+import { useZoneLookKey, zoneDrawingOf } from "./use-zone-look"
 import { zoneArtPxOf } from "./use-zone-plan"
 
 export function applyZoneBandWedge(band: HTMLElement): void {
@@ -23,10 +24,11 @@ export function applyZoneBandWedge(band: HTMLElement): void {
   const px = zoneArtPxOf(band)
   const leg = zoneDialogWedgeArt(Math.floor(width / px), Math.floor(height / px))
   band.style.setProperty("--zone-band-wedge-leg", String(leg))
-  band.style.setProperty("--zone-band-wedge-shape", zoneStairWedge(leg, "bottom-left"))
+  band.style.setProperty("--zone-band-wedge-shape", zoneStairWedge(leg, "bottom-left", zoneDrawingOf(band).edges))
 }
 
 export function useZoneBandWedge(band: RefObject<HTMLElement | null>): void {
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const element = band.current
     if (element === null) return
@@ -35,5 +37,5 @@ export function useZoneBandWedge(band: RefObject<HTMLElement | null>): void {
     const observer = new ResizeObserver(() => applyZoneBandWedge(element))
     observer.observe(element)
     return () => observer.disconnect()
-  }, [band])
+  }, [band, look])
 }

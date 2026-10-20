@@ -100,3 +100,14 @@
     100% 0
   );
 }
+
+/* Modern: the tail's end is one smooth 45 degree line. */
+[data-look="modern"] .zone-keycap-word {
+  clip-path: polygon(
+    0 0,
+    0 100%,
+    calc(100% - 11 * var(--zone-px)) 100%,
+    calc(100% - 11 * var(--zone-px)) calc(11 * var(--zone-px)),
+    100% 0
+  );
+}

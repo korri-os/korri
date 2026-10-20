@@ -15,6 +15,7 @@
 import { useLayoutEffect, type RefObject } from "react"
 import { ZONE_KEYBOARD_STEPS, zoneKeyboardPanel, type ZoneKeyboardPlan } from "./plan/keyboard"
 import { zoneArtPxOf } from "./use-zone-plan"
+import { useZoneLookKey } from "./use-zone-look"
 
 export const ZONE_KEYBOARD_PLANNED = [
   "--zone-kb-key-h",
@@ -59,6 +60,8 @@ export function fitZoneKeyboard(panel: HTMLElement): void {
 }
 
 export function useZoneKeyboardFit(panel: RefObject<HTMLElement | null>, on = true): void {
+  // A look changes the faces: measure again in the one now drawn.
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const element = panel.current
     if (element === null) return
@@ -85,5 +88,5 @@ export function useZoneKeyboardFit(panel: RefObject<HTMLElement | null>, on = tr
       live = false
       observer.disconnect()
     }
-  }, [panel, on])
+  }, [panel, on, look])
 }

@@ -14,6 +14,11 @@
  * organism hands it a canvas `wArt` by `hArt` that CSS scales by whole
  * `--zone-px` with `image-rendering: pixelated`; the tests hand it a
  * recorder.
+ *
+ * The Modern look (src/plan/look.ts, rings "smooth") draws the same rings
+ * and dots with `renderZoneGroundSmooth`: antialiased arcs on a canvas of
+ * CSS px, `scale` CSS px an art px, each dot where its orbit puts it,
+ * never rounded to an art px.
  */
 
 export interface ZoneGroundPalette {
@@ -102,10 +107,18 @@ function fillRing(paint: ZoneGroundPainter, cx: number, cy: number, outer: numbe
   }
 }
 
-/** Where a dot stands at time `t`: on its ring's centre line, on a whole art px. */
-export function zoneGroundDot(ring: Ring, dot: Ring["dots"][number], t: number, drift: number): { readonly x: number; readonly y: number } {
+/** Where a dot stands at time `t`: on its ring's centre line, on a whole art px (or anywhere, `whole` false). */
+export function zoneGroundDot(
+  ring: Ring,
+  dot: Ring["dots"][number],
+  t: number,
+  drift: number,
+  whole = true,
+): { readonly x: number; readonly y: number } {
   const angle = (dot.phase + (ring.turn * t) / Math.max(1, drift)) * Math.PI * 2
-  return { x: Math.round(ring.cx + ring.r * Math.cos(angle)), y: Math.round(ring.cy + ring.r * Math.sin(angle)) }
+  const x = ring.cx + ring.r * Math.cos(angle)
+  const y = ring.cy + ring.r * Math.sin(angle)
+  return whole ? { x: Math.round(x), y: Math.round(y) } : { x, y }
 }
 
 /**
@@ -125,6 +138,51 @@ export function renderZoneGround(paint: ZoneGroundPainter, t: number, palette: Z
     for (const dot of ring.dots) {
       const at = zoneGroundDot(ring, dot, frame, drift)
       fillRing(paint, at.x + 0.5, at.y + 0.5, dot.r, 0, hArt)
+    }
+  }
+}
+
+/** What a smooth ground paints with: a canvas's paths, in art px after `setTransform`. */
+export interface ZoneGroundSmoothPainter extends ZoneGroundPainter {
+  setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void
+  beginPath(): void
+  arc(x: number, y: number, radius: number, startAngle: number, endAngle: number, counterclockwise?: boolean): void
+  fill(fillRule?: "nonzero" | "evenodd"): void
+}
+
+/**
+ * The Modern ground at time `t` (ms): the same flat ground, ring B, ring A
+ * and their dots as `renderZoneGround`, drawn as antialiased arcs on a
+ * canvas `scale` px an art px, the dots gliding between frames instead of
+ * standing on whole art px.
+ */
+export function renderZoneGroundSmooth(
+  paint: ZoneGroundSmoothPainter,
+  t: number,
+  palette: ZoneGroundPalette,
+  wArt: number,
+  hArt: number,
+  scale: number,
+): void {
+  paint.setTransform(scale, 0, 0, scale, 0, 0)
+  paint.fillStyle = palette.ground
+  paint.fillRect(0, 0, wArt, hArt)
+  if (!palette.rings || wArt <= 0 || hArt <= 0) return
+  const frame = zoneGroundFrame(t, palette.fps)
+  const { a, b } = zoneGroundRings(wArt, hArt)
+  const half = ZONE_RING_THICKNESS / 2
+  const turn = Math.PI * 2
+  for (const [ring, colour, drift] of [[b, palette.ringB, palette.driftB], [a, palette.ringA, palette.driftA]] as const) {
+    paint.fillStyle = colour
+    paint.beginPath()
+    paint.arc(ring.cx, ring.cy, ring.r + half, 0, turn)
+    paint.arc(ring.cx, ring.cy, Math.max(0, ring.r - half), 0, turn, true)
+    paint.fill("evenodd")
+    for (const dot of ring.dots) {
+      const at = zoneGroundDot(ring, dot, frame, drift, false)
+      paint.beginPath()
+      paint.arc(at.x + 0.5, at.y + 0.5, dot.r, 0, turn)
+      paint.fill()
     }
   }
 }

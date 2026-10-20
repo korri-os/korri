@@ -13,6 +13,7 @@
  */
 import { useLayoutEffect, type RefObject } from "react"
 import { zoneStairClip, type ZoneStairEdge } from "./plan/stair-clip"
+import { useZoneLookKey, zoneDrawingOf } from "./use-zone-look"
 import { zoneArtPxOf } from "./use-zone-plan"
 
 export function applyZoneStairClip(
@@ -25,7 +26,7 @@ export function applyZoneStairClip(
   const px = zoneArtPxOf(element)
   const wArt = Math.round(width / px)
   const hArt = Math.round(height / px)
-  element.style.setProperty("--zone-panel-shape", zoneStairClip(wArt, hArt, edges))
+  element.style.setProperty("--zone-panel-shape", zoneStairClip(wArt, hArt, edges, zoneDrawingOf(element).edges))
   element.style.setProperty("--zone-panel-run", `calc(${Math.max(0, hArt - 1)} * var(--zone-px))`)
   element.style.setProperty("--zone-panel-point", `calc(${Math.max(0, Math.floor((hArt - 1) / 2))} * var(--zone-px))`)
 }
@@ -35,6 +36,7 @@ export function useZoneStairClip(
   edges: { readonly left?: ZoneStairEdge; readonly right?: ZoneStairEdge } = {},
 ): void {
   const { left, right } = edges
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const element = box.current
     if (element === null) return
@@ -49,5 +51,5 @@ export function useZoneStairClip(
     })
     observer.observe(element)
     return () => observer.disconnect()
-  }, [box, left, right])
+  }, [box, left, right, look])
 }

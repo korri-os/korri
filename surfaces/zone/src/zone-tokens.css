@@ -1249,3 +1249,55 @@
   /** DONE's label. Art px. @label Key label DONE @min 8 @max 80 @step 1 */
   --zone-key-label-done: 28;
 }
+
+/* ---- the looks ----
+ * Three looks on one axis, from modern to retro (src/plan/look.ts). The
+ * root wears one as `data-look`; a Caliper frame names it on `<html>`
+ * (vite.config.ts), so each block also matches a theme under a marked
+ * ancestor. The blocks above are Retro, the pixel refinement exactly as it
+ * stood: Retro adds only its name. Blend sets Korri's facts in Anton.
+ * Modern also sets Zone's own words in Anton with a flat face (the ring and
+ * drop stay), and switches what the stylesheets draw smooth: a see-through
+ * veil, eased nudges, sub-pixel travel, round discs. Layout sizes never
+ * change: every face is sized to the cap of the pixel face it stands in
+ * (zone-fonts.css). Blocks are keyed by the attribute alone, so a look
+ * never changes a ground's palette. */
+.zone-theme[data-look="retro"],
+[data-look="retro"] .zone-theme {
+  /** The look, for the hooks that draw in TypeScript (use-zone-look.ts). @label Look */
+  --zone-look: retro;
+}
+
+.zone-theme[data-look="blend"],
+[data-look="blend"] .zone-theme {
+  /** The look, for the hooks that draw in TypeScript (use-zone-look.ts). @label Look */
+  --zone-look: blend;
+  /** Korri's facts and sentences, in their own case: Anton sized to Jersey 10's cap, then Jersey 10. @label Fact face */
+  --zone-font-fact: "Zone Anton Fact", "Zone Jersey 10", sans-serif;
+}
+
+.zone-theme[data-look="modern"],
+[data-look="modern"] .zone-theme {
+  /** The look, for the hooks that draw in TypeScript (use-zone-look.ts). @label Look */
+  --zone-look: modern;
+  /** Zone's own words: Anton caps sized to Zone Caps' cap, then Zone Caps for a glyph Anton lacks. @label Face */
+  --zone-font: "Zone Anton Caps", "Zone Caps", "Zone Jersey 10", sans-serif;
+  /** Korri's facts and sentences, in their own case: Anton sized to Jersey 10's cap, then Jersey 10. @label Fact face */
+  --zone-font-fact: "Zone Anton Fact", "Zone Jersey 10", sans-serif;
+  /** The white ink's face is flat: its lower rows are its face. @label White ink shade */
+  --zone-ink-white-shade: var(--zone-white);
+  /** The danger ink's face is flat. @label Danger ink shade */
+  --zone-ink-danger-shade: var(--zone-danger);
+  /** The veil under a dialog: black, see-through (the only see-through in Zone, and only in this look). @label Veil, see-through @min 0.3 @max 0.8 @step 0.05 */
+  --zone-veil-see-through: 0.5;
+  /** The ground's dots glide: as many frames as the screen gives, near enough. @label Ground fps @min 15 @max 60 @step 1 */
+  --zone-ground-fps: 60;
+  /** The cursor triangles breathe eased, not in two steps. @label Nudge easing */
+  --zone-nudge-easing: ease-in-out;
+  /** Moving things stand anywhere: the band's travel rounds to a layout unit, not an art px. @label Motion snap */
+  --zone-motion-snap: 0.015625px;
+  /** The keycap's rim: a round disc. @label Keycap rim shape */
+  --zone-keycap-rim-shape: circle(50%);
+  /** The disc inside the rim: round. @label Keycap disc shape */
+  --zone-keycap-disc-shape: circle(50%);
+}

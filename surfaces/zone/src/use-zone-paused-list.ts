@@ -23,6 +23,7 @@
 import { useLayoutEffect, type RefObject } from "react"
 import { zonePausedGaps, zonePausedScroll, type ZonePausedSpan } from "./plan/paused"
 import { zoneArtPxOf } from "./use-zone-plan"
+import { useZoneLookKey } from "./use-zone-look"
 
 const ROWS = ".zone-paused-control, .zone-paused-group-label"
 const FOCUSED = ".zone-paused-control[data-focused]"
@@ -64,6 +65,8 @@ export function useZonePausedList(
   rows: RefObject<HTMLElement | null>,
   key: string,
 ): void {
+  // A look changes the faces: measure again in the one now drawn.
+  const look = useZoneLookKey()
   useLayoutEffect(() => {
     const box = page.current
     const scroller = list.current
@@ -75,5 +78,5 @@ export function useZonePausedList(
     observer.observe(box)
     observer.observe(content)
     return () => observer.disconnect()
-  }, [page, list, rows, key])
+  }, [page, list, rows, key, look])
 }

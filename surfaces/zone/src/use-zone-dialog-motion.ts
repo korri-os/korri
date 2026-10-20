@@ -19,7 +19,8 @@
  * width to travel.
  */
 import { useLayoutEffect, type RefObject } from "react"
-import { zoneDialogDuration, zoneDialogKeyframes, type ZoneDialogPhase } from "./plan/dialog"
+import { zoneDialogDuration, zoneDialogEasing, zoneDialogKeyframes, type ZoneDialogPhase } from "./plan/dialog"
+import { zoneDrawingOf } from "./use-zone-look"
 import { zoneArtPxOf } from "./use-zone-plan"
 
 const stillMotion = (): boolean =>
@@ -31,9 +32,10 @@ export function playZoneDialog(panel: HTMLElement, phase: ZoneDialogPhase): read
   const width = panel.getBoundingClientRect().width
   if (!(width > 0)) return []
   const px = zoneArtPxOf(panel)
-  const frames = zoneDialogKeyframes(Math.round(width / px), phase)
+  const { motion } = zoneDrawingOf(panel)
+  const frames = zoneDialogKeyframes(Math.round(width / px), phase, motion)
   const timing = { duration: zoneDialogDuration(phase), fill: "both" as const }
-  const held = { easing: "steps(1, end)" }
+  const held = { easing: zoneDialogEasing(phase, motion) }
   const played = [
     panel.animate(frames.map(frame => ({ ...held, offset: frame.offset, scale: `1 ${frame.scaleY}` })), timing),
   ]

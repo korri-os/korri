@@ -324,7 +324,22 @@ describe("no see-through", () => {
    * whole: a keyframe list whose last frame is `opacity: 1`, or a rule
    * under `prefers-reduced-motion`. A `var()` is not read, so it is not
    * allowed either.
+   *
+   * One exception, named here and nowhere else: the Modern look's veil
+   * under a dialog is a see-through black (src/plan/look.ts, "dimming
+   * behind dialogs"). Only the rule `[data-look="modern"] .zone-veil` in
+   * ZoneVeil.css may set an opacity, and only to its token. Blend and
+   * Retro keep the dither, so the same opacity under any other selector,
+   * in any other file, or as any other value still fails.
    */
+  const SEE_THROUGH = {
+    file: join(SRC, "ui", "atoms", "ZoneVeil.css"),
+    selector: '[data-look="modern"] .zone-veil',
+    value: "var(--zone-veil-see-through)",
+  } as const
+  const allowed = (entry: Opacity): boolean =>
+    entry.file === SEE_THROUGH.file && entry.within.length === 1
+    && entry.within[0] === SEE_THROUGH.selector && entry.value === SEE_THROUGH.value
   interface Opacity {
     readonly file: string
     readonly value: string
@@ -361,6 +376,7 @@ describe("no see-through", () => {
     const all = opacities(file, text)
     return all.flatMap((entry) => {
       if (entry.value === "1") return []
+      if (allowed(entry)) return []
       if (entry.within.some((prelude) => /^@media\b.*prefers-reduced-motion/.test(prelude))) return []
       const keyframes = entry.within.findIndex((prelude) => prelude.startsWith("@keyframes"))
       if (keyframes >= 0) {
@@ -385,6 +401,27 @@ describe("no see-through", () => {
     expect(seeThrough(at, "@keyframes in { from { opacity: 0; } to { opacity: 1; } }")).toEqual([])
     expect(seeThrough(at, "@media (prefers-reduced-motion: reduce) { .a { opacity: 0.5; } }")).toEqual([])
     expect(seeThrough(at, ".a { opacity: 1; }")).toEqual([])
+  })
+
+  test("the one see-through is Modern's veil: Retro, Blend, a bare veil and any other file still fail", () => {
+    const veil = SEE_THROUGH.file
+    const rule = (selector: string, value = SEE_THROUGH.value) => `${selector} { opacity: ${value}; }`
+    expect(seeThrough(veil, rule(SEE_THROUGH.selector))).toEqual([])
+    expect(seeThrough(veil, rule('[data-look="retro"] .zone-veil'))).toHaveLength(1)
+    expect(seeThrough(veil, rule('[data-look="blend"] .zone-veil'))).toHaveLength(1)
+    expect(seeThrough(veil, rule(".zone-veil"))).toHaveLength(1)
+    expect(seeThrough(veil, rule(SEE_THROUGH.selector, "0.5"))).toHaveLength(1)
+    expect(seeThrough(veil, rule('[data-look="modern"] .zone-veil-other'))).toHaveLength(1)
+    expect(seeThrough(veil, `@media (min-width: 1px) { ${rule(SEE_THROUGH.selector)} }`)).toHaveLength(1)
+    expect(seeThrough(join(SRC, "ui", "atoms", "ZoneButton.css"), rule(SEE_THROUGH.selector))).toHaveLength(1)
+  })
+
+  test("Retro's stylesheets set no opacity at all: the exception is Modern's rule alone", () => {
+    const found = cssFiles.flatMap((file) => opacities(file, read(file)))
+      .filter((entry) => entry.value !== "1" && !entry.within.some((prelude) => /prefers-reduced-motion|@keyframes/.test(prelude)))
+    expect(found.map((entry) => `${rel(entry.file)} ${entry.within.join(" > ")}`)).toEqual([
+      `${rel(SEE_THROUGH.file)} ${SEE_THROUGH.selector}`,
+    ])
   })
 })
 

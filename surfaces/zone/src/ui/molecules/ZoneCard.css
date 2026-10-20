@@ -127,14 +127,14 @@
 .zone-card-tri[data-side="left"] {
   right: 100%;
   margin-right: calc(var(--zone-nudge-near) * var(--zone-px));
-  animation: zone-nudge-left var(--zone-games-nudge-time) steps(2, jump-none) infinite;
+  animation: zone-nudge-left var(--zone-games-nudge-time) var(--zone-nudge-easing, steps(2, jump-none)) infinite;
 }
 
 .zone-card-tri[data-side="right"] {
   left: 100%;
   margin-left: calc(var(--zone-nudge-near) * var(--zone-px));
   scale: -1 1;
-  animation: zone-nudge-right var(--zone-games-nudge-time) steps(2, jump-none) infinite;
+  animation: zone-nudge-right var(--zone-games-nudge-time) var(--zone-nudge-easing, steps(2, jump-none)) infinite;
 }
 
 .zone-card[data-position="first"] .zone-card-tri[data-side="left"],
@@ -142,4 +142,10 @@
 .zone-card[data-position="only"] .zone-card-tri {
   background: var(--zone-inert-ink);
   animation: none;
+}
+
+/* Modern: the triangles breathe there and back, eased (the nudge's easing
+ * is the look's token). */
+[data-look="modern"] .zone-card-tri {
+  animation-direction: alternate;
 }

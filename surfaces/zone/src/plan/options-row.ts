@@ -12,6 +12,7 @@
  *  - A fact that does not fit is cut: a path in the middle, keeping its
  *    last segment whole for as long as it can, anything else at the end.
  */
+import type { ZoneEdges } from "./look"
 import { zoneStairClip, type ZoneStairEdge } from "./stair-clip"
 
 /** The band's inset on each side of the rows. Art px. Held equal to `--zone-options-band-inset`. */
@@ -45,9 +46,10 @@ export function zoneOptionClip(
   wArt: number,
   hArt: number,
   edges: { readonly left?: ZoneStairEdge; readonly right?: ZoneStairEdge } = {},
+  drawn: ZoneEdges = "stairs",
 ): string {
   const slanted = (edges.left === "straight" ? 0 : 1) + (edges.right === "straight" ? 0 : 1)
-  return zoneStairClip(Math.min(wArt, slanted * ZONE_OPTION_SLANT + 1), hArt, edges)
+  return zoneStairClip(Math.min(wArt, slanted * ZONE_OPTION_SLANT + 1), hArt, edges, drawn)
 }
 
 /** A fact that reads as a path ("/nix/store/…", "~/roms"): cut in its middle. */
