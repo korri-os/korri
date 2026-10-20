@@ -466,7 +466,29 @@ impl DiscoveryLifecycleCoordinator {
         self.snapshot()
     }
 
-    #[cfg(test)]
+    /// Paired sources as `device.yaml` holds them, with their roots.
+    pub fn source_views(
+        &self,
+    ) -> Result<Vec<crate::discovery::identify::SourceView>, DiscoveryError> {
+        self.reconciler.source_views()
+    }
+
+    pub fn seed_hash(
+        &self,
+        path: &Path,
+        rules: &[crate::plugin::HeaderRule],
+        sha256_hex: &str,
+        sha1_hex: &str,
+    ) -> Result<bool, DiscoveryError> {
+        self.reconciler.seed_hash(path, rules, sha256_hex, sha1_hex)
+    }
+
+    /// The published library and device documents, read fresh.
+    pub fn published(&self) -> Result<crate::config::ConfigSnapshot, DiscoveryError> {
+        self.reconciler.published()
+    }
+
+    /// Block until queued work has finished or `timeout` passes.
     pub fn wait_until_idle(&self, timeout: Duration) -> DiscoverySnapshot {
         let deadline = Instant::now() + timeout;
         loop {
