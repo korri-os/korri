@@ -44,7 +44,7 @@ export const cardTags = ({ system, places, resumable }: ZoneCardFacts): readonly
  * triangle with nothing beyond it dims.
  *
  * A native button: the host puts DOM focus on it and the card reports the
- * focus through `onFocus`. Its size comes from the band through
+ * focus through `onFocus`, and A (a click) through `onPress`. Its size comes from the band through
  * `--zone-card-h`; standing alone it takes the plan's focused height.
  */
 export function ZoneCard({
@@ -57,11 +57,14 @@ export function ZoneCard({
   position = "middle",
   size = "focus",
   onFocus,
+  onPress,
 }: ZoneCardFacts & {
   readonly focused?: boolean
   readonly position?: ZoneCardPosition
   readonly size?: ZoneCardSize
   readonly onFocus?: () => void
+  /** A on the card. */
+  readonly onPress?: () => void
 }) {
   const card = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLSpanElement>(null)
@@ -72,6 +75,7 @@ export function ZoneCard({
       data-focused={focused ? "true" : undefined}
       data-position={position}
       data-size={size}
+      onClick={onPress}
       onFocus={onFocus}
       ref={card}
       type="button"

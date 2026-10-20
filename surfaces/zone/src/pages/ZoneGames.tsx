@@ -302,6 +302,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                 <ZoneCardBand
                   cards={catalog._tag === "Ready" ? cards : []}
                   focusedIndex={focusedCard}
+                  onChoose={index => onEvent({ _tag: "ChoseCard", index })}
                   onFocus={index => report({ _tag: "FocusedCard", index })}
                   visible={band === "wide" ? 5 : 3}
                 />
