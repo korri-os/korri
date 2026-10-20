@@ -768,7 +768,7 @@ C23 OPTIONS WI-FI: a locked network's password keyboard, an open one at once, HI
 C24 PAUSED: Korri's title on the red band, controls then groups in the yellow wedge, toggle/choice/range on left and right, reasons, NO / YES, B back to the game — test: zone-navigation-acceptance "C24 overlay"
 C25 first boot: CONTROLLERS, WI-FI (OPTIONS' join keyboard for a locked network), NAME, IDENTITY's NEW SAVE and FINISH — test: zone-navigation-acceptance "C25 first boot"
 C26 the foot: TIME as Korri's clock, the device's name, the build string, on every tab — test: zone-navigation-acceptance "C26 clock and build"
-C27 idle: after 30 s the title card for the focused game, the next every 4 s, on GAMES only; any input wakes it — test: zone-navigation-acceptance "C27 idle"
+C27 idle: after 30 s the attract for the focused game (its title card, then its stage), the next every 6 s, on GAMES only; any input wakes it on the same card — test: zone-navigation-acceptance "C27 idle", "attract wakes to the same card"
 C28 options = GAME OPTS., menu = the tabs, system = OPTIONS' SYSTEM group; every tab by d-pad and A, home by B — test: zone-navigation-acceptance "C28 input actions"
 C29 the one slanted keyboard: a 40-character backup secret, capitals and symbols as layers — test: zone-navigation-acceptance "C29 text entry"
 C30 the pink edge and underline on whatever holds DOM focus, on every page and layer; reduced motion stops all motion — test: zone-navigation-acceptance "C30 focus and motion"
@@ -1034,3 +1034,129 @@ without asking. The four screen workers build on them.
 The games worker refined GAMES, GAME OPTS., FIND, the idle attract and the
 launch moments (REFINEMENT.md sections 2d, 3 and 4). Each choice the brief
 left open is recorded here.
+
+| Piece | Where |
+|---|---|
+| The launch title card (M3) | `ui/organisms/ZoneLaunchCard`, model `launch` in `state/navigation.ts` with `state/tally.ts` |
+| The results tally (M5) | `ui/organisms/ZoneTally`, model `session` and `tally`, words in `plan/tally.ts` |
+| The idle attract (M6) | `ui/organisms/ZoneAttract` over `ui/molecules/ZoneTitleCard` |
+| The moments' clock | `use-zone-moment.ts` (`useZoneMoment`, `window.seek(t)`, `window.play()`); frames in `plan/motion.ts` |
+| Words that wrap only between words | `ui/atoms/ZoneWords`, fitted by `use-zone-words-fit.ts` |
+| Acceptance | `zone-navigation-acceptance` "title card on launch", "results tally", "attract wakes to the same card" |
+
+- **The launch card waits for Korri, and a press before Korri answers lets
+  go of it.** It opens on PLAY or CONTINUE (A on a one-place card too),
+  with the title, the system and the act as they stood then. Until Korri's
+  status names the game (Busy, Confirm or Running, or one of those naming
+  no game) it is only Zone's announcement: the page under it stays live, so
+  a move or a host button lets go of it and does what it does. A host that
+  never answers therefore never strands it. Once named, the page goes inert
+  and the card holds every press until the status names the game no more.
+  A Problem before Korri answers sends it out too.
+- **Both moments leave by moving.** `leaving` is part of the model; the
+  binding removes the card after M3's 400 ms way out (`TitleCardLeft`) and
+  the tally after M5's 300 ms (`TallyLeft`). While leaving they hold no
+  press.
+- **An absent playCount is none.** The treaty says playCount is absent
+  together with lastPlayedAt, that is, no session recorded. So the act is
+  `(playCount ?? 0) + 1`, and a first session (absent, then 1) is a rise of
+  exactly one and gets a tally, with TIME counted from 0 seconds. Any other
+  absence makes TIME or TOTAL absent, never invented.
+- **The session is noted at the first Running for a game**, kept through
+  Busy, Problem and Confirm, replaced by another game's Running, and read
+  at the next Browsing. A tally opens only while GAMES is shown with none
+  of Zone's own layers over it; on another tab no tally shows (it would
+  hold presses on a page that does not draw it).
+- **The tally is one button.** A on it is a press like the host's
+  buttons; the first skips the count-up (`counted`), the next closes it.
+  The count-up's end (`TallyCounted`) is the runtime's timer, so a press
+  after it closes at once. A direction moves no DOM focus (nothing else is
+  focusable), so on the device it neither skips nor closes; B, menu,
+  options, system and A do. Bars: TIME's bar is this session's share of
+  the new total; PLAYS and TOTAL run full. The values count with CSS
+  counters from the clock's whole numbers, so the whole value is also
+  there as text for a screen reader.
+- **The busy strip and Confirm stand on the card because they belong to
+  the status layer**, which draws over the page that holds the card. The
+  status layer's veil also lies over the card while Busy; the layers
+  worker owns it. `ZoneLaunchCard` has a `foot` slot for a strip of its
+  own, empty today. Suggested: the veil skips a page that shows a launch.
+- **The attract's stage stands under its card the whole turn.** A turn's
+  first frames sweep the next card in over the game's art, never over the
+  page. A game with no art gets the card's light, blue and teal stripes as
+  its stage. PLAYS shows the dashes when Korri has none. Under reduced
+  motion the card stands at rest and nothing blinks; the turn still moves
+  on every 6 s (that is content, not motion).
+- **The moments are a seekable clock beside the ground's.** The authoring
+  gate's frame-clock allowance names `use-zone-moment.ts` too: the brief
+  asks for a `render(t)` a reviewer can hold, which a transition is not.
+  It writes custom properties only, and paints one rest frame under
+  reduced motion. Parts that show a moment hold it at a named time
+  (`fixtures/fixture-moments.ts`), so a still is the same every run.
+- **M1 is the band's track on the clock; the cards' sizes stay a 220 ms
+  transition.** The track's two counts (focus and dividers) are
+  interpolated together, from wherever the track stands, so a move that
+  starts mid-move does not jump. The track's translate is rounded to whole
+  art px. The triangles nudge 2 art px in two steps every 480 ms.
+- **M2 has no outgoing half.** The binding swaps the page at once, so
+  there is nothing left to slide out. A chosen tab marks the ground it
+  leaves (`markZoneTransition`); the arriving shell (a new page, or a
+  changed `page` on the same shell) wipes that colour away from the top
+  right in 4-art-px stairs, drops the banner 8 art px and slides the body
+  in from the right, all inside 500 ms. A page that mounts for any other
+  reason (power-on, a part) arrives still. Rows are not staggered one by
+  one: the body moves as one, since the shell cannot know a page's rows.
+- **Tags never lose a letter.** A tag's type is rounded down to a whole
+  caps step (also for the save card, the controller card and the running
+  strip, whose holders ask for shares). Each tag starts at its word's
+  width (`flex: 1 1 auto`, was equal shares). A row that still cuts a tag
+  at caps-1 hides its last tags one by one, keeping the system first, then
+  the places. The focused card reports how many it kept, and the facts
+  line shows the rest (not DOWNLOAD, which is a fact there already). The
+  spill is written on the next task, outside the resize notification, so
+  no observer loop.
+- **Titles step and wrap with `ZoneWords`.** Each word is its own
+  ZoneCaps, so a line breaks only between words and every word keeps its
+  ring and two-tone face. `useZoneWordsFit` adds up the words' letters and
+  gaps (a scroll width misses words that run out past a right-aligned
+  line's start, and counts the ring room). A focused card's word longer
+  than the card stands whole past its edge; a side card's is cut with "…"
+  and is whole once focused. A title of several words is read once, whole,
+  from a hidden copy, and its drawn words are hidden from a screen reader.
+- **The facts line is one strip with a one-line lean.** A wrapped line
+  keeps 45 degree ends one line tall, so wrapping never widens the ends and
+  starts a loop. Each spilled tag and each fact is an item of one run.
+  Absent: LAST PLAYED --, PLAYS --, TIME --'--"--. Values are Korri's
+  facts in Jersey 10; the dashes are Zone's words in Zone Caps.
+- **The top strip, measured again.** With each hint's column its own
+  width (`minmax(max-content, 1fr)`) and the tabs' padding as space
+  (`--zone-games-tab-pad-y-least`), one row needs 472, 414 and 307 art px;
+  the thresholds are 476, 420 and 312, and two rows keep the words down to
+  152. 1280x720 keeps BACK and CONFIRM; 640x480 is one row of keycaps
+  (two rows before; the yield order puts words before rows); 480x800 is
+  two rows, its tabs wrapping onto a row of their own. A tab never
+  shrinks or truncates. The inactive tab draws its own stair panel so its
+  padding can yield; ZonePanel's is fixed.
+- **GAME OPTS. is ZoneOptionRow rows under its own head.** The page draws
+  the head (GAME OPTS. caps-2 on black, the game in Jersey 10 on blue) and
+  maps Korri's actions to ZoneOptionRow itself, since ZoneOptionGroup
+  always draws a title. The rows keep that molecule's focus, disabled and
+  destructive looks; the triangles flanking the value are not drawn
+  (ZoneOptionRow is the options worker's).
+- **The keyboard's letters.** A key whose character has a capital is
+  lower case and is set in Jersey 10; digits, capitals, symbols and the
+  control words are Zone Caps at caps-1. The count is HUD ink. The FIND
+  draft holds `ZONE_FIND_MAX` (40), so the FIND keyboard shows `n/40`.
+- **Static** is three hard-stop checkers at prime tile sizes (3, 5, 7 art
+  px) jumped to five places 100 ms apart. It repeats every 500 ms; true
+  noise would need a canvas. NO GAMES is one card that cannot be chosen,
+  the words on its white header bar over a well of static.
+- **The foot on the grid.** TIME is HUD ink, the clock caps-1, the device's
+  name and the build in Jersey 10. The build is no longer dimmed (an
+  opacity is a blend) and yields with "…" after the SSID; at 640x480 it
+  shows `korri 0.4.1 · …`.
+- **Not done.** PLAYS ×07 (Could). The keyboard's keys still lean by the
+  slant token, not 45 degrees. The card triangles are smooth polygons, not
+  stairs. Live takes at 1280x720 failed on this machine (the recorder fell
+  behind); every move has a seek-built take at both sizes instead.
+
