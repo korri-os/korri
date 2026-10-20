@@ -140,9 +140,22 @@ pub fn call_plugin_operation_snapshot(
     operation: &str,
     input_json: &str,
 ) -> Result<String, OperationFailure> {
-    if input_json.len() > 512 * 1024 {
+    call_plugin_operation_bounded(snapshot, operation, input_json, 512 * 1024)
+}
+
+/// The same call with a caller-chosen input bound. Acquisition provider turns
+/// carry host-read response text and use a 4 MiB bound (ADR 0013); the heap,
+/// stack, deadline and output budget are unchanged.
+pub fn call_plugin_operation_bounded(
+    snapshot: &source::SourceSnapshot,
+    operation: &str,
+    input_json: &str,
+    max_input_bytes: usize,
+) -> Result<String, OperationFailure> {
+    if input_json.len() > max_input_bytes {
         return Err(OperationFailure::Failed(format!(
-            "plugin {operation} input exceeds 512 KiB"
+            "plugin {operation} input exceeds {} KiB",
+            max_input_bytes / 1024
         )));
     }
     let graph =

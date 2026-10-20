@@ -862,3 +862,5 @@ mod rpc_tests;
 mod game_download_tests;
 #[cfg(test)]
 mod http_fixture;
+#[cfg(test)]
+mod turns_tests;
