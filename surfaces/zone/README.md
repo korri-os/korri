@@ -1567,3 +1567,49 @@ disagrees with a section above, this one holds.
   grid of dots (a screen door) and the 2-px checker as a pattern of its
   own. The references' only stipple (the credits' checker) is as fine. The
   same ZoneVeil is now the one veil everywhere.
+
+## PAUSED's wedge fits before it scrolls (decided without asking: paused)
+
+Groups (two flat controls, DISPLAY with two rows, SOUND with one) showed
+its first row as a black sliver under the band at 640x480 and 1280x720.
+Measured in Chromium at 1280x720: the rows at caps-1 with their foot
+padding were 561 px in a 510 px column (17 art px too tall), and the list
+stood 45 px down. Two causes, both fixed where they start:
+
+- **The gaps did not yield.** Every gap between rows was 5 art px (10 over
+  a group's tag) whatever the room, so a list that fits with smaller gaps
+  scrolled instead (intrinsic-design rule 6: space yields before content
+  goes out of view). Now `useZonePausedList` tries the gap from 5 down to 2
+  art px (`zonePausedGaps`, `ZONE_PAUSED_GAP_MOST` held equal to
+  `--zone-paused-row-gap`, `ZONE_PAUSED_GAP_LEAST`) and keeps the largest
+  at which the rows fit; only at 2 does the list scroll. Groups fits at 2
+  at both sizes; the default list (three rows) keeps 5. The gap moves when
+  the content does: a focused row's description can take the list from
+  fitting to scrolling (Groups with FILL SCREEN focused scrolls, EXIT cut
+  through its letters).
+- **The list was scrolled before the rows were sized.** `useZoneLayerFocus`
+  focuses the lit row in a layout effect that runs before the type's fit,
+  so the browser's scroll on focus moved the list while the rows were
+  still caps-2; the fit then stepped them to caps-1 and the list kept the
+  stale offset. The row's own `scrollIntoView({ block: "nearest" })` left
+  it there, as the focused row was in view. PAUSED now owns its scroll:
+  the row no longer scrolls itself, and after the fit, on every focus move
+  and whenever the page or the rows change size, `zonePausedScroll`
+  (`src/plan/paused.ts`) sets the scroll top from the measured rows, their
+  lines of words and the focused row with its drop: 0 when the rows fit;
+  else the focused row whole, and each edge either with nothing past it or
+  cutting a line of words within an eighth of its box from its middle
+  (`ZONE_PAUSED_CUT_SHARE`, at least 30% of the cap shown), nearest to
+  where the list stood. When no place cuts letters (a wide-short page, the
+  focus at the foot), a cut row that keeps its words beats a letterless
+  sliver or a cut in a gap.
+- **The proof is in the part.** `ZonePaused.page.part.tsx` exports Caliper
+  `checks`: Groups has no row out of view and is not scrolled (failed
+  before at both devices: CONTINUE hidden, scroll 45 / 30); ManyControls
+  keeps CHEAT CODES whole and cuts its top row through its letters (failed
+  before at both devices: the top edge cut the tag's title above or below
+  the middle of its letters, at rg353m the foot of THE LEGEND OF);
+  Narrow keeps VOLUME whole and neither edge is a sliver. The plan's rules
+  are tested in `test/plan-layers.test.ts`.
+- **Shared files touched:** none. `ZonePausedControl.tsx` loses its
+  `scrollIntoView`; only ZonePaused holds the control.

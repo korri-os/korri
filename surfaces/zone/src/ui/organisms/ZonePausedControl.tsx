@@ -1,6 +1,6 @@
 import "./ZonePausedControl.css"
 import type { SurfaceGameplayControl } from "@contracts/surface/korri-surface"
-import { useEffect, useLayoutEffect, useRef } from "react"
+import { useLayoutEffect, useRef } from "react"
 import { useZoneHorizontal } from "../../use-zone-horizontal"
 import { useZoneStairClip } from "../../use-zone-stair-clip"
 import { ZoneCaps } from "../atoms/ZoneCaps"
@@ -67,10 +67,6 @@ export function ZonePausedControl({
   const horizontal = useZoneHorizontal(button, steps, interaction.kind, onStep)
   useZoneStairClip(meter)
   useZoneStairClip(fill, { left: "straight" })
-
-  useEffect(() => {
-    if (focused) button.current?.scrollIntoView({ block: "nearest" })
-  }, [focused])
 
   const value = interaction.kind === "range" ? rangeValue ?? interaction.value : undefined
   const span = interaction.kind === "range" ? interaction.max - interaction.min : 0

@@ -20,6 +20,8 @@ import {
 import {
   planPaused,
   ZONE_PAUSED_BAND_LEAST,
+  ZONE_PAUSED_GAP_LEAST,
+  ZONE_PAUSED_GAP_MOST,
   ZONE_PAUSED_BAND_MOST,
   ZONE_PAUSED_HINT_RISE,
   ZONE_PAUSED_HINT_WIDTH,
@@ -27,6 +29,9 @@ import {
   ZONE_PAUSED_ROWS_LEAST,
   ZONE_PAUSED_STEPS_MOST,
   ZONE_PAUSED_WEDGE_TOP,
+  zonePausedGaps,
+  zonePausedScroll,
+  type ZonePausedSpan,
   zonePausedStairs,
   zonePausedStep,
 } from "../src/plan/paused"
@@ -106,6 +111,73 @@ describe("the stair of rows", () => {
       expect(row).toContain(`.zone-paused-control[data-step="${step}"]`)
     }
     expect(rows).not.toContain(`[data-steps="${ZONE_PAUSED_STEPS_MOST + 1}"]`)
+  })
+})
+
+/*
+ * A list of one-line rows as Chromium lays them at 2 CSS px an art px: each
+ * row 36 px (18 art) tall, 40 px apart, its line of words' box from 2 px
+ * over the row's top to 30 px under it (measured on PAUSED's rows), and the
+ * list's foot padding 26 px under the last row.
+ */
+const pausedList = (count: number) => {
+  const rows: ZonePausedSpan[] = Array.from({ length: count }, (_, index) => ({ top: index * 40, bottom: index * 40 + 36 }))
+  const lines = rows.map(row => ({ top: row.top - 2, bottom: row.top + 30 }))
+  const last = rows[count - 1] ?? { top: 0, bottom: 0 }
+  return { rows, lines, end: last.bottom + 26, last }
+}
+
+describe("the wedge's list", () => {
+  test("the gaps yield an art px at a time, from the token's gap to the least", () => {
+    expect(zonePausedGaps()).toEqual([5, 4, 3, 2])
+    expect(zonePausedGaps()[0]).toBe(ZONE_PAUSED_GAP_MOST)
+    expect(zonePausedGaps().at(-1)).toBe(ZONE_PAUSED_GAP_LEAST)
+    expect(token("--zone-paused-row-gap")).toBe(String(ZONE_PAUSED_GAP_MOST))
+  })
+
+  test("every gap between the rows, and over a group's tag, is the one that yields", () => {
+    const rows = readFileSync(join(import.meta.dir, "..", "src", "pages", "ZonePaused.css"), "utf8")
+    expect(rows).toContain("var(--zone-paused-row-gap-fit, var(--zone-paused-row-gap))")
+    expect(rows).not.toContain("calc(var(--zone-paused-row-gap) * var(--zone-px))")
+  })
+
+  test("a list that fits is not scrolled, wherever it stood", () => {
+    const { rows, lines, end, last } = pausedList(7)
+    for (const at of [0, 45]) {
+      expect(zonePausedScroll({ view: end, end, at, rows, lines, keep: { top: last.top, bottom: last.bottom + 6 } })).toBe(0)
+      expect(zonePausedScroll({ view: end + 30, end, at, rows, lines })).toBe(0)
+    }
+  })
+
+  test("a deep focus stands whole, and the top edge cuts a row through its letters, not under them", () => {
+    const { rows, lines, end, last } = pausedList(10)
+    const keep = { top: last.top, bottom: last.bottom + 6 }
+    // scrollIntoView left it at the end (222): row 5's slab foot, a sliver with no letters.
+    expect(zonePausedScroll({ view: 200, end, at: 222, rows, lines, keep })).toBe(214)
+    // A place already cutting the letters is kept: the list moves only when it must.
+    expect(zonePausedScroll({ view: 200, end, at: 214, rows, lines, keep })).toBe(214)
+    expect(zonePausedScroll({ view: 200, end, at: 216, rows, lines, keep })).toBe(216)
+  })
+
+  test("a focus near the top moves the list off an edge that falls in a gap", () => {
+    const { rows, lines, end } = pausedList(10)
+    const third = rows[2] ?? { top: 0, bottom: 0 }
+    const keep = { top: third.top, bottom: third.bottom + 6 }
+    // At 0 the bottom edge (200) falls between rows 4 and 5 and says nothing;
+    // at 14 it cuts row 5's words (mid 214), and the top edge cuts row 0's.
+    expect(zonePausedScroll({ view: 200, end, at: 0, rows, lines, keep })).toBe(14)
+  })
+
+  test("with no place to cut letters, a cut row that keeps its words beats a sliver", () => {
+    const { rows, lines, end, last } = pausedList(10)
+    const keep = { top: last.top, bottom: last.bottom + 6 }
+    // The focus is whole from 222 to 242: 222 leaves row 5's foot, 242 cuts row 6 over its words.
+    expect(zonePausedScroll({ view: 180, end, at: 222, rows, lines, keep })).toBe(242)
+  })
+
+  test("a focused row taller than the view stands at its top", () => {
+    const { rows, lines, end } = pausedList(10)
+    expect(zonePausedScroll({ view: 30, end, at: 0, rows, lines, keep: { top: 120, bottom: 162 } })).toBe(120)
   })
 })
 

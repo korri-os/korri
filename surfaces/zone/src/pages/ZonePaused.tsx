@@ -8,6 +8,7 @@ import { useRef } from "react"
 import { zonePausedStairs, zonePausedStep } from "../plan/paused"
 import { useZoneFit } from "../use-zone-fit"
 import { useZoneLayerFocus } from "../use-zone-layer-focus"
+import { useZonePausedList } from "../use-zone-paused-list"
 import { useZonePausedPlan } from "../use-zone-paused-plan"
 import { useZoneStairClip } from "../use-zone-stair-clip"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
@@ -44,8 +45,10 @@ function valueText(control: SurfaceGameplayControl, value: SurfaceGameplayContro
  * bottom-right corner on a 45 degree stair; Korri's own controls, then
  * each plugin group under its blue tag, step down-left along it, each row
  * one cap further left than the one above. The rows stand at caps-2 and
- * step to caps-1 together when the column is too narrow; the list scrolls
- * when it outgrows the page, and the focused row brings itself into view.
+ * step to caps-1 together when the column is too narrow; when they are too
+ * many for the wedge, the gaps between them yield first, and only then
+ * does the list scroll, the focused row whole and each edge cutting a row
+ * through its words (useZonePausedList).
  *
  * A destructive control asks first: the sky dialog over the dithered page
  * with NO lit before YES, the control's label as headline and the value it
@@ -96,7 +99,10 @@ export function ZonePaused({
 
   const title = overlay.title ?? "Paused"
   const all = [...overlay.controls, ...overlay.groups.flatMap(group => group.controls)]
-  useZoneFit(page, [heading, rows], `${title}|${all.map(control => control.label).join("|")}`)
+  const fitKey = `${title}|${all.map(control => control.label).join("|")}`
+  useZoneFit(page, [heading, rows], fitKey)
+  // After the fit: the gaps yield, then the list stands where its rules put it.
+  useZonePausedList(page, wedge, rows, `${fitKey}|${focusedId ?? ""}`)
 
   const asked = asking === undefined ? undefined : all.find(control => control.id === asking.controlId)
 

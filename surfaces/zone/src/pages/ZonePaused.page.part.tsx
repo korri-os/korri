@@ -59,8 +59,9 @@ interface CheckTools {
  * scrolled, the rows (controls and group tags) not whole inside its view,
  * whether the focused row and its pink drop stand whole, and how each edge
  * meets the rows. An edge is "clear" when nothing is hidden past it,
- * "letters" when it cuts a line of words with a quarter of the line or more
- * on the shown side, else "bad": a sliver with no letters, or a cut that
+ * "letters" when it cuts a line of words within a sixth of the line's box
+ * from its middle (a line's box is about 1.6 of its cap, so a fifth of the
+ * cap or more shows), else "bad": a sliver with no letters, or a cut that
  * falls in a gap and says nothing about what is past it.
  */
 function wedgeView(button: HTMLElement) {
@@ -80,9 +81,9 @@ function wedgeView(button: HTMLElement) {
     range.selectNodeContents(node)
     lines.push(...Array.from(range.getClientRects()))
   }
-  const edge = (at: number, shown: (line: DOMRect) => number, past: (box: DOMRect) => boolean) => {
+  const edge = (at: number, past: (box: DOMRect) => boolean) => {
     if (!rows.some(row => past(row.getBoundingClientRect()))) return "clear"
-    return lines.some(line => line.top < at && line.bottom > at && shown(line) >= line.height / 4) ? "letters" : "bad"
+    return lines.some(line => Math.abs(at - (line.top + line.bottom) / 2) <= line.height / 6) ? "letters" : "bad"
   }
   const focused = list.querySelector<HTMLElement>(".zone-paused-control[data-focused]")
   const drop = 3 * Number.parseFloat(getComputedStyle(list).getPropertyValue("--zone-px") || "1")
@@ -94,8 +95,8 @@ function wedgeView(button: HTMLElement) {
     scrolled: list.scrollTop,
     hidden: hidden.map(row => row.textContent ?? "").join(", "),
     focusedWhole: whole,
-    top: edge(view.top, line => line.bottom - view.top, box => box.top < view.top - 0.5),
-    bottom: edge(view.bottom, line => view.bottom - line.top, box => box.bottom > view.bottom + 0.5),
+    top: edge(view.top, box => box.top < view.top - 0.5),
+    bottom: edge(view.bottom, box => box.bottom > view.bottom + 0.5),
   }
 }
 

@@ -110,7 +110,8 @@
 /* The rows' column: under the band, from planPaused's left to the right
  * margin, resting at the bottom when few and scrolling when many. A row
  * scrolled up is cut on one straight line under the band, so the cut row
- * says there is more; the focused one is always brought into view. */
+ * says there is more; useZonePausedList keeps the focused one whole and
+ * cuts each edge's row through its words. */
 .zone-paused-list {
   position: absolute;
   inset: calc(var(--zone-paused-band-at) + var(--zone-paused-margin)) 0 0 var(--zone-paused-rows-left, 40cqi);
@@ -126,12 +127,15 @@
 /* The rows at caps-2, a whole step smaller together when the column is
  * too narrow (useZoneFit). Auto margin above, so a short list rests at the
  * bottom and a long one still scrolls from its first row. One em is one
- * cap, the stair's step. */
+ * cap, the stair's step. The gap between rows (and over a group's tag) is
+ * the token's while the rows fit; when they do not it yields an art px at
+ * a time before the list scrolls (useZonePausedList writes the fit). */
 .zone-paused-rows {
   --zone-paused-row-type: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
   --zone-paused-steps: 0;
+  --zone-paused-row-gap-at: calc(var(--zone-paused-row-gap-fit, var(--zone-paused-row-gap)) * var(--zone-px));
   display: grid;
-  gap: calc(var(--zone-paused-row-gap) * var(--zone-px));
+  gap: var(--zone-paused-row-gap-at);
   margin-top: auto;
   font-size: var(--zone-paused-row-type);
 }
@@ -161,7 +165,7 @@
 
 .zone-paused-group {
   display: grid;
-  gap: calc(var(--zone-paused-row-gap) * var(--zone-px));
+  gap: var(--zone-paused-row-gap-at);
 }
 
 /* A group's label: Korri's word on a blue tag in caps-1, on the stair. */
@@ -169,7 +173,7 @@
   --zone-paused-step: 0;
   display: flex;
   min-width: 0;
-  margin: calc(var(--zone-paused-row-gap) * var(--zone-px)) calc(var(--zone-paused-step) * 1em) 0 calc((var(--zone-paused-steps) - var(--zone-paused-step)) * 1em);
+  margin: var(--zone-paused-row-gap-at) calc(var(--zone-paused-step) * 1em) 0 calc((var(--zone-paused-steps) - var(--zone-paused-step)) * 1em);
   font: inherit;
   font-size: inherit;
 }
