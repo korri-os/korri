@@ -244,7 +244,8 @@ export interface GameDownloadContext {
  * What a person can do with a game's download from the game itself. Download
  * while it needs one and nothing is under way; Cancel while anything is;
  * Remove once its own files are Ready and it is not running. Cancel cannot
- * stop unpacking, so it stays on offer, dimmed, until that ends.
+ * stop unpacking, or a runtime another game's pending download needs, so it
+ * stays on offer, dimmed and saying why, until that ends.
  */
 function downloadActions({ facts, live, enabled }: GameDownloadContext): readonly SurfaceAction[] {
   const actions: SurfaceAction[] = []
@@ -257,7 +258,9 @@ function downloadActions({ facts, live, enabled }: GameDownloadContext): readonl
   if (facts.active) {
     actions.push({
       id: "cancel-download", label: "Cancel download", enabled: enabled && facts.stoppable,
-      ...(facts.stoppable ? {} : { description: "Unpacking cannot be stopped. It ends on its own." }),
+      ...(facts.stoppable ? {}
+        : facts.shared === true ? { description: "Another game's download needs what is left, so it goes on." }
+        : { description: "Unpacking cannot be stopped. It ends on its own." }),
     })
   }
   if (facts.ownReady && !facts.active && !live) {

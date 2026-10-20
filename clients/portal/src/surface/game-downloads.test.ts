@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import type { AcquisitionOutcome, ArtifactStatus } from "@contracts/generated/korrid"
 import { createGameDownloads } from "./game-downloads"
 
@@ -189,4 +189,94 @@ test("a failed background download keeps korrid's words for the next try", async
   await downloads.refresh(["mm"])
   expect(downloads.getFacts().get("mm")).toMatchObject({ needs: true, active: false, failure: "The connection stalled." })
   downloads.dispose()
+})
+
+describe("Cancel download leaves what another pending download needs", () => {
+  const hk = { id: "hk", surfaceId: "game:hk", title: "Hollow Knight" }
+  /** A world of artifact states; each game's read lists its own, `release` on the release's. */
+  function world(initial: Record<string, ArtifactStatus["state"]>) {
+    const states = { ...initial }
+    const of = (make: (state: ArtifactStatus["state"]) => ArtifactStatus) => {
+      const id = make(missing).id
+      return make(states[id] ?? missing)
+    }
+    const games: Record<string, () => ArtifactStatus[]> = {
+      mm: () => [of(content), of(rootfs)],
+      hk: () => [of(rootfs), of(proton)],
+    }
+    const korrid = brain({ all: () => [of(content), of(rootfs), of(proton)], game: id => games[id]?.() })
+    const cancel = korrid.client.acquisitionCancel
+    korrid.client.acquisitionCancel = async (id: string) => {
+      await cancel(id)
+      states[id] = missing
+      return ok([{ ...(Object.values(games).flatMap(game => game()).find(artifact => artifact.id === id)!), state: missing }])
+    }
+    const download = (gameId: string) => {
+      for (const artifact of games[gameId]!()) if (artifact.state._tag === "Missing") states[artifact.id] = queued
+      return ok(games[gameId]!())
+    }
+    return { states, korrid, download, cancelled: () => korrid.calls.filter(call => call.method === "cancel").map(call => call.args) }
+  }
+
+  test("Hollow Knight asked for the runtime: Cancel on Mega Man stops only Mega Man's own files", async () => {
+    const w = world({})
+    const downloads = createGameDownloads(w.korrid.client)
+    await downloads.refresh(["mm", "hk"])
+    w.korrid.answers.download.push(w.download("hk"))
+    downloads.download(hk)
+    await settle()
+    w.korrid.answers.download.push(w.download("mm"))
+    downloads.download(mm)
+    await settle()
+    w.states[rootfs(missing).id] = downloading(100, 1_160_000_000)
+    await downloads.refresh()
+    // Mega Man's own files are cancellable; the runtime is not Mega Man's alone.
+    expect(downloads.getFacts().get("mm")).toMatchObject({ stoppable: true, shared: true })
+    downloads.cancel(mm)
+    await settle(8)
+    expect(w.cancelled()).toEqual([content(missing).id])
+    expect(downloads.getFacts().get("hk")).toMatchObject({ active: true, needs: true })
+    // What is left of Mega Man's download is Hollow Knight's too: Cancel has nothing to stop.
+    expect(downloads.getFacts().get("mm")).toMatchObject({ active: true, stoppable: false, shared: true })
+    downloads.dispose()
+  })
+
+  test("with no other pending download, Cancel stops the runtime as well", async () => {
+    const w = world({})
+    const downloads = createGameDownloads(w.korrid.client)
+    await downloads.refresh(["mm", "hk"])
+    w.korrid.answers.download.push(w.download("mm"))
+    downloads.download(mm)
+    await settle()
+    expect(downloads.getFacts().get("mm")).toMatchObject({ stoppable: true })
+    expect(downloads.getFacts().get("mm")?.shared).toBeUndefined()
+    downloads.cancel(mm)
+    await settle(8)
+    expect(w.cancelled()).toEqual([content(missing).id, rootfs(missing).id])
+    downloads.dispose()
+  })
+
+  test("a launch the gate holds keeps its runtime, and so does a download asked for before a reload", async () => {
+    // The gate is fetching for Hollow Knight.
+    let w = world({})
+    let downloads = createGameDownloads(w.korrid.client, { heldGames: () => ["hk"] })
+    await downloads.refresh(["mm", "hk"])
+    w.korrid.answers.download.push(w.download("mm"))
+    downloads.download(mm)
+    await settle()
+    downloads.cancel(mm)
+    await settle(8)
+    expect(w.cancelled()).toEqual([content(missing).id])
+    downloads.dispose()
+
+    // A fresh portal does not know who asked; Proton waiting for Hollow
+    // Knight alone shows that Hollow Knight's download is pending.
+    w = world({ [content(missing).id]: queued, [rootfs(missing).id]: queued, [proton(missing).id]: queued })
+    downloads = createGameDownloads(w.korrid.client)
+    await downloads.refresh(["mm", "hk"])
+    downloads.cancel(mm)
+    await settle(8)
+    expect(w.cancelled()).toEqual([content(missing).id])
+    downloads.dispose()
+  })
 })

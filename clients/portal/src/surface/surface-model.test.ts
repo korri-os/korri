@@ -418,6 +418,10 @@ describe("a game's download actions (ADR 0013)", () => {
     expect(ids({ ...idle, needs: true, active: true, progress: { done: 0 } })).toEqual(["cancel-download (dimmed)"])
     expect(gameActionsForEntry(entry, { facts: { ...idle, needs: true, active: true }, live: false, enabled: true })[0]?.description)
       .toBe("Unpacking cannot be stopped. It ends on its own.")
+    // What is left is a runtime another game's pending download needs: dimmed, and says so.
+    expect(ids({ ...idle, needs: true, active: true, shared: true, progress: { done: 1, total: 2 } })).toEqual(["cancel-download (dimmed)"])
+    expect(gameActionsForEntry(entry, { facts: { ...idle, needs: true, active: true, shared: true }, live: false, enabled: true })[0]?.description)
+      .toBe("Another game's download needs what is left, so it goes on.")
     expect(ids({ ...idle, ownReady: true })).toEqual(["remove-download"])
     // Its own files are here but the runtime is missing: both.
     expect(ids({ ...idle, needs: true, ownReady: true })).toEqual(["download", "remove-download"])

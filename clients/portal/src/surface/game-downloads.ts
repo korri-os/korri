@@ -34,8 +34,12 @@ export interface GameDownloadFacts {
   readonly bytes?: number
   /** Something is queued, downloading or unpacking for it. */
   readonly active: boolean
-  /** Something of it is queued or downloading: what Cancel can stop. */
+  /** Cancel would stop something: its own files, or a queued or running
+   * artifact no other pending download needs. */
   readonly stoppable: boolean
+  /** Something of it is queued or downloading that Cancel leaves alone,
+   * because another game's pending download needs it too. */
+  readonly shared?: boolean
   /** Active, and waiting behind another download. */
   readonly queued: boolean
   /** While it downloads, in the treaty's Busy.progress shape. */
@@ -75,6 +79,8 @@ export interface GameDownloads {
 
 export interface GameDownloadsOptions {
   readonly pollIntervalMs?: number
+  /** korrid ids of games a launch gate is fetching for right now. */
+  readonly heldGames?: () => readonly string[]
 }
 
 interface Member {
@@ -112,6 +118,10 @@ export function createGameDownloads(
    * until the next refresh. */
   const unresolved = new Set<string>()
   const pending = new Set<string>()
+  /** Games the person pressed Download for, until nothing of theirs is under
+   * way. Like the launch gate's `owned`: a Cancel elsewhere leaves what these
+   * still need. */
+  const requested = new Set<string>()
   const listeners = new Set<() => void>()
   let facts: ReadonlyMap<string, GameDownloadFacts> = new Map()
   let problem: SurfaceStatus | undefined
@@ -128,6 +138,41 @@ export function createGameDownloads(
     if (gameId !== undefined) {
       membership.set(gameId, artifacts.map(artifact => ({ id: artifact.id, release: artifact.release === true })))
     }
+  }
+
+  const stateOf = (id: string) => states.get(id)
+  /**
+   * Games with a download of their own pending, other than `gameId`: asked
+   * for from the game, held by a launch, or (after a reload, when the portal
+   * no longer knows who asked) with something under way that `gameId` does
+   * not need, so it cannot be `gameId`'s download.
+   */
+  const otherPending = (gameId: string): readonly string[] => {
+    const mine = new Set((membership.get(gameId) ?? []).map(member => member.id))
+    const held = options.heldGames?.() ?? []
+    return [...membership].flatMap(([other, members]) => {
+      if (other === gameId) return []
+      const pendingHere = requested.has(other) || held.includes(other) || members.some(member => {
+        const status = stateOf(member.id)
+        return status !== undefined && isActive(status) && !mine.has(member.id)
+      })
+      return pendingHere ? [other] : []
+    })
+  }
+  /**
+   * What Cancel on `gameId` stops: everything of its own release that is
+   * queued or downloading, and any other queued or downloading artifact no
+   * other pending download needs. The launch gate's rule, `owned` but never
+   * `held`, for downloads asked for from the game.
+   */
+  const cancelTargets = (gameId: string) => {
+    const neededElsewhere = new Set(otherPending(gameId).flatMap(other => (membership.get(other) ?? []).map(member => member.id)))
+    const stoppable = (membership.get(gameId) ?? []).filter(member => {
+      const status = stateOf(member.id)
+      return status !== undefined && isStoppable(status)
+    })
+    const targets = stoppable.filter(member => member.release || !neededElsewhere.has(member.id))
+    return { targets: targets.map(member => member.id), shared: targets.length < stoppable.length }
   }
 
   const factsFor = (gameId: string, members: readonly Member[]): GameDownloadFacts => {
@@ -169,11 +214,13 @@ export function createGameDownloads(
     }
     const failed = artifacts.find(artifact => artifact.state._tag === "Failed")
     const bytes = totalBytes(missing)
+    const cancel = cancelTargets(gameId)
     return {
       needs: missing.length > 0,
       ...(bytes === undefined ? {} : { bytes }),
       active,
-      stoppable: artifacts.some(isStoppable),
+      stoppable: cancel.targets.length > 0,
+      ...(cancel.shared ? { shared: true } : {}),
       queued: active && !downloading && !unpacking,
       ...(progress === undefined ? {} : { progress }),
       ownReady: members.some(member => member.release && states.get(member.id)?.state._tag === "Ready"),
@@ -183,6 +230,14 @@ export function createGameDownloads(
 
   const publish = () => {
     if (disposed) return
+    // A download asked for ends when nothing of it is under way any more.
+    for (const gameId of requested) {
+      const done = !(membership.get(gameId) ?? []).some(member => {
+        const status = stateOf(member.id)
+        return status !== undefined && isActive(status)
+      })
+      if (done) requested.delete(gameId)
+    }
     const next = new Map<string, GameDownloadFacts>()
     for (const [gameId, members] of membership) next.set(gameId, factsFor(gameId, members))
     facts = next
@@ -301,16 +356,18 @@ export function createGameDownloads(
       const result = await korrid.acquisitionDownload(game.id)
       if (result._tag === "Err") return result.payload
       absorb(result.payload.artifacts, game.id)
+      requested.add(game.id)
       return undefined
     }),
     // Cancel stops everything of this game that is queued or downloading;
     // korrid deletes the partial files. Unpacking finishes on its own.
+    // Cancel stops this game's own files and what only it is waiting for;
+    // korrid deletes the partial files. A runtime another pending download
+    // needs goes on, and unpacking finishes on its own.
     cancel: game => act(game, "Couldn't cancel the download", async () => {
-      const members = membership.get(game.id) ?? []
-      for (const member of members) {
-        const status = states.get(member.id)
-        if (status === undefined || !isStoppable(status)) continue
-        const result = await korrid.acquisitionCancel(member.id)
+      requested.delete(game.id)
+      for (const id of cancelTargets(game.id).targets) {
+        const result = await korrid.acquisitionCancel(id)
         if (result._tag === "Err") return result.payload
         absorb(result.payload.artifacts)
       }

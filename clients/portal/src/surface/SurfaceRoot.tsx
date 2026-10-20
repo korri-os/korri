@@ -98,11 +98,20 @@ export function SurfaceRoot({
   // store, so the launch lifecycle never learns about artifacts.
   // Downloads asked for from a game run in the background; the gate tells
   // this store when a launch's download changed what is on disk.
-  const downloads = useMemo(() => createGameDownloads(korrid), [korrid])
+  // The gate's open launch counts as a pending download: a Cancel on another
+  // game leaves the runtime it is fetching.
+  const gateGameRef = useRef<() => readonly string[]>(() => [])
+  const downloads = useMemo(() => createGameDownloads(korrid, {
+    heldGames: () => gateGameRef.current(),
+  }), [korrid])
   useEffect(() => () => downloads.dispose(), [downloads])
   const acquisition = useMemo(() => createAcquisitionGate(korrid, {
     onSettled: () => void downloads.refresh(),
   }), [downloads, korrid])
+  gateGameRef.current = () => {
+    const gameId = acquisition.getGameId()
+    return gameId === undefined ? [] : [gameId]
+  }
   useEffect(() => () => acquisition.dispose(), [acquisition])
   /**
    * The shared startup behind the gate: once every artifact the game's runner

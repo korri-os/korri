@@ -84,6 +84,8 @@ type Phase =
 export interface AcquisitionGate {
   /** The status to show in place of the launch status; undefined while idle. */
   getStatus(): SurfaceStatus | undefined
+  /** korrid's id of the game the open gate fetches for; undefined while idle. */
+  getGameId(): string | undefined
   subscribe(listener: () => void): () => void
   /**
    * Check, ask, download, then `proceed` into the launch. `abandon` runs
@@ -491,6 +493,7 @@ export function createAcquisitionGate(
 
   return {
     getStatus: () => status,
+    getGameId: () => phase._tag === "Idle" ? undefined : phase.launch.game.id,
     subscribe: listener => {
       listeners.add(listener)
       return () => {
