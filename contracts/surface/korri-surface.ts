@@ -77,12 +77,18 @@ export interface SurfaceGame {
   /** Summed recorded session length. Absent together with lastPlayedAt. */
   readonly totalPlaytimeSeconds?: number
   /**
-   * Present when launching this game first needs something downloaded to
-   * this device (a runtime it depends on, not the game itself). `bytes` is the
-   * total still to fetch; absent when Korri does not know the size. Surfaces
-   * format it; Korri never ships a label. Absent when nothing is needed.
+   * Present when this game needs anything downloaded to this device: its own
+   * files, or a runtime it depends on. `bytes` is the total still to fetch;
+   * absent when Korri does not know the size. `queued` while the download
+   * waits behind another one. `progress` while it downloads, in the shape of
+   * `Busy.progress`: no `total` means no known end. Surfaces format all of it;
+   * Korri never ships a label. Absent when nothing is needed.
    */
-  readonly download?: { readonly bytes?: number }
+  readonly download?: {
+    readonly bytes?: number
+    readonly queued?: true
+    readonly progress?: { readonly done: number; readonly total?: number }
+  }
 }
 
 /**
