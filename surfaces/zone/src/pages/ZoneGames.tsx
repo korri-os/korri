@@ -391,7 +391,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                 <div className="zone-games-loading" inert>
                   <ZoneCardBand cards={LOADING_CARDS} focusedIndex={1} visible={3} />
                 </div>
-              ) : (
+              ) : catalog._tag === "Error" ? null : (
                 <ZoneCardBand
                   cards={catalog._tag === "Ready" ? cards : []}
                   focusedIndex={focusedCard}
@@ -425,7 +425,7 @@ export function ZoneGames(props: ZoneGamesProps) {
             )}
             {finding && keysAt === "body" ? keyboard : finding ? null : (
               <>
-                <div className="zone-games-factline" inert={layer !== "none"}>
+                <div className="zone-games-factline" data-none={factLines.length === 0 || undefined} inert={layer !== "none"}>
                   <span className="zone-games-fact-panel">
                     <span className="zone-games-fact-run">
                       <span className="zone-games-spill" data-empty="" ref={spill}>

@@ -71,7 +71,12 @@
 }
 
 /* There the facts stand at the strip's start, left of the row. */
-.zone-games-body[data-facts="inline"] .zone-games-factline {
+.zone-games-body[data-facts="inline"] /* With no game focused the line keeps its height and draws nothing. */
+.zone-games-factline[data-none] {
+  visibility: hidden;
+}
+
+.zone-games-factline {
   grid-row: 2;
   grid-column: 1;
   justify-content: flex-start;
@@ -92,10 +97,11 @@
   transition: opacity var(--zone-lift-time) linear;
 }
 
-/* Under the error dialog the page steps back; GAME OPTS. covers it. */
-.zone-games[data-layer="error"] .zone-games-band,
+/* Under the error dialog there is nothing to show: no band, no FIND. No
+ * veil either: a dimmed page would be a blend. GAME OPTS. covers the page
+ * with its own sheet. */
 .zone-games[data-layer="error"] .zone-games-find {
-  opacity: var(--zone-games-behind-opacity);
+  visibility: hidden;
 }
 
 .zone-games-loading {
@@ -135,6 +141,11 @@
  * labels and white values (Korri's in Jersey 10; the dashes of an
  * unrecorded fact in Zone Caps), all at caps-1. Too long for one line,
  * it wraps between whole facts; nothing is cut. */
+/* With no game focused the line keeps its height and draws nothing. */
+.zone-games-factline[data-none] {
+  visibility: hidden;
+}
+
 .zone-games-factline {
   display: flex;
   justify-content: center;
