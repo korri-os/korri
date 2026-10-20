@@ -30,7 +30,6 @@ import type {
   SurfaceInputAction,
   SurfaceModel,
   SurfaceNetwork,
-  SurfaceRunnerChoice,
 } from "@contracts/surface/korri-surface"
 import { ZoneSurface } from "../src/index"
 
@@ -467,7 +466,7 @@ describe("runner choice", () => {
     warnings: ["BIOS missing: games may not boot"],
     actions: [{ id: "runner:launch:mgba", label: "Play with mGBA", enabled: true }],
   }
-  const choice = (tag: "Ready" | "Stale"): SurfaceRunnerChoice => ({
+  const choice = (tag: "Loading" | "Ready" | "Stale") => ({
     _tag: tag,
     gameTitle: "Wario Land 4",
     message: "Choose what plays it",
@@ -485,7 +484,7 @@ describe("runner choice", () => {
     moveTo(button("Runners on this device"))
     confirm()
     expect(calls(host)).toEqual([["runGameAction", "wario", "runners"]])
-    publish({ ...HOME, runnerChoice: { ...choice("Ready"), _tag: "Loading" } })
+    publish({ ...HOME, runnerChoice: choice("Loading") })
     expect(onScreen("Loading")).toBe(true)
     publish({ ...HOME, runnerChoice: choice("Ready") })
     const page = document.querySelector<HTMLElement>(".zone-run-with")!
@@ -932,5 +931,150 @@ describe("onboarding", () => {
     publish(HOME)
     expect(document.querySelector(".zone-onboarding")).toBeNull()
     expect(cardTitles()).toHaveLength(GAMES.length)
+  })
+})
+
+// ---- C26 to C30: chrome and input ----
+
+describe("chrome and input", () => {
+  const foot = () => document.querySelector(".zone-foot")?.textContent ?? ""
+
+  test("C26 clock and build", () => {
+    const { publish, press } = mount()
+    // Korri's clock as the stage timer, its build, and the device's name, on every page.
+    for (const open of [() => undefined, () => openOptions(press), () => openSaveData(press)]) {
+      open()
+      expect(foot()).toContain("21:47")
+      expect(foot()).toContain("korri 0.4.1 · 9a1fb22")
+      expect(foot()).toContain("mini")
+    }
+    publish({ ...HOME, clockLabel: undefined })
+    expect(document.querySelector(".zone-foot-timer")).toBeNull()
+  })
+
+  test("C27 idle", () => {
+    jest.useFakeTimers()
+    const { press } = mount()
+    moveTo(button("Spelunky"))
+    act(() => jest.advanceTimersByTime(30_000))
+    const titleCard = () => document.querySelector(".zone-title-card-title")?.textContent
+    expect(titleCard()).toBe("Spelunky")
+    act(() => jest.advanceTimersByTime(4_000))
+    expect(titleCard()).toBe("Tetris")
+    // Any input wakes it, the cursor where it was.
+    press("back")
+    expect(titleCard()).toBeUndefined()
+    expect(focusedText()).toContain("Spelunky")
+    // Idle belongs to the zone select: it never starts over OPTIONS.
+    openOptions(press)
+    act(() => jest.advanceTimersByTime(60_000))
+    expect(titleCard()).toBeUndefined()
+  })
+
+  test("C28 input actions", () => {
+    const { press } = mount()
+    // options: GAME OPTS. on GAMES; nothing on OPTIONS or SAVE DATA.
+    press("options")
+    expect(onScreen("Game opts.")).toBe(true)
+    press("back")
+    expect(onScreen("Game opts.")).toBe(false)
+    // menu: the cursor to the tabs, on every tab.
+    press("menu")
+    expect(focusedText()).toBe("Games")
+    // d-pad, confirm and back alone reach every tab and come home.
+    moveTo(button("Options"))
+    confirm()
+    press("options")
+    expect(onScreen("Game opts.")).toBe(false)
+    moveTo(row("Player seats"))
+    press("menu")
+    expect(focusedText()).toContain("Options")
+    moveTo(button("Save data"))
+    confirm()
+    press("options")
+    expect(onScreen("Game opts.")).toBe(false)
+    // system: OPTIONS at its SYSTEM group, from anywhere.
+    press("system")
+    expect(currentTab()).toContain("Options")
+    expect(focusedText()).toContain("Pair controller")
+    // back: the page's own rule, then the GAMES tab, then nothing.
+    press("back")
+    expect(currentTab()).toContain("Games")
+    expect(focusedText()).toContain("Celeste Classic")
+    press("back")
+    expect(currentTab()).toContain("Games")
+    expect(focusedText()).toContain("Celeste Classic")
+  })
+
+  test("C29 text entry", () => {
+    const { host, press } = mount()
+    openSaveData(press)
+    moveTo(button("From backup", document.querySelector<HTMLElement>(".zone-save-data-band")!))
+    confirm()
+    // A forty-character secret, digits and letters, on the one keyboard.
+    // A stand-in, built so it reads as one: never a real backup.
+    const backup = `ncryptsec1${"abcd".repeat(7)}90`
+    expect(backup).toHaveLength(40)
+    type(backup)
+    expect(document.querySelector(".zone-keyboard-draft")?.textContent).toContain(backup)
+    moveTo(button("Done", keyboardOnScreen()))
+    confirm()
+    // Capitals and symbols are layers of the same keyboard.
+    moveTo(button("ABC", keyboardOnScreen()))
+    confirm()
+    type("P")
+    moveTo(button("#?!", keyboardOnScreen()))
+    confirm()
+    type("!")
+    moveTo(button("Done", keyboardOnScreen()))
+    confirm()
+    moveTo(button("Transfer"))
+    confirm()
+    moveTo(button("Yes"))
+    confirm()
+    expect(calls(host)).toEqual([["switchIdentityFromBackup", backup, "P!", "transfer", true]])
+  })
+
+  test("C30 focus and motion", () => {
+    const { press } = mount()
+    const LIT = "[data-focused]:not([data-focused='off']):not([data-focused='false'])"
+    /** DOM focus is on a control, and that control draws itself focused. */
+    const drawn = () => {
+      const focused = document.activeElement
+      expect(focused === null || focused === document.body).toBe(false)
+      expect(focused?.closest(LIT) !== null || focused?.querySelector(LIT) !== null).toBe(true)
+    }
+    drawn()
+    moveTo(button("Tetris"))
+    drawn()
+    press("options")
+    drawn()
+    press("back")
+    drawn()
+    press("menu")
+    drawn()
+    moveTo(button("Options"))
+    confirm()
+    drawn()
+    moveTo(row("Device name"))
+    drawn()
+    confirm()
+    drawn()
+    press("back")
+    drawn()
+    press("system")
+    drawn()
+    press("menu")
+    moveTo(button("Save data"))
+    confirm()
+    drawn()
+    moveTo(button("Back up"))
+    drawn()
+    press("back")
+    drawn()
+    // Motion answers input and stops for a person who asks for less.
+    const css = readFileSync(join(import.meta.dir, "..", "src", "zone.css"), "utf8")
+    expect(css).toContain("@media (prefers-reduced-motion: reduce)")
+    expect(css).toMatch(/animation: none !important;\s*transition: none !important;/)
   })
 })
