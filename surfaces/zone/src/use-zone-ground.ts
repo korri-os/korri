@@ -1,8 +1,9 @@
 /**
  * The ground's clock: size a canvas to the art grid, read the palette the
  * nearest `data-ground` names, and paint `renderZoneGround` at 15 frames a
- * second (M7). Under reduced motion it paints once, at the clock's start,
- * and stops.
+ * second (M7), on the moments' seekable clock (`startZoneClock`), so
+ * `window.seek(t)` holds the rings at `t` with every moment. Under reduced
+ * motion it paints once, at the clock's start, and stops.
  *
  * Drawing, not state: the canvas is painted from refs and the computed
  * style, and nothing re-renders (the authoring gate names this file and
@@ -13,6 +14,7 @@
  */
 import { useLayoutEffect, type RefObject } from "react"
 import { renderZoneGround, zoneGroundFrame, type ZoneGroundPalette } from "./plan/ground"
+import { startZoneClock } from "./use-zone-moment"
 import { zoneArtPxOf } from "./use-zone-plan"
 
 /** A duration token (`140s`, `200ms`) in ms. */
@@ -68,21 +70,16 @@ export function useZoneGround(box: RefObject<HTMLElement | null>, canvas: RefObj
       painted = { frame, palette, wArt: size.wArt }
     }
     resize()
-    const still = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches
-    let request = 0
-    const started = performance.now()
-    const tick = (now: number) => {
-      paint(still ? 0 : now - started)
-      if (!still) request = requestAnimationFrame(tick)
-    }
-    tick(started)
+    // The drift runs on the moments' seekable clock: `window.seek` holds
+    // the rings with everything else, and reduced motion paints its start.
+    const clock = startZoneClock(paint, () => ({ duration: Number.POSITIVE_INFINITY, loop: true, rest: 0 }))
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => {
       resize()
-      paint(still ? 0 : performance.now() - started)
+      clock.repaint()
     })
     observer?.observe(holder)
     return () => {
-      cancelAnimationFrame(request)
+      clock.stop()
       observer?.disconnect()
     }
   }, [box, canvas])

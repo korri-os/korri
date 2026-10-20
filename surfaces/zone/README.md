@@ -1689,3 +1689,14 @@ one holds.
   twice. `test/zone-run-with.test.tsx` holds the 213/214 case, and
   RUN WITH's part has a Caliper check that the focused row's cut facts
   stand whole under it.
+- **The ground's drift is on the moments' clock.** `useZoneGround` ran its
+  own `performance.now` clock, so `window.seek` held every moment but not
+  the rings. `startZoneClock` (`use-zone-moment.ts`) is now the one
+  seekable clock: every moment and the drift run on it, a seek paints the
+  held time on all of them and runs no frames, `window.play()` runs them on
+  from there, and reduced motion paints the drift's start. Verified in
+  Chromium on GAMES: after `seek(35000)` the canvas is the same 1.5 s
+  later, `seek(90000)` changes it, `play()` moves it on.
+  `test/zone-clock.test.tsx` holds it (it failed against the old hook).
+  Parts that hold a moment (`useFixtureHold`) now hold the rings too, so
+  their stills no longer vary with the drift.
