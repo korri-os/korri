@@ -429,8 +429,9 @@ export interface SurfaceOnboarding {
 }
 
 /**
- * Getting a game from a provider: a place, such as a homebrew archive, that a
- * provider plugin can search and fetch from. Grounded in legacy Shift's store
+ * Getting a game from a provider: a place, such as the PICO-8 BBS, that a
+ * provider plugin can search and fetch from. Each surface lists whatever
+ * providers Korri publishes; there may be one. Grounded in legacy Shift's store
  * (search, results, detail, Get/Getting/Play, the ungetable guard, the staged
  * notice) and the legacy acquisition protocol (`ProviderClaim`,
  * `ProviderClaimDetails`, `AcquireJobStatus`).
@@ -454,7 +455,7 @@ export interface SurfaceStoreEntry {
   /** Opaque. Hand it back unchanged to `openStoreEntry`. */
   readonly id: string
   readonly title: string
-  /** What the game runs on, as the provider says it, such as "Game Boy".
+  /** What the game runs on, as the provider says it, such as "PICO-8".
    * Absent when the provider does not say. */
   readonly system?: string
 }
@@ -496,12 +497,11 @@ export type SurfaceStoreGet =
   /** Get is on offer (`actions`). `note` says what happened last, such as a
    * cancelled download. */
   | { readonly _tag: "Offer"; readonly note?: string; readonly actions: readonly SurfaceAction[] }
-  /** This entry cannot be fetched to this device, and why: the provider no
-   * longer offers it, it does not say what it runs on, or no folder on this
-   * device holds that kind of game. Nothing was downloaded. */
+  /** This entry cannot be fetched to this device, and why: the provider
+   * hands it out only on its website, or it does not say what it runs on, or
+   * this device cannot play what it runs on. Nothing was downloaded. */
   | { readonly _tag: "Unavailable"; readonly reason: string }
-  /** Korri needs the person's say-so first: the download and its size, or
-   * which of several folders to put it in (one action each). */
+  /** Korri needs the person's say-so first: the download and its size. */
   | {
       readonly _tag: "Confirm"
       readonly kicker: string

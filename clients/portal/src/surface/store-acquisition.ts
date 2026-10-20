@@ -73,8 +73,6 @@ export interface StoreAcquisition {
 /** Where one claim's download stands, as the host keeps it. */
 type Job =
   | { readonly _tag: "Confirming" }
-  /** korrid's ChooseSource job: several folders can take it. */
-  | { readonly _tag: "ChoosingSource"; readonly sources: readonly { readonly id: string; readonly label: string }[] }
   /** acquire sent, not answered. A Cancel waits for the answer. */
   | { readonly _tag: "Starting"; readonly cancelRequested: boolean }
   | { readonly _tag: "Active"; readonly jobId: string; readonly state: AcquireJobState; readonly cancelling: boolean }
@@ -85,7 +83,6 @@ type Job =
       readonly kicker: string
       readonly reason: string
       readonly retry: boolean
-      readonly sourceId?: string
     }
   | { readonly _tag: "Unavailable"; readonly reason: string }
   | { readonly _tag: "Cancelled" }
@@ -128,7 +125,7 @@ export const storeEntryId = (claim: Pick<ProviderClaim, "providerId" | "id">): s
 
 /** Legacy Shift's ungetable guard, in its own words. */
 export const NO_SYSTEM_REASON =
-  "This source doesn't say which console this game is for, so it can't be downloaded yet."
+  "This provider doesn't say which system this game is for, so it can't be downloaded yet."
 export const STOPPED_KICKER = "Download stopped"
 export const STOPPED_REASON =
   "Korri restarted before the download finished. Nothing was kept, and your library is unchanged."
@@ -137,10 +134,9 @@ export const STAGED_MESSAGE =
   "Downloaded to this device, but your library did not recognise it as a game."
 export const NOT_AVAILABLE_KICKER = "Not available"
 
-/** Nothing a Retry here could change: no folder, no known system, or a
- * provider that hands out a page instead of the file. */
+/** Nothing a Retry here could change: no known system, or a provider that
+ * hands out a page instead of the file. */
 const UNAVAILABLE_CODES: ReadonlySet<string> = new Set([
-  ACQUISITION_CODE.noSource,
   ACQUISITION_CODE.systemUnknown,
   ACQUISITION_CODE.notFinal,
 ])
@@ -191,8 +187,6 @@ function jobFrom(status: AcquireJobStatus, cancelling = false): Job {
         reason: state.reason.message,
         retry: true,
       }
-    case "ChooseSource":
-      return { _tag: "ChoosingSource", sources: state.sources }
     case "Resolving":
     case "Downloading":
     case "Placing":
@@ -272,16 +266,6 @@ export function createStoreAcquisition(
           actions: [jobAction(key, slot, "download", "Download"), cancel()],
         }
       }
-      case "ChoosingSource":
-        return {
-          _tag: "Confirm",
-          kicker: "Choose a folder",
-          detail: `More than one folder on this device holds ${claim.platform ?? artifact?.system ?? "these"} games. Choose where this one goes.`,
-          actions: [
-            ...job.sources.map((source, index) => jobAction(key, slot, `source.${index}`, source.label)),
-            cancel(),
-          ],
-        }
       case "Starting":
         return job.cancelRequested
           ? { _tag: "Working", kicker: "Cancelling download…", detail: "Nothing will be kept", actions: [] }
@@ -406,13 +390,9 @@ export function createStoreAcquisition(
     settle(key, claim, job._tag === "Active" ? { _tag: "Cancelled" } : job)
   }
 
-  const start = async (key: string, claim: ProviderClaim, sourceId?: string) => {
+  const start = async (key: string, claim: ProviderClaim) => {
     setJob(key, claim, { _tag: "Starting", cancelRequested: false })
-    const result = await korrid.acquisitionAcquire({
-      providerId: claim.providerId,
-      id: claim.id,
-      ...(sourceId === undefined ? {} : { sourceId }),
-    })
+    const result = await korrid.acquisitionAcquire({ providerId: claim.providerId, id: claim.id })
     const now = jobs.get(key)?.job
     if (disposed || now?._tag !== "Starting") return
     if (result._tag === "Err") {
@@ -420,18 +400,14 @@ export function createStoreAcquisition(
       if (now.cancelRequested) setJob(key, claim, { _tag: "Cancelled" })
       else if (UNAVAILABLE_CODES.has(failure.code)) setJob(key, claim, { _tag: "Unavailable", reason: failure.message })
       else {
-        setJob(key, claim, {
-          _tag: "Failed", kicker: "Couldn't start the download", reason: failure.message, retry: true,
-          ...(sourceId === undefined ? {} : { sourceId }),
-        })
+        setJob(key, claim, { _tag: "Failed", kicker: "Couldn't start the download", reason: failure.message, retry: true })
       }
       return
     }
     const job = jobFrom(result.payload)
     if (job._tag !== "Active") {
-      // Already in the library, finished, or asking which folder: korrid
-      // returned the claim's job, and nothing is downloading.
-      settle(key, claim, now.cancelRequested && job._tag === "ChoosingSource" ? { _tag: "Cancelled" } : job)
+      // Already in the library, or finished: korrid returned the claim's job.
+      settle(key, claim, job)
       return
     }
     // A Cancel pressed while the acquire was unanswered: what it started is
@@ -513,13 +489,10 @@ export function createStoreAcquisition(
       if (job === undefined || job._tag === "Cancelled") setJob(key, open, { _tag: "Confirming" })
     } else if (kind === "download" && job?._tag === "Confirming") {
       void start(key, open)
-    } else if (kind.startsWith("source.") && job?._tag === "ChoosingSource") {
-      const source = job.sources[Number(kind.slice("source.".length))]
-      if (source !== undefined) void start(key, open, source.id)
     } else if (kind === "retry" && job?._tag === "Failed" && job.retry) {
-      void start(key, open, job.sourceId)
+      void start(key, open)
     } else if (kind === "cancel") {
-      if (job?._tag === "Confirming" || job?._tag === "ChoosingSource") {
+      if (job?._tag === "Confirming") {
         jobs.delete(key)
         publish()
       } else if (job?._tag === "Starting" && !job.cancelRequested) {

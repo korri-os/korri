@@ -4,8 +4,9 @@
  *
  * Mirror of the game-acquisition wire the `build` worker exports through
  * Typeshare (build-3, f53e2cade, `services/korrid/SCRIPTING.md` "Acquisition
- * providers"), copied name for name, plus the coordinator's ChooseSource
- * amendment to AcquireJobState that build-3 is committing. Every name below is
+ * providers"), copied name for name. Placement into a person's folders is
+ * withdrawn (workflow contract section 10): no `sourceId`, no ChooseSource;
+ * a downloaded cart stays in korrid's cache. Every name below is
  * the generated one; only `StoreAcquisitionRpcRequest` is local, because the
  * generated RpcRequest union does not carry the six methods yet.
  */
@@ -88,8 +89,6 @@ export interface AcquireArtifactRequest {
   providerId: string
   id: string
   fileName?: string
-  /** A `DiscoverySource.id` from a ChooseSource job. */
-  sourceId?: string
 }
 
 export interface AcquireStatusRequest {
@@ -108,9 +107,6 @@ export type AcquireJobState =
   | { _tag: "Staged"; message: string }
   | { _tag: "Failed"; reason: RpcFailure }
   | { _tag: "Cancelled" }
-  /** Several folders can take it. Terminal: nothing was downloaded; acquire
-   * again with one `sourceId`, which makes a new job. DiscoverySource's names. */
-  | { _tag: "ChooseSource"; sources: { id: string; label: string }[] }
 
 export interface AcquireJobStatus {
   jobId: string
@@ -140,8 +136,6 @@ export type AcquireJobOutcome =
 export const ACQUISITION_CODE = {
   /** `acquire-status`/`acquire-cancel` after a korrid restart. */
   unknownJob: "AcquisitionUnknownJob",
-  /** No paired source holds the claim's system; refused before download. */
-  noSource: "AcquisitionNoSource",
   /** The claim names no enabled system: it cannot be acquired. */
   systemUnknown: "AcquisitionSystemUnknown",
   /** Failed: the provider answered with a page, not the file (NonFinalDownload). */

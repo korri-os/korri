@@ -1,6 +1,6 @@
 /**
  * Getting a game from a provider, end to end: the in-memory brain offers the
- * three providers in scope, Pico renders what the host publishes, and the
+ * PICO-8 BBS, the one provider that searches, Pico renders what the host publishes, and the
  * host carries each answer back as RPC, then into the catalog and the shared
  * launch. Also: a korrid restart under a download, and the store with an
  * empty library.
@@ -42,7 +42,8 @@ const launched: string[] = []
 
 async function mount() {
   launched.length = 0
-  const store = createInMemoryStoreAcquisition(SAMPLE_STORE)
+  // Small steps, so a download is still running when the test restarts korrid.
+  const store = createInMemoryStoreAcquisition({ ...SAMPLE_STORE, bytesPerStep: 4_000 })
   const korrid = createInMemoryKorridClient({ games: [], store })
   await korrid.finishOnboarding()
   let model!: SurfaceModel
@@ -76,23 +77,26 @@ test("from an empty library: GET GAMES, a provider, a search, an entry, Get, Dow
   await click(button(view.container, /MENU/))
   await click(button(view.container, "GET GAMES"))
   await waitFor("providers", () => view.model().store?.providers._tag === "Ready")
-  await click(button(view.container, /Homebrew Hub/))
+  await click(button(view.container, /PICO-8 BBS/))
   // Not searched yet: the keyboard opens.
-  for (const key of ["2", "0"]) await click(button(view.container, `Type ${key}`))
+  for (const key of ["c", "e", "l"]) await click(button(view.container, `Type ${key}`))
   await click(button(view.container, "SEARCH"))
+  // The BBS does not answer the first time; Retry asks again.
+  await waitFor("no answer", () => view.model().store?.search._tag === "Problem")
+  await click(button(view.container, "Retry"))
   await waitFor("results", () => view.model().store?.search._tag === "Ready")
-  await click(button(view.container, "2048, Game Boy"))
+  await click(button(view.container, "Celeste Classic 2, PICO-8"))
   await waitFor("details", () => view.model().store?.details._tag === "Ready")
   await click(button(view.container, "GET"))
-  // Curated entries state no size: Confirm says so.
+  // The BBS states no size: Confirm says so.
   await waitFor("confirm", () => view.get()._tag === "Confirm")
-  expect(view.get()).toMatchObject({ detail: "2048, size unknown" })
+  expect(view.get()).toMatchObject({ detail: "Celeste Classic 2, size unknown" })
   await click(button(view.container, "Download"))
   await waitFor("downloading", () => view.get()._tag === "Working" && "progress" in view.get())
   // The download takes the launch stage, with the size korrid now reports.
   await waitFor("a real bar", () => view.container.querySelector('[role="progressbar"][aria-valuenow]') !== null)
   await waitFor("in the library", () => view.get()._tag === "InLibrary" && (view.get() as { gameId?: string }).gameId !== undefined, 3000)
-  expect(view.model().catalog).toMatchObject({ _tag: "Ready", games: [{ title: "2048" }] })
+  expect(view.model().catalog).toMatchObject({ _tag: "Ready", games: [{ title: "Celeste Classic 2" }] })
   const gameId = (view.get() as { gameId: string }).gameId
   const catalog = view.model().catalog
   expect(catalog._tag === "Ready" && catalog.games.some(game => game.id === gameId)).toBe(true)
@@ -107,7 +111,11 @@ test("korrid restarting under a download: Download stopped with Retry, and Retry
   const view = await mount()
   view.host().openStore()
   await waitFor("providers", () => view.model().store?.providers._tag === "Ready")
-  view.host().searchStore("@korri:retrobrews", "anguna")
+  view.host().searchStore("@korri:pico8", "celeste")
+  await waitFor("no answer", () => view.model().store?.search._tag === "Problem")
+  const problem = view.model().store?.search
+  if (problem?._tag !== "Problem") throw new Error("expected no answer")
+  view.host().runAction(problem.actions[0]!.id)
   await waitFor("results", () => view.model().store?.search._tag === "Ready")
   const entry = view.model().store?.search
   if (entry?._tag !== "Ready") throw new Error("no results")
@@ -121,9 +129,6 @@ test("korrid restarting under a download: Download stopped with Retry, and Retry
   run("Get")
   await waitFor("confirm", () => view.get()._tag === "Confirm")
   run("Download")
-  // Two GBA folders: korrid's ChooseSource job asks which.
-  await waitFor("folder choice", () => view.get()._tag === "Confirm" && (view.get() as { kicker: string }).kicker === "Choose a folder")
-  run("SD card · GBA")
   await waitFor("downloading", () => view.get()._tag === "Working" && (view.get() as { progress?: { done: number } }).progress !== undefined)
   view.store.restart()
   await waitFor("stopped", () => view.get()._tag === "Problem")

@@ -17,17 +17,16 @@ import {
   storeEntryId,
 } from "./store-acquisition"
 
-const HUB = "@korri:homebrewhub"
+const BBS = "@korri:pico8"
 const art = (system: string, file?: { name: string; sizeBytes?: number }) =>
   ({ kind: "content" as const, format: { id: "rom" }, system, ...(file === undefined ? {} : { file }) })
 const claim = (id: string, extra: Partial<InMemoryClaim> = {}): InMemoryClaim => ({
-  providerId: HUB, id, title: id.toUpperCase(), url: `https://hh3.gbdev.io/game/${id}`, platform: "Game Boy",
-  artifact: art("gb", { name: `${id}.gb`, sizeBytes: 32_000 }), ...extra,
+  providerId: BBS, id, title: id.toUpperCase(), url: `https://www.lexaloffle.com/bbs/?tid=${id}`, platform: "PICO-8",
+  artifact: art("pico8", { name: `${id}.p8.png`, sizeBytes: 32_000 }), ...extra,
 })
 const base = (claims: InMemoryClaim[], extra: Partial<InMemoryStoreConfig> = {}): InMemoryStoreConfig => ({
-  providers: [{ id: HUB, title: "Homebrew Hub", pluginId: HUB }],
-  claims: { [HUB]: claims },
-  sources: { gb: [{ id: "games-gb", label: "Game Boy" }] },
+  providers: [{ id: BBS, title: "PICO-8 BBS", pluginId: BBS }],
+  claims: { [BBS]: claims },
   bytesPerStep: 16_000,
   ...extra,
 })
@@ -80,9 +79,9 @@ function harness(config: InMemoryStoreConfig) {
   const open = async (id: string, query = "") => {
     store.openStore()
     await until("providers", () => now().providers._tag === "Ready")
-    store.search(HUB, query)
+    store.search(BBS, query)
     await until("results", () => now().search._tag === "Ready")
-    store.openEntry(storeEntryId({ providerId: HUB, id }))
+    store.openEntry(storeEntryId({ providerId: BBS, id }))
     await until("details", () => now().details._tag === "Ready")
   }
   return { korrid, store, calls, imported, seen, now, get, until, press, open }
@@ -110,40 +109,40 @@ test("the provider list loads, and a refused list offers Retry", async () => {
   store.act(problem.actions[0]!.id)
   await flush()
   await flush()
-  expect(store.getSnapshot().providers).toEqual({ _tag: "Ready", providers: [{ id: HUB, title: "Homebrew Hub" }] })
+  expect(store.getSnapshot().providers).toEqual({ _tag: "Ready", providers: [{ id: BBS, title: "PICO-8 BBS" }] })
 })
 
 test("a search shows results, an empty answer, and only for a listed provider", async () => {
-  const h = harness(base([claim("2048gb"), claim("tobu")]))
+  const h = harness(base([claim("celeste"), claim("dusk")]))
   h.store.openStore()
   await h.until("providers", () => h.now().providers._tag === "Ready")
-  h.store.search("@korri:nobody", "2048")
+  h.store.search("@korri:nobody", "cel")
   await flush()
   expect(h.calls.some(call => call.startsWith("search"))).toBe(false)
-  h.store.search(HUB, "2048")
-  expect(h.now().search).toEqual({ _tag: "Searching", providerId: HUB, query: "2048" })
+  h.store.search(BBS, "cel")
+  expect(h.now().search).toEqual({ _tag: "Searching", providerId: BBS, query: "cel" })
   await h.until("results", () => h.now().search._tag === "Ready")
   expect(h.now().search).toEqual({
-    _tag: "Ready", providerId: HUB, query: "2048",
-    entries: [{ id: storeEntryId({ providerId: HUB, id: "2048gb" }), title: "2048GB", system: "Game Boy" }],
+    _tag: "Ready", providerId: BBS, query: "cel",
+    entries: [{ id: storeEntryId({ providerId: BBS, id: "celeste" }), title: "CELESTE", system: "PICO-8" }],
   })
-  h.store.search(HUB, "zelda")
+  h.store.search(BBS, "zelda")
   await h.until("empty results", () => h.now().search._tag === "Ready" && (h.now().search as { query: string }).query === "zelda")
   expect(h.now().search).toMatchObject({ _tag: "Ready", entries: [] })
 })
 
 test("a provider that does not answer offers Retry, and Retry asks again", async () => {
-  const h = harness(base([claim("2048gb")], {
-    failingSearches: { [HUB]: "Homebrew Hub did not answer. Check the connection and try again." },
+  const h = harness(base([claim("celeste")], {
+    failingSearches: { [BBS]: "The BBS did not answer. Check the connection and try again." },
     searchFailuresBeforeRecovery: 1,
   }))
   h.store.openStore()
   await h.until("providers", () => h.now().providers._tag === "Ready")
-  h.store.search(HUB, "")
+  h.store.search(BBS, "")
   await h.until("problem", () => h.now().search._tag === "Problem")
   const search = h.now().search
   if (search._tag !== "Problem") throw new Error("expected a problem")
-  expect(search.message).toBe("Homebrew Hub did not answer. Check the connection and try again.")
+  expect(search.message).toBe("The BBS did not answer. Check the connection and try again.")
   h.store.act(search.actions[0]!.id)
   await h.until("results", () => h.now().search._tag === "Ready")
   expect(h.calls.filter(call => call.startsWith("search"))).toHaveLength(2)
@@ -152,7 +151,7 @@ test("a provider that does not answer offers Retry, and Retry asks again", async
 test("an older search answer never replaces a newer one", async () => {
   let release: () => void = () => {}
   const held = new Promise<void>(resolve => { release = resolve })
-  const korrid = createInMemoryStoreAcquisition(base([claim("2048gb"), claim("tobu")]))
+  const korrid = createInMemoryStoreAcquisition(base([claim("celeste"), claim("dusk")]))
   const store = createStoreAcquisition({
     ...korrid,
     acquisitionProviders: () => korrid.acquisitionProviders(),
@@ -163,27 +162,27 @@ test("an older search answer never replaces a newer one", async () => {
   })
   store.openStore()
   await flush()
-  store.search(HUB, "slow")
-  store.search(HUB, "tobu")
+  store.search(BBS, "slow")
+  store.search(BBS, "dusk")
   await flush()
   await flush()
   release()
   await flush()
   await flush()
-  expect(store.getSnapshot().search).toMatchObject({ _tag: "Ready", query: "tobu" })
+  expect(store.getSnapshot().search).toMatchObject({ _tag: "Ready", query: "dusk" })
 })
 
 test("details offer Get; a claim with no system cannot be got, and asks korrid nothing", async () => {
   const h = harness(base([
-    claim("2048gb", { description: "Slide the tiles." }),
+    claim("celeste", { description: "Slide the tiles." }),
     claim("nosys", { artifact: undefined, platform: undefined }),
   ]))
-  await h.open("2048gb")
+  await h.open("celeste")
   const details = h.now().details
   expect(details).toMatchObject({ _tag: "Ready", description: "Slide the tiles.", get: { _tag: "Offer" } })
   expect(h.get()).toMatchObject({ actions: [{ label: "Get", enabled: true }] })
 
-  h.store.openEntry(storeEntryId({ providerId: HUB, id: "nosys" }))
+  h.store.openEntry(storeEntryId({ providerId: BBS, id: "nosys" }))
   await h.until("nosys", () => h.now().details._tag === "Ready" && h.get()._tag === "Unavailable")
   expect(h.get()).toEqual({ _tag: "Unavailable", reason: NO_SYSTEM_REASON })
 
@@ -227,8 +226,8 @@ test("a page instead of the file (DownloadNotFinal) is not available here", asyn
     }),
   }, { pollIntervalMs: 2 })
   store.openStore(); await flush()
-  store.search(HUB, ""); await flush(); await flush()
-  store.openEntry(storeEntryId({ providerId: HUB, id: "itch" })); await flush(); await flush()
+  store.search(BBS, ""); await flush(); await flush()
+  store.openEntry(storeEntryId({ providerId: BBS, id: "itch" })); await flush(); await flush()
   const act = (label: string) => {
     const details = store.getSnapshot().details
     if (details._tag !== "Ready" || !("actions" in details.get)) throw new Error("no actions")
@@ -239,26 +238,26 @@ test("a page instead of the file (DownloadNotFinal) is not available here", asyn
 })
 
 test("details that fail to load offer Retry", async () => {
-  const korrid = createInMemoryStoreAcquisition(base([claim("2048gb")]))
+  const korrid = createInMemoryStoreAcquisition(base([claim("celeste")]))
   let fail = true
   const store = createStoreAcquisition({
     ...korrid,
     acquisitionProviders: () => korrid.acquisitionProviders(),
     acquisitionSearch: request => korrid.acquisitionSearch(request),
     acquisitionDetails: async request => fail
-      ? { _tag: "Err", payload: { code: "ProviderUnavailable", message: "Homebrew Hub did not answer." } }
+      ? { _tag: "Err", payload: { code: "ProviderUnavailable", message: "The BBS did not answer." } }
       : korrid.acquisitionDetails(request),
   })
   store.openStore()
   await flush()
-  store.search(HUB, "")
+  store.search(BBS, "")
   await flush()
   await flush()
-  store.openEntry(storeEntryId({ providerId: HUB, id: "2048gb" }))
-  expect(store.getSnapshot().details).toMatchObject({ _tag: "Loading", entry: { title: "2048GB" } })
+  store.openEntry(storeEntryId({ providerId: BBS, id: "celeste" }))
+  expect(store.getSnapshot().details).toMatchObject({ _tag: "Loading", entry: { title: "CELESTE" } })
   await flush()
   const details = store.getSnapshot().details
-  expect(details).toMatchObject({ _tag: "Problem", message: "Homebrew Hub did not answer." })
+  expect(details).toMatchObject({ _tag: "Problem", message: "The BBS did not answer." })
   if (details._tag !== "Problem") return
   fail = false
   store.act(details.actions[0]!.id)
@@ -268,38 +267,38 @@ test("details that fail to load offer Retry", async () => {
 })
 
 test("Get asks first with the size; Cancel there asks nothing of korrid", async () => {
-  const h = harness(base([claim("2048gb"), claim("unsized", { artifact: art("gb") })]))
-  await h.open("2048gb")
+  const h = harness(base([claim("celeste"), claim("unsized", { artifact: art("pico8") })]))
+  await h.open("celeste")
   h.press("Get")
-  expect(h.get()).toMatchObject({ _tag: "Confirm", kicker: "Download to this device", detail: "2048GB, 32 KB" })
+  expect(h.get()).toMatchObject({ _tag: "Confirm", kicker: "Download to this device", detail: "CELESTE, 32 KB" })
   expect((h.get() as { readonly actions: readonly SurfaceAction[] }).actions.map(action => action.label)).toEqual(["Download", "Cancel"])
   h.press("Cancel")
   expect(h.get()).toMatchObject({ _tag: "Offer" })
   expect(h.calls.some(call => call.startsWith("acquire"))).toBe(false)
 
-  h.store.openEntry(storeEntryId({ providerId: HUB, id: "unsized" }))
+  h.store.openEntry(storeEntryId({ providerId: BBS, id: "unsized" }))
   await h.until("unsized", () => h.now().details._tag === "Ready" && (h.now().details as { entry: { title: string } }).entry.title === "UNSIZED")
   h.press("Get")
   expect(h.get()).toMatchObject({ _tag: "Confirm", detail: "UNSIZED, size unknown" })
 })
 
 test("Download runs with real progress and Cancel, places without Cancel, and lands in the library", async () => {
-  const h = harness(base([claim("2048gb")]))
-  await h.open("2048gb")
+  const h = harness(base([claim("celeste")]))
+  await h.open("celeste")
   h.press("Get")
   h.press("Download")
   expect(h.get()).toMatchObject({ _tag: "Working", kicker: "Starting download…", actions: [{ label: "Cancel" }] })
   await h.until("downloading", () => h.get()._tag === "Working" && "progress" in h.get())
   expect(h.get()).toMatchObject({
-    _tag: "Working", kicker: "Downloading 2048GB", progress: { done: 0, total: 32_000 }, actions: [{ label: "Cancel" }],
+    _tag: "Working", kicker: "Downloading CELESTE", progress: { done: 0, total: 32_000 }, actions: [{ label: "Cancel" }],
   })
   await h.until("half", () => (h.get() as { progress?: { done: number } }).progress?.done === 16_000)
   expect(h.get()).toMatchObject({ detail: "16 KB of 32 KB · 16 KB/s · 0:01 left" })
   await h.until("placing", () => h.get()._tag === "Working" && (h.get() as { kicker: string }).kicker === "Adding to your library…")
   expect(h.get()).toEqual({ _tag: "Working", kicker: "Adding to your library…", progress: { done: 0 }, actions: [] })
   await h.until("imported", () => h.get()._tag === "InLibrary")
-  expect(h.get()).toEqual({ _tag: "InLibrary", detail: "In your library", gameId: "store-korrihomebrewhub-2048gb" })
-  expect(h.imported).toEqual(["store-korrihomebrewhub-2048gb"])
+  expect(h.get()).toEqual({ _tag: "InLibrary", detail: "In your library", gameId: "store-korripico8-celeste" })
+  expect(h.imported).toEqual(["store-korripico8-celeste"])
   expect(h.korrid.downloadedBytes()).toBe(32_000)
   // Every progress step the surface saw grew.
   const done = h.seen.flatMap(seen => seen.details._tag === "Ready" && seen.details.get._tag === "Working" && seen.details.get.progress?.total !== undefined
@@ -307,47 +306,14 @@ test("Download runs with real progress and Cancel, places without Cancel, and la
   expect(done).toEqual([...done].sort((a, b) => a - b))
 })
 
-test("no folder for the system is refused before any download, naming the system", async () => {
-  const h = harness(base([claim("2048gb")], { sources: {} }))
-  await h.open("2048gb")
-  h.press("Get")
-  h.press("Download")
-  await h.until("refused", () => h.get()._tag === "Unavailable")
-  expect(h.get()).toEqual({
-    _tag: "Unavailable",
-    reason: "No folder on this device holds Game Boy games. Add one in Settings, then get this game again.",
-  })
-  expect(h.korrid.downloadedBytes()).toBe(0)
-  expect(h.calls.some(call => call.startsWith("status"))).toBe(false)
-})
-
-test("several folders: the person chooses, and acquire goes again with that source", async () => {
-  const h = harness(base([claim("anguna", { platform: "Game Boy Advance", artifact: art("gba", { name: "anguna.gba", sizeBytes: 16_000 }) })], {
-    sources: { gba: [{ id: "games-gba", label: "Games · GBA" }, { id: "sd-gba", label: "SD card · GBA" }] },
-  }))
-  await h.open("anguna")
-  h.press("Get")
-  h.press("Download")
-  await h.until("choice", () => h.get()._tag === "Confirm" && (h.get() as { kicker: string }).kicker === "Choose a folder")
-  expect(h.get()).toMatchObject({
-    detail: "More than one folder on this device holds Game Boy Advance games. Choose where this one goes.",
-  })
-  expect((h.get() as { readonly actions: readonly SurfaceAction[] }).actions.map(action => action.label)).toEqual(["Games · GBA", "SD card · GBA", "Cancel"])
-  h.press("SD card · GBA")
-  await h.until("imported", () => h.get()._tag === "InLibrary")
-  const acquires = h.calls.filter(call => call.startsWith("acquire"))
-  expect(acquires).toHaveLength(2)
-  expect(acquires[1]).toContain("\"sourceId\":\"sd-gba\"")
-})
-
 test("already in the library: Get becomes Play without a second download", async () => {
-  const h = harness(base([claim("2048gb")]))
-  await h.open("2048gb")
+  const h = harness(base([claim("celeste")]))
+  await h.open("celeste")
   h.press("Get")
   h.press("Download")
   await h.until("imported", () => h.get()._tag === "InLibrary")
   // Reopening the entry in this portal: Play at once.
-  h.store.openEntry(storeEntryId({ providerId: HUB, id: "2048gb" }))
+  h.store.openEntry(storeEntryId({ providerId: BBS, id: "celeste" }))
   await h.until("reopened", () => h.now().details._tag === "Ready")
   expect(h.get()._tag).toBe("InLibrary")
 
@@ -355,10 +321,10 @@ test("already in the library: Get becomes Play without a second download", async
   const again = createStoreAcquisition(h.korrid, { pollIntervalMs: 2 })
   again.openStore()
   await flush()
-  again.search(HUB, "")
+  again.search(BBS, "")
   await flush()
   await flush()
-  again.openEntry(storeEntryId({ providerId: HUB, id: "2048gb" }))
+  again.openEntry(storeEntryId({ providerId: BBS, id: "celeste" }))
   await flush()
   await flush()
   const offer = again.getSnapshot().details
@@ -369,18 +335,8 @@ test("already in the library: Get becomes Play without a second download", async
   again.act(confirm.get.actions[0]!.id)
   await flush()
   await flush()
-  expect(again.getSnapshot().details).toMatchObject({ get: { _tag: "InLibrary", gameId: "store-korrihomebrewhub-2048gb" } })
+  expect(again.getSnapshot().details).toMatchObject({ get: { _tag: "InLibrary", gameId: "store-korripico8-celeste" } })
   expect(h.korrid.downloadedBytes()).toBe(32_000)
-})
-
-test("the same bytes already in the folder import with nothing downloaded", async () => {
-  const h = harness(base([claim("2048gb", { inLibrary: true })]))
-  await h.open("2048gb")
-  h.press("Get")
-  h.press("Download")
-  await h.until("imported", () => h.get()._tag === "InLibrary")
-  expect(h.korrid.downloadedBytes()).toBe(0)
-  expect(h.calls.some(call => call.startsWith("status"))).toBe(false)
 })
 
 test("downloaded but not recognised says so plainly", async () => {
@@ -394,8 +350,8 @@ test("downloaded but not recognised says so plainly", async () => {
 })
 
 test("Cancel during the download stops it, and Get is offered again", async () => {
-  const h = harness(base([claim("2048gb", { artifact: art("gb", { name: "2048.gb", sizeBytes: 160_000 }) })]))
-  await h.open("2048gb")
+  const h = harness(base([claim("celeste", { artifact: art("pico8", { name: "celeste.p8.png", sizeBytes: 160_000 }) })]))
+  await h.open("celeste")
   h.press("Get")
   h.press("Download")
   await h.until("downloading", () => (h.get() as { progress?: { done: number } }).progress?.done === 16_000)
@@ -412,8 +368,8 @@ test("Cancel during the download stops it, and Get is offered again", async () =
 test("Cancel before acquire answers is honoured against the job it started", async () => {
   let release: () => void = () => {}
   const held = new Promise<void>(resolve => { release = resolve })
-  const h = harness(base([claim("2048gb")], { acquireGate: () => held }))
-  await h.open("2048gb")
+  const h = harness(base([claim("celeste")], { acquireGate: () => held }))
+  await h.open("celeste")
   h.press("Get")
   h.press("Download")
   h.press("Cancel")
@@ -440,8 +396,8 @@ test("a failed download offers Retry, and Retry finishes it", async () => {
 })
 
 test("korrid restarting under a download: Download stopped, Retry starts from zero", async () => {
-  const h = harness(base([claim("2048gb", { artifact: art("gb", { name: "2048.gb", sizeBytes: 160_000 }) })]))
-  await h.open("2048gb")
+  const h = harness(base([claim("celeste", { artifact: art("pico8", { name: "celeste.p8.png", sizeBytes: 160_000 }) })]))
+  await h.open("celeste")
   h.press("Get")
   h.press("Download")
   await h.until("downloading", () => ((h.get() as { progress?: { done: number } }).progress?.done ?? 0) >= 32_000)
@@ -457,7 +413,7 @@ test("korrid restarting under a download: Download stopped, Retry starts from ze
 })
 
 test("korrid not answering for a moment does not end the watch", async () => {
-  const korrid = createInMemoryStoreAcquisition(base([claim("2048gb")]))
+  const korrid = createInMemoryStoreAcquisition(base([claim("celeste")]))
   let dark = 0
   const store = createStoreAcquisition({
     ...korrid,
@@ -471,9 +427,9 @@ test("korrid not answering for a moment does not end the watch", async () => {
   }, { pollIntervalMs: 2 })
   store.openStore()
   await flush()
-  store.search(HUB, "")
+  store.search(BBS, "")
   await flush(); await flush()
-  store.openEntry(storeEntryId({ providerId: HUB, id: "2048gb" }))
+  store.openEntry(storeEntryId({ providerId: BBS, id: "celeste" }))
   await flush(); await flush()
   dark = 5
   const press = (label: string) => {
@@ -490,8 +446,8 @@ test("korrid not answering for a moment does not end the watch", async () => {
 })
 
 test("a stale or repeated press sends nothing", async () => {
-  const h = harness(base([claim("2048gb")]))
-  await h.open("2048gb")
+  const h = harness(base([claim("celeste")]))
+  await h.open("celeste")
   const getId = h.press("Get")
   // Get again with the old id: Confirm is unchanged, nothing is asked.
   expect(h.store.act(getId)).toBe(true)
@@ -507,26 +463,25 @@ test("a stale or repeated press sends nothing", async () => {
 })
 
 test("a download keeps going while another entry is open, and shows again on its own", async () => {
-  const h = harness(base([claim("2048gb", { artifact: art("gb", { name: "2048.gb", sizeBytes: 160_000 }) }), claim("tobu")]))
-  await h.open("2048gb")
+  const h = harness(base([claim("celeste", { artifact: art("pico8", { name: "celeste.p8.png", sizeBytes: 160_000 }) }), claim("dusk")]))
+  await h.open("celeste")
   h.press("Get")
   h.press("Download")
   await h.until("downloading", () => (h.get() as { progress?: unknown }).progress !== undefined)
-  h.store.openEntry(storeEntryId({ providerId: HUB, id: "tobu" }))
-  await h.until("tobu", () => h.now().details._tag === "Ready" && (h.now().details as { entry: { title: string } }).entry.title === "TOBU")
+  h.store.openEntry(storeEntryId({ providerId: BBS, id: "dusk" }))
+  await h.until("dusk", () => h.now().details._tag === "Ready" && (h.now().details as { entry: { title: string } }).entry.title === "DUSK")
   expect(h.get()._tag).toBe("Offer")
   const before = h.korrid.downloadedBytes()
   await new Promise(resolve => setTimeout(resolve, 15))
   expect(h.korrid.downloadedBytes()).toBeGreaterThan(before)
-  h.store.openEntry(storeEntryId({ providerId: HUB, id: "2048gb" }))
-  await h.until("back", () => h.now().details._tag === "Ready" && (h.now().details as { entry: { title: string } }).entry.title === "2048GB")
+  h.store.openEntry(storeEntryId({ providerId: BBS, id: "celeste" }))
+  await h.until("back", () => h.now().details._tag === "Ready" && (h.now().details as { entry: { title: string } }).entry.title === "CELESTE")
   expect(["Working", "InLibrary"]).toContain(h.get()._tag)
 })
 
 test("the codes the store tells apart are build-3's (SCRIPTING.md)", () => {
   expect(ACQUISITION_CODE).toEqual({
     unknownJob: "AcquisitionUnknownJob",
-    noSource: "AcquisitionNoSource",
     systemUnknown: "AcquisitionSystemUnknown",
     notFinal: "DownloadNotFinal",
     resolutionFailed: "DownloadResolutionFailed",
