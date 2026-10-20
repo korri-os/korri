@@ -123,11 +123,20 @@ export function ZoneSurface({ model, host }: { readonly model: SurfaceModel; rea
         onFocusButton={index => send.status({ _tag: "FocusedStatusButton", index })}
         onProblemButton={button => send.status({ _tag: "ChoseProblemButton", button })}
         page={zonePage(shown, program, model, host, send)}
+        runningHud={shown !== "paused"}
         status={model.status}
         titleOf={titleOf}
       />
     </div>
   )
+}
+
+/** The running game's art for PAUSED's stand-in: wide, else cover, when Korri names a game its catalog lists. */
+function runningArt(model: SurfaceModel): string | undefined {
+  const status = model.status
+  if (status._tag !== "Running" || status.gameId === undefined) return undefined
+  const game = catalogGames(model.catalog).find(entry => entry.id === status.gameId)
+  return game?.wideArtUrl ?? game?.coverArtUrl
 }
 
 /** The page for what is shown, with plain props and its model's callbacks. */
@@ -221,6 +230,7 @@ function zonePage(
         <div aria-label={model.presentation.title ?? "Paused"} aria-modal="true" className="zone-surface-paused" role="dialog">
           <ZonePaused
             answer={state.overlay.answer}
+            art={runningArt(model)}
             asking={state.overlay.asking}
             focusedId={state.overlay.focusedId}
             moving={state.overlay.moving}

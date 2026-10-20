@@ -1,0 +1,15 @@
+/* A checker of single art pixels: black in two quarters of every 2 by 2
+ * tile, the page in the other two. The tile is whole art px, so every
+ * black pixel lands on one. */
+.zone-veil {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: conic-gradient(
+    var(--zone-veil) 0% 25%,
+    transparent 25% 50%,
+    var(--zone-veil) 50% 75%,
+    transparent 75% 100%
+  ) 0 0 / calc(var(--zone-veil-tile) * var(--zone-px)) calc(var(--zone-veil-tile) * var(--zone-px));
+  pointer-events: none;
+}

@@ -1,18 +1,49 @@
-/* A row: the button over its note. The type is the wedge's, through
- * --zone-paused-row-type, or the row token standing alone. */
+/* A row: the button over its note. The type is the wedge's caps step,
+ * through --zone-paused-row-type, or caps-2 standing alone. One em is one
+ * cap, so the stair's step is 1em: the row stands `step` caps left of the
+ * top row, in a column `--zone-paused-steps` caps wider than the row. */
 .zone-paused-control {
+  --zone-paused-step: 0;
   display: grid;
   row-gap: calc(var(--zone-drop) * var(--zone-px));
   min-width: 0;
-  font-size: var(--zone-paused-row-type, calc(var(--zone-type-row) * var(--zone-px)));
+  margin-left: calc((var(--zone-paused-steps, 0) - var(--zone-paused-step)) * 1em);
+  margin-right: calc(var(--zone-paused-step) * 1em);
+  font-size: var(--zone-paused-row-type, calc(var(--zone-caps-2) * var(--zone-px)));
 }
 
-/* The whole row is one focus stop; the panel inside it fills its width. */
+.zone-paused-control[data-step="1"] {
+  --zone-paused-step: 1;
+}
+
+.zone-paused-control[data-step="2"] {
+  --zone-paused-step: 2;
+}
+
+.zone-paused-control[data-step="3"] {
+  --zone-paused-step: 3;
+}
+
+.zone-paused-control[data-step="4"] {
+  --zone-paused-step: 4;
+}
+
+/* The whole row is one focus stop. Its lettering's top is the button's
+ * top; the slab starts 4 art px lower, so the caps rise over its edge. */
 .zone-paused-control-button {
+  position: relative;
+  isolation: isolate;
   display: grid;
   width: 100%;
   min-width: 0;
+  padding:
+    0
+    calc(1em - var(--zone-paused-overhang-at) + var(--zone-paused-slab-foot-at) + calc(var(--zone-panel-pad) * var(--zone-px)))
+    var(--zone-paused-slab-foot-at);
   text-align: left;
+  --zone-paused-overhang-at: calc(var(--zone-paused-overhang) * var(--zone-px));
+  --zone-paused-slab-foot-at: calc(var(--zone-paused-slab-foot) * var(--zone-px));
+  --zone-underline-depth: var(--zone-drop-focus);
   transition: translate var(--zone-press-time) var(--zone-bounce);
 }
 
@@ -20,50 +51,60 @@
   translate: calc(var(--zone-press-sink) * var(--zone-px)) calc(var(--zone-press-sink) * var(--zone-px));
 }
 
-/* Label left, value right. The label wraps rather than cuts and keeps a
- * few letters' room; when the row cannot hold both, the value drops under
+/* The black slab under the lettering, a 45 degree parallelogram cut on the
+ * art grid (useZoneStairClip writes its shape); the pink drop under it when
+ * focused. */
+.zone-paused-control-slab {
+  position: absolute;
+  inset: var(--zone-paused-overhang-at) 0 0 0;
+  z-index: -1;
+  isolation: isolate;
+  display: block;
+}
+
+.zone-paused-control-slab::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: var(--zone-panel-shape, polygon(1em 0, 100% 0, calc(100% - 1em) 100%, 0 100%));
+}
+
+/* Label left, value right. The label keeps a few letters' room and wraps
+ * only between words; when the row cannot hold both, the value drops under
  * the label and stays at the right. */
 .zone-paused-control-face {
   display: flex;
-  flex: 1 1 auto;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(var(--zone-row-gap) * var(--zone-px));
+  gap: calc(var(--zone-paused-gap) * var(--zone-px)) calc(var(--zone-row-gap) * var(--zone-px));
   min-width: 0;
-  min-height: 1.2em;
-  white-space: normal;
+  line-height: 1;
 }
 
 .zone-paused-control-label {
   flex: 1 1 var(--zone-paused-label-least);
   min-width: 0;
-  overflow-wrap: normal;
-  line-height: 1.05;
-  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
+  white-space: var(--zone-paused-label-wrap, nowrap);
 }
 
-/* Destructive: the label is red, as a destructive option's value is. */
-.zone-paused-control[data-destructive] .zone-paused-control-label {
-  color: var(--zone-destructive-ink);
-  --zone-caps-shade: currentColor;
-  text-shadow: none;
-}
 
 .zone-paused-control-value {
   display: inline-flex;
   flex: 0 1 auto;
   align-items: center;
-  gap: calc(calc(var(--zone-row-gap) * var(--zone-px)) / 2);
+  gap: calc(var(--zone-row-gap) * var(--zone-px));
   min-width: 0;
   max-width: 100%;
   margin-left: auto;
+  white-space: nowrap;
 }
 
 .zone-paused-control-text {
+  display: flex;
   min-width: 0;
-  overflow-wrap: normal;
-  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
 }
 
 /* The triangles' room is kept when the row is not focused. */
@@ -76,12 +117,9 @@
   visibility: visible;
 }
 
-/* A range's number never breaks, and its digits keep one width so the
- * meter does not shift as it moves. */
+/* A range's number never truncates. */
 .zone-paused-control[data-kind="range"] .zone-paused-control-text {
   flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 /* A range on the move: its number turns yellow until Korri shows it. */
@@ -90,27 +128,24 @@
   --zone-caps-shade: currentColor;
 }
 
-/* The meter: a blue parallelogram, filled yellow from the left. */
+/* The meter: SPECIAL STAGE's red on the dark track, 45 degree stair ends. */
 .zone-paused-control-meter {
-  --zone-paused-control-meter-slant: calc(var(--zone-paused-meter-height) * 0.5em);
   position: relative;
   flex: 0 0 auto;
   width: calc(var(--zone-paused-meter-length) * 1em);
-  height: calc(var(--zone-paused-meter-height) * 1em);
+  height: calc(var(--zone-paused-meter-rows) * var(--zone-px));
+  overflow: hidden;
   background: var(--zone-paused-meter);
-  clip-path: polygon(
-    var(--zone-paused-control-meter-slant) 0,
-    100% 0,
-    calc(100% - var(--zone-paused-control-meter-slant)) 100%,
-    0 100%
-  );
+  clip-path: var(--zone-panel-shape, none);
 }
 
 .zone-paused-control-fill {
   position: absolute;
   inset: 0 auto 0 0;
+  display: block;
   width: calc(var(--zone-paused-control-share, 0) * 100%);
   background: var(--zone-paused-meter-fill);
+  clip-path: var(--zone-panel-shape, none);
   transition: width var(--zone-press-time) var(--zone-bounce);
 }
 
@@ -119,15 +154,16 @@
   opacity: var(--zone-disabled-opacity);
 }
 
-/* Korri's words under the row: why it is disabled, or what it does. Black
- * caps on the wedge's yellow, no outline. */
+/* Korri's words under the row, why it is disabled or what it does: Jersey
+ * 10 as written, black on the wedge's yellow, no ring. */
 .zone-paused-control-note {
   padding-left: calc(var(--zone-slant) * var(--zone-px));
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) * var(--zone-px));
+  line-height: calc(var(--zone-dialog-line-leading) * var(--zone-px));
+  color: var(--zone-paused-note-ink);
+  text-transform: none;
+  text-shadow: none;
   overflow-wrap: break-word;
   hyphens: auto;
-  color: var(--zone-paused-note-ink);
-  --zone-caps-shade: currentColor;
-  font-size: max(calc(var(--zone-type-note) * var(--zone-px)), calc(var(--zone-type-reason-scale) * 1em));
-  line-height: 1.15;
-  text-shadow: none;
 }

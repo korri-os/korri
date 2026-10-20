@@ -1,17 +1,21 @@
 import "./ZonePaused.css"
-import "../zone-motion.css"
 import type {
   SurfaceGameplayControl,
   SurfaceGameplayControlValue,
   SurfaceGameplayOverlayPresentation,
 } from "@contracts/surface/korri-surface"
 import { useRef } from "react"
+import { ZONE_PAUSED_STEPS_MOST, zonePausedStep } from "../plan/paused"
+import { useZoneFit } from "../use-zone-fit"
 import { useZoneLayerFocus } from "../use-zone-layer-focus"
+import { useZonePausedPlan } from "../use-zone-paused-plan"
+import { useZoneStairClip } from "../use-zone-stair-clip"
 import { ZoneCaps } from "../ui/atoms/ZoneCaps"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
 import { ZonePanel } from "../ui/atoms/ZonePanel"
+import { ZoneVeil } from "../ui/atoms/ZoneVeil"
+import { ZoneWords } from "../ui/atoms/ZoneWords"
 import { ZoneDialog } from "../ui/molecules/ZoneDialog"
-import { ZoneGround } from "../ui/organisms/ZoneGround"
 import { ZonePausedControl } from "../ui/organisms/ZonePausedControl"
 
 /** A destructive control waiting on NO / YES, and the value it would send. */
@@ -33,23 +37,30 @@ function valueText(control: SurfaceGameplayControl, value: SurfaceGameplayContro
 
 /**
  * PAUSED (C24): Mania's pause screen over a game that is still there,
- * behind the host's window. The ground stands in for it, greyed and
- * striped, as Mania greys the stage. A red band across the top-left holds
- * Korri's title (PAUSED when it gives none) on a black parallelogram; a
- * yellow wedge on the right holds Korri's own controls, then each plugin
- * group under its label. The wedge scrolls when the rows outgrow it, and
- * the focused row brings itself into view.
+ * behind the host's window. The game stands in grey: the running game's
+ * own art drained of colour when Korri names the game and its catalog has
+ * art (`art`), else a grey checker of 16 art px squares, as the greyed
+ * loop ground in Mania's reference. A red band across the top-left holds
+ * Korri's title (PAUSED when it gives none) in caps-3 on a black slab, its
+ * letters rising over the slab's top edge. A yellow wedge rises from the
+ * bottom-right corner on a 45 degree stair; Korri's own controls, then
+ * each plugin group under its blue tag, step down-left along it, each row
+ * one cap further left than the one above. The rows stand at caps-2 and
+ * step to caps-1 together when the column is too narrow; the list scrolls
+ * when it outgrows the page, and the focused row brings itself into view.
  *
- * A destructive control asks first: Mania's blue dialog with NO lit before
- * YES, the control's label as headline and the value it would take in
- * yellow. B withdraws the question, else returns to the game.
+ * A destructive control asks first: the sky dialog over the dithered page
+ * with NO lit before YES, the control's label as headline and the value it
+ * would take in yellow. B withdraws the question, else returns to the game.
  *
- * Everything this page knows comes in as props: Korri's overlay, and the
- * overlay model's value (the focused id, the question, the lit answer, a
- * range's value while it moves). It reports through callbacks.
+ * Everything this page knows comes in as props: Korri's overlay, the
+ * running game's art, and the overlay model's value (the focused id, the
+ * question, the lit answer, a range's value while it moves). It reports
+ * through callbacks. Every length is from `planPaused` on the art grid.
  */
 export function ZonePaused({
   overlay,
+  art,
   focusedId,
   asking,
   answer = 0,
@@ -61,6 +72,8 @@ export function ZonePaused({
   onAnswer,
 }: {
   readonly overlay: SurfaceGameplayOverlayPresentation
+  /** The running game's art (wide, else cover), greyed behind the page; the checker when absent. */
+  readonly art?: string
   readonly focusedId?: string
   readonly asking?: ZonePausedQuestion
   /** The lit button of the question: 0 is NO, 1 is YES. */
@@ -72,13 +85,30 @@ export function ZonePaused({
   readonly onFocusAnswer?: (index: 0 | 1) => void
   readonly onAnswer?: (yes: boolean) => void
 }) {
+  const page = useRef<HTMLDivElement | null>(null)
   const wedge = useRef<HTMLDivElement | null>(null)
   const question = useRef<HTMLDivElement | null>(null)
+  const heading = useRef<HTMLHeadingElement | null>(null)
+  const band = useRef<HTMLElement | null>(null)
+  const slab = useRef<HTMLSpanElement | null>(null)
+  const rows = useRef<HTMLDivElement | null>(null)
+  useZonePausedPlan(page)
+  useZoneStairClip(band, { left: "straight" })
+  useZoneStairClip(slab)
   useZoneLayerFocus(wedge, asking === undefined ? focusedId : undefined)
   useZoneLayerFocus(question, asking === undefined ? undefined : `answer:${answer}`)
 
-  const asked = asking === undefined ? undefined
-    : [...overlay.controls, ...overlay.groups.flatMap(group => group.controls)].find(control => control.id === asking.controlId)
+  const title = overlay.title ?? "Paused"
+  const all = [...overlay.controls, ...overlay.groups.flatMap(group => group.controls)]
+  useZoneFit(page, [heading, rows], `${title}|${all.map(control => control.label).join("|")}`)
+
+  const asked = asking === undefined ? undefined : all.find(control => control.id === asking.controlId)
+
+  // Each row and each group's tag takes the next step down the stair.
+  let place = 0
+  const nextStep = () => zonePausedStep(place++)
+  const items = overlay.controls.length + overlay.groups.reduce((sum, group) => sum + 1 + group.controls.length, 0)
+  const stairs = Math.min(ZONE_PAUSED_STEPS_MOST, Math.max(0, items - 1))
 
   const row = (control: SurfaceGameplayControl) => (
     <ZonePausedControl
@@ -90,6 +120,7 @@ export function ZonePaused({
       onPress={onPressControl === undefined ? undefined : () => onPressControl(control.id)}
       onStep={onStepControl === undefined ? undefined : (direction) => onStepControl(control.id, direction)}
       rangeValue={moving[control.id]}
+      step={nextStep()}
     />
   )
 
@@ -98,27 +129,28 @@ export function ZonePaused({
   }
 
   return (
-    <div className="zone-paused">
+    <div className="zone-paused" ref={page}>
       <div aria-hidden="true" className="zone-paused-behind">
-        <ZoneGround />
-        <i className="zone-paused-stripes" />
+        <i className="zone-paused-checker" />
+        {art === undefined ? null : <img alt="" className="zone-paused-art" decoding="async" src={art} />}
       </div>
-      <header className="zone-paused-band">
-        <h1 className="zone-paused-title">
-          <ZonePanel edge={false}>
-            <ZoneCaps>{overlay.title ?? "Paused"}</ZoneCaps>
-          </ZonePanel>
+      <header className="zone-paused-band" ref={band}>
+        <h1 className="zone-paused-title" ref={heading}>
+          <span aria-hidden="true" className="zone-paused-title-slab" ref={slab} />
+          <span className="zone-paused-title-text">
+            <ZoneWords>{title}</ZoneWords>
+          </span>
         </h1>
       </header>
       <div className="zone-paused-wedge" inert={asking !== undefined}>
         <div className="zone-paused-list" ref={wedge}>
-          <div className="zone-paused-rows">
+          <div className="zone-paused-rows" data-steps={stairs} ref={rows}>
             {overlay.controls.map(row)}
             {overlay.groups.map(group => (
               <section aria-label={group.label} className="zone-paused-group" key={group.id}>
-                <h2 className="zone-paused-group-label">
+                <h2 className="zone-paused-group-label" data-step={nextStep()}>
                   <ZonePanel edge={false} tone="blue">
-                    <span className="zone-paused-group-text">{group.label}</span>
+                    <ZoneCaps size="caps-1">{group.label}</ZoneCaps>
                   </ZonePanel>
                 </h2>
                 {group.controls.map(row)}
@@ -132,6 +164,7 @@ export function ZonePaused({
       </span>
       {asked === undefined ? null : (
         <div className="zone-paused-question" data-block-exit ref={question}>
+          <ZoneVeil />
           <ZoneDialog
             actions={[
               { label: "No", onPress: onAnswer === undefined ? undefined : () => onAnswer(false) },

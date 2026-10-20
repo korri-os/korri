@@ -1,0 +1,79 @@
+/* One text over more than one line. The box is the line box: 1.4 caps a
+ * line, the cap in rows 0.2 to 1.2 of it. The glyphs' ring and drop draw
+ * past the box and are never clipped, so no word loses a letter. */
+.zone-words {
+  --zone-words-r: calc(var(--zone-cap-outline) * var(--zone-px));
+  position: relative;
+  isolation: isolate;
+  display: inline-block;
+  max-width: 100%;
+  font-family: var(--zone-font);
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-shadow: none;
+  text-transform: uppercase;
+  overflow-wrap: normal;
+}
+
+/* The two copies: the same text in the same box, so the same line breaks. */
+.zone-words::before,
+.zone-words::after {
+  content: attr(data-text) / "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Under the words: the ring, one art px all round, and the drop. */
+.zone-words::before {
+  z-index: -1;
+  color: var(--zone-words-outline);
+  text-shadow:
+    calc(var(--zone-words-r) * -1) calc(var(--zone-words-r) * -1) 0 var(--zone-words-outline),
+    0 calc(var(--zone-words-r) * -1) 0 var(--zone-words-outline),
+    var(--zone-words-r) calc(var(--zone-words-r) * -1) 0 var(--zone-words-outline),
+    calc(var(--zone-words-r) * -1) 0 0 var(--zone-words-outline),
+    var(--zone-words-r) 0 0 var(--zone-words-outline),
+    calc(var(--zone-words-r) * -1) var(--zone-words-r) 0 var(--zone-words-outline),
+    0 var(--zone-words-r) 0 var(--zone-words-outline),
+    var(--zone-words-r) var(--zone-words-r) 0 var(--zone-words-outline),
+    calc(var(--zone-words-r) * 2) var(--zone-words-r) 0 var(--zone-words-drop),
+    calc(var(--zone-words-r) * 2) calc(var(--zone-words-r) * 2) 0 var(--zone-words-drop),
+    var(--zone-words-r) calc(var(--zone-words-r) * 2) 0 var(--zone-words-drop);
+}
+
+/* Over the words: the shade, a band through each line's lower three rows
+ * of ten (rows 0.9 to 1.2 of a 1.4 line), cut to the glyphs. */
+.zone-words::after {
+  color: transparent;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0% 64.2857%,
+    var(--zone-words-shade) 64.2857% 85.7143%,
+    transparent 85.7143% 100%
+  ) 0 0 / 100% 1.4em;
+  background-clip: text;
+}
+
+/* White: the face is the colour the words stand in, so a tinting panel
+ * still tints it; the shade is lavender unless that panel names its own. */
+.zone-words[data-ink="white"] {
+  --zone-words-outline: var(--zone-ink-white-outline);
+  --zone-words-drop: var(--zone-ink-white-outline);
+  --zone-words-shade: var(--zone-caps-shade, var(--zone-ink-white-shade));
+}
+
+.zone-words[data-ink="hud"] {
+  --zone-words-outline: var(--zone-ink-hud-outline);
+  --zone-words-drop: var(--zone-ink-hud-outline);
+  --zone-words-shade: var(--zone-ink-hud-face);
+  color: var(--zone-ink-hud-face);
+}
+
+.zone-words[data-ink="danger"] {
+  --zone-words-outline: var(--zone-ink-white-outline);
+  --zone-words-drop: transparent;
+  --zone-words-shade: var(--zone-ink-danger-shade);
+  color: var(--zone-ink-danger-face);
+}

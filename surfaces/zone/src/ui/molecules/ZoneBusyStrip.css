@@ -1,36 +1,37 @@
-/* The kicker's panel and the actions, side by side. The panel grows and
- * shrinks; the actions keep their size and wrap under it when the strip is
- * narrower than both. */
+/* The panel and the actions, side by side. The panel grows and shrinks;
+ * the actions keep their size and, once their caps have stepped down to
+ * caps-1, wrap under it when the strip is narrower than both. */
 .zone-busy-strip {
-  --zone-busy-strip-type-kicker: clamp(calc(var(--zone-type-row) * var(--zone-px)), 2.8cqi, calc(var(--zone-type-kicker) * var(--zone-px)));
-  --zone-busy-strip-type-detail: clamp(calc(var(--zone-type-note) * var(--zone-px)), 1.8cqi, calc(var(--zone-type-detail) * var(--zone-px)));
-  --zone-busy-strip-shape: polygon(
-    calc(var(--zone-slant) * var(--zone-px)) 0,
-    100% 0,
-    calc(100% - calc(var(--zone-slant) * var(--zone-px))) 100%,
-    0 100%
-  );
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: stretch;
   gap: calc(var(--zone-strip-gap) * var(--zone-px));
   width: 100%;
   color: var(--zone-cap);
+  font-size: calc(var(--zone-caps-2) * var(--zone-px));
 }
 
-/* The black parallelogram: kicker over detail, both left-aligned. */
+.zone-busy-strip:has(> .zone-busy-strip-actions[data-zone-fit-floor]) {
+  flex-wrap: wrap;
+}
+
+/* The black panel: kicker over detail over meter, left-aligned. Its
+ * top-left and bottom-right corners are cut on the art grid
+ * (useZoneBusyShape); the kicker stands clear of the first cut and the
+ * meter of the second. */
 .zone-busy-strip-panel {
+  --zone-busy-strip-cut-at: var(--zone-busy-strip-cut, calc(var(--zone-busy-cut-least) * var(--zone-px)));
   position: relative;
   isolation: isolate;
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
   justify-content: center;
-  gap: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2);
-  min-width: min(100%, calc(calc(var(--zone-busy-height) * var(--zone-px)) * 3));
+  gap: calc(var(--zone-busy-gap) * var(--zone-px));
+  min-width: min(100%, calc(var(--zone-busy-least) * var(--zone-px)));
   min-height: calc(var(--zone-busy-height) * var(--zone-px));
-  padding: calc(var(--zone-row-space) * var(--zone-px)) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)) * 2);
-  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
+  padding: calc(var(--zone-busy-pad-block) * var(--zone-px)) calc(var(--zone-busy-pad) * var(--zone-px));
+  text-shadow: none;
 }
 
 .zone-busy-strip-panel::before {
@@ -39,61 +40,59 @@
   inset: 0;
   z-index: -1;
   background: var(--zone-panel);
-  clip-path: var(--zone-busy-strip-shape);
+  clip-path: var(--zone-busy-strip-shape, polygon(1.5em 0, 100% 0, calc(100% - 1.5em) 100%, 0 100%));
 }
 
+/* Korri's kicker: white caps-2, a whole step smaller when the strip is
+ * narrow (useZoneFit), and only then wrapping between words. */
 .zone-busy-strip-kicker {
-  font-size: var(--zone-busy-strip-type-kicker);
-  line-height: 1.05;
-  overflow-wrap: break-word;
-  hyphens: auto;
+  display: block;
+  margin-left: var(--zone-busy-strip-cut-at);
+  font-size: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
+  line-height: 1;
+  white-space: nowrap;
 }
 
+.zone-busy-strip-kicker[data-zone-fit-floor] {
+  white-space: normal;
+}
+
+/* Korri's detail: Jersey 10 as written, at most about 52 characters a
+ * line; a word longer than the line breaks at its end with a hyphen. */
 .zone-busy-strip-detail {
-  font-size: var(--zone-busy-strip-type-detail);
-  line-height: 1.15;
+  max-inline-size: var(--zone-dialog-measure);
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) * var(--zone-px));
+  line-height: calc(var(--zone-dialog-line-leading) * var(--zone-px));
+  color: var(--zone-dialog-line-ink);
+  text-transform: none;
   overflow-wrap: break-word;
   hyphens: auto;
 }
 
-/* Korri's actions, as buttons beside the panel. */
+/* Korri's actions, as black slabs beside the panel: one row at caps-2,
+ * then caps-1, and only then under the panel. */
 .zone-busy-strip-actions {
   display: flex;
   flex: 0 0 auto;
-  align-items: stretch;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: calc(var(--zone-strip-gap) * var(--zone-px));
-  font-size: var(--zone-busy-strip-type-kicker);
+  max-width: 100%;
+  padding-bottom: calc(var(--zone-drop-focus) * var(--zone-px));
+  font-size: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
+}
+
+.zone-busy-strip-actions[data-zone-fit-floor] {
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .zone-busy-strip-action {
-  position: relative;
-  isolation: isolate;
-  display: flex;
-  align-items: center;
-  min-height: calc(var(--zone-busy-height) * var(--zone-px));
-  padding: calc(var(--zone-row-space) * var(--zone-px)) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)) * 2);
-  line-height: 1;
-  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
+  display: grid;
+  flex: 0 0 auto;
+  --zone-underline-depth: var(--zone-drop-focus);
   transition: translate var(--zone-press-time) var(--zone-bounce);
-}
-
-.zone-busy-strip-action::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--zone-panel);
-  clip-path: var(--zone-busy-strip-shape);
-}
-
-.zone-busy-strip-action[data-focused]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  background: var(--zone-focus);
-  clip-path: var(--zone-busy-strip-shape);
-  translate: calc(calc(var(--zone-drop) * var(--zone-px)) * -1) calc(var(--zone-drop) * var(--zone-px));
 }
 
 .zone-busy-strip-action:active {
@@ -105,63 +104,51 @@
   opacity: var(--zone-triangle-dim);
 }
 
-/* A destructive action's caps are red, as a destructive row's value is. */
-.zone-busy-strip-action[data-destructive] {
-  color: var(--zone-destructive-ink);
-  --zone-caps-shade: currentColor;
-}
-
-/* Korri's progress: SPECIAL STAGE's red slanted bar under the detail, the
- * sizes standing at its right end. When the strip is too narrow for both,
- * the sizes drop under the bar. */
+/* Korri's progress: SPECIAL STAGE's bar under the detail, the sizes at
+ * its right end, clear of the panel's bottom-right cut. When the panel is
+ * too narrow for both, the sizes drop under the bar. */
 .zone-busy-strip-meter {
-  --zone-busy-strip-meter-height: clamp(calc(var(--zone-meter-height-least) * var(--zone-px)), 1.6cqi, calc(var(--zone-meter-height) * var(--zone-px)));
-  --zone-busy-strip-meter-slant: var(--zone-busy-strip-meter-height);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(var(--zone-row-gap) * var(--zone-px));
-  margin-top: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2);
-  font-size: var(--zone-busy-strip-type-detail);
+  gap: calc(var(--zone-busy-gap) * var(--zone-px)) calc(var(--zone-row-gap) * var(--zone-px));
+  margin-right: var(--zone-busy-strip-cut-at);
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
   line-height: 1;
 }
 
-/* The track: the whole bar in blue, leaning as every panel leans. */
+/* The track: 4 art px of dark, its ends 45 degree stairs. */
 .zone-busy-strip-bar {
   position: relative;
   flex: 1 1 calc(var(--zone-meter-least) * var(--zone-px));
   min-width: min(100%, calc(var(--zone-meter-least) * var(--zone-px)));
-  height: var(--zone-busy-strip-meter-height);
+  height: calc(var(--zone-meter-height) * var(--zone-px));
   overflow: hidden;
   background: var(--zone-meter-track);
-  clip-path: polygon(
-    var(--zone-busy-strip-meter-slant) 0,
-    100% 0,
-    calc(100% - var(--zone-busy-strip-meter-slant)) 100%,
-    0 100%
-  );
+  clip-path: var(--zone-panel-shape, polygon(0.25em 0, 100% 0, calc(100% - 0.25em) 100%, 0 100%));
 }
 
-/* The fill: red under an orange lip, its right end cut on the same lean,
- * so a full bar is exactly the track's shape. */
+/* The fill: red under a 1-px orange lip (a quarter of 4 rows), its right
+ * end a 45 degree stair, so a full fill is exactly the track's shape. */
 .zone-busy-strip-fill {
   position: absolute;
   inset: 0 auto 0 0;
+  display: block;
   width: calc(var(--zone-busy-strip-share, 0) * 100%);
   background: linear-gradient(
     to bottom,
-    var(--zone-meter-lip) 0% 34%,
-    var(--zone-meter-fill) 34% 100%
+    var(--zone-meter-lip) 0% 25%,
+    var(--zone-meter-fill) 25% 100%
   );
-  clip-path: polygon(0 0, 100% 0, calc(100% - var(--zone-busy-strip-meter-slant)) 100%, 0 100%);
+  clip-path: var(--zone-panel-shape, none);
   transition: width var(--zone-press-time) var(--zone-bounce);
 }
 
-/* No known end: red stripes on the blue track, sliding along the bar. Under
- * reduced motion they stand still, still a bar with no end. */
+/* No known end: red stripes on the dark track, sliding along the bar.
+ * Under reduced motion they stand still, still a bar with no end. */
 .zone-busy-strip-meter[data-meter="indeterminate"] .zone-busy-strip-fill {
-  --zone-sweep-tile: calc(var(--zone-busy-strip-meter-height) * 2);
+  --zone-sweep-tile: calc(var(--zone-meter-height) * var(--zone-px) * 2);
   width: 100%;
   background: linear-gradient(
     -45deg,
@@ -175,17 +162,18 @@
   animation: zone-sweep var(--zone-meter-sweep-time) linear infinite;
 }
 
-/* The sizes: DONE / TOTAL, the done size in room of its own so the readout
- * keeps its width as it counts. */
+/* The sizes: DONE / TOTAL in white caps-1, whose digits are all one width;
+ * the done size has room of its own so the readout keeps its place as it
+ * counts. */
 .zone-busy-strip-figures {
   display: flex;
   flex: 0 0 auto;
   align-items: baseline;
-  gap: calc(calc(var(--zone-row-gap) * var(--zone-px)) / 2);
+  gap: calc(var(--zone-busy-gap) * var(--zone-px));
   white-space: nowrap;
 }
 
 .zone-busy-strip-done {
-  min-inline-size: var(--zone-meter-figures);
+  min-inline-size: calc(var(--zone-meter-figures) * var(--zone-px));
   text-align: end;
 }

@@ -283,7 +283,9 @@ describe("ZoneStatusLayer", () => {
   test("C31: the game the question belongs to stands in yellow", () => {
     mount(statusConfirmForGame)
     const dialog = screen.getByRole("dialog", { name: "Needs a download" })
-    expect(within(dialog).getByText("Hollow Knight").className).toBe("zone-dialog-title")
+    const title = within(dialog).getByText("Hollow Knight")
+    expect(title.closest(".zone-dialog-title")).not.toBeNull()
+    expect(title.getAttribute("data-ink")).toBe("hud")
   })
 
   test("C31: any action, the last as well, is reported by its id; none is treated as no", () => {
@@ -370,13 +372,24 @@ describe("ZoneStatusLayer", () => {
   })
 })
 
-describe("the dim covers the whole page", () => {
-  const css = readFileSync(join(import.meta.dir, "..", "src", "ui", "organisms", "ZoneStatusLayer.css"), "utf8")
+describe("the veil covers the whole page", () => {
+  const read = (...path: string[]) => readFileSync(join(import.meta.dir, "..", "src", ...path), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
-  test("the page's own layers are shut in a stacking context under the sheet", () => {
+  const css = read("ui", "organisms", "ZoneStatusLayer.css")
+  test("the page's own layers are shut in a stacking context under the veil", () => {
     expect(css).toMatch(/\.zone-status-layer-page \{[^}]*isolation: isolate;/)
     expect(css).toMatch(/\.zone-status-layer-content \{[^}]*z-index: 0;[^}]*isolation: isolate;/)
-    expect(css).toMatch(/\.zone-status-layer-page\[data-covered\]::after \{[^}]*z-index: 1;/)
+    // The veil is drawn after the content, in the same stacking context: over it.
+    mount(statusBusyDetail)
+    const covered = document.querySelector(".zone-status-layer-page[data-covered]")!
+    expect([...covered.children].map(child => child.className)).toEqual(["zone-status-layer-content", "zone-veil"])
+  })
+  test("the veil is a dither of single art pixels: a hard-stop checker, no opacity", () => {
+    const veil = read("ui", "atoms", "ZoneVeil.css")
+    expect(veil).toMatch(/conic-gradient\(/)
+    expect(veil).toMatch(/var\(--zone-veil-tile\) \* var\(--zone-px\)/)
+    expect(veil).not.toMatch(/opacity/)
+    expect(read("zone-tokens.css")).toMatch(/--zone-veil-tile: 2;/)
   })
   test("busy over home: FIND is inside the covered, inert content", async () => {
     const games = await import("../src/pages/ZoneGames.page.part")

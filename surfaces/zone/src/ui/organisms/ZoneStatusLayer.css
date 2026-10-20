@@ -2,17 +2,18 @@
  * a size container, so the strip and the dialog size against the page they
  * cover, not the device. */
 .zone-status-layer {
-  --zone-status-layer-margin: clamp(calc(var(--zone-strip-margin-min) * var(--zone-px)), 3cqi, calc(var(--zone-strip-margin) * var(--zone-px)));
+  --zone-status-layer-margin: calc(var(--zone-layer-margin) * var(--zone-px));
+  --zone-status-layer-hud-top: 0%;
   position: relative;
   width: 100%;
   height: 100%;
   container: zone-layer / size;
 }
 
-/* The page and its sheet share one stacking context, and the page's own
+/* The page and its veil share one stacking context, and the page's own
  * layers (FIND, GAME OPTS., a page's dialogs, each with its z-index) are
- * shut inside a second one under the sheet: no z-index in a page can rise
- * through the dim. */
+ * shut inside a second one under the veil: no z-index in a page can rise
+ * through it. */
 .zone-status-layer-page {
   position: absolute;
   inset: 0;
@@ -26,80 +27,80 @@
   isolation: isolate;
 }
 
-/* Covered: the page dims under a flat black sheet. No blur, one opacity. */
-.zone-status-layer-page[data-covered]::after {
-  content: "";
+/* A picture over the veil: the launch title card. */
+.zone-status-layer-stage {
   position: absolute;
   inset: 0;
-  z-index: 1;
-  background: var(--zone-layer-dim);
-  opacity: var(--zone-layer-dim-opacity);
-  pointer-events: none;
 }
 
-/* Running: a small strip at the top of the page, centred. It never takes
- * a pointer or focus, and the title gives way before the kicker does. */
+/* Running: the HUD stack at the top left, under the page's header. It
+ * never takes a pointer or focus; the title gives way before the kicker. */
 .zone-status-layer-running {
   position: absolute;
-  top: var(--zone-status-layer-margin);
-  left: 50%;
-  display: flex;
-  max-width: calc(100% - var(--zone-status-layer-margin) * 2);
-  font-size: clamp(calc(var(--zone-type-note) * var(--zone-px)), 3cqi, calc(var(--zone-type-row) * var(--zone-px)));
+  top: calc(var(--zone-status-layer-hud-top) + var(--zone-status-layer-margin));
+  left: var(--zone-status-layer-margin);
+  display: grid;
+  justify-items: start;
+  row-gap: calc(var(--zone-layer-hud-gap) * var(--zone-px));
+  max-width: min(calc(100% - var(--zone-status-layer-margin) * 2), calc(var(--zone-layer-hud-width) * var(--zone-px)));
   pointer-events: none;
-  translate: -50% 0;
-  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
 }
 
-.zone-status-layer-running-line {
+.zone-status-layer-hud-kicker {
+  display: flex;
+  max-width: 100%;
+}
+
+.zone-status-layer-hud-line {
   display: flex;
   align-items: center;
   gap: calc(var(--zone-row-gap) * var(--zone-px));
+  max-width: 100%;
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+}
+
+.zone-status-layer-hud-title {
+  display: flex;
   min-width: 0;
 }
 
-/* The OPEN tag at the caps' height. */
+/* The OPEN tag at caps-1. */
 .zone-status-layer-running-tag {
-  --zone-tag-type: calc(var(--zone-tag-type-share) * 1em);
+  --zone-tag-type: calc(var(--zone-caps-1) * var(--zone-px));
   display: inline-flex;
   flex: 0 0 auto;
-  height: calc(var(--zone-tag-row-height) * var(--zone-tag-type-share) * 1em);
+  height: calc(var(--zone-tag-row-height) * var(--zone-caps-1) * var(--zone-px));
 }
 
-/* The game a status belongs to: its title in yellow, as the dialog states it. */
-.zone-status-layer-game {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--zone-dialog-title-ink);
-  --zone-caps-shade: currentColor;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Busy: the strip dropped across the page's middle, no wider than its
- * token, the game's title on its own panel above it. */
+/* Busy: the strip across the page's middle with the game's tab on its
+ * top-left, no wider than its token; or, under a title card, along the
+ * page's foot. */
 .zone-status-layer-busy {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: calc(var(--zone-strip-gap) * var(--zone-px));
+  align-items: flex-start;
   padding: var(--zone-status-layer-margin)
     max(var(--zone-status-layer-margin), calc((100cqi - calc(var(--zone-layer-busy-width) * var(--zone-px))) / 2));
   overflow-y: auto;
   scrollbar-width: none;
-  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
+}
+
+.zone-status-layer-busy[data-at="foot"] {
+  justify-content: flex-end;
 }
 
 .zone-status-layer-busy-game {
   display: flex;
   max-width: 100%;
-  font-size: clamp(calc(var(--zone-type-note) * var(--zone-px)), 2.6cqi, calc(var(--zone-type-row) * var(--zone-px)));
+  margin-left: calc(var(--zone-layer-tab-inset) * var(--zone-px));
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
 }
 
-/* Problem and Confirm: the blue dialog in the middle of the page, never
- * taller than it. */
+/* Problem and Confirm: the sky dialog from edge to edge across the
+ * page's middle, as Mania's is, never taller than the page. */
 .zone-status-layer-problem,
 .zone-status-layer-confirm {
   position: absolute;
@@ -107,7 +108,5 @@
   display: grid;
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   align-items: center;
-  padding: var(--zone-status-layer-margin)
-    max(var(--zone-status-layer-margin), calc((100cqi - calc(var(--zone-layer-dialog-width) * var(--zone-px))) / 2));
-  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
+  padding: var(--zone-status-layer-margin) 0;
 }
