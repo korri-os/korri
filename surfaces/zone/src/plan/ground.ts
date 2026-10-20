@@ -113,7 +113,7 @@ export function zoneGroundDot(
   dot: Ring["dots"][number],
   t: number,
   drift: number,
-  whole = true,
+  whole: boolean,
 ): { readonly x: number; readonly y: number } {
   const angle = (dot.phase + (ring.turn * t) / Math.max(1, drift)) * Math.PI * 2
   const x = ring.cx + ring.r * Math.cos(angle)
@@ -136,7 +136,7 @@ export function renderZoneGround(paint: ZoneGroundPainter, t: number, palette: Z
     paint.fillStyle = colour
     fillRing(paint, ring.cx, ring.cy, ring.r + half, ring.r - half, hArt)
     for (const dot of ring.dots) {
-      const at = zoneGroundDot(ring, dot, frame, drift)
+      const at = zoneGroundDot(ring, dot, frame, drift, true)
       fillRing(paint, at.x + 0.5, at.y + 0.5, dot.r, 0, hArt)
     }
   }

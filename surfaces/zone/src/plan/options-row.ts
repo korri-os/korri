@@ -46,7 +46,7 @@ export function zoneOptionClip(
   wArt: number,
   hArt: number,
   edges: { readonly left?: ZoneStairEdge; readonly right?: ZoneStairEdge } = {},
-  drawn: ZoneEdges = "stairs",
+  drawn: ZoneEdges,
 ): string {
   const slanted = (edges.left === "straight" ? 0 : 1) + (edges.right === "straight" ? 0 : 1)
   return zoneStairClip(Math.min(wArt, slanted * ZONE_OPTION_SLANT + 1), hArt, edges, drawn)

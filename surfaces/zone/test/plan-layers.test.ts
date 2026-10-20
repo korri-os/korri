@@ -223,12 +223,12 @@ describe("M4, the dialog as a function of time", () => {
   })
 
   test("the keyframes are the frames at each step, the same every run", () => {
-    const open = zoneDialogKeyframes(320, "open")
+    const open = zoneDialogKeyframes(320, "open", "art")
     expect(open).toHaveLength(7)
     expect(open.map(frame => frame.scaleY)).toEqual([0, 1, 2, 3, 4, 5, 6].map(k => k / 6))
     expect(open.map(frame => frame.offset)).toEqual([0, 1, 2, 3, 4, 5, 6].map(k => k / 6))
-    expect(zoneDialogKeyframes(320, "open")).toEqual(open)
-    expect(zoneDialogKeyframes(320, "close").map(frame => frame.scaleY)).toEqual([6, 5, 4, 3, 2, 1, 0].map(k => k / 6))
+    expect(zoneDialogKeyframes(320, "open", "art")).toEqual(open)
+    expect(zoneDialogKeyframes(320, "close", "art").map(frame => frame.scaleY)).toEqual([6, 5, 4, 3, 2, 1, 0].map(k => k / 6))
   })
 })
 
@@ -251,7 +251,7 @@ describe("the one-line chamfer", () => {
   })
 
   test("the cut is a 45 degree stair at the top-left and the bottom-right, whole art px", () => {
-    const shape = zoneStairChamfer(4, 4)
+    const shape = zoneStairChamfer(4, 4, "stairs")
     expect(shape).toBe([
       "polygon(calc(3 * var(--zone-px)) 0",
       "calc(3 * var(--zone-px)) calc(1 * var(--zone-px))",
@@ -271,7 +271,7 @@ describe("the one-line chamfer", () => {
       "100% 0)",
     ].join(", "))
     // Taller than the cut: the straight run between the cuts is two points, not one a row.
-    const tall = zoneStairChamfer(40, 4)
+    const tall = zoneStairChamfer(40, 4, "stairs")
     expect(tall.split("), ").length).toBe(shape.split("), ").length)
   })
 })

@@ -74,7 +74,7 @@ export function zoneDialogFrame(t: number, wArt: number, phase: ZoneDialogPhase)
  * grid; in Modern the open decelerates in and the close accelerates out,
  * M2's landing and leaving curves.
  */
-export function zoneDialogEasing(phase: ZoneDialogPhase, grid: ZoneMotionGrid = "art"): string {
+export function zoneDialogEasing(phase: ZoneDialogPhase, grid: ZoneMotionGrid): string {
   if (grid === "art") return "steps(1, end)"
   return phase === "open" ? "cubic-bezier(0.2, 0.8, 0.2, 1)" : "cubic-bezier(0.5, 0, 0.9, 0.4)"
 }
@@ -90,7 +90,7 @@ export interface ZoneDialogKeyframe {
  * zoneDialogDuration(phase). Off the art grid (Modern) there are no steps:
  * the two ends, eased between by `zoneDialogEasing`, the wedges anywhere.
  */
-export function zoneDialogKeyframes(wArt: number, phase: ZoneDialogPhase, grid: ZoneMotionGrid = "art"): readonly ZoneDialogKeyframe[] {
+export function zoneDialogKeyframes(wArt: number, phase: ZoneDialogPhase, grid: ZoneMotionGrid): readonly ZoneDialogKeyframe[] {
   if (grid === "free") {
     const width = Math.max(0, wArt)
     const shut = { scaleY: 0, wedgeArt: width }

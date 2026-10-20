@@ -46,7 +46,7 @@ export function zoneTitleBandClip(
   band: { readonly x: number; readonly y: number; readonly thickness: number },
   wArt: number,
   hArt: number,
-  edges: ZoneEdges = "stairs",
+  edges: ZoneEdges,
 ): string {
   const px = (value: number) => (value === 0 ? "0" : `calc(${value} * var(--zone-px))`)
   const top = Math.round(band.y * hArt)

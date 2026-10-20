@@ -118,7 +118,7 @@ const covered = (korri: SurfaceModel): boolean =>
   korri.status._tag === "Busy" || korri.status._tag === "Problem" || korri.status._tag === "Confirm"
 
 /** The start, in the look the device kept (zone-look-preference.ts reads it; the default without). */
-export function zoneSurfaceStart(korri: SurfaceModel, look: ZoneLook = ZONE_DEFAULT_LOOK): ZoneSurfaceState {
+export function zoneSurfaceStart(korri: SurfaceModel, look: ZoneLook): ZoneSurfaceState {
   const start: ZoneSurfaceState = {
     look,
     nav: ZONE_START,

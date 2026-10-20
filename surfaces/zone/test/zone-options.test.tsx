@@ -349,7 +349,7 @@ describe("the band's black wedge", () => {
       const band = document.querySelector<HTMLElement>(".zone-options-band")!
       const leg = zoneDialogWedgeArt(320, 150)
       expect(band.style.getPropertyValue("--zone-band-wedge-leg")).toBe(String(leg))
-      expect(band.style.getPropertyValue("--zone-band-wedge-shape")).toBe(zoneStairWedge(leg, "bottom-left"))
+      expect(band.style.getPropertyValue("--zone-band-wedge-shape")).toBe(zoneStairWedge(leg, "bottom-left", "stairs"))
       cleanup()
       render(<ZoneRunWith choice={fixtureRunnerReady} />)
       expect(document.querySelector<HTMLElement>(".zone-run-with-band")?.style.getPropertyValue("--zone-band-wedge-leg")).toBe(String(leg))

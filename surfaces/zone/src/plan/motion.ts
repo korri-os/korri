@@ -68,7 +68,7 @@ export function along(t: number, start: number, duration: number, ease: (t: numb
  * A distance in art px: rounded to a whole art px on the art grid (Blend,
  * Retro), left where it falls in Modern, whose motion is sub-pixel.
  */
-const art = (value: number, grid: ZoneMotionGrid = "art"): number => (grid === "art" ? Math.round(value) || 0 : value || 0)
+const art = (value: number, grid: ZoneMotionGrid): number => (grid === "art" ? Math.round(value) || 0 : value || 0)
 
 /** A move in hard steps on the art grid, eased smooth in Modern. */
 const stepped = (count: number, grid: ZoneMotionGrid, smooth: (t: number) => number) =>
@@ -115,7 +115,7 @@ export interface ZoneMenuFrame {
 }
 
 /** M2 at `t` on a canvas `wArt` wide: the new page arriving. */
-export function zoneMenuFrame(t: number, wArt: number, grid: ZoneMotionGrid = "art"): ZoneMenuFrame {
+export function zoneMenuFrame(t: number, wArt: number, grid: ZoneMotionGrid): ZoneMenuFrame {
   return {
     wipe: along(t, MENU_WIPE.start, MENU_WIPE.duration, ZONE_EASE.wipe),
     bannerY: art(-MENU_BANNER.rise * (1 - along(t, MENU_BANNER.start, MENU_BANNER.duration, ZONE_EASE.snap)), grid),
@@ -128,7 +128,7 @@ export function zoneMenuFrame(t: number, wArt: number, grid: ZoneMotionGrid = "a
 export const ZONE_SHEET_MS = MENU_ROWS.duration
 
 /** The sheet's offset from rest at `t`, art px to the right. */
-export const zoneSheetFrame = (t: number, wArt: number, grid: ZoneMotionGrid = "art"): number =>
+export const zoneSheetFrame = (t: number, wArt: number, grid: ZoneMotionGrid): number =>
   art(wArt * (1 - along(t, 0, MENU_ROWS.duration, ZONE_EASE.rows)), grid)
 
 /**
@@ -137,7 +137,7 @@ export const zoneSheetFrame = (t: number, wArt: number, grid: ZoneMotionGrid = "
  * 4 art px, so the wipe reads as stairs and the polygon stays short.
  * Smooth (Modern), the line itself, cut where it meets the box.
  */
-export function zoneWipeClip(share: number, wArt: number, hArt: number, edges: ZoneEdges = "stairs"): string {
+export function zoneWipeClip(share: number, wArt: number, hArt: number, edges: ZoneEdges): string {
   if (share <= 0) return "none"
   if (share >= 1) return "polygon(0 0, 0 0, 0 0)"
   // Kept: every point with x + (hArt - y) at most `reach` from the bottom left.
@@ -179,7 +179,7 @@ export interface ZoneTitleFrame {
 }
 
 /** M3 in at `t`: everything from the top right (bands), left (name) and right (bar). */
-export function zoneTitleInFrame(t: number, wArt: number, hArt: number, grid: ZoneMotionGrid = "art"): ZoneTitleFrame {
+export function zoneTitleInFrame(t: number, wArt: number, hArt: number, grid: ZoneMotionGrid): ZoneTitleFrame {
   const band = (index: number): readonly [number, number] => {
     const left = 1 - along(t, TITLE_BANDS.start + index * TITLE_BANDS.stagger, TITLE_BANDS.duration, ZONE_EASE.bands)
     return [art(wArt * left, grid), art(-hArt * left, grid)]
@@ -195,7 +195,7 @@ export function zoneTitleInFrame(t: number, wArt: number, hArt: number, grid: Zo
 }
 
 /** M3 out at `t`: the reverse, the bands leaving toward the bottom left. */
-export function zoneTitleOutFrame(t: number, wArt: number, hArt: number, grid: ZoneMotionGrid = "art"): ZoneTitleFrame {
+export function zoneTitleOutFrame(t: number, wArt: number, hArt: number, grid: ZoneMotionGrid): ZoneTitleFrame {
   const gone = along(t, 0, ZONE_TITLE_OUT_MS, ZONE_EASE.leave)
   const band = (index: number): readonly [number, number] => {
     const share = along(t, index * TITLE_BANDS.stagger, ZONE_TITLE_OUT_MS - 3 * TITLE_BANDS.stagger, ZONE_EASE.leave)
@@ -231,7 +231,7 @@ export interface ZoneTallyRowFrame {
 }
 
 /** M5 at `t` for row `index`. A skipped count-up is `t` at or past its end. */
-export function zoneTallyRowFrame(t: number, index: number, grid: ZoneMotionGrid = "art"): ZoneTallyRowFrame {
+export function zoneTallyRowFrame(t: number, index: number, grid: ZoneMotionGrid): ZoneTallyRowFrame {
   const start = index * ZONE_TALLY_ROW_STAGGER_MS
   return {
     x: art(TALLY_ROW_ENTER.from * (1 - along(t, start, TALLY_ROW_ENTER.duration, ZONE_EASE.rows)), grid),
@@ -241,7 +241,7 @@ export function zoneTallyRowFrame(t: number, index: number, grid: ZoneMotionGrid
 }
 
 /** The tally leaving at `t`: its panel slides down off the canvas. */
-export const zoneTallyOutFrame = (t: number, hArt: number, grid: ZoneMotionGrid = "art"): number =>
+export const zoneTallyOutFrame = (t: number, hArt: number, grid: ZoneMotionGrid): number =>
   art(hArt * along(t, 0, ZONE_TALLY_OUT_MS, ZONE_EASE.leave), grid)
 
 // ---- M6 idle attract ----
@@ -265,7 +265,7 @@ export interface ZoneAttractFrame {
  * 2900, then the stage pans linearly to 5600 and holds to 6000, when the
  * next game's turn starts at 0 with its own M3.
  */
-export function zoneAttractFrame(t: number, wArt: number, hArt: number, grid: ZoneMotionGrid = "art"): ZoneAttractFrame {
+export function zoneAttractFrame(t: number, wArt: number, hArt: number, grid: ZoneMotionGrid): ZoneAttractFrame {
   const at = Math.max(0, Math.min(ZONE_ATTRACT_MS, t))
   const stage = at >= ATTRACT.holdUntil
   const card = at < ATTRACT.holdUntil ? zoneTitleInFrame(at, wArt, hArt, grid)

@@ -2,8 +2,7 @@
 // The portal builds Zone from source with its own Vite config, not this one.
 import { caliper } from "@simonwjackson/caliper"
 import { defineConfig, type Plugin } from "vite"
-
-const LOOKS = ["modern", "blend", "retro"] as const
+import { isZoneLook, ZONE_DEFAULT_LOOK, ZONE_LOOKS } from "./src/plan/look"
 
 /**
  * The look every Caliper frame shows: `ZONE_LOOK=modern bun run caliper`
@@ -13,9 +12,9 @@ const LOOKS = ["modern", "blend", "retro"] as const
  * (src/fixtures/fixture-look.ts). Development only, as this file is.
  */
 function zoneFrameLook(): Plugin {
-  const asked = process.env.ZONE_LOOK ?? "blend"
-  const look = LOOKS.find(id => id === asked)
-  if (look === undefined) throw new Error(`ZONE_LOOK must be one of ${LOOKS.join(", ")}; got ${asked}`)
+  const asked = process.env.ZONE_LOOK ?? ZONE_DEFAULT_LOOK
+  if (!isZoneLook(asked)) throw new Error(`ZONE_LOOK must be one of ${ZONE_LOOKS.join(", ")}; got ${asked}`)
+  const look = asked
   return {
     name: "zone-frame-look",
     apply: "serve",

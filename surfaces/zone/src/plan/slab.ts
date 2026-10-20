@@ -36,7 +36,7 @@ const far = (art: number): string => (art === 0 ? "100%" : `calc(100% - ${art} *
  * last row ends at 100% of the height, so a box a fraction taller still
  * closes. Smooth (Modern), each cut is one straight line.
  */
-export function zoneStairChamfer(hArt: number, cutArt: number, drawn: ZoneEdges = "stairs"): string {
+export function zoneStairChamfer(hArt: number, cutArt: number, drawn: ZoneEdges): string {
   const rows = Math.max(1, Math.round(hArt))
   const cut = Math.max(0, Math.min(rows, Math.round(cutArt)))
   if (drawn === "smooth") {

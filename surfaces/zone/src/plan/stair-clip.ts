@@ -119,7 +119,7 @@ export function zoneStairClip(
   wArt: number,
   hArt: number,
   edges: { readonly left?: ZoneStairEdge; readonly right?: ZoneStairEdge } = {},
-  drawn: ZoneEdges = "stairs",
+  drawn: ZoneEdges,
 ): string {
   const left = edges.left ?? "slash"
   const right = edges.right ?? "slash"
@@ -158,7 +158,7 @@ export type ZoneStairCorner = "top-left" | "top-right" | "bottom-left" | "bottom
  * corner of its box, its long edge a 45 degree stair: the dialog's black
  * wedges and PAUSED's wedge cut.
  */
-export function zoneStairWedge(sizeArt: number, corner: ZoneStairCorner, drawn: ZoneEdges = "stairs"): string {
+export function zoneStairWedge(sizeArt: number, corner: ZoneStairCorner, drawn: ZoneEdges): string {
   const size = Math.max(1, Math.round(sizeArt))
   const top = corner.startsWith("top")
   const leftSide = corner.endsWith("left")
@@ -184,7 +184,7 @@ export function zoneStairWedge(sizeArt: number, corner: ZoneStairCorner, drawn: 
  * own box: a box that many art px square draws every stair on an art px.
  * Each row spans the pixels whose centres fall inside the circle.
  */
-export function zoneStairCircle(diameterArt: number, drawn: ZoneEdges = "stairs"): string {
+export function zoneStairCircle(diameterArt: number, drawn: ZoneEdges): string {
   if (drawn === "smooth") return "circle(50%)"
   const d = Math.max(1, Math.round(diameterArt))
   const r = d / 2

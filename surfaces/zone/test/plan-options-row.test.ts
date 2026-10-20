@@ -45,16 +45,16 @@ describe("narrow: the row stacks its label over its value", () => {
 describe("cells lean at 45 degrees, and no further when they wrap", () => {
   test("a one-line cell is the stair panel itself: its slant is its height less one", () => {
     expect(ZONE_OPTION_SLANT).toBe(ZONE_OPTION_CELL - 1)
-    expect(zoneOptionClip(200, ZONE_OPTION_CELL)).toBe(zoneStairClip(200, ZONE_OPTION_CELL))
+    expect(zoneOptionClip(200, ZONE_OPTION_CELL, {}, "stairs")).toBe(zoneStairClip(200, ZONE_OPTION_CELL, {}, "stairs"))
   })
   test("a taller cell keeps the one-line slant, stepped over its height", () => {
-    const two = zoneOptionClip(200, 26)
-    expect(two).toBe(zoneStairClip(2 * ZONE_OPTION_SLANT + 1, 26))
+    const two = zoneOptionClip(200, 26, {}, "stairs")
+    expect(two).toBe(zoneStairClip(2 * ZONE_OPTION_SLANT + 1, 26, {}, "stairs"))
     expect(two).toContain(`calc(${ZONE_OPTION_SLANT} * var(--zone-px)) 0`)
     expect(two).not.toContain("calc(25 * var(--zone-px)) 0")
   })
   test("a flush panel (a problem, a warning) leans at its end only", () => {
-    const flush = zoneOptionClip(200, ZONE_OPTION_CELL, { left: "straight", right: "slash" })
+    const flush = zoneOptionClip(200, ZONE_OPTION_CELL, { left: "straight", right: "slash" }, "stairs")
     expect(flush.startsWith("polygon(0 0")).toBe(true)
     expect(flush).toContain(`calc(100% - ${ZONE_OPTION_SLANT} * var(--zone-px))`)
   })

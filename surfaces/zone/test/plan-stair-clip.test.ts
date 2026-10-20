@@ -32,14 +32,14 @@ function points(polygon: string): string[] {
 
 describe("zoneStairClip", () => {
   test("a panel 3 art px tall leans 2 px each side, one stair per art px", () => {
-    expect(points(zoneStairClip(10, 3))).toEqual([
+    expect(points(zoneStairClip(10, 3, {}, "stairs"))).toEqual([
       "2,0", "2,1", "1,1", "1,2", "0,2", "0,-0",
       "-2,-0", "-2,2", "-1,2", "-1,1", "-0,1", "-0,0",
     ])
   })
 
   test("the slant is the height: a 16-px panel's top row starts 15 px in and every step is 1 px", () => {
-    const pts = points(zoneStairClip(100, 16))
+    const pts = points(zoneStairClip(100, 16, {}, "stairs"))
     expect(pts[0]).toBe("15,0")
     // Down the left edge: x falls by one each time y rises by one.
     const left = pts.slice(0, 32)
@@ -51,42 +51,42 @@ describe("zoneStairClip", () => {
   })
 
   test("every length is a whole number of art px or a share of the box, never a smooth line", () => {
-    for (const polygon of [zoneStairClip(40, 12), zoneStairClip(40, 12, { left: "straight" }), zoneStairClip(7, 9, { right: "backslash" })]) {
+    for (const polygon of [zoneStairClip(40, 12, {}, "stairs"), zoneStairClip(40, 12, { left: "straight" }, "stairs"), zoneStairClip(7, 9, { right: "backslash" }, "stairs")]) {
       expect(() => points(polygon)).not.toThrow()
     }
   })
 
   test("a straight left edge and a slashed right edge: the keycap's tail", () => {
-    expect(points(zoneStairClip(20, 3, { left: "straight", right: "slash" }))).toEqual([
+    expect(points(zoneStairClip(20, 3, { left: "straight", right: "slash" }, "stairs"))).toEqual([
       "0,0", "0,-0", "-2,-0", "-2,2", "-1,2", "-1,1", "-0,1", "-0,0",
     ])
   })
 
   test("backslash edges lean the other way", () => {
-    expect(points(zoneStairClip(20, 3, { left: "backslash", right: "straight" }))).toEqual([
+    expect(points(zoneStairClip(20, 3, { left: "backslash", right: "straight" }, "stairs"))).toEqual([
       "0,0", "0,1", "1,1", "1,2", "2,2", "2,-0", "-0,-0", "-0,0",
     ])
   })
 
   test("a panel too narrow for two full slants leans half its width", () => {
-    const pts = points(zoneStairClip(5, 10))
+    const pts = points(zoneStairClip(5, 10, {}, "stairs"))
     expect(pts[0]).toBe("2,0")
   })
 
   test("two straight edges are the box", () => {
-    expect(points(zoneStairClip(10, 4, { left: "straight", right: "straight" }))).toEqual(["0,0", "0,-0", "-0,-0", "-0,0"])
+    expect(points(zoneStairClip(10, 4, { left: "straight", right: "straight" }, "stairs"))).toEqual(["0,0", "0,-0", "-0,-0", "-0,0"])
   })
 })
 
 describe("zoneStairWedge", () => {
   test("a 3-px wedge in the top-left corner: full along the top, one stair a row", () => {
-    expect(points(zoneStairWedge(3, "top-left"))).toEqual([
+    expect(points(zoneStairWedge(3, "top-left", "stairs"))).toEqual([
       "0,0", "0,3", "1,3", "1,2", "2,2", "2,1", "3,1", "3,0",
     ])
   })
 
   test("a 3-px wedge in the bottom-right corner, measured from the far sides", () => {
-    expect(points(zoneStairWedge(3, "bottom-right"))).toEqual([
+    expect(points(zoneStairWedge(3, "bottom-right", "stairs"))).toEqual([
       "-1,-3", "-1,-2", "-2,-2", "-2,-1", "-3,-1", "-3,-0", "-0,-0", "-0,-3",
     ])
   })
@@ -97,17 +97,17 @@ describe("the shapes the stylesheets hold are the helper's", () => {
   const token = (name: string) => tokens.match(new RegExp(`${name}: ([^;]+);`))?.[1]
 
   test("the keycap's rim and disc are pixel circles 15 and 13 art px across", () => {
-    expect(token("--zone-keycap-rim-shape")).toBe(zoneStairCircle(15))
-    expect(token("--zone-keycap-disc-shape")).toBe(zoneStairCircle(13))
+    expect(token("--zone-keycap-rim-shape")).toBe(zoneStairCircle(15, "stairs"))
+    expect(token("--zone-keycap-disc-shape")).toBe(zoneStairCircle(13, "stairs"))
   })
 
   test("the keycap's tail is a 12-px bar with a straight start and a 45 degree stair end", () => {
     const css = flat(readFileSync(join(SRC, "ui", "atoms", "ZoneKeycap.css"), "utf8"))
-    expect(css).toContain(`clip-path: ${zoneStairClip(100, 12, { left: "straight", right: "slash" })};`)
+    expect(css).toContain(`clip-path: ${zoneStairClip(100, 12, { left: "straight", right: "slash" }, "stairs")};`)
   })
 
   test("a pixel circle's rows are symmetric and every point is a share of whole art px", () => {
-    const circle = zoneStairCircle(15)
+    const circle = zoneStairCircle(15, "stairs")
     const shares = [...circle.matchAll(/([\d.]+)%/g)].map(match => Number(match[1]) * 15 / 100)
     for (const share of shares) expect(Math.abs(share - Math.round(share))).toBeLessThan(1e-3)
   })
