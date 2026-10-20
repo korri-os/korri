@@ -119,6 +119,32 @@ fixed URL.
 - **Shared artifacts stay.** Remove download keeps any artifact that another
   release in this device's library still names.
 
+**Coordinator decisions during the build, 2026-10-20 (provisional).** These
+wait for the owner's confirmation at landing.
+
+- **Remove download while downloading.** When any of the game's artifacts is
+  Queued, Downloading or Unpacking, `app.acquisition.remove` refuses with the
+  `RpcFailure` code `AcquisitionBusy` and plain copy ("This game is still
+  downloading. Cancel the download first."). The name follows
+  `AcquisitionFailed` and the existing `*Busy` codes (`HostSessionBusy`,
+  `StreamCertificateControlBusy`).
+- **`ArtifactStatus.release`.** The field is `true` or absent, never `false`.
+  korrid sets it only in game-scoped results (`app.acquisition.status
+  { gameId }`, `app.acquisition.download`, `app.acquisition.remove`), on the
+  artifacts that one of the game's declared releases names. Runner artifacts
+  and device-wide status omit it.
+- **Restart order.** After a restart, korrid queues interrupted downloads by
+  the earliest creation time of an entry in each contribution's `.downloads`,
+  not by `.part` modification time. A running download's `.part` changes while
+  bytes arrive, so its modification time would put it behind a later request.
+  Where the filesystem reports no creation time, korrid uses the modification
+  time.
+- **What counts as interrupted.** Any entry in `.downloads` with no ready
+  directory is an interrupted download, because a restart between two files
+  or during unpacking leaves verified files and no `.part`. Cancel therefore
+  deletes the whole `.downloads` directory, verified files too, which is the
+  "starts again from zero" cost above.
+
 ## Considered Options
 
 - **Wait for the source layer.** Rejected: it blocks every pinned download on
