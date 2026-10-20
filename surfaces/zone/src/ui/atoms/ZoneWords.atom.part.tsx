@@ -27,15 +27,6 @@ export function LongHud() {
   )
 }
 
-/** One word wider than its line: it stands whole past the line, never broken and never cut. */
-export function LongWord() {
-  return (
-    <ZonePartFrame shape="card">
-      <ZoneWords children="Supercalifragilisticexpialidocious" />
-    </ZonePartFrame>
-  )
-}
-
 /** HUD ink, as a label on the facts line. */
 export function Hud() {
   return <ZoneWords ink="hud" children="Last played" />
