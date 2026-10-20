@@ -1,4 +1,5 @@
 use korri_plugin_host::{
+    admin,
     host::Host,
     lifecycle::LifecyclePolicy,
     package,
@@ -138,7 +139,7 @@ fn lifecycle_policy() -> Result<LifecyclePolicy, String> {
     )?])
 }
 
-fn run(args: Vec<String>) -> Result<(), String> {
+fn open_host() -> Result<Host, String> {
     let nix =
         env::var("KORRI_PLUGIN_NIX").map_err(|_| "host package must supply KORRI_PLUGIN_NIX")?;
     let systemctl = env::var("KORRI_PLUGIN_SYSTEMCTL")
@@ -147,18 +148,86 @@ fn run(args: Vec<String>) -> Result<(), String> {
         .map_err(|_| "host package must supply KORRI_PLUGIN_IPTABLES")?;
     let ip6tables = env::var("KORRI_PLUGIN_IP6TABLES")
         .map_err(|_| "host package must supply KORRI_PLUGIN_IP6TABLES")?;
-    let host = Host::open(
+    Host::open(
         Path::new(&nix),
         Path::new(&systemctl),
         Path::new(&iptables),
         Path::new(&ip6tables),
         lifecycle_policy()?,
-    )?;
+    )
+}
+
+fn repository_configuration() -> Result<Configuration, String> {
+    let curl =
+        env::var("KORRI_PLUGIN_CURL").map_err(|_| "host package must supply KORRI_PLUGIN_CURL")?;
+    Configuration::from_host(Path::new(&curl))
+}
+
+/// korrid's uid, supplied by the NixOS module like KORRI_LOCAL_SIGNER_PEER_UID.
+fn admin_peer_uid() -> Result<u32, String> {
+    let uid = env::var("KORRI_PLUGIN_ADMIN_PEER_UID")
+        .map_err(|_| "KORRI_PLUGIN_ADMIN_PEER_UID must be set")?
+        .parse::<u32>()
+        .map_err(|_| "KORRI_PLUGIN_ADMIN_PEER_UID must be a numeric ID")?;
+    if uid == 0 {
+        return Err("KORRI_PLUGIN_ADMIN_PEER_UID must identify an unprivileged account".into());
+    }
+    Ok(uid)
+}
+
+fn inherited_listener() -> Result<std::os::unix::net::UnixListener, String> {
+    use std::os::fd::FromRawFd;
+    let count = env::var("LISTEN_FDS")
+        .map_err(|_| "LISTEN_FDS must be set")?
+        .parse::<u32>()
+        .map_err(|_| "LISTEN_FDS must be a number")?;
+    let pid = env::var("LISTEN_PID")
+        .map_err(|_| "LISTEN_PID must be set")?
+        .parse::<u32>()
+        .map_err(|_| "LISTEN_PID must be a number")?;
+    if count != 1 || pid != std::process::id() {
+        return Err(
+            "serve-admin requires exactly one inherited listener for its current PID".into(),
+        );
+    }
+    Ok(unsafe { std::os::unix::net::UnixListener::from_raw_fd(3) })
+}
+
+/// One request at a time. Each opens the host, and so takes its lock, only
+/// for that request; boot restore and the CLI keep working in between.
+fn serve_admin() -> Result<(), String> {
+    let peer = admin_peer_uid()?;
+    let listener = inherited_listener()?;
+    for stream in listener.incoming() {
+        let stream = match stream {
+            Ok(stream) => stream,
+            Err(error) => {
+                eprintln!("korri-plugin: admin accept failed: {error}");
+                continue;
+            }
+        };
+        let served = admin::serve_connection(stream, peer, |request| {
+            match open_host().and_then(|host| Ok((host, repository_configuration()?))) {
+                Ok((host, config)) => admin::handle(&host, &config, request),
+                Err(error) => admin::host_refused(error),
+            }
+        });
+        if let Err(error) = served {
+            eprintln!("korri-plugin: admin connection: {}", error.escape_default());
+        }
+    }
+    Ok(())
+}
+
+fn run(args: Vec<String>) -> Result<(), String> {
+    if args == ["serve-admin"] {
+        return serve_admin();
+    }
+    let host = open_host()?;
     let words = args.iter().map(String::as_str).collect::<Vec<_>>();
     match words.as_slice() {
         ["repository", commands @ ..] => {
-            let curl = env::var("KORRI_PLUGIN_CURL").map_err(|_| "host package must supply KORRI_PLUGIN_CURL")?;
-            repository_command(&host, &Configuration::from_host(Path::new(&curl))?, commands)
+            repository_command(&host, &repository_configuration()?, commands)
         }
         ["inspect", source, path] => {
             print_json(&host.inspect(source, Path::new(path))?)?;
@@ -197,7 +266,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
             println!("{}.service", package::unit_name(id));
             Ok(())
         }
-        _ => Err("usage: korri-plugin seed PACKAGE CACHE_URL | seed-graph PUBLISHER_BINDINGS PACKAGE... | inspect CACHE PACKAGE | install CACHE ID --release COMMIT (inspect, then approve the exact path) | install CACHE PACKAGE APPROVAL | update ID CACHE PACKAGE APPROVAL | enable ID | disable ID | remove ID [--purge] | status ID | unit ID | restore-all | restore ID | enabled-packages | repository COMMAND".into()),
+        _ => Err("usage: korri-plugin seed PACKAGE CACHE_URL | seed-graph PUBLISHER_BINDINGS PACKAGE... | inspect CACHE PACKAGE | install CACHE ID --release COMMIT (inspect, then approve the exact path) | install CACHE PACKAGE APPROVAL | update ID CACHE PACKAGE APPROVAL | enable ID | disable ID | remove ID [--purge] | status ID | unit ID | restore-all | restore ID | enabled-packages | repository COMMAND | serve-admin".into()),
     }
 }
 

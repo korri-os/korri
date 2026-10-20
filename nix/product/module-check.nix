@@ -891,8 +891,35 @@ assert
   ];
 assert
   productPluginNames (builtins.attrNames productConfig.systemd.services) == [
+    "korri-plugin-admin"
     "korri-plugin-host"
   ];
+# korrid reaches the root plugin host only through this socket. systemd limits
+# it to root and korrid's group; the server also checks korrid's uid.
+assert
+  productPluginNames (builtins.attrNames productConfig.systemd.sockets) == [
+    "korri-plugin-admin"
+  ];
+assert
+  productConfig.systemd.sockets.korri-plugin-admin.socketConfig == {
+    ListenStream = productPluginHost.adminSocket;
+    SocketUser = "root";
+    SocketGroup = productConfig.systemd.services.korrid.serviceConfig.Group;
+    SocketMode = "0660";
+    DirectoryMode = "0755";
+    RemoveOnStop = true;
+    Service = "korri-plugin-admin.service";
+  };
+assert
+  productConfig.systemd.services.korri-plugin-admin.environment.KORRI_PLUGIN_ADMIN_PEER_UID
+  == toString productConfig.services.korridLinuxDevice.uid;
+assert productConfig.systemd.services.korri-plugin-admin.serviceConfig.User == "root";
+assert
+  productConfig.systemd.services.korri-plugin-admin.serviceConfig.ReadWritePaths
+  == productPluginRestore.serviceConfig.ReadWritePaths;
+assert
+  productConfig.systemd.services.korrid.environment.KORRID_PLUGIN_ADMIN_SOCKET
+  == productPluginHost.adminSocket;
 assert
   productPluginDirectories == [
     "d /var/lib/korri-plugin-host 0700 root root -"

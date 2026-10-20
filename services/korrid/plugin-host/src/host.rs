@@ -18,6 +18,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// The host's refusal when a stored approval no longer matches the installed
+/// package or the current host policy. The admin socket reports exactly this
+/// refusal as needing a new review.
+pub const APPROVAL_STALE: &str = "installed package or host policy no longer matches its approval";
+
 #[derive(Clone)]
 struct HostPaths {
     roots: PathBuf,
@@ -227,6 +232,16 @@ impl Host {
             return Err("selected release package changed identity".into());
         }
         Ok(report)
+    }
+
+    /// Every committed selection receipt, read under the host lock.
+    pub fn installed(&self) -> Result<Vec<Receipt>, String> {
+        self.receipts()
+    }
+
+    /// Whether this device binds a key for the publisher namespace.
+    pub fn publisher_bound(&self, namespace: &str) -> bool {
+        self.publishers.contains_key(namespace)
     }
 
     pub fn sources(&self) -> Result<Vec<SourceUrl>, String> {
@@ -1925,7 +1940,7 @@ impl Host {
         #[cfg(not(test))]
         let report = load()?;
         if report.id != receipt.id || report.approval != receipt.approval {
-            return Err("installed package or host policy no longer matches its approval".into());
+            return Err(APPROVAL_STALE.into());
         }
         Ok(report)
     }
@@ -3636,5 +3651,192 @@ mod tests {
             .borrow()
             .iter()
             .any(|event| event.starts_with("start:")));
+    }
+
+    fn admin_configuration(official: Option<&str>) -> Configuration {
+        Configuration {
+            curl: PathBuf::from("/unavailable-curl"),
+            official: official.map(|url| SourceUrl::parse(url).unwrap()),
+            ca_bundle: None,
+        }
+    }
+
+    fn admin_failure(response: crate::admin::PluginAdminResponse) -> (String, String) {
+        match response {
+            crate::admin::PluginAdminResponse::Refused(failure) => (failure.code, failure.message),
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn admin_socket_cannot_remove_the_official_repository() {
+        use crate::admin::*;
+        let root = tempfile::tempdir().unwrap();
+        let host = Host::for_test(
+            root.path(),
+            PathBuf::from("/unavailable-nix"),
+            permitted_policy(),
+            runtime(&[]),
+        )
+        .unwrap();
+        let official = "https://official.example/catalog.json";
+        let config = admin_configuration(Some(official));
+        let (code, message) = admin_failure(handle(
+            &host,
+            &config,
+            PluginAdminRequest::RepositoryRemove(PluginRepositoryRequest {
+                url: official.into(),
+            }),
+        ));
+        assert_eq!(code, CODE_REFUSED);
+        assert!(message.contains("official source"), "{message}");
+        // Adding the official source is a no-op answer, not a stored copy.
+        assert_eq!(
+            handle(
+                &host,
+                &config,
+                PluginAdminRequest::RepositoryAdd(PluginRepositoryRequest {
+                    url: official.into(),
+                }),
+            ),
+            PluginAdminResponse::RepositoryAdded(PluginRepositoryAddResult::AlreadyPresent)
+        );
+        assert_eq!(
+            handle(
+                &host,
+                &config,
+                PluginAdminRequest::Repositories(PluginRepositoriesRequest {}),
+            ),
+            PluginAdminResponse::Repositories(PluginRepositories {
+                official: Some(official.into()),
+                user_added: Vec::new(),
+                repository_installs: Vec::new(),
+            })
+        );
+        let (code, message) = admin_failure(handle(
+            &host,
+            &config,
+            PluginAdminRequest::RepositoryAdd(PluginRepositoryRequest {
+                url: "http://plain.example/".into(),
+            }),
+        ));
+        assert_eq!(code, CODE_URL_INVALID);
+        assert!(message.contains("HTTPS"), "{message}");
+    }
+
+    #[test]
+    fn install_refuses_a_missing_or_stale_digest_and_starts_disabled() {
+        let root = tempfile::tempdir().unwrap();
+        let selected = report("@test:clock", "clock-v1");
+        let host = Host::for_test(
+            root.path(),
+            PathBuf::from("/unavailable-nix"),
+            permitted_policy(),
+            runtime(std::slice::from_ref(&selected)),
+        )
+        .unwrap();
+        for approval in ["", "clock-v0-approval"] {
+            let error = host
+                .install(selected.clone(), approval, SelectionIntent::Install)
+                .unwrap_err();
+            assert!(error.contains("approval does not match"), "{error}");
+            assert!(host.status(&selected.id).unwrap().is_none());
+        }
+        install(&host, selected.clone());
+        let receipt = host.status(&selected.id).unwrap().unwrap();
+        assert_eq!(receipt.desired, Desired::Disabled);
+        assert_eq!(receipt.approval, selected.approval);
+        assert!(!host
+            .test_runtime
+            .as_ref()
+            .unwrap()
+            .events
+            .borrow()
+            .iter()
+            .any(|event| event.starts_with("start:")));
+    }
+
+    #[test]
+    fn admin_enable_reports_a_stale_stored_approval_as_needing_review() {
+        use crate::admin::*;
+        let root = tempfile::tempdir().unwrap();
+        let mut selected = report("@test:clock", "clock-v1");
+        selected.provenance = Provenance::Repository {
+            source_url: "https://removed.example/catalog.json".into(),
+            plugin_id: selected.id.clone(),
+            release_version: "v1".into(),
+            platform: current_platform().into(),
+            archive_sha256: "a".repeat(64),
+        };
+        let runtime = runtime(&[selected.clone()]);
+        let host = Host::for_test(
+            root.path(),
+            PathBuf::from("/unavailable-nix"),
+            permitted_policy(),
+            runtime.clone(),
+        )
+        .unwrap();
+        install(&host, selected.clone());
+        let config = admin_configuration(None);
+        let set_enabled = |enabled| {
+            handle(
+                &host,
+                &config,
+                PluginAdminRequest::SetEnabled(PluginSetEnabledRequest {
+                    id: selected.id.clone(),
+                    enabled,
+                }),
+            )
+        };
+        assert_eq!(
+            set_enabled(true),
+            PluginAdminResponse::Applied(PluginChangeApplied {})
+        );
+        // An installed plugin from a repository that is no longer configured
+        // stays listed with its real on/off state.
+        assert_eq!(
+            handle(
+                &host,
+                &config,
+                PluginAdminRequest::Repositories(PluginRepositoriesRequest {}),
+            ),
+            PluginAdminResponse::Repositories(PluginRepositories {
+                official: None,
+                user_added: Vec::new(),
+                repository_installs: vec![PluginRepositoryInstall {
+                    id: selected.id.clone(),
+                    source_url: "https://removed.example/catalog.json".into(),
+                    release_version: "v1".into(),
+                    enabled: true,
+                }],
+            })
+        );
+        assert_eq!(
+            set_enabled(false),
+            PluginAdminResponse::Applied(PluginChangeApplied {})
+        );
+        // The host policy changes, so the stored digest no longer matches.
+        runtime
+            .reports
+            .borrow_mut()
+            .get_mut(&selected.package)
+            .unwrap()
+            .approval = "clock-v1-new-policy-approval".into();
+        let (code, message) = admin_failure(set_enabled(true));
+        assert_eq!(code, CODE_NEEDS_REVIEW);
+        assert_eq!(message, APPROVAL_STALE);
+        assert_eq!(
+            host.status(&selected.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+        let (code, _) = admin_failure(handle(
+            &host,
+            &config,
+            PluginAdminRequest::SetEnabled(PluginSetEnabledRequest {
+                id: "@test:missing".into(),
+                enabled: true,
+            }),
+        ));
+        assert_eq!(code, CODE_REFUSED);
     }
 }

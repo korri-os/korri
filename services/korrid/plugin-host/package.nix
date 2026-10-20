@@ -41,6 +41,7 @@ let
     chmod -R u+w "$out/plugin-host"
     cp ${../src/script.rs} "$out/src/script.rs"
     cp -R ${../src/script} "$out/src/script"
+    cp ${../src/plugin_admin.rs} "$out/src/plugin_admin.rs"
     cp ${../src/plugin_installation.rs} "$out/src/plugin_installation.rs"
     cp ${../src/plugin_references.rs} "$out/src/plugin_references.rs"
     cp ${../src/plugin_discovery.rs} "$out/src/plugin_discovery.rs"

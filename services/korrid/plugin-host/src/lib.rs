@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod archive;
 pub mod catalog;
 pub mod declaration;
@@ -20,6 +21,8 @@ pub mod source_store;
 pub mod storage;
 pub mod unit;
 
+#[path = "../../src/plugin_admin.rs"]
+pub mod plugin_admin;
 #[path = "../../src/plugin_installation.rs"]
 pub mod plugin_installation;
 #[path = "../../src/plugin_references.rs"]

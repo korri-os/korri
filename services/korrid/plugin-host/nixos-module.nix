@@ -7,6 +7,23 @@
 }:
 let
   cfg = config.services.korri.pluginHost;
+  # korrid's own module, when this device runs korrid. Its account is the only
+  # peer the admin socket serves.
+  korrid = config.services.korridLinuxDevice or { enable = false; };
+  hardening = {
+    User = "root";
+    UMask = "0077";
+    NoNewPrivileges = true;
+    ProtectHome = true;
+    ProtectSystem = "strict";
+    PrivateTmp = true;
+    ReadWritePaths = [
+      "/var/lib/korri-plugin-host"
+      "/run/korri-plugin-host"
+      "/nix/var/nix/gcroots/korri-plugin-host"
+      "/run/systemd/system"
+    ];
+  };
 in
 {
   options.services.korri.pluginHost = {
@@ -33,6 +50,12 @@ in
       );
       default = { };
       description = "Device-owned publisher bindings. Keys are @publisher namespaces, not plugin-controlled claims.";
+    };
+    adminSocket = lib.mkOption {
+      type = lib.types.str;
+      default = "/run/korri-plugin-admin/admin.sock";
+      readOnly = true;
+      description = "korrid's plugin administration socket. Only korrid's account may connect.";
     };
     package = lib.mkOption {
       type = lib.types.package;
@@ -102,26 +125,50 @@ in
             "systemd-tmpfiles-setup.service"
             "firewall.service"
           ];
-          serviceConfig = {
+          serviceConfig = hardening // {
             Type = "oneshot";
             ExecStart = "${cfg.package}/bin/korri-plugin restore-all";
             RemainAfterExit = true;
-            User = "root";
-            UMask = "0077";
             TimeoutStartSec = 300;
-            NoNewPrivileges = true;
-            ProtectHome = true;
-            ProtectSystem = "strict";
-            PrivateTmp = true;
-            ReadWritePaths = [
-              "/var/lib/korri-plugin-host"
-              "/run/korri-plugin-host"
-              "/nix/var/nix/gcroots/korri-plugin-host"
-              "/run/systemd/system"
-            ];
           };
         };
       }
+      (lib.mkIf korrid.enable {
+        # korrid stays unprivileged. It reaches the host only through this
+        # socket, and the server accepts only korrid's uid (SO_PEERCRED).
+        systemd.sockets.korri-plugin-admin = {
+          description = "korrid plugin administration socket";
+          wantedBy = [ "sockets.target" ];
+          before = [ "korri-plugin-admin.service" ];
+          socketConfig = {
+            ListenStream = cfg.adminSocket;
+            SocketUser = "root";
+            SocketGroup = config.systemd.services.korrid.serviceConfig.Group;
+            SocketMode = "0660";
+            DirectoryMode = "0755";
+            RemoveOnStop = true;
+            Service = "korri-plugin-admin.service";
+          };
+        };
+        systemd.services.korri-plugin-admin = {
+          description = "Serve korrid's plugin repository, install and on/off requests";
+          requires = [ "korri-plugin-admin.socket" ];
+          after = [
+            "korri-plugin-admin.socket"
+            "korri-plugin-host.service"
+          ];
+          restartTriggers = [ config.environment.etc."korri-plugin-host/publishers.json".source ];
+          environment = {
+            XDG_CACHE_HOME = "/run/korri-plugin-host";
+            KORRI_PLUGIN_ADMIN_PEER_UID = toString korrid.uid;
+          };
+          serviceConfig = hardening // {
+            ExecStart = "${cfg.package}/bin/korri-plugin serve-admin";
+            Restart = "on-failure";
+            RestartSec = 1;
+          };
+        };
+      })
     ]
   );
 }
