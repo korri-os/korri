@@ -4,7 +4,9 @@
  *
  *     tab      which page: GAMES, OPTIONS or SAVE DATA
  *     zone     where the cursor is on the games page: the tabs, the FIND
- *              key, the cards or the action row under the focused card
+ *              key, the cards or the action row under the focused card.
+ *              On OPTIONS and SAVE DATA only `tabs` or `cards` (the page's
+ *              own rows), so `menu` knows whether to move it
  *     card     the focused card's index in the band (the filtered catalog)
  *     action   the focused button's index in the action row
  *     layers   what is drawn over the page, bottom to top; empty is none
@@ -65,7 +67,8 @@ export interface ZoneNavigation {
   readonly action: number
   readonly layers: readonly ZoneLayer[]
   /** Where OPTIONS lands when opened by `system`: its SYSTEM group. The
-   * OPTIONS page clears it once it has put the cursor there. */
+   * wire stage (state/surface.ts) puts the OPTIONS cursor there and clears
+   * it with LandedOptions. */
   readonly optionsGroup: "system" | undefined
   /** The game whose RUN WITH was asked for. The OPTIONS page owns the
    * runner choice; it reads this and clears it. */
@@ -105,12 +108,24 @@ export const bandGames = (nav: ZoneNavigation, korri: SurfaceModel) => visibleGa
 /** The game under the cursor, if the band has one. */
 export const focusedGame = (nav: ZoneNavigation, korri: SurfaceModel) => bandGames(nav, korri)[nav.card]
 
-export function update(nav: ZoneNavigation, message: ZoneMessage, korri: SurfaceModel): ZoneStep<ZoneNavigation> {
+/**
+ * The navigation's messages: every fact a page or the host reports, and two
+ * the wire stage reports for the pages that do not speak to navigation
+ * themselves (OPTIONS, SAVE DATA).
+ */
+export type ZoneNavMessage =
+  | ZoneMessage
+  /** The cursor is on a row or card of OPTIONS or SAVE DATA, off the tabs. */
+  | { readonly _tag: "FocusedPage" }
+  /** OPTIONS has put its cursor on the SYSTEM group that `system` asked for. */
+  | { readonly _tag: "LandedOptions" }
+
+export function update(nav: ZoneNavigation, message: ZoneNavMessage, korri: SurfaceModel): ZoneStep<ZoneNavigation> {
   const result = step(nav, message, korri)
   return { model: settle(result.model, korri), requests: result.requests }
 }
 
-function step(nav: ZoneNavigation, message: ZoneMessage, korri: SurfaceModel): ZoneStep<ZoneNavigation> {
+function step(nav: ZoneNavigation, message: ZoneNavMessage, korri: SurfaceModel): ZoneStep<ZoneNavigation> {
   // Idle is a screensaver: any press or focus move wakes it and is otherwise
   // ignored, so the cursor comes back exactly where it was. Korri publishing
   // a model (a clock tick) is not a press; the cycle's own tick moves the card.
@@ -131,8 +146,14 @@ function step(nav: ZoneNavigation, message: ZoneMessage, korri: SurfaceModel): Z
       return nav.zone === "tabs" && nav.tab === "games"
         ? stay({ ...nav, zone: "find" }) : stay({ ...nav, zone: "tabs", tabCursor: nav.tab })
     case "PressedSystem":
+      // The cursor goes into the page, never onto the tabs: SYSTEM is a row.
       return topLayer(nav) === "none"
-        ? stay({ ...nav, tab: "options", tabCursor: "options", optionsGroup: "system" }) : stay(nav)
+        ? stay({ ...nav, tab: "options", tabCursor: "options", zone: "cards", optionsGroup: "system" }) : stay(nav)
+    case "FocusedPage":
+      // OPTIONS and SAVE DATA: the cursor left the tabs for the page's own rows.
+      return nav.tab === "games" || nav.zone !== "tabs" ? stay(nav) : stay({ ...nav, zone: "cards" })
+    case "LandedOptions":
+      return nav.optionsGroup === undefined ? stay(nav) : stay({ ...nav, optionsGroup: undefined })
     case "KorriPublished":
       return stay(nav)
     case "IdleElapsed": {
