@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test"
 import { createHttpKorridClient, createInMemoryKorridClient } from "./client"
 import { createInMemoryStoreAcquisition, SAMPLE_STORE } from "./store-acquisition-client"
-import type { StoreAcquisitionRpcRequest } from "./store-acquisition-types"
+import type { RpcRequest } from "@contracts/generated/korrid"
+
+type StoreAcquisitionRpcRequest = Extract<RpcRequest, { _tag: `app.acquisition.${"providers" | "search" | "details" | "acquire" | "acquire-status" | "acquire-cancel"}` }>
 
 test("the six acquisition methods use the tagged /rpc wire with the capability", async () => {
   const implementation = createInMemoryStoreAcquisition({ ...SAMPLE_STORE, failingSearches: {} })
