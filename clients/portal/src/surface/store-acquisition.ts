@@ -1,6 +1,7 @@
 /**
  * Getting a game from a provider: the providers, one search, one open entry,
- * and every download a person started (workflow contract sections 2 and 5).
+ * and every download a person started (ADR 0014; the wire is
+ * services/korrid/SCRIPTING.md, "Acquisition providers").
  *
  * Host-owned, like the acquisition gate: no DOM, hardware or surface
  * dependency. It makes every RPC call, keeps each claim's job id, watches the
@@ -12,6 +13,14 @@
  * memory only. This module owns the question before a download, the
  * observation, and the words. A download keeps going while the person looks
  * at something else; it shows again on its entry.
+ *
+ * Whether a cart is already in the library is the library's fact, not this
+ * module's memory: korrid links the game it writes to the claim (ADR 0014,
+ * provider link `{ provider, ref: claim id }`), and the catalog carries that
+ * link as the game's provider identity. An entry whose claim matches a game
+ * this device can play offers Play at once, after a portal reload or a korrid
+ * restart too. A removed cart has no route, so it leaves the local catalog and
+ * its entry offers Get again (ADR 0014, Q4 and Q6).
  *
  * Every action id carries the version of what it answers, so a press that
  * lands after the state moved on finds nothing published and sends nothing.
@@ -54,6 +63,9 @@ export interface StoreAcquisitionOptions {
   readonly pollIntervalMs?: number
   /** A job reached Imported: the catalog should be read again. */
   readonly onImported?: (gameId: string) => void
+  /** The korrid id of the playable game this device holds for a claim, by the
+   * provider identity the catalog carries; undefined when it holds none. */
+  readonly ownedGame?: (providerId: string, claimId: string) => string | undefined
 }
 
 export interface StoreAcquisition {
@@ -64,6 +76,8 @@ export interface StoreAcquisition {
   openStore(): void
   search(providerId: string, query: string): void
   openEntry(entryId: string): void
+  /** The catalog changed: entries re-read whether their game is owned. */
+  libraryChanged(): void
   /** A `store:` action id. True when this module owns the id, whether or not
    * it is still published. */
   act(actionId: string): boolean
@@ -76,7 +90,8 @@ type Job =
   /** acquire sent, not answered. A Cancel waits for the answer. */
   | { readonly _tag: "Starting"; readonly cancelRequested: boolean }
   | { readonly _tag: "Active"; readonly jobId: string; readonly state: AcquireJobState; readonly cancelling: boolean }
-  | { readonly _tag: "Imported"; readonly gameId: string }
+  /** `seen`: the catalog has held the game since, so its leaving is a removal. */
+  | { readonly _tag: "Imported"; readonly gameId: string; readonly seen?: boolean }
   | {
       readonly _tag: "Failed"
       readonly kicker: string
@@ -247,6 +262,11 @@ export function createStoreAcquisition(
     const cancel = () => jobAction(key, slot, "cancel", "Cancel")
     const job = slot?.job
     const artifact = details.artifact ?? claim.artifact
+    // The library's fact outranks any job that has ended: an owned cart is Play.
+    const owned = options.ownedGame?.(claim.providerId, claim.id)
+    if (owned !== undefined && (job === undefined || job._tag === "Cancelled" || job._tag === "Failed" || job._tag === "Imported")) {
+      return { _tag: "InLibrary", detail: "In your library", gameId: owned }
+    }
     if (job === undefined) {
       if (artifact?.system === undefined) return { _tag: "Unavailable", reason: NO_SYSTEM_REASON }
       return { _tag: "Offer", actions: [jobAction(key, slot, "get", "Get")] }
@@ -284,7 +304,7 @@ export function createStoreAcquisition(
           return { _tag: "Working", kicker: "Waiting to download", detail: QUEUED_DETAIL, actions: [cancel()] }
         }
         // Placing has no position and no Cancel: the file is being moved in.
-        if (state._tag === "Placing") return { _tag: "Working", kicker: "Adding to your library…", progress: { done: 0 }, actions: [] }
+        if (state._tag === "Placing") return { _tag: "Working", kicker: "Adding to your library…", actions: [] }
         return { _tag: "Working", kicker: "Starting download…", detail: "Asking the provider for the file", actions: [cancel()] }
       }
       case "Imported":
@@ -459,13 +479,6 @@ export function createStoreAcquisition(
     if (disposed || seq !== detailsSeq) return
     if (result._tag === "Ok") {
       details = { _tag: "Ready", claim, details: result.payload }
-    } else if (UNAVAILABLE_CODES.has(result.payload.code)) {
-      // It cannot be had here: say so where Get would be.
-      details = { _tag: "Ready", claim, details: { ...claim, _tag: "ProviderClaimDetails" } }
-      const key = storeEntryId(claim)
-      if (jobs.get(key)?.job._tag !== "Active") {
-        jobs.set(key, { claim, job: { _tag: "Unavailable", reason: result.payload.message }, version: next() })
-      }
     } else {
       details = { _tag: "Problem", claim, message: result.payload.message, version: next() }
     }
@@ -543,6 +556,18 @@ export function createStoreAcquisition(
       else if (kind === "details-retry" && details._tag === "Problem") void loadDetails(details.claim)
       else actOnJob(kind, key)
       return true
+    },
+    libraryChanged: () => {
+      if (disposed) return
+      // An Imported job the library no longer holds was removed (Remove
+      // download): its entry offers Get again, as a never-got cart does.
+      for (const [key, slot] of jobs) {
+        if (slot.job._tag !== "Imported") continue
+        const owned = options.ownedGame?.(slot.claim.providerId, slot.claim.id)
+        if (owned !== undefined) jobs.set(key, { ...slot, job: { ...slot.job, seen: true } })
+        else if (slot.job.seen) jobs.delete(key)
+      }
+      publish()
     },
     dispose: () => {
       disposed = true

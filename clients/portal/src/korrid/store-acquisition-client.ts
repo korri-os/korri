@@ -105,7 +105,7 @@ export interface InMemoryStoreConfig {
 export interface InMemoryStoreAcquisition extends StoreAcquisitionMethods {
   /** korrid restarted: every job and every held claim is gone, and no
    * partial file remains. A cart that finished stays in the library and the
-   * cache, so acquiring it again answers Imported at once (section 11). */
+   * cache, so acquiring it again answers Imported at once (ADR 0014). */
   restart(): void
   /** Bytes korrid fetched in total, across every job: proves no second download. */
   readonly downloadedBytes: () => number
@@ -115,7 +115,7 @@ export interface InMemoryStoreAcquisition extends StoreAcquisitionMethods {
 
 /**
  * The browser preview's korrid: the one provider in scope that searches
- * (workflow contract section 10), the PICO-8 BBS. Homebrew Hub and RetroBrews
+ * (ADR 0014), the PICO-8 BBS. Homebrew Hub and RetroBrews
  * are declared games under ADR 0013, not providers. The BBS states no size,
  * so Confirm says the size is unknown and the size arrives with the download
  * (`contentLength`). No art: the portal never loads a provider's image. The
@@ -127,7 +127,7 @@ export const SAMPLE_STORE: InMemoryStoreConfig = {
     "@korri:pico8": [
       {
         providerId: "@korri:pico8", id: "celeste_classic_2-5", title: "Celeste Classic 2", url: "https://www.lexaloffle.com/bbs/?tid=41282",
-        platform: "PICO-8", description: "Madeline climbs again, with a grappling hook this time.",
+        platform: "pico8", description: "Madeline climbs again, with a grappling hook this time.",
         artifact: { kind: "content", format: { id: "pico8-cart" }, system: "pico8", file: { name: "celeste_classic_2-5.p8.png" } },
         contentLength: 15_872,
       },
@@ -187,7 +187,11 @@ export function createInMemoryStoreAcquisition(
     inLibrary.set(claimKey(claim.providerId, claim.id), gameId)
     if (!imported.has(gameId)) {
       imported.add(gameId)
-      addGame({ id: gameId, title: claim.title, supportsRunnerSelection: false, source: { label: "browser", isLocal: true } })
+      // The game korrid writes carries the provider link as its identity.
+      addGame({
+        id: gameId, title: claim.title, supportsRunnerSelection: false, source: { label: "browser", isLocal: true },
+        identity: { kind: "provider", value: { provider: claim.providerId, ref: claim.id } },
+      })
     }
     set(job, { _tag: "Imported", gameId })
   }

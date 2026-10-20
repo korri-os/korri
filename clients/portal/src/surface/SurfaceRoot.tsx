@@ -66,6 +66,29 @@ function surfaceIdForKorridGame(state: LaunchablesState, gameId: string): string
   return entry === undefined ? undefined : entryKey(entry)
 }
 
+/**
+ * The korrid id of a game this device can play that korrid linked to a
+ * provider's claim (ADR 0014: provider link `{ provider, ref: claim id }`,
+ * carried as the game's provider identity). Only local copies count, and the
+ * local catalog lists only games with a route, so a removed cart is absent.
+ */
+function korridGameForClaim(state: LaunchablesState, providerId: string, claimId: string): string | undefined {
+  if (state._tag === "Loading") return undefined
+  for (const entry of state.entries) {
+    if (entry.kind === "now-playing") continue
+    const copies = [
+      entry.kind === "local-game" ? { local: true, game: entry.game } : { local: entry.game.source.isLocal, game: entry.game },
+      ...(entry.alternatives ?? []).map(copy =>
+        copy.kind === "local" ? { local: true, game: copy.game } : { local: copy.game.source.isLocal, game: copy.game }),
+    ]
+    for (const { local, game } of copies) {
+      const identity = game.identity
+      if (local && identity?.kind === "provider" && identity.value.provider === providerId && identity.value.ref === claimId) return game.id
+    }
+  }
+  return undefined
+}
+
 /** The store as the surface sees it: an imported game by the surface's id. */
 function storeForSurface(store: SurfaceStore, state: LaunchablesState): SurfaceStore {
   const details = store.details
@@ -144,6 +167,7 @@ export function SurfaceRoot({
   // An imported game joins the catalog by re-reading it in place.
   const store = useMemo(() => createStoreAcquisition(korrid, {
     onImported: () => launchablesRef.current.refresh(),
+    ownedGame: (providerId, claimId) => korridGameForClaim(launchablesRef.current.getState(), providerId, claimId),
   }), [korrid])
   useEffect(() => () => store.dispose(), [store])
   const storeSnapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
@@ -265,6 +289,8 @@ export function SurfaceRoot({
     if (localGameIds === "") return
     void downloads.refresh(localGameIds.split("\n"))
   }, [downloads, localGameIds])
+  // The library changed: a store entry may now be owned, or no longer be.
+  useEffect(() => { store.libraryChanged() }, [store, state])
   const surfaceToKorridId = useMemo(() => localGameIdsBySurfaceId(state), [state])
   surfaceIdsRef.current = useMemo(() => new Map([...surfaceToKorridId].map(([surfaceId, korridId]) => [korridId, surfaceId])), [surfaceToKorridId])
   // Chooser transitions are not new catalog observations. Keep that identity
