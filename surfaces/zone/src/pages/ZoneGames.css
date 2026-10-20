@@ -97,9 +97,9 @@
   transition: opacity var(--zone-lift-time) linear;
 }
 
-/* Under the error dialog there is nothing to show: no band, no FIND. No
- * veil either: a dimmed page would be a blend. GAME OPTS. covers the page
- * with its own sheet. */
+/* Under the error dialog there is nothing to show: no band, no FIND; the
+ * dialog's own veil lies over the ground. GAME OPTS. covers the page with
+ * its own sheet, and its NO / YES question veils the sheet. */
 .zone-games[data-layer="error"] .zone-games-find {
   visibility: hidden;
 }

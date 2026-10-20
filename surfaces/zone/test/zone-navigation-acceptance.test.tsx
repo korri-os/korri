@@ -1420,10 +1420,11 @@ describe("moments", () => {
     })
     const question = screen.getByRole("dialog", { name: "Needs a download" })
     expect(launchCard()?.hasAttribute("data-leaving")).toBe(false)
-    expect(stage?.querySelector(".zone-veil")).not.toBeNull()
-    // Drawn after the stage, outside it: on top.
-    expect(stage?.contains(question)).toBe(false)
-    expect((stage!.compareDocumentPosition(question) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true)
+    // The question and its veil are drawn after the stage, outside it: over the card.
+    const veil = question.previousElementSibling
+    expect(veil?.classList.contains("zone-veil")).toBe(true)
+    expect(stage?.contains(veil!)).toBe(false)
+    expect((stage!.compareDocumentPosition(veil!) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true)
     expect(focusedText()).toBe("Download")
     confirm()
     expect(calls(host).at(-1)).toEqual(["runAction", "acquisition:1:download"])

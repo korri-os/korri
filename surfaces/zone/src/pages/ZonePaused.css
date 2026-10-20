@@ -215,8 +215,8 @@
   display: flex;
 }
 
-/* The question: the page under the veil, the sky dialog from edge to edge
- * across its middle. */
+/* The question: the sky dialog from edge to edge across the page's
+ * middle, its veil (the dialog's own) over the whole page. */
 .zone-paused-question {
   position: absolute;
   inset: 0;

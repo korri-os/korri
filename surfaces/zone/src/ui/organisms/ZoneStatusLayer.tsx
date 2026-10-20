@@ -102,14 +102,11 @@ export function ZoneStatusLayer({
     <div className="zone-status-layer" data-status={status._tag} ref={root}>
       <div className="zone-status-layer-page" data-covered={covers || undefined} inert={covers}>
         <div className="zone-status-layer-content">{page}</div>
-        {covers && stage === undefined ? <ZoneVeil /> : null}
+        {/* Busy veils the page, never the stage; a problem's or a question's
+            dialog lays its own veil over both. */}
+        {status._tag === "Busy" && stage === undefined ? <ZoneVeil /> : null}
       </div>
-      {stage === undefined ? null : (
-        <div className="zone-status-layer-stage" inert={covers}>
-          {stage}
-          {covers && status._tag !== "Busy" ? <ZoneVeil /> : null}
-        </div>
-      )}
+      {stage === undefined ? null : <div className="zone-status-layer-stage" inert={covers}>{stage}</div>}
       {status._tag === "Running" && hud ? (
         <div aria-live="polite" className="zone-status-layer-running" role="status">
           <span className="zone-status-layer-hud-kicker">

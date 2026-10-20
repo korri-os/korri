@@ -12,7 +12,6 @@ import { useZonePausedPlan } from "../use-zone-paused-plan"
 import { useZoneStairClip } from "../use-zone-stair-clip"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
 import { ZoneSlab } from "../ui/atoms/ZoneSlab"
-import { ZoneVeil } from "../ui/atoms/ZoneVeil"
 import { ZoneWords } from "../ui/atoms/ZoneWords"
 import { ZoneDialog } from "../ui/molecules/ZoneDialog"
 import { ZonePausedControl } from "../ui/organisms/ZonePausedControl"
@@ -166,7 +165,6 @@ export function ZonePaused({
       </span>
       {asked === undefined ? null : (
         <div className="zone-paused-question" data-block-exit ref={question}>
-          <ZoneVeil />
           <ZoneDialog
             actions={[
               { label: "No", onPress: onAnswer === undefined ? undefined : () => onAnswer(false) },

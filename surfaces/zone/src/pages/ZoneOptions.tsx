@@ -12,6 +12,7 @@ import {
 import { ZoneBars } from "../ui/atoms/ZoneBars"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
 import { ZoneSignal } from "../ui/atoms/ZoneSignal"
+import { ZoneVeil } from "../ui/atoms/ZoneVeil"
 import { ZoneDialog } from "../ui/molecules/ZoneDialog"
 import { ZoneFoot } from "../ui/molecules/ZoneFoot"
 import type { ZoneKey } from "../ui/molecules/ZoneKeyboard"
@@ -200,6 +201,8 @@ export function ZoneOptions({
         </div>
         {keyboard === undefined || heading === undefined ? null : (
           <div className="zone-options-layer" data-block-exit="true" data-kind="keyboard">
+            {/* The band behind the keyboard is inert under the veil, as under every dialog. */}
+            <ZoneVeil />
             <ZoneOptionsEntry
               caret={keyboard.caret}
               clearLabel={heading.clearLabel}

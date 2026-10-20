@@ -5,6 +5,7 @@ import { useZoneDialogShape } from "../../use-zone-dialog-shape"
 import { useZoneFit } from "../../use-zone-fit"
 import { ZoneCaps } from "../atoms/ZoneCaps"
 import { ZoneSlab } from "../atoms/ZoneSlab"
+import { ZoneVeil } from "../atoms/ZoneVeil"
 import { ZoneWords } from "../atoms/ZoneWords"
 
 export interface ZoneDialogAction {
@@ -40,6 +41,11 @@ export interface ZoneDialogAction {
  *
  * M4: the panel opens from its middle in six steps while the wedges slide
  * in, and closes the same way faster (useZoneDialogMotion).
+ *
+ * The veil: every dialog lays the Mega Drive dither (ZoneVeil) over what
+ * it stands on, from edge to edge of its holder's layer (the nearest
+ * positioned box: a page's dialog layer, PAUSED's question, the status
+ * layer), so no page places a veil of its own and none forgets it.
  */
 export function ZoneDialog({
   headline,
@@ -71,6 +77,8 @@ export function ZoneDialog({
   useZoneDialogMotion(panel)
   useZoneFit(ruler, [head, row], `${headline}|${actions.map(action => action.label).join("|")}`)
   return (
+    <>
+    <ZoneVeil />
     <section aria-label={headline} className="zone-dialog" ref={panel} role="dialog">
       <i aria-hidden="true" className="zone-dialog-ruler" ref={ruler} />
       <span className="zone-dialog-wedge" data-wedge="start" />
@@ -108,5 +116,6 @@ export function ZoneDialog({
         ))}
       </div>
     </section>
+    </>
   )
 }

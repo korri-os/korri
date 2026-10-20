@@ -2,6 +2,8 @@
  * part that gives way: it scrolls its keys in a short box, and the heading
  * and the clear key stay. */
 .zone-options-entry {
+  /* Positioned, so it stands over the veil its layer lays under it. */
+  position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   width: 100%;

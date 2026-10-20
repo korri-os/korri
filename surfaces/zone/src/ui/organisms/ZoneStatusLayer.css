@@ -28,7 +28,7 @@
 }
 
 /* A picture over the page: the launch title card. Its own stacking
- * context, so the veil a question lays over it lies over all of it. */
+ * context, so nothing in it rises over a dialog's veil. */
 .zone-status-layer-stage {
   position: absolute;
   inset: 0;
