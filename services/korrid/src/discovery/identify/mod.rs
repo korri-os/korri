@@ -543,7 +543,9 @@ fn resolve_declared_files(
                     // An artifact file lives in korrid's cache, which discovery
                     // never scans. Read as an account-root path, it would hash
                     // a wrong file or fail without any error (ADR 0013).
-                    Some(DeclaredReleaseFile::Artifact(_)) => continue,
+                    Some(DeclaredReleaseFile::Artifact(_) | DeclaredReleaseFile::Package(_)) => {
+                        continue
+                    }
                     None => continue,
                 };
                 let result = match &root {

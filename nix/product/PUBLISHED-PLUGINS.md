@@ -56,12 +56,16 @@ registration, then imports only the pinned local proofs. Recursive Nix
 verification checks contents and signatures with the bound full public key.
 It uses no remote substituter and changes no build-host signature database.
 
-All seven product devices select Starter pack and FAKE-08 by default:
+All seven product devices ship Starter pack Disabled and its FAKE-08, Solarus
+and ZQuest Classic runners Enabled:
 `rg353m`, `rgds`, `r36tmax`, `rpminiv2`, `odin2portal`, `rg35xxsp` and `rg35xxpro`.
 Their product images register offline proofs before plugin recovery.
-The pack retains 24 games, 25 original cartridges, credits, notices and
-noncommercial CC BY-NC-SA 4.0. Installation does not add library entries or
-game tiles. Into Ruins remains a known FAKE-08 failure.
+The pack retains its games, original cartridges, credits, notices and
+noncommercial CC BY-NC-SA 4.0. First-boot setup offers to install the pack;
+installation means enabling its approved local package, with no network.
+Declared `packageFile` releases then enter the library without saved locations
+(ADR 0014). The current published pack pins predate those declarations; the
+27-game pack is pinned after publication. Into Ruins remains a known FAKE-08 failure.
 This change does not install software or write firmware on existing devices.
 Recovery images keep their existing no-default-plugin behavior. R36T Max
 retains its hardware-owned root-population command and now uses the same

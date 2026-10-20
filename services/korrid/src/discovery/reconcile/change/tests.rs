@@ -573,3 +573,29 @@ fn a_copy_discovered_in_a_source_joins_the_artifact_release() {
         hash('a')
     );
 }
+
+#[test]
+fn package_releases_have_no_location_and_stay_when_the_pack_is_disabled() {
+    let mut declared = artifact_game(&[("v1", 'a')]);
+    let release = declared.1.releases.get_mut("v1").unwrap();
+    release.artifacts.clear();
+    release.file = Some(crate::plugin::DeclaredReleaseFile::Package(
+        crate::plugin::PackageContentFile {
+            package_file: "cartridges".into(),
+            path: "game.p8".into(),
+        },
+    ));
+    let initial = snapshot();
+    let change = reconcile(&declared_report(&[declared.clone()]), &initial, NOW);
+    let snapshot = apply(&initial, &change);
+    assert_eq!(snapshot.library.len(), 1);
+    assert_eq!(release_ids(&snapshot, "rock-n-roll"), ["v1"]);
+    assert_eq!(
+        snapshot.provider_links[&declared.0].playable.0,
+        "rock-n-roll"
+    );
+    assert!(snapshot.locations.is_empty());
+    let disabled = reconcile(&ScanReport::default(), &snapshot, LATER);
+    assert!(disabled.library_yaml.is_none());
+    assert!(disabled.device_yaml.is_none());
+}

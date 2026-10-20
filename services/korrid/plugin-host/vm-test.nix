@@ -73,6 +73,23 @@ let
           -subj '/CN=cache' -addext 'subjectAltName=DNS:cache'
       '';
   mkPlugin = (import ./interface.nix).mkPlugin { inherit pkgs; };
+  offlinePack = mkPlugin {
+    publisher.namespace = "@korri";
+    source = pkgs.writeTextDir "plugin.ts" ''
+      export const name = "offline-pack";
+      export const games = { cartridge: { title: "Offline cartridge", releases: { v1: {
+        hashes: ["sha256:${builtins.hashString "sha256" "offline cartridge"}"],
+        file: { packageFile: "cartridges", path: "game.p8" }
+      } } } };
+      export const runners = { run: { id: "@korri:offline-pack/run", program: "run",
+        releases: ["sha256:${builtins.hashString "sha256" "offline cartridge"}"] } };
+      export const handlers = { "launch.prepare": input => ({ command: input.program, args: [input.contentPath] }) };
+    '';
+    plugin = _: {
+      files.cartridges = "${pkgs.writeTextDir "cartridges/game.p8" "offline cartridge"}/cartridges";
+      files.run = "${pkgs.coreutils}/bin/true";
+    };
+  };
   alternate = mkPlugin {
     publisher.namespace = "@example";
     source = pkgs.writeTextDir "plugin.ts" "export const name = 'clock'; export const title = 'Clock'; export const services = ['example-clock'];";
@@ -364,6 +381,7 @@ let
           runtimeSeat
           emptyClock
           gameRuntimePackage
+          offlinePack
           dependentClock
           credential
           namedUser
@@ -419,6 +437,7 @@ pkgs.testers.runNixOSTest {
           runtimeSeat
           emptyClock
           gameRuntimePackage
+          offlinePack
           dependentClock
           credential
           namedUser
@@ -559,6 +578,8 @@ pkgs.testers.runNixOSTest {
         system.activationScripts.korriProductVmStorage.text = ''
           install -d -m 0755 /var/lib/korri-brain-smoke
           cp -R --no-preserve=mode,ownership ${smokeStorage}/. /var/lib/korri-brain-smoke/
+          # Discovery publishes the catalog as the unprivileged brain.
+          chown -R 976:976 /var/lib/korri-brain-smoke
         '';
         # Exercise configured substitution without contacting public caches
         # from the isolated VM. The production module keeps NixOS's stock cache.
@@ -980,14 +1001,16 @@ pkgs.testers.runNixOSTest {
     capability = "plugin-host-vm-capability"
     published = json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json"))
     assert [package["id"] for package in published] == ["@korri:mgba"], published
-    def brain_rpc(tag):
-        request = json.dumps({"_tag": tag, "payload": {}})
-        return json.loads(machine.succeed(
+    def brain_command(tag, payload=None):
+        request = json.dumps({"_tag": tag, "payload": payload or {}})
+        return (
             "curl --fail --silent http://127.0.0.1:49117/rpc"
             " -H 'content-type: application/json'"
             " -H " + shlex.quote("authorization: Bearer " + capability)
             + " -d " + shlex.quote(request)
-        ))
+        )
+    def brain_rpc(tag, payload=None):
+        return json.loads(machine.succeed(brain_command(tag, payload)))
 
     machine.wait_for_open_port(49117)
     assert brain_rpc("system.health")["outcome"]["_tag"] == "Ok"
@@ -1001,6 +1024,29 @@ pkgs.testers.runNixOSTest {
     # Without an enabled runner the same catalog resolves no route at all.
     empty = brain_rpc("app.local-games.list")["outcome"]
     assert empty["payload"]["games"] == [], empty
+
+    def rescan_and_wait():
+        assert brain_rpc("app.discovery.rescan")["outcome"]["_tag"] == "Ok"
+        machine.wait_until_succeeds(brain_command("app.discovery.snapshot") + " | jq -e '.outcome.payload.state._tag | . != \"Scanning\" and . != \"Enriching\"'", timeout=30)
+        snapshot = brain_rpc("app.discovery.snapshot")["outcome"]["payload"]
+        assert snapshot["state"]["_tag"] == "Idle", snapshot
+
+    # Install the fixture before cutting all non-loopback networking. Enable,
+    # reconcile and listing must then work with only the approved package.
+    install("${offlinePack}")
+    assert brain_rpc("app.local-games.list")["outcome"]["payload"]["games"] == []
+    machine.succeed("iptables -w -N starter-offline; iptables -w -A starter-offline -o lo -j RETURN; iptables -w -A starter-offline -j REJECT; iptables -w -I OUTPUT 1 -j starter-offline; ip6tables -w -N starter-offline; ip6tables -w -A starter-offline -o lo -j RETURN; ip6tables -w -A starter-offline -j REJECT; ip6tables -w -I OUTPUT 1 -j starter-offline")
+    machine.succeed("korri-plugin enable @korri:offline-pack")
+    rescan_and_wait()
+    machine.wait_until_succeeds(brain_command("app.local-games.list") + " | jq -e '.outcome.payload.games | map(.title) == [\"Offline cartridge\"]'")
+    games = brain_rpc("app.local-games.list")["outcome"]["payload"]["games"]
+    assert [game["title"] for game in games] == ["Offline cartridge"], games
+    machine.succeed("korri-plugin disable @korri:offline-pack")
+    rescan_and_wait()
+    assert brain_rpc("app.local-games.list")["outcome"]["payload"]["games"] == []
+    machine.succeed("grep -q 'Offline cartridge' /var/lib/korri-brain-smoke/catalog/library.yaml")
+    machine.succeed("iptables -w -D OUTPUT -j starter-offline; iptables -w -F starter-offline; iptables -w -X starter-offline; ip6tables -w -D OUTPUT -j starter-offline; ip6tables -w -F starter-offline; ip6tables -w -X starter-offline")
+    machine.succeed("korri-plugin remove @korri:offline-pack --purge")
 
     # Load, but never start, the actual hostile bytes in systemd. Bare CR is a
     # directive boundary there, even after a comment or inside Description.

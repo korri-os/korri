@@ -13,6 +13,7 @@ let
     plugins = import ./published-plugins.nix { inherit system; };
   };
   seeded = import ../../services/korrid/plugin-host/image-seed.nix {
+    disabled = [ "@korri:starter-pack" ];
     inherit pkgs;
     hostPackage = korri.packages.${system}.korri-plugin-host;
     publishers = (import ./requirements.nix { inherit korri; }).constants.publishers;

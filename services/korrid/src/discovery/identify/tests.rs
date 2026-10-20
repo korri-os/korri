@@ -998,3 +998,41 @@ fn an_artifact_file_is_never_hashed_as_an_account_root_path() {
     assert!(report.attention.is_empty());
     assert_eq!(report.hashed_bytes, 0);
 }
+
+#[test]
+fn a_package_file_is_never_hashed_as_an_account_root_path() {
+    let root = tempfile::tempdir().unwrap();
+    let path = write(root.path(), "games/cart.p8", b"account copy");
+    let expected = HashCache::default().hash(&path, &[]).unwrap();
+    let games = BTreeMap::from([(
+        "@test:pack/cart".into(),
+        DeclaredGame {
+            provider: "@test:pack".into(),
+            key: "cart".into(),
+            title: "Cart".into(),
+            releases: indexmap::IndexMap::from([(
+                "v1".into(),
+                DeclaredRelease {
+                    system: None,
+                    hashes: vec![expected.value().to_owned()],
+                    artifacts: vec![],
+                    file: Some(crate::plugin::DeclaredReleaseFile::Package(
+                        crate::plugin::PackageContentFile {
+                            package_file: "cartridges".into(),
+                            path: "games/cart.p8".into(),
+                        },
+                    )),
+                },
+            )]),
+        },
+    )]);
+    let accounts = [AccountRoot {
+        user: "default".into(),
+        storage_id: "account-default".into(),
+        root: root.path().to_owned(),
+    }];
+    let report = resolve_declared_games(&accounts, &games, &mut HashCache::default());
+    assert!(report.files.is_empty());
+    assert!(report.attention.is_empty());
+    assert_eq!(report.hashed_bytes, 0);
+}

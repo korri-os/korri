@@ -52,8 +52,9 @@ pub fn launch_route(
         &route.file_target,
         &route.provider_target,
         &route.artifact_target,
+        &route.package_target,
     ) {
-        (Some(target), None, None) => {
+        (Some(target), None, None, None) => {
             let content =
                 storage::resolve_file_target(root, snapshot, target).map_err(|storage| {
                     if storage.is_missing_target() {
@@ -66,8 +67,8 @@ pub fn launch_route(
                 })?;
             (Some(content.path.display().to_string()), None)
         }
-        (None, Some(target), None) => (None, Some(target.provider_ref.clone())),
-        (None, None, Some(target)) => (
+        (None, Some(target), None, None) => (None, Some(target.provider_ref.clone())),
+        (None, None, Some(target), None) => (
             Some(
                 crate::acquisition::artifact_content_path(root, registry, target)
                     .map_err(|failure| error(failure.message))?
@@ -76,9 +77,18 @@ pub fn launch_route(
             ),
             None,
         ),
+        (None, None, None, Some(target)) => (
+            Some(
+                crate::config::resolver::package_content_path(registry, target)
+                    .map_err(|cause| error(cause.to_string()))?
+                    .display()
+                    .to_string(),
+            ),
+            None,
+        ),
         _ => {
             return Err(error(
-                "native route must have one file, provider or artifact target".into(),
+                "native route must have one file, provider, artifact or package target".into(),
             ))
         }
     };

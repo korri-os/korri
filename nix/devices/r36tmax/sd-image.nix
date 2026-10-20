@@ -26,6 +26,7 @@ let
       plugins = import ../../product/published-plugins.nix { system = pkgs.stdenv.hostPlatform.system; };
     }).r36tmax;
   seeded = import ../../../services/korrid/plugin-host/image-seed.nix {
+    disabled = [ "@korri:starter-pack" ];
     inherit pkgs;
     hostPackage = korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-plugin-host;
     publishers = (import ../../product/requirements.nix { inherit korri; }).constants.publishers;

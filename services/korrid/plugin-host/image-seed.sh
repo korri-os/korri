@@ -1,7 +1,7 @@
 set -euo pipefail
 
 if (( $# < 4 )); then
-  echo 'usage: korri-image-seed FILES_ROOT KORRI_PLUGIN PUBLISHER_BINDINGS PACKAGE...' >&2
+  echo 'usage: korri-image-seed FILES_ROOT KORRI_PLUGIN [--disabled ID]... PUBLISHER_BINDINGS PACKAGE...' >&2
   exit 2
 fi
 files=$1
@@ -9,12 +9,11 @@ while [[ "$files" != / && "$files" == */ ]]; do
   files=${files%/}
 done
 host=$2
-publishers=$3
-shift 3
+shift 2
 
 # Validate the whole exact selection before writing any receipt. The plugin
 # host owns dependency ordering, approvals, receipts and unit-name policy.
-receipts="$("$host" seed-graph "$publishers" "$@")"
+receipts="$("$host" seed-graph "$@")"
 # Check every directory component inside the image root without following
 # symlinks. A later blocked parent must not leave earlier selections written.
 preflight_directories() {

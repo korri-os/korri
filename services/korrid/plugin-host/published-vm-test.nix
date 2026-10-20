@@ -33,6 +33,7 @@ let
     );
   closure = pkgs.closureInfo { rootPaths = paths; };
   image = import ./image-seed.nix {
+    disabled = [ "@korri:starter-pack" ];
     inherit pkgs hostPackage;
     publishers."@korri" = binding;
     pluginPackages = paths;
@@ -271,12 +272,12 @@ pkgs.testers.runNixOSTest {
     machine.succeed("systemd-tmpfiles --create --prefix=/var/lib/korri-plugin-host --prefix=/nix/var/nix/gcroots/korri-plugin-host")
     machine.succeed("rm -f /run/korri-plugin-host/enabled-packages.json")
 
-    def seeded(id, package):
+    def seeded(id, package, desired="Enabled"):
         name = machine.succeed("korri-plugin unit-name " + shlex.quote(id)).strip()
         receipt_path = "/var/lib/korri-plugin-host/" + name + "/selection.json"
         receipt = json.loads(machine.succeed("cat " + receipt_path))
         assert receipt["id"] == id and receipt["package"] == package, receipt
-        assert receipt["desired"] == {"state": "Enabled"} and receipt["previous"] is None, receipt
+        assert receipt["desired"] == {"state": desired} and receipt["previous"] is None, receipt
         assert receipt["provenance"] == {"kind": "RawCache", "cache_url": cache_url}, receipt
         assert machine.succeed("stat -c '%U:%a' " + receipt_path).strip() == "root:600"
         assert machine.succeed("stat -c '%U:%a' /var/lib/korri-plugin-host/" + name).strip() == "root:700"
@@ -290,7 +291,7 @@ pkgs.testers.runNixOSTest {
     fake08_receipt_path, fake08_receipt = seeded("@korri:fake08", fake08_path)
     solarus_receipt_path, solarus_receipt = seeded("@korri:solarus", solarus_path)
     zquest_receipt_path, zquest_receipt = seeded("@korri:zquest-classic", zquest_path)
-    pack_receipt_path, pack_receipt = seeded("@korri:starter-pack", pack_path)
+    pack_receipt_path, pack_receipt = seeded("@korri:starter-pack", pack_path, "Disabled")
     pack_manifest = json.loads(machine.succeed("cat " + pack_path + "/manifest.json"))
     assert pack_manifest["requires"] == [fake08_path, solarus_path, zquest_path], pack_manifest
     ssh_manifest = json.loads(machine.succeed("cat " + ssh_path + "/manifest.json"))
@@ -317,7 +318,7 @@ pkgs.testers.runNixOSTest {
     machine.fail("systemctl is-active " + ssh_unit)
     machine.fail("test -e /run/systemd/system/" + ssh_unit)
     assert machine.succeed("ss -ltnH 'sport = :2222'").strip() == ""
-    remaining_packages = {id: package for id, package in expected_packages.items() if id != "@korri:ssh"}
+    remaining_packages = {id: package for id, package in expected_packages.items() if id not in ["@korri:ssh", "@korri:starter-pack"]}
     assert {p["id"]: p["package"] for p in json.loads(machine.succeed("korri-plugin enabled-packages"))} == remaining_packages
     assert {p["id"]: p["package"] for p in json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json"))} == remaining_packages
     # Repair from the original approved image producer bytes, not a migration
@@ -325,6 +326,9 @@ pkgs.testers.runNixOSTest {
     original = "/run/published-image-stage/files" + ssh_receipt_path
     machine.succeed("cp -a " + original + " " + ssh_receipt_path + "; korri-plugin restore-all", timeout=300)
     machine.succeed("cmp " + original + " " + ssh_receipt_path)
+    # Enabling uses only approved store bytes and offline proofs.
+    machine.succeed("korri-plugin enable @korri:starter-pack", timeout=300)
+    pack_receipt = json.loads(machine.succeed("cat " + pack_receipt_path))
     machine.succeed("systemctl start korri-plugin-host.service korrid.service")
     reports = {report["id"]: report for report in json.loads(machine.succeed("korri-plugin enabled-packages"))}
     assert set(reports) == set(expected_packages), reports
@@ -356,6 +360,7 @@ pkgs.testers.runNixOSTest {
     original_pack = "/run/published-image-stage/files" + pack_receipt_path
     machine.succeed("cp -a " + original_pack + " " + pack_receipt_path + "; korri-plugin restore-all", timeout=300)
     machine.succeed("cmp " + original_pack + " " + pack_receipt_path)
+    machine.succeed("korri-plugin enable @korri:starter-pack", timeout=300)
     machine.succeed("systemctl start korri-plugin-host.service korrid.service")
     refusal = machine.fail("korri-plugin disable @korri:fake08 2>&1", timeout=300)
     assert "actively required by @korri:starter-pack" in refusal, refusal

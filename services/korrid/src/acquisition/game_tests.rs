@@ -524,3 +524,98 @@ async fn remove_download_refuses_while_session_recovery_is_unresolved() {
     );
     assert!(fixture.ready("bonus").is_dir());
 }
+
+#[test]
+fn package_games_resolve_content_path_offline_and_become_unavailable_when_disabled() {
+    let root = tempfile::tempdir().unwrap();
+    let package = root.path().join("pack");
+    fs::create_dir(&package).unwrap();
+    fs::write(
+        package.join("plugin.ts"),
+        format!(
+            r#"
+        export const name = 'pack';
+        export const games = {{ cart: {{title: 'Offline cart', releases: {{ v1: {{
+            hashes: ['{hash}'], file: {{packageFile: 'cartridges', path: 'games/cart.p8'}}
+        }} }} }} }};
+    "#,
+            hash = sha(CONTENT)
+        ),
+    )
+    .unwrap();
+    let pack = plugin_installation::EnabledPackage {
+        id: "@test:pack".into(),
+        package: package.clone(),
+        entry: "plugin.ts".into(),
+        sources: vec!["plugin.ts".into()],
+        requires: vec![],
+        files: BTreeMap::from([("cartridges".into(), package.join("cartridges"))]),
+    };
+    let mut missing = pack.clone();
+    missing.files.clear();
+    assert!(plugin::PluginRegistry::from_installed(vec![missing])
+        .unwrap_err()
+        .to_string()
+        .contains("cartridges"));
+    let runner_package = root.path().join("runner");
+    fs::create_dir(&runner_package).unwrap();
+    fs::write(runner_package.join("plugin.ts"), format!(r#"
+        export const name = 'runner';
+        export const runners = {{ run: {{id: '@test:runner/run', program: 'run', releases: ['{hash}']}} }};
+        export const handlers = {{'launch.prepare': (input: any) => ({{command: input.program, args: [input.contentPath]}})}};
+    "#, hash=sha(CONTENT))).unwrap();
+    let runner = plugin_installation::EnabledPackage {
+        id: "@test:runner".into(),
+        package: runner_package.clone(),
+        entry: "plugin.ts".into(),
+        sources: vec!["plugin.ts".into()],
+        requires: vec![],
+        files: BTreeMap::from([("run".into(), runner_package.join("run"))]),
+    };
+    let registry = plugin::PluginRegistry::from_installed(vec![pack, runner.clone()]).unwrap();
+    let initial = config::decode_config_documents("{}", "{}").unwrap();
+    let change = discovery::reconcile::reconcile(
+        &discovery::identify::ScanReport {
+            declared_games: registry.declared_games().clone(),
+            ..Default::default()
+        },
+        &initial,
+        NOW,
+    );
+    let snapshot =
+        config::decode_config_documents("{}", change.library_yaml.as_deref().unwrap()).unwrap();
+    assert!(snapshot.locations.is_empty());
+    let route = config::resolver::resolve_linux_route(
+        root.path(),
+        &snapshot,
+        &registry,
+        "offline-cart",
+        None,
+    )
+    .unwrap();
+    let expected = package.join("cartridges/games/cart.p8");
+    assert_eq!(
+        config::resolver::package_content_path(&registry, route.package_target.as_ref().unwrap())
+            .unwrap(),
+        expected
+    );
+    let spec =
+        launcher::linux_plugin::launch_route(root.path(), &snapshot, &registry, &route, None, None)
+            .unwrap();
+    let input: launcher::plugin_launch::PluginLaunchInput =
+        serde_json::from_str(&spec.command[3]).unwrap();
+    assert_eq!(input.content_path, Some(expected.display().to_string()));
+    assert!(acquisition::route_artifact_ids(&registry, &route)
+        .unwrap()
+        .is_empty());
+    let disabled = plugin::PluginRegistry::from_installed(vec![runner]).unwrap();
+    assert!(config::resolver::resolve_linux_route(
+        root.path(),
+        &snapshot,
+        &disabled,
+        "offline-cart",
+        None
+    )
+    .is_err());
+    assert_eq!(snapshot.library.len(), 1);
+}

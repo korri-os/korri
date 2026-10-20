@@ -420,12 +420,24 @@ export interface SurfaceController {
 }
 
 /**
+ * The Starter pack this device ships turned off, offered once during setup.
+ * `message` is finished, user-facing copy from Korri.
+ */
+export type SurfaceStarterPack =
+  | { readonly _tag: "Offered"; readonly actions: readonly SurfaceAction[] }
+  | { readonly _tag: "Installing" }
+  | { readonly _tag: "Installed" }
+  | { readonly _tag: "Failed"; readonly message: string; readonly actions: readonly SurfaceAction[] }
+
+/**
  * Present only while this device has not finished first-boot setup. The
  * surface owns the steps and their order; it ends setup with
  * `SurfaceHost.finishOnboarding`, after which Korri omits this field.
  */
 export interface SurfaceOnboarding {
   readonly controllers: readonly SurfaceController[]
+  /** Present while setup can offer the Starter pack. Absent when there is nothing to offer. */
+  readonly starterPack?: SurfaceStarterPack
 }
 
 /** Everything Korri publishes to the surface. Replaced wholesale on change. */

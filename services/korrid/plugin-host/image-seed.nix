@@ -6,6 +6,7 @@
   hostPackage,
   publishers,
   pluginPackages,
+  disabled ? [ ],
 }:
 let
   bindings = pkgs.writeText "korri-image-publishers.json" (builtins.toJSON publishers);
@@ -22,6 +23,14 @@ in
   storePaths = pluginPackages;
   populateRootCommands = ''
     ${seed}/bin/korri-image-seed ./files ${hostPackage}/bin/korri-plugin \
+      ${
+        pkgs.lib.escapeShellArgs (
+          pkgs.lib.concatMap (id: [
+            "--disabled"
+            id
+          ]) disabled
+        )
+      } \
       ${bindings} \
       ${pkgs.lib.escapeShellArgs (map toString pluginPackages)}
   '';

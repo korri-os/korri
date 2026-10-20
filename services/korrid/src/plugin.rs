@@ -148,7 +148,7 @@ pub struct DeclaredRelease {
 
 /// Where a declared release's content file starts. The form of the value says
 /// which folder the path is relative to, so no string is ever parsed for it.
-/// Every reader must handle both forms; an artifact path is never an
+/// Every reader must handle every form; a package or artifact path is never an
 /// account-root path (ADR 0013).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(untagged)]
@@ -157,12 +157,21 @@ pub enum DeclaredReleaseFile {
     AccountRoot(String),
     /// A file inside one ready artifact directory.
     Artifact(ArtifactContentFile),
+    /// A file from the declaring plugin's own installed package (ADR 0014).
+    Package(PackageContentFile),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ArtifactContentFile {
     pub artifact: String,
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageContentFile {
+    pub package_file: String,
     pub path: String,
 }
 
@@ -644,6 +653,13 @@ impl PluginRegistry {
             if runner.program.is_some() {
                 if let Some(core) = &runner.core {
                     registry.installed_file(&runner.id, core)?;
+                }
+            }
+        }
+        for (id, game) in registry.declared_games() {
+            for release in game.releases.values() {
+                if let Some(DeclaredReleaseFile::Package(file)) = &release.file {
+                    registry.installed_file(id, &file.package_file)?;
                 }
             }
         }
@@ -1376,6 +1392,15 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                             "game",
                             &key,
                             "file path must be relative to its artifact without traversal",
+                        ));
+                    }
+                }
+                Some(DeclaredReleaseFile::Package(file)) => {
+                    if !release.artifacts.is_empty() || !is_safe_relative_path(&file.path) {
+                        return Err(invalid_contribution(
+                            "game",
+                            &key,
+                            "package file requires a safe relative path and no artifacts",
                         ));
                     }
                 }
@@ -2212,6 +2237,44 @@ mod release_artifact_tests {
             registry.artifacts_for_release(&game.releases["v1"])[0].id,
             "@test:game/content"
         );
+    }
+
+    #[test]
+    fn package_release_files_are_strict_and_stay_in_their_own_package() {
+        let file = |path: &str| json!({"packageFile":"cartridges", "path":path});
+        let plugin = decode(content(
+            json!({"hashes":[HASH], "file":file("games/cart.p8")}),
+        ))
+        .unwrap();
+        assert_eq!(
+            plugin.declared_games["@test:game/rocknroll"].releases["v1"].file,
+            Some(DeclaredReleaseFile::Package(PackageContentFile {
+                package_file: "cartridges".into(),
+                path: "games/cart.p8".into()
+            }))
+        );
+        for release in [
+            json!({"hashes":[HASH], "file":{"packageFile":"cartridges", "path":"cart.p8", "extra":1}}),
+            json!({"hashes":[HASH], "file":{"packageFile":"cartridges"}}),
+            json!({"hashes":[HASH], "artifacts":["@test:game/content"], "file":file("cart.p8")}),
+        ] {
+            assert!(decode(content(release)).is_err());
+        }
+        for path in [
+            "",
+            "/cart.p8",
+            "..",
+            "../cart.p8",
+            "a/../cart.p8",
+            "a//cart.p8",
+            "a/",
+            "cart\n.p8",
+        ] {
+            assert!(
+                decode(content(json!({"hashes":[HASH], "file":file(path)}))).is_err(),
+                "{path}"
+            );
+        }
     }
 
     #[test]

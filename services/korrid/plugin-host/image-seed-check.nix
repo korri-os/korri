@@ -20,7 +20,54 @@ let
       cacheUrl = "https://games.example.invalid";
     };
   };
+  productRunners =
+    map
+      (
+        name:
+        mkPlugin {
+          publisher.namespace = "@korri";
+          source = pkgs.writeTextDir "plugin.ts" "export const name = '${name}';";
+          plugin = _: { };
+        }
+      )
+      [
+        "fake08"
+        "solarus"
+        "zquest-classic"
+      ];
+  productPack = mkPlugin {
+    publisher.namespace = "@korri";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'starter-pack';";
+    plugin = _: { requires = productRunners; };
+  };
+  productImage = import ./image-seed.nix {
+    inherit pkgs hostPackage publishers;
+    pluginPackages = [ productPack ] ++ productRunners;
+    disabled = [ "@korri:starter-pack" ];
+  };
   rejectedImages = {
+    unselectedDisabled = {
+      pluginPackages = [ sshPackage ];
+      disabled = [ "@korri:starter-pack" ];
+      error = "not among selected packages";
+    };
+    requiredDisabled = {
+      pluginPackages = [
+        fixtures.pack
+        fixtures.runner
+      ];
+      disabled = [ "@runtime:fake08" ];
+      error = "requires disabled plugin";
+    };
+    transitiveDisabled = {
+      pluginPackages = [
+        fixtures.transitive
+        fixtures.pack
+        fixtures.runner
+      ];
+      disabled = [ "@games:starter-pack" ];
+      error = "requires disabled plugin";
+    };
     missing = {
       pluginPackages = [
         sshPackage
@@ -82,6 +129,15 @@ pkgs.runCommand "korri-plugin-image-seed-check"
     ];
   }
   ''
+    mkdir -p product
+    (cd product; ${productImage.populateRootCommands})
+    for id in '@korri:starter-pack' '@korri:fake08' '@korri:solarus' '@korri:zquest-classic'; do
+      name=$(${hostPackage}/bin/korri-plugin unit-name "$id")
+      expected=Enabled
+      if [[ "$id" = '@korri:starter-pack' ]]; then expected=Disabled; fi
+      jq -e --arg expected "$expected" '.desired.state == $expected' "product/files/var/lib/korri-plugin-host/$name/selection.json"
+      test -L "product/files/nix/var/nix/gcroots/korri-plugin-host/$name/active"
+    done
     mkdir -p files
     ${image.populateRootCommands}
     test "$(find files/var/lib/korri-plugin-host -name selection.json -type f | wc -l)" = 4
@@ -140,6 +196,7 @@ pkgs.runCommand "korri-plugin-image-seed-check"
             inherit pkgs hostPackage;
             publishers = rejected.publishers or publishers;
             inherit (rejected) pluginPackages;
+            disabled = rejected.disabled or [ ];
           }).populateRootCommands
           }
         ) 2>'${name}-error'; then

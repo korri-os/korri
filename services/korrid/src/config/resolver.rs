@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::{plugin::PluginRegistry, GameIdentity};
 
 pub use super::linux_routes::{linux_route_candidates, resolve_linux_route, stored_runner};
-pub(crate) use super::linux_routes::{linux_route_selection, LinuxRouteSelection};
+pub(crate) use super::linux_routes::{
+    linux_route_selection, package_content_path, LinuxRouteSelection,
+};
 use super::ConfigSnapshot;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,6 +47,8 @@ pub struct ResolvedRoute {
     /// A release with no usable saved location whose declaration names its
     /// content file inside an artifact (ADR 0013).
     pub artifact_target: Option<ResolvedArtifactTarget>,
+    /// A release provided by its declaring plugin's installed package.
+    pub package_target: Option<ResolvedPackageTarget>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -54,6 +58,12 @@ pub struct ResolvedArtifactTarget {
     pub path: String,
     /// Every artifact the release names, in declaration order.
     pub release_artifacts: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedPackageTarget {
+    pub declared_game_id: String,
+    pub file: crate::plugin::PackageContentFile,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

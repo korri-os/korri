@@ -74,30 +74,34 @@ fn linux_route_candidates_for_runner(
                         .get(system_id)
                         .and_then(|system| system.title.clone().or_else(|| system.name.clone()))
                 });
-            let route =
-                |file_target, provider_target, artifact_target, flattened_target| ResolvedRoute {
-                    playable_id: game_id.into(),
-                    title: game.title.clone(),
-                    release_id: key.into(),
-                    identity: snapshot.game_identity(game_id),
-                    provider_id: runner
-                        .family
-                        .clone()
-                        .unwrap_or_else(|| runner.id.split_once('/').unwrap().0.into()),
-                    system_id: system_id.into(),
-                    system_title: system_title.clone(),
-                    runner_id: runner.id.clone(),
-                    family_id: runner.family.clone(),
-                    integration_token: String::new(),
-                    flattened_target,
-                    linux_runner: Some(ResolvedLinuxRunner {
-                        program: program.display().to_string(),
-                    }),
-                    core_path: core_path.clone(),
-                    file_target,
-                    provider_target,
-                    artifact_target,
-                };
+            let route = |file_target,
+                         provider_target,
+                         artifact_target,
+                         package_target,
+                         flattened_target| ResolvedRoute {
+                playable_id: game_id.into(),
+                title: game.title.clone(),
+                release_id: key.into(),
+                identity: snapshot.game_identity(game_id),
+                provider_id: runner
+                    .family
+                    .clone()
+                    .unwrap_or_else(|| runner.id.split_once('/').unwrap().0.into()),
+                system_id: system_id.into(),
+                system_title: system_title.clone(),
+                runner_id: runner.id.clone(),
+                family_id: runner.family.clone(),
+                integration_token: String::new(),
+                flattened_target,
+                linux_runner: Some(ResolvedLinuxRunner {
+                    program: program.display().to_string(),
+                }),
+                core_path: core_path.clone(),
+                file_target,
+                provider_target,
+                artifact_target,
+                package_target,
+            };
             // A saved location is tried before the declaration's artifact.
             let mut routed = false;
             for location in snapshot.locations.get(key).into_iter().flatten() {
@@ -188,7 +192,13 @@ fn linux_route_candidates_for_runner(
                         (Some(target), None, format!("{}:{}", storage.0, path))
                     };
                 emitted.insert(runner.id.clone());
-                candidates.push(route(file_target, provider_target, None, flattened_target));
+                candidates.push(route(
+                    file_target,
+                    provider_target,
+                    None,
+                    None,
+                    flattened_target,
+                ));
                 routed = true;
                 break;
             }
@@ -198,7 +208,18 @@ fn linux_route_candidates_for_runner(
                 if let Some(target) = artifact_target(registry, key) {
                     let flattened = format!("{}:{}", target.artifact_id, target.path);
                     emitted.insert(runner.id.clone());
-                    candidates.push(route(None, None, Some(target), flattened));
+                    candidates.push(route(None, None, Some(target), None, flattened));
+                } else if let Some(target) = package_target(registry, key) {
+                    let path = package_content_path(registry, &target)
+                        .map_err(|error| failure(error.to_string()))?;
+                    emitted.insert(runner.id.clone());
+                    candidates.push(route(
+                        None,
+                        None,
+                        None,
+                        Some(target),
+                        path.display().to_string(),
+                    ));
                 }
             }
         }
@@ -221,7 +242,8 @@ fn artifact_target(registry: &PluginRegistry, key: &str) -> Option<ResolvedArtif
                 Some(DeclaredReleaseFile::Artifact(file)) => file,
                 // A prepared file reaches the library as a saved location,
                 // which the location loop has already tried.
-                Some(DeclaredReleaseFile::AccountRoot(_)) | None => return None,
+                Some(DeclaredReleaseFile::AccountRoot(_) | DeclaredReleaseFile::Package(_))
+                | None => return None,
             };
             Some(ResolvedArtifactTarget {
                 artifact_id: file.artifact.clone(),
@@ -229,6 +251,30 @@ fn artifact_target(registry: &PluginRegistry, key: &str) -> Option<ResolvedArtif
                 release_artifacts: declared.release.artifacts.clone(),
             })
         })
+}
+
+fn package_target(registry: &PluginRegistry, key: &str) -> Option<ResolvedPackageTarget> {
+    registry
+        .declared_hash(key)
+        .into_iter()
+        .find_map(|declared| match &declared.release.file {
+            Some(DeclaredReleaseFile::Package(file)) => Some(ResolvedPackageTarget {
+                declared_game_id: format!("{}/{}", declared.game.provider, declared.game.key),
+                file: file.clone(),
+            }),
+            Some(DeclaredReleaseFile::AccountRoot(_) | DeclaredReleaseFile::Artifact(_)) | None => {
+                None
+            }
+        })
+}
+
+pub(crate) fn package_content_path(
+    registry: &PluginRegistry,
+    target: &ResolvedPackageTarget,
+) -> Result<std::path::PathBuf, crate::plugin::PluginError> {
+    Ok(registry
+        .installed_file(&target.declared_game_id, &target.file.package_file)?
+        .join(&target.file.path))
 }
 
 pub fn stored_runner<'a>(snapshot: &'a ConfigSnapshot, route: &ResolvedRoute) -> Option<&'a str> {

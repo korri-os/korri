@@ -285,7 +285,8 @@ pub fn reconcile(report: &ScanReport, current: &ConfigSnapshot, now: &str) -> Ca
     change
 }
 
-/// ADR 0013: a release that comes from artifacts is in the library before its
+/// ADR 0013/0014: a release from artifacts or its own package enters the library.
+/// An artifact release is in the library before its
 /// download. It uses only the existing declared-game records (library item,
 /// release keyed by its first hash, provider link) and saves no location: the
 /// route comes from the declaration and readiness from the cache. A release
@@ -299,7 +300,7 @@ fn reconcile_artifact_releases(
     for (declared_id, declared) in &report.declared_games {
         for (index, (release_key, release)) in declared.releases.iter().enumerate() {
             match &release.file {
-                Some(DeclaredReleaseFile::Artifact(_)) => (),
+                Some(DeclaredReleaseFile::Artifact(_) | DeclaredReleaseFile::Package(_)) => (),
                 // A prepared file joins the library only when resolve_declared
                 // finds and verifies it under an account root (ADR 0003).
                 Some(DeclaredReleaseFile::AccountRoot(_)) | None => continue,

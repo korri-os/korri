@@ -324,7 +324,10 @@ fn plan_with_rules(
                         }
                         // Artifact content lives in korrid's cache, never under
                         // an account root, so it gives no migration target.
-                        Some(DeclaredReleaseFile::Artifact(_)) | None => (),
+                        Some(
+                            DeclaredReleaseFile::Artifact(_) | DeclaredReleaseFile::Package(_),
+                        )
+                        | None => (),
                     }
                 }
                 match targets.len() {
@@ -720,7 +723,9 @@ fn prospective_catalog(
                     }
                 }
                 // A planned move never touches korrid's cache.
-                Some(DeclaredReleaseFile::Artifact(_)) | None => (),
+                Some(DeclaredReleaseFile::Artifact(_) | DeclaredReleaseFile::Package(_)) | None => {
+                    ()
+                }
             }
         }
     }
@@ -1862,6 +1867,11 @@ mod tests {
                                 value["file"] = serde_json::json!({
                                     "artifact": file.artifact,
                                     "path": file.path,
+                                });
+                            }
+                            Some(DeclaredReleaseFile::Package(file)) => {
+                                value["file"] = serde_json::json!({
+                                    "packageFile": file.package_file, "path": file.path,
                                 });
                             }
                             None => (),

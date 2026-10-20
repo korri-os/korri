@@ -35,29 +35,15 @@ fn main() -> ExitCode {
     }
     // A product supplies its existing PublisherBindings and the complete exact
     // selection, not a host configuration or an inherited dependency cache.
-    if let ["seed-graph", bindings, packages @ ..] = args
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>()
-        .as_slice()
-    {
-        let result = (|| {
-            if packages.is_empty() {
-                return Err("seed-graph requires at least one selected package".into());
-            }
-            let bindings = package::publisher_bindings(Path::new(bindings))?;
-            let selected = packages
-                .iter()
-                .map(std::path::PathBuf::from)
-                .collect::<Vec<_>>();
-            let receipts = package::load_graph_for_seed(&selected, &bindings)?
-                .iter()
-                .map(seed_selection)
-                .collect::<Vec<_>>();
-            print_json(&receipts)
-        })();
-        return match result {
-            Ok(()) => ExitCode::SUCCESS,
+    if args.first().is_some_and(|word| word == "seed-graph") {
+        return match seed_graph(&args[1..]) {
+            Ok(receipts) => match print_json(&receipts) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("korri-plugin: {}", error.escape_default());
+                    ExitCode::FAILURE
+                }
+            },
             Err(error) => {
                 eprintln!("korri-plugin: {}", error.escape_default());
                 ExitCode::FAILURE
@@ -88,6 +74,184 @@ fn main() -> ExitCode {
         Err(error) => {
             eprintln!("korri-plugin: {}", error.escape_default());
             ExitCode::FAILURE
+        }
+    }
+}
+
+fn seed_graph(args: &[String]) -> Result<Vec<Receipt>, String> {
+    let (disabled, bindings, packages) = seed_graph_args(args)?;
+    let bindings = package::publisher_bindings(Path::new(bindings))?;
+    let selected = packages
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect::<Vec<_>>();
+    let reports = package::load_graph_for_seed(&selected, &bindings)?;
+    seed_selections(&reports, &disabled)
+}
+
+fn seed_selections(
+    reports: &[package::Report],
+    disabled: &std::collections::BTreeSet<&str>,
+) -> Result<Vec<Receipt>, String> {
+    for id in disabled {
+        if !reports.iter().any(|report| &report.id == id) {
+            return Err(format!(
+                "disabled plugin {id} is not among selected packages"
+            ));
+        }
+    }
+    for report in reports {
+        if disabled.contains(report.id.as_str()) {
+            continue;
+        }
+        for required in &report.requires {
+            let dependency = reports
+                .iter()
+                .find(|candidate| &candidate.package == required)
+                .expect("validated complete selection");
+            if disabled.contains(dependency.id.as_str()) {
+                return Err(format!(
+                    "enabled plugin {} requires disabled plugin {}",
+                    report.id, dependency.id
+                ));
+            }
+        }
+    }
+    Ok(reports
+        .iter()
+        .map(|report| {
+            let mut receipt = seed_selection(report);
+            if disabled.contains(report.id.as_str()) {
+                receipt.desired = Desired::Disabled;
+            }
+            receipt
+        })
+        .collect())
+}
+
+fn seed_graph_args(
+    args: &[String],
+) -> Result<(std::collections::BTreeSet<&str>, &str, &[String]), String> {
+    let mut disabled = std::collections::BTreeSet::new();
+    let mut words = args;
+    while let [option, rest @ ..] = words {
+        if option != "--disabled" {
+            break;
+        }
+        let [id, rest @ ..] = rest else {
+            return Err("--disabled requires a plugin ID".into());
+        };
+        korri_plugin_host::declaration::validate_id(id)?;
+        disabled.insert(id.as_str());
+        words = rest;
+    }
+    let [bindings, packages @ ..] = words else {
+        return Err("seed-graph requires publisher bindings and selected packages".into());
+    };
+    if packages.is_empty() {
+        return Err("seed-graph requires at least one selected package".into());
+    }
+    Ok((disabled, bindings, packages))
+}
+
+#[cfg(test)]
+mod seed_tests {
+    use super::*;
+    fn report(name: &str, requires: Vec<std::path::PathBuf>) -> package::Report {
+        package::Report {
+            id: format!("@korri:{name}"),
+            package: format!("/nix/store/{name}").into(),
+            requires,
+            provenance: Provenance::RawCache {
+                cache_url: "https://cache.example".into(),
+            },
+            approval: "approval".into(),
+            policy: package::BASE_POLICY,
+            warning: String::new(),
+            unit: None,
+            state_directory: String::new(),
+            runtime_directory: String::new(),
+            unit_configuration: String::new(),
+            declaration: korri_plugin_host::declaration::Declaration::evaluate(
+                "@korri",
+                &format!("export const name = {name:?};"),
+            )
+            .unwrap(),
+            native_units: Default::default(),
+            ports: Default::default(),
+            packages: Default::default(),
+            files: Default::default(),
+            entry: "plugin.ts".into(),
+            sources: vec!["plugin.ts".into()],
+            brings: vec![],
+        }
+    }
+
+    #[test]
+    fn seeding_disables_only_selected_ids_and_refuses_enabled_dependents() {
+        let runner = report("fake08", vec![]);
+        let pack = report("starter-pack", vec![runner.package.clone()]);
+        let reports = [runner, pack];
+        let receipts = seed_selections(
+            &reports,
+            &std::collections::BTreeSet::from(["@korri:starter-pack"]),
+        )
+        .unwrap();
+        assert_eq!(receipts[0].desired, Desired::Enabled);
+        assert_eq!(receipts[1].desired, Desired::Disabled);
+        assert_eq!(receipts[1].approval, reports[1].approval);
+        assert!(seed_selections(
+            &reports,
+            &std::collections::BTreeSet::from(["@korri:missing"])
+        )
+        .unwrap_err()
+        .contains("not among selected"));
+        assert!(seed_selections(
+            &reports,
+            &std::collections::BTreeSet::from(["@korri:fake08"])
+        )
+        .unwrap_err()
+        .contains("requires disabled"));
+        assert!(
+            seed_selections(&reports, &std::collections::BTreeSet::new())
+                .unwrap()
+                .iter()
+                .all(|r| r.desired == Desired::Enabled)
+        );
+        let all_off = std::collections::BTreeSet::from(["@korri:fake08", "@korri:starter-pack"]);
+        assert!(seed_selections(&reports, &all_off)
+            .unwrap()
+            .iter()
+            .all(|r| r.desired == Desired::Disabled));
+    }
+
+    #[test]
+    fn disabled_options_precede_bindings_and_repeat() {
+        let args = [
+            "--disabled",
+            "@korri:starter-pack",
+            "--disabled",
+            "@games:other",
+            "publishers.json",
+            "/nix/store/package",
+        ]
+        .map(String::from);
+        let (disabled, bindings, packages) = seed_graph_args(&args).unwrap();
+        assert_eq!(
+            disabled.into_iter().collect::<Vec<_>>(),
+            ["@games:other", "@korri:starter-pack"]
+        );
+        assert_eq!(bindings, "publishers.json");
+        assert_eq!(packages, ["/nix/store/package"]);
+        for args in [
+            vec![],
+            vec!["--disabled"],
+            vec!["--disabled", "bad", "bindings", "package"],
+            vec!["bindings"],
+        ] {
+            assert!(
+                seed_graph_args(&args.into_iter().map(String::from).collect::<Vec<_>>()).is_err()
+            );
         }
     }
 }
@@ -266,7 +430,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
             println!("{}.service", package::unit_name(id));
             Ok(())
         }
-        _ => Err("usage: korri-plugin seed PACKAGE CACHE_URL | seed-graph PUBLISHER_BINDINGS PACKAGE... | inspect CACHE PACKAGE | install CACHE ID --release COMMIT (inspect, then approve the exact path) | install CACHE PACKAGE APPROVAL | update ID CACHE PACKAGE APPROVAL | enable ID | disable ID | remove ID [--purge] | status ID | unit ID | restore-all | restore ID | enabled-packages | repository COMMAND | serve-admin".into()),
+        _ => Err("usage: korri-plugin seed PACKAGE CACHE_URL | seed-graph [--disabled ID]... PUBLISHER_BINDINGS PACKAGE... | inspect CACHE PACKAGE | install CACHE ID --release COMMIT (inspect, then approve the exact path) | install CACHE PACKAGE APPROVAL | update ID CACHE PACKAGE APPROVAL | enable ID | disable ID | remove ID [--purge] | status ID | unit ID | restore-all | restore ID | enabled-packages | repository COMMAND | serve-admin".into()),
     }
 }
 

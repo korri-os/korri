@@ -30,7 +30,9 @@ let
       jq -e --arg id ${
         pkgs.lib.escapeShellArg ("@korri:" + pkgs.lib.removePrefix "korri-plugin-" name)
       } --arg path ${pkgs.lib.escapeShellArg package} \
-        '.[] | select(.id == $id) | .package == $path and .desired.state == "Enabled" and .previous == null' \
+        '.[] | select(.id == $id) | .package == $path and .desired.state == "${
+          if name == "korri-plugin-starter-pack" then "Disabled" else "Enabled"
+        }" and .previous == null' \
         receipts.json >/dev/null
     '') published
   );
@@ -46,7 +48,7 @@ pkgs.runCommand "korri-published-plugin-acceptance-${system}" { nativeBuildInput
     set -euo pipefail
     test -f ${metadata}/nix-cache-info
     test -e ${proofCheck}
-    ${hostPackage}/bin/korri-plugin seed-graph ${publishers} \
+    ${hostPackage}/bin/korri-plugin seed-graph --disabled '@korri:starter-pack' ${publishers} \
       ${pkgs.lib.escapeShellArgs (builtins.attrValues published)} > receipts.json
     jq -e 'length == ${toString (builtins.length (builtins.attrNames published))}' receipts.json >/dev/null
     ${identityChecks}
