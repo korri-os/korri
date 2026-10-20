@@ -5,8 +5,9 @@
  *    positions transition with `var(--zone-snap-time) var(--zone-bounce)`;
  *    something that appears runs `zone-snap`.
  *  - the nudge: the red cursor triangles breathe toward their target.
- *  - the drift: the two orbit rings turn, one clockwise and one counter,
- *    so slowly that only a long look notices.
+ *  - the drift: the ground's planet dots orbit their rings, one clockwise
+ *    and one counter, so slowly that only a long look notices. It is drawn
+ *    on the ground's canvas (src/plan/ground.ts), not here.
  *
  * A component whose stylesheet names one of these keyframes imports this
  * file itself. zone.css turns every animation and transition off under
@@ -42,13 +43,6 @@
   }
   to {
     margin-left: calc(var(--zone-nudge-far) * var(--zone-px));
-  }
-}
-
-/* One full turn. The ring sets its own duration and direction. */
-@keyframes zone-drift {
-  to {
-    transform: rotate(360deg);
   }
 }
 

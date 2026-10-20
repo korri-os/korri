@@ -1,85 +1,21 @@
-/* The ground fills whatever box holds it and never takes a pointer. */
+/* The ground fills whatever box holds it and never takes a pointer. Its
+ * colour shows in the CSS px the art grid leaves over. */
 .zone-ground {
   position: absolute;
   inset: 0;
   display: block;
-  width: 100%;
-  height: 100%;
+  overflow: hidden;
+  background: var(--zone-ground);
   pointer-events: none;
 }
 
-/* Stroke widths and dashes are in the drawing's own units, so they scale
- * with the slice like everything else. */
-.zone-ground-band-upper {
-  fill: var(--zone-band-upper);
-  opacity: var(--zone-band-blue-opacity);
-}
-
-.zone-ground-band-lower {
-  fill: var(--zone-band-lower);
-  opacity: var(--zone-band-orange-opacity);
-}
-
-/* The rings turn about their own centres, named as shares of the drawing
- * (640,380 and 980,300 of 1280 by 720), so no length is written here. */
-.zone-ground-orbit-big {
-  transform-box: view-box;
-  transform-origin: 50% 52.7778%;
-  animation: zone-drift var(--zone-drift-big) linear infinite;
-}
-
-.zone-ground-orbit-small {
-  transform-box: view-box;
-  transform-origin: 76.5625% 41.6667%;
-  animation: zone-drift var(--zone-drift-small) linear infinite reverse;
-}
-
-.zone-ground-ring-big {
-  fill: none;
-  stroke: var(--zone-ring-big);
-  stroke-width: 16;
-  opacity: var(--zone-ring-big-opacity);
-}
-
-.zone-ground-dot-big {
-  fill: var(--zone-ring-big);
-  opacity: var(--zone-ring-big-opacity);
-}
-
-.zone-ground-ring-small {
-  fill: none;
-  stroke: var(--zone-ring-small);
-  stroke-width: 14;
-  opacity: var(--zone-ring-small-opacity);
-}
-
-.zone-ground-dot-small {
-  fill: var(--zone-ring-small);
-  opacity: var(--zone-ring-small-opacity);
-}
-
-.zone-ground-arc {
-  fill: none;
-  stroke: var(--zone-arc);
-  stroke-width: 10;
-  stroke-dasharray: 900 1000;
-  stroke-dashoffset: -200;
-  opacity: var(--zone-arc-opacity);
-}
-
-.zone-ground-mark-ring {
-  fill: none;
-  stroke: var(--zone-cap);
-  stroke-width: 8;
-  opacity: var(--zone-mark-white-opacity);
-}
-
-.zone-ground-mark-white {
-  fill: var(--zone-cap);
-  opacity: var(--zone-mark-white-opacity);
-}
-
-.zone-ground-mark-red {
-  fill: var(--zone-arc);
-  opacity: var(--zone-mark-red-opacity);
+/* One canvas pixel per art px, shown at exactly --zone-px CSS px each. */
+.zone-ground-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: var(--zone-ground-w, 100%);
+  height: var(--zone-ground-h, 100%);
+  image-rendering: pixelated;
 }

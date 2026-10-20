@@ -1,6 +1,7 @@
 import "./ZoneShell.css"
 import { useRef, type ReactNode } from "react"
 import { useZoneTopStrip } from "../../use-zone-top-strip"
+import type { ZoneGroundName } from "../organisms/ZoneGround"
 
 /** The plan's two discrete answers. Height picks the strips; width picks the type. */
 export type ZoneStrips = "tall" | "short"
@@ -21,9 +22,12 @@ export type ZoneBand = "wide" | "narrow"
  * the hints over the tabs. No tab and no hint is ever hidden.
  *
  * The shell arranges slots and sizes their type; it supplies no words. A
- * page fills each slot with its own controls.
+ * page fills each slot with its own controls. `ground` names the palette
+ * the shell stands on (`data-ground`); without it the shell takes the one
+ * around it, which the root sets from the page shown.
  */
 export function ZoneShell({
+  ground,
   strips = "tall",
   band = "wide",
   hintBack,
@@ -33,6 +37,8 @@ export function ZoneShell({
   footEnd,
   children,
 }: {
+  /** The screen group's palette, for a shell drawn without the root around it. */
+  readonly ground?: ZoneGroundName
   readonly strips?: ZoneStrips
   readonly band?: ZoneBand
   /** The top-left keycap hint: B BACK. */
@@ -50,7 +56,7 @@ export function ZoneShell({
   const shell = useRef<HTMLDivElement>(null)
   useZoneTopStrip(shell)
   return (
-    <div className="zone-shell" data-band={band} data-strips={strips} ref={shell}>
+    <div className="zone-shell" data-band={band} data-ground={ground} data-strips={strips} ref={shell}>
       <header className="zone-shell-top">
         <div className="zone-shell-hint-back">{hintBack}</div>
         <nav className="zone-shell-tabs">{tabs}</nav>

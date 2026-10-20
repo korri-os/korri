@@ -14,7 +14,7 @@ import { zoneShown, type ZoneShown, type ZoneSurfaceMessage } from "./state/surf
 import { ZoneKeycap } from "./ui/atoms/ZoneKeycap"
 import { ZoneFoot } from "./ui/molecules/ZoneFoot"
 import { ZoneTabStrip, type ZoneTabItem } from "./ui/molecules/ZoneTabStrip"
-import { ZoneGround } from "./ui/organisms/ZoneGround"
+import { ZoneGround, type ZoneGroundName } from "./ui/organisms/ZoneGround"
 import { ZoneStatusLayer } from "./ui/organisms/ZoneStatusLayer"
 import { useZoneSurface, zoneDeviceName, zoneGamesPage, type ZoneSurfaceProgram } from "./use-zone-games"
 
@@ -29,6 +29,28 @@ const asTab = (id: string): ZoneTab | undefined => ZONE_TABS.find(tab => tab ===
 
 /** Pages that draw the ground themselves, behind their own picture. */
 const OWN_GROUND: readonly ZoneShown[] = ["paused", "onboarding"]
+
+/**
+ * The palette each page stands on (REFINEMENT.md 2c): the root wears it as
+ * `data-ground`, so the ground, the page and every layer over it read one
+ * token set. First boot shares GAMES's mint; RUN WITH and OPTIONS' join
+ * keyboard share OPTIONS's yellow.
+ */
+function groundOf(shown: ZoneShown): ZoneGroundName {
+  switch (shown) {
+    case "games":
+    case "onboarding":
+      return "games"
+    case "options":
+    case "join":
+    case "runwith":
+      return "options"
+    case "savedata":
+      return "savedata"
+    case "paused":
+      return "paused"
+  }
+}
 
 /** Each model's dispatcher, built once per program. */
 function senders(dispatch: (message: ZoneSurfaceMessage) => void) {
@@ -92,7 +114,7 @@ export function ZoneSurface({ model, host }: { readonly model: SurfaceModel; rea
   const titleOf = (gameId: string) => catalogGames(model.catalog).find(game => game.id === gameId)?.title
 
   return (
-    <div className="zone-theme zone-screen" data-layer={nav.layers.at(-1) ?? "none"} data-shown={shown} ref={root}>
+    <div className="zone-theme zone-screen" data-ground={groundOf(shown)} data-layer={nav.layers.at(-1) ?? "none"} data-shown={shown} ref={root}>
       {OWN_GROUND.includes(shown) ? null : <ZoneGround />}
       <ZoneStatusLayer
         focus={state.status.focus}

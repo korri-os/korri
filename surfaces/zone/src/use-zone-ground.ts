@@ -1,0 +1,89 @@
+/**
+ * The ground's clock: size a canvas to the art grid, read the palette the
+ * nearest `data-ground` names, and paint `renderZoneGround` at 15 frames a
+ * second (M7). Under reduced motion it paints once, at the clock's start,
+ * and stops.
+ *
+ * Drawing, not state: the canvas is painted from refs and the computed
+ * style, and nothing re-renders (the authoring gate names this file and
+ * ZoneGround as the only places that draw on a canvas or run a frame
+ * clock). The canvas is `wArt` by `hArt` pixels and is shown at exactly
+ * `--zone-px` CSS px a pixel, so the browser scales it by a whole number;
+ * the CSS px left over at the right and bottom show the ground's colour.
+ */
+import { useLayoutEffect, type RefObject } from "react"
+import { renderZoneGround, zoneGroundFrame, type ZoneGroundPalette } from "./plan/ground"
+import { zoneArtPxOf } from "./use-zone-plan"
+
+/** A duration token (`140s`, `200ms`) in ms. */
+const ms = (value: string, fallback: number): number => {
+  const number = Number.parseFloat(value)
+  if (!Number.isFinite(number)) return fallback
+  return value.trim().endsWith("ms") ? number : number * 1000
+}
+
+/** The palette the canvas stands in, read from its computed custom properties. */
+export function zoneGroundPalette(element: Element): ZoneGroundPalette {
+  const style = getComputedStyle(element)
+  const read = (name: string) => style.getPropertyValue(name).trim()
+  return {
+    ground: read("--zone-ground"),
+    ringA: read("--zone-ring-a"),
+    ringB: read("--zone-ring-b"),
+    rings: read("--zone-ground-rings") !== "0",
+    driftA: ms(read("--zone-drift-big"), 140_000),
+    driftB: ms(read("--zone-drift-small"), 200_000),
+    fps: Number.parseFloat(read("--zone-ground-fps")) || 15,
+  }
+}
+
+const samePalette = (a: ZoneGroundPalette | undefined, b: ZoneGroundPalette): boolean =>
+  a !== undefined && (Object.keys(b) as (keyof ZoneGroundPalette)[]).every(key => a[key] === b[key])
+
+export function useZoneGround(box: RefObject<HTMLElement | null>, canvas: RefObject<HTMLCanvasElement | null>): void {
+  useLayoutEffect(() => {
+    const holder = box.current
+    const surface = canvas.current
+    const context = surface?.getContext("2d") ?? null
+    if (holder === null || surface === null || context === null) return
+    let size = { wArt: 0, hArt: 0 }
+    let painted: { frame: number; palette: ZoneGroundPalette | undefined; wArt: number } = { frame: -1, palette: undefined, wArt: 0 }
+    const resize = () => {
+      const px = zoneArtPxOf(holder)
+      const wArt = Math.floor(holder.clientWidth / px)
+      const hArt = Math.floor(holder.clientHeight / px)
+      if (wArt === size.wArt && hArt === size.hArt) return
+      size = { wArt, hArt }
+      surface.width = wArt
+      surface.height = hArt
+      surface.style.setProperty("--zone-ground-w", `${wArt * px}px`)
+      surface.style.setProperty("--zone-ground-h", `${hArt * px}px`)
+      painted = { frame: -1, palette: undefined, wArt: 0 }
+    }
+    const paint = (t: number) => {
+      const palette = zoneGroundPalette(surface)
+      const frame = zoneGroundFrame(t, palette.fps)
+      if (frame === painted.frame && samePalette(painted.palette, palette) && painted.wArt === size.wArt) return
+      renderZoneGround(context, frame, palette, size.wArt, size.hArt)
+      painted = { frame, palette, wArt: size.wArt }
+    }
+    resize()
+    const still = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches
+    let request = 0
+    const started = performance.now()
+    const tick = (now: number) => {
+      paint(still ? 0 : now - started)
+      if (!still) request = requestAnimationFrame(tick)
+    }
+    tick(started)
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => {
+      resize()
+      paint(still ? 0 : performance.now() - started)
+    })
+    observer?.observe(holder)
+    return () => {
+      cancelAnimationFrame(request)
+      observer?.disconnect()
+    }
+  }, [box, canvas])
+}
