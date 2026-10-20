@@ -115,10 +115,10 @@ comes in as a prop and a change goes out through a callback.
 - `optionsGroup`: where OPTIONS lands when `system` took the person there
   (its SYSTEM group)
 - `layers`: a stack over the page, each one of
-  `gameopts | keyboard | busy | problem | overlay | onboarding | idle`.
+  `gameopts | keyboard | busy | problem | confirm | overlay | onboarding | idle`.
   An empty stack is `none`. Back pops the top layer; a host status pushes
-  `busy` or `problem`; OPTS. in the action row (`ChoseGameOpts`) and its
-  shortcut `options` push `gameopts`; 30 s without input pushes
+  `busy`, `problem` or `confirm`; OPTS. in the action row (`ChoseGameOpts`)
+  and its shortcut `options` push `gameopts`; 30 s without input pushes
   `idle` (the idle cycle itself is built later).
 
 `menu` jumps to the tabs. `system` jumps to the SYSTEM group under OPTIONS.

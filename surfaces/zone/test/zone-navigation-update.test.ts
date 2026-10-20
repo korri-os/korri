@@ -244,8 +244,8 @@ describe("ChoseLaunch", () => {
 
 describe("the layer stack", () => {
   test("names every layer the brief reserves", () => {
-    const layers: ZoneLayer[] = ["gameopts", "keyboard", "busy", "problem", "overlay", "onboarding", "idle"]
-    expect(layers).toHaveLength(7)
+    const layers: ZoneLayer[] = ["gameopts", "keyboard", "busy", "problem", "confirm", "overlay", "onboarding", "idle"]
+    expect(layers).toHaveLength(8)
     expect(topLayer(ZONE_START)).toBe("none")
   })
 })
