@@ -82,6 +82,8 @@ src/
   state/              navigation model, messages, requests; pure
   zone-host.ts        the one door to Korri
   use-zone-program.ts the runtime: holds a model, runs update, performs requests
+  use-zone-games.ts   the home program: navigation, host buttons, idle and its
+                      cycle, and the GAMES page's props
   use-zone-plan.ts    measures the root and returns plan(width, height)
   use-zone-idle.ts    the idle timer, a subscription
   ZoneSurface.tsx     the composition root: the only file that reads the treaty
@@ -98,8 +100,16 @@ comes in as a prop and a change goes out through a callback.
 `src/state/navigation.ts` holds one value:
 
 - `tab`: `games | options | savedata`
-- `zone`: where focus is on the games page: `tabs | cards | actions`
-- `card`, `action`: indices
+- `zone`: where focus is on the games page: `tabs | find | cards | actions`
+- `card`, `action`: indices; `card` counts the band, which is the catalog
+  through the find draft
+- `find`: the find draft (the band's filter), its caret and the keyboard's
+  layer and focused key
+- `opts`: the focused GAME OPTS. row and the destructive action awaiting
+  NO / YES
+- `idleCard`: the game the idle title card shows, in catalog order
+- `optionsGroup`, `optionsRunWith`: where OPTIONS lands when `system` or RUN
+  WITH took the person there
 - `layers`: a stack over the page, each one of
   `gameopts | keyboard | busy | problem | overlay | onboarding | idle`.
   An empty stack is `none`. Back pops the top layer; a host status pushes
@@ -178,18 +188,103 @@ bun run lint
 - **Caliper device for 1280x720.** No stock Caliper device has that
   viewport, so `vite.config.ts` declares `screen-720p` with estimated
   millimetres.
-- **The idle layer.** Reserved in the stack now, pushed by an `IdleElapsed`
-  message after `ZONE_IDLE_AFTER_MS` (30 000). Any input pops it. The title
-  card cycle it will show is not built yet.
+- **The idle layer.** Pushed by an `IdleElapsed` message after
+  `ZONE_IDLE_AFTER_MS` (30 000). Any input pops it. It shows ZoneTitleCard
+  for the focused game and moves to the next every `ZONE_IDLE_CYCLE_MS`
+  (4 000).
 - **System jump target.** `system` sets the tab to `options` and records
   `focusGroup: "system"`; the OPTIONS page, when it lands, reads it.
 - **Host door is a plain function pair** (`performZoneRequest`,
   `subscribeZoneHostButtons`), as in Pico. The oxlint rule names `host`, so
   a renamed host parameter would get past it; review must catch that.
-- **Catalog titles for now.** `ZoneSurface` lists the catalog's game titles
-  as plain text in the shell's body until the card band lands, so the
-  package renders end to end with a real `SurfaceModel`.
+- **Catalog titles for now.** Superseded: `ZoneSurface` renders the GAMES
+  page as home.
 
 ### GAMES page (decided without asking)
 
-- (filled in as the GAMES page lands)
+- **FIND sits at the body's top right, under the A hint, not in the action
+  row.** Korri moves focus by geometry (`clients/portal/src/input/
+  spatial-focus.ts`); a key under the band is never the next stop right of
+  SAVE DATA, because the side cards are nearer. Under the A hint it is, and
+  `menu` twice reaches it as well. The top strip at 640 px has no room for a
+  fourth control.
+- **A on a one-place card launches.** Its one button is lit as the default,
+  so A on the card is A on that button. With a choice of places, A drops
+  into the row and launches nothing (the brief's rule).
+- **One published location is one place.** The button says PLAY (or
+  CONTINUE) and carries that location's id, since the treaty requires the id
+  whenever locations are published. The tag names the location; HERE is only
+  drawn for a game with no published location (as the mockup and the
+  fixture do) and for the first of a choice.
+- **A resumable game with a choice says CONTINUE HERE / CONTINUE ON ZAO**
+  (DIRECTION C4), not PLAY HERE.
+- **The first of a choice is HERE**, as the brief says, trusting the
+  treaty's "Korri orders the local device first". If a game is published
+  only on remote devices that label is wrong; the treaty has no way to tell.
+- **Find keeps the cursor on its game.** A new draft keeps the focused game
+  when it still matches, else the first match. A draft that matches nothing
+  shows NO GAMES with the cursor on FIND. B on the band while a filter is
+  kept lets go of it, on the same game; B on the keyboard deletes, and on an
+  empty draft drops the keyboard and the filter. The draft holds 40
+  characters.
+- **GAME OPTS. is a header (GAME OPTS.) over a group titled with the game.**
+  Each enabled action is a row whose value is RUN (red when destructive);
+  a disabled action is a read-only row whose value is Korri's description,
+  so the reason is on screen. ZoneOptionRow has no dimmed look for a
+  disabled row; that is a gap in the molecule, not decided here. A plain
+  action and YES close GAME OPTS. The question's headline is the action's
+  label, its line the description, its yellow title the game; NO has the
+  cursor first and B is NO.
+- **RUN WITH is a row whose value is CHOOSE.** It dispatches
+  `OpenedRunWith`, which closes GAME OPTS., opens OPTIONS and records
+  `optionsRunWith: gameId` for the OPTIONS page to read and clear. B from
+  OPTIONS forgets it.
+- **The catalog's error dialog is headed GAMES.** Korri's `Error` carries
+  only a message; the headline names the place that failed rather than
+  inventing a sentence, and the message is the body.
+- **LOADING uses ZoneBusyStrip, the error ZoneDialog.** Both left
+  `AWAITING_PAGE`, since the gate fails while a consumed component is listed.
+  The layers worker uses them too.
+- **Facts are a date, a count and hours.** LAST PLAYED is the local day
+  (19 Oct 2026); a relative "today" would need a clock. TIME is whole hours
+  and minutes (3h 12m). The line keeps its height when a game has none, so
+  the band does not jump.
+- **Short screens: `ZONE_SHORT_HEIGHT` (400, token `--zone-short-height`).**
+  Below it, on a wide screen, the facts join the action strip at note size;
+  on any screen the find keyboard rises over everything below the tabs,
+  because the body cannot hold its keys. The band is hidden while typing
+  there; DONE shows the result.
+- **The action strip grows when its row wraps** (two places on a narrow
+  screen); the band gives the room.
+- **A section is a spine in the band.** `ZoneSectionCard` (a new molecule):
+  a narrow black card, side-card height, caption up it, stripe down it, no
+  focus. `ZoneCardBand` takes `section` on a card and writes
+  `--zone-band-dividers` so its centring sum stays exact. Its caption is set
+  in the molecule, not ZoneCaps, so the ellipsis runs up the spine.
+- **The band clips instead of hiding overflow.** `overflow: clip` makes it
+  never a scroll box, so the host's `scrollIntoView` after a focus move
+  cannot scroll it under the track's translation.
+- **A on a card had no way out.** `ZoneCard` gained `onPress` and
+  `ZoneCardBand` `onChoose`.
+- **Waking keeps the exact focus.** `use-zone-idle` no longer wakes on
+  `focusin` (a focus move is already a message, and `update` treats any
+  message while idle as a wake) and wakes on a key one task later, after the
+  host has turned it into a move. The page does not report the focus moves
+  it makes itself to follow the model, so its own sync never wakes idle.
+- **The page moves DOM focus to the model's target** after `menu`, `back`
+  or a layer, through `data-games-region` wrappers. ZoneKeyboard and
+  ZoneDialog report no focus of their own, so the page reads a focused key
+  from its glyph and a dialog button from its index.
+- **The home program lives in `src/use-zone-games.ts`**, beside the other
+  runtime hooks, as Pico's `use-pico-navigation.ts` does. The page part runs
+  the real `update` through it, since nothing under `src/pages/` may import
+  `src/state/`.
+- **OPTIONS and SAVE DATA show their tab's label on a panel** until their
+  pages land; `tab` already drives which one shows.
+- **FIND shows only while the catalog is Ready.** There is nothing to find
+  while it loads, fails or is empty.
+- **`ZonePartFrame` gained a `handheld` shape** (640 by 480, as tokens) for
+  the Narrow state on the 720p device.
+- **The intrinsic ladder was rendered with two Caliper devices added for the
+  run and not committed** (480x800, 1280x300), so every other part keeps its
+  two devices.
