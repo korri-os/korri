@@ -65,6 +65,16 @@
   text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
 }
 
+/* The triangles' room is kept when the row is not focused. */
+.zone-paused-control-step {
+  display: inline-flex;
+  visibility: hidden;
+}
+
+.zone-paused-control-step[data-shown] {
+  visibility: visible;
+}
+
 /* A range's number never breaks, and its digits keep one width so the
  * meter does not shift as it moves. */
 .zone-paused-control[data-kind="range"] .zone-paused-control-text {

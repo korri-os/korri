@@ -549,15 +549,15 @@
   /** The title's caps at most. @label Paused title type @min 20 @max 120 @step 1 */
   --zone-type-paused-title: 72px;
   /** The title's caps at least. @label Paused title type, least @min 12 @max 60 @step 1 */
-  --zone-type-paused-title-min: 26px;
+  --zone-type-paused-title-min: 20px;
   /** Room between rows. @label Paused row gap @min 0 @max 40 @step 1 */
   --zone-paused-row-gap: 10px;
   /** A group label's caps against a row's. @label Paused group label scale @min 0.4 @max 1.2 @step 0.05 */
   --zone-paused-group-scale: 0.75;
   /** The room a label keeps beside its value before the value drops under it. @label Paused label room @min 1em @max 20em @step 0.5 */
-  --zone-paused-label-least: 6em;
+  --zone-paused-label-least: 4em;
   /** A range meter's length, in the row's type. @label Paused meter length @min 1 @max 10 @step 0.25 */
-  --zone-paused-meter-length: 4;
+  --zone-paused-meter-length: 3.5;
   /** A range meter's height, in the row's type. @label Paused meter height @min 0.2 @max 1 @step 0.05 */
   --zone-paused-meter-height: 0.55;
   /** The stripe field's lean. @label Paused stripe angle @min -90 @max 90 @step 1 */
@@ -588,6 +588,8 @@
   --zone-controller-stripe-angle: 128deg;
   /** The step strip's widest. @label Step strip width @min 200 @max 1200 @step 10 */
   --zone-onboarding-steps-width: 620px;
+  /** The room each keycap hint keeps beside the step strip. @label Step strip hint room @min 40 @max 300 @step 1 */
+  --zone-onboarding-hint-room: 128px;
   /** @label Controller heard frame */
   --zone-controller-heard: var(--zone-red);
 }

@@ -55,7 +55,8 @@ function Scenario({
   program.current ??= createOnboardingProgram(korri, {
     step,
     started,
-    focus: started ? "finish" : step === "identity" ? "save" : step === "name" ? "name" : "next",
+    // An empty cursor lands on the step's first row, as opening the step does.
+    focus: started ? "finish" : step === "controllers" ? "next" : "",
     entry: typing ? { draft: "mini", caret: 4, layer: "letters", focusedKey: "i" } : undefined,
   })
   const { dispatch, subscribe, get } = program.current

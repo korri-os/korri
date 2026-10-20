@@ -8,11 +8,12 @@
   container: zone-onboarding / size;
 }
 
-/* The step strip in the tabs' place: four joined tags, the tabs' type. */
+/* The step strip in the tabs' place: four joined tags, the tabs' type,
+ * as wide as the room the two keycap hints leave, up to its token. */
 .zone-onboarding-steps {
   --zone-tag-row-base: var(--zone-shell-tab-type, var(--zone-type-tab-wide));
   display: flex;
-  width: min(var(--zone-onboarding-steps-width), 46cqi);
+  width: min(var(--zone-onboarding-steps-width), calc(100cqi - var(--zone-onboarding-hint-room) * 2));
 }
 
 /* The step over its way forward. The step gives way; the action row keeps

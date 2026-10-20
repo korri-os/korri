@@ -34,7 +34,8 @@ function rangeText(value: number, step: number): string {
  *    and while it moves the number turns yellow.
  *
  * The focused row wears the pink underline, and a row that steps shows the
- * red triangles either side of its value, dimmed at a range's ends. A
+ * red triangles either side of its value, dimmed at a range's ends. Their
+ * room is kept while unfocused, so focus never moves a row's layout. A
  * disabled row stays focusable, dims, and shows Korri's reason under it; a
  * focused row shows Korri's description. Focus is a prop.
  */
@@ -126,14 +127,22 @@ export function ZonePausedControl({
             <span className="zone-paused-control-label">{control.label}</span>
             {shown === undefined ? null : (
               <span className="zone-paused-control-value" data-moving={moving || undefined}>
-                {focused && steps ? <ZoneTriangle dimmed={atMin} direction="left" nudge={false} size="inline" /> : null}
+                {steps ? (
+                  <span className="zone-paused-control-step" data-shown={focused || undefined}>
+                    <ZoneTriangle dimmed={atMin} direction="left" nudge={false} size="inline" />
+                  </span>
+                ) : null}
                 <span className="zone-paused-control-text">{shown}</span>
                 {interaction.kind === "range" ? (
                   <span aria-hidden="true" className="zone-paused-control-meter" ref={meter}>
                     <i className="zone-paused-control-fill" />
                   </span>
                 ) : null}
-                {focused && steps ? <ZoneTriangle dimmed={atMax} direction="right" nudge={false} size="inline" /> : null}
+                {steps ? (
+                  <span className="zone-paused-control-step" data-shown={focused || undefined}>
+                    <ZoneTriangle dimmed={atMax} direction="right" nudge={false} size="inline" />
+                  </span>
+                ) : null}
               </span>
             )}
           </span>

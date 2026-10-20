@@ -7,7 +7,7 @@
   --zone-paused-wedge-w: clamp(min(100cqi, var(--zone-paused-wedge-min)), calc(var(--zone-paused-wedge-share) * 100cqi), 100cqi);
   --zone-paused-wedge-cut: calc(var(--zone-paused-wedge-w) * var(--zone-paused-wedge-lean));
   --zone-paused-margin: clamp(var(--zone-strip-margin-min), 3cqi, var(--zone-strip-margin));
-  --zone-paused-row-type: clamp(var(--zone-type-row-min), 3.4cqi, var(--zone-type-paused-row));
+  --zone-paused-row-type: clamp(var(--zone-type-row-min), min(4.4cqi, 6cqb), var(--zone-type-paused-row));
   position: relative;
   width: 100%;
   height: 100%;
@@ -76,7 +76,8 @@
 }
 
 /* The rows' column: under the band, right of the slant's top, sitting at
- * the bottom when few and scrolling when many. */
+ * the bottom when few and scrolling when many. A row scrolled up passes
+ * under the band; the focused one is always brought out below it. */
 .zone-paused-list {
   position: absolute;
   inset: 0;
@@ -90,7 +91,7 @@
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
-  scroll-padding-block: var(--zone-paused-margin);
+  scroll-padding: calc(var(--zone-paused-band-h) + var(--zone-paused-margin)) 0 var(--zone-paused-margin);
 }
 
 /* Auto margin above, so a short list rests at the bottom and a long one
