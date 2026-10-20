@@ -25,14 +25,11 @@ const SRC = join(import.meta.dir, "..", "src")
  * surface, a `@platform` module) would tie Zone to this repository and break
  * the promise that a surface can ship on its own.
  */
-const ALLOWED_IMPORTS = [
-  "react",
-  "react-dom",
-  "react/jsx-runtime",
-  "react-dom/client",
-  "@contracts/surface/",
-  "qrcode",
-]
+const ALLOWED_IMPORTS = ["react", "react-dom", "@contracts/surface", "qrcode"]
+
+/** A package by its exact name, or a path inside it: `react` and `react/jsx-runtime`, never `react-foo`. */
+const allowedImport = (specifier: string): boolean =>
+  ALLOWED_IMPORTS.some((allowed) => specifier === allowed || specifier.startsWith(`${allowed}/`))
 
 function walk(dir: string): readonly string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -155,19 +152,21 @@ describe("the surface treaty is the whole contract", () => {
         return [...source.matchAll(IMPORT)]
           .map((match) => match[1])
           .filter((specifier): specifier is string => specifier !== undefined)
-          .filter(
-            (specifier) =>
-              !specifier.startsWith(".") &&
-              !ALLOWED_IMPORTS.some(
-                (allowed) =>
-                  specifier === allowed || specifier.startsWith(allowed),
-              ),
-          )
+          .filter((specifier) => !specifier.startsWith(".") && !allowedImport(specifier))
           .map((specifier) => `${rel(file)}: ${specifier}`)
       })
       .sort()
 
     expect(offenders).toEqual([])
+  })
+
+  test("the allowlist matches a package's exact name or a path inside it, never a name it starts", () => {
+    for (const specifier of ["react", "react/jsx-runtime", "react-dom", "react-dom/client", "@contracts/surface/korri-surface", "qrcode"]) {
+      expect(allowedImport(specifier)).toBe(true)
+    }
+    for (const specifier of ["react-foo", "reactive", "react-dom-extra", "@contracts/surfaces", "@contracts/surface-x/y", "qrcode-svg", "@contracts/generated/korrid"]) {
+      expect(allowedImport(specifier)).toBe(false)
+    }
   })
 
   test("no design-part registry is reintroduced", () => {
