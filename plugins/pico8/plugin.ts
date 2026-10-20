@@ -22,9 +22,10 @@ export const providers = {
   [PROVIDER_ID]: { id: PROVIDER_ID, title: "PICO-8 BBS" },
 }
 
-// Legacy result shapes (legacy product/platform/protocol/acquisition/claim.ts,
-// download-resolution.ts) minus `ref`, `playable`, `facets` and
-// `requestHeaders`.
+// Local mirror of the legacy result shapes (legacy
+// product/platform/protocol/acquisition/claim.ts, download-resolution.ts)
+// minus `ref`, `playable`, `facets` and `requestHeaders`, as korrid admits
+// them. Replace with contracts/generated/korrid.ts types once they land.
 interface ArtifactAcquisitionHint {
   readonly kind: "content" | "patch"
   readonly system?: string
@@ -65,7 +66,7 @@ interface DownloadChoice {
   readonly id: string
   readonly fileName?: string
   readonly size?: string
-  readonly platforms?: readonly string[]
+  readonly platforms?: string[]
 }
 
 type DownloadResolution =
@@ -81,7 +82,7 @@ type DownloadResolution =
       readonly providerId: string
       readonly reason: "interstitial" | "requires-user-action" | "unsupported"
       readonly url?: string
-      readonly choices?: readonly DownloadChoice[]
+      readonly choices?: DownloadChoice[]
     }
   | {
       readonly _tag: "FailedDownload"
@@ -94,11 +95,10 @@ type DownloadResolution =
       readonly message: string
     }
 
-// Turn protocol. Field names follow legacy PluginHttpRequestOptions and
-// PluginHttpResponse. The tag is the build worker's draft of SCRIPTING.md and
-// is not final yet; it lives only in this constant.
-const HTTP_REQUESTS_TAG = "HttpRequests"
-
+// Local mirror of the turn protocol in services/korrid/SCRIPTING.md
+// ("Acquisition providers"), named as in contracts/generated/korrid.ts. Field
+// names follow legacy PluginHttpRequestOptions and PluginHttpResponse.
+// Replace with the generated types once they land on main.
 interface PluginHttpRequest {
   readonly url: string
   readonly query?: Readonly<Record<string, string | number | boolean>>
@@ -114,35 +114,38 @@ interface PluginHttpResponse {
   readonly text: string
 }
 
-interface HttpRequests {
-  readonly _tag: typeof HTTP_REQUESTS_TAG
-  readonly requests: readonly PluginHttpRequest[]
+interface PluginHttpRequests {
+  readonly _tag: "HttpRequests"
+  readonly requests: PluginHttpRequest[]
 }
 
-type Turn<Result> = HttpRequests | Result
-
-interface TurnInput {
-  readonly providerId?: string
-  readonly responses?: readonly PluginHttpResponse[]
-}
-
-interface SearchInput extends TurnInput {
+interface PluginSearchInput {
+  readonly providerId: string
   readonly query: string
+  readonly responses: PluginHttpResponse[]
 }
 
-interface DetailsInput extends TurnInput {
+interface PluginDetailsInput {
+  readonly providerId: string
   readonly id: string
+  readonly responses: PluginHttpResponse[]
 }
 
-interface ResolveDownloadInput extends TurnInput {
+interface PluginResolveDownloadInput {
+  readonly providerId: string
   readonly candidateUrl: string
   readonly fileName?: string
+  readonly responses: PluginHttpResponse[]
 }
+
+type PluginSearchOutput = PluginHttpRequests | ProviderClaim[]
+type PluginDetailsOutput = PluginHttpRequests | ProviderClaimDetails
+type PluginResolveDownloadOutput = PluginHttpRequests | DownloadResolution
 
 const HTML_HEADERS = { accept: "text/html,application/xhtml+xml" } as const
 
-function httpRequests(...requests: PluginHttpRequest[]): HttpRequests {
-  return { _tag: HTTP_REQUESTS_TAG, requests }
+function httpRequests(...requests: PluginHttpRequest[]): PluginHttpRequests {
+  return { _tag: "HttpRequests", requests }
 }
 
 // Legacy searchUrl(): the BBS cart listing filtered by `search`.
@@ -171,7 +174,7 @@ function postUrl(id: string): string {
 
 // --- handlers: thin adapters over the pure parsers below -----------------
 
-function searchClaims(input: SearchInput): Turn<readonly ProviderClaim[]> {
+function searchClaims(input: PluginSearchInput): PluginSearchOutput {
   const query = typeof input.query === "string" ? input.query.trim() : ""
   if (query.length === 0) return []
   const page = firstResponse(input)
@@ -184,7 +187,7 @@ function searchClaims(input: SearchInput): Turn<readonly ProviderClaim[]> {
   return entries.slice(0, MAX_SEARCH_RESULTS).map(claimFor)
 }
 
-function claimDetails(input: DetailsInput): Turn<ProviderClaimDetails> {
+function claimDetails(input: PluginDetailsInput): PluginDetailsOutput {
   const id = stringField(input.id, "id")
   const page = firstResponse(input)
   if (!page) return httpRequests(postRequest(id))
@@ -194,7 +197,7 @@ function claimDetails(input: DetailsInput): Turn<ProviderClaimDetails> {
   return detailsFor(details)
 }
 
-function resolveDownload(input: ResolveDownloadInput): Turn<DownloadResolution> {
+function resolveDownload(input: PluginResolveDownloadInput): PluginResolveDownloadOutput {
   const candidateUrl = stringField(input.candidateUrl, "candidateUrl")
   const parsed = parsePico8BbsUrl(candidateUrl)
   if (!parsed) return nonFinal("unsupported", candidateUrl)
@@ -345,7 +348,7 @@ function parsePico8SearchEntries(html: string): readonly Pico8BbsEntry[] | null 
   })
 }
 
-function pdatRows(html: string): readonly string[] | null {
+function pdatRows(html: string): string[] | null {
   const assignment = html.indexOf("pdat=[")
   if (assignment < 0) return null
   const start = html.indexOf("[", assignment)
@@ -394,7 +397,7 @@ function pdatRows(html: string): readonly string[] | null {
   return rows
 }
 
-function splitTopLevel(row: string): readonly string[] {
+function splitTopLevel(row: string): string[] {
   const fields: string[] = []
   let start = 0
   let depth = 0
@@ -627,7 +630,9 @@ function escapeRegExp(value: string): string {
   return value.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
-function firstResponse(input: TurnInput): PluginHttpResponse | undefined {
+function firstResponse(input: {
+  readonly responses?: PluginHttpResponse[]
+}): PluginHttpResponse | undefined {
   const responses = input.responses
   return Array.isArray(responses) && responses.length > 0 ? responses[0] : undefined
 }

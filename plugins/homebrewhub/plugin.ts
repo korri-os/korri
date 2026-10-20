@@ -16,9 +16,13 @@ export const providers = {
   [PROVIDER_ID]: { id: PROVIDER_ID, title: "Homebrew Hub" },
 }
 
-// Legacy result shapes (legacy product/platform/protocol/acquisition/claim.ts,
-// download-resolution.ts) minus `ref`, `playable`, `facets` and
-// `requestHeaders`.
+// Local mirror of the legacy result shapes (legacy
+// product/platform/protocol/acquisition/claim.ts, download-resolution.ts)
+// minus `ref`, `playable`, `facets` and `requestHeaders`, as korrid admits
+// them, and of the handler inputs in services/korrid/SCRIPTING.md, named as in
+// contracts/generated/korrid.ts. Replace with the generated types once they
+// land on main. This catalog never returns `HttpRequests`, so `responses` is
+// always empty and unread.
 interface ArtifactAcquisitionHint {
   readonly kind: "content" | "patch"
   readonly system?: string
@@ -80,16 +84,23 @@ type DownloadResolution =
       readonly message: string
     }
 
-interface SearchInput {
+interface PluginSearchInput {
+  readonly providerId: string
   readonly query: string
+  readonly responses: unknown[]
 }
 
-interface DetailsInput {
+interface PluginDetailsInput {
+  readonly providerId: string
   readonly id: string
+  readonly responses: unknown[]
 }
 
-interface ResolveDownloadInput {
+interface PluginResolveDownloadInput {
+  readonly providerId: string
   readonly candidateUrl: string
+  readonly fileName?: string
+  readonly responses: unknown[]
 }
 
 // Legacy FixtureEntry. `system` replaces legacy `platform`, whose values were
@@ -110,7 +121,7 @@ interface CatalogEntry {
 // Live on 2026-10-20 (live-probe.ts). Legacy also listed
 // `basil-termini_2048-advance` (GBA; its download URL answers 404) and the
 // test-only `disabled-downloads` (no such entry upstream).
-const entries: readonly CatalogEntry[] = [
+const entries: CatalogEntry[] = [
   {
     id: "2048gb",
     title: "2048gb",
@@ -126,7 +137,7 @@ const entries: readonly CatalogEntry[] = [
 
 // --- handlers ---------------------------------------------------------------
 
-function searchClaims(input: SearchInput): readonly ProviderClaim[] {
+function searchClaims(input: PluginSearchInput): ProviderClaim[] {
   const query = typeof input.query === "string" ? input.query.trim().toLowerCase() : ""
   if (query.length === 0) return []
   return entries
@@ -134,14 +145,14 @@ function searchClaims(input: SearchInput): readonly ProviderClaim[] {
     .map(claimFor)
 }
 
-function claimDetails(input: DetailsInput): ProviderClaimDetails {
+function claimDetails(input: PluginDetailsInput): ProviderClaimDetails {
   const id = stringField(input.id, "id")
   const entry = findEntry(id)
   if (!entry) throw new Error(unknownMessage(id))
   return detailsFor(entry)
 }
 
-function resolveDownload(input: ResolveDownloadInput): DownloadResolution {
+function resolveDownload(input: PluginResolveDownloadInput): DownloadResolution {
   const candidateUrl = stringField(input.candidateUrl, "candidateUrl")
   const id = parseHomebrewHubUrl(candidateUrl)
   if (!id) {

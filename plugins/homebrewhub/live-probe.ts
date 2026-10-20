@@ -28,7 +28,7 @@ const check = (ok: boolean, message: string) => {
 type Claim = { id: string; title: string; url: string; artifact: { system: string; file: { name: string } } }
 
 // Every entry's search text names its system's legacy id.
-const claims = handlers["claims.search"]({ query: "nintendo-gameboy" }) as Claim[]
+const claims = handlers["claims.search"]({ providerId, query: "nintendo-gameboy", responses: [] }) as Claim[]
 check(claims.length > 0, `claims.search lists ${claims.length} entries`)
 
 for (const claim of claims) {
@@ -45,7 +45,7 @@ for (const claim of claims) {
     log(`recorded ${claim.id}.json`)
   }
 
-  const resolution = handlers["artifact.resolve-download"]({ providerId, candidateUrl: claim.url }) as {
+  const resolution = handlers["artifact.resolve-download"]({ providerId, candidateUrl: claim.url, responses: [] }) as {
     _tag: string
     url?: string
     filename?: string
