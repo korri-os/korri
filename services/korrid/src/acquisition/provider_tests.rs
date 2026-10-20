@@ -137,6 +137,7 @@ fn world() -> World {
                 ("page", "Page", "gba"),
                 ("slow", "Slow", "gba"),
                 ("web", "Web", "gba"),
+                ("zip", "Zipped", "gba"),
             ]),
         ),
     );
@@ -148,6 +149,7 @@ fn world() -> World {
         ("page", "", "page"),
         ("slow", "/files/slow.gba", "ok"),
         ("web", "/files/web.gba", "ok"),
+        ("zip", "/files/game.zip", "ok"),
     ] {
         let system = if id == "tetris" { "gb" } else { "gba" };
         server.route(
@@ -173,6 +175,7 @@ fn world() -> World {
         Route::ok("application/octet-stream", ROM),
     );
     server.route("/files/web.gba", Route::ok("text/html", "<html></html>"));
+    server.route("/files/game.zip", Route::ok("application/zip", ROM));
     server.route(
         "/files/slow.gba",
         Route::ok("application/octet-stream", vec![1u8; 64 * 1024])
@@ -302,7 +305,7 @@ async fn search_details_acquire_place_rescan_imported() {
         .await
         .unwrap()
         .claims;
-    assert_eq!(claims.len(), 8);
+    assert_eq!(claims.len(), 9);
     assert_eq!(claims[0].url, world.server.url(HOST, "/game/2048"));
     let details = api
         .details(
@@ -427,6 +430,18 @@ async fn refusals_happen_before_any_download_and_failures_are_plain() {
         api.acquire(&world.context, &bad).unwrap_err().code,
         "AcquisitionCaller"
     );
+
+    // Not a file of the claim's system: refused by name, never downloaded.
+    let zip = finish(
+        &world,
+        api.acquire(&world.context, &acquire("zip")).unwrap(),
+    )
+    .await;
+    assert!(
+        matches!(&zip.state, AcquireJobState::Failed { reason } if reason.message.contains("not a game for this system")),
+        "{zip:?}"
+    );
+    assert_eq!(downloads(&world), 0);
 
     for (id, code) in [
         ("gone", "DownloadResolutionFailed"),
