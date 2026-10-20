@@ -1474,12 +1474,93 @@ states), `ZonePaused` (`OnTheGame`, `OnTheCover`), and the new atoms
 
 ### Known gaps, after the layers
 
-- **Pages' own dialogs** (OPTIONS' confirmation, GAME OPTS.' NO / YES,
-  SAVE DATA's steps) now have the sky look and M4, but no veil under them:
-  their pages place them.
-- **The launch title card is not passed yet.** `ZoneStatusLayer` takes
-  `stage` and `busyAt`; the games worker's card is the stage, and
-  `ZoneSurface` passes nothing until that card lands.
+- ~~Pages' own dialogs have no veil~~ and ~~the launch title card is not
+  passed yet~~: both closed by the join (below).
 - **The 52-character measure is in `ch`.** Jersey 10 is proportional, so
   46ch holds 44 to 50 characters of Korri's real sentences; a line of
   narrow letters (i, l, t) could pass 52.
+
+## The join of the four refinements (decided without asking: join)
+
+The GAMES, OPTIONS, SAVE DATA and layers refinements were merged at
+`420d0ca0a`; this section records how their seams were closed. Where it
+disagrees with a section above, this one holds.
+
+- **One ZoneWords: each word its own ZoneCaps, on a 1.4-cap line.** Two
+  atoms of that name met. The games one drew each word as a ZoneCaps in a
+  flex row (`text`, `--zone-words-wrap`); the layers one drew one text
+  node and redrew its ring, drop and shade in `::before`/`::after` copies
+  (`children`, inherited `white-space`, leading 1.4). Rendered side by
+  side in the same boxes at 640x480 and 1280x720 they break lines in the
+  same places, but the copies draw the drop with three of ZoneCaps' five
+  offsets, so a wrapped word's arms end in a notch a one-line label does
+  not have (`/tmp/zone-refine-join/cmp/lrz.png`), and they carry three of
+  the five inks. Kept: the games mechanism, so every word Zone wraps is
+  pixel for pixel the word it draws on one line, in any ink. Taken from
+  the layers one: the prop shape (`children`, like ZoneCaps), the way a
+  holder says whether the words wrap (its own `white-space`; alignment
+  is its `text-align`), and the 1.4-cap line with the cap from 0.2 to 1.2
+  (measured in Chromium: lines 1.4000 caps apart, the box 1.4000 caps a
+  line, the cap 0.2000 down, at both sizes). `ZONE_SLAB_LINE_EM` stays
+  1.4 and a test holds it to ZoneWords' stylesheet. Supersedes "Caps
+  that wrap are one text" (layers) and the flex row of "Titles step and
+  wrap with ZoneWords" (games).
+- **A word never loses a letter.** A word wider than its line stands
+  whole past it (no ellipsis inside the word); a holder that cannot show
+  it decides (a side card draws no title, as before). The room ZoneCaps
+  keeps round each word for accents, ring and drop is painted through an
+  `overflow-clip-margin` but not counted as overflow, so `useZoneFit`
+  sees the letters: without that the dialog headline stepped to caps-1
+  for 3 art px of ink room.
+- **Several words are read once.** ZoneWords keeps the whole words in a
+  hidden copy and hides the drawn words from a screen reader (the games
+  worker's card did this itself; it moved into the atom, so every caller
+  gets it). Tests that read `textContent` of a holder now read what a
+  reader reads (`test/read-text.ts`).
+- **Holders that want a ZoneCaps-tight box trim the half-leading.** The
+  card title, the title card's name and the tally's heading give back
+  0.2em over and under (`margin-block: -0.2em`), so the name still rises 3
+  art px over its slab and the cards keep their sizes. A wrapped card
+  title's lines are now 14 art px apart at caps-1, not 12, and the games
+  leading tokens (`--zone-games-title-leading`, `--zone-tc-leading`) are
+  gone.
+- **The launch title card is the status layer's stage.** `ZoneSurface`
+  passes `ZoneLaunchCard` as `stage` while GAMES is shown and the launch
+  stands; ZoneGames only learns that the card holds the page
+  (`launchHeld`). Under Busy the strip stands at the card's foot
+  (`busyAt` foot) and no veil lies on the card; under Confirm or Problem
+  the dialog's veil lies over the card and the dialog over that. The
+  card's empty `foot` slot and its in-page `z-index` are gone.
+  Supersedes the games worker's "the status layer's veil also lies over
+  the card while Busy" and its suggested issue.
+- **The veil is laid once, by ZoneDialog.** Every ZoneDialog draws a
+  ZoneVeil just under itself, over its holder's layer (the nearest
+  positioned box: OPTIONS' and SAVE DATA's dialog layers cover the page
+  body, GAMES' question and error the body, PAUSED's question and the
+  status layer the whole screen). PAUSED and the status layer no longer
+  draw their own for a question; the status layer still veils the page
+  itself under Busy without a stage. OPTIONS' keyboard draws the same
+  ZoneVeil (its hand-written `::after` checker is gone). GAMES' error now
+  has the veil, over the ground (supersedes "no veil under the catalog's
+  error"). A test lists the only three files that draw a veil.
+- **One sticky group title at a time.** A group another follows in a
+  scrolling holder (`followed`, OPTIONS passes it to all but the last)
+  ends its sticky content the title's height, less the gap, sooner: its
+  title leaves as the last row comes up under it and is gone by the time
+  the next title reaches the foot of its place, so the old title never
+  stands on the new one. The title's height is measured
+  (`use-zone-sticky-hold.ts`, a DOM mechanic). Cost: for less than a
+  title's height of scroll a group's last row shows with its title on the
+  way out. Supersedes "accepted, it lasts one title's height of scroll".
+- **GAME OPTS.' focused RUN wears the red triangles.** ZoneOptionRow takes
+  `flanked`: the focused value gets the same pixel-stair triangles as a
+  choice, though left and right step nothing. GAME OPTS. passes it; OPTIONS
+  keeps triangles for choices only.
+- **The veil stays the 1-art-px checker.** Judged at 1280x720 (3 CSS px
+  a pixel) beside a 2x2 ordered dither at 25% (one black art px in four)
+  and a 2-art-px checker (`/tmp/zone-refine-join/cmp/veil-ab-1280-1to1.png`):
+  the checker reads as an even dim of the page; the 25% pattern reads as a
+  grid of dots (a screen door) and the 2-px checker as a pattern of its
+  own. The references' only stipple (the credits' checker) is as fine. The
+  same ZoneVeil is now the one veil everywhere.
+
