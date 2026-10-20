@@ -3,7 +3,6 @@ import type { SurfaceRunnerChoice } from "@contracts/surface/korri-surface"
 import { useEffect, useRef } from "react"
 import { runWithPlan, zoneSavedRowId, type ZoneRunWithState } from "../plan/options-run-with"
 import { ZoneBanner } from "../ui/atoms/ZoneBanner"
-import { ZoneCaps } from "../ui/atoms/ZoneCaps"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
 import { ZonePanel } from "../ui/atoms/ZonePanel"
 import { ZoneTag, type ZoneTagKind } from "../ui/atoms/ZoneTag"
@@ -12,6 +11,8 @@ import { ZoneFoot } from "../ui/molecules/ZoneFoot"
 import { ZoneRunWithRoute } from "../ui/organisms/ZoneRunWithRoute"
 import { ZoneWarningLines } from "../ui/organisms/ZoneWarningLines"
 import { ZoneShell, type ZoneBand, type ZoneStrips } from "../ui/templates/ZoneShell"
+import { useZoneFit } from "../use-zone-fit"
+import { useZoneOptionClips } from "../use-zone-option-row"
 
 /** Each state of Korri's runner choice wears a tag colour Zone already uses
  * for that kind of news: blue for settled, yellow for at work, orange for
@@ -29,12 +30,17 @@ const STATE_TAGS: Record<ZoneRunWithState, ZoneTagKind> = {
 
 /**
  * RUN WITH, reached from GAME OPTS. for one game: which installed runner
- * plays it. The banner names the page, the game's title stands beside it,
- * and Korri's state for the choice is a tag at the end of that row. Under
- * them: Korri's warnings for the whole choice in red, its message as one
- * caps line, one row per route (program, then the exact build) with SAVED
- * on the route a saved choice picks, and Korri's actions as buttons: each
- * route's under it, the choice's own at the bottom. A saved choice whose
+ * plays it. It stands on the OPTIONS ground and band. The banner names the
+ * page where the tabs stand on every other page (RUN WITH has no tabs);
+ * under it the game's title stands on a black panel at caps-2
+ * (caps-1 when it must), and Korri's state for the choice is a tag at the
+ * end of that row. Under them, in the band: Korri's warnings for the whole
+ * choice (black panels with a red bar), its message on a black panel in
+ * Jersey 10 as written, one row per route (program, then the exact build,
+ * cut in the middle so its tail shows, whole under the row while it is
+ * focused) with SAVED on the route a saved choice picks, and Korri's
+ * actions as buttons: each route's under it, the choice's own at the
+ * bottom. A saved choice whose
  * runner no route offers (Stale) is drawn as a route of its own: SAVED, the
  * runner's id, and UNAVAILABLE where a build would be.
  *
@@ -67,7 +73,12 @@ export function ZoneRunWith({
   readonly onAction?: (actionId: string) => void
 }) {
   const list = useRef<HTMLDivElement | null>(null)
+  const head = useRef<HTMLDivElement | null>(null)
+  const title = useRef<HTMLSpanElement | null>(null)
   const tag = choice._tag
+  const message = choice._tag === "Closed" ? "" : choice.message
+  useZoneFit(head, [title], choice._tag === "Closed" ? "" : choice.gameTitle)
+  useZoneOptionClips(list, message)
   useEffect(() => {
     const box = list.current
     if (box === null || box.contains(document.activeElement)) return
@@ -85,23 +96,26 @@ export function ZoneRunWith({
       hintBack={<ZoneKeycap button="B" word="Back" />}
       hintConfirm={<ZoneKeycap button="A" word="Confirm" />}
       strips={strips}
+      tabs={<ZoneBanner>Run with</ZoneBanner>}
     >
       <div className="zone-run-with" data-state={choice._tag}>
-        <div className="zone-run-with-head">
-          <ZoneBanner>Run with</ZoneBanner>
+        <div className="zone-run-with-head" ref={head}>
           <span className="zone-run-with-title">
             <ZonePanel>
-              <ZoneCaps>{choice.gameTitle}</ZoneCaps>
+              <span className="zone-run-with-title-words" ref={title}>{choice.gameTitle}</span>
             </ZonePanel>
           </span>
           <span className="zone-run-with-state">
             <ZoneTag kind={STATE_TAGS[choice._tag]} label={choice._tag} />
           </span>
         </div>
-        <div className="zone-run-with-scroll" data-block-exit="true" ref={list}>
-          <div className="zone-run-with-rows">
+        <div className="zone-run-with-band">
+          <div className="zone-run-with-scroll" data-block-exit="true" ref={list}>
+            <div className="zone-run-with-rows">
             <ZoneWarningLines lines={choice.warnings} />
-            {choice.message === "" ? null : <p className="zone-run-with-message">{choice.message}</p>}
+            {choice.message === "" ? null : (
+              <p className="zone-run-with-message" data-option-clip="slash">{choice.message}</p>
+            )}
             {plan.orphans.map(orphan => (
               <ZoneRunWithRoute
                 focused={focused}
@@ -145,6 +159,7 @@ export function ZoneRunWith({
                 />
               </div>
             )}
+            </div>
           </div>
         </div>
       </div>

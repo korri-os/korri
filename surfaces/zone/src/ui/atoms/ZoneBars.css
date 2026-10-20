@@ -1,36 +1,35 @@
-/* Four bars, bottom-aligned, a quarter taller each. */
+/* Four pixel bars, bottom-aligned: 2, 4, 6 and 8 art px tall, 2 wide and
+ * 1 apart. Lit white, unlit the track's dark; no alpha. */
 .zone-bars {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: flex-end;
   gap: calc(var(--zone-bar-gap) * var(--zone-px));
-  height: calc(var(--zone-bars-height) * var(--zone-px));
+  height: calc(var(--zone-bar-step) * 4 * var(--zone-px));
 }
 
 .zone-bars-bar {
   display: block;
   width: calc(var(--zone-bar-width) * var(--zone-px));
-  background: var(--zone-bar-off);
-  opacity: var(--zone-bar-off-opacity);
+  background: var(--zone-bar-unlit);
 }
 
 .zone-bars-bar:nth-child(1) {
-  height: 31%;
+  height: calc(var(--zone-bar-step) * var(--zone-px));
 }
 
 .zone-bars-bar:nth-child(2) {
-  height: 54%;
+  height: calc(var(--zone-bar-step) * 2 * var(--zone-px));
 }
 
 .zone-bars-bar:nth-child(3) {
-  height: 77%;
+  height: calc(var(--zone-bar-step) * 3 * var(--zone-px));
 }
 
 .zone-bars-bar:nth-child(4) {
-  height: 100%;
+  height: calc(var(--zone-bar-step) * 4 * var(--zone-px));
 }
 
 .zone-bars-bar[data-lit="on"] {
-  background: var(--zone-badge-strength);
-  opacity: 1;
+  background: var(--zone-bar-lit);
 }

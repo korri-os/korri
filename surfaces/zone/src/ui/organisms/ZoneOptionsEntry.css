@@ -7,7 +7,7 @@
   width: 100%;
   max-height: 100%;
   min-height: 0;
-  font-size: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 3.2cqi, calc(var(--zone-type-row) * var(--zone-px)));
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
 }
 
 /* The heading and the clear key on one line while they fit; the clear key

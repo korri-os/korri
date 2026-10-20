@@ -34,3 +34,8 @@ export function LongSsid() {
     />
   )
 }
+
+/** The readouts without the panel, as an OPTIONS row draws them in its own black value panel. */
+export function Bare() {
+  return <ZoneSignal connection={wifi} panel={false} />
+}

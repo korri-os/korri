@@ -16,8 +16,10 @@
   padding-left: calc(var(--zone-slant) * var(--zone-px));
 }
 
-/* A program's name and a build's path are data: the row keeps their case. */
+/* A program's name and a build's path are data: the row keeps their case.
+ * The build is the long one, so the value panel takes the larger share. */
 .zone-run-with-route-row {
+  --zone-row-label-share: var(--zone-run-with-label-share);
   display: block;
   min-width: 0;
 }

@@ -1,48 +1,76 @@
 /* Title over rows. The group fills the box it is given; the rows are the
  * one part that gives way, so a long list scrolls under a title that stays. */
 .zone-option-group {
+  --zone-option-group-width: var(--zone-option-group-rows, 100%);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
-  row-gap: calc(var(--zone-group-title-space) * var(--zone-px));
+  row-gap: calc(var(--zone-option-group-space) * var(--zone-px));
   width: 100%;
   max-height: 100%;
   min-height: 0;
 }
 
-/* The title: caps with the blue edge on a black parallelogram, as VIDEO
- * heads Mania's page. It takes only the width its word needs. */
+/* The title's row holds at the top of a scrolling box, over the rows that
+ * pass under it, in the holder's backing colour (none by default). */
 .zone-option-group-title {
-  position: relative;
-  isolation: isolate;
-  justify-self: start;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
   margin: 0;
-  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)) * 2);
+  padding-bottom: calc(var(--zone-option-group-space) * var(--zone-px));
+  margin-bottom: calc(var(--zone-option-group-space) * var(--zone-px) * -1);
+  background: var(--zone-option-group-backing, transparent);
   font: inherit;
-  font-size: clamp(calc(var(--zone-type-row) * var(--zone-px)), 3cqi, calc(var(--zone-type-group-title) * var(--zone-px)));
-  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
+  line-height: 1;
+  text-shadow: none;
 }
 
-.zone-option-group-title::before {
+/* The title: caps-2 (caps-1 when it must) on a black panel flush with the
+ * group's left edge and leaning at its right, as VIDEO heads Mania's page.
+ * Its words start where the rows' words start. */
+.zone-option-group-wedge {
+  position: relative;
+  isolation: isolate;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  padding:
+    calc(var(--zone-option-group-pad) * var(--zone-px))
+    calc(calc(var(--zone-option-group-pad) * var(--zone-px)) + 1.3em)
+    calc(var(--zone-option-group-pad) * var(--zone-px))
+    calc(calc(100% - var(--zone-option-group-width)) / 2 + calc(var(--zone-option-text-inset) * var(--zone-px)));
+  font-size: calc(calc(var(--zone-caps-2) * var(--zone-px)) * var(--zone-fit, 1));
+}
+
+.zone-option-group-wedge::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
   background: var(--zone-panel);
-  clip-path: polygon(
-    calc(var(--zone-slant) * var(--zone-px)) 0,
-    100% 0,
-    calc(100% - calc(var(--zone-slant) * var(--zone-px))) 100%,
-    0 100%
+  clip-path: var(
+    --zone-panel-shape,
+    polygon(0 0, 100% 0, calc(100% - 1.3em) 100%, 0 100%)
   );
 }
 
-/* The scroll region. The pink underline of a focused row reaches past the
- * row by the drop edge, so the region keeps that much room at its sides. */
+/* The rows, centred in the width a holder gives them. The pink drop of a
+ * focused row reaches past its row by the focused drop, so the box keeps
+ * that much room at its sides. */
 .zone-option-group-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  row-gap: calc(var(--zone-option-row-space) * var(--zone-px));
+  width: var(--zone-option-group-width);
   min-height: 0;
+  margin-inline: auto;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
-  padding: 0 calc(var(--zone-drop) * var(--zone-px));
-  scroll-padding-block: calc(var(--zone-row-height) * var(--zone-px));
+  padding: 0 calc(var(--zone-drop-focus) * var(--zone-px)) calc(var(--zone-drop-focus) * var(--zone-px));
+  scroll-padding-block: calc(var(--zone-option-cell) * var(--zone-px));
 }

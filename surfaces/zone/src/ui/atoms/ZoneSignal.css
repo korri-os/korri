@@ -19,8 +19,11 @@
 .zone-signal-strength {
   flex: 0 0 auto;
   margin-left: calc(var(--zone-strip-gap) * var(--zone-px));
-  color: var(--zone-badge-strength);
-  --zone-caps-shade: currentColor;
   font-variant-numeric: tabular-nums;
   text-shadow: none;
+}
+
+/* Without its panel the readouts stand in a row of their own. */
+.zone-signal[data-panel="off"] {
+  align-items: center;
 }

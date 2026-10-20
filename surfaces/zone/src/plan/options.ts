@@ -70,7 +70,7 @@ export interface ZoneOptionsConfirm {
  */
 export type ZoneOptionsSignal =
   | { readonly _tag: "Connection"; readonly connection: SurfaceNetworkConnection }
-  | { readonly _tag: "Network"; readonly strengthPercent: number }
+  | { readonly _tag: "Network"; readonly strengthPercent: number; readonly words: readonly string[] }
 
 export interface ZoneOptionsRow {
   /** Korri's setting id, or a `zone:` id for a row Zone makes. */
@@ -86,6 +86,8 @@ export interface ZoneOptionsRow {
   readonly disabled?: boolean
   /** Which of the row's words are facts Korri publishes, kept in their own case. */
   readonly keepCase?: { readonly label?: boolean; readonly value?: boolean }
+  /** The description is Zone's own word (CONNECTING), not Korri's sentence. */
+  readonly ownDescription?: boolean
 }
 
 export interface ZoneOptionsGroup {
@@ -134,13 +136,22 @@ export function zoneConnectionValue(connection: SurfaceNetworkConnection): strin
   }
 }
 
-/** A listed network's words: strength, then LOCK and KNOWN when they hold. The row draws bars before them. */
+/**
+ * A network's words, one set shared by OPTIONS and first boot: LOCKED or
+ * OPEN for its security, then SAVED when Korri knows its key. Zone's own
+ * words, so they are set in caps; the strength before them is Korri's.
+ */
+export function zoneWifiWords(network: SurfaceWifiNetwork): readonly string[] {
+  return [network.secured ? "LOCKED" : "OPEN", ...(network.known ? ["SAVED"] : [])]
+}
+
+/**
+ * A listed network's value: its strength, then its words ("72% LOCKED
+ * SAVED"). The one function OPTIONS and first boot name a network with;
+ * OPTIONS draws bars before it.
+ */
 export function zoneNetworkValue(network: SurfaceWifiNetwork): string {
-  return [
-    `${network.strengthPercent}%`,
-    ...(network.secured ? ["LOCK"] : []),
-    ...(network.known ? ["KNOWN"] : []),
-  ].join(" ")
+  return [`${network.strengthPercent}%`, ...zoneWifiWords(network)].join(" ")
 }
 
 /**
@@ -309,6 +320,9 @@ function wifiGroup(slices: ZoneOptionsSlices): ZoneOptionsGroup[] {
   const networks = [...wifi.networks].sort((a, b) => b.strengthPercent - a.strengthPercent)
   const attempt = wifi.attempt
   const networkRows = networks.map((item): ZoneOptionsRow => ({
+    // An SSID is a name Korri publishes: it keeps its case.
+    keepCase: { label: true },
+    ...(attempt._tag === "Connecting" && attempt.ssid === item.ssid ? { ownDescription: true } : {}),
     ...wifiRow(
       zoneNetworkRowId(item.id),
       {
@@ -319,7 +333,7 @@ function wifiGroup(slices: ZoneOptionsSlices): ZoneOptionsGroup[] {
       },
       { _tag: "Join", networkId: item.id },
     ),
-    signal: { _tag: "Network", strengthPercent: item.strengthPercent },
+    signal: { _tag: "Network", strengthPercent: item.strengthPercent, words: zoneWifiWords(item) },
   }))
   const rows: ZoneOptionsRow[] = [
     connection,

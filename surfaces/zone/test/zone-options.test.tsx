@@ -223,7 +223,7 @@ describe("C21 connection", () => {
 })
 
 describe("C22 Wi-Fi list", () => {
-  test("SCAN, the networks strongest first with LOCK and KNOWN, then HIDDEN NETWORK", () => {
+  test("SCAN, the networks strongest first with LOCKED or OPEN and SAVED, then HIDDEN NETWORK", () => {
     const host = mount({ ...fixtureOptions, network: fixtureNetworkMany })
     const wifi = screen.getByRole("region", { name: "WI-FI" })
     const labels = within(wifi).getAllByRole("button").map(button => button.firstChild?.textContent)
@@ -233,10 +233,11 @@ describe("C22 Wi-Fi list", () => {
     ])
     // The connection's badge names the same SSID: find the network's own row by its label.
     const home = within(wifi).getAllByRole("button").find(button => button.firstChild?.textContent === "hummingbird-lake")!
-    expect(home.textContent).toContain("LOCK KNOWN")
+    expect(home.textContent).toContain("LOCKED SAVED")
     expect(home.querySelectorAll(".zone-bars-bar").length).toBe(4)
     expect(home.textContent).not.toMatch(/[▁▂▄▆█]/)
-    expect(row("cafe-guest").textContent).not.toContain("LOCK")
+    expect(row("cafe-guest").textContent).not.toContain("LOCKED")
+    expect(row("cafe-guest").textContent).toContain("OPEN")
     fireEvent.click(row("SCAN"))
     expect(host.calls).toEqual(["scanWifi"])
   })

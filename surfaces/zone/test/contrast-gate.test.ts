@@ -90,6 +90,14 @@ const PAIRS: readonly (readonly [ink: string, ground: string, floor: number])[] 
   ["--zone-ink-white-face", "--zone-key-tail", LARGE],
   ["--zone-cap", "--zone-panel", SMALL],
   ["--zone-ink-ink-face", "--zone-white", LARGE],
+  // An option row's words on its black panels: the two-tone label, the
+  // steel face of a disabled row or a placeholder, a destructive value,
+  // and a lit signal bar.
+  ["--zone-ink-white-shade", "--zone-panel", LARGE],
+  ["--zone-option-steel", "--zone-panel", LARGE],
+  ["--zone-ink-danger-face", "--zone-panel", LARGE],
+  ["--zone-ink-danger-shade", "--zone-panel", LARGE],
+  ["--zone-bar-lit", "--zone-panel", LARGE],
 ]
 
 /** Outlined inks: the face, and the shade of its lower rows, against the ring. */

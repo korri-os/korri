@@ -648,7 +648,8 @@ describe("runner choice", () => {
     publish({ ...HOME, runnerChoice: choice("Loading") })
     expect(onScreen("Loading")).toBe(true)
     publish({ ...HOME, runnerChoice: choice("Ready") })
-    const page = document.querySelector<HTMLElement>(".zone-run-with")!
+    // The banner stands where the tabs stand on every other page: the page is its whole shell.
+    const page = document.querySelector<HTMLElement>(".zone-run-with")!.closest<HTMLElement>(".zone-shell")!
     for (const words of ["Run with", "Wario Land 4", "Ready", "Choose what plays it", "Two runners are installed",
       "mGBA", "/nix/store/abc-mgba-0.10.3", "BIOS missing: games may not boot", "VBA-M", "This game"]) {
       expect(page.textContent).toContain(words)
@@ -944,14 +945,18 @@ describe("network", () => {
   test("C22 wi-fi list", () => {
     const { host, publish, press } = mount()
     openOptions(press)
-    // Strongest first, with strength, LOCK and KNOWN.
+    // Strongest first, with strength, LOCKED or OPEN, and SAVED.
     const listed = [...document.querySelectorAll(".zone-options-scroll .zone-option-row-label")]
       .map(label => label.textContent).filter(label => ["hummingbird-lake", "Neighbour", "Cafe"].includes(label ?? ""))
     expect(listed).toEqual(["hummingbird-lake", "Neighbour", "Cafe"])
     // A listed network's row, not the connection row that also names it.
-    expect(network("hummingbird-lake").textContent).toContain("72% LOCK KNOWN")
-    expect(network("Neighbour").textContent).toContain("48% LOCK")
-    expect(network("Cafe").textContent).not.toContain("LOCK")
+    expect(network("hummingbird-lake").textContent).toContain("72%")
+    expect(network("hummingbird-lake").textContent).toContain("LOCKED SAVED")
+    expect(network("Neighbour").textContent).toContain("48%")
+    expect(network("Neighbour").textContent).toContain("LOCKED")
+    expect(network("Neighbour").textContent).not.toContain("SAVED")
+    expect(network("Cafe").textContent).toContain("OPEN")
+    expect(network("Cafe").textContent).not.toContain("LOCKED")
     expect(row("SCAN").textContent).toContain("3 FOUND")
     moveTo(row("SCAN"))
     confirm()

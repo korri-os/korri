@@ -114,8 +114,10 @@ describe("what a row reads", () => {
     expect(zoneConnectionValue({ _tag: "Wired" })).toBe("WIRED")
     expect(zoneConnectionValue({ _tag: "Offline" })).toBe("OFFLINE")
   })
-  test("a network's words: strength, LOCK when secured, KNOWN when known", () => {
-    expect(zoneNetworkValue({ id: "a", ssid: "a", strengthPercent: 72, secured: true, known: true })).toBe("72% LOCK KNOWN")
-    expect(zoneNetworkValue({ id: "b", ssid: "b", strengthPercent: 48, secured: false, known: false })).toBe("48%")
+  test("a network's words: strength, LOCKED or OPEN, SAVED when known; one set for OPTIONS and first boot", () => {
+    expect(zoneNetworkValue({ id: "a", ssid: "a", strengthPercent: 72, secured: true, known: true })).toBe("72% LOCKED SAVED")
+    expect(zoneNetworkValue({ id: "b", ssid: "b", strengthPercent: 48, secured: false, known: false })).toBe("48% OPEN")
+    expect(zoneNetworkValue({ id: "c", ssid: "c", strengthPercent: 21, secured: true, known: false })).toBe("21% LOCKED")
+    expect(zoneNetworkValue({ id: "d", ssid: "d", strengthPercent: 90, secured: false, known: true })).toBe("90% OPEN SAVED")
   })
 })
