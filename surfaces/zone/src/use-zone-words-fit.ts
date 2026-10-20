@@ -24,6 +24,9 @@ import { zoneArtPxOf } from "./use-zone-plan"
 /** The room Zone Caps keeps either side of a word, in art px (--zone-caps-room). */
 const CAPS_ROOM = 3
 
+/** Zone Caps' space between two words, in ems: 4 art px of a 10-art-px cap. */
+const CAPS_SPACE_EM = 0.4
+
 /** Each word's own letters, without the room its ink keeps round them. */
 const wordWidths = (words: HTMLElement, room: number): readonly number[] =>
   [...words.querySelectorAll<HTMLElement>(".zone-words-word")]
@@ -33,7 +36,7 @@ const wordWidths = (words: HTMLElement, room: number): readonly number[] =>
 /** The width the words want on one line: each word's letters, and the gaps between them. */
 function lineWidth(words: HTMLElement, room: number): number {
   const each = wordWidths(words, room)
-  const gap = Number.parseFloat(getComputedStyle(words).columnGap) || 0
+  const gap = CAPS_SPACE_EM * (Number.parseFloat(getComputedStyle(words).fontSize) || 0)
   return each.reduce((sum, width) => sum + width, 0) + gap * Math.max(0, each.length - 1)
 }
 

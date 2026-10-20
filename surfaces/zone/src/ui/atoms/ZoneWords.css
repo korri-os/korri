@@ -1,22 +1,36 @@
-/* A row of words that wraps only between them. The gap is a Zone Caps
- * space (4 art px at caps-1: 0.4 of the cap); lines stand a fifth of a cap
- * apart. The holder decides whether the row wraps and how it is aligned. */
+/* Words in one line of text, each word its own ZoneCaps. The box is the
+ * line box: 1.4 caps a line (ZONE_SLAB_LINE_EM reads the same number), the
+ * cap in rows 0.2 to 1.2 of it. Wrapping is the holder's `white-space` and
+ * alignment its `text-align`, both inherited. Nothing here clips: a word
+ * longer than the line stands whole past it. */
 .zone-words {
-  display: flex;
-  flex-wrap: var(--zone-words-wrap, wrap);
-  align-items: baseline;
-  justify-content: var(--zone-words-align, center);
-  gap: var(--zone-words-line-gap, 0.2em) 0.4em;
-  min-width: 0;
+  display: inline-block;
   max-width: 100%;
+  font-family: var(--zone-font);
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-shadow: none;
+  text-transform: uppercase;
+  vertical-align: top;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  hyphens: none;
 }
 
-/* One word: as wide as its letters, at most its line unless the holder
- * lifts the cap. Words never squeeze each other: a line too narrow for
- * them overflows (which a fit can see) or wraps. */
+/* One word: exactly as wide as its letters (ZoneCaps lays out as tight as
+ * its line), its line one cap, standing on the words' baseline. */
 .zone-words-word {
-  display: inline-flex;
-  flex: 0 0 auto;
-  min-width: 0;
-  max-width: var(--zone-words-max, 100%);
+  display: inline-block;
+  line-height: 1;
+}
+
+/* The whole words, read and never drawn. */
+.zone-words-read {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

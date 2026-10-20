@@ -885,8 +885,6 @@
   --zone-games-card-stripe-side: 4;
   /** The room between a card's well, title, stripe and tags. Art px. @label Card gap @min 0 @max 8 @step 1 */
   --zone-games-card-gap: 2;
-  /** The room between two lines of a wrapped title. Art px. @label Title leading @min 0 @max 8 @step 1 */
-  --zone-games-title-leading: 2;
   /** Room between two facts, and between the spilled tags and the facts. Art px. @label Fact gap @min 0 @max 24 @step 1 */
   --zone-games-fact-gap: 7;
   /** Room between a fact's label and its value, and between two spilled tags. Art px. @label Fact label gap @min 0 @max 12 @step 1 */
@@ -931,8 +929,6 @@
   --zone-tc-slab-pad: 22;
   /** How far the name's caps rise over (and stop short of) their panel. Art px. @label Name overhang @min 0 @max 8 @step 1 */
   --zone-tc-overhang: 3;
-  /** Room between two lines of a wrapped name. Art px. @label Name leading @min 0 @max 10 @step 1 */
-  --zone-tc-leading: 4;
   /** The ZONE bar's room over and under its caps. Art px. @label ZONE bar padding, block @min 0 @max 8 @step 1 */
   --zone-tc-bar-pad-y: 3;
   /** The ZONE bar's room after its caps. Art px. @label ZONE bar padding @min 0 @max 24 @step 1 */

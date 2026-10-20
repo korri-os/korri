@@ -108,20 +108,16 @@
 /* caps-3, stepped down whole caps by the card's fit (--zone-fit), on one
  * line until the fit is at caps-1, then wrapping between words. */
 .zone-title-card-title {
-  --zone-words-wrap: nowrap;
-  --zone-words-align: flex-end;
-  --zone-words-line-gap: calc(var(--zone-tc-leading) * var(--zone-px));
   margin: 0;
   font: inherit;
   font-size: calc(var(--zone-caps-3) * var(--zone-px) * var(--zone-fit, 1));
   line-height: 1;
   text-align: right;
-  overflow-wrap: normal;
-  word-break: keep-all;
+  white-space: nowrap;
 }
 
 .zone-title-card-title[data-zone-fit-floor] {
-  --zone-words-wrap: wrap;
+  white-space: normal;
 }
 
 /* ZONE on the white bar, its left end cut at 45 degrees; the system's tag

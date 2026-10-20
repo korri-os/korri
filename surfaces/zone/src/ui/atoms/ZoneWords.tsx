@@ -3,38 +3,49 @@ import { Fragment } from "react"
 import { ZoneCaps, type ZoneInk } from "./ZoneCaps"
 
 /**
- * Words that may take more than one line: each word is its own ZoneCaps,
- * so every word keeps its ink (ring, drop and two-tone face) and a line
- * can only ever break between two words, never inside one. A space stays
- * between the words in the text, so the words read as one string.
+ * Zone Caps that may take more than one line (REFINEMENT.md, 2a): a line
+ * breaks only between words, never inside one, and no word ever loses a
+ * letter.
  *
- * A word wider than its line is cut with "…" inside its own box, unless
- * the holder lifts the cap (`--zone-words-max: none`), when it stands whole
- * past its line: a focused card's title does, so its words are never cut.
- * Whether the words wrap is the holder's choice (`--zone-words-wrap`): a
- * fitted title keeps one line until its fit reaches caps-1.
+ * Each word is its own ZoneCaps, so every word keeps the ink ZoneCaps draws
+ * (ring, drop, two-tone face) and the browser has no place inside a word to
+ * break. The words stand in one line of text, a space between each, so:
+ *
+ *  - whether they wrap is the holder's `white-space` (inherited): a fitted
+ *    headline keeps `nowrap` until its caps reach caps-1, then `normal`;
+ *  - how a line is aligned is the holder's `text-align`;
+ *  - lines are 1.4 caps apart (ZONE_WORDS_LEADING), the cap from 0.2 to
+ *    1.2 of each line, so a ring and drop never touch the next line.
+ *
+ * A word wider than its line stands whole past it; a holder that cannot
+ * show it whole decides what to do (useZoneWordsFit marks it).
+ *
+ * Words of several words are read once, whole, from a hidden copy, and
+ * their drawn words are hidden from a screen reader; a single word is read
+ * from its ZoneCaps.
  */
 export function ZoneWords({
-  text,
   ink = "white",
-  fact = false,
+  children,
 }: {
-  readonly text: string
   readonly ink?: ZoneInk
-  /** Korri's words in their own case, in Jersey 10. */
-  readonly fact?: boolean
+  readonly children: string
 }) {
-  const words = text.split(/\s+/).filter(word => word !== "")
+  const words = children.split(/\s+/).filter(word => word !== "")
+  const several = words.length > 1
   return (
     <span className="zone-words">
-      {words.map((word, index) => (
-        <Fragment key={`${index}:${word}`}>
-          {index === 0 ? null : " "}
-          <span className="zone-words-word">
-            <ZoneCaps fact={fact} ink={ink}>{word}</ZoneCaps>
-          </span>
-        </Fragment>
-      ))}
+      {several ? <span className="zone-words-read">{words.join(" ")}</span> : null}
+      <span aria-hidden={several || undefined} className="zone-words-drawn">
+        {words.map((word, index) => (
+          <Fragment key={`${index}:${word}`}>
+            {index === 0 ? null : " "}
+            <span className="zone-words-word">
+              <ZoneCaps ink={ink}>{word}</ZoneCaps>
+            </span>
+          </Fragment>
+        ))}
+      </span>
     </span>
   )
 }

@@ -98,7 +98,6 @@ export function ZoneCard({
   const card = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLSpanElement>(null)
   useZoneWordsFit(card, heading, title)
-  const several = /\s/.test(title.trim())
   return (
     <button
       className="zone-card"
@@ -114,10 +113,8 @@ export function ZoneCard({
       <i aria-hidden="true" className="zone-card-tri" data-side="right" />
       <ZoneCoverWell art={art} noise={noise} title={title} />
       <span className="zone-card-body">
-        {/* A title of several words is drawn word by word; it is read once, whole. */}
-        {several ? <span className="zone-card-name">{title}</span> : null}
-        <span aria-hidden={several || undefined} className="zone-card-title" ref={heading}>
-          <ZoneWords text={title} />
+        <span className="zone-card-title" ref={heading}>
+          <ZoneWords>{title}</ZoneWords>
         </span>
         <i aria-hidden="true" className="zone-card-stripe" />
         <ZoneTagRow onShown={onTagsShown} tags={cardTags({ title, system, places, resumable, download })} />

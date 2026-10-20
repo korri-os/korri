@@ -50,16 +50,17 @@
 }
 
 .zone-tally-title {
-  --zone-words-wrap: nowrap;
   display: block;
   min-width: 0;
   max-width: 100%;
   font-size: calc(var(--zone-caps-3) * var(--zone-px) * var(--zone-fit, 1));
   line-height: 1;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .zone-tally-title[data-zone-fit-floor] {
-  --zone-words-wrap: wrap;
+  white-space: normal;
 }
 
 /* The rows: label, bar, value, the values right-aligned at the bars' end.

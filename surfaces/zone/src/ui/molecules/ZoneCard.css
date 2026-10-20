@@ -62,21 +62,16 @@
  * A focused card lets a word longer than itself stand whole past its edge;
  * a side card draws no title rather than cut such a word. */
 .zone-card-title {
-  --zone-words-wrap: nowrap;
-  --zone-words-line-gap: calc(var(--zone-games-title-leading) * var(--zone-px));
   display: block;
   min-width: 0;
   font-size: calc(var(--zone-card-title-caps) * var(--zone-px) * var(--zone-fit, 1));
   line-height: 1;
-  overflow-wrap: normal;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .zone-card-title[data-zone-fit-floor] {
-  --zone-words-wrap: wrap;
-}
-
-.zone-card[data-size="focus"] .zone-card-title {
-  --zone-words-max: none;
+  white-space: normal;
 }
 
 /* A side card too narrow for one of its title's words at caps-1 draws no
@@ -85,16 +80,6 @@
 .zone-card[data-size="side"] .zone-card-title[data-zone-words-long] {
   max-height: 0;
   overflow: hidden;
-}
-
-/* The whole title, read and never drawn. */
-.zone-card-name {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 
 /* TIME ATTACK's stripe under the title: light mint, blue, then teal, on

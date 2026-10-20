@@ -66,7 +66,7 @@ export function ZoneTitleCard({
         <div className="zone-title-card-name">
           <span aria-hidden="true" className="zone-title-card-slab" ref={slab} />
           <h1 className="zone-title-card-title" ref={heading}>
-            <ZoneWords text={title} />
+            <ZoneWords>{title}</ZoneWords>
           </h1>
         </div>
         <div className="zone-title-card-zone">
