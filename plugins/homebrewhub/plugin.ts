@@ -28,7 +28,10 @@ export const artifacts = {
   },
 }
 
-// The release's hash is its content file's hash: the downloaded file itself.
+// A release's hash is its content identity as discovery computes it: the
+// SHA-256 after the system's header rule strips its bytes (discovery/identify/
+// hash.rs). The publisher's `gb` system has no header rule, so it is the whole
+// downloaded file's hash. The release key is its first 12 hex digits.
 export const games = {
   "2048gb": {
     title: "2048gb",

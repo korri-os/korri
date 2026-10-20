@@ -15,7 +15,7 @@ export const description =
 // Without `unpack`, the ready directory holds the verified file named by the
 // URL's last segment. `version` names that directory; RetroBrews publishes no
 // versions, so it is the first 12 hex digits of the file's SHA-256.
-// Measured 2026-10-20T05:55:56Z and 05:58:00Z (README, live-probe.ts).
+// Measured 2026-10-20T05:55:56Z, 05:58:00Z and 07:39:12Z (README, live-probe.ts).
 export const artifacts = {
   ambushed: {
     id: "@korri:retrobrews/ambushed",
@@ -43,14 +43,20 @@ export const artifacts = {
   },
 }
 
-// Each release's hash is its content file's hash: the downloaded file itself.
+// A release's hash is its content identity as discovery computes it: the
+// SHA-256 after the system's header rule strips its bytes (discovery/identify/
+// hash.rs). The publisher's `nes` system strips the 16-byte iNES header
+// (`NES\x1a`), so Ambushed's release hash covers bytes 16..end and differs
+// from its artifact file hash. `gba` has no header rule, so Anguna's release
+// hash is the whole file's. The release key is the first 12 hex digits of the
+// release hash; the artifact version those of the file hash.
 export const games = {
   ambushed: {
     title: "Ambushed",
     releases: {
-      c4efb1e252e3: {
+      b9c6afa60056: {
         system: "nes",
-        hashes: ["sha256:c4efb1e252e39dd957ecc76ff2a868159bb3a6dc66e07addfcdbf9e6660dfb62"],
+        hashes: ["sha256:b9c6afa600568aa0144aed787acf778d6237187f89776b7d3548889700cd589a"],
         artifacts: ["@korri:retrobrews/ambushed"],
         file: { artifact: "@korri:retrobrews/ambushed", path: "ambushed.nes" },
       },

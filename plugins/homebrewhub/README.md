@@ -13,7 +13,7 @@ Download action) has korrid download, verify and keep the file in its cache.
 | Export | Meaning |
 |---|---|
 | `artifacts.<key>` | One file `{ url, sha256, bytes }`, no `unpack`. The ready directory `<storage-root>/cache/homebrewhub/<key>/<version>/` then holds the verified file named by the URL's last segment. |
-| `games.<key>.releases.<release>` | `system`, `hashes` (the content file's SHA-256, which is the downloaded file itself), `artifacts: [id]`, `file: { artifact: id, path: <file name> }`. |
+| `games.<key>.releases.<release>` | `system`, `hashes` (the content hash discovery computes: SHA-256 after the system's header rule strips its bytes; `gb` has no header rule, so it is the whole file's), `artifacts: [id]`, `file: { artifact: id, path: <file name> }`. |
 
 `plugin.nix` declares nothing. `hosts` is for provider plugins that make
 request turns; artifact downloads follow ADR 0012's own policy.
@@ -56,7 +56,7 @@ device. No game bytes are in this repository.
 
 ```sh
 bun test plugins/homebrewhub/plugin.test.ts
-plugins/homebrewhub/live-probe.ts      # GETs the pinned file, checks size, SHA-256, header
+plugins/homebrewhub/live-probe.ts      # GETs the pinned file; prints file and content hashes
 plugins/homebrewhub/live-probe.ts --record plugins/homebrewhub/fixtures
 ```
 

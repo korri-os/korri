@@ -16,6 +16,10 @@ import { artifacts, games } from "./plugin"
 
 // First 16 bytes of the Nintendo logo at 0x104 in a Game Boy cartridge header.
 const GB_LOGO = { offset: 0x104, hex: "ceed6666cc0d000b03730083000c000d" }
+// systems.nix `gb` has no `content.header` rule, so discovery hashes the
+// whole file (discovery/identify/hash.rs) and the content hash is the file's.
+const HEADER_BYTES = 0
+const sha256Of = (bytes: Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`
 
 const log = (message: string) => console.log(`${new Date().toISOString()} ${message}`)
 const recordDir = process.argv[2] === "--record" ? process.argv[3] : undefined
@@ -25,14 +29,17 @@ const check = (ok: boolean, message: string) => {
   if (!ok) failures += 1
 }
 
-for (const artifact of Object.values(artifacts)) {
+for (const [key, game] of Object.entries(games)) for (const release of Object.values(game.releases)) {
+  const artifact = Object.values(artifacts).find(a => a.id === release.file.artifact)!
   for (const pin of artifact.files) {
     const response = await fetch(pin.url, { redirect: "manual" })
     const bytes = Buffer.from(await response.arrayBuffer())
-    const sha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`
-    log(`GET ${pin.url} -> ${response.status} ${bytes.length} bytes ${sha256}`)
+    const sha256 = sha256Of(bytes)
+    const content = sha256Of(bytes.subarray(HEADER_BYTES))
+    log(`GET ${pin.url} -> ${response.status} ${bytes.length} bytes; file ${sha256}; content (after ${HEADER_BYTES} header bytes) ${content}`)
     check(response.status === 200, `${artifact.id}: answers 200 without a redirect`)
-    check(bytes.length === pin.bytes && sha256 === pin.sha256, `${artifact.id}: size and SHA-256 match the pin`)
+    check(bytes.length === pin.bytes && sha256 === pin.sha256, `${artifact.id}: size and file SHA-256 match the artifact pin`)
+    check(release.hashes.includes(content), `${key}: content SHA-256 matches the release hash`)
     const logo = bytes.subarray(GB_LOGO.offset, GB_LOGO.offset + 16).toString("hex")
     check(logo === GB_LOGO.hex, `${artifact.id}: carries the Game Boy header logo (${logo})`)
   }

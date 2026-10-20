@@ -19,6 +19,12 @@ const HEADER_EVIDENCE: Record<string, { offset: number; hex: string }> = {
   nes: { offset: 0, hex: "4e45531a" },
   gba: { offset: 4, hex: "24ffae51699aa2213d84820a84e409ad" },
 }
+// systems.nix `content.header`: bytes discovery strips before hashing when
+// the file starts with `hex` (discovery/identify/hash.rs). `gba` has none.
+const HEADER_RULES: Record<string, { size: number; hex: string }> = {
+  nes: { size: 16, hex: "4e45531a" },
+}
+const sha256Of = (bytes: Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`
 
 const log = (message: string) => console.log(`${new Date().toISOString()} ${message}`)
 const recordDir = process.argv[2] === "--record" ? process.argv[3] : undefined
@@ -35,10 +41,14 @@ for (const [key, game] of Object.entries(games)) {
     for (const pin of artifact.files) {
       const response = await fetch(pin.url, { redirect: "manual" })
       const bytes = Buffer.from(await response.arrayBuffer())
-      const sha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`
-      log(`GET ${pin.url} -> ${response.status} ${bytes.length} bytes ${sha256}`)
+      const sha256 = sha256Of(bytes)
+      const rule = HEADER_RULES[release.system]
+      const skip = rule && bytes.subarray(0, rule.hex.length / 2).toString("hex") === rule.hex ? rule.size : 0
+      const content = sha256Of(bytes.subarray(skip))
+      log(`GET ${pin.url} -> ${response.status} ${bytes.length} bytes; file ${sha256}; content (after ${skip} header bytes) ${content}`)
       check(response.status === 200, `${artifact.id}: answers 200 without a redirect`)
-      check(bytes.length === pin.bytes && sha256 === pin.sha256, `${artifact.id}: size and SHA-256 match the pin`)
+      check(bytes.length === pin.bytes && sha256 === pin.sha256, `${artifact.id}: size and file SHA-256 match the artifact pin`)
+      check(release.hashes.includes(content), `${key}: content SHA-256 matches the release hash`)
       const evidence = HEADER_EVIDENCE[release.system]
       const found = bytes.subarray(evidence.offset, evidence.offset + evidence.hex.length / 2).toString("hex")
       check(found === evidence.hex, `${artifact.id}: carries the ${release.system} header evidence (${found})`)

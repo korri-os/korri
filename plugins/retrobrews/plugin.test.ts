@@ -8,8 +8,7 @@ const readme = (repository: string) =>
   readFileSync(new URL(`./fixtures/${repository}-README.md`, import.meta.url), "utf8")
 
 // korrid's admission rules for `artifacts` and `games`, restated from
-// services/korrid/src/plugin.rs (ADR 0013 implementation, worktree c-1fcdf054,
-// commit 5ea5a70da): local keys are playable-id segments, artifact ids are
+// services/korrid/src/plugin.rs (`normalize_plugin`): local keys are playable-id segments, artifact ids are
 // `<plugin id>/<key>`, versions are one safe non-hidden segment, file hashes
 // are `sha256:` + 64 hex, release hashes are sha256/sha1, a release with
 // artifacts names its file inside one of them by a relative path.
@@ -19,8 +18,11 @@ const safeRelativePath = (path: string) =>
   !path.startsWith("/") &&
   !/[\u0000-\u001f\u007f]/.test(path) &&
   path.split("/").every(part => part !== "" && part !== "..")
-// Publisher systems.nix extensions for the systems this plugin names.
+// Publisher systems.nix content rules for the systems this plugin names:
+// extensions, and the header bytes discovery strips before hashing
+// (`nes`: 16 bytes when they start `NES\x1a`; `gba` has none).
 const systemExtensions: Record<string, string[]> = { gba: ["gba", "agb"], nes: ["nes"] }
+const headerRules: Record<string, { size: number; hex: string }> = { nes: { size: 16, hex: "4e45531a" } }
 
 const pluginId = "@korri:retrobrews"
 const { artifacts, games } = plugin
@@ -63,7 +65,19 @@ describe("RetroBrews declaration", () => {
         bytes: 16400,
       },
     ])
-    expect(games.ambushed.releases.c4efb1e252e3.system).toBe("nes")
+    expect(games.ambushed).toStrictEqual({
+      title: "Ambushed",
+      releases: {
+        // SHA-256 of bytes 16..end, after the iNES header.
+        b9c6afa60056: {
+          system: "nes",
+          hashes: ["sha256:b9c6afa600568aa0144aed787acf778d6237187f89776b7d3548889700cd589a"],
+          artifacts: ["@korri:retrobrews/ambushed"],
+          file: { artifact: "@korri:retrobrews/ambushed", path: "ambushed.nes" },
+        },
+      },
+    })
+    expect(artifacts.ambushed.version).toBe("c4efb1e252e3")
   })
 
   test("every artifact passes korrid's artifact admission", () => {
@@ -94,9 +108,15 @@ describe("RetroBrews declaration", () => {
         // percent-decoded last segment, and that file is the content file.
         const [file] = artifact.files
         expect(release.file.path).toBe(decodeURIComponent(file.url.split("/").at(-1)!))
-        expect(release.hashes).toEqual([file.sha256])
+        // The release hash is discovery's content hash: the whole file only
+        // when the system strips no header (live-probe.ts measures both).
+        expect(release.hashes).toHaveLength(1)
+        expect(release.hashes[0]).toMatch(sha256)
+        if (headerRules[release.system]) expect(release.hashes[0]).not.toBe(file.sha256)
+        else expect(release.hashes[0]).toBe(file.sha256)
+        // Release key from the content hash, artifact version from the file hash.
+        expect(releaseKey).toBe(release.hashes[0].slice("sha256:".length, "sha256:".length + 12))
         expect(artifact.version).toBe(file.sha256.slice("sha256:".length, "sha256:".length + 12))
-        expect(releaseKey).toBe(artifact.version)
         // The system's runner accepts the file by its publisher content rules.
         expect(systemExtensions[release.system]).toContain(release.file.path.split(".").at(-1)!)
       }
