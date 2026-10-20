@@ -43,16 +43,14 @@ afterEach(() => {
   cleanup()
 })
 
-const HUB = "@korri:homebrewhub"
+const BBS = "@korri:pico8"
 const action = (id: string, label: string, enabled = true) => ({ id, label, enabled })
-const entry2048 = { id: "e:2048", title: "2048", system: "Game Boy" }
+const celeste = { id: "e:celeste", title: "Celeste Classic 2", system: "PICO-8" }
 
 function storeWith(overrides: Partial<SurfaceStore> = {}): SurfaceStore {
   return {
     providers: { _tag: "Ready", providers: [
-      { id: "@korri:pico8", title: "PICO-8 BBS" },
-      { id: HUB, title: "Homebrew Hub" },
-      { id: "@korri:retrobrews", title: "RetroBrews" },
+      { id: BBS, title: "PICO-8 BBS" },
     ] },
     search: { _tag: "Idle" },
     details: { _tag: "Closed" },
@@ -60,7 +58,7 @@ function storeWith(overrides: Partial<SurfaceStore> = {}): SurfaceStore {
   }
 }
 const ready = (get: SurfaceStoreGet): SurfaceStore["details"] =>
-  ({ _tag: "Ready", entry: entry2048, description: "Slide the tiles and join equal numbers to reach 2048.", get })
+  ({ _tag: "Ready", entry: celeste, description: "Madeline climbs again, with a grappling hook this time.", get })
 
 function modelWith(games: readonly SurfaceGame[], store: SurfaceStore | undefined): SurfaceModel {
   return {
@@ -140,47 +138,46 @@ describe("ordering", () => {
 
   test("a catalogue not searched opens the order form; the keys write it; Search asks that one", () => {
     const { host } = atDesk(storeWith())
-    go("Homebrew Hub")
-    expect(screen.getByRole("form", { name: "Order from Homebrew Hub" })).toBeTruthy()
-    for (const key of ["2", "0", "4", "8"]) go(`Write ${key}`)
+    go("PICO-8 BBS")
+    expect(screen.getByRole("form", { name: "Order from PICO-8 BBS" })).toBeTruthy()
+    for (const key of ["c", "e", "l"]) go(`Write ${key}`)
     go("Write a space")
     go("Rub out")
     go("Search")
-    expect(host.calls.at(-1)).toBe(`searchStore:${HUB}:2048`)
+    expect(host.calls.at(-1)).toBe(`searchStore:${BBS}:cel`)
   })
 
   test("the desk's pages: searching, no answer with Retry, nothing found, and results", () => {
     const host = createRecordingHost()
     const { drawing } = recordingDrawing()
     const searched = (search: SurfaceStore["search"]) => modelWith([], storeWith({ search }))
-    const { rerender } = render(<BoxbusterSurface host={host} model={searched({ _tag: "Searching", providerId: HUB, query: "2048" })} drawing={drawing} />)
+    const { rerender } = render(<BoxbusterSurface host={host} model={searched({ _tag: "Searching", providerId: BBS, query: "celeste" })} drawing={drawing} />)
     go("Go to the order desk")
-    go("Homebrew Hub")
-    expect(screen.getByText("Asking Homebrew Hub for “2048”…")).toBeTruthy()
+    go("PICO-8 BBS")
+    expect(screen.getByText("Asking PICO-8 BBS for “celeste”…")).toBeTruthy()
     rerender(<BoxbusterSurface host={host} model={searched({
-      _tag: "Problem", providerId: HUB, query: "2048", message: "The provider did not answer. Check the connection and try again.",
+      _tag: "Problem", providerId: BBS, query: "celeste", message: "The provider did not answer. Check the connection and try again.",
       actions: [action("store:2:search-retry", "Retry")],
     })} drawing={drawing} />)
     go("Retry")
     expect(host.calls.at(-1)).toBe("action:store:2:search-retry")
-    rerender(<BoxbusterSurface host={host} model={searched({ _tag: "Ready", providerId: HUB, query: "zelda", entries: [] })} drawing={drawing} />)
-    expect(screen.getByText("Nothing in Homebrew Hub matches “zelda”.")).toBeTruthy()
-    rerender(<BoxbusterSurface host={host} model={searched({ _tag: "Ready", providerId: HUB, query: "2048", entries: [entry2048] })} drawing={drawing} />)
-    go(/^2048/)
-    expect(host.calls.at(-1)).toBe("openStoreEntry:e:2048")
+    rerender(<BoxbusterSurface host={host} model={searched({ _tag: "Ready", providerId: BBS, query: "zelda", entries: [] })} drawing={drawing} />)
+    expect(screen.getByText("Nothing in PICO-8 BBS matches “zelda”.")).toBeTruthy()
+    rerender(<BoxbusterSurface host={host} model={searched({ _tag: "Ready", providerId: BBS, query: "celeste", entries: [celeste] })} drawing={drawing} />)
+    go(/^Celeste Classic 2/)
+    expect(host.calls.at(-1)).toBe("openStoreEntry:e:celeste")
   })
 
   test.each([
     ["offer", { _tag: "Offer", actions: [action("store:1:get", "Get")] }, ["Get"], undefined],
-    ["confirm", { _tag: "Confirm", kicker: "Download to this device", detail: "2048, size unknown", actions: [action("store:3:download", "Download"), action("store:3:cancel", "Cancel")] }, ["Download", "Cancel"], "2048, size unknown"],
-    ["folders", { _tag: "Confirm", kicker: "Choose a folder", actions: [action("store:4:source.0", "Game Boy"), action("store:4:source.1", "SD card"), action("store:4:cancel", "Cancel")] }, ["Game Boy", "SD card", "Cancel"], "Choose a folder"],
-    ["unavailable", { _tag: "Unavailable", reason: "No folder on this device holds Game Boy games." }, [], "No folder on this device holds Game Boy games."],
+    ["confirm", { _tag: "Confirm", kicker: "Download to this device", detail: "Celeste Classic 2, size unknown", actions: [action("store:3:download", "Download"), action("store:3:cancel", "Cancel")] }, ["Download", "Cancel"], "Celeste Classic 2, size unknown"],
+    ["unavailable", { _tag: "Unavailable", reason: "This game is for a system this device cannot play." }, [], "This game is for a system this device cannot play."],
     ["staged", { _tag: "Staged", message: "Downloaded to this device, but your library did not recognise it as a game." }, [], "Downloaded to this device, but your library did not recognise it as a game."],
     ["stopped", { _tag: "Problem", kicker: "Download stopped", reason: "Korri restarted before the download finished.", actions: [action("store:8:retry", "Retry")] }, ["Retry"], "Download stopped"],
   ] as const)("the entry when %s shows Korri's words and runs exactly its actions", (_name, get, labels, words) => {
-    const { host } = atDesk(storeWith({ search: { _tag: "Ready", providerId: HUB, query: "", entries: [entry2048] }, details: ready(get) }))
-    go("Homebrew Hub")
-    go(/^2048/)
+    const { host } = atDesk(storeWith({ search: { _tag: "Ready", providerId: BBS, query: "", entries: [celeste] }, details: ready(get) }))
+    go("PICO-8 BBS")
+    go(/^Celeste Classic 2/)
     const page = document.querySelector(".boxbuster-desk-entry")
     expect([...(page?.querySelectorAll("button") ?? [])].map(button => button.textContent)).toEqual([...labels])
     if (words !== undefined) expect(screen.getByText(words)).toBeTruthy()
@@ -193,52 +190,52 @@ describe("ordering", () => {
 
   test("a download is a counter from Korri's bytes with Cancel; Back leaves it running", () => {
     const working: SurfaceStoreGet = {
-      _tag: "Working", kicker: "Downloading 2048", detail: "16 KB of 32.8 KB · 16 KB/s · 0:01 left",
-      progress: { done: 16_000, total: 32_768 }, actions: [action("store:5:cancel", "Cancel")],
+      _tag: "Working", kicker: "Downloading Celeste Classic 2", detail: "8 KB of 15.9 KB · 8 KB/s · 0:01 left",
+      progress: { done: 8_000, total: 15_872 }, actions: [action("store:5:cancel", "Cancel")],
     }
-    const { host } = atDesk(storeWith({ search: { _tag: "Ready", providerId: HUB, query: "", entries: [entry2048] }, details: ready(working) }))
-    go("Homebrew Hub")
-    go(/^2048/)
-    const counter = screen.getByRole("progressbar", { name: "Downloading 2048" })
-    expect(counter.getAttribute("aria-valuenow")).toBe("48")
-    expect(counter.querySelectorAll('[data-lit="on"]')).toHaveLength(7)
+    const { host } = atDesk(storeWith({ search: { _tag: "Ready", providerId: BBS, query: "", entries: [celeste] }, details: ready(working) }))
+    go("PICO-8 BBS")
+    go(/^Celeste Classic 2/)
+    const counter = screen.getByRole("progressbar", { name: "Downloading Celeste Classic 2" })
+    expect(counter.getAttribute("aria-valuenow")).toBe("50")
+    expect(counter.querySelectorAll('[data-lit="on"]')).toHaveLength(8)
     go("Cancel")
     expect(host.calls.at(-1)).toBe("action:store:5:cancel")
     const before = host.calls.length
     act(() => host.press("back"))
-    expect(screen.getByRole("button", { name: /^2048/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: /^Celeste Classic 2/ })).toBeTruthy()
     expect(host.calls.length).toBe(before)
   })
 
   test("in the library: the desk hands you the tape at the TV, once it is on a shelf", () => {
     const store = storeWith({
-      search: { _tag: "Ready", providerId: HUB, query: "", entries: [entry2048] },
-      details: ready({ _tag: "InLibrary", detail: "In your library", gameId: "store-2048" }),
+      search: { _tag: "Ready", providerId: BBS, query: "", entries: [celeste] },
+      details: ready({ _tag: "InLibrary", detail: "In your library", gameId: "store-celeste" }),
     })
     const host = createRecordingHost()
     const { drawing, drawn } = recordingDrawing()
     const { container, rerender } = render(<BoxbusterSurface host={host} model={modelWith([], store)} drawing={drawing} />)
     go("Go to the order desk")
-    go("Homebrew Hub")
-    go(/^2048/)
+    go("PICO-8 BBS")
+    go(/^Celeste Classic 2/)
     // The catalog has not shelved it yet.
     expect(screen.getByText("It is on its way to the shelves.")).toBeTruthy()
-    rerender(<BoxbusterSurface host={host} model={modelWith([{ id: "store-2048", title: "2048" }], store)} drawing={drawing} />)
+    rerender(<BoxbusterSurface host={host} model={modelWith([{ id: "store-celeste", title: "Celeste Classic 2" }], store)} drawing={drawing} />)
     go("Take it to the TV")
     expect(spotOf(container)).toBe("viewing")
-    expect(drawn.last?.held?.tapeId).toBe("store-2048")
+    expect(drawn.last?.held?.tapeId).toBe("store-celeste")
     // One confirm on the deck puts it in: the only launchGame call.
-    go("Put 2048 in the deck")
-    expect(host.calls.at(-1)).toBe("launch:store-2048:")
+    go("Put Celeste Classic 2 in the deck")
+    expect(host.calls.at(-1)).toBe("launch:store-celeste:")
   })
 })
 
 describe("the desk's rules", () => {
   test("Back walks form, entry, results, providers, then leaves", () => {
-    expect(deskBack({ view: "Form", providerId: HUB, text: "x" }, false)).toEqual({ view: "Providers", providerId: HUB, text: "x" })
-    expect(deskBack({ view: "Form", providerId: HUB, text: "x" }, true)).toEqual({ view: "Results", providerId: HUB, text: "x" })
-    expect(deskBack({ view: "Entry", providerId: HUB, text: "" }, true)).toMatchObject({ view: "Results" })
-    expect(deskBack({ view: "Results", providerId: HUB, text: "" }, true)).toMatchObject({ view: "Providers" })
+    expect(deskBack({ view: "Form", providerId: BBS, text: "x" }, false)).toEqual({ view: "Providers", providerId: BBS, text: "x" })
+    expect(deskBack({ view: "Form", providerId: BBS, text: "x" }, true)).toEqual({ view: "Results", providerId: BBS, text: "x" })
+    expect(deskBack({ view: "Entry", providerId: BBS, text: "" }, true)).toMatchObject({ view: "Results" })
+    expect(deskBack({ view: "Results", providerId: BBS, text: "" }, true)).toMatchObject({ view: "Providers" })
     expect(deskBack(DESK_START, false)).toBe("Leave")
   })
 
