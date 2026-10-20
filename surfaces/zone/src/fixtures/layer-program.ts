@@ -183,3 +183,6 @@ export const createOnboardingProgram = (model: SurfaceModel, init: Partial<ZoneO
     published: { _tag: "KorriPublished" },
     korri: korriOnboarding,
   })
+
+/** What the binding reads from Korri's model for first boot, for parts. */
+export { canGoOn, deviceNameSetting } from "../state/onboarding"

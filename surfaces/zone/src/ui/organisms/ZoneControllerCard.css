@@ -1,0 +1,84 @@
+/* A square body over a name bar, in a hard frame. The card's width comes
+ * from the row it stands in (--zone-onboarding-card-w) or its token alone;
+ * everything inside measures the card. */
+.zone-controller-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  width: var(--zone-onboarding-card-w, var(--zone-controller-card-max));
+  border: var(--zone-controller-frame) solid var(--zone-panel);
+  background: var(--zone-panel);
+  container-type: inline-size;
+  animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
+}
+
+/* Heard: the frame turns red, as COMPETITION's chosen seat. */
+.zone-controller-card[data-heard] {
+  border-color: var(--zone-controller-heard);
+}
+
+.zone-controller-card-body {
+  position: relative;
+  display: grid;
+  aspect-ratio: 1;
+  min-height: 0;
+}
+
+/* The empty seat: Mania's stripes with WAITING across them on a white slab. */
+.zone-controller-card-waiting {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(
+    var(--zone-controller-stripe-angle),
+    var(--zone-stripe-3) 0% 38%,
+    var(--zone-stripe-1) 38% 52%,
+    var(--zone-stripe-2) 52% 66%,
+    var(--zone-controller-heard) 66% 74%,
+    var(--zone-stripe-3) 74% 100%
+  );
+  font-size: clamp(var(--zone-type-note), 15cqi, var(--zone-type-kicker));
+}
+
+.zone-controller-card-slab {
+  width: 100%;
+  padding: calc(var(--zone-row-space) / 2) 0;
+  background: var(--zone-slab);
+  color: var(--zone-slab-ink);
+  text-align: center;
+  text-shadow: none;
+}
+
+/* The seat in the top corner. */
+.zone-controller-card-seat {
+  --zone-tag-type: clamp(var(--zone-type-note), 11cqi, var(--zone-type-row));
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  height: calc(var(--zone-tag-type) * var(--zone-tag-row-height));
+}
+
+/* The name along the foot, between two red triangles. */
+.zone-controller-card-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--zone-row-gap) / 2);
+  padding: calc(var(--zone-row-space) / 2) var(--zone-row-space);
+  font-size: clamp(calc(var(--zone-type-note) * 0.75), 10cqi, var(--zone-type-row));
+}
+
+/* Two lines at most; a longer name ends in an ellipsis on screen and stays
+ * whole in the card's label. */
+.zone-controller-card-name-text {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  text-align: center;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  text-transform: none;
+  line-height: 1.05;
+  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+}

@@ -578,4 +578,16 @@
   --zone-paused-meter-fill: var(--zone-yellow);
   /** @label Paused note ink */
   --zone-paused-note-ink: var(--zone-black);
+
+  /* First boot. */
+  /** A controller card's frame. @label Controller card frame @min 0 @max 16 @step 1 */
+  --zone-controller-frame: 6px;
+  /** A controller card's widest. @label Controller card width @min 80 @max 400 @step 1 */
+  --zone-controller-card-max: 220px;
+  /** The lean of the waiting card's stripes. @label Controller stripe angle @min -90 @max 90 @step 1 */
+  --zone-controller-stripe-angle: 128deg;
+  /** The step strip's widest. @label Step strip width @min 200 @max 1200 @step 10 */
+  --zone-onboarding-steps-width: 620px;
+  /** @label Controller heard frame */
+  --zone-controller-heard: var(--zone-red);
 }
