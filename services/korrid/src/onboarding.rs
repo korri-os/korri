@@ -15,6 +15,9 @@ pub struct OnboardingStatusRequest {}
 pub struct OnboardingFinishRequest {}
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct OnboardingRestartRequest {}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnboardingStatus {
     pub needed: bool,
@@ -69,6 +72,22 @@ pub fn finish(root: &Path) -> OnboardingStatusOutcome {
     }
     status(root)
 }
+/// Put the device back into first-boot setup. Removes only the marker; every
+/// other setting, profile and identity stays. Idempotent: a device already in
+/// setup stays there.
+pub fn restart(root: &Path) -> OnboardingStatusOutcome {
+    let result = (|| -> std::io::Result<()> {
+        match fs::remove_file(root.join(ONBOARDING_FINISHED_FILE_NAME)) {
+            Ok(()) => File::open(root)?.sync_all(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    })();
+    if result.is_err() {
+        return OnboardingStatusOutcome::Err(failure());
+    }
+    status(root)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,6 +115,46 @@ mod tests {
             fs::read(root.join(ONBOARDING_FINISHED_FILE_NAME)).unwrap(),
             b""
         );
+    }
+    #[test]
+    fn restart_removes_the_marker_and_is_idempotent() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("private");
+        // Before any marker exists: restart is a no-op that still reports setup.
+        assert!(matches!(
+            restart(&root),
+            OnboardingStatusOutcome::Ok(OnboardingStatus { needed: true })
+        ));
+        finish(&root);
+        let unrelated = root.join("unrelated-test-data");
+        fs::write(&unrelated, b"preserve these bytes").unwrap();
+        for _ in 0..2 {
+            assert!(matches!(
+                restart(&root),
+                OnboardingStatusOutcome::Ok(OnboardingStatus { needed: true })
+            ));
+        }
+        assert!(matches!(
+            status(&root),
+            OnboardingStatusOutcome::Ok(OnboardingStatus { needed: true })
+        ));
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        assert_eq!(fs::read(&unrelated).unwrap(), b"preserve these bytes");
+        // Setup can be finished again afterwards.
+        assert!(matches!(
+            finish(&root),
+            OnboardingStatusOutcome::Ok(OnboardingStatus { needed: false })
+        ));
+    }
+    #[test]
+    fn restart_reports_a_marker_it_cannot_remove() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("private");
+        finish(&root);
+        // A directory where the marker file should be cannot be unlinked.
+        fs::remove_file(root.join(ONBOARDING_FINISHED_FILE_NAME)).unwrap();
+        fs::create_dir(root.join(ONBOARDING_FINISHED_FILE_NAME)).unwrap();
+        assert!(matches!(restart(&root), OnboardingStatusOutcome::Err(_)));
     }
     #[test]
     fn storage_failure_does_not_report_finished() {

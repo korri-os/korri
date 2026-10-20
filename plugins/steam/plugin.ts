@@ -22,16 +22,18 @@ export const runners = {
     id: "@korri:steam/steam",
     program: "steam-session",
     systems: ["steam"],
+    // korrid downloads these before it starts the runner and passes the
+    // ready directories in `artifacts`.
+    artifacts: ["@korri:fex/rootfs", "@korri:proton/cachyos"],
   },
 }
 
-// Files of the exact required @korri:fex and @korri:proton builds, as korrid
-// passes them under `<pluginId>/<key>`, and the variable that hands each one
-// to the session program.
-const runtimeFiles = {
-  KORRI_FEX_PREPARE: "@korri:fex/fex-prepare",
-  KORRI_FEX_CONFIG: "@korri:fex/config",
-  KORRI_PROTON_CACHYOS_PREPARE: "@korri:proton/cachyos-prepare",
+function requiredPath(paths: Record<string, string>, key: string): string {
+  const path = paths[key]
+  if (!path) {
+    throw new Error(`Steam requires ${key} from its required plugin`)
+  }
+  return path
 }
 
 function prepareLaunch(input: PluginLaunchInput): PluginLaunchOutput {
@@ -48,20 +50,14 @@ function prepareLaunch(input: PluginLaunchInput): PluginLaunchOutput {
   ) {
     throw new Error("Steam runner does not implement typed settings yet")
   }
-  if (!input.cacheRoot) {
-    throw new Error("Steam requires korrid's cache root for its runtime downloads")
-  }
   const steamHome = `${input.accountRoot}/steam`
+  // The exact required @korri:fex and @korri:proton builds: their files and
+  // ready artifacts, as korrid passes them under `<pluginId>/<key>`.
   const env: Record<string, string> = {
     STEAM_HOME: steamHome,
-    KORRI_CACHE_ROOT: input.cacheRoot,
-  }
-  for (const [variable, key] of Object.entries(runtimeFiles)) {
-    const path = input.files[key]
-    if (!path) {
-      throw new Error(`Steam requires ${key} from its required plugin`)
-    }
-    env[variable] = path
+    KORRI_FEX_CONFIG: requiredPath(input.files, "@korri:fex/config"),
+    KORRI_FEX_ROOTFS: requiredPath(input.artifacts, "@korri:fex/rootfs"),
+    KORRI_PROTON_CACHYOS: requiredPath(input.artifacts, "@korri:proton/cachyos"),
   }
   return {
     command: input.program,

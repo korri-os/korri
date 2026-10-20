@@ -567,7 +567,7 @@ impl HostRuntime {
         launcher.prepare(game_id, person_public_key)
     }
 
-    fn route_root(&self) -> Result<&Path, RpcFailure> {
+    pub(crate) fn route_root(&self) -> Result<&Path, RpcFailure> {
         match &self.dynamic {
             Some(DynamicHostSource::Installed(root)) => Ok(root),
             #[cfg(test)]
@@ -592,7 +592,7 @@ impl HostRuntime {
         self
     }
 
-    fn route_registry(&self) -> Result<crate::plugin::PluginRegistry, RpcFailure> {
+    pub(crate) fn route_registry(&self) -> Result<crate::plugin::PluginRegistry, RpcFailure> {
         #[cfg(test)]
         if let Some(DynamicHostSource::Selected(_, registry)) = &self.dynamic {
             return Ok((**registry).clone());
@@ -873,6 +873,7 @@ impl HostRuntime {
                     request.runner_id.as_deref(),
                 )
                 .map_err(|error| crate::route_diagnostic_failure(&error))?;
+                crate::acquisition::require_ready(root, &registry, &route.runner_id)?;
                 let launch = linux_plugin::launch_route(
                     root,
                     &snapshot,

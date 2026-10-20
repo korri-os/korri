@@ -178,7 +178,8 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::WifiConnect(_)
         | RpcRequest::WifiConnectHidden(_)
         | RpcRequest::OnboardingStatus(_)
-        | RpcRequest::OnboardingFinish(_) => PeerPolicy::LocalPortalOnly,
+        | RpcRequest::OnboardingFinish(_)
+        | RpcRequest::OnboardingRestart(_) => PeerPolicy::LocalPortalOnly,
         RpcRequest::CatalogSnapshot(_) => PeerPolicy::CatalogOrStreamScope,
         RpcRequest::MoonlightCertificateAttest(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::MoonlightCertificateProvision(_) => {
@@ -186,6 +187,9 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         }
         RpcRequest::MoonlightCertificateRevoke(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SessionPrepare(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::AcquisitionStatus(_)
+        | RpcRequest::AcquisitionStart(_)
+        | RpcRequest::AcquisitionCancel(_) => PeerPolicy::LocalPortalOnly,
         RpcRequest::SessionReserve(_)
         | RpcRequest::SessionStart(_)
         | RpcRequest::SessionCancel(_) => PeerPolicy::LocalOnly,
@@ -270,6 +274,7 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::WifiConnect(_)
             | RpcRequest::WifiConnectHidden(_)
             | RpcRequest::OnboardingFinish(_)
+            | RpcRequest::OnboardingRestart(_)
             | RpcRequest::SessionStop(_)
             | RpcRequest::SessionControlInvoke(_)
             | RpcRequest::SessionFreeze(_)
@@ -1324,6 +1329,7 @@ mod tests {
             ),
             ("system.onboarding.status", serde_json::json!({})),
             ("system.onboarding.finish", serde_json::json!({})),
+            ("system.onboarding.restart", serde_json::json!({})),
         ] {
             let request = request(serde_json::json!({"_tag":tag,"payload":payload}));
             assert_eq!(policy_for(&request), PeerPolicy::LocalPortalOnly);

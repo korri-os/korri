@@ -62,6 +62,7 @@ fn the_hand_written_runner_prepares_its_own_launch() {
         "program": "/nix/store/exact-ppsspp/bin/ppsspp",
         "contentPath": "/storage/games/psp/wipeout.iso",
         "accountRoot": "/storage/korri/accounts/simon",
+        "artifacts": {},
         "cacheRoot": "/storage/korri/cache",
         "files": { "ppsspp": "/nix/store/exact-ppsspp/bin/ppsspp" },
     })
@@ -94,6 +95,7 @@ fn the_hand_written_runner_refuses_what_it_has_not_implemented() {
         "program": "/nix/store/exact-ppsspp/bin/ppsspp",
         "contentPath": "/storage/games/psp/wipeout.iso",
         "accountRoot": "/storage/korri/accounts/simon",
+        "artifacts": {},
         "cacheRoot": "/storage/korri/cache",
         "files": { "ppsspp": "/nix/store/exact-ppsspp/bin/ppsspp" },
     });

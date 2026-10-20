@@ -79,6 +79,92 @@ export function StartingWithCancel() {
 export function Running() {
   return home({ ...fixtureModel, status: { _tag: "Running", kicker: "PLAYING", gameId: "hollow" } })
 }
+/** The question before a first launch, as the host words it (ADR 0012). */
+export function NeedsDownload() {
+  return home({
+    ...fixtureModel,
+    status: {
+      _tag: "Confirm",
+      kicker: "Needs a download",
+      detail: "FEX rootfs and Proton-CachyOS, 1.5 GB",
+      gameId: "hollow",
+      actions: [
+        { id: "acquisition:1:download", label: "Download", enabled: true },
+        { id: "acquisition:1:cancel", label: "Cancel", enabled: true },
+      ],
+    },
+  })
+}
+export function NeedsDownloadUnknownSize() {
+  return home({
+    ...fixtureModel,
+    status: {
+      _tag: "Confirm",
+      kicker: "Needs a download",
+      detail: "FEX rootfs, Proton-CachyOS, Steam Runtime, Vulkan layers, Mesa, lib32-mesa and libdisplay-info, size unknown",
+      gameId: "petal",
+      actions: [
+        { id: "acquisition:1:download", label: "Download", enabled: true },
+        { id: "acquisition:1:cancel", label: "Cancel", enabled: true },
+      ],
+    },
+  })
+}
+export function Downloading() {
+  return home({
+    ...fixtureModel,
+    status: {
+      _tag: "Busy",
+      kicker: "Downloading FEX rootfs",
+      detail: "116 MB of 1.2 GB · 6.4 MB/s · 2:43 left",
+      progress: { done: 116_000_000, total: 1_160_000_000 },
+      gameId: "hollow",
+      actions: [{ id: "acquisition:2:cancel", label: "Cancel", enabled: true }],
+    },
+  })
+}
+export function DownloadingNearlyDone() {
+  return home({
+    ...fixtureModel,
+    status: {
+      _tag: "Busy",
+      kicker: "Downloading FEX rootfs",
+      detail: "1 GB of 1.2 GB · 6.4 MB/s · 0:18 left",
+      progress: { done: 1_044_000_000, total: 1_160_000_000 },
+      gameId: "hollow",
+      actions: [{ id: "acquisition:2:cancel", label: "Cancel", enabled: true }],
+    },
+  })
+}
+/** Unpacking: a position of nothing and no known end, so the band walks. */
+export function Unpacking() {
+  return home({ ...fixtureModel, status: { _tag: "Busy", kicker: "Unpacking FEX rootfs", progress: { done: 0 }, gameId: "hollow" } })
+}
+export function DownloadFailed() {
+  return home({
+    ...fixtureModel,
+    status: {
+      _tag: "Problem",
+      kicker: "Couldn't download FEX rootfs",
+      reason: "The connection stalled. Check the network and try again.",
+      canRetry: true,
+      gameId: "hollow",
+      gameTitle: "Hollow Knight",
+    },
+  })
+}
+/** A shelf where the chosen cart still has something to fetch. */
+export function ShelfWithDownload() {
+  return home({
+    ...fixtureModel,
+    catalog: fixtureModel.catalog._tag !== "Ready" ? fixtureModel.catalog : {
+      _tag: "Ready",
+      games: fixtureModel.catalog.games.map(game =>
+        game.id === "celeste" ? { ...game, download: { bytes: 1_500_000_000 } }
+          : game.id === "petal" ? { ...game, download: {} } : game),
+    },
+  })
+}
 export function RetryableProblem() {
   return home({ ...fixtureModel, status: { _tag: "Problem", kicker: "COULD NOT START", reason: "The device did not respond.", canRetry: true, gameTitle: "Tetris" } })
 }

@@ -140,8 +140,12 @@ A statement, signed by one person, that two games are the same game. It holds fo
 _Avoid_: merge, match, personal link
 
 **Declared game**:
-A game a plugin states directly, naming its releases' hashes and any files it prepared, instead of one discovery found in a source. A hash list is a set of declared games.
+A game a plugin states directly, naming its releases' hashes and any files it prepared or artifacts that hold them, instead of one discovery found in a source. A hash list is a set of declared games. A declared game whose release comes from artifacts is in the library before its artifacts are on the device.
 _Avoid_: prepared game, plugin game, hash database
+
+**Artifact**:
+A download a plugin declares by fixed address and hash. Korri fetches it, checks it and unpacks it on the device that needs it, and can fetch it again if it is lost. It can hold a runtime or a game's content.
+_Avoid_: payload, package, download (alone), delivery
 
 **Variant**:
 A game that is a port, edition or standalone mod of another game.

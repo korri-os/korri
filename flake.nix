@@ -230,6 +230,7 @@
             hostPackage = pluginHost.packages.korri-plugin-host;
           })
           // {
+            korri-plugins-typecheck = import ./plugins/typecheck.nix { inherit pkgs; };
             korri-published-game-launch = import ./services/korrid/published-game-launch-check.nix {
               inherit pkgs korridPackage;
             };

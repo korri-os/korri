@@ -1,4 +1,4 @@
-import type { NetworkSnapshot, WifiAttempt } from "@contracts/generated/korrid"
+import type { NetworkSnapshot, OnboardingStatusOutcome, WifiAttempt } from "@contracts/generated/korrid"
 import type { SurfaceNetwork, SurfaceWifiAttempt } from "@contracts/surface/korri-surface"
 import type { KorridClient } from "../korrid/client"
 
@@ -83,6 +83,21 @@ export function createNetworkOnboarding(korrid: KorridClient) {
       publish({ ...state, problem: FAILURE, ...(network?.wifi._tag === "Available" && ssid !== undefined ? { network: { ...network, wifi: { ...network.wifi, attempt: { _tag: "Failed", ssid, message: "Could not join the network. Try again.", passwordRejected: false } } } } : {}) })
     } } finally { if (current === generation) busy = false }
   }
+  // Finishing or restarting setup is independent of a radio scan or
+  // activation. One command at a time; a reply from an older command is dropped.
+  const changeOnboarding = (call: () => Promise<OnboardingStatusOutcome>, failure: string) => {
+    if (!active || finishing) return
+    finishing = true
+    ++onboardingRevision
+    const current = ++finishGeneration
+    void call().then(outcome => {
+      if (!active || current !== finishGeneration) return
+      ++onboardingRevision
+      publish(outcome._tag === "Ok" ? { ...state, onboardingNeeded: outcome.payload.needed, problem: undefined }
+        : { ...state, problem: failure })
+    }).catch(() => { if (active && current === finishGeneration) publish({ ...state, problem: FAILURE }) })
+      .finally(() => { if (current === finishGeneration) finishing = false })
+  }
   return {
     snapshot: () => state,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
@@ -113,20 +128,8 @@ export function createNetworkOnboarding(korrid: KorridClient) {
           if (network?.wifi._tag === "Available") publish({ ...state, network: { ...network, wifi: { ...network.wifi, scanning: false } } })
         })
     },
-    finishOnboarding() {
-      // Finishing setup is independent of a radio scan or activation.
-      if (!active || finishing) return
-      finishing = true
-      ++onboardingRevision
-      const current = ++finishGeneration
-      void korrid.finishOnboarding().then(outcome => {
-        if (!active || current !== finishGeneration) return
-        ++onboardingRevision
-        publish(outcome._tag === "Ok" ? { ...state, onboardingNeeded: outcome.payload.needed, problem: undefined }
-          : { ...state, problem: "Could not save setup progress. Try again." })
-      }).catch(() => { if (active && current === finishGeneration) publish({ ...state, problem: FAILURE }) })
-        .finally(() => { if (current === finishGeneration) finishing = false })
-    },
+    finishOnboarding() { changeOnboarding(() => korrid.finishOnboarding(), "Could not save setup progress. Try again.") },
+    restartOnboarding() { changeOnboarding(() => korrid.restartOnboarding(), "Could not restart setup. Try again.") },
     dismissProblem() { publish({ ...state, problem: undefined }) },
   }
 }

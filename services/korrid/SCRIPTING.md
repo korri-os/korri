@@ -190,7 +190,7 @@ plugin.ts  ──(oxc: transpile in-process)──▶  JS  ──(QuickJS: evalu
 JSON containing its data exports, not the JavaScript completion value.
 `name` must be a non-empty string. Optional identity exports are `title` and
 `description`. Data export names come from the current producers: `providers`,
-`systems`, `groups`, `games`, `families`, `runners`, `transports`,
+`systems`, `groups`, `games`, `families`, `runners`, `artifacts`, `transports`,
 `controls`, and the constrained `discovery` list described below. Native
 launcher/runtime fields follow the instance/kind model described below.
 `sessionControls` is an unknown export and fails admission. `services` names
@@ -226,8 +226,8 @@ contains the selected full launcher/kind/runtime IDs, program and core file path
 existing account root, the cache root (the storage root's `cache` directory),
 kind-owned manifest files under their bare keys, and each exactly required
 plugin's files under `<pluginId>/<key>`
-(`docs/adr/0010-plugin-runtimes-download-into-the-shared-cache.md` records
-these choices). A file route supplies
+(ADR 0012 records artifact acquisition; ADR 0010 records the original file
+keying). Ready artifact paths arrive separately in `artifacts`. A file route supplies
 `contentPath`; a provider location supplies `ref` instead, named after
 `GameProviderIdentity.ref`. Neither path invents a file for provider content.
 Output
@@ -266,6 +266,76 @@ uses `launcher` and its existing `path` field as a manifest file key. The
 instance owns the program key, the runtime owns the core key, and the kind
 owns callback source and auxiliary files. The kind's default instance points
 to itself.
+
+### Declared artifacts
+
+ADR 0012 supersedes plugin-owned downloads. An effect-free `artifacts` export
+is a map keyed like `runners`:
+
+```ts
+export const artifacts = {
+  rootfs: {
+    id: "@korri:fex/rootfs",
+    version: "archlinux-2026-01-08-mesa-26.1.2",
+    files: [{
+      url: "https://rootfs.fex-emu.gg/ArchLinux/2026-01-08/ArchLinux.sqsh",
+      sha256: "sha256:cb059973b7953ad9165845529655189b96f9a174b14a6a149c87ec884b0c5e90",
+      bytes: 1160000000,
+    }],
+    unpack: "fex-unpack",
+  },
+}
+```
+
+Each strict record has `id`, `version`, ordered non-empty `files`, optional
+`unpack` and optional `title`. Each file has `url`, `sha256` and optional numeric
+`bytes`. IDs must match the declaring plugin and map key. Versions must be one
+safe non-hidden path segment. SHA-256 values require `sha256:` and 64 hex digits;
+admission lowercases the digits and rejects duplicates. `unpack` is a bare key
+in that plugin's own installed `files`. Unknown fields and explicit nulls fail.
+
+`RunnerRecord.artifacts` lists the full artifact IDs the runner needs, including
+artifacts from other enabled plugins. Every ID must resolve. Omission means an
+empty list. A runner does not acquire all artifacts of its package dependencies.
+
+`PluginLaunchInput.artifacts` maps ready artifact IDs to paths. The runner's own
+artifacts use bare keys; foreign artifacts use `<pluginId>/<key>`, as `files`
+does. The field is required, including for runners with no artifacts (`{}`).
+Only the listed artifacts appear. Actual launch refuses with the existing
+`RpcFailure` code `ArtifactsNotReady` until all required directories exist.
+The caller obtains their IDs and titles from
+`app.acquisition.status {gameId, runnerId?}`. An explicit `runnerId` selects the
+same route as `app.session.start`; without it, the saved/default route rules
+apply. Without `gameId`, status lists all enabled artifacts.
+
+An unpack program runs as `<unpack> <work-dir> <file>...`. Files are verified
+inputs in declaration order. The program writes only under `<work-dir>`, exits
+0 for success or 1 for failure, and writes diagnostics to stderr. There is no
+stdout contract. It does not download or rename the ready directory. korrid
+runs it in a transient systemd unit with no network, no privilege escalation,
+and the contribution directory as its only writable filesystem path. Its name is
+`korri-acquire-<plugin-short-name>-<key>.service`. Recovery holds `.lock`, stops
+an orphaned named unit, then removes stale `.tmp-*` directories. It never binds
+the unit to a daemon service name, so a standalone korrid uses the same path. Direct
+spawn exists only in Rust unit tests, not as a production fallback.
+
+korrid stores partials under
+`<storage-root>/cache/<plugin-short-name>/<key>/.downloads/<hex>.part`, verifies
+SHA-256 while streaming, and renames verified files to `<hex>`. It holds a
+per-contribution in-process exclusion and `.lock` across download and unpack.
+After unpacking in `.tmp-*`, korrid removes write permissions, syncs the tree,
+atomically renames it to `<version>/`, and removes `.downloads`. Without an
+unpack program, the version directory contains verified files named by the
+percent-decoded last segment of each declared URL. Unsafe or duplicate names
+fail. Ready means that the version directory exists. There is no journal.
+
+The local portal polls `app.acquisition.status`, starts IDs through
+`app.acquisition.start`, and cancels one download through
+`app.acquisition.cancel`. Cancellation keeps partial bytes; unpacking cannot
+be cancelled. Process restart forgets in-memory failures and progress but keeps
+partial bytes for the next start. Downloading reports `bytesDone`, optional
+`bytesTotal`, and a rate sampled over the last five seconds. Failure copy never
+contains a URL, hash, path, HTTP status or unpack stderr.
 
 ### Native runners for specific content
 

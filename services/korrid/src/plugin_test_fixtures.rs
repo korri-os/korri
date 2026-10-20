@@ -147,13 +147,45 @@ pub fn steam(root: &Path) -> PluginRegistry {
         include_str!("../../../plugins/steam/plugin.ts"),
     )
     .unwrap();
-    PluginRegistry::from_installed(vec![EnabledPackage {
+    let mut dependencies = Vec::new();
+    for (name, source, keys) in [
+        (
+            "fex",
+            include_str!("../../../plugins/fex/plugin.ts"),
+            vec!["fex-unpack", "config"],
+        ),
+        (
+            "proton",
+            include_str!("../../../plugins/proton/plugin.ts"),
+            vec!["cachyos-unpack"],
+        ),
+    ] {
+        let directory = root.join(format!("plugin-{name}"));
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("plugin.ts"), source).unwrap();
+        dependencies.push(EnabledPackage {
+            id: format!("@korri:{name}"),
+            package: directory.clone(),
+            entry: "plugin.ts".into(),
+            sources: vec!["plugin.ts".into()],
+            requires: vec![],
+            files: keys
+                .into_iter()
+                .map(|key| (key.into(), directory.join(key)))
+                .collect(),
+        });
+    }
+    let requires = dependencies
+        .iter()
+        .map(|package| package.package.clone())
+        .collect();
+    dependencies.push(EnabledPackage {
         id: "@korri:steam".into(),
         package: package.clone(),
         files: BTreeMap::from([("steam-session".into(), package.join("steam-session"))]),
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
-        requires: vec![],
-    }])
-    .unwrap()
+        requires,
+    });
+    PluginRegistry::from_installed(dependencies).unwrap()
 }

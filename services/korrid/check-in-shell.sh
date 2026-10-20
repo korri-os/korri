@@ -29,6 +29,10 @@ typeshare . --lang=typescript --output-file="$GENERATED_TS"
 # Typeshare 1.13 emits trailing spaces and an extra final blank line.
 sed -i -e 's/[[:space:]]\+$//' -e '${/^$/d;}' "$GENERATED_TS"
 
+# Check every in-repo declaration against the freshly generated Rust treaty.
+nix build --no-link -L \
+  "$ROOT#checks.$(nix eval --raw --impure --expr builtins.currentSystem).korri-plugins-typecheck"
+
 cd "$ROOT/clients/portal"
 bun install --frozen-lockfile --ignore-scripts
 # Every registered surface compiles from source and must share the portal's
@@ -46,9 +50,6 @@ done
 
 cd "$ROOT/clients/portal"
 bun run typecheck
-# The installed Steam declaration consumes the same regenerated Rust treaty.
-bun node_modules/typescript/bin/tsc --ignoreConfig --noEmit --strict --skipLibCheck \
-  --target es2022 --module preserve "$ROOT/plugins/steam/plugin.ts"
 bun test
 
 # Shift is its own package with its own toolchain: check it on its own terms so

@@ -336,10 +336,10 @@ describe("while Korri is doing something with a game", () => {
     expect(screen.getByRole("heading", { name: "Tetris" })).toBeTruthy()
     expect(screen.getByText("zao did not answer.")).toBeTruthy()
 
-    fireEvent.click(screen.getByRole("button", { name: "TRY AGAIN" }))
+    fireEvent.click(screen.getByRole("button", { name: "RETRY" }))
     expect(host.calls).toEqual(["retry"])
 
-    fireEvent.click(screen.getByRole("button", { name: "OK" }))
+    fireEvent.click(screen.getByRole("button", { name: "CANCEL" }))
     expect(host.calls).toEqual(["retry", "dismiss"])
   })
 
@@ -358,7 +358,7 @@ describe("while Korri is doing something with a game", () => {
       />,
     )
 
-    expect(screen.queryByRole("button", { name: "TRY AGAIN" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "RETRY" })).toBeNull()
     expect(screen.getByRole("button", { name: "OK" })).toBeTruthy()
   })
 })

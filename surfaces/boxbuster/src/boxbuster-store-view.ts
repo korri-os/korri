@@ -277,5 +277,15 @@ export function tvStatusFrom(model: SurfaceModel): TvStatus {
         canRetry: status.canRetry,
         ...(status.gameTitle === undefined ? {} : { title: status.gameTitle }),
       }
+    // A question before Korri acts: the TV states it and the decks answer it,
+    // the same way they run the actions of work under way.
+    case "Confirm":
+      return {
+        _tag: "Working",
+        kicker: status.kicker,
+        ...(status.detail === undefined ? {} : { detail: status.detail }),
+        ...(status.gameId === undefined ? {} : { tapeId: status.gameId }),
+        lines: status.actions.map(action => action.label),
+      }
   }
 }

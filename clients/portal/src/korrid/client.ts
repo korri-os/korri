@@ -47,6 +47,8 @@ import type {
   SettingsUpdateOutcome,
   SourceStatusOutcome,
   PeerListOutcome,
+  AcquisitionOutcome,
+  ArtifactStatus,
 } from "@contracts/generated/korrid"
 import {
   FocusOwnership,
@@ -81,6 +83,8 @@ export interface KorridClient {
   connectHiddenWifi(ssid: string, password?: string): Promise<NetworkStatusOutcome>
   onboardingStatus(): Promise<OnboardingStatusOutcome>
   finishOnboarding(): Promise<OnboardingStatusOutcome>
+  /** Put the device back into first-boot setup. Nothing else is cleared. */
+  restartOnboarding(): Promise<OnboardingStatusOutcome>
   health(): Promise<HealthOutcome>
   settingsSnapshot(): Promise<SettingsSnapshotOutcome>
   updateSetting(
@@ -136,6 +140,16 @@ export interface KorridClient {
   /** Readiness of exactly one native peer, selected by its device key. */
   sourceStatus(devicePublicKey: string): Promise<SourceStatusOutcome>
   peerList(): Promise<PeerListOutcome>
+  /**
+   * Artifacts plugins declared and where each stands on this device. With a
+   * game id: the artifacts of that game's resolved runner. Without: every
+   * artifact of every loaded plugin.
+   */
+  acquisitionStatus(gameId?: string, runnerId?: string): Promise<AcquisitionOutcome>
+  /** Idempotent: an active artifact is not restarted; a Failed one resumes. */
+  acquisitionStart(artifactIds: readonly string[]): Promise<AcquisitionOutcome>
+  /** Stops one download and keeps its partial file for a later resume. */
+  acquisitionCancel(artifactId: string): Promise<AcquisitionOutcome>
 }
 
 const RPC_TIMEOUT_MS = 25_000
@@ -294,6 +308,10 @@ export function createHttpKorridClient(
     },
     async finishOnboarding() {
       try { return (await callKorrid(baseUrl, capability, { _tag: "system.onboarding.finish", payload: {} })).outcome }
+      catch { return onboardingUnavailable() }
+    },
+    async restartOnboarding() {
+      try { return (await callKorrid(baseUrl, capability, { _tag: "system.onboarding.restart", payload: {} })).outcome }
       catch { return onboardingUnavailable() }
     },
     async health() {
@@ -644,10 +662,67 @@ export function createHttpKorridClient(
         return unreachable(error)
       }
     },
+    async acquisitionStatus(gameId, runnerId) {
+      try {
+        // `runnerId` names the runner whose artifacts to resolve, as
+        // app.session.start takes it; the wire accepts it ahead of the
+        // regenerated request type naming the field.
+        const payload: { gameId?: string; runnerId?: string } = gameId === undefined ? {} : { gameId }
+        if (runnerId !== undefined) payload.runnerId = runnerId
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "app.acquisition.status",
+          payload,
+        })
+        return response.outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async acquisitionStart(artifactIds) {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "app.acquisition.start",
+          payload: { artifactIds: [...artifactIds] },
+        })
+        return response.outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async acquisitionCancel(artifactId) {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "app.acquisition.cancel",
+          payload: { artifactId },
+        })
+        return response.outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
   }
 }
 
+/** One declared artifact as the in-memory brain seeds it. */
+export interface InMemoryArtifact {
+  readonly id: string
+  readonly title: string
+  readonly version?: string
+  readonly bytesTotal?: number
+  /** Starts Ready; absent means Missing until started. */
+  readonly ready?: boolean
+  /** Fail once, with this plain copy, when the download reaches `atFraction`
+   * (default half). The next start resumes and completes. */
+  readonly failure?: { readonly message: string; readonly atFraction?: number }
+}
+
 export interface InMemoryKorridClientConfig {
+  /** Artifacts every loaded plugin declares, and which games need which:
+   * keyed by game id, or `<gameId>@<runnerId>` for one runner of a game. */
+  readonly artifacts?: readonly InMemoryArtifact[]
+  readonly gameArtifacts?: Readonly<Record<string, readonly string[]>>
+  /**
+   * The simulated download advances one step per status read of the artifact,
+   * so a polled observation is what moves it: deterministic in tests, and at
+   * the host's 1 Hz poll a believable download in the browser. Default 50 MB
+   * a step, then two Unpacking steps before Ready.
+   */
+  readonly acquisitionBytesPerStep?: number
+  readonly acquisitionUnpackSteps?: number
   readonly behavior?:
     | "ok"
     | "catalog-fail"
@@ -822,6 +897,49 @@ export function createInMemoryKorridClient(
       payload: { launchId: expectedLaunchId, state, changed },
     }
   }
+  // Artifacts: a Missing one downloads a step per observation once started,
+  // unpacks for a few more, then is Ready. Cancel keeps the bytes for the
+  // next start, the way korrid keeps the .part file.
+  const bytesPerStep = config.acquisitionBytesPerStep ?? 50_000_000
+  const unpackSteps = config.acquisitionUnpackSteps ?? 2
+  const artifacts = new Map((config.artifacts ?? []).map(seed => [seed.id, {
+    seed,
+    status: {
+      id: seed.id, title: seed.title, version: seed.version ?? "in-memory",
+      ...(seed.bytesTotal === undefined ? {} : { bytesTotal: seed.bytesTotal }),
+      state: seed.ready ? { _tag: "Ready", path: `/cache/${seed.id}` } : { _tag: "Missing" },
+    } as ArtifactStatus,
+    partial: 0,
+    failedOnce: false,
+    unpackLeft: 0,
+  }]))
+  const stepArtifact = (entry: NonNullable<ReturnType<typeof artifacts.get>>) => {
+    const { seed } = entry
+    const total = seed.bytesTotal
+    if (entry.status.state._tag === "Downloading") {
+      const done = total === undefined ? entry.partial + bytesPerStep : Math.min(total, entry.partial + bytesPerStep)
+      entry.partial = done
+      const fraction = total === undefined ? 0 : done / total
+      if (seed.failure && !entry.failedOnce && fraction >= (seed.failure.atFraction ?? 0.5)) {
+        entry.failedOnce = true
+        entry.status = { ...entry.status, state: { _tag: "Failed", reason: { code: "DownloadFailed", message: seed.failure.message } } }
+      } else if (total !== undefined && done >= total) {
+        entry.unpackLeft = unpackSteps
+        entry.status = { ...entry.status, state: { _tag: "Unpacking" } }
+      } else {
+        entry.status = { ...entry.status, state: { _tag: "Downloading", file: 1, fileCount: 1, bytesDone: done,
+          ...(total === undefined ? {} : { bytesTotal: total }), bytesPerSecond: bytesPerStep } }
+      }
+    } else if (entry.status.state._tag === "Unpacking") {
+      if (entry.unpackLeft <= 0) entry.status = { ...entry.status, state: { _tag: "Ready", path: `/cache/${seed.id}` } }
+      else entry.unpackLeft -= 1
+    }
+  }
+  const artifactList = (ids?: readonly string[], advance = false): AcquisitionOutcome => {
+    const chosen = [...artifacts.values()].filter(entry => ids === undefined || ids.includes(entry.seed.id))
+    if (advance) for (const entry of chosen) stepArtifact(entry)
+    return { _tag: "Ok", payload: { artifacts: chosen.map(entry => structuredClone(entry.status)) } }
+  }
   const seedSettings = config.settings
   const plugins: SettingsSnapshot["plugins"] = structuredClone(seedSettings?.plugins ?? [
     { id: "@korri:mgba", title: "mGBA", enabled: true },
@@ -913,6 +1031,7 @@ export function createInMemoryKorridClient(
     async connectHiddenWifi(ssid) { return connectNetwork(ssid) },
     async onboardingStatus() { return { _tag: "Ok", payload: { needed: onboardingNeeded } } },
     async finishOnboarding() { onboardingNeeded = false; return { _tag: "Ok", payload: { needed: false } } },
+    async restartOnboarding() { onboardingNeeded = true; return { _tag: "Ok", payload: { needed: true } } },
     async health() {
       return { _tag: "Ok", payload: { version: "korrid-in-memory" } }
     },
@@ -1375,6 +1494,39 @@ export function createInMemoryKorridClient(
           streamControl: SourceStreamControlState.Enabled,
         },
       }
+    },
+    async acquisitionStatus(gameId, runnerId) {
+      if (gameId === undefined) return artifactList()
+      if (!games.some(game => game.id === gameId) && !routeRecords.some(record => record.gameId === gameId)) {
+        return routeFailure("GameNotFound", "Game is not available")
+      }
+      // Several runners and no choice: korrid cannot resolve the artifacts.
+      const record = routeRecords.find(record => record.gameId === gameId)
+      if (runnerId === undefined && record !== undefined && record.routes.length > 1 &&
+        record.gameRunner === undefined && Object.keys(record.systemRunners).length === 0) {
+        return routeFailure("RunnerChoiceRequired", "Choose a runner for this game first")
+      }
+      const keyed = runnerId === undefined ? undefined : config.gameArtifacts?.[`${gameId}@${runnerId}`]
+      return artifactList(keyed ?? config.gameArtifacts?.[gameId] ?? [], true)
+    },
+    async acquisitionStart(artifactIds) {
+      for (const id of artifactIds) {
+        const entry = artifacts.get(id)
+        if (!entry) return routeFailure("ArtifactUnknown", "No plugin declares that artifact")
+        const tag = entry.status.state._tag
+        if (tag !== "Missing" && tag !== "Failed") continue
+        entry.status = { ...entry.status, state: { _tag: "Downloading", file: 1, fileCount: 1, bytesDone: entry.partial,
+          ...(entry.seed.bytesTotal === undefined ? {} : { bytesTotal: entry.seed.bytesTotal }) } }
+      }
+      return artifactList([...artifactIds])
+    },
+    async acquisitionCancel(artifactId) {
+      const entry = artifacts.get(artifactId)
+      if (!entry) return routeFailure("ArtifactUnknown", "No plugin declares that artifact")
+      if (entry.status.state._tag === "Downloading") {
+        entry.status = { ...entry.status, state: { _tag: "Missing" } }
+      }
+      return artifactList([artifactId])
     },
   }
 }

@@ -100,6 +100,8 @@ pub fn launch_route(
             .into_iter()
             .map(|(key, path)| (key, path.display().to_string()))
             .collect(),
+        artifacts: crate::acquisition::launch_artifacts(root, registry, &route.runner_id)
+            .map_err(|failure| error(failure.message))?,
         overrides: Some(PluginLaunchOverrides {
             settings,
             config: folded.config,

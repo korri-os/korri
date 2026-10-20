@@ -104,6 +104,8 @@ async function mount(korrid: KorridClient) {
       const action = choice.routes[0]?.actions[0]
       if (!action) throw new Error("expected launch action")
       await invoke(() => host.runAction(action.id))
+      // The chosen runner's artifacts are checked before the shared startup.
+      await waitFor(() => { const s = model.status; return s._tag !== "Busy" || s.detail !== "Checking what it needs" })
     },
   }
 }
@@ -161,9 +163,12 @@ test.each([
   "cancel",
   "different request",
 ])("late cancelled selected acknowledgement never resurrects startup after %s", async (mode) => {
+  // Cancel must land before any observed handoff: the gate's check sits
+  // between the choice and the startup, so the window is observed, not shared.
   const base = createInMemoryKorridClient({
     games: [game(), game("other")],
     gameRoutes: [routes(), routes("other")],
+    sessionFocusDelayMs: 60_000,
   })
   const ack = deferred<SelectedGameLaunchOutcome>()
   let failed = false
@@ -236,6 +241,7 @@ test.each([
   const base = createInMemoryKorridClient({
     games: [game(), game("other")],
     gameRoutes: [routes(), routes("other")],
+    sessionFocusDelayMs: 60_000,
   })
   const release = deferred<void>()
   let failed = false

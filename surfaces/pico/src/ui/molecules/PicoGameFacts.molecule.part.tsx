@@ -32,3 +32,19 @@ export function LongTitle() {
     />
   )
 }
+
+/** Playing fetches a runtime first; the amount is a chip beside the play facts. */
+export function NeedsDownload() {
+  return (
+    <PicoGameFacts
+      download="1.5 GB DOWNLOAD"
+      stats={[{ figure: "2", caption: "PLAYS" }]}
+      subtitle="Steam · This device"
+      title="Hollow Knight"
+    />
+  )
+}
+
+export function NeedsDownloadUnknownSize() {
+  return <PicoGameFacts download="DOWNLOAD NEEDED" resumable stats={[]} subtitle="Steam · This device" title="Celeste" />
+}

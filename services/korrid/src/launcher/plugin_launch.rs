@@ -53,6 +53,9 @@ pub struct PluginLaunchInput {
     /// The runner's own files under their bare keys, plus each exactly
     /// required, installed and enabled plugin's files under `<pluginId>/<key>`.
     pub files: HashMap<String, String>,
+    /// Ready runtime paths, under own bare keys or full foreign artifact ids.
+    #[typeshare(serialized_as = "HashMap<String, String>")]
+    pub artifacts: std::collections::BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overrides: Option<PluginLaunchOverrides>,
 }

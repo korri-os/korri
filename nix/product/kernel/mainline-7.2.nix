@@ -51,6 +51,9 @@ linux_latest.override (
         KMALLOC_PARTITION_CACHES = yes;
         # ARM64 now has ARCH_HAS_PREEMPT_LAZY, which hides VOLUNTARY.
         PREEMPT_VOLUNTARY = lib.mkForce unset;
+        # Nixpkgs now selects LAZY by default. It shares a Kconfig choice with
+        # our full preemption setting; requesting both breaks config generation.
+        PREEMPT_LAZY = lib.mkForce no;
         PREEMPT = lib.mkForce yes;
       });
   }

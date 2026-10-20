@@ -7,7 +7,8 @@ import { PicoStatRun } from "./PicoStatRun"
 /**
  * What Korri said about one game, as a block of type: an optional kicker
  * (why this game is here), the title, where it comes from, and chips for
- * whether it resumes and how much it has been played.
+ * whether it resumes, what it still has to download, and how much it has
+ * been played.
  *
  * States only what it is given. There is no byline or blurb because the
  * treaty carries neither, and a plausible invented one would be worse than
@@ -19,6 +20,7 @@ export function PicoGameFacts({
   subtitle,
   stats,
   resumable = false,
+  download,
   level = 1,
 }: {
   readonly kicker?: string
@@ -26,6 +28,8 @@ export function PicoGameFacts({
   readonly subtitle?: string
   readonly stats: readonly { readonly figure: string; readonly caption: string }[]
   readonly resumable?: boolean
+  /** "1.5 GB DOWNLOAD": what playing fetches first. Absent when nothing. */
+  readonly download?: string
   /** The heading level; a screen has exactly one level-1 heading. */
   readonly level?: 1 | 2
 }) {
@@ -40,6 +44,7 @@ export function PicoGameFacts({
       )}
       <div className="pico-game-facts-chips">
         {resumable ? <PicoBadge text="RESUME" tone="ok" /> : null}
+        {download === undefined ? null : <PicoBadge text={download} tone="info" />}
         <PicoStatRun stats={stats} />
       </div>
     </div>

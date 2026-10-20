@@ -22,3 +22,6 @@ NativeInputRetiredKindWire = '"retired"'
 # Exact legacy provider discovery literals, enforced by discovery/provider.rs.
 ProviderReleaseKindWire = '"provider-ref-release"'
 ProviderReleaseConfidenceWire = '"high"'
+
+# Exact ADR 0012 internally tagged union, enforced by acquisition/types.rs.
+ArtifactStateWire = '{ _tag: "Missing" } | { _tag: "Downloading"; file: number; fileCount: number; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number } | { _tag: "Unpacking" } | { _tag: "Ready"; path: string } | { _tag: "Failed"; reason: RpcFailure }'

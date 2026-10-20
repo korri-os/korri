@@ -4,11 +4,7 @@ import os
 from pathlib import Path
 
 home = Path(os.environ["STEAM_HOME"])
-cache = Path(os.environ["KORRI_CACHE_ROOT"])
-(home / "seed.json").write_text(json.dumps({
-    "rootfs": (cache / "fex/rootfs/fixture").is_dir(),
-    "proton": (cache / "proton/cachyos/fixture").is_dir(),
-}))
+(home / "seed.json").write_text(json.dumps({"FEX_ROOTFS": os.environ.get("FEX_ROOTFS")}))
 client = home / "steamrtarm64/steam"
 client.parent.mkdir(parents=True, exist_ok=True)
 client.touch()

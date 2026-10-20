@@ -186,22 +186,19 @@ fn steam_provider_launch_composes_the_prepared_session_before_native_exec() {
     let fex = package_with_files(
         root.path(),
         "@korri:fex",
-        "export const name = 'fex'\n",
+        include_str!("../../../plugins/fex/plugin.ts"),
         None,
         BTreeMap::from([
-            ("fex-prepare".into(), root.path().join("fex-prepare")),
+            ("fex-unpack".into(), root.path().join("fex-unpack")),
             ("config".into(), root.path().join("fex-config")),
         ]),
     );
     let proton = package_with_files(
         root.path(),
         "@korri:proton",
-        "export const name = 'proton'\n",
+        include_str!("../../../plugins/proton/plugin.ts"),
         None,
-        BTreeMap::from([(
-            "cachyos-prepare".into(),
-            root.path().join("cachyos-prepare"),
-        )]),
+        BTreeMap::from([("cachyos-unpack".into(), root.path().join("cachyos-unpack"))]),
     );
     let mut runner = package_with_files(
         root.path(),
@@ -226,6 +223,18 @@ export const handlers = {'launch.compose': input => {
         None,
     );
     let registry = PluginRegistry::from_installed(vec![runner, fex, proton, modifier]).unwrap();
+    for artifact in registry.artifacts().values() {
+        let (owner, key) = artifact.id.split_once('/').unwrap();
+        let name = owner.split_once(':').unwrap().1;
+        fs::create_dir_all(
+            root.path()
+                .join("cache")
+                .join(name)
+                .join(key)
+                .join(&artifact.version),
+        )
+        .unwrap();
+    }
     let snapshot = decode_config_documents(
         "locations:\n  '@korri:steam/401710': [{provider: '@korri:steam', ref: '401710'}]\nmodifiers: {'@test:wrapper/main': {enabled: true}}\n",
         "library:\n  flinthook:\n    title: Flinthook\n    releases:\n      - id: steam\n        system: steam\n        identity: {kind: provider, value: '@korri:steam/401710'}\n",

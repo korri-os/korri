@@ -1014,6 +1014,9 @@ assert
 assert standalone.config.users.users.korri.uid == requirements.constants.runtimeAccount.uid;
 assert !(rg353m.users.users ? gameplay);
 assert !(rg353m.users.groups ? games);
+# Discovery creates 0700 folders; without an explicit mask the game user's
+# named read entry stays ineffective on them.
+assert builtins.elem "A+ /var/lib/korri/games - - - - u:korri:rX,d:u:korri:rX,m::rX,d:m::rX" rg353m.systemd.tmpfiles.rules;
 pkgs.runCommand "korri-product-module-check" { } ''
   test -x ${sameNameFailingPackage}/${sameNameRelativeExecutable}
   touch "$out"

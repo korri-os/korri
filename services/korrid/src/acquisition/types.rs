@@ -1,0 +1,127 @@
+use crate::RpcFailure;
+use serde::{Deserialize, Serialize};
+use typeshare::typeshare;
+
+// Typeshare cannot infer internally tagged enums; the exact wire union is
+// mapped in typeshare.toml, as for NativeInputEvent. Serde owns the decoder.
+#[typeshare(serialized_as = "ArtifactStateWire")]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag")]
+pub enum ArtifactState {
+    Missing,
+    Downloading {
+        file: u32,
+        #[serde(rename = "fileCount")]
+        file_count: u32,
+        #[serde(rename = "bytesDone")]
+        #[typeshare(serialized_as = "number")]
+        bytes_done: u64,
+        #[serde(rename = "bytesTotal", skip_serializing_if = "Option::is_none")]
+        #[typeshare(serialized_as = "Option<number>")]
+        bytes_total: Option<u64>,
+        #[serde(rename = "bytesPerSecond", skip_serializing_if = "Option::is_none")]
+        bytes_per_second: Option<f64>,
+    },
+    Unpacking,
+    Ready {
+        path: String,
+    },
+    Failed {
+        reason: RpcFailure,
+    },
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactStatus {
+    pub id: String,
+    pub title: String,
+    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[typeshare(serialized_as = "Option<number>")]
+    pub bytes_total: Option<u64>,
+    pub state: ArtifactState,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcquisitionStatusRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner_id: Option<String>,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcquisitionStartRequest {
+    pub artifact_ids: Vec<String>,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcquisitionCancelRequest {
+    pub artifact_id: String,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AcquisitionSnapshot {
+    pub artifacts: Vec<ArtifactStatus>,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum AcquisitionOutcome {
+    Ok(AcquisitionSnapshot),
+    Err(RpcFailure),
+}
+
+/// Never send transport, filesystem or unpack stderr strings to the portal.
+/// A closed vocabulary is stronger than trying to redact arbitrary diagnostics.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Failure {
+    UnsafeUrl,
+    UnsafePath,
+    Redirect,
+    Network,
+    Stalled,
+    Hash,
+    Storage,
+    NoSpace,
+    Unpack,
+    Cancelled,
+}
+impl Failure {
+    pub(super) fn rpc(self) -> RpcFailure {
+        let message = match self {
+            Self::UnsafeUrl => "The download address is not allowed.",
+            Self::UnsafePath => "The download file name is not safe.",
+            Self::Redirect => "The download redirected too many times.",
+            Self::Network => "The download could not finish. Check the connection and retry.",
+            Self::Stalled => "The download stopped making progress. Please retry.",
+            Self::Hash => "The downloaded file did not pass verification. Please retry.",
+            Self::Storage => "The download storage is unavailable.",
+            Self::NoSpace => "There is not enough space for this download.",
+            Self::Unpack => "The downloaded files could not be unpacked.",
+            Self::Cancelled => "The download was cancelled.",
+        };
+        RpcFailure {
+            code: "AcquisitionFailed".into(),
+            message: crate::launcher::redaction::status_text(
+                message,
+                crate::launcher::redaction::MAX_REASON_CHARS,
+            ),
+        }
+    }
+}
+impl From<std::io::Error> for Failure {
+    fn from(error: std::io::Error) -> Self {
+        if error.raw_os_error() == Some(libc::ENOSPC) {
+            Self::NoSpace
+        } else {
+            Self::Storage
+        }
+    }
+}

@@ -209,7 +209,7 @@ fn evaluate_module(
             match name.as_str() {
                 "name" | "title" | "description" | "providers" | "systems" | "families"
                 | "runners" | "modifiers" | "transports" | "controls" | "groups" | "games"
-                | "services" | "config" | "discovery" => {
+                | "services" | "config" | "discovery" | "artifacts" => {
                     data.set(name, value).map_err(|error| error.to_string())?;
                 }
                 // Handlers are callable operation code, never declaration data.

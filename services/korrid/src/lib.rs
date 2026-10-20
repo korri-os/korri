@@ -1,5 +1,6 @@
 //! Embedded-capable korrid server core: contracts, dispatch, and lifecycle.
 
+pub mod acquisition;
 #[cfg(test)]
 mod launch_handoff_tests;
 
@@ -1187,6 +1188,14 @@ pub enum IdentityRetiredDeleteOutcome {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum RpcRequest {
+    #[serde(rename = "system.onboarding.restart")]
+    OnboardingRestart(onboarding::OnboardingRestartRequest),
+    #[serde(rename = "app.acquisition.status")]
+    AcquisitionStatus(acquisition::AcquisitionStatusRequest),
+    #[serde(rename = "app.acquisition.start")]
+    AcquisitionStart(acquisition::AcquisitionStartRequest),
+    #[serde(rename = "app.acquisition.cancel")]
+    AcquisitionCancel(acquisition::AcquisitionCancelRequest),
     #[serde(rename = "system.onboarding.finish")]
     OnboardingFinish(onboarding::OnboardingFinishRequest),
     #[serde(rename = "system.onboarding.status")]
@@ -1283,6 +1292,14 @@ pub enum RpcRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "outcome")]
 pub enum RpcResponse {
+    #[serde(rename = "system.onboarding.restart")]
+    OnboardingRestart(onboarding::OnboardingStatusOutcome),
+    #[serde(rename = "app.acquisition.status")]
+    AcquisitionStatus(acquisition::AcquisitionOutcome),
+    #[serde(rename = "app.acquisition.start")]
+    AcquisitionStart(acquisition::AcquisitionOutcome),
+    #[serde(rename = "app.acquisition.cancel")]
+    AcquisitionCancel(acquisition::AcquisitionOutcome),
     #[serde(rename = "system.onboarding.finish")]
     OnboardingFinish(onboarding::OnboardingStatusOutcome),
     #[serde(rename = "system.onboarding.status")]
@@ -1424,6 +1441,7 @@ enum RpcSurface {
 
 #[derive(Clone)]
 struct AppState {
+    acquisition: acquisition::AcquisitionCoordinator,
     network: network::NetworkService,
     // Retain the actual shared directory for snapshot-only B5 consumers.
     federation: Option<federation::FederationDirectory>,
@@ -1438,6 +1456,26 @@ struct AppState {
 }
 
 impl AppState {
+    fn recover_acquisition(&self) {
+        if let Ok((root, registry)) = self.acquisition_context() {
+            if let Err(failure) = self.acquisition.recover(root, &registry) {
+                eprintln!("korrid acquisition recovery: {}", failure.message);
+            }
+        }
+    }
+    fn acquisition_context(&self) -> Result<(&Path, plugin::PluginRegistry), RpcFailure> {
+        match &self.mode {
+            ServerMode::Host(host) => Ok((host.route_root()?, host.route_registry()?)),
+            ServerMode::Brain(brain) => Ok((
+                &brain.local_storage_root,
+                brain.registry_source.registry().map_err(|_| RpcFailure {
+                    code: "AcquisitionUnavailable".into(),
+                    message: "Downloads are unavailable on this device.".into(),
+                })?,
+            )),
+        }
+    }
+
     fn private_state_root(&self) -> &Path {
         match &self.mode {
             ServerMode::Brain(brain) => &brain.private_state_root,
@@ -2113,6 +2151,60 @@ async fn dispatch(
 ) -> Result<RpcResponse, authorization::AuthorizationDenied> {
     authorization::authorize(authorization, &request)?;
     let mut response = match request {
+        RpcRequest::AcquisitionStatus(request) => {
+            let outcome = (|| {
+                let (root, registry) = state.acquisition_context()?;
+                let ids = request
+                    .game_id
+                    .as_ref()
+                    .map(|id| {
+                        acquisition::game_artifact_ids(
+                            root,
+                            &registry,
+                            id,
+                            request.runner_id.as_deref(),
+                        )
+                    })
+                    .transpose()?;
+                state.acquisition.status(root, &registry, ids.as_deref())
+            })();
+            RpcResponse::AcquisitionStatus(
+                outcome
+                    .map(acquisition::AcquisitionOutcome::Ok)
+                    .unwrap_or_else(acquisition::AcquisitionOutcome::Err),
+            )
+        }
+        RpcRequest::AcquisitionStart(request) => {
+            let outcome = state.acquisition_context().and_then(|(root, registry)| {
+                state.acquisition.start(
+                    root,
+                    state.private_state_root(),
+                    &registry,
+                    &request.artifact_ids,
+                )
+            });
+            RpcResponse::AcquisitionStart(
+                outcome
+                    .map(acquisition::AcquisitionOutcome::Ok)
+                    .unwrap_or_else(acquisition::AcquisitionOutcome::Err),
+            )
+        }
+        RpcRequest::AcquisitionCancel(request) => {
+            let outcome = match state.acquisition_context() {
+                Ok((root, registry)) => {
+                    state
+                        .acquisition
+                        .cancel(root, &registry, &request.artifact_id)
+                        .await
+                }
+                Err(error) => Err(error),
+            };
+            RpcResponse::AcquisitionCancel(
+                outcome
+                    .map(acquisition::AcquisitionOutcome::Ok)
+                    .unwrap_or_else(acquisition::AcquisitionOutcome::Err),
+            )
+        }
         RpcRequest::NetworkStatus(_) => RpcResponse::NetworkStatus(state.network.status().await),
         RpcRequest::WifiScan(_) => RpcResponse::WifiScan(state.network.scan().await),
         RpcRequest::WifiConnect(request) => RpcResponse::WifiConnect(
@@ -2132,6 +2224,9 @@ async fn dispatch(
         }
         RpcRequest::OnboardingFinish(_) => {
             RpcResponse::OnboardingFinish(onboarding::finish(state.private_state_root()))
+        }
+        RpcRequest::OnboardingRestart(_) => {
+            RpcResponse::OnboardingRestart(onboarding::restart(state.private_state_root()))
         }
         RpcRequest::GameRoutes(request) => RpcResponse::GameRoutes(match &state.mode {
             ServerMode::Host(host) => host
@@ -3564,6 +3659,7 @@ fn brain_app_state(
     let local_owner_public_key = brain_owner_public_key(&private_state_root);
     let portal_access = PortalAccess::new(rpc_capability, allowed_origin, PortalPermission::Full);
     let state = AppState {
+        acquisition: acquisition::AcquisitionCoordinator::default(),
         network: network::NetworkService::default(),
         federation: resources.map(|resources| resources.directory),
         federation_wake,
@@ -3582,6 +3678,7 @@ fn brain_app_state(
         rpc_surface: RpcSurface::Lan,
         overlay_intent: Arc::new(Mutex::new(None)),
     };
+    state.recover_acquisition();
     (state, ())
 }
 
@@ -3762,7 +3859,9 @@ fn secure_host_router_with_in_memory_units_at(
 fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
     let overlay_intent = Arc::new(Mutex::new(None));
     let network = network::NetworkService::default();
+    let acquisition = acquisition::AcquisitionCoordinator::default();
     let lan = AppState {
+        acquisition: acquisition.clone(),
         network: network.clone(),
         federation: None,
         federation_wake: None,
@@ -3773,6 +3872,7 @@ fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
         overlay_intent: overlay_intent.clone(),
     };
     let local = AppState {
+        acquisition,
         network,
         federation: None,
         federation_wake: None,
@@ -3782,6 +3882,7 @@ fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
         rpc_surface: RpcSurface::LocalControl,
         overlay_intent,
     };
+    lan.recover_acquisition();
     (lan, local)
 }
 

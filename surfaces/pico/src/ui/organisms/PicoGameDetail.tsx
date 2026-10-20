@@ -28,6 +28,7 @@ export function PicoGameDetail({
     <div className="pico-game-detail">
       <PicoGameStage
         artUrl={game.artUrl}
+        download={game.download}
         id={game.id}
         resumable={game.primaryLabel === "CONTINUE"}
         stats={game.stats}

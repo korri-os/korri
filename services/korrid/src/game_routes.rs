@@ -198,6 +198,7 @@ fn prepare_launch(
     let (snapshot, _) = settings::runner_choice_snapshot(root).map_err(settings_failure)?;
     let route = resolver::resolve_linux_route(root, &snapshot, registry, game_id, runner_id)
         .map_err(|error| crate::route_diagnostic_failure(&error))?;
+    crate::acquisition::require_ready(root, registry, &route.runner_id)?;
     linux_plugin::launch_route(root, &snapshot, registry, &route, overrides, display)
         .map_err(|error| unavailable(error.to_string()))
 }

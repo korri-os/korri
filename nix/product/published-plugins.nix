@@ -15,7 +15,7 @@ let
       korri-plugin-flycast = "/nix/store/1hyibappvdbx4jmqdsrp5blyyba46wkv-korri-plugin";
       korri-plugin-gambatte = "/nix/store/wqaq8k7vgb7snzl9i8q448d3n913b5h4-korri-plugin";
       korri-plugin-fex = "/nix/store/9wd09blndwjqpzyzk9girzw7pr75p8px-korri-plugin";
-      korri-plugin-gamescope = "/nix/store/9b77s5572yadd9pdzd6071ac6g1nyqz1-korri-plugin";
+      korri-plugin-gamescope = "/nix/store/6y3g0yv13pmsq30a0fbigk40570h94lh-korri-plugin";
       korri-plugin-genesis-plus-gx = "/nix/store/8g6n55diwvblwcs3hl35k1n03j7b34yk-korri-plugin";
       korri-plugin-gw = "/nix/store/b44l2y0gcj8h5fqwmhhfq9wszwfdqid1-korri-plugin";
       korri-plugin-handy = "/nix/store/0fx1xk6n4c2lp4k3jrhnzpyk6i9d5vnn-korri-plugin";
@@ -46,7 +46,7 @@ let
       korri-plugin-flycast = "/nix/store/ysp64r0bv0pyvnnk6cj03j7d65xfl32q-korri-plugin";
       korri-plugin-gambatte = "/nix/store/989m522gm214hcjq8b6rgx4z677lvx5c-korri-plugin";
       korri-plugin-fex = "/nix/store/jbbswdh10xkq8i52jn7akakkyzhj731b-korri-plugin";
-      korri-plugin-gamescope = "/nix/store/lr5x9jrbaiygcnyw579ibq2zh04cyd6p-korri-plugin";
+      korri-plugin-gamescope = "/nix/store/b6c5bsvk0divymqlgfjbvpqkkim8hacr-korri-plugin";
       korri-plugin-genesis-plus-gx = "/nix/store/725vhfqq0zssspafbrkn4ffy0z1g5d3s-korri-plugin";
       korri-plugin-gw = "/nix/store/hr7fccqr7vz02k91i3vjiggq60lzyr3k-korri-plugin";
       korri-plugin-handy = "/nix/store/rbxh6ylhzlyxslxy85m13yiy54d584k2-korri-plugin";

@@ -72,6 +72,67 @@ test("a slow status read is not restarted or starved by a second refresh", async
   expect(host.snapshot().network).toBeDefined()
 })
 
+test("restarting setup brings onboarding back, and a failed restart says so", async () => {
+  const client = createInMemoryKorridClient()
+  const host = createNetworkOnboarding(client)
+  await host.refresh()
+  host.finishOnboarding()
+  await waitFor(() => host.snapshot().onboardingNeeded === false)
+  host.restartOnboarding()
+  await waitFor(() => host.snapshot().onboardingNeeded === true)
+  expect(host.snapshot().problem).toBeUndefined()
+  // Setup can be finished again afterwards.
+  host.finishOnboarding()
+  await waitFor(() => host.snapshot().onboardingNeeded === false)
+
+  const failing = createNetworkOnboarding({ ...client,
+    async restartOnboarding() { return { _tag: "Err", payload: { code: "OnboardingStorageUnavailable", message: "dependency text" } } },
+  })
+  await failing.refresh()
+  expect(failing.snapshot().onboardingNeeded).toBe(false)
+  failing.restartOnboarding()
+  await waitFor(() => failing.snapshot().problem !== undefined)
+  expect(failing.snapshot().onboardingNeeded).toBe(false)
+  expect(failing.snapshot().problem).toBe("Could not restart setup. Try again.")
+})
+
+test("restart rejects duplicate writes and a stale status cannot undo it", async () => {
+  const client = createInMemoryKorridClient()
+  await client.finishOnboarding()
+  let releaseRead!: () => void
+  let releaseRestart!: () => void
+  const readGate = new Promise<void>(resolve => { releaseRead = resolve })
+  const restartGate = new Promise<void>(resolve => { releaseRestart = resolve })
+  let delayRead = false
+  let restarts = 0
+  const host = createNetworkOnboarding({ ...client,
+    async onboardingStatus() {
+      const snapshot = await client.onboardingStatus()
+      if (delayRead) await readGate
+      return snapshot
+    },
+    async restartOnboarding() {
+      restarts++
+      await restartGate
+      return client.restartOnboarding()
+    },
+  })
+  await host.refresh()
+  delayRead = true
+  const staleRead = host.refresh()
+  host.restartOnboarding()
+  host.restartOnboarding()
+  host.finishOnboarding()
+  expect(restarts).toBe(1)
+  expect(host.snapshot().onboardingNeeded).toBe(false)
+  releaseRestart()
+  await waitFor(() => host.snapshot().onboardingNeeded === true)
+  releaseRead()
+  await staleRead
+  expect(host.snapshot().onboardingNeeded).toBe(true)
+  expect(await client.onboardingStatus()).toEqual({ _tag: "Ok", payload: { needed: true } })
+})
+
 test("finishing setup is not dropped while a connection is in flight", async () => {
   const host = createNetworkOnboarding(createInMemoryKorridClient())
   await host.refresh()

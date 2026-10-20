@@ -134,6 +134,21 @@ describe("settingsFrom", () => {
     expect(items.filter(item => item.interaction !== undefined).map(item => item.id)).toEqual(["device-name"])
   })
 
+  it("offers to run setup again only once Korri has said setup is finished", () => {
+    expect(group({ settings: configuration }, "Device")?.items.map(item => item.id)).toEqual(["device-name"])
+    expect(group({ settings: configuration, onboardingNeeded: true }, "Device")?.items.map(item => item.id)).toEqual(["device-name"])
+    expect(group({ onboardingNeeded: false }, "Device")?.items).toEqual([{
+      id: "setup-restart",
+      label: "Run setup again",
+      description: "Games, Wi-Fi and identity stay.",
+      interaction: {
+        kind: "action",
+        actionId: "setup-restart",
+        confirmation: { title: "Run setup again?", message: "Korri will show first-boot setup now. Games, Wi-Fi and identity stay.", confirmLabel: "Run setup" },
+      },
+    }])
+  })
+
   it("keeps read-only snapshots readable and accepts an absent snapshot", () => {
     const items = settingsFrom({ settings: { ...configuration, editableSettingIds: [] } })
       .flatMap(group => group.items)

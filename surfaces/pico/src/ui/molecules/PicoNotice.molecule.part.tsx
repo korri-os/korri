@@ -31,3 +31,30 @@ export function RetryableFailure() {
 export function Loading() {
   return <PicoNotice kicker="LOADING LIBRARY" message="Waiting for your games." tone="info" />
 }
+
+/** A question: yellow, with Korri's two answers as rows. */
+export function Ask() {
+  return (
+    <PicoNotice
+      actions={[
+        { label: "Download", onPress: () => undefined },
+        { label: "Cancel", onPress: () => undefined },
+      ]}
+      kicker="Needs a download"
+      message="FEX rootfs and Proton-CachyOS, 1.5 GB"
+      title="Hollow Knight"
+      tone="ask"
+    />
+  )
+}
+
+/** A kicker and its answers, with nothing more to say under it. */
+export function AskWithoutMessage() {
+  return (
+    <PicoNotice
+      actions={[{ label: "Download", onPress: () => undefined }, { label: "Cancel", disabled: true, onPress: () => undefined }]}
+      kicker="Needs a download"
+      tone="ask"
+    />
+  )
+}

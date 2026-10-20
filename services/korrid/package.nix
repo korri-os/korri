@@ -25,12 +25,16 @@ let
         "services/korrid"
         "contracts"
         "contracts/input"
-        # The Steam discovery tests embed the real Steam plugin source
+        # The Steam discovery/launch tests embed the real Steam and runtime sources
         # (plugin_test_fixtures.rs, discovery/provider/tests.rs). Test data
         # only: korrid still loads plugins solely from the installed registry.
         "plugins"
         "plugins/steam"
         "plugins/steam/plugin.ts"
+        "plugins/fex"
+        "plugins/fex/plugin.ts"
+        "plugins/proton"
+        "plugins/proton/plugin.ts"
       ]
       || ((inCrate || inTreaty) && craneLib.filterCargoSources path type)
       # The shared scheduler is host runtime source included by completion.rs.

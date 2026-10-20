@@ -1,7 +1,9 @@
 # Invoked once under dbus-run-session by the public steam-session command.
 # Steam's own artifact paths and the Proton tool name are substituted by
-# packages/default.nix. The FEX and Proton runtime files come from the
-# required plugins through the KORRI_* environment checked by that command.
+# packages/default.nix. The FEX config file and the ready FEX rootfs and
+# Proton-CachyOS directories come from the required plugins through the
+# KORRI_* environment checked by that command; korrid downloaded them before
+# this session started.
 set -Eeuo pipefail
 umask 077
 
@@ -29,8 +31,6 @@ new_console=""
 new_bootstrap=""
 generation=0
 login_deadline=0
-fex_rootfs=""
-proton_dir=""
 forwarded_at=0
 resends=0
 package_dir="$STEAM_HOME/package"
@@ -263,18 +263,6 @@ app_process_present() {
   return 1
 }
 
-# A prepare program prints its ready directory as the last stdout line. Its
-# diagnostics go to this session's stderr.
-run_prepare() {
-  local label="$1" program="$2" result="$3" output status=0
-  output=$("$program" "$KORRI_CACHE_ROOT" 9>&-) || status=$?
-  output="${output##*$'\n'}"
-  if (( status != 0 )) || [[ "$output" != /* || ! -d "$output" ]]; then
-    fail 126 "runtime download failed: $label (prepare exited with status $status)"
-  fi
-  printf -v "$result" '%s' "$output"
-}
-
 # The account root is setgid (game-library-access.nix), so every directory
 # created below it inherits the bit. The game unit's RestrictSUIDSGID then
 # refuses an extractor's chmod of such a directory, and Steam's own unpacking
@@ -302,19 +290,16 @@ if pgrep -x steam >/dev/null; then fail 126 'Steam failed: client is already run
 clean_shared_memory
 # bwrap enters its caller's cwd before the guest helper can change directory.
 cd "$STEAM_HOME"
-say 'runtime: preparing the FEX rootfs and Proton-CachyOS (first run downloads them)'
-run_prepare 'FEX rootfs' "$KORRI_FEX_PREPARE" fex_rootfs
-run_prepare 'Proton-CachyOS' "$KORRI_PROTON_CACHYOS_PREPARE" proton_dir
-export FEX_ROOTFS="$fex_rootfs"
+export FEX_ROOTFS="$KORRI_FEX_ROOTFS"
 say 'seed: preparing ARM64 runtime and client'
 if [[ ! -x "$STEAM_HOME/steamrtarm64/steam" ]]; then
   @helpers@/bin/steam-arm64-seed --apply >>"$STEAM_HOME/logs/session_log.txt" 2>&1 \
     || fail 126 'Steam failed: ARM64 seed failed (see logs/session_log.txt)'
 fi
 # Link on every launch: the seed runs only once per Steam home, and a new
-# Proton pin brings a new tool name and prepared directory.
+# Proton pin brings a new tool name and ready directory.
 mkdir -p "$STEAM_HOME/compatibilitytools.d"
-ln -sfn "$proton_dir" "$STEAM_HOME/compatibilitytools.d/@protonToolName@"
+ln -sfn "$KORRI_PROTON_CACHYOS" "$STEAM_HOME/compatibilitytools.d/@protonToolName@"
 say 'settings: merging Proton, Steam Input and first-launch seeds'
 @settings@/bin/steam-vdf-settings "$STEAM_HOME" "$appid"
 if ! login_present; then say 'login: Steam sign-in required; waiting up to 600 s for manual sign-in'; fi

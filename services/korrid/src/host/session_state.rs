@@ -2094,12 +2094,18 @@ impl HostSessionControl {
             }
             state.reconcile = true;
             if stopped.is_err() {
-                if matches!(
-                    self.backend.state(&launch_id),
-                    Ok(LaunchUnitState::Completed)
-                ) && !seat_stop_failed
-                {
-                    return self.complete_stop(&mut state, launch_id);
+                if !seat_stop_failed {
+                    // The helper can time out while systemd continues the exact
+                    // stop job. Proven progress does not need administrator recovery.
+                    match self.backend.state(&launch_id) {
+                        Ok(LaunchUnitState::Completed) => {
+                            return self.complete_stop(&mut state, launch_id);
+                        }
+                        Ok(LaunchUnitState::Stopping) => {
+                            return HostSessionStop::AlreadyStopping { launch_id };
+                        }
+                        _ => {}
+                    }
                 }
                 *state = ActiveState::RecoveryBlocked;
                 return HostSessionStop::RecoveryBlocked;
@@ -2442,6 +2448,7 @@ mod tests {
         launch_rejected: bool,
         enumeration_unavailable: bool,
         stop_fails_when_collected: bool,
+        stop_times_out: bool,
         freezer_fails: bool,
         window_pids: BTreeMap<String, BTreeSet<i32>>,
         window_pids_fail: bool,
@@ -2577,6 +2584,15 @@ mod tests {
                 return Err(LaunchUnitError::new(
                     LaunchUnitErrorKind::Failed,
                     "Cannot perform operation on frozen unit",
+                ));
+            }
+            if state.stop_times_out {
+                state
+                    .units
+                    .insert(launch_id.into(), LaunchUnitState::Stopping);
+                return Err(LaunchUnitError::new(
+                    LaunchUnitErrorKind::Timeout,
+                    "stop helper timed out while the unit is deactivating",
                 ));
             }
             state
@@ -3153,6 +3169,64 @@ mod tests {
             control.stop(&prepared.launch_id),
             HostSessionStop::Completed {
                 launch_id: prepared.launch_id
+            }
+        );
+    }
+
+    #[test]
+    fn timed_out_stop_reports_pending_until_the_exact_unit_completes() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let control = control(root.path(), backend.clone());
+        let prepared = prepare(&control, "one");
+        let journal = root.path().join("host-session").join(ACTIVE_FILE);
+        let record = fs::read(&journal).unwrap();
+        backend.state.lock().unwrap().stop_times_out = true;
+
+        let outcome = control.stop(&prepared.launch_id);
+        assert_eq!(
+            outcome,
+            HostSessionStop::AlreadyStopping {
+                launch_id: prepared.launch_id.clone(),
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(crate::host_session_stop_outcome(Ok(outcome))).unwrap(),
+            serde_json::json!({"_tag": "Ok", "payload": {"phase": "pending"}})
+        );
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::Stopping {
+                launch_id: prepared.launch_id.clone(),
+                game_id: Some("one".into()),
+            }
+        );
+        assert_eq!(fs::read(&journal).unwrap(), record);
+        assert_eq!(
+            control.stop(&prepared.launch_id),
+            HostSessionStop::AlreadyStopping {
+                launch_id: prepared.launch_id.clone(),
+            }
+        );
+        assert_eq!(
+            backend.state.lock().unwrap().stopped.as_slice(),
+            std::slice::from_ref(&prepared.launch_id)
+        );
+
+        let recovered = HostSessionControl::new(root.path(), backend.clone());
+        assert_eq!(recovered.status(), control.status());
+        backend.insert(&prepared.launch_id, LaunchUnitState::Completed);
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::Completed {
+                launch_id: prepared.launch_id.clone(),
+            }
+        );
+        assert!(!journal.exists());
+        assert_eq!(
+            control.stop(&prepared.launch_id),
+            HostSessionStop::Completed {
+                launch_id: prepared.launch_id,
             }
         );
     }
