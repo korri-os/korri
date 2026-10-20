@@ -20,6 +20,8 @@ describe("first boot through the in-memory korrid contract", () => {
     expect((await client.connectHiddenWifi("Hidden", "anything"))._tag).toBe("Ok")
     expect(await client.finishOnboarding()).toEqual({ _tag: "Ok", payload: { needed: false } })
     expect(await client.onboardingStatus()).toEqual({ _tag: "Ok", payload: { needed: false } })
+    expect(await client.restartOnboarding()).toEqual({ _tag: "Ok", payload: { needed: true } })
+    expect(await client.onboardingStatus()).toEqual({ _tag: "Ok", payload: { needed: true } })
   })
   test("transport failures cannot put a password in error text", async () => {
     const client = createHttpKorridClient("http://127.0.0.1:1", "test")

@@ -16,7 +16,12 @@ export interface DeviceFacts {
   readonly settings?: SettingsSnapshot
   readonly localGameCount?: number
   readonly discovery?: DiscoverySnapshot
+  /** Absent until Korri has read setup progress. */
+  readonly onboardingNeeded?: boolean
 }
+
+/** Setting-local action that puts the device back into first-boot setup. */
+export const SETUP_RESTART_ACTION_ID = "setup-restart"
 
 const countLabel = (count: number, noun: string): string =>
   count === 1 ? `1 ${noun}` : `${count} ${noun}s`
@@ -82,6 +87,25 @@ export function settingsFrom(
                 maxLength: 64,
               },
             } : {}),
+          },
+      // Offered only once setup has finished; during setup the row would be a
+      // no-op, and before the first read Korri cannot say which it is.
+      facts.onboardingNeeded !== false
+        ? undefined
+        : {
+            id: SETUP_RESTART_ACTION_ID,
+            label: "Run setup again",
+            description: "Games, Wi-Fi and identity stay.",
+            interaction: {
+              kind: "action" as const,
+              actionId: SETUP_RESTART_ACTION_ID,
+              confirmation: {
+                title: "Run setup again?",
+                message:
+                  "Korri will show first-boot setup now. Games, Wi-Fi and identity stay.",
+                confirmLabel: "Run setup",
+              },
+            },
           },
     ]),
     group("Controllers", [

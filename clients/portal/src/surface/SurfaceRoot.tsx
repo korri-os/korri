@@ -122,9 +122,16 @@ export function SurfaceRoot({
   } = launchables
 
   const settings = useMemo(
-    () => settingsFrom(facts),
-    [facts],
+    () => settingsFrom({ ...facts, onboardingNeeded }),
+    [facts, onboardingNeeded],
   )
+  // Setup run again: `heard` counts input since setup began, so pads heard
+  // during the first run must not pass the second one unproven.
+  const previousOnboardingNeeded = useRef(onboardingNeeded)
+  useEffect(() => {
+    if (previousOnboardingNeeded.current === false && onboardingNeeded === true) controllerSource.forget()
+    previousOnboardingNeeded.current = onboardingNeeded
+  }, [controllerSource, onboardingNeeded])
 
   const baseModel = useMemo(
     () => surfaceModelFrom(state, {

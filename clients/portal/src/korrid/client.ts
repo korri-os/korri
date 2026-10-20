@@ -81,6 +81,8 @@ export interface KorridClient {
   connectHiddenWifi(ssid: string, password?: string): Promise<NetworkStatusOutcome>
   onboardingStatus(): Promise<OnboardingStatusOutcome>
   finishOnboarding(): Promise<OnboardingStatusOutcome>
+  /** Put the device back into first-boot setup. Nothing else is cleared. */
+  restartOnboarding(): Promise<OnboardingStatusOutcome>
   health(): Promise<HealthOutcome>
   settingsSnapshot(): Promise<SettingsSnapshotOutcome>
   updateSetting(
@@ -294,6 +296,10 @@ export function createHttpKorridClient(
     },
     async finishOnboarding() {
       try { return (await callKorrid(baseUrl, capability, { _tag: "system.onboarding.finish", payload: {} })).outcome }
+      catch { return onboardingUnavailable() }
+    },
+    async restartOnboarding() {
+      try { return (await callKorrid(baseUrl, capability, { _tag: "system.onboarding.restart", payload: {} })).outcome }
       catch { return onboardingUnavailable() }
     },
     async health() {
@@ -913,6 +919,7 @@ export function createInMemoryKorridClient(
     async connectHiddenWifi(ssid) { return connectNetwork(ssid) },
     async onboardingStatus() { return { _tag: "Ok", payload: { needed: onboardingNeeded } } },
     async finishOnboarding() { onboardingNeeded = false; return { _tag: "Ok", payload: { needed: false } } },
+    async restartOnboarding() { onboardingNeeded = true; return { _tag: "Ok", payload: { needed: true } } },
     async health() {
       return { _tag: "Ok", payload: { version: "korrid-in-memory" } }
     },

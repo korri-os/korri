@@ -30,7 +30,7 @@ import {
   type SessionStartResult,
 } from "../korrid/client"
 import { createNetworkOnboarding } from "./network-onboarding"
-import type { DeviceFacts } from "./settings-model"
+import { SETUP_RESTART_ACTION_ID, type DeviceFacts } from "./settings-model"
 import {
   entryKey,
   entryLabel,
@@ -412,6 +412,12 @@ export function useLaunchables(korrid: KorridClient): Launchables {
 
   const runDeviceAction = useCallback(
     (actionId: string) => {
+      if (actionId === SETUP_RESTART_ACTION_ID) {
+        // Korri republishes `onboarding` once the marker is gone; a failure
+        // surfaces through the same system problem as a failed finish.
+        networkOnboarding.restartOnboarding()
+        return
+      }
       if (actionId === "game-folder-rescan") {
         if (
           discoveryActive(factsRef.current.discovery) ||
@@ -455,7 +461,7 @@ export function useLaunchables(korrid: KorridClient): Launchables {
       }
       settingsProblem(actionId, "This setting is not available")
     },
-    [korrid, publishSettingsStatus, settingsProblem],
+    [korrid, networkOnboarding, publishSettingsStatus, settingsProblem],
   )
 
   const changeSetting = useCallback(

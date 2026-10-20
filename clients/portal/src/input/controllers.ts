@@ -22,6 +22,11 @@ export function createControllers() {
       publish([...controllers.filter(controller => controller.id !== id), { id, name, heard: heard.has(id) }])
     },
     removed(id: string) { publish(controllers.filter(controller => controller.id !== id)) },
+    /** Setup has begun again: every pad must prove itself afresh. */
+    forget() {
+      heard.clear()
+      publish(controllers.map(controller => ({ ...controller, heard: false })))
+    },
     disconnected() { publish([]) },
     input,
     gamepads(pads: readonly (GamepadSnapshot | null)[]) {

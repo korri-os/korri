@@ -72,6 +72,30 @@ test("a slow status read is not restarted or starved by a second refresh", async
   expect(host.snapshot().network).toBeDefined()
 })
 
+test("restarting setup brings onboarding back, and a failed restart says so", async () => {
+  const client = createInMemoryKorridClient()
+  const host = createNetworkOnboarding(client)
+  await host.refresh()
+  host.finishOnboarding()
+  await waitFor(() => host.snapshot().onboardingNeeded === false)
+  host.restartOnboarding()
+  await waitFor(() => host.snapshot().onboardingNeeded === true)
+  expect(host.snapshot().problem).toBeUndefined()
+  // Setup can be finished again afterwards.
+  host.finishOnboarding()
+  await waitFor(() => host.snapshot().onboardingNeeded === false)
+
+  const failing = createNetworkOnboarding({ ...client,
+    async restartOnboarding() { return { _tag: "Err", payload: { code: "OnboardingStorageUnavailable", message: "dependency text" } } },
+  })
+  await failing.refresh()
+  expect(failing.snapshot().onboardingNeeded).toBe(false)
+  failing.restartOnboarding()
+  await waitFor(() => failing.snapshot().problem !== undefined)
+  expect(failing.snapshot().onboardingNeeded).toBe(false)
+  expect(failing.snapshot().problem).toBe("Could not restart setup. Try again.")
+})
+
 test("finishing setup is not dropped while a connection is in flight", async () => {
   const host = createNetworkOnboarding(createInMemoryKorridClient())
   await host.refresh()

@@ -39,4 +39,24 @@ test("SurfaceRoot publishes controller evidence, Connecting and completion throu
   await act(async () => host!.finishOnboarding())
   await settle(() => model?.onboarding === undefined)
   expect(seen.join()).not.toContain("test-passphrase")
+
+  // Setup finished: Settings offers to run it again. Setup in progress: it
+  // does not. Running it brings `onboarding` back and the pad must be heard
+  // again. Nothing else changes: the network connection stays.
+  const restart = () => model?.settings.flatMap(group => group.items).find(item => item.id === "setup-restart")
+  expect(restart()).toMatchObject({
+    label: "Run setup again",
+    interaction: { kind: "action", actionId: "setup-restart", confirmation: { confirmLabel: "Run setup" } },
+  })
+  await act(async () => host!.runAction("setup-restart"))
+  await settle(() => model?.onboarding !== undefined)
+  expect(model?.onboarding?.controllers).toEqual([{ id: "pad", name: "Pad", heard: false }])
+  expect(model?.network?.connection._tag).toBe("Wifi")
+  expect(model?.status._tag).not.toBe("Problem")
+  expect(restart()).toBeUndefined()
+  await act(async () => controllers.input("pad"))
+  expect(model?.onboarding?.controllers[0]?.heard).toBe(true)
+  await act(async () => host!.finishOnboarding())
+  await settle(() => model?.onboarding === undefined)
+  expect(restart()).toBeDefined()
 })
