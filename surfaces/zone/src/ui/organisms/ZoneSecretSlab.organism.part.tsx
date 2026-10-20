@@ -10,6 +10,11 @@ export default function Default() {
   return <ZoneSecretSlab label="Backup secret" secret={fixtureEncryptedSecret} />
 }
 
+/** The cursor on the slab: the pink edge. */
+export function Focused() {
+  return <ZoneSecretSlab focused label="Backup secret" secret={fixtureEncryptedSecret} />
+}
+
 /** A short string: one line, centred. */
 export function OneLine() {
   return <ZoneSecretSlab label="Backup secret" secret={fixtureEncryptedSecret.slice(0, 20)} />

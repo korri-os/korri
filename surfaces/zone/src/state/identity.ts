@@ -69,8 +69,13 @@ export type IdentityFlow =
   | { readonly _tag: "confirmDelete"; readonly publicKey: string; readonly focus: IdentityChoice }
   /** NO / YES: is it backed up? The only way to the deletion. */
   | { readonly _tag: "confirmBackedUp"; readonly publicKey: string; readonly focus: IdentityChoice }
-  /** A backup was asked for: Korri's Working, then its BackupReady, is drawn; B closes it. */
-  | { readonly _tag: "showSecret" }
+  /**
+   * A backup was asked for: Korri's Working, then its BackupReady, is drawn;
+   * B closes it. `onSlab` is where the cursor rests: on the secret's slab,
+   * which leaves the BACK UP card unmarked so its QR code can fill the well,
+   * or back on the band.
+   */
+  | { readonly _tag: "showSecret"; readonly onSlab: boolean }
 
 export interface IdentityModel {
   readonly card: number
@@ -91,6 +96,8 @@ export const IDENTITY_BUNKER_PREFIX = "bunker://"
 export type IdentityMessage =
   /** The cursor is on a save card. */
   | { readonly _tag: "FocusedSaveCard"; readonly index: number }
+  /** The cursor is on the backup's slab. */
+  | { readonly _tag: "FocusedSecret" }
   /** A on a save card. */
   | { readonly _tag: "ChoseSaveCard"; readonly index: number }
   /** The cursor is on a key. */
@@ -154,8 +161,20 @@ function step(
       return stay(model)
 
     case "FocusedSaveCard":
-      return flow._tag === "idle" || flow._tag === "showSecret"
+      if (flow._tag === "showSecret") {
+        return stay(model.card === message.index && !flow.onSlab
+          ? model
+          : { card: message.index, flow: { _tag: "showSecret", onSlab: false } })
+      }
+      return flow._tag === "idle"
         ? stay(model.card === message.index ? model : { ...model, card: message.index })
+        : stay(model)
+
+    case "FocusedSecret":
+      // Korri's backup can be on screen with no flow behind it (the page
+      // was opened over it): the cursor on its slab is the same fact.
+      return (flow._tag === "showSecret" && !flow.onSlab) || (flow._tag === "idle" && status === "BackupReady")
+        ? stay({ ...model, flow: { _tag: "showSecret", onSlab: true } })
         : stay(model)
 
     case "ChoseSaveCard":
@@ -271,7 +290,7 @@ function done(model: IdentityModel, status: SurfaceIdentityManagement["status"][
       if (password.trim() === "") return stay(model)
       if (flow.for.kind === "export") {
         if (status === "Working") return stay(model)
-        return ask({ ...model, flow: { _tag: "showSecret" } }, { _tag: "ExportIdentityBackup", password })
+        return ask({ ...model, flow: { _tag: "showSecret", onSlab: false } }, { _tag: "ExportIdentityBackup", password })
       }
       return stay({
         ...model,

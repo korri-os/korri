@@ -83,6 +83,25 @@ describe("FocusedSaveCard", () => {
   })
 })
 
+describe("FocusedSecret", () => {
+  test("the cursor on the backup's slab", () => {
+    expect(after(at({ _tag: "showSecret", onSlab: false }), { _tag: "FocusedSecret" }, ready).model.flow)
+      .toEqual({ _tag: "showSecret", onSlab: true })
+  })
+  test("Korri's backup with no flow behind it is the same fact", () => {
+    expect(after(IDENTITY_START, { _tag: "FocusedSecret" }, ready).model.flow).toEqual({ _tag: "showSecret", onSlab: true })
+    expect(after(IDENTITY_START, { _tag: "FocusedSecret" }, idle).model).toBe(IDENTITY_START)
+  })
+  test("already there changes nothing", () => {
+    const model = at({ _tag: "showSecret", onSlab: true })
+    expect(after(model, { _tag: "FocusedSecret" }, ready).model).toBe(model)
+  })
+  test("a card focused from the slab takes the cursor back to the band", () => {
+    expect(after(at({ _tag: "showSecret", onSlab: true }), { _tag: "FocusedSaveCard", index: 0 }, ready).model)
+      .toEqual(at({ _tag: "showSecret", onSlab: false }))
+  })
+})
+
 describe("ChoseSaveCard", () => {
   test("BACK UP asks a password on the secret keyboard", () => {
     const { model } = after(IDENTITY_START, { _tag: "ChoseSaveCard", index: 0 })
@@ -113,7 +132,7 @@ describe("ChoseSaveCard", () => {
     expect(after(model, { _tag: "ChoseSaveCard", index: 0 }).model).toBe(model)
   })
   test("a finished backup on screen is dismissed when another flow starts", () => {
-    const { model, requests } = after(at({ _tag: "showSecret" }), { _tag: "ChoseSaveCard", index: 2 }, ready)
+    const { model, requests } = after(at({ _tag: "showSecret", onSlab: false }), { _tag: "ChoseSaveCard", index: 2 }, ready)
     expect(model.flow._tag).toBe("bunker")
     expect(requests).toEqual([{ _tag: "DismissIdentityStatus" }])
   })
@@ -160,7 +179,7 @@ describe("PressedDone", () => {
   })
   test("a backup password asks Korri for the backup, verbatim, and waits for it", () => {
     const { model, requests } = after(at({ _tag: "password", for: { kind: "export" }, draft: draft(" pass word ") }), { _tag: "PressedDone" })
-    expect(model.flow).toEqual({ _tag: "showSecret" })
+    expect(model.flow).toEqual({ _tag: "showSecret", onSlab: false })
     expect(requests).toEqual([{ _tag: "ExportIdentityBackup", password: " pass word " }])
   })
   test("nothing is sent while Korri works", () => {
@@ -269,7 +288,7 @@ describe("Answered", () => {
 describe("DismissedStatus", () => {
   test("clears Korri's problem, switched or backup status, and ends a flow waiting on it", () => {
     for (const identity of [problem, switched, ready]) {
-      expect(after(at({ _tag: "showSecret" }), { _tag: "DismissedStatus" }, identity))
+      expect(after(at({ _tag: "showSecret", onSlab: false }), { _tag: "DismissedStatus" }, identity))
         .toEqual({ model: IDENTITY_START, requests: [{ _tag: "DismissIdentityStatus" }] })
     }
   })
@@ -287,7 +306,7 @@ describe("DismissedStatus", () => {
 describe("PressedBack", () => {
   test("closes Korri's dialogs and a finished backup, as DISMISS does", () => {
     for (const identity of [problem, switched, ready]) {
-      expect(after(at({ _tag: "showSecret" }), { _tag: "PressedBack" }, identity).requests).toEqual([{ _tag: "DismissIdentityStatus" }])
+      expect(after(at({ _tag: "showSecret", onSlab: false }), { _tag: "PressedBack" }, identity).requests).toEqual([{ _tag: "DismissIdentityStatus" }])
     }
   })
   test("on the band changes nothing", () => {
@@ -299,7 +318,7 @@ describe("PressedBack", () => {
       { _tag: "secret", draft: draft("ab") },
       { _tag: "bunker", draft: draft("bunker://", "uri") },
       { _tag: "confirmDelete", publicKey: KEY_A, focus: 0 },
-      { _tag: "showSecret" },
+      { _tag: "showSecret", onSlab: false },
     ] as const) {
       expect(after(at(flow, 2), { _tag: "PressedBack" }).model).toEqual(at({ _tag: "idle" }, 2))
     }
@@ -321,7 +340,7 @@ describe("PressedBack", () => {
 describe("KorriPublished", () => {
   test("a republished model never dismisses Korri's status", () => {
     for (const identity of [problem, switched, ready, working]) {
-      const model = at({ _tag: "showSecret" })
+      const model = at({ _tag: "showSecret", onSlab: false })
       expect(after(model, { _tag: "KorriPublished" }, identity)).toEqual({ model, requests: [] })
     }
   })

@@ -146,6 +146,9 @@ describe("C16 back up", () => {
 
     publish(identityOf({ _tag: "BackupReady", encryptedSecret: SECRET }, { localBackupAvailable: true }))
     expect(screen.getByRole("img", { name: "Backup QR code" })).toBeTruthy()
+    // The cursor rests on the slab; the band goes unmarked so the QR takes the well.
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Backup secret" }))
+    expect(card(/Back up/).dataset["focused"]).toBeUndefined()
     const text = screen.getByRole("region", { name: "Backup secret" })
     expect(text.textContent).toContain("ncry")
     expect(within(text).getByText("ptse")).toBeTruthy()

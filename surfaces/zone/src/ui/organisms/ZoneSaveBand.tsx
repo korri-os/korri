@@ -34,11 +34,14 @@ export interface ZoneSaveBandCard {
 export function ZoneSaveBand({
   cards,
   focusedIndex,
+  marked = true,
   onFocus,
   onChoose,
 }: {
   readonly cards: readonly ZoneSaveBandCard[]
   readonly focusedIndex: number
+  /** Whether the centred card wears the cursor: off while the cursor is elsewhere on the page. */
+  readonly marked?: boolean
   readonly onFocus?: (index: number) => void
   readonly onChoose?: (index: number) => void
 }) {
@@ -71,7 +74,7 @@ export function ZoneSaveBand({
           >
             <ZoneSaveCard
               body={card.body}
-              focused={index === focus}
+              focused={marked && index === focus}
               header={card.header}
               onFocus={onFocus === undefined ? undefined : () => onFocus(index)}
               tag={card.tag}

@@ -104,13 +104,25 @@ export function Password() {
   return <Scene initial={sceneOf(idle, { card: 0, flow: { _tag: "password", for: { kind: "export" }, draft: draft("hummingbird", "letters", "d") } })} />
 }
 
-/** C16: Korri's backup: the QR in BACK UP's well and the secret on the slab. B closes it. */
+/** C16: Korri's backup: the QR in BACK UP's well and the secret on the slab, the cursor on the slab. B closes it. */
 export function BackupReady() {
   return (
     <Scene
       initial={sceneOf(
         fixtureIdentity({ _tag: "BackupReady", encryptedSecret: fixtureEncryptedSecret }, { localBackupAvailable: true, retiredPublicKeys: fixtureRetiredKeys }),
-        { card: 0, flow: { _tag: "showSecret" } },
+        { card: 0, flow: { _tag: "showSecret", onSlab: true } },
+      )}
+    />
+  )
+}
+
+/** C16: the cursor moved back to the band: BACK UP wears it, and its QR stands clear of the triangles. */
+export function BackupReadyOnCard() {
+  return (
+    <Scene
+      initial={sceneOf(
+        fixtureIdentity({ _tag: "BackupReady", encryptedSecret: fixtureEncryptedSecret }, { localBackupAvailable: true, retiredPublicKeys: fixtureRetiredKeys }),
+        { card: 0, flow: { _tag: "showSecret", onSlab: false } },
       )}
     />
   )
@@ -179,7 +191,7 @@ export function ConfirmBackedUp() {
 
 /** C20: Korri works: its operation over the band. */
 export function Working() {
-  return <Scene initial={sceneOf(fixtureIdentity({ _tag: "Working", operation: "Encrypting backup" }, { retiredPublicKeys: fixtureRetiredKeys }), { card: 0, flow: { _tag: "showSecret" } })} />
+  return <Scene initial={sceneOf(fixtureIdentity({ _tag: "Working", operation: "Encrypting backup" }, { retiredPublicKeys: fixtureRetiredKeys }), { card: 0, flow: { _tag: "showSecret", onSlab: false } })} />
 }
 
 /** C20: Korri's problem, verbatim, with DISMISS. */

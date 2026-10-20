@@ -31,7 +31,7 @@ export interface ZoneSaveDataDraft {
  */
 export type ZoneSaveDataFlow =
   | { readonly _tag: "idle" }
-  | { readonly _tag: "showSecret" }
+  | { readonly _tag: "showSecret"; readonly onSlab: boolean }
   | { readonly _tag: "password" | "secret" | "bunker"; readonly draft: ZoneSaveDataDraft }
   | { readonly _tag: "disposition" | "trust"; readonly focus: number }
   | { readonly _tag: "confirmDelete" | "confirmBackedUp"; readonly publicKey: string; readonly focus: number }
@@ -39,6 +39,7 @@ export type ZoneSaveDataFlow =
 /** What the page reports. Each is one of the identity model's messages. */
 export type ZoneSaveDataEvent =
   | { readonly _tag: "FocusedSaveCard"; readonly index: number }
+  | { readonly _tag: "FocusedSecret" }
   | { readonly _tag: "ChoseSaveCard"; readonly index: number }
   | { readonly _tag: "FocusedKey"; readonly key: string }
   | { readonly _tag: "TypedChar"; readonly char: string }
@@ -80,7 +81,7 @@ const keyEvent = (key: ZoneKey): ZoneSaveDataEvent => {
 const CAPTIONS = { password: "Password", secret: "Backup", bunker: "Bunker" } as const
 
 /** The cards, in band order. The words are the page's labels; the keys are Korri's. */
-function cardsOf(identity: SurfaceIdentityManagement | undefined): readonly ZoneSaveBandCard[] {
+function cardsOf(identity: SurfaceIdentityManagement | undefined, marked: boolean): readonly ZoneSaveBandCard[] {
   if (identity === undefined) {
     return [{ id: "unavailable", header: "Identity", body: { kind: "text", text: "Not available" } }]
   }
@@ -92,7 +93,7 @@ function cardsOf(identity: SurfaceIdentityManagement | undefined): readonly Zone
       ? {
         kind: "node",
         node: (
-          <span className="zone-save-data-qr">
+          <span className="zone-save-data-qr" data-clear={marked ? "triangles" : undefined}>
             <ZoneQrWell label="Backup QR code" value={status.encryptedSecret} />
           </span>
         ),
@@ -126,7 +127,9 @@ function cardsOf(identity: SurfaceIdentityManagement | undefined): readonly Zone
  * Korri's status is drawn as Korri states it. Working is the busy strip
  * over the band with the operation as its kicker. BackupReady turns the
  * BACK UP card's well into the QR code and lays the secret on a white slab
- * beside or under the band. Problem and Switched are dialogs.
+ * beside or under the band; the cursor goes to the slab, and the band goes
+ * unmarked so the QR code can take the whole well. Problem and Switched are
+ * dialogs.
  *
  * A shape: it takes Korri's identity slice and the identity model's value
  * as props and reports every press and every focus through `onEvent`.
@@ -150,7 +153,11 @@ export function ZoneSaveData({
   const root = useRef<HTMLDivElement>(null)
   const status = identity?.status
   const send = (event: ZoneSaveDataEvent) => onEvent?.(event)
-  const cards = cardsOf(identity)
+  const backup = status?._tag === "BackupReady" ? status.encryptedSecret : undefined
+  // The cursor on the backup's slab leaves the band unmarked, so the QR code
+  // in BACK UP's well needs no room for the card's triangles.
+  const marked = !(backup !== undefined && flow._tag === "showSecret" && flow.onSlab)
+  const cards = cardsOf(identity, marked)
 
   // When a step opens or closes, the cursor goes to it: DOM mechanics only.
   // The first render leaves focus where the host has it.
@@ -163,6 +170,7 @@ export function ZoneSaveData({
     if (page === null) return
     const target = page.querySelector<HTMLElement>(".zone-save-data-layer [data-focused]")
       ?? page.querySelector<HTMLElement>(".zone-save-data-layer button")
+      ?? page.querySelector<HTMLElement>(".zone-save-data-slab [tabindex]")
       ?? page.querySelector<HTMLElement>(".zone-save-data-band button[data-focused]")
     target?.focus()
   }, [scene])
@@ -232,8 +240,6 @@ export function ZoneSaveData({
     }
   }
 
-  const backup = status?._tag === "BackupReady" ? status.encryptedSecret : undefined
-
   return (
     <ZoneShell {...frame}>
       <div className="zone-save-data" ref={root}>
@@ -250,13 +256,14 @@ export function ZoneSaveData({
             <ZoneSaveBand
               cards={cards}
               focusedIndex={card}
+              marked={marked}
               onChoose={index => send({ _tag: "ChoseSaveCard", index })}
               onFocus={index => send({ _tag: "FocusedSaveCard", index })}
             />
           </div>
           {backup === undefined ? null : (
             <div className="zone-save-data-slab">
-              <ZoneSecretSlab label="Backup secret" secret={backup} />
+              <ZoneSecretSlab focused={!marked} label="Backup secret" onFocus={() => send({ _tag: "FocusedSecret" })} secret={backup} />
             </div>
           )}
         </div>

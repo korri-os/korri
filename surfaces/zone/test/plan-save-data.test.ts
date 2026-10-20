@@ -11,6 +11,7 @@ import {
   secretLines,
   shortKey,
   ZONE_KEY_END,
+  ZONE_SAVE_BANNER_FOLD_ASPECT,
   ZONE_SAVE_SLAB_BESIDE_ASPECT,
   ZONE_SECRET_GROUP,
   ZONE_SECRET_LINE,
@@ -38,9 +39,31 @@ describe("planSaveData", () => {
   })
   test("the page's container query holds the same number", () => {
     const css = readFileSync(join(import.meta.dir, "..", "src", "pages", "ZoneSaveData.css"), "utf8")
-    const match = /@container zone-save-data \(min-aspect-ratio: (\d+) \/ (\d+)\)/.exec(css)
+    const match = /@container zone-save-data \(min-aspect-ratio: (\d+) \/ (\d+)\) \{\s*\.zone-save-data-main/.exec(css)
     expect(match).not.toBeNull()
     expect(Number(match?.[1]) / Number(match?.[2])).toBe(ZONE_SAVE_SLAB_BESIDE_ASPECT)
+  })
+})
+
+describe("the banner", () => {
+  const height = 200
+  const edge = height * ZONE_SAVE_BANNER_FOLD_ASPECT
+  test("stays one pixel under the fold and folds at it and past it", () => {
+    expect(planSaveData(edge - 1, height).banner).toBe(true)
+    expect(planSaveData(edge, height).banner).toBe(false)
+    expect(planSaveData(edge + 1, height).banner).toBe(false)
+  })
+  test("the ladder: only the 1280x300 strip folds it", () => {
+    expect(planSaveData(1280, 720 - 74 - 58).banner).toBe(true)
+    expect(planSaveData(640, 480 - 56 - 46).banner).toBe(true)
+    expect(planSaveData(480, 800 - 74 - 58).banner).toBe(true)
+    expect(planSaveData(1280, 300 - 56 - 46).banner).toBe(false)
+  })
+  test("the page's container query holds the same number", () => {
+    const css = readFileSync(join(import.meta.dir, "..", "src", "pages", "ZoneSaveData.css"), "utf8")
+    const queries = [...css.matchAll(/@container zone-save-data \(min-aspect-ratio: (\d+) \/ (\d+)\) \{\s*\.zone-save-data-banner/g)]
+    expect(queries.length).toBe(1)
+    expect(Number(queries[0]?.[1]) / Number(queries[0]?.[2])).toBe(ZONE_SAVE_BANNER_FOLD_ASPECT)
   })
 })
 

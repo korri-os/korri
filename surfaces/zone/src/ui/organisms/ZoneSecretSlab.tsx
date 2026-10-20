@@ -21,10 +21,14 @@ const HALF = ZONE_SECRET_LINE / ZONE_SECRET_GROUP / 2
  * The slab draws the string it is given and nothing else; the caller
  * decides what is safe to show.
  */
-export function ZoneSecretSlab({ secret, label }: {
+export function ZoneSecretSlab({ secret, label, focused = false, onFocus }: {
   readonly secret: string
+  /** The cursor is on the slab: it wears the pink edge. */
+  readonly focused?: boolean
   /** What the slab holds, for a reader that cannot see it. */
   readonly label: string
+  /** The host's cursor arrived on the slab. */
+  readonly onFocus?: () => void
 }) {
   const slab = useRef<HTMLDivElement>(null)
   const lines = secretLines(secret).map(groups => [groups.slice(0, HALF), groups.slice(HALF)].filter(half => half.length > 0))
@@ -36,7 +40,14 @@ export function ZoneSecretSlab({ secret, label }: {
 
   return (
     <div className="zone-secret-slab" ref={slab}>
-      <div aria-label={label} className="zone-secret-slab-paper" role="region" tabIndex={0}>
+      <div
+        aria-label={label}
+        className="zone-secret-slab-paper"
+        data-focused={focused ? "true" : undefined}
+        onFocus={onFocus}
+        role="region"
+        tabIndex={0}
+      >
         <div className="zone-secret-slab-text">
           {lines.map((halves, line) => (
             <p className="zone-secret-slab-line" key={line}>
