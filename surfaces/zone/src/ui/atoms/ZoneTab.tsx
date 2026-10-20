@@ -1,5 +1,4 @@
 import "./ZoneTab.css"
-import "../../zone-motion.css"
 import { ZoneBanner } from "./ZoneBanner"
 import { ZoneCaps } from "./ZoneCaps"
 import { ZonePanel } from "./ZonePanel"

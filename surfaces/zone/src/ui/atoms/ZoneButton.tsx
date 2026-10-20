@@ -1,5 +1,4 @@
 import "./ZoneButton.css"
-import "../../zone-motion.css"
 import { ZoneCaps } from "./ZoneCaps"
 import { ZonePanel } from "./ZonePanel"
 import { ZoneTriangle } from "./ZoneTriangle"
