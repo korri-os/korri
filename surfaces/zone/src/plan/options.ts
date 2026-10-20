@@ -134,13 +134,22 @@ export function zoneConnectionValue(connection: SurfaceNetworkConnection): strin
   }
 }
 
-/** A listed network's words: strength, then LOCK and KNOWN when they hold. The row draws bars before them. */
+/**
+ * A network's words, one set shared by OPTIONS and first boot: LOCKED or
+ * OPEN for its security, then SAVED when Korri knows its key. Zone's own
+ * words, so they are set in caps; the strength before them is Korri's.
+ */
+export function zoneWifiWords(network: SurfaceWifiNetwork): readonly string[] {
+  return [network.secured ? "LOCKED" : "OPEN", ...(network.known ? ["SAVED"] : [])]
+}
+
+/**
+ * A listed network's value: its strength, then its words ("72% LOCKED
+ * SAVED"). The one function OPTIONS and first boot name a network with;
+ * OPTIONS draws bars before it.
+ */
 export function zoneNetworkValue(network: SurfaceWifiNetwork): string {
-  return [
-    `${network.strengthPercent}%`,
-    ...(network.secured ? ["LOCK"] : []),
-    ...(network.known ? ["KNOWN"] : []),
-  ].join(" ")
+  return [`${network.strengthPercent}%`, ...zoneWifiWords(network)].join(" ")
 }
 
 /**

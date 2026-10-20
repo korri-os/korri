@@ -8,6 +8,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { useLayoutEffect, useRef } from "react"
 import { planControllerCards } from "../plan/onboarding"
+import { zoneNetworkValue } from "../plan/options"
 import { zoneArtPxOf } from "../use-zone-plan"
 import { useZoneLayerFocus } from "../use-zone-layer-focus"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
@@ -90,7 +91,7 @@ function wifiRows(network: SurfaceNetwork | undefined): readonly ZoneOptionGroup
       id: onboardingNetworkTarget(item.id),
       label: item.ssid,
       verbatimLabel: true,
-      value: `${item.strengthPercent}% ${item.known ? "Saved" : item.secured ? "Locked" : "Open"}`,
+      value: zoneNetworkValue(item),
       interaction: { kind: "action", actionId: item.id } as const,
     })) : []),
     ...(wifi?._tag === "Available"

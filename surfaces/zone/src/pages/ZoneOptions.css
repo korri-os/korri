@@ -74,7 +74,7 @@
   min-width: 0;
 }
 
-/* A network's bars, then its strength, LOCK and KNOWN. */
+/* A network's bars, then its strength, LOCKED or OPEN, and SAVED. */
 .zone-options-network {
   display: inline-flex;
   align-items: center;

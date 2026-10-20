@@ -942,14 +942,18 @@ describe("network", () => {
   test("C22 wi-fi list", () => {
     const { host, publish, press } = mount()
     openOptions(press)
-    // Strongest first, with strength, LOCK and KNOWN.
+    // Strongest first, with strength, LOCKED or OPEN, and SAVED.
     const listed = [...document.querySelectorAll(".zone-options-scroll .zone-option-row-label")]
       .map(label => label.textContent).filter(label => ["hummingbird-lake", "Neighbour", "Cafe"].includes(label ?? ""))
     expect(listed).toEqual(["hummingbird-lake", "Neighbour", "Cafe"])
     // A listed network's row, not the connection row that also names it.
-    expect(network("hummingbird-lake").textContent).toContain("72% LOCK KNOWN")
-    expect(network("Neighbour").textContent).toContain("48% LOCK")
-    expect(network("Cafe").textContent).not.toContain("LOCK")
+    expect(network("hummingbird-lake").textContent).toContain("72%")
+    expect(network("hummingbird-lake").textContent).toContain("LOCKED SAVED")
+    expect(network("Neighbour").textContent).toContain("48%")
+    expect(network("Neighbour").textContent).toContain("LOCKED")
+    expect(network("Neighbour").textContent).not.toContain("SAVED")
+    expect(network("Cafe").textContent).toContain("OPEN")
+    expect(network("Cafe").textContent).not.toContain("LOCKED")
     expect(row("SCAN").textContent).toContain("3 FOUND")
     moveTo(row("SCAN"))
     confirm()
