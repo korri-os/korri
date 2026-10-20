@@ -1,0 +1,1007 @@
+; Zone Caps: Zone's own pixel capitals, drawn on this grid by hand.
+;
+; Built into ZoneCaps.woff2 and ZoneCaps.ttf by scripts/build-zone-caps.py.
+; Never trace a screenshot: every block below was drawn from the spec in
+; docs/design/surfaces/zone/REFINEMENT.md, section 2a.
+;
+; The spec: capitals only. A glyph is 6 art px of ink and 1 of gap (M, W
+; and the wide ligatures 8 + 1; I 2 + 1; space 4). The cap is 10 art px.
+; Strokes are 2 px. Diagonals are 1:1 stairs. Round letters (O C G Q S D U
+; 0 6 8 9, and the bowls of B P R and the digits that curve) lose one pixel
+; on each outer corner: a 45 degree notch, Zone's own signature, never a
+; rounded corner. Accents stand in 3 px of headroom above the cap: 2 rows of
+; mark over a 1-px gap. The digits are all 7 wide, so they are tabular.
+;
+; The format:
+;
+;   glyph U+0041          a character, by code point
+;   mark grave            an accent, used by compose lines below
+;   top=N                 the block's first row stands N px above the
+;                         baseline (default 10: the first row is the cap's
+;                         top row; marks default to 13)
+;   advance=N             the advance width in art px (default: the ink's
+;                         width plus the 1-px gap)
+;   compose U+00C0 A grave        a capital as a base glyph and a mark,
+;   compose U+0130 I dotabove dx=-1   centred over the base unless dx says
+;
+; '#' is ink, '.' is paper. One art px is 100 font units; the em is the cap,
+; so font-size = 10 art px x --zone-px draws caps-1.
+
+; ---- A to Z ----
+
+glyph U+0041 A
+.####.
+######
+##..##
+##..##
+######
+######
+##..##
+##..##
+##..##
+##..##
+
+glyph U+0042 B
+#####.
+######
+##..##
+##..##
+#####.
+#####.
+##..##
+##..##
+######
+#####.
+
+glyph U+0043 C
+.####.
+######
+##..##
+##....
+##....
+##....
+##....
+##..##
+######
+.####.
+
+glyph U+0044 D
+#####.
+######
+##..##
+##..##
+##..##
+##..##
+##..##
+##..##
+######
+#####.
+
+glyph U+0045 E
+######
+######
+##....
+##....
+#####.
+#####.
+##....
+##....
+######
+######
+
+glyph U+0046 F
+######
+######
+##....
+##....
+#####.
+#####.
+##....
+##....
+##....
+##....
+
+glyph U+0047 G
+.####.
+######
+##..##
+##....
+##.###
+##.###
+##..##
+##..##
+######
+.####.
+
+glyph U+0048 H
+##..##
+##..##
+##..##
+##..##
+######
+######
+##..##
+##..##
+##..##
+##..##
+
+glyph U+0049 I
+##
+##
+##
+##
+##
+##
+##
+##
+##
+##
+
+glyph U+004A J
+....##
+....##
+....##
+....##
+....##
+....##
+##..##
+##..##
+######
+.####.
+
+glyph U+004B K
+##..##
+##..##
+##.##.
+####..
+###...
+###...
+####..
+##.##.
+##..##
+##..##
+
+glyph U+004C L
+##....
+##....
+##....
+##....
+##....
+##....
+##....
+##....
+######
+######
+
+glyph U+004D M
+##....##
+###..###
+########
+##.##.##
+##....##
+##....##
+##....##
+##....##
+##....##
+##....##
+
+glyph U+004E N
+##..##
+##..##
+###.##
+######
+######
+##.###
+##..##
+##..##
+##..##
+##..##
+
+glyph U+004F O
+.####.
+######
+##..##
+##..##
+##..##
+##..##
+##..##
+##..##
+######
+.####.
+
+glyph U+0050 P
+#####.
+######
+##..##
+##..##
+######
+#####.
+##....
+##....
+##....
+##....
+
+glyph U+0051 Q
+.####.
+######
+##..##
+##..##
+##..##
+##..##
+##..##
+##.###
+######
+.#####
+....##
+
+glyph U+0052 R
+#####.
+######
+##..##
+##..##
+######
+#####.
+##.##.
+##..##
+##..##
+##..##
+
+glyph U+0053 S
+.####.
+######
+##..##
+##....
+#####.
+.#####
+....##
+##..##
+######
+.####.
+
+glyph U+0054 T
+######
+######
+..##..
+..##..
+..##..
+..##..
+..##..
+..##..
+..##..
+..##..
+
+glyph U+0055 U
+##..##
+##..##
+##..##
+##..##
+##..##
+##..##
+##..##
+##..##
+######
+.####.
+
+glyph U+0056 V
+##..##
+##..##
+##..##
+##..##
+##..##
+##..##
+##..##
+.####.
+..##..
+..##..
+
+glyph U+0057 W
+##....##
+##....##
+##....##
+##....##
+##....##
+##....##
+##.##.##
+########
+###..###
+##....##
+
+glyph U+0058 X
+##..##
+##..##
+##..##
+.####.
+..##..
+..##..
+.####.
+##..##
+##..##
+##..##
+
+glyph U+0059 Y
+##..##
+##..##
+##..##
+##..##
+.####.
+..##..
+..##..
+..##..
+..##..
+..##..
+
+glyph U+005A Z
+######
+######
+....##
+...##.
+..##..
+.##...
+##....
+##....
+######
+######
+
+; ---- 0 to 9: all 7 wide, so they are tabular ----
+
+glyph U+0030 0
+.####.
+######
+##..##
+##..##
+##.###
+###.##
+##..##
+##..##
+######
+.####.
+
+glyph U+0031 1
+..##..
+.###..
+####..
+..##..
+..##..
+..##..
+..##..
+..##..
+######
+######
+
+glyph U+0032 2
+.####.
+######
+##..##
+....##
+...##.
+..##..
+.##...
+##....
+######
+######
+
+glyph U+0033 3
+.####.
+######
+##..##
+....##
+..###.
+..###.
+....##
+##..##
+######
+.####.
+
+glyph U+0034 4
+...##.
+..###.
+.####.
+##.##.
+##.##.
+######
+######
+...##.
+...##.
+...##.
+
+glyph U+0035 5
+######
+######
+##....
+##....
+#####.
+######
+....##
+##..##
+######
+.####.
+
+glyph U+0036 6
+.####.
+######
+##....
+##....
+#####.
+######
+##..##
+##..##
+######
+.####.
+
+glyph U+0037 7
+######
+######
+....##
+...##.
+..##..
+..##..
+..##..
+..##..
+..##..
+..##..
+
+glyph U+0038 8
+.####.
+######
+##..##
+##..##
+.####.
+######
+##..##
+##..##
+######
+.####.
+
+glyph U+0039 9
+.####.
+######
+##..##
+##..##
+######
+.#####
+....##
+##..##
+######
+.####.
+
+; ---- punctuation ----
+
+glyph U+0020 space advance=4
+
+glyph U+00A0 no-break space advance=4
+
+glyph U+0027 '
+##
+##
+##
+
+glyph U+0022 "
+##.##
+##.##
+##.##
+
+glyph U+003A :
+..
+..
+##
+##
+..
+..
+..
+..
+##
+##
+
+glyph U+002E .
+..
+..
+..
+..
+..
+..
+..
+..
+##
+##
+
+glyph U+002C ,
+..
+..
+..
+..
+..
+..
+..
+..
+##
+##
+.#
+#.
+
+glyph U+002D -
+....
+....
+....
+....
+####
+####
+
+; The slash and the per cent sign step two rows per column: a 1:1 stair
+; ten rows tall would need eleven columns.
+glyph U+002F /
+....##
+....##
+...##.
+...##.
+..##..
+..##..
+.##...
+.##...
+##....
+##....
+
+glyph U+0025 %
+##..##
+##..##
+...##.
+...##.
+..##..
+..##..
+.##...
+.##...
+##..##
+##..##
+
+glyph U+003F ?
+.####.
+######
+##..##
+....##
+..###.
+..##..
+..##..
+......
+..##..
+..##..
+
+glyph U+0021 !
+##
+##
+##
+##
+##
+##
+##
+..
+##
+##
+
+glyph U+0026 &
+.###..
+##.##.
+##.##.
+.###..
+####.#
+##.###
+##..##
+##.###
+######
+.###.#
+
+glyph U+002B +
+......
+......
+..##..
+..##..
+######
+######
+..##..
+..##..
+
+glyph U+0028 (
+.##
+##.
+##.
+##.
+##.
+##.
+##.
+##.
+##.
+.##
+
+glyph U+0029 )
+##.
+.##
+.##
+.##
+.##
+.##
+.##
+.##
+.##
+##.
+
+glyph U+0023 #
+.#..#.
+.#..#.
+######
+######
+.#..#.
+.#..#.
+######
+######
+.#..#.
+.#..#.
+
+glyph U+0040 @
+.####.
+######
+##..##
+##.###
+##.###
+##.###
+##....
+##....
+######
+.####.
+
+glyph U+2026 …
+........
+........
+........
+........
+........
+........
+........
+........
+##.##.##
+##.##.##
+
+glyph U+00D7 ×
+......
+......
+##..##
+.####.
+..##..
+..##..
+.####.
+##..##
+
+glyph U+25B2 ▲
+........
+........
+........
+........
+........
+........
+...##...
+..####..
+.######.
+########
+
+; ---- the marks: accents above the cap, hooks below the baseline ----
+
+mark grave
+.##...
+..##..
+
+mark acute
+...##.
+..##..
+
+mark circumflex
+.####.
+##..##
+
+mark caron
+##..##
+.####.
+
+mark tilde
+.###.#
+#.###.
+
+mark diaeresis
+......
+##..##
+
+mark ring top=13
+..##..
+.#..#.
+..##..
+
+mark macron
+......
+######
+
+mark breve
+##..##
+.####.
+
+mark dotabove
+......
+..##..
+
+mark doubleacute
+..#..#
+.#..#.
+
+; The marks over I, which is 2 wide: 4 wide, centred, so they overhang its
+; gap by one pixel each side.
+mark gravei
+##..
+.##.
+
+mark acutei
+.##.
+##..
+
+mark circumflexi
+.##.
+#..#
+
+mark diaeresisi
+....
+#..#
+
+mark tildei
+.#.#
+#.#.
+
+mark macroni
+....
+####
+
+mark brevei
+#..#
+.##.
+
+mark dotabovei
+....
+.##.
+
+mark cedilla top=0
+..##..
+.##...
+
+mark commabelow top=0
+..##..
+.##...
+
+mark ogonek top=0
+...##.
+....##
+
+; ---- Latin-1 capitals ----
+
+compose U+00C0 A grave
+compose U+00C1 A acute
+compose U+00C2 A circumflex
+compose U+00C3 A tilde
+compose U+00C4 A diaeresis
+compose U+00C5 A ring
+compose U+00C7 C cedilla
+compose U+00C8 E grave
+compose U+00C9 E acute
+compose U+00CA E circumflex
+compose U+00CB E diaeresis
+compose U+00CC I gravei
+compose U+00CD I acutei
+compose U+00CE I circumflexi
+compose U+00CF I diaeresisi
+compose U+00D1 N tilde
+compose U+00D2 O grave
+compose U+00D3 O acute
+compose U+00D4 O circumflex
+compose U+00D5 O tilde
+compose U+00D6 O diaeresis
+compose U+00D9 U grave
+compose U+00DA U acute
+compose U+00DB U circumflex
+compose U+00DC U diaeresis
+compose U+00DD Y acute
+
+glyph U+00C6 Æ
+.#######
+########
+##..##..
+##..##..
+#######.
+#######.
+##..##..
+##..##..
+##..####
+##..####
+
+glyph U+00D0 Ð
+.####.
+.#####
+.##.##
+.##.##
+######
+######
+.##.##
+.##.##
+.#####
+.####.
+
+glyph U+00D8 Ø
+.####.
+######
+##..##
+##.###
+##.###
+###.##
+###.##
+##..##
+######
+.####.
+
+glyph U+00DE Þ
+##....
+##....
+#####.
+######
+##..##
+##..##
+######
+#####.
+##....
+##....
+
+; ---- Latin Extended-A capitals ----
+
+compose U+0100 A macron
+compose U+0102 A breve
+compose U+0104 A ogonek
+compose U+0106 C acute
+compose U+0108 C circumflex
+compose U+010A C dotabove
+compose U+010C C caron
+compose U+010E D caron
+compose U+0110 Ð
+compose U+0112 E macron
+compose U+0114 E breve
+compose U+0116 E dotabove
+compose U+0118 E ogonek
+compose U+011A E caron
+compose U+011C G circumflex
+compose U+011E G breve
+compose U+0120 G dotabove
+compose U+0122 G commabelow
+compose U+0124 H circumflex
+compose U+0128 I tildei
+compose U+012A I macroni
+compose U+012C I brevei
+compose U+012E I ogonek
+compose U+0130 I dotabovei
+compose U+0134 J circumflex
+compose U+0136 K commabelow
+compose U+0139 L acute dx=-2
+compose U+013B L commabelow
+compose U+0143 N acute
+compose U+0145 N commabelow
+compose U+0147 N caron
+compose U+014C O macron
+compose U+014E O breve
+compose U+0150 O doubleacute
+compose U+0154 R acute
+compose U+0156 R commabelow
+compose U+0158 R caron
+compose U+015A S acute
+compose U+015C S circumflex
+compose U+015E S cedilla
+compose U+0160 S caron
+compose U+0162 T cedilla
+compose U+0164 T caron
+compose U+0168 U tilde
+compose U+016A U macron
+compose U+016C U breve
+compose U+016E U ring
+compose U+0170 U doubleacute
+compose U+0172 U ogonek
+compose U+0174 W circumflex
+compose U+0176 Y circumflex
+compose U+0178 Y diaeresis
+compose U+0179 Z acute
+compose U+017B Z dotabove
+compose U+017D Z caron
+
+glyph U+0126 Ħ
+##..##
+##..##
+######
+##..##
+######
+######
+##..##
+##..##
+##..##
+##..##
+
+glyph U+0132 Ĳ
+##....##
+##....##
+##....##
+##....##
+##....##
+##....##
+##.##.##
+##.##.##
+##.#####
+##..###.
+
+glyph U+013D Ľ
+##..##
+##..##
+##..#.
+##....
+##....
+##....
+##....
+##....
+######
+######
+
+glyph U+013F Ŀ
+##....
+##....
+##....
+##....
+##.##.
+##.##.
+##....
+##....
+######
+######
+
+glyph U+0141 Ł
+.##...
+.##...
+.##...
+.##...
+.####.
+####..
+.##...
+.##...
+.#####
+.#####
+
+glyph U+014A Ŋ
+##..##
+##..##
+###.##
+######
+######
+##.###
+##..##
+##..##
+##..##
+##..##
+....##
+..###.
+
+glyph U+0152 Œ
+.#######
+########
+##..##..
+##..##..
+##..###.
+##..###.
+##..##..
+##..##..
+########
+.#######
+
+glyph U+0166 Ŧ
+######
+######
+..##..
+..##..
+.####.
+.####.
+..##..
+..##..
+..##..
+..##..
