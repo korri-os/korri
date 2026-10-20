@@ -1,6 +1,5 @@
-/* Over the whole page it stands on. */
+/* Over the whole stage it stands on (the status layer's, over the page). */
 .zone-launch-card {
   position: absolute;
   inset: 0;
-  z-index: 9;
 }

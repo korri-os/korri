@@ -16,6 +16,7 @@ import {
   statusProgressKnown,
   statusRunning,
 } from "../../fixtures/fixture-layers"
+import { useFixtureHold } from "../../fixtures/fixture-moments"
 import { useFixtureTake } from "../../fixtures/fixture-take"
 import { createStatusProgram } from "../../fixtures/layer-program"
 import { fixtureCards } from "../../fixtures/zone-cards"
@@ -24,6 +25,7 @@ import { ZoneCardBand } from "../molecules/ZoneCardBand"
 import { ZoneTabStrip } from "../molecules/ZoneTabStrip"
 import { ZoneShell } from "../templates/ZoneShell"
 import { ZoneGround } from "./ZoneGround"
+import { ZoneLaunchCard } from "./ZoneLaunchCard"
 import { ZoneStatusLayer } from "./ZoneStatusLayer"
 
 export const name = "Status layer"
@@ -79,8 +81,9 @@ const shellPage = (
   </>
 )
 
-/* A stand-in for the launch title card: the title card's flat yellow. */
-const titleStage = <ZoneGround ground="titlecard" />
+/* The launch title card as ZoneSurface passes it, for the game the status
+ * names. The states that show it hold its moment at rest. */
+const titleStage = (title: string, system: string, act: number) => <ZoneLaunchCard act={act} system={system} title={title} />
 
 /** Korri's problem, the game in yellow, DISMISS lit before RETRY. */
 export default function Default() {
@@ -157,14 +160,16 @@ export function RunningUnderHeader() {
   return <Scenario page={shellPage} status={statusRunning} />
 }
 
-/** A launch under the title card (the stage): the busy strip stands along its foot. */
+/** A launch under the title card (the stage): the busy strip stands along its foot, no veil over the card. */
 export function BusyUnderStage() {
-  return <Scenario page={standInPage} stage={titleStage} status={statusBusyDetail} />
+  useFixtureHold(1000)
+  return <Scenario page={standInPage} stage={titleStage("Spelunky", "PC", 8)} status={statusBusyDetail} />
 }
 
-/** Korri asks while the title card stands: the question covers it. */
+/** Korri asks while the title card stands: the question covers it, the veil between. */
 export function ConfirmOverStage() {
-  return <Scenario page={standInPage} stage={titleStage} status={statusConfirmForGame} />
+  useFixtureHold(1000)
+  return <Scenario page={standInPage} stage={titleStage("Hollow Knight", "PC", 3)} status={statusConfirmForGame} />
 }
 
 /** Korri's download with a known end over the page: the red bar under the detail, CANCEL lit. */
