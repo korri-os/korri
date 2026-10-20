@@ -4124,6 +4124,7 @@ fn secure_host_routers(
 
 /// Tests reach a loopback provider site through the acquisition engine's
 /// test DNS answers; production composes the default coordinator.
+#[cfg(test)]
 fn secure_host_routers_with_acquisition(
     runtime: host::HostRuntime,
     private_state_root: &Path,
