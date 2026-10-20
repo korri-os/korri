@@ -17,6 +17,9 @@ let
       ../../../surfaces/pico/package.json
       ../../../surfaces/pico/tsconfig.json
       ../../../surfaces/pico/src
+      ../../../surfaces/zone/package.json
+      ../../../surfaces/zone/tsconfig.json
+      ../../../surfaces/zone/src
       ../../../surfaces/boxbuster/package.json
       ../../../surfaces/boxbuster/tsconfig.json
       ../../../surfaces/boxbuster/src
@@ -41,6 +44,8 @@ let
         ../../../surfaces/shift/bun.lock
         ../../../surfaces/pico/package.json
         ../../../surfaces/pico/bun.lock
+        ../../../surfaces/zone/package.json
+        ../../../surfaces/zone/bun.lock
         ../../../surfaces/boxbuster/package.json
         ../../../surfaces/boxbuster/bun.lock
         ../../../packages/intrinsic-design/package.json
@@ -68,6 +73,11 @@ let
         bun install --production --frozen-lockfile --ignore-scripts --os=linux --cpu='*'
       )
       (
+        cd surfaces/zone
+        # Zone is built by Vite as Pico is: only qrcode, no Caliper dev dependencies.
+        bun install --production --frozen-lockfile --ignore-scripts --os=linux --cpu='*'
+      )
+      (
         cd surfaces/boxbuster
         # Boxbuster is built by Vite too; it needs only three and its renderer.
         bun install --production --frozen-lockfile --ignore-scripts --os=linux --cpu='*'
@@ -81,7 +91,7 @@ let
     '';
     installPhase = ''
       runHook preInstall
-      for project in surfaces/shift surfaces/pico surfaces/boxbuster clients/portal; do
+      for project in surfaces/shift surfaces/pico surfaces/zone surfaces/boxbuster clients/portal; do
         mkdir -p "$out/$project"
         cp -R "$project/node_modules" "$out/$project/"
       done
@@ -89,7 +99,7 @@ let
     '';
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-Gi6xES5VZFyQRcMMnFcUmZaTR9N6XmGxs0dV311nr+M=";
+    outputHash = "sha256-x4hMNxBDh0JphJf6I0zKdGQ4mvHr3QCVLpICYQ6sMLQ=";
   };
 in
 pkgs.stdenvNoCC.mkDerivation {
@@ -109,7 +119,7 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preBuild
     export HOME="$TMPDIR/home"
     mkdir -p "$HOME"
-    for project in surfaces/shift surfaces/pico surfaces/boxbuster clients/portal; do
+    for project in surfaces/shift surfaces/pico surfaces/zone surfaces/boxbuster clients/portal; do
       cp -R "${dependencies}/$project/node_modules" "$project/"
       chmod -R u+w "$project/node_modules"
     done
@@ -131,6 +141,9 @@ pkgs.stdenvNoCC.mkDerivation {
     # emits only what code references, so they are copied here, beside it.
     mkdir -p "$out/licenses/pico-fonts"
     cp ../../surfaces/pico/src/fonts/licenses/*.txt "$out/licenses/pico-fonts/"
+    # Zone's one face, Anton, is under the SIL OFL; its text travels the same way.
+    mkdir -p "$out/licenses/zone-fonts"
+    cp ../../surfaces/zone/src/fonts/OFL.txt "$out/licenses/zone-fonts/anton-OFL.txt"
     runHook postInstall
   '';
 
@@ -153,19 +166,21 @@ pkgs.stdenvNoCC.mkDerivation {
     grep -Fq 'korridPort' "''${js[@]}"
     grep -Fq 'korridCapability' "''${js[@]}"
     ! grep -Fq '/runtime.json' "''${js[@]}"
-    # Both source-built surfaces must ship, not just an empty Vite shell.
+    # The source-built surfaces must ship, not just an empty Vite shell.
     grep -Fq 'pico-screen' "''${css[@]}"
     grep -Fq 'data-shift-surface' "''${css[@]}"
+    grep -Fq 'zone-screen' "''${css[@]}"
     # Pico's faces whose licences ask for their text to travel with every
     # copy (Spleen's BSD 2-Clause, Tiny5's OFL) ship it beside the bundle.
     grep -Fq 'Frederic Cambus' "$out/licenses/pico-fonts/spleen-LICENSE.txt"
     grep -Fq 'SIL OPEN FONT LICENSE' "$out/licenses/pico-fonts/tiny5-OFL.txt"
+    grep -Fq 'SIL OPEN FONT LICENSE' "$out/licenses/zone-fonts/anton-OFL.txt"
     runHook postInstallCheck
   '';
 
   passthru = { inherit dependencies; };
   meta = {
-    description = "Immutable static Korri portal with Pico and Shift";
+    description = "Immutable static Korri portal with Pico, Zone and Shift";
     platforms = [
       "x86_64-linux"
       "aarch64-linux"
