@@ -72,6 +72,7 @@ export type ZoneGamesEvent =
   | { readonly _tag: "ChoseLaunch"; readonly gameId: string; readonly locationId?: string }
   | { readonly _tag: "FocusedKey"; readonly id: string }
   | { readonly _tag: "PressedKey"; readonly key: ZoneKey }
+  | { readonly _tag: "ChoseGameOpts" }
   | { readonly _tag: "FocusedGameOpt"; readonly index: number }
   | {
       readonly _tag: "ChoseGameAction"
@@ -147,6 +148,9 @@ export const launchLabel = (launch: ZoneGamesLaunch): string => {
   return launch.place.here ? `${verb} here` : `${verb} on ${launch.place.label}`
 }
 
+/** The OPTS. button's id in the action row; no launch choice is named so. */
+const OPTS_ID = "game-opts"
+
 /** The buttons in a region, in order: the page's handle on DOM focus. */
 const buttonsIn = (region: Element | null): HTMLButtonElement[] =>
   region === null ? [] : [...region.querySelectorAll("button")]
@@ -157,7 +161,8 @@ const buttonsIn = (region: Element | null): HTMLButtonElement[] =>
  * The shell's top strip holds the B and A hints, the three tabs and the
  * FIND key at their right end. The body is the card band with the focused
  * game centred, a line of Korri's session facts under it, and the action
- * row: PLAY, CONTINUE, or one button per place when there is a choice. The
+ * row: PLAY, CONTINUE, or one button per place when there is a choice,
+ * then OPTS., which opens GAME OPTS. as the host's `options` does. The
  * foot reads the clock, the device, the network and the build.
  *
  * Over the page, one at a time: GAME OPTS. over the band, the keyboard in
@@ -230,8 +235,12 @@ export function ZoneGames(props: ZoneGamesProps) {
     })),
   ]
 
-  const actions: readonly ZoneAction[] = launches.map(launch => ({ id: launch.id, label: launchLabel(launch) }))
-  const focusedLaunch = zone === "actions" ? launches[focusedAction]?.id : undefined
+  // The play buttons, then OPTS.: GAME OPTS. by d-pad and A, as `options` opens it.
+  const actions: readonly ZoneAction[] = [
+    ...launches.map(launch => ({ id: launch.id, label: launchLabel(launch) })),
+    { id: OPTS_ID, label: "Opts." },
+  ]
+  const focusedLaunch = zone === "actions" ? actions[focusedAction]?.id : undefined
   // One place: its button is the default and stays lit. A choice: nothing is
   // lit until the cursor is on one.
   const lit = choice ? focusedLaunch : launches[0]?.id
@@ -344,8 +353,12 @@ export function ZoneGames(props: ZoneGamesProps) {
                       actions={actions}
                       focused={focusedLaunch}
                       lit={lit}
-                      onFocus={id => report({ _tag: "FocusedAction", index: launches.findIndex(launch => launch.id === id) })}
+                      onFocus={id => report({ _tag: "FocusedAction", index: actions.findIndex(action => action.id === id) })}
                       onPress={id => {
+                        if (id === OPTS_ID) {
+                          onEvent({ _tag: "ChoseGameOpts" })
+                          return
+                        }
                         const launch = launches.find(candidate => candidate.id === id)
                         if (launch !== undefined) onEvent({ _tag: "ChoseLaunch", gameId: game.id, locationId: launch.locationId })
                       }}

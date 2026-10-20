@@ -80,6 +80,15 @@ describe("PressedOptions", () => {
   })
 })
 
+describe("ChoseGameOpts", () => {
+  test("OPTS. in the action row opens GAME OPTS. as the options button does", () => {
+    const from = at({ card: 2, zone: "actions", action: 1 })
+    expect(after(from, { _tag: "ChoseGameOpts" }).model).toEqual(after(from, { _tag: "PressedOptions" }).model)
+    expect(after(from, { _tag: "ChoseGameOpts" }).model.layers).toEqual(["gameopts"])
+    expect(after(at({ layers: ["gameopts"] }), { _tag: "ChoseGameOpts" }).model.layers).toEqual(["gameopts"])
+  })
+})
+
 describe("PressedMenu", () => {
   test("jumps to the tabs, cursor on the current tab", () => {
     const next = after(at({ tab: "savedata", tabCursor: "games", zone: "cards" }), { _tag: "PressedMenu" }).model

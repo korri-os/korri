@@ -116,7 +116,7 @@ describe("C4: launch", () => {
   test("one place: PLAY, lit; A on the card launches it", () => {
     const { host } = mount()
     focus(card("Hollow Knight"))
-    expect(launches()).toEqual([{ label: "Play", lit: true }])
+    expect(launches()).toEqual([{ label: "Play", lit: true }, { label: "Opts.", lit: false }])
     click(card("Hollow Knight"))
     expect(host.calls).toEqual(["launch:hollow-knight"])
   })
@@ -130,17 +130,17 @@ describe("C4: launch", () => {
 
   test("resumable: CONTINUE", () => {
     mount()
-    expect(launches()).toEqual([{ label: "Continue", lit: true }])
+    expect(launches()).toEqual([{ label: "Continue", lit: true }, { label: "Opts.", lit: false }])
   })
 
   test("a choice: PLAY HERE and PLAY ON ZAO, none lit; A on the card drops into the row and launches nothing", () => {
     const { host } = mount()
     focus(card("Spelunky"))
-    expect(launches()).toEqual([{ label: "Play here", lit: false }, { label: "Play on zao", lit: false }])
+    expect(launches()).toEqual([{ label: "Play here", lit: false }, { label: "Play on zao", lit: false }, { label: "Opts.", lit: false }])
     click(card("Spelunky"))
     expect(host.calls).toEqual([])
     expect(document.activeElement).toBe(button("Play here"))
-    expect(launches()).toEqual([{ label: "Play here", lit: true }, { label: "Play on zao", lit: false }])
+    expect(launches()).toEqual([{ label: "Play here", lit: true }, { label: "Play on zao", lit: false }, { label: "Opts.", lit: false }])
     focus(button("Play on zao"))
     click(button("Play on zao"))
     expect(host.calls).toEqual(["launch:spelunky:zao"])
@@ -160,6 +160,18 @@ describe("C5: GAME OPTS.", () => {
     expect(screen.getByText("zao is not on the network")).toBeTruthy()
     expect(document.activeElement).toBe(button("Verify files"))
     expect(document.querySelector(".zone-games-band")?.hasAttribute("inert")).toBe(true)
+  })
+
+  test("OPTS. at the end of the action row opens GAME OPTS. without the options button; B comes back to it", () => {
+    const { press } = mount()
+    focus(card("Spelunky"))
+    focus(button("Opts."))
+    click(button("Opts."))
+    expect(screen.getByText("Game opts.")).toBeTruthy()
+    expect(document.activeElement).toBe(button("Verify files"))
+    press("back")
+    expect(screen.queryByText("Game opts.")).toBeNull()
+    expect(document.activeElement).toBe(button("Opts."))
   })
 
   test("a plain action runs at once", () => {

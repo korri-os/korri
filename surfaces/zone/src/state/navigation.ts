@@ -133,7 +133,9 @@ function step(nav: ZoneNavigation, message: ZoneNavMessage, korri: SurfaceModel)
     case "PressedBack":
       return back(nav, korri)
     case "PressedOptions":
+    case "ChoseGameOpts":
       // GAME OPTS. for the focused card, when there is one and nothing is over the page.
+      // OPTS. in the action row opens it too, so d-pad and A alone reach it.
       return topLayer(nav) === "none" && nav.tab === "games" && bandGames(nav, korri).length > 0
         ? stay(push({ ...nav, opts: ZONE_OPTS_START }, "gameopts")) : stay(nav)
     case "PressedMenu":

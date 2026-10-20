@@ -332,9 +332,12 @@ describe("catalog", () => {
   })
 
   test("C5 per-game actions", () => {
-    const { host, press } = mount()
+    // d-pad and A alone: OPTS. at the end of the action row, never the options button.
+    const { host } = mount()
+    const opts = () => button("Opts.", document.querySelector<HTMLElement>(".zone-games-actions")!)
     moveTo(button("Spelunky"))
-    press("options")
+    moveTo(opts())
+    confirm()
     expect(onScreen("Game opts.")).toBe(true)
     expect(onScreen("zao is not on the network")).toBe(true)
     // Disabled: A does nothing.
@@ -350,7 +353,8 @@ describe("catalog", () => {
     confirm()
     expect(calls(host)).toEqual([["runGameAction", "spelunky", "delete-save"]])
     // A plain one runs at once.
-    press("options")
+    moveTo(opts())
+    confirm()
     moveTo(button("Verify files"))
     confirm()
     expect(calls(host).at(-1)).toEqual(["runGameAction", "spelunky", "verify"])

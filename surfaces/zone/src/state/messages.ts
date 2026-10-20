@@ -47,6 +47,8 @@ export type ZoneMessage =
   /** A on a key. */
   | { readonly _tag: "PressedKey"; readonly key: ZoneFindKey }
   // GAME OPTS.
+  /** A on OPTS. at the end of the action row: GAME OPTS. opens, as `options` opens it. */
+  | { readonly _tag: "ChoseGameOpts" }
   /** The cursor is on a GAME OPTS. row. */
   | { readonly _tag: "FocusedGameOpt"; readonly index: number }
   /** A on one of Korri's game actions. The facts come with it: `update` never reads the host. */

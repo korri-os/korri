@@ -12,7 +12,8 @@ stylesheet, and it is built to ship from another repository unchanged.
 
 - A **zone select**. Games are stages. The band scrolls sideways; the focused
   card is the one you are about to enter. The action row under it says what
-  entering means: PLAY, CONTINUE, PLAY ON a named device.
+  entering means: PLAY, CONTINUE, PLAY ON a named device, then OPTS. for
+  GAME OPTS.
 - **Three tabs** across the top: GAMES, OPTIONS, SAVE DATA. GAMES wears the
   one yellow-on-blue hexagonal banner. OPTIONS holds settings and Wi-Fi. SAVE
   DATA holds identity.
@@ -116,7 +117,8 @@ comes in as a prop and a change goes out through a callback.
 - `layers`: a stack over the page, each one of
   `gameopts | keyboard | busy | problem | overlay | onboarding | idle`.
   An empty stack is `none`. Back pops the top layer; a host status pushes
-  `busy` or `problem`; `options` pushes `gameopts`; 30 s without input pushes
+  `busy` or `problem`; OPTS. in the action row (`ChoseGameOpts`) and its
+  shortcut `options` push `gameopts`; 30 s without input pushes
   `idle` (the idle cycle itself is built later).
 
 `menu` jumps to the tabs. `system` jumps to the SYSTEM group under OPTIONS.
@@ -230,6 +232,10 @@ bun run lint
   kept lets go of it, on the same game; B on the keyboard deletes, and on an
   empty draft drops the keyboard and the filter. The draft holds 40
   characters.
+- **OPTS. is the last button of the action row.** It opens GAME OPTS. as
+  `options` does, so a person with d-pad, confirm and back alone reaches
+  Korri's game actions (C28). It is never lit by default; B from GAME
+  OPTS. returns the cursor to it.
 - **GAME OPTS. is a header (GAME OPTS.) over a group titled with the game.**
   Each enabled action is a row whose value is RUN (red when destructive);
   a disabled action is a read-only row whose value is Korri's description,
@@ -562,7 +568,7 @@ What takes the screen, first match wins (`zoneShown`):
 |---|---|
 | back | Korri's Problem first (dismiss); Busy is never cancelled by it. Then the shown page's own rule; on OPTIONS and SAVE DATA, when the page has nothing to close, to the GAMES tab; on GAMES, navigation's rule; then nothing |
 | menu | the cursor to the tabs, on every tab. OPTIONS' keyboard commits instead; a dialog or an identity step holds the cursor |
-| options | GAME OPTS. on GAMES; nothing on OPTIONS or SAVE DATA |
+| options | GAME OPTS. on GAMES, a shortcut for OPTS. in the action row; nothing on OPTIONS or SAVE DATA |
 | system | OPTIONS with the cursor on its SYSTEM group (`focusSystemGroup`) |
 
 PAUSED, first boot and RUN WITH have no tabs on screen, so menu, options
@@ -630,7 +636,7 @@ C1  GAMES band: three stripe wells and LOADING, Korri's message under GAMES with
 C2  ZoneCardBand cards: title, subtitle tag, a section spine per section, cover art or the stripe well with initials (wide art is not drawn) — test: zone-navigation-acceptance "C2 browse"
 C3  facts line LAST PLAYED, PLAYS, TIME under the band; CONTINUE for a resumable game — test: zone-navigation-acceptance "C3 game facts"
 C4  action row: A on a one-place card launches; a choice drops into PLAY HERE / PLAY ON <device> — test: zone-navigation-acceptance "C4 launch"
-C5  GAME OPTS. (options): Korri's actions as rows, a disabled one with its reason, NO / YES before a destructive one — test: zone-navigation-acceptance "C5 per-game actions"
+C5  GAME OPTS. (OPTS. at the end of the action row; options is its shortcut): Korri's actions as rows, a disabled one with its reason, NO / YES before a destructive one — test: zone-navigation-acceptance "C5 per-game actions"
 C6  FIND key (menu twice) and the keyboard filtering the band, FIND: <draft> kept, B lets go — test: zone-navigation-acceptance "C6 find"
 C7  ZoneStatusLayer busy strip: kicker, detail, the game in yellow, Korri's CANCEL; the page inert — test: zone-navigation-acceptance "C7 busy"
 C8  ZoneStatusLayer running strip: kicker, OPEN, the game's title; the page stays usable — test: zone-navigation-acceptance "C8 running"
