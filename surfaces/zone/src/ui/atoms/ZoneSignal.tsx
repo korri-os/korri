@@ -5,8 +5,11 @@ import { ZonePanel } from "./ZonePanel"
 
 const BARS = [1, 2, 3, 4] as const
 
-/** Bars lit for a strength: one per quarter, never none while connected. */
-function litBars(strengthPercent: number): number {
+/** Bars lit for a strength: one per quarter, never none while connected.
+ * The treaty makes the strength optional; a connection with no reading
+ * shows one bar, as a connection it is. */
+function litBars(strengthPercent: number | undefined): number {
+  if (strengthPercent === undefined) return 1
   return Math.max(1, Math.min(BARS.length, Math.round(strengthPercent / 25)))
 }
 

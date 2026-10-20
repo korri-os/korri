@@ -317,6 +317,21 @@ describe("every component has a consumer", () => {
     "ZoneCardBand",
     // The save-data page: the vertical save-card select (DIRECTION C16).
     "ZoneSaveCard",
+    // The games page: hints in the shell, the tab strip, the action row
+    // under the focused card, the foot, GAME OPTS. over the band, the keyboard
+    // for find-by-text, and the idle title card (C1 to C6, C26 to C29).
+    "ZoneKeycap",
+    "ZoneTabStrip",
+    "ZoneActionRow",
+    "ZoneFoot",
+    "ZoneOptionGroup",
+    "ZoneKeyboard",
+    "ZoneTitleCard",
+    // The save-data page: the QR in a save card's well (C16).
+    "ZoneQrWell",
+    // The layers organism: the busy strip and the problem dialog (C7, C9).
+    "ZoneBusyStrip",
+    "ZoneDialog",
   ]
 
   test("no atom, molecule, organism or template is imported by nothing", () => {
