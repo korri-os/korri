@@ -710,3 +710,87 @@ describe("identity", () => {
     expect(calls(host).at(-1)).toEqual(["dismissIdentityStatus"])
   })
 })
+
+// ---- C21 to C23: the network ----
+
+describe("network", () => {
+  const withNetwork = (network: SurfaceNetwork): SurfaceModel => ({ ...HOME, network })
+  const wifi = (more: Partial<Extract<SurfaceNetwork["wifi"], { _tag: "Available" }>>): SurfaceNetwork => {
+    if (NETWORK.wifi._tag !== "Available") throw new Error("the fixture has Wi-Fi")
+    return { ...NETWORK, wifi: { ...NETWORK.wifi, ...more } }
+  }
+  const connectionRow = () => row("CONNECTION").textContent
+
+  test("C21 connection", () => {
+    const { publish, press } = mount()
+    // The foot names the network on every page; OPTIONS says it in full.
+    expect(document.querySelector(".zone-foot")?.textContent).toContain("hummingbird-lake")
+    openOptions(press)
+    expect(connectionRow()).toContain("hummingbird-lake")
+    expect(connectionRow()).toContain("72%")
+    publish(withNetwork({ ...NETWORK, connection: { _tag: "Wired" } }))
+    expect(connectionRow()).toContain("WIRED")
+    publish(withNetwork({ ...NETWORK, connection: { _tag: "Offline" } }))
+    expect(connectionRow()).toContain("OFFLINE")
+  })
+
+  test("C22 wi-fi list", () => {
+    const { host, publish, press } = mount()
+    openOptions(press)
+    // Strongest first, with strength, LOCK and KNOWN.
+    const listed = [...document.querySelectorAll(".zone-options-scroll .zone-option-row-label")]
+      .map(label => label.textContent).filter(label => ["hummingbird-lake", "Neighbour", "Cafe"].includes(label ?? ""))
+    expect(listed).toEqual(["hummingbird-lake", "Neighbour", "Cafe"])
+    expect(row("hummingbird-lake").textContent).toContain("72% LOCK KNOWN")
+    expect(row("Neighbour").textContent).toContain("48% LOCK")
+    expect(row("Cafe").textContent).not.toContain("LOCK")
+    expect(row("SCAN").textContent).toContain("3 FOUND")
+    moveTo(row("SCAN"))
+    confirm()
+    expect(calls(host)).toEqual([["scanWifi"]])
+    publish(withNetwork(wifi({ scanning: true })))
+    expect(row("SCAN").textContent).toContain("SCANNING…")
+    publish(withNetwork(wifi({ attempt: { _tag: "Connecting", ssid: "Cafe" } })))
+    expect(row("Cafe").querySelector("[aria-label='Saving']")).not.toBeNull()
+    publish(withNetwork(wifi({ attempt: { _tag: "Failed", ssid: "Cafe", message: "Cafe did not answer.", passwordRejected: false } })))
+    expect(screen.getByRole("alert").textContent).toBe("Cafe did not answer.")
+    // A rejected key: the keyboard comes back for that network with Korri's reason.
+    publish(withNetwork(wifi({ attempt: { _tag: "Failed", ssid: "Neighbour", message: "The password was wrong.", passwordRejected: true } })))
+    const again = screen.getByRole("dialog", { name: "Password" })
+    expect(again.textContent).toContain("Neighbour")
+    expect(again.textContent).toContain("The password was wrong.")
+    press("back")
+    publish(withNetwork({ ...NETWORK, wifi: { _tag: "NoAdapter" } }))
+    expect(onScreen("NO WI-FI ADAPTER")).toBe(true)
+  })
+
+  test("C23 join", () => {
+    const { host, press } = mount()
+    openOptions(press)
+    // A secured network Korri has no key for asks its password.
+    moveTo(row("Neighbour"))
+    confirm()
+    const password = screen.getByRole("dialog", { name: "Password" })
+    expect(password.textContent).toContain("Neighbour")
+    type("pw", password)
+    moveTo(button("Done", password))
+    confirm()
+    expect(calls(host)).toEqual([["connectWifi", "n-near", "pw"]])
+    // An open one joins at once.
+    moveTo(row("Cafe"))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["connectWifi", "n-cafe"])
+    // A hidden one: its name, then its password.
+    moveTo(row("HIDDEN NETWORK"))
+    confirm()
+    const name = screen.getByRole("dialog", { name: "Network name" })
+    type("lab", name)
+    moveTo(button("Done", name))
+    confirm()
+    const hidden = screen.getByRole("dialog", { name: "Password" })
+    type("pw", hidden)
+    moveTo(button("Done", hidden))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["connectHiddenWifi", "lab", "pw"])
+  })
+})
