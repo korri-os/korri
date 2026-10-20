@@ -20,6 +20,8 @@ pub(super) struct DownloadEngine {
     stall_window: Duration,
     retry_delay: Duration,
     addresses: policy::AddressPolicy,
+    /// The cap for a game with no expected hash (`MAX_GAME_BYTES`).
+    game_cap: u64,
     /// Test-only DNS answers, so declared DNS names reach a loopback server.
     #[cfg(test)]
     names: std::collections::BTreeMap<String, IpAddr>,
@@ -30,6 +32,7 @@ impl Default for DownloadEngine {
             stall_window: Duration::from_secs(60),
             retry_delay: Duration::from_secs(2),
             addresses: policy::AddressPolicy::Public,
+            game_cap: MAX_GAME_BYTES,
             #[cfg(test)]
             names: Default::default(),
         }
@@ -86,8 +89,15 @@ impl DownloadEngine {
             stall_window,
             retry_delay: Duration::from_millis(1),
             addresses: policy::AddressPolicy::AllowLoopback,
+            game_cap: MAX_GAME_BYTES,
             names: Default::default(),
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_game_cap(mut self, cap: u64) -> Self {
+        self.game_cap = cap;
+        self
     }
 
     #[cfg(test)]
@@ -268,7 +278,7 @@ impl DownloadEngine {
             return Err(Failure::WebPage);
         }
         let total = response.content_length();
-        if total.is_some_and(|total| total > MAX_GAME_BYTES) {
+        if total.is_some_and(|total| total > self.game_cap) {
             return Err(Failure::TooLarge);
         }
         let mut name = [0u8; 12];
@@ -306,7 +316,7 @@ impl DownloadEngine {
                     break;
                 };
                 done += chunk.len() as u64;
-                if done > MAX_GAME_BYTES {
+                if done > self.game_cap {
                     return Err(Failure::TooLarge);
                 }
                 if lead.len() < 512 {

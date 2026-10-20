@@ -15,6 +15,8 @@ pub(super) struct Route {
     pub body: Vec<u8>,
     /// Send the body in pieces of this size with this pause between them.
     pub pace: Option<(usize, std::time::Duration)>,
+    /// Send no Content-Length: the body ends when the connection closes.
+    pub unsized_body: bool,
 }
 
 impl Route {
@@ -24,7 +26,12 @@ impl Route {
             headers: vec![("Content-Type".into(), content_type.into())],
             body: body.into(),
             pace: None,
+            unsized_body: false,
         }
+    }
+    pub fn unsized_body(mut self) -> Self {
+        self.unsized_body = true;
+        self
     }
     pub fn paced(mut self, piece: usize, pause: std::time::Duration) -> Self {
         self.pace = Some((piece, pause));
@@ -36,6 +43,7 @@ impl Route {
             headers: vec![("Location".into(), location.into())],
             body: Vec::new(),
             pace: None,
+            unsized_body: false,
         }
     }
     pub fn header(mut self, name: &str, value: &str) -> Self {
@@ -99,6 +107,7 @@ impl HttpFixture {
                         headers: Vec::new(),
                         body: b"missing".to_vec(),
                         pace: None,
+                        unsized_body: false,
                     });
                     let mut head = format!("HTTP/1.1 {} Status\r\n", route.status);
                     let declares_length = route
@@ -108,7 +117,7 @@ impl HttpFixture {
                     for (name, value) in &route.headers {
                         head.push_str(&format!("{name}: {value}\r\n"));
                     }
-                    if !declares_length {
+                    if !declares_length && !route.unsized_body {
                         head.push_str(&format!("Content-Length: {}\r\n", route.body.len()));
                     }
                     head.push_str("Connection: close\r\n\r\n");
