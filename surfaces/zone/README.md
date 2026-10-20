@@ -586,3 +586,15 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   QR in BACK UP's well, the `data-clear` padding and BackupReadyOnCard.
   `--zone-save-band-share` and `--zone-save-slab-share` are now unused and
   left in the savedata block for its owner to remove.
+- **A retired key offers BACK UP and DELETE.** Supersedes "Retired keys
+  are deleted, never backed up". While a retired card has the cursor a
+  `ZoneActionRow` under the band offers both, BACK UP lit. A on the card
+  drops into the row on BACK UP (`flow: retired`), as A on a game with a
+  choice of places does; it sends nothing. BACK UP runs this key's
+  password step with `retiredPublicKey`, and Korri's backup shows as
+  C16's does. B steps back from either action's first step to the row,
+  and from the row to the card. The card loses its red DELETE tag, since
+  A no longer deletes. The band keeps the row's room whenever Korri lists
+  a retired key, so it does not jump; on a strip 4 times wider than tall
+  the row stands at the band's end instead of under it. The backup view
+  does not say which key it holds; the person chose it one step before.

@@ -18,6 +18,9 @@
  *   - a deletion is sent only after the backup is confirmed, and a switch
  *     only after the trust loss is confirmed: both flags are always true
  *     when a request carries them;
+ *   - a retired key offers two actions, BACK UP and DELETE, in a row under
+ *     the band; its backup is the same password step as this key's, and
+ *     the request carries the retired key;
  *   - Korri's status is cleared only by the player (B, DISMISS, OK, or a
  *     new flow over a finished backup), never by a republished model.
  */
@@ -40,16 +43,24 @@ export type IdentitySource =
   | { readonly kind: "backup"; readonly encryptedSecret: string; readonly password: string }
   | { readonly kind: "bunker"; readonly bunkerUri: string }
 
-/** What a password is typed for: a new backup of this key, or opening a backup to switch to. */
+/**
+ * What a password is typed for: a new backup of this key (or of a retired
+ * key, when `retiredPublicKey` is set), or opening a backup to switch to.
+ */
 export type IdentityPasswordFor =
-  | { readonly kind: "export" }
+  | { readonly kind: "export"; readonly retiredPublicKey?: string }
   | { readonly kind: "switch"; readonly encryptedSecret: string }
 
 /** A two-button dialog's cursor: 0 is the left button, 1 the right. */
 export type IdentityChoice = 0 | 1
 
+/** The two actions a retired key's row offers, in row order. */
+export type IdentityRetiredAction = "backup" | "delete"
+
 export type IdentityFlow =
   | { readonly _tag: "idle" }
+  /** The cursor is in the row under a focused retired key: BACK UP or DELETE. */
+  | { readonly _tag: "retired"; readonly action: IdentityRetiredAction }
   /** The keyboard, secret: a password for a new backup or for the backup being opened. */
   | { readonly _tag: "password"; readonly for: IdentityPasswordFor; readonly draft: IdentityDraft }
   /** The keyboard: the encrypted secret of a backup to switch to. */
@@ -100,6 +111,10 @@ export type IdentityMessage =
   | { readonly _tag: "FocusedSecret" }
   /** A on a save card. */
   | { readonly _tag: "ChoseSaveCard"; readonly index: number }
+  /** The cursor is on an action in a retired key's row. */
+  | { readonly _tag: "FocusedRetiredAction"; readonly action: IdentityRetiredAction }
+  /** A on an action in a retired key's row. */
+  | { readonly _tag: "ChoseRetiredAction"; readonly action: IdentityRetiredAction }
   /** The cursor is on a key. */
   | { readonly _tag: "FocusedKey"; readonly key: string }
   | { readonly _tag: "TypedChar"; readonly char: string }
@@ -166,9 +181,19 @@ function step(
           ? model
           : { card: message.index, flow: { _tag: "showSecret", onSlab: false } })
       }
+      // Up from a retired key's row returns the cursor to the band.
+      if (flow._tag === "retired") return stay({ card: message.index, flow: IDLE })
       return flow._tag === "idle"
         ? stay(model.card === message.index ? model : { ...model, card: message.index })
         : stay(model)
+
+    case "FocusedRetiredAction":
+      if (retiredKeyAt(identity, model.card) === undefined) return stay(model)
+      if (flow._tag === "retired") return stay(flow.action === message.action ? model : { ...model, flow: { _tag: "retired", action: message.action } })
+      return flow._tag === "idle" ? stay({ ...model, flow: { _tag: "retired", action: message.action } }) : stay(model)
+
+    case "ChoseRetiredAction":
+      return choseRetired(model, message.action, identity)
 
     case "FocusedSecret":
       // Korri's backup can be on screen with no flow behind it (the page
@@ -239,7 +264,7 @@ function chose(
   if (identity === undefined) return stay(model)
   const status = identity.status._tag
   if (status === "Working" || status === "Problem" || status === "Switched") return stay(model)
-  if (model.flow._tag !== "idle" && model.flow._tag !== "showSecret") return stay(model)
+  if (model.flow._tag !== "idle" && model.flow._tag !== "showSecret" && model.flow._tag !== "retired") return stay(model)
 
   let flow: IdentityFlow
   if (index === IDENTITY_BACKUP_CARD) {
@@ -249,12 +274,33 @@ function chose(
   } else if (index === IDENTITY_SWITCH_BUNKER_CARD) {
     flow = { _tag: "bunker", draft: draftOf(IDENTITY_BUNKER_PREFIX, "uri", "1") }
   } else {
-    const publicKey = retiredKeyAt(identity, index)
-    if (publicKey === undefined) return stay(model)
-    flow = { _tag: "confirmDelete", publicKey, focus: 0 }
+    // A retired key has a choice of two: A drops into its row, on BACK UP.
+    if (retiredKeyAt(identity, index) === undefined) return stay(model)
+    flow = { _tag: "retired", action: "backup" }
   }
   const next: IdentityModel = { card: index, flow }
   // A finished backup is still on screen: starting something else closes it.
+  return status === "BackupReady" ? ask(next, { _tag: "DismissIdentityStatus" }) : stay(next)
+}
+
+/**
+ * A on BACK UP or DELETE under a retired key. BACK UP asks for a password,
+ * as this key's backup does; DELETE asks the first delete question.
+ */
+function choseRetired(
+  model: IdentityModel,
+  action: IdentityRetiredAction,
+  identity: SurfaceIdentityManagement | undefined,
+): ZoneStep<IdentityModel> {
+  const publicKey = retiredKeyAt(identity, model.card)
+  if (identity === undefined || publicKey === undefined) return stay(model)
+  const status = identity.status._tag
+  if (status === "Working" || status === "Problem" || status === "Switched") return stay(model)
+  if (model.flow._tag !== "idle" && model.flow._tag !== "retired" && model.flow._tag !== "showSecret") return stay(model)
+  const flow: IdentityFlow = action === "backup"
+    ? { _tag: "password", for: { kind: "export", retiredPublicKey: publicKey }, draft: draftOf("", "letters", "q") }
+    : { _tag: "confirmDelete", publicKey, focus: 0 }
+  const next: IdentityModel = { ...model, flow }
   return status === "BackupReady" ? ask(next, { _tag: "DismissIdentityStatus" }) : stay(next)
 }
 
@@ -290,7 +336,13 @@ function done(model: IdentityModel, status: SurfaceIdentityManagement["status"][
       if (password.trim() === "") return stay(model)
       if (flow.for.kind === "export") {
         if (status === "Working") return stay(model)
-        return ask({ ...model, flow: { _tag: "showSecret", onSlab: false } }, { _tag: "ExportIdentityBackup", password })
+        const { retiredPublicKey } = flow.for
+        return ask(
+          { ...model, flow: { _tag: "showSecret", onSlab: false } },
+          retiredPublicKey === undefined
+            ? { _tag: "ExportIdentityBackup", password }
+            : { _tag: "ExportIdentityBackup", password, retiredPublicKey },
+        )
       }
       return stay({
         ...model,
@@ -375,14 +427,19 @@ function back(model: IdentityModel, status: SurfaceIdentityManagement["status"][
     case "showSecret":
     case "secret":
     case "bunker":
-    case "confirmDelete":
+    case "retired":
       return stay({ ...model, flow: IDLE })
+    case "confirmDelete":
+      // DELETE was chosen in the retired key's row: back to it.
+      return stay({ ...model, flow: { _tag: "retired", action: "delete" } })
     case "password":
       return stay({
         ...model,
-        flow: flow.for.kind === "export"
-          ? IDLE
-          : { _tag: "secret", draft: draftOf(flow.for.encryptedSecret, "letters", "done") },
+        flow: flow.for.kind === "switch"
+          ? { _tag: "secret", draft: draftOf(flow.for.encryptedSecret, "letters", "done") }
+          : flow.for.retiredPublicKey === undefined
+            ? IDLE
+            : { _tag: "retired", action: "backup" },
       })
     case "disposition":
       return stay({
@@ -407,8 +464,9 @@ function back(model: IdentityModel, status: SurfaceIdentityManagement["status"][
 
 /**
  * Korri's facts win. Without identity management the page is one card and
- * no flow; the cursor never points past the last card; a deletion whose key
- * Korri no longer lists ends.
+ * no flow; the cursor never points past the last card; a deletion or a
+ * backup whose key Korri no longer lists ends, and so does a retired key's
+ * row once its card stands for no retired key.
  */
 function settle(model: IdentityModel, identity: SurfaceIdentityManagement | undefined): IdentityModel {
   if (identity === undefined) {
@@ -417,8 +475,11 @@ function settle(model: IdentityModel, identity: SurfaceIdentityManagement | unde
   const last = identityCardCount(identity) - 1
   const card = Math.max(0, Math.min(model.card, last))
   const { flow } = model
-  const gone = (flow._tag === "confirmDelete" || flow._tag === "confirmBackedUp")
-    && !identity.retiredPublicKeys.includes(flow.publicKey)
+  const gone = ((flow._tag === "confirmDelete" || flow._tag === "confirmBackedUp")
+    && !identity.retiredPublicKeys.includes(flow.publicKey))
+    || (flow._tag === "password" && flow.for.kind === "export" && flow.for.retiredPublicKey !== undefined
+      && !identity.retiredPublicKeys.includes(flow.for.retiredPublicKey))
+    || (flow._tag === "retired" && retiredKeyAt(identity, card) === undefined)
   if (card === model.card && !gone) return model
   return { card, flow: gone ? IDLE : flow }
 }

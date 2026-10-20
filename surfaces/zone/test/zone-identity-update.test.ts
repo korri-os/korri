@@ -114,9 +114,9 @@ describe("ChoseSaveCard", () => {
     const { model } = after(IDENTITY_START, { _tag: "ChoseSaveCard", index: 2 })
     expect(model.flow).toEqual({ _tag: "bunker", draft: draft(IDENTITY_BUNKER_PREFIX, "uri", "1") })
   })
-  test("a retired card asks the first delete question about its own key", () => {
+  test("a retired card has a choice of two: A drops into its row on BACK UP and sends nothing", () => {
     const { model, requests } = after(IDENTITY_START, { _tag: "ChoseSaveCard", index: 4 })
-    expect(model).toEqual({ card: 4, flow: { _tag: "confirmDelete", publicKey: KEY_B, focus: 0 } })
+    expect(model).toEqual({ card: 4, flow: { _tag: "retired", action: "backup" } })
     expect(requests).toEqual([])
   })
   test("nothing starts while Korri works, or under its problem or switched dialog", () => {
@@ -303,6 +303,60 @@ describe("DismissedStatus", () => {
   })
 })
 
+describe("a retired key's row", () => {
+  const onRow = (action: "backup" | "delete" = "backup", card = 3) => at({ _tag: "retired", action }, card)
+
+  test("focus on an action under a retired key puts the cursor in the row", () => {
+    expect(after(at({ _tag: "idle" }, 3), { _tag: "FocusedRetiredAction", action: "delete" }).model).toEqual(onRow("delete"))
+    expect(after(onRow("delete"), { _tag: "FocusedRetiredAction", action: "backup" }).model).toEqual(onRow("backup"))
+  })
+  test("there is no row under a card that is not a retired key", () => {
+    const model = at({ _tag: "idle" }, 1)
+    expect(after(model, { _tag: "FocusedRetiredAction", action: "backup" }).model).toBe(model)
+    expect(after(model, { _tag: "ChoseRetiredAction", action: "backup" }).model).toBe(model)
+  })
+  test("focus back on a card leaves the row", () => {
+    expect(after(onRow(), { _tag: "FocusedSaveCard", index: 4 }).model).toEqual(at({ _tag: "idle" }, 4))
+  })
+  test("BACK UP asks a password for that key's backup", () => {
+    const { model, requests } = after(onRow("backup", 4), { _tag: "ChoseRetiredAction", action: "backup" })
+    expect(model.flow).toEqual({ _tag: "password", for: { kind: "export", retiredPublicKey: KEY_B }, draft: draft("") })
+    expect(requests).toEqual([])
+  })
+  test("BACK UP from the card's own A, without moving into the row first, works the same", () => {
+    expect(after(at({ _tag: "idle" }, 3), { _tag: "ChoseRetiredAction", action: "backup" }).model.flow)
+      .toEqual({ _tag: "password", for: { kind: "export", retiredPublicKey: KEY_A }, draft: draft("") })
+  })
+  test("DONE sends the backup with the retired key, then shows Korri's backup", () => {
+    const model = at({ _tag: "password", for: { kind: "export", retiredPublicKey: KEY_A }, draft: draft("pw") }, 3)
+    const step = after(model, { _tag: "PressedDone" })
+    expect(step.requests).toEqual([{ _tag: "ExportIdentityBackup", password: "pw", retiredPublicKey: KEY_A }])
+    expect(step.model.flow).toEqual({ _tag: "showSecret", onSlab: false })
+  })
+  test("DELETE asks the first delete question about that key", () => {
+    expect(after(onRow("delete", 4), { _tag: "ChoseRetiredAction", action: "delete" }).model.flow)
+      .toEqual({ _tag: "confirmDelete", publicKey: KEY_B, focus: 0 })
+  })
+  test("B steps back to the row from either action's first step, and from the row to the card", () => {
+    expect(after(at({ _tag: "password", for: { kind: "export", retiredPublicKey: KEY_A }, draft: draft("pw") }, 3), { _tag: "PressedBack" }).model)
+      .toEqual(onRow("backup"))
+    expect(after(at({ _tag: "confirmDelete", publicKey: KEY_A, focus: 0 }, 3), { _tag: "PressedBack" }).model)
+      .toEqual(onRow("delete"))
+    expect(after(onRow("delete"), { _tag: "PressedBack" }).model).toEqual(at({ _tag: "idle" }, 3))
+  })
+  test("nothing starts while Korri works, or under its problem or switched dialog", () => {
+    for (const identity of [working, problem, switched]) {
+      for (const action of ["backup", "delete"] as const) {
+        expect(after(onRow(action), { _tag: "ChoseRetiredAction", action }, identity).model).toEqual(onRow(action))
+      }
+    }
+  })
+  test("a backup whose key Korri no longer lists ends", () => {
+    const model = at({ _tag: "password", for: { kind: "export", retiredPublicKey: KEY_B }, draft: draft("pw") }, 4)
+    expect(after(model, { _tag: "KorriPublished" }, identityOf({ _tag: "Idle" }, [KEY_A])).model).toEqual(at({ _tag: "idle" }, 3))
+  })
+})
+
 describe("PressedBack", () => {
   test("closes Korri's dialogs and a finished backup, as DISMISS does", () => {
     for (const identity of [problem, switched, ready]) {
@@ -381,9 +435,17 @@ describe("flows end to end", () => {
     expect(requests).toEqual([{ _tag: "SwitchIdentityToNip46", bunkerUri: "bunker://abc?relay=wss://r", disposition: "transfer", trustLossConfirmed: true }])
   })
   test("C19: a retired key is deleted only after both questions", () => {
-    const one = run(idle, { _tag: "ChoseSaveCard", index: 3 }, { _tag: "Answered", yes: true })
+    const toDelete: IdentityMessage[] = [{ _tag: "ChoseSaveCard", index: 3 }, { _tag: "ChoseRetiredAction", action: "delete" }]
+    const one = run(idle, ...toDelete, { _tag: "Answered", yes: true })
     expect(one.requests).toEqual([])
-    const both = run(idle, { _tag: "ChoseSaveCard", index: 3 }, { _tag: "Answered", yes: true }, { _tag: "Answered", yes: true })
+    const both = run(idle, ...toDelete, { _tag: "Answered", yes: true }, { _tag: "Answered", yes: true })
     expect(both.requests).toEqual([{ _tag: "DeleteRetiredIdentity", publicKey: KEY_A, backupConfirmed: true }])
+  })
+  test("C19: a retired key is backed up with the same password step, the request carrying the key", () => {
+    const { model, requests } = run(idle,
+      { _tag: "ChoseSaveCard", index: 4 }, { _tag: "ChoseRetiredAction", action: "backup" },
+      ...type("hunter2"), { _tag: "PressedDone" })
+    expect(model.flow._tag).toBe("showSecret")
+    expect(requests).toEqual([{ _tag: "ExportIdentityBackup", password: "hunter2", retiredPublicKey: KEY_B }])
   })
 })

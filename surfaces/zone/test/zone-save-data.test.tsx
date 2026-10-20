@@ -87,7 +87,7 @@ const typeKeys = (text: string) => {
 const dialog = () => screen.getByRole("dialog")
 
 describe("the band", () => {
-  test("BACK UP, two SWITCH cards, then one RETIRED card per key, shortened, with DELETE", () => {
+  test("BACK UP, two SWITCH cards, then one RETIRED card per key, shortened", () => {
     mount(identityOf())
     expect(screen.getByText("Save data")).toBeTruthy()
     expect(card(/Back up/)).toBeTruthy()
@@ -96,7 +96,8 @@ describe("the band", () => {
     expect(screen.getAllByText("Retired").length).toBe(2)
     expect(screen.getByText(shortKey(KEY_A))).toBeTruthy()
     expect(screen.getByText(shortKey(KEY_B))).toBeTruthy()
-    expect(screen.getAllByText("Delete").length).toBe(2)
+    // No row until a retired key has the cursor.
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull()
   })
 
   test("BACK UP reads NEW without a local backup and BACKED UP with one", () => {
@@ -265,9 +266,44 @@ describe("C18 switch by bunker", () => {
 })
 
 describe("C19 retired keys", () => {
+  const retired = (index: number) => screen.getAllByRole("button", { name: /Retired/ })[index]!
+
+  test("a focused retired key offers BACK UP and DELETE in a row under the band", () => {
+    mount(identityOf())
+    fireEvent.focus(retired(0))
+    const row = document.querySelector(".zone-save-data-actions")!
+    expect(within(row as HTMLElement).getByRole("button", { name: "Back up" })).toBeTruthy()
+    expect(within(row as HTMLElement).getByRole("button", { name: "Delete" })).toBeTruthy()
+    fireEvent.focus(card(/Bunker/))
+    expect(within(row as HTMLElement).queryByRole("button")).toBeNull()
+  })
+
+  test("A on the card drops into the row on BACK UP, and focus there moves its cursor", () => {
+    mount(identityOf())
+    fireEvent.click(retired(1))
+    const backUp = screen.getByRole("button", { name: "Back up" })
+    expect(document.activeElement).toBe(backUp)
+    expect(backUp.dataset["focused"]).toBe("on")
+    const del = screen.getByRole("button", { name: "Delete" })
+    fireEvent.focus(del)
+    expect(del.dataset["focused"]).toBe("on")
+    expect(backUp.dataset["focused"]).toBe("off")
+  })
+
+  test("BACK UP asks the password and sends it with the retired key", () => {
+    const { calls } = mount(identityOf())
+    fireEvent.click(retired(1))
+    press("Back up")
+    expect(screen.getByText("Password")).toBeTruthy()
+    typeKeys("hi")
+    press("Done")
+    expect(calls).toEqual([["exportIdentityBackup", "hi", KEY_B]])
+  })
+
   test("DELETE THIS KEY? then IS IT BACKED UP?; both YES delete that key with the backup confirmed", () => {
     const { calls } = mount(identityOf())
-    fireEvent.click(screen.getAllByRole("button", { name: /Retired/ })[1]!)
+    fireEvent.click(retired(1))
+    press("Delete")
     expect(within(dialog()).getByText("Delete this key?")).toBeTruthy()
     expect(within(dialog()).getByText("Back it up first.")).toBeTruthy()
     expect(within(dialog()).getByText(shortKey(KEY_B))).toBeTruthy()
@@ -280,9 +316,11 @@ describe("C19 retired keys", () => {
 
   test("NO on either question sends nothing", () => {
     const { calls } = mount(identityOf())
-    fireEvent.click(screen.getAllByRole("button", { name: /Retired/ })[0]!)
+    fireEvent.click(retired(0))
+    press("Delete")
     press("No")
-    fireEvent.click(screen.getAllByRole("button", { name: /Retired/ })[0]!)
+    fireEvent.click(retired(0))
+    press("Delete")
     press("Yes")
     press("No")
     expect(calls).toEqual([])
@@ -355,12 +393,15 @@ describe("the parts", () => {
     expect(words(page.Working)).toContain("Encrypting backup")
     expect(words(page.Switched)).toContain("Switched")
     expect(words(page.BackupReady)).toContain("ncry")
+    expect(words(page.RetiredActions)).toContain("Delete")
+    expect(words(page.RetiredPassword)).toContain("Password")
   })
 
   test("the page part answers presses through the real model", () => {
     const Default = page.default
     render(<Default />)
     fireEvent.click(screen.getAllByRole("button", { name: /Retired/ })[0]!)
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
     fireEvent.click(screen.getByRole("button", { name: "Yes" }))
     fireEvent.click(screen.getByRole("button", { name: "Yes" }))
     expect(screen.getAllByRole("button", { name: /Retired/ }).length).toBe(1)

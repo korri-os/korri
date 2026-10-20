@@ -25,6 +25,7 @@ export const note = "SAVE DATA: identity on MANIA MODE's save select; back up, s
 export const composition = {
   default: [{ part: "src/ui/organisms/ZoneSaveBand.organism.part.tsx", state: "default" }],
   RetiredKeys: [{ part: "src/ui/organisms/ZoneSaveBand.organism.part.tsx", state: "MidBand" }],
+  RetiredActions: [{ part: "src/ui/molecules/ZoneActionRow.molecule.part.tsx", state: "TwoButtons" }],
   ManyRetiredKeys: [{ part: "src/ui/organisms/ZoneSaveBand.organism.part.tsx", state: "Many" }],
   NotAvailable: [{ part: "src/ui/organisms/ZoneSaveBand.organism.part.tsx", state: "One" }],
   BackupReady: [{ part: "src/ui/organisms/ZoneSecretSlab.organism.part.tsx", state: "default" }],
@@ -177,9 +178,27 @@ export function BunkerLongUri() {
   return <Scene initial={sceneOf(idle, { card: 2, flow: { _tag: "bunker", draft: draft(fixtureBunkerUri, "uri", "done") } })} />
 }
 
-/** C19: a retired key focused: its first and last eight characters, DELETE. */
+/** C19: a retired key focused: its first and last eight characters, and BACK UP and DELETE under the band. */
 export function RetiredKeys() {
   return <Scene initial={sceneOf(idle, { card: 3, flow: { _tag: "idle" } })} />
+}
+
+/** C19: the cursor in a retired key's row, on BACK UP; A asks for its backup's password. */
+export function RetiredActions() {
+  return <Scene initial={sceneOf(idle, { card: 3, flow: { _tag: "retired", action: "backup" } })} />
+}
+
+/** C16 for a retired key: its backup's password; DONE sends it with the retired key. */
+export function RetiredPassword() {
+  const key = fixtureRetiredKeys[0] ?? ""
+  return (
+    <Scene
+      initial={sceneOf(idle, {
+        card: 3,
+        flow: { _tag: "password", for: { kind: "export", retiredPublicKey: key }, draft: draft("hummingbird", "letters", "d") },
+      })}
+    />
+  )
 }
 
 /** C19: fourteen retired keys, the cursor deep in the band. */

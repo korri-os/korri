@@ -27,6 +27,18 @@
   .zone-save-data-banner {
     display: none;
   }
+
+  /* The same strip is too short to give a row under the band: a retired
+   * key's row stands at the band's end instead, where the width is. */
+  .zone-save-data-band[data-row="kept"] {
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+
+  .zone-save-data-actions {
+    min-height: 0;
+    padding: 0 var(--zone-save-data-margin) 0 0;
+  }
 }
 
 .zone-save-data-busy {
@@ -46,9 +58,32 @@
   container: zone-save-main / size;
 }
 
+/* The band, and under it the row of a focused retired key. While Korri
+ * lists any retired key the row's room is kept, empty on the other cards,
+ * so the band does not jump as the cursor crosses into the retired keys. */
 .zone-save-data-band {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
+}
+
+.zone-save-data-band[data-row="kept"] {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.zone-save-data-cards {
+  min-width: 0;
+  min-height: 0;
+}
+
+.zone-save-data-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: var(--zone-action-strip-short);
+  padding: 0 var(--zone-save-data-margin) var(--zone-save-data-space);
 }
 
 /* Korri's backup: the QR code as the largest square the room allows, the
