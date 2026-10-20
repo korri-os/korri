@@ -15,7 +15,7 @@ import {
   ZONE_CARD_GAP,
   ZONE_CARD_RATIO,
   ZONE_CARD_SIDE_SCALE,
-  ZONE_FACTS_INLINE_HEIGHT,
+  ZONE_SHORT_HEIGHT,
   ZONE_FOOT_STRIP,
   ZONE_TAB_STRIP,
   ZONE_TALL_HEIGHT,
@@ -161,14 +161,21 @@ describe("nothing is cut: the visible set always fits", () => {
 })
 
 describe("height and width decide where the GAMES facts line stands", () => {
-  test(`one pixel below ${ZONE_FACTS_INLINE_HEIGHT} on a wide screen, it joins the action strip`, () => {
-    expect(plan(ZONE_WIDE_WIDTH, ZONE_FACTS_INLINE_HEIGHT - 1).facts).toBe("inline")
+  test(`one pixel below ${ZONE_SHORT_HEIGHT} on a wide screen, it joins the action strip`, () => {
+    expect(plan(ZONE_WIDE_WIDTH, ZONE_SHORT_HEIGHT - 1).facts).toBe("inline")
   })
-  test(`at ${ZONE_FACTS_INLINE_HEIGHT} it keeps its own row`, () => {
-    expect(plan(ZONE_WIDE_WIDTH, ZONE_FACTS_INLINE_HEIGHT).facts).toBe("row")
+  test(`at ${ZONE_SHORT_HEIGHT} it keeps its own row`, () => {
+    expect(plan(ZONE_WIDE_WIDTH, ZONE_SHORT_HEIGHT).facts).toBe("row")
   })
   test("a narrow screen keeps the row however short, since its width cannot pay for both", () => {
-    expect(plan(ZONE_WIDE_WIDTH - 1, ZONE_FACTS_INLINE_HEIGHT - 1).facts).toBe("row")
+    expect(plan(ZONE_WIDE_WIDTH - 1, ZONE_SHORT_HEIGHT - 1).facts).toBe("row")
+  })
+  test(`one pixel below ${ZONE_SHORT_HEIGHT} the find keyboard rises over the screen, at any width`, () => {
+    expect(plan(ZONE_WIDE_WIDTH, ZONE_SHORT_HEIGHT - 1).keys).toBe("screen")
+    expect(plan(ZONE_WIDE_WIDTH - 1, ZONE_SHORT_HEIGHT - 1).keys).toBe("screen")
+  })
+  test(`at ${ZONE_SHORT_HEIGHT} it rises inside the body`, () => {
+    expect(plan(ZONE_WIDE_WIDTH, ZONE_SHORT_HEIGHT).keys).toBe("body")
   })
 })
 
@@ -221,6 +228,6 @@ describe("the plan's constants are the tokens", () => {
   test("the two thresholds are named in the tokens too", () => {
     expect(px("--zone-wide-width")).toBe(`${ZONE_WIDE_WIDTH}px`)
     expect(px("--zone-tall-height")).toBe(`${ZONE_TALL_HEIGHT}px`)
-    expect(px("--zone-facts-inline-height")).toBe(`${ZONE_FACTS_INLINE_HEIGHT}px`)
+    expect(px("--zone-short-height")).toBe(`${ZONE_SHORT_HEIGHT}px`)
   })
 })

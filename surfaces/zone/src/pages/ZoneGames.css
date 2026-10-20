@@ -3,6 +3,7 @@
  * plan's answer for the screen's height, like the shell's own strips. */
 .zone-games {
   --zone-games-act: var(--zone-action-strip-tall);
+  --zone-games-top: var(--zone-tab-strip-tall);
   --zone-shell-button-type: var(--zone-type-button-tall);
   position: relative;
   width: 100%;
@@ -11,6 +12,7 @@
 
 .zone-games[data-strips="short"] {
   --zone-games-act: var(--zone-action-strip-short);
+  --zone-games-top: var(--zone-tab-strip-short);
   --zone-shell-button-type: var(--zone-type-button-short);
 }
 
@@ -167,6 +169,19 @@
   min-height: 0;
   max-height: calc(100cqh - var(--zone-games-band-min));
   padding: 0 var(--zone-band-margin) var(--zone-strip-inset);
+}
+
+/* A screen too short for the keys inside the body: the keyboard rises over
+ * everything below the tabs, the foot included, and keeps the tabs in view. */
+.zone-games-keys[data-keys="screen"] {
+  position: absolute;
+  top: var(--zone-games-top);
+  bottom: 0;
+  left: 50%;
+  z-index: 5;
+  align-items: flex-end;
+  max-height: none;
+  translate: -50% 0;
 }
 
 /* GAME OPTS.: the head, then the rows over the band, centred, at most a

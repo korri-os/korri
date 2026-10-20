@@ -91,6 +91,8 @@ export interface ZoneGamesProps {
   readonly band: "wide" | "narrow"
   /** The plan's answer for the facts line: its own row, or in the action strip. */
   readonly factsAt: "row" | "inline"
+  /** The plan's answer for the find keyboard: in the body, or over the screen below the tabs. */
+  readonly keysAt: "body" | "screen"
   readonly tab: ZoneGamesTab
   readonly tabCursor: ZoneGamesTab
   readonly zone: ZoneGamesZone
@@ -188,7 +190,7 @@ const indexIn = (region: Element, target: EventTarget): number =>
  */
 export function ZoneGames(props: ZoneGamesProps) {
   const {
-    strips, band, factsAt, tab, tabCursor, zone, catalog, cards, focusedCard, facts, launches, focusedAction,
+    strips, band, factsAt, keysAt, tab, tabCursor, zone, catalog, cards, focusedCard, facts, launches, focusedAction,
     find, finding, opts, idle, clock, device, connection, build, onEvent,
   } = props
   const root = useRef<HTMLDivElement | null>(null)
@@ -281,6 +283,18 @@ export function ZoneGames(props: ZoneGamesProps) {
     </div>
   )
 
+  const keyboard = (
+    <div className="zone-games-keys" data-block-exit="" data-games-region="keys" data-keys={keysAt} onFocus={onKeysFocus}>
+      <ZoneKeyboard
+        caret={find.caret}
+        draft={find.draft}
+        focusedKey={find.key}
+        layer={find.layer}
+        onKey={key => onEvent({ _tag: "PressedKey", key })}
+      />
+    </div>
+  )
+
   return (
     <div className="zone-games" data-layer={layer} data-strips={strips} ref={root}>
       <ZoneShell
@@ -320,23 +334,12 @@ export function ZoneGames(props: ZoneGamesProps) {
                 <ZoneButton
                   focused={target?.[0] === "find"}
                   label="Find"
-                  lit={find.draft !== ""}
                   onFocus={() => report({ _tag: "FocusedFind" })}
                   onPress={() => onEvent({ _tag: "ChoseFind" })}
                 />
               </div>
             )}
-            {finding ? (
-              <div className="zone-games-keys" data-block-exit="" data-games-region="keys" onFocus={onKeysFocus}>
-                <ZoneKeyboard
-                  caret={find.caret}
-                  draft={find.draft}
-                  focusedKey={find.key}
-                  layer={find.layer}
-                  onKey={key => onEvent({ _tag: "PressedKey", key })}
-                />
-              </div>
-            ) : (
+            {finding && keysAt === "body" ? keyboard : finding ? null : (
               <>
                 <div className="zone-games-facts" data-empty={factLines.length === 0 || undefined} inert={layer !== "none"}>
                   {factLines.length === 0 || game === undefined ? (
@@ -449,6 +452,7 @@ export function ZoneGames(props: ZoneGamesProps) {
           </div>
         )}
       </ZoneShell>
+      {finding && keysAt === "screen" ? keyboard : null}
       {idle === undefined ? null : (
         <div aria-live="off" className="zone-games-idle">
           <ZoneTitleCard act={idle.act} title={idle.title} />

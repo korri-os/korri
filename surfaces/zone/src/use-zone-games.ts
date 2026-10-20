@@ -67,7 +67,7 @@ export function zoneGamesProps(
   korri: SurfaceModel,
   host: SurfaceHost,
   dispatch: (message: ZoneMessage) => void,
-): Omit<ZoneGamesProps, "strips" | "band" | "factsAt"> {
+): Omit<ZoneGamesProps, "strips" | "band" | "factsAt" | "keysAt"> {
   const games = bandGames(nav, korri)
   const game = games[nav.card]
   const top = topLayer(nav)
@@ -144,6 +144,6 @@ export function useZoneGames(
   return {
     nav,
     dispatch,
-    page: { ...zoneGamesProps(nav, korri, host, dispatch), strips: layout.strips, band: layout.band, factsAt: layout.facts },
+    page: { ...zoneGamesProps(nav, korri, host, dispatch), strips: layout.strips, band: layout.band, factsAt: layout.facts, keysAt: layout.keys },
   }
 }

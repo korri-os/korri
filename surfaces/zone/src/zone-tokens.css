@@ -531,8 +531,8 @@
   --zone-games-keys-max: 900px;
   /** The band height the find keyboard always leaves. @label Band kept while finding @min 60px @max 400px @step 10px */
   --zone-games-band-min: 120px;
-  /** Below this screen height, on a wide screen, the facts line joins the action strip (plan: ZONE_FACTS_INLINE_HEIGHT). @label Facts inline below @min 200px @max 720px @step 10px */
-  --zone-facts-inline-height: 400px;
+  /** Below this screen height the facts line joins the action strip on a wide screen and the find keyboard rises over the screen (plan: ZONE_SHORT_HEIGHT). @label Short screen below @min 200px @max 720px @step 10px */
+  --zone-short-height: 400px;
   /** A handheld screen's width, for a part shown inside a bigger device. @label Handheld width @min 320px @max 1280px @step 10px */
   --zone-part-handheld-width: 640px;
   /** A handheld screen's height, likewise. @label Handheld height @min 240px @max 720px @step 10px */

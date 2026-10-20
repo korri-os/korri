@@ -18,11 +18,13 @@ export const ZONE_WIDE_WIDTH = 1000
 /** The strips take their tall heights at or above this height. */
 export const ZONE_TALL_HEIGHT = 600
 /**
- * Below this height, on a wide screen, the GAMES page's facts line joins the
- * action strip instead of taking a row of its own: the band gets the row
- * back, and the width that is plentiful there pays for it.
+ * Below this height the GAMES page's body is too short for its rows. On a
+ * wide screen the facts line joins the action strip instead of taking a row
+ * of its own: the band gets the row back, and the plentiful width pays for
+ * it. On any screen the find keyboard rises over the whole screen below the
+ * tabs instead of inside the body, since the body cannot hold its keys.
  */
-export const ZONE_FACTS_INLINE_HEIGHT = 400
+export const ZONE_SHORT_HEIGHT = 400
 
 export const ZONE_VISIBLE_CARDS = { wide: 5, narrow: 3 } as const
 export const ZONE_TAB_STRIP = { tall: 74, short: 56 } as const
@@ -54,12 +56,15 @@ export const ZONE_TYPE_SIDE_SHARE = 0.115
 export type ZoneBand = "wide" | "narrow"
 export type ZoneStrips = "tall" | "short"
 export type ZoneFacts = "row" | "inline"
+export type ZoneKeys = "body" | "screen"
 
 export interface ZonePlan {
   readonly band: ZoneBand
   readonly strips: ZoneStrips
   /** Where the GAMES page's facts line stands: its own row, or in the action strip. */
   readonly facts: ZoneFacts
+  /** Where the find keyboard rises: in the body, or over the screen below the tabs. */
+  readonly keys: ZoneKeys
   /** Cards on screen, the focused one in the middle. */
   readonly visible: 3 | 5
   readonly tabH: number
@@ -86,7 +91,8 @@ export interface ZonePlan {
 export function plan(width: number, height: number): ZonePlan {
   const band: ZoneBand = width >= ZONE_WIDE_WIDTH ? "wide" : "narrow"
   const strips: ZoneStrips = height >= ZONE_TALL_HEIGHT ? "tall" : "short"
-  const facts: ZoneFacts = height < ZONE_FACTS_INLINE_HEIGHT && band === "wide" ? "inline" : "row"
+  const facts: ZoneFacts = height < ZONE_SHORT_HEIGHT && band === "wide" ? "inline" : "row"
+  const keys: ZoneKeys = height < ZONE_SHORT_HEIGHT ? "screen" : "body"
   const visible = ZONE_VISIBLE_CARDS[band]
   const tabH = ZONE_TAB_STRIP[strips]
   const actH = ZONE_ACTION_STRIP[strips]
@@ -113,6 +119,7 @@ export function plan(width: number, height: number): ZonePlan {
     band,
     strips,
     facts,
+    keys,
     visible,
     tabH,
     actH,
