@@ -79,7 +79,7 @@ impl HashCache {
         self.read_bytes
     }
 
-    /// Record digests a writer computed while writing `path` (ADR 0013: the
+    /// Record digests a writer computed while writing `path` (ADR 0014: the
     /// acquisition digest, as legacy identityPolicy "skip" reused the staging
     /// digest). The entry is valid only for this exact path, size and mtime,
     /// and only when the rules strip no header, because the digests cover the

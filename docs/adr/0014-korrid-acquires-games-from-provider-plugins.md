@@ -110,6 +110,6 @@ bound, and the heap must hold the input. A 3.5 MiB page fits, as tested.
 - A system whose header rule strips bytes costs one file hash on the next scan.
 - Ports in provider URLs are not restricted; only the host name is declared.
 - Declaration evaluation refuses a plugin whose artifact key equals one of
-  its provider names, so ADR 0012 artifact caches and ADR 0013 provider
+  its provider names, so ADR 0012 artifact caches and ADR 0014 provider
   staging never share `cache/<plugin>/<key>/`.
 - Device evidence is still owed; the Mini V2 was unreachable during this work.

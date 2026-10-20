@@ -144,7 +144,7 @@ pub fn call_plugin_operation_snapshot(
 }
 
 /// The same call with a caller-chosen input bound. Acquisition provider turns
-/// carry host-read response text and use a 4 MiB bound (ADR 0013); the heap,
+/// carry host-read response text and use a 4 MiB bound (ADR 0014); the heap,
 /// stack, deadline and output budget are unchanged.
 pub fn call_plugin_operation_bounded(
     snapshot: &source::SourceSnapshot,
@@ -282,7 +282,7 @@ fn evaluate_module(
                 "discovery provider has no callable discovery.discover handler".to_owned()
             })?;
         }
-        // An explicit providers export is an acquisition provider (ADR 0013).
+        // An explicit providers export is an acquisition provider (ADR 0014).
         if let Some(providers) = declaration
             .get("providers")
             .and_then(serde_json::Value::as_object)
@@ -297,7 +297,7 @@ fn evaluate_module(
                     format!("acquisition provider has no callable {operation} handler")
                 })?;
             }
-            // ADR 0012 artifacts and ADR 0013 provider staging share the cache
+            // ADR 0012 artifacts and ADR 0014 provider staging share the cache
             // grammar `cache/<plugin>/<key>/`; one key must not name both.
             let artifacts = declaration
                 .get("artifacts")

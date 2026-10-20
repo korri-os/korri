@@ -43,7 +43,7 @@ pub struct AcquisitionCoordinator {
     queue: Arc<Mutex<Queue>>,
     engine: download::DownloadEngine,
     sleep: sleep::SleepBlock,
-    /// Game acquisition: provider claims and acquire jobs (ADR 0013).
+    /// Game acquisition: provider claims and acquire jobs (ADR 0014).
     games: game::GameAcquisition,
 }
 #[derive(Default)]
@@ -556,7 +556,7 @@ async fn discard_partials(base: &Path) -> Result<(), RpcFailure> {
     placement::remove_downloads(base).map_err(Failure::rpc)
 }
 
-/// Game acquisition RPC (ADR 0013); see `game.rs`.
+/// Game acquisition RPC (ADR 0014); see `game.rs`.
 impl AcquisitionCoordinator {
     pub fn providers(&self, registry: &PluginRegistry) -> PluginListResponse {
         self.games.providers(registry)

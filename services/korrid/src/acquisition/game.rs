@@ -1,4 +1,4 @@
-//! Game acquisition (ADR 0013): provider search, details and acquire jobs.
+//! Game acquisition (ADR 0014): provider search, details and acquire jobs.
 //! Claims and jobs live in memory only; a restart forgets both.
 use std::{
     collections::BTreeMap,

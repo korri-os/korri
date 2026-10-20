@@ -38,7 +38,7 @@ impl Default for DownloadEngine {
 
 /// Legacy `MAX_FALLBACK_DOWNLOAD_BYTES`: the cap for a game with no expected hash.
 pub(super) const MAX_GAME_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-/// Body text one provider turn response may carry (ADR 0013).
+/// Body text one provider turn response may carry (ADR 0014).
 pub(super) const MAX_TEXT_BYTES: u64 = 4 * 1024 * 1024;
 
 /// A GET a provider asked for, after the turn runner admitted it.

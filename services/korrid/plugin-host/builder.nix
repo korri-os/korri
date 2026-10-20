@@ -18,7 +18,7 @@ let
       services ? { },
       requires ? [ ],
       ports ? { },
-      # ADR 0013: exact DNS names a provider plugin may reach. The host validates
+      # ADR 0014: exact DNS names a provider plugin may reach. The host validates
       # them, binds them in the approval digest and enforces them in korrid.
       hosts ? [ ],
     }:
