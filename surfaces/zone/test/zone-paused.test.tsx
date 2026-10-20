@@ -32,7 +32,7 @@ import {
   type ZoneOverlayMessage,
   type ZoneOverlayModel,
 } from "../src/state/overlay"
-import { readText } from "./read-text"
+import { byWords } from "./words"
 
 afterEach(cleanup)
 
@@ -220,18 +220,18 @@ const portalStep = (element: HTMLElement, direction: "left" | "right") =>
 describe("ZonePaused", () => {
   test("C24: Korri's title in the band, or PAUSED when it gives none", () => {
     mount({ ...overlayDefault, title: "Celeste Classic" })
-    expect(readText(screen.getByRole("heading", { level: 1 }))).toBe("Celeste Classic")
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Celeste Classic")
     cleanup()
     mount(overlayNoTitle)
-    expect(readText(screen.getByRole("heading", { level: 1 }))).toBe("Paused")
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Paused")
   })
 
   test("C24: flat controls first, then each group under its label", () => {
     mount(overlayGroups)
-    const labels = screen.getAllByRole("button").map(button => readText(button))
+    const labels = screen.getAllByRole("button").map(button => button.textContent)
     expect(labels).toEqual(["Continue", "Exit", "Fill screenOff", "Screen filterSharp", "Volume60"])
     const display = screen.getByRole("region", { name: "Display" })
-    expect(within(display).getByText("Fill screen")).toBeDefined()
+    expect(within(display).getByText(byWords("Fill screen"))).toBeDefined()
     expect(within(screen.getByRole("region", { name: "Sound" })).getByText("Volume")).toBeDefined()
   })
 
@@ -287,7 +287,7 @@ describe("ZonePaused", () => {
     const save = row("Save state")
     expect(save.getAttribute("aria-disabled")).toBe("true")
     expect(save.hasAttribute("data-korri-horizontal-control")).toBe(false)
-    expect(screen.getByText("This game does not support save states")).toBeDefined()
+    expect(screen.getByText(byWords("This game does not support save states"))).toBeDefined()
     fireEvent.click(save)
     expect(program.host.calls).toEqual([])
   })
@@ -313,14 +313,14 @@ describe("ZonePaused", () => {
     mount(every)
     portalStep(row("Hard mode"), "right")
     const dialog = screen.getByRole("dialog", { name: "Hard mode" })
-    expect(within(dialog).getByText("Restarts the level")).toBeDefined()
+    expect(within(dialog).getByText(byWords("Restarts the level"))).toBeDefined()
     expect(within(dialog).getByText("On")).toBeDefined()
   })
 
   test("C24: many controls all render, the long label whole", () => {
     mount(overlayMany)
-    expect(screen.getByText("Cheat codes for the second quest and the linked game")).toBeDefined()
-    expect(screen.getByText("The Legend of Zelda: Oracle of Seasons")).toBeDefined()
+    expect(screen.getByText(byWords("Cheat codes for the second quest and the linked game"))).toBeDefined()
+    expect(screen.getByText(byWords("The Legend of Zelda: Oracle of Seasons"))).toBeDefined()
     expect(screen.getAllByRole("button").length).toBe(11)
   })
 })

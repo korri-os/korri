@@ -9,7 +9,6 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { planTitleCard, ZONE_TITLE_STACK_ASPECT } from "../src/plan/title-card"
 import * as part from "../src/ui/molecules/ZoneTitleCard.molecule.part"
-import { readText } from "./read-text"
 
 afterEach(cleanup)
 
@@ -60,7 +59,7 @@ describe("the title never breaks inside a word", () => {
   })
   test("NarrowTall and LongWord draw the whole title and the act", () => {
     render(<part.NarrowTall />)
-    expect(readText(screen.getByRole("heading"))).toBe("The Legend of Zelda: Oracle of Seasons")
+    expect(screen.getByRole("heading").textContent).toBe("The Legend of Zelda: Oracle of Seasons")
     expect(screen.getByText("GBC")).toBeTruthy()
     cleanup()
     render(<part.LongWord />)

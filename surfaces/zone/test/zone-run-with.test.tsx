@@ -24,6 +24,7 @@ import {
 } from "../src/fixtures/fixture-options"
 import { ZoneRunWith } from "../src/pages/ZoneRunWith"
 import { performZoneRequest } from "../src/zone-host"
+import { byWords } from "./words"
 
 afterEach(cleanup)
 
@@ -45,8 +46,8 @@ const route = (program: string) => screen.getByRole("region", { name: program })
 describe("C11 runner choice", () => {
   test("the banner, the game's title and Korri's state as a tag", () => {
     mount(fixtureRunnerReady)
-    expect(screen.getByText("Run with")).toBeTruthy()
-    expect(screen.getByText("Wario Land 4")).toBeTruthy()
+    expect(screen.getByText(byWords("Run with"))).toBeTruthy()
+    expect(screen.getByText(byWords("Wario Land 4"))).toBeTruthy()
     expect(screen.getByText("Ready")).toBeTruthy()
   })
 
@@ -59,8 +60,8 @@ describe("C11 runner choice", () => {
     ["Warnings", fixtureRunnerWarnings],
   ] as const)("%s reads as its tag, with Korri's message", (state, choice) => {
     mount(choice)
-    expect(screen.getByText(state)).toBeTruthy()
-    if (choice._tag !== "Closed") expect(screen.getByText(choice.message)).toBeTruthy()
+    expect(screen.getByText(byWords(state))).toBeTruthy()
+    if (choice._tag !== "Closed") expect(screen.getByText(byWords(choice.message))).toBeTruthy()
   })
 
   test("one row per route: the program, then the exact build", () => {
@@ -73,7 +74,7 @@ describe("C11 runner choice", () => {
   test("the saved route is tagged SAVED with the saved choice's name", () => {
     mount(fixtureRunnerSaved)
     expect(within(route("mGBA")).getByText("Saved")).toBeTruthy()
-    expect(within(route("mGBA")).getByText("This game")).toBeTruthy()
+    expect(within(route("mGBA")).getByText(byWords("This game"))).toBeTruthy()
     expect(within(route("RetroArch mGBA")).queryByText("Saved")).toBeNull()
   })
 
@@ -81,7 +82,7 @@ describe("C11 runner choice", () => {
     mount(fixtureRunnerStale)
     const orphan = route("vba-m")
     expect(within(orphan).getByText("Saved")).toBeTruthy()
-    expect(within(orphan).getByText("System gba")).toBeTruthy()
+    expect(within(orphan).getByText(byWords("System gba"))).toBeTruthy()
     expect(within(orphan).getByText("UNAVAILABLE")).toBeTruthy()
   })
 
@@ -94,7 +95,7 @@ describe("C11 runner choice", () => {
 
   test("a route's action and the choice's action go back unchanged", () => {
     const { host } = mount(fixtureRunnerReady)
-    fireEvent.click(within(route("mGBA")).getByText("Remember for this game").closest("button")!)
+    fireEvent.click(within(route("mGBA")).getByText(byWords("Remember for this game")).closest("button")!)
     fireEvent.click(screen.getByText("Cancel").closest("button")!)
     expect(host.calls).toEqual(["action:runner:3:game:1", "action:runner:cancel"])
   })
@@ -105,15 +106,15 @@ describe("C11 runner choice", () => {
       actions: [{ id: "runner:3:stop", label: "Stop active session", enabled: false, description: "Nothing is running" }],
     } as SurfaceRunnerChoice
     const { host } = mount(inert)
-    fireEvent.click(screen.getByText("Stop active session").closest("button")!)
+    fireEvent.click(screen.getByText(byWords("Stop active session")).closest("button")!)
     expect(host.calls).toEqual([])
-    expect(screen.getByText("Nothing is running")).toBeTruthy()
+    expect(screen.getByText(byWords("Nothing is running"))).toBeTruthy()
   })
 
   test("focus follows the host onto a route and its actions", () => {
     mount(fixtureRunnerReady)
-    fireEvent.focus(screen.getByText("Reload runners").closest("button")!)
-    expect(screen.getByText("Reload runners").closest("button")?.dataset.focused).toBe("on")
+    fireEvent.focus(screen.getByText(byWords("Reload runners")).closest("button")!)
+    expect(screen.getByText(byWords("Reload runners")).closest("button")?.dataset.focused).toBe("on")
   })
 
   test("Closed renders nothing", () => {

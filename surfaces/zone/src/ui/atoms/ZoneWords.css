@@ -29,13 +29,3 @@
   overflow-clip-margin: calc(0.3em + var(--zone-caps-room) * var(--zone-px));
   line-height: 1;
 }
-
-/* The whole words, read and never drawn. */
-.zone-words-read {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}

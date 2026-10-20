@@ -27,6 +27,7 @@ import {
 import type { ZoneOptionsSlices } from "../src/plan/options"
 import { ZoneOptions } from "../src/pages/ZoneOptions"
 import { performZoneRequest } from "../src/zone-host"
+import { byWords } from "./words"
 
 afterEach(cleanup)
 
@@ -48,7 +49,7 @@ function mount(korri: ZoneOptionsSlices = fixtureOptions, script: readonly Optio
 
 /** The row button that carries a label. */
 const row = (label: string) => {
-  const button = within(screen.getByRole("main")).getByText(label).closest("button")
+  const button = within(screen.getByRole("main")).getByText(byWords(label)).closest("button")
   if (button === null) throw new Error(`no row ${label}`)
   return button
 }
@@ -67,9 +68,9 @@ describe("C12 groups and items", () => {
     mount(fixtureOptions, [{ _tag: "FocusedRow", rowId: "device-name" }])
     expect(screen.getByText("Name")).toBeTruthy()
     expect(screen.getByText("mini")).toBeTruthy()
-    expect(screen.getByText("14 games")).toBeTruthy()
-    expect(screen.getByText("What other devices call this one")).toBeTruthy()
-    expect(screen.queryByText("Declared in catalog/library.yaml")).toBeNull()
+    expect(screen.getByText(byWords("14 games"))).toBeTruthy()
+    expect(screen.getByText(byWords("What other devices call this one"))).toBeTruthy()
+    expect(screen.queryByText(byWords("Declared in catalog/library.yaml"))).toBeNull()
   })
   test("focus follows the host: the row it lands on is the row the page marks", () => {
     mount()
@@ -112,7 +113,7 @@ describe("C13 interactions", () => {
   test("sensitiveText: Korri's status on the row, its placeholder then dots on the keyboard, never what is typed; CLEAR sends empty", () => {
     const host = mount()
     expect(row("SteamGridDB API key").querySelector(".zone-option-row-text")?.textContent).toBe("Configured")
-    expect(screen.queryByText("•".repeat("Configured".length))).toBeNull()
+    expect(screen.queryByText(byWords("•".repeat("Configured".length)))).toBeNull()
     fireEvent.click(row("SteamGridDB API key"))
     const entry = screen.getByRole("dialog", { name: "SteamGridDB API key" })
     expect(entry.querySelector(".zone-keyboard-placeholder")?.textContent).toBe("Paste API key")
@@ -120,7 +121,7 @@ describe("C13 interactions", () => {
     expect(entry.querySelector(".zone-keyboard-placeholder")).toBeNull()
     expect(entry.textContent).toContain("•••")
     expect(entry.textContent).not.toContain("ab1")
-    fireEvent.click(within(entry).getByText("Clear saved key").closest("button")!)
+    fireEvent.click(within(entry).getByText(byWords("Clear saved key")).closest("button")!)
     expect(host.calls).toEqual(["setting:steamgriddb-credential="])
   })
   test("action: fires on A", () => {
@@ -247,9 +248,9 @@ describe("C22 Wi-Fi list", () => {
   })
   test("no adapter: one row NO WI-FI ADAPTER and no SCAN", () => {
     mount({ ...fixtureOptions, network: fixtureNetworkNoAdapter })
-    expect(screen.getByText("NO WI-FI ADAPTER")).toBeTruthy()
+    expect(screen.getByText(byWords("NO WI-FI ADAPTER"))).toBeTruthy()
     expect(screen.queryByText("SCAN")).toBeNull()
-    expect(screen.queryByText("HIDDEN NETWORK")).toBeNull()
+    expect(screen.queryByText(byWords("HIDDEN NETWORK"))).toBeNull()
   })
   test("Connecting: that row's value is the caret, CONNECTING under it", () => {
     mount({ ...fixtureOptions, network: fixtureNetworkConnecting }, [{ _tag: "FocusedRow", rowId: "zone:wifi:network:ap-attic" }])
@@ -259,7 +260,7 @@ describe("C22 Wi-Fi list", () => {
   test("Failed with the key rejected: the message in red, the keyboard back for that network", () => {
     const host = mount({ ...fixtureOptions, network: fixtureNetworkConnecting })
     act(() => program?.publish({ ...fixtureOptions, network: fixtureNetworkRejected }))
-    expect(screen.getAllByText("The password for Attic 5G was not accepted.").length).toBe(2)
+    expect(screen.getAllByText(byWords("The password for Attic 5G was not accepted.")).length).toBe(2)
     const entry = screen.getByRole("dialog", { name: "Password" })
     expect(entry.textContent).toContain("Attic 5G")
     typeInto(entry, "k2")

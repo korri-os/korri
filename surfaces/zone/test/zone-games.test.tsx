@@ -19,7 +19,7 @@ import {
   fixtureSectionsModel,
 } from "../src/fixtures/zone-games"
 import { ZONE_IDLE_AFTER_MS, ZONE_IDLE_CYCLE_MS } from "../src/state/navigation"
-import { readText } from "./read-text"
+import { byWords } from "./words"
 
 afterEach(() => {
   cleanup()
@@ -34,15 +34,15 @@ function mount(model: SurfaceModel = fixtureReadyModel) {
 }
 
 const button = (text: string): HTMLButtonElement => {
-  const found = screen.getAllByText(text).map(node => node.closest("button")).find(node => node !== null)
+  const found = screen.getAllByText(byWords(text)).map(node => node.closest("button")).find(node => node !== null)
   if (found === undefined || found === null) throw new Error(`no button "${text}"`)
   return found
 }
 const card = (title: string) => button(title)
 const focus = (element: HTMLElement) => act(() => element.focus())
 const click = (element: HTMLElement) => act(() => element.click())
-const cardTitles = () => [...document.querySelectorAll(".zone-card-title")].map(node => readText(node))
-const focusedCard = () => readText(document.querySelector(".zone-card[data-focused='true'] .zone-card-title"))
+const cardTitles = () => [...document.querySelectorAll(".zone-card-title")].map(node => node.textContent)
+const focusedCard = () => document.querySelector(".zone-card[data-focused='true'] .zone-card-title")?.textContent
 const active = () => document.activeElement?.textContent ?? ""
 const launches = () => [...document.querySelectorAll(".zone-games-actions .zone-button")]
   .map(node => ({ label: node.textContent, lit: node.getAttribute("data-lit") === "on" }))
@@ -60,7 +60,7 @@ describe("C1: the catalog's four states", () => {
   test("Error: Korri's message under GAMES and RELOAD, which asks Korri to read everything again", () => {
     const { host } = mount(fixtureErrorModel)
     expect(screen.getByRole("dialog", { name: "Games" })).toBeTruthy()
-    expect(screen.getByText("The library could not be read. The disk did not answer.")).toBeTruthy()
+    expect(screen.getByText(byWords("The library could not be read. The disk did not answer."))).toBeTruthy()
     expect(document.activeElement).toBe(button("Reload"))
     click(button("Reload"))
     expect(host.calls).toEqual(["reload"])
@@ -68,7 +68,7 @@ describe("C1: the catalog's four states", () => {
 
   test("Empty: NO GAMES, and the tabs still reachable with the cursor on GAMES", () => {
     mount(fixtureEmptyModel)
-    expect(screen.getByText("No games")).toBeTruthy()
+    expect(screen.getByText(byWords("No games"))).toBeTruthy()
     expect(cardTitles()).toEqual([])
     expect(active()).toBe("Games")
     expect(button("Options").closest("[inert]")).toBeNull()
@@ -153,12 +153,12 @@ describe("C5: GAME OPTS.", () => {
     const { press } = mount()
     focus(card("Spelunky"))
     press("options")
-    expect(screen.getByText("Game opts.")).toBeTruthy()
-    for (const label of ["Verify files", "Delete save", "Copy to zao"]) expect(screen.getByText(label)).toBeTruthy()
+    expect(screen.getByText(byWords("Game opts."))).toBeTruthy()
+    for (const label of ["Verify files", "Delete save", "Copy to zao"]) expect(screen.getByText(byWords(label))).toBeTruthy()
     // No RUN WITH: no host call opens a runner choice; Korri publishes one itself.
-    expect(screen.queryByText("Run with")).toBeNull()
+    expect(screen.queryByText(byWords("Run with"))).toBeNull()
     expect(document.querySelectorAll(".zone-games-opts-rows .zone-option-row")).toHaveLength(3)
-    expect(screen.getByText("zao is not on the network")).toBeTruthy()
+    expect(screen.getByText(byWords("zao is not on the network"))).toBeTruthy()
     expect(document.activeElement).toBe(button("Verify files"))
     expect(document.querySelector(".zone-games-band")?.hasAttribute("inert")).toBe(true)
     // The focused row's RUN is flanked by the red triangles, as on OPTIONS; no other row's is.
@@ -173,10 +173,10 @@ describe("C5: GAME OPTS.", () => {
     focus(card("Spelunky"))
     focus(button("Opts."))
     click(button("Opts."))
-    expect(screen.getByText("Game opts.")).toBeTruthy()
+    expect(screen.getByText(byWords("Game opts."))).toBeTruthy()
     expect(document.activeElement).toBe(button("Verify files"))
     press("back")
-    expect(screen.queryByText("Game opts.")).toBeNull()
+    expect(screen.queryByText(byWords("Game opts."))).toBeNull()
     expect(document.activeElement).toBe(button("Opts."))
   })
 
@@ -186,7 +186,7 @@ describe("C5: GAME OPTS.", () => {
     press("options")
     click(button("Verify files"))
     expect(host.calls).toEqual(["gameAction:spelunky:verify-files"])
-    expect(screen.queryByText("Game opts.")).toBeNull()
+    expect(screen.queryByText(byWords("Game opts."))).toBeNull()
   })
 
   test("a destructive action asks NO / YES and fires only on YES", () => {
@@ -209,7 +209,7 @@ describe("C5: GAME OPTS.", () => {
     press("options")
     click(button("Copy to zao"))
     expect(host.calls).toEqual([])
-    expect(screen.getByText("Game opts.")).toBeTruthy()
+    expect(screen.getByText(byWords("Game opts."))).toBeTruthy()
   })
 })
 
@@ -226,7 +226,7 @@ describe("C6: find by text", () => {
     expect(cardTitles()).toEqual(["Hollow Knight", "Wario Land 4"])
     click(button("Done"))
     expect(screen.queryByRole("group", { name: "Keyboard" })).toBeNull()
-    expect(screen.getByText("Find: w")).toBeTruthy()
+    expect(screen.getByText(byWords("Find: w"))).toBeTruthy()
     expect(cardTitles()).toEqual(["Hollow Knight", "Wario Land 4"])
     press("back")
     expect(cardTitles()).toHaveLength(12)
@@ -254,7 +254,7 @@ describe("C6: find by text", () => {
     click(button("Find"))
     click(button("x"))
     click(button("Done"))
-    expect(screen.getByText("No games")).toBeTruthy()
+    expect(screen.getByText(byWords("No games"))).toBeTruthy()
     expect(active()).toBe("Find")
   })
 })
@@ -264,7 +264,7 @@ describe("C26: the foot", () => {
     mount()
     expect(document.querySelector(".zone-foot-timer")?.textContent).toBe("Time21:47")
     expect(screen.getByText("hummingbird-lake")).toBeTruthy()
-    expect(screen.getByText("korri 0.4.1 · 9a1fb22")).toBeTruthy()
+    expect(screen.getByText(byWords("korri 0.4.1 · 9a1fb22"))).toBeTruthy()
   })
 
   test("no clock, no timer", () => {
@@ -279,7 +279,7 @@ describe("C27: idle", () => {
     mount()
     focus(card("Spelunky"))
     act(() => jest.advanceTimersByTime(ZONE_IDLE_AFTER_MS))
-    const titleCard = () => readText(document.querySelector(".zone-title-card-title"))
+    const titleCard = () => document.querySelector(".zone-title-card-title")?.textContent
     expect(titleCard()).toBe("Spelunky")
     expect(screen.getAllByText("PC").length).toBeGreaterThan(0)
     act(() => jest.advanceTimersByTime(ZONE_IDLE_CYCLE_MS))
@@ -296,7 +296,7 @@ describe("C28: the host's buttons", () => {
   test("options = GAME OPTS., menu = the tabs, system = OPTIONS", () => {
     const { press } = mount()
     press("options")
-    expect(screen.getByText("Game opts.")).toBeTruthy()
+    expect(screen.getByText(byWords("Game opts."))).toBeTruthy()
     press("back")
     press("menu")
     expect(active()).toBe("Games")

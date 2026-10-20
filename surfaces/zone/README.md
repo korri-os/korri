@@ -1213,8 +1213,8 @@ left open is recorded here.
   line's start, and counts the ring room). A focused card's word longer
   than the card stands whole past its edge; a side card with such a word
   draws no title at all (its cover and its name still say which game it
-  is) and shows it whole once focused. No title ever loses a letter. A title of several words is read once, whole,
-  from a hidden copy, and its drawn words are hidden from a screen reader.
+  is) and shows it whole once focused. No title ever loses a letter. (The join: the title is
+  read as drawn, with no hidden copy; see below.)
 - **The facts line is one strip with a one-line lean.** A wrapped line
   keeps 45 degree ends one line tall, so wrapping never widens the ends and
   starts a loop. Each spilled tag and each fact is an item of one run.
@@ -1512,11 +1512,15 @@ disagrees with a section above, this one holds.
   `overflow-clip-margin` but not counted as overflow, so `useZoneFit`
   sees the letters: without that the dialog headline stepped to caps-1
   for 3 art px of ink room.
-- **Several words are read once.** ZoneWords keeps the whole words in a
-  hidden copy and hides the drawn words from a screen reader (the games
-  worker's card did this itself; it moved into the atom, so every caller
-  gets it). Tests that read `textContent` of a holder now read what a
-  reader reads (`test/read-text.ts`).
+- **The words are read as drawn.** ZoneWords is real text with a real
+  space between its ZoneCaps words, so `textContent`, an accessible name
+  and a screen reader get the words once, whole; the games card's hidden
+  copy of its title is gone (it doubled the title for anything reading
+  the card's text, the portal's tests among them). A text query in the
+  tests finds words drawn a word at a time through `test/words.ts`
+  (`byWords`), which every `*ByText` call with several words or a
+  computed text now uses, so an absence check cannot pass by missing
+  split words.
 - **Holders that want a ZoneCaps-tight box trim the half-leading.** The
   card title, the title card's name and the tally's heading give back
   0.2em over and under (`margin-block: -0.2em`), so the name still rises 3

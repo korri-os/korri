@@ -40,6 +40,7 @@ import {
   type ZoneOnboardingMessage,
   type ZoneOnboardingModel,
 } from "../src/state/onboarding"
+import { byWords } from "./words"
 
 afterEach(cleanup)
 
@@ -306,7 +307,7 @@ describe("ZoneOnboarding", () => {
   test("C25: a controller not yet heard reads WAITING, and NEXT does nothing", () => {
     const program = mount(waiting)
     expect(screen.getByRole("group", { name: "Waiting" })).toBeDefined()
-    expect(screen.queryByText("Xbox Wireless Controller")).toBeNull()
+    expect(screen.queryByText(byWords("Xbox Wireless Controller"))).toBeNull()
     const next = screen.getByRole("button", { name: "Next" })
     expect(next.getAttribute("aria-disabled")).toBe("true")
     fireEvent.click(next)
@@ -315,7 +316,7 @@ describe("ZoneOnboarding", () => {
 
   test("C25: a heard controller flips to its name and 1P; NEXT leads to WI-FI", () => {
     mount(heard)
-    expect(screen.getByText("Xbox Wireless Controller")).toBeDefined()
+    expect(screen.getByText(byWords("Xbox Wireless Controller"))).toBeDefined()
     expect(screen.getByText("1P")).toBeDefined()
     fireEvent.click(screen.getByRole("button", { name: "Next" }))
     expect(currentStep()).toBe("Wi-Fi")
@@ -323,7 +324,7 @@ describe("ZoneOnboarding", () => {
 
   test("C25: four controllers take their seats in heard order; the unheard one waits", () => {
     mount(onboardingModel(controllersFour))
-    expect(["1P", "2P", "3P"].map(seat => screen.getByText(seat).textContent)).toEqual(["1P", "2P", "3P"])
+    expect(["1P", "2P", "3P"].map(seat => screen.getByText(byWords(seat)).textContent)).toEqual(["1P", "2P", "3P"])
     expect(screen.getByText("DualSense")).toBeDefined()
     expect(screen.getAllByRole("group", { name: "Waiting" })).toHaveLength(1)
     // Three or four seats: Mania's four-up, no VS.
@@ -332,7 +333,7 @@ describe("ZoneOnboarding", () => {
 
   test("C25: every seat wears the same black corner tab; no seat has a colour of its own", () => {
     mount(onboardingModel(controllersFour))
-    const tabs = ["1P", "2P", "3P"].map(seat => screen.getByText(seat).closest<HTMLElement>(".zone-controller-card-seat"))
+    const tabs = ["1P", "2P", "3P"].map(seat => screen.getByText(byWords(seat)).closest<HTMLElement>(".zone-controller-card-seat"))
     expect(tabs.every(tab => tab !== null)).toBe(true)
     expect(document.querySelector(".zone-controller-card .zone-tag")).toBeNull()
     // A heard card draws Zone's controller emblem where Mania draws a portrait.
@@ -356,11 +357,11 @@ describe("ZoneOnboarding", () => {
     const program = mount(heard, { step: "wifi", focus: networkTarget("net-home") })
     expect(screen.getByText("Connection")).toBeDefined()
     expect(screen.getByText("Offline")).toBeDefined()
-    expect(screen.getByText("82% LOCKED SAVED")).toBeDefined()
-    expect(screen.getByText("21% LOCKED")).toBeDefined()
-    fireEvent.click(screen.getByText("Cafe Guest"))
+    expect(screen.getByText(byWords("82% LOCKED SAVED"))).toBeDefined()
+    expect(screen.getByText(byWords("21% LOCKED"))).toBeDefined()
+    fireEvent.click(screen.getByText(byWords("Cafe Guest")))
     expect(program.host.calls).toEqual(["connectWifi:net-cafe"])
-    expect(screen.getByText("Cafe Guest", { selector: ".zone-option-row-text" })).toBeDefined()
+    expect(screen.getByText(byWords("Cafe Guest"), { selector: ".zone-option-row-text" })).toBeDefined()
   })
 
   test("C25: a locked network is handed to the join flow; SCAN rescans; SKIP goes on to NAME", () => {

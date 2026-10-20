@@ -17,7 +17,7 @@ import { initialsOf, stripeSetOf } from "../src/ui/atoms/ZoneCoverWell"
 import { ZoneCardBand } from "../src/ui/molecules/ZoneCardBand"
 import { fixtureCards } from "../src/fixtures/zone-cards"
 import { fitZoneType, zoneFitSteps } from "../src/use-zone-fit"
-import { readText } from "./read-text"
+import { byWords } from "./words"
 
 afterEach(cleanup)
 
@@ -44,7 +44,7 @@ describe("ZoneTag", () => {
   ])("%s reads %s as a %s tag", (state, text, kind) => {
     const State = (tag as Part)[state] as ComponentType
     render(<State />)
-    const node = screen.getByText(text)
+    const node = screen.getByText(byWords(text))
     expect(node.getAttribute("data-kind")).toBe(kind)
   })
 
@@ -171,7 +171,7 @@ describe("ZoneCard", () => {
 
   test("UnfocusedOnePlace: Hollow Knight, SWITCH / HERE, no focus mark", () => {
     render(<card.UnfocusedOnePlace />)
-    expect(screen.getByText("Hollow Knight")).toBeTruthy()
+    expect(screen.getByText(byWords("Hollow Knight"))).toBeTruthy()
     expect(tagsIn()).toEqual(["Switch", "Here"])
     expect(cardNode().getAttribute("data-focused")).toBeNull()
     expect(cardNode().getAttribute("data-size")).toBe("focus")
@@ -179,31 +179,31 @@ describe("ZoneCard", () => {
 
   test("Resumable: Celeste Classic closes its row with CONTINUE", () => {
     render(<card.Resumable />)
-    expect(screen.getByText("Celeste Classic")).toBeTruthy()
+    expect(screen.getByText(byWords("Celeste Classic"))).toBeTruthy()
     expect(tagsIn()).toEqual(["PICO-8", "Here", "Continue"])
   })
 
   test("NoCover: Comet Courier wears the stripe well with CC", () => {
     render(<card.NoCover />)
-    expect(screen.getByText("Comet Courier")).toBeTruthy()
+    expect(screen.getByText(byWords("Comet Courier"))).toBeTruthy()
     expect(screen.getByText("CC")).toBeTruthy()
     expect(document.querySelector(".zone-cover-well")?.getAttribute("data-filled")).toBe("initials")
   })
 
   test("LongTitle: the Zelda title is there in full", () => {
     render(<card.LongTitle />)
-    expect(screen.getByText("The Legend of Zelda: Oracle of Seasons")).toBeTruthy()
+    expect(screen.getByText(byWords("The Legend of Zelda: Oracle of Seasons"))).toBeTruthy()
     expect(tagsIn()).toEqual(["GBC", "Here"])
   })
 
   test("First and Last name their position", () => {
     render(<card.First />)
     expect(cardNode().getAttribute("data-position")).toBe("first")
-    expect(screen.getByText("Celeste Classic")).toBeTruthy()
+    expect(screen.getByText(byWords("Celeste Classic"))).toBeTruthy()
     cleanup()
     render(<card.Last />)
     expect(cardNode().getAttribute("data-position")).toBe("last")
-    expect(screen.getByText("Super Metroid")).toBeTruthy()
+    expect(screen.getByText(byWords("Super Metroid"))).toBeTruthy()
   })
 
   test("SideSize: Tetris at the side scale, unfocused", () => {
@@ -222,7 +222,7 @@ describe("ZoneCard", () => {
   test("Download: Hollow Knight closes its row with DOWNLOAD and Korri's size, formatted", () => {
     render(<card.Download />)
     expect(tagsIn()).toEqual(["Switch", "Here", "Download 1.5 GB"])
-    expect(screen.getByText("Download 1.5 GB").getAttribute("data-kind")).toBe("download")
+    expect(screen.getByText(byWords("Download 1.5 GB")).getAttribute("data-kind")).toBe("download")
   })
 
   test("DownloadUnknownSize: DOWNLOAD alone after two places; every tag kept", () => {
@@ -281,8 +281,8 @@ describe("ZoneSaveCard", () => {
 
   test("WithText: BACK UP over the key and its word, the SAVED bar at the foot", () => {
     render(<saveCard.WithText />)
-    expect(screen.getByText("Back up")).toBeTruthy()
-    expect(screen.getByText("This device")).toBeTruthy()
+    expect(screen.getByText(byWords("Back up"))).toBeTruthy()
+    expect(screen.getByText(byWords("This device"))).toBeTruthy()
     expect(emblemIn()).toBe("key")
     expect(barsIn()).toEqual(["Saved"])
     expect(document.querySelector(".zone-save-card-foot")?.getAttribute("data-kind")).toBe("saved")
@@ -290,7 +290,7 @@ describe("ZoneSaveCard", () => {
 
   test("WithQr: the QR node stands in the well, the OPEN bar at the foot", () => {
     render(<saveCard.WithQr />)
-    expect(screen.getByText("Back up")).toBeTruthy()
+    expect(screen.getByText(byWords("Back up"))).toBeTruthy()
     expect(screen.getByRole("img", { name: "QR code" })).toBeTruthy()
     expect(barsIn()).toEqual(["Open"])
   })
@@ -306,7 +306,7 @@ describe("ZoneSaveCard", () => {
 
   test("LongHeader keeps the whole header in the DOM; a key keeps its case and breaks only after its ellipsis", () => {
     render(<saveCard.LongHeader />)
-    expect(screen.getByText("Retired identity backup")).toBeTruthy()
+    expect(screen.getByText(byWords("Retired identity backup"))).toBeTruthy()
     const key = document.querySelector(".zone-save-card-text")!
     expect(key.getAttribute("data-case")).toBe("verbatim")
     expect(key.textContent).toBe("npub1qy3…8x7lk2m0")
@@ -323,7 +323,7 @@ describe("ZoneSaveCard", () => {
 
 describe("ZoneCardBand", () => {
   const titles = () => [...document.querySelectorAll(".zone-card-title")].map((node) => node.textContent)
-  const focusedTitle = () => readText(document.querySelector('.zone-card[data-focused="true"] .zone-card-title'))
+  const focusedTitle = () => document.querySelector('.zone-card[data-focused="true"] .zone-card-title')?.textContent
   const slots = () => [...document.querySelectorAll(".zone-card-band-slot")]
 
   test("TwelveFocusThree: twelve cards, Spelunky focused in the middle, two shown either side", () => {
@@ -361,7 +361,7 @@ describe("ZoneCardBand", () => {
 
   test("NoCards: the caps line NO GAMES and no card", () => {
     render(<band.NoCards />)
-    expect(screen.getByText("No games")).toBeTruthy()
+    expect(screen.getByText(byWords("No games"))).toBeTruthy()
     expect(titles()).toEqual([])
   })
 

@@ -32,7 +32,7 @@ import type {
   SurfaceNetwork,
 } from "@contracts/surface/korri-surface"
 import { ZoneSurface } from "../src/index"
-import { readText } from "./read-text"
+import { byWords } from "./words"
 
 afterEach(() => {
   cleanup()
@@ -215,7 +215,7 @@ function mount(model: SurfaceModel = HOME, actions: readonly SurfaceAction[] = G
 
 /** The button whose words are `text`, anywhere on screen. */
 const button = (text: string | RegExp, scope: HTMLElement = document.body): HTMLButtonElement => {
-  const found = within(scope).getAllByText(text).map(node => node.closest("button")).find(node => node !== null)
+  const found = within(scope).getAllByText(byWords(text)).map(node => node.closest("button")).find(node => node !== null)
   if (found === undefined || found === null) throw new Error(`no button ${String(text)}`)
   return found
 }
@@ -246,9 +246,9 @@ function type(text: string, keyboard: HTMLElement = keyboardOnScreen()) {
 }
 const keyboardOnScreen = () => screen.getByRole("group", { name: "Keyboard" })
 const focusedText = () => document.activeElement?.textContent ?? ""
-const onScreen = (text: string | RegExp) => screen.queryAllByText(text).length > 0
+const onScreen = (text: string | RegExp) => screen.queryAllByText(byWords(text)).length > 0
 const currentTab = () => document.querySelector("[role='tablist'] [aria-current='page']")?.textContent ?? ""
-const cardTitles = () => [...document.querySelectorAll(".zone-card-title")].map(node => readText(node))
+const cardTitles = () => [...document.querySelectorAll(".zone-card-title")].map(node => node.textContent)
 const calls = (host: FakeHost) => host.calls.map(call => [call.method, ...call.args])
 
 /** The yellow-on-blue banner is drawn once: on the active tab. */
@@ -1044,7 +1044,7 @@ describe("gameplay overlay", () => {
     confirm()
     publish(paused)
     const page = document.querySelector<HTMLElement>(".zone-paused")!
-    expect(readText(page.querySelector(".zone-paused-title"))).toBe("Wario Land 4")
+    expect(page.querySelector(".zone-paused-title")?.textContent).toBe("Wario Land 4")
     expect(page.textContent).toContain("mGBA")
     // The cursor opens on Korri's first control.
     expect(focusedText()).toContain("Continue")
@@ -1183,7 +1183,7 @@ describe("chrome and input", () => {
     const { press } = mount()
     moveTo(button("Spelunky"))
     act(() => jest.advanceTimersByTime(30_000))
-    const titleCard = () => readText(document.querySelector(".zone-title-card-title"))
+    const titleCard = () => document.querySelector(".zone-title-card-title")?.textContent
     expect(titleCard()).toBe("Spelunky")
     // The attract gives each game 6 s: its title card, then its stage (M6).
     act(() => jest.advanceTimersByTime(6_000))
@@ -1391,7 +1391,7 @@ describe("moments", () => {
     // CONTINUE on Celeste, played 23 times: ACT 24, the system on its tag, ZONE on the bar.
     confirm()
     expect(calls(host)).toEqual([["launchGame", "celeste"]])
-    expect(readText(launchCard()?.querySelector(".zone-title-card-title"))).toBe("Celeste Classic")
+    expect(launchCard()?.querySelector(".zone-title-card-title")?.textContent).toBe("Celeste Classic")
     expect(launchCard()?.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("Act 24")
     expect(launchCard()?.querySelector(".zone-title-card-bar")?.textContent).toBe("Zone")
     expect(launchCard()?.querySelector(".zone-tag")?.textContent).toBe("PICO-8")
@@ -1492,7 +1492,7 @@ describe("moments", () => {
     moveTo(button("Spelunky"))
     act(() => jest.advanceTimersByTime(30_000))
     const attract = () => document.querySelector<HTMLElement>(".zone-attract")
-    const titleCard = () => readText(attract()?.querySelector(".zone-title-card-title"))
+    const titleCard = () => attract()?.querySelector(".zone-title-card-title")?.textContent
     // Spelunky's turn: its title card, never played (ACT 1), then its stage with the HUD.
     expect(titleCard()).toBe("Spelunky")
     expect(attract()?.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("Act 1")

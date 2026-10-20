@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { cleanup, render, screen, within } from "@testing-library/react"
 import { createFixtureHost, fixtureModel } from "../src/fixtures/fixture-host"
 import { ZoneSurface, zoneSurface } from "../src/index"
+import { byWords } from "./words"
 
 afterEach(cleanup)
 
@@ -13,12 +14,12 @@ describe("ZoneSurface", () => {
   test("is the GAMES page on power-on: every catalog card in the band, the first focused, over the ground", () => {
     render(<ZoneSurface host={createFixtureHost()} model={fixtureModel} />)
     expect(screen.getByText("Spelunky")).toBeTruthy()
-    expect(screen.getByText("The Legend of Zelda: Oracle of Seasons")).toBeTruthy()
+    expect(screen.getByText(byWords("The Legend of Zelda: Oracle of Seasons"))).toBeTruthy()
     expect(document.querySelectorAll(".zone-card")).toHaveLength(12)
     expect(document.activeElement?.textContent).toContain("Celeste Classic")
     expect(document.querySelector(".zone-tab[aria-current='page']")?.textContent).toBe("Games")
     expect(screen.getByText("21:47")).toBeTruthy()
-    expect(screen.getByText("korri 0.4.1 · 9a1fb22")).toBeTruthy()
+    expect(screen.getByText(byWords("korri 0.4.1 · 9a1fb22"))).toBeTruthy()
     expect(document.querySelector(".zone-ground")).not.toBeNull()
     expect(document.querySelector(".zone-shell")).not.toBeNull()
   })

@@ -19,6 +19,7 @@ import * as slab from "../src/ui/organisms/ZoneSecretSlab.organism.part"
 import { IDENTITY_START, update, type IdentityFlow, type IdentityMessage, type IdentityModel } from "../src/state/identity"
 import { useZoneProgram } from "../src/use-zone-program"
 import { performZoneRequest } from "../src/zone-host"
+import { byWords } from "./words"
 
 afterEach(cleanup)
 
@@ -95,8 +96,8 @@ describe("the band", () => {
     expect(card(/From backup/)).toBeTruthy()
     expect(card(/Bunker/)).toBeTruthy()
     expect(screen.getAllByText("Retired").length).toBe(2)
-    expect(screen.getByText(shortKey(KEY_A))).toBeTruthy()
-    expect(screen.getByText(shortKey(KEY_B))).toBeTruthy()
+    expect(screen.getByText(byWords(shortKey(KEY_A)))).toBeTruthy()
+    expect(screen.getByText(byWords(shortKey(KEY_B)))).toBeTruthy()
     // No row until a retired key has the cursor.
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull()
   })
@@ -125,7 +126,7 @@ describe("the band", () => {
     expect(within(card(/Back up/)).getByText("New")).toBeTruthy()
     cleanup()
     mount(identityOf({ _tag: "Idle" }, { localBackupAvailable: true }))
-    expect(within(card(/Back up/)).getByText("Backed up")).toBeTruthy()
+    expect(within(card(/Back up/)).getByText(byWords("Backed up"))).toBeTruthy()
   })
 
   test("the cursor goes to a step when it opens, and back to the card when it closes", () => {
@@ -145,7 +146,7 @@ describe("the band", () => {
 
   test("without identity management: one NOT AVAILABLE card and nothing else", () => {
     const { calls } = mount(undefined)
-    expect(screen.getByText("Not available")).toBeTruthy()
+    expect(screen.getByText(byWords("Not available"))).toBeTruthy()
     expect(screen.getAllByRole("button").length).toBe(1)
     press(/Not available/)
     expect(screen.queryByRole("dialog")).toBeNull()
@@ -180,7 +181,7 @@ describe("C16 back up", () => {
     back()
     expect(calls.at(-1)).toEqual(["dismissIdentityStatus"])
     publish(identityOf({ _tag: "Idle" }, { localBackupAvailable: true }))
-    expect(within(card(/Back up/)).getByText("Backed up")).toBeTruthy()
+    expect(within(card(/Back up/)).getByText(byWords("Backed up"))).toBeTruthy()
     expect(screen.queryByRole("img", { name: "Backup QR code" })).toBeNull()
   })
 
@@ -235,12 +236,12 @@ describe("C17 switch from backup", () => {
     typeKeys("pw")
     press("Done")
 
-    expect(within(dialog()).getByText("Local records")).toBeTruthy()
+    expect(within(dialog()).getByText(byWords("Local records"))).toBeTruthy()
     expect(within(dialog()).getByRole("button", { name: "Transfer" })).toBeTruthy()
     press("Delete")
 
-    expect(within(dialog()).getByText("Switch key?")).toBeTruthy()
-    expect(within(dialog()).getByText("Other devices will stop trusting this key")).toBeTruthy()
+    expect(within(dialog()).getByText(byWords("Switch key?"))).toBeTruthy()
+    expect(within(dialog()).getByText(byWords("Other devices will stop trusting this key"))).toBeTruthy()
     expect(calls).toEqual([])
     press("Yes")
     expect(calls).toEqual([["switchIdentityFromBackup", "ncryptsec1q", "pw", "delete", true]])
@@ -279,7 +280,7 @@ describe("C18 switch by bunker", () => {
     typeKeys("ab")
     press("Done")
     press("Transfer")
-    expect(within(dialog()).getByText("Other devices will stop trusting this key")).toBeTruthy()
+    expect(within(dialog()).getByText(byWords("Other devices will stop trusting this key"))).toBeTruthy()
     press("Yes")
     expect(calls).toEqual([["switchIdentityToNip46", "bunker://ab", "transfer", true]])
   })
@@ -334,12 +335,12 @@ describe("C19 retired keys", () => {
     const { calls } = mount(identityOf())
     fireEvent.click(retired(1))
     press("Delete")
-    expect(within(dialog()).getByText("Delete this key?")).toBeTruthy()
-    expect(within(dialog()).getByText("Back it up first.")).toBeTruthy()
-    expect(within(dialog()).getByText(shortKey(KEY_B))).toBeTruthy()
+    expect(within(dialog()).getByText(byWords("Delete this key?"))).toBeTruthy()
+    expect(within(dialog()).getByText(byWords("Back it up first."))).toBeTruthy()
+    expect(within(dialog()).getByText(byWords(shortKey(KEY_B)))).toBeTruthy()
     press("Yes")
     expect(calls).toEqual([])
-    expect(within(dialog()).getByText("Is it backed up?")).toBeTruthy()
+    expect(within(dialog()).getByText(byWords("Is it backed up?"))).toBeTruthy()
     press("Yes")
     expect(calls).toEqual([["deleteRetiredIdentity", KEY_B, true]])
   })
@@ -360,7 +361,7 @@ describe("C19 retired keys", () => {
 describe("C20 identity status", () => {
   test("Working: Korri's operation as the kicker over the band, and nothing can be started", () => {
     const { calls } = mount(identityOf({ _tag: "Working", operation: "Encrypting backup" }))
-    expect(within(screen.getByRole("status")).getByText("Encrypting backup")).toBeTruthy()
+    expect(within(screen.getByRole("status")).getByText(byWords("Encrypting backup"))).toBeTruthy()
     press(/Back up/)
     expect(screen.queryByRole("group", { name: "Keyboard" })).toBeNull()
     expect(calls).toEqual([])
@@ -368,7 +369,7 @@ describe("C20 identity status", () => {
 
   test("Problem: Korri's message verbatim with DISMISS", () => {
     const { calls } = mount(identityOf({ _tag: "Problem", message: "The password does not open this backup." }))
-    expect(within(dialog()).getByText("The password does not open this backup.")).toBeTruthy()
+    expect(within(dialog()).getByText(byWords("The password does not open this backup."))).toBeTruthy()
     press("Dismiss")
     expect(calls).toEqual([["dismissIdentityStatus"]])
   })
@@ -376,7 +377,7 @@ describe("C20 identity status", () => {
   test("Switched: the new owner key shortened, with OK", () => {
     const { calls } = mount(identityOf({ _tag: "Switched", ownerPublicKey: OWNER }))
     expect(within(dialog()).getByText("Switched")).toBeTruthy()
-    expect(within(dialog()).getByText(shortKey(OWNER))).toBeTruthy()
+    expect(within(dialog()).getByText(byWords(shortKey(OWNER)))).toBeTruthy()
     press("OK")
     expect(calls).toEqual([["dismissIdentityStatus"]])
   })

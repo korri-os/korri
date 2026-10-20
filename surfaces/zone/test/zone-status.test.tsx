@@ -36,6 +36,7 @@ import {
   type ZoneStatusModel,
 } from "../src/state/status"
 import { ZoneStatusLayer } from "../src/ui/organisms/ZoneStatusLayer"
+import { byWords } from "./words"
 
 afterEach(cleanup)
 
@@ -171,7 +172,7 @@ const mount = (status: SurfaceStatus) => {
   return program
 }
 
-const pageOf = () => screen.getByText("Page card").closest("[inert]")
+const pageOf = () => screen.getByText(byWords("Page card")).closest("[inert]")
 
 describe("ZoneStatusLayer", () => {
   test("Browsing draws nothing over the page", () => {
@@ -186,7 +187,7 @@ describe("ZoneStatusLayer", () => {
     mount(statusBusyDetail)
     const strip = screen.getByRole("status")
     expect(within(strip).getByText("Starting")).toBeDefined()
-    expect(within(strip).getByText("Waiting for zao to answer")).toBeDefined()
+    expect(within(strip).getByText(byWords("Waiting for zao to answer"))).toBeDefined()
     expect(screen.getByText("Spelunky")).toBeDefined()
     expect(within(strip).queryByRole("button")).toBeNull()
     expect(pageOf()).not.toBeNull()
@@ -210,8 +211,8 @@ describe("ZoneStatusLayer", () => {
 
   test("C7: two actions; focusing STOP lights it and A runs it", () => {
     const program = mount(statusBusyTwo)
-    expect(screen.getByText("Copying save")).toBeDefined()
-    expect(screen.getByText("Wario Land 4")).toBeDefined()
+    expect(screen.getByText(byWords("Copying save"))).toBeDefined()
+    expect(screen.getByText(byWords("Wario Land 4"))).toBeDefined()
     const stop = screen.getByRole("button", { name: "Stop" })
     act(() => {
       fireEvent.focus(stop)
@@ -225,9 +226,9 @@ describe("ZoneStatusLayer", () => {
   test("C8: Running shows the kicker, OPEN and the game's title, takes no focus and leaves the page usable", () => {
     mount(statusRunning)
     const strip = screen.getByRole("status")
-    expect(within(strip).getByText("Playing on zao")).toBeDefined()
+    expect(within(strip).getByText(byWords("Playing on zao"))).toBeDefined()
     expect(within(strip).getByText("Open")).toBeDefined()
-    expect(within(strip).getByText("The Legend of Zelda: Oracle of Seasons")).toBeDefined()
+    expect(within(strip).getByText(byWords("The Legend of Zelda: Oracle of Seasons"))).toBeDefined()
     expect(within(strip).queryByRole("button")).toBeNull()
     expect(pageOf()).toBeNull()
   })
@@ -235,7 +236,7 @@ describe("ZoneStatusLayer", () => {
   test("C9: Problem states Korri's kicker, reason and the game, DISMISS lit before RETRY", () => {
     mount(statusProblem)
     const dialog = screen.getByRole("dialog", { name: "Could not start" })
-    expect(within(dialog).getByText("zao did not answer in time. Check that it is awake and on the same network.")).toBeDefined()
+    expect(within(dialog).getByText(byWords("zao did not answer in time. Check that it is awake and on the same network."))).toBeDefined()
     expect(within(dialog).getByText("Spelunky")).toBeDefined()
     const buttons = within(dialog).getAllByRole("button")
     expect(buttons.map(button => button.textContent)).toEqual(["Dismiss", "Retry"])
@@ -271,7 +272,7 @@ describe("ZoneStatusLayer", () => {
   test("C31: Confirm asks Korri's question: the kicker as headline, the detail, the host's actions in order, the first lit", () => {
     mount(statusConfirmThree)
     const dialog = screen.getByRole("dialog", { name: "Needs a download" })
-    expect(within(dialog).getByText("Proton-CachyOS, size unknown. This device is on a metered connection.")).toBeDefined()
+    expect(within(dialog).getByText(byWords("Proton-CachyOS, size unknown. This device is on a metered connection."))).toBeDefined()
     const buttons = within(dialog).getAllByRole("button")
     expect(buttons.map(button => button.textContent)).toEqual(["Download", "Play on zao instead", "Cancel"])
     expect(buttons[0]?.getAttribute("data-focused")).toBe("true")
@@ -283,7 +284,7 @@ describe("ZoneStatusLayer", () => {
   test("C31: the game the question belongs to stands in yellow", () => {
     mount(statusConfirmForGame)
     const dialog = screen.getByRole("dialog", { name: "Needs a download" })
-    const title = within(dialog).getByText("Hollow Knight").closest<HTMLElement>(".zone-dialog-title")
+    const title = within(dialog).getByText(byWords("Hollow Knight")).closest<HTMLElement>(".zone-dialog-title")
     expect(title).not.toBeNull()
     // Each drawn word is HUD caps.
     const words = [...title!.querySelectorAll(".zone-caps")]
@@ -340,7 +341,7 @@ describe("ZoneStatusLayer", () => {
     expect(bar.textContent).toBe("612.0 MB/1.2 GB")
     expect(bar.style.getPropertyValue("--zone-busy-strip-share")).toBe(String(612_000_000 / 1_160_000_000))
     // Korri's detail stays, verbatim, above the bar.
-    expect(within(strip).getByText("612 MB of 1.2 GB · 6.4 MB/s · 1:30 left")).toBeDefined()
+    expect(within(strip).getByText(byWords("612 MB of 1.2 GB · 6.4 MB/s · 1:30 left"))).toBeDefined()
     expect(screen.getByRole("button", { name: "Cancel" }).getAttribute("data-focused")).toBe("true")
   })
 
