@@ -1140,15 +1140,27 @@ impl Host {
     /// callback execution occurs. Signature verification may consult the bound
     /// cache; pending transitions never publish launch authority.
     pub fn enabled_packages(&self) -> Result<Vec<Report>, String> {
+        // Every install, enable, disable, update and rollback republishes this
+        // list. Loading each enabled graph separately costs several Nix calls
+        // and a declaration evaluation per plugin, so a batch of N changes did
+        // O(N^2) work. Read store metadata once and load the graphs together,
+        // exactly as boot restore does. The same approval, dependency and
+        // signature checks still run on every report; a cached report is used
+        // only for the exact package its receipt selects.
+        let checks = self.boot_checks();
         let mut reports = Vec::new();
         for receipt in self.receipts()? {
             if !matches!(receipt.desired, Desired::Enabled) {
                 continue;
             }
             self.settled(&receipt)?;
-            let report = self.approved(&receipt)?;
-            self.check_dependencies(&report, true, None)?;
-            self.verify_report(&report, None, package::StoreContents::TrustRegistered)?;
+            let report = self.approved_in(&receipt, checks.as_ref())?;
+            self.check_dependencies(&report, true, checks.as_ref())?;
+            self.verify_report(
+                &report,
+                checks.as_ref(),
+                package::StoreContents::TrustRegistered,
+            )?;
             reports.push(report);
         }
         Ok(reports)
@@ -3022,6 +3034,26 @@ mod tests {
             published(&host).1,
             ["@games:starter-pack", "@runtime:fake08"]
         );
+        // The batched projection must equal loading each receipt on its own.
+        let batched = serde_json::to_value(host.enabled_packages().unwrap()).unwrap();
+        let mut separate = Vec::new();
+        for receipt in host.receipts().unwrap() {
+            if matches!(receipt.desired, Desired::Enabled) {
+                let report = host.approved(&receipt).unwrap();
+                host.verify_report(&report, None, package::StoreContents::TrustRegistered)
+                    .unwrap();
+                separate.push(report);
+            }
+        }
+        assert_eq!(batched, serde_json::to_value(separate).unwrap());
+        // Rebinding the dependency's namespace to a key that signed nothing
+        // still fails the batched publish. (The games key also signed the
+        // runner above, so it cannot stand in for a revoked key.)
+        let unused_secret = run(&["key", "generate-secret", "--key-name", "same-label"]);
+        let bound = host.publishers.clone();
+        host.publishers.get_mut("@runtime").unwrap().public_key = public(&unused_secret);
+        assert!(host.enabled_packages().is_err());
+        host.publishers = bound;
         assert!(host.set_enabled(&dependency.id, false).is_err());
         assert!(host.remove(&dependency.id, false).is_err());
         host.selection(&dependency.id).stage(&runner).unwrap();
