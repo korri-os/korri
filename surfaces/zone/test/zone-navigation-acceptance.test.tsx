@@ -926,7 +926,20 @@ describe("gameplay overlay", () => {
     expect(calls(host)).toHaveLength(4)
     press("back")
     expect(calls(host).at(-1)).toEqual(["dismissGameplayOverlay"])
+    // destructive, answered: nothing is invoked until YES.
+    publish(HOME)
+    publish(paused)
+    const before = calls(host).length
+    moveTo(control("Exit"))
+    confirm()
+    const exit = screen.getByRole("dialog", { name: "Exit" })
+    expect(calls(host)).toHaveLength(before)
+    moveTo(button("Yes", exit))
+    expect(calls(host)).toHaveLength(before)
+    confirm()
+    expect(calls(host).slice(before)).toEqual([["invokeGameplayControl", "exit"]])
     // dismissOnSuccess: Zone invokes and lets the host return to the game.
+    publish(HOME)
     publish(paused)
     moveTo(control("Continue"))
     confirm()
