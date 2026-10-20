@@ -47,13 +47,13 @@ const launches = () => [...document.querySelectorAll(".zone-games-actions .zone-
   .map(node => ({ label: node.textContent, lit: node.getAttribute("data-lit") === "on" }))
 
 describe("C1: the catalog's four states", () => {
-  test("Loading: three dim stripe-well cards nobody can focus, and LOADING", () => {
+  test("Loading: three cards with static in their wells, nobody can focus them, and LOADING", () => {
     mount(fixtureLoadingModel)
     expect(screen.getByText("Loading")).toBeTruthy()
     const wells = document.querySelectorAll(".zone-games-loading .zone-card")
     expect(wells).toHaveLength(3)
     expect([...wells].every(well => well.closest("[inert]") !== null)).toBe(true)
-    expect(document.querySelectorAll(".zone-games-loading .zone-cover-well[data-filled='initials']")).toHaveLength(3)
+    expect(document.querySelectorAll(".zone-games-loading .zone-cover-well[data-filled='noise']")).toHaveLength(3)
   })
 
   test("Error: Korri's message under GAMES and RELOAD, which asks Korri to read everything again", () => {

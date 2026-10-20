@@ -92,11 +92,7 @@
   transition: opacity var(--zone-lift-time) linear;
 }
 
-/* Under GAME OPTS. or the error dialog the page steps back. */
-.zone-games[data-layer="opts"] .zone-games-band,
-.zone-games[data-layer="opts"] .zone-games-factline,
-.zone-games[data-layer="opts"] .zone-games-actions,
-.zone-games[data-layer="opts"] .zone-games-find,
+/* Under the error dialog the page steps back; GAME OPTS. covers it. */
 .zone-games[data-layer="error"] .zone-games-band,
 .zone-games[data-layer="error"] .zone-games-find {
   opacity: var(--zone-games-behind-opacity);
@@ -105,10 +101,26 @@
 .zone-games-loading {
   width: 100%;
   height: 100%;
-  opacity: var(--zone-games-loading-opacity);
 }
 
-/* The FIND: <draft> tag at the band's start, over the first card's corner. */
+/* The kept filter at the band's start, over the first card's corner: FIND
+ * in HUD ink, then the draft as typed, in Jersey 10, on black. */
+.zone-games-find-read {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.zone-games-find-words {
+  display: inline-flex;
+  align-items: baseline;
+  gap: calc(var(--zone-games-fact-pair) * var(--zone-px));
+  min-width: 0;
+}
+
 .zone-games-find-tag {
   position: absolute;
   top: calc(var(--zone-strip-inset) * var(--zone-px));
@@ -226,28 +238,52 @@
   translate: -50% 0;
 }
 
-/* GAME OPTS.: the head, then the rows over the band, centred, at most a
- * share of the width; the rows scroll inside when they do not fit. */
+/* GAME OPTS.: MANIA MODE's sheet. An opaque panel of its own teal with its
+ * own rings across the whole body, under the tabs, so nothing of the band
+ * shows through; it slides in from the right. The head (GAME OPTS. on a
+ * black panel, the game on a blue tag), then Korri's actions as rows that
+ * scroll inside it when they do not fit. */
 .zone-games-opts {
   position: absolute;
-  inset: calc(var(--zone-strip-inset) * var(--zone-px)) calc(var(--zone-band-margin) * var(--zone-px)) 0;
+  inset: 0;
   z-index: 3;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   justify-items: center;
   row-gap: calc(var(--zone-strip-inset) * var(--zone-px));
-  pointer-events: none;
+  padding: calc(var(--zone-strip-inset) * var(--zone-px)) calc(var(--zone-band-margin) * var(--zone-px)) 0;
+  overflow: hidden;
+  translate: calc(var(--zone-games-sheet-x, 0) * var(--zone-px)) 0;
 }
 
 .zone-games-opts-head {
-  font-size: var(--zone-shell-button-type);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--zone-games-fact-pair) * var(--zone-px));
+  max-width: 100%;
+  font-size: calc(var(--zone-caps-2) * var(--zone-px));
+}
+
+/* The game, in its own case, on the system's blue. */
+.zone-games-opts-game {
+  display: inline-flex;
+  max-width: 100%;
+  padding: calc(var(--zone-games-fact-pair) * var(--zone-px)) calc(var(--zone-games-fact-gap) * var(--zone-px));
+  background: var(--zone-blue);
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
 }
 
 .zone-games-opts-rows {
+  position: relative;
   display: flex;
+  flex-direction: column;
+  gap: calc(var(--zone-games-fact-pair) * var(--zone-px));
   width: min(100%, calc(var(--zone-games-opts-max) * var(--zone-px)));
   min-height: 0;
-  pointer-events: auto;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
 /* The NO / YES question and the catalog's error stand over everything in

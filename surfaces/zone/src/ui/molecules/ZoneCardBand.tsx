@@ -1,6 +1,9 @@
 import "./ZoneCardBand.css"
 import "../../zone-motion.css"
 import { Fragment, useLayoutEffect, useRef } from "react"
+import { ZONE_SNAP_MS, zoneSnapFrame } from "../../plan/motion"
+import { useZoneMoment } from "../../use-zone-moment"
+import { ZoneCoverWell } from "../atoms/ZoneCoverWell"
 import { ZoneCard, type ZoneCardFacts, type ZoneCardPosition } from "./ZoneCard"
 import { ZoneSectionCard } from "./ZoneSectionCard"
 
@@ -88,14 +91,41 @@ export function ZoneCardBand({
   const spine = visible === 3 ? "hairline" : "full"
 
   useLayoutEffect(() => {
-    track.current?.style.setProperty("--zone-band-focus", String(focus))
-    track.current?.style.setProperty("--zone-band-dividers", String(dividers))
     track.current?.style.setProperty("--zone-band-spines", String(spines))
-  }, [focus, dividers, spines])
+  }, [spines])
+
+  // M1: the track travels from the old focus to the new in 220 ms with one
+  // overshoot, as a seekable moment. The counts it centres on move together,
+  // so every frame is a point on the same straight path.
+  // A move that starts mid-move starts from where the track stands.
+  const snap = `${focus}:${dividers}`
+  const painted = useRef({ focus, dividers })
+  const origin = useRef({ key: snap, from: { focus, dividers } })
+  if (origin.current.key !== snap) origin.current = { key: snap, from: painted.current }
+  useZoneMoment(track, {
+    key: snap,
+    duration: ZONE_SNAP_MS,
+    frame: t => {
+      const share = zoneSnapFrame(t)
+      const { from } = origin.current
+      const at = (a: number, b: number) => Number((a + (b - a) * share).toFixed(4))
+      painted.current = { focus: at(from.focus, focus), dividers: at(from.dividers, dividers) }
+      return { "--zone-band-focus": painted.current.focus, "--zone-band-dividers": painted.current.dividers }
+    },
+  })
 
   return (
     <div className="zone-card-band" data-visible={visible}>
-      {cards.length === 0 ? <p className="zone-card-band-empty">No games</p> : null}
+      {cards.length === 0 ? (
+        // No games: one card that cannot be chosen, NO GAMES on its header
+        // bar over a well of static.
+        <div className="zone-card-band-empty">
+          <div className="zone-card-band-none">
+            <p className="zone-card-band-none-bar">No games</p>
+            <ZoneCoverWell noise title="" />
+          </div>
+        </div>
+      ) : null}
       <div className="zone-card-band-track" ref={track}>
         {cards.map((card, index) => (
           <Fragment key={card.id}>
@@ -116,6 +146,7 @@ export function ZoneCardBand({
               <ZoneCard
                 art={card.art}
                 download={card.download}
+                noise={card.noise}
                 focused={index === focus}
                 onFocus={onFocus === undefined ? undefined : () => onFocus(index)}
                 onPress={onChoose === undefined ? undefined : () => onChoose(index)}

@@ -955,6 +955,16 @@
   --zone-games-tab-pad-y: 5;
   /** A tab's padding once the top strip has yielded its gaps. Art px. @label Tab padding, least @min 0 @max 10 @step 1 */
   --zone-games-tab-pad-y-least: 1;
+  /** The static's three checker tiles, prime so they never line up. Art px. @label Static tile A @min 1 @max 16 @step 1 */
+  --zone-well-noise-a: 3;
+  /** @label Static tile B @min 1 @max 16 @step 1 */
+  --zone-well-noise-b: 5;
+  /** @label Static tile C @min 1 @max 16 @step 1 */
+  --zone-well-noise-c: 7;
+  /** One loop of the static: five frames, a new one every 100 ms. @label Static loop @min 0ms @max 2000ms @step 100ms */
+  --zone-well-noise-time: 500ms;
+  /** One blink of the keyboard's caret and of PRESS ANY BUTTON: shown, then hidden. @label Blink @min 0ms @max 2000ms @step 50ms */
+  --zone-games-blink-time: 1000ms;
   /** One loop of the cursor triangles' nudge: two steps, 2 art px apart (M1). @label Nudge loop @min 0ms @max 2000ms @step 20ms */
   --zone-games-nudge-time: 480ms;
 

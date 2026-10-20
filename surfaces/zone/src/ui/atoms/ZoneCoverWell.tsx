@@ -33,21 +33,26 @@ export function stripeSetOf(title: string): number {
  * the well drains its colour, as PAUSED greys the game behind it.
  *
  * `children` stand in the well instead of art or initials: the save card
- * puts a QR code or a line of text there.
+ * puts a QR code or a line of text there. `noise` fills it with black and
+ * white static, drawn anew every 100 ms and still under reduced motion,
+ * while there is nothing to show yet.
  */
 export function ZoneCoverWell({
   art,
   title,
   greyed = false,
+  noise = false,
   children,
 }: {
   readonly art?: string
   /** The title the well stands for; its initials show when there is no art. */
   readonly title: string
   readonly greyed?: boolean
+  /** Nothing to show yet: MANIA MODE's used save window, two-colour static before its picture. */
+  readonly noise?: boolean
   readonly children?: ReactNode
 }) {
-  const filled = children !== undefined ? "node" : art === undefined ? "initials" : "art"
+  const filled = noise ? "noise" : children !== undefined ? "node" : art === undefined ? "initials" : "art"
   return (
     <span
       className="zone-cover-well"

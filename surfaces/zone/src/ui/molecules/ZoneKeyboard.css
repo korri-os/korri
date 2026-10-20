@@ -1,8 +1,11 @@
-/* The panel: blue, slanted, rising with the snap. The slab sits over the
- * rows; the count, when there is one, sits at the slab's end. */
+/* The panel: sky, slanted, a black wedge down its left end as Mania's
+ * OPTIONS band, rising with the snap. The slab sits over the rows; the
+ * count, when there is one, sits at the slab's end. Every key and the
+ * slab stand at caps-1 (the slab's words at the fact size among it): no
+ * size between art pixels. */
 .zone-keyboard {
-  --zone-keyboard-type-key: clamp(calc(calc(var(--zone-type-key) * var(--zone-px)) * 0.6), 2.4cqi, calc(var(--zone-type-key) * var(--zone-px)));
-  --zone-keyboard-type-slab: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 4cqi, calc(var(--zone-type-slab) * var(--zone-px)));
+  --zone-keyboard-type-key: calc(var(--zone-caps-1) * var(--zone-px));
+  --zone-keyboard-type-slab: calc(var(--zone-caps-1) * var(--zone-px));
   --zone-keyboard-key-height: clamp(calc(calc(var(--zone-key-height) * var(--zone-px)) * 0.7), 8cqb, calc(var(--zone-key-height) * var(--zone-px)));
   --zone-keyboard-shape: polygon(
     calc(var(--zone-slant) * var(--zone-px)) 0,
@@ -22,7 +25,7 @@
   padding: calc(var(--zone-keyboard-pad) * var(--zone-px)) calc(calc(var(--zone-keyboard-pad) * var(--zone-px)) + calc(var(--zone-keyboard-slant) * var(--zone-px)));
   overflow-y: auto;
   scrollbar-width: none;
-  background: var(--zone-keyboard-panel);
+  background: linear-gradient(90deg, var(--zone-black) 0 4%, var(--zone-keyboard-panel) 4% 100%);
   clip-path: polygon(
     calc(var(--zone-keyboard-slant) * var(--zone-px)) 0,
     100% 0,
@@ -48,7 +51,9 @@
   background: var(--zone-slab);
   color: var(--zone-slab-ink);
   --zone-caps-shade: currentColor;
-  font-size: var(--zone-keyboard-type-slab);
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-keyboard-type-slab) * var(--zone-fact) / var(--zone-caps-1));
+  line-height: 0.75;
   text-transform: none;
   text-shadow: none;
   white-space: pre;
@@ -73,16 +78,16 @@
   vertical-align: baseline;
   background: var(--zone-caret-colour);
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
-  animation: zone-blink var(--zone-blink-time) steps(1) infinite alternate;
+  animation: zone-blink var(--zone-games-blink-time) steps(2, jump-none) infinite;
 }
 
-/* How many characters of the most Korri takes. */
+/* How many characters of the most Korri takes, in HUD ink beside the slab. */
 .zone-keyboard-count {
   position: sticky;
   top: 0;
   z-index: 1;
   grid-column: 2;
-  font-size: calc(var(--zone-type-note) * var(--zone-px));
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
 }
 
 .zone-keyboard-rows {
@@ -149,6 +154,14 @@
  * DONE between. The current layer's key is yellow. */
 .zone-keyboard-key[data-role] {
   text-transform: uppercase;
+}
+
+/* A lower-case letter: its own glyph in Jersey 10, one Jersey pixel to an
+ * art pixel among the caps. */
+.zone-keyboard-key[data-face="fact"] {
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-keyboard-type-key) * var(--zone-fact) / var(--zone-caps-1));
+  line-height: 0.75;
 }
 
 .zone-keyboard-key[data-role="layer"] {

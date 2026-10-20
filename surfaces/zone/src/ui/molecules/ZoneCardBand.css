@@ -72,8 +72,7 @@
   display: flex;
   align-items: center;
   gap: var(--zone-band-gap);
-  translate: calc(50cqw - var(--zone-band-centre)) -50%;
-  transition: translate var(--zone-snap-time) var(--zone-bounce);
+  translate: round(calc(50cqw - var(--zone-band-centre)), var(--zone-px)) -50%;
   will-change: translate;
 }
 
@@ -96,12 +95,35 @@
   opacity: 0;
 }
 
-/* No cards: one caps line in the middle of the band. */
+/* No cards: one card in the middle of the band, as tall as a focused card,
+ * its white header bar reading NO GAMES in black caps-1 (as MANIA MODE's
+ * NEW card), static in its well. It is not a button: nothing to choose. */
 .zone-card-band-empty {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
+}
+
+.zone-card-band-none {
+  --zone-card-band-none-h: min(calc(var(--zone-card-focus-max) * var(--zone-px)), calc(100cqh - 2 * calc(var(--zone-band-pad) * var(--zone-px))));
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--zone-games-card-gap) * var(--zone-px));
+  width: calc(var(--zone-card-band-none-h) * var(--zone-card-ratio));
+  height: var(--zone-card-band-none-h);
+  padding: calc(var(--zone-games-card-frame) * var(--zone-px));
+  background: var(--zone-black);
+  box-shadow: calc(var(--zone-drop) * var(--zone-px)) calc(var(--zone-drop) * var(--zone-px)) 0 var(--zone-shade);
+}
+
+.zone-card-band-none-bar {
   margin: 0;
-  font-size: calc(var(--zone-type-empty) * var(--zone-px));
+  padding: calc(var(--zone-games-card-gap) * var(--zone-px)) 0;
+  background: var(--zone-white);
+  color: var(--zone-black);
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+  line-height: 1;
+  text-align: center;
+  text-shadow: none;
 }

@@ -114,6 +114,13 @@ export function zoneMenuFrame(t: number, wArt: number): ZoneMenuFrame {
   }
 }
 
+/** GAME OPTS.' sheet arriving: M2's incoming rows, as one sheet from the right. */
+export const ZONE_SHEET_MS = MENU_ROWS.duration
+
+/** The sheet's offset from rest at `t`, art px to the right. */
+export const zoneSheetFrame = (t: number, wArt: number): number =>
+  art(wArt * (1 - along(t, 0, MENU_ROWS.duration, ZONE_EASE.rows)))
+
 /**
  * The stair the old ground keeps at wipe `share`: everything below and left
  * of a 45 degree line that has swept in from the top right corner. Rows of

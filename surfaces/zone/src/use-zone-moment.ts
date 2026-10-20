@@ -148,3 +148,25 @@ export function useZoneMoment(element: RefObject<HTMLElement | null>, moment: Zo
     }
   }, [element, key])
 }
+
+/**
+ * M2's trigger. A tab chosen (ZoneTab) marks the moment with the colour of
+ * the ground it leaves; the shell of the page that arrives takes the mark
+ * when it mounts (a new page) or when its own page changes (the same shell)
+ * and plays the menu transition from that colour. A mark older than the
+ * transition is stale and plays nothing, so a page that mounts for any
+ * other reason (power-on, a part) arrives still.
+ */
+let transition: { readonly at: number; readonly ground: string } | undefined
+
+export function markZoneTransition(from: Element | null): void {
+  const ground = from === null ? "" : getComputedStyle(from).getPropertyValue("--zone-ground").trim()
+  transition = { at: performance.now(), ground }
+}
+
+/** The ground colour a fresh tab change left, once; undefined when there is none. */
+export function takeZoneTransition(within: number): string | undefined {
+  const mark = transition
+  transition = undefined
+  return mark !== undefined && performance.now() - mark.at <= within ? mark.ground : undefined
+}

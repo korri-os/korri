@@ -8,10 +8,24 @@
   --zone-shell-hint-type: calc(var(--zone-type-hint-wide) * var(--zone-px));
   --zone-shell-margin: clamp(calc(var(--zone-strip-margin-min) * var(--zone-px)), 1.6cqw, calc(var(--zone-strip-margin) * var(--zone-px)));
   position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-rows: var(--zone-shell-top) minmax(0, 1fr) auto;
   width: 100%;
   height: 100%;
+}
+
+/* M2: the ground the person left, wiping away from the top right in 4-art-px
+ * stairs as the new page arrives (its colour and its stair polygon are the
+ * shell's moment). Under the shell's own content, over the root's ground;
+ * at rest it is clear. */
+.zone-shell-wipe {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-shell-wipe-ground, transparent);
+  clip-path: var(--zone-shell-wipe, none);
+  pointer-events: none;
 }
 
 .zone-shell[data-strips="short"] {
@@ -97,6 +111,7 @@
 }
 
 .zone-shell-tabs {
+  translate: 0 calc(var(--zone-shell-banner-y, 0) * var(--zone-px));
   display: flex;
   align-items: center;
   justify-self: center;
@@ -138,6 +153,7 @@
  * does. */
 .zone-shell-body {
   position: relative;
+  translate: calc(var(--zone-shell-body-x, 0) * var(--zone-px)) 0;
   min-height: 0;
   overflow: hidden;
   container: zone-body / size;

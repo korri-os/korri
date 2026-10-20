@@ -28,6 +28,8 @@ export interface ZoneCardFacts {
    * `bytes` is the size still to fetch, absent when Korri does not know it.
    */
   readonly download?: { readonly bytes?: number }
+  /** Nothing to show yet (the catalog loading): the well is static. */
+  readonly noise?: boolean
 }
 
 /** Where the card sits in the band: an end card dims the triangle beyond it. */
@@ -76,6 +78,7 @@ export function ZoneCard({
   resumable = false,
   art,
   download,
+  noise = false,
   focused = false,
   position = "middle",
   size = "focus",
@@ -109,7 +112,7 @@ export function ZoneCard({
     >
       <i aria-hidden="true" className="zone-card-tri" data-side="left" />
       <i aria-hidden="true" className="zone-card-tri" data-side="right" />
-      <ZoneCoverWell art={art} title={title} />
+      <ZoneCoverWell art={art} noise={noise} title={title} />
       <span className="zone-card-body">
         {/* A title of several words is drawn word by word; it is read once, whole. */}
         {several ? <span className="zone-card-name">{title}</span> : null}

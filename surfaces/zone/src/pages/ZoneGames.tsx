@@ -2,6 +2,8 @@ import "./ZoneGames.css"
 import type { SurfaceAction, SurfaceNetworkConnection, SurfaceSettingItem } from "@contracts/surface/korri-surface"
 import { useLayoutEffect, useRef } from "react"
 import { formatZoneBytes } from "../plan/bytes"
+import { ZONE_SHEET_MS, zoneSheetFrame } from "../plan/motion"
+import { useZoneMoment } from "../use-zone-moment"
 import { ZoneButton } from "../ui/atoms/ZoneButton"
 import { ZoneCaps } from "../ui/atoms/ZoneCaps"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
@@ -14,9 +16,11 @@ import { ZoneCardBand, type ZoneBandCard } from "../ui/molecules/ZoneCardBand"
 import { ZoneDialog } from "../ui/molecules/ZoneDialog"
 import { ZoneFoot } from "../ui/molecules/ZoneFoot"
 import { ZoneKeyboard, type ZoneKey, type ZoneKeyboardLayer } from "../ui/molecules/ZoneKeyboard"
-import { ZoneOptionGroup, type ZoneOptionGroupRow } from "../ui/molecules/ZoneOptionGroup"
+import type { ZoneOptionGroupRow } from "../ui/molecules/ZoneOptionGroup"
+import { ZoneOptionRow } from "../ui/molecules/ZoneOptionRow"
 import { ZoneTabStrip, type ZoneTabItem } from "../ui/molecules/ZoneTabStrip"
 import { ZoneAttract } from "../ui/organisms/ZoneAttract"
+import { ZoneGround } from "../ui/organisms/ZoneGround"
 import { ZoneLaunchCard } from "../ui/organisms/ZoneLaunchCard"
 import { ZoneTally } from "../ui/organisms/ZoneTally"
 import { ZoneShell } from "../ui/templates/ZoneShell"
@@ -54,6 +58,8 @@ export interface ZoneGamesFind {
   readonly caret: number
   readonly layer: ZoneKeyboardLayer
   readonly key: string
+  /** The most characters the draft holds. */
+  readonly max?: number
 }
 
 export interface ZoneGamesOpts {
@@ -169,11 +175,12 @@ const TABS: readonly (ZoneTabItem & { readonly id: ZoneGamesTab })[] = [
   { id: "savedata", label: "Save data", sub: "Identity" },
 ]
 
-/** The three stripe-well cards the band shows while Korri loads: no titles, no tags. */
+/** The three cards the band shows while Korri loads: static in their wells, no titles, no tags. */
 const LOADING_CARDS: readonly ZoneBandCard[] = ["", " ", "  "].map((title, index) => ({
   id: `loading-${index}`,
   title,
   places: [],
+  noise: true,
 }))
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -230,6 +237,13 @@ export function ZoneGames(props: ZoneGamesProps) {
     find, finding, opts, idle, launch, tally, clock, device, connection, build, onEvent,
   } = props
   const root = useRef<HTMLDivElement | null>(null)
+  // GAME OPTS. slides in over the band from the right (M2's incoming rows).
+  const sheet = useRef<HTMLDivElement | null>(null)
+  useZoneMoment(sheet, {
+    key: opts === undefined ? undefined : "open",
+    duration: ZONE_SHEET_MS,
+    frame: (t, size) => ({ "--zone-games-sheet-x": zoneSheetFrame(t, size.wArt) }),
+  })
   // True while the page itself moves DOM focus to where the props say it is:
   // that move is not news, and reporting it would wake idle.
   const syncing = useRef(false)
@@ -351,6 +365,7 @@ export function ZoneGames(props: ZoneGamesProps) {
         draft={find.draft}
         focusedKey={find.key}
         layer={find.layer}
+        maxLength={find.max}
         onFocusKey={id => report({ _tag: "FocusedKey", id })}
         onKey={key => onEvent({ _tag: "PressedKey", key })}
       />
@@ -365,6 +380,7 @@ export function ZoneGames(props: ZoneGamesProps) {
         foot={<ZoneFoot build={build} clock={clock} connection={connection} device={device} />}
         hintBack={<ZoneKeycap button="B" word="Back" />}
         hintConfirm={<ZoneKeycap button="A" word="Confirm" />}
+        page={tab}
         strips={strips}
         tabs={tabsSlot}
       >
@@ -388,7 +404,11 @@ export function ZoneGames(props: ZoneGamesProps) {
               {find.draft === "" ? null : (
                 <div className="zone-games-find-tag">
                   <ZonePanel>
-                    <ZoneCaps>{`Find: ${find.draft}`}</ZoneCaps>
+                    <span className="zone-games-find-read">{`Find: ${find.draft}`}</span>
+                    <span aria-hidden="true" className="zone-games-find-words">
+                      <ZoneCaps ink="hud">Find:</ZoneCaps>
+                      <ZoneCaps fact>{find.draft}</ZoneCaps>
+                    </span>
                   </ZonePanel>
                 </div>
               )}
@@ -453,34 +473,46 @@ export function ZoneGames(props: ZoneGamesProps) {
               </>
             )}
             {opts !== undefined && game !== undefined ? (
-              <div className="zone-games-opts" data-block-exit="">
+              <div className="zone-games-opts" data-block-exit="" ref={sheet}>
+                <ZoneGround ground="gameopts" />
                 <div className="zone-games-opts-head">
                   <ZonePanel>
-                    <ZoneCaps>Game opts.</ZoneCaps>
+                    <ZoneCaps size="caps-2">Game opts.</ZoneCaps>
                   </ZonePanel>
+                  <span className="zone-games-opts-game">
+                    <ZoneCaps fact>{opts.gameTitle}</ZoneCaps>
+                  </span>
                 </div>
                 <div
+                  aria-label={opts.gameTitle}
                   className="zone-games-opts-rows"
                   data-games-region="opts"
                   inert={opts.asking !== undefined}
+                  role="group"
                 >
-                  <ZoneOptionGroup
-                    focusedId={optRows[opts.row]?.id}
-                    onFocus={id => report({ _tag: "FocusedGameOpt", index: optRows.findIndex(row => row.id === id) })}
-                    onPress={id => {
-                      const action = opts.actions.find(candidate => candidate.id === id)
-                      if (action === undefined) return
-                      onEvent({
-                        _tag: "ChoseGameAction",
-                        gameId: game.id,
-                        actionId: action.id,
-                        enabled: action.enabled,
-                        destructive: action.destructive === true,
-                      })
-                    }}
-                    rows={optRows}
-                    title={opts.gameTitle}
-                  />
+                  {optRows.map(row => (
+                    <ZoneOptionRow
+                      description={row.description}
+                      disabled={row.disabled}
+                      focused={row.id === optRows[opts.row]?.id}
+                      interaction={row.interaction}
+                      key={row.id}
+                      label={row.label}
+                      onFocus={() => report({ _tag: "FocusedGameOpt", index: optRows.findIndex(candidate => candidate.id === row.id) })}
+                      onPress={() => {
+                        const action = opts.actions.find(candidate => candidate.id === row.id)
+                        if (action === undefined) return
+                        onEvent({
+                          _tag: "ChoseGameAction",
+                          gameId: game.id,
+                          actionId: action.id,
+                          enabled: action.enabled,
+                          destructive: action.destructive === true,
+                        })
+                      }}
+                      value={row.value}
+                    />
+                  ))}
                 </div>
                 {opts.asking === undefined ? null : (
                   <div className="zone-games-ask" data-games-region="answer">

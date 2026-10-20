@@ -1,5 +1,7 @@
 import "./ZoneShell.css"
 import { useRef, type ReactNode } from "react"
+import { ZONE_MENU_MS, zoneMenuFrame, zoneWipeClip } from "../../plan/motion"
+import { takeZoneTransition, useZoneMoment } from "../../use-zone-moment"
 import { useZoneTopStrip } from "../../use-zone-top-strip"
 import type { ZoneGroundName } from "../organisms/ZoneGround"
 
@@ -35,6 +37,7 @@ export function ZoneShell({
   tabs,
   foot,
   footEnd,
+  page,
   children,
 }: {
   /** The screen group's palette, for a shell drawn without the root around it. */
@@ -50,13 +53,42 @@ export function ZoneShell({
   readonly foot?: ReactNode
   /** The foot's right run: the Wi-Fi badge and the build string. */
   readonly footEnd?: ReactNode
+  /** Names the page in the body: a new one, after a tab is chosen, plays the menu transition (M2). */
+  readonly page?: string
   readonly children: ReactNode
 }) {
   const hasFoot = foot !== undefined || footEnd !== undefined
   const shell = useRef<HTMLDivElement>(null)
   useZoneTopStrip(shell)
+  // M2: a tab was just chosen. The ground it left wipes away from the top
+  // right, the banner drops in, the body slides in from the right. A page
+  // that arrives for any other reason arrives still.
+  const entrance = useRef<{ readonly page: string | undefined; readonly count: number; readonly from: string; readonly first: boolean }>(
+    { page, count: 0, from: "", first: true },
+  )
+  if (entrance.current.first || entrance.current.page !== page) {
+    const from = takeZoneTransition(ZONE_MENU_MS)
+    const was = entrance.current
+    entrance.current = from === undefined
+      ? { ...was, page, first: false }
+      : { page, count: was.count + 1, from, first: false }
+  }
+  useZoneMoment(shell, {
+    key: entrance.current.count === 0 ? undefined : String(entrance.current.count),
+    duration: ZONE_MENU_MS,
+    frame: (t, size) => {
+      const frame = zoneMenuFrame(t, size.wArt)
+      return {
+        "--zone-shell-wipe": zoneWipeClip(frame.wipe, size.wArt, size.hArt),
+        "--zone-shell-wipe-ground": entrance.current.from === "" ? "transparent" : entrance.current.from,
+        "--zone-shell-banner-y": frame.bannerY,
+        "--zone-shell-body-x": frame.rowsX[0] ?? 0,
+      }
+    },
+  })
   return (
     <div className="zone-shell" data-band={band} data-ground={ground} data-strips={strips} ref={shell}>
+      <i aria-hidden="true" className="zone-shell-wipe" />
       <header className="zone-shell-top">
         <div className="zone-shell-hint-back">{hintBack}</div>
         <nav className="zone-shell-tabs">{tabs}</nav>

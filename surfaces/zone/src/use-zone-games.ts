@@ -19,7 +19,7 @@
 import type { SurfaceGame, SurfaceHost, SurfaceModel } from "@contracts/surface/korri-surface"
 import { useCallback, useEffect, type RefObject } from "react"
 import type { ZoneGamesProps } from "./pages/ZoneGames"
-import { catalogGames, launchChoices, playtime, sectionStarts } from "./state/games"
+import { catalogGames, launchChoices, playtime, sectionStarts, ZONE_FIND_MAX } from "./state/games"
 import {
   bandGames,
   topLayer,
@@ -110,7 +110,7 @@ export function zoneGamesProps(
     },
     launches: game === undefined ? [] : launchChoices(game),
     focusedAction: nav.action,
-    find: nav.find,
+    find: { ...nav.find, max: ZONE_FIND_MAX },
     finding: top === "keyboard",
     opts: top === "gameopts" && game !== undefined ? {
       gameTitle: game.title,

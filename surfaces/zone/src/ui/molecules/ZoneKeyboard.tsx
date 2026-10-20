@@ -1,4 +1,5 @@
 import "./ZoneKeyboard.css"
+import { ZoneCaps } from "../atoms/ZoneCaps"
 import "../../zone-motion.css"
 import { useEffect, useLayoutEffect, useRef } from "react"
 
@@ -48,10 +49,14 @@ const LAYER_LABELS: Record<ZoneKeyboardLayer, string> = {
 const DOT = "•"
 
 /**
- * The keyboard panel: Mania's slanted blue panel rising from the foot, a
- * white slab with the typed string and a red caret, four rows of black
- * slanted keys, and a control row with the layer switch, SPACE, DELETE and
- * DONE. The focused key wears the pink underline.
+ * The keyboard panel: Mania's sky panel with the OPTIONS band's black wedge
+ * at its left, rising from the foot; a white slab with the typed string in
+ * Jersey 10 and a red ▲ caret blinking once a second; the count in HUD ink
+ * beside the slab; four rows of black slanted keys and a control row with
+ * the layer switch, SPACE, DELETE and DONE, all at caps-1. A letter key
+ * shows its real glyph: a lower-case letter in Jersey 10 (Zone Caps has no
+ * lower case), capitals, digits and symbols in Zone Caps. The focused key
+ * wears the pink drop.
  *
  * The draft and the caret are props; every key reports through `onKey`.
  * The slab scrolls sideways to keep the caret in view, so a forty-character
@@ -126,6 +131,7 @@ export function ZoneKeyboard({
         className="zone-keyboard-key"
         data-current={value.kind === "layer" && value.layer === layer ? true : undefined}
         data-focused={id === focusedKey || undefined}
+        data-face={value.kind === "char" && value.char !== value.char.toUpperCase() ? "fact" : undefined}
         data-key-id={id}
         data-role={extra}
         key={id}
@@ -151,7 +157,9 @@ export function ZoneKeyboard({
           : null}
       </div>
       {maxLength !== undefined ? (
-        <span className="zone-keyboard-count">{draft.length}/{maxLength}</span>
+        <span className="zone-keyboard-count">
+          <ZoneCaps ink="hud">{`${draft.length}/${maxLength}`}</ZoneCaps>
+        </span>
       ) : null}
       <div className="zone-keyboard-rows">
         {ROWS[layer].map((row, index) => (

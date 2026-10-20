@@ -76,6 +76,30 @@
   --zone-well-stripe-3: var(--zone-blue);
 }
 
+/* Static: three hard-stop checkers of white on black at prime tile sizes,
+ * so their union never repeats inside a card, jumped to a new place every
+ * 100 ms. Two colours only, no blend; under reduced motion it stands. */
+.zone-cover-well[data-filled="noise"] {
+  --zone-noise-a: calc(var(--zone-well-noise-a) * var(--zone-px));
+  --zone-noise-b: calc(var(--zone-well-noise-b) * var(--zone-px));
+  --zone-noise-c: calc(var(--zone-well-noise-c) * var(--zone-px));
+  background:
+    conic-gradient(var(--zone-white) 0 25%, transparent 25% 50%, var(--zone-white) 50% 75%, transparent 75% 100%) 0 0 / var(--zone-noise-a) var(--zone-noise-b),
+    conic-gradient(transparent 0 25%, var(--zone-white) 25% 50%, transparent 50% 100%) 0 0 / var(--zone-noise-b) var(--zone-noise-c),
+    conic-gradient(var(--zone-white) 0 25%, transparent 25% 100%) 0 0 / var(--zone-noise-c) var(--zone-noise-a),
+    var(--zone-black);
+  animation: zone-cover-well-static var(--zone-well-noise-time) steps(1) infinite;
+}
+
+@keyframes zone-cover-well-static {
+  0% { background-position: 0 0, 0 0, 0 0; }
+  20% { background-position: calc(var(--zone-px) * 3) calc(var(--zone-px) * 7), calc(var(--zone-px) * 11) calc(var(--zone-px) * 2), calc(var(--zone-px) * 5) calc(var(--zone-px) * 13); }
+  40% { background-position: calc(var(--zone-px) * 9) calc(var(--zone-px) * 4), calc(var(--zone-px) * 1) calc(var(--zone-px) * 9), calc(var(--zone-px) * 12) calc(var(--zone-px) * 3); }
+  60% { background-position: calc(var(--zone-px) * 6) calc(var(--zone-px) * 12), calc(var(--zone-px) * 8) calc(var(--zone-px) * 5), calc(var(--zone-px) * 2) calc(var(--zone-px) * 8); }
+  80% { background-position: calc(var(--zone-px) * 13) calc(var(--zone-px) * 1), calc(var(--zone-px) * 4) calc(var(--zone-px) * 11), calc(var(--zone-px) * 10) calc(var(--zone-px) * 6); }
+  100% { background-position: 0 0, 0 0, 0 0; }
+}
+
 /* The initials: two outlined caps sized by the well, so a tiny well still
  * shows two letters and a tall one does not run out of width. */
 .zone-cover-well-initials {

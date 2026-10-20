@@ -1,5 +1,6 @@
 import "./ZoneTab.css"
 import { useRef } from "react"
+import { markZoneTransition } from "../../use-zone-moment"
 import { useZoneStairClip } from "../../use-zone-stair-clip"
 import { ZoneBanner } from "./ZoneBanner"
 import { ZoneCaps } from "./ZoneCaps"
@@ -46,7 +47,11 @@ export function ZoneTab({
       aria-current={active ? "page" : undefined}
       data-active={active ? "on" : "off"}
       data-focused={focused ? "on" : "off"}
-      onClick={onSelect}
+      onClick={event => {
+        // The page about to arrive plays the menu transition from this ground (M2).
+        if (!active) markZoneTransition(event.currentTarget)
+        onSelect()
+      }}
       onFocus={onFocus}
       type="button"
     >
