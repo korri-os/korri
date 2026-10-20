@@ -232,6 +232,9 @@ pub struct HostRuntime {
     moonlight_certificate_permits: Arc<tokio::sync::Semaphore>,
     retroarch_control: Arc<dyn RetroarchControlExecutor>,
     input_coordinator: Option<Arc<input_coordination::SeatCoordinator>>,
+    /// ADR 0015: discovery and the store run on this device's own installed
+    /// library, so one korrid finds, downloads and launches.
+    library_discovery: Option<crate::discovery::DiscoveryLifecycleCoordinator>,
 }
 
 impl HostRuntime {
@@ -307,6 +310,7 @@ impl HostRuntime {
             )),
             retroarch_control: Arc::new(NetworkRetroarchControl::default()),
             input_coordinator,
+            library_discovery: None,
         }
     }
 
@@ -347,6 +351,7 @@ impl HostRuntime {
             )),
             retroarch_control: Arc::new(NetworkRetroarchControl::default()),
             input_coordinator: None,
+            library_discovery: None,
         }
     }
 
@@ -457,6 +462,33 @@ impl HostRuntime {
 
     pub fn owner_public_key(&self) -> Option<&str> {
         self.owner_public_key.as_deref()
+    }
+
+    /// ADR 0015: give an installed library its discovery coordinator, on the
+    /// same root, private state, publication lock and registry source the
+    /// launch routes use. Its first scan runs on its own thread; nothing
+    /// here waits for it. A host with no installed library gets none.
+    pub(crate) fn with_library_discovery(mut self) -> Self {
+        if self.library_discovery.is_none() {
+            if let Ok(root) = self.route_root() {
+                self.library_discovery = Some(
+                    crate::discovery::DiscoveryLifecycleCoordinator::new_with_registry_source(
+                        root,
+                        &self.private_state_root,
+                        self.route_write_lock.clone(),
+                        crate::discovery::FolderSelectionGrantStore::default(),
+                        self.settings_registry_source(),
+                    ),
+                );
+            }
+        }
+        self
+    }
+
+    pub(crate) fn library_discovery(
+        &self,
+    ) -> Option<&crate::discovery::DiscoveryLifecycleCoordinator> {
+        self.library_discovery.as_ref()
     }
 
     /// Reports this host's current readiness as a federation source. The

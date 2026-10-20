@@ -1594,19 +1594,35 @@ impl AppState {
         }
     }
 
-    /// Game acquisition needs discovery, which only the local brain runs.
-    fn game_context(&self) -> Result<acquisition::GameContext, RpcFailure> {
+    /// ADR 0015: this device's own library. Discovery and the store run on
+    /// it in both modes: the brain's local library, or the host's installed
+    /// library root. A host with no installed library has none.
+    fn local_library(&self) -> Option<LocalLibrary<'_>> {
         match &self.mode {
-            ServerMode::Brain(brain) => Ok(acquisition::GameContext {
-                root: brain.local_storage_root.clone(),
-                registry: self.acquisition_context()?.1,
-                discovery: brain.discovery.clone(),
+            ServerMode::Brain(brain) => Some(LocalLibrary {
+                discovery: &brain.discovery,
+                owner_public_key: brain.local_owner_public_key(),
             }),
-            ServerMode::Host(_) => Err(RpcFailure {
-                code: "AcquisitionUnavailable".into(),
-                message: "Downloads are unavailable on this device.".into(),
+            ServerMode::Host(host) => host.library_discovery().map(|discovery| LocalLibrary {
+                discovery,
+                owner_public_key: host.owner_public_key(),
             }),
         }
+    }
+
+    /// Game acquisition writes the library through discovery.
+    fn game_context(&self) -> Result<acquisition::GameContext, RpcFailure> {
+        let unavailable = || RpcFailure {
+            code: "AcquisitionUnavailable".into(),
+            message: "Downloads are unavailable on this device.".into(),
+        };
+        let library = self.local_library().ok_or_else(unavailable)?;
+        let (root, registry) = self.acquisition_context().map_err(|_| unavailable())?;
+        Ok(acquisition::GameContext {
+            root: root.to_path_buf(),
+            registry,
+            discovery: library.discovery.clone(),
+        })
     }
 
     fn private_state_root(&self) -> &Path {
@@ -2149,6 +2165,19 @@ fn exact_host_launch_id(
         })
 }
 
+/// The device's own library and the owner key its changes answer to.
+struct LocalLibrary<'a> {
+    discovery: &'a discovery::DiscoveryLifecycleCoordinator,
+    owner_public_key: Option<&'a str>,
+}
+
+fn library_unavailable(what: &str) -> RpcFailure {
+    RpcFailure {
+        code: "OperationUnsupported".into(),
+        message: format!("{what} needs this device's game library"),
+    }
+}
+
 /// Whether a brain caller acts for the brain's own owner. Local surfaces act
 /// for the device owner. A peer principal must present the same owner as
 /// the brain device; a household or guest pass holder is a different person
@@ -2157,15 +2186,21 @@ fn brain_caller_is_owner(
     brain: &BrainRuntime,
     authorization: &authorization::AuthorizationContext,
 ) -> bool {
+    caller_is_owner(brain.local_owner_public_key(), authorization)
+}
+
+/// The same rule for either mode, against the device's verified owner key.
+fn caller_is_owner(
+    local_owner_public_key: Option<&str>,
+    authorization: &authorization::AuthorizationContext,
+) -> bool {
     match authorization {
         authorization::AuthorizationContext::LocalBrowser
         | authorization::AuthorizationContext::LocalUnixControl => true,
         authorization::AuthorizationContext::Peer(principal) => match principal {
             authorization::Principal::OwnerDevice {
                 owner_public_key, ..
-            } => brain
-                .local_owner_public_key()
-                .is_some_and(|local| local == *owner_public_key),
+            } => local_owner_public_key.is_some_and(|local| local == *owner_public_key),
             _ => false,
         },
         authorization::AuthorizationContext::TrustReconciliation => false,
@@ -3022,58 +3057,52 @@ async fn dispatch(
         RpcRequest::Health(_) => RpcResponse::Health(HealthOutcome::Ok(Health {
             version: VERSION.into(),
         })),
-        RpcRequest::DiscoverySnapshot(_) => match &state.mode {
-            ServerMode::Brain(brain) => RpcResponse::DiscoverySnapshot(
-                DiscoverySnapshotOutcome::Ok(discovery_snapshot(brain.discovery.snapshot())),
-            ),
-            ServerMode::Host(_) => {
-                RpcResponse::DiscoverySnapshot(DiscoverySnapshotOutcome::Err(RpcFailure {
-                    code: "OperationUnsupported".into(),
-                    message: "discovery is available only from the local brain".into(),
-                }))
-            }
-        },
+        RpcRequest::DiscoverySnapshot(_) => {
+            RpcResponse::DiscoverySnapshot(match state.local_library() {
+                Some(library) => {
+                    DiscoverySnapshotOutcome::Ok(discovery_snapshot(library.discovery.snapshot()))
+                }
+                None => DiscoverySnapshotOutcome::Err(library_unavailable("discovery")),
+            })
+        }
         RpcRequest::DiscoveryPair(request) => {
-            RpcResponse::DiscoveryPair(discovery_mutation(state, authorization, |brain| {
-                brain.discovery.pair(&request.receipt, &request.system)
+            RpcResponse::DiscoveryPair(discovery_mutation(state, authorization, |discovery| {
+                discovery.pair(&request.receipt, &request.system)
             }))
         }
         RpcRequest::DiscoveryChange(request) => {
-            RpcResponse::DiscoveryChange(discovery_mutation(state, authorization, |brain| {
-                brain.discovery.change(&request.source, &request.system)
+            RpcResponse::DiscoveryChange(discovery_mutation(state, authorization, |discovery| {
+                discovery.change(&request.source, &request.system)
             }))
         }
         RpcRequest::DiscoveryUnpair(request) => {
-            RpcResponse::DiscoveryUnpair(discovery_mutation(state, authorization, |brain| {
-                brain.discovery.unpair(&request.source)
+            RpcResponse::DiscoveryUnpair(discovery_mutation(state, authorization, |discovery| {
+                discovery.unpair(&request.source)
             }))
         }
         RpcRequest::AttentionList(_) => {
-            RpcResponse::AttentionList(attention_operation(state, |brain| {
-                brain.discovery.attention()
+            RpcResponse::AttentionList(attention_operation(state, |discovery| {
+                discovery.attention()
             }))
         }
         RpcRequest::AttentionAssign(request) => {
-            RpcResponse::AttentionAssign(attention_operation(state, |brain| {
-                brain.discovery.assign(&request.item, &request.system)
+            RpcResponse::AttentionAssign(attention_operation(state, |discovery| {
+                discovery.assign(&request.item, &request.system)
             }))
         }
         RpcRequest::AttentionIgnore(request) => {
-            RpcResponse::AttentionIgnore(attention_operation(state, |brain| {
-                brain.discovery.ignore(&request.item)
+            RpcResponse::AttentionIgnore(attention_operation(state, |discovery| {
+                discovery.ignore(&request.item)
             }))
         }
-        RpcRequest::DiscoveryRescan(_) => match &state.mode {
-            ServerMode::Brain(brain) => RpcResponse::DiscoveryRescan(DiscoverySnapshotOutcome::Ok(
-                discovery_snapshot(brain.discovery.rescan()),
-            )),
-            ServerMode::Host(_) => {
-                RpcResponse::DiscoveryRescan(DiscoverySnapshotOutcome::Err(RpcFailure {
-                    code: "OperationUnsupported".into(),
-                    message: "discovery is available only from the local brain".into(),
-                }))
-            }
-        },
+        RpcRequest::DiscoveryRescan(_) => {
+            RpcResponse::DiscoveryRescan(match state.local_library() {
+                Some(library) => {
+                    DiscoverySnapshotOutcome::Ok(discovery_snapshot(library.discovery.rescan()))
+                }
+                None => DiscoverySnapshotOutcome::Err(library_unavailable("discovery")),
+            })
+        }
         RpcRequest::SettingsSnapshot(_) => match &state.mode {
             ServerMode::Brain(brain) => RpcResponse::SettingsSnapshot(
                 config::settings::read_with_registry_source(
@@ -3608,16 +3637,17 @@ fn discovery_mutation(
     state: &AppState,
     authorization: &authorization::AuthorizationContext,
     operation: impl FnOnce(
-        &BrainRuntime,
+        &discovery::DiscoveryLifecycleCoordinator,
     ) -> Result<
         discovery::DiscoverySnapshot,
         discovery::coordinator::DiscoveryRequestError,
     >,
 ) -> DiscoverySnapshotOutcome {
-    match &state.mode {
-        ServerMode::Brain(brain) => {
-            match require_discovery_owner(brain_caller_is_owner(brain, authorization)) {
-                Ok(()) => operation(brain)
+    match state.local_library() {
+        Some(library) => {
+            match require_discovery_owner(caller_is_owner(library.owner_public_key, authorization))
+            {
+                Ok(()) => operation(library.discovery)
                     .map(discovery_snapshot)
                     .map(DiscoverySnapshotOutcome::Ok)
                     .unwrap_or_else(|error| {
@@ -3626,10 +3656,7 @@ fn discovery_mutation(
                 Err(error) => DiscoverySnapshotOutcome::Err(error),
             }
         }
-        ServerMode::Host(_) => DiscoverySnapshotOutcome::Err(RpcFailure {
-            code: "OperationUnsupported".into(),
-            message: "discovery is available only from the local brain".into(),
-        }),
+        None => DiscoverySnapshotOutcome::Err(library_unavailable("discovery")),
     }
 }
 
@@ -3647,14 +3674,14 @@ fn require_discovery_owner(is_owner: bool) -> Result<(), RpcFailure> {
 fn attention_operation(
     state: &AppState,
     operation: impl FnOnce(
-        &BrainRuntime,
+        &discovery::DiscoveryLifecycleCoordinator,
     ) -> Result<
         Vec<discovery::attention::AttentionFinding>,
         discovery::coordinator::DiscoveryRequestError,
     >,
 ) -> AttentionOutcome {
-    match &state.mode {
-        ServerMode::Brain(brain) => operation(brain)
+    match state.local_library() {
+        Some(library) => operation(library.discovery)
             .map(|items| {
                 AttentionOutcome::Ok(AttentionList {
                     items: items
@@ -3671,10 +3698,7 @@ fn attention_operation(
                 })
             })
             .unwrap_or_else(|error| AttentionOutcome::Err(discovery_request_failure(error))),
-        ServerMode::Host(_) => AttentionOutcome::Err(RpcFailure {
-            code: "OperationUnsupported".into(),
-            message: "attention is available only from the local brain".into(),
-        }),
+        None => AttentionOutcome::Err(library_unavailable("attention")),
     }
 }
 
@@ -4197,9 +4221,17 @@ fn secure_host_router_with_in_memory_units_at(
 }
 
 fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
+    app_states_with(runtime, acquisition::AcquisitionCoordinator::default())
+}
+
+fn app_states_with(
+    runtime: host::HostRuntime,
+    acquisition: acquisition::AcquisitionCoordinator,
+) -> (AppState, AppState) {
+    // ADR 0015: one korrid finds, downloads and launches on its library.
+    let runtime = runtime.with_library_discovery();
     let overlay_intent = Arc::new(Mutex::new(None));
     let network = network::NetworkService::default();
-    let acquisition = acquisition::AcquisitionCoordinator::default();
     let lan = AppState {
         acquisition: acquisition.clone(),
         network: network.clone(),
@@ -4258,7 +4290,23 @@ fn secure_host_routers(
     private_state_root: &Path,
     portal_access: Option<PortalAccess>,
 ) -> (Router, Router) {
-    let (lan, local) = app_states(runtime);
+    secure_host_routers_with_acquisition(
+        runtime,
+        private_state_root,
+        portal_access,
+        acquisition::AcquisitionCoordinator::default(),
+    )
+}
+
+/// Tests reach a loopback provider site through the acquisition engine's
+/// test DNS answers; production composes the default coordinator.
+fn secure_host_routers_with_acquisition(
+    runtime: host::HostRuntime,
+    private_state_root: &Path,
+    portal_access: Option<PortalAccess>,
+    acquisition: acquisition::AcquisitionCoordinator,
+) -> (Router, Router) {
+    let (lan, local) = app_states_with(runtime, acquisition);
     let portal = portal_router_for(&lan, portal_access);
     let peer = peer_rpc::PeerRpcServer::new(lan, private_state_root)
         .expect("load or create peer RPC identity");
