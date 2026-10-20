@@ -445,6 +445,8 @@ let
       script = ''
         cd "$KORRI_ROOT/surfaces/shift"
         bun install --frozen-lockfile --ignore-scripts
+        cd "$KORRI_ROOT/surfaces/zone"
+        bun install --frozen-lockfile --ignore-scripts
         cd "$KORRI_ROOT/surfaces/boxbuster"
         bun install --frozen-lockfile --ignore-scripts
         cd "$KORRI_ROOT/clients/portal"
@@ -461,6 +463,8 @@ let
         cd "$KORRI_ROOT/surfaces/shift"
         bun install --frozen-lockfile --ignore-scripts
         cd "$KORRI_ROOT/surfaces/pico"
+        bun install --frozen-lockfile --ignore-scripts
+        cd "$KORRI_ROOT/surfaces/zone"
         bun install --frozen-lockfile --ignore-scripts
         cd "$KORRI_ROOT/surfaces/boxbuster"
         bun install --frozen-lockfile --ignore-scripts
@@ -498,6 +502,18 @@ let
       runtimeInputs = [ pkgs.bun ];
       script = ''
         cd "$KORRI_ROOT/surfaces/pico"
+        bun install --frozen-lockfile --ignore-scripts
+        bun test
+        bun run typecheck
+        bun run lint
+      '';
+    };
+
+    zone-check = {
+      description = "Run the Zone surface unit tests, gates and acceptance, typecheck, and architecture lint.";
+      runtimeInputs = [ pkgs.bun ];
+      script = ''
+        cd "$KORRI_ROOT/surfaces/zone"
         bun install --frozen-lockfile --ignore-scripts
         bun test
         bun run typecheck
