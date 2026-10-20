@@ -99,6 +99,23 @@ can record what each session started from.
 Research behind the choice, with sources and an audit:
 `~/.cache/research/deterministic-save-sync-20261020/` (outside the repo).
 
+## Plugin survey (2026-10-20)
+
+Every runner on main, in the owner's `korri-plugins` repository, and on legacy
+was checked: about 40 runners. On Linux, none of them is impossible to direct.
+
+- Native redirect (env var, argument, config key or working folder): RetroArch,
+  PPSSPP, melonDS, RPCS3, Ryubing, Dolphin, MAME, Solarus, ZQuest Classic,
+  Chromium-based runners, Godot games, SRB2, Neverball, and most personal
+  plugins. OpenGOAL needs `XDG_CONFIG_HOME` set (inferred from upstream, not
+  tested). Skate 3 redirects, but its saves share a folder with extracted game
+  files.
+- Bind needed, because saves sit next to game files: Fallout 1/2 CE
+  (`SAVEGAME/` in the working folder), GMLoader, many PortMaster ports, 3dSen,
+  and Wine fangames that save beside the executable (`psycho-waluigi`).
+- Out of reach: Steam games inside pressure-vessel (left to Steam Cloud), and
+  the Android app sandbox (Android was dropped on 2026-09-16).
+
 ## Considered Options
 
 - **Wrap a file syncer (Syncthing, Unison, rclone bisync, git-annex).** Each one
@@ -127,8 +144,6 @@ Savestates of 0.5 to 2 GB make storage and transfer cost real.
 Not decided yet, and not to be assumed by an implementation:
 
 - How a runner whose folder is shared by every game names one game's files.
-- Games whose saves land outside `account_root` (OpenGOAL, Fallout 1/2 CE,
-  Skate 3): being checked plugin by plugin, including legacy.
 - The shape of the save-location and bind declarations in the plugin contract,
   and how a bind is set up inside korrid's launch (systemd scope, launch
   modifiers such as Gamescope, runners that already sandbox themselves).
