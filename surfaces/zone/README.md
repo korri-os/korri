@@ -1028,3 +1028,9 @@ without asking. The four screen workers build on them.
   package.nix` copies `surfaces/zone/src/fonts/OFL.txt` as
   `anton-OFL.txt`; it should copy `OFL.txt` as `jersey10-OFL.txt` and add
   `ZoneCaps-OFL.txt`. Suggested issue.
+
+## The GAMES refinement (decided without asking: games)
+
+The games worker refined GAMES, GAME OPTS., FIND, the idle attract and the
+launch moments (REFINEMENT.md sections 2d, 3 and 4). Each choice the brief
+left open is recorded here.
