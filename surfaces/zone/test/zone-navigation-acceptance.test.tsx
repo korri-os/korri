@@ -668,10 +668,10 @@ describe("get games", () => {
     confirm()
     expect(calls(host).at(-1)).toEqual(["runAction", "store:1:search-retry"])
 
-    // Results: the system as the provider says it, UNKNOWN when it does not.
+    // Results: the system as the provider says it, nothing when it does not.
     publish({ ...EMPTY, store: found })
     expect(button("Celeste Classic 2").textContent).toContain("PICO-8")
-    expect(button("untitled work in progress").textContent).toContain("Unknown")
+    expect(button("untitled work in progress").textContent).toBe("untitled work in progress")
     moveTo(button("Celeste Classic 2"))
     confirm()
     expect(calls(host).at(-1)).toEqual(["openStoreEntry", "celeste_classic_2-5"])

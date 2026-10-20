@@ -906,8 +906,9 @@ the row ids and the rules the page and the model share are
   those words.
 - **Rows are ZoneOptionRow.** A provider's value is OPEN. A result's value
   is the system as the provider says it; when the provider does not say,
-  the value is UNKNOWN, a label for an absent fact, since an empty value
-  panel read as broken.
+  the value is absent and its panel stands empty, because absent data
+  stays absent (provisional coordinator decision, 2026-10-20, pending
+  the owner).
 - **An entry is a well and Korri's words.** A store entry carries no art:
   the treaty says a provider's images are on its own site, which the portal
   never reaches, so a surface draws its own stand-in. A ZoneCoverWell stands in with the
