@@ -79,14 +79,17 @@ src/
   fonts/              Anton-Regular.ttf and OFL.txt
   fixtures/           the fixture host and model, and the part frame
   plan/               plan(width, height) per page: pure, thresholds named
-  state/              navigation model, messages, requests; pure
+  state/              every model, messages, requests, and surface.ts, which
+                      composes them and routes each message; pure
   zone-host.ts        the one door to Korri
   use-zone-program.ts the runtime: holds a model, runs update, performs requests
-  use-zone-games.ts   the home program: navigation, host buttons, idle and its
-                      cycle, and the GAMES page's props
+  use-zone-games.ts   Zone's program: every model under one useZoneProgram,
+                      host buttons, idle and its cycle, and the GAMES page's
+                      props
   use-zone-plan.ts    measures the root and returns plan(width, height)
   use-zone-idle.ts    the idle timer, a subscription
-  ZoneSurface.tsx     the composition root: the only file that reads the treaty
+  ZoneSurface.tsx     the composition root: the only file below the host door
+                      that reads the treaty's model; picks the page
   ui/atoms|molecules|organisms|templates
   pages/
 ```
@@ -280,7 +283,8 @@ bun run lint
   the real `update` through it, since nothing under `src/pages/` may import
   `src/state/`.
 - **OPTIONS and SAVE DATA show their tab's label on a panel** until their
-  pages land; `tab` already drives which one shows.
+  pages land; `tab` already drives which one shows. Superseded: the wire
+  stage mounts both pages.
 - **FIND shows only while the catalog is Ready.** There is nothing to find
   while it loads, fails or is empty.
 - **`ZonePartFrame` gained a `handheld` shape** (640 by 480, as tokens) for
@@ -530,3 +534,124 @@ model's message, and the model's `update` returns `ZoneRequest`s.
 - **Tokens** are in the `/* ---- layers ---- */` block. The controller-card
   plan's widest and gap equal `--zone-controller-card-max` and
   `--zone-card-gap-wide` (held by `test/zone-onboarding.test.tsx`).
+
+## The wire stage: Zone as a whole
+
+`ZoneSurface.tsx` is the composition root. It runs one program
+(`useZoneSurface` in `src/use-zone-games.ts`, on `useZoneProgram`) over
+`src/state/surface.ts`, which holds every model side by side (navigation,
+OPTIONS, RUN WITH, SAVE DATA's identity, the status layer, PAUSED, first
+boot) and routes each message to the model it belongs to. A page reports in
+its own model's words; Korri publishing goes to every model; the host's four
+buttons are routed by what is shown.
+
+What takes the screen, first match wins (`zoneShown`):
+
+| Shown | When |
+|---|---|
+| PAUSED (`ZonePaused`) | Korri presents `gameplay-overlay` |
+| OPTIONS' join keyboard | first boot handed a secured network to OPTIONS' join flow |
+| first boot (`ZoneOnboarding`) | `model.onboarding` exists |
+| RUN WITH (`ZoneRunWith`) | Korri's `runnerChoice` is open |
+| the tab | GAMES (home), OPTIONS, SAVE DATA |
+
+`ZoneStatusLayer` is drawn over whichever it is.
+
+| Button | What it does |
+|---|---|
+| back | Korri's Problem first (dismiss); Busy is never cancelled by it. Then the shown page's own rule; on OPTIONS and SAVE DATA, when the page has nothing to close, to the GAMES tab; on GAMES, navigation's rule; then nothing |
+| menu | the cursor to the tabs, on every tab. OPTIONS' keyboard commits instead; a dialog or an identity step holds the cursor |
+| options | GAME OPTS. on GAMES; nothing on OPTIONS or SAVE DATA |
+| system | OPTIONS with the cursor on its SYSTEM group (`focusSystemGroup`) |
+
+PAUSED, first boot and RUN WITH have no tabs on screen, so menu, options
+and system do nothing there.
+
+### Decided without asking: the wire stage
+
+- **RUN WITH shows while Korri's runner choice is open, whoever opened
+  it.** The treaty has no call that opens a runner choice for a game. The
+  portal opens it itself on a launch and on its own game action (RUNNERS ON
+  THIS DEVICE, which GAME OPTS. lists as Korri's), and while it is open the
+  portal sends Back to its own cancel and no other button to Zone. So the
+  page follows `model.runnerChoice`, not `nav.optionsRunWith`. GAME OPTS.'
+  own RUN WITH row (`OpenedRunWith`) still takes the person to OPTIONS as the
+  GAMES page decided; it cannot open a choice Korri has not published.
+  C11 is proved through Korri's action.
+- **Navigation took two messages of the wire stage's**, in
+  `ZoneNavMessage` beside `ZoneMessage` (so `messages.ts` is untouched):
+  `FocusedPage` (the cursor left the tabs for OPTIONS' rows or SAVE DATA's
+  cards, so `menu` knows to bring it back) and `LandedOptions` (clears
+  `optionsGroup` once `focusSystemGroup` has run). `system` now also puts
+  `zone` off the tabs, so the cursor lands on the SYSTEM row, not a tab.
+- **The binding moves DOM focus to a tab on OPTIONS and SAVE DATA** when
+  navigation says the cursor is on the tabs (a tab chosen, `menu`). Those
+  pages do not do it themselves; GAMES does.
+- **Idle belongs to the zone select.** `IdleElapsed` is dropped unless
+  GAMES is shown, so the title card never covers OPTIONS, SAVE DATA, RUN
+  WITH, PAUSED or first boot.
+- **First boot's secured network** goes to OPTIONS' join flow: the wire
+  stage presses that network's row in the OPTIONS model, its keyboard rises,
+  and the OPTIONS page is shown (keyboard up, cursor trapped) until DONE
+  sends `connectWifi(networkId, password)` or B puts it down; first boot
+  comes back on the WI-FI step.
+- **PAUSED's model starts over each time Korri presents the overlay**, so
+  the cursor opens on Korri's first control.
+- **PAUSED is wrapped in a dialog named for the game** (`role="dialog"`,
+  Korri's title or PAUSED). The portal's own test renders every overlay
+  surface and finds its overlay by that role and name.
+- **The foot's device tag** shows the value of Korri's device-name setting,
+  found as first boot finds it (by its label). Absent, the tag is empty.
+- **Ground.** The root draws ZoneGround under GAMES, OPTIONS, SAVE DATA and
+  RUN WITH; PAUSED and first boot draw their own.
+- **Wide art.** Zone's cards are portrait; `wideArtUrl` is not drawn. A game
+  with only wide art wears the stripe well with initials, as one with no art
+  does (C2).
+- **Portal.** Zone is registered as `catalog` and `gameplay-overlay`, aliased
+  like Pico in `tsconfig.json`, `vite.config.ts` and `test/happydom.ts`. The
+  device bundle (`clients/portal/nix/package.nix`) carries Zone's source,
+  installs its `qrcode` as Pico's is, ships Anton's OFL beside Pico's font
+  licences and checks `zone-screen` is in the CSS; its dependency hash moved.
+- **Nix.** One task, `nix run .#zone-check` (tests, typecheck, lint), the
+  shape of `pico-check`. `portal-check` and `portal-bundle` install Zone.
+- **Two assertions in `test/zone-games.test.tsx`** that looked for the
+  OPTIONS and SAVE DATA placeholder panel now look for the pages.
+
+## Capability map
+
+Every line names Zone's own answer and the test in
+`test/zone-navigation-acceptance.test.tsx` that reaches it from home with
+d-pad, confirm and back, through `ZoneSurface` and a host that records calls.
+
+```
+C1  GAMES band: three stripe wells and LOADING, Korri's message under GAMES with RELOAD, NO GAMES, the cards — test: zone-navigation-acceptance "C1 catalog states"
+C2  ZoneCardBand cards: title, subtitle tag, a section spine per section, cover art or the stripe well with initials (wide art is not drawn) — test: zone-navigation-acceptance "C2 browse"
+C3  facts line LAST PLAYED, PLAYS, TIME under the band; CONTINUE for a resumable game — test: zone-navigation-acceptance "C3 game facts"
+C4  action row: A on a one-place card launches; a choice drops into PLAY HERE / PLAY ON <device> — test: zone-navigation-acceptance "C4 launch"
+C5  GAME OPTS. (options): Korri's actions as rows, a disabled one with its reason, NO / YES before a destructive one — test: zone-navigation-acceptance "C5 per-game actions"
+C6  FIND key (menu twice) and the keyboard filtering the band, FIND: <draft> kept, B lets go — test: zone-navigation-acceptance "C6 find"
+C7  ZoneStatusLayer busy strip: kicker, detail, the game in yellow, Korri's CANCEL; the page inert — test: zone-navigation-acceptance "C7 busy"
+C8  ZoneStatusLayer running strip: kicker, OPEN, the game's title; the page stays usable — test: zone-navigation-acceptance "C8 running"
+C9  ZoneStatusLayer problem dialog: kicker, reason, Korri's game title, DISMISS and RETRY; B dismisses — test: zone-navigation-acceptance "C9 problem"
+C10 RELOAD in the catalog's error dialog under GAMES — test: zone-navigation-acceptance "C10 reload"
+C11 RUN WITH page: state tag, message, warnings, a row per route (program, build, SAVED), Korri's actions — test: zone-navigation-acceptance "C11 runner choice"
+C12 OPTIONS: Korri's groups under their titles, rows with label and value, the description under the focused row — test: zone-navigation-acceptance "C12 groups and items"
+C13 OPTIONS rows: choice steps left/right, text and secret on the keyboard, CLEAR, Korri's confirmation dialog — test: zone-navigation-acceptance "C13 interactions"
+C14 OPTIONS: the Saving caret on the row, Korri's message in red and a DISMISS row — test: zone-navigation-acceptance "C14 saving and problem"
+C15 OPTIONS SYSTEM group (system button): Korri's device actions, NO / YES before a destructive one — test: zone-navigation-acceptance "C15 device actions"
+C16 SAVE DATA BACK UP card: password keyboard, the busy strip, the QR code in the well and the secret on its slab — test: zone-navigation-acceptance "C16 export backup"
+C17 SAVE DATA SWITCH FROM BACKUP: secret, password, LOCAL RECORDS TRANSFER / DELETE, SWITCH KEY? — test: zone-navigation-acceptance "C17 switch from backup"
+C18 SAVE DATA SWITCH BUNKER: the URI keyboard from bunker://, disposition, SWITCH KEY? — test: zone-navigation-acceptance "C18 switch by bunker"
+C19 SAVE DATA RETIRED cards with DELETE: DELETE THIS KEY? then IS IT BACKED UP? — test: zone-navigation-acceptance "C19 retired keys"
+C20 SAVE DATA: Working as the busy strip, Problem headed IDENTITY with DISMISS, SWITCHED with the key and OK — test: zone-navigation-acceptance "C20 identity status"
+C21 the foot's Wi-Fi badge and OPTIONS' CONNECTION row: SSID, bars and %, WIRED, OFFLINE — test: zone-navigation-acceptance "C21 connection"
+C22 OPTIONS WI-FI: networks strongest first with LOCK and KNOWN, SCAN, SCANNING…, the caret while joining, the failure in red, the keyboard back on a rejected key, NO WI-FI ADAPTER — test: zone-navigation-acceptance "C22 wi-fi list"
+C23 OPTIONS WI-FI: a locked network's password keyboard, an open one at once, HIDDEN NETWORK name then password — test: zone-navigation-acceptance "C23 join"
+C24 PAUSED: Korri's title on the red band, controls then groups in the yellow wedge, toggle/choice/range on left and right, reasons, NO / YES, B back to the game — test: zone-navigation-acceptance "C24 overlay"
+C25 first boot: CONTROLLERS, WI-FI (OPTIONS' join keyboard for a locked network), NAME, IDENTITY's NEW SAVE and FINISH — test: zone-navigation-acceptance "C25 first boot"
+C26 the foot: TIME as Korri's clock, the device's name, the build string, on every tab — test: zone-navigation-acceptance "C26 clock and build"
+C27 idle: after 30 s the title card for the focused game, the next every 4 s, on GAMES only; any input wakes it — test: zone-navigation-acceptance "C27 idle"
+C28 options = GAME OPTS., menu = the tabs, system = OPTIONS' SYSTEM group; every tab by d-pad and A, home by B — test: zone-navigation-acceptance "C28 input actions"
+C29 the one slanted keyboard: a 40-character backup secret, capitals and symbols as layers — test: zone-navigation-acceptance "C29 text entry"
+C30 the pink edge and underline on whatever holds DOM focus, on every page and layer; reduced motion stops all motion — test: zone-navigation-acceptance "C30 focus and motion"
+```
