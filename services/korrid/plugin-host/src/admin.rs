@@ -254,8 +254,10 @@ pub fn inspection(report: &Report) -> PluginInspection {
         title: report.declaration.title.clone(),
         approval: report.approval.clone(),
         warning: report.warning.clone(),
-        allowed_tcp_ports: report.ports.allowed_tcp_ports.clone(),
-        allowed_udp_ports: report.ports.allowed_udp_ports.clone(),
+        ports: PluginPorts {
+            allowed_tcp_ports: report.ports.allowed_tcp_ports.clone(),
+            allowed_udp_ports: report.ports.allowed_udp_ports.clone(),
+        },
         native_units: report.native_units.keys().cloned().collect(),
         brings: report
             .brings

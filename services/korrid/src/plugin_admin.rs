@@ -32,9 +32,8 @@ pub const CODE_NEEDS_REVIEW: &str = "PluginNeedsReview";
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginRepositories {
-    /// Absent until the device's trusted configuration names an official
+    /// `null` until the device's trusted configuration names an official
     /// catalog (`services.korri.pluginHost.officialCatalogUrl`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub official: Option<String>,
     pub user_added: Vec<String>,
     pub repository_installs: Vec<PluginRepositoryInstall>,
@@ -106,7 +105,7 @@ pub struct PluginCatalogEntry {
 
 // Producer: `package.rs:24-52` Report, returned by `host.rs:270`
 // inspect_repository. `title` is Report.declaration.title, `nativeUnits` the
-// keys of Report.native_units, the ports Report.ports.
+// keys of Report.native_units, `ports` Report.ports.
 #[typeshare]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -116,12 +115,20 @@ pub struct PluginInspection {
     pub title: Option<String>,
     pub approval: String,
     pub warning: String,
+    pub ports: PluginPorts,
+    pub native_units: Vec<String>,
+    pub brings: Vec<PluginDependency>,
+}
+
+// Producer: `firewall.rs` Ports, with its NixOS field names.
+#[typeshare]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginPorts {
     #[serde(rename = "allowedTCPPorts")]
     pub allowed_tcp_ports: Vec<u16>,
     #[serde(rename = "allowedUDPPorts")]
     pub allowed_udp_ports: Vec<u16>,
-    pub native_units: Vec<String>,
-    pub brings: Vec<PluginDependency>,
 }
 
 // Producer: `package.rs` DependencyReport (its Report's id, declaration title

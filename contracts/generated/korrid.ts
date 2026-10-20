@@ -666,13 +666,17 @@ export interface PluginInspectRequest {
 	releaseVersion: string;
 }
 
+export interface PluginPorts {
+	allowedTCPPorts: number[];
+	allowedUDPPorts: number[];
+}
+
 export interface PluginInspection {
 	id: string;
 	title?: string;
 	approval: string;
 	warning: string;
-	allowedTCPPorts: number[];
-	allowedUDPPorts: number[];
+	ports: PluginPorts;
 	nativeUnits: string[];
 	brings: PluginDependency[];
 }
@@ -721,7 +725,7 @@ export interface PluginRepositoryInstall {
 
 export interface PluginRepositories {
 	/**
-	 * Absent until the device's trusted configuration names an official
+	 * `null` until the device's trusted configuration names an official
 	 * catalog (`services.korri.pluginHost.officialCatalogUrl`).
 	 */
 	official?: string;

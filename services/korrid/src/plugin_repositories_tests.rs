@@ -140,6 +140,7 @@ async fn plugin_requests_reach_the_host_socket_and_return_its_answers() {
     assert_eq!(
         value["outcome"],
         json!({"_tag":"Ok","payload":{
+            "official":null,
             "userAdded":["https://plugins.example/catalog.json"],
             "repositoryInstalls":[{
                 "id":"@example:clock",

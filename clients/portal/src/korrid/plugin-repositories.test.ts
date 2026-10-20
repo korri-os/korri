@@ -91,7 +91,7 @@ describe("plugin repositories in the in-memory brain", () => {
     const client = createInMemoryKorridClient()
     const report = ok(await client.inspectPlugin(OFFICIAL, "@korri:sunshine", "2026.09.2"))
     expect(report.warning).not.toBe("")
-    expect(report.allowedTCPPorts.length).toBeGreaterThan(0)
+    expect(report.ports.allowedTCPPorts.length).toBeGreaterThan(0)
     expect(report.brings).toHaveLength(1)
     expect(await client.installPlugin(OFFICIAL, "@korri:sunshine", "2026.09.2", "")).toMatchObject({ _tag: "Err" })
     expect(await client.installPlugin(OFFICIAL, "@korri:sunshine", "2026.10.1", report.approval)).toMatchObject({ _tag: "Err" })
