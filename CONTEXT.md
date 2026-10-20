@@ -162,3 +162,25 @@ _Avoid_: preset, mode, config
 **Attention list**:
 The files on one device that discovery could not identify or could not decide between, shown to everyone on that device to resolve.
 _Avoid_: errors, unmatched, inbox
+
+### Saves
+
+**Save history**:
+The record of everything one person's play has saved for one game, on every device and every release. It is a chain of save snapshots, and it can hold splits.
+_Avoid_: cloud save, save folder, save slot
+
+**Save snapshot**:
+One game's complete saves for one person, captured as one unit after a game exits. It names the snapshot its session started from and the release it ran. It holds in-game saves, savestates and screenshots.
+_Avoid_: backup, version, save file
+
+**Interrupted snapshot**:
+A save snapshot made from what a game wrote before a crash or power loss, not after a clean exit. Korri keeps it and marks it.
+_Avoid_: recovered save, partial save
+
+**Split**:
+Two save snapshots that started from the same snapshot. The person picks one to continue from; the other stays in the save history.
+_Avoid_: conflict, divergence, fork
+
+**In-use warning**:
+A notice before launch that the same person's game is pending or live on another device, or has newer saves there that this device has not received. It never blocks a launch.
+_Avoid_: lock, lease, checkout
