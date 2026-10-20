@@ -589,8 +589,10 @@ carries an expected digest: legacy carried `expectedDigests` only on
 #### RPC
 
 Local `/rpc`, portal capability only (like `app.acquisition.status`), legacy
-method names. Every answer is `{ _tag: "Ok", payload }` or
-`{ _tag: "Err", payload: RpcFailure }`.
+method names. As for every method, the response is `{ _tag, outcome }`; each
+outcome is `{ _tag: "Ok", payload }` or `{ _tag: "Err", payload: RpcFailure }`.
+Only the local brain runs discovery, so a host-mode korrid answers every
+method with `AcquisitionUnavailable`.
 
 | Method | Request type | Outcome type | `Ok` payload |
 |---|---|---|---|
@@ -666,7 +668,13 @@ content type or an HTML lead tag), then the target system's declared content
 rules: the file name must end in one of its extensions (longest suffix,
 ignoring case), and a matching header rule must leave content after the
 header. SHA-256 is computed while writing; it is byte identity, not
-authentication. Placement and the library import follow ADR 0013.
+authentication. Placement follows legacy `artifact-placement.ts` (identical
+SHA-256 reused, otherwise `name (n).ext` with the matched system extension, 20
+names) inside the source's first layout directory; content already located in
+that source is reused instead of copied again. korrid then seeds discovery's
+hash cache with the digests it computed, rescans, waits at most 120 s, and
+reports `Imported { gameId }` only when the library holds the placed release;
+otherwise `Staged`. ADR 0013 records the grounding and the limits.
 
 ### Native runners for specific content
 
