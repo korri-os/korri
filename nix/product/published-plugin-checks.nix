@@ -34,6 +34,8 @@ builtins.listToAttrs (
         ssh = published.korri-plugin-ssh;
         mgba = published.korri-plugin-mgba;
         fake08 = published.korri-plugin-fake08;
+        solarus = published.korri-plugin-solarus;
+        zquestClassic = published.korri-plugin-zquest-classic;
         starterPack = published.korri-plugin-starter-pack;
       };
       metadata = import ./published-plugin-metadata.nix {
