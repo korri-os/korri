@@ -300,6 +300,8 @@ pub(super) enum Failure {
     Empty,
     /// The file does not match the target system's declared content rules.
     NotSystemFile,
+    /// Legacy placement: 20 different files already hold the name.
+    NameTaken,
 }
 impl Failure {
     pub(super) fn rpc(self) -> RpcFailure {
@@ -319,6 +321,7 @@ impl Failure {
             Self::WebPage => "The source sent a web page instead of the game file.",
             Self::Empty => "The source sent an empty file.",
             Self::NotSystemFile => "The downloaded file is not a game for this system.",
+            Self::NameTaken => "The library folder already has different files with this name.",
         };
         RpcFailure {
             code: "AcquisitionFailed".into(),

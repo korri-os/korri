@@ -23,7 +23,10 @@ pub(super) fn is_ready(path: &Path) -> bool {
 }
 
 pub(super) fn prepare(root: &Path, artifact: &ArtifactRecord) -> Result<PathBuf, Failure> {
-    let base = contribution(root, artifact);
+    create_base(root, contribution(root, artifact))
+}
+
+fn create_base(root: &Path, base: PathBuf) -> Result<PathBuf, Failure> {
     // The daemon runs with umask 0077. Published runtime paths must still be
     // traversable by the game user. Never chmod an existing parent or symlink.
     let relative = base.strip_prefix(root).map_err(|_| Failure::UnsafePath)?;
@@ -218,4 +221,188 @@ pub(super) fn clean_work(base: &Path) -> Result<(), Failure> {
         }
     }
     Ok(())
+}
+
+/// ADR 0012 grammar for a provider's reconstructible cache:
+/// `<root>/cache/<plugin short name>/<provider name>`.
+pub(super) fn provider_cache(root: &Path, plugin_id: &str, provider_id: &str) -> PathBuf {
+    let (_, plugin) = plugin_id.split_once(':').expect("validated plugin id");
+    let (_, provider) = provider_id.split_once(':').expect("validated provider id");
+    root.join("cache").join(plugin).join(provider)
+}
+
+/// The private (0700) staging directory of a provider's game downloads.
+pub(super) fn game_staging(
+    root: &Path,
+    plugin_id: &str,
+    provider_id: &str,
+) -> Result<PathBuf, Failure> {
+    downloads(&create_base(
+        root,
+        provider_cache(root, plugin_id, provider_id),
+    )?)
+}
+
+/// Startup: a game download never resumes, so every staging file goes.
+/// Pinned artifact partials in the same grammar have other names and stay.
+pub(super) fn remove_game_staging(directory: &Path) -> Result<(), Failure> {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    for entry in entries {
+        let entry = entry?;
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(super::download::STAGING_PREFIX))
+            && entry.file_type()?.is_file()
+        {
+            fs::remove_file(entry.path())?;
+        }
+    }
+    Ok(())
+}
+
+/// Legacy `artifact-placement.ts`: at most 20 names are tried.
+const PLACEMENT_ATTEMPTS: usize = 20;
+const PLACEMENT_TEMP_PREFIX: &str = ".korri-acquire-";
+
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct Placed {
+    /// Path relative to the source root, `/`-separated.
+    pub relative: String,
+    pub path: PathBuf,
+    /// Identical bytes were already there (legacy `alreadyPresent`).
+    pub reused: bool,
+}
+
+/// Place a staged game inside a paired source without clobbering anything.
+/// Identical SHA-256 present: reuse. Different file: `name (n).ext`, where
+/// `ext` is the system extension the name matched. Written to a hidden temp
+/// in the target directory, synced, then linked into place so a concurrent
+/// writer's file is never replaced. `directory` is relative to the source root.
+pub(super) fn place_game(
+    staged: &Path,
+    sha256: &str,
+    source_root: &Path,
+    directory: &str,
+    file_name: &str,
+    extension_len: usize,
+) -> Result<Placed, Failure> {
+    if !super::claims::safe_file_name(file_name)
+        || file_name.starts_with('.')
+        || extension_len + 1 >= file_name.len()
+        || !file_name.is_char_boundary(file_name.len() - extension_len - 1)
+    {
+        return Err(Failure::UnsafePath);
+    }
+    let root = fs::canonicalize(source_root).map_err(|_| Failure::Storage)?;
+    if !root.is_dir() {
+        return Err(Failure::Storage);
+    }
+    let segments: Vec<_> = directory
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    if segments
+        .iter()
+        .any(|segment| matches!(*segment, "." | "..") || segment.contains('\0'))
+    {
+        return Err(Failure::UnsafePath);
+    }
+    let mut target = root.clone();
+    for segment in segments {
+        target.push(segment);
+        match fs::symlink_metadata(&target) {
+            Ok(metadata) if metadata.is_dir() => {}
+            Ok(_) => return Err(Failure::UnsafePath),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::create_dir(&target)?,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    if fs::canonicalize(&target)? != target || !target.starts_with(&root) {
+        return Err(Failure::UnsafePath);
+    }
+    let (stem, dot_extension) = file_name.split_at(file_name.len() - extension_len - 1);
+    for attempt in 0..PLACEMENT_ATTEMPTS {
+        let candidate = if attempt == 0 {
+            file_name.to_owned()
+        } else {
+            format!("{stem} ({attempt}){dot_extension}")
+        };
+        let path = target.join(&candidate);
+        let relative = path
+            .strip_prefix(&root)
+            .map_err(|_| Failure::UnsafePath)?
+            .to_str()
+            .ok_or(Failure::UnsafePath)?
+            .to_owned();
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                match link_new(staged, &target, &path) {
+                    Ok(()) => {
+                        return Ok(Placed {
+                            relative,
+                            path,
+                            reused: false,
+                        })
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(error) => return Err(error.into()),
+                }
+            }
+            Ok(metadata) if metadata.is_file() => {
+                if file_sha256(&path)? == sha256 {
+                    return Ok(Placed {
+                        relative,
+                        path,
+                        reused: true,
+                    });
+                }
+            }
+            // A directory, symlink or special file occupies the name.
+            Ok(_) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err(Failure::NameTaken)
+}
+
+fn link_new(staged: &Path, directory: &Path, path: &Path) -> std::io::Result<()> {
+    let temp = directory.join(format!(
+        "{PLACEMENT_TEMP_PREFIX}{:032x}",
+        rand::random::<u128>()
+    ));
+    let result = (|| {
+        let mut output = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o644)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&temp)?;
+        let mut input = File::options()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(staged)?;
+        std::io::copy(&mut input, &mut output)?;
+        output.sync_all()?;
+        // link(2) never replaces an existing name, unlike rename(2).
+        fs::hard_link(&temp, path)?;
+        File::open(directory)?.sync_all()
+    })();
+    let _ = fs::remove_file(&temp);
+    result
+}
+
+fn file_sha256(path: &Path) -> Result<String, Failure> {
+    use sha2::{Digest, Sha256};
+    let mut file = File::options()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)?;
+    let mut hash = Sha256::new();
+    std::io::copy(&mut file, &mut hash)?;
+    Ok(hex::encode(hash.finalize()))
 }

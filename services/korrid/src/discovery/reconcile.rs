@@ -73,6 +73,9 @@ impl Default for DiscoveryOptions {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DiscoveryMutationReport {
     pub scan: ScanReport,
+    /// File bytes read to hash content during this scan; unchanged and
+    /// seeded files cost none.
+    pub hashed_bytes: u64,
     pub scan_duration_ms: u128,
     pub added_games: usize,
     pub removed_locations: usize,
@@ -193,6 +196,39 @@ impl DiscoveryCoordinator {
         options: &DiscoveryOptions,
     ) -> Result<DiscoveryMutationReport, DiscoveryError> {
         self.mutate(Mutation::Rescan, options)
+    }
+
+    /// The committed documents, validated, under the publication lock.
+    pub fn published(&self) -> Result<ConfigSnapshot, DiscoveryError> {
+        let _guard = self
+            .write_lock
+            .lock()
+            .expect("discovery write lock poisoned");
+        Documents::read(&self.readable_root)?.validate()
+    }
+
+    /// Seed the private hash cache with digests computed while writing
+    /// `path`, under the publication lock, so the next scan reads none of it.
+    pub fn seed_hash(
+        &self,
+        path: &Path,
+        rules: &[crate::plugin::HeaderRule],
+        sha256_hex: &str,
+        sha1_hex: &str,
+    ) -> Result<bool, DiscoveryError> {
+        let _guard = self
+            .write_lock
+            .lock()
+            .expect("discovery write lock poisoned");
+        let mut cache: HashCache = read_json(&state_file(&self.private_root, HASH_CACHE_FILE))?;
+        let seeded = cache
+            .seed(path, rules, sha256_hex, sha1_hex)
+            .map_err(|e| DiscoveryError::Storage(e.to_string()))?;
+        if seeded {
+            attention::atomic_save_json(&self.private_root, HASH_CACHE_FILE, &cache)
+                .map_err(|e| DiscoveryError::Storage(e.to_string()))?;
+        }
+        Ok(seeded)
     }
 
     fn mutate(
@@ -368,6 +404,7 @@ impl DiscoveryCoordinator {
             .map_err(|e| DiscoveryError::Storage(e.to_string()))?;
         scan.unpaired = unpaired;
         Ok(DiscoveryMutationReport {
+            hashed_bytes: cache.hashed_bytes(),
             scan,
             scan_duration_ms: started.elapsed().as_millis(),
             added_games: final_snapshot
