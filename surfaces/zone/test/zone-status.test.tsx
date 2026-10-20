@@ -331,33 +331,43 @@ describe("ZoneStatusLayer", () => {
     expect(document.activeElement?.textContent).toBe("Page card")
   })
 
-  test("C32: a known total is a real bar: its share, and DONE / TOTAL at its end", () => {
+  test("C32: a known total is a real bar: its share, and the figures once, Korri's detail at its end", () => {
     mount(statusProgressKnown)
     const strip = screen.getByRole("status")
     const bar = within(strip).getByRole("progressbar", { name: "Downloading FEX rootfs" })
     expect(bar.getAttribute("data-meter")).toBe("progress")
     expect(bar.getAttribute("aria-valuenow")).toBe("52")
     expect(bar.getAttribute("aria-valuetext")).toBe("612.0 MB / 1.2 GB")
-    expect(bar.textContent).toBe("612.0 MB/1.2 GB")
     expect(bar.style.getPropertyValue("--zone-busy-strip-share")).toBe(String(612_000_000 / 1_160_000_000))
-    // Korri's detail stays, verbatim, above the bar.
-    expect(within(strip).getByText(byWords("612 MB of 1.2 GB · 6.4 MB/s · 1:30 left"))).toBeDefined()
+    // Korri's detail, verbatim, is the meter's one readout: Zone draws no figures of its own beside it.
+    expect(bar.textContent).toBe("612 MB of 1.2 GB · 6.4 MB/s · 1:30 left")
+    expect(strip.querySelectorAll(".zone-busy-strip-detail")).toHaveLength(1)
+    expect(strip.querySelector(".zone-busy-strip-figures")).toBeNull()
     expect(screen.getByRole("button", { name: "Cancel" }).getAttribute("data-focused")).toBe("true")
   })
 
-  test("C32: nearly done fills all but the last sliver", () => {
-    mount(statusProgressNearlyDone)
+  test("C32: with no detail of Korri's, the meter's readout is Zone's DONE / TOTAL", () => {
+    mount({ ...statusProgressNearlyDone, detail: undefined } as SurfaceStatus)
     const bar = screen.getByRole("progressbar")
     expect(bar.getAttribute("aria-valuenow")).toBe("99")
     expect(bar.textContent).toBe("1.2 GB/1.2 GB")
   })
 
-  test("C32: done without a total claims no share: the size so far and the moving stripe", () => {
+  test("C32: done without a total claims no share: the size so far (Korri's words, else Zone's) and the moving stripe", () => {
     mount(statusProgressNoTotal)
     const bar = screen.getByRole("progressbar")
     expect(bar.getAttribute("data-meter")).toBe("indeterminate")
     expect(bar.hasAttribute("aria-valuenow")).toBe(false)
-    expect(bar.textContent).toBe("212.4 MB")
+    expect(bar.getAttribute("aria-valuetext")).toBe("212.4 MB")
+    expect(bar.textContent).toBe("212 MB so far · 6.4 MB/s")
+    cleanup()
+    mount({ ...statusProgressNoTotal, detail: undefined } as SurfaceStatus)
+    expect(screen.getByRole("progressbar").textContent).toBe("212.4 MB")
+  })
+
+  test("C32: the busy strip stands at the page's foot, clear of the band's cards", () => {
+    mount(statusProgressKnown)
+    expect(document.querySelector(".zone-status-layer-busy")?.getAttribute("data-at")).toBe("foot")
   })
 
   test("C32: nothing done and no end (unpacking) is the stripe alone; no progress is no bar", () => {

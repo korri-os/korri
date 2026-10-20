@@ -592,7 +592,9 @@ describe("status", () => {
     const bar = within(strip).getByRole("progressbar")
     expect(bar.getAttribute("data-meter")).toBe("progress")
     expect(bar.getAttribute("aria-valuenow")).toBe("52")
-    expect(bar.textContent).toBe("612.0 MB/1.2 GB")
+    // The figures once: Korri's detail is the meter's readout; Zone's are its value text.
+    expect(bar.textContent).toBe("612 MB of 1.2 GB · 6.4 MB/s · 1:30 left")
+    expect(bar.getAttribute("aria-valuetext")).toBe("612.0 MB / 1.2 GB")
     // Korri counts on: the same strip, the bar moves, the cursor stays on CANCEL.
     publish(busy({ done: 1_154_000_000, total: 1_160_000_000 }))
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("99")

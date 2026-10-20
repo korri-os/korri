@@ -139,6 +139,13 @@
   line-height: 1;
 }
 
+/* Korri's detail as the meter's readout, at the bar's right end, or under
+ * it, right-aligned, when the line has no room beside it. */
+.zone-busy-strip-detail[data-on-meter] {
+  flex: 0 1 auto;
+  text-align: end;
+}
+
 /* The track: 4 art px of dark, its ends 45 degree stairs. */
 .zone-busy-strip-bar {
   position: relative;

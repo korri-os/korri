@@ -1777,3 +1777,15 @@ one holds.
   while rows pass under it), so the wedge shows whole round the titles it
   meets. Cost: label panels over the wedge lose their black edge against
   it (their words stay white on black).
+- **Busy with progress says its figures once, at the foot.** Supersedes
+  "Korri's detail and Zone's figures both show" (treaty) and the strip
+  "across the page's middle" (layers). The meter has one readout at its
+  right end: Korri's detail as written when there is one (the portal's
+  names the sizes, the rate and the time left), else Zone's DONE / TOTAL
+  or the size so far; the bar's value text always carries Zone's figures.
+  Without progress the detail stands under the kicker as before. The busy
+  strip stands at the page's foot by default (`busyAt`), over the veil and
+  clear of the band's cards; `middle` stays for a holder that asks.
+  Cost: a detail of Korri's that names no sizes leaves the sizes to the
+  bar's fill and its value text. At 640x480 the game's tab still meets the
+  focused card's foot, over the veil.

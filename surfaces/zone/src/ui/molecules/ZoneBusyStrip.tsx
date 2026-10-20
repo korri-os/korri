@@ -24,14 +24,17 @@ import { ZoneWords } from "../atoms/ZoneWords"
  * together when the strip is narrow; only then does the kicker wrap
  * between words and the actions drop under the panel.
  *
- * With Korri's `progress` (C32) a meter stands under the detail: SPECIAL
+ * With Korri's `progress` (C32) a meter stands under the kicker: SPECIAL
  * STAGE's bar, 4 art px tall with 45 degree stair ends, a red fill under a
- * 1-px orange lip on a dark track, and the sizes in white caps-1 at its
- * right end: with a total, the filled share and DONE / TOTAL; without one,
- * the size so far and red stripes sliding along the whole bar (still under
- * reduced motion, where it reads as a bar with no end). Nothing done and no
- * end known (unpacking): the stripes alone. Without `progress` the strip
- * says only that work is under way.
+ * 1-px orange lip on a dark track (with a total, the filled share; without
+ * one, red stripes sliding along the whole bar, still under reduced motion,
+ * where it reads as a bar with no end), and one readout at its right end.
+ * The figures are said once: Korri's detail, as written, when there is one
+ * (the portal's names the sizes, the rate and the time left); else Zone's
+ * own DONE / TOTAL in white caps-1, or the size so far. Nothing done and no
+ * end known (unpacking): the stripes alone. The bar's value text always
+ * carries Zone's figures. Without `progress` the strip says only that work
+ * is under way, the detail under the kicker.
  *
  * The strip takes the width and the place its parent gives it, so a page,
  * the status layer or the launch title card can stand it where it belongs.
@@ -86,7 +89,7 @@ export function ZoneBusyStrip({
         <span className="zone-busy-strip-kicker">
           <ZoneWords>{kicker}</ZoneWords>
         </span>
-        {detail !== undefined ? <span className="zone-busy-strip-detail">{detail}</span> : null}
+        {detail !== undefined && progress === undefined ? <span className="zone-busy-strip-detail">{detail}</span> : null}
         {progress === undefined ? null : (
           <div
             aria-label={kicker}
@@ -102,7 +105,10 @@ export function ZoneBusyStrip({
             <span className="zone-busy-strip-bar" ref={bar}>
               <span className="zone-busy-strip-fill" ref={fill} />
             </span>
-            {figures === undefined || done === undefined ? null : (
+            {detail !== undefined ? (
+              // The meter's readout is Korri's own: the figures once.
+              <span className="zone-busy-strip-detail" data-on-meter="">{detail}</span>
+            ) : figures === undefined || done === undefined ? null : (
               <span aria-hidden="true" className="zone-busy-strip-figures">
                 <span className="zone-busy-strip-done"><ZoneCaps size="caps-1">{done}</ZoneCaps></span>
                 {total === undefined ? null : (

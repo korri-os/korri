@@ -75,7 +75,7 @@ export function ZoneStatusLayer({
   readonly page?: ReactNode
   /** A picture over the page and under the status's panels: the launch title card. */
   readonly stage?: ReactNode
-  /** Where the busy strip stands. Default: the foot under a stage, else the middle. */
+  /** Where the busy strip stands. Default: the foot, clear of the band's cards (and of a stage's title). */
   readonly busyAt?: ZoneStatusBusyAt
   /** Draw the running HUD. Off where the page already names the game (PAUSED). */
   readonly runningHud?: boolean
@@ -127,7 +127,7 @@ export function ZoneStatusLayer({
         </div>
       ) : null}
       {status._tag === "Busy" ? (
-        <div className="zone-status-layer-busy" data-at={busyAt ?? (stage === undefined ? "middle" : "foot")} data-block-exit ref={layer}>
+        <div className="zone-status-layer-busy" data-at={busyAt ?? "foot"} data-block-exit ref={layer}>
           {gameTitle === undefined ? null : (
             <span className="zone-status-layer-busy-game">
               <ZonePanel edge={false}>

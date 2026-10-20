@@ -75,9 +75,10 @@
   height: calc(var(--zone-tag-row-height) * var(--zone-caps-1) * var(--zone-px));
 }
 
-/* Busy: the strip across the page's middle with the game's tab on its
- * top-left, no wider than its token; or, under a title card, along the
- * page's foot. */
+/* Busy: the strip along the page's foot with the game's tab on its
+ * top-left, no wider than its token, over the veil and clear of the band's
+ * cards (a page's middle is where its cards stand); `middle` when a holder
+ * asks for it. */
 .zone-status-layer-busy {
   position: absolute;
   inset: 0;
