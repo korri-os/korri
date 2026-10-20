@@ -27,10 +27,12 @@
   isolation: isolate;
 }
 
-/* A picture over the veil: the launch title card. */
+/* A picture over the page: the launch title card. Its own stacking
+ * context, so the veil a question lays over it lies over all of it. */
 .zone-status-layer-stage {
   position: absolute;
   inset: 0;
+  isolation: isolate;
 }
 
 /* Running: the HUD stack at the top left, under the page's header. It

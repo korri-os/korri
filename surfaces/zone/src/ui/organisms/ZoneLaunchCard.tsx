@@ -1,5 +1,5 @@
 import "./ZoneLaunchCard.css"
-import { useRef, type ReactNode } from "react"
+import { useRef } from "react"
 import { ZONE_TITLE_IN_MS, ZONE_TITLE_OUT_MS, zoneTitleInFrame, zoneTitleOutFrame, zoneTitleVars } from "../../plan/motion"
 import { useZoneMoment } from "../../use-zone-moment"
 import { ZoneTitleCard } from "../molecules/ZoneTitleCard"
@@ -13,10 +13,8 @@ import { ZoneTitleCard } from "../molecules/ZoneTitleCard"
  * 400 ms, and the binding removes it.
  *
  * The act is the session about to start; ZONE is the surface's own name.
- * Korri's busy strip and its questions are drawn by the status layer over
- * the page, so they stand on top of this card. `foot` is a slot at the
- * card's foot for a strip that belongs to the card itself; it is empty
- * today.
+ * The card is the status layer's stage (ZoneSurface passes it): Korri's
+ * busy strip stands at its foot, unveiled, and a question stands over it.
  *
  * It takes no focus: what is under it is inert while it shows.
  */
@@ -25,13 +23,11 @@ export function ZoneLaunchCard({
   act,
   system,
   leaving = false,
-  foot,
 }: {
   readonly title: string
   readonly act: number
   readonly system?: string
   readonly leaving?: boolean
-  readonly foot?: ReactNode
 }) {
   const box = useRef<HTMLDivElement>(null)
   useZoneMoment(box, {
@@ -42,7 +38,6 @@ export function ZoneLaunchCard({
   return (
     <div className="zone-launch-card" data-leaving={leaving || undefined} ref={box}>
       <ZoneTitleCard act={act} system={system} title={title} />
-      {foot === undefined ? null : <div className="zone-launch-card-foot">{foot}</div>}
     </div>
   )
 }

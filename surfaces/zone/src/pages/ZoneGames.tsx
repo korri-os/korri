@@ -21,7 +21,6 @@ import { ZoneOptionRow } from "../ui/molecules/ZoneOptionRow"
 import { ZoneTabStrip, type ZoneTabItem } from "../ui/molecules/ZoneTabStrip"
 import { ZoneAttract } from "../ui/organisms/ZoneAttract"
 import { ZoneGround } from "../ui/organisms/ZoneGround"
-import { ZoneLaunchCard } from "../ui/organisms/ZoneLaunchCard"
 import { ZoneTally } from "../ui/organisms/ZoneTally"
 import { ZoneShell } from "../ui/templates/ZoneShell"
 
@@ -112,16 +111,6 @@ export interface ZoneGamesIdle {
   readonly plays?: number
 }
 
-/** The launch title card, from PLAY or CONTINUE until Korri lets go of the game. */
-export interface ZoneGamesLaunchCard {
-  readonly title: string
-  readonly system?: string
-  readonly act: number
-  /** Korri's status has named the launch: the card now holds the page. */
-  readonly seen: boolean
-  readonly leaving: boolean
-}
-
 /** The results tally after a session whose count rose by exactly one. */
 export interface ZoneGamesTally {
   readonly gameId: string
@@ -158,8 +147,13 @@ export interface ZoneGamesProps {
   readonly opts?: ZoneGamesOpts
   /** The idle attract: the game whose turn it is. */
   readonly idle?: ZoneGamesIdle
-  /** The launch title card over the page. */
-  readonly launch?: ZoneGamesLaunchCard
+  /**
+   * The launch title card (the status layer's stage, over this page) holds
+   * the page: Korri's status has named the launch and the card is not
+   * leaving. Before that the card is only Zone's announcement, and a move
+   * under it lets go of it.
+   */
+  readonly launchHeld?: boolean
   /** The results tally over the page. */
   readonly tally?: ZoneGamesTally
   readonly clock?: string
@@ -234,7 +228,7 @@ const buttonsIn = (region: Element | null): HTMLButtonElement[] =>
 export function ZoneGames(props: ZoneGamesProps) {
   const {
     strips, band, factsAt, keysAt, tab, tabCursor, zone, catalog, cards, focusedCard, facts, launches, focusedAction,
-    find, finding, opts, idle, launch, tally, clock, device, connection, build, onEvent,
+    find, finding, opts, idle, launchHeld = false, tally, clock, device, connection, build, onEvent,
   } = props
   const root = useRef<HTMLDivElement | null>(null)
   // GAME OPTS. slides in over the band from the right (M2's incoming rows).
@@ -257,11 +251,11 @@ export function ZoneGames(props: ZoneGamesProps) {
   const failed = games && catalog._tag === "Error"
   const layer = opts !== undefined ? "opts" : finding ? "keyboard" : failed ? "error" : "none"
   // The tally covers the page, makes it inert and holds the cursor itself.
-  // The launch card does too once Korri has named the launch; before that
-  // it is only Zone's announcement, and a move under it lets go of it.
+  // The launch card (drawn over the page by the status layer) does too
+  // once Korri has named the launch.
   // Idle covers nothing: a key wakes it.
   const holding = tally !== undefined && !tally.leaving
-  const launching = launch !== undefined && !launch.leaving && launch.seen
+  const launching = launchHeld
 
   // Where DOM focus belongs, as a region and an index in it.
   const target: readonly [string, number | string] | undefined =
@@ -568,9 +562,6 @@ export function ZoneGames(props: ZoneGamesProps) {
             turn={idle.key}
           />
         </div>
-      )}
-      {launch === undefined ? null : (
-        <ZoneLaunchCard act={launch.act} leaving={launch.leaving} system={launch.system} title={launch.title} />
       )}
       {tally === undefined ? null : (
         <div className="zone-games-tally" data-games-region="tally">

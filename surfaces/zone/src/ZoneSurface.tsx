@@ -15,6 +15,7 @@ import { ZoneKeycap } from "./ui/atoms/ZoneKeycap"
 import { ZoneFoot } from "./ui/molecules/ZoneFoot"
 import { ZoneTabStrip, type ZoneTabItem } from "./ui/molecules/ZoneTabStrip"
 import { ZoneGround, type ZoneGroundName } from "./ui/organisms/ZoneGround"
+import { ZoneLaunchCard } from "./ui/organisms/ZoneLaunchCard"
 import { ZoneStatusLayer } from "./ui/organisms/ZoneStatusLayer"
 import { useZoneSurface, zoneDeviceName, zoneGamesPage, type ZoneSurfaceProgram } from "./use-zone-games"
 
@@ -87,6 +88,9 @@ type Senders = ReturnType<typeof senders>
  *
  * with the status layer over whichever it is. Each page receives plain
  * props and reports in its own model's messages; the program routes them.
+ * The launch title card is the status layer's stage over GAMES: Korri's
+ * busy strip stands at its foot with no veil over it, and a question or a
+ * problem stands over it.
  *
  * The one DOM mechanic here: on OPTIONS and SAVE DATA, which do not move
  * focus to the tabs themselves, the cursor goes to the tab navigation names
@@ -124,11 +128,19 @@ export function ZoneSurface({ model, host }: { readonly model: SurfaceModel; rea
         onProblemButton={button => send.status({ _tag: "ChoseProblemButton", button })}
         page={zonePage(shown, program, model, host, send)}
         runningHud={shown !== "paused"}
+        stage={launchStage(shown, program)}
         status={model.status}
         titleOf={titleOf}
       />
     </div>
   )
+}
+
+/** The launch title card, from PLAY or CONTINUE until Korri lets go of the game, while GAMES is shown. */
+function launchStage(shown: ZoneShown, program: ZoneSurfaceProgram): ReactNode {
+  const launch = program.state.nav.launch
+  if (shown !== "games" || launch === undefined) return undefined
+  return <ZoneLaunchCard act={launch.act} leaving={launch.leaving} system={launch.system} title={launch.title} />
 }
 
 /** The running game's art for PAUSED's stand-in: wide, else cover, when Korri names a game its catalog lists. */

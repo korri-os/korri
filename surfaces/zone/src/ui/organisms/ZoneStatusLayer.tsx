@@ -42,9 +42,11 @@ export type ZoneStatusBusyAt = "middle" | "foot"
  *    by its label, and Back answers nothing: Korri's actions are the only
  *    ways out.
  *
- * `stage` is a picture that stands over the veil and under the status's
+ * `stage` is a picture that stands over the page and under the status's
  * own panels: the launch title card. While it stands the busy strip goes
- * to its foot (`busyAt`), and a question or a problem still covers it.
+ * to its foot (`busyAt`) and no veil lies over it, so the card is seen
+ * whole while Korri works; a problem or a question veils it as it veils a
+ * page, and covers it.
  *
  * Every word is Korri's except DISMISS, RETRY and OPEN. `focus` is the
  * model's lit button; focus returns to the page when the layer closes.
@@ -71,7 +73,7 @@ export function ZoneStatusLayer({
   readonly focus?: number
   /** The page the layer covers. */
   readonly page?: ReactNode
-  /** A picture over the veil and under the status's panels: the launch title card. */
+  /** A picture over the page and under the status's panels: the launch title card. */
   readonly stage?: ReactNode
   /** Where the busy strip stands. Default: the foot under a stage, else the middle. */
   readonly busyAt?: ZoneStatusBusyAt
@@ -100,9 +102,14 @@ export function ZoneStatusLayer({
     <div className="zone-status-layer" data-status={status._tag} ref={root}>
       <div className="zone-status-layer-page" data-covered={covers || undefined} inert={covers}>
         <div className="zone-status-layer-content">{page}</div>
-        {covers ? <ZoneVeil /> : null}
+        {covers && stage === undefined ? <ZoneVeil /> : null}
       </div>
-      {stage === undefined ? null : <div className="zone-status-layer-stage">{stage}</div>}
+      {stage === undefined ? null : (
+        <div className="zone-status-layer-stage" inert={covers}>
+          {stage}
+          {covers && status._tag !== "Busy" ? <ZoneVeil /> : null}
+        </div>
+      )}
       {status._tag === "Running" && hud ? (
         <div aria-live="polite" className="zone-status-layer-running" role="status">
           <span className="zone-status-layer-hud-kicker">

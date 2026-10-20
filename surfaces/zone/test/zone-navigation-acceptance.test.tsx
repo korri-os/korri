@@ -1395,10 +1395,40 @@ describe("moments", () => {
     expect(launchCard()?.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("Act 24")
     expect(launchCard()?.querySelector(".zone-title-card-bar")?.textContent).toBe("Zone")
     expect(launchCard()?.querySelector(".zone-tag")?.textContent).toBe("PICO-8")
-    // Korri takes it up: Busy, then Running. The card holds, the busy strip over it.
+    // Korri takes it up: Busy, then Running. The card is the status layer's
+    // stage: the busy strip's kicker stands at its foot, and no veil lies over it.
     publish({ ...HOME, status: { _tag: "Busy", kicker: "Starting", gameId: "celeste" } })
-    expect(launchCard()).not.toBeNull()
+    const stage = document.querySelector<HTMLElement>(".zone-status-layer-stage")
+    expect(launchCard()?.closest(".zone-status-layer-stage")).toBe(stage)
     expect(screen.getByRole("status").textContent).toContain("Starting")
+    expect(screen.getByText("Starting").closest(".zone-status-layer-busy")?.getAttribute("data-at")).toBe("foot")
+    expect(stage?.querySelector(".zone-veil")).toBeNull()
+    // Korri asks over the card: the question stands on top of it, veiled under
+    // it, and the host's action answers by runAction; the card holds.
+    publish({
+      ...HOME,
+      status: {
+        _tag: "Confirm",
+        kicker: "Needs a download",
+        detail: "FEX rootfs, 1.5 GB",
+        gameId: "celeste",
+        actions: [
+          { id: "acquisition:1:download", label: "Download", enabled: true },
+          { id: "acquisition:1:cancel", label: "Cancel", enabled: true },
+        ],
+      },
+    })
+    const question = screen.getByRole("dialog", { name: "Needs a download" })
+    expect(launchCard()?.hasAttribute("data-leaving")).toBe(false)
+    expect(stage?.querySelector(".zone-veil")).not.toBeNull()
+    // Drawn after the stage, outside it: on top.
+    expect(stage?.contains(question)).toBe(false)
+    expect((stage!.compareDocumentPosition(question) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true)
+    expect(focusedText()).toBe("Download")
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "acquisition:1:download"])
+    publish({ ...HOME, status: { _tag: "Busy", kicker: "Starting", gameId: "celeste" } })
+    expect(launchCard()?.hasAttribute("data-leaving")).toBe(false)
     publish(running("celeste"))
     expect(launchCard()?.hasAttribute("data-leaving")).toBe(false)
     expect(document.querySelector(".zone-games-page")?.hasAttribute("inert")).toBe(true)
