@@ -11,29 +11,24 @@
 // --record rewrites the committed fixtures as excerpts of the live pages.
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
+import type {
+  DownloadResolution,
+  PluginHttpRequest,
+  PluginHttpRequests,
+  PluginHttpResponse,
+  ProviderClaim,
+  ProviderClaimDetails,
+} from "../../contracts/generated/korrid"
 import { handlers } from "./plugin"
 
 const QUERY = "celeste"
-const SPECIMEN_TITLE = "Celeste Classic 2"
+const SPECIMEN_POST = "86783"
 const SPECIMEN_FILE = "celeste_classic_2-5.p8.png"
 const OLD_CART_POST = "11722"
 const UNKNOWN_POST = "999999999"
 const EMPTY_QUERY = "zzqxjvkw"
 const MAX_TURNS = 4
 const PNG_SIGNATURE = "89504e470d0a1a0a"
-
-type Request = {
-  url: string
-  query?: Record<string, string | number | boolean>
-  headers?: Record<string, string>
-}
-type Response = {
-  status: number
-  ok: boolean
-  url: string
-  headers: Record<string, string>
-  text: string
-}
 
 const log = (message: string) => console.log(`${new Date().toISOString()} ${message}`)
 const recordDir = process.argv[2] === "--record" ? process.argv[3] : undefined
@@ -43,14 +38,14 @@ const check = (ok: boolean, message: string) => {
   if (!ok) failures += 1
 }
 
-function requestUrl(request: Request): string {
+function requestUrl(request: PluginHttpRequest): string {
   const query = Object.entries(request.query ?? {})
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
     .join("&")
   return query ? `${request.url}?${query}` : request.url
 }
 
-async function get(request: Request): Promise<Response> {
+async function get(request: PluginHttpRequest): Promise<PluginHttpResponse> {
   const response = await fetch(requestUrl(request), { headers: request.headers ?? {} })
   const text = await response.text()
   const headers: Record<string, string> = {}
@@ -59,24 +54,34 @@ async function get(request: Request): Promise<Response> {
   return { status: response.status, ok: response.ok, url: response.url, headers, text }
 }
 
-async function run(
-  operation: keyof typeof handlers,
-  input: Record<string, unknown>,
-): Promise<{ result: unknown; responses: Response[] }> {
-  const responses: Response[] = []
-  const handler = handlers[operation] as (input: unknown) => unknown
+const isRequests = (output: unknown): output is PluginHttpRequests =>
+  typeof output === "object" && output !== null && !Array.isArray(output) &&
+  (output as { _tag?: unknown })._tag === "HttpRequests"
+
+// korrid's replay loop: call, fetch what was asked, call again with every
+// response so far, at most MAX_TURNS calls.
+async function run<Result>(
+  operation: string,
+  call: (responses: PluginHttpResponse[]) => PluginHttpRequests | Result,
+): Promise<{ result: Result; responses: PluginHttpResponse[] }> {
+  const responses: PluginHttpResponse[] = []
   for (let turn = 1; turn <= MAX_TURNS; turn++) {
-    const output = handler({ providerId: "@korri:pico8", ...input, responses }) as
-      | { _tag?: string; requests?: Request[] }
-      | undefined
-    if (output && !Array.isArray(output) && output._tag === "HttpRequests") {
-      for (const request of output.requests ?? []) responses.push(await get(request))
-      continue
-    }
-    return { result: output, responses }
+    const output = call([...responses])
+    if (!isRequests(output)) return { result: output, responses }
+    for (const request of output.requests) responses.push(await get(request))
   }
   throw new Error(`${operation} needed more than ${MAX_TURNS} turns`)
 }
+
+const providerId = "@korri:pico8"
+const search = (query: string) =>
+  run<ProviderClaim[]>("claims.search", responses => handlers["claims.search"]({ providerId, query, responses }))
+const details = (id: string) =>
+  run<ProviderClaimDetails>("claims.details", responses => handlers["claims.details"]({ providerId, id, responses }))
+const resolve = (candidateUrl: string) =>
+  run<DownloadResolution>("artifact.resolve-download", responses =>
+    handlers["artifact.resolve-download"]({ providerId, candidateUrl, responses }),
+  )
 
 // Verbatim lines of a page, in page order: the head up to the viewport meta,
 // the post container, every line that names a `.p8.png`, and the cart block
@@ -113,44 +118,43 @@ function record(name: string, text: string) {
   log(`recorded ${name} (${text.length} chars)`)
 }
 
-const search = await run("claims.search", { query: QUERY })
-const claims = search.result as Array<{ id: string; title: string; url: string }>
-check(Array.isArray(claims) && claims.length > 0, `claims.search "${QUERY}" returned ${claims?.length ?? 0} claims`)
-record("search-celeste.html", searchExcerpt(search.responses[0].text))
-const specimen = claims.find(claim => claim.title === SPECIMEN_TITLE)
-check(specimen !== undefined, `search lists "${SPECIMEN_TITLE}" (${specimen?.id ?? "missing"})`)
+const found = await search(QUERY)
+const claims = found.result
+check(claims.length > 0, `claims.search "${QUERY}" returned ${claims.length} claims`)
+record("search-celeste.html", searchExcerpt(found.responses[0].text))
+const specimen = claims.find(claim => claim.id === SPECIMEN_POST)
+check(specimen !== undefined, `search lists post ${SPECIMEN_POST} ("${specimen?.title ?? "missing"}")`)
 
-const empty = await run("claims.search", { query: EMPTY_QUERY })
-check(Array.isArray(empty.result) && (empty.result as unknown[]).length === 0, `claims.search "${EMPTY_QUERY}" is empty`)
+const empty = await search(EMPTY_QUERY)
+check(empty.result.length === 0, `claims.search "${EMPTY_QUERY}" is empty`)
 record("search-empty.html", searchExcerpt(empty.responses[0].text))
 
 if (specimen) {
-  const details = await run("claims.details", { id: specimen.id })
-  const detail = details.result as { title: string; downloadPageUrl?: string; description?: string }
+  const described = await details(specimen.id)
+  const detail = described.result
   check(detail.downloadPageUrl?.endsWith(`/${SPECIMEN_FILE}`) === true, `claims.details ${specimen.id}: "${detail.title}" ${detail.downloadPageUrl}; ${detail.description}`)
-  record(`post-${specimen.id}.html`, postExcerpt(details.responses[0].text, specimen.id))
+  record(`post-${specimen.id}.html`, postExcerpt(described.responses[0].text, specimen.id))
 
-  const resolved = await run("artifact.resolve-download", { candidateUrl: specimen.url })
-  const resolution = resolved.result as { _tag: string; url?: string; filename?: string }
-  check(resolution._tag === "FinalDownload" && resolution.filename === SPECIMEN_FILE, `artifact.resolve-download ${specimen.url}: ${resolution._tag} ${resolution.url}`)
+  const { result: resolution } = await resolve(specimen.url)
+  const final = resolution._tag === "FinalDownload" ? resolution : undefined
+  check(final?.filename === SPECIMEN_FILE, `artifact.resolve-download ${specimen.url}: ${resolution._tag} ${final?.url ?? ""}`)
 
-  if (resolution._tag === "FinalDownload" && resolution.url) {
-    const cart = await fetch(resolution.url, { headers: { range: "bytes=0-63" } })
+  if (final) {
+    const cart = await fetch(final.url, { headers: { range: "bytes=0-63" } })
     const head = Buffer.from(await cart.arrayBuffer()).subarray(0, 8).toString("hex")
     const total = cart.headers.get("content-range")?.split("/")[1] ?? cart.headers.get("content-length")
-    log(`GET ${resolution.url} (bytes=0-63) -> ${cart.status} total ${total} bytes ${cart.headers.get("content-type") ?? ""}`)
+    log(`GET ${final.url} (bytes=0-63) -> ${cart.status} total ${total} bytes ${cart.headers.get("content-type") ?? ""}`)
     check(head === PNG_SIGNATURE, `cart file starts with the PNG signature (${head})`)
   }
 }
 
-const old = await run("claims.details", { id: OLD_CART_POST })
-const oldDetail = old.result as { title: string; downloadPageUrl?: string }
-check(/\/bbs\/cposts\/\d+\//.test(oldDetail.downloadPageUrl ?? ""), `claims.details ${OLD_CART_POST}: "${oldDetail.title}" ${oldDetail.downloadPageUrl}`)
+const old = await details(OLD_CART_POST)
+check(/\/bbs\/cposts\/\d+\//.test(old.result.downloadPageUrl ?? ""), `claims.details ${OLD_CART_POST}: "${old.result.title}" ${old.result.downloadPageUrl}`)
 record(`post-${OLD_CART_POST}.html`, postExcerpt(old.responses[0].text, OLD_CART_POST))
 
-const unknown = await run("artifact.resolve-download", { candidateUrl: `https://www.lexaloffle.com/bbs/?pid=${UNKNOWN_POST}#p` })
-const unknownResolution = unknown.result as { _tag: string; reason?: string }
-check(unknownResolution._tag === "FailedDownload" && unknownResolution.reason === "not-found", `unknown post ${UNKNOWN_POST}: ${unknownResolution._tag} ${unknownResolution.reason}`)
+const unknown = await resolve(`https://www.lexaloffle.com/bbs/?pid=${UNKNOWN_POST}#p`)
+const unknownResolution = unknown.result
+check(unknownResolution._tag === "FailedDownload" && unknownResolution.reason === "not-found", `unknown post ${UNKNOWN_POST}: ${unknownResolution._tag}`)
 record(`post-${UNKNOWN_POST}.html`, postExcerpt(unknown.responses[0].text, UNKNOWN_POST))
 
 log(failures === 0 ? "probe passed" : `probe failed: ${failures} check(s)`)
