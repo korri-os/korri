@@ -191,7 +191,13 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::AcquisitionStart(_)
         | RpcRequest::AcquisitionDownload(_)
         | RpcRequest::AcquisitionCancel(_)
-        | RpcRequest::AcquisitionRemove(_) => PeerPolicy::LocalPortalOnly,
+        | RpcRequest::AcquisitionRemove(_)
+        | RpcRequest::AcquisitionProviders(_)
+        | RpcRequest::AcquisitionSearch(_)
+        | RpcRequest::AcquisitionDetails(_)
+        | RpcRequest::AcquisitionAcquire(_)
+        | RpcRequest::AcquisitionAcquireStatus(_)
+        | RpcRequest::AcquisitionAcquireCancel(_) => PeerPolicy::LocalPortalOnly,
         RpcRequest::SessionReserve(_)
         | RpcRequest::SessionStart(_)
         | RpcRequest::SessionCancel(_) => PeerPolicy::LocalOnly,

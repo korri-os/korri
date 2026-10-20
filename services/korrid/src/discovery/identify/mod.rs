@@ -13,7 +13,7 @@ use std::{
 };
 
 pub use evidence::level as evidence_level;
-pub use hash::HashCache;
+pub use hash::{header_size, HashCache};
 pub use types::*;
 
 use crate::{

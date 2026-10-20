@@ -1430,6 +1430,12 @@ export type RpcRequest =
 	| { _tag: "app.acquisition.cancel", payload: AcquisitionCancelRequest }
 	| { _tag: "app.acquisition.download", payload: AcquisitionDownloadRequest }
 	| { _tag: "app.acquisition.remove", payload: AcquisitionRemoveRequest }
+	| { _tag: "app.acquisition.providers", payload: AcquisitionPluginsPayload }
+	| { _tag: "app.acquisition.search", payload: SearchRequest }
+	| { _tag: "app.acquisition.details", payload: DetailsRequest }
+	| { _tag: "app.acquisition.acquire", payload: AcquireArtifactRequest }
+	| { _tag: "app.acquisition.acquire-status", payload: AcquireStatusRequest }
+	| { _tag: "app.acquisition.acquire-cancel", payload: AcquireCancelRequest }
 	| { _tag: "system.onboarding.finish", payload: OnboardingFinishRequest }
 	| { _tag: "system.onboarding.status", payload: OnboardingStatusRequest }
 	| { _tag: "system.wifi.connectHidden", payload: WifiConnectHiddenRequest }
@@ -1490,6 +1496,12 @@ export type RpcResponse =
 	| { _tag: "app.acquisition.cancel", outcome: AcquisitionOutcome }
 	| { _tag: "app.acquisition.download", outcome: AcquisitionOutcome }
 	| { _tag: "app.acquisition.remove", outcome: AcquisitionOutcome }
+	| { _tag: "app.acquisition.providers", outcome: PluginListOutcome }
+	| { _tag: "app.acquisition.search", outcome: SearchOutcome }
+	| { _tag: "app.acquisition.details", outcome: DetailsOutcome }
+	| { _tag: "app.acquisition.acquire", outcome: AcquireJobOutcome }
+	| { _tag: "app.acquisition.acquire-status", outcome: AcquireJobOutcome }
+	| { _tag: "app.acquisition.acquire-cancel", outcome: AcquireJobOutcome }
 	| { _tag: "system.onboarding.finish", outcome: OnboardingStatusOutcome }
 	| { _tag: "system.onboarding.status", outcome: OnboardingStatusOutcome }
 	| { _tag: "system.wifi.connectHidden", outcome: NetworkStatusOutcome }

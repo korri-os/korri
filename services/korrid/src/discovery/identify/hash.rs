@@ -58,7 +58,8 @@ pub(super) fn prefix(path: &Path) -> Result<Vec<u8>, IdentifyError> {
     Ok(bytes)
 }
 
-fn header_size(prefix: &[u8], size: u64, rules: &[HeaderRule]) -> u64 {
+/// Bytes the first applicable header rule strips (0 when none applies).
+pub fn header_size(prefix: &[u8], size: u64, rules: &[HeaderRule]) -> u64 {
     rules
         .iter()
         .find(|rule| {
