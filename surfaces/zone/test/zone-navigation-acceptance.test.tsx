@@ -23,6 +23,8 @@ import { join } from "node:path"
 import type {
   SurfaceAction,
   SurfaceGame,
+  SurfaceGameplayControl,
+  SurfaceGameplayOverlayPresentation,
   SurfaceHost,
   SurfaceIdentityManagement,
   SurfaceInputAction,
@@ -792,5 +794,143 @@ describe("network", () => {
     moveTo(button("Done", hidden))
     confirm()
     expect(calls(host).at(-1)).toEqual(["connectHiddenWifi", "lab", "pw"])
+  })
+})
+
+// ---- C24: PAUSED ----
+
+describe("gameplay overlay", () => {
+  const command = (id: string, label: string, more: Partial<SurfaceGameplayControl> = {}): SurfaceGameplayControl =>
+    ({ id, label, enabled: true, destructive: false, dismissOnSuccess: false, interaction: { kind: "command" }, ...more })
+  const overlay: SurfaceGameplayOverlayPresentation = {
+    kind: "gameplay-overlay",
+    title: "Wario Land 4",
+    controls: [
+      command("resume", "Continue", { dismissOnSuccess: true }),
+      command("exit", "Exit", { destructive: true, dismissOnSuccess: true, description: "The game closes" }),
+    ],
+    groups: [{
+      id: "mgba",
+      label: "mGBA",
+      controls: [
+        { ...command("fill", "Fill screen"), interaction: { kind: "toggle", value: false, trueLabel: "On", falseLabel: "Off" } },
+        {
+          ...command("filter", "Filter"),
+          interaction: { kind: "choice", value: "sharp", options: [{ value: "sharp", label: "Sharp" }, { value: "smooth", label: "Smooth" }] },
+        },
+        { ...command("volume", "Volume"), interaction: { kind: "range", value: 5, min: 0, max: 10, step: 1 } },
+        command("save", "Save state", { enabled: false, disabledReason: "Saving is off for this game" }),
+      ],
+    }],
+  }
+  const paused: SurfaceModel = { ...HOME, presentation: overlay }
+  const control = (label: string) => button(label, document.querySelector<HTMLElement>(".zone-paused-wedge")!)
+
+  test("C24 overlay", () => {
+    const { host, publish, press } = mount()
+    moveTo(button("Hollow Knight"))
+    confirm()
+    publish(paused)
+    const page = document.querySelector<HTMLElement>(".zone-paused")!
+    expect(page.querySelector(".zone-paused-title")?.textContent).toBe("Wario Land 4")
+    expect(page.textContent).toContain("mGBA")
+    // The cursor opens on Korri's first control.
+    expect(focusedText()).toContain("Continue")
+    // toggle, choice and range answer left and right, each invoked as it moves.
+    moveTo(control("Fill screen"))
+    expect(focusedText()).toContain("Off")
+    sideways("right")
+    moveTo(control("Filter"))
+    sideways("right")
+    moveTo(control("Volume"))
+    sideways("right")
+    expect(focusedText()).toContain("6")
+    expect(calls(host).slice(1)).toEqual([
+      ["invokeGameplayControl", "fill", { kind: "toggle", value: true }],
+      ["invokeGameplayControl", "filter", { kind: "choice", value: "smooth" }],
+      ["invokeGameplayControl", "volume", { kind: "range", value: 6 }],
+    ])
+    // disabled: its reason under it, and A does nothing.
+    expect(page.textContent).toContain("Saving is off for this game")
+    moveTo(control("Save state"))
+    confirm()
+    expect(calls(host)).toHaveLength(4)
+    // destructive: NO / YES first; B withdraws the question, then returns to the game.
+    moveTo(control("Exit"))
+    confirm()
+    expect(screen.getByRole("dialog", { name: "Exit" }).textContent).toContain("The game closes")
+    expect(focusedText()).toBe("No")
+    press("back")
+    expect(screen.queryByRole("dialog", { name: "Exit" })).toBeNull()
+    expect(calls(host)).toHaveLength(4)
+    press("back")
+    expect(calls(host).at(-1)).toEqual(["dismissGameplayOverlay"])
+    // dismissOnSuccess: Zone invokes and lets the host return to the game.
+    publish(paused)
+    moveTo(control("Continue"))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["invokeGameplayControl", "resume"])
+    expect(calls(host).filter(call => call[0] === "dismissGameplayOverlay")).toHaveLength(1)
+    // The host closes it: home again, Zone's own page under it.
+    publish(HOME)
+    expect(document.querySelector(".zone-paused")).toBeNull()
+    expect(cardTitles()).toHaveLength(GAMES.length)
+  })
+})
+
+// ---- C25: first boot ----
+
+describe("onboarding", () => {
+  const offline: SurfaceNetwork = { ...NETWORK, connection: { _tag: "Offline" } }
+  const pad = { id: "pad-1", name: "Xbox Wireless Controller", heard: false }
+  const firstBoot = (heard: boolean, network: SurfaceNetwork = offline): SurfaceModel =>
+    ({ ...HOME, network, onboarding: { controllers: [{ ...pad, heard }] } })
+  const next = () => button("Next", document.querySelector<HTMLElement>(".zone-onboarding-actions")!)
+
+  test("C25 first boot", () => {
+    const { host, publish } = mount(firstBoot(false))
+    expect(document.querySelector("[aria-label='Setup steps']")?.textContent).toContain("Controllers")
+    expect(onScreen("Waiting")).toBe(true)
+    expect(next().closest("[data-disabled], [aria-disabled='true']") !== null || next().disabled).toBe(true)
+    // A controller is heard: its name on the card, and NEXT leads on.
+    publish(firstBoot(true))
+    expect(onScreen("Xbox Wireless Controller")).toBe(true)
+    moveTo(next())
+    confirm()
+    // WI-FI: a secured network goes to OPTIONS' join flow for its password.
+    expect(document.querySelector(".zone-onboarding")?.getAttribute("data-step")).toBe("wifi")
+    moveTo(button("Neighbour"))
+    confirm()
+    const password = screen.getByRole("dialog", { name: "Password" })
+    type("pw", password)
+    moveTo(button("Done", password))
+    confirm()
+    expect(calls(host)).toEqual([["connectWifi", "n-near", "pw"]])
+    // Back on the step; an open network joins at once.
+    expect(document.querySelector(".zone-onboarding")?.getAttribute("data-step")).toBe("wifi")
+    moveTo(button("Cafe"))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["connectWifi", "n-cafe"])
+    publish(firstBoot(true, NETWORK))
+    moveTo(next())
+    confirm()
+    // NAME: Korri's device-name setting, typed on the keyboard.
+    moveTo(button("Device name"))
+    confirm()
+    type("x")
+    moveTo(button("Done", keyboardOnScreen()))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["changeSetting", "device-name", "minix"])
+    moveTo(next())
+    confirm()
+    // IDENTITY: START on the NEW SAVE card, then FINISH.
+    moveTo(button("New save"))
+    confirm()
+    moveTo(button("Finish"))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["finishOnboarding"])
+    publish(HOME)
+    expect(document.querySelector(".zone-onboarding")).toBeNull()
+    expect(cardTitles()).toHaveLength(GAMES.length)
   })
 })
