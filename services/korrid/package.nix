@@ -33,6 +33,8 @@ let
         "plugins/steam/plugin.ts"
         "plugins/fex"
         "plugins/fex/plugin.ts"
+        "plugins/mega-man-rock-n-roll"
+        "plugins/mega-man-rock-n-roll/plugin.ts"
         "plugins/proton"
         "plugins/proton/plugin.ts"
       ]
