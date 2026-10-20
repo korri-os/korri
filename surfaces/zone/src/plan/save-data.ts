@@ -3,13 +3,14 @@
  *
  * Height decides structure, width decides content (as in zone-select.ts):
  *
- *  - The backup's white slab stands under the band while the page is a
- *    column, and beside it once the page is wider than tall by
- *    `ZONE_SAVE_SLAB_BESIDE_ASPECT`. Height is what the QR code in the
- *    BACK UP card needs to be scannable (the card's size follows the band's
- *    height), so wherever width can pay for the slab, it does. A 640x480 or
- *    1280x300 screen keeps the band's full height; a 480x800 column stacks.
- *    The page's stylesheet holds the same number in its container query;
+ *  - Korri's backup (BackupReady) takes the band's room: the QR code leaves
+ *    the BACK UP card's well and becomes the largest square the room
+ *    allows, so a phone can read it, with the secret's white slab beside
+ *    it, or under it once the page is taller than wide
+ *    (`ZONE_SAVE_BACKUP_BESIDE_ASPECT`). The slab keeps at least
+ *    `--zone-save-slab-least` across (beside) or `--zone-save-slab-least-block`
+ *    down (under); the square gets everything else. The page's stylesheet
+ *    holds the same aspect in its container query;
  *    test/plan-save-data.test.ts holds the two equal.
  *  - The SAVE DATA banner folds away once the page is a strip wider than
  *    tall by `ZONE_SAVE_BANNER_FOLD_ASPECT` (1280x300 is 1280 by 198 of
@@ -23,8 +24,8 @@
  *    characters, which is what a person compares between two screens.
  */
 
-/** Body width over body height at and above which the slab stands beside the band. */
-export const ZONE_SAVE_SLAB_BESIDE_ASPECT = 1.25
+/** Body width over body height at and above which the backup's slab stands beside its QR code. */
+export const ZONE_SAVE_BACKUP_BESIDE_ASPECT = 1
 /** Body width over body height at and above which the banner folds away. */
 export const ZONE_SAVE_BANNER_FOLD_ASPECT = 4
 /** Characters in one group of the secret. */
@@ -37,6 +38,7 @@ export const ZONE_KEY_END = 8
 export type ZoneSaveSlab = "under" | "beside"
 
 export interface ZoneSaveDataPlan {
+  /** Where the backup's slab stands against its QR code. */
   readonly slab: ZoneSaveSlab
   /** Whether the SAVE DATA banner is drawn; the tab strip names the page either way. */
   readonly banner: boolean
@@ -45,7 +47,7 @@ export interface ZoneSaveDataPlan {
 /** The page's plan for a body of this size. */
 export function planSaveData(width: number, height: number): ZoneSaveDataPlan {
   const aspect = height > 0 ? width / height : 0
-  const slab: ZoneSaveSlab = aspect >= ZONE_SAVE_SLAB_BESIDE_ASPECT ? "beside" : "under"
+  const slab: ZoneSaveSlab = aspect >= ZONE_SAVE_BACKUP_BESIDE_ASPECT ? "beside" : "under"
   return { slab, banner: aspect < ZONE_SAVE_BANNER_FOLD_ASPECT }
 }
 

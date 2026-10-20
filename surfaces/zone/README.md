@@ -655,3 +655,107 @@ C28 options = GAME OPTS., menu = the tabs, system = OPTIONS' SYSTEM group; every
 C29 the one slanted keyboard: a 40-character backup secret, capitals and symbols as layers — test: zone-navigation-acceptance "C29 text entry"
 C30 the pink edge and underline on whatever holds DOM focus, on every page and layer; reduced motion stops all motion — test: zone-navigation-acceptance "C30 focus and motion"
 ```
+
+### Polish (decided without asking)
+
+- **The shell measures its own width for the top strip.** The brief wants
+  the strip's ladder as `planTopStrip(width)` with CSS following a data
+  attribute, and `ZoneSurface.tsx` (which passes `strips` and `band`) is
+  the wire worker's. So `useZoneTopStrip` observes the shell's box and
+  writes `data-top` on it, as `use-zone-fit` writes `--zone-fit`: no
+  re-render, no state. A box of width 0 (a test DOM) keeps no attribute.
+  The shell is the container whose width matters, so this also holds for
+  a shell drawn in a pane.
+- **The top strip's ladder** is `inline` (620 and up), `tight` (530: gaps,
+  margins, panel padding and type at their least), `keys` (400: hints keep
+  only the round keycap; `role="img"` with `aria-label` "B Back" keeps the
+  word), then `stacked` (two rows; the hints take their words back while
+  the row is 240 wide or more). Thresholds measured in Chromium at the
+  narrow type with today's tab words; a longer tab word needs them moved.
+- **The tabs and the foot fit their type to their row.** In two rows the
+  tabs still want about 300 px at the least type, so `ZoneTabStrip` uses
+  `useZoneFit` (to half) and the banner follows the fitted tab type; a tab
+  only shrinks and truncates at the fit's floor. The foot overlapped
+  itself at 360, so `ZoneFoot` fits its type the same way after the SSID
+  has given way. At 260 the foot reaches the floor and the build string is
+  tiny; that is the weakest size.
+- **The title card's circle moves under the title on a card taller than
+  wide** (`ZONE_TITLE_STACK_ASPECT`, 1, in `src/plan/title-card.ts`, held
+  equal to the container query by test). The title wraps only between
+  words (`word-break: keep-all`, balanced lines) and `useZoneFit` shrinks
+  it until its longest word fits. `useZoneFit` gained an optional floor;
+  the title's is a quarter, not half, so a single word wider than the card
+  stays whole (tiny) instead of cut. A column's title type follows 11% of
+  the width, not 7.5%, since the column has height to spare.
+- **Narrow bands draw hairline spines, and every band counts its spines.**
+  On the three-card band a section divider is a 6 px stripe in a black
+  hairline frame (`--zone-section-hairline`); its caption stays as the
+  separator's accessible name. The caption's facts survive on the cards'
+  own tags (HERE, the device, CONTINUE). Both bands reserve room for the
+  most dividers a side of the focus ever holds (`bandSpinesPerSide`), the
+  same number for every focus, so the cards never change size as the
+  cursor crosses a section. Cost: on a sectioned catalog the cards are a
+  little smaller at width-bound sizes (about 5% at 640x480, about 15% at
+  1280x720 when a side can hold two full spines).
+- **Korri's backup takes the band's room.** BackupReady replaces the band
+  with the QR code (the largest square left after the slab's least room,
+  `--zone-save-slab-least` 220 px across or `--zone-save-slab-least-block`
+  130 px down) and the slab beside it, or under it when the page is taller
+  than wide (`ZONE_SAVE_BACKUP_BESIDE_ASPECT`, 1, which replaces the old
+  1.25 band-and-slab rule). The cards come back when B dismisses the
+  backup, with the cursor where it was; that is one press, and the B hint
+  says so. The well keeps a hairline of black, not 10 px, round the
+  code's own four-module quiet zone. Measured in Chromium, the code is
+  317 px at 640x480 (5.2 px a module), 168 px at 1280x300 (2.75 px a
+  module), 454 px at 480x800 and 502 px at 1280x720. This supersedes the
+  QR in BACK UP's well, the `data-clear` padding and BackupReadyOnCard.
+  `--zone-save-band-share` and `--zone-save-slab-share` are now unused and
+  left in the savedata block for its owner to remove.
+- **A retired key offers BACK UP and DELETE.** Supersedes "Retired keys
+  are deleted, never backed up". While a retired card has the cursor a
+  `ZoneActionRow` under the band offers both, BACK UP lit. A on the card
+  drops into the row on BACK UP (`flow: retired`), as A on a game with a
+  choice of places does; it sends nothing. BACK UP runs this key's
+  password step with `retiredPublicKey`, and Korri's backup shows as
+  C16's does. B steps back from either action's first step to the row,
+  and from the row to the card. The card loses its red DELETE tag, since
+  A no longer deletes. The band keeps the row's room whenever Korri lists
+  a retired key, so it does not jump; on a strip 4 times wider than tall
+  the row stands at the band's end instead of under it. The backup view
+  does not say which key it holds; the person chose it one step before.
+- **ZoneKeyboard and ZoneDialog report focus themselves.** Supersedes the
+  glyph and index reading noted under GAMES, SAVE DATA and OPTIONS:
+  `ZoneKeyboard` calls `onFocusKey(id)` (the `zoneKeyId`) and `ZoneDialog`
+  calls `onFocusAction(index)` from each button's `onFocus`. GAMES,
+  OPTIONS, SAVE DATA, PAUSED, `ZoneStatusLayer`'s problem dialog,
+  `ZoneOptionsEntry` and `ZoneSaveEntry` use them. GAMES moved DOM focus to
+  a key by reading its glyph; each key now carries `data-key-id`, and the
+  page finds it by that. The busy strip still reports by button index,
+  since `ZoneBusyStrip` has no callback (out of this fix). The onboarding
+  keyboard still lights the last pressed key: its model has no focus
+  message, and the fix was to keep behaviour identical.
+- **OPTIONS and GAME OPTS. use ZoneOptionRow's `valueNode` and
+  `disabled`.** Supersedes "Rows are strings" and "An inert device action
+  ... UNAVAILABLE" and GAME OPTS.' description-as-value. The plan marks a
+  Wi-Fi row with a `signal` and an inert row `disabled`; the page draws
+  the connection row as `ZoneSignal` (at the row's type, through
+  `--zone-signal-type`) and a network row as `ZoneBars` then its words
+  (72% LOCK KNOWN). The words stay the row's value and accessible name; no
+  glyph bars remain. `ZoneBars` is a new atom, and `ZoneSignal` draws its
+  bars with it. A disabled row keeps its verb (GO, RUN), dimmed, and
+  `ZoneOptionRow` now shows a disabled row's description whether or not
+  it is focused, so Korri's reason is always on screen.
+- **GAME OPTS. has no RUN WITH row.** Supersedes "RUN WITH is a row whose
+  value is CHOOSE". The treaty has no host call that opens a runner
+  choice: the RUN WITH page shows only when Korri itself publishes
+  `model.runnerChoice` (usually after the person runs Korri's own game
+  action for runners, which GAME OPTS. lists). The row could never do
+  what its label said, so it, the page's `OpenedRunWith` event and their
+  tests are gone. `navigation.ts` still holds the message for the wire
+  worker to remove; its update test went with the row.
+- **The status layer's dim covers the page's own layers.** The page under
+  `ZoneStatusLayer` now sits in `.zone-status-layer-content`, its own
+  stacking context (`isolation: isolate`, `z-index: 0`) inside the
+  isolated `.zone-status-layer-page`, and the sheet is `z-index: 1` over
+  it. Before, FIND (`z-index: 5` on the GAMES page) painted through the
+  dim. The GAMES part's `BusyOverHome` state shows it.

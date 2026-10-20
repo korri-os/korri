@@ -558,10 +558,6 @@
  * slab's lettering. Appended by the save-data worker; the lines above are
  * untouched. */
 .zone-theme {
-  /** The band's share of a column page while the backup's slab stands under it. @label Save band share */
-  --zone-save-band-share: 2fr;
-  /** The slab's share of a column page under the band's. @label Secret slab share */
-  --zone-save-slab-share: 1fr;
   /** One line of the secret, 32 characters in 8 groups, in ems of its type. @label Secret line width @min 12 @max 40 @step 0.5 */
   --zone-secret-line-ems: 21;
   /** Line height of the secret, as a multiple of its type. @label Secret leading @min 1 @max 2 @step 0.05 */
@@ -651,4 +647,35 @@
   --zone-onboarding-hint-room: 128px;
   /** @label Controller heard frame */
   --zone-controller-heard: var(--zone-red);
+}
+
+/* ---- polish ---- */
+/* The fixes after the four pages met: the narrow top strip's least sizes,
+ * and the part frames that prove it. Appended by the polish worker; the
+ * lines above are untouched. */
+.zone-theme {
+  /** A tab's caps once a narrow top strip has yielded its gaps (plan: planTopStrip, tight). @label Tab type, least @min 8 @max 30 @step 1 */
+  --zone-type-tab-least: 14px;
+  /** A keycap hint's caps likewise. @label Hint type, least @min 8 @max 30 @step 1 */
+  --zone-type-hint-least: 13px;
+  /** The gap between items in a narrow top strip, and its panels' padding. @label Strip gap, least @min 0 @max 20 @step 1 */
+  --zone-strip-gap-least: 4px;
+  /** The least slant of a panel in a narrow strip; a bigger type still leans by its own size. @label Panel slant, least @min 0 @max 32 @step 1 */
+  --zone-slant-least: 6px;
+  /** A section divider's width on the narrow band (three visible): a hairline spine. @label Section hairline @min 2 @max 24 @step 1 */
+  --zone-section-hairline: 6px;
+  /** The least width the backup's slab keeps beside its QR code. @label Backup slab, least width @min 120px @max 600px @step 10px */
+  --zone-save-slab-least: 220px;
+  /** The widest the backup's slab grows beside its QR code: one line of the secret at the slab type, with room. @label Backup slab, widest @min 240px @max 1200px @step 10px */
+  --zone-save-slab-most: 640px;
+  /** The least height the backup's slab keeps under its QR code. @label Backup slab, least height @min 60px @max 400px @step 10px */
+  --zone-save-slab-least-block: 130px;
+  /** A part frame 300 tall, for a 1280x300 strip inside the 720p device. @label Part frame, strip height @min 120px @max 720px @step 10px */
+  --zone-part-strip-height: 300px;
+  /** A part frame 480 wide, for the top strip's ladder. @label Part frame, 480 @min 120px @max 1280px @step 10px */
+  --zone-part-w480: 480px;
+  /** A part frame 360 wide. @label Part frame, 360 @min 120px @max 1280px @step 10px */
+  --zone-part-w360: 360px;
+  /** A part frame 260 wide. @label Part frame, 260 @min 120px @max 1280px @step 10px */
+  --zone-part-w260: 260px;
 }

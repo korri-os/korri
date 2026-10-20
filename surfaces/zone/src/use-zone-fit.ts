@@ -35,9 +35,9 @@ const overflows = (element: HTMLElement): boolean => {
       child instanceof HTMLElement && child.scrollWidth > child.clientWidth + 1)
 }
 
-export function fitZoneType(element: HTMLElement): void {
+export function fitZoneType(element: HTMLElement, floor: number = ZONE_FIT_MIN): void {
   for (let step = 0; step <= ZONE_FIT_STEPS; step += 1) {
-    const factor = 1 - (step * (1 - ZONE_FIT_MIN)) / ZONE_FIT_STEPS
+    const factor = 1 - (step * (1 - floor)) / ZONE_FIT_STEPS
     element.style.setProperty("--zone-fit", factor.toFixed(2))
     if (!overflows(element)) return
   }
@@ -47,10 +47,12 @@ export function useZoneFit(
   box: RefObject<HTMLElement | null>,
   targets: readonly RefObject<HTMLElement | null>[],
   key: string,
+  /** The least factor; half unless a caller's words must never break. */
+  floor: number = ZONE_FIT_MIN,
 ): void {
   useLayoutEffect(() => {
     const fit = () => {
-      for (const target of targets) if (target.current !== null) fitZoneType(target.current)
+      for (const target of targets) if (target.current !== null) fitZoneType(target.current, floor)
     }
     fit()
     const element = box.current
@@ -60,5 +62,5 @@ export function useZoneFit(
     return () => observer.disconnect()
     // The targets are refs, whose identity never changes; `key` (the text
     // being fitted) is what re-runs the fit.
-  }, [box, key])
+  }, [box, key, floor])
 }

@@ -1,5 +1,5 @@
 import "./ZoneOptionsEntry.css"
-import { useEffect, useRef, type FocusEvent } from "react"
+import { useEffect, useRef } from "react"
 import { ZoneCaps } from "../atoms/ZoneCaps"
 import { ZonePanel } from "../atoms/ZonePanel"
 import { ZoneButton } from "../atoms/ZoneButton"
@@ -8,28 +8,6 @@ import { ZoneWarningLines } from "./ZoneWarningLines"
 
 /** The focus id of the clear key, beside the keyboard's own key ids. */
 export const ZONE_ENTRY_CLEAR = "zone:clear"
-
-const LAYER_KEY_IDS: Record<string, string> = {
-  abc: "layer:letters",
-  ABC: "layer:shift",
-  "#?!": "layer:symbols",
-  "://": "layer:uri",
-}
-
-/** A key's id from the button the host focused, as ZoneKeyboard names it. */
-function keyIdOf(button: HTMLElement): string | undefined {
-  const text = button.textContent ?? ""
-  switch (button.dataset.role) {
-    case "layer":
-      return LAYER_KEY_IDS[text]
-    case "space":
-      return "space"
-    case "wide":
-      return text.toLowerCase()
-    default:
-      return text === "" ? undefined : text
-  }
-}
 
 /**
  * What is being typed, over the OPTIONS page: a black heading naming it (a
@@ -82,12 +60,6 @@ export function ZoneOptionsEntry({
     box.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true })
   }, [])
 
-  const followFocus = (event: FocusEvent<HTMLDivElement>) => {
-    if (onFocusKey === undefined || !(event.target instanceof HTMLElement)) return
-    const id = keyIdOf(event.target)
-    if (id !== undefined) onFocusKey(id)
-  }
-
   return (
     <div aria-label={title} className="zone-options-entry" role="dialog">
       <div className="zone-options-entry-head">
@@ -113,13 +85,14 @@ export function ZoneOptionsEntry({
           </span>
         )}
       </div>
-      <div className="zone-options-entry-keys" onFocus={followFocus} ref={keys}>
+      <div className="zone-options-entry-keys" ref={keys}>
         <ZoneKeyboard
           caret={caret}
           draft={draft}
           focusedKey={focusedKey}
           layer={layer}
           maxLength={maxLength}
+          onFocusKey={onFocusKey}
           onKey={onKey}
           secret={secret}
         />

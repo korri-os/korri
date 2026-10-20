@@ -163,13 +163,19 @@ describe("C15 device actions", () => {
     const host = mount()
     const system = screen.getByRole("region", { name: "System" })
     expect(within(system).getAllByRole("button").map(button => button.textContent))
-      .toEqual(["Allow controllersGo", "Restart KorriGo", "SleepUnavailable", "Power offGo"])
+      .toEqual(["Allow controllersGo", "Restart KorriGo", "SleepGo", "Power offGo"])
     fireEvent.click(row("Restart Korri"))
     expect(host.calls).toEqual(["action:restart-korri"])
   })
-  test("an inert action is drawn and does nothing", () => {
+  test("an inert action is drawn disabled, says why, and does nothing", () => {
     const host = mount()
-    fireEvent.click(row("Sleep"))
+    const sleep = row("Sleep")
+    expect(sleep.parentElement?.dataset.disabled).toBe("true")
+    expect(sleep.getAttribute("aria-disabled")).toBe("true")
+    expect(screen.queryByText("Unavailable")).toBeNull()
+    const reason = fixtureOptions.actions.find(action => action.label === "Sleep")?.description
+    if (reason !== undefined) expect(sleep.parentElement?.textContent).toContain(reason)
+    fireEvent.click(sleep)
     expect(host.calls).toEqual([])
   })
   test("a destructive one asks NO / YES first", () => {
@@ -186,18 +192,22 @@ describe("C15 device actions", () => {
 })
 
 describe("C21 connection", () => {
-  test("WI-FI's first row reads the SSID, bars and strength", () => {
+  test("WI-FI's first row draws the foot's badge: SSID, bars and strength", () => {
     mount()
     const wifi = screen.getByRole("region", { name: "WI-FI" })
     const first = within(wifi).getAllByRole("button")[0]!
-    expect(first.textContent).toBe("CONNECTIONhummingbird-lake ▂▄▆▁ 72%")
+    expect(first.getAttribute("aria-label")).toBe("CONNECTION: hummingbird-lake 72%")
+    const badge = first.querySelector(".zone-signal")
+    expect(badge?.textContent).toBe("hummingbird-lake72%")
+    expect(badge?.querySelectorAll(".zone-bars-bar[data-lit='on']").length).toBe(3)
+    expect(first.textContent).not.toMatch(/[▁▂▄▆█]/)
   })
   test("WIRED and OFFLINE", () => {
     mount({ ...fixtureOptions, network: fixtureNetworkWired })
-    expect(screen.getByText("WIRED")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "CONNECTION: WIRED" }).querySelector(".zone-signal")).not.toBeNull()
     cleanup()
     mount({ ...fixtureOptions, network: fixtureNetworkOffline })
-    expect(screen.getAllByText("OFFLINE").length).toBeGreaterThan(0)
+    expect(screen.getByRole("button", { name: "CONNECTION: OFFLINE" }).querySelectorAll(".zone-bars-bar[data-lit='on']").length).toBe(0)
   })
 })
 
@@ -210,7 +220,11 @@ describe("C22 Wi-Fi list", () => {
       "CONNECTION", "SCAN", "hummingbird-lake", "Attic 5G", "cafe-guest", "NETGEAR-7F3A",
       "DIRECT-42-HP OfficeJet", "the-very-long-network-name-xyz12", "Living Room TV", "far-away", "HIDDEN NETWORK",
     ])
-    expect(row("hummingbird-lake").textContent).toContain("LOCK KNOWN")
+    // The connection's badge names the same SSID: find the network's own row by its label.
+    const home = within(wifi).getAllByRole("button").find(button => button.firstChild?.textContent === "hummingbird-lake")!
+    expect(home.textContent).toContain("LOCK KNOWN")
+    expect(home.querySelectorAll(".zone-bars-bar").length).toBe(4)
+    expect(home.textContent).not.toMatch(/[▁▂▄▆█]/)
     expect(row("cafe-guest").textContent).not.toContain("LOCK")
     fireEvent.click(row("SCAN"))
     expect(host.calls).toEqual(["scanWifi"])

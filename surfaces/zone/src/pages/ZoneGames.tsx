@@ -1,6 +1,6 @@
 import "./ZoneGames.css"
 import type { SurfaceAction, SurfaceNetworkConnection, SurfaceSettingItem } from "@contracts/surface/korri-surface"
-import { useLayoutEffect, useRef, type FocusEvent } from "react"
+import { useLayoutEffect, useRef } from "react"
 import { ZoneButton } from "../ui/atoms/ZoneButton"
 import { ZoneCaps } from "../ui/atoms/ZoneCaps"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
@@ -11,7 +11,7 @@ import { ZoneCardBand, type ZoneBandCard } from "../ui/molecules/ZoneCardBand"
 import { ZoneDialog } from "../ui/molecules/ZoneDialog"
 import { ZoneFoot } from "../ui/molecules/ZoneFoot"
 import { ZoneKeyboard, type ZoneKey, type ZoneKeyboardLayer } from "../ui/molecules/ZoneKeyboard"
-import { ZoneOptionGroup } from "../ui/molecules/ZoneOptionGroup"
+import { ZoneOptionGroup, type ZoneOptionGroupRow } from "../ui/molecules/ZoneOptionGroup"
 import { ZoneTabStrip, type ZoneTabItem } from "../ui/molecules/ZoneTabStrip"
 import { ZoneTitleCard } from "../ui/molecules/ZoneTitleCard"
 import { ZoneShell } from "../ui/templates/ZoneShell"
@@ -82,7 +82,6 @@ export type ZoneGamesEvent =
     }
   | { readonly _tag: "FocusedAnswer"; readonly index: number }
   | { readonly _tag: "AnsweredGameAction"; readonly yes: boolean }
-  | { readonly _tag: "OpenedRunWith"; readonly gameId: string }
   | { readonly _tag: "ChoseReload" }
 
 export interface ZoneGamesProps {
@@ -123,9 +122,6 @@ const TABS: readonly (ZoneTabItem & { readonly id: ZoneGamesTab })[] = [
   { id: "savedata", label: "Save data", sub: "Identity" },
 ]
 
-/** The row GAME OPTS. adds after Korri's actions: the OPTIONS page's runner choice. */
-const RUN_WITH = "zone-run-with"
-
 /** The three stripe-well cards the band shows while Korri loads: no titles, no tags. */
 const LOADING_CARDS: readonly ZoneBandCard[] = ["", " ", "  "].map((title, index) => ({
   id: `loading-${index}`,
@@ -151,24 +147,9 @@ export const launchLabel = (launch: ZoneGamesLaunch): string => {
   return launch.place.here ? `${verb} here` : `${verb} on ${launch.place.label}`
 }
 
-/** A keyboard key's id from the button that drew it: its glyph, or the control it names. */
-const KEY_CONTROLS: Readonly<Record<string, string>> = {
-  Space: "space",
-  Delete: "delete",
-  Done: "done",
-  abc: "layer:letters",
-  ABC: "layer:shift",
-  "#?!": "layer:symbols",
-  "://": "layer:uri",
-}
-const keyIdOf = (text: string): string => KEY_CONTROLS[text] ?? text
-
 /** The buttons in a region, in order: the page's handle on DOM focus. */
 const buttonsIn = (region: Element | null): HTMLButtonElement[] =>
   region === null ? [] : [...region.querySelectorAll("button")]
-
-const indexIn = (region: Element, target: EventTarget): number =>
-  buttonsIn(region).findIndex(button => button === target || button.contains(target as Node))
 
 /**
  * The GAMES page: Zone's home and the zone select a person sees on power-on.
@@ -228,7 +209,7 @@ export function ZoneGames(props: ZoneGamesProps) {
     const buttons = buttonsIn(root.current.querySelector(`[data-games-region="${region}"]`))
     const button = typeof at === "number"
       ? buttons[Math.min(at, buttons.length - 1)]
-      : buttons.find(candidate => keyIdOf(candidate.textContent ?? "") === at) ?? buttons[0]
+      : buttons.find(candidate => candidate.dataset["keyId"] === at) ?? buttons[0]
     if (button === undefined || document.activeElement === button) return
     syncing.current = true
     button.focus({ preventScroll: true })
@@ -236,18 +217,17 @@ export function ZoneGames(props: ZoneGamesProps) {
     // targetKey names everything target says; the effect follows it alone.
   }, [targetKey])
 
-  const optRows: readonly SurfaceSettingItem[] = opts === undefined ? [] : [
-    ...opts.actions.map((action): SurfaceSettingItem => action.enabled
-      ? {
-        id: action.id,
-        label: action.label,
-        value: "Run",
-        description: action.description,
-        interaction: { kind: "action", actionId: action.id, destructive: action.destructive },
-      }
-      // Korri says why it cannot: its description stands where the verb would.
-      : { id: action.id, label: action.label, value: action.description }),
-    { id: RUN_WITH, label: "Run with", value: "Choose", interaction: { kind: "action", actionId: RUN_WITH } },
+  const optRows: readonly ZoneOptionGroupRow[] = opts === undefined ? [] : [
+    // A disabled action keeps its verb, dimmed; Korri's description under
+    // it says why, and A does nothing.
+    ...opts.actions.map((action): ZoneOptionGroupRow => ({
+      id: action.id,
+      label: action.label,
+      value: "Run",
+      description: action.description,
+      interaction: { kind: "action", actionId: action.id, destructive: action.destructive },
+      ...(action.enabled ? {} : { disabled: true }),
+    })),
   ]
 
   const actions: readonly ZoneAction[] = launches.map(launch => ({ id: launch.id, label: launchLabel(launch) }))
@@ -255,15 +235,6 @@ export function ZoneGames(props: ZoneGamesProps) {
   // One place: its button is the default and stays lit. A choice: nothing is
   // lit until the cursor is on one.
   const lit = choice ? focusedLaunch : launches[0]?.id
-
-  const onKeysFocus = (event: FocusEvent<HTMLDivElement>) => {
-    const button = (event.target as Element).closest("button")
-    if (button !== null) report({ _tag: "FocusedKey", id: keyIdOf(button.textContent ?? "") })
-  }
-  const onAnswerFocus = (event: FocusEvent<HTMLDivElement>) => {
-    const index = indexIn(event.currentTarget, event.target)
-    if (index >= 0) report({ _tag: "FocusedAnswer", index })
-  }
 
   const factLines = facts === undefined ? [] : [
     ...(facts.lastPlayedAt === undefined ? [] : [["Last played", day(facts.lastPlayedAt)] as const]),
@@ -284,12 +255,13 @@ export function ZoneGames(props: ZoneGamesProps) {
   )
 
   const keyboard = (
-    <div className="zone-games-keys" data-block-exit="" data-games-region="keys" data-keys={keysAt} onFocus={onKeysFocus}>
+    <div className="zone-games-keys" data-block-exit="" data-games-region="keys" data-keys={keysAt}>
       <ZoneKeyboard
         caret={find.caret}
         draft={find.draft}
         focusedKey={find.key}
         layer={find.layer}
+        onFocusKey={id => report({ _tag: "FocusedKey", id })}
         onKey={key => onEvent({ _tag: "PressedKey", key })}
       />
     </div>
@@ -398,7 +370,6 @@ export function ZoneGames(props: ZoneGamesProps) {
                     focusedId={optRows[opts.row]?.id}
                     onFocus={id => report({ _tag: "FocusedGameOpt", index: optRows.findIndex(row => row.id === id) })}
                     onPress={id => {
-                      if (id === RUN_WITH) return onEvent({ _tag: "OpenedRunWith", gameId: game.id })
                       const action = opts.actions.find(candidate => candidate.id === id)
                       if (action === undefined) return
                       onEvent({
@@ -414,7 +385,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                   />
                 </div>
                 {opts.asking === undefined ? null : (
-                  <div className="zone-games-ask" data-games-region="answer" onFocus={onAnswerFocus}>
+                  <div className="zone-games-ask" data-games-region="answer">
                     <div className="zone-games-dialog">
                       <ZoneDialog
                         actions={[
@@ -423,6 +394,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                         ]}
                         focused={opts.answer}
                         headline={opts.asking.label}
+                        onFocusAction={index => report({ _tag: "FocusedAnswer", index })}
                         lines={opts.asking.description === undefined ? [] : [opts.asking.description]}
                         title={opts.gameTitle}
                       />

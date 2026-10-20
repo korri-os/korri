@@ -70,9 +70,6 @@ export interface ZoneNavigation {
    * wire stage (state/surface.ts) puts the OPTIONS cursor there and clears
    * it with LandedOptions. */
   readonly optionsGroup: "system" | undefined
-  /** The game whose RUN WITH was asked for. The OPTIONS page owns the
-   * runner choice; it reads this and clears it. */
-  readonly optionsRunWith: string | undefined
   readonly find: ZoneFind
   readonly opts: ZoneGameOpts
   readonly idleCard: number
@@ -86,7 +83,6 @@ export const ZONE_START: ZoneNavigation = {
   action: 0,
   layers: [],
   optionsGroup: undefined,
-  optionsRunWith: undefined,
   find: ZONE_FIND_START,
   opts: ZONE_OPTS_START,
   idleCard: 0,
@@ -218,11 +214,6 @@ function step(nav: ZoneNavigation, message: ZoneNavMessage, korri: SurfaceModel)
         ? ask(closeOpts(nav), { _tag: "RunGameAction", gameId: asking.gameId, actionId: asking.actionId })
         : stay({ ...nav, opts: { ...nav.opts, asking: undefined, answer: 0 } })
     }
-    case "OpenedRunWith":
-      // The runner choice is the OPTIONS page's; this only takes the person there.
-      return topLayer(nav) === "gameopts"
-        ? stay({ ...closeOpts(nav), tab: "options", tabCursor: "options", zone: "tabs", optionsRunWith: message.gameId })
-        : stay(nav)
     case "ChoseReload":
       return korri.catalog._tag === "Error" ? ask(nav, { _tag: "Reload" }) : stay(nav)
   }
@@ -273,7 +264,7 @@ function back(nav: ZoneNavigation, korri: SurfaceModel): ZoneStep<ZoneNavigation
     case "none":
       if (nav.zone !== "cards" && nav.tab === "games") return stay({ ...nav, zone: "cards" })
       if (nav.tab !== "games") {
-        return stay({ ...nav, tab: "games", tabCursor: "games", zone: "cards", optionsGroup: undefined, optionsRunWith: undefined })
+        return stay({ ...nav, tab: "games", tabCursor: "games", zone: "cards", optionsGroup: undefined })
       }
       // On the band with a filter kept: B lets go of it, the cursor on the same game.
       if (nav.find.draft !== "") return stay({ ...refilter(nav, { ...nav.find, draft: "", caret: 0 }, korri), find: ZONE_FIND_START })

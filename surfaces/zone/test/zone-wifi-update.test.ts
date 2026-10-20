@@ -10,7 +10,8 @@ import {
   fixtureNetworkRejected,
   fixtureNetworkScanning,
 } from "../src/fixtures/fixture-options"
-import { zoneBars, zoneConnectionValue, zoneNetworkValue } from "../src/plan/options"
+import { zoneConnectionValue, zoneNetworkValue } from "../src/plan/options"
+import { zoneBarsLit } from "../src/ui/atoms/ZoneBars"
 import { joinHidden, lastAttempt, pickNetwork, rejectedEntry, sameAttempt, scan, scannedNetworks, submitWifi } from "../src/state/wifi"
 
 const connected = { network: fixtureNetworkConnected }
@@ -101,18 +102,20 @@ describe("sameAttempt", () => {
 })
 
 describe("what a row reads", () => {
-  test("bars: one lit per quarter, never none", () => {
-    expect(zoneBars(0)).toBe("▂▁▁▁")
-    expect(zoneBars(72)).toBe("▂▄▆▁")
-    expect(zoneBars(100)).toBe("▂▄▆█")
+  test("bars: one lit per quarter, never none while connected, none offline", () => {
+    expect(zoneBarsLit(0)).toBe(1)
+    expect(zoneBarsLit(72)).toBe(3)
+    expect(zoneBarsLit(100)).toBe(4)
+    expect(zoneBarsLit(undefined)).toBe(1)
+    expect(zoneBarsLit(80, false)).toBe(0)
   })
-  test("the connection: SSID, bars and strength; WIRED; OFFLINE", () => {
-    expect(zoneConnectionValue({ _tag: "Wifi", ssid: "hummingbird-lake", strengthPercent: 72 })).toBe("hummingbird-lake ▂▄▆▁ 72%")
+  test("the connection's words: SSID and strength; WIRED; OFFLINE. No glyphs: the row draws bars", () => {
+    expect(zoneConnectionValue({ _tag: "Wifi", ssid: "hummingbird-lake", strengthPercent: 72 })).toBe("hummingbird-lake 72%")
     expect(zoneConnectionValue({ _tag: "Wired" })).toBe("WIRED")
     expect(zoneConnectionValue({ _tag: "Offline" })).toBe("OFFLINE")
   })
-  test("a network: bars, strength, LOCK when secured, KNOWN when known", () => {
-    expect(zoneNetworkValue({ id: "a", ssid: "a", strengthPercent: 72, secured: true, known: true })).toBe("▂▄▆▁ 72% LOCK KNOWN")
-    expect(zoneNetworkValue({ id: "b", ssid: "b", strengthPercent: 48, secured: false, known: false })).toBe("▂▄▁▁ 48%")
+  test("a network's words: strength, LOCK when secured, KNOWN when known", () => {
+    expect(zoneNetworkValue({ id: "a", ssid: "a", strengthPercent: 72, secured: true, known: true })).toBe("72% LOCK KNOWN")
+    expect(zoneNetworkValue({ id: "b", ssid: "b", strengthPercent: 48, secured: false, known: false })).toBe("48%")
   })
 })

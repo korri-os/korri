@@ -148,12 +148,15 @@ describe("C4: launch", () => {
 })
 
 describe("C5: GAME OPTS.", () => {
-  test("options opens Korri's actions for the focused game, the disabled one with its reason, and RUN WITH", () => {
+  test("options opens Korri's actions for the focused game, the disabled one with its reason, and nothing else", () => {
     const { press } = mount()
     focus(card("Spelunky"))
     press("options")
     expect(screen.getByText("Game opts.")).toBeTruthy()
-    for (const label of ["Verify files", "Delete save", "Copy to zao", "Run with"]) expect(screen.getByText(label)).toBeTruthy()
+    for (const label of ["Verify files", "Delete save", "Copy to zao"]) expect(screen.getByText(label)).toBeTruthy()
+    // No RUN WITH: no host call opens a runner choice; Korri publishes one itself.
+    expect(screen.queryByText("Run with")).toBeNull()
+    expect(document.querySelectorAll(".zone-games-opts-rows .zone-option-row")).toHaveLength(3)
     expect(screen.getByText("zao is not on the network")).toBeTruthy()
     expect(document.activeElement).toBe(button("Verify files"))
     expect(document.querySelector(".zone-games-band")?.hasAttribute("inert")).toBe(true)
@@ -189,16 +192,6 @@ describe("C5: GAME OPTS.", () => {
     click(button("Copy to zao"))
     expect(host.calls).toEqual([])
     expect(screen.getByText("Game opts.")).toBeTruthy()
-  })
-
-  test("RUN WITH takes the person to OPTIONS; B comes back to the same game", () => {
-    const { press } = mount()
-    focus(card("Spelunky"))
-    press("options")
-    click(button("Run with"))
-    expect(document.querySelector(".zone-tab[aria-current='page']")?.textContent).toContain("Options")
-    press("back")
-    expect(focusedCard()).toBe("Spelunky")
   })
 })
 

@@ -24,13 +24,14 @@ import { useZoneHorizontal } from "../../use-zone-horizontal"
  *
  * `valueNode` draws the value when a word is not enough (a ZoneSignal's
  * bars); `value` still names it for the dots and for assistive tech.
- * `disabled` dims the row and keeps it focusable, so Korri's `description`
- * under it can say why; A does nothing.
+ * `disabled` dims the row and keeps it focusable; Korri's `description`
+ * stands under it whether or not it is focused, so the reason is on screen;
+ * A does nothing.
  *
  * `saving` replaces the value with a blinking caret until Korri answers.
  * `problem` is Korri's message, red on its own parallelogram under the row.
- * `description` shows under the row only while it is focused, so a long
- * list stays one row per setting.
+ * `description` shows under an enabled row only while it is focused, so a
+ * long list stays one row per setting.
  *
  * Focus is a prop. The row brings itself into view when it gains it, so a
  * scrolling group never leaves the cursor off screen.
@@ -118,7 +119,7 @@ export function ZoneOptionRow({
           {clearLabel}
         </span>
       ) : null}
-      {focused && description !== undefined ? (
+      {(focused || disabled) && description !== undefined ? (
         <span className="zone-option-row-description">{description}</span>
       ) : null}
       {problem !== undefined ? (

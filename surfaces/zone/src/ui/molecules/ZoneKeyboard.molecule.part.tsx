@@ -23,6 +23,11 @@ function createDraftStore(initial: Draft) {
       return () => listeners.delete(listener)
     },
     get: () => state,
+    focus(focusedKey: string) {
+      if (state.focusedKey === focusedKey) return
+      state = { ...state, focusedKey }
+      for (const listener of listeners) listener()
+    },
     press(key: ZoneKey, maxLength: number | undefined) {
       const { draft, caret } = state
       let next: Draft = { ...state, focusedKey: zoneKeyId(key) }
@@ -49,7 +54,7 @@ function createDraftStore(initial: Draft) {
   }
 }
 
-/** Unexported: the scenario around the real keyboard. */
+/** Unexported: the scenario around the real keyboard. The lit key follows the host's cursor through `onFocusKey`. */
 function Typing({ initial, secret = false, maxLength }: { initial: Draft; secret?: boolean; maxLength?: number }) {
   const store = useRef<ReturnType<typeof createDraftStore> | null>(null)
   store.current ??= createDraftStore(initial)
@@ -61,6 +66,7 @@ function Typing({ initial, secret = false, maxLength }: { initial: Draft; secret
       focusedKey={state.focusedKey}
       layer={state.layer}
       maxLength={maxLength}
+      onFocusKey={(id) => store.current?.focus(id)}
       onKey={(key) => store.current?.press(key, maxLength)}
       secret={secret}
     />

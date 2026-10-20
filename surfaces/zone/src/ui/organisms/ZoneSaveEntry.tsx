@@ -1,31 +1,11 @@
 import "./ZoneSaveEntry.css"
-import type { FocusEvent } from "react"
 import { ZoneCaps } from "../atoms/ZoneCaps"
 import { ZonePanel } from "../atoms/ZonePanel"
 import {
-  ZONE_KEYBOARD_LAYERS,
   ZoneKeyboard,
   type ZoneKey,
   type ZoneKeyboardLayer,
 } from "../molecules/ZoneKeyboard"
-
-/** The id ZoneKeyboard names a key by, read from the key's button. */
-function keyIdOf(button: HTMLElement, panel: HTMLElement): string | undefined {
-  const label = button.textContent ?? ""
-  switch (button.dataset["role"]) {
-    case undefined:
-      return label.length === 1 ? label : undefined
-    case "layer": {
-      const index = [...panel.querySelectorAll("button[data-role='layer']")].indexOf(button)
-      const layer = ZONE_KEYBOARD_LAYERS[index]
-      return layer === undefined ? undefined : `layer:${layer}`
-    }
-    case "space":
-      return "space"
-    default:
-      return label.toLowerCase() === "delete" ? "delete" : label.toLowerCase() === "done" ? "done" : undefined
-  }
-}
 
 /**
  * One keyboard step of an identity flow: a black caption panel naming what
@@ -34,9 +14,8 @@ function keyIdOf(button: HTMLElement, panel: HTMLElement): string | undefined {
  * and reports where the cursor is.
  *
  * The host moves DOM focus across the keys. The keyboard draws the cursor
- * from its `focusedKey` prop and has no focus callback of its own, so the
- * entry hears focus arrive on a key (React's focus event bubbles) and
- * reports the key's id, named as ZoneKeyboard names it.
+ * from its `focusedKey` prop and reports a focused key's id through its
+ * own `onFocusKey`, which the entry hands on.
  */
 export function ZoneSaveEntry({
   caption,
@@ -57,13 +36,8 @@ export function ZoneSaveEntry({
   readonly onKey?: (key: ZoneKey) => void
   readonly onFocusKey?: (id: string) => void
 }) {
-  const heard = (event: FocusEvent<HTMLDivElement>) => {
-    if (onFocusKey === undefined || !(event.target instanceof HTMLElement)) return
-    const id = keyIdOf(event.target, event.currentTarget)
-    if (id !== undefined) onFocusKey(id)
-  }
   return (
-    <div className="zone-save-entry" onFocus={heard}>
+    <div className="zone-save-entry">
       <div className="zone-save-entry-caption">
         <ZonePanel>
           <ZoneCaps size="button">{caption}</ZoneCaps>
@@ -75,6 +49,7 @@ export function ZoneSaveEntry({
           draft={draft}
           focusedKey={focusedKey}
           layer={layer}
+          onFocusKey={onFocusKey}
           onKey={onKey}
           secret={secret}
         />

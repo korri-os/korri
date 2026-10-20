@@ -61,8 +61,6 @@ export type ZoneMessage =
   | { readonly _tag: "FocusedAnswer"; readonly index: number }
   /** A on NO or YES. */
   | { readonly _tag: "AnsweredGameAction"; readonly yes: boolean }
-  /** A on RUN WITH: the OPTIONS page's runner choice for this game. */
-  | { readonly _tag: "OpenedRunWith"; readonly gameId: string }
   // The catalog
   /** A on RELOAD in the catalog's error dialog. */
   | { readonly _tag: "ChoseReload" }

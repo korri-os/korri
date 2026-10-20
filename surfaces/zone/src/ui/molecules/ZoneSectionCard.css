@@ -47,3 +47,20 @@
   text-align: start;
   text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
 }
+
+/* The hairline spine: the stripe in a black hairline frame, as wide as the
+ * band hands down (or the hairline token), with its drop edge. The caption
+ * is the separator's name only. */
+.zone-section-card[data-spine="hairline"] {
+  --zone-section-width: var(--zone-band-section-w, var(--zone-section-hairline));
+  gap: 0;
+  padding: var(--zone-hairline);
+}
+
+.zone-section-card[data-spine="hairline"] .zone-section-card-stripe {
+  flex: 1 1 auto;
+}
+
+.zone-section-card[data-spine="hairline"] .zone-section-card-caption {
+  display: none;
+}

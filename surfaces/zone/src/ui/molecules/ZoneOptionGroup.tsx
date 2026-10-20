@@ -1,6 +1,15 @@
 import "./ZoneOptionGroup.css"
 import type { SurfaceSettingItem, SurfaceSettingsStatus } from "@contracts/surface/korri-surface"
+import type { ReactNode } from "react"
 import { ZoneOptionRow } from "./ZoneOptionRow"
+
+/** A row as the group draws it: Korri's item, and what ZoneOptionRow adds to one. */
+export interface ZoneOptionGroupRow extends SurfaceSettingItem {
+  /** Drawn in place of the value's text (a ZoneSignal, bars); the text still names it. */
+  readonly valueNode?: ReactNode
+  /** Dimmed and inert to A; the description says why. */
+  readonly disabled?: boolean
+}
 
 /**
  * A titled run of option rows, as Mania heads VIDEO or CONTROLS: the title
@@ -27,7 +36,7 @@ export function ZoneOptionGroup({
   onFocus,
 }: {
   readonly title: string
-  readonly rows: readonly SurfaceSettingItem[]
+  readonly rows: readonly ZoneOptionGroupRow[]
   readonly focusedId?: string
   readonly status?: SurfaceSettingsStatus
   readonly onPress?: (settingId: string) => void
@@ -41,6 +50,7 @@ export function ZoneOptionGroup({
         {rows.map((row) => (
           <ZoneOptionRow
             description={row.description}
+            disabled={row.disabled}
             focused={row.id === focusedId}
             interaction={row.interaction}
             key={row.id}
@@ -51,6 +61,7 @@ export function ZoneOptionGroup({
             problem={status._tag === "Problem" && status.settingId === row.id ? status.message : undefined}
             saving={status._tag === "Saving" && status.settingId === row.id}
             value={row.value}
+            valueNode={row.valueNode}
           />
         ))}
       </div>

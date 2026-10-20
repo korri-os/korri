@@ -87,7 +87,7 @@ const typeKeys = (text: string) => {
 const dialog = () => screen.getByRole("dialog")
 
 describe("the band", () => {
-  test("BACK UP, two SWITCH cards, then one RETIRED card per key, shortened, with DELETE", () => {
+  test("BACK UP, two SWITCH cards, then one RETIRED card per key, shortened", () => {
     mount(identityOf())
     expect(screen.getByText("Save data")).toBeTruthy()
     expect(card(/Back up/)).toBeTruthy()
@@ -96,7 +96,8 @@ describe("the band", () => {
     expect(screen.getAllByText("Retired").length).toBe(2)
     expect(screen.getByText(shortKey(KEY_A))).toBeTruthy()
     expect(screen.getByText(shortKey(KEY_B))).toBeTruthy()
-    expect(screen.getAllByText("Delete").length).toBe(2)
+    // No row until a retired key has the cursor.
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull()
   })
 
   test("BACK UP reads NEW without a local backup and BACKED UP with one", () => {
@@ -145,17 +146,44 @@ describe("C16 back up", () => {
     expect(calls).toEqual([["exportIdentityBackup", "hi", undefined]])
 
     publish(identityOf({ _tag: "BackupReady", encryptedSecret: SECRET }, { localBackupAvailable: true }))
-    expect(screen.getByRole("img", { name: "Backup QR code" })).toBeTruthy()
-    // The cursor rests on the slab; the band goes unmarked so the QR takes the well.
+    // The QR leaves the card's well and takes the band's room, beside the slab.
+    const qr = screen.getByRole("img", { name: "Backup QR code" })
+    expect(qr.closest(".zone-save-data-backup")).not.toBeNull()
+    expect(qr.closest(".zone-save-card")).toBeNull()
+    expect(screen.queryByRole("button", { name: /Back up/ })).toBeNull()
+    // The cursor rests on the slab.
     expect(document.activeElement).toBe(screen.getByRole("region", { name: "Backup secret" }))
-    expect(card(/Back up/).dataset["focused"]).toBeUndefined()
     const text = screen.getByRole("region", { name: "Backup secret" })
     expect(text.textContent).toContain("ncry")
     expect(within(text).getByText("ptse")).toBeTruthy()
-    expect(within(card(/Back up/)).getByText("Backed up")).toBeTruthy()
 
     back()
     expect(calls.at(-1)).toEqual(["dismissIdentityStatus"])
+    publish(identityOf({ _tag: "Idle" }, { localBackupAvailable: true }))
+    expect(within(card(/Back up/)).getByText("Backed up")).toBeTruthy()
+    expect(screen.queryByRole("img", { name: "Backup QR code" })).toBeNull()
+  })
+
+  test("the QR code's paper keeps a quiet zone of four modules on every side", () => {
+    render(<page.BackupReady />)
+    const svg = screen.getByRole("img", { name: "Backup QR code" })
+    const span = Number(svg.getAttribute("viewBox")?.split(" ")[2])
+    const marks = [...(svg.querySelector("path")?.getAttribute("d") ?? "").matchAll(/M(\d+) (\d+)/g)]
+      .map(match => [Number(match[1]), Number(match[2])] as const)
+    expect(marks.length).toBeGreaterThan(0)
+    expect(Math.min(...marks.map(([x]) => x))).toBe(4)
+    expect(Math.min(...marks.map(([, y]) => y))).toBe(4)
+    expect(Math.max(...marks.map(([x]) => x))).toBe(span - 5)
+    expect(Math.max(...marks.map(([, y]) => y))).toBe(span - 5)
+  })
+
+  test("the 640x480 and 1280x300 states draw the backup in the band's room", () => {
+    for (const State of [page.BackupReadyHandheld, page.BackupReadyStrip]) {
+      render(<State />)
+      expect(screen.getByRole("img", { name: "Backup QR code" }).closest(".zone-save-data-qr-square")).not.toBeNull()
+      expect(screen.getByRole("region", { name: "Backup secret" })).toBeTruthy()
+      cleanup()
+    }
   })
 
   test("an empty password sends nothing", () => {
@@ -238,9 +266,44 @@ describe("C18 switch by bunker", () => {
 })
 
 describe("C19 retired keys", () => {
+  const retired = (index: number) => screen.getAllByRole("button", { name: /Retired/ })[index]!
+
+  test("a focused retired key offers BACK UP and DELETE in a row under the band", () => {
+    mount(identityOf())
+    fireEvent.focus(retired(0))
+    const row = document.querySelector(".zone-save-data-actions")!
+    expect(within(row as HTMLElement).getByRole("button", { name: "Back up" })).toBeTruthy()
+    expect(within(row as HTMLElement).getByRole("button", { name: "Delete" })).toBeTruthy()
+    fireEvent.focus(card(/Bunker/))
+    expect(within(row as HTMLElement).queryByRole("button")).toBeNull()
+  })
+
+  test("A on the card drops into the row on BACK UP, and focus there moves its cursor", () => {
+    mount(identityOf())
+    fireEvent.click(retired(1))
+    const backUp = screen.getByRole("button", { name: "Back up" })
+    expect(document.activeElement).toBe(backUp)
+    expect(backUp.dataset["focused"]).toBe("on")
+    const del = screen.getByRole("button", { name: "Delete" })
+    fireEvent.focus(del)
+    expect(del.dataset["focused"]).toBe("on")
+    expect(backUp.dataset["focused"]).toBe("off")
+  })
+
+  test("BACK UP asks the password and sends it with the retired key", () => {
+    const { calls } = mount(identityOf())
+    fireEvent.click(retired(1))
+    press("Back up")
+    expect(screen.getByText("Password")).toBeTruthy()
+    typeKeys("hi")
+    press("Done")
+    expect(calls).toEqual([["exportIdentityBackup", "hi", KEY_B]])
+  })
+
   test("DELETE THIS KEY? then IS IT BACKED UP?; both YES delete that key with the backup confirmed", () => {
     const { calls } = mount(identityOf())
-    fireEvent.click(screen.getAllByRole("button", { name: /Retired/ })[1]!)
+    fireEvent.click(retired(1))
+    press("Delete")
     expect(within(dialog()).getByText("Delete this key?")).toBeTruthy()
     expect(within(dialog()).getByText("Back it up first.")).toBeTruthy()
     expect(within(dialog()).getByText(shortKey(KEY_B))).toBeTruthy()
@@ -253,9 +316,11 @@ describe("C19 retired keys", () => {
 
   test("NO on either question sends nothing", () => {
     const { calls } = mount(identityOf())
-    fireEvent.click(screen.getAllByRole("button", { name: /Retired/ })[0]!)
+    fireEvent.click(retired(0))
+    press("Delete")
     press("No")
-    fireEvent.click(screen.getAllByRole("button", { name: /Retired/ })[0]!)
+    fireEvent.click(retired(0))
+    press("Delete")
     press("Yes")
     press("No")
     expect(calls).toEqual([])
@@ -328,12 +393,15 @@ describe("the parts", () => {
     expect(words(page.Working)).toContain("Encrypting backup")
     expect(words(page.Switched)).toContain("Switched")
     expect(words(page.BackupReady)).toContain("ncry")
+    expect(words(page.RetiredActions)).toContain("Delete")
+    expect(words(page.RetiredPassword)).toContain("Password")
   })
 
   test("the page part answers presses through the real model", () => {
     const Default = page.default
     render(<Default />)
     fireEvent.click(screen.getAllByRole("button", { name: /Retired/ })[0]!)
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
     fireEvent.click(screen.getByRole("button", { name: "Yes" }))
     fireEvent.click(screen.getByRole("button", { name: "Yes" }))
     expect(screen.getAllByRole("button", { name: /Retired/ }).length).toBe(1)

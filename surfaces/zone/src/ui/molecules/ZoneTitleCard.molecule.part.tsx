@@ -36,3 +36,25 @@ export function WideShort() {
     </ZonePartFrame>
   )
 }
+
+/**
+ * A narrow-tall column with the longest title: the circle stands under the
+ * title, and the title wraps between words at a size that fits its longest
+ * word, never one letter to a line.
+ */
+export function NarrowTall() {
+  return (
+    <ZonePartFrame shape="narrow-tall">
+      <ZoneTitleCard act={zelda?.subtitle} title={zelda?.title ?? ""} />
+    </ZonePartFrame>
+  )
+}
+
+/** One word longer than the card is wide: it shrinks whole rather than break. */
+export function LongWord() {
+  return (
+    <ZonePartFrame shape="narrow-tall">
+      <ZoneTitleCard act="ARCADE" title="Supercalifragilisticexpialidocious" />
+    </ZonePartFrame>
+  )
+}

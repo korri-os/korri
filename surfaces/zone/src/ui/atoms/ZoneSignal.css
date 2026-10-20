@@ -1,54 +1,19 @@
-/* The badge is the foot's small type and may take the badge share of its
- * row. Squeezed, the name gives; the bars and the strength keep their
+/* The badge is the foot's small type (scaled with a fitted foot), or the
+ * type a holder sets as --zone-signal-type, and may take the badge share of
+ * its row (or the share a holder sets as --zone-signal-share). Squeezed, the name gives; the bars and the strength keep their
  * width. */
 .zone-signal {
   display: inline-flex;
   flex: 0 1 auto;
   min-width: 0;
-  max-width: var(--zone-badge-share);
-  font-size: calc(var(--zone-type-badge-scale) * var(--zone-shell-foot-type, var(--zone-type-foot-tall)));
+  max-width: var(--zone-signal-share, var(--zone-badge-share));
+  font-size: var(--zone-signal-type, calc(var(--zone-type-badge-scale) * var(--zone-shell-foot-type, var(--zone-type-foot-tall)) * var(--zone-foot-fit, 1)));
 }
 
 .zone-signal-name {
   display: inline-flex;
   min-width: 0;
   margin-right: var(--zone-strip-gap);
-}
-
-.zone-signal-bars {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: flex-end;
-  gap: var(--zone-bar-gap);
-  height: var(--zone-bars-height);
-}
-
-.zone-signal-bar {
-  display: block;
-  width: var(--zone-bar-width);
-  background: var(--zone-bar-off);
-  opacity: var(--zone-bar-off-opacity);
-}
-
-.zone-signal-bar:nth-child(1) {
-  height: 31%;
-}
-
-.zone-signal-bar:nth-child(2) {
-  height: 54%;
-}
-
-.zone-signal-bar:nth-child(3) {
-  height: 77%;
-}
-
-.zone-signal-bar:nth-child(4) {
-  height: 100%;
-}
-
-.zone-signal-bar[data-lit="on"] {
-  background: var(--zone-badge-strength);
-  opacity: 1;
 }
 
 .zone-signal-strength {

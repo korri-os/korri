@@ -334,6 +334,21 @@ describe("ZoneCardBand", () => {
     expect(focusedTitle()).toBe("Hollow Knight")
   })
 
+  test("NarrowSections: hairline spines named by their captions, and room for one per side", () => {
+    render(<band.NarrowSections />)
+    const spines = [...document.querySelectorAll(".zone-section-card")]
+    expect(spines.map((spine) => spine.getAttribute("data-spine"))).toEqual(["hairline", "hairline", "hairline"])
+    expect(spines.map((spine) => spine.getAttribute("aria-label"))).toEqual(["Continue", "This device", "zao"])
+    const track = document.querySelector<HTMLElement>(".zone-card-band-track")!
+    expect(track.style.getPropertyValue("--zone-band-spines")).toBe("1")
+    expect(focusedTitle()).toBe("Hollow Knight")
+  })
+
+  test("Sections on the wide band keep the full spine", () => {
+    render(<band.Sections />)
+    expect([...document.querySelectorAll(".zone-section-card")].every((spine) => spine.getAttribute("data-spine") === "full")).toBe(true)
+  })
+
   test("Narrow: three visible, one side card either side", () => {
     render(<band.Narrow />)
     expect(document.querySelector(".zone-card-band")?.getAttribute("data-visible")).toBe("3")
@@ -355,7 +370,7 @@ describe("ZoneCardBand", () => {
 
   test("every state is covered", () => {
     expect(statesOf(band as Part).map(([key]) => key).sort()).toEqual(
-      ["FocusFirst", "FocusLast", "FortyCards", "Narrow", "NoCards", "OneCard", "Sections", "TwelveFocusThree"].sort(),
+      ["FocusFirst", "FocusLast", "FortyCards", "Narrow", "NarrowSections", "NoCards", "OneCard", "Sections", "TwelveFocusThree"].sort(),
     )
   })
 })

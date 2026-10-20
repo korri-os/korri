@@ -629,10 +629,11 @@ describe("identity", () => {
     const slab = screen.getByRole("region", { name: "Backup secret" })
     expect(slab.textContent?.replace(/\s/g, "").toLowerCase()).toBe(secret)
     expect(document.activeElement).toBe(slab)
-    expect(saveCard("Back up").textContent).toContain("Backed up")
-    // B puts the backup away: Korri is told.
+    // B puts the backup away: Korri is told, and the cards come back.
     press("back")
     expect(calls(host).at(-1)).toEqual(["dismissIdentityStatus"])
+    publish(withIdentity({ _tag: "Idle" }, { localBackupAvailable: true }))
+    expect(saveCard("Back up").textContent).toContain("Backed up")
   })
 
   test("C17 switch from backup", () => {
@@ -677,8 +678,20 @@ describe("identity", () => {
     const { host, press } = mount()
     openSaveData(press)
     const retired = saveCard("Retired")
-    expect(retired.textContent).toContain("Delete")
+    // A on a retired key moves the cursor into its row: BACK UP, then DELETE.
     moveTo(retired)
+    confirm()
+    const actions = document.querySelector<HTMLElement>(".zone-save-data-actions")!
+    // BACK UP a retired key: the same password flow, the key named to Korri.
+    moveTo(button("Back up", actions))
+    confirm()
+    type("pw")
+    done()
+    expect(calls(host)).toEqual([["exportIdentityBackup", "pw", IDENTITY.retiredPublicKeys[0]]])
+    host.calls.length = 0
+    moveTo(saveCard("Retired"))
+    confirm()
+    moveTo(button("Delete", document.querySelector<HTMLElement>(".zone-save-data-actions")!))
     confirm()
     const ask = screen.getByRole("dialog", { name: "Delete this key?" })
     expect(ask.textContent).toContain("Back it up first.")
@@ -721,6 +734,13 @@ describe("network", () => {
     return { ...NETWORK, wifi: { ...NETWORK.wifi, ...more } }
   }
   const connectionRow = () => row("CONNECTION").textContent
+  /** The row whose label is exactly this network's name. */
+  const network = (ssid: string): HTMLButtonElement => {
+    const label = [...document.querySelectorAll(".zone-options-scroll .zone-option-row-label")].find(node => node.textContent === ssid)
+    const found = label?.closest("button")
+    if (found === null || found === undefined) throw new Error(`no network ${ssid}`)
+    return found
+  }
 
   test("C21 connection", () => {
     const { publish, press } = mount()
@@ -730,9 +750,10 @@ describe("network", () => {
     expect(connectionRow()).toContain("hummingbird-lake")
     expect(connectionRow()).toContain("72%")
     publish(withNetwork({ ...NETWORK, connection: { _tag: "Wired" } }))
-    expect(connectionRow()).toContain("WIRED")
+    // The connection is ZoneSignal's badge; its caps are the face's, not the text's.
+    expect(connectionRow()).toMatch(/wired/i)
     publish(withNetwork({ ...NETWORK, connection: { _tag: "Offline" } }))
-    expect(connectionRow()).toContain("OFFLINE")
+    expect(connectionRow()).toMatch(/offline/i)
   })
 
   test("C22 wi-fi list", () => {
@@ -742,9 +763,10 @@ describe("network", () => {
     const listed = [...document.querySelectorAll(".zone-options-scroll .zone-option-row-label")]
       .map(label => label.textContent).filter(label => ["hummingbird-lake", "Neighbour", "Cafe"].includes(label ?? ""))
     expect(listed).toEqual(["hummingbird-lake", "Neighbour", "Cafe"])
-    expect(row("hummingbird-lake").textContent).toContain("72% LOCK KNOWN")
-    expect(row("Neighbour").textContent).toContain("48% LOCK")
-    expect(row("Cafe").textContent).not.toContain("LOCK")
+    // A listed network's row, not the connection row that also names it.
+    expect(network("hummingbird-lake").textContent).toContain("72% LOCK KNOWN")
+    expect(network("Neighbour").textContent).toContain("48% LOCK")
+    expect(network("Cafe").textContent).not.toContain("LOCK")
     expect(row("SCAN").textContent).toContain("3 FOUND")
     moveTo(row("SCAN"))
     confirm()

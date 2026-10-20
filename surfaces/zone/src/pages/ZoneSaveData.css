@@ -27,6 +27,18 @@
   .zone-save-data-banner {
     display: none;
   }
+
+  /* The same strip is too short to give a row under the band: a retired
+   * key's row stands at the band's end instead, where the width is. */
+  .zone-save-data-band[data-row="kept"] {
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+
+  .zone-save-data-actions {
+    min-height: 0;
+    padding: 0 var(--zone-save-data-margin) 0 0;
+  }
 }
 
 .zone-save-data-busy {
@@ -35,59 +47,102 @@
   padding: 0 var(--zone-save-data-margin);
 }
 
-/* The band alone, or the band and the slab. The slab stands under the band
- * while the page is not a wide strip; the band keeps the larger share. */
+/* The band, or Korri's backup in its place. A size container: the backup
+ * sizes its square against the room the banner leaves. */
 .zone-save-data-main {
   display: grid;
   grid-row: 3;
   grid-template-rows: minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--zone-save-data-space);
   min-height: 0;
+  container: zone-save-main / size;
 }
 
-.zone-save-data-main[data-slab="shown"] {
-  grid-template-rows: minmax(0, var(--zone-save-band-share)) minmax(0, var(--zone-save-slab-share));
-  padding-bottom: var(--zone-save-data-space);
-}
-
-/* Wider than tall (src/plan/save-data.ts, ZONE_SAVE_SLAB_BESIDE_ASPECT):
- * the width pays for the slab, beside the band, and the band keeps the
- * height the QR code needs. */
-@container zone-save-data (min-aspect-ratio: 5 / 4) {
-  .zone-save-data-main[data-slab="shown"] {
-    grid-template-rows: minmax(0, 1fr);
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    padding-right: var(--zone-save-data-margin);
-  }
-}
-
+/* The band, and under it the row of a focused retired key. While Korri
+ * lists any retired key the row's room is kept, empty on the other cards,
+ * so the band does not jump as the cursor crosses into the retired keys. */
 .zone-save-data-band {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
 }
 
-/* The QR code takes the whole well while the cursor is on the slab. When
- * the cursor is back on the card it stands clear of the card's triangles:
- * a reader needs every module and the quiet zone round them. The triangles are a share of
- * the card's width; the well this stands in is a size container a little
- * narrower than the card, so its width is the measure (the card's own
- * lengths are written in the band's container units and would resolve
- * against the well here). */
-.zone-save-data-qr {
-  display: block;
-  width: 100%;
-  height: 100%;
+.zone-save-data-band[data-row="kept"] {
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 
-.zone-save-data-qr[data-clear="triangles"] {
-  padding-block: calc(var(--zone-card-pad) + 100cqw * var(--zone-save-triangle-share) / var(--zone-triangle-aspect));
+.zone-save-data-cards {
+  min-width: 0;
+  min-height: 0;
+}
+
+.zone-save-data-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: var(--zone-action-strip-short);
+  padding: 0 var(--zone-save-data-margin) var(--zone-save-data-space);
+}
+
+/* Korri's backup: the QR code as the largest square the room allows, the
+ * slab beside it with at least its least width and at most its widest. The
+ * pair is centred, so a wide strip keeps the slab by the square rather than
+ * stretched to the far edge. */
+.zone-save-data-backup {
+  --zone-save-backup-beside: min(
+    calc(100cqh - var(--zone-save-data-space)),
+    calc(100cqw - 2 * var(--zone-save-data-margin) - var(--zone-save-data-space) - var(--zone-save-slab-least))
+  );
+  --zone-save-backup-under: min(
+    calc(100cqw - 2 * var(--zone-save-data-margin)),
+    calc(100cqh - 2 * var(--zone-save-data-space) - var(--zone-save-slab-least-block))
+  );
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: var(--zone-save-backup-beside) minmax(0, var(--zone-save-slab-most));
+  justify-content: center;
+  gap: var(--zone-save-data-space);
+  min-height: 0;
+  padding: 0 var(--zone-save-data-margin) var(--zone-save-data-space);
+}
+
+/* The square's cell centres the square in it. */
+.zone-save-data-qr {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The square is all code: the well keeps only a hairline of black round
+ * the white paper, whose quiet zone is the code's own. */
+.zone-save-data-qr-square {
+  --zone-qr-pad: var(--zone-hairline);
+  display: block;
+  width: var(--zone-save-backup-beside);
+  height: var(--zone-save-backup-beside);
+}
+
+/* Taller than wide (src/plan/save-data.ts, ZONE_SAVE_BACKUP_BESIDE_ASPECT):
+ * the slab stands under the square, which takes the width. */
+@container zone-save-data (aspect-ratio < 1) {
+  .zone-save-data-backup {
+    grid-template-rows: var(--zone-save-backup-under) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+  }
+
+  .zone-save-data-qr-square {
+    width: var(--zone-save-backup-under);
+    height: var(--zone-save-backup-under);
+  }
 }
 
 .zone-save-data-slab {
   min-width: 0;
   min-height: 0;
-  padding: 0 var(--zone-save-data-margin);
 }
 
 /* A step of a flow: the keyboard rises from the foot of the page, a dialog

@@ -1,3 +1,4 @@
+import { useRef, useSyncExternalStore } from "react"
 import { fixtureProblem } from "../../fixtures/fixture-dialogs"
 import { ZonePartFrame } from "../../fixtures/ZonePartFrame"
 import { ZoneDialog } from "./ZoneDialog"
@@ -52,4 +53,38 @@ export function FocusedYes() {
 /** Korri names the game: a third line in yellow. */
 export function WithTitle() {
   return <ZoneDialog actions={noYes} focused={1} headline={headline} lines={[reason]} title={problem?.gameTitle} />
+}
+
+/** A ref-backed store for the cursor, so the preview follows focus; the product keeps it in src/state. */
+function createCursorStore() {
+  let focused = 0
+  const listeners = new Set<() => void>()
+  return {
+    subscribe(listener: () => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    get: () => focused,
+    focus(index: number) {
+      if (focused === index) return
+      focused = index
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
+/** The underline follows the host's cursor: the dialog reports it through `onFocusAction`. */
+export function FollowsFocus() {
+  const store = useRef<ReturnType<typeof createCursorStore> | null>(null)
+  store.current ??= createCursorStore()
+  const focused = useSyncExternalStore(store.current.subscribe, store.current.get)
+  return (
+    <ZoneDialog
+      actions={noYes}
+      focused={focused}
+      headline={headline}
+      lines={[reason]}
+      onFocusAction={index => store.current?.focus(index)}
+    />
+  )
 }

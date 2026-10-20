@@ -1,7 +1,16 @@
 import "./ZoneTitleCard.css"
+import { useRef } from "react"
+import { useZoneFit } from "../../use-zone-fit"
 
 /** One of Zone's eight colours, by name. The stylesheet maps it to its token. */
 export type ZoneColour = "mint" | "black" | "white" | "yellow" | "blue" | "orange" | "red" | "pink"
+
+/**
+ * How far the title may shrink to keep its longest word whole: a quarter,
+ * below the usual half, because the title wraps only between words and a
+ * word wider than the card would otherwise be cut.
+ */
+const ZONE_TITLE_FIT_FLOOR = 0.25
 
 /** The reference card's bands: orange, blue, mint across a yellow ground. */
 export const ZONE_TITLE_BANDS: readonly [ZoneColour, ZoneColour, ZoneColour] = ["orange", "blue", "mint"]
@@ -12,9 +21,12 @@ export const ZONE_TITLE_BANDS: readonly [ZoneColour, ZoneColour, ZoneColour] = [
  * circle with ACT over the act line on a white slab. Zone writes the game's
  * system where Mania writes the act number.
  *
- * The card fills the box it is given. The title shrinks with the width and
- * wraps before it is cut; the circle takes a share of the height. With no
- * act there is no circle, not an empty one.
+ * The card fills the box it is given. The title's type follows the width,
+ * and shrinks further (to half, by `useZoneFit`) until its longest word
+ * fits; it wraps only between words, never inside one. The circle takes a
+ * share of the height and stands beside the title, or under it when the
+ * card is taller than wide (`ZONE_TITLE_STACK_ASPECT`). With no act there
+ * is no circle, not an empty one.
  *
  * The parallelogram is drawn here; it becomes ZonePanel after the merge.
  */
@@ -30,15 +42,18 @@ export function ZoneTitleCard({
   readonly bands?: readonly [ZoneColour, ZoneColour, ZoneColour]
   readonly ground?: ZoneColour
 }) {
+  const card = useRef<HTMLDivElement>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
+  useZoneFit(card, [heading], title, ZONE_TITLE_FIT_FLOOR)
   return (
-    <div className="zone-title-card" data-ground={ground}>
+    <div className="zone-title-card" data-ground={ground} ref={card}>
       <div aria-hidden className="zone-title-card-bands">
         {bands.map((colour, index) => (
           <span className="zone-title-card-band" data-colour={colour} key={index} />
         ))}
       </div>
       <div className="zone-title-card-face">
-        <h1 className="zone-title-card-title">{title}</h1>
+        <h1 className="zone-title-card-title" ref={heading}>{title}</h1>
         {act === undefined ? null : (
           <div className="zone-title-card-circle">
             <span className="zone-title-card-slab">

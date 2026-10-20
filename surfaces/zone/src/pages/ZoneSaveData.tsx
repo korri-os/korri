@@ -3,11 +3,12 @@ import type {
   SurfaceIdentityDisposition,
   SurfaceIdentityManagement,
 } from "@contracts/surface/korri-surface"
-import { useEffect, useRef, type FocusEvent, type ReactNode } from "react"
+import { useEffect, useRef, type ReactNode } from "react"
 import { shortKey } from "../plan/save-data"
 import { ZoneBanner } from "../ui/atoms/ZoneBanner"
 import { ZoneQrWell } from "../ui/atoms/ZoneQrWell"
 import { ZoneBusyStrip } from "../ui/molecules/ZoneBusyStrip"
+import { ZoneActionRow } from "../ui/molecules/ZoneActionRow"
 import { ZoneDialog, type ZoneDialogAction } from "../ui/molecules/ZoneDialog"
 import type { ZoneKey, ZoneKeyboardLayer } from "../ui/molecules/ZoneKeyboard"
 import { ZoneSaveBand, type ZoneSaveBandCard } from "../ui/organisms/ZoneSaveBand"
@@ -29,8 +30,12 @@ export interface ZoneSaveDataDraft {
  * passed here unchanged; test/zone-save-data.test.tsx holds the two
  * assignable, so the binding needs no mapping.
  */
+/** A retired key's two actions, as the row under the band offers them. */
+export type ZoneSaveDataRetiredAction = "backup" | "delete"
+
 export type ZoneSaveDataFlow =
   | { readonly _tag: "idle" }
+  | { readonly _tag: "retired"; readonly action: ZoneSaveDataRetiredAction }
   | { readonly _tag: "showSecret"; readonly onSlab: boolean }
   | { readonly _tag: "password" | "secret" | "bunker"; readonly draft: ZoneSaveDataDraft }
   | { readonly _tag: "disposition" | "trust"; readonly focus: number }
@@ -41,6 +46,8 @@ export type ZoneSaveDataEvent =
   | { readonly _tag: "FocusedSaveCard"; readonly index: number }
   | { readonly _tag: "FocusedSecret" }
   | { readonly _tag: "ChoseSaveCard"; readonly index: number }
+  | { readonly _tag: "FocusedRetiredAction"; readonly action: ZoneSaveDataRetiredAction }
+  | { readonly _tag: "ChoseRetiredAction"; readonly action: ZoneSaveDataRetiredAction }
   | { readonly _tag: "FocusedKey"; readonly key: string }
   | { readonly _tag: "TypedChar"; readonly char: string }
   | { readonly _tag: "TypedSpace" }
@@ -80,25 +87,23 @@ const keyEvent = (key: ZoneKey): ZoneSaveDataEvent => {
 
 const CAPTIONS = { password: "Password", secret: "Backup", bunker: "Bunker" } as const
 
+/** The row under a focused retired key: BACK UP first, as the delete question asks. */
+const RETIRED_ACTIONS = [
+  { id: "backup", label: "Back up" },
+  { id: "delete", label: "Delete" },
+] as const
+
+const retiredActionOf = (id: string): ZoneSaveDataRetiredAction => id === "delete" ? "delete" : "backup"
+
 /** The cards, in band order. The words are the page's labels; the keys are Korri's. */
-function cardsOf(identity: SurfaceIdentityManagement | undefined, marked: boolean): readonly ZoneSaveBandCard[] {
+function cardsOf(identity: SurfaceIdentityManagement | undefined): readonly ZoneSaveBandCard[] {
   if (identity === undefined) {
     return [{ id: "unavailable", header: "Identity", body: { kind: "text", text: "Not available" } }]
   }
-  const { status } = identity
   const backup: ZoneSaveBandCard = {
     id: "backup",
     header: "Back up",
-    body: status._tag === "BackupReady"
-      ? {
-        kind: "node",
-        node: (
-          <span className="zone-save-data-qr" data-clear={marked ? "triangles" : undefined}>
-            <ZoneQrWell label="Backup QR code" value={status.encryptedSecret} />
-          </span>
-        ),
-      }
-      : { kind: "text", text: "This key" },
+    body: { kind: "text", text: "This key" },
     tag: identity.localBackupAvailable ? { kind: "saved", label: "Backed up" } : { kind: "open", label: "New" },
   }
   return [
@@ -109,7 +114,6 @@ function cardsOf(identity: SurfaceIdentityManagement | undefined, marked: boolea
       id: `retired:${key}`,
       header: "Retired",
       body: { kind: "text", text: shortKey(key) },
-      tag: { kind: "remote", label: "Delete" },
     })),
   ]
 }
@@ -120,15 +124,17 @@ function cardsOf(identity: SurfaceIdentityManagement | undefined, marked: boolea
  * The shell with SAVE DATA as its tab; in the body the SAVE DATA banner and
  * a band of vertical save cards: BACK UP (tagged NEW, or BACKED UP once a
  * local backup exists), SWITCH from a backup, SWITCH to a bunker, then one
- * RETIRED card per retired key with a DELETE tag. Over the band, the step
- * of the flow the player is in: a keyboard with a caption, or a blue
- * dialog.
+ * RETIRED card per retired key. While a retired key is focused, a row under
+ * the band offers BACK UP and DELETE for it; A on the card drops into the
+ * row. Over the band, the step of the flow the player is in: a keyboard
+ * with a caption, or a blue dialog.
  *
  * Korri's status is drawn as Korri states it. Working is the busy strip
- * over the band with the operation as its kicker. BackupReady turns the
- * BACK UP card's well into the QR code and lays the secret on a white slab
- * beside or under the band; the cursor goes to the slab, and the band goes
- * unmarked so the QR code can take the whole well. Problem and Switched are
+ * over the band with the operation as its kicker. BackupReady takes the
+ * band's room: the QR code as the largest square it allows, so a phone can
+ * read it, and the secret on a white slab beside it (under it on a page
+ * taller than wide). The cursor goes to the slab; B closes the backup and
+ * the band returns with its cursor where it was. Problem and Switched are
  * dialogs.
  *
  * A shape: it takes Korri's identity slice and the identity model's value
@@ -158,10 +164,17 @@ export function ZoneSaveData({
   // backup's slab, which also lets the QR code in BACK UP's well take the
   // room the card's triangles would need.
   const onSlab = backup !== undefined && flow._tag === "showSecret" && flow.onSlab
+  const onRow = flow._tag === "retired"
   const layered = status?._tag === "Problem" || status?._tag === "Switched"
-    || (flow._tag !== "idle" && flow._tag !== "showSecret")
-  const marked = !onSlab && !layered
-  const cards = cardsOf(identity, marked)
+    || (flow._tag !== "idle" && flow._tag !== "showSecret" && !onRow)
+  const marked = !onSlab && !layered && !onRow
+  const cards = cardsOf(identity)
+  // The focused card stands for a retired key: its row of two is drawn. The
+  // band keeps the row's room whenever there is a retired key at all, so it
+  // does not jump as the cursor crosses into them.
+  const hasRetired = cards.some(each => each.id.startsWith("retired:"))
+  const retiredRow = backup === undefined && cards[card]?.id.startsWith("retired:") === true
+    && (flow._tag === "idle" || onRow)
 
   // When a step opens or closes, the cursor goes to it: DOM mechanics only.
   // The first render leaves focus where the host has it.
@@ -174,21 +187,27 @@ export function ZoneSaveData({
     if (page === null) return
     const target = page.querySelector<HTMLElement>(".zone-save-data-layer [data-focused]")
       ?? page.querySelector<HTMLElement>(".zone-save-data-layer button")
+      ?? page.querySelector<HTMLElement>(".zone-save-data-actions button[data-focused='on']")
       ?? page.querySelector<HTMLElement>(".zone-save-data-slab [tabindex]")
       ?? page.querySelector<HTMLElement>(".zone-save-data-band button[data-focused]")
     target?.focus()
   }, [scene])
 
-  // The host moved the cursor across a dialog's buttons.
-  const heardChoice = (event: FocusEvent<HTMLDivElement>) => {
-    const buttons = [...event.currentTarget.querySelectorAll("[role='dialog'] button")]
-    const index = buttons.indexOf(event.target)
-    if (buttons.length === 2 && (index === 0 || index === 1)) send({ _tag: "FocusedChoice", index })
+  // The host moved the cursor across a two-button dialog.
+  const heardChoice = (count: number) => (index: number) => {
+    if (count === 2 && (index === 0 || index === 1)) send({ _tag: "FocusedChoice", index })
   }
 
   const dialog = (headline: string, lines: readonly string[], actions: readonly ZoneDialogAction[], focus: number, title?: string) => (
-    <div className="zone-save-data-layer" data-layer="dialog" onFocus={heardChoice}>
-      <ZoneDialog actions={actions} focused={focus} headline={headline} lines={lines} title={title} />
+    <div className="zone-save-data-layer" data-layer="dialog">
+      <ZoneDialog
+        actions={actions}
+        focused={focus}
+        headline={headline}
+        lines={lines}
+        onFocusAction={heardChoice(actions.length)}
+        title={title}
+      />
     </div>
   )
 
@@ -206,6 +225,7 @@ export function ZoneSaveData({
   } else {
     switch (flow._tag) {
       case "idle":
+      case "retired":
       case "showSecret":
         break
       case "password":
@@ -255,19 +275,42 @@ export function ZoneSaveData({
             <ZoneBusyStrip kicker={status.operation} />
           </div>
         ) : null}
-        <div className="zone-save-data-main" data-slab={backup === undefined ? undefined : "shown"}>
-          <div className="zone-save-data-band">
-            <ZoneSaveBand
-              cards={cards}
-              focusedIndex={card}
-              marked={marked}
-              onChoose={index => send({ _tag: "ChoseSaveCard", index })}
-              onFocus={index => send({ _tag: "FocusedSaveCard", index })}
-            />
-          </div>
-          {backup === undefined ? null : (
-            <div className="zone-save-data-slab">
-              <ZoneSecretSlab focused={onSlab && !layered} label="Backup secret" onFocus={() => send({ _tag: "FocusedSecret" })} secret={backup} />
+        <div className="zone-save-data-main">
+          {backup === undefined ? (
+            <div className="zone-save-data-band" data-row={hasRetired ? "kept" : undefined}>
+              <div className="zone-save-data-cards">
+                <ZoneSaveBand
+                  cards={cards}
+                  focusedIndex={card}
+                  marked={marked}
+                  onChoose={index => send({ _tag: "ChoseSaveCard", index })}
+                  onFocus={index => send({ _tag: "FocusedSaveCard", index })}
+                />
+              </div>
+              {hasRetired ? (
+                <div className="zone-save-data-actions">
+                  {retiredRow ? (
+                    <ZoneActionRow
+                      actions={RETIRED_ACTIONS}
+                      focused={onRow ? flow.action : undefined}
+                      lit="backup"
+                      onFocus={id => send({ _tag: "FocusedRetiredAction", action: retiredActionOf(id) })}
+                      onPress={id => send({ _tag: "ChoseRetiredAction", action: retiredActionOf(id) })}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="zone-save-data-backup">
+              <div className="zone-save-data-qr">
+                <span className="zone-save-data-qr-square">
+                  <ZoneQrWell label="Backup QR code" value={backup} />
+                </span>
+              </div>
+              <div className="zone-save-data-slab">
+                <ZoneSecretSlab focused={onSlab && !layered} label="Backup secret" onFocus={() => send({ _tag: "FocusedSecret" })} secret={backup} />
+              </div>
             </div>
           )}
         </div>

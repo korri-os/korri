@@ -5,6 +5,8 @@
   --zone-band-n: 5;
   --zone-band-tri: var(--zone-triangle-wide);
   --zone-band-gap: var(--zone-card-gap-wide);
+  --zone-band-spine-share: var(--zone-section-share);
+  --zone-band-spine-fixed: calc(var(--zone-hairline) * 0);
   position: relative;
   width: 100%;
   height: 100%;
@@ -14,10 +16,13 @@
   container-type: size;
 }
 
+/* Three visible: the dividers are hairline spines of a fixed width. */
 .zone-card-band[data-visible="3"] {
   --zone-band-n: 3;
   --zone-band-tri: var(--zone-triangle-narrow);
   --zone-band-gap: var(--zone-card-gap-narrow);
+  --zone-band-spine-share: 0;
+  --zone-band-spine-fixed: var(--zone-section-hairline);
 }
 
 /* The plan's sums. The width the cards do not get is the gaps, the two
@@ -31,20 +36,30 @@
  * of them times a side width and a gap, plus the triangle's room, plus half
  * a focused width, plus a spine and a gap for each section divider before
  * it. --zone-band-focus and --zone-band-dividers are those counts, written
- * by the band. */
+ * by the band.
+ *
+ * Dividers in view take width too. The track is centred on the focused
+ * card, so each side holds its own: the band writes the most a side ever
+ * holds as --zone-band-spines, and the fit leaves room for that many spines
+ * and gaps on both sides. A spine is a share of the card height on the wide
+ * band (so it joins the divisor) and a fixed hairline on the narrow one. */
 .zone-card-band-track {
   --zone-band-fixed: calc(
     (var(--zone-band-n) - 1) * var(--zone-band-gap)
     + 2 * (var(--zone-band-tri) + var(--zone-triangle-gap))
     + 2 * var(--zone-band-margin)
+    + 2 * var(--zone-band-spines, 0) * (var(--zone-band-gap) + var(--zone-band-spine-fixed))
   );
   --zone-band-fit: calc(
     (100cqw - var(--zone-band-fixed))
-    / (var(--zone-card-ratio) * (1 + (var(--zone-band-n) - 1) * var(--zone-card-side-scale)))
+    / (
+      var(--zone-card-ratio) * (1 + (var(--zone-band-n) - 1) * var(--zone-card-side-scale))
+      + 2 * var(--zone-band-spines, 0) * var(--zone-band-spine-share)
+    )
   );
   --zone-card-h: min(var(--zone-card-focus-max), calc(100cqh - 2 * var(--zone-band-pad)), var(--zone-band-fit));
   --zone-band-side-w: calc(var(--zone-card-h) * var(--zone-card-side-scale) * var(--zone-card-ratio));
-  --zone-band-section-w: calc(var(--zone-card-h) * var(--zone-section-share));
+  --zone-band-section-w: calc(var(--zone-card-h) * var(--zone-band-spine-share) + var(--zone-band-spine-fixed));
   --zone-band-centre: calc(
     var(--zone-band-focus, 0) * (var(--zone-band-side-w) + var(--zone-band-gap))
     + var(--zone-band-dividers, 0) * (var(--zone-band-section-w) + var(--zone-band-gap))
