@@ -77,7 +77,6 @@ type Job =
   | { readonly _tag: "Starting"; readonly cancelRequested: boolean }
   | { readonly _tag: "Active"; readonly jobId: string; readonly state: AcquireJobState; readonly cancelling: boolean }
   | { readonly _tag: "Imported"; readonly gameId: string }
-  | { readonly _tag: "Staged"; readonly message: string }
   | {
       readonly _tag: "Failed"
       readonly kicker: string
@@ -130,8 +129,6 @@ export const STOPPED_KICKER = "Download stopped"
 export const STOPPED_REASON =
   "Korri restarted before the download finished. Nothing was kept, and your library is unchanged."
 export const CANCELLED_NOTE = "Download cancelled. Nothing was kept."
-export const STAGED_MESSAGE =
-  "Downloaded to this device, but your library did not recognise it as a game."
 export const NOT_AVAILABLE_KICKER = "Not available"
 
 /** Nothing a Retry here could change: no known system, or a provider that
@@ -174,8 +171,6 @@ function jobFrom(status: AcquireJobStatus, cancelling = false): Job {
   switch (state._tag) {
     case "Imported":
       return { _tag: "Imported", gameId: state.gameId }
-    case "Staged":
-      return { _tag: "Staged", message: state.message.trim() === "" ? STAGED_MESSAGE : state.message }
     case "Cancelled":
       return { _tag: "Cancelled" }
     case "Failed":
@@ -288,8 +283,6 @@ export function createStoreAcquisition(
       }
       case "Imported":
         return { _tag: "InLibrary", detail: "In your library", gameId: job.gameId }
-      case "Staged":
-        return { _tag: "Staged", message: job.message }
       case "Failed":
         return {
           _tag: "Problem", kicker: job.kicker, reason: job.reason,

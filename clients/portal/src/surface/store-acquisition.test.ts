@@ -11,7 +11,6 @@ import {
   createStoreAcquisition,
   NO_SYSTEM_REASON,
   NOT_AVAILABLE_KICKER,
-  STAGED_MESSAGE,
   STOPPED_KICKER,
   STOPPED_REASON,
   storeEntryId,
@@ -337,16 +336,6 @@ test("already in the library: Get becomes Play without a second download", async
   await flush()
   expect(again.getSnapshot().details).toMatchObject({ get: { _tag: "InLibrary", gameId: "store-korripico8-celeste" } })
   expect(h.korrid.downloadedBytes()).toBe(32_000)
-})
-
-test("downloaded but not recognised says so plainly", async () => {
-  const h = harness(base([claim("odd", { unrecognised: true })]))
-  await h.open("odd")
-  h.press("Get")
-  h.press("Download")
-  await h.until("staged", () => h.get()._tag === "Staged")
-  expect(h.get()).toEqual({ _tag: "Staged", message: STAGED_MESSAGE })
-  expect(h.imported).toEqual([])
 })
 
 test("Cancel during the download stops it, and Get is offered again", async () => {

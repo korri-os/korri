@@ -267,7 +267,7 @@ same keyboard Wi-Fi passwords use (`PicoTextEditor`, with SEARCH and CANCEL);
 results are carts on Find's shelf; an entry stands on a game's own stage with
 the provider's words, and where getting it stands is a card in Korri's words
 and with Korri's actions (yellow: download; red: failed,
-stopped; blue: not available, downloaded but not recognised, in your library
+stopped; blue: not available, in your library
 with PLAY). A download takes the launch stage, with the bar from Korri's
 bytes. Back walks keyboard, entry, results, providers, home, and never
 cancels: the download keeps going and shows again on its entry. No provider

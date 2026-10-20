@@ -1,9 +1,8 @@
 /**
  * Shift store — where getting one entry stands (organism).
  *
- * Legacy Shift's store detail put Get, Getting… and Play under the entry, the
- * ungetable guard where Get would be, and the staged notice under the
- * actions. This draws the treaty's `SurfaceStoreGet` the same way: Korri's
+ * Legacy Shift's store detail put Get, Getting… and Play under the entry, and
+ * the ungetable guard where Get would be. This draws the treaty's `SurfaceStoreGet` the same way: Korri's
  * words, Korri's actions in Korri's order, and a real bar while it downloads.
  * Play is Shift's own verb: it launches the catalog game Korri named.
  */
@@ -29,7 +28,6 @@ export function shiftStoreGetPrimaryLabel(get: SurfaceStoreGet): string | undefi
     case "InLibrary":
       return get.gameId === undefined ? undefined : "Play"
     case "Unavailable":
-    case "Staged":
       return undefined
   }
 }
@@ -93,8 +91,6 @@ export function ShiftStoreGet({ get, onAction, onPlay }: ShiftStoreGetProps) {
           )}
           <p className="shift-store-get-note" data-tone="done">{get.detail ?? "In your library"}</p>
         </>
-      ) : get._tag === "Staged" ? (
-        <p className="shift-store-get-note">{get.message}</p>
       ) : (
         <>
           <p className="shift-store-get-kicker" data-tone="failed">{get.kicker}</p>

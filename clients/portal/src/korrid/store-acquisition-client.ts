@@ -67,8 +67,6 @@ export interface InMemoryClaim extends Omit<ProviderClaim, "_tag"> {
   /** Fail once, with this plain copy, when the download reaches `atFraction`
    * (default half). The next acquire completes. */
   readonly failure?: { readonly message: string; readonly atFraction?: number }
-  /** The library does not recognise the file: the job ends Staged. */
-  readonly unrecognised?: boolean
   /** The provider will not hand out the file (FailedDownload): the job fails
    * DownloadResolutionFailed with this copy. */
   readonly unavailable?: string
@@ -170,10 +168,6 @@ export function createInMemoryStoreAcquisition(
   }
   const finish = (job: InMemoryJob) => {
     const claim = job.claim
-    if (claim.unrecognised) {
-      set(job, { _tag: "Staged", message: "" })
-      return
-    }
     const gameId = `store-${claim.providerId.replace(/[^a-z0-9]/g, "")}-${claim.id}`
     if (!imported.has(gameId)) {
       imported.add(gameId)
@@ -232,7 +226,7 @@ export function createInMemoryStoreAcquisition(
       return {
         _tag: "Ok",
         payload: {
-          claims: found.map(({ description: _description, failure: _failure, unrecognised: _u, unavailable: _a, contentLength: _c, ...claim }) =>
+          claims: found.map(({ description: _description, failure: _failure, unavailable: _a, contentLength: _c, ...claim }) =>
             ({ _tag: "ProviderClaim" as const, ...structuredClone(claim) })),
         },
       }
@@ -258,7 +252,7 @@ export function createInMemoryStoreAcquisition(
       const existing = byClaim.get(key)
       const running = existing === undefined ? undefined : jobs.get(existing)
       // A repeated acquire for a claim whose newest job is live or Imported
-      // returns that job; after Failed, Cancelled or Staged it is a new try.
+      // returns that job; after Failed or Cancelled it is a new try.
       const tag = running?.status.state._tag
       if (running !== undefined && (tag === "Resolving" || tag === "Downloading" || tag === "Placing" || tag === "Imported")) {
         return snapshot(running)

@@ -44,7 +44,6 @@ export type DeskGet =
       readonly actions: readonly DeskAction[]
     }
   | { readonly _tag: "InLibrary"; readonly detail?: string; readonly gameId?: string }
-  | { readonly _tag: "Staged"; readonly message: string }
   | { readonly _tag: "Problem"; readonly kicker: string; readonly reason: string; readonly actions: readonly DeskAction[] }
 
 export type DeskDetails =

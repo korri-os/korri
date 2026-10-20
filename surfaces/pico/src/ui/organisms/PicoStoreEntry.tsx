@@ -10,8 +10,7 @@ import { PicoGameStage } from "./PicoGameStage"
  * cartridge (or initials), its name and where it comes from, the provider's
  * description, and where getting it stands. The words and actions under it
  * are Korri's. Cards say what they are by colour: yellow asks (download),
- * red warns (failed, stopped), blue tells (not available,
- * downloaded but not recognised, in your library). Work under way takes the
+ * red warns (failed, stopped), blue tells (not available, in your library). Work under way takes the
  * whole screen on the launch stage, so it is not drawn here.
  */
 export function PicoStoreEntry({
@@ -56,7 +55,7 @@ export function PicoStoreEntry({
       <PicoGameStage
         id={entry.id}
         stats={[]}
-        statsEmptyLabel={details._tag === "Ready" && (details.get._tag === "InLibrary" || details.get._tag === "Staged")
+        statsEmptyLabel={details._tag === "Ready" && details.get._tag === "InLibrary"
           ? "ON THIS DEVICE"
           : "NOT ON THIS DEVICE"}
         subtitle={subtitle === "" ? undefined : subtitle}
@@ -111,8 +110,6 @@ function entryGet(
             tone="info"
           />
         )
-      case "Staged":
-        return <PicoNotice kicker="DOWNLOADED" message={get.message} tone="info" />
       case "Problem":
         return <PicoNotice actions={rows(get.actions)} kicker={get.kicker} message={get.reason} tone="warn" />
     }

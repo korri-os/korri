@@ -432,8 +432,8 @@ export interface SurfaceOnboarding {
  * Getting a game from a provider: a place, such as the PICO-8 BBS, that a
  * provider plugin can search and fetch from. Each surface lists whatever
  * providers Korri publishes; there may be one. Grounded in legacy Shift's store
- * (search, results, detail, Get/Getting/Play, the ungetable guard, the staged
- * notice) and the legacy acquisition protocol (`ProviderClaim`,
+ * (search, results, detail, Get/Getting/Play, the ungetable guard) and the
+ * legacy acquisition protocol (`ProviderClaim`,
  * `ProviderClaimDetails`, `AcquireJobStatus`).
  *
  * The host owns every request, the download and its job; the surface owns
@@ -521,9 +521,6 @@ export type SurfaceStoreGet =
   /** The game is in the library. `gameId` is its `SurfaceGame.id` for
    * `launchGame`, present once the catalog holds it. */
   | { readonly _tag: "InLibrary"; readonly detail?: string; readonly gameId?: string }
-  /** Downloaded to this device, but the library did not recognise it as a
-   * game. Nothing more can be done from here. */
-  | { readonly _tag: "Staged"; readonly message: string }
   /** The download did not finish. `actions` holds Retry when one helps. */
   | {
       readonly _tag: "Problem"
