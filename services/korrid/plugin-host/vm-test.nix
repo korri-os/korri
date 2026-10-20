@@ -1254,12 +1254,12 @@ pkgs.testers.runNixOSTest {
     inspection = plugin_ok("system.plugins.inspect", {"url": source_a, "pluginId": "@korri:tailscale", "releaseVersion": "v1"})
     assert inspection["approval"] == report["approval"], inspection
     assert "CAP_NET_ADMIN" in inspection["warning"], inspection
-    install = {"url": source_a, "pluginId": "@korri:tailscale", "releaseVersion": "v1"}
+    tailscale_selection = {"url": source_a, "pluginId": "@korri:tailscale", "releaseVersion": "v1"}
     for wrong in ["", alternative["approval"]]:
-        refused = plugin_err("system.plugins.install", dict(install, approval=wrong))
+        refused = plugin_err("system.plugins.install", dict(tailscale_selection, approval=wrong))
         assert "approval does not match" in refused["message"], refused
     machine.fail("korri-plugin status @korri:tailscale")
-    assert plugin_ok("system.plugins.install", dict(install, approval=inspection["approval"])) == {}
+    assert plugin_ok("system.plugins.install", dict(tailscale_selection, approval=inspection["approval"])) == {}
     assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["desired"] == {"state": "Disabled"}
     machine.fail("systemctl is-active " + report["unit"])
     assert [entry.get("installed") for entry in plugin_ok("system.plugins.catalog", {"url": source_a})["entries"]] == ["Disabled"] * len(records)
