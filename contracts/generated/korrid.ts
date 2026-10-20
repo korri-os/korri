@@ -482,6 +482,9 @@ export interface NetworkStatusRequest {
 export interface OnboardingFinishRequest {
 }
 
+export interface OnboardingRestartRequest {
+}
+
 export interface OnboardingStatus {
 	needed: boolean;
 }
@@ -983,6 +986,7 @@ export type PeerListOutcome =
 	| { _tag: "Err", payload: RpcFailure };
 
 export type RpcRequest =
+	| { _tag: "system.onboarding.restart", payload: OnboardingRestartRequest }
 	| { _tag: "system.onboarding.finish", payload: OnboardingFinishRequest }
 	| { _tag: "system.onboarding.status", payload: OnboardingStatusRequest }
 	| { _tag: "system.wifi.connectHidden", payload: WifiConnectHiddenRequest }
@@ -1030,6 +1034,7 @@ export type RpcRequest =
 	| { _tag: "system.identity.retired.delete", payload: IdentityRetiredDeleteRequest };
 
 export type RpcResponse =
+	| { _tag: "system.onboarding.restart", outcome: OnboardingStatusOutcome }
 	| { _tag: "system.onboarding.finish", outcome: OnboardingStatusOutcome }
 	| { _tag: "system.onboarding.status", outcome: OnboardingStatusOutcome }
 	| { _tag: "system.wifi.connectHidden", outcome: NetworkStatusOutcome }

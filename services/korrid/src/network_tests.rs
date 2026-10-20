@@ -161,6 +161,24 @@ async fn network_and_onboarding_rpc_round_trip_uses_portal_authority_and_real_ma
             needed: false
         })
     ));
+    let restarted = client
+        .post(&url)
+        .bearer_auth("onboarding-test-capability")
+        .json(&serde_json::json!({"_tag":"system.onboarding.restart", "payload":{}}))
+        .send()
+        .await
+        .unwrap();
+    assert!(restarted.status().is_success());
+    let restarted: serde_json::Value = restarted.json().await.unwrap();
+    assert_eq!(restarted["_tag"], "system.onboarding.restart");
+    assert_eq!(restarted["outcome"]["_tag"], "Ok");
+    assert_eq!(restarted["outcome"]["payload"]["needed"], true);
+    assert!(matches!(
+        crate::onboarding::status(private.path()),
+        crate::onboarding::OnboardingStatusOutcome::Ok(crate::onboarding::OnboardingStatus {
+            needed: true
+        })
+    ));
     task.abort();
 }
 

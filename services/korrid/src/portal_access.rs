@@ -31,6 +31,7 @@ impl PortalPermission {
             | RpcRequest::WifiConnect(_)
             | RpcRequest::WifiConnectHidden(_)
             | RpcRequest::OnboardingFinish(_)
+            | RpcRequest::OnboardingRestart(_)
             | RpcRequest::GameRunnerSet(_)
             | RpcRequest::SelectedGameLaunch(_)
             | RpcRequest::SessionReserve(_)
@@ -85,7 +86,8 @@ impl PortalPermission {
                         | RpcRequest::WifiScan(_)
                         | RpcRequest::WifiConnect(_)
                         | RpcRequest::WifiConnectHidden(_)
-                        | RpcRequest::OnboardingFinish(_) => true,
+                        | RpcRequest::OnboardingFinish(_)
+                        | RpcRequest::OnboardingRestart(_) => true,
                         _ => false,
                     }
             }
@@ -322,6 +324,7 @@ mod tests {
                 json!({"ssid":"Hidden", "password":"test-passphrase"}),
             ),
             ("system.onboarding.finish", json!({})),
+            ("system.onboarding.restart", json!({})),
         ] {
             let request: RpcRequest =
                 serde_json::from_value(json!({"_tag":tag,"payload":payload})).unwrap();

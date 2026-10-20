@@ -1187,6 +1187,8 @@ pub enum IdentityRetiredDeleteOutcome {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum RpcRequest {
+    #[serde(rename = "system.onboarding.restart")]
+    OnboardingRestart(onboarding::OnboardingRestartRequest),
     #[serde(rename = "system.onboarding.finish")]
     OnboardingFinish(onboarding::OnboardingFinishRequest),
     #[serde(rename = "system.onboarding.status")]
@@ -1283,6 +1285,8 @@ pub enum RpcRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "outcome")]
 pub enum RpcResponse {
+    #[serde(rename = "system.onboarding.restart")]
+    OnboardingRestart(onboarding::OnboardingStatusOutcome),
     #[serde(rename = "system.onboarding.finish")]
     OnboardingFinish(onboarding::OnboardingStatusOutcome),
     #[serde(rename = "system.onboarding.status")]
@@ -2132,6 +2136,9 @@ async fn dispatch(
         }
         RpcRequest::OnboardingFinish(_) => {
             RpcResponse::OnboardingFinish(onboarding::finish(state.private_state_root()))
+        }
+        RpcRequest::OnboardingRestart(_) => {
+            RpcResponse::OnboardingRestart(onboarding::restart(state.private_state_root()))
         }
         RpcRequest::GameRoutes(request) => RpcResponse::GameRoutes(match &state.mode {
             ServerMode::Host(host) => host

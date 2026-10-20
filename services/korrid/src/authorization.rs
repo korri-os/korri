@@ -178,7 +178,8 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::WifiConnect(_)
         | RpcRequest::WifiConnectHidden(_)
         | RpcRequest::OnboardingStatus(_)
-        | RpcRequest::OnboardingFinish(_) => PeerPolicy::LocalPortalOnly,
+        | RpcRequest::OnboardingFinish(_)
+        | RpcRequest::OnboardingRestart(_) => PeerPolicy::LocalPortalOnly,
         RpcRequest::CatalogSnapshot(_) => PeerPolicy::CatalogOrStreamScope,
         RpcRequest::MoonlightCertificateAttest(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::MoonlightCertificateProvision(_) => {
@@ -270,6 +271,7 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::WifiConnect(_)
             | RpcRequest::WifiConnectHidden(_)
             | RpcRequest::OnboardingFinish(_)
+            | RpcRequest::OnboardingRestart(_)
             | RpcRequest::SessionStop(_)
             | RpcRequest::SessionControlInvoke(_)
             | RpcRequest::SessionFreeze(_)
