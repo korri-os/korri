@@ -370,3 +370,139 @@ describe("catalog", () => {
     expect(cardTitles()).toHaveLength(GAMES.length)
   })
 })
+
+// ---- C7 to C10: Korri's status over any page ----
+
+describe("status", () => {
+  test("C7 busy", () => {
+    const { host, publish, press } = mount()
+    moveTo(button("Hollow Knight"))
+    confirm()
+    publish({
+      ...HOME,
+      status: {
+        _tag: "Busy",
+        kicker: "Starting",
+        detail: "Waking zao",
+        gameId: "hollow",
+        actions: [{ id: "cancel-launch", label: "Cancel", enabled: true }],
+      },
+    })
+    const strip = screen.getByRole("status")
+    expect(strip.textContent).toContain("Starting")
+    expect(strip.textContent).toContain("Waking zao")
+    expect(document.querySelector(".zone-status-layer-busy")?.textContent).toContain("Hollow Knight")
+    // The page under it is inert; the cursor is on Korri's own cancel.
+    expect(document.querySelector(".zone-status-layer-page")?.hasAttribute("inert")).toBe(true)
+    expect(focusedText()).toBe("Cancel")
+    press("back")
+    expect(calls(host)).toEqual([["launchGame", "hollow"]])
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "cancel-launch"])
+    // Korri goes back to browsing: the cursor returns to where it was.
+    publish(HOME)
+    expect(focusedText()).toContain("Hollow Knight")
+  })
+
+  test("C8 running", () => {
+    const { host, publish } = mount()
+    publish({ ...HOME, status: { _tag: "Running", kicker: "Playing on zao", gameId: "tetris" } })
+    const strip = document.querySelector<HTMLElement>(".zone-status-layer-running")!
+    expect(strip.textContent).toContain("Playing on zao")
+    expect(strip.textContent).toContain("Open")
+    expect(strip.textContent).toContain("Tetris")
+    // The page stays usable under it.
+    expect(document.querySelector(".zone-status-layer-page")?.hasAttribute("inert")).toBe(false)
+    moveTo(button("Hollow Knight"))
+    confirm()
+    expect(calls(host)).toEqual([["launchGame", "hollow"]])
+  })
+
+  test("C9 problem", () => {
+    const { host, publish, press } = mount()
+    moveTo(button("Spelunky"))
+    const problem: SurfaceModel = {
+      ...HOME,
+      status: { _tag: "Problem", kicker: "Could not start", reason: "zao did not answer.", canRetry: true, gameId: "tetris", gameTitle: "Tetris" },
+    }
+    publish(problem)
+    const dialog = screen.getByRole("dialog", { name: "Could not start" })
+    expect(dialog.textContent).toContain("zao did not answer.")
+    // Stated against Korri's game, not the card on screen.
+    expect(dialog.textContent).toContain("Tetris")
+    expect(dialog.textContent).not.toContain("Spelunky")
+    expect(focusedText()).toBe("Dismiss")
+    moveTo(button("Retry", dialog))
+    confirm()
+    expect(calls(host)).toEqual([["retry"]])
+    moveTo(button("Dismiss", dialog))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["dismiss"])
+    press("back")
+    expect(calls(host).at(-1)).toEqual(["dismiss"])
+    expect(calls(host)).toHaveLength(3)
+    publish(HOME)
+    expect(focusedText()).toContain("Spelunky")
+  })
+
+  test("C10 reload", () => {
+    const { host, publish } = mount()
+    publish({ ...HOME, catalog: { _tag: "Error", message: "The disk did not answer." } })
+    expect(focusedText()).toBe("Reload")
+    confirm()
+    expect(calls(host)).toEqual([["reload"]])
+  })
+})
+
+// ---- C11: Korri's runner choice ----
+
+describe("runner choice", () => {
+  const route = {
+    runnerId: "mgba",
+    systemId: "gba",
+    runnerBuild: "/nix/store/abc-mgba-0.10.3",
+    program: "mGBA",
+    warnings: ["BIOS missing: games may not boot"],
+    actions: [{ id: "runner:launch:mgba", label: "Play with mGBA", enabled: true }],
+  }
+  const choice = (tag: "Ready" | "Stale"): SurfaceRunnerChoice => ({
+    _tag: tag,
+    gameTitle: "Wario Land 4",
+    message: "Choose what plays it",
+    routes: [route, { ...route, runnerId: "vba", program: "VBA-M", runnerBuild: "/nix/store/def-vbam-2.1", warnings: [], actions: [] }],
+    saved: [{ label: "This game", runnerId: "mgba" }],
+    warnings: ["Two runners are installed"],
+    actions: [{ id: "runner:cancel", label: "Close", enabled: true }],
+  })
+
+  test("C11 runner choice", () => {
+    const { host, publish, press } = mount()
+    // GAME OPTS. lists Korri's own action that opens the runner choice.
+    moveTo(button("Wario Land 4"))
+    press("options")
+    moveTo(button("Runners on this device"))
+    confirm()
+    expect(calls(host)).toEqual([["runGameAction", "wario", "runners"]])
+    publish({ ...HOME, runnerChoice: { ...choice("Ready"), _tag: "Loading" } })
+    expect(onScreen("Loading")).toBe(true)
+    publish({ ...HOME, runnerChoice: choice("Ready") })
+    const page = document.querySelector<HTMLElement>(".zone-run-with")!
+    for (const words of ["Run with", "Wario Land 4", "Ready", "Choose what plays it", "Two runners are installed",
+      "mGBA", "/nix/store/abc-mgba-0.10.3", "BIOS missing: games may not boot", "VBA-M", "This game"]) {
+      expect(page.textContent).toContain(words)
+    }
+    // The cursor is in the page; Korri's action ids go back unchanged.
+    expect(page.contains(document.activeElement)).toBe(true)
+    moveTo(button("Play with mGBA", page))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "runner:launch:mgba"])
+    // A saved runner no route offers is its own row.
+    publish({ ...HOME, runnerChoice: { ...choice("Stale"), routes: [], saved: [{ label: "This game", runnerId: "retroarch" }] } })
+    expect(document.querySelector(".zone-run-with")?.textContent).toContain("retroarch")
+    expect(document.querySelector(".zone-run-with")?.textContent).toContain("UNAVAILABLE")
+    // Korri closes it: home again.
+    publish({ ...HOME, runnerChoice: { _tag: "Closed" } })
+    expect(document.querySelector(".zone-run-with")).toBeNull()
+    expect(cardTitles()).toHaveLength(GAMES.length)
+  })
+})
