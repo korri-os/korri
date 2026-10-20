@@ -79,6 +79,55 @@ pub(super) fn downloads(base: &Path) -> Result<PathBuf, Failure> {
     Ok(path)
 }
 
+/// The queue marker (ADR 0013): `<hex of file 1>.part`, zero bytes when no
+/// byte has arrived yet. Never truncates partial bytes that already exist.
+pub(super) fn mark_queued(root: &Path, artifact: &ArtifactRecord) -> Result<(), Failure> {
+    let downloads = downloads(&prepare(root, artifact)?)?;
+    let first = artifact.files.first().ok_or(Failure::Storage)?;
+    let hex = first
+        .sha256
+        .strip_prefix("sha256:")
+        .ok_or(Failure::UnsafePath)?;
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(downloads.join(format!("{hex}.part")))?;
+    Ok(())
+}
+
+/// When this contribution's interrupted download was queued, or `None` when
+/// nothing was interrupted. Any entry in `.downloads` counts: a restart
+/// between two files or during unpacking leaves verified files and no `.part`.
+/// The earliest creation time is the queue marker for file 1; renaming it to
+/// its verified name keeps that time.
+pub(super) fn interrupted_since(base: &Path) -> Option<std::time::SystemTime> {
+    fs::read_dir(base.join(".downloads"))
+        .ok()?
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let metadata = entry.metadata().ok()?;
+            // A file's mtime moves while bytes arrive. Use it only where the
+            // filesystem has no creation time; that can reorder a running
+            // download behind a later one.
+            metadata.created().or_else(|_| metadata.modified()).ok()
+        })
+        .min()
+}
+
+/// Cancel deletes everything downloaded so far (ADR 0013 amends ADR 0012):
+/// partial and verified files alike, so a cancelled download is never taken
+/// for an interrupted one and starts again from zero. The caller holds
+/// the contribution's `.lock`.
+pub(super) fn remove_downloads(base: &Path) -> Result<(), Failure> {
+    match fs::remove_dir_all(base.join(".downloads")) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+        _ => Ok(()),
+    }
+}
+
 pub(super) fn publish(
     base: &Path,
     private_root: &Path,
@@ -140,7 +189,7 @@ fn freeze_and_sync(path: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
-fn discard_work(path: &Path) -> Result<(), Failure> {
+pub(super) fn discard_work(path: &Path) -> Result<(), Failure> {
     let metadata = fs::symlink_metadata(path)?;
     if metadata.is_dir() {
         fs::set_permissions(

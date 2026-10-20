@@ -15,7 +15,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::plugin::{ContentRules, DeclaredGame, DeclaredRelease, GroupRecord, PluginRegistry};
+use crate::plugin::{
+    ContentRules, DeclaredGame, DeclaredRelease, DeclaredReleaseFile, GroupRecord, PluginRegistry,
+};
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -315,9 +317,14 @@ fn plan_with_rules(
                 };
                 let mut targets = BTreeSet::new();
                 for release in hashes.iter().flat_map(|hash| registry.declared(hash)) {
-                    if let Some(relative) = &release.file {
-                        safe_relative(Path::new(relative))?;
-                        targets.insert(account.join(relative));
+                    match &release.file {
+                        Some(DeclaredReleaseFile::AccountRoot(relative)) => {
+                            safe_relative(Path::new(relative))?;
+                            targets.insert(account.join(relative));
+                        }
+                        // Artifact content lives in korrid's cache, never under
+                        // an account root, so it gives no migration target.
+                        Some(DeclaredReleaseFile::Artifact(_)) | None => (),
                     }
                 }
                 match targets.len() {
@@ -705,11 +712,15 @@ fn prospective_catalog(
             .values()
             .flat_map(|game| game.releases.values())
         {
-            if let Some(file) = &release.file {
-                let future = account_root.join(file);
-                if let Some(physical) = previous_path(&plan.moves, &future) {
-                    files.insert(future, physical);
+            match &release.file {
+                Some(DeclaredReleaseFile::AccountRoot(file)) => {
+                    let future = account_root.join(file);
+                    if let Some(physical) = previous_path(&plan.moves, &future) {
+                        files.insert(future, physical);
+                    }
                 }
+                // A planned move never touches korrid's cache.
+                Some(DeclaredReleaseFile::Artifact(_)) | None => (),
             }
         }
     }
@@ -1751,7 +1762,7 @@ mod tests {
             "users/default/old/MASTER.DAT",
         ];
         let mut games = BTreeMap::new();
-        let mut releases = BTreeMap::new();
+        let mut releases = indexmap::IndexMap::new();
         let mut locations = BTreeMap::new();
         for (index, file) in files.into_iter().enumerate() {
             let game = format!("old-{index}");
@@ -1813,14 +1824,17 @@ mod tests {
                 provider: "@test:fallout".into(),
                 key: "fallout".into(),
                 title: "Fallout".into(),
-                releases: BTreeMap::from([(
+                releases: indexmap::IndexMap::from([(
                     "prepared".into(),
                     DeclaredRelease {
                         system: None,
                         hashes: vec![
                             whole_hash(&root.join("users/default/old/MASTER.DAT")).unwrap()
                         ],
-                        file: Some("fallout-ce/MASTER.DAT".into()),
+                        artifacts: Vec::new(),
+                        file: Some(crate::plugin::DeclaredReleaseFile::AccountRoot(
+                            "fallout-ce/MASTER.DAT".into(),
+                        )),
                     },
                 )]),
             },
@@ -1839,8 +1853,18 @@ mod tests {
                     .iter()
                     .map(|(key, release)| {
                         let mut value = serde_json::json!({"hashes":release.hashes});
-                        if let Some(file) = &release.file {
-                            value["file"] = file.clone().into();
+                        match &release.file {
+                            Some(DeclaredReleaseFile::AccountRoot(file)) => {
+                                value["file"] = file.clone().into();
+                            }
+                            Some(DeclaredReleaseFile::Artifact(file)) => {
+                                value["artifacts"] = release.artifacts.clone().into();
+                                value["file"] = serde_json::json!({
+                                    "artifact": file.artifact,
+                                    "path": file.path,
+                                });
+                            }
+                            None => (),
                         }
                         if let Some(system) = &release.system {
                             value["system"] = system.clone().into();
@@ -1886,7 +1910,9 @@ mod tests {
             .releases
             .get_mut("prepared")
             .unwrap()
-            .file = Some(declared_file.into());
+            .file = Some(crate::plugin::DeclaredReleaseFile::AccountRoot(
+            declared_file.into(),
+        ));
         rules
     }
 
@@ -1974,12 +2000,15 @@ mod tests {
                         provider: "@test:fallout".into(),
                         key: "second".into(),
                         title: "Second".into(),
-                        releases: BTreeMap::from([(
+                        releases: indexmap::IndexMap::from([(
                             "prepared".into(),
                             DeclaredRelease {
                                 system: None,
                                 hashes: vec![whole_hash(&second).unwrap()],
-                                file: Some("second/two/MASTER.DAT".into()),
+                                artifacts: Vec::new(),
+                                file: Some(crate::plugin::DeclaredReleaseFile::AccountRoot(
+                                    "second/two/MASTER.DAT".into(),
+                                )),
                             },
                         )]),
                     },
@@ -2629,11 +2658,12 @@ mod tests {
                 provider: "@test:cart".into(),
                 key: "mario".into(),
                 title: "Mario".into(),
-                releases: BTreeMap::from([(
+                releases: indexmap::IndexMap::from([(
                     "original".into(),
                     DeclaredRelease {
                         system: Some("snes".into()),
                         hashes: vec![whole_hash(&root.path().join("mixed/Mario.sfc")).unwrap()],
+                        artifacts: Vec::new(),
                         file: None,
                     },
                 )]),

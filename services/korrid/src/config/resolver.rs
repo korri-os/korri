@@ -42,6 +42,18 @@ pub struct ResolvedRoute {
     pub core_path: Option<String>,
     pub file_target: Option<ResolvedFileTarget>,
     pub provider_target: Option<crate::GameProviderIdentity>,
+    /// A release with no usable saved location whose declaration names its
+    /// content file inside an artifact (ADR 0013).
+    pub artifact_target: Option<ResolvedArtifactTarget>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedArtifactTarget {
+    pub artifact_id: String,
+    /// Relative to the artifact's ready directory.
+    pub path: String,
+    /// Every artifact the release names, in declaration order.
+    pub release_artifacts: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

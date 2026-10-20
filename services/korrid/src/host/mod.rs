@@ -873,7 +873,7 @@ impl HostRuntime {
                     request.runner_id.as_deref(),
                 )
                 .map_err(|error| crate::route_diagnostic_failure(&error))?;
-                crate::acquisition::require_ready(root, &registry, &route.runner_id)?;
+                crate::acquisition::require_ready(root, &registry, &route)?;
                 let launch = linux_plugin::launch_route(
                     root,
                     &snapshot,

@@ -331,11 +331,50 @@ fail. Ready means that the version directory exists. There is no journal.
 
 The local portal polls `app.acquisition.status`, starts IDs through
 `app.acquisition.start`, and cancels one download through
-`app.acquisition.cancel`. Cancellation keeps partial bytes; unpacking cannot
-be cancelled. Process restart forgets in-memory failures and progress but keeps
-partial bytes for the next start. Downloading reports `bytesDone`, optional
+`app.acquisition.cancel`. Downloading reports `bytesDone`, optional
 `bytesTotal`, and a rate sampled over the last five seconds. Failure copy never
 contains a URL, hash, path, HTTP status or unpack stderr.
+
+ADR 0013 adds a download queue. One job runs at a time; a waiting artifact
+reports `Queued`. `app.acquisition.start { artifactIds }` still means that a
+launch is waiting: its artifacts move to the front of the queue, in request
+order. A background job that is downloading pauses, reports `Queued`, and
+resumes next with a `Range` request. Unpacking is never paused.
+`app.acquisition.download { gameId }` resolves the game's default route as
+`app.acquisition.status` does and appends every artifact that is not ready to
+the end of the queue. The download continues when the person leaves the game.
+
+Cancel stops the download, removes the artifact from the queue and deletes its
+`.downloads` directory: partial and verified files alike, so a cancelled
+download starts again from zero. Unpacking cannot be cancelled. When korrid
+queues an artifact it creates `.downloads/<hex of file 1>.part`, with zero bytes
+if nothing has arrived. Any entry in `.downloads` with no ready directory
+therefore means an interrupted download, including a restart between two files
+or during unpacking. At startup korrid queues every such contribution, ordered
+by the earliest creation time of an entry in its `.downloads`. That entry is the
+file 1 marker, which keeps its creation time when it is renamed to its verified
+name. The creation time records when the person asked; the modification time
+moves while bytes arrive. Where the filesystem reports no creation time, korrid
+uses the modification time, which can put a running download behind a later
+one. Process restart forgets in-memory failures and progress. No new state is
+saved.
+
+While a job downloads or unpacks, korrid holds a logind `sleep` inhibitor in
+`block` mode. The screen may blank, but the device does not suspend. Shutdown
+is not blocked. Without logind, korrid logs the failure and continues.
+
+`app.acquisition.remove { gameId }` frees space. It removes the ready
+directories of the artifacts that this game's declared releases name. It never
+removes an artifact that any runner lists, or one that a release of another
+game in this device's library names. It takes each contribution's `.lock`
+first and never touches saves or account roots. While the game runs it refuses
+with `ActiveSessionConflict`. While one of the game's artifacts is queued,
+downloading or unpacking it refuses with `AcquisitionBusy`; the person cancels
+first.
+
+Game-scoped results (`app.acquisition.status { gameId }`, `.download` and
+`.remove`) set `release: true` on each artifact that one of the game's declared
+releases names. Runner artifacts and device-wide status omit the field.
 
 ### Native runners for specific content
 
@@ -555,11 +594,66 @@ export const games = {
 Game and release keys use legacy local playable-ID segments:
 `[a-z0-9][a-z0-9._-]*`. The registry keys a game by `<plugin id>/<game key>` and
 sets its provider identity to `{ provider: <plugin id>, ref: <game key> }`.
-Each release has non-empty `hashes`, an optional `system`, and an optional `file`
-relative to an account root, without traversal. Hash hex digits accept either
+Each release has non-empty `hashes`, an optional `system`, optional `artifacts`
+and an optional `file`. Hash hex digits accept either
 case and are stored in lowercase. A release without a system uses
 only runners whose `releases` accept its hash. No prepared-game system is invented.
 `declared_hash` returns all enabled declared releases that name a hash.
+
+ADR 0013 lets a release come from artifacts:
+
+```ts
+export const games = {
+  rocknroll: {
+    title: "Mega Man Rock N Roll",
+    releases: {
+      v1: {
+        hashes: ["sha256:…"], // the content file, not the ZIP
+        artifacts: ["@korri:rocknroll/content"],
+        file: { artifact: "@korri:rocknroll/content", path: "data.pck" },
+      },
+    },
+  },
+}
+```
+
+`file` has one of two forms, and the form says where the path starts. A string
+is relative to an account root, without traversal (ADR 0003). An object
+`{ artifact, path }` names a file inside one ready artifact directory. `path` is
+relative: no leading `/`, no empty or `..` segment and no control character.
+Rust decodes `file` as an enum, so every reader handles both forms. Discovery
+hashes only the string form under account roots; it never reads an artifact
+path as an account-root path.
+
+`artifacts` lists full artifact IDs, with the same rule as
+`RunnerRecord.artifacts`: every ID must be a loaded, enabled artifact, which
+may belong to another enabled plugin. Omission means none. `file.artifact` must
+be one of them. A release with `artifacts` must use the object form of `file`;
+a string `file` or a missing `file` with `artifacts` fails. `hashes` stay
+required and are hashes of the content file.
+
+A plugin lists its preferred release first. Releases keep the module's
+property order through QuickJS, JSON and the Rust registry. ECMAScript puts
+array-index keys (`"1"`, `"10"`) before every other key, in numeric order, so a
+release key that is a plain number does not keep its place.
+
+Every reconcile pass creates or keeps the game of each enabled release whose
+`file` is an object. It uses the existing declared-game records only: the
+library item, a release whose identity is the first hash, and the provider link.
+No location is saved: the route comes from the declaration and readiness from
+the cache. A new release goes before the first release that the game declares
+later, so declared releases keep declaration order. A release that is no longer
+declared stays in the game's history and is unavailable. A copy of the content
+file that discovery finds in a source joins the same game.
+
+A release with no usable saved location that an enabled plugin declares with an
+artifact `file` gets an artifact route. A saved `File` or `FileSet` location is
+tried first. The runner matches through its `releases` hashes, so no system is
+needed. `contentPath` is the artifact's ready directory joined with
+`file.path`. `PluginLaunchInput.artifacts` still holds only the runner's
+artifacts. Launch refuses with `ArtifactsNotReady` until the release's and the
+runner's artifacts are all ready, and `app.acquisition.status { gameId }` lists
+both, release artifacts first, without duplicates.
 
 `controls` keeps the previous session-control record shape. Only its export name
 changed; there is no alias for the old name.

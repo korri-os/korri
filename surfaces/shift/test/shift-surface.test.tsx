@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react"
 import { readFileSync } from "node:fs"
 import type {
+  SurfaceGame,
   SurfaceGameplayOverlayPresentation,
   SurfaceModel,
 } from "@contracts/surface/korri-surface"
@@ -16,6 +17,7 @@ import {
   createFixtureHost,
   fixtureModel,
 } from "../src/fixtures/fixture-host"
+import { shiftDownloadLabel } from "../src/shift-download-label"
 import {
   shiftDetailGameFromSurfaceGame,
   shiftGameFromSurfaceGame,
@@ -496,8 +498,8 @@ describe("ShiftSurface", () => {
 
     const sheet = screen.getByRole("dialog")
     expect(sheet.getAttribute("aria-label")).toBe("Actions for Skate 3")
-    fireEvent.click(screen.getByRole("button", { name: "Stop" }))
-    expect(host.calls).toEqual(["game-action:now-playing:L1:stop"])
+    fireEvent.click(screen.getByRole("button", { name: "Continue playing" }))
+    expect(host.calls).toEqual(["game-action:now-playing:L1:resume"])
     expect(screen.queryByRole("dialog")).toBeNull()
   })
 
@@ -1622,5 +1624,118 @@ describe("Shift settings", () => {
     expect(new Set(shiftPartPreviews.map(part => part.id)).size).toBe(
       shiftPartPreviews.length,
     )
+  })
+})
+
+describe("Shift destructive game actions and downloads (ADR 0013)", () => {
+  const removeDownload = {
+    id: "remove-download", label: "Remove download", enabled: true, destructive: true,
+    description: "Deletes its downloaded files from this device. Your saves stay.",
+  } as const
+  const withDownload = (download: SurfaceGame["download"]): SurfaceModel => {
+    const catalog = fixtureModel.catalog
+    if (catalog._tag !== "Ready") throw new Error("fixture catalog")
+    return model({ catalog: { _tag: "Ready", games: catalog.games.map(game =>
+      game.id === "now-playing:L1" ? { ...game, download } : game) } })
+  }
+
+  test("a destructive game action asks first, Cancel first, and sends nothing until the person says yes", () => {
+    const host = createFixtureHost({
+      "now-playing:L1": [
+        { id: "resume", label: "Continue playing", enabled: true },
+        { id: "stop", label: "Stop", enabled: true, destructive: true },
+      ],
+    })
+    render(<ShiftSurface model={model()} host={host} />)
+    act(() => host.press("options"))
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }))
+    expect(host.calls).toEqual([])
+    const sheet = screen.getByRole("dialog")
+    expect(sheet.getAttribute("aria-label")).toBe("Stop?")
+    expect(within(sheet).getByText("This cannot be undone.")).toBeDefined()
+    const buttons = within(sheet).getAllByRole("button").filter(button => !button.classList.contains("shift-sheet-close"))
+    expect(buttons.map(button => button.getAttribute("aria-label"))).toEqual(["Cancel", "Stop"])
+    // The cursor starts on Cancel: a stray confirm backs out.
+    expect(document.activeElement).toBe(buttons[0]!)
+    expect(buttons[1]!.getAttribute("data-tone")).toBe("danger")
+    fireEvent.click(buttons[0]!)
+    expect(host.calls).toEqual([])
+    expect(screen.queryByRole("dialog")).toBeNull()
+
+    act(() => host.press("options"))
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }))
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Stop" }))
+    expect(host.calls).toEqual(["game-action:now-playing:L1:stop"])
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  test("Remove download asks in Korri's words; Back withdraws the question", () => {
+    const host = createFixtureHost({ "now-playing:L1": [removeDownload] })
+    render(<ShiftSurface model={model()} host={host} />)
+    act(() => host.press("options"))
+    fireEvent.click(screen.getByRole("button", { name: "Remove download" }))
+    const sheet = screen.getByRole("dialog")
+    expect(sheet.getAttribute("aria-label")).toBe("Remove download?")
+    expect(within(sheet).getByText("Deletes its downloaded files from this device. Your saves stay.")).toBeDefined()
+    act(() => host.press("back"))
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(host.calls).toEqual([])
+    act(() => host.press("options"))
+    fireEvent.click(screen.getByRole("button", { name: "Remove download" }))
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remove download" }))
+    expect(host.calls).toEqual(["game-action:now-playing:L1:remove-download"])
+  })
+
+  test("Download and Cancel download are not destructive and go at once", () => {
+    const host = createFixtureHost({ "now-playing:L1": [
+      { id: "download", label: "Download", enabled: true },
+      { id: "cancel-download", label: "Cancel download", enabled: true },
+    ] })
+    render(<ShiftSurface model={model()} host={host} />)
+    act(() => host.press("options"))
+    fireEvent.click(screen.getByRole("button", { name: "Download" }))
+    expect(host.calls).toEqual(["game-action:now-playing:L1:download"])
+    act(() => host.press("options"))
+    fireEvent.click(screen.getByRole("button", { name: "Cancel download" }))
+    expect(host.calls).toEqual(["game-action:now-playing:L1:download", "game-action:now-playing:L1:cancel-download"])
+  })
+
+  test("words each download state, and states nothing Korri did not send", () => {
+    expect(shiftDownloadLabel(undefined)).toBeUndefined()
+    expect(shiftDownloadLabel({})).toBe("Needs a download")
+    expect(shiftDownloadLabel({ bytes: 1_500_000_000 })).toBe("Needs a 1.5 GB download")
+    expect(shiftDownloadLabel({ bytes: 612_000_000, queued: true })).toBe("Waiting to download")
+    expect(shiftDownloadLabel({ bytes: 840_000_000, progress: { done: 344_400_000, total: 840_000_000 } })).toBe("Downloading 41%")
+    expect(shiftDownloadLabel({ progress: { done: 200, total: 100 } })).toBe("Downloading 100%")
+    expect(shiftDownloadLabel({ progress: { done: 0 } })).toBe("Downloading")
+    expect(shiftDetailGameFromSurfaceGame({ id: "g", title: "G", download: { bytes: 48_000 } }).download).toBe("Needs a 48 KB download")
+    expect(shiftGameFromSurfaceGame({ id: "g", title: "G" }).download).toBeUndefined()
+  })
+
+  test("the hero leads its chips with the download state, so Options' download actions have a reason", () => {
+    const host = createFixtureHost({ "now-playing:L1": [{ id: "cancel-download", label: "Cancel download", enabled: true }] })
+    const { container, rerender } = render(<ShiftSurface model={withDownload({ bytes: 1_500_000_000, queued: true })} host={host} />)
+    const chip = () => container.querySelector(".shift-cine-chip.is-download")
+    expect(chip()?.textContent).toBe("Waiting to download")
+    rerender(<ShiftSurface model={withDownload({ bytes: 1_500_000_000, progress: { done: 615_000_000, total: 1_500_000_000 } })} host={host} />)
+    expect(chip()?.textContent).toBe("Downloading 41%")
+    rerender(<ShiftSurface model={withDownload({ bytes: 1_500_000_000 })} host={host} />)
+    expect(chip()?.textContent).toBe("Needs a 1.5 GB download")
+    rerender(<ShiftSurface model={withDownload(undefined)} host={host} />)
+    expect(chip()).toBeNull()
+  })
+
+  test("a game's detail states its download beside its play history", () => {
+    const catalog = fixtureModel.catalog
+    if (catalog._tag !== "Ready") throw new Error("fixture catalog")
+    const host = createFixtureHost({ "local-game:wl4": [{ id: "download", label: "Download", enabled: true }] })
+    const { container } = render(<ShiftSurface host={host} model={model({ catalog: { _tag: "Ready", games: catalog.games.map(game =>
+      game.id === "local-game:wl4" ? { ...game, download: { bytes: 840_000_000 } } : game) } })} />)
+    const library = screen.getByRole("button", { name: "Library" })
+    fireEvent.focus(library)
+    fireEvent.click(library)
+    fireEvent.click(screen.getByRole("button", { name: "Wario Land 4" }))
+    expect(container.querySelector("[data-shift-detail] .shift-detail-download")?.textContent).toBe("Needs a 840 MB download")
+    expect(screen.getByRole("button", { name: "Options" })).toBeDefined()
   })
 })

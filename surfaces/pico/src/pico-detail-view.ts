@@ -22,8 +22,10 @@ export interface PicoDetailView {
    */
   readonly stats: readonly { readonly figure: string; readonly caption: string }[]
   readonly locations?: readonly PicoShelfLocation[]
-  /** "1.5 GB DOWNLOAD" when playing first fetches something; see picoDownloadLabel. */
+  /** "1.5 GB DOWNLOAD", "QUEUED", "DOWNLOADING 41%"; see picoDownloadLabel. */
   readonly download?: string
+  /** Korri's measured position while the download runs, for the bar. */
+  readonly downloadProgress?: { readonly done: number; readonly total?: number }
 }
 
 export function picoDetailViewFromGame(game: SurfaceGame): PicoDetailView {
@@ -36,6 +38,7 @@ export function picoDetailViewFromGame(game: SurfaceGame): PicoDetailView {
     primaryLabel: game.resumable === true ? "CONTINUE" : "PLAY",
     stats: picoStatsFor(game),
     ...(download === undefined ? {} : { download }),
+    ...(game.download?.progress === undefined ? {} : { downloadProgress: game.download.progress }),
     ...(game.launchLocations === undefined || game.launchLocations.length === 0
       ? {}
       : { locations: game.launchLocations }),
@@ -68,12 +71,27 @@ export function picoStatsFor(
 
 /**
  * What a game still has to fetch before it plays, as one chip: "1.5 GB
- * DOWNLOAD", or "DOWNLOAD NEEDED" when Korri knows that but not how much.
- * Absent when Korri said nothing, which is every game that plays at once.
+ * DOWNLOAD", or "DOWNLOAD NEEDED" when Korri knows that but not how much;
+ * "QUEUED" while it waits behind another download; "DOWNLOADING 41%" while
+ * it runs, or "DOWNLOADING" when Korri knows no end. Absent when Korri said
+ * nothing, which is every game that plays at once.
  */
 export function picoDownloadLabel(game: Pick<SurfaceGame, "download">): string | undefined {
-  if (game.download === undefined) return undefined
-  return game.download.bytes === undefined ? "DOWNLOAD NEEDED" : `${picoBytesLabel(game.download.bytes)} DOWNLOAD`
+  const download = game.download
+  if (download === undefined) return undefined
+  if (download.progress !== undefined) {
+    const percent = picoPercent(download.progress)
+    return percent === undefined ? "DOWNLOADING" : `DOWNLOADING ${percent}%`
+  }
+  if (download.queued === true) return "QUEUED"
+  return download.bytes === undefined ? "DOWNLOAD NEEDED" : `${picoBytesLabel(download.bytes)} DOWNLOAD`
+}
+
+/** Whole percent done, never rounded up to 100 before the end; undefined
+ * without a known end. */
+export function picoPercent(progress: { readonly done: number; readonly total?: number }): number | undefined {
+  if (progress.total === undefined || progress.total <= 0) return undefined
+  return Math.max(0, Math.min(100, Math.floor((progress.done / progress.total) * 100)))
 }
 
 /** "1.5 GB", "612 MB", "48 KB": decimal units, one decimal below ten. */

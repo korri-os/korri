@@ -88,6 +88,7 @@ fn route() -> korrid::config::resolver::ResolvedRoute {
         core_path: None,
         file_target: None,
         provider_target: None,
+        artifact_target: None,
     }
 }
 

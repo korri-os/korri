@@ -13,6 +13,9 @@ export interface ShiftCineChipsProps {
   readonly favorite?: boolean
   /** Marks a fresh/recommended pick — leads the row with a reason chip. */
   readonly fresh?: boolean
+  /** What the game still has to fetch ("Downloading 41%"). Leads the row: it
+   * is why Options offers Download, Cancel download or Remove download. */
+  readonly download?: string
 }
 
 export function ShiftCineChips({
@@ -23,9 +26,11 @@ export function ShiftCineChips({
   playtimeLabel,
   favorite,
   fresh,
+  download,
 }: ShiftCineChipsProps) {
   return (
     <div className="shift-cine-chips">
+      {download ? <ShiftCineChip tone="download">{download}</ShiftCineChip> : null}
       {fresh ? <ShiftCineChip tone="reason">Fresh pick</ShiftCineChip> : null}
       {subtitle ? <ShiftCineChip>{subtitle}</ShiftCineChip> : null}
       {genre ? <ShiftCineChip>{genre}</ShiftCineChip> : null}

@@ -12,6 +12,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { createAcquisitionGate, type AcquisitionGameRef } from "./acquisition-gate"
+import { createGameDownloads, type DownloadGameRef } from "./game-downloads"
 import { createRunnerChooser } from "./runner-chooser"
 import { createControllers, type Controllers } from "../input/controllers"
 import { entryKey, type LaunchablesState, type PortalEntry } from "../launchables/state"
@@ -20,11 +21,14 @@ import type { KorridClient, SessionStartResult } from "../korrid/client"
 import { settingsFrom } from "./settings-model"
 import type { PortalSurface } from "./surface-registry"
 import {
+  DOWNLOAD_ACTION_IDS,
   entryForId,
   entryForLaunchLocation,
   gameActionsForEntry,
   launchLocationsForEntry,
+  surfaceDownloadFrom,
   surfaceModelFrom,
+  type GameDownloadContext,
 } from "./surface-model"
 import { useLaunchables } from "./use-launchables"
 
@@ -92,7 +96,22 @@ export function SurfaceRoot({
   launchablesRef.current = launchables
   // Downloads a launch needs come before reserve/start; the gate is a sibling
   // store, so the launch lifecycle never learns about artifacts.
-  const acquisition = useMemo(() => createAcquisitionGate(korrid), [korrid])
+  // Downloads asked for from a game run in the background; the gate tells
+  // this store when a launch's download changed what is on disk.
+  // The gate's open launch counts as a pending download: a Cancel on another
+  // game leaves the runtime it is fetching.
+  const gateGameRef = useRef<() => readonly string[]>(() => [])
+  const downloads = useMemo(() => createGameDownloads(korrid, {
+    heldGames: () => gateGameRef.current(),
+  }), [korrid])
+  useEffect(() => () => downloads.dispose(), [downloads])
+  const acquisition = useMemo(() => createAcquisitionGate(korrid, {
+    onSettled: () => void downloads.refresh(),
+  }), [downloads, korrid])
+  gateGameRef.current = () => {
+    const gameId = acquisition.getGameId()
+    return gameId === undefined ? [] : [gameId]
+  }
   useEffect(() => () => acquisition.dispose(), [acquisition])
   /**
    * The shared startup behind the gate: once every artifact the game's runner
@@ -130,7 +149,8 @@ export function SurfaceRoot({
   }), [gatedStart, korrid])
   const runnerChoice = useSyncExternalStore(runner.subscribe, runner.getSnapshot)
   const acquisitionStatus = useSyncExternalStore(acquisition.subscribe, acquisition.getStatus)
-  const downloadNeeds = useSyncExternalStore(acquisition.subscribe, acquisition.getNeeds)
+  const downloadFacts = useSyncExternalStore(downloads.subscribe, downloads.getFacts)
+  const downloadProblem = useSyncExternalStore(downloads.subscribe, downloads.getStatus)
   const surfaceInput = useMemo(createInputBus, [])
   useEffect(() => bus.on(action => {
     // One dispatch decision, before subscriber fanout: cancelling a chooser
@@ -209,24 +229,46 @@ export function SurfaceRoot({
   const localGameIds = useMemo(() => localGameIdsOf(state), [state])
   useEffect(() => {
     if (localGameIds === "") return
-    void acquisition.refreshNeeds(localGameIds.split("\n"))
-  }, [acquisition, localGameIds])
+    void downloads.refresh(localGameIds.split("\n"))
+  }, [downloads, localGameIds])
   const surfaceToKorridId = useMemo(() => localGameIdsBySurfaceId(state), [state])
   surfaceIdsRef.current = useMemo(() => new Map([...surfaceToKorridId].map(([surfaceId, korridId]) => [korridId, surfaceId])), [surfaceToKorridId])
   // Chooser transitions are not new catalog observations. Keep that identity
   // so session-return consumers do not discard an outstanding launch request.
   const model = useMemo(() => {
-    const catalog = baseModel.catalog._tag !== "Ready" || downloadNeeds.size === 0 ? baseModel.catalog : {
+    const catalog = baseModel.catalog._tag !== "Ready" || downloadFacts.size === 0 ? baseModel.catalog : {
       _tag: "Ready" as const,
       games: baseModel.catalog.games.map(game => {
         const korridId = surfaceToKorridId.get(game.id)
-        if (korridId === undefined || !downloadNeeds.has(korridId)) return game
-        const bytes = downloadNeeds.get(korridId)
-        return { ...game, download: bytes === undefined ? {} : { bytes } }
+        const download = korridId === undefined ? undefined : surfaceDownloadFrom(downloadFacts.get(korridId))
+        return download === undefined ? game : { ...game, download }
       }),
     }
-    return { ...baseModel, catalog, status: acquisitionStatus ?? baseModel.status, runnerChoice }
-  }, [baseModel, runnerChoice, acquisitionStatus, downloadNeeds, surfaceToKorridId])
+    return { ...baseModel, catalog, status: acquisitionStatus ?? downloadProblem ?? baseModel.status, runnerChoice }
+  }, [baseModel, runnerChoice, acquisitionStatus, downloadProblem, downloadFacts, surfaceToKorridId])
+  const surfaceToKorridIdRef = useRef(surfaceToKorridId)
+  surfaceToKorridIdRef.current = surfaceToKorridId
+  /**
+   * The download side of one presented game, when this device fetches for
+   * it: korrid's id, and what its actions are decided from. Facts korrid has
+   * not reported yet are asked for here, once, and arrive as a new model.
+   */
+  const downloadSubject = useCallback((id: string): { ref: DownloadGameRef; context?: GameDownloadContext } | undefined => {
+    const current = launchablesRef.current.getState()
+    const korridId = surfaceToKorridIdRef.current.get(id)
+    const entry = entryForId(current, id)
+    if (korridId === undefined || entry?.kind !== "game" || current._tag === "Loading") return undefined
+    const ref = { id: korridId, surfaceId: id, title: entry.game.title }
+    const facts = downloads.getFacts().get(korridId)
+    if (facts === undefined) {
+      downloads.learn(korridId)
+      return { ref }
+    }
+    const live = current.entries.some(candidate => candidate.kind === "now-playing" && candidate.session.gameId === korridId &&
+      (candidate.session.host === undefined || candidate.session.host === entry.game.host))
+    const enabled = current._tag === "Ready" && current.unavailableSessionStatus === undefined && !downloads.isPending(korridId)
+    return { ref, context: { facts, live, enabled } }
+  }, [downloads])
 
   // The host object is stable: it reads the latest state through the closures
   // above rather than capturing a snapshot, so re-creating it on every model
@@ -304,7 +346,7 @@ export function SurfaceRoot({
       gameActions: id => {
         const current = launchablesRef.current.getState()
         const entry = entryForId(current, id)
-        return [...gameActionsForEntry(entry), ...(localRunnerEntry(entry) ? [{
+        return [...gameActionsForEntry(entry, downloadSubject(id)?.context), ...(localRunnerEntry(entry) ? [{
           id: "runners", label: "Runners on this device", enabled: current._tag === "Ready" && current.unavailableSessionStatus === undefined,
         }] : [])]
       },
@@ -316,6 +358,16 @@ export function SurfaceRoot({
           if (current.unavailableSessionStatus !== undefined) return
           const local = localRunnerEntry(entry)
           if (local) void runner.open(local.game.id, local.game.title, "inspect")
+          return
+        }
+        // Only a download action on offer now, enabled, is authority.
+        if (DOWNLOAD_ACTION_IDS.has(actionId)) {
+          const subject = downloadSubject(gameId)
+          const offered = gameActionsForEntry(entry, subject?.context).find(action => action.id === actionId && action.enabled)
+          if (subject === undefined || offered === undefined) return
+          if (actionId === "download") downloads.download(subject.ref)
+          else if (actionId === "cancel-download") downloads.cancel(subject.ref)
+          else downloads.remove(subject.ref)
           return
         }
         if (actionId === "stop") stopSession(entry)
@@ -332,15 +384,17 @@ export function SurfaceRoot({
         if (!acquisition.retry()) reload()
       },
       dismiss: () => {
-        if (!acquisition.dismiss()) dismissNotice()
+        if (!acquisition.dismiss() && !downloads.dismiss()) dismissNotice()
       },
       reload: () => {
         reload()
-        void acquisition.refreshNeeds()
+        void downloads.refresh()
       },
     }),
     [
       acquisition,
+      downloads,
+      downloadSubject,
       surfaceInput,
       runner,
       scanWifi,

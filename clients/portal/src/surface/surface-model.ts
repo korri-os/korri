@@ -20,6 +20,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { mergePlayStats, type PortalGameCopy } from "../launchables/fold-games"
 import type { PlayStats } from "@contracts/generated/korrid"
+import type { GameDownloadFacts } from "./game-downloads"
 import {
   entryKey,
   isLocalCatalogSession,
@@ -217,18 +218,76 @@ function gameFromEntry(
   }
 }
 
+/** The game action ids that act on a game's download (ADR 0013). */
+export const DOWNLOAD_ACTION_IDS: ReadonlySet<string> = new Set(["download", "cancel-download", "remove-download"])
+
+/** The treaty's `download` for a game, from what korrid's artifacts add up to. */
+export function surfaceDownloadFrom(facts: GameDownloadFacts | undefined): SurfaceGame["download"] {
+  if (facts === undefined || !facts.needs) return undefined
+  return {
+    ...(facts.bytes === undefined ? {} : { bytes: facts.bytes }),
+    ...(facts.queued ? { queued: true as const } : {}),
+    ...(facts.progress === undefined ? {} : { progress: facts.progress }),
+  }
+}
+
+/** What the download actions of one game are decided from. */
+export interface GameDownloadContext {
+  readonly facts: GameDownloadFacts
+  /** A session of this game is live, here or anywhere korrid reports it. */
+  readonly live: boolean
+  /** Korri can take a game action now (nothing else under way, no action pending). */
+  readonly enabled: boolean
+}
+
 /**
- * The running session is the one game Korri can currently act on beyond
- * launching, so it is the only entry that carries a command sheet today.
+ * What a person can do with a game's download from the game itself. Download
+ * while it needs one and nothing is under way; Cancel while anything is;
+ * Remove once its own files are Ready and it is not running. Cancel cannot
+ * stop unpacking, or a runtime another game's pending download needs, so it
+ * stays on offer, dimmed and saying why, until that ends.
+ */
+function downloadActions({ facts, live, enabled }: GameDownloadContext): readonly SurfaceAction[] {
+  const actions: SurfaceAction[] = []
+  if (facts.needs && !facts.active) {
+    actions.push({
+      id: "download", label: "Download", enabled,
+      ...(facts.failure === undefined ? {} : { description: `The last try failed. ${facts.failure}` }),
+    })
+  }
+  if (facts.active) {
+    actions.push({
+      id: "cancel-download", label: "Cancel download", enabled: enabled && facts.stoppable,
+      ...(facts.stoppable ? {}
+        : facts.shared === true ? { description: "Another game's download needs what is left, so it goes on." }
+        : { description: "Unpacking cannot be stopped. It ends on its own." }),
+    })
+  }
+  if (facts.ownReady && !facts.active && !live) {
+    actions.push({
+      id: "remove-download", label: "Remove download", enabled, destructive: true,
+      description: "Deletes its downloaded files from this device. Your saves stay.",
+    })
+  }
+  return actions
+}
+
+/**
+ * The running session can be continued or stopped. A local game whose files
+ * or runtime come from artifacts can be downloaded, cancelled and removed
+ * from the game itself, when `download` says what korrid reports for it.
  */
 export function gameActionsForEntry(
   entry: PortalEntry | undefined,
+  download?: GameDownloadContext,
 ): readonly SurfaceAction[] {
-  if (entry?.kind !== "now-playing") return []
-  return [
-    { id: "resume", label: "Continue playing", enabled: true },
-    { id: "stop", label: "Stop", enabled: true, destructive: true },
-  ]
+  if (entry?.kind === "now-playing") {
+    return [
+      { id: "resume", label: "Continue playing", enabled: true },
+      { id: "stop", label: "Stop", enabled: true, destructive: true },
+    ]
+  }
+  return download === undefined ? [] : downloadActions(download)
 }
 
 /** Surface status names an actual presented entry, never a raw Rust game id. */

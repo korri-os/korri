@@ -94,6 +94,7 @@ export function ShiftCineHero({
                 playtimeLabel={game.playtimeLabel}
                 favorite={game.favorite}
                 fresh={game.fresh}
+                download={game.download}
               />
             </>
           )}

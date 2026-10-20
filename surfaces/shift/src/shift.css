@@ -341,6 +341,12 @@
 	color: var(--shift-accent);
 }
 
+/* What the game still has to fetch: the accent, so it reads as the reason
+ * Options offers Download, Cancel download or Remove download. */
+[data-shift-detail] .shift-detail-download {
+	color: var(--shift-accent);
+}
+
 [data-shift-detail] .shift-detail-actions {
 	display: flex;
 	flex-wrap: wrap;
@@ -682,6 +688,14 @@
 [data-shift-home] .shift-cine-chip.is-fav {
 	color: var(--shift-accent);
 	border-color: color-mix(in srgb, var(--shift-accent) 50%, transparent);
+}
+
+/* A download the game still needs: the accent, filled, so it leads the row
+ * without borrowing the failure chip's danger red. */
+[data-shift-home] .shift-cine-chip.is-download {
+	color: var(--shift-accent);
+	border-color: color-mix(in srgb, var(--shift-accent) 50%, transparent);
+	background: color-mix(in srgb, var(--shift-accent) 14%, transparent);
 }
 
 :is([data-shift-home], [data-shift-settings]) .shift-cine-legend {
@@ -2911,6 +2925,15 @@ button.shift-sheet-control:is(:hover, :focus, [data-korri-active-focus]) {
 	margin: 0;
 	font-size: var(--shift-text-fine);
 	line-height: 1.35;
+	color: var(--shift-ink-dim);
+}
+
+/* The question a destructive game action asks: its own description, plain,
+ * above the choice. */
+.shift-game-action-confirm-message {
+	margin: 0 0 var(--shift-space-2);
+	font-size: var(--shift-text-fine);
+	line-height: 1.45;
 	color: var(--shift-ink-dim);
 }
 

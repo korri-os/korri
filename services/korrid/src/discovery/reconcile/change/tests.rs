@@ -207,12 +207,13 @@ fn declaration() -> (String, crate::plugin::DeclaredGame) {
             provider: "@test:games".into(),
             key: "wario".into(),
             title: "Declared Wario".into(),
-            releases: BTreeMap::from([
+            releases: indexmap::IndexMap::from([
                 (
                     "original".into(),
                     crate::plugin::DeclaredRelease {
                         system: Some("gba".into()),
                         hashes: vec![format!("sha1:{}", "a".repeat(40))],
+                        artifacts: Vec::new(),
                         file: None,
                     },
                 ),
@@ -221,7 +222,10 @@ fn declaration() -> (String, crate::plugin::DeclaredGame) {
                     crate::plugin::DeclaredRelease {
                         system: None,
                         hashes: vec![hash('b')],
-                        file: Some("built/game".into()),
+                        artifacts: Vec::new(),
+                        file: Some(crate::plugin::DeclaredReleaseFile::AccountRoot(
+                            "built/game".into(),
+                        )),
                     },
                 ),
             ]),
@@ -440,4 +444,132 @@ fn declared_unreadable_and_mismatch_keep_locations_but_absent_marks_missing() {
     scan.declared = resolve(&scan);
     let absent = reconcile(&with_history(scan, &first), &current, LATER);
     assert_eq!(absent.missing_locations, 1);
+}
+
+fn artifact_release(c: char) -> crate::plugin::DeclaredRelease {
+    crate::plugin::DeclaredRelease {
+        system: None,
+        hashes: vec![hash(c)],
+        artifacts: vec!["@test:games/content".into()],
+        file: Some(crate::plugin::DeclaredReleaseFile::Artifact(
+            crate::plugin::ArtifactContentFile {
+                artifact: "@test:games/content".into(),
+                path: "Rock/data.pck".into(),
+            },
+        )),
+    }
+}
+fn artifact_game(releases: &[(&str, char)]) -> (String, crate::plugin::DeclaredGame) {
+    (
+        "@test:games/rocknroll".into(),
+        crate::plugin::DeclaredGame {
+            provider: "@test:games".into(),
+            key: "rocknroll".into(),
+            title: "Rock N Roll".into(),
+            releases: releases
+                .iter()
+                .map(|(key, c)| ((*key).to_owned(), artifact_release(*c)))
+                .collect(),
+        },
+    )
+}
+fn declared_report(games: &[(String, crate::plugin::DeclaredGame)]) -> ScanReport {
+    ScanReport {
+        declared_games: games.iter().cloned().collect(),
+        ..ScanReport::default()
+    }
+}
+fn release_ids(snapshot: &ConfigSnapshot, game: &str) -> Vec<String> {
+    snapshot.library[game]
+        .releases
+        .iter()
+        .map(|r| r.id.0.clone())
+        .collect()
+}
+
+#[test]
+fn an_artifact_release_is_in_the_library_before_its_download_without_a_location() {
+    // Declared order is not key order: `v2` is preferred over `v1`.
+    let declared = artifact_game(&[("v2", 'e'), ("v1", 'd')]);
+    let initial = snapshot();
+    let change = reconcile(&declared_report(&[declared.clone()]), &initial, NOW);
+    let snapshot = apply(&initial, &change);
+    assert_eq!(snapshot.library.len(), 1);
+    assert_eq!(release_ids(&snapshot, "rock-n-roll"), ["v2", "v1"]);
+    let release = &snapshot.library["rock-n-roll"].releases[0];
+    assert_eq!(
+        release.identity,
+        Some(crate::config::library::LibraryIdentity::Hash { value: hash('e') })
+    );
+    assert!(release.system.is_none());
+    assert!(snapshot.locations.is_empty());
+    assert!(change.origins.is_empty());
+    let link = &snapshot.provider_links[&declared.0];
+    assert_eq!(link.playable.0, "rock-n-roll");
+    assert_eq!(link.provider.0, "@test:games");
+    assert_eq!(link.refs[0].value.0, "rocknroll");
+    // Rescan keeps the game and writes nothing.
+    let again = reconcile(&declared_report(&[declared]), &snapshot, LATER);
+    assert!(again.library_yaml.is_none());
+    assert!(again.device_yaml.is_none());
+}
+
+#[test]
+fn a_release_no_longer_declared_stays_as_history_and_a_new_one_keeps_declared_order() {
+    let initial = snapshot();
+    let first = reconcile(
+        &declared_report(&[artifact_game(&[("v1", 'd')])]),
+        &initial,
+        NOW,
+    );
+    let snapshot = apply(&initial, &first);
+    // A plugin update prefers v3, keeps v2 after it and drops v1.
+    let change = reconcile(
+        &declared_report(&[artifact_game(&[("v3", 'f'), ("v2", 'e')])]),
+        &snapshot,
+        LATER,
+    );
+    let updated = apply(&snapshot, &change);
+    // Declared releases keep declaration order among themselves. History
+    // keeps its place; it has no route, so v3 is the default version.
+    assert_eq!(release_ids(&updated, "rock-n-roll"), ["v1", "v3", "v2"]);
+    // The dropped release is unavailable: no declaration and no location.
+    assert!(!updated.locations.contains_key(&hash('d')));
+    // The plugin is disabled: nothing is deleted.
+    let disabled = reconcile(&ScanReport::default(), &updated, LATER);
+    assert!(disabled.library_yaml.is_none());
+    assert!(disabled.device_yaml.is_none());
+}
+
+#[test]
+fn a_copy_discovered_in_a_source_joins_the_artifact_release() {
+    let declared = artifact_game(&[("v1", 'a')]);
+    let initial = snapshot();
+    let first = reconcile(&declared_report(&[declared.clone()]), &initial, NOW);
+    let before = apply(&initial, &first);
+    let mut scan = with_history(report(vec![unit("rock.gba", 'a')]), &first);
+    scan.declared_games = BTreeMap::from([declared.clone()]);
+    let change = reconcile(&scan, &before, LATER);
+    let snapshot = apply(&before, &change);
+    assert_eq!(snapshot.library.len(), 1);
+    assert_eq!(release_ids(&snapshot, "rock-n-roll"), ["v1"]);
+    assert_eq!(snapshot.locations[&hash('a')].len(), 1);
+    assert_eq!(
+        snapshot.provider_links[&declared.0].playable.0,
+        "rock-n-roll"
+    );
+
+    // Discovered first, declared later: still one game and one release.
+    let initial = self::snapshot();
+    let mut scan = report(vec![unit("rock.gba", 'a')]);
+    scan.declared_games = BTreeMap::from([declared]);
+    let change = reconcile(&scan, &initial, NOW);
+    let snapshot = apply(&initial, &change);
+    assert_eq!(snapshot.library.len(), 1);
+    let (_, game) = snapshot.library.iter().next().unwrap();
+    assert_eq!(game.releases.len(), 1);
+    assert_eq!(
+        game.releases[0].identity.as_ref().unwrap().value(),
+        hash('a')
+    );
 }

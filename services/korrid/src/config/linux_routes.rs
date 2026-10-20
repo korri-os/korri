@@ -1,7 +1,7 @@
 use super::resolver::*;
 use crate::{
     config::{ConfigSnapshot, Location},
-    plugin::PluginRegistry,
+    plugin::{DeclaredReleaseFile, PluginRegistry},
 };
 use std::{collections::BTreeSet, path::Path};
 
@@ -74,6 +74,32 @@ fn linux_route_candidates_for_runner(
                         .get(system_id)
                         .and_then(|system| system.title.clone().or_else(|| system.name.clone()))
                 });
+            let route =
+                |file_target, provider_target, artifact_target, flattened_target| ResolvedRoute {
+                    playable_id: game_id.into(),
+                    title: game.title.clone(),
+                    release_id: key.into(),
+                    identity: snapshot.game_identity(game_id),
+                    provider_id: runner
+                        .family
+                        .clone()
+                        .unwrap_or_else(|| runner.id.split_once('/').unwrap().0.into()),
+                    system_id: system_id.into(),
+                    system_title: system_title.clone(),
+                    runner_id: runner.id.clone(),
+                    family_id: runner.family.clone(),
+                    integration_token: String::new(),
+                    flattened_target,
+                    linux_runner: Some(ResolvedLinuxRunner {
+                        program: program.display().to_string(),
+                    }),
+                    core_path: core_path.clone(),
+                    file_target,
+                    provider_target,
+                    artifact_target,
+                };
+            // A saved location is tried before the declaration's artifact.
+            let mut routed = false;
             for location in snapshot.locations.get(key).into_iter().flatten() {
                 let (file_target, provider_target, flattened_target) =
                     if let Location::ProviderRef {
@@ -162,29 +188,18 @@ fn linux_route_candidates_for_runner(
                         (Some(target), None, format!("{}:{}", storage.0, path))
                     };
                 emitted.insert(runner.id.clone());
-                candidates.push(ResolvedRoute {
-                    playable_id: game_id.into(),
-                    title: game.title.clone(),
-                    release_id: key.into(),
-                    identity: snapshot.game_identity(game_id),
-                    provider_id: runner
-                        .family
-                        .clone()
-                        .unwrap_or_else(|| runner.id.split_once('/').unwrap().0.into()),
-                    system_id: system_id.into(),
-                    system_title,
-                    runner_id: runner.id.clone(),
-                    family_id: runner.family.clone(),
-                    integration_token: String::new(),
-                    flattened_target,
-                    linux_runner: Some(ResolvedLinuxRunner {
-                        program: program.display().to_string(),
-                    }),
-                    core_path: core_path.clone(),
-                    file_target,
-                    provider_target,
-                });
+                candidates.push(route(file_target, provider_target, None, flattened_target));
+                routed = true;
                 break;
+            }
+            // ADR 0013: no usable saved location, but an enabled plugin
+            // declares this release's content file inside an artifact.
+            if !routed {
+                if let Some(target) = artifact_target(registry, key) {
+                    let flattened = format!("{}:{}", target.artifact_id, target.path);
+                    emitted.insert(runner.id.clone());
+                    candidates.push(route(None, None, Some(target), flattened));
+                }
             }
         }
     }
@@ -193,6 +208,27 @@ fn linux_route_candidates_for_runner(
     } else {
         Ok(candidates)
     }
+}
+
+/// The first enabled declaration of this release key whose file is in an
+/// artifact. Readiness is not checked here; the launch gate checks it.
+fn artifact_target(registry: &PluginRegistry, key: &str) -> Option<ResolvedArtifactTarget> {
+    registry
+        .declared_hash(key)
+        .into_iter()
+        .find_map(|declared| {
+            let file = match &declared.release.file {
+                Some(DeclaredReleaseFile::Artifact(file)) => file,
+                // A prepared file reaches the library as a saved location,
+                // which the location loop has already tried.
+                Some(DeclaredReleaseFile::AccountRoot(_)) | None => return None,
+            };
+            Some(ResolvedArtifactTarget {
+                artifact_id: file.artifact.clone(),
+                path: file.path.clone(),
+                release_artifacts: declared.release.artifacts.clone(),
+            })
+        })
 }
 
 pub fn stored_runner<'a>(snapshot: &'a ConfigSnapshot, route: &ResolvedRoute) -> Option<&'a str> {

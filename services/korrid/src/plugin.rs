@@ -5,6 +5,7 @@
 //! effects; this module evaluates, validates and combines their declarations.
 
 use crate::plugin_discovery::ReleaseDiscoveryProvider;
+use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Deserializer};
@@ -123,19 +124,46 @@ pub struct DeclaredGame {
     pub provider: String,
     pub key: String,
     pub title: String,
-    pub releases: BTreeMap<String, DeclaredRelease>,
+    /// Declaration order is the plugin's preference order (ADR 0013): the
+    /// first release is the default version. JavaScript property order
+    /// carries it through QuickJS, so it is kept here and never re-sorted.
+    pub releases: IndexMap<String, DeclaredRelease>,
 }
 
-/// One declared release: hashes (`sha256:` or `sha1:`) and an optional
-/// prepared file relative to an account root.
+/// One declared release: hashes (`sha256:` or `sha1:`) of its content file,
+/// an optional system, an optional content file and the artifacts that hold
+/// it (ADR 0013).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct DeclaredRelease {
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub system: Option<String>,
     pub hashes: Vec<String>,
+    /// Full artifact ids, as `RunnerRecord.artifacts`. Omission means none.
+    #[serde(default)]
+    pub artifacts: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub file: Option<String>,
+    pub file: Option<DeclaredReleaseFile>,
+}
+
+/// Where a declared release's content file starts. The form of the value says
+/// which folder the path is relative to, so no string is ever parsed for it.
+/// Every reader must handle both forms; an artifact path is never an
+/// account-root path (ADR 0013).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(untagged)]
+pub enum DeclaredReleaseFile {
+    /// A prepared file relative to an account root (ADR 0003).
+    AccountRoot(String),
+    /// A file inside one ready artifact directory.
+    Artifact(ArtifactContentFile),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ArtifactContentFile {
+    pub artifact: String,
+    pub path: String,
 }
 
 /// A declared release found by one of its hashes.
@@ -524,6 +552,22 @@ impl PluginRegistry {
             }
             declared_games.extend(plugin.declared_games.clone());
         }
+        // Same rule as runner artifacts: every id is loaded and enabled.
+        for (id, game) in &declared_games {
+            for release in game.releases.values() {
+                if release
+                    .artifacts
+                    .iter()
+                    .any(|id| !artifacts.contains_key(id))
+                {
+                    return Err(invalid_contribution(
+                        "game",
+                        id,
+                        "release artifact is not loaded and enabled",
+                    ));
+                }
+            }
+        }
         for rules in content_rules.values_mut() {
             if rules.layouts.is_empty() {
                 rules.layouts.push("**/{title}.{ext}".into());
@@ -675,6 +719,16 @@ impl PluginRegistry {
             .artifacts
             .iter()
             .map(|id| self.artifact(id))
+            .collect()
+    }
+
+    /// A declared release's artifacts, in declaration order. Admission
+    /// already proved that each id is loaded and enabled.
+    pub fn artifacts_for_release(&self, release: &DeclaredRelease) -> Vec<&ArtifactRecord> {
+        release
+            .artifacts
+            .iter()
+            .filter_map(|id| self.artifacts.get(id))
             .collect()
     }
 
@@ -912,7 +966,7 @@ struct PluginDeclaration {
 #[serde(deny_unknown_fields)]
 struct DeclaredGameContribution {
     title: String,
-    releases: BTreeMap<String, DeclaredRelease>,
+    releases: IndexMap<String, DeclaredRelease>,
 }
 
 /// The caller supplies publisher identity from verified packaging or trusted
@@ -1286,20 +1340,53 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
             for hash in &mut release.hashes {
                 hash.make_ascii_lowercase();
             }
-            if let Some(file) = &release.file {
-                if file.is_empty()
-                    || file.starts_with('/')
-                    || std::path::Path::new(file)
-                        .components()
-                        .any(|part| matches!(part, std::path::Component::ParentDir))
-                    || file.contains('\0')
-                {
+            match &release.file {
+                Some(DeclaredReleaseFile::AccountRoot(file)) => {
+                    if file.is_empty()
+                        || file.starts_with('/')
+                        || std::path::Path::new(file)
+                            .components()
+                            .any(|part| matches!(part, std::path::Component::ParentDir))
+                        || file.contains('\0')
+                    {
+                        return Err(invalid_contribution(
+                            "game",
+                            &key,
+                            "file must be relative to an account root without traversal",
+                        ));
+                    }
+                    if !release.artifacts.is_empty() {
+                        return Err(invalid_contribution(
+                            "game",
+                            &key,
+                            "a release with artifacts must name its file inside one of them",
+                        ));
+                    }
+                }
+                Some(DeclaredReleaseFile::Artifact(file)) => {
+                    if !release.artifacts.contains(&file.artifact) {
+                        return Err(invalid_contribution(
+                            "game",
+                            &key,
+                            "file artifact must be listed in the release's artifacts",
+                        ));
+                    }
+                    if !is_safe_relative_path(&file.path) {
+                        return Err(invalid_contribution(
+                            "game",
+                            &key,
+                            "file path must be relative to its artifact without traversal",
+                        ));
+                    }
+                }
+                None if !release.artifacts.is_empty() => {
                     return Err(invalid_contribution(
                         "game",
                         &key,
-                        "file must be relative to an account root without traversal",
+                        "a release with artifacts must name its file inside one of them",
                     ));
                 }
+                None => (),
             }
         }
         declared_games.insert(
@@ -1348,6 +1435,15 @@ fn invalid_contribution(kind: &'static str, id: &str, reason: &str) -> PluginErr
         record_id: id.into(),
         reason: reason.into(),
     }
+}
+
+/// No leading `/`, no empty or `..` segment, no control character.
+fn is_safe_relative_path(path: &str) -> bool {
+    !path.starts_with('/')
+        && !path.chars().any(char::is_control)
+        && path
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != "..")
 }
 
 fn is_declared_hash(hash: &str) -> bool {
@@ -1971,11 +2067,12 @@ mod tests {
         assert_eq!(game.key, "jak1");
         assert_eq!(game.releases["prepared"].system, None);
         assert_eq!(
-            game.releases["prepared"].file.as_deref(),
-            Some("opengoal/GAME.CGO")
+            game.releases["prepared"].file,
+            Some(DeclaredReleaseFile::AccountRoot("opengoal/GAME.CGO".into()))
         );
         assert_eq!(registry.declared_hash(&hash).len(), 4);
-        assert_eq!(registry.declared_hash(&hash)[0].release_key, "original");
+        // Declaration order, not key order: `prepared` is declared first.
+        assert_eq!(registry.declared_hash(&hash)[0].release_key, "prepared");
         assert!(registry.declared_hash("sha1:unknown").is_empty());
     }
 }
@@ -2061,5 +2158,166 @@ mod artifact_tests {
             registry.artifacts_for_runner("@test:player/play").unwrap()[0].id,
             "@test:runtime/rootfs"
         );
+    }
+}
+
+#[cfg(test)]
+mod release_artifact_tests {
+    use super::*;
+    use serde_json::json;
+
+    const HASH: &str = "sha256:ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+
+    fn content(release: serde_json::Value) -> serde_json::Value {
+        json!({"name":"game", "artifacts":{"content":{
+            "id":"@test:game/content", "version":"1.0", "files":[{
+                "url":"https://example.com/game.zip", "sha256":format!("sha256:{}", "c".repeat(64))
+            }]
+        }}, "games":{"rocknroll":{"title":"Rock N Roll", "releases":{"v1": release}}}})
+    }
+    fn decode(value: serde_json::Value) -> Result<Plugin, PluginError> {
+        decode_plugin_declaration("@test", &value.to_string())
+    }
+
+    #[test]
+    fn a_release_file_is_an_account_root_path_or_an_artifact_file() {
+        let prepared = decode(content(
+            json!({"hashes":[HASH], "file":"prepared/data.pck"}),
+        ))
+        .unwrap();
+        let release = &prepared.declared_games["@test:game/rocknroll"].releases["v1"];
+        assert_eq!(
+            release.file,
+            Some(DeclaredReleaseFile::AccountRoot("prepared/data.pck".into()))
+        );
+        assert!(release.artifacts.is_empty());
+
+        let downloaded = decode(content(json!({
+            "hashes":[HASH], "artifacts":["@test:game/content"],
+            "file":{"artifact":"@test:game/content", "path":"Mega Man/data.pck"}
+        })))
+        .unwrap();
+        let release = &downloaded.declared_games["@test:game/rocknroll"].releases["v1"];
+        assert_eq!(
+            release.file,
+            Some(DeclaredReleaseFile::Artifact(ArtifactContentFile {
+                artifact: "@test:game/content".into(),
+                path: "Mega Man/data.pck".into()
+            }))
+        );
+        assert_eq!(release.hashes, [HASH.to_lowercase()]);
+        let registry = PluginRegistry::new(vec![downloaded], ["@test:game".into()]).unwrap();
+        let game = &registry.declared_games()["@test:game/rocknroll"];
+        assert_eq!(
+            registry.artifacts_for_release(&game.releases["v1"])[0].id,
+            "@test:game/content"
+        );
+    }
+
+    #[test]
+    fn release_artifacts_and_artifact_files_reject_every_inconsistent_form() {
+        let listed = json!(["@test:game/content"]);
+        let file = |path: &str| json!({"artifact":"@test:game/content", "path":path});
+        let mut rejected = vec![
+            // A string file never comes from an artifact.
+            json!({"hashes":[HASH], "artifacts":listed, "file":"data.pck"}),
+            // Artifacts without a file name no content file.
+            json!({"hashes":[HASH], "artifacts":listed}),
+            // The file's artifact must be one the release lists.
+            json!({"hashes":[HASH], "file":file("data.pck")}),
+            json!({"hashes":[HASH], "artifacts":[], "file":file("data.pck")}),
+            json!({"hashes":[HASH], "artifacts":listed, "file":{"artifact":"@test:game/other", "path":"data.pck"}}),
+            // Strict records: unknown fields and explicit nulls fail.
+            json!({"hashes":[HASH], "artifacts":listed, "file":{"artifact":"@test:game/content", "path":"data.pck", "extra":1}}),
+            json!({"hashes":[HASH], "artifacts":listed, "file":{"artifact":"@test:game/content"}}),
+            json!({"hashes":[HASH], "artifacts":null, "file":"data.pck"}),
+            json!({"hashes":[HASH], "artifacts":listed, "file":null}),
+            // Hashes stay required.
+            json!({"artifacts":listed, "file":file("data.pck")}),
+            json!({"hashes":[], "artifacts":listed, "file":file("data.pck")}),
+        ];
+        for path in [
+            "",
+            "/data.pck",
+            "..",
+            "../data.pck",
+            "a/../data.pck",
+            "a//data.pck",
+            "a/",
+            "data\u{1}.pck",
+            "data\n.pck",
+        ] {
+            rejected.push(json!({"hashes":[HASH], "artifacts":listed, "file":file(path)}));
+        }
+        for release in rejected {
+            assert!(decode(content(release.clone())).is_err(), "{release}");
+        }
+    }
+
+    #[test]
+    fn release_artifacts_must_be_loaded_and_enabled_like_runner_artifacts() {
+        let release = json!({"hashes":[HASH], "artifacts":["@test:runtime/content"],
+            "file":{"artifact":"@test:runtime/content", "path":"data.pck"}});
+        let game =
+            decode(json!({"name":"game", "games":{"g":{"title":"G", "releases":{"v1":release}}}}))
+                .unwrap();
+        let runtime = decode(json!({"name":"runtime", "artifacts":{"content":{
+            "id":"@test:runtime/content", "version":"1", "files":[{"url":"https://example.com/a", "sha256":format!("sha256:{}", "d".repeat(64))}]
+        }}}))
+        .unwrap();
+        assert!(PluginRegistry::new(vec![game.clone()], ["@test:game".into()]).is_err());
+        assert!(
+            PluginRegistry::new(vec![game.clone(), runtime.clone()], ["@test:game".into()])
+                .is_err()
+        );
+        // Another enabled plugin's artifact is allowed, as for runners.
+        PluginRegistry::new(
+            vec![game, runtime],
+            ["@test:game".into(), "@test:runtime".into()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn release_order_survives_typescript_quickjs_json_and_rust_decoding() {
+        let hash = |c: char| format!("'sha256:{}'", c.to_string().repeat(64));
+        let source = format!(
+            "export const name = 'game';
+             export const games = {{ g: {{ title: 'G', releases: {{
+               zeta: {{ hashes: [{}] }},
+               alpha: {{ hashes: [{}] }},
+               mid: {{ hashes: [{}] }},
+             }} }} }};",
+            hash('a'),
+            hash('b'),
+            hash('c')
+        );
+        let plugin = load_plugin_source("@test", &source).unwrap();
+        let registry = PluginRegistry::new(vec![plugin], ["@test:game".into()]).unwrap();
+        let keys: Vec<_> = registry.declared_games()["@test:game/g"]
+            .releases
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(keys, ["zeta", "alpha", "mid"]);
+
+        // ECMAScript property order puts array-index keys first, in numeric
+        // order, before every other key. SCRIPTING.md records this rule.
+        let source = format!(
+            "export const name = 'game';
+             export const games = {{ g: {{ title: 'G', releases: {{
+               v2: {{ hashes: [{}] }}, '10': {{ hashes: [{}] }}, '2': {{ hashes: [{}] }},
+             }} }} }};",
+            hash('a'),
+            hash('b'),
+            hash('c')
+        );
+        let plugin = load_plugin_source("@test", &source).unwrap();
+        let keys: Vec<_> = plugin.declared_games["@test:game/g"]
+            .releases
+            .keys()
+            .cloned()
+            .collect();
+        assert_eq!(keys, ["2", "10", "v2"]);
     }
 }

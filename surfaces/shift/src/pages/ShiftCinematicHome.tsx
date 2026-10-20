@@ -63,6 +63,8 @@ export interface ShiftCinematicGame {
   /** Rail section this game belongs to (e.g. "Continue", "Fresh picks"); the rail
    * groups consecutive games sharing a section under one caption. */
   readonly section?: string
+  /** What it still has to fetch, already worded ("Needs a 1.5 GB download"). */
+  readonly download?: string
 }
 
 /**

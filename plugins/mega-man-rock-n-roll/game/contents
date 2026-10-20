@@ -1,0 +1,7 @@
+# Files the public Linux 1.3 ZIP must yield, read by unpack.py.
+# Columns: mode, path in the ready directory. The ZIP was made with MS-DOS
+# file attributes and carries no Unix modes, so the executable bit comes
+# from this list. korrid verifies the whole ZIP against its pinned SHA-256
+# before unpacking, so this list holds no hashes.
+0644 data.pck
+0755 MegaMan_RocknRoll

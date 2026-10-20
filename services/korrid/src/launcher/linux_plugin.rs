@@ -48,8 +48,12 @@ pub fn launch_route(
         .linux_runner
         .as_ref()
         .ok_or_else(|| error("native route has no program".into()))?;
-    let (content_path, provider_ref) = match (&route.file_target, &route.provider_target) {
-        (Some(target), None) => {
+    let (content_path, provider_ref) = match (
+        &route.file_target,
+        &route.provider_target,
+        &route.artifact_target,
+    ) {
+        (Some(target), None, None) => {
             let content =
                 storage::resolve_file_target(root, snapshot, target).map_err(|storage| {
                     if storage.is_missing_target() {
@@ -62,10 +66,19 @@ pub fn launch_route(
                 })?;
             (Some(content.path.display().to_string()), None)
         }
-        (None, Some(target)) => (None, Some(target.provider_ref.clone())),
+        (None, Some(target), None) => (None, Some(target.provider_ref.clone())),
+        (None, None, Some(target)) => (
+            Some(
+                crate::acquisition::artifact_content_path(root, registry, target)
+                    .map_err(|failure| error(failure.message))?
+                    .display()
+                    .to_string(),
+            ),
+            None,
+        ),
         _ => {
             return Err(error(
-                "native route must have one file or provider target".into(),
+                "native route must have one file, provider or artifact target".into(),
             ))
         }
     };

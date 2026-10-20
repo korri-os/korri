@@ -158,6 +158,56 @@ fn registry(url: &str, digest: &str) -> PluginRegistry {
         crate::plugin::decode_plugin_declaration("@test", &declaration.to_string()).unwrap();
     PluginRegistry::new(vec![plugin], ["@test:runtime".into()]).unwrap()
 }
+pub(super) fn runner_route(runner: &str) -> crate::config::resolver::ResolvedRoute {
+    crate::config::resolver::ResolvedRoute {
+        playable_id: "game".into(),
+        title: None,
+        release_id: String::new(),
+        identity: None,
+        provider_id: String::new(),
+        system_id: String::new(),
+        system_title: None,
+        runner_id: runner.into(),
+        family_id: None,
+        integration_token: String::new(),
+        flattened_target: String::new(),
+        linux_runner: None,
+        core_path: None,
+        file_target: None,
+        provider_target: None,
+        artifact_target: None,
+    }
+}
+async fn until(
+    coordinator: &AcquisitionCoordinator,
+    root: &Path,
+    registry: &PluginRegistry,
+    done: impl Fn(&ArtifactState) -> bool,
+) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !done(&state(coordinator, root, registry)) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+/// The worker has finished every job and released the sleep block.
+async fn idle(coordinator: &AcquisitionCoordinator) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            {
+                let queue = coordinator.lock();
+                if !queue.worker && queue.running.is_none() {
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+}
 fn state(
     coordinator: &AcquisitionCoordinator,
     root: &Path,
@@ -180,7 +230,9 @@ async fn settled(
             let current = state(coordinator, root, registry);
             if !matches!(
                 current,
-                ArtifactState::Downloading { .. } | ArtifactState::Unpacking
+                ArtifactState::Queued
+                    | ArtifactState::Downloading { .. }
+                    | ArtifactState::Unpacking
             ) {
                 return current;
             }
@@ -202,7 +254,7 @@ async fn cache_truth_idempotent_start_retry_and_launch_paths() {
         ArtifactState::Missing
     ));
     assert_eq!(
-        require_ready(root.path(), &registry, "@test:runtime/run")
+        require_ready(root.path(), &registry, &runner_route("@test:runtime/run"))
             .unwrap_err()
             .code,
         "ArtifactsNotReady"
@@ -262,7 +314,7 @@ async fn cache_truth_idempotent_start_retry_and_launch_paths() {
     .await
     .unwrap();
     assert!(!downloads.exists());
-    require_ready(root.path(), &registry, "@test:runtime/run").unwrap();
+    require_ready(root.path(), &registry, &runner_route("@test:runtime/run")).unwrap();
     assert_eq!(
         launch_artifacts(root.path(), &registry, "@test:runtime/run").unwrap()["payload"],
         ready.display().to_string()
@@ -273,18 +325,7 @@ async fn cache_truth_idempotent_start_retry_and_launch_paths() {
     ));
     // Finish the worker before this test simulates external cache deletion.
     // Publication is already Ready while its async completion is still queued.
-    let mut completed = coordinator.jobs.lock().unwrap()[&base]
-        .lock()
-        .unwrap()
-        .done
-        .clone();
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while !*completed.borrow() {
-            completed.changed().await.unwrap();
-        }
-    })
-    .await
-    .unwrap();
+    idle(&coordinator).await;
     // The directory, not a stale in-memory success, remains authoritative.
     fs::set_permissions(&ready, fs::Permissions::from_mode(0o755)).unwrap();
     fs::remove_dir_all(&ready).unwrap();
@@ -328,7 +369,7 @@ async fn failure_is_retryable_and_restart_forgets_failure_but_keeps_partial_byte
 }
 
 #[tokio::test]
-async fn cancellation_keeps_partial_bytes_and_cross_process_lock_blocks_a_second_writer() {
+async fn cancellation_deletes_partial_bytes_and_cross_process_lock_blocks_a_second_writer() {
     let root = tempfile::tempdir().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -362,11 +403,15 @@ async fn cancellation_keeps_partial_bytes_and_cross_process_lock_blocks_a_second
     coordinator
         .start(root.path(), root.path(), &registry, &[artifact.id.clone()])
         .unwrap();
-    assert!(matches!(
-        state(&coordinator, root.path(), &registry),
-        ArtifactState::Downloading { .. }
-    ));
-    assert!(!base.join(".downloads").exists());
+    until(&coordinator, root.path(), &registry, |state| {
+        matches!(state, ArtifactState::Downloading { .. })
+    })
+    .await;
+    // Queueing wrote only the zero-byte marker; the writer waits for .lock.
+    let marker = base
+        .join(".downloads")
+        .join(format!("{}.part", "a".repeat(64)));
+    assert_eq!(fs::metadata(&marker).unwrap().len(), 0);
     drop(lock);
     let partial = base
         .join(".downloads")
@@ -386,7 +431,11 @@ async fn cancellation_keeps_partial_bytes_and_cross_process_lock_blocks_a_second
         state(&coordinator, root.path(), &registry),
         ArtifactState::Missing
     ));
-    assert_eq!(fs::read(&partial).unwrap(), b"part");
+    // ADR 0013: Cancel deletes downloaded bytes, so anything left in
+    // .downloads always means an interrupted download.
+    assert!(!partial.exists());
+    assert!(!base.join(".downloads").exists());
+    assert!(placement::interrupted_since(&base).is_none());
     assert!(matches!(
         state(&AcquisitionCoordinator::default(), root.path(), &registry),
         ArtifactState::Missing

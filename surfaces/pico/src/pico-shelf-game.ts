@@ -42,8 +42,14 @@ export interface PicoShelfGame {
    */
   readonly locations?: readonly PicoShelfLocation[]
   /**
-   * Present when playing first fetches something to this device. `bytes` is
-   * how much, when Korri knows; the shelf prints it, Korri never does.
+   * Present when this game needs something fetched to this device. `bytes` is
+   * how much, when Korri knows; `queued` while it waits behind another
+   * download; `progress` while it downloads. The shelf prints all of it,
+   * Korri never does.
    */
-  readonly download?: { readonly bytes?: number }
+  readonly download?: {
+    readonly bytes?: number
+    readonly queued?: true
+    readonly progress?: { readonly done: number; readonly total?: number }
+  }
 }

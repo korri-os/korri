@@ -627,14 +627,15 @@ fn declared_files_match_sha1_without_system_headers_and_report_only_existing_mis
     let root = tempfile::tempdir().unwrap();
     write(root.path(), "game.cgo", b"abc");
     write(root.path(), "wrong.cgo", b"wrong");
-    let mut releases = BTreeMap::new();
+    let mut releases = indexmap::IndexMap::new();
     for file in ["game.cgo", "wrong.cgo", "absent.cgo"] {
         releases.insert(
             file.into(),
             DeclaredRelease {
                 system: None,
                 hashes: vec!["sha1:a9993e364706816aba3e25717850c26c9cd0d89d".into()],
-                file: Some(file.into()),
+                artifacts: Vec::new(),
+                file: Some(crate::plugin::DeclaredReleaseFile::AccountRoot(file.into())),
             },
         );
     }
@@ -643,6 +644,7 @@ fn declared_files_match_sha1_without_system_headers_and_report_only_existing_mis
         DeclaredRelease {
             system: Some("ps2".into()),
             hashes: vec![format!("sha1:{}", "0".repeat(40))],
+            artifacts: Vec::new(),
             file: None,
         },
     );
@@ -694,12 +696,15 @@ fn declared_files_cannot_escape_the_account_root() {
     let outside = tempfile::tempdir().unwrap();
     let secret = write(outside.path(), "secret.cgo", b"secret");
     symlink(secret, root.path().join("game.cgo")).unwrap();
-    let releases = BTreeMap::from([(
+    let releases = indexmap::IndexMap::from([(
         "prepared".into(),
         DeclaredRelease {
             system: None,
             hashes: vec!["sha1:unused".into()],
-            file: Some("game.cgo".into()),
+            artifacts: Vec::new(),
+            file: Some(crate::plugin::DeclaredReleaseFile::AccountRoot(
+                "game.cgo".into(),
+            )),
         },
     )]);
     let games = BTreeMap::from([(
@@ -798,12 +803,15 @@ fn declared_descriptor_files_are_hashed_as_bytes_instead_of_interpreted() {
     let root = tempfile::tempdir().unwrap();
     let path = write(root.path(), "game.cue", b"not a cue descriptor");
     let expected = HashCache::default().hash(&path, &[]).unwrap();
-    let releases = BTreeMap::from([(
+    let releases = indexmap::IndexMap::from([(
         "prepared".into(),
         DeclaredRelease {
             system: None,
             hashes: vec![expected.value().to_owned()],
-            file: Some("game.cue".into()),
+            artifacts: Vec::new(),
+            file: Some(crate::plugin::DeclaredReleaseFile::AccountRoot(
+                "game.cue".into(),
+            )),
         },
     )]);
     let games = BTreeMap::from([(
@@ -948,4 +956,45 @@ fn projected_budgets_include_existing_empty_directories_and_incoming_parents() {
         );
         assert!(crate::discovery::scanner::incomplete(&projected));
     }
+}
+
+#[test]
+fn an_artifact_file_is_never_hashed_as_an_account_root_path() {
+    let root = tempfile::tempdir().unwrap();
+    // Same relative path under the account root as the artifact's content
+    // file. Reading it as an account-root path would join a wrong copy.
+    let path = write(root.path(), "Mega Man/data.pck", b"account copy");
+    let expected = HashCache::default().hash(&path, &[]).unwrap();
+    let releases = indexmap::IndexMap::from([(
+        "v1".to_owned(),
+        DeclaredRelease {
+            system: None,
+            hashes: vec![expected.value().to_owned()],
+            artifacts: vec!["@test:plugin/content".into()],
+            file: Some(crate::plugin::DeclaredReleaseFile::Artifact(
+                crate::plugin::ArtifactContentFile {
+                    artifact: "@test:plugin/content".into(),
+                    path: "Mega Man/data.pck".into(),
+                },
+            )),
+        },
+    )]);
+    let games = BTreeMap::from([(
+        "@test:plugin/game".into(),
+        DeclaredGame {
+            provider: "@test:plugin".into(),
+            key: "game".into(),
+            title: "Game".into(),
+            releases,
+        },
+    )]);
+    let accounts = [AccountRoot {
+        user: "default".into(),
+        storage_id: "account-default".into(),
+        root: root.path().to_owned(),
+    }];
+    let report = resolve_declared_games(&accounts, &games, &mut HashCache::default());
+    assert!(report.files.is_empty());
+    assert!(report.attention.is_empty());
+    assert_eq!(report.hashed_bytes, 0);
 }

@@ -48,3 +48,13 @@ export function NeedsDownload() {
 export function NeedsDownloadUnknownSize() {
   return <PicoGameFacts download="DOWNLOAD NEEDED" resumable stats={[]} subtitle="Steam · This device" title="Celeste" />
 }
+
+/** Waiting behind another game's download. */
+export function DownloadQueued() {
+  return <PicoGameFacts download="QUEUED" stats={[]} subtitle="This device" title="Mega Man Rock N Roll" />
+}
+
+/** Downloading in the background. */
+export function Downloading() {
+  return <PicoGameFacts download="DOWNLOADING 41%" stats={[]} subtitle="This device" title="Mega Man Rock N Roll" />
+}
