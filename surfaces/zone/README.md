@@ -1028,3 +1028,97 @@ without asking. The four screen workers build on them.
   package.nix` copies `surfaces/zone/src/fonts/OFL.txt` as
   `anton-OFL.txt`; it should copy `OFL.txt` as `jersey10-OFL.txt` and add
   `ZoneCaps-OFL.txt`. Suggested issue.
+
+## SAVE DATA and first boot, refined (decided without asking: refine-savedata)
+
+SAVE DATA reads as MANIA MODE's save select and first boot as COMPETITION.
+New pieces: `ZoneEmblem` (Zone's own 16x16 drawings), `ZoneStepStrip`,
+`ZoneVersus`, and `use-zone-save-band-fit.ts`. Tokens are in the
+`refine-savedata` block.
+
+- **The emblems are grids in code.** `ZONE_EMBLEMS` in
+  `src/ui/atoms/ZoneEmblem.tsx` holds five 16x16 drawings, one letter a
+  pixel; the black outline is computed (every empty pixel beside a filled
+  one), so a drawing stays inside a one-pixel margin. Key = BACK UP and
+  first boot's START; an arrow going into a card = FROM BACKUP; a silver
+  link through a gold one = BUNKER; the key in greys = RETIRED and NOT
+  AVAILABLE (no identity at all reads as a key that does not work here).
+  A fifth, `pad`, stands in a heard controller card where COMPETITION puts
+  a portrait; it replaces the initials well, which read as a seat number
+  ("8P" for 8BitDo). The emblem takes the largest whole multiple of 16 art
+  px that half its box allows.
+- **The save card's anatomy.** A 4-art-px black frame; the header pale
+  teal (`#9CE7C6`) with the yellow, red and blue stripes and the white bar,
+  the label in `ink` caps; the window pale teal with a teal (`#5AA2B5`)
+  diagonal, the emblem over the word on a black tag. The window's word is
+  one element drawn in Zone Caps with a hard-stop two-tone fill clipped to
+  the letters, not `ZoneCaps`: `ZoneCaps` never wraps, and Zone's words
+  must wrap between words at caps-1 (FROM / BACKUP on a narrow card). On a
+  black tag the ring would not show, so nothing is lost. A key keeps
+  Jersey 10 and breaks only after its ellipsis (`<wbr>`).
+- **The save card is 0.7 as wide as tall** (`--zone-save-card-aspect`,
+  was 0.6), the least that sets FROM BACKUP on one caps-1 line at the
+  card's cap of 133 art px. Both sides round down to whole art px.
+- **One header step for the whole band.** Per-card fitting left SWITCH at
+  caps-2 beside BACK UP at caps-1. `useZoneSaveBandFit` tries caps-2 on
+  every header at once, then caps-1; a header that still overflows
+  truncates. A card standing alone (first boot) fits its own header, so
+  NEW is caps-2 there, as the brief asks.
+- **The status is a bar across the foot** (`.zone-save-card-foot`), in the
+  status's colour with dark ink on the light ones. Supersedes "Tags: NEW is
+  orange …" in the SAVE DATA section: the words and colours stay, the tag
+  shape goes.
+- **The page names its ground.** `ZoneSaveData` passes `ground="savedata"`
+  to its shell, so the cards' shade and every layer over them read the
+  teal set even where a binding forgets to; the root already sets it.
+- **The checker is the QR well's own background**, `earned` only on
+  Korri's BackupReady: blue `#2E4BD6` and white, 8-art-px squares, centred
+  on the paper. The paper (the SVG, with its 4-module quiet zone inside the
+  viewBox) stands at least one square in from every side and is opaque, so
+  the checker never reaches the quiet zone. The paper is a whole number of
+  CSS px a module, not of art px: on the art grid 640x480 would drop from
+  4 px to 2 px a module. Measured: 640x480 is 244x244 px (61 modules at
+  4 px, quiet zone 16 px); 1280x300 is 183x183 px (3 px, quiet zone
+  12 px); 1280x720 is 427x427 px (7 px).
+- **The secret is Jersey 10 in whole CSS px a Jersey pixel**, not whole art
+  px. 162 characters must be on screen at once for copying by hand; at one
+  Jersey pixel an art pixel they do not fit beside the QR at 640x480 or
+  1280x720. So the slab steps by `--zone-fact` px: 1280x300 lands on the
+  grid (1 px), 640x480 at 1 px of a 2-px grid, 1280x720 at 2 px of 3. The
+  one place on these screens that leaves the art grid, for a reason a
+  reader needs. When one line has to break at its middle every line does,
+  so the groups keep even columns. The slab's widest is its own token
+  (`--zone-save-slab-widest`, 400 art px): the old widest (320) was set
+  for Zone Caps and cut a Jersey line at 1280x300.
+- **First boot's strip is the banner and four pips.** `ZoneStepStrip`
+  draws the one banner with the step's name and hangs four diamond pips
+  (5 art px inside a 1-px black outline) one lip and 4 art px under it;
+  they take no room in the top strip. The group reads "Setup steps"; the
+  pips read "Step 2 of 4". The step words lose their numbers ("1
+  Controllers" became CONTROLLERS). Supersedes "under a strip of four
+  tags" in the layers section.
+- **Seats wear one black corner tab**, its left edge a 45-degree stair,
+  1P to 4P in white caps-1. Supersedes "1P blue, 2P red, 3P yellow, 4P
+  mint".
+- **VS needs two seats, both heard.** The brief says "exactly 2 heard" and
+  "with 3 or 4 seats none"; Korri may list a third, unheard controller, so
+  the rule is: Korri lists exactly two controllers and both are heard.
+  `planControllerCards(w, h, count, versus)` spends VS's room on the axis
+  the cards stand along (80 art px across in a row, 28 down in a column).
+- **A waiting card keeps an empty name bar**, so every seat is one height,
+  as COMPETITION's WAITING seat is.
+- **Controller names are one Jersey line** ending in "…": a two-line clamp
+  cut a long single word mid-letter. The triangles stand aside on a card
+  under 90 art px (`ZONE_CONTROLLER_ARROWS_LEAST`, written by the page as
+  `--zone-seat-arrows`) so the name keeps their room. The full name stays
+  in the card's label.
+- **First boot's identity card** is headed NEW (was NEW SAVE, per the
+  brief's copy list), START under the key, READY as its foot bar once
+  chosen. The C25 acceptance step moves to `button("New")`.
+- **Wi-Fi words on first boot already read SAVED, LOCKED and OPEN**, the
+  set the options worker is moving OPTIONS to; nothing to switch here. If
+  that branch renames them, `wifiRows` in `ZoneOnboarding.tsx` is the one
+  place to follow.
+- **The WI-FI step's group keeps its WI-FI title** under a banner that
+  now also says WI-FI. The brief allows no new strings; a second word for
+  the group would be one. Left as is, noted as a duplicate.
