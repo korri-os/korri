@@ -593,3 +593,120 @@ describe("settings", () => {
     expect(calls(host).at(-1)).toEqual(["runAction", "restart"])
   })
 })
+
+// ---- C16 to C20: SAVE DATA ----
+
+describe("identity", () => {
+  const withIdentity = (status: SurfaceIdentityManagement["status"], more: Partial<SurfaceIdentityManagement> = {}): SurfaceModel =>
+    ({ ...HOME, identityManagement: { ...IDENTITY, ...more, status } })
+  const saveCard = (words: string) => button(words, document.querySelector<HTMLElement>(".zone-save-data-band")!)
+  const done = () => {
+    moveTo(button("Done", keyboardOnScreen()))
+    confirm()
+  }
+
+  test("C16 export backup", () => {
+    const { host, publish, press } = mount()
+    openSaveData(press)
+    expect(saveCard("Back up").textContent).toContain("New")
+    moveTo(saveCard("Back up"))
+    confirm()
+    expect(onScreen("Password")).toBe(true)
+    type("pw")
+    // The password is a secret on screen.
+    expect(keyboardOnScreen().textContent).toContain("••")
+    expect(keyboardOnScreen().textContent).not.toContain("pw")
+    done()
+    expect(calls(host)).toEqual([["exportIdentityBackup", "pw"]])
+    publish(withIdentity({ _tag: "Working", operation: "Encrypting" }))
+    expect(screen.getByRole("status").textContent).toContain("Encrypting")
+    // A stand-in, built so it reads as one: never a real backup.
+    const secret = `ncryptsec1${"testbackup".repeat(5)}`
+    publish(withIdentity({ _tag: "BackupReady", encryptedSecret: secret }, { localBackupAvailable: true }))
+    // The QR code in BACK UP's well and the text on its slab, the cursor on the slab.
+    expect(screen.getByRole("img", { name: "Backup QR code" })).toBeTruthy()
+    const slab = screen.getByRole("region", { name: "Backup secret" })
+    expect(slab.textContent?.replace(/\s/g, "").toLowerCase()).toBe(secret)
+    expect(document.activeElement).toBe(slab)
+    expect(saveCard("Back up").textContent).toContain("Backed up")
+    // B puts the backup away: Korri is told.
+    press("back")
+    expect(calls(host).at(-1)).toEqual(["dismissIdentityStatus"])
+  })
+
+  test("C17 switch from backup", () => {
+    const { host, press } = mount()
+    openSaveData(press)
+    moveTo(saveCard("From backup"))
+    confirm()
+    expect(onScreen("Backup")).toBe(true)
+    type("ncrypt")
+    done()
+    expect(onScreen("Password")).toBe(true)
+    type("pw")
+    done()
+    const records = screen.getByRole("dialog", { name: "Local records" })
+    expect(focusedText()).toBe("Transfer")
+    moveTo(button("Transfer", records))
+    confirm()
+    const trust = screen.getByRole("dialog", { name: "Switch key?" })
+    expect(trust.textContent).toContain("Other devices will stop trusting this key")
+    expect(focusedText()).toBe("No")
+    moveTo(button("Yes", trust))
+    confirm()
+    expect(calls(host)).toEqual([["switchIdentityFromBackup", "ncrypt", "pw", "transfer", true]])
+  })
+
+  test("C18 switch by bunker", () => {
+    const { host, press } = mount()
+    openSaveData(press)
+    moveTo(saveCard("Bunker"))
+    confirm()
+    expect(keyboardOnScreen().textContent).toContain("bunker://")
+    type("relay.ab")
+    done()
+    moveTo(button("Delete", screen.getByRole("dialog", { name: "Local records" })))
+    confirm()
+    moveTo(button("Yes", screen.getByRole("dialog", { name: "Switch key?" })))
+    confirm()
+    expect(calls(host)).toEqual([["switchIdentityToNip46", "bunker://relay.ab", "delete", true]])
+  })
+
+  test("C19 retired keys", () => {
+    const { host, press } = mount()
+    openSaveData(press)
+    const retired = saveCard("Retired")
+    expect(retired.textContent).toContain("Delete")
+    moveTo(retired)
+    confirm()
+    const ask = screen.getByRole("dialog", { name: "Delete this key?" })
+    expect(ask.textContent).toContain("Back it up first.")
+    moveTo(button("Yes", ask))
+    confirm()
+    // Only after the backup is confirmed.
+    expect(calls(host)).toEqual([])
+    moveTo(button("Yes", screen.getByRole("dialog", { name: "Is it backed up?" })))
+    confirm()
+    expect(calls(host)).toEqual([["deleteRetiredIdentity", IDENTITY.retiredPublicKeys[0], true]])
+  })
+
+  test("C20 identity status", () => {
+    const { host, publish, press } = mount()
+    openSaveData(press)
+    publish(withIdentity({ _tag: "Working", operation: "Switching" }))
+    expect(screen.getByRole("status").textContent).toContain("Switching")
+    publish(withIdentity({ _tag: "Problem", message: "The bunker did not answer." }))
+    const problem = screen.getByRole("dialog", { name: "Identity" })
+    expect(problem.textContent).toContain("The bunker did not answer.")
+    expect(focusedText()).toBe("Dismiss")
+    confirm()
+    expect(calls(host)).toEqual([["dismissIdentityStatus"]])
+    const owner = "npub1newownerkeyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    publish(withIdentity({ _tag: "Switched", ownerPublicKey: owner }))
+    const switched = screen.getByRole("dialog", { name: "Switched" })
+    expect(switched.textContent?.toLowerCase()).toContain(owner.slice(0, 8))
+    expect(focusedText()).toBe("OK")
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["dismissIdentityStatus"])
+  })
+})
