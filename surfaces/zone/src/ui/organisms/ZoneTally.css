@@ -1,0 +1,153 @@
+/* The tally covers the zone select on SPECIAL STAGE's yellow with its
+ * rings; its panel slides down off the screen when it leaves. */
+.zone-tally {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  overflow: hidden;
+  background: var(--zone-ground);
+}
+
+/* The whole tally is one button, so A on it is a press. It draws no frame
+ * of its own: the tally is the screen. */
+.zone-tally-panel {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto auto;
+  align-content: center;
+  justify-items: center;
+  row-gap: calc(var(--zone-tally-gap) * 2 * var(--zone-px));
+  margin: 0;
+  padding: calc(var(--zone-tally-margin) * var(--zone-px));
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: calc(var(--zone-caps-2) * var(--zone-px));
+  text-align: left;
+  translate: 0 calc(var(--zone-tally-out, 0) * var(--zone-px));
+  cursor: pointer;
+}
+
+/* The heading: the game's title on a black panel leaning at 45 degrees,
+ * as SPECIAL STAGE stands over its results. caps-3, stepped down by the
+ * tally's fit, wrapping between words at caps-1. */
+.zone-tally-head {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+  padding: calc(var(--zone-tally-gap) * var(--zone-px)) calc(var(--zone-tally-head-pad) * var(--zone-px));
+}
+
+.zone-tally-slab {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-black);
+  clip-path: var(--zone-panel-shape, polygon(1.5em 0, 100% 0, calc(100% - 1.5em) 100%, 0 100%));
+}
+
+.zone-tally-title {
+  --zone-words-wrap: nowrap;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  font-size: calc(var(--zone-caps-3) * var(--zone-px) * var(--zone-fit, 1));
+  line-height: 1;
+}
+
+.zone-tally-title[data-zone-fit-floor] {
+  --zone-words-wrap: wrap;
+}
+
+/* The rows: label, bar, value, the values right-aligned at the bars' end.
+ * The rows' caps step from caps-2 to caps-1 by the tally's fit. */
+.zone-tally-rows {
+  display: grid;
+  grid-template-columns: max-content minmax(calc(var(--zone-tally-bar-least) * var(--zone-px)), calc(var(--zone-tally-bar-most) * var(--zone-px))) max-content;
+  align-items: end;
+  column-gap: calc(var(--zone-tally-gap) * var(--zone-px));
+  row-gap: calc(var(--zone-tally-gap) * 2 * var(--zone-px));
+  max-width: 100%;
+  font-size: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
+}
+
+.zone-tally-row {
+  display: contents;
+}
+
+.zone-tally-label,
+.zone-tally-bar,
+.zone-tally-count {
+  opacity: var(--zone-tally-shown);
+  translate: calc(var(--zone-tally-x) * var(--zone-px)) 0;
+}
+
+.zone-tally-row[data-row="0"] { --zone-tally-x: var(--zone-tally-row-0-x, 0); --zone-tally-shown: var(--zone-tally-row-0-shown, 1); --zone-tally-share: var(--zone-tally-row-0-bar, 1); }
+.zone-tally-row[data-row="1"] { --zone-tally-x: var(--zone-tally-row-1-x, 0); --zone-tally-shown: var(--zone-tally-row-1-shown, 1); --zone-tally-share: var(--zone-tally-row-1-bar, 1); }
+.zone-tally-row[data-row="2"] { --zone-tally-x: var(--zone-tally-row-2-x, 0); --zone-tally-shown: var(--zone-tally-row-2-shown, 1); --zone-tally-share: var(--zone-tally-row-2-bar, 1); }
+
+/* The bar: red over a black underside one art px deep, cut at 45 degrees
+ * at its end, growing with its count. */
+.zone-tally-bar {
+  align-self: end;
+  justify-self: end;
+  width: calc(var(--zone-tally-share) * 100%);
+  height: calc(var(--zone-tally-bar-h) * var(--zone-px));
+  margin-bottom: calc(var(--zone-tally-bar-drop) * var(--zone-px));
+  background: var(--zone-danger-shade);
+  border-bottom: var(--zone-px) solid var(--zone-black);
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--zone-tally-bar-h) * var(--zone-px)) 100%, 0 100%);
+}
+
+/* The counting value: Zone Caps in white with its black ring and drop,
+ * written by CSS counters from the clock's whole numbers. */
+.zone-tally-count {
+  justify-self: end;
+  font-family: var(--zone-font);
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--zone-white);
+  text-shadow:
+    calc(var(--zone-px) * -1) calc(var(--zone-px) * -1) 0 var(--zone-black),
+    0 calc(var(--zone-px) * -1) 0 var(--zone-black),
+    var(--zone-px) calc(var(--zone-px) * -1) 0 var(--zone-black),
+    calc(var(--zone-px) * -1) 0 0 var(--zone-black),
+    var(--zone-px) 0 0 var(--zone-black),
+    calc(var(--zone-px) * -1) var(--zone-px) 0 var(--zone-black),
+    0 var(--zone-px) 0 var(--zone-black),
+    var(--zone-px) var(--zone-px) 0 var(--zone-black),
+    calc(var(--zone-px) * 2) calc(var(--zone-px) * 2) 0 var(--zone-black);
+}
+
+.zone-tally-count[data-kind="time"]::after {
+  content: counter(zone-tally-m) "'" counter(zone-tally-s, decimal-leading-zero) '"';
+  counter-reset: zone-tally-m var(--zone-tally-time-m, 0) zone-tally-s var(--zone-tally-time-s, 0);
+}
+
+.zone-tally-count[data-kind="plays"]::after {
+  content: counter(zone-tally-n);
+  counter-reset: zone-tally-n var(--zone-tally-plays, 0);
+}
+
+.zone-tally-count[data-kind="total"]::after {
+  content: counter(zone-tally-m) "M";
+  counter-reset: zone-tally-m var(--zone-tally-total-m, 0);
+}
+
+.zone-tally-count[data-kind="total"][data-hours="on"]::after {
+  content: counter(zone-tally-h) "H " counter(zone-tally-m) "M";
+  counter-reset: zone-tally-h var(--zone-tally-total-h, 0) zone-tally-m var(--zone-tally-total-m, 0);
+}
+
+/* The whole value, for a screen reader and the tests; the counter draws it. */
+.zone-tally-value {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

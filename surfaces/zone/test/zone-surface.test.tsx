@@ -3,7 +3,7 @@
  * doors: the React component and the treaty's mount adapter.
  */
 import { afterEach, describe, expect, test } from "bun:test"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, render, screen, within } from "@testing-library/react"
 import { createFixtureHost, fixtureModel } from "../src/fixtures/fixture-host"
 import { ZoneSurface, zoneSurface } from "../src/index"
 
@@ -25,7 +25,8 @@ describe("ZoneSurface", () => {
 
   test("hides the timer when Korri publishes no clock", () => {
     render(<ZoneSurface host={createFixtureHost()} model={{ ...fixtureModel, clockLabel: undefined }} />)
-    expect(screen.queryByText(/Time/)).toBeNull()
+    // The foot's timer goes; the facts line's TIME (the game's playtime) is another fact.
+    expect(within(document.querySelector<HTMLElement>(".zone-foot")!).queryByText(/Time/)).toBeNull()
   })
 
   test("listens to the host's buttons through the one door", () => {

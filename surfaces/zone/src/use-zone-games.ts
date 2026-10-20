@@ -19,9 +19,17 @@
 import type { SurfaceGame, SurfaceHost, SurfaceModel } from "@contracts/surface/korri-surface"
 import { useCallback, useEffect, type RefObject } from "react"
 import type { ZoneGamesProps } from "./pages/ZoneGames"
-import type { ZoneMessage } from "./state/messages"
 import { catalogGames, launchChoices, playtime, sectionStarts } from "./state/games"
-import { bandGames, topLayer, ZONE_IDLE_CYCLE_MS, type ZoneNavigation } from "./state/navigation"
+import {
+  bandGames,
+  topLayer,
+  ZONE_IDLE_CYCLE_MS,
+  ZONE_TALLY_CLOSE_MS,
+  type ZoneNavigation,
+  type ZoneNavMessage,
+} from "./state/navigation"
+import { zoneActOf } from "./state/tally"
+import { ZONE_TALLY_OUT_MS, ZONE_TITLE_OUT_MS, zoneTallyCountMs } from "./plan/motion"
 import { deviceNameSetting } from "./state/onboarding"
 import type { ZoneRequest } from "./state/requests"
 import {
@@ -77,7 +85,7 @@ export function zoneGamesProps(
   nav: ZoneNavigation,
   korri: SurfaceModel,
   host: SurfaceHost,
-  dispatch: (message: ZoneMessage) => void,
+  dispatch: (message: ZoneNavMessage) => void,
 ): Omit<ZoneGamesProps, "strips" | "band" | "factsAt" | "keysAt"> {
   const games = bandGames(nav, korri)
   const game = games[nav.card]
@@ -111,7 +119,22 @@ export function zoneGamesProps(
       asking: asking === undefined ? undefined : actions.find(action => action.id === asking.actionId),
       answer: nav.opts.answer,
     } : undefined,
-    idle: idleGame === undefined ? undefined : { title: idleGame.title, act: idleGame.subtitle },
+    idle: idleGame === undefined ? undefined : {
+      key: `${nav.idleCard}:${idleGame.id}`,
+      title: idleGame.title,
+      system: idleGame.subtitle,
+      act: zoneActOf(idleGame),
+      art: idleGame.wideArtUrl ?? idleGame.coverArtUrl,
+      plays: idleGame.playCount,
+    },
+    launch: nav.launch === undefined ? undefined : {
+      title: nav.launch.title,
+      system: nav.launch.system,
+      act: nav.launch.act,
+      seen: nav.launch.seen,
+      leaving: nav.launch.leaving,
+    },
+    tally: nav.tally,
     clock: korri.clockLabel,
     device: zoneDeviceName(korri),
     connection: korri.network?.connection,
@@ -124,7 +147,7 @@ export interface ZoneSurfaceProgram {
   readonly state: ZoneSurfaceState
   readonly dispatch: (message: ZoneSurfaceMessage) => void
   /** Navigation's own messages: the GAMES page, the tabs and idle report in them. */
-  readonly dispatchNav: (message: ZoneMessage) => void
+  readonly dispatchNav: (message: ZoneNavMessage) => void
   readonly layout: ZonePlan
 }
 
@@ -145,7 +168,7 @@ export function useZoneSurface(
     korri,
     perform,
   )
-  const dispatchNav = useCallback((message: ZoneMessage) => dispatch({ _tag: "Games", message }), [dispatch])
+  const dispatchNav = useCallback((message: ZoneNavMessage) => dispatch({ _tag: "Games", message }), [dispatch])
 
   useEffect(() => subscribeZoneHostButtons(host, dispatch), [host, dispatch])
   useEffect(() => {
@@ -159,6 +182,37 @@ export function useZoneSurface(
     const cycle = setInterval(() => dispatchNav({ _tag: "IdleTicked" }), ZONE_IDLE_CYCLE_MS)
     return () => clearInterval(cycle)
   }, [idle, dispatchNav])
+
+  // The results tally: its count-up ends (unless a press skipped it), and
+  // it closes by itself ZONE_TALLY_CLOSE_MS after it showed.
+  const tally = state.nav.tally
+  const tallyKey = tally === undefined ? undefined : `${tally.gameId}:${tally.plays}`
+  const counting = tally !== undefined && !tally.counted
+  useEffect(() => {
+    if (tallyKey === undefined) return
+    const close = setTimeout(() => dispatchNav({ _tag: "TallyElapsed" }), ZONE_TALLY_CLOSE_MS)
+    return () => clearTimeout(close)
+  }, [tallyKey, dispatchNav])
+  const rows = tally === undefined ? 0 : (tally.seconds === undefined ? 0 : 1) + 1 + (tally.total === undefined ? 0 : 1)
+  useEffect(() => {
+    if (!counting) return
+    const counted = setTimeout(() => dispatchNav({ _tag: "TallyCounted" }), zoneTallyCountMs(rows))
+    return () => clearTimeout(counted)
+  }, [counting, rows, dispatchNav])
+
+  // The two ways out: once the motion has run, the moment goes.
+  const launchLeaving = state.nav.launch?.leaving === true
+  useEffect(() => {
+    if (!launchLeaving) return
+    const gone = setTimeout(() => dispatchNav({ _tag: "TitleCardLeft" }), ZONE_TITLE_OUT_MS)
+    return () => clearTimeout(gone)
+  }, [launchLeaving, dispatchNav])
+  const tallyLeaving = tally?.leaving === true
+  useEffect(() => {
+    if (!tallyLeaving) return
+    const gone = setTimeout(() => dispatchNav({ _tag: "TallyLeft" }), ZONE_TALLY_OUT_MS)
+    return () => clearTimeout(gone)
+  }, [tallyLeaving, dispatchNav])
 
   const layout = useZonePlan(root)
   return { state, dispatch, dispatchNav, layout }
@@ -182,7 +236,7 @@ export function zoneGamesPage(
 
 export interface ZoneGamesProgram {
   readonly nav: ZoneNavigation
-  readonly dispatch: (message: ZoneMessage) => void
+  readonly dispatch: (message: ZoneNavMessage) => void
   readonly page: ZoneGamesProps
 }
 
@@ -194,7 +248,7 @@ export function useZoneGames(
   korri: SurfaceModel,
   host: SurfaceHost,
   root: RefObject<HTMLElement | null>,
-  opening: readonly ZoneMessage[] = [],
+  opening: readonly ZoneNavMessage[] = [],
 ): ZoneGamesProgram {
   const program = useZoneSurface(korri, host, root, opening.map(message => ({ _tag: "Games", message }) as const))
   return { nav: program.state.nav, dispatch: program.dispatchNav, page: zoneGamesPage(program, korri, host) }

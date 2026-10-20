@@ -1,166 +1,202 @@
-/* The card: a flat ground that fills its box and clips the bands. The
- * ground and each band name a colour; the map below turns it into a token. */
+/* The card: the flat yellow ground of the title-card palette, four bands
+ * and the face, filling its box and clipping what leaves it. Every moving
+ * part reads its offset in art px from a custom property a moment writes;
+ * at rest they are 0. */
 .zone-title-card {
-  --zone-title-card-type-title: clamp(calc(var(--zone-type-title-min) * var(--zone-px)), 7.5cqi, calc(var(--zone-type-title) * var(--zone-px)));
-  --zone-title-card-type-act: clamp(calc(var(--zone-type-note) * var(--zone-px)), 6cqb, calc(var(--zone-type-act) * var(--zone-px)));
-  --zone-title-card-type-act-word: clamp(calc(calc(var(--zone-type-act-word) * var(--zone-px)) * 0.6), 2.4cqb, calc(var(--zone-type-act-word) * var(--zone-px)));
-  --zone-title-card-circle: calc(var(--zone-act-circle-share) * 100cqh);
-  --zone-title-card-colour: var(--zone-title-ground);
   position: relative;
+  isolation: isolate;
   container-type: size;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--zone-title-card-colour);
-  color: var(--zone-cap);
 }
 
-.zone-title-card[data-ground="mint"] { --zone-title-card-colour: var(--zone-mint); }
-.zone-title-card[data-ground="black"] { --zone-title-card-colour: var(--zone-black); }
-.zone-title-card[data-ground="white"] { --zone-title-card-colour: var(--zone-white); }
-.zone-title-card[data-ground="yellow"] { --zone-title-card-colour: var(--zone-yellow); }
-.zone-title-card[data-ground="blue"] { --zone-title-card-colour: var(--zone-blue); }
-.zone-title-card[data-ground="orange"] { --zone-title-card-colour: var(--zone-orange); }
-.zone-title-card[data-ground="red"] { --zone-title-card-colour: var(--zone-red); }
-.zone-title-card[data-ground="pink"] { --zone-title-card-colour: var(--zone-pink); }
-
-/* Three bands side by side, the whole strip turned so each band falls
- * from top-left to bottom-right at the band angle, and twice the card's
- * size so it reaches every corner. The outer two slide along their length,
- * as the reference staggers them. */
-.zone-title-card-bands {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  gap: calc(var(--zone-title-band-share) * 25cqw);
-  width: 200cqmax;
-  height: 200cqmax;
-  translate: -50% -50%;
-  rotate: calc(var(--zone-title-band-angle) - 90deg);
-  pointer-events: none;
-}
-
-.zone-title-card-band {
-  --zone-title-card-band-colour: var(--zone-band-upper);
-  flex: 0 0 calc(var(--zone-title-band-share) * 100cqw);
-  background: var(--zone-title-card-band-colour);
-}
-
-.zone-title-card-band:first-child {
-  translate: 0 -18%;
-}
-
-.zone-title-card-band:last-child {
-  translate: 0 18%;
-}
-
-.zone-title-card-band[data-colour="mint"] { --zone-title-card-band-colour: var(--zone-mint); }
-.zone-title-card-band[data-colour="black"] { --zone-title-card-band-colour: var(--zone-black); }
-.zone-title-card-band[data-colour="white"] { --zone-title-card-band-colour: var(--zone-white); }
-.zone-title-card-band[data-colour="yellow"] { --zone-title-card-band-colour: var(--zone-yellow); }
-.zone-title-card-band[data-colour="blue"] { --zone-title-card-band-colour: var(--zone-blue); }
-.zone-title-card-band[data-colour="orange"] { --zone-title-card-band-colour: var(--zone-orange); }
-.zone-title-card-band[data-colour="red"] { --zone-title-card-band-colour: var(--zone-red); }
-.zone-title-card-band[data-colour="pink"] { --zone-title-card-band-colour: var(--zone-pink); }
-
-/* The title and the circle, centred together. */
-.zone-title-card-face {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: calc(var(--zone-title-card-circle) * 0.2);
-  width: 100%;
-  height: 100%;
-  padding: min(calc(var(--zone-band-margin) * var(--zone-px)), 4cqmin);
-}
-
-/* The title: caps with the blue edge on a black parallelogram. Its type
- * shrinks by the card's fit (--zone-fit) until its longest word fits, and
- * it wraps only between words: a word is never cut or broken. */
-.zone-title-card-title {
-  position: relative;
-  isolation: isolate;
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 100%;
-  margin: 0;
-  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) * 2) calc(calc(var(--zone-slant) * var(--zone-px)) * 2 + min(calc(var(--zone-row-gap) * var(--zone-px)) * 2, 4cqi));
-  font: inherit;
-  font-size: calc(var(--zone-title-card-type-title) * var(--zone-fit, 1));
-  line-height: 1;
-  text-align: center;
-  text-wrap: balance;
-  overflow-wrap: normal;
-  word-break: keep-all;
-  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
-}
-
-.zone-title-card-title::before {
-  content: "";
+.zone-title-card-ground {
   position: absolute;
   inset: 0;
-  z-index: -1;
-  background: var(--zone-panel);
-  clip-path: polygon(
-    calc(calc(var(--zone-slant) * var(--zone-px)) * 2) 0,
-    100% 0,
-    calc(100% - calc(var(--zone-slant) * var(--zone-px)) * 2) 100%,
-    0 100%
-  );
+  background: var(--zone-ground);
+  translate: calc(var(--zone-tc-ground-x, 0) * var(--zone-px)) calc(var(--zone-tc-ground-y, 0) * var(--zone-px));
 }
 
-/* Taller than wide (src/plan/title-card.ts, ZONE_TITLE_STACK_ASPECT): the
- * circle moves under the title, and the title has the card's whole width. */
-@container (aspect-ratio < 1) {
-  .zone-title-card-face {
-    --zone-title-card-type-title: clamp(calc(var(--zone-type-title-min) * var(--zone-px)), 11cqi, calc(var(--zone-type-title) * var(--zone-px)));
-    --zone-title-card-circle: min(calc(var(--zone-act-circle-share) * 100cqh), 60cqw);
-    flex-direction: column;
-  }
+/* A band: the whole card, cut to its stair polygon (written by the card for
+ * its size, src/plan/title-card.ts), moved as one. Until measured it is a
+ * smooth fallback that still falls at 45 degrees. */
+.zone-title-card-band {
+  position: absolute;
+  inset: 0;
+  background: var(--zone-tc-band-colour);
+  clip-path: var(--zone-tc-band-shape);
+  translate: calc(var(--zone-tc-band-x) * var(--zone-px)) calc(var(--zone-tc-band-y) * var(--zone-px));
 }
 
-/* The orange circle with the act on a white slab. The circle takes its
- * share of the height, and grows, still round, when the act needs more. */
-.zone-title-card-circle {
+.zone-title-card-band[data-colour="green"] { --zone-tc-band-colour: var(--zone-title-green); }
+.zone-title-card-band[data-colour="orange"] { --zone-tc-band-colour: var(--zone-orange); }
+.zone-title-card-band[data-colour="red"] { --zone-tc-band-colour: var(--zone-title-red); }
+.zone-title-card-band[data-colour="blue"] { --zone-tc-band-colour: var(--zone-title-blue); }
+
+.zone-title-card-band[data-band="0"] {
+  --zone-tc-band-shape: var(--zone-tc-band-0-shape, polygon(56% 46%, 63% 46%, 117% 100%, 110% 100%));
+  --zone-tc-band-x: var(--zone-tc-band-0-x, 0);
+  --zone-tc-band-y: var(--zone-tc-band-0-y, 0);
+}
+
+.zone-title-card-band[data-band="1"] {
+  --zone-tc-band-shape: var(--zone-tc-band-1-shape, polygon(10% 30%, 30% 30%, 82% 100%, 62% 100%));
+  --zone-tc-band-x: var(--zone-tc-band-1-x, 0);
+  --zone-tc-band-y: var(--zone-tc-band-1-y, 0);
+}
+
+.zone-title-card-band[data-band="2"] {
+  --zone-tc-band-shape: var(--zone-tc-band-2-shape, polygon(12% 58%, 52% 58%, 84% 100%, 44% 100%));
+  --zone-tc-band-x: var(--zone-tc-band-2-x, 0);
+  --zone-tc-band-y: var(--zone-tc-band-2-y, 0);
+}
+
+.zone-title-card-band[data-band="3"] {
+  --zone-tc-band-shape: var(--zone-tc-band-3-shape, polygon(15% 0, 31% 0, 106% 100%, 90% 100%));
+  --zone-tc-band-x: var(--zone-tc-band-3-x, 0);
+  --zone-tc-band-y: var(--zone-tc-band-3-y, 0);
+}
+
+/* The face: the name over the ZONE bar, the act disc beside them, the
+ * whole a little above the middle so a busy strip at the foot never
+ * touches it. Columns shrink before anything is cut. */
+.zone-title-card-face {
+  position: absolute;
+  inset: 0;
   display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  min-width: var(--zone-title-card-circle);
-  min-height: var(--zone-title-card-circle);
-  aspect-ratio: 1;
-  padding: calc(var(--zone-title-card-circle) * 0.12);
-  border-radius: 50%;
-  background: var(--zone-act-circle);
-}
-
-/* The act wraps at a space, never inside a word: a long system widens the
- * circle instead. */
-.zone-title-card-slab {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  grid-template-columns: minmax(0, max-content) auto;
+  grid-template-areas:
+    "name disc"
+    "zone disc";
+  align-content: center;
   justify-content: center;
-  gap: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2);
-  max-width: calc(var(--zone-title-card-circle) * 0.76);
-  min-width: min-content;
-  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) * 2) calc(var(--zone-row-gap) * var(--zone-px));
-  background: var(--zone-act-slab);
-  color: var(--zone-act-ink);
-  --zone-caps-shade: currentColor;
-  text-align: center;
-  text-shadow: none;
+  align-items: center;
+  column-gap: calc(var(--zone-tc-gap) * var(--zone-px));
+  row-gap: calc(var(--zone-tc-row-gap) * var(--zone-px));
+  padding: calc(var(--zone-tc-margin) * var(--zone-px));
+  padding-bottom: calc(var(--zone-tc-lift) * var(--zone-px));
 }
 
-.zone-title-card-act-word {
-  font-size: var(--zone-title-card-type-act-word);
+.zone-title-card-face[data-act="none"] {
+  grid-template-columns: minmax(0, max-content);
+  grid-template-areas:
+    "name"
+    "zone";
+}
+
+/* The name: white caps rising 3 art px over the black slab behind them, the
+ * slab leaning at 45 degrees with stair edges, sliding in from the left. */
+.zone-title-card-name {
+  position: relative;
+  grid-area: name;
+  justify-self: end;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 calc(var(--zone-tc-slab-pad) * var(--zone-px));
+  translate: calc(var(--zone-tc-name-x, 0) * var(--zone-px)) 0;
+}
+
+.zone-title-card-slab {
+  position: absolute;
+  inset: calc(var(--zone-tc-overhang) * var(--zone-px)) 0 calc(var(--zone-tc-overhang) * -1 * var(--zone-px));
+  z-index: -1;
+  background: var(--zone-black);
+  clip-path: var(--zone-panel-shape, polygon(1.5em 0, 100% 0, calc(100% - 1.5em) 100%, 0 100%));
+}
+
+/* caps-3, stepped down whole caps by the card's fit (--zone-fit), on one
+ * line until the fit is at caps-1, then wrapping between words. */
+.zone-title-card-title {
+  --zone-words-wrap: nowrap;
+  --zone-words-align: flex-end;
+  --zone-words-line-gap: calc(var(--zone-tc-leading) * var(--zone-px));
+  margin: 0;
+  font: inherit;
+  font-size: calc(var(--zone-caps-3) * var(--zone-px) * var(--zone-fit, 1));
   line-height: 1;
+  text-align: right;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
+.zone-title-card-title[data-zone-fit-floor] {
+  --zone-words-wrap: wrap;
+}
+
+/* ZONE on the white bar, its left end cut at 45 degrees; the system's tag
+ * under it. Both slide in from the right. */
+.zone-title-card-zone {
+  display: flex;
+  grid-area: zone;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-self: end;
+  gap: calc(var(--zone-tc-row-gap) * var(--zone-px));
+  translate: calc(var(--zone-tc-bar-x, 0) * var(--zone-px)) 0;
+}
+
+.zone-title-card-bar {
+  display: inline-flex;
+  align-items: center;
+  padding: calc(var(--zone-tc-bar-pad-y) * var(--zone-px)) calc(var(--zone-tc-bar-pad) * var(--zone-px)) calc(var(--zone-tc-bar-pad-y) * var(--zone-px)) calc(var(--zone-tc-bar-lead) * var(--zone-px));
+  background: var(--zone-white);
+  clip-path: var(--zone-panel-shape, polygon(1em 0, 100% 0, 100% 100%, 0 100%));
+  font-size: calc(var(--zone-caps-2) * var(--zone-px));
+}
+
+.zone-title-card-system {
+  display: inline-flex;
+  max-width: 100%;
+  height: calc(var(--zone-tc-tag-h) * var(--zone-px));
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+}
+
+/* The act disc: an orange pixel circle 52 art px across, ACT on a black
+ * tab at its upper left and the number in caps-3 (caps-2 from three
+ * digits), scaled in four steps by its moment. */
+.zone-title-card-disc {
+  position: relative;
+  display: grid;
+  grid-area: disc;
+  place-items: center;
+  width: calc(var(--zone-tc-disc) * var(--zone-px));
+  height: calc(var(--zone-tc-disc) * var(--zone-px));
+  background: var(--zone-orange);
+  clip-path: var(--zone-tc-disc-shape, circle(50%));
+  scale: var(--zone-tc-disc-scale, 1);
+}
+
+.zone-title-card-act-tab {
+  position: absolute;
+  top: calc(var(--zone-tc-tab-top) * var(--zone-px));
+  left: calc(var(--zone-tc-tab-left) * var(--zone-px));
+  padding: calc(var(--zone-tc-tab-pad) * var(--zone-px));
+  background: var(--zone-black);
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
 }
 
 .zone-title-card-act {
-  font-size: var(--zone-title-card-type-act);
-  line-height: 1;
+  padding-top: calc(var(--zone-tc-act-drop) * var(--zone-px));
+  font-size: calc(var(--zone-caps-3) * var(--zone-px));
+}
+
+.zone-title-card-disc[data-digits="3"] .zone-title-card-act {
+  font-size: calc(var(--zone-caps-2) * var(--zone-px));
+}
+
+/* Taller than wide (src/plan/title-card.ts, ZONE_TITLE_STACK_ASPECT): the
+ * disc moves under the words, which take the card's whole width. */
+@container (aspect-ratio < 1) {
+  .zone-title-card-face {
+    grid-template-columns: minmax(0, max-content);
+    grid-template-areas:
+      "name"
+      "zone"
+      "disc";
+  }
+
+  .zone-title-card-disc {
+    justify-self: end;
+  }
 }

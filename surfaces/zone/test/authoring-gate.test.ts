@@ -338,10 +338,15 @@ describe("the ground is the one drawing", () => {
    * only place allowed to draw on a canvas or run a frame clock; anything
    * else that animates does it in a stylesheet, where reduced motion stops
    * it, and anything else that shows a value shows it from the model.
+   *
+   * The one other clock is the moments' (use-zone-moment.ts): the brief's
+   * structural and idle motion (REFINEMENT.md, 2d) is a seekable render(t),
+   * which a stylesheet transition cannot be. It draws on no canvas, writes
+   * only custom properties, and paints one rest frame under reduced motion.
    */
-  const CANVAS_ALLOWANCE = ["ui/organisms/ZoneGround.tsx", "use-zone-ground.ts"]
+  const CANVAS_ALLOWANCE = ["ui/organisms/ZoneGround.tsx", "use-zone-ground.ts", "use-zone-moment.ts"]
 
-  test("only ZoneGround and its hook draw on a canvas or run a frame clock", () => {
+  test("only ZoneGround, its hook and the moments' clock draw on a canvas or run a frame clock", () => {
     const offenders = tsxFiles
       .filter((file) => !file.endsWith(".part.tsx"))
       .filter((file) => /getContext\(|requestAnimationFrame\(|<canvas\b/.test(read(file)))

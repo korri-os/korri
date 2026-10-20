@@ -1,9 +1,14 @@
 /* A tag is a slab of one palette colour with caps in the middle. The slant
  * of its cut ends is the panel slant, held under half a line so a small
- * tag on a side card keeps its lean. */
+ * tag on a side card keeps its lean.
+ *
+ * Its caps stand on the art grid: the size the holder asks for
+ * (--zone-tag-type) is rounded down to a whole caps step, never under
+ * caps-1, so a share of a card never lands between art pixels. */
 .zone-tag {
   --zone-tag-slant: min(calc(var(--zone-slant) * var(--zone-px)), 0.55em);
   --zone-tag-slant-pad: calc(var(--zone-tag-slant) / 2 + calc(var(--zone-tag-pad) * var(--zone-px)));
+  --zone-tag-caps: calc(var(--zone-caps-1) * var(--zone-px));
   flex: 1 1 0;
   display: inline-grid;
   place-items: center;
@@ -14,17 +19,21 @@
   overflow: hidden;
   background: var(--zone-tag-system);
   color: var(--zone-tag-ink);
-  --zone-caps-shade: currentColor;
-  font-size: var(--zone-tag-type, calc(var(--zone-type-button-tall) * var(--zone-px)));
+  font-size: max(var(--zone-tag-caps), round(down, var(--zone-tag-type, var(--zone-tag-caps)), var(--zone-tag-caps)));
   line-height: 1;
   white-space: nowrap;
   text-overflow: ellipsis;
+  text-transform: uppercase;
+  /* White ink: a ring one art px wide on all eight sides, no blur. */
   text-shadow:
-    calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -0.5) 0 0 var(--zone-cap-outline-colour),
-    calc(calc(var(--zone-cap-outline) * var(--zone-px)) * 0.5) 0 0 var(--zone-cap-outline-colour),
-    0 calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -0.5) 0 var(--zone-cap-outline-colour),
-    0 calc(calc(var(--zone-cap-outline) * var(--zone-px)) * 0.5) 0 var(--zone-cap-outline-colour),
-    calc(calc(var(--zone-cap-outline) * var(--zone-px)) * 0.5) calc(calc(var(--zone-cap-outline) * var(--zone-px)) * 0.5) 0 var(--zone-cap-outline-colour);
+    calc(var(--zone-px) * -1) calc(var(--zone-px) * -1) 0 var(--zone-black),
+    0 calc(var(--zone-px) * -1) 0 var(--zone-black),
+    var(--zone-px) calc(var(--zone-px) * -1) 0 var(--zone-black),
+    calc(var(--zone-px) * -1) 0 0 var(--zone-black),
+    var(--zone-px) 0 0 var(--zone-black),
+    calc(var(--zone-px) * -1) var(--zone-px) 0 var(--zone-black),
+    0 var(--zone-px) 0 var(--zone-black),
+    var(--zone-px) var(--zone-px) 0 var(--zone-black);
 }
 
 /* Joined tags overlap by one slant so the cut of one lies on the cut of the
@@ -49,12 +58,19 @@
   padding-left: var(--zone-tag-slant-pad);
 }
 
-/* The kinds. A light tag takes black ink and drops the outline. */
+/* A row too narrow for every tag hides its last ones (ZoneTagRow). */
+.zone-tag[data-tag-hidden] {
+  display: none;
+}
+
+/* The kinds. A light tag takes black ink and no ring. */
+.zone-tag:is([data-kind="here"], [data-kind="saved"], [data-kind="open"], [data-kind="download"]) {
+  color: var(--zone-black);
+  text-shadow: none;
+}
+
 .zone-tag[data-kind="here"] {
   background: var(--zone-tag-here);
-  color: var(--zone-tag-here-ink);
-  --zone-caps-shade: currentColor;
-  text-shadow: none;
 }
 
 .zone-tag[data-kind="remote"] {
@@ -63,29 +79,18 @@
 
 .zone-tag[data-kind="saved"] {
   background: var(--zone-tag-saved);
-  color: var(--zone-tag-dark-ink);
-  --zone-caps-shade: currentColor;
-  text-shadow: none;
 }
 
 .zone-tag[data-kind="open"] {
   background: var(--zone-tag-open);
-  color: var(--zone-tag-dark-ink);
-  --zone-caps-shade: currentColor;
-  text-shadow: none;
 }
 
+/* CONTINUE: TIME ATTACK's third tag, white caps on black. */
 .zone-tag[data-kind="continue"] {
-  background: var(--zone-tag-continue);
-  color: var(--zone-tag-dark-ink);
-  --zone-caps-shade: currentColor;
-  text-shadow: none;
+  background: var(--zone-black);
 }
 
 /* A game that needs a download first: orange with black ink. */
 .zone-tag[data-kind="download"] {
   background: var(--zone-tag-download);
-  color: var(--zone-tag-dark-ink);
-  --zone-caps-shade: currentColor;
-  text-shadow: none;
 }

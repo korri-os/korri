@@ -5,6 +5,7 @@ import { useZoneFit } from "../../use-zone-fit"
 import { formatZoneBytes } from "../../plan/bytes"
 import { ZoneCoverWell } from "../atoms/ZoneCoverWell"
 import type { ZoneTagItem } from "../atoms/ZoneTag"
+import { ZoneWords } from "../atoms/ZoneWords"
 import { ZoneTagRow } from "./ZoneTagRow"
 
 /** A place a game can be played: this device, or a remote one by name. */
@@ -48,13 +49,21 @@ export const cardTags = ({ system, places, resumable, download }: ZoneCardFacts)
 ]
 
 /**
- * The zone card: a black body with a hard drop edge, the cover in its well,
- * the title in two lines of white caps that shrink to fit, the orange, blue
- * and mint diagonal band, and the tag row. A game that needs a download
- * before its first launch closes the row with an orange DOWNLOAD tag and
- * the size when Korri knows it. Focused, it wears the pink edge
- * and the two red triangles that point at it; at an end of the band, the
- * triangle with nothing beyond it dims.
+ * The zone card, as TIME ATTACK's: a black body whose 4-art-px frame holds
+ * the cover in its well, the title in white caps, the light, blue and teal
+ * diagonal stripe, and the tag row, on a hard drop in the ground's shade.
+ * A game that needs a download before its first launch closes the row with
+ * an orange DOWNLOAD tag and the size when Korri knows it. Focused, it
+ * wears the pink edge and the two red triangles that point at it; at an
+ * end of the band, the triangle with nothing beyond it dims.
+ *
+ * No letter is ever cut. The focused title is caps-2 and steps to caps-1,
+ * then wraps between words, the well giving way; a word longer than the
+ * card stands whole past its edge. A side card's title is caps-1, wraps the
+ * same way, and cuts only a word wider than the card, with "…" (whole once
+ * focused). The tag row steps its caps, then drops its last tags; the
+ * focused card reports how many it kept (`onTagsShown`), so the page shows
+ * the rest on the facts line.
  *
  * A native button: the host puts DOM focus on it and the card reports the
  * focus through `onFocus`, and A (a click) through `onPress`. Its size comes from the band through
@@ -72,6 +81,7 @@ export function ZoneCard({
   size = "focus",
   onFocus,
   onPress,
+  onTagsShown,
 }: ZoneCardFacts & {
   readonly focused?: boolean
   readonly position?: ZoneCardPosition
@@ -79,10 +89,13 @@ export function ZoneCard({
   readonly onFocus?: () => void
   /** A on the card. */
   readonly onPress?: () => void
+  /** How many tags the row kept after its fit. */
+  readonly onTagsShown?: (count: number) => void
 }) {
   const card = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLSpanElement>(null)
   useZoneFit(card, [heading], title)
+  const several = /\s/.test(title.trim())
   return (
     <button
       className="zone-card"
@@ -98,9 +111,13 @@ export function ZoneCard({
       <i aria-hidden="true" className="zone-card-tri" data-side="right" />
       <ZoneCoverWell art={art} title={title} />
       <span className="zone-card-body">
-        <span className="zone-card-title" ref={heading}>{title}</span>
+        {/* A title of several words is drawn word by word; it is read once, whole. */}
+        {several ? <span className="zone-card-name">{title}</span> : null}
+        <span aria-hidden={several || undefined} className="zone-card-title" ref={heading}>
+          <ZoneWords text={title} />
+        </span>
         <i aria-hidden="true" className="zone-card-stripe" />
-        <ZoneTagRow tags={cardTags({ title, system, places, resumable, download })} />
+        <ZoneTagRow onShown={onTagsShown} tags={cardTags({ title, system, places, resumable, download })} />
       </span>
     </button>
   )

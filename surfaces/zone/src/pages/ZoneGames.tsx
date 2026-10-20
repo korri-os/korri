@@ -6,15 +6,19 @@ import { ZoneButton } from "../ui/atoms/ZoneButton"
 import { ZoneCaps } from "../ui/atoms/ZoneCaps"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
 import { ZonePanel } from "../ui/atoms/ZonePanel"
+import { ZoneTag } from "../ui/atoms/ZoneTag"
 import { ZoneActionRow, type ZoneAction } from "../ui/molecules/ZoneActionRow"
 import { ZoneBusyStrip } from "../ui/molecules/ZoneBusyStrip"
+import { cardTags } from "../ui/molecules/ZoneCard"
 import { ZoneCardBand, type ZoneBandCard } from "../ui/molecules/ZoneCardBand"
 import { ZoneDialog } from "../ui/molecules/ZoneDialog"
 import { ZoneFoot } from "../ui/molecules/ZoneFoot"
 import { ZoneKeyboard, type ZoneKey, type ZoneKeyboardLayer } from "../ui/molecules/ZoneKeyboard"
 import { ZoneOptionGroup, type ZoneOptionGroupRow } from "../ui/molecules/ZoneOptionGroup"
 import { ZoneTabStrip, type ZoneTabItem } from "../ui/molecules/ZoneTabStrip"
-import { ZoneTitleCard } from "../ui/molecules/ZoneTitleCard"
+import { ZoneAttract } from "../ui/organisms/ZoneAttract"
+import { ZoneLaunchCard } from "../ui/organisms/ZoneLaunchCard"
+import { ZoneTally } from "../ui/organisms/ZoneTally"
 import { ZoneShell } from "../ui/templates/ZoneShell"
 
 export type ZoneGamesTab = "games" | "options" | "savedata"
@@ -87,6 +91,41 @@ export type ZoneGamesEvent =
   | { readonly _tag: "FocusedAnswer"; readonly index: number }
   | { readonly _tag: "AnsweredGameAction"; readonly yes: boolean }
   | { readonly _tag: "ChoseReload" }
+  | { readonly _tag: "PressedTally" }
+
+/** The idle attract's game this turn: its title card, then its stage. */
+export interface ZoneGamesIdle {
+  /** Names the turn: a new one starts the attract's clock again. */
+  readonly key: string
+  readonly title: string
+  readonly system?: string
+  /** The session that would start next: Korri's playCount + 1. */
+  readonly act: number
+  /** Korri's wide art, else its cover. */
+  readonly art?: string
+  readonly plays?: number
+}
+
+/** The launch title card, from PLAY or CONTINUE until Korri lets go of the game. */
+export interface ZoneGamesLaunchCard {
+  readonly title: string
+  readonly system?: string
+  readonly act: number
+  /** Korri's status has named the launch: the card now holds the page. */
+  readonly seen: boolean
+  readonly leaving: boolean
+}
+
+/** The results tally after a session whose count rose by exactly one. */
+export interface ZoneGamesTally {
+  readonly gameId: string
+  readonly title: string
+  readonly seconds?: number
+  readonly plays: number
+  readonly total?: number
+  readonly counted: boolean
+  readonly leaving: boolean
+}
 
 export interface ZoneGamesProps {
   /** The plan's two answers: height picks the strips, width the band. */
@@ -111,8 +150,12 @@ export interface ZoneGamesProps {
   readonly finding: boolean
   /** GAME OPTS. is open over the band. */
   readonly opts?: ZoneGamesOpts
-  /** The idle title card: the game it shows now. */
-  readonly idle?: { readonly title: string; readonly act?: string }
+  /** The idle attract: the game whose turn it is. */
+  readonly idle?: ZoneGamesIdle
+  /** The launch title card over the page. */
+  readonly launch?: ZoneGamesLaunchCard
+  /** The results tally over the page. */
+  readonly tally?: ZoneGamesTally
   readonly clock?: string
   readonly device?: string
   readonly connection?: SurfaceNetworkConnection
@@ -143,6 +186,10 @@ const day = (at: number): string => {
 
 const hoursAndMinutes = ({ hours, minutes }: { readonly hours: number; readonly minutes: number }): string =>
   hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
+
+/** TIME ATTACK's empty record: the dashes a fact Korri has not recorded shows. */
+const NO_TIME = "--'--\"--"
+const NO_VALUE = "--"
 
 /** PLAY, CONTINUE, PLAY HERE, PLAY ON ZAO. */
 export const launchLabel = (launch: ZoneGamesLaunch): string => {
@@ -180,7 +227,7 @@ const buttonsIn = (region: Element | null): HTMLButtonElement[] =>
 export function ZoneGames(props: ZoneGamesProps) {
   const {
     strips, band, factsAt, keysAt, tab, tabCursor, zone, catalog, cards, focusedCard, facts, launches, focusedAction,
-    find, finding, opts, idle, clock, device, connection, build, onEvent,
+    find, finding, opts, idle, launch, tally, clock, device, connection, build, onEvent,
   } = props
   const root = useRef<HTMLDivElement | null>(null)
   // True while the page itself moves DOM focus to where the props say it is:
@@ -195,10 +242,18 @@ export function ZoneGames(props: ZoneGamesProps) {
   const choice = launches.length > 1
   const failed = games && catalog._tag === "Error"
   const layer = opts !== undefined ? "opts" : finding ? "keyboard" : failed ? "error" : "none"
+  // The tally covers the page, makes it inert and holds the cursor itself.
+  // The launch card does too once Korri has named the launch; before that
+  // it is only Zone's announcement, and a move under it lets go of it.
+  // Idle covers nothing: a key wakes it.
+  const holding = tally !== undefined && !tally.leaving
+  const launching = launch !== undefined && !launch.leaving && launch.seen
 
   // Where DOM focus belongs, as a region and an index in it.
   const target: readonly [string, number | string] | undefined =
-    opts !== undefined ? (opts.asking !== undefined ? ["answer", opts.answer] : ["opts", opts.row])
+    holding ? ["tally", 0]
+    : launching ? undefined
+    : opts !== undefined ? (opts.asking !== undefined ? ["answer", opts.answer] : ["opts", opts.row])
     : finding ? ["keys", find.key]
     : zone === "tabs" || !games ? ["tabs", Math.max(0, TABS.findIndex(item => item.id === tabCursor))]
     : zone === "find" ? ["find", 0]
@@ -209,7 +264,7 @@ export function ZoneGames(props: ZoneGamesProps) {
     : catalog._tag === "Ready" ? ["find", 0]
     : catalog._tag === "Empty" ? ["tabs", 0]
     : undefined
-  const targetKey = target === undefined ? "" : `${target[0]}:${target[1]}:${idle === undefined ? "awake" : "idle"}`
+  const targetKey = target === undefined ? "" : `${target[0]}:${target[1]}:${idle === undefined ? "awake" : "idle"}:${launching}`
 
   useLayoutEffect(() => {
     if (target === undefined || root.current === null) return
@@ -248,14 +303,30 @@ export function ZoneGames(props: ZoneGamesProps) {
   // lit until the cursor is on one.
   const lit = choice ? focusedLaunch : launches[0]?.id
 
-  const factLines = facts === undefined ? [] : [
-    ...(facts.lastPlayedAt === undefined ? [] : [["Last played", day(facts.lastPlayedAt)] as const]),
-    ...(facts.playCount === undefined ? [] : [["Plays", String(facts.playCount)] as const]),
-    ...(facts.playtime === undefined ? [] : [["Time", hoursAndMinutes(facts.playtime)] as const]),
+  // The facts line as a HUD: Korri's facts, or TIME ATTACK's dashes for a
+  // fact it has not recorded. DOWNLOAD only when Korri says so.
+  const factLines: readonly (readonly [string, string | undefined, boolean])[] = facts === undefined || game === undefined ? [] : [
+    ["Last played", facts.lastPlayedAt === undefined ? NO_VALUE : day(facts.lastPlayedAt), facts.lastPlayedAt !== undefined],
+    ["Plays", facts.playCount === undefined ? NO_VALUE : String(facts.playCount), facts.playCount !== undefined],
+    ["Time", facts.playtime === undefined ? NO_TIME : hoursAndMinutes(facts.playtime), facts.playtime !== undefined],
     // DOWNLOAD and its size, or the word alone when Korri does not know it.
     ...(facts.download === undefined ? []
-      : [["Download", facts.download.bytes === undefined ? undefined : formatZoneBytes(facts.download.bytes)] as const]),
+      : [["Download", facts.download.bytes === undefined ? undefined : formatZoneBytes(facts.download.bytes), true] as const]),
   ]
+  const recorded = factLines.some(([, , known]) => known)
+
+  // The focused card's tags its own row could not keep stand at the facts
+  // line's start, so the whole set is on screen. DOWNLOAD is a fact already.
+  const spillTags = game === undefined ? [] : cardTags(game)
+  const spill = useRef<HTMLDivElement | null>(null)
+  const spillFrom = (shown: number) => {
+    const tags = spill.current?.querySelectorAll<HTMLElement>(".zone-tag") ?? []
+    tags.forEach((tag, index) => {
+      const kept = index < shown || spillTags[index]?.kind === "download"
+      tag.toggleAttribute("data-tag-hidden", kept)
+    })
+    spill.current?.toggleAttribute("data-empty", [...tags].every(tag => tag.hasAttribute("data-tag-hidden")))
+  }
 
   const tabsSlot = (
     <div className="zone-games-tabs" data-games-region="tabs">
@@ -284,6 +355,7 @@ export function ZoneGames(props: ZoneGamesProps) {
 
   return (
     <div className="zone-games" data-layer={layer} data-strips={strips} ref={root}>
+      <div className="zone-games-page" inert={holding || launching}>
       <ZoneShell
         band={band}
         foot={<ZoneFoot build={build} clock={clock} connection={connection} device={device} />}
@@ -305,6 +377,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                   focusedIndex={focusedCard}
                   onChoose={index => onEvent({ _tag: "ChoseCard", index })}
                   onFocus={index => report({ _tag: "FocusedCard", index })}
+                  onFocusedTagsShown={spillFrom}
                   visible={band === "wide" ? 5 : 3}
                 />
               )}
@@ -328,25 +401,29 @@ export function ZoneGames(props: ZoneGamesProps) {
             )}
             {finding && keysAt === "body" ? keyboard : finding ? null : (
               <>
-                <div className="zone-games-facts" data-empty={factLines.length === 0 || undefined} inert={layer !== "none"}>
-                  {factLines.length === 0 || game === undefined ? (
-                    // The line keeps its height when Korri has no facts, so the band
-                    // does not jump as the cursor passes a game never played.
+                <div className="zone-games-factline" inert={layer !== "none"}>
+                  <div className="zone-games-spill" data-empty="" ref={spill}>
+                    {spillTags.map(tag => (
+                      <ZoneTag key={`${tag.kind}:${tag.label}`} kind={tag.kind} label={tag.label} />
+                    ))}
+                  </div>
+                  <div className="zone-games-facts" data-empty={!recorded || undefined}>
                     <ZonePanel edge={false}>
-                      <ZoneCaps>{"\u00a0"}</ZoneCaps>
+                      {factLines.length === 0 ? (
+                        // The line keeps its height with no game, so the band does not jump.
+                        <ZoneCaps>{"\u00a0"}</ZoneCaps>
+                      ) : (
+                        <span className="zone-games-fact-run">
+                          {factLines.map(([label, value, known]) => (
+                            <span className="zone-games-fact" key={label}>
+                              <ZoneCaps ink="hud">{label}</ZoneCaps>
+                              {value === undefined ? null : <ZoneCaps fact={known}>{value}</ZoneCaps>}
+                            </span>
+                          ))}
+                        </span>
+                      )}
                     </ZonePanel>
-                  ) : (
-                    <ZonePanel edge={false}>
-                      <span className="zone-games-fact-run">
-                        {factLines.map(([label, value]) => (
-                          <span className="zone-games-fact" key={label}>
-                            <span className="zone-games-fact-label">{label}</span>
-                            {value === undefined ? null : <ZoneCaps>{value}</ZoneCaps>}
-                          </span>
-                        ))}
-                      </span>
-                    </ZonePanel>
-                  )}
+                  </div>
                 </div>
                 <div className="zone-games-actions" data-games-region="actions" inert={layer !== "none"}>
                   {catalog._tag === "Loading" ? (
@@ -444,9 +521,36 @@ export function ZoneGames(props: ZoneGamesProps) {
         )}
       </ZoneShell>
       {finding && keysAt === "screen" ? keyboard : null}
+      </div>
       {idle === undefined ? null : (
         <div aria-live="off" className="zone-games-idle">
-          <ZoneTitleCard act={idle.act} title={idle.title} />
+          <ZoneAttract
+            act={idle.act}
+            art={idle.art}
+            clock={clock}
+            plays={idle.plays}
+            system={idle.system}
+            title={idle.title}
+            turn={idle.key}
+          />
+        </div>
+      )}
+      {launch === undefined ? null : (
+        <ZoneLaunchCard act={launch.act} leaving={launch.leaving} system={launch.system} title={launch.title} />
+      )}
+      {tally === undefined ? null : (
+        <div className="zone-games-tally" data-games-region="tally">
+          <ZoneTally
+            counted={tally.counted}
+            focused={holding}
+            gameId={tally.gameId}
+            leaving={tally.leaving}
+            onPress={() => onEvent({ _tag: "PressedTally" })}
+            plays={tally.plays}
+            seconds={tally.seconds}
+            title={tally.title}
+            total={tally.total}
+          />
         </div>
       )}
     </div>

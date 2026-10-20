@@ -919,3 +919,90 @@
   /** @label Rings @min 0 @max 1 @step 1 */
   --zone-ground-rings: 1;
 }
+
+/* ---- refine-games ----
+ * GAMES, GAME OPTS., FIND, the idle attract and the launch moments
+ * (REFINEMENT.md 2d, 3 and 4). Appended by the games worker; the blocks
+ * above are untouched. */
+.zone-theme {
+  /** The card's black frame round its well, focused. Art px. @label Card frame @min 0 @max 12 @step 1 */
+  --zone-games-card-frame: 4;
+  /** A side card's frame. Art px. @label Card frame, side @min 0 @max 12 @step 1 */
+  --zone-games-card-frame-side: 3;
+  /** The stripe under a focused card's title. Art px. @label Card stripe @min 1 @max 16 @step 1 */
+  --zone-games-card-stripe: 6;
+  /** The stripe under a side card's title. Art px. @label Card stripe, side @min 1 @max 16 @step 1 */
+  --zone-games-card-stripe-side: 4;
+  /** The room between a card's well, title, stripe and tags. Art px. @label Card gap @min 0 @max 8 @step 1 */
+  --zone-games-card-gap: 2;
+  /** The room between two lines of a wrapped title. Art px. @label Title leading @min 0 @max 8 @step 1 */
+  --zone-games-title-leading: 2;
+  /** Room between two facts, and between the spilled tags. Art px. @label Fact gap @min 0 @max 24 @step 1 */
+  --zone-games-fact-gap: 8;
+  /** Room between a fact's label and its value. Art px. @label Fact label gap @min 0 @max 12 @step 1 */
+  --zone-games-fact-pair: 4;
+  /** A spilled tag's height on the facts line. Art px. @label Spilled tag height @min 10 @max 24 @step 1 */
+  --zone-games-spill-h: 14;
+  /** One loop of the cursor triangles' nudge: two steps, 2 art px apart (M1). @label Nudge loop @min 0ms @max 2000ms @step 20ms */
+  --zone-games-nudge-time: 480ms;
+
+  /* The title card (M3, M6). */
+  /** Room between the title card's words and its act disc. Art px. @label Title card gap @min 0 @max 24 @step 1 */
+  --zone-tc-gap: 8;
+  /** Room between the name, the ZONE bar and the system's tag. Art px. @label Title card row gap @min 0 @max 12 @step 1 */
+  --zone-tc-row-gap: 3;
+  /** The title card's margin round its face. Art px. @label Title card margin @min 0 @max 32 @step 1 */
+  --zone-tc-margin: 12;
+  /** Room kept under the face so it stands above the middle, clear of a busy strip. Art px. @label Title card lift @min 0 @max 120 @step 2 */
+  --zone-tc-lift: 40;
+  /** The name panel's room either side of the words, its slant included. Art px. @label Name panel padding @min 0 @max 40 @step 1 */
+  --zone-tc-slab-pad: 22;
+  /** How far the name's caps rise over (and stop short of) their panel. Art px. @label Name overhang @min 0 @max 8 @step 1 */
+  --zone-tc-overhang: 3;
+  /** Room between two lines of a wrapped name. Art px. @label Name leading @min 0 @max 10 @step 1 */
+  --zone-tc-leading: 4;
+  /** The ZONE bar's room over and under its caps. Art px. @label ZONE bar padding, block @min 0 @max 8 @step 1 */
+  --zone-tc-bar-pad-y: 3;
+  /** The ZONE bar's room after its caps. Art px. @label ZONE bar padding @min 0 @max 24 @step 1 */
+  --zone-tc-bar-pad: 6;
+  /** The ZONE bar's room before its caps, its cut included. Art px. @label ZONE bar lead @min 0 @max 48 @step 1 */
+  --zone-tc-bar-lead: 30;
+  /** The system's tag under the ZONE bar. Art px. @label Title card tag height @min 10 @max 24 @step 1 */
+  --zone-tc-tag-h: 14;
+  /** The act disc across. Art px. @label Act disc @min 30 @max 80 @step 1 */
+  --zone-tc-disc: 52;
+  /** The ACT tab's top inside the disc. Art px. @label ACT tab top @min 0 @max 20 @step 1 */
+  --zone-tc-tab-top: 8;
+  /** The ACT tab's left inside the disc. Art px. @label ACT tab left @min 0 @max 20 @step 1 */
+  --zone-tc-tab-left: 6;
+  /** The ACT tab's room round its caps. Art px. @label ACT tab padding @min 0 @max 6 @step 1 */
+  --zone-tc-tab-pad: 1;
+  /** How far the act number stands under the disc's middle. Art px. @label Act number drop @min 0 @max 20 @step 1 */
+  --zone-tc-act-drop: 8;
+
+  /* The idle attract (M6). */
+  /** The attract's HUD and prompt inset from the screen's edge. Art px. @label Attract inset @min 0 @max 32 @step 1 */
+  --zone-attract-inset: 8;
+  /** Room between the HUD's lines. Art px. @label Attract HUD gap @min 0 @max 12 @step 1 */
+  --zone-attract-hud-gap: 4;
+  /** The stage's room to pan into, past its right edge. Art px. @label Attract pan room @min 0 @max 64 @step 1 */
+  --zone-attract-pan-room: 32;
+  /** A stripe's width in the stage that has no art. Art px. @label Attract stripe @min 2 @max 40 @step 1 */
+  --zone-attract-stripe: 12;
+
+  /* The results tally (M5). */
+  /** Room between the tally's rows and columns. Art px. @label Tally gap @min 0 @max 16 @step 1 */
+  --zone-tally-gap: 6;
+  /** The tally's margin round its panel. Art px. @label Tally margin @min 0 @max 32 @step 1 */
+  --zone-tally-margin: 12;
+  /** The heading panel's room either side of the title, its slant included. Art px. @label Tally heading padding @min 0 @max 48 @step 1 */
+  --zone-tally-head-pad: 26;
+  /** The least a tally bar keeps. Art px. @label Tally bar, least @min 0 @max 200 @step 2 */
+  --zone-tally-bar-least: 40;
+  /** The most a tally bar takes. Art px. @label Tally bar, most @min 40 @max 400 @step 2 */
+  --zone-tally-bar-most: 140;
+  /** A tally bar's height, its black underside included. Art px. @label Tally bar height @min 2 @max 12 @step 1 */
+  --zone-tally-bar-h: 5;
+  /** How far the bar stands over the row's foot. Art px. @label Tally bar lift @min 0 @max 8 @step 1 */
+  --zone-tally-bar-drop: 1;
+}

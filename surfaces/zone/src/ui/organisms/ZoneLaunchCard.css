@@ -1,0 +1,15 @@
+/* Over the whole page; the slot for a strip of its own at its foot. */
+.zone-launch-card {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+}
+
+.zone-launch-card-foot {
+  position: absolute;
+  right: 0;
+  bottom: calc(var(--zone-strip-inset) * var(--zone-px));
+  left: 0;
+  display: flex;
+  justify-content: center;
+}

@@ -3,58 +3,62 @@ import { ZonePartFrame } from "../../fixtures/ZonePartFrame"
 import { ZoneTitleCard } from "./ZoneTitleCard"
 
 export const name = "Title card"
-export const note = "Mania's zone title card for idle: ground, three diagonal bands, the title on black, the system in the ACT circle"
+export const note = "The title card at rest: yellow ground, four stair bands, the title over its black panel, ZONE on the white bar, the system's tag, the act disc"
 
 const celeste = fixtureGames[0]
 const zelda = fixtureGames[9]
 
-/** A short title and its system. */
+/** A short title, its system, and its next act. */
 export default function ShortTitle() {
-  return <ZoneTitleCard act={celeste?.subtitle} title={celeste?.title ?? ""} />
+  return <ZoneTitleCard act={24} system={celeste?.subtitle} title={celeste?.title ?? ""} />
 }
 
-/** The longest title in the catalog: it wraps on the panel and the circle keeps its place. */
+/** The longest title in the catalog: it steps to caps-1 and wraps between words; the disc keeps its place. */
 export function LongTitle() {
-  return <ZoneTitleCard act={zelda?.subtitle} title={zelda?.title ?? ""} />
+  return <ZoneTitleCard act={3} system={zelda?.subtitle} title={zelda?.title ?? ""} />
 }
 
-/** Korri gave no system: no circle. */
+/** A game never played: ACT 1. */
+export function FirstAct() {
+  return <ZoneTitleCard act={1} system="SNES" title="Super Metroid" />
+}
+
+/** A hundred sessions and more: three digits step the number to caps-2. */
+export function ThreeDigits() {
+  return <ZoneTitleCard act={128} system="PICO-8" title="Celeste Classic" />
+}
+
+/** No act and no system: no disc and no tag, never an empty one. */
 export function NoAct() {
   return <ZoneTitleCard title={celeste?.title ?? ""} />
 }
 
-/** Another ground and band order: the card is a palette, not a picture. */
-export function OtherBands() {
-  return <ZoneTitleCard act="SNES" bands={["red", "orange", "blue"]} ground="mint" title="Super Metroid" />
-}
-
-/** A strip: the circle shrinks with the height and the title stays on one line. */
+/** A strip: the title stays on one line at a smaller step. */
 export function WideShort() {
   return (
     <ZonePartFrame shape="wide-short">
-      <ZoneTitleCard act={celeste?.subtitle} title={celeste?.title ?? ""} />
+      <ZoneTitleCard act={24} system={celeste?.subtitle} title={celeste?.title ?? ""} />
     </ZonePartFrame>
   )
 }
 
 /**
- * A narrow-tall column with the longest title: the circle stands under the
- * title, and the title wraps between words at a size that fits its longest
- * word, never one letter to a line.
+ * A narrow-tall column with the longest title: the disc stands under the
+ * words, which wrap between words at caps-1, never one letter to a line.
  */
 export function NarrowTall() {
   return (
     <ZonePartFrame shape="narrow-tall">
-      <ZoneTitleCard act={zelda?.subtitle} title={zelda?.title ?? ""} />
+      <ZoneTitleCard act={3} system={zelda?.subtitle} title={zelda?.title ?? ""} />
     </ZonePartFrame>
   )
 }
 
-/** One word longer than the card is wide: it shrinks whole rather than break. */
+/** One word longer than the card is wide: whole caps-1, cut with "…" rather than broken. */
 export function LongWord() {
   return (
     <ZonePartFrame shape="narrow-tall">
-      <ZoneTitleCard act="ARCADE" title="Supercalifragilisticexpialidocious" />
+      <ZoneTitleCard act={1} system="ARCADE" title="Supercalifragilisticexpialidocious" />
     </ZonePartFrame>
   )
 }

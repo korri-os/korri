@@ -13,6 +13,10 @@
  *     find     the find draft (the band's filter) and the keyboard's cursor
  *     opts     the cursor in GAME OPTS. and the question it is asking
  *     idleCard which game the idle title card shows, in catalog order
+ *     launch   the title card over GAMES from PLAY or CONTINUE until
+ *              Korri's status lets go of that game (state/tally.ts)
+ *     session  the counts a Running game started with
+ *     tally    the results of that session, when they are unambiguous
  *
  * Layers come from two owners. Korri's (`onboarding`, `busy`, `problem`,
  * `overlay`) follow its model and are settled on every message, so they can
@@ -35,6 +39,17 @@ import {
   type ZoneFind,
 } from "./games"
 import { ask, stay, type ZoneStep } from "./requests"
+import {
+  dropLaunch,
+  pressTally,
+  settleLaunch,
+  settleSession,
+  zoneLaunchOpen,
+  zoneTallyOf,
+  type ZoneLaunch,
+  type ZoneSession,
+  type ZoneTally,
+} from "./tally"
 
 export type ZoneTab = "games" | "options" | "savedata"
 export type ZoneFocusZone = "tabs" | "find" | "cards" | "actions"
@@ -45,8 +60,10 @@ export const ZONE_TABS: readonly ZoneTab[] = ["games", "options", "savedata"]
 
 /** Milliseconds without input before the idle layer shows. */
 export const ZONE_IDLE_AFTER_MS = 30_000
-/** Milliseconds each game's title card holds while idle. */
-export const ZONE_IDLE_CYCLE_MS = 4_000
+/** Milliseconds each game holds the idle attract: its title card, then its stage (REFINEMENT.md M6). */
+export const ZONE_IDLE_CYCLE_MS = 6_000
+/** Milliseconds after which the results tally closes by itself (REFINEMENT.md M5). */
+export const ZONE_TALLY_CLOSE_MS = 8_000
 
 /** GAME OPTS.: the focused row, and the destructive action awaiting NO / YES. */
 export interface ZoneGameOpts {
@@ -73,6 +90,12 @@ export interface ZoneNavigation {
   readonly find: ZoneFind
   readonly opts: ZoneGameOpts
   readonly idleCard: number
+  /** The launch title card over GAMES, while it shows. */
+  readonly launch: ZoneLaunch | undefined
+  /** The counts the Running game started with. */
+  readonly session: ZoneSession | undefined
+  /** The results tally over GAMES, while it shows. */
+  readonly tally: ZoneTally | undefined
 }
 
 export const ZONE_START: ZoneNavigation = {
@@ -86,6 +109,9 @@ export const ZONE_START: ZoneNavigation = {
   find: ZONE_FIND_START,
   opts: ZONE_OPTS_START,
   idleCard: 0,
+  launch: undefined,
+  session: undefined,
+  tally: undefined,
 }
 
 export const topLayer = (nav: ZoneNavigation): ZoneLayer | "none" => nav.layers.at(-1) ?? "none"
@@ -115,6 +141,22 @@ export type ZoneNavMessage =
   | { readonly _tag: "FocusedPage" }
   /** OPTIONS has put its cursor on the SYSTEM group that `system` asked for. */
   | { readonly _tag: "LandedOptions" }
+  /** A on the results tally. */
+  | { readonly _tag: "PressedTally" }
+  /** The tally's count-up reached its end. */
+  | { readonly _tag: "TallyCounted" }
+  /** ZONE_TALLY_CLOSE_MS passed since the tally showed. */
+  | { readonly _tag: "TallyElapsed" }
+  /** The tally's way out ended. */
+  | { readonly _tag: "TallyLeft" }
+  /** The launch title card's way out ended. */
+  | { readonly _tag: "TitleCardLeft" }
+
+/** Messages that are no press: Korri publishing, and the runtime's own timers. */
+const unpressed = (message: ZoneNavMessage): boolean =>
+  message._tag === "KorriPublished" || message._tag === "IdleElapsed" || message._tag === "IdleTicked"
+  || message._tag === "TallyCounted" || message._tag === "TallyElapsed" || message._tag === "TallyLeft"
+  || message._tag === "TitleCardLeft" || message._tag === "LandedOptions"
 
 export function update(nav: ZoneNavigation, message: ZoneNavMessage, korri: SurfaceModel): ZoneStep<ZoneNavigation> {
   const result = step(nav, message, korri)
@@ -122,6 +164,25 @@ export function update(nav: ZoneNavigation, message: ZoneNavMessage, korri: Surf
 }
 
 function step(nav: ZoneNavigation, message: ZoneNavMessage, korri: SurfaceModel): ZoneStep<ZoneNavigation> {
+  // The moments' own timers.
+  if (message._tag === "TitleCardLeft") return nav.launch?.leaving === true ? stay({ ...nav, launch: undefined }) : stay(nav)
+  const tally = nav.tally
+  if (message._tag === "TallyLeft") return tally?.leaving === true ? stay({ ...nav, tally: undefined }) : stay(nav)
+  if (tally !== undefined && !tally.leaving) {
+    if (message._tag === "TallyCounted") return stay({ ...nav, tally: { ...tally, counted: true } })
+    if (message._tag === "TallyElapsed") return stay({ ...nav, tally: { ...tally, leaving: true } })
+    // The results tally holds every press: the first skips its count-up,
+    // the next closes it, and neither does anything else.
+    if (!unpressed(message)) return stay({ ...nav, tally: pressTally(tally) })
+  }
+  // The launch title card. Before Korri answers, a press lets go of it and
+  // does what it does; once Korri has named the launch, the card covers the
+  // page until Korri's status lets go of the game.
+  const launch = nav.launch
+  if (launch !== undefined && !launch.leaving && !unpressed(message)) {
+    if (launch.seen) return stay(nav)
+    return step({ ...nav, launch: dropLaunch(launch) }, message, korri)
+  }
   // Idle is a screensaver: any press or focus move wakes it and is otherwise
   // ignored, so the cursor comes back exactly where it was. Korri publishing
   // a model (a clock tick) is not a press; the cycle's own tick moves the card.
@@ -155,13 +216,16 @@ function step(nav: ZoneNavigation, message: ZoneNavMessage, korri: SurfaceModel)
     case "KorriPublished":
       return stay(nav)
     case "IdleElapsed": {
-      if (nav.layers.length > 0) return stay(nav)
+      if (nav.layers.length > 0 || nav.launch !== undefined || nav.tally !== undefined) return stay(nav)
       const shown = focusedGame(nav, korri)
       const start = shown === undefined ? 0 : Math.max(0, catalogGames(korri.catalog).indexOf(shown))
       return stay(push({ ...nav, idleCard: start }, "idle"))
     }
     case "IdleTicked":
     case "Woke":
+    case "PressedTally":
+    case "TallyCounted":
+    case "TallyElapsed":
       return stay(nav)
     case "FocusedTab":
       return stay({ ...nav, zone: "tabs", tabCursor: message.tab })
@@ -176,14 +240,14 @@ function step(nav: ZoneNavigation, message: ZoneNavMessage, korri: SurfaceModel)
       const game = bandGames(nav, korri)[card]
       const choices = game === undefined ? [] : launchChoices(game)
       if (game !== undefined && choices.length === 1) {
-        return ask({ ...nav, zone: "cards", card }, launch(game.id, choices[0]!.locationId))
+        return ask({ ...nav, zone: "cards", card, launch: zoneLaunchOpen(korri, game.id) }, launchGame(game.id, choices[0]!.locationId))
       }
       return stay({ ...nav, zone: "actions", card, action: 0 })
     }
     case "FocusedAction":
       return stay({ ...nav, zone: "actions", action: Math.max(0, message.index) })
     case "ChoseLaunch":
-      return ask(nav, launch(message.gameId, message.locationId))
+      return ask({ ...nav, launch: zoneLaunchOpen(korri, message.gameId) }, launchGame(message.gameId, message.locationId))
     case "FocusedFind":
       return stay({ ...nav, zone: "find" })
     case "ChoseFind":
@@ -221,7 +285,7 @@ function step(nav: ZoneNavigation, message: ZoneNavMessage, korri: SurfaceModel)
   }
 }
 
-const launch = (gameId: string, locationId: string | undefined) => locationId === undefined
+const launchGame = (gameId: string, locationId: string | undefined) => locationId === undefined
   ? { _tag: "LaunchGame", gameId } as const
   : { _tag: "LaunchGame", gameId, locationId } as const
 
@@ -295,6 +359,24 @@ function clampCard(index: number, nav: ZoneNavigation, korri: SurfaceModel): num
  * brought back in.
  */
 function settle(nav: ZoneNavigation, korri: SurfaceModel): ZoneNavigation {
+  return settleLayers(settleMoments(nav, korri), korri)
+}
+
+/**
+ * The launch card, the session and the tally against Korri's status. A
+ * tally opens only over GAMES with nothing else over it, since it belongs
+ * to the zone select and holds every press while it shows.
+ */
+function settleMoments(nav: ZoneNavigation, korri: SurfaceModel): ZoneNavigation {
+  const launch = settleLaunch(nav.launch, korri.status)
+  const ended = nav.tab === "games" && !nav.layers.some(layer => layer === "onboarding" || OWN_LAYERS.includes(layer))
+    ? zoneTallyOf(nav.session, korri) : undefined
+  const session = settleSession(nav.session, korri)
+  const tally = ended ?? nav.tally
+  return launch === nav.launch && session === nav.session && tally === nav.tally ? nav : { ...nav, launch, session, tally }
+}
+
+function settleLayers(nav: ZoneNavigation, korri: SurfaceModel): ZoneNavigation {
   const own = nav.layers.filter(layer => OWN_LAYERS.includes(layer))
   const status = korri.status._tag
   const layers: ZoneLayer[] = [
@@ -304,7 +386,7 @@ function settle(nav: ZoneNavigation, korri: SurfaceModel): ZoneNavigation {
     ...(status === "Problem" ? ["problem" as const] : []),
     ...(status === "Confirm" ? ["confirm" as const] : []),
     ...(korri.presentation.kind === "gameplay-overlay" ? ["overlay" as const] : []),
-    ...(own.includes("idle") && own.length === 1 && status === "Browsing"
+    ...(own.includes("idle") && own.length === 1 && status === "Browsing" && nav.launch === undefined && nav.tally === undefined
       && korri.presentation.kind === "catalog" && korri.onboarding === undefined ? ["idle" as const] : []),
   ]
   const card = clampCard(nav.card, nav, korri)

@@ -1,0 +1,81 @@
+/* The whole screen. The stage stands under the title card; each shows
+ * while its moment says so (1 or 0, never between: no fade). */
+.zone-attract {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.zone-attract-card {
+  position: absolute;
+  inset: 0;
+  visibility: var(--zone-attract-card-visibility, visible);
+  opacity: var(--zone-attract-card, 1);
+}
+
+/* The stage: the art letterboxed on black, panning by whole art px. */
+.zone-attract-stage {
+  position: absolute;
+  inset: 0;
+  background: var(--zone-black);
+  opacity: var(--zone-attract-stage, 0);
+}
+
+.zone-attract-pan {
+  position: absolute;
+  inset: 0 calc(var(--zone-attract-pan-room) * -1 * var(--zone-px)) 0 0;
+  translate: calc(var(--zone-attract-pan, 0) * var(--zone-px)) 0;
+}
+
+.zone-attract-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* No art: the card's stripe well pattern, light, blue and teal on hard
+ * lines, across the whole stage. */
+.zone-attract-stage[data-art="none"] .zone-attract-pan {
+  background: linear-gradient(
+    135deg,
+    var(--zone-stripe-light) 0 16.6667%,
+    var(--zone-blue) 16.6667% 33.3333%,
+    var(--zone-stripe-teal) 33.3333% 50%,
+    var(--zone-stripe-light) 50% 66.6667%,
+    var(--zone-blue) 66.6667% 83.3333%,
+    var(--zone-stripe-teal) 83.3333% 100%
+  );
+  background-size: calc(var(--zone-attract-stripe) * 6 * var(--zone-px)) calc(var(--zone-attract-stripe) * 6 * var(--zone-px));
+}
+
+/* The HUD, as the game's own: yellow labels, white values, top left. */
+.zone-attract-hud {
+  position: absolute;
+  top: calc(var(--zone-attract-inset) * var(--zone-px));
+  left: calc(var(--zone-attract-inset) * var(--zone-px));
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--zone-attract-hud-gap) * var(--zone-px));
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+}
+
+.zone-attract-hud-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+}
+
+/* PRESS ANY BUTTON, bottom centre, blinking once a second in two steps. */
+.zone-attract-prompt {
+  position: absolute;
+  right: 0;
+  bottom: calc(var(--zone-attract-inset) * 2 * var(--zone-px));
+  left: 0;
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+  opacity: var(--zone-attract-prompt, 1);
+}

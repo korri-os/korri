@@ -104,11 +104,11 @@ describe("C3: the focused game's facts", () => {
     expect(facts).toBe("Last played10 Oct 2026Plays7Time3h 12m")
   })
 
-  test("a game Korri never recorded shows no facts and the line keeps its place", () => {
+  test("a game Korri never recorded shows TIME ATTACK's dashes, and the line keeps its place", () => {
     mount()
     focus(card("Tetris"))
     expect(document.querySelector(".zone-games-facts")?.hasAttribute("data-empty")).toBe(true)
-    expect(screen.queryByText("Last played")).toBeNull()
+    expect(document.querySelector(".zone-games-facts")?.textContent).toBe(`Last played--Plays--Time--'--"--`)
   })
 })
 

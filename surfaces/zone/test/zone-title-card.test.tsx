@@ -34,10 +34,12 @@ describe("planTitleCard", () => {
   test("no height keeps it beside", () => {
     expect(planTitleCard(480, 0)).toBe("beside")
   })
-  test("the stylesheet's container query holds the same number and stacks the face", () => {
-    const match = /@container \(aspect-ratio < ([\d.]+)\) \{\s*\.zone-title-card-face \{[^}]*flex-direction: column/.exec(css)
+  test("the stylesheet's container query holds the same number and puts the disc under the words", () => {
+    const match = /@container \(aspect-ratio < ([\d.]+)\) \{\s*\.zone-title-card-face \{([^}]*)\}/.exec(css)
     expect(match).not.toBeNull()
     expect(Number(match?.[1])).toBe(ZONE_TITLE_STACK_ASPECT)
+    // One column: the name, the ZONE bar, then the disc on a row of its own.
+    expect(match?.[2]).toMatch(/grid-template-areas:\s*"name"\s*"zone"\s*"disc"/)
   })
 })
 

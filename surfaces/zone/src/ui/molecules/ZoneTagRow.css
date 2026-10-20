@@ -1,8 +1,9 @@
 /* One strip of joined tags. The base type is what the card hands down (or
  * a button's caps standing alone); the fitted type is the base times the
- * factor the row's own fit sets. The height follows the base only. */
+ * factor the row's own fit sets, a whole caps step. The height follows the
+ * base only, so a fit never moves the card. */
 .zone-tag-row {
-  --zone-tag-row-type: var(--zone-tag-row-base, calc(var(--zone-type-button-short) * var(--zone-px)));
+  --zone-tag-row-type: var(--zone-tag-row-base, calc(var(--zone-caps-1) * var(--zone-px)));
   --zone-tag-type: calc(var(--zone-tag-row-type) * var(--zone-fit, 1));
   display: flex;
   flex: 0 0 auto;
@@ -10,4 +11,5 @@
   width: 100%;
   height: calc(var(--zone-tag-row-type) * var(--zone-tag-row-height));
   min-width: 0;
+  font-size: var(--zone-tag-row-type);
 }

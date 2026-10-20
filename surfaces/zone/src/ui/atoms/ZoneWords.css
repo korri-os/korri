@@ -1,0 +1,21 @@
+/* A row of words that wraps only between them. The gap is a Zone Caps
+ * space (4 art px at caps-1: 0.4 of the cap); lines stand a fifth of a cap
+ * apart. The holder decides whether the row wraps and how it is aligned. */
+.zone-words {
+  display: flex;
+  flex-wrap: var(--zone-words-wrap, wrap);
+  align-items: baseline;
+  justify-content: var(--zone-words-align, center);
+  gap: var(--zone-words-line-gap, 0.2em) 0.4em;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* One word: as wide as its letters, at most its line unless the holder
+ * lifts the cap. */
+.zone-words-word {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: var(--zone-words-max, 100%);
+}

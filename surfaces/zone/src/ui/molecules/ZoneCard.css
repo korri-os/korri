@@ -1,83 +1,105 @@
 /* The card's size is one height: the band hands it down as --zone-card-h,
  * and a card standing alone takes the plan's focused height from its own
- * container. Everything else is a share of it: the width by the card ratio,
- * a side card by the side scale, the title by its share of the width, and
- * the tags and the band by their shares of the title. */
+ * container. The width follows by the card ratio and a side card by the
+ * side scale. The type does not follow the size: it is a whole caps step
+ * (caps-2 on the focused card's title, caps-1 on a side card's and on
+ * every tag) that the fits step down, so no letter ever stands between art
+ * pixels. */
 .zone-card {
   --zone-card-base: var(--zone-card-h, min(calc(var(--zone-card-focus-max) * var(--zone-px)), calc(100cqh - 2 * calc(var(--zone-band-pad) * var(--zone-px)))));
   --zone-card-scale: 1;
-  --zone-card-share: var(--zone-type-card-share);
   --zone-card-width: calc(var(--zone-card-base) * var(--zone-card-scale) * var(--zone-card-ratio));
-  --zone-card-type: calc(var(--zone-card-width) * var(--zone-card-share));
+  --zone-card-title-caps: var(--zone-caps-2);
+  --zone-card-frame: calc(var(--zone-games-card-frame) * var(--zone-px));
+  --zone-card-stripe-h: calc(var(--zone-games-card-stripe) * var(--zone-px));
   --zone-card-tri: var(--zone-band-tri, calc(var(--zone-triangle-wide) * var(--zone-px)));
-  --zone-tag-row-base: calc(var(--zone-card-type) * var(--zone-tag-type-share));
+  --zone-tag-row-base: calc(var(--zone-caps-1) * var(--zone-px));
   position: relative;
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
   width: var(--zone-card-width);
   height: calc(var(--zone-card-base) * var(--zone-card-scale));
-  padding: calc(var(--zone-card-pad) * var(--zone-px));
+  padding: var(--zone-card-frame);
   background: var(--zone-panel);
-  box-shadow: calc(var(--zone-drop) * var(--zone-px)) calc(var(--zone-drop) * var(--zone-px)) 0 var(--zone-panel-edge);
+  box-shadow: calc(var(--zone-drop) * var(--zone-px)) calc(var(--zone-drop) * var(--zone-px)) 0 var(--zone-shade);
   text-align: center;
   transition:
     width var(--zone-snap-time) var(--zone-bounce),
     height var(--zone-snap-time) var(--zone-bounce),
-    padding var(--zone-snap-time) var(--zone-bounce),
     box-shadow var(--zone-lift-time) linear;
 }
 
 .zone-card[data-size="side"] {
   --zone-card-scale: var(--zone-card-side-scale);
-  --zone-card-share: var(--zone-type-side-share);
-  padding: calc(var(--zone-card-pad-side) * var(--zone-px));
+  --zone-card-title-caps: var(--zone-caps-1);
+  --zone-card-frame: calc(var(--zone-games-card-frame-side) * var(--zone-px));
+  --zone-card-stripe-h: calc(var(--zone-games-card-stripe-side) * var(--zone-px));
 }
 
-/* Focus: the pink edge around the card and a deeper drop edge. */
+/* Focus: the pink edge around the card and a deeper drop. */
 .zone-card[data-focused="true"] {
   z-index: 1;
   box-shadow:
     0 0 0 calc(var(--zone-focus-edge) * var(--zone-px)) var(--zone-focus),
-    calc(var(--zone-drop-focus) * var(--zone-px)) calc(var(--zone-drop-focus) * var(--zone-px)) 0 var(--zone-panel-edge);
+    calc(var(--zone-drop-focus) * var(--zone-px)) calc(var(--zone-drop-focus) * var(--zone-px)) 0 var(--zone-shade);
 }
 
-/* The title, the band and the tags sit at the foot; the well above them
- * gives way. */
+/* The title, the stripe and the tags sit at the foot; the well above them
+ * gives way when the title takes more lines. */
 .zone-card-body {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
   justify-content: flex-end;
-  padding: calc(var(--zone-card-type) * 0.12) calc(var(--zone-card-type) * 0.1) calc(var(--zone-card-type) * 0.05);
+  min-width: 0;
+  padding-top: calc(var(--zone-games-card-gap) * var(--zone-px));
 }
 
-/* Two lines at most. The fit shrinks the caps (to half) until two lines
- * hold the title; the box follows the fitted size, so a third line is
- * never shown. White caps with the blue edge, as on every panel. */
+/* The title in white ink at a whole caps step: on one line while the fit
+ * can still step down, then (at caps-1, the floor) wrapping between words.
+ * A focused card lets a word longer than itself stand whole past its edge;
+ * a side card cuts only such a word, with "…". */
 .zone-card-title {
+  --zone-words-wrap: nowrap;
+  --zone-words-line-gap: calc(var(--zone-games-title-leading) * var(--zone-px));
   display: block;
-  max-height: calc(var(--zone-card-type) * var(--zone-fit, 1) * 0.98 * 2 + calc(var(--zone-hairline) * var(--zone-px)));
-  overflow: hidden;
-  font-size: calc(var(--zone-card-type) * var(--zone-fit, 1));
-  line-height: 0.98;
-  letter-spacing: 0.01em;
+  min-width: 0;
+  font-size: calc(var(--zone-card-title-caps) * var(--zone-px) * var(--zone-fit, 1));
+  line-height: 1;
   overflow-wrap: normal;
-  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
 }
 
-/* The orange, blue and mint diagonal band: three colours meeting on hard
- * lines, each stop starting where the last ended. */
+.zone-card-title[data-zone-fit-floor] {
+  --zone-words-wrap: wrap;
+}
+
+.zone-card[data-size="focus"] .zone-card-title {
+  --zone-words-max: none;
+}
+
+/* The whole title, read and never drawn. */
+.zone-card-name {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* TIME ATTACK's stripe under the title: light mint, blue, then teal, on
+ * hard lines, each stop starting where the last ended. */
 .zone-card-stripe {
   display: block;
   flex: 0 0 auto;
-  height: calc(var(--zone-card-type) * var(--zone-card-band-share));
-  margin: calc(var(--zone-card-type) * 0.1) 0 calc(var(--zone-card-type) * 0.08);
+  height: var(--zone-card-stripe-h);
+  margin: calc(var(--zone-games-card-gap) * var(--zone-px)) 0;
   background: linear-gradient(
     var(--zone-stripe-angle),
-    var(--zone-stripe-1) 0 24%,
-    var(--zone-stripe-2) 24% 46%,
-    var(--zone-stripe-3) 46% 100%
+    var(--zone-stripe-light) 0 56%,
+    var(--zone-blue) 56% 80%,
+    var(--zone-stripe-teal) 80% 100%
   );
 }
 
@@ -103,14 +125,14 @@
 .zone-card-tri[data-side="left"] {
   right: 100%;
   margin-right: calc(var(--zone-nudge-near) * var(--zone-px));
-  animation: zone-nudge-left var(--zone-nudge-time) ease-in-out infinite alternate;
+  animation: zone-nudge-left var(--zone-games-nudge-time) steps(2, jump-none) infinite;
 }
 
 .zone-card-tri[data-side="right"] {
   left: 100%;
   margin-left: calc(var(--zone-nudge-near) * var(--zone-px));
   scale: -1 1;
-  animation: zone-nudge-right var(--zone-nudge-time) ease-in-out infinite alternate;
+  animation: zone-nudge-right var(--zone-games-nudge-time) steps(2, jump-none) infinite;
 }
 
 .zone-card[data-position="first"] .zone-card-tri[data-side="left"],

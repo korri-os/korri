@@ -323,7 +323,9 @@ describe("catalog", () => {
     expect(document.querySelector(".zone-games-facts")?.textContent).toBe("Last played19 Oct 2026Plays23Time11h 31m")
     expect(button("Continue", document.querySelector<HTMLElement>(".zone-games-actions")!)).toBeTruthy()
     moveTo(button("Hollow Knight"))
+    // Never recorded: TIME ATTACK's empty record, not a blank.
     expect(document.querySelector(".zone-games-facts")?.hasAttribute("data-empty")).toBe(true)
+    expect(document.querySelector(".zone-games-facts")?.textContent).toBe(`Last played--Plays--Time--'--"--`)
     expect(button("Play", document.querySelector<HTMLElement>(".zone-games-actions")!)).toBeTruthy()
   })
 
@@ -476,10 +478,10 @@ describe("status", () => {
     expect(tags("Celeste Classic")).not.toContain("Download")
     // The facts line under the band adds it for the focused game.
     moveTo(button("Hollow Knight"))
-    expect(facts()).toBe("Download1.5 GB")
+    expect(facts()).toBe(`Last played--Plays--Time--'--"--Download1.5 GB`)
     expect(document.querySelector(".zone-games-facts")?.hasAttribute("data-empty")).toBe(false)
     moveTo(button("Spelunky"))
-    expect(facts()).toBe("Download")
+    expect(facts()).toBe(`Last played--Plays--Time--'--"--Download`)
     moveTo(button("Celeste Classic"))
     expect(facts()).not.toContain("Download")
     // Nothing else changes: A launches as before, and the portal raises its question.
@@ -1177,7 +1179,8 @@ describe("chrome and input", () => {
     act(() => jest.advanceTimersByTime(30_000))
     const titleCard = () => document.querySelector(".zone-title-card-title")?.textContent
     expect(titleCard()).toBe("Spelunky")
-    act(() => jest.advanceTimersByTime(4_000))
+    // The attract gives each game 6 s: its title card, then its stage (M6).
+    act(() => jest.advanceTimersByTime(6_000))
     expect(titleCard()).toBe("Tetris")
     // Any input wakes it, the cursor where it was.
     press("back")
@@ -1361,5 +1364,111 @@ describe("chrome and input", () => {
     markOnFocus(page)
     moveTo(button("Play with mGBA", page))
     markOnFocus(page)
+  })
+})
+
+// ---- The moments: the launch title card, the results tally, the attract ----
+
+describe("moments", () => {
+  const launchCard = () => document.querySelector<HTMLElement>(".zone-launch-card")
+  const tallyOnScreen = () => document.querySelector<HTMLElement>(".zone-tally")
+  const tallyRows = () => [...document.querySelectorAll(".zone-tally-row")]
+    .map(row => [row.querySelector(".zone-tally-label")?.textContent, row.querySelector(".zone-tally-value")?.textContent])
+  const celesteAfter = (plays: number, seconds: number | undefined): SurfaceModel => withGames(GAMES.map(game =>
+    game.id === "celeste" ? { ...game, playCount: plays, totalPlaytimeSeconds: seconds } : game))
+  const running = (gameId: string, model: SurfaceModel = HOME): SurfaceModel =>
+    ({ ...model, status: { _tag: "Running", kicker: "Playing", gameId } })
+
+  test("title card on launch", () => {
+    jest.useFakeTimers()
+    const { host, publish } = mount()
+    // CONTINUE on Celeste, played 23 times: ACT 24, the system on its tag, ZONE on the bar.
+    confirm()
+    expect(calls(host)).toEqual([["launchGame", "celeste"]])
+    expect(launchCard()?.querySelector(".zone-title-card-title")?.textContent).toBe("Celeste Classic")
+    expect(launchCard()?.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("Act 24")
+    expect(launchCard()?.querySelector(".zone-title-card-bar")?.textContent).toBe("Zone")
+    expect(launchCard()?.querySelector(".zone-tag")?.textContent).toBe("PICO-8")
+    // Korri takes it up: Busy, then Running. The card holds, the busy strip over it.
+    publish({ ...HOME, status: { _tag: "Busy", kicker: "Starting", gameId: "celeste" } })
+    expect(launchCard()).not.toBeNull()
+    expect(screen.getByRole("status").textContent).toContain("Starting")
+    publish(running("celeste"))
+    expect(launchCard()?.hasAttribute("data-leaving")).toBe(false)
+    expect(document.querySelector(".zone-games-page")?.hasAttribute("inert")).toBe(true)
+    // Korri lets go of the game: the card leaves (M3 out, 400 ms) and the cursor is home.
+    publish(HOME)
+    expect(launchCard()?.hasAttribute("data-leaving")).toBe(true)
+    act(() => jest.advanceTimersByTime(400))
+    expect(launchCard()).toBeNull()
+    expect(focusedText()).toContain("Celeste Classic")
+    // A game Korri never counted opens ACT 1; a problem before Korri takes it up ends the card.
+    moveTo(button("Hollow Knight"))
+    confirm()
+    expect(launchCard()?.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("Act 1")
+    publish({ ...HOME, status: { _tag: "Problem", kicker: "Could not start", reason: "zao did not answer.", canRetry: false, gameId: "hollow" } })
+    expect(launchCard()?.hasAttribute("data-leaving")).toBe(true)
+    act(() => jest.advanceTimersByTime(400))
+    expect(launchCard()).toBeNull()
+  })
+
+  test("results tally", () => {
+    jest.useFakeTimers()
+    const { publish, press } = mount()
+    // Celeste runs from 23 plays and 11h 31m, and comes back with 24 and 72'14" more.
+    publish(running("celeste"))
+    publish(celesteAfter(24, 41_460 + 4_334))
+    expect(tallyOnScreen()?.textContent).toContain("Celeste Classic")
+    expect(tallyRows()).toEqual([["Time", "72'14\""], ["Plays", "24"], ["Total", "12H 43M"]])
+    expect(focusedText()).toContain("Celeste Classic")
+    expect(document.activeElement?.closest(".zone-tally")).not.toBeNull()
+    // The first press skips the count-up; the tally stays.
+    press("back")
+    expect(tallyOnScreen()?.hasAttribute("data-leaving")).toBe(false)
+    // The next closes it, and does nothing else.
+    press("menu")
+    expect(tallyOnScreen()?.hasAttribute("data-leaving")).toBe(true)
+    act(() => jest.advanceTimersByTime(300))
+    expect(tallyOnScreen()).toBeNull()
+    expect(currentTab()).toContain("Games")
+    expect(focusedText()).toContain("Celeste Classic")
+    // Alone, it closes after 8 s. Korri did not move the total: no TIME row.
+    publish(running("celeste", celesteAfter(24, 45_794)))
+    publish(celesteAfter(25, 45_794))
+    expect(tallyRows()).toEqual([["Plays", "25"], ["Total", "12H 43M"]])
+    act(() => jest.advanceTimersByTime(8_000))
+    expect(tallyOnScreen()?.hasAttribute("data-leaving")).toBe(true)
+    act(() => jest.advanceTimersByTime(300))
+    expect(tallyOnScreen()).toBeNull()
+    // Ambiguous: the count rose by two, or did not rise. No tally.
+    publish(running("celeste", celesteAfter(25, 45_794)))
+    publish(celesteAfter(27, 50_000))
+    expect(tallyOnScreen()).toBeNull()
+    publish(running("celeste", celesteAfter(27, 50_000)))
+    publish(celesteAfter(27, 50_000))
+    expect(tallyOnScreen()).toBeNull()
+  })
+
+  test("attract wakes to the same card", () => {
+    jest.useFakeTimers()
+    const { press } = mount()
+    moveTo(button("Spelunky"))
+    act(() => jest.advanceTimersByTime(30_000))
+    const attract = () => document.querySelector<HTMLElement>(".zone-attract")
+    const titleCard = () => attract()?.querySelector(".zone-title-card-title")?.textContent
+    // Spelunky's turn: its title card, never played (ACT 1), then its stage with the HUD.
+    expect(titleCard()).toBe("Spelunky")
+    expect(attract()?.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("Act 1")
+    expect(attract()?.textContent).toContain("Press any button")
+    expect(attract()?.textContent).toContain("21:47")
+    // Two turns on: Wario Land 4's stage is its wide art.
+    act(() => jest.advanceTimersByTime(12_000))
+    expect(titleCard()).toBe("Wario Land 4")
+    expect(attract()?.querySelector(".zone-attract-art")?.getAttribute("src")).toBe(WIDE)
+    // Any input wakes it, on the card the person left, not the attract's.
+    press("menu")
+    expect(attract()).toBeNull()
+    expect(focusedText()).toContain("Spelunky")
+    expect(document.querySelector(".zone-card[data-focused='true'] .zone-card-title")?.textContent).toBe("Spelunky")
   })
 })

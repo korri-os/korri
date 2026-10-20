@@ -3,9 +3,10 @@ import "./ZoneTag.css"
 /**
  * What a tag says about a game or a save, and so what colour it wears:
  * the system in blue, HERE in yellow, a remote device in red, SAVED in
- * mint, OPEN in orange, CONTINUE in white, DOWNLOAD in orange (OPEN is
- * only ever on a save or the running strip, never on a game card). White
- * caps keep the black outline; a light tag takes black ink.
+ * mint, OPEN in orange, CONTINUE in black (TIME ATTACK's third tag),
+ * DOWNLOAD in orange (OPEN is only ever on a save or the running strip,
+ * never on a game card). A dark tag wears white caps ringed in black one
+ * art px wide; a light tag takes black ink with no ring.
  */
 export type ZoneTagKind = "system" | "here" | "remote" | "saved" | "open" | "continue" | "download"
 
@@ -22,8 +23,10 @@ export interface ZoneTagItem {
  * Joined tags meet on a slant: a first tag is cut on its right, a last tag
  * on its left, a middle tag on both, so a row reads as one strip.
  *
- * The tag never grows past its row: its caps shrink with the row's
- * `--zone-fit`, then truncate.
+ * The tag never grows past its row. Its caps stand on whole caps steps
+ * only: whatever size the holder asks for is rounded down to caps-1, 2 or
+ * 3, never between. A row that is still too narrow drops its last tags
+ * (ZoneTagRow); a tag standing alone truncates with "…".
  */
 export function ZoneTag({ kind, label, join = "only" }: ZoneTagItem & { readonly join?: ZoneTagJoin }) {
   return (
