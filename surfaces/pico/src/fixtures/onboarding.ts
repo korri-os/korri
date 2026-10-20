@@ -10,11 +10,13 @@
  * reject every one, which is the way to the offline path.
  */
 import type {
+  SurfaceAction,
   SurfaceController,
   SurfaceModel,
   SurfaceNetwork,
   SurfaceIdentityStatus,
   SurfaceSettingGroup,
+  SurfaceStarterPack,
   SurfaceWifiAttempt,
   SurfaceWifiNetwork,
 } from "@contracts/surface/korri-surface"
@@ -129,6 +131,36 @@ export const onboardingModel: SurfaceModel = {
   onboarding: { controllers: fixtureControllers },
 }
 
+/** Korri's Starter pack actions. The ids are this fixture's own: Pico runs
+ * whichever id Korri publishes, and shows Korri's label for neither. */
+export const fixtureStarterPackInstall: SurfaceAction = { id: "starter-pack-install", label: "Install", enabled: true }
+export const fixtureStarterPackRetry: SurfaceAction = { id: "starter-pack-retry", label: "Retry", enabled: true }
+const STARTER_PACK_ACTIONS = new Set([fixtureStarterPackInstall.id, fixtureStarterPackRetry.id])
+
+export const starterPackOffered: SurfaceStarterPack = { _tag: "Offered", actions: [fixtureStarterPackInstall] }
+export const starterPackInstalling: SurfaceStarterPack = { _tag: "Installing" }
+export const starterPackInstalled: SurfaceStarterPack = { _tag: "Installed" }
+export const starterPackFailed: SurfaceStarterPack = {
+  _tag: "Failed",
+  message: "The Starter pack could not be installed. Try again.",
+  actions: [fixtureStarterPackRetry],
+}
+/** The longest failure Korri might word: a sentence or three, and a path
+ * with no break points. */
+export const fixtureStarterPackFailedLong =
+  "The Starter pack could not be installed: /var/lib/korri/plugins/starter-pack/staging/fake08-runtime-aarch64-unknown-linux-gnu.tar.zst did not match its signature. The copy on this device may be damaged. Try again, and if it fails again, reinstall Korri on this device."
+export const starterPackFailedLong: SurfaceStarterPack = { ...starterPackFailed, message: fixtureStarterPackFailedLong }
+
+/** Korri's model with the Starter pack in this state, or with none to offer. */
+export function withStarterPack(model: SurfaceModel, pack: SurfaceStarterPack | undefined): SurfaceModel {
+  if (model.onboarding === undefined) return model
+  const { starterPack: _old, ...onboarding } = model.onboarding
+  return { ...model, onboarding: pack === undefined ? onboarding : { ...onboarding, starterPack: pack } }
+}
+
+/** A fresh device: nothing in the library yet, and the Starter pack offered. */
+export const starterPackModel: SurfaceModel = withStarterPack({ ...onboardingModel, catalog: { _tag: "Empty" } }, starterPackOffered)
+
 /** The same device with Wi-Fi in Settings, after setup. */
 export const wifiSettingsModel: SurfaceModel = { ...fixtureModel, settings: [], network: onlineNetwork }
 
@@ -192,6 +224,13 @@ export function answerRequest(request: PicoRequest): FixtureAnswer | undefined {
         later: { ms: 600, then: model => ({ ...setValue(model, request.settingId, request.value), settingsStatus: { _tag: "Idle" } }) },
       }
     case "RunAction":
+      // The pack installs, then Korri rescans: the fixture games appear.
+      if (STARTER_PACK_ACTIONS.has(request.actionId)) {
+        return {
+          now: model => withStarterPack(model, starterPackInstalling),
+          later: { ms: 1500, then: model => ({ ...withStarterPack(model, starterPackInstalled), catalog: fixtureModel.catalog }) },
+        }
+      }
       return {
         now: model => ({ ...model, settingsStatus: { _tag: "Saving", settingId: request.actionId } }),
         later: { ms: 1200, then: model => ({ ...model, settingsStatus: { _tag: "Idle" } }) },

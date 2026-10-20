@@ -183,5 +183,8 @@ export type OnboardingMessage =
   | { readonly _tag: "ChangedSetting"; readonly settingId: string; readonly value: string }
   // Games
   | { readonly _tag: "ScannedGames" }
+  /** Install, or try again, on the Starter pack: one of the actions Korri
+   * published with it. */
+  | { readonly _tag: "ChoseStarterPackAction"; readonly actionId: string }
   // Play
   | { readonly _tag: "Finished" }

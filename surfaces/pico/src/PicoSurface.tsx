@@ -195,6 +195,7 @@ function PicoOnboardingSurface({
       }
     },
     onScanGames: () => dispatch({ _tag: "ScannedGames" }),
+    onStarterPack: actionId => dispatch({ _tag: "ChoseStarterPackAction", actionId }),
     onFinish: () => dispatch({ _tag: "Finished" }),
   }
   return (

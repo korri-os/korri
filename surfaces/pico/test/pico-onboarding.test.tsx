@@ -5,7 +5,20 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { createFixtureHost } from "../src/fixtures/fixture-host"
-import { onboardingModel, onlineNetwork, wifiSettingsModel, wrongPasswordNetwork } from "../src/fixtures/onboarding"
+import type { SurfaceModel, SurfaceStarterPack } from "@contracts/surface/korri-surface"
+import {
+  fixtureStarterPackFailedLong,
+  heardControllers,
+  onboardingModel,
+  onlineNetwork,
+  starterPackFailedLong,
+  starterPackInstalled,
+  starterPackInstalling,
+  starterPackOffered,
+  wifiSettingsModel,
+  withStarterPack,
+  wrongPasswordNetwork,
+} from "../src/fixtures/onboarding"
 import { PicoSurface } from "../src/PicoSurface"
 
 afterEach(() => cleanup())
@@ -75,6 +88,76 @@ describe("switching identity during setup", () => {
     fireEvent.click(statement)
     expect(screen.getByRole("button", { name: /I understand/ }).querySelector("[data-lit]")?.textContent).toBe("ON")
     expect(host.calls).toEqual(["scanWifi"])
+  })
+})
+
+describe("the Starter pack on the games step", () => {
+  // Online, named "usu", controllers heard: NEXT goes straight through to Games.
+  const ready: SurfaceModel = {
+    ...onboardingModel,
+    network: onlineNetwork,
+    onboarding: { controllers: heardControllers },
+    settings: onboardingModel.settings.map(group => ({
+      ...group,
+      items: group.items.map(item => (item.id === "device-name" ? { ...item, value: "usu" } : item)),
+    })),
+  }
+  const atGames = (pack: SurfaceStarterPack | undefined) => {
+    const host = createFixtureHost()
+    const view = render(<PicoSurface host={host} model={withStarterPack(ready, pack)} />)
+    fireEvent.click(screen.getByRole("button", { name: "▶ START" }))
+    fireEvent.click(screen.getByRole("button", { name: "NEXT" }))
+    fireEvent.click(screen.getByRole("button", { name: /^NEXT/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^New identity/ }))
+    fireEvent.click(screen.getByRole("button", { name: "NEXT" }))
+    fireEvent.click(screen.getByRole("button", { name: "NEXT" }))
+    expect(screen.getByRole("region", { name: "Games" })).toBeTruthy()
+    return { host, rerender: (next: SurfaceStarterPack | undefined) => view.rerender(<PicoSurface host={host} model={withStarterPack(ready, next)} />) }
+  }
+
+  test("is offered above the library, with the cursor on Install, which runs Korri's action", () => {
+    const { host } = atGames(starterPackOffered)
+    const install = screen.getByRole("button", { name: /^Install Starter pack/ })
+    expect(document.activeElement).toBe(install)
+    expect(screen.getByText("Free games and the programs to play them. No internet needed.")).toBeTruthy()
+    // The offer comes before what Korri found.
+    const games = screen.getByRole("region", { name: "Games" })
+    expect(games.firstElementChild?.getAttribute("aria-label")).toBe("Starter pack")
+    expect(games.textContent).toContain("9 games found")
+    fireEvent.click(install)
+    expect(host.calls.at(-1)).toBe("action:starter-pack-install")
+  })
+
+  test("while it installs there is no Install, the cursor is on NEXT, and NEXT goes on", () => {
+    const { rerender } = atGames(starterPackOffered)
+    rerender(starterPackInstalling)
+    expect(screen.queryByRole("button", { name: /^Install Starter pack/ })).toBeNull()
+    expect(screen.getByRole("progressbar", { name: "Installing Starter pack" })).toBeTruthy()
+    const next = screen.getByRole("button", { name: "NEXT" })
+    expect(document.activeElement).toBe(next)
+    fireEvent.click(next)
+    expect(screen.getByRole("button", { name: /GO TO GAMES/ })).toBeTruthy()
+  })
+
+  test("installed: says so, and the library shows the games", () => {
+    atGames(starterPackInstalled)
+    expect(screen.getByText("Starter pack installed")).toBeTruthy()
+    expect(screen.getByText("9 games found")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Starter pack/ })).toBeNull()
+  })
+
+  test("failed: Korri's words, whole, and a retry that runs Korri's retry action", () => {
+    const { host } = atGames(starterPackFailedLong)
+    expect(screen.getByText(fixtureStarterPackFailedLong)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /^Try Starter pack again/ }))
+    expect(host.calls.at(-1)).toBe("action:starter-pack-retry")
+  })
+
+  test("with no starterPack from Korri there is no offer and no placeholder", () => {
+    atGames(undefined)
+    expect(screen.queryByRole("region", { name: "Starter pack" })).toBeNull()
+    expect(screen.queryByText(/Starter pack/)).toBeNull()
+    expect(document.activeElement?.textContent).toBe("NEXT")
   })
 })
 

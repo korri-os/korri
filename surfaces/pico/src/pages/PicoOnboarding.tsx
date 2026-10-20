@@ -1,6 +1,6 @@
 import "./PicoOnboarding.css"
 import { useEffect, useRef } from "react"
-import type { PicoOnboardingScreen } from "../pico-onboarding-view"
+import type { PicoOnboardingScreen, PicoStarterPackView } from "../pico-onboarding-view"
 import { IDENTITY_FORM } from "../state/navigation"
 import { PICO_IDENTITY_BACKUP_ACTION } from "../pico-settings-view"
 import type { IdentityOrigin } from "../state/onboarding"
@@ -43,6 +43,8 @@ export interface PicoOnboardingActions {
   /** A on the player-seats row: Korri's next value for it. */
   readonly onSeats: () => void
   readonly onScanGames: () => void
+  /** Install, or try again, on the Starter pack: the id of Korri's action. */
+  readonly onStarterPack: (actionId: string) => void
   readonly onFinish: () => void
 }
 
@@ -52,6 +54,9 @@ const SELECT_BACK: readonly PicoButtonBarHint[] = [
 ]
 const BACK_ONLY: readonly PicoButtonBarHint[] = [{ hintKey: "b", label: "BACK" }]
 const NONE: readonly PicoButtonBarHint[] = []
+
+const hasStarterPackAction = (pack: PicoStarterPackView | undefined): boolean =>
+  (pack?._tag === "Offered" || pack?._tag === "Failed") && pack.actions.some(action => action.enabled)
 
 /** What A and B do on this screen. B on Hello does nothing, so it is not named;
  * nor while Korri switches an identity, which cannot be stopped. */
@@ -64,7 +69,9 @@ function hintsFor(screen: PicoOnboardingScreen): readonly PicoButtonBarHint[] {
     case "Identity":
       return screen.view._tag === "Working" || screen.view._tag === "Approving" ? NONE : SELECT_BACK
     case "Games":
-      return screen.view._tag === "Scanning" ? BACK_ONLY : SELECT_BACK
+      // While Korri reads the library, A has something to press only on the
+      // Starter pack.
+      return screen.view._tag === "Scanning" && !hasStarterPackAction(screen.starterPack) ? BACK_ONLY : SELECT_BACK
     case "Play":
       return screen.finishing ? NONE : SELECT_BACK
     case "Entry":
@@ -159,6 +166,8 @@ export function PicoOnboarding({
               onContinue={actions.onContinue}
               onDismissProblem={actions.onDismissProblem}
               onScan={actions.onScanGames}
+              onStarterPack={actions.onStarterPack}
+              starterPack={screen.starterPack}
               view={screen.view}
             />
           ) : null}

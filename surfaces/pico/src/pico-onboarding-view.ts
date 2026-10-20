@@ -3,6 +3,7 @@
  * Korri's model. The page renders a screen; it tests no facts of its own.
  */
 import type {
+  SurfaceAction,
   SurfaceController,
   SurfaceIdentityManagement,
   SurfaceModel,
@@ -120,6 +121,25 @@ export type PicoGamesView =
   /** Korri could not read the library; `message` is its own. */
   | { readonly _tag: "Failed"; readonly message: string; readonly canScan: boolean; readonly problem?: string }
 
+/** One of the actions Korri published with the Starter pack. `label` is
+ * Pico's word for the first, which is the one Korri offers: Install, or the
+ * retry after a failure. Any further action keeps Korri's label, so it stays
+ * reachable. `enabled: false` is drawn dimmed. */
+export interface PicoStarterPackAction {
+  readonly id: string
+  readonly label: string
+  readonly enabled: boolean
+}
+
+/** The Starter pack offer above the library, as Korri states it. */
+export type PicoStarterPackView =
+  | { readonly _tag: "Offered"; readonly actions: readonly PicoStarterPackAction[] }
+  /** No percentage: Korri states none. */
+  | { readonly _tag: "Installing" }
+  | { readonly _tag: "Installed" }
+  /** `message` is Korri's own words. */
+  | { readonly _tag: "Failed"; readonly message: string; readonly actions: readonly PicoStarterPackAction[] }
+
 /** One line of the closing summary. */
 export interface PicoSetupFact {
   readonly label: string
@@ -148,7 +168,8 @@ export type PicoOnboardingScreen =
       }
     }
   | { readonly _tag: "Pads"; readonly view: PicoPadsView }
-  | { readonly _tag: "Games"; readonly view: PicoGamesView }
+  /** `starterPack`: absent when Korri offers none. */
+  | { readonly _tag: "Games"; readonly view: PicoGamesView; readonly starterPack?: PicoStarterPackView }
   | { readonly _tag: "Play"; readonly facts: readonly PicoSetupFact[]; readonly finishing: boolean }
 
 /* ---- Korri's facts, found once ---- */
@@ -375,6 +396,35 @@ function gamesView(korri: SurfaceModel): PicoGamesView {
   }
 }
 
+/** The Starter pack actions Korri offers now: Install, or the retry. */
+export function starterPackActions(korri: SurfaceModel): readonly SurfaceAction[] {
+  const pack = korri.onboarding?.starterPack
+  return pack?._tag === "Offered" || pack?._tag === "Failed" ? pack.actions : []
+}
+
+function starterPackAction(action: SurfaceAction, index: number, first: string): PicoStarterPackAction {
+  return { id: action.id, label: index === 0 ? first : action.label, enabled: action.enabled }
+}
+
+function starterPackView(korri: SurfaceModel): PicoStarterPackView | undefined {
+  const pack = korri.onboarding?.starterPack
+  switch (pack?._tag) {
+    case undefined:
+      return undefined
+    case "Offered":
+      return { _tag: "Offered", actions: pack.actions.map((action, index) => starterPackAction(action, index, "Install Starter pack")) }
+    case "Installing":
+    case "Installed":
+      return { _tag: pack._tag }
+    case "Failed":
+      return {
+        _tag: "Failed",
+        message: pack.message,
+        actions: pack.actions.map((action, index) => starterPackAction(action, index, "Try Starter pack again")),
+      }
+  }
+}
+
 const ORIGIN_FACT: Readonly<Record<IdentityOrigin, string>> = { created: "New key", restored: "Restored", signer: "Signer" }
 
 /** The summary: Korri's facts as they stand now, and how the identity came. */
@@ -428,8 +478,12 @@ export function picoOnboardingScreen(nav: OnboardingNav, korri: SurfaceModel): P
     }
     case "pads":
       return { _tag: "Pads", view: padsView(korri) }
-    case "games":
-      return { _tag: "Games", view: gamesView(korri) }
+    case "games": {
+      const starterPack = starterPackView(korri)
+      return starterPack === undefined
+        ? { _tag: "Games", view: gamesView(korri) }
+        : { _tag: "Games", view: gamesView(korri), starterPack }
+    }
     case "play":
       return { _tag: "Play", facts: facts(nav, korri), finishing: nav.finishing }
   }
@@ -477,7 +531,9 @@ export function picoSetupCursor(step: OnboardingStep, screen: PicoOnboardingScre
     case "Pads":
       return { key: `pads:${String(screen.view.ready)}`, at: "last" }
     case "Games":
-      return { key: `games:${screen.view._tag}`, at: "first" }
+      // The offer's state is in the key: Install goes when the install
+      // starts, and the cursor must not stay on a control that is gone.
+      return { key: `games:${screen.starterPack?._tag ?? "None"}:${screen.view._tag}`, at: "first" }
     case "Play":
       return { key: "play", at: "last" }
   }

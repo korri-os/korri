@@ -5,10 +5,16 @@ import { useFixtureDpad } from "../fixtures/fixture-dpad"
 import {
   answerRequest,
   emptyScanNetwork,
+  fixtureStarterPackInstall,
   heardControllers,
   noAdapterNetwork,
   onboardingModel,
+  starterPackFailed,
+  starterPackFailedLong,
+  starterPackModel,
+  starterPackOffered,
   unreachableNetwork,
+  withStarterPack,
   wiredNetwork,
 } from "../fixtures/onboarding"
 import { performPicoRequest } from "../pico-host"
@@ -133,6 +139,7 @@ function Walk({ start = onboardingModel, beats = [] }: { readonly start?: Surfac
       }
     },
     onScanGames: () => dispatch({ _tag: "ScannedGames" }),
+    onStarterPack: actionId => dispatch({ _tag: "ChoseStarterPackAction", actionId }),
     onFinish: () => dispatch({ _tag: "Finished" }),
   }
   return (
@@ -177,7 +184,7 @@ const signing: readonly Beat[] = [
   { _tag: "SubmittedText" },
 ]
 const pads: readonly Beat[] = [...created, { _tag: "Continued" }]
-const heard: Beat = { change: model => ({ ...model, onboarding: { controllers: heardControllers } }) }
+const heard: Beat = { change: model => ({ ...model, onboarding: { ...model.onboarding, controllers: heardControllers } }) }
 const padsReady: readonly Beat[] = [...pads, heard]
 const games: readonly Beat[] = [...padsReady, { _tag: "Continued" }]
 const done: readonly Beat[] = [...games, { _tag: "Continued" }]
@@ -356,6 +363,38 @@ export function Games() {
 
 export function GamesEmpty() {
   return <Walk beats={[...games, { change: model => ({ ...model, catalog: { _tag: "Empty" } }) }]} />
+}
+
+/* The Starter pack, offered above the library on a fresh device. With no
+ * `starterPack` from Korri there is no offer at all: that is Games above. */
+const install: Beat = { _tag: "ChoseStarterPackAction", actionId: fixtureStarterPackInstall.id }
+
+export function GamesStarterPackOffered() {
+  return <Walk beats={games} start={starterPackModel} />
+}
+
+export function GamesStarterPackOfferedWithLibrary() {
+  return <Walk beats={games} start={withStarterPack(onboardingModel, starterPackOffered)} />
+}
+
+export function GamesStarterPackOfferedWhileScanning() {
+  return <Walk beats={[...games, { _tag: "ScannedGames" }]} start={withStarterPack(onboardingModel, starterPackOffered)} />
+}
+
+export function GamesStarterPackInstalling() {
+  return <Walk beats={[...games, install]} start={starterPackModel} />
+}
+
+export function GamesStarterPackInstalled() {
+  return <Walk beats={[...games, install, "answer"]} start={starterPackModel} />
+}
+
+export function GamesStarterPackFailed() {
+  return <Walk beats={[...games, install, { change: model => withStarterPack(model, starterPackFailed) }]} start={starterPackModel} />
+}
+
+export function GamesStarterPackFailedLongMessage() {
+  return <Walk beats={[...games, install, { change: model => withStarterPack(model, starterPackFailedLong) }]} start={starterPackModel} />
 }
 
 export function Done() {

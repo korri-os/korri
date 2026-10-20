@@ -7,13 +7,20 @@ import { describe, expect, test } from "bun:test"
 import type { SurfaceModel, SurfaceNetwork } from "@contracts/surface/korri-surface"
 import {
   emptyScanNetwork,
+  fixtureStarterPackInstall,
+  fixtureStarterPackRetry,
   heardControllers,
   noAdapterNetwork,
   offlineNetwork,
   onboardingModel,
   onlineNetwork,
+  starterPackFailed,
+  starterPackInstalled,
+  starterPackInstalling,
+  starterPackOffered,
   unreachableNetwork,
   wiredNetwork,
+  withStarterPack,
   wrongPasswordNetwork,
 } from "../src/fixtures/onboarding"
 import { picoOnboardingScreen, picoSetupCursor, picoSetupTrack, type PicoOnboardingScreen } from "../src/pico-onboarding-view"
@@ -341,6 +348,74 @@ describe("pads, games and play", () => {
     expect(requests).toEqual([{ _tag: "FinishOnboarding" }])
     expect(nav.step).toBe("play")
   })
+})
+
+describe("the Starter pack", () => {
+  const korri = withNetwork(onlineNetwork)
+  const games: OnboardingNav = { ...initialOnboarding(), step: "games", identity: { _tag: "Ready", origin: "created" } }
+  const install = { _tag: "ChoseStarterPackAction", actionId: fixtureStarterPackInstall.id } as const
+  const retry = { _tag: "ChoseStarterPackAction", actionId: fixtureStarterPackRetry.id } as const
+  function gamesScreen(screen: PicoOnboardingScreen) {
+    if (screen._tag !== "Games") throw new Error(`Expected Games, saw ${screen._tag}`)
+    return screen
+  }
+
+  test("Install runs the action Korri published with the offer", () => {
+    const offered = withStarterPack(korri, starterPackOffered)
+    const { nav, requests, screen } = storyFrom(games, offered, install)
+    expect(requests).toEqual([{ _tag: "RunAction", actionId: "starter-pack-install" }])
+    expect(nav.step).toBe("games")
+    expect(gamesScreen(screen).starterPack).toEqual({
+      _tag: "Offered",
+      actions: [{ id: "starter-pack-install", label: "Install Starter pack", enabled: true }],
+    })
+  })
+
+  test("after a failure, Korri's words show and the retry runs Korri's retry action", () => {
+    const failed = withStarterPack(korri, starterPackFailed)
+    const { requests, screen } = storyFrom(games, failed, retry)
+    expect(requests).toEqual([{ _tag: "RunAction", actionId: "starter-pack-retry" }])
+    expect(gamesScreen(screen).starterPack).toEqual({
+      _tag: "Failed",
+      message: "The Starter pack could not be installed. Try again.",
+      actions: [{ id: "starter-pack-retry", label: "Try Starter pack again", enabled: true }],
+    })
+  })
+
+  test("asks nothing for an action Korri does not offer now, or one it dimmed", () => {
+    expect(storyFrom(games, withStarterPack(korri, starterPackInstalling), install).requests).toEqual([])
+    expect(storyFrom(games, withStarterPack(korri, starterPackInstalled), install).requests).toEqual([])
+    expect(storyFrom(games, withStarterPack(korri, starterPackOffered), retry).requests).toEqual([])
+    const dimmed = withStarterPack(korri, { _tag: "Offered", actions: [{ ...fixtureStarterPackInstall, enabled: false }] })
+    expect(storyFrom(games, dimmed, install).requests).toEqual([])
+    // Only on the games step.
+    expect(storyFrom({ ...games, step: "pads" }, withStarterPack(korri, starterPackOffered), install).requests).toEqual([])
+  })
+
+  test("NEXT goes on while the pack installs: it finishes by itself", () => {
+    const installing = withStarterPack(korri, starterPackInstalling)
+    expect(gamesScreen(storyFrom(games, installing).screen).starterPack).toEqual({ _tag: "Installing" })
+    expect(storyFrom(games, installing, next).nav.step).toBe("play")
+  })
+
+  test("with no starterPack from Korri there is no offer", () => {
+    const screen = gamesScreen(storyFrom(games, korri).screen)
+    expect("starterPack" in screen).toBe(false)
+    expect(storyFrom(games, korri, install).requests).toEqual([])
+  })
+
+  test("the cursor starts again when the offer changes, so it never rests on a row that went", () => {
+    const key = (model: SurfaceModel) => picoSetupCursor("games", storyFrom(games, model).screen).key
+    const keys = [
+      korri,
+      withStarterPack(korri, starterPackOffered),
+      withStarterPack(korri, starterPackInstalling),
+      withStarterPack(korri, starterPackInstalled),
+      withStarterPack(korri, starterPackFailed),
+    ].map(key)
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
 })
 
 describe("signal bars", () => {

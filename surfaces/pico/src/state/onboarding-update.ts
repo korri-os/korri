@@ -19,6 +19,7 @@ import {
   isOffline,
   padsView,
   picoWifiView,
+  starterPackActions,
   wifiDone,
 } from "../pico-onboarding-view"
 import { picoDraftBackspace, picoDraftType, picoTextDraft, type PicoTextDraft } from "../pico-text-draft"
@@ -153,6 +154,12 @@ function step(nav: OnboardingNav, message: OnboardingMessage, korri: SurfaceMode
       return nav.step === "games" && canRescanGames(korri) && !gamesScanning(korri)
         ? ask(nav, { _tag: "RunAction", actionId: GAME_RESCAN_ACTION })
         : stay(nav)
+    case "ChoseStarterPackAction":
+      // Only an action Korri offers now, and only one it has not dimmed.
+      return nav.step === "games"
+        && starterPackActions(korri).some(action => action.id === message.actionId && action.enabled)
+        ? ask(nav, { _tag: "RunAction", actionId: message.actionId })
+        : stay(nav)
 
     // Play
     case "Finished":
@@ -194,6 +201,7 @@ function continued(nav: OnboardingNav, korri: SurfaceModel): PicoStep<Onboarding
     case "pads":
       return padsView(korri).ready ? stay(at(nav, "games")) : stay(nav)
     case "games":
+      // A Starter pack install finishes by itself, so it never holds NEXT.
       return gamesScanning(korri) ? stay(nav) : stay(at(nav, "play"))
     case "hello":
     case "name":

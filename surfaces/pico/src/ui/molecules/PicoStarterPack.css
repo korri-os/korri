@@ -1,0 +1,37 @@
+/* A row and the line under it, as setup draws a choice, no wider than the
+ * step's other rows. The line says what the row means, so it takes the dim
+ * ink: the quiet ink reads 3.3:1 on the plate. */
+.pico-starter-pack {
+	--pico-row-quiet: var(--pico-ink-dim);
+	display: grid;
+	gap: var(--pico-px);
+	max-width: calc(var(--pico-px) * 280);
+	min-width: 0;
+}
+
+.pico-starter-pack-note {
+	margin: 0;
+	padding: 0 calc(var(--pico-px) * 4);
+	font-size: var(--pico-text-sm);
+	line-height: 1.5;
+	color: var(--pico-ink-dim);
+	overflow-wrap: anywhere;
+}
+
+/* Korri's words for a failure, on a red plate, in the note ink red takes for
+ * small text (white read 3.5:1 there). A long message wraps; a word with no
+ * break points breaks anywhere. */
+.pico-starter-pack[data-state="Failed"] .pico-starter-pack-note {
+	justify-self: start;
+	/* Clear of the focused row's drop, so the two plates do not touch. */
+	margin-top: var(--pico-drop);
+	padding: calc(var(--pico-px) * 2) calc(var(--pico-px) * 4);
+	color: var(--pico-shell-warn-note);
+	background: var(--pico-warn);
+}
+
+/* The meter has no known end, so it takes a fixed share of the row. */
+.pico-starter-pack-meter {
+	display: block;
+	width: calc(var(--pico-px) * 48);
+}
