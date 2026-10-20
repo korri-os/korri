@@ -101,6 +101,9 @@ fn registry(server: &Server) -> PluginRegistry {
         "slow":{"id":"@test:queue/slow", "version":"v1", "files":file("/slow", &server.slow)},
         "a":{"id":"@test:queue/a", "version":"v1", "files":file("/a", b"/a")},
         "b":{"id":"@test:queue/b", "version":"v1", "files":file("/b", b"/b")},
+        "multi":{"id":"@test:queue/multi", "version":"v1", "files":[
+            file("/m1", b"/m1")[0].clone(), file("/m2", b"/m2")[0].clone(),
+        ]},
     }});
     let plugin =
         crate::plugin::decode_plugin_declaration("@test", &declaration.to_string()).unwrap();
@@ -257,7 +260,10 @@ async fn cancel_deletes_partial_files_of_a_running_or_queued_job_and_leaves_the_
         .cancel(root.path(), &registry, slow)
         .await
         .unwrap();
-    assert!(!part(root.path(), &registry, slow).exists());
+    // Cancel deletes every downloaded file, so it never looks interrupted.
+    let base = placement::contribution(root.path(), registry.artifact(slow).unwrap());
+    assert!(!base.join(".downloads").exists());
+    assert!(placement::interrupted_since(&base).is_none());
     assert!(matches!(
         state_of(&coordinator, root.path(), &registry, slow),
         ArtifactState::Missing
@@ -344,4 +350,72 @@ async fn a_restarted_queue_resumes_with_range_once_a_runtime_exists() {
     })
     .await;
     assert_eq!(server.paths(), [("/slow".to_owned(), Some(FIRST))]);
+}
+
+fn hex_of(bytes: &[u8]) -> String {
+    hex::encode(Sha256::digest(bytes))
+}
+
+/// FEX's rootfs has eleven files. Once file 1 is verified its marker is
+/// renamed, and the earliest remaining `.part` belongs to a later file.
+#[test]
+fn restart_order_survives_a_finished_first_file_of_a_multi_file_artifact() {
+    let server = Server::start();
+    let registry = registry(&server);
+    let root = tempfile::tempdir().unwrap();
+    let (multi, b) = ("@test:queue/multi", "@test:queue/b");
+    placement::mark_queued(root.path(), registry.artifact(multi).unwrap()).unwrap();
+    thread::sleep(Duration::from_millis(20));
+    placement::mark_queued(root.path(), registry.artifact(b).unwrap()).unwrap();
+    thread::sleep(Duration::from_millis(20));
+    // File 1 finishes and file 2 starts after b was queued.
+    let downloads =
+        placement::contribution(root.path(), registry.artifact(multi).unwrap()).join(".downloads");
+    fs::rename(
+        downloads.join(format!("{}.part", hex_of(b"/m1"))),
+        downloads.join(hex_of(b"/m1")),
+    )
+    .unwrap();
+    fs::write(downloads.join(format!("{}.part", hex_of(b"/m2"))), b"/").unwrap();
+    let (coordinator, _) = coordinator();
+    coordinator
+        .recover(root.path(), root.path(), &registry)
+        .unwrap();
+    let base = |id| placement::contribution(root.path(), registry.artifact(id).unwrap());
+    let waiting: Vec<_> = coordinator.lock().waiting.iter().cloned().collect();
+    assert_eq!(waiting, [base(multi), base(b)]);
+    server.gate.store(true, Ordering::SeqCst);
+}
+
+/// A restart between two files, or during unpacking, leaves verified files
+/// and no `.part`. The download still resumes and fetches only what is left.
+#[tokio::test]
+async fn a_restart_between_files_or_during_unpacking_still_resumes() {
+    let server = Server::start();
+    let registry = registry(&server);
+    let root = tempfile::tempdir().unwrap();
+    let (multi, a) = ("@test:queue/multi", "@test:queue/a");
+    // `multi` stopped between its two files; `a` stopped during unpacking.
+    for (id, bytes) in [(multi, &b"/m1"[..]), (a, &b"/a"[..])] {
+        let artifact = registry.artifact(id).unwrap();
+        let downloads = placement::contribution(root.path(), artifact).join(".downloads");
+        fs::create_dir_all(&downloads).unwrap();
+        fs::write(downloads.join(hex_of(bytes)), bytes).unwrap();
+    }
+    let (coordinator, _) = coordinator();
+    coordinator
+        .recover(root.path(), root.path(), &registry)
+        .unwrap();
+    until("both downloads", || {
+        [multi, a].iter().all(|id| {
+            matches!(
+                state_of(&coordinator, root.path(), &registry, id),
+                ArtifactState::Ready { .. }
+            )
+        })
+    })
+    .await;
+    // Only the missing second file of `multi` went to the network.
+    assert_eq!(server.paths(), [("/m2".to_owned(), None)]);
+    server.gate.store(true, Ordering::SeqCst);
 }

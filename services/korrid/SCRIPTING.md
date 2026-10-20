@@ -345,15 +345,19 @@ resumes next with a `Range` request. Unpacking is never paused.
 the end of the queue. The download continues when the person leaves the game.
 
 Cancel stops the download, removes the artifact from the queue and deletes its
-`.part` files. Verified whole files stay. Unpacking cannot be cancelled. When
-korrid queues an artifact it creates `.downloads/<hex of file 1>.part`, with
-zero bytes if nothing has arrived. A `.part` file with no ready directory
-therefore always means an interrupted download. At startup korrid queues every
-such contribution, ordered by the creation time of its earliest `.part` file.
-The creation time records when the person asked; the modification time moves
-while bytes arrive. Where the filesystem reports no creation time, korrid uses
-the modification time, which can put a running download behind a later one.
-Process restart forgets in-memory failures and progress. No new state is saved.
+`.downloads` directory: partial and verified files alike, so a cancelled
+download starts again from zero. Unpacking cannot be cancelled. When korrid
+queues an artifact it creates `.downloads/<hex of file 1>.part`, with zero bytes
+if nothing has arrived. Any entry in `.downloads` with no ready directory
+therefore means an interrupted download, including a restart between two files
+or during unpacking. At startup korrid queues every such contribution, ordered
+by the earliest creation time of an entry in its `.downloads`. That entry is the
+file 1 marker, which keeps its creation time when it is renamed to its verified
+name. The creation time records when the person asked; the modification time
+moves while bytes arrive. Where the filesystem reports no creation time, korrid
+uses the modification time, which can put a running download behind a later
+one. Process restart forgets in-memory failures and progress. No new state is
+saved.
 
 While a job downloads or unpacks, korrid holds a logind `sleep` inhibitor in
 `block` mode. The screen may blank, but the device does not suspend. Shutdown

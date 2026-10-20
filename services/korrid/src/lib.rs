@@ -2156,14 +2156,15 @@ fn local_launch_caller<'a>(
 }
 
 /// Remove download refuses while the game runs on this device. A session
-/// whose game is unknown also refuses: its files might be the ones in use.
+/// whose game is unknown, or one whose recovery is unresolved, also refuses:
+/// its files might be the ones in use.
 async fn acquisition_remove(
     state: &AppState,
     game_id: &str,
 ) -> Result<acquisition::AcquisitionSnapshot, RpcFailure> {
     if let ServerMode::Host(host) = &state.mode {
         use host::control::HostSessionStatus;
-        match host.session_status().await? {
+        let in_use = match host.session_status().await? {
             HostSessionStatus::Running {
                 game_id: active, ..
             }
@@ -2175,13 +2176,17 @@ async fn acquisition_remove(
             }
             | HostSessionStatus::Stopping {
                 game_id: active, ..
-            } if active.as_deref().is_none_or(|active| active == game_id) => {
-                return Err(RpcFailure {
-                    code: "ActiveSessionConflict".into(),
-                    message: "This game is running. Stop it before removing its download.".into(),
-                });
-            }
-            _ => (),
+            } => active.as_deref().is_none_or(|active| active == game_id),
+            HostSessionStatus::RecoveryBlocked => true,
+            HostSessionStatus::Completed { .. }
+            | HostSessionStatus::Failed { .. }
+            | HostSessionStatus::NoActive => false,
+        };
+        if in_use {
+            return Err(RpcFailure {
+                code: "ActiveSessionConflict".into(),
+                message: "This game is running. Stop it before removing its download.".into(),
+            });
         }
     }
     let (root, registry) = state.acquisition_context()?;

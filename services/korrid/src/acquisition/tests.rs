@@ -431,9 +431,10 @@ async fn cancellation_deletes_partial_bytes_and_cross_process_lock_blocks_a_seco
         state(&coordinator, root.path(), &registry),
         ArtifactState::Missing
     ));
-    // ADR 0013: Cancel deletes partial bytes, so a .part always means
-    // an interrupted download.
+    // ADR 0013: Cancel deletes downloaded bytes, so anything left in
+    // .downloads always means an interrupted download.
     assert!(!partial.exists());
+    assert!(!base.join(".downloads").exists());
     assert!(placement::interrupted_since(&base).is_none());
     assert!(matches!(
         state(&AcquisitionCoordinator::default(), root.path(), &registry),

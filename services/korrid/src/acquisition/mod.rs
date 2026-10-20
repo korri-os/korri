@@ -102,7 +102,7 @@ impl AcquisitionCoordinator {
                 Ok::<bool, Failure>(true)
             })();
             if recovery.map_err(Failure::rpc)? {
-                // A .part with no ready directory always means interrupted.
+                // Downloads with no ready directory always mean interrupted.
                 if let Some(since) = placement::interrupted_since(&base) {
                     interrupted.push((since, artifact));
                 }
@@ -534,7 +534,7 @@ async fn lock_briefly(base: &Path) -> Result<Option<std::fs::File>, RpcFailure> 
     Ok(None)
 }
 
-/// Cancel deletes partial files; a live writer elsewhere keeps its own.
+/// Cancel deletes downloaded files; a live writer elsewhere keeps its own.
 async fn discard_partials(base: &Path) -> Result<(), RpcFailure> {
     if !placement::is_ready(base) {
         return Ok(());
@@ -542,7 +542,7 @@ async fn discard_partials(base: &Path) -> Result<(), RpcFailure> {
     let Some(_guard) = lock_briefly(base).await? else {
         return Ok(());
     };
-    placement::remove_partials(base).map_err(Failure::rpc)
+    placement::remove_downloads(base).map_err(Failure::rpc)
 }
 
 #[allow(clippy::too_many_arguments)]

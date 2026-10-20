@@ -29,6 +29,8 @@ korri-input-contract = { path = "../../contracts/input" }
 log = { version = "0.4", features = ["max_level_info", "release_max_level_info"] }
 nostr = { version = "0.45.4", default-features = false, features = ["std", "os-rng", "nip44", "nip49", "nip59"] }
 serde = { version = "1", features = ["derive"] }
+# Declared release order (ADR 0013) depends on insertion order. toon-format
+# already enables this feature; naming it keeps the dependency explicit.
 serde_json = { version = "1", features = ["preserve_order"] }
 indexmap = { version = "2", features = ["serde"] }
 serde_yaml = "0.9"

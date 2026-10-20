@@ -21,6 +21,7 @@ fn sha(bytes: &[u8]) -> String {
 struct Fixture {
     root: tempfile::TempDir,
     registry: plugin::PluginRegistry,
+    backend: Arc<host::control::InMemoryLaunchUnitBackend>,
     app: Router,
 }
 
@@ -88,11 +89,12 @@ impl Fixture {
         fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
         let config = root.path().join("host.toml");
         fs::write(&config, "label = \"artifact-games\"\ngames = []\n").unwrap();
+        let backend = Arc::new(host::control::InMemoryLaunchUnitBackend::default());
         let runtime = host::HostRuntime::from_paths_with_backend(
             &config,
             Some(root.path().into()),
             root.path().join("private"),
-            Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+            backend.clone(),
         )
         .with_route_registry(root.path().into(), registry.clone());
         let app = secure_host_routers(
@@ -108,6 +110,7 @@ impl Fixture {
         Self {
             root,
             registry,
+            backend,
             app,
         }
     }
@@ -467,4 +470,30 @@ async fn a_saved_file_location_is_tried_before_the_artifact_route() {
         route.artifact_target.unwrap().artifact_id,
         "@test:rock/content"
     );
+}
+
+#[tokio::test]
+async fn remove_download_refuses_while_session_recovery_is_unresolved() {
+    let fixture = Fixture::new();
+    for (key, bytes) in [("content", CONTENT), ("bonus", BONUS), ("runtime", RUNTIME)] {
+        fixture.place_verified(key, bytes);
+    }
+    for game in ["rock-n-roll", "second"] {
+        fixture
+            .call("app.acquisition.download", json!({"gameId": game}))
+            .await;
+        fixture.wait_ready(game).await;
+    }
+    let started = fixture.launch("rock-n-roll").await;
+    assert_eq!(started["outcome"]["_tag"], "Ok", "{started}");
+    // korrid can no longer prove which game owns the session.
+    fixture.backend.set_state_unavailable(true);
+    let blocked = fixture
+        .call("app.acquisition.remove", json!({"gameId":"second"}))
+        .await;
+    assert_eq!(
+        blocked["outcome"]["payload"]["code"], "ActiveSessionConflict",
+        "{blocked}"
+    );
+    assert!(fixture.ready("bonus").is_dir());
 }

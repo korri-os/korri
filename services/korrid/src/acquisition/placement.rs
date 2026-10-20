@@ -98,38 +98,34 @@ pub(super) fn mark_queued(root: &Path, artifact: &ArtifactRecord) -> Result<(), 
     Ok(())
 }
 
-/// When this contribution's interrupted download was queued: the creation
-/// time of its earliest `.part` file. `None` means nothing was interrupted.
+/// When this contribution's interrupted download was queued, or `None` when
+/// nothing was interrupted. Any entry in `.downloads` counts: a restart
+/// between two files or during unpacking leaves verified files and no `.part`.
+/// The earliest creation time is the queue marker for file 1; renaming it to
+/// its verified name keeps that time.
 pub(super) fn interrupted_since(base: &Path) -> Option<std::time::SystemTime> {
     fs::read_dir(base.join(".downloads"))
         .ok()?
         .filter_map(Result::ok)
-        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".part"))
         .filter_map(|entry| {
             let metadata = entry.metadata().ok()?;
-            // The marker is created when the person asks; its mtime moves
-            // while bytes arrive. Use mtime only where the filesystem has no
-            // creation time, which can reorder a running download.
+            // A file's mtime moves while bytes arrive. Use it only where the
+            // filesystem has no creation time; that can reorder a running
+            // download behind a later one.
             metadata.created().or_else(|_| metadata.modified()).ok()
         })
         .min()
 }
 
-/// Cancel deletes partial bytes (ADR 0013 amends ADR 0012). Verified whole
-/// files stay. The caller holds the contribution's `.lock`.
-pub(super) fn remove_partials(base: &Path) -> Result<(), Failure> {
-    let entries = match fs::read_dir(base.join(".downloads")) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error.into()),
-    };
-    for entry in entries {
-        let entry = entry?;
-        if entry.file_name().to_string_lossy().ends_with(".part") {
-            fs::remove_file(entry.path())?;
-        }
+/// Cancel deletes everything downloaded so far (ADR 0013 amends ADR 0012):
+/// partial and verified files alike, so a cancelled download is never taken
+/// for an interrupted one and starts again from zero. The caller holds
+/// the contribution's `.lock`.
+pub(super) fn remove_downloads(base: &Path) -> Result<(), Failure> {
+    match fs::remove_dir_all(base.join(".downloads")) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 pub(super) fn publish(

@@ -5,8 +5,10 @@ use super::source::SourceSnapshot;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-// Preserve native condition order without changing serde_json ordering for
-// the rest of korrid's wire and persisted data.
+// Preserve native condition order in this module's own type. serde_json
+// already keeps insertion order in korrid: toon-format enables its
+// `preserve_order` feature, and korrid's Cargo.toml names it because declared
+// release order depends on it (ADR 0013).
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum Value {
