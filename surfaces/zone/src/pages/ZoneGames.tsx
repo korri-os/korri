@@ -488,6 +488,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                     <ZoneOptionRow
                       description={row.description}
                       disabled={row.disabled}
+                      flanked
                       focused={row.id === optRows[opts.row]?.id}
                       interaction={row.interaction}
                       key={row.id}

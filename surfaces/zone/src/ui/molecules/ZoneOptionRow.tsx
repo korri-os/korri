@@ -35,7 +35,9 @@ import { useZoneOptionRow } from "../../use-zone-option-row"
  *  - `text` and `sensitiveText` with no value: Korri's `placeholder`, in
  *    the steel face, stands in the value's place.
  *  - `action`: the value is the command; a destructive one is in the
- *    danger ink.
+ *    danger ink. A holder whose rows are all commands (GAME OPTS., as
+ *    Mania's SECRETS) passes `flanked`: the focused value wears the red
+ *    triangles too, though left and right step nothing.
  *  - absent: the row is read-only and draws nothing it cannot do.
  *
  * Left and right reach a choice row from the portal as
@@ -71,6 +73,7 @@ export function ZoneOptionRow({
   problem,
   verbatimLabel = false,
   verbatimValue = false,
+  flanked = false,
   onPress,
   onStep,
   onFocus,
@@ -92,6 +95,8 @@ export function ZoneOptionRow({
   readonly verbatimLabel?: boolean
   /** The value is a fact Korri publishes: keep its case. */
   readonly verbatimValue?: boolean
+  /** The focused value wears the red triangles whatever its kind (GAME OPTS.' RUN); left and right still step only a choice. */
+  readonly flanked?: boolean
   /** A on the row: fire the action or raise the keyboard. */
   readonly onPress?: () => void
   /** Left or right on a choice row. */
@@ -111,6 +116,7 @@ export function ZoneOptionRow({
   const placeholder = (value === undefined || value === "")
     && (interaction?.kind === "text" || interaction?.kind === "sensitiveText") ? interaction.placeholder : undefined
   const steps = kind === "choice" && focused && !saving && !disabled
+  const triangles = (steps || flanked) && focused && !saving && !disabled
   const horizontal = useZoneHorizontal(control, steps && onStep !== undefined, kind, onStep)
   const shown = placeholder ?? value
   const cutValue = valueNode === undefined && shown !== undefined && shown !== ""
@@ -151,7 +157,7 @@ export function ZoneOptionRow({
           data-drawn={valueNode === undefined ? undefined : ""}
           data-option-clip="slash"
         >
-          {steps ? <i aria-hidden="true" className="zone-option-row-step" data-way="back" /> : null}
+          {triangles ? <i aria-hidden="true" className="zone-option-row-step" data-way="back" /> : null}
           {valueNode !== undefined ? (
             <span className="zone-option-row-text">{valueNode}</span>
           ) : (
@@ -170,7 +176,7 @@ export function ZoneOptionRow({
             </span>
           )}
           {saving ? <span aria-label="Saving" className="zone-option-row-caret" role="img" /> : null}
-          {steps ? <i aria-hidden="true" className="zone-option-row-step" data-way="forward" /> : null}
+          {triangles ? <i aria-hidden="true" className="zone-option-row-step" data-way="forward" /> : null}
         </span>
       </button>
       {focused && clearLabel !== undefined && !saving ? (

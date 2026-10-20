@@ -161,6 +161,11 @@ describe("C5: GAME OPTS.", () => {
     expect(screen.getByText("zao is not on the network")).toBeTruthy()
     expect(document.activeElement).toBe(button("Verify files"))
     expect(document.querySelector(".zone-games-band")?.hasAttribute("inert")).toBe(true)
+    // The focused row's RUN is flanked by the red triangles, as on OPTIONS; no other row's is.
+    const steps = (row: Element | null | undefined) => [...(row?.querySelectorAll(".zone-option-row-step") ?? [])].map(node => node.getAttribute("data-way"))
+    const rows = [...document.querySelectorAll(".zone-games-opts-rows .zone-option-row")]
+    expect(steps(rows[0])).toEqual(["back", "forward"])
+    expect(rows.slice(1).map(steps)).toEqual([[], []])
   })
 
   test("OPTS. at the end of the action row opens GAME OPTS. without the options button; B comes back to it", () => {

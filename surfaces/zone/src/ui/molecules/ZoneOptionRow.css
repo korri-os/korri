@@ -183,8 +183,9 @@
   translate: calc(calc(var(--zone-drop-focus) * var(--zone-px)) * -1) calc(var(--zone-drop-focus) * var(--zone-px));
 }
 
-/* A choice's red triangles, inside the value panel at its two ends, pixel
- * stairs 4 by 7 art px, breathing toward the value in two steps. */
+/* A choice's red triangles (and a flanked row's: GAME OPTS.), inside the
+ * value panel at its two ends, pixel stairs 4 by 7 art px, breathing
+ * toward the value in two steps. */
 .zone-option-row-step {
   position: absolute;
   top: 50%;
