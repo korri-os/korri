@@ -13,8 +13,10 @@
 /* The frame stands in for a screen of its own size, so it has its own art
  * pixel: the plan's rule (src/plan/art-px.ts), as zone.css derives it for a
  * part shown at the device's size. */
-.zone-part-frame > * {
+.zone-part-frame-screen {
   --zone-px: max(var(--zone-px-least), round(down, calc(min(100cqw, 100cqh) / var(--zone-art-rows)), var(--zone-px-least)));
+  position: absolute;
+  inset: 0;
 }
 
 .zone-part-frame[data-shape="narrow-tall"] {

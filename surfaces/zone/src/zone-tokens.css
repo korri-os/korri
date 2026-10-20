@@ -757,9 +757,9 @@
   --zone-ink-danger-face: var(--zone-danger);
   /** @label Danger ink shade */
   --zone-ink-danger-shade: var(--zone-danger-shade);
-  /** Room a caps box keeps above its cap for accents and the ring. Art px. @label Caps headroom @min 0 @max 6 @step 1 */
+  /** Room a caps box keeps above its cap for accents and the ring, at caps-1; the banner pads by it. Art px. @label Caps headroom @min 0 @max 6 @step 1 */
   --zone-caps-headroom: 4;
-  /** Room a caps box keeps under and beside its ink for the ring and the drop. Art px. @label Caps ink room @min 0 @max 6 @step 1 */
+  /** Room a caps box keeps round its ink for the ring and the drop, beyond the accents and tails. Art px. @label Caps ink room @min 0 @max 6 @step 1 */
   --zone-caps-room: 3;
 
   /* The banner (ZoneBanner): blue, caps-2 banner ink, and a lip under it,

@@ -22,10 +22,15 @@ stylesheet, and it is built to ship from another repository unchanged.
 - **Keycap hints** in the top corners: B BACK left, A CONFIRM right.
 - **Focus** is never ambiguous: a pink edge plus two red triangles on a card,
   a pink offset underline on a button, a pink bar and a lift on a tab.
-- **Eight colours** and nothing else: mint, black, white, yellow, blue,
-  orange, red, pink. No gradients, no blur, no soft shadows. A drop edge is
-  a hard offset in a palette colour.
-- **One face**: Anton. All caps.
+- **One palette per screen group** (GAMES, OPTIONS, SAVE DATA, GAME OPTS.,
+  PAUSED, the title card, the tally), sampled from Mania's menus and
+  switched by `data-ground`. No blends, no blur, no soft shadows, no smooth
+  gradients: flat colours, hard-stop stripes and dither only. A drop edge is
+  a hard offset in the ground's shade. (Supersedes "eight colours".)
+- **Two faces on one art-pixel grid**: Zone Caps, Zone's own outlined pixel
+  capitals, for every word Zone writes; Jersey 10 for every fact and
+  sentence Korri publishes, in its own case. (Supersedes "one face:
+  Anton".)
 
 ## What Zone never does
 
@@ -60,8 +65,10 @@ one has been seen to fail on a planted defect.
 | No blur, blend, soft shadow or smooth gradient; a `linear-gradient` is a hard-stop stripe | `test/authoring-gate.test.ts` |
 | Shapes read no state: nothing under `src/ui/` or `src/pages/` imports `src/state/` or reads the host | `test/atomic-gate.test.ts` |
 | Every component file has exactly one component | `test/atomic-gate.test.ts` |
-| White caps on black, yellow on blue, and every other lettering pair reach contrast | `test/contrast-gate.test.ts` |
-| Layout is `plan(width, height)`, thresholds are named constants, tested one pixel either side | `test/plan-zone-select.test.ts` |
+| Every lettering pair reaches contrast; outlined lettering is judged face against outline, on every screen group's ground | `test/contrast-gate.test.ts` |
+| Only the ground draws on a canvas or runs a frame clock; gradients are hard-stop stripes or dither; no word breaks inside itself | `test/authoring-gate.test.ts` |
+| Zone Caps is the grid, built: coverage, metrics, outlines and a reproducible build | `test/zone-caps-font.test.ts` |
+| Layout is `plan(width, height)` on the art grid (`planArt(wArt, hArt)`), thresholds are named constants in art px, tested one art pixel either side | `test/plan-zone-select.test.ts` |
 
 `test/architecture-lint.test.ts` runs oxlint over `test/lint-tripwires`, where
 each planted violation is marked `// VIOLATION <rule>`, and requires exactly
@@ -73,11 +80,14 @@ those reports.
 src/
   zone-tokens.css     the only file with a raw colour or pixel value; every
                       value is a literal custom property with a knob comment
-  zone-fonts.css      Anton, embedded from src/fonts/ (SIL OFL 1.1)
+  zone-fonts.css      Zone Caps and Jersey 10, embedded from src/fonts/
+                      (SIL OFL 1.1)
   zone-motion.css     the one-bounce snap, the triangle nudge, the ring drift;
                       imported by each component whose stylesheet names one
   zone.css            reset, screen scope and reduced motion; imports nothing
-  fonts/              Anton-Regular.ttf and OFL.txt
+  fonts/              zone-caps.grid (Zone Caps, drawn by hand), its build
+                      ZoneCaps.woff2 and .ttf, ZoneCaps-OFL.txt;
+                      Jersey10-latin.woff2 and its OFL.txt
   fixtures/           the fixture host and model, and the part frame
   plan/               plan(width, height) per page: pure, thresholds named
   state/              every model, messages, requests, and surface.ts, which

@@ -1,0 +1,21 @@
+/* Lines of glyphs, wrapping, with a cap's room between lines. */
+.zone-glyph-sheet {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: calc(var(--zone-caps-headroom) * 2 * var(--zone-px)) calc(var(--zone-caps-room) * 3 * var(--zone-px));
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+  row-gap: calc(var(--zone-caps-2) * var(--zone-px));
+  height: 100%;
+  overflow: hidden;
+  padding: calc(var(--zone-strip-margin) * var(--zone-px));
+}
+
+/* The black ink is drawn on a white bar. */
+.zone-glyph-sheet[data-ink="ink"] {
+  background: var(--zone-white);
+}
+
+.zone-glyph-sheet-chunk {
+  display: inline-flex;
+}

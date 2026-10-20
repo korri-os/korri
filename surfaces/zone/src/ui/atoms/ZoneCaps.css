@@ -1,12 +1,14 @@
 /* Zone Caps on the art grid. The box keeps room round its words for the
- * accents, the ring and the drop (padding), and gives it back (an equal
- * negative margin), so it lays out as tight as its line but clips nothing
- * it draws. Its line is one em: the em is the cap, so the cap fills the
- * line and the baseline lands on a whole art px. */
+ * accents (3 glyph rows over the cap, 0.3em), the tails under the baseline
+ * (0.2em), the ring and the drop (art px whatever the size), and gives it
+ * back with an equal negative margin, so it lays out as tight as its line
+ * but clips nothing it draws. Its line is one em: the em is the cap, so the
+ * cap fills the line and the baseline lands on a whole art px. */
 .zone-caps {
   --zone-caps-r: calc(var(--zone-cap-outline) * var(--zone-px));
-  --zone-caps-top: calc(var(--zone-caps-headroom) * var(--zone-px));
   --zone-caps-pad: calc(var(--zone-caps-room) * var(--zone-px));
+  --zone-caps-top: calc(0.3em + var(--zone-caps-pad));
+  --zone-caps-bottom: calc(0.2em + var(--zone-caps-pad));
   /* The ring: all eight neighbours, one art px out, no blur. */
   --zone-caps-ring:
     calc(var(--zone-caps-r) * -1) calc(var(--zone-caps-r) * -1) 0 var(--zone-caps-outline-colour),
@@ -36,8 +38,8 @@
   isolation: isolate;
   display: inline-block;
   max-width: calc(100% + var(--zone-caps-pad) * 2);
-  margin: calc(var(--zone-caps-top) * -1) calc(var(--zone-caps-pad) * -1);
-  padding: var(--zone-caps-top) var(--zone-caps-pad);
+  margin: calc(var(--zone-caps-top) * -1) calc(var(--zone-caps-pad) * -1) calc(var(--zone-caps-bottom) * -1);
+  padding: var(--zone-caps-top) var(--zone-caps-pad) var(--zone-caps-bottom);
   overflow: hidden;
   font-family: var(--zone-font);
   font-weight: 400;
@@ -102,7 +104,7 @@
 }
 
 .zone-caps[data-ink="banner"]::after {
-  clip-path: inset(calc(var(--zone-caps-top) + 0.3em) 0 calc(100% - var(--zone-caps-top) - 0.6em) 0);
+  clip-path: inset(calc(var(--zone-caps-top) + 0.3em) 0 calc(var(--zone-caps-bottom) + 0.4em) 0);
 }
 
 .zone-caps[data-ink="ink"] {

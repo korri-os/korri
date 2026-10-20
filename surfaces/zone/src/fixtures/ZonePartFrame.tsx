@@ -20,7 +20,7 @@ export function ZonePartFrame({
 }) {
   return (
     <div className="zone-part-frame" data-shape={shape}>
-      {children}
+      <div className="zone-part-frame-screen">{children}</div>
     </div>
   )
 }
