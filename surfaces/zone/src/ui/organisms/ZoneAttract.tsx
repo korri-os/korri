@@ -15,8 +15,10 @@ import { ZoneTitleCard } from "../molecules/ZoneTitleCard"
  * the clock starts again with the next title card.
  *
  * The words are true: any input wakes Zone, the cursor where it was. With
- * no art, the card's stripe pattern fills the stage. Under reduced motion
- * the title card stands still and nothing blinks.
+ * no art, the card's stripe pattern fills the stage. The stage stands
+ * under the card the whole turn, so a turn's first frames sweep the card
+ * in over the game, never over the page. Under reduced motion the title
+ * card stands still and nothing blinks.
  */
 export function ZoneAttract({
   turn,
@@ -50,7 +52,6 @@ export function ZoneAttract({
       return {
         ...zoneTitleVars(frame.card),
         "--zone-attract-card": frame.card === undefined ? 0 : 1,
-        "--zone-attract-stage": frame.stage ? 1 : 0,
         "--zone-attract-pan": frame.panX,
         "--zone-attract-prompt": frame.prompt ? 1 : 0,
       }

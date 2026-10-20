@@ -19,11 +19,14 @@ export type ZoneFootStrips = "tall" | "short"
  * reserves that row) and the tall token alone. `strips` pins the height
  * and type for a part; without it the foot follows the shell.
  *
+ * Every size is on the art grid: TIME in HUD ink and the clock at caps-1,
+ * Korri's facts (the device's name, the SSID, the build) in Jersey 10 at
+ * the fact size among them.
+ *
  * Yield order when squeezed: the room between the two ends, then the SSID
  * (an ellipsis, with the badge capped at its share of the foot), then the
- * whole foot's type, which shrinks to fit (to half, as a card title does).
- * The timer, the device tag, the bars and the build string keep their
- * words; a foot too narrow for them at half size overflows at its end.
+ * build string (an ellipsis; its whole text is its title). The timer, the
+ * device tag and the bars keep their words.
  */
 export function ZoneFoot({
   clock,
@@ -48,7 +51,9 @@ export function ZoneFoot({
       {clock === undefined ? null : (
         <span className="zone-foot-timer">
           <ZonePanel edge={false}>
-            <span className="zone-foot-timer-label">Time</span>
+            <span className="zone-foot-timer-label">
+              <ZoneCaps ink="hud">Time</ZoneCaps>
+            </span>
             <span className="zone-foot-timer-digits">
               <ZoneCaps>{clock}</ZoneCaps>
             </span>
@@ -58,13 +63,13 @@ export function ZoneFoot({
       {device === undefined ? null : (
         <span className="zone-foot-device">
           <ZonePanel edge={false}>
-            <ZoneCaps>{device}</ZoneCaps>
+            <ZoneCaps fact>{device}</ZoneCaps>
           </ZonePanel>
         </span>
       )}
       <i className="zone-foot-spacer" aria-hidden="true" />
       {connection === undefined ? null : <ZoneSignal connection={connection} />}
-      {build === undefined ? null : <span className="zone-foot-build">{build}</span>}
+      {build === undefined ? null : <span className="zone-foot-build" title={build}>{build}</span>}
     </div>
   )
 }

@@ -229,9 +229,30 @@ describe("ZoneCard", () => {
     expect(tagsIn()).toEqual(["PC", "Here", "zao", "Download"])
   })
 
+  test.each([
+    ["SideOneTag", ["GB"]],
+    ["SideTwoTags", ["Switch", "Here"]],
+    ["SideThreeTags", ["PICO-8", "Here", "Continue"]],
+    ["SideFourTags", ["PC", "Here", "zao", "Continue"]],
+    ["FocusOneTag", ["GB"]],
+    ["FocusTwoTags", ["Switch", "Here"]],
+    ["FocusThreeTags", ["PICO-8", "Here", "Continue"]],
+    ["FocusFourTags", ["PC", "Here", "zao", "Continue"]],
+  ])("the tag ladder: %s draws every tag whole, in order; a row too narrow only hides its last", (state, tags) => {
+    const State = (card as Part)[state] as ComponentType
+    render(<State />)
+    expect(tagsIn()).toEqual(tags)
+    // No tag is ever cut: every tag stays in the row, its label entire, and
+    // only a hidden mark (never a shorter word) answers a narrow row.
+    for (const node of document.querySelectorAll(".zone-tag")) {
+      expect(node.textContent).toBe(tags[[...document.querySelectorAll(".zone-tag")].indexOf(node)])
+    }
+  })
+
   test("every state is covered", () => {
     expect(statesOf(card as Part).map(([key]) => key).sort()).toEqual(
-      ["Download", "DownloadUnknownSize", "First", "FocusedTwoPlace", "Last", "LongTitle", "NoCover", "Resumable", "SideSize", "UnfocusedOnePlace"].sort(),
+      ["Download", "DownloadUnknownSize", "First", "FocusedTwoPlace", "Last", "LongTitle", "NoCover", "Resumable", "SideSize", "UnfocusedOnePlace",
+        "SideOneTag", "SideTwoTags", "SideThreeTags", "SideFourTags", "FocusOneTag", "FocusTwoTags", "FocusThreeTags", "FocusFourTags"].sort(),
     )
   })
 })

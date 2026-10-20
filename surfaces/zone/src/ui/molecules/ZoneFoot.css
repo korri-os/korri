@@ -15,6 +15,7 @@
   gap: clamp(calc(var(--zone-strip-margin-min) * var(--zone-px)), 1.6cqw, calc(var(--zone-strip-gap) * var(--zone-px)));
   height: var(--zone-foot-height);
   padding: calc(var(--zone-foot-inset) * var(--zone-px)) var(--zone-foot-margin);
+  --zone-signal-type: calc(var(--zone-foot-type) * var(--zone-foot-fit));
   font-size: calc(var(--zone-foot-type) * var(--zone-foot-fit));
   line-height: 1;
 }
@@ -37,7 +38,7 @@
   min-width: 0;
 }
 
-/* TIME in yellow at the label scale, then the digits. */
+/* TIME in HUD ink, then the clock, both caps-1: the stage timer. */
 .zone-foot-timer {
   display: inline-flex;
   flex: 0 0 auto;
@@ -45,11 +46,8 @@
 }
 
 .zone-foot-timer-label {
-  margin-right: calc(var(--zone-strip-gap) * var(--zone-px));
-  color: var(--zone-timer-label);
-  --zone-caps-shade: currentColor;
-  font-size: calc(var(--zone-type-timer-label-scale) * 1em);
-  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-outline-colour);
+  display: inline-flex;
+  margin-right: calc(var(--zone-games-fact-pair) * var(--zone-px));
 }
 
 .zone-foot-timer-digits {
@@ -61,19 +59,22 @@
   display: inline-flex;
   flex: 0 0 auto;
   align-items: stretch;
-  font-size: calc(var(--zone-type-device-scale) * 1em);
 }
 
-/* Tiny, black, on the ground: the one lower-case thing in Zone, because a
- * build hash is not a word. */
+/* Black on the ground, in Korri's own case: Jersey 10 at the fact size
+ * among the caps, one Jersey pixel to an art pixel. It yields after the
+ * SSID, with an ellipsis. */
 .zone-foot-build {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   align-self: center;
+  min-width: 0;
+  overflow: hidden;
   color: var(--zone-build-ink);
   --zone-caps-shade: currentColor;
-  font-size: calc(var(--zone-type-build-scale) * 1em);
-  letter-spacing: var(--zone-build-tracking);
-  opacity: var(--zone-build-opacity);
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
+  line-height: 0.75;
+  text-overflow: ellipsis;
   text-shadow: none;
   text-transform: none;
   white-space: nowrap;
