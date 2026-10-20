@@ -69,3 +69,6 @@ C27 The den idles as a SCUMM room does: a star in the window blinks and the cons
 C28 options opens the desk drawer (settings); menu jumps the crosshair to the verb grid; system does nothing; back drops what is carried, then leaves the panel.
 C29 Use the typewriter: the verb grid gives way to a keyboard grid in the same panel, four rows of letters then Shift, Space, Rubout and Done, moved with the d-pad and struck with confirm; the sentence line becomes the typed line and the paper fills; B rubs out one character, Done puts the verbs back.
 C30 Focus is the crosshair, always over one hotspot, verb or pocket (the sentence line names it); scenes cut, so reduced motion has nothing to remove but idles.
+C31 Confirm: the kicker on the sentence line, the detail printed over the scene, the game's box lit when it has one; the host's actions replace the verbs as dialogue lines, in the host's order and words.
+C32 Progress: the chosen screen draws a bar like the volume bars, filled to done over total, "1.2 of 3.4 GB" on the sentence line; with no total "1.2 GB so far" and no bar; with no progress the kicker alone.
+C33 Look at a box adds "It needs a 3.4 GB download first." ("It needs a download first." with no size); the box wears a parcel sticker on the shelf.

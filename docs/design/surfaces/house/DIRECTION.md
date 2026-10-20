@@ -62,3 +62,6 @@ C27 No attract. After 2 minutes the figure sits down where it stands and the roo
 C28 `options` walks the figure to the kitchen board, `menu` to the hall router, `system` to the fuse box; everything else is left/right along a floor, up/down on the stairs, A and B
 C29 A at the typewriter: the caption strip becomes a 40-wide letter grid, one typed line over three rows of 40 cells; the d-pad walks it, A strikes, B deletes, done hands the line to the router or drawer that asked
 C30 The figure is the only focus and is always drawn; it walks stop to stop at a few pixels a frame; under reduced motion it appears at the next stop and no bulb blinks
+C31 The caption asks the kicker, naming the game when it has one, with the detail under it; the host's actions sit on the caption line as stops the d-pad reaches, in the host's order and words; the figure stays where it stands
+C32 The CRT draws a bar of slot-amber blocks filled to done over total, and the caption reads "1.2 of 3.4 GB"; with no total "1.2 GB so far" and no bar; with no progress only the slot light blinks
+C33 The caption adds "Needs a 3.4 GB download first." or, with no size, "Needs a download first."; the box carries a parcel tag on the shelf

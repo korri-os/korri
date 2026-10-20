@@ -56,3 +56,6 @@ C27 Attract: 30 s idle hard-cuts to DEMO, one game's cover and chrome title ever
 C28 `options` opens the slot's DIP page, `menu` jumps to OPERATOR, `system` opens the SERVICE page; the rest is left/right on the ring, down to the sides and the operator, A and B
 C29 High-score initials entry, extended: a character strip (A–Z, a–z, 0–9, symbols, SPACE, END) scrolled left/right, up/down jumps groups; A enters the next slot, B deletes the last; the line shows above with a blinking cursor and the count (12/40)
 C30 Focus is the yellow slot frame (flashing red), the yellow triangle on a side row, the yellow block on the operator line; the ring slides one slot per press; reduced motion: static frame, no slide, no blink
+C31 The heading becomes the kicker, the detail under it in Silkscreen, the gameTitle in chrome when there is one; the host's actions sit where INSERT COIN was as stops, in the host's order and words
+C32 Under the Busy detail a bar of sticker blocks fills to done over total, 1.2/3.4 GB beside it; with no total 1.2 GB IN and no bar; with no progress only the focused slot flashes
+C33 The high-score table adds a DOWNLOAD row with the size (3.4 GB), or NEEDED with none; the slot card wears a DL sticker

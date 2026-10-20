@@ -62,3 +62,6 @@ C27 Nothing: the two orbit rings keep drifting; no attract and no screensaver
 C28 menu jumps to the tabs; options opens GAME OPTS. for the focused card; system jumps to the SYSTEM group on OPTIONS; up to the tabs, then left/right and A, reaches it all
 C29 The keyboard panel from the foot strip: black slanted keys rise over the action row with the snap, white slab with a red caret; A types, B deletes, options shifts, menu confirms; 40 chars scroll the slab
 C30 Focus is always one of: pink edge and red triangles on a card, pink underline on a button, pink bar and lift on a tab; snaps bounce 340 ms; prefers-reduced-motion stops all motion
+C31 The OPTIONS dialog: blue panel cut by black wedges, kicker as headline, detail under it, gameTitle in yellow when there is one; one parallelogram per host action in the host's order and words, never cast as NO / YES
+C32 The Busy parallelogram fills with a mint bar to done over total, 1.2 / 3.4 GB in white caps; with no total 1.2 GB and no bar; with no progress the parallelogram alone
+C33 An orange DOWNLOAD tag joins the card's tag row with the size (DOWNLOAD 3.4 GB), DOWNLOAD alone with none

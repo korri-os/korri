@@ -58,3 +58,6 @@ C27 Attract: 20 s idle on SELECT cuts to the attract reel; any press returns to 
 C28 menu jumps to TEST MODE; options opens the focused game's GAME TEST MODE; system lands on SETTINGS' SYSTEM run; d-pad down reaches all of it: ring › places › service
 C29 The name-entry panel from the foot: slanted cyan-framed keys, yellow block cursor, A types, B deletes, options shifts, menu confirms; yellow entry bar with 12/40 count, dots for a password
 C30 Focus is always the yellow block, the yellow card frame or the cabinet outline; ring rotation eases 0.45 s; prefers-reduced-motion removes attract, pulse, sweep and wipe
+C31 A headline in the showcase: the kicker, the detail in cyan, the gameTitle in yellow when there is one; the host's actions as yellow-block items under it, in the host's order and words
+C32 NOW LOADING gains a hard-banded gauge on the plinth, filled to done over total, 1.2 / 3.4 GB in tabular figures; with no total 1.2 GB and no gauge; with no progress NOW LOADING alone
+C33 The RANKING panel adds a DOWNLOAD line with the size (3.4 GB), or REQUIRED with none

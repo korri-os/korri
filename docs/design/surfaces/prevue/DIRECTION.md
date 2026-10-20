@@ -68,3 +68,6 @@ C27 Attract after 60 s: the grid crawls up one row every 4 s and wraps, the prev
 C28 `options` flips the preview to the listing's own page (C5); `menu` jumps to channel 1; `system` jumps to the Device channel; everything else is the four directions, A and B
 C29 Text entry takes over the bar: the clock stays and the crawl becomes a one-line keypad strip; left/right step the row, up/down switch abc/ABC/123/#+=, A types, B deletes; the value shows in the sidebar in big type, dots for a password
 C30 The focused cell is marquee yellow with a white rule, always one on screen; the grid scrolls to keep it in view; under reduced motion rows and the crawl step in whole jumps
+C31 A slate in the preview window: the kicker in big yellow, the detail under it, the listing named when it has one; the host's actions as tags under the promo title, in the host's order and words; the crawl repeats the kicker
+C32 The Busy slate gains a bar of yellow blocks filled to done over total with "1.2 of 3.4 GB" under it; with no total "1.2 GB so far" and no bar; with no progress the slate alone
+C33 The sidebar facts line adds Download 3.4 GB (Download alone with no size); the listing's cell carries a DL flag beside the pips

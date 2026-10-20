@@ -71,3 +71,6 @@ C27 Nothing: the list stays as it is and only the message cursor blinks. No attr
 C28 `options` opens the file's COMMANDS page, `menu` jumps to the SYS files at the top of the list, `system` calls the operator; everything else is up/down, left/right, A and B
 C29 The transceiver strip becomes a frequency entry: the message area shows the draft with the cursor, three rows of the character set appear in the dossier; d-pad moves, A types, B deletes, `options` toggles case, `menu` commits
 C30 The focus is a solid cyan row, always drawn; the list scrolls so it stays in view and a "more" mark shows what is below; the only motion is the cursor blink, off under reduced motion
+C31 The transceiver asks: the kicker, then the detail, cursor blinking, with the file number when it has one; the host's actions print as lines under it, in the host's order and words, that down reaches
+C32 Under the Busy lines the transceiver draws a meter like the signal meter, cells lit to done over total, "1.2/3.4 GB" beside it; with no total "1.2 GB in" and no meter; with no progress only the spoken kicker
+C33 The dossier adds a "Download 3.4 GB" line ("Download needed" with no size), and the file's row carries a DL tag

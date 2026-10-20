@@ -65,3 +65,6 @@ C27 Nothing: the page stays as it is, as a teletext page did; only the row 0 clo
 C28 options jumps to the yellow Settings key, menu to the blue Index key (both carry a keycap glyph); system does nothing; d-pad, A and B reach every page.
 C29 The entry page: the field on row 4 (rows 4 and 5 for a 63-character password), the 95-character table on rows 8 to 19 walked with the d-pad, A writes, B deletes; Fastext becomes Delete, Space, Show/Hide, Done.
 C30 Focus is reverse video: the yellow row, the yellow cell or the grown Fastext key, always one; pages cut, nothing tweens, reduced motion changes nothing.
+C31 Confirm: the band turns magenta with the kicker double height, the game named on row 19 when it has one, the detail on rows 20 and 21; Fastext takes the host's actions in the host's order and words, red, green, yellow, blue.
+C32 Progress: row 21 of the red band is a mosaic bar filled to done over total, "1.2 of 3.4 GB" after it; with no total only "1.2 GB so far", no bar; with no progress the header counter rolls alone.
+C33 Band row 21 after the play facts, in cyan: "Needs a 3.4 GB download first."; with no size, "Needs a download first."

@@ -74,3 +74,6 @@ C27 Nothing: the book lies open where it was left, the pencil loop still round t
 C28 options jumps the pencil to the Order form tab, menu to the Index tab; system does nothing; the d-pad reaches the tabs right off the page; B turns back.
 C29 Box-per-letter fields with the printed four-row letter chart: the d-pad moves the pencil, A writes the next box, B rubs out the last, a "show letters" tick decides dots or letters, down off the chart reaches Join; the "Order by phone" QR is the fast route once Korri publishes a hand-off.
 C30 The graphite pencil loop is always round one item or tab and redraws itself in 0.42 s when it moves; under reduced motion it appears in place, no draw-on.
+C31 Confirm: an advice note laid across the spread with the kicker as its heading, the game's title on the "Item" line when it has one, the detail under it; a tick box per host action, in the host's order and words, none ticked in advance.
+C32 Progress: the despatch slip prints a scale under its heading, inked to done over total, "1.2 of 3.4 GB" beside it; with no total "1.2 GB so far" and no scale; with no progress the slip alone.
+C33 The item's small print after the system: "Needs a 3.4 GB download first"; with no size, "Needs a download first".

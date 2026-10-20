@@ -56,3 +56,6 @@ C27 Nothing: the stack stays as it is; no attract, no screensaver
 C28 menu pulls the Settings card; options flips the pulled pass to its back; system pulls the Settings card to its Actions row; up/down reach every card and the Find slip
 C29 A pass flips to its back: the text field across its top (40 characters fit at 18 px on a 720 pass) over a 10 × 4 key grid plus Space, Delete, Shift, Done; A types, B deletes, holding B flips back
 C30 Focus is the pulled pass (forward, wider, hard shadow) plus the lit gate chip or lit field; top/height ease 0.18 s; prefers-reduced-motion removes the transition
+C31 The notification strip under the status row in the pass's own colour (lining when no game): pass name, kicker and detail; the host's actions as chips at its right, in the host's order and words; the pass stays pulled
+C32 The Busy strip draws a hairline bar across its foot, filled to done over total, "1.2 of 3.4 GB" beside it; with no total "1.2 GB so far" and no bar; with no progress the strip alone
+C33 A Download field joins the fields row with the size (3.4 GB), or Needed with none
