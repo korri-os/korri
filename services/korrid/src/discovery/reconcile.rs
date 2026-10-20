@@ -408,8 +408,8 @@ impl DiscoveryCoordinator {
     /// Written once, under the publication lock: the game (claim title), its
     /// release (`sha256:` identity, the claim's system) and the provider link
     /// `{ provider, ref: claim id }`. No location is saved. Identical bytes
-    /// already in the library join that game; an existing link keeps its game.
-    /// Returns the game id.
+    /// already in the library join that game and the link moves to it;
+    /// otherwise an existing link keeps its game. Returns the game id.
     pub fn record_acquired(&self, acquired: &AcquiredGame<'_>) -> Result<String, DiscoveryError> {
         use crate::config::{
             library::{
@@ -435,17 +435,19 @@ impl DiscoveryCoordinator {
                 .iter()
                 .any(|release| release.identity.as_ref().is_some_and(|i| i.value() == key))
         };
+        // The game that already holds these bytes wins, so the link never
+        // names a game without the release; then the link's own game.
         let game_id = after
-            .provider_links
-            .get(&link_id)
-            .map(|link| link.playable.0.clone())
-            .filter(|id| after.library.contains_key(id))
+            .library
+            .iter()
+            .find(|(_, game)| holds(game))
+            .map(|(id, _)| id.clone())
             .or_else(|| {
                 after
-                    .library
-                    .iter()
-                    .find(|(_, game)| holds(game))
-                    .map(|(id, _)| id.clone())
+                    .provider_links
+                    .get(&link_id)
+                    .map(|link| link.playable.0.clone())
+                    .filter(|id| after.library.contains_key(id))
             })
             .unwrap_or_else(|| {
                 let id = change::unique_id(&change::slug(acquired.title), |id| {
