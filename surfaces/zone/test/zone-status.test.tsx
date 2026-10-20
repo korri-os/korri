@@ -106,6 +106,14 @@ describe("updateStatus", () => {
     expect(settled(statusConfirm, { shown: "busy", focus: 1 })).toEqual({ shown: "confirm", focus: 0 })
     const none: SurfaceStatus = { _tag: "Confirm", kicker: "Needs a download", actions: [] }
     expect(statusTakesFocus(none)).toBe(false)
+    expect(settled(none)).toEqual({ shown: "confirm", focus: 0 })
+    // An inert first answer cannot hold the cursor: the first enabled one is lit.
+    const inertFirst: SurfaceStatus = {
+      _tag: "Confirm",
+      kicker: "Needs a download",
+      actions: [{ id: "go", label: "Download", enabled: false }, { id: "no", label: "Cancel", enabled: true }],
+    }
+    expect(settled(inertFirst)).toEqual({ shown: "confirm", focus: 1 })
   })
 
   test("C31 ChoseConfirmAction runs Korri's action by its id, and only an enabled one of the question", () => {

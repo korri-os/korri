@@ -124,13 +124,23 @@ function step(model: ZoneStatusModel, message: ZoneStatusMessage, status: Surfac
 }
 
 /**
+ * The button a layer opens on: the first. Korri's question opens on its
+ * first enabled action, since an inert button cannot hold the cursor; with
+ * none enabled, on the first.
+ */
+function opening(status: SurfaceStatus): number {
+  if (status._tag !== "Confirm") return 0
+  return Math.max(0, status.actions.findIndex(action => action.enabled))
+}
+
+/**
  * The layer follows Korri. A layer that changes opens with its first button
- * lit (DISMISS before RETRY); a focus past the buttons Korri now offers is
- * brought back in.
+ * lit (DISMISS before RETRY, Korri's first enabled answer); a focus past the
+ * buttons Korri now offers is brought back in.
  */
 function settle(model: ZoneStatusModel, status: SurfaceStatus): ZoneStatusModel {
   const shown = shownFor(status)
   const count = statusButtonCount(status)
-  const focus = shown !== model.shown ? 0 : Math.min(model.focus, Math.max(0, count - 1))
+  const focus = shown !== model.shown ? opening(status) : Math.min(model.focus, Math.max(0, count - 1))
   return shown === model.shown && focus === model.focus ? model : { shown, focus }
 }

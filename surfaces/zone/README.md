@@ -460,6 +460,80 @@ bun run lint
   flow offers DELETE only; `exportIdentityBackup(password, retiredPublicKey)`
   is in the treaty but has no control here yet.
 
+### The treaty: Confirm, progress, download (C31 to C33)
+
+The surface treaty gained a `Confirm` status, `Busy.progress` and
+`SurfaceGame.download` while Zone was built (commit 1a593ed07). The brief
+fixed the look of each; these are the choices it left open.
+
+- **Confirm is its own layer.** The status model shows `confirm`, and
+  navigation's stack holds a `confirm` layer while Korri asks. Like Busy and
+  Problem it covers the page: menu, options and system do nothing under it,
+  and Back answers nothing. Today the portal keeps every host button to
+  itself while its download gate has a status, and sends Back to the gate
+  (`clients/portal/src/surface/SurfaceRoot.tsx`, `acquisition.back()`), so
+  Zone never has to guess which action declines.
+- **The question opens on Korri's first enabled action.** "The first
+  focused" is the first of the host's order; an inert button cannot hold
+  DOM focus, so a question whose first action is disabled opens on the
+  next enabled one. With no action enabled (or none at all) nothing takes
+  the cursor and the page stays inert until Korri publishes again.
+- **ZoneDialog gained `id`, `disabled` and `destructive` on an action.**
+  Korri's labels may repeat, so a button is keyed by the action's id. An
+  inert action is drawn dimmed and does nothing; a destructive one has red
+  caps, as the busy strip already marks it.
+- **The meter's words are DONE / TOTAL.** A slash, no word: the two sizes
+  stand at the bar's right end as SPECIAL STAGE's score stands at its bar.
+  They sit beside the bar, not on it, so they never hide the fill; when
+  the strip is too narrow for both they drop under it, right-aligned.
+  Without a total the size done stands alone. With nothing done and no
+  total (the portal's unpacking, `progress: { done: 0 }`) there are no
+  figures at all: "0 B" would read as stuck.
+- **Korri's detail and Zone's figures both show.** The portal's detail
+  already names the sizes ("612 MB of 1.2 GB · 6.4 MB/s · 1:30 left") and
+  is drawn verbatim; the figures are Zone's own reading of `progress`, in
+  the brief's format, so they can differ in rounding (612 MB against
+  612.0 MB). Zone does not parse or hide Korri's words.
+- **Bytes are decimal.** `formatZoneBytes` (`src/plan/bytes.ts`) counts
+  1 KB as 1000 B, as the portal's detail does, so a card's 1.5 GB and
+  Korri's question agree. Under 1 KB it writes whole bytes (512 B), since
+  "0 KB" would hide a real count. From 10 MB it keeps the decimal even when
+  it is 0 (1.0 GB), so the figure's width does not jump. A value that
+  rounds to 1000 of a unit is written in the next (999 999 B is 1 MB). GB
+  is the largest unit.
+- **Anton has no tabular figures.** Its GSUB lists `aalt c2sc case ccmp dlig
+  dnom frac liga locl numr ordn sinf smcp subs sups zero`, no `tnum`, and
+  its "1" is 677 units wide against 1012 for every other digit. So the
+  size done gets room of its own (`--zone-meter-figures`, 8.5ch,
+  right-aligned) and the readout keeps its width as it counts.
+- **The bar is red over blue.** The fill is red under an orange lip (a
+  hard stop at 34%), as SPECIAL STAGE's bar is red over a darker edge; the
+  track is blue, as PAUSED's range meter is. Both lean as every panel
+  leans, and a full fill is exactly the track's shape.
+- **No end is stripes over the whole bar.** Red diagonal stripes on the
+  blue track slide one tile along, over and over (`zone-sweep`, a fourth
+  movement added to `zone-motion.css`). Under reduced motion they stand
+  still. A single sliding stripe would stand still as a short fill and read
+  as a share; stripes over the whole bar read as "under way, no end" moving
+  or not.
+- **The meter is a `progressbar`** named by Korri's kicker. With a total it
+  states the whole percent done and the figures as its value text; without
+  one it states no value. The drawn figures are `aria-hidden`, since the
+  bar's value text already says them.
+- **The DOWNLOAD tag is orange with black ink.** A game card wears blue
+  (system), yellow (HERE), red (a device) and white (CONTINUE); orange is
+  OPEN, which is only ever on a save card or the running strip. It closes
+  the row, after CONTINUE. The row fits its caps as one, so DOWNLOAD 1.5 GB
+  makes every tag on that card smaller; on a side card with two places the
+  caps reach the fit's floor.
+- **DOWNLOAD is the last fact.** The facts line keeps its order and adds
+  DOWNLOAD <size> (or the word alone). A narrow screen cuts the line at its
+  end, so DOWNLOAD is the first fact to go there; the card's tag still
+  carries it.
+- **Extra part states.** Beside the brief's list, the status layer has
+  `BusyProgress` (the meter over the page) and the busy strip has
+  `ProgressUnpacking` and `ProgressNarrow`; the tag atom has `Download`.
+
 ## Layers: status, PAUSED, first boot
 
 Three shapes, each driven by a pure model, built ahead of their mount in
@@ -469,7 +543,7 @@ model's message, and the model's `update` returns `ZoneRequest`s.
 
 | Shape | Model (`src/state/`) | Korri slice | Capability |
 |---|---|---|---|
-| `ui/organisms/ZoneStatusLayer` | `status.ts` (`updateStatus`) | `status`, the catalog's titles | C7 to C10 |
+| `ui/organisms/ZoneStatusLayer` | `status.ts` (`updateStatus`) | `status`, the catalog's titles | C7 to C10, C31, C32 |
 | `pages/ZonePaused` (+ `ZonePausedControl`) | `overlay.ts` (`updateOverlay`) | `presentation` when `gameplay-overlay` | C24 |
 | `pages/ZoneOnboarding` (+ `ZoneControllerCard`) | `onboarding.ts` (`updateOnboarding`) | `onboarding`, `network`, `settings`, `settingsStatus` | C25 |
 
@@ -477,7 +551,10 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   nothing while Browsing; Busy drops the busy strip over the dimmed, inert
   page with the game's title in yellow above it; Running is a small strip
   at the top (kicker, OPEN, title) that leaves the page usable; Problem is
-  the blue dialog, DISMISS lit before RETRY. Korri's Problem never offers
+  the blue dialog, DISMISS lit before RETRY; Confirm is the same dialog
+  with Korri's own actions in its order, the first lit, Back answering
+  nothing. Busy with Korri's progress draws a red slanted meter under the
+  detail. Korri's Problem never offers
   a reload. C10 is RELOAD in the catalog's Error dialog on GAMES: the
   page reports `ChoseReload` and navigation asks `Reload`. The SYSTEM
   group lists Korri's own device actions and has no reload of its own.
@@ -590,7 +667,7 @@ What takes the screen, first match wins (`zoneShown`):
 
 | Button | What it does |
 |---|---|
-| back | Korri's Problem first (dismiss); Busy is never cancelled by it. Then the shown page's own rule; on OPTIONS and SAVE DATA, when the page has nothing to close, to the GAMES tab; on GAMES, navigation's rule; then nothing |
+| back | Korri's Problem first (dismiss); Busy is never cancelled by it, Confirm never answered by it. Then the shown page's own rule; on OPTIONS and SAVE DATA, when the page has nothing to close, to the GAMES tab; on GAMES, navigation's rule; then nothing |
 | menu | the cursor to the tabs, on every tab. OPTIONS' keyboard commits instead; a dialog or an identity step holds the cursor |
 | options | GAME OPTS. on GAMES, a shortcut for OPTS. in the action row; nothing on OPTIONS or SAVE DATA |
 | system | OPTIONS with the cursor on its SYSTEM group (`focusSystemGroup`) |
@@ -685,6 +762,9 @@ C27 idle: after 30 s the title card for the focused game, the next every 4 s, on
 C28 options = GAME OPTS., menu = the tabs, system = OPTIONS' SYSTEM group; every tab by d-pad and A, home by B — test: zone-navigation-acceptance "C28 input actions"
 C29 the one slanted keyboard: a 40-character backup secret, capitals and symbols as layers — test: zone-navigation-acceptance "C29 text entry"
 C30 the pink edge and underline on whatever holds DOM focus, on every page and layer; reduced motion stops all motion — test: zone-navigation-acceptance "C30 focus and motion"
+C31 ZoneStatusLayer question: the blue ZoneDialog with Korri's kicker, detail and the game in yellow, one button per host action in its order, the first lit, Back answering nothing; the page inert and dimmed — test: zone-navigation-acceptance "C31 confirm"
+C32 ZoneBusyStrip meter: SPECIAL STAGE's red slanted bar, its share and DONE / TOTAL; with no total the size so far and sweeping stripes; without progress, the strip as before — test: zone-navigation-acceptance "C32 progress"
+C33 ZoneCard's orange DOWNLOAD tag with the size, and DOWNLOAD <size> at the end of the GAMES facts line — test: zone-navigation-acceptance "C33 download"
 ```
 
 ### Polish (decided without asking)
