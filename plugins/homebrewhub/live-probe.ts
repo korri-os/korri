@@ -1,21 +1,21 @@
 #!/usr/bin/env -S nix shell nixpkgs#bun --command bun
 // Live probe for @korri:homebrewhub. Not part of the unit suite.
 //
-// The catalog is curated, so the handlers make no requests. This probe proves
-// that each entry is still live: it GETs the entry's Homebrew Hub API record
-// (the claim URL) and checks it names the same file, then reads the first
-// 336 bytes of the resolved file with a Range request and checks the Game Boy
-// header logo at 0x104. One timestamped line per step. Small GETs, no auth.
+// Proves each pinned artifact is still what plugin.ts says: it GETs every
+// artifact file (each is small) and compares status, size and SHA-256 with the
+// pin, checks the Game Boy header logo at 0x104, and checks that Homebrew
+// Hub's API record still lists the file. One timestamped line per step.
+// GETs only, no auth.
 //
 // Usage: plugins/homebrewhub/live-probe.ts [--record <dir>]
 // --record rewrites the committed API record fixtures.
+import { createHash } from "node:crypto"
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { handlers } from "./plugin"
+import { artifacts, games } from "./plugin"
 
 // First 16 bytes of the Nintendo logo at 0x104 in a Game Boy cartridge header.
 const GB_LOGO = { offset: 0x104, hex: "ceed6666cc0d000b03730083000c000d" }
-const providerId = "@korri:homebrewhub"
 
 const log = (message: string) => console.log(`${new Date().toISOString()} ${message}`)
 const recordDir = process.argv[2] === "--record" ? process.argv[3] : undefined
@@ -25,41 +25,35 @@ const check = (ok: boolean, message: string) => {
   if (!ok) failures += 1
 }
 
-type Claim = { id: string; title: string; url: string; artifact: { system: string; file: { name: string } } }
+for (const artifact of Object.values(artifacts)) {
+  for (const pin of artifact.files) {
+    const response = await fetch(pin.url, { redirect: "manual" })
+    const bytes = Buffer.from(await response.arrayBuffer())
+    const sha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`
+    log(`GET ${pin.url} -> ${response.status} ${bytes.length} bytes ${sha256}`)
+    check(response.status === 200, `${artifact.id}: answers 200 without a redirect`)
+    check(bytes.length === pin.bytes && sha256 === pin.sha256, `${artifact.id}: size and SHA-256 match the pin`)
+    const logo = bytes.subarray(GB_LOGO.offset, GB_LOGO.offset + 16).toString("hex")
+    check(logo === GB_LOGO.hex, `${artifact.id}: carries the Game Boy header logo (${logo})`)
+  }
+}
 
-// Every entry's search text names its system's legacy id.
-const claims = handlers["claims.search"]({ providerId, query: "nintendo-gameboy", responses: [] }) as Claim[]
-check(claims.length > 0, `claims.search lists ${claims.length} entries`)
-
-for (const claim of claims) {
-  const record = await fetch(claim.url)
-  const text = await record.text()
-  log(`GET ${claim.url} -> ${record.status} ${text.length} chars ${record.headers.get("content-type") ?? ""}`)
+for (const [key, game] of Object.entries(games)) {
+  const url = `https://hh3.gbdev.io/api/entry/${key}.json`
+  const response = await fetch(url)
+  const text = await response.text()
+  log(`GET ${url} -> ${response.status} ${text.length} chars`)
   let files: string[] = []
   try {
     files = (JSON.parse(text).files ?? []).map((file: { filename: string }) => file.filename)
   } catch {}
-  check(record.ok && files.includes(claim.artifact.file.name), `${claim.id}: API record lists ${claim.artifact.file.name} (${files.join(", ")})`)
-  if (recordDir && record.ok) {
-    writeFileSync(join(recordDir, `${claim.id}.json`), text.endsWith("\n") ? text : `${text}\n`)
-    log(`recorded ${claim.id}.json`)
+  for (const release of Object.values(game.releases)) {
+    check(response.ok && files.includes(release.file.path), `${key}: API record lists ${release.file.path}`)
   }
-
-  const resolution = handlers["artifact.resolve-download"]({ providerId, candidateUrl: claim.url, responses: [] }) as {
-    _tag: string
-    url?: string
-    filename?: string
+  if (recordDir && response.ok) {
+    writeFileSync(join(recordDir, `${key}.json`), text.endsWith("\n") ? text : `${text}\n`)
+    log(`recorded ${key}.json`)
   }
-  check(resolution._tag === "FinalDownload", `${claim.id}: artifact.resolve-download ${resolution._tag} ${resolution.url}`)
-  if (resolution._tag !== "FinalDownload" || !resolution.url) continue
-
-  const end = GB_LOGO.offset + 47
-  const file = await fetch(resolution.url, { headers: { range: `bytes=0-${end}` } })
-  const bytes = Buffer.from(await file.arrayBuffer())
-  const total = file.headers.get("content-range")?.split("/")[1] ?? file.headers.get("content-length")
-  log(`GET ${resolution.url} (bytes=0-${end}) -> ${file.status} total ${total} bytes ${file.headers.get("content-type") ?? ""}`)
-  const logo = bytes.subarray(GB_LOGO.offset, GB_LOGO.offset + 16).toString("hex")
-  check(file.ok && logo === GB_LOGO.hex, `${claim.id}: ${resolution.filename} carries the Game Boy header logo (${logo})`)
 }
 
 log(failures === 0 ? "probe passed" : `probe failed: ${failures} check(s)`)

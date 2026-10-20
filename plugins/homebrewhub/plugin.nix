@@ -1,7 +1,5 @@
-# A source-only acquisition provider with a curated catalog. Its handlers
-# make no requests; korrid downloads each resolved file from this host only,
-# on every redirect hop.
-{ pkgs }:
-{
-  hosts = [ "hh3.gbdev.io" ];
-}
+# Declarations only: games and their pinned artifacts. korrid downloads the
+# artifacts under its ADR 0012 rules, so this plugin needs no `hosts` (that
+# list is for provider plugins) and ships no native files.
+_:
+{ }

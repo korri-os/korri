@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
-import { handlers, providers } from "./plugin"
+import * as plugin from "./plugin"
 
 // Homebrew Hub's API record for the entry, recorded by
 // live-probe.ts --record on 2026-10-20. No game bytes are committed.
@@ -8,120 +8,106 @@ const apiRecord = JSON.parse(
   readFileSync(new URL("./fixtures/2048gb.json", import.meta.url), "utf8"),
 ) as { slug: string; title: string; developer: string; license: string; platform: string; basepath: string; files: Array<{ filename: string }> }
 
-const providerId = "@korri:homebrewhub"
-const search = (query: string) => handlers["claims.search"]({ providerId, query, responses: [] } as never)
-const details = (id: string) => handlers["claims.details"]({ providerId, id, responses: [] } as never)
-const resolve = (candidateUrl: string) =>
-  handlers["artifact.resolve-download"]({ providerId, candidateUrl, responses: [] } as never)
+// korrid's admission rules for `artifacts` and `games`, restated from
+// services/korrid/src/plugin.rs (ADR 0013 implementation, worktree c-1fcdf054,
+// commit 5ea5a70da): local keys are playable-id segments, artifact ids are
+// `<plugin id>/<key>`, versions are one safe non-hidden segment, file hashes
+// are `sha256:` + 64 hex, release hashes are sha256/sha1, a release with
+// artifacts names its file inside one of them by a relative path.
+const segment = /^[a-z0-9][a-z0-9._-]*$/
+const sha256 = /^sha256:[0-9a-f]{64}$/
+const safeRelativePath = (path: string) =>
+  !path.startsWith("/") &&
+  !/[\u0000-\u001f\u007f]/.test(path) &&
+  path.split("/").every(part => part !== "" && part !== "..")
+// Publisher systems.nix extensions for the systems this plugin names.
+const systemExtensions: Record<string, string[]> = { gb: ["gb", "dmg", "sgb"] }
 
-const artifact = {
-  kind: "content",
-  system: "gb",
-  format: { id: "gb" },
-  file: { name: "2048.gb", extension: "gb", mediaType: "application/octet-stream" },
-}
-const claim = {
-  _tag: "ProviderClaim",
-  providerId,
-  id: "2048gb",
-  title: "2048gb",
-  url: "https://hh3.gbdev.io/api/entry/2048gb.json",
-  platform: "gb",
-  artifact,
-}
+const pluginId = "@korri:homebrewhub"
+const { artifacts, games } = plugin
 
-describe("Homebrew Hub provider declaration", () => {
-  test("declares one provider and the three acquisition handlers", () => {
-    expect(providers).toStrictEqual({
-      "@korri:homebrewhub": { id: "@korri:homebrewhub", title: "Homebrew Hub" },
-    })
-    expect(Object.keys(handlers).sort()).toEqual([
-      "artifact.resolve-download",
-      "claims.details",
-      "claims.search",
-    ])
+describe("Homebrew Hub declaration", () => {
+  test("declares games and pinned artifacts, and no provider or handlers", () => {
+    expect(plugin.name).toBe("homebrewhub")
+    expect(Object.keys(plugin).sort()).toEqual(["artifacts", "description", "games", "name", "title"])
   })
 
-  test("the curated entry agrees with Homebrew Hub's recorded API record", () => {
-    const detail = details(apiRecord.slug)
-    expect(detail.title).toBe(apiRecord.title)
-    expect(detail.description).toContain(apiRecord.developer)
+  test("declares 2048gb exactly", () => {
+    expect(artifacts).toStrictEqual({
+      "2048gb": {
+        id: "@korri:homebrewhub/2048gb",
+        version: "3ea2376b15b3",
+        title: "2048gb",
+        files: [
+          {
+            url: "https://hh3.gbdev.io/static/database-gb/entries/2048gb/2048.gb",
+            sha256: "sha256:3ea2376b15b34bd26b10e6b31d2753bf8b086098dbdb5ee84d9c0f03d66d3d7f",
+            bytes: 32768,
+          },
+        ],
+      },
+    })
+    expect(games).toStrictEqual({
+      "2048gb": {
+        title: "2048gb",
+        releases: {
+          "3ea2376b15b3": {
+            system: "gb",
+            hashes: ["sha256:3ea2376b15b34bd26b10e6b31d2753bf8b086098dbdb5ee84d9c0f03d66d3d7f"],
+            artifacts: ["@korri:homebrewhub/2048gb"],
+            file: { artifact: "@korri:homebrewhub/2048gb", path: "2048.gb" },
+          },
+        },
+      },
+    })
+  })
+
+  test("every artifact passes korrid's artifact admission", () => {
+    for (const [key, artifact] of Object.entries(artifacts)) {
+      expect(key).toMatch(segment)
+      expect(artifact.id).toBe(`${pluginId}/${key}`)
+      expect(artifact.version).toMatch(/^[^./][^/\u0000-\u001f]*$/)
+      expect(artifact.files.length).toBeGreaterThan(0)
+      for (const file of artifact.files) {
+        expect(file.sha256).toMatch(sha256)
+        expect(file.url).toStartWith("https://")
+        expect(file.bytes).toBeGreaterThan(0)
+      }
+      expect("unpack" in artifact).toBe(false)
+    }
+  })
+
+  test("every release names its content file inside its own pinned artifact", () => {
+    for (const [key, game] of Object.entries(games)) {
+      expect(key).toMatch(segment)
+      for (const [releaseKey, release] of Object.entries(game.releases)) {
+        expect(releaseKey).toMatch(segment)
+        expect(release.artifacts).toContain(release.file.artifact)
+        expect(safeRelativePath(release.file.path)).toBe(true)
+        const artifact = Object.values(artifacts).find(a => a.id === release.file.artifact)!
+        expect(artifact).toBeDefined()
+        // No unpack: the ready directory holds the file named by the URL's
+        // percent-decoded last segment, and that file is the content file.
+        const [file] = artifact.files
+        expect(release.file.path).toBe(decodeURIComponent(file.url.split("/").at(-1)!))
+        expect(release.hashes).toEqual([file.sha256])
+        expect(artifact.version).toBe(file.sha256.slice("sha256:".length, "sha256:".length + 12))
+        expect(releaseKey).toBe(artifact.version)
+        // The system's runner accepts the file by its publisher content rules.
+        expect(systemExtensions[release.system]).toContain(release.file.path.split(".").at(-1)!)
+      }
+    }
+  })
+
+  test("the entry agrees with Homebrew Hub's recorded API record", () => {
+    const game = games["2048gb"]
+    const release = game.releases["3ea2376b15b3"]
+    expect(game.title).toBe(apiRecord.title)
     expect(apiRecord.platform).toBe("GB")
     expect(apiRecord.license).toBe("Zlib")
-    expect(apiRecord.files.map(file => file.filename)).toContain(detail.artifact?.file?.name)
-    expect(detail.downloadPageUrl).toBe(
-      `https://hh3.gbdev.io/static/${apiRecord.basepath}/entries/${apiRecord.slug}/${apiRecord.files[0].filename}`,
+    expect(apiRecord.files.map(file => file.filename)).toContain(release.file.path)
+    expect(artifacts["2048gb"].files[0].url).toBe(
+      `https://hh3.gbdev.io/static/${apiRecord.basepath}/entries/${apiRecord.slug}/${release.file.path}`,
     )
-  })
-})
-
-describe("claims.search", () => {
-  test("matches the query against the entry's search text, without a request", () => {
-    for (const query of ["2048", " SANQUI ", "zlib", "nintendo-gameboy"]) {
-      expect(search(query)).toStrictEqual([claim])
-    }
-  })
-
-  test("answers a blank or unmatched query with no claims", () => {
-    expect(search("  ")).toStrictEqual([])
-    expect(search("anguna")).toStrictEqual([])
-  })
-})
-
-describe("claims.details", () => {
-  test("describes the entry and names its file", () => {
-    expect(details("2048gb")).toStrictEqual({
-      _tag: "ProviderClaimDetails",
-      providerId,
-      id: "2048gb",
-      title: "2048gb",
-      url: "https://hh3.gbdev.io/api/entry/2048gb.json",
-      description: "A Game Boy port of 2048 by Sanqui.",
-      downloadPageUrl: "https://hh3.gbdev.io/static/database-gb/entries/2048gb/2048.gb",
-      artifact,
-    })
-  })
-
-  test("refuses an entry the catalog does not hold", () => {
-    expect(() => details("basil-termini_2048-advance")).toThrow(
-      "Unknown @korri:homebrewhub candidate: basil-termini_2048-advance",
-    )
-  })
-})
-
-describe("artifact.resolve-download", () => {
-  const final = {
-    _tag: "FinalDownload",
-    providerId,
-    url: "https://hh3.gbdev.io/static/database-gb/entries/2048gb/2048.gb",
-    filename: "2048.gb",
-    contentType: "application/octet-stream",
-  }
-
-  test("resolves the claim URL or a file URL of the entry to its file", () => {
-    expect(resolve(claim.url)).toStrictEqual(final)
-    expect(resolve(final.url)).toStrictEqual(final)
-    expect(resolve("HTTPS://HH3.GBDEV.IO/api/entry/2048gb.json")).toStrictEqual(final)
-  })
-
-  test("reports an entry the catalog does not hold as not found", () => {
-    expect(resolve("https://hh3.gbdev.io/api/entry/disabled-downloads.json")).toStrictEqual({
-      _tag: "FailedDownload",
-      providerId,
-      reason: "not-found",
-      message: "Unknown @korri:homebrewhub candidate: disabled-downloads",
-    })
-  })
-
-  test("leaves other hosts and paths unsupported", () => {
-    for (const url of [
-      "https://example.com/api/entry/2048gb.json",
-      "https://hh3.gbdev.io.example.com/api/entry/2048gb.json",
-      "https://user@hh3.gbdev.io/api/entry/2048gb.json",
-      "https://hh3.gbdev.io/entry/2048gb",
-      "https://hh3.gbdev.io/api/entry/%E0%A4%A.json",
-    ]) {
-      expect(resolve(url)).toStrictEqual({ _tag: "NonFinalDownload", providerId, reason: "unsupported", url })
-    }
   })
 })

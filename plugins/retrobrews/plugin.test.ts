@@ -1,136 +1,110 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
-import { handlers, providers } from "./plugin"
+import * as plugin from "./plugin"
 
 // The RetroBrews repository READMEs that list each collection's games,
 // recorded by live-probe.ts --record on 2026-10-20. No game bytes are committed.
 const readme = (repository: string) =>
   readFileSync(new URL(`./fixtures/${repository}-README.md`, import.meta.url), "utf8")
 
-const providerId = "@korri:retrobrews"
-const search = (query: string) => handlers["claims.search"]({ providerId, query, responses: [] } as never)
-const details = (id: string) => handlers["claims.details"]({ providerId, id, responses: [] } as never)
-const resolve = (candidateUrl: string) =>
-  handlers["artifact.resolve-download"]({ providerId, candidateUrl, responses: [] } as never)
+// korrid's admission rules for `artifacts` and `games`, restated from
+// services/korrid/src/plugin.rs (ADR 0013 implementation, worktree c-1fcdf054,
+// commit 5ea5a70da): local keys are playable-id segments, artifact ids are
+// `<plugin id>/<key>`, versions are one safe non-hidden segment, file hashes
+// are `sha256:` + 64 hex, release hashes are sha256/sha1, a release with
+// artifacts names its file inside one of them by a relative path.
+const segment = /^[a-z0-9][a-z0-9._-]*$/
+const sha256 = /^sha256:[0-9a-f]{64}$/
+const safeRelativePath = (path: string) =>
+  !path.startsWith("/") &&
+  !/[\u0000-\u001f\u007f]/.test(path) &&
+  path.split("/").every(part => part !== "" && part !== "..")
+// Publisher systems.nix extensions for the systems this plugin names.
+const systemExtensions: Record<string, string[]> = { gba: ["gba", "agb"], nes: ["nes"] }
 
-const ambushed = {
-  _tag: "ProviderClaim",
-  providerId,
-  id: "nes-games:ambushed.nes",
-  title: "Ambushed",
-  url: "https://github.com/retrobrews/nes-games/blob/master/ambushed.nes",
-  platform: "nes",
-  artifact: {
-    kind: "content",
-    system: "nes",
-    format: { id: "nes" },
-    file: { name: "ambushed.nes", extension: "nes", mediaType: "application/octet-stream" },
-  },
-}
-const anguna = {
-  _tag: "ProviderClaim",
-  providerId,
-  id: "gba-games:anguna.gba",
-  title: "Anguna",
-  url: "https://github.com/retrobrews/gba-games/blob/master/anguna.gba",
-  platform: "gba",
-  artifact: {
-    kind: "content",
-    system: "gba",
-    format: { id: "gba" },
-    file: { name: "anguna.gba", extension: "gba", mediaType: "application/octet-stream" },
-  },
-}
-const angunaFile = {
-  _tag: "FinalDownload",
-  providerId,
-  url: "https://raw.githubusercontent.com/retrobrews/gba-games/master/anguna.gba",
-  filename: "anguna.gba",
-  contentType: "application/octet-stream",
-}
+const pluginId = "@korri:retrobrews"
+const { artifacts, games } = plugin
 
-describe("RetroBrews provider declaration", () => {
-  test("declares one provider and the three acquisition handlers", () => {
-    expect(providers).toStrictEqual({
-      "@korri:retrobrews": { id: "@korri:retrobrews", title: "RetroBrews" },
-    })
-    expect(Object.keys(handlers).sort()).toEqual([
-      "artifact.resolve-download",
-      "claims.details",
-      "claims.search",
-    ])
+describe("RetroBrews declaration", () => {
+  test("declares games and pinned artifacts, and no provider or handlers", () => {
+    expect(plugin.name).toBe("retrobrews")
+    expect(Object.keys(plugin).sort()).toEqual(["artifacts", "description", "games", "name", "title"])
   })
 
-  test("each curated entry is listed with its author in its repository README", () => {
-    expect(readme("nes-games")).toContain("<b>Ambushed</b> by SlyDog Studios")
-    expect(details(ambushed.id).description).toBe("NES homebrew by SlyDog Studios.")
-    expect(readme("gba-games")).toContain("<b>ANGUNA</b> by Nathan Tolbert")
-    expect(details(anguna.id).description).toBe("GBA homebrew by Nathan Tolbert.")
-  })
-})
-
-describe("claims.search", () => {
-  test("matches the query against each entry's search text, without a request", () => {
-    expect(search("nintendo-")).toStrictEqual([ambushed, anguna])
-    expect(search(" Tolbert ")).toStrictEqual([anguna])
-    expect(search("slydog")).toStrictEqual([ambushed])
-  })
-
-  test("answers a blank or unmatched query with no claims", () => {
-    expect(search("")).toStrictEqual([])
-    expect(search("2048")).toStrictEqual([])
-  })
-})
-
-describe("claims.details", () => {
-  test("describes the entry and names its file", () => {
-    expect(details("gba-games:anguna.gba")).toStrictEqual({
-      _tag: "ProviderClaimDetails",
-      providerId,
-      id: "gba-games:anguna.gba",
+  test("declares Ambushed (nes) and Anguna (gba) exactly, in legacy order", () => {
+    expect(Object.keys(games)).toEqual(["ambushed", "anguna"])
+    expect(artifacts.anguna).toStrictEqual({
+      id: "@korri:retrobrews/anguna",
+      version: "cd3b969d5ed6",
       title: "Anguna",
-      url: anguna.url,
-      description: "GBA homebrew by Nathan Tolbert.",
-      downloadPageUrl: angunaFile.url,
-      artifact: anguna.artifact,
+      files: [
+        {
+          url: "https://raw.githubusercontent.com/retrobrews/gba-games/master/anguna.gba",
+          sha256: "sha256:cd3b969d5ed6b38b2039c11b894d6db2fc3fad209a7fd046bee241cc66069851",
+          bytes: 1710888,
+        },
+      ],
     })
-  })
-
-  test("refuses an entry the catalog does not hold", () => {
-    expect(() => details("gba-games:another-world.gba")).toThrow(
-      "Unknown @korri:retrobrews candidate: gba-games:another-world.gba",
-    )
-  })
-})
-
-describe("artifact.resolve-download", () => {
-  test("resolves the GitHub file page or the raw file to the raw file", () => {
-    expect(resolve(anguna.url)).toStrictEqual(angunaFile)
-    expect(resolve(angunaFile.url)).toStrictEqual(angunaFile)
-    expect(resolve(ambushed.url)).toMatchObject({
-      _tag: "FinalDownload",
-      url: "https://raw.githubusercontent.com/retrobrews/nes-games/master/ambushed.nes",
-      filename: "ambushed.nes",
+    expect(games.anguna).toStrictEqual({
+      title: "Anguna",
+      releases: {
+        cd3b969d5ed6: {
+          system: "gba",
+          hashes: ["sha256:cd3b969d5ed6b38b2039c11b894d6db2fc3fad209a7fd046bee241cc66069851"],
+          artifacts: ["@korri:retrobrews/anguna"],
+          file: { artifact: "@korri:retrobrews/anguna", path: "anguna.gba" },
+        },
+      },
     })
+    expect(artifacts.ambushed.files).toStrictEqual([
+      {
+        url: "https://raw.githubusercontent.com/retrobrews/nes-games/master/ambushed.nes",
+        sha256: "sha256:c4efb1e252e39dd957ecc76ff2a868159bb3a6dc66e07addfcdbf9e6660dfb62",
+        bytes: 16400,
+      },
+    ])
+    expect(games.ambushed.releases.c4efb1e252e3.system).toBe("nes")
   })
 
-  test("reports a RetroBrews file the catalog does not hold as not found", () => {
-    expect(resolve("https://github.com/retrobrews/nes-games/blob/master/yun.nes")).toStrictEqual({
-      _tag: "FailedDownload",
-      providerId,
-      reason: "not-found",
-      message: "Unknown @korri:retrobrews candidate: nes-games:yun.nes",
-    })
-  })
-
-  test("leaves other owners, branches, hosts and traversal unsupported", () => {
-    for (const url of [
-      "https://github.com/someone/gba-games/blob/master/anguna.gba",
-      "https://github.com/retrobrews/gba-games/blob/main/anguna.gba",
-      "https://example.com/retrobrews/gba-games/master/anguna.gba",
-      "https://raw.githubusercontent.com/retrobrews/gba-games/master/../nes-games/master/ambushed.nes",
-    ]) {
-      expect(resolve(url)).toStrictEqual({ _tag: "NonFinalDownload", providerId, reason: "unsupported", url })
+  test("every artifact passes korrid's artifact admission", () => {
+    for (const [key, artifact] of Object.entries(artifacts)) {
+      expect(key).toMatch(segment)
+      expect(artifact.id).toBe(`${pluginId}/${key}`)
+      expect(artifact.version).toMatch(/^[^./][^/\u0000-\u001f]*$/)
+      expect(artifact.files.length).toBeGreaterThan(0)
+      for (const file of artifact.files) {
+        expect(file.sha256).toMatch(sha256)
+        expect(file.url).toStartWith("https://")
+        expect(file.bytes).toBeGreaterThan(0)
+      }
+      expect("unpack" in artifact).toBe(false)
     }
+  })
+
+  test("every release names its content file inside its own pinned artifact", () => {
+    for (const [key, game] of Object.entries(games)) {
+      expect(key).toMatch(segment)
+      for (const [releaseKey, release] of Object.entries(game.releases)) {
+        expect(releaseKey).toMatch(segment)
+        expect(release.artifacts).toContain(release.file.artifact)
+        expect(safeRelativePath(release.file.path)).toBe(true)
+        const artifact = Object.values(artifacts).find(a => a.id === release.file.artifact)!
+        expect(artifact).toBeDefined()
+        // No unpack: the ready directory holds the file named by the URL's
+        // percent-decoded last segment, and that file is the content file.
+        const [file] = artifact.files
+        expect(release.file.path).toBe(decodeURIComponent(file.url.split("/").at(-1)!))
+        expect(release.hashes).toEqual([file.sha256])
+        expect(artifact.version).toBe(file.sha256.slice("sha256:".length, "sha256:".length + 12))
+        expect(releaseKey).toBe(artifact.version)
+        // The system's runner accepts the file by its publisher content rules.
+        expect(systemExtensions[release.system]).toContain(release.file.path.split(".").at(-1)!)
+      }
+    }
+  })
+
+  test("each game is listed with its author in its collection README", () => {
+    expect(readme("nes-games")).toContain("<b>Ambushed</b> by SlyDog Studios")
+    expect(readme("gba-games")).toContain("<b>ANGUNA</b> by Nathan Tolbert")
   })
 })
