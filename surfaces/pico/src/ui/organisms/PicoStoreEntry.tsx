@@ -30,7 +30,12 @@ export function PicoStoreEntry({
     const scope = root.current
     if (scope === null) return
     const active = scope.ownerDocument.activeElement
-    if (active !== null && active !== scope.ownerDocument.body && active.isConnected && !active.matches(":disabled")) return
+    if (active !== null && active !== scope.ownerDocument.body && active.isConnected && !active.matches(":disabled")) {
+      // Korri's card under the facts grows as the state moves on (a Play
+      // arrives, words change): keep the control the cursor is on in view.
+      if (scope.contains(active)) active.scrollIntoView?.({ block: "nearest" })
+      return
+    }
     scope.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus()
   })
   const entry = details.entry
@@ -38,7 +43,16 @@ export function PicoStoreEntry({
   const rows = (actions: readonly SurfaceAction[]): PicoNoticeAction[] =>
     actions.map(action => ({ label: action.label, disabled: !action.enabled, onPress: () => onAction(action.id) }))
   return (
-    <div className="pico-store-entry" ref={root}>
+    <div
+      className="pico-store-entry"
+      ref={root}
+      // A card lands with a short step animation; once it has, the control
+      // the cursor is on may sit lower than when it was focused.
+      onAnimationEnd={event => {
+        const active = event.currentTarget.ownerDocument.activeElement
+        if (active !== null && event.currentTarget.contains(active)) active.scrollIntoView?.({ block: "nearest" })
+      }}
+    >
       <PicoGameStage
         id={entry.id}
         stats={[]}
