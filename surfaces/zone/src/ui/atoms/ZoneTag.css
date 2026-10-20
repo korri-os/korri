@@ -14,6 +14,7 @@
   overflow: hidden;
   background: var(--zone-tag-system);
   color: var(--zone-tag-ink);
+  --zone-caps-shade: currentColor;
   font-size: var(--zone-tag-type, calc(var(--zone-type-button-tall) * var(--zone-px)));
   line-height: 1;
   white-space: nowrap;
@@ -52,6 +53,7 @@
 .zone-tag[data-kind="here"] {
   background: var(--zone-tag-here);
   color: var(--zone-tag-here-ink);
+  --zone-caps-shade: currentColor;
   text-shadow: none;
 }
 
@@ -62,18 +64,21 @@
 .zone-tag[data-kind="saved"] {
   background: var(--zone-tag-saved);
   color: var(--zone-tag-dark-ink);
+  --zone-caps-shade: currentColor;
   text-shadow: none;
 }
 
 .zone-tag[data-kind="open"] {
   background: var(--zone-tag-open);
   color: var(--zone-tag-dark-ink);
+  --zone-caps-shade: currentColor;
   text-shadow: none;
 }
 
 .zone-tag[data-kind="continue"] {
   background: var(--zone-tag-continue);
   color: var(--zone-tag-dark-ink);
+  --zone-caps-shade: currentColor;
   text-shadow: none;
 }
 
@@ -81,5 +86,6 @@
 .zone-tag[data-kind="download"] {
   background: var(--zone-tag-download);
   color: var(--zone-tag-dark-ink);
+  --zone-caps-shade: currentColor;
   text-shadow: none;
 }

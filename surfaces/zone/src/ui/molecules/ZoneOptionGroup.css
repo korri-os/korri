@@ -43,6 +43,6 @@
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
-  padding: 0 calc(var(--zone-drop-edge) * var(--zone-px));
+  padding: 0 calc(var(--zone-drop) * var(--zone-px));
   scroll-padding-block: calc(var(--zone-row-height) * var(--zone-px));
 }

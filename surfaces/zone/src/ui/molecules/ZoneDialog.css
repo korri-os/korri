@@ -78,6 +78,7 @@
 .zone-dialog-title {
   margin: calc(var(--zone-row-space) * var(--zone-px)) 0 0;
   color: var(--zone-dialog-title-ink);
+  --zone-caps-shade: currentColor;
   overflow-wrap: normal;
 }
 
@@ -125,7 +126,7 @@
   z-index: -2;
   background: var(--zone-focus);
   clip-path: var(--zone-dialog-shape);
-  translate: calc(calc(var(--zone-drop-edge) * var(--zone-px)) * -1) calc(var(--zone-drop-edge) * var(--zone-px));
+  translate: calc(calc(var(--zone-drop) * var(--zone-px)) * -1) calc(var(--zone-drop) * var(--zone-px));
 }
 
 .zone-dialog-action:active {
@@ -140,4 +141,5 @@
 /* A destructive action's caps are red, as the busy strip's are. */
 .zone-dialog-action[data-destructive] {
   color: var(--zone-destructive-ink);
+  --zone-caps-shade: currentColor;
 }

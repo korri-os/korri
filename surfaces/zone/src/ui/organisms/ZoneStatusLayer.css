@@ -71,6 +71,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--zone-dialog-title-ink);
+  --zone-caps-shade: currentColor;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

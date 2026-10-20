@@ -93,7 +93,7 @@
   z-index: -2;
   background: var(--zone-focus);
   clip-path: var(--zone-busy-strip-shape);
-  translate: calc(calc(var(--zone-drop-edge) * var(--zone-px)) * -1) calc(var(--zone-drop-edge) * var(--zone-px));
+  translate: calc(calc(var(--zone-drop) * var(--zone-px)) * -1) calc(var(--zone-drop) * var(--zone-px));
 }
 
 .zone-busy-strip-action:active {
@@ -108,6 +108,7 @@
 /* A destructive action's caps are red, as a destructive row's value is. */
 .zone-busy-strip-action[data-destructive] {
   color: var(--zone-destructive-ink);
+  --zone-caps-shade: currentColor;
 }
 
 /* Korri's progress: SPECIAL STAGE's red slanted bar under the detail, the

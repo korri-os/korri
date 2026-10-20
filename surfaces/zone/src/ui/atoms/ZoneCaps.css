@@ -1,35 +1,123 @@
-/* The edge is drawn first so it sits on top: a band of blue down and right
- * of every stroke. The outline follows as four hard offsets, then three more
- * past the edge so the blue never meets the ground bare. A panel that wants
- * none sets --zone-caps-shadow. */
+/* Zone Caps on the art grid. The box keeps room round its words for the
+ * accents, the ring and the drop (padding), and gives it back (an equal
+ * negative margin), so it lays out as tight as its line but clips nothing
+ * it draws. Its line is one em: the em is the cap, so the cap fills the
+ * line and the baseline lands on a whole art px. */
 .zone-caps {
+  --zone-caps-r: calc(var(--zone-cap-outline) * var(--zone-px));
+  --zone-caps-top: calc(var(--zone-caps-headroom) * var(--zone-px));
+  --zone-caps-pad: calc(var(--zone-caps-room) * var(--zone-px));
+  /* The ring: all eight neighbours, one art px out, no blur. */
+  --zone-caps-ring:
+    calc(var(--zone-caps-r) * -1) calc(var(--zone-caps-r) * -1) 0 var(--zone-caps-outline-colour),
+    0 calc(var(--zone-caps-r) * -1) 0 var(--zone-caps-outline-colour),
+    var(--zone-caps-r) calc(var(--zone-caps-r) * -1) 0 var(--zone-caps-outline-colour),
+    calc(var(--zone-caps-r) * -1) 0 0 var(--zone-caps-outline-colour),
+    var(--zone-caps-r) 0 0 var(--zone-caps-outline-colour),
+    calc(var(--zone-caps-r) * -1) var(--zone-caps-r) 0 var(--zone-caps-outline-colour),
+    0 var(--zone-caps-r) 0 var(--zone-caps-outline-colour),
+    var(--zone-caps-r) var(--zone-caps-r) 0 var(--zone-caps-outline-colour);
+  /* A drop one art px down and right of the ringed letter. */
+  --zone-caps-drop-1:
+    calc(var(--zone-caps-r) * 2) 0 0 var(--zone-caps-drop-colour),
+    calc(var(--zone-caps-r) * 2) var(--zone-caps-r) 0 var(--zone-caps-drop-colour),
+    calc(var(--zone-caps-r) * 2) calc(var(--zone-caps-r) * 2) 0 var(--zone-caps-drop-colour),
+    var(--zone-caps-r) calc(var(--zone-caps-r) * 2) 0 var(--zone-caps-drop-colour),
+    0 calc(var(--zone-caps-r) * 2) 0 var(--zone-caps-drop-colour);
+  /* And two: the banner's. */
+  --zone-caps-drop-2:
+    var(--zone-caps-drop-1),
+    calc(var(--zone-caps-r) * 3) var(--zone-caps-r) 0 var(--zone-caps-drop-colour),
+    calc(var(--zone-caps-r) * 3) calc(var(--zone-caps-r) * 2) 0 var(--zone-caps-drop-colour),
+    calc(var(--zone-caps-r) * 3) calc(var(--zone-caps-r) * 3) 0 var(--zone-caps-drop-colour),
+    calc(var(--zone-caps-r) * 2) calc(var(--zone-caps-r) * 3) 0 var(--zone-caps-drop-colour),
+    var(--zone-caps-r) calc(var(--zone-caps-r) * 3) 0 var(--zone-caps-drop-colour);
+  position: relative;
+  isolation: isolate;
   display: inline-block;
-  max-width: 100%;
+  max-width: calc(100% + var(--zone-caps-pad) * 2);
+  margin: calc(var(--zone-caps-top) * -1) calc(var(--zone-caps-pad) * -1);
+  padding: var(--zone-caps-top) var(--zone-caps-pad);
   overflow: hidden;
-  color: var(--zone-cap);
   font-family: var(--zone-font);
   font-weight: 400;
   line-height: 1;
-  letter-spacing: var(--zone-tracking);
-  text-transform: uppercase;
+  letter-spacing: 0;
   text-overflow: ellipsis;
+  text-shadow: none;
+  text-transform: uppercase;
   white-space: nowrap;
-  text-shadow: var(
-    --zone-caps-shadow,
-    calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour),
-    calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -1) 0 0 var(--zone-cap-outline-colour),
-    calc(var(--zone-cap-outline) * var(--zone-px)) 0 0 var(--zone-cap-outline-colour),
-    0 calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -1) 0 var(--zone-cap-outline-colour),
-    0 calc(var(--zone-cap-outline) * var(--zone-px)) 0 var(--zone-cap-outline-colour),
-    calc(calc(var(--zone-cap-edge) * var(--zone-px)) + calc(var(--zone-cap-outline) * var(--zone-px))) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-outline-colour),
-    calc(var(--zone-cap-edge) * var(--zone-px)) calc(calc(var(--zone-cap-edge) * var(--zone-px)) + calc(var(--zone-cap-outline) * var(--zone-px))) 0 var(--zone-cap-outline-colour),
-    calc(calc(var(--zone-cap-edge) * var(--zone-px)) + calc(var(--zone-cap-outline) * var(--zone-px))) calc(calc(var(--zone-cap-edge) * var(--zone-px)) + calc(var(--zone-cap-outline) * var(--zone-px))) 0 var(--zone-cap-outline-colour)
-  );
 }
 
-/* A published name keeps its case. */
-.zone-caps[data-case="verbatim"] {
-  text-transform: none;
+/* Two copies of the words, generated with an empty alternative so they are
+ * never read: the ring and drop under the words, the shade over them. */
+.zone-caps::before,
+.zone-caps::after {
+  content: attr(data-text) / "";
+  position: absolute;
+  inset: 0;
+  padding: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.zone-caps::before {
+  z-index: -1;
+  color: var(--zone-caps-outline-colour);
+  text-shadow: var(--zone-caps-shadow, var(--zone-caps-ring), var(--zone-caps-drop));
+}
+
+/* The shade: the face's lower three rows of ten. */
+.zone-caps::after {
+  color: var(--zone-caps-shade-colour);
+  clip-path: inset(calc(var(--zone-caps-top) + 0.7em) 0 0 0);
+}
+
+/* White: the face is the colour the caps stand in, so a tinting panel still
+ * tints it; the shade is lavender unless that panel names its own. */
+.zone-caps[data-ink="white"] {
+  --zone-caps-outline-colour: var(--zone-ink-white-outline);
+  --zone-caps-drop-colour: var(--zone-ink-white-outline);
+  --zone-caps-drop: var(--zone-caps-drop-1);
+  --zone-caps-shade-colour: var(--zone-caps-shade, var(--zone-ink-white-shade));
+}
+
+.zone-caps[data-ink="hud"] {
+  --zone-caps-outline-colour: var(--zone-ink-hud-outline);
+  --zone-caps-drop-colour: var(--zone-ink-hud-outline);
+  --zone-caps-drop: var(--zone-caps-drop-1);
+  --zone-caps-shade-colour: var(--zone-ink-hud-face);
+  color: var(--zone-ink-hud-face);
+}
+
+/* The banner's band runs through rows 4 to 6 of the ten. */
+.zone-caps[data-ink="banner"] {
+  --zone-caps-outline-colour: var(--zone-ink-white-outline);
+  --zone-caps-drop-colour: var(--zone-ink-banner-drop);
+  --zone-caps-drop: var(--zone-caps-drop-2);
+  --zone-caps-shade-colour: var(--zone-ink-banner-band);
+  color: var(--zone-banner-ink);
+}
+
+.zone-caps[data-ink="banner"]::after {
+  clip-path: inset(calc(var(--zone-caps-top) + 0.3em) 0 calc(100% - var(--zone-caps-top) - 0.6em) 0);
+}
+
+.zone-caps[data-ink="ink"] {
+  --zone-caps-outline-colour: var(--zone-ink-ink-face);
+  --zone-caps-shade-colour: var(--zone-ink-ink-face);
+  --zone-caps-shadow: none;
+  color: var(--zone-ink-ink-face);
+}
+
+.zone-caps[data-ink="danger"] {
+  --zone-caps-outline-colour: var(--zone-ink-white-outline);
+  --zone-caps-drop-colour: var(--zone-ink-white-outline);
+  --zone-caps-drop: 0 0 0 transparent;
+  --zone-caps-shade-colour: var(--zone-ink-danger-shade);
+  color: var(--zone-ink-danger-face);
 }
 
 /* The named sizes read the shell's strip when they stand in one, and the
@@ -48,4 +136,32 @@
 
 .zone-caps[data-size="foot"] {
   font-size: var(--zone-shell-foot-type, calc(var(--zone-type-foot-tall) * var(--zone-px)));
+}
+
+.zone-caps[data-size="caps-1"] {
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+}
+
+.zone-caps[data-size="caps-2"] {
+  font-size: calc(var(--zone-caps-2) * var(--zone-px));
+}
+
+.zone-caps[data-size="caps-3"] {
+  font-size: calc(var(--zone-caps-3) * var(--zone-px));
+}
+
+/* A fact: Korri's words in Jersey 10, in their own case, as tall as the
+ * caps it stands among: its em is the caps' em times 18.6667 / 10, so among
+ * caps-1 one Jersey pixel is one art pixel (cap 10, x-height 8). Its line
+ * is 0.75 of its own em (14 art px among caps-1), which puts the baseline
+ * on a whole art px; no shade. */
+.zone-caps[data-face="fact"] {
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
+  line-height: 0.75;
+  text-transform: none;
+}
+
+.zone-caps[data-face="fact"]::after {
+  content: none;
 }

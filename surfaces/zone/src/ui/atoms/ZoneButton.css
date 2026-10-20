@@ -22,6 +22,11 @@
   transition: translate var(--zone-press-time) var(--zone-bounce);
 }
 
+/* The focused button's pink drop is one art px deeper than a lit one's. */
+.zone-button[data-focused="on"] {
+  --zone-underline-depth: var(--zone-drop-focus);
+}
+
 /* The press: the panel sinks into its underline. */
 .zone-button[data-pressed="on"] .zone-button-face {
   --zone-underline-press: 1;
@@ -65,7 +70,7 @@
   display: block;
   max-width: 100%;
   overflow: hidden;
-  margin-top: calc(var(--zone-drop-edge) * var(--zone-px));
+  margin-top: calc(var(--zone-drop) * var(--zone-px));
   font-size: calc(var(--zone-type-reason-scale) * 1em);
   text-overflow: ellipsis;
   white-space: nowrap;

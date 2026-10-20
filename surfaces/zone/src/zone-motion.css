@@ -16,7 +16,7 @@
 /* Something landing: it rises from its own drop edge and overshoots once. */
 @keyframes zone-snap {
   from {
-    translate: 0 calc(var(--zone-drop-edge) * var(--zone-px));
+    translate: 0 calc(var(--zone-drop) * var(--zone-px));
     scale: 0.96;
   }
   to {

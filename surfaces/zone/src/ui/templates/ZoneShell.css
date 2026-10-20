@@ -49,8 +49,8 @@
  * least slant take the strip's least gap, so a small type is not lost in
  * chrome. The body's panels keep theirs. */
 .zone-shell:is([data-top="tight"], [data-top="keys"], [data-top="stacked"], [data-top="stacked-keys"]) :is(.zone-shell-top, .zone-shell-foot) {
-  --zone-panel-pad: calc(var(--zone-strip-gap-least) * var(--zone-px));
-  --zone-slant: calc(var(--zone-slant-least) * var(--zone-px));
+  --zone-panel-pad: var(--zone-strip-gap-least);
+  --zone-slant: var(--zone-slant-least);
 }
 
 /* The room a keycap hint keeps beside the tabs, for a tabs slot that sizes

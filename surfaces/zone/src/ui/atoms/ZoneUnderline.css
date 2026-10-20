@@ -1,4 +1,6 @@
-/* Behind the panel's body (z-index -1) and in front of its drop edge (-3).
+/* The pink drop: 2 art px under a lit control, 3 under the focused one
+ * (its control sets --zone-underline-depth to --zone-drop-focus).
+ * Behind the panel's body (z-index -1) and in front of its drop edge (-3).
  * Standing alone it has no panel shape to read, so it draws the same
  * parallelogram at its own lean. A pressed button sets --zone-underline-press
  * to 1 and sinks its panel by the press sink; the underline moves back by
@@ -19,8 +21,9 @@
       0 100%
     )
   );
+  --zone-underline-drop: calc(var(--zone-underline-depth, var(--zone-drop)) * var(--zone-px));
   translate:
-    calc(calc(var(--zone-drop-edge) * var(--zone-px)) * -1 - calc(var(--zone-press-sink) * var(--zone-px)) * var(--zone-underline-press, 0))
-    calc(calc(var(--zone-drop-edge) * var(--zone-px)) - calc(var(--zone-press-sink) * var(--zone-px)) * var(--zone-underline-press, 0));
+    calc(var(--zone-underline-drop) * -1 - calc(var(--zone-press-sink) * var(--zone-px)) * var(--zone-underline-press, 0))
+    calc(var(--zone-underline-drop) - calc(var(--zone-press-sink) * var(--zone-px)) * var(--zone-underline-press, 0));
   pointer-events: none;
 }

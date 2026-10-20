@@ -150,6 +150,7 @@
   padding: calc(calc(var(--zone-row-space) * var(--zone-px)) * 2) calc(var(--zone-row-gap) * var(--zone-px));
   background: var(--zone-act-slab);
   color: var(--zone-act-ink);
+  --zone-caps-shade: currentColor;
   text-align: center;
   text-shadow: none;
 }

@@ -14,7 +14,7 @@
   display: grid;
   grid-template-columns: minmax(0, var(--zone-option-row-label-width)) minmax(0, 1fr);
   column-gap: calc(var(--zone-row-gap) * var(--zone-px));
-  row-gap: calc(var(--zone-drop-edge) * var(--zone-px));
+  row-gap: calc(var(--zone-drop) * var(--zone-px));
   padding-bottom: calc(var(--zone-row-space) * var(--zone-px));
   font-size: var(--zone-option-row-type);
   color: var(--zone-cap);
@@ -79,7 +79,7 @@
   z-index: -2;
   background: var(--zone-focus);
   clip-path: var(--zone-option-row-shape);
-  translate: calc(calc(var(--zone-drop-edge) * var(--zone-px)) * -1) calc(var(--zone-drop-edge) * var(--zone-px));
+  translate: calc(calc(var(--zone-drop) * var(--zone-px)) * -1) calc(var(--zone-drop) * var(--zone-px));
 }
 
 /* A choice's red triangles, breathing toward the value they step. */
@@ -114,6 +114,7 @@
 /* A destructive action's value is red. */
 .zone-option-row[data-destructive] .zone-option-row-value {
   color: var(--zone-destructive-ink);
+  --zone-caps-shade: currentColor;
 }
 
 /* The notes under the row: the description on the label's side, Korri's
@@ -147,6 +148,7 @@
 .zone-option-row-problem {
   grid-column: 1 / -1;
   color: var(--zone-problem-ink);
+  --zone-caps-shade: currentColor;
   text-shadow: none;
 }
 

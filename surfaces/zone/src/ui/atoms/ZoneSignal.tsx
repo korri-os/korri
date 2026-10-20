@@ -18,7 +18,7 @@ export function ZoneSignal({ connection }: { readonly connection: SurfaceNetwork
     <span className="zone-signal" data-connection={connection._tag}>
       <ZonePanel edge={false}>
         <span className="zone-signal-name">
-          <ZoneCaps verbatim={connection._tag === "Wifi"}>{label}</ZoneCaps>
+          <ZoneCaps fact={connection._tag === "Wifi"}>{label}</ZoneCaps>
         </span>
         <ZoneBars connected={connection._tag !== "Offline"} strengthPercent={strength} />
         {connection._tag === "Wifi" ? (

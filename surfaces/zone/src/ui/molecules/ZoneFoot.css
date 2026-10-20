@@ -47,6 +47,7 @@
 .zone-foot-timer-label {
   margin-right: calc(var(--zone-strip-gap) * var(--zone-px));
   color: var(--zone-timer-label);
+  --zone-caps-shade: currentColor;
   font-size: calc(var(--zone-type-timer-label-scale) * 1em);
   text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-outline-colour);
 }
@@ -69,6 +70,7 @@
   flex: 0 0 auto;
   align-self: center;
   color: var(--zone-build-ink);
+  --zone-caps-shade: currentColor;
   font-size: calc(var(--zone-type-build-scale) * 1em);
   letter-spacing: var(--zone-build-tracking);
   opacity: var(--zone-build-opacity);

@@ -1,30 +1,41 @@
 /* Sized by the hint type: the shell's, in its corners, or the wide token
- * when it stands alone. */
+ * when it stands alone (caps-1). */
 .zone-keycap {
   --zone-keycap-diameter: calc(var(--zone-keycap-scale) * 1em);
-  font-size: var(--zone-shell-hint-type, calc(var(--zone-type-hint-wide) * var(--zone-px)));
-  --zone-keycap-slant: max(calc(var(--zone-slant) * var(--zone-px)), calc(var(--zone-lean) * 1em));
   display: inline-flex;
   align-items: center;
   height: var(--zone-keycap-diameter);
+  font-size: var(--zone-shell-hint-type, calc(var(--zone-type-hint-wide) * var(--zone-px)));
   line-height: 1;
   white-space: nowrap;
 }
 
-
-/* The round key: black, a white ring, the letter in the key's ink. */
+/* The key: a pixel disc (--zone-keycap-disc-shape) inside a black rim one
+ * art px wide (--zone-keycap-rim-shape), the letter in the key's colour,
+ * no outline. A 7-px glyph centres exactly across 15; down, the 10-px cap
+ * stands 2 art px under the rim's top, the nearest whole pixel to centre. */
 .zone-keycap-key {
+  position: relative;
   z-index: 1;
+  isolation: isolate;
   display: grid;
   flex: 0 0 auto;
-  place-items: center;
+  place-items: start center;
   width: var(--zone-keycap-diameter);
   height: var(--zone-keycap-diameter);
-  border-radius: 50%;
-  background: var(--zone-key);
-  box-shadow: 0 0 0 calc(var(--zone-keycap-ring) * var(--zone-px)) var(--zone-key-ring);
-  font-size: 0.95em;
+  padding-top: calc(var(--zone-keycap-ring) * 2 * var(--zone-px));
+  background: var(--zone-key-ring);
+  clip-path: var(--zone-keycap-rim-shape);
   text-shadow: none;
+}
+
+.zone-keycap-key::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--zone-keycap-ring) * var(--zone-px));
+  z-index: -1;
+  background: var(--zone-key);
+  clip-path: var(--zone-keycap-disc-shape);
 }
 
 .zone-keycap[data-key="A"] .zone-keycap-key {
@@ -43,17 +54,49 @@
   color: var(--zone-key-y-ink);
 }
 
-/* The word's tab. A hint in a narrow top strip drops it (the shell sets
- * --zone-keycap-words); the word stays the hint's accessible name. The
- * word's tab: starts under the key, trails past the word, and is cut
- * on the slant at its far end. */
+/* The word's tail: a black bar 12 art px tall that starts under the key,
+ * runs 3 art px past the word along its bottom and is cut at 45 degrees at
+ * its far end, one stair per art px (zoneStairClip(w, 12, straight, slash),
+ * held equal by test). A hint in a narrow top strip drops it (the shell
+ * sets --zone-keycap-words); the word stays the hint's accessible name. */
 .zone-keycap-word {
   display: var(--zone-keycap-words, inline-flex);
   align-items: center;
   min-width: 0;
-  height: calc(var(--zone-keycap-diameter) * 0.75);
-  margin-left: calc(var(--zone-keycap-overlap) * -1em);
-  padding: 0 calc(var(--zone-keycap-tail) * 1em) 0 calc(var(--zone-keycap-overlap) * 1em + 0.4em);
-  background: var(--zone-key);
-  clip-path: polygon(0 0, 100% 0, calc(100% - var(--zone-keycap-slant)) 100%, 0 100%);
+  height: calc(12 * var(--zone-px));
+  margin-left: calc(var(--zone-keycap-diameter) * -0.5);
+  padding:
+    0
+    calc(11 * var(--zone-px) + calc(var(--zone-keycap-run) * var(--zone-px)))
+    0
+    calc(var(--zone-keycap-diameter) * 0.5 + calc(var(--zone-panel-pad) * var(--zone-px)));
+  background: var(--zone-key-tail);
+  clip-path: polygon(
+    0 0,
+    0 100%,
+    calc(100% - 11 * var(--zone-px)) 100%,
+    calc(100% - 11 * var(--zone-px)) calc(11 * var(--zone-px)),
+    calc(100% - 10 * var(--zone-px)) calc(11 * var(--zone-px)),
+    calc(100% - 10 * var(--zone-px)) calc(10 * var(--zone-px)),
+    calc(100% - 9 * var(--zone-px)) calc(10 * var(--zone-px)),
+    calc(100% - 9 * var(--zone-px)) calc(9 * var(--zone-px)),
+    calc(100% - 8 * var(--zone-px)) calc(9 * var(--zone-px)),
+    calc(100% - 8 * var(--zone-px)) calc(8 * var(--zone-px)),
+    calc(100% - 7 * var(--zone-px)) calc(8 * var(--zone-px)),
+    calc(100% - 7 * var(--zone-px)) calc(7 * var(--zone-px)),
+    calc(100% - 6 * var(--zone-px)) calc(7 * var(--zone-px)),
+    calc(100% - 6 * var(--zone-px)) calc(6 * var(--zone-px)),
+    calc(100% - 5 * var(--zone-px)) calc(6 * var(--zone-px)),
+    calc(100% - 5 * var(--zone-px)) calc(5 * var(--zone-px)),
+    calc(100% - 4 * var(--zone-px)) calc(5 * var(--zone-px)),
+    calc(100% - 4 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(100% - 3 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(100% - 3 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(100% - 2 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(100% - 2 * var(--zone-px)) calc(2 * var(--zone-px)),
+    calc(100% - 1 * var(--zone-px)) calc(2 * var(--zone-px)),
+    calc(100% - 1 * var(--zone-px)) calc(1 * var(--zone-px)),
+    100% calc(1 * var(--zone-px)),
+    100% 0
+  );
 }

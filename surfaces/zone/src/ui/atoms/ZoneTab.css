@@ -15,8 +15,9 @@
   transition: translate var(--zone-lift-time) var(--zone-bounce);
 }
 
-/* The focused tab lifts. */
+/* The focused tab lifts, its pink drop at the focused depth. */
 .zone-tab[data-focused="on"] {
+  --zone-underline-depth: var(--zone-drop-focus);
   translate: 0 calc(calc(var(--zone-tab-lift) * var(--zone-px)) * -1);
 }
 
@@ -29,31 +30,22 @@
   min-width: 0;
 }
 
+/* Zone Caps has no size under caps-1, and a sub-line at caps-1 would make
+ * each tab twice as wide as its label, so the sub-line is read, not drawn:
+ * it stays in the tab's name for a screen reader (Mania's tabs carry no
+ * sub-line either). */
 .zone-tab-sub {
-  display: block;
-  max-width: 100%;
+  position: absolute;
+  width: 0;
+  height: 0;
   overflow: hidden;
-  margin-top: 0.15em;
-  color: var(--zone-cap);
-  font-size: calc(var(--zone-tab-sub-scale) * 1em);
-  letter-spacing: var(--zone-tab-sub-tracking);
-  text-overflow: ellipsis;
-  text-shadow: none;
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 
-/* The active tab's banner, with the underline shaped to the hexagon when
- * the tab is focused. The point depth repeats the banner's own formula. */
+/* The active tab's banner. Its underline takes the banner's stair points,
+ * measured on this wrapper (the lip hangs outside it). */
 .zone-tab-banner {
-  --zone-tab-banner-point: calc(var(--zone-banner-point) * var(--zone-type-banner-scale) * var(--zone-tab-type));
-  --zone-panel-shape: polygon(
-    var(--zone-tab-banner-point) 0,
-    calc(100% - var(--zone-tab-banner-point)) 0,
-    100% 50%,
-    calc(100% - var(--zone-tab-banner-point)) 100%,
-    var(--zone-tab-banner-point) 100%,
-    0 50%
-  );
   --zone-banner-base: var(--zone-tab-type);
   position: relative;
   isolation: isolate;

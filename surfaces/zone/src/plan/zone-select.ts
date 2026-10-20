@@ -36,7 +36,7 @@ export const ZONE_TALL_HEIGHT = 320
 export const ZONE_SHORT_HEIGHT = 240
 
 export const ZONE_VISIBLE_CARDS = { wide: 5, narrow: 3 } as const
-export const ZONE_TAB_STRIP = { tall: 36, short: 32 } as const
+export const ZONE_TAB_STRIP = { tall: 40, short: 36 } as const
 export const ZONE_ACTION_STRIP = { tall: 30, short: 26 } as const
 export const ZONE_FOOT_STRIP = { tall: 24, short: 22 } as const
 export const ZONE_TRIANGLE = { wide: 14, narrow: 12 } as const

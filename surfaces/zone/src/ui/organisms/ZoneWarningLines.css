@@ -3,7 +3,7 @@
 .zone-warning-lines {
   display: grid;
   justify-items: start;
-  row-gap: calc(var(--zone-drop-edge) * var(--zone-px));
+  row-gap: calc(var(--zone-drop) * var(--zone-px));
   margin: 0;
   padding: 0;
   list-style: none;
@@ -15,6 +15,7 @@
   max-width: 100%;
   padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)));
   color: var(--zone-problem-ink);
+  --zone-caps-shade: currentColor;
   font-size: calc(var(--zone-type-note) * var(--zone-px));
   line-height: 1.15;
   overflow-wrap: break-word;

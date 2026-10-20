@@ -1,9 +1,11 @@
-/* The slant leads by the lean times the type size and never less than the
- * slant token, so a 17px tab and a 28px timer lean the same in proportion.
- * Every other panel shape in Zone (the tab, the keycap's word, the banner's
- * points) derives from this one length. */
+/* The slant is the panel's height (45 degrees), measured: the panel writes
+ * the run of its stairs as --zone-panel-run and the stair polygon as
+ * --zone-panel-shape. Until it is measured (a test DOM) the shape is the
+ * smooth parallelogram at one and a half ems, about its height. Every other
+ * panel shape in Zone (the tab, the keycap's word, the banner's points)
+ * derives from this one length. */
 .zone-panel {
-  --zone-panel-slant: max(calc(var(--zone-slant) * var(--zone-px)), calc(var(--zone-lean) * 1em));
+  --zone-panel-slant: var(--zone-panel-run, 1.5em);
   --zone-panel-shape: polygon(
     var(--zone-panel-slant) 0,
     100% 0,
@@ -40,7 +42,7 @@
   z-index: -3;
   background: var(--zone-panel-edge);
   clip-path: var(--zone-panel-shape);
-  translate: calc(var(--zone-drop-edge) * var(--zone-px)) calc(var(--zone-drop-edge) * var(--zone-px));
+  translate: calc(var(--zone-drop) * var(--zone-px)) calc(var(--zone-drop) * var(--zone-px));
 }
 
 .zone-panel[data-tone="blue"]::before {
@@ -57,6 +59,7 @@
 .zone-panel[data-tone="white"] {
   --zone-caps-shadow: none;
   color: var(--zone-panel-light-ink);
+  --zone-caps-shade: currentColor;
   text-shadow: none;
 }
 

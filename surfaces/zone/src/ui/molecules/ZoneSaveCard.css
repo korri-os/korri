@@ -15,7 +15,7 @@
   height: var(--zone-save-card-height);
   padding: calc(var(--zone-card-pad) * var(--zone-px));
   background: var(--zone-panel);
-  box-shadow: calc(var(--zone-drop-edge) * var(--zone-px)) calc(var(--zone-drop-edge) * var(--zone-px)) 0 var(--zone-panel-edge);
+  box-shadow: calc(var(--zone-drop) * var(--zone-px)) calc(var(--zone-drop) * var(--zone-px)) 0 var(--zone-panel-edge);
   text-align: center;
   transition: box-shadow var(--zone-lift-time) linear;
 }
@@ -24,7 +24,7 @@
   z-index: 1;
   box-shadow:
     0 0 0 calc(var(--zone-focus-edge) * var(--zone-px)) var(--zone-focus),
-    calc(var(--zone-drop-edge-focus) * var(--zone-px)) calc(var(--zone-drop-edge-focus) * var(--zone-px)) 0 var(--zone-panel-edge);
+    calc(var(--zone-drop-focus) * var(--zone-px)) calc(var(--zone-drop-focus) * var(--zone-px)) 0 var(--zone-panel-edge);
 }
 
 /* The NEW-style header: a mint panel with a yellow stripe above the white
@@ -77,6 +77,7 @@
   overflow: hidden;
   background: var(--zone-save-header-band);
   color: var(--zone-save-header-ink);
+  --zone-caps-shade: currentColor;
   font-size: calc(var(--zone-save-type) * var(--zone-fit, 1));
   line-height: 1;
   white-space: nowrap;

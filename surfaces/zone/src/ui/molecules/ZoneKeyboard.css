@@ -47,6 +47,7 @@
   overflow: hidden;
   background: var(--zone-slab);
   color: var(--zone-slab-ink);
+  --zone-caps-shade: currentColor;
   font-size: var(--zone-keyboard-type-slab);
   text-transform: none;
   text-shadow: none;
@@ -137,7 +138,7 @@
   z-index: -2;
   background: var(--zone-focus);
   clip-path: var(--zone-keyboard-shape);
-  translate: calc(calc(var(--zone-drop-edge) * var(--zone-px)) * -1) calc(var(--zone-drop-edge) * var(--zone-px));
+  translate: calc(calc(var(--zone-drop) * var(--zone-px)) * -1) calc(var(--zone-drop) * var(--zone-px));
 }
 
 .zone-keyboard-key:active {
@@ -164,4 +165,5 @@
 
 .zone-keyboard-key[data-current] {
   color: var(--zone-layer-ink);
+  --zone-caps-shade: currentColor;
 }

@@ -1,30 +1,20 @@
-/* The hexagon: two points, each as deep as the banner point times the type.
- * The type is the tab's (a fitted tab's, the shell's, or the wide token
- * alone) times the
- * banner scale, so the banner rises above the tabs beside it. The band is a
- * white parallelogram through the middle at the band opacity; it is the
- * ground's kind of drawing, with no edge to blur. */
+/* The banner's type is the tab's (a fitted tab's, the shell's, or the wide
+ * token alone) times the banner scale: caps-1 tabs, a caps-2 banner. The
+ * body is blue with a stair point at each end (--zone-panel-shape, written
+ * by the body's measurement; until then a smooth hexagon). */
 .zone-banner {
   --zone-banner-type: calc(var(--zone-type-banner-scale) * var(--zone-banner-base, var(--zone-shell-tab-type, calc(var(--zone-type-tab-wide) * var(--zone-px)))));
-  --zone-banner-point-depth: calc(var(--zone-banner-point) * var(--zone-banner-type));
   position: relative;
-  isolation: isolate;
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
   min-width: 0;
-  padding: 0.2em calc(var(--zone-banner-point-depth) + calc(var(--zone-panel-pad) * var(--zone-px)));
+  max-width: 100%;
   font-size: var(--zone-banner-type);
   white-space: nowrap;
 }
 
-.zone-banner::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  background: var(--zone-banner);
-  clip-path: polygon(
+.zone-banner-body {
+  --zone-banner-point-depth: var(--zone-panel-point, 0.6em);
+  --zone-panel-shape: polygon(
     var(--zone-banner-point-depth) 0,
     calc(100% - var(--zone-banner-point-depth)) 0,
     100% 50%,
@@ -32,34 +22,78 @@
     var(--zone-banner-point-depth) 100%,
     0 50%
   );
-}
-
-.zone-banner-band {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  left: 0;
-  z-index: -1;
-  height: calc(var(--zone-banner-band-share) * 100%);
-  background: var(--zone-banner-band);
-  opacity: var(--zone-banner-band-opacity);
-  clip-path: polygon(calc(var(--zone-slant) * var(--zone-px)) 0, calc(100% - calc(var(--zone-slant) * var(--zone-px))) 0, 100% 100%, 0 100%);
-  translate: 0 -50%;
-}
-
-/* Yellow caps, outlined in black, extruded in black down and right. */
-.zone-banner-caps {
-  display: inline-block;
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
   max-width: 100%;
-  overflow: hidden;
-  color: var(--zone-banner-ink);
-  line-height: 1;
-  text-overflow: ellipsis;
-  text-shadow:
-    calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -1) 0 0 var(--zone-banner-extrude-colour),
-    calc(var(--zone-cap-outline) * var(--zone-px)) 0 0 var(--zone-banner-extrude-colour),
-    0 calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -1) 0 var(--zone-banner-extrude-colour),
-    0 calc(var(--zone-cap-outline) * var(--zone-px)) 0 var(--zone-banner-extrude-colour),
-    calc(calc(var(--zone-banner-extrude) * var(--zone-px)) * 0.75) calc(calc(var(--zone-banner-extrude) * var(--zone-px)) * 0.75) 0 var(--zone-banner-extrude-colour),
-    calc(var(--zone-banner-extrude) * var(--zone-px)) calc(var(--zone-banner-extrude) * var(--zone-px)) 0 var(--zone-banner-extrude-colour);
+  padding:
+    calc(var(--zone-caps-headroom) * var(--zone-px))
+    calc(var(--zone-banner-point-depth) + calc(var(--zone-banner-pad) * var(--zone-px)))
+    calc(var(--zone-caps-headroom) * var(--zone-px) + var(--zone-px));
+}
+
+.zone-banner-body::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-banner);
+  clip-path: var(--zone-panel-shape);
+}
+
+.zone-banner-caps {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* The lip: 2 art px, red then green, with four notches 4 art px wide and 2
+ * deep at its centre, hanging under the body's straight bottom edge. */
+.zone-banner-lip {
+  position: absolute;
+  top: 100%;
+  right: var(--zone-panel-point, 0.6em);
+  left: var(--zone-panel-point, 0.6em);
+  display: block;
+  height: calc(var(--zone-banner-lip) * var(--zone-px));
+  background: linear-gradient(to right, var(--zone-banner-lip-left) 0 50%, var(--zone-banner-lip-right) 50% 100%);
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% calc(2 * var(--zone-px)),
+    calc(50% + 8 * var(--zone-px)) calc(2 * var(--zone-px)),
+    calc(50% + 8 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% + 7 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% + 7 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(50% + 5 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(50% + 5 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% + 4 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% + 4 * var(--zone-px)) calc(2 * var(--zone-px)),
+    calc(50% + 4 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% + 3 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% + 3 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(50% + 1 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(50% + 1 * var(--zone-px)) calc(3 * var(--zone-px)),
+    50% calc(3 * var(--zone-px)),
+    50% calc(2 * var(--zone-px)),
+    50% calc(3 * var(--zone-px)),
+    calc(50% - 1 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% - 1 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(50% - 3 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(50% - 3 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% - 4 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% - 4 * var(--zone-px)) calc(2 * var(--zone-px)),
+    calc(50% - 4 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% - 5 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% - 5 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(50% - 7 * var(--zone-px)) calc(4 * var(--zone-px)),
+    calc(50% - 7 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% - 8 * var(--zone-px)) calc(3 * var(--zone-px)),
+    calc(50% - 8 * var(--zone-px)) calc(2 * var(--zone-px)),
+    0 calc(2 * var(--zone-px))
+  );
+  pointer-events: none;
 }

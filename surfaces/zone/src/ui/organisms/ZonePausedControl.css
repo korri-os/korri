@@ -2,7 +2,7 @@
  * --zone-paused-row-type, or the row token standing alone. */
 .zone-paused-control {
   display: grid;
-  row-gap: calc(var(--zone-drop-edge) * var(--zone-px));
+  row-gap: calc(var(--zone-drop) * var(--zone-px));
   min-width: 0;
   font-size: var(--zone-paused-row-type, calc(var(--zone-type-row) * var(--zone-px)));
 }
@@ -46,6 +46,7 @@
 /* Destructive: the label is red, as a destructive option's value is. */
 .zone-paused-control[data-destructive] .zone-paused-control-label {
   color: var(--zone-destructive-ink);
+  --zone-caps-shade: currentColor;
   text-shadow: none;
 }
 
@@ -86,6 +87,7 @@
 /* A range on the move: its number turns yellow until Korri shows it. */
 .zone-paused-control-value[data-moving] .zone-paused-control-text {
   color: var(--zone-paused-moving-ink);
+  --zone-caps-shade: currentColor;
 }
 
 /* The meter: a blue parallelogram, filled yellow from the left. */
@@ -124,6 +126,7 @@
   overflow-wrap: break-word;
   hyphens: auto;
   color: var(--zone-paused-note-ink);
+  --zone-caps-shade: currentColor;
   font-size: max(calc(var(--zone-type-note) * var(--zone-px)), calc(var(--zone-type-reason-scale) * 1em));
   line-height: 1.15;
   text-shadow: none;

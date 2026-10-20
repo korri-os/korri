@@ -5,11 +5,12 @@ import { ZoneCaps } from "./ZoneCaps"
 export type ZoneKey = "A" | "B" | "X" | "Y"
 
 /**
- * A keycap hint: the round black keycap with its white ring and the letter
- * in the key's colour, then the word on a black tab that trails off to the
- * right and is cut on the slant, as in the top corners of Mania's menus.
- * The keycap sits a little over the tab's start. With no word it is the
- * keycap alone, for a row that names the key beside its own label.
+ * A keycap hint: a dark pixel disc with a black rim and the letter in the
+ * key's colour (B red-pink, A green), then the word in white ink at caps-1
+ * on a black tail that runs 3 art px past it and is cut at 45 degrees, as
+ * in the top corners of Mania's menus. The disc sits over the tail's start.
+ * With no word it is the keycap alone, for a row that names the key beside
+ * its own label.
  *
  * The keycap and its word are one image named by both, so a hint whose word
  * a narrow strip has dropped still reads B BACK to a screen reader.

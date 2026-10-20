@@ -148,6 +148,7 @@
 .zone-games-fact-label {
   flex: 0 0 auto;
   color: var(--zone-timer-label);
+  --zone-caps-shade: currentColor;
   font-size: calc(var(--zone-type-timer-label-scale) * 1em);
 }
 

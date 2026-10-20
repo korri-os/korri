@@ -85,8 +85,8 @@
   flex-direction: column;
   padding:
     calc(var(--zone-paused-band-h) + var(--zone-paused-margin))
-    calc(var(--zone-paused-margin) + calc(var(--zone-drop-edge) * var(--zone-px)))
-    calc(var(--zone-paused-margin) * 2 + calc(var(--zone-drop-edge) * var(--zone-px)) + calc(var(--zone-type-hint-wide) * var(--zone-px)) * var(--zone-keycap-scale))
+    calc(var(--zone-paused-margin) + calc(var(--zone-drop) * var(--zone-px)))
+    calc(var(--zone-paused-margin) * 2 + calc(var(--zone-drop) * var(--zone-px)) + calc(var(--zone-type-hint-wide) * var(--zone-px)) * var(--zone-keycap-scale))
     calc(var(--zone-paused-wedge-cut) * var(--zone-paused-list-inset));
   overflow-x: hidden;
   overflow-y: auto;
@@ -100,7 +100,7 @@
   display: grid;
   gap: calc(var(--zone-paused-row-gap) * var(--zone-px));
   margin-top: auto;
-  padding-left: calc(var(--zone-drop-edge) * var(--zone-px));
+  padding-left: calc(var(--zone-drop) * var(--zone-px));
 }
 
 .zone-paused-group {

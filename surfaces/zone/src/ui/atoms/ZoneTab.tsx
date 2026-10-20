@@ -1,4 +1,6 @@
 import "./ZoneTab.css"
+import { useRef } from "react"
+import { useZoneStairClip } from "../../use-zone-stair-clip"
 import { ZoneBanner } from "./ZoneBanner"
 import { ZoneCaps } from "./ZoneCaps"
 import { ZonePanel } from "./ZonePanel"
@@ -29,6 +31,8 @@ export function ZoneTab({
   readonly onSelect: () => void
   readonly onFocus?: () => void
 }) {
+  const banner = useRef<HTMLSpanElement>(null)
+  useZoneStairClip(banner, { left: "point", right: "point" })
   return (
     <button
       className="zone-tab"
@@ -40,7 +44,7 @@ export function ZoneTab({
       type="button"
     >
       {active ? (
-        <span className="zone-tab-banner">
+        <span className="zone-tab-banner" ref={banner}>
           <ZoneBanner>{label}</ZoneBanner>
           {focused ? <ZoneUnderline /> : null}
         </span>

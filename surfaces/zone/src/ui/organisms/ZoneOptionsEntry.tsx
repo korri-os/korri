@@ -69,7 +69,7 @@ export function ZoneOptionsEntry({
         <ZonePanel>
           <span className="zone-options-entry-title">
             <ZoneCaps>{title}</ZoneCaps>
-            {name === undefined ? null : <ZoneCaps verbatim>{name}</ZoneCaps>}
+            {name === undefined ? null : <ZoneCaps fact>{name}</ZoneCaps>}
           </span>
         </ZonePanel>
         {clearLabel === undefined || onClear === undefined ? null : (

@@ -44,6 +44,7 @@
   padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) 0;
   background: var(--zone-slab);
   color: var(--zone-slab-ink);
+  --zone-caps-shade: currentColor;
   text-align: center;
   text-shadow: none;
 }

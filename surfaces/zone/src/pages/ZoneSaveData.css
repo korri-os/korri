@@ -112,7 +112,7 @@
 /* The square is all code: the well keeps only a hairline of black round
  * the white paper, whose quiet zone is the code's own. */
 .zone-save-data-qr-square {
-  --zone-qr-pad: calc(var(--zone-hairline) * var(--zone-px));
+  --zone-qr-pad: var(--zone-hairline);
   display: block;
   width: var(--zone-save-backup-beside);
   height: var(--zone-save-backup-beside);

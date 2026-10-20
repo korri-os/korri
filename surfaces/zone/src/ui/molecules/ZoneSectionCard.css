@@ -13,7 +13,7 @@
   height: calc(var(--zone-section-base) * var(--zone-card-side-scale));
   padding: calc(var(--zone-card-pad) * var(--zone-px));
   background: var(--zone-panel);
-  box-shadow: calc(var(--zone-drop-edge) * var(--zone-px)) calc(var(--zone-drop-edge) * var(--zone-px)) 0 var(--zone-panel-edge);
+  box-shadow: calc(var(--zone-drop) * var(--zone-px)) calc(var(--zone-drop) * var(--zone-px)) 0 var(--zone-panel-edge);
 }
 
 /* The three stripe colours down the spine's edge, meeting on hard lines. */

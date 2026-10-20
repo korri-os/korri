@@ -19,7 +19,7 @@
   height: calc(var(--zone-card-base) * var(--zone-card-scale));
   padding: calc(var(--zone-card-pad) * var(--zone-px));
   background: var(--zone-panel);
-  box-shadow: calc(var(--zone-drop-edge) * var(--zone-px)) calc(var(--zone-drop-edge) * var(--zone-px)) 0 var(--zone-panel-edge);
+  box-shadow: calc(var(--zone-drop) * var(--zone-px)) calc(var(--zone-drop) * var(--zone-px)) 0 var(--zone-panel-edge);
   text-align: center;
   transition:
     width var(--zone-snap-time) var(--zone-bounce),
@@ -39,7 +39,7 @@
   z-index: 1;
   box-shadow:
     0 0 0 calc(var(--zone-focus-edge) * var(--zone-px)) var(--zone-focus),
-    calc(var(--zone-drop-edge-focus) * var(--zone-px)) calc(var(--zone-drop-edge-focus) * var(--zone-px)) 0 var(--zone-panel-edge);
+    calc(var(--zone-drop-focus) * var(--zone-px)) calc(var(--zone-drop-focus) * var(--zone-px)) 0 var(--zone-panel-edge);
 }
 
 /* The title, the band and the tags sit at the foot; the well above them

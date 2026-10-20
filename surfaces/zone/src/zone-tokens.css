@@ -40,33 +40,63 @@
   /** The least art pixel (plan: ZONE_ART_PX_LEAST). @label Art pixel, least @min 1px @max 1px @step 1px */
   --zone-px-least: 1px;
 
-  /* ---- 1. The palette ---- */
-  /** The ground and the stripe band. @label Mint */
-  --zone-mint: #3fe0a0;
+  /* ---- 1. The palette ----
+   * Every hex sampled from Sonic Mania's menus by the refinement brief
+   * (docs/design/surfaces/zone/REFINEMENT.md, 2c), except the few marked
+   * there with a dagger. Flat colours only: no blend, no gradient, no blur.
+   * A drop edge is a hard offset in one of them. */
+  /** The GAMES ground (TIME ATTACK's mint). @label Mint */
+  --zone-mint: #4ad39c;
   /** Every panel and card body. @label Black */
   --zone-black: #000000;
-  /** Caps on a panel. @label White */
-  --zone-white: #ffffff;
-  /** The banner lettering, the HERE tag, the TIME label, the A keycap. @label Yellow */
-  --zone-yellow: #ffd21e;
-  /** The banner, the small orbit ring, the system tag, the well border, the letter edge. @label Blue */
-  --zone-blue: #2d5be8;
-  /** The big orbit ring, its dots, and the lower band. @label Orange */
-  --zone-orange: #f7931e;
-  /** The cursor triangles, the remote tag, the ribbon rule. @label Red */
-  --zone-red: #e8322a;
-  /** The focused card's edge, the lit underline, the B keycap. @label Pink */
-  --zone-pink: #e889b0;
+  /** Lettering, Mania's warm white. @label White */
+  --zone-white: #f7f3f7;
+  /** The lower three rows of white lettering. @label White, shade */
+  --zone-white-shade: #b5bee7;
+  /** HUD lettering (TIME, PLAYS, FIND), the HERE tag, the PAUSED wedge. @label Yellow */
+  --zone-yellow: #f7db08;
+  /** The outline and drop of HUD lettering. @label HUD edge */
+  --zone-hud-edge: #3151ad;
+  /** The system tag, READY, a group label's tag. @label Blue */
+  --zone-blue: #5a71e7;
+  /** The ring, the banner's drop, the act disc. @label Orange */
+  --zone-orange: #f78e18;
+  /** The cursor triangles and the banner lip's left half. @label Red */
+  --zone-red: #e70000;
+  /** Focus: the drop under whatever has the cursor. @label Pink */
+  --zone-pink: #ce6584;
+  /** Destructive verbs and warnings. @label Danger */
+  --zone-danger: #f75131;
+  /** The lower three rows of a destructive verb; the meter's fill. @label Danger, shade */
+  --zone-danger-shade: #c64100;
+  /** A meter's or a range's empty track; an unlit bar. @label Track */
+  --zone-track: #3a313a;
+  /** The dialog and the keyboard: Mania's sky. @label Sky */
+  --zone-sky: #31a2f7;
+  /** The banner. @label Banner blue */
+  --zone-banner-blue: #0020b5;
+  /** The banner's lettering. @label Banner yellow */
+  --zone-banner-yellow: #f7db00;
+  /** The white band through the banner's lettering. @label Banner band white */
+  --zone-banner-white: #e7e3e7;
+  /** The right half of the banner's lip. @label Lip green */
+  --zone-green: #18a800;
+  /** A keycap's disc. @label Keycap disc */
+  --zone-key-disc: #292029;
+  /** The B keycap's letter; PAUSED's band. @label Keycap B */
+  --zone-key-b: #ef285a;
+  /** The A keycap's letter. @label Keycap A */
+  --zone-key-a: #639f3d;
 
   /* ---- 2. Geometry ---- */
   /** How far a parallelogram's top edge leads its bottom edge. Art px. @label Panel slant @min 0 @max 32 @step 1 */
   --zone-slant: 6;
   /** The angle of the three-colour stripe under a card title. @label Stripe angle @min -90 @max 90 @step 1 */
   --zone-stripe-angle: -62deg;
-  /** The hard offset of a panel's blue edge and a lit underline. Art px. @label Drop edge @min 0 @max 16 @step 1 */
-  --zone-drop-edge: 2;
-  /** The drop edge of the focused card. Art px. @label Focused drop edge @min 0 @max 24 @step 1 */
-  --zone-drop-edge-focus: 3;
+  /** The hard offset of a panel's drop (the ground's shade) and of the pink drop under a lit control: 2 art px. @label Drop @min 0 @max 16 @step 1 */
+  --zone-drop: 2;
+  /** The drop under the focused card or control: 3 art px. @label Drop, focused @min 0 @max 24 @step 1 */
+  --zone-drop-focus: 3;
   /** The pink edge around the focused card. Art px. @label Focus edge @min 1 @max 12 @step 1 */
   --zone-focus-edge: 2;
   /** The pink underline under a lit button or tab. Art px. @label Underline @min 1 @max 12 @step 1 */
@@ -75,8 +105,6 @@
   --zone-cap-edge: 1;
   /** The black outline around white caps on colour. Art px. @label Cap outline @min 0 @max 4 @step 1 */
   --zone-cap-outline: 1;
-  /** The black extrusion behind the banner's yellow caps. Art px. @label Banner extrusion @min 0 @max 8 @step 1 */
-  --zone-banner-extrude: 2;
   /** The blue border of a cover well. Art px. @label Well edge @min 0 @max 6 @step 1 */
   --zone-well-edge: 1;
   /** The ring around a keycap. Art px. @label Keycap ring @min 0 @max 4 @step 1 */
@@ -98,9 +126,9 @@
 
   /* The strips, tall (height >= 600) and short. The plan picks one. */
   /** The tab strip on a tall screen. Art px. @label Tab strip, tall @min 40 @max 120 @step 1 */
-  --zone-tab-strip-tall: 36;
+  --zone-tab-strip-tall: 40;
   /** The tab strip on a short screen. Art px. @label Tab strip, short @min 32 @max 100 @step 1 */
-  --zone-tab-strip-short: 32;
+  --zone-tab-strip-short: 36;
   /** The action row on a tall screen. Art px. @label Action strip, tall @min 40 @max 120 @step 1 */
   --zone-action-strip-tall: 30;
   /** The action row on a short screen. Art px. @label Action strip, short @min 32 @max 100 @step 1 */
@@ -189,8 +217,8 @@
   --zone-type-side-share: 0.115;
 
   /* ---- Motion ---- */
-  /** How long a snap takes. @label Snap @min 0 @max 1000 @step 10 */
-  --zone-snap-time: 340ms;
+  /** How long a snap takes (M1: 220 ms, inside the 250 ms focus budget). @label Snap @min 0 @max 1000 @step 10 */
+  --zone-snap-time: 220ms;
   /** The one-overshoot curve every snap uses. @label Bounce */
   --zone-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
   /** A tab's lift. @label Lift time @min 0 @max 500 @step 10 */
@@ -199,52 +227,34 @@
   --zone-press-time: 140ms;
   /** One leg of a triangle's nudge. @label Nudge time @min 0 @max 2000 @step 50 */
   --zone-nudge-time: 600ms;
-  /** One turn of the big orbit ring. @label Drift, big ring @min 10 @max 600 @step 10 */
+  /** One turn of ring A's planet dots (M7). @label Drift, ring A @min 10 @max 600 @step 10 */
   --zone-drift-big: 140s;
-  /** One turn of the small orbit ring. @label Drift, small ring @min 10 @max 600 @step 10 */
+  /** One turn of ring B's planet dots (M7). @label Drift, ring B @min 10 @max 600 @step 10 */
   --zone-drift-small: 200s;
+  /** The ground's frame rate: its dots step, never glide (M7). @label Ground frames a second @min 1 @max 60 @step 1 */
+  --zone-ground-fps: 15;
 
-  /* ---- The ground's drawing ---- */
-  /** How much of the big ring shows through. @label Big ring opacity @min 0 @max 1 @step 0.05 */
-  --zone-ring-big-opacity: 0.6;
-  /** How much of the small ring shows through. @label Small ring opacity @min 0 @max 1 @step 0.05 */
-  --zone-ring-small-opacity: 0.35;
-  /** How much of the red arc shows through. @label Arc opacity @min 0 @max 1 @step 0.05 */
-  --zone-arc-opacity: 0.4;
-  /** How much of the blue band shows through. @label Blue band opacity @min 0 @max 1 @step 0.05 */
-  --zone-band-blue-opacity: 0.3;
-  /** How much of the orange band shows through. @label Orange band opacity @min 0 @max 1 @step 0.05 */
-  --zone-band-orange-opacity: 0.4;
-  /** How much of a white mark shows through. @label White mark opacity @min 0 @max 1 @step 0.05 */
-  --zone-mark-white-opacity: 0.35;
-  /** How much of a red mark shows through. @label Red mark opacity @min 0 @max 1 @step 0.05 */
-  --zone-mark-red-opacity: 0.5;
+  /* ---- Dimmed things ---- */
   /** The end triangle at the first or last card. @label Dimmed triangle @min 0 @max 1 @step 0.05 */
   --zone-triangle-dim: 0.3;
   /** The build string on the ground. @label Build opacity @min 0 @max 1 @step 0.05 */
   --zone-build-opacity: 0.75;
 
   /* ---- 3. Roles ---- */
-  /** @label Ground */
-  --zone-ground: var(--zone-mint);
   /** @label Panel */
   --zone-panel: var(--zone-black);
   /** @label Panel edge */
-  --zone-panel-edge: var(--zone-blue);
+  --zone-panel-edge: var(--zone-shade);
   /** @label Cap */
   --zone-cap: var(--zone-white);
   /** @label Cap edge colour */
-  --zone-cap-edge-colour: var(--zone-blue);
+  --zone-cap-edge-colour: var(--zone-black);
   /** @label Cap outline colour */
   --zone-cap-outline-colour: var(--zone-black);
   /** @label Banner */
-  --zone-banner: var(--zone-blue);
+  --zone-banner: var(--zone-banner-blue);
   /** @label Banner ink */
-  --zone-banner-ink: var(--zone-yellow);
-  /** @label Banner extrusion colour */
-  --zone-banner-extrude-colour: var(--zone-black);
-  /** @label Banner band */
-  --zone-banner-band: var(--zone-white);
+  --zone-banner-ink: var(--zone-banner-yellow);
   /** @label Focus */
   --zone-focus: var(--zone-pink);
   /** @label Cursor */
@@ -268,25 +278,15 @@
   /** @label Signal bars */
   --zone-badge-strength: var(--zone-mint);
   /** @label B keycap ink */
-  --zone-key-b-ink: var(--zone-pink);
+  --zone-key-b-ink: var(--zone-key-b);
   /** @label A keycap ink */
-  --zone-key-a-ink: var(--zone-yellow);
+  --zone-key-a-ink: var(--zone-key-a);
   /** @label Keycap */
-  --zone-key: var(--zone-black);
+  --zone-key: var(--zone-key-disc);
   /** @label Keycap ring colour */
-  --zone-key-ring: var(--zone-white);
+  --zone-key-ring: var(--zone-black);
   /** @label Build ink */
   --zone-build-ink: var(--zone-black);
-  /** @label Big ring */
-  --zone-ring-big: var(--zone-orange);
-  /** @label Small ring */
-  --zone-ring-small: var(--zone-blue);
-  /** @label Arc */
-  --zone-arc: var(--zone-red);
-  /** @label Upper band */
-  --zone-band-upper: var(--zone-blue);
-  /** @label Lower band */
-  --zone-band-lower: var(--zone-orange);
   /** @label Stripe, first */
   --zone-stripe-1: var(--zone-orange);
   /** @label Stripe, second */
@@ -352,20 +352,6 @@
   --zone-panel-pad: 5;
   /** A keycap's diameter as a multiple of its hint type. @label Keycap size @min 1 @max 2.5 @step 0.05 */
   --zone-keycap-scale: 1.5;
-  /** The tail a keycap's word tab trails past the word, in multiples of its type. @label Keycap tail @min 0 @max 4 @step 0.1 */
-  --zone-keycap-tail: 2.2;
-  /** How far the keycap sits over its word tab, in multiples of its type. @label Keycap overlap @min 0 @max 1 @step 0.05 */
-  --zone-keycap-overlap: 0.3;
-  /** The depth of the banner's two points, as a multiple of its type. @label Banner point @min 0 @max 1.5 @step 0.05 */
-  --zone-banner-point: 0.6;
-  /** The white band through the banner, as a share of its height. @label Banner band height @min 0 @max 1 @step 0.02 */
-  --zone-banner-band-share: 0.26;
-  /** How much of the banner's white band shows through. @label Banner band opacity @min 0 @max 1 @step 0.05 */
-  --zone-banner-band-opacity: 0.3;
-  /** A tab's sub-line as a share of its label. @label Tab sub scale @min 0.3 @max 1 @step 0.05 */
-  --zone-tab-sub-scale: 0.5;
-  /** The tracking of a tab's sub-line. @label Tab sub tracking @min 0 @max 0.2 @step 0.01 */
-  --zone-tab-sub-tracking: 0.06em;
   /** A cursor triangle beside a button, as a multiple of the button's type. @label Inline triangle @min 0.3 @max 1.5 @step 0.05 */
   --zone-triangle-inline: 0.7;
   /** A disabled button's reason line as a share of its label. @label Reason scale @min 0.3 @max 1 @step 0.05 */
@@ -511,13 +497,13 @@
 
   /* Roles. */
   /** @label Dialog panel */
-  --zone-dialog-panel: var(--zone-blue);
+  --zone-dialog-panel: var(--zone-sky);
   /** @label Dialog wedge */
   --zone-dialog-wedge: var(--zone-black);
   /** @label Dialog title ink */
   --zone-dialog-title-ink: var(--zone-yellow);
   /** @label Keyboard panel */
-  --zone-keyboard-panel: var(--zone-blue);
+  --zone-keyboard-panel: var(--zone-sky);
   /** @label Slab */
   --zone-slab: var(--zone-white);
   /** @label Slab ink */
@@ -525,9 +511,9 @@
   /** @label Caret colour */
   --zone-caret-colour: var(--zone-red);
   /** @label Problem ink */
-  --zone-problem-ink: var(--zone-red);
+  --zone-problem-ink: var(--zone-danger);
   /** @label Destructive ink */
-  --zone-destructive-ink: var(--zone-red);
+  --zone-destructive-ink: var(--zone-danger);
   /** @label Current layer ink */
   --zone-layer-ink: var(--zone-yellow);
   /** @label QR well */
@@ -655,7 +641,7 @@
   /** How dark the stripe field lies over the greyed ground. @label Paused stripes @min 0 @max 1 @step 0.05 */
   --zone-paused-stripe-opacity: 0.3;
   /** @label Paused band */
-  --zone-paused-band: var(--zone-red);
+  --zone-paused-band: var(--zone-key-b);
   /** @label Paused wedge */
   --zone-paused-wedge: var(--zone-yellow);
   /** @label Paused stripe */
@@ -727,18 +713,208 @@
   --zone-meter-height-least: 4;
   /** The shortest the bar gets before the sizes drop under it. Art px. @label Meter, least length @min 40 @max 400 @step 10 */
   --zone-meter-least: 60;
-  /** Room for the size done, so the figures do not jump as they count (Anton has no tabular figures). @label Meter figures width @min 4 @max 14 @step 0.5 */
+  /** Room for the size done, so the figures do not jump as they count (Zone Caps' digits are tabular; the room keeps the bar still). @label Meter figures width @min 4 @max 14 @step 0.5 */
   --zone-meter-figures: 8.5ch;
   /** One pass of the moving stripe when Korri knows no end. @label Meter sweep time @min 100 @max 4000 @step 50 */
   --zone-meter-sweep-time: 700ms;
   /** @label Meter track */
-  --zone-meter-track: var(--zone-blue);
+  --zone-meter-track: var(--zone-track);
   /** @label Meter fill */
-  --zone-meter-fill: var(--zone-red);
+  --zone-meter-fill: var(--zone-danger-shade);
   /** @label Meter fill lip */
-  --zone-meter-lip: var(--zone-orange);
+  --zone-meter-lip: var(--zone-danger);
 
   /* The download tag on a card. */
   /** @label Download tag */
   --zone-tag-download: var(--zone-orange);
+}
+
+/* ---- pixel refinement: inks, chrome, grounds ----
+ * The foundation of the refinement brief (docs/design/surfaces/zone/
+ * REFINEMENT.md, 2a to 2c and the "All screens, first" block of 4).
+ * Appended as one block; the screen workers add theirs after it. */
+.zone-theme {
+  /* The five inks of ZoneCaps. A ring one art px wide in the outline
+   * colour, then a drop down and right; the face's lower three rows in
+   * the shade (the banner: a band through rows 4 to 6). */
+  /** @label White ink face */
+  --zone-ink-white-face: var(--zone-white);
+  /** @label White ink shade */
+  --zone-ink-white-shade: var(--zone-white-shade);
+  /** @label White ink outline */
+  --zone-ink-white-outline: var(--zone-black);
+  /** @label HUD ink face */
+  --zone-ink-hud-face: var(--zone-yellow);
+  /** @label HUD ink outline */
+  --zone-ink-hud-outline: var(--zone-hud-edge);
+  /** @label Banner ink band */
+  --zone-ink-banner-band: var(--zone-banner-white);
+  /** @label Banner ink drop */
+  --zone-ink-banner-drop: var(--zone-orange);
+  /** @label Ink on a white bar */
+  --zone-ink-ink-face: var(--zone-black);
+  /** @label Danger ink face */
+  --zone-ink-danger-face: var(--zone-danger);
+  /** @label Danger ink shade */
+  --zone-ink-danger-shade: var(--zone-danger-shade);
+  /** Room a caps box keeps above its cap for accents and the ring. Art px. @label Caps headroom @min 0 @max 6 @step 1 */
+  --zone-caps-headroom: 4;
+  /** Room a caps box keeps under and beside its ink for the ring and the drop. Art px. @label Caps ink room @min 0 @max 6 @step 1 */
+  --zone-caps-room: 3;
+
+  /* The banner (ZoneBanner): blue, caps-2 banner ink, and a lip under it,
+   * red on the left half and green on the right, with four notches at its
+   * centre. */
+  /** The lip under the banner and its notches, together. Art px. @label Banner lip @min 4 @max 4 @step 1 */
+  --zone-banner-lip: 4;
+  /** The room either side of the banner's caps. Art px. @label Banner padding @min 0 @max 24 @step 1 */
+  --zone-banner-pad: 6;
+  /** @label Banner lip, left */
+  --zone-banner-lip-left: var(--zone-red);
+  /** @label Banner lip, right */
+  --zone-banner-lip-right: var(--zone-green);
+
+  /* The keycap (ZoneKeycap): a dark disc with a black rim and the letter
+   * in the key's colour, the word in white ink on a black tail cut at 45
+   * degrees, reaching 3 art px past the word. */
+  /** The keycap's rim: a pixel circle 15 art px across, in shares of its box (zoneStairCircle(15), held equal by test). @label Keycap rim shape */
+  --zone-keycap-rim-shape: polygon(33.3333% 0, 33.3333% 6.6667%, 20% 6.6667%, 20% 13.3333%, 13.3333% 13.3333%, 13.3333% 20%, 6.6667% 20%, 6.6667% 26.6667%, 6.6667% 33.3333%, 0 33.3333%, 0 40%, 0 46.6667%, 0 53.3333%, 0 60%, 0 66.6667%, 6.6667% 66.6667%, 6.6667% 73.3333%, 6.6667% 80%, 13.3333% 80%, 13.3333% 86.6667%, 20% 86.6667%, 20% 93.3333%, 33.3333% 93.3333%, 33.3333% 100%, 66.6667% 100%, 66.6667% 93.3333%, 80% 93.3333%, 80% 86.6667%, 86.6667% 86.6667%, 86.6667% 80%, 93.3333% 80%, 93.3333% 73.3333%, 93.3333% 66.6667%, 100% 66.6667%, 100% 60%, 100% 53.3333%, 100% 46.6667%, 100% 40%, 100% 33.3333%, 93.3333% 33.3333%, 93.3333% 26.6667%, 93.3333% 20%, 86.6667% 20%, 86.6667% 13.3333%, 80% 13.3333%, 80% 6.6667%, 66.6667% 6.6667%, 66.6667% 0);
+  /** The disc inside the rim: 13 art px across (zoneStairCircle(13)). @label Keycap disc shape */
+  --zone-keycap-disc-shape: polygon(30.7692% 0, 30.7692% 7.6923%, 15.3846% 7.6923%, 15.3846% 15.3846%, 7.6923% 15.3846%, 7.6923% 23.0769%, 7.6923% 30.7692%, 0 30.7692%, 0 38.4615%, 0 46.1538%, 0 53.8462%, 0 61.5385%, 0 69.2308%, 7.6923% 69.2308%, 7.6923% 76.9231%, 7.6923% 84.6154%, 15.3846% 84.6154%, 15.3846% 92.3077%, 30.7692% 92.3077%, 30.7692% 100%, 69.2308% 100%, 69.2308% 92.3077%, 84.6154% 92.3077%, 84.6154% 84.6154%, 92.3077% 84.6154%, 92.3077% 76.9231%, 92.3077% 69.2308%, 100% 69.2308%, 100% 61.5385%, 100% 53.8462%, 100% 46.1538%, 100% 38.4615%, 100% 30.7692%, 92.3077% 30.7692%, 92.3077% 23.0769%, 92.3077% 15.3846%, 84.6154% 15.3846%, 84.6154% 7.6923%, 69.2308% 7.6923%, 69.2308% 0);
+  /** How far the tail runs past the word. Art px. @label Keycap tail run @min 0 @max 12 @step 1 */
+  --zone-keycap-run: 3;
+  /** @label Keycap tail */
+  --zone-key-tail: var(--zone-black);
+
+  /* Shared everywhere (2c). */
+  /** @label Veil dither */
+  --zone-veil: var(--zone-black);
+
+  /* The group colours a screen worker paints with (2c). Named here so the
+   * five groups read from one sheet. */
+  /** GAMES: the card stripe, light. @label Card stripe, light */
+  --zone-stripe-light: #9ce7c6;
+  /** GAMES: the card stripe, teal; SAVE DATA's stripe. @label Card stripe, teal */
+  --zone-stripe-teal: #5aa2b5;
+  /** The title card's red band. @label Title band red */
+  --zone-title-red: #f75131;
+  /** The title card's blue band. @label Title band blue */
+  --zone-title-blue: #4261b5;
+  /** The title card's green band. @label Title band green */
+  --zone-title-green: #63c3a5;
+  /** PAUSED's stand-in, dark grey. @label Grey, dark */
+  --zone-grey-dark: #5a5a5a;
+  /** PAUSED's stand-in, light grey. @label Grey, light */
+  --zone-grey-light: #8c8c8c;
+}
+
+/* ---- the grounds ----
+ * One token set per screen group (2c), switched by `data-ground` on the
+ * root or a shell: the ground, its two rings and the shade a panel drops.
+ * `--zone-ground-rings` is 1 where the ground draws its rings, 0 where it
+ * is flat. GAMES is the default: FIND and first boot share it. */
+.zone-theme,
+.zone-theme [data-ground="games"],
+.zone-theme[data-ground="games"] {
+  /** @label Ground */
+  --zone-ground: var(--zone-mint);
+  /** @label Ring A */
+  --zone-ring-a: #39b2ce;
+  /** @label Ring B */
+  --zone-ring-b: var(--zone-orange);
+  /** A panel's drop on this ground. @label Shade */
+  --zone-shade: #2e9e72;
+  /** Whether this ground draws its rings. @label Rings @min 0 @max 1 @step 1 */
+  --zone-ground-rings: 1;
+}
+
+/* OPTIONS and RUN WITH: Mania's OPTIONS. */
+.zone-theme [data-ground="options"],
+.zone-theme[data-ground="options"] {
+  /** @label Ground */
+  --zone-ground: #efc300;
+  /** @label Ring A */
+  --zone-ring-a: #84a2b5;
+  /** @label Ring B */
+  --zone-ring-b: var(--zone-orange);
+  /** @label Shade */
+  --zone-shade: #b58f00;
+  /** @label Rings @min 0 @max 1 @step 1 */
+  --zone-ground-rings: 1;
+}
+
+/* SAVE DATA: MANIA MODE's save select. */
+.zone-theme [data-ground="savedata"],
+.zone-theme[data-ground="savedata"] {
+  /** @label Ground */
+  --zone-ground: #31aac6;
+  /** @label Ring A */
+  --zone-ring-a: #f57128;
+  /** @label Ring B */
+  --zone-ring-b: #4ab8ac;
+  /** @label Shade */
+  --zone-shade: #23809a;
+  /** @label Rings @min 0 @max 1 @step 1 */
+  --zone-ground-rings: 1;
+}
+
+/* GAME OPTS.: MANIA MODE's GAME OPTS. sheet. */
+.zone-theme [data-ground="gameopts"],
+.zone-theme[data-ground="gameopts"] {
+  /** @label Ground */
+  --zone-ground: #33acc7;
+  /** @label Ring A */
+  --zone-ring-a: #f57128;
+  /** @label Ring B */
+  --zone-ring-b: #4ab8ac;
+  /** @label Shade */
+  --zone-shade: #23809a;
+  /** @label Rings @min 0 @max 1 @step 1 */
+  --zone-ground-rings: 1;
+}
+
+/* PAUSED: the stand-in for the game is greys; the band and wedge are the
+ * page's own. */
+.zone-theme [data-ground="paused"],
+.zone-theme[data-ground="paused"] {
+  /** @label Ground */
+  --zone-ground: var(--zone-grey-dark);
+  /** @label Ring A */
+  --zone-ring-a: var(--zone-grey-light);
+  /** @label Ring B */
+  --zone-ring-b: var(--zone-grey-light);
+  /** @label Shade */
+  --zone-shade: var(--zone-black);
+  /** @label Rings @min 0 @max 1 @step 1 */
+  --zone-ground-rings: 0;
+}
+
+/* The title card and idle attract: flat yellow; the bands are the card's. */
+.zone-theme [data-ground="titlecard"],
+.zone-theme[data-ground="titlecard"] {
+  /** @label Ground */
+  --zone-ground: #f7cb00;
+  /** @label Ring A */
+  --zone-ring-a: var(--zone-title-blue);
+  /** @label Ring B */
+  --zone-ring-b: var(--zone-orange);
+  /** @label Shade */
+  --zone-shade: #b58f00;
+  /** @label Rings @min 0 @max 1 @step 1 */
+  --zone-ground-rings: 0;
+}
+
+/* The results tally: SPECIAL STAGE's results. */
+.zone-theme [data-ground="tally"],
+.zone-theme[data-ground="tally"] {
+  /** @label Ground */
+  --zone-ground: #efc300;
+  /** @label Ring A */
+  --zone-ring-a: #84a2b5;
+  /** @label Ring B */
+  --zone-ring-b: var(--zone-orange);
+  /** @label Shade */
+  --zone-shade: #b58f00;
+  /** @label Rings @min 0 @max 1 @step 1 */
+  --zone-ground-rings: 1;
 }

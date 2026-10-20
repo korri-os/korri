@@ -121,15 +121,15 @@ describe("nothing is cut: the visible set always fits", () => {
     return p.focusW + (p.visible - 1) * p.sideW + fixed <= p.wArt + p.visible
   }
 
-  test("at the two devices the plan is Mania's canvas: five cards shrunk to fit 426 art px, three shrunk a hair to fit 320", () => {
+  test("at the two devices the plan is Mania's canvas: five cards shrunk to fit 426 art px, three at full size in 320", () => {
     const wide = plan(1280, 720)
     expect([wide.px, wide.wArt, wide.hArt]).toEqual([3, 426, 240])
-    expect([wide.focusH, wide.focusW, wide.sideH, wide.sideW]).toEqual([110, 86, 75, 58])
-    expect(wide.scale).toBeCloseTo(0.8281, 3)
+    expect([wide.focusH, wide.focusW, wide.sideH, wide.sideW]).toEqual([110, 85, 74, 58])
+    expect(wide.scale).toBeCloseTo(0.8435, 3)
     const narrow = plan(640, 480)
     expect([narrow.px, narrow.wArt, narrow.hArt]).toEqual([2, 320, 240])
-    expect([narrow.focusH, narrow.focusW, narrow.sideH, narrow.sideW]).toEqual([132, 103, 89, 69])
-    expect(narrow.scale).toBeCloseTo(0.9918, 3)
+    expect([narrow.focusH, narrow.focusW, narrow.sideH, narrow.sideW]).toEqual([130, 101, 88, 69])
+    expect(narrow.scale).toBe(1)
     expect(fits(1280, 720)).toBe(true)
     expect(fits(640, 480)).toBe(true)
   })

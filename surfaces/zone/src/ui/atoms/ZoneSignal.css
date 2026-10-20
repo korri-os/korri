@@ -20,6 +20,7 @@
   flex: 0 0 auto;
   margin-left: calc(var(--zone-strip-gap) * var(--zone-px));
   color: var(--zone-badge-strength);
+  --zone-caps-shade: currentColor;
   font-variant-numeric: tabular-nums;
   text-shadow: none;
 }
