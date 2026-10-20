@@ -158,6 +158,26 @@ fn registry(url: &str, digest: &str) -> PluginRegistry {
         crate::plugin::decode_plugin_declaration("@test", &declaration.to_string()).unwrap();
     PluginRegistry::new(vec![plugin], ["@test:runtime".into()]).unwrap()
 }
+pub(super) fn runner_route(runner: &str) -> crate::config::resolver::ResolvedRoute {
+    crate::config::resolver::ResolvedRoute {
+        playable_id: "game".into(),
+        title: None,
+        release_id: String::new(),
+        identity: None,
+        provider_id: String::new(),
+        system_id: String::new(),
+        system_title: None,
+        runner_id: runner.into(),
+        family_id: None,
+        integration_token: String::new(),
+        flattened_target: String::new(),
+        linux_runner: None,
+        core_path: None,
+        file_target: None,
+        provider_target: None,
+        artifact_target: None,
+    }
+}
 fn state(
     coordinator: &AcquisitionCoordinator,
     root: &Path,
@@ -202,7 +222,7 @@ async fn cache_truth_idempotent_start_retry_and_launch_paths() {
         ArtifactState::Missing
     ));
     assert_eq!(
-        require_ready(root.path(), &registry, "@test:runtime/run")
+        require_ready(root.path(), &registry, &runner_route("@test:runtime/run"))
             .unwrap_err()
             .code,
         "ArtifactsNotReady"
@@ -262,7 +282,7 @@ async fn cache_truth_idempotent_start_retry_and_launch_paths() {
     .await
     .unwrap();
     assert!(!downloads.exists());
-    require_ready(root.path(), &registry, "@test:runtime/run").unwrap();
+    require_ready(root.path(), &registry, &runner_route("@test:runtime/run")).unwrap();
     assert_eq!(
         launch_artifacts(root.path(), &registry, "@test:runtime/run").unwrap()["payload"],
         ready.display().to_string()

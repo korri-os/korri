@@ -347,15 +347,38 @@ fn unknown_artifact() -> RpcFailure {
     }
 }
 
+/// A route's artifacts: the release's first, then the runner's, once each.
+pub(crate) fn route_artifact_ids(
+    registry: &PluginRegistry,
+    route: &crate::config::resolver::ResolvedRoute,
+) -> Result<Vec<String>, RpcFailure> {
+    let mut ids: Vec<String> = route
+        .artifact_target
+        .as_ref()
+        .map(|target| target.release_artifacts.clone())
+        .unwrap_or_default();
+    for artifact in registry
+        .artifacts_for_runner(&route.runner_id)
+        .map_err(|_| unknown_artifact())?
+    {
+        if !ids.contains(&artifact.id) {
+            ids.push(artifact.id.clone());
+        }
+    }
+    Ok(ids)
+}
+
 /// Used by both the launch gate and launch input: one directory-based truth.
+/// A route refuses until its release's and its runner's artifacts are ready.
 pub(crate) fn require_ready(
     root: &Path,
     registry: &PluginRegistry,
-    runner_id: &str,
+    route: &crate::config::resolver::ResolvedRoute,
 ) -> Result<(), RpcFailure> {
-    let artifacts = registry
-        .artifacts_for_runner(runner_id)
-        .map_err(|_| unknown_artifact())?;
+    let artifacts = route_artifact_ids(registry, route)?
+        .iter()
+        .map(|id| registry.artifact(id).map_err(|_| unknown_artifact()))
+        .collect::<Result<Vec<_>, _>>()?;
     let missing: Vec<_> = artifacts
         .iter()
         .filter(|artifact| !placement::is_ready(&placement::ready_path(root, artifact)))
@@ -377,6 +400,26 @@ pub(crate) fn require_ready(
         });
     }
     Ok(())
+}
+
+/// `contentPath` for an artifact route: its ready directory joined with the
+/// declared path. Nothing else is derived.
+pub(crate) fn artifact_content_path(
+    root: &Path,
+    registry: &PluginRegistry,
+    target: &crate::config::resolver::ResolvedArtifactTarget,
+) -> Result<PathBuf, RpcFailure> {
+    let artifact = registry
+        .artifact(&target.artifact_id)
+        .map_err(|_| unknown_artifact())?;
+    let ready = placement::ready_path(root, artifact);
+    if !placement::is_ready(&ready) {
+        return Err(RpcFailure {
+            code: "ArtifactsNotReady".into(),
+            message: "The game is not downloaded yet.".into(),
+        });
+    }
+    Ok(ready.join(&target.path))
 }
 
 pub(crate) fn launch_artifacts(
@@ -419,12 +462,7 @@ pub(crate) fn game_artifact_ids(
     let route =
         crate::config::resolver::resolve_linux_route(root, &snapshot, registry, game_id, runner_id)
             .map_err(|error| crate::route_diagnostic_failure(&error))?;
-    Ok(registry
-        .artifacts_for_runner(&route.runner_id)
-        .map_err(|_| unknown_artifact())?
-        .iter()
-        .map(|artifact| artifact.id.clone())
-        .collect())
+    route_artifact_ids(registry, &route)
 }
 
 #[cfg(test)]
