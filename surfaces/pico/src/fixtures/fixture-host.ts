@@ -128,6 +128,15 @@ export function createFixtureHost(): FixtureHost {
     finishOnboarding() {
       calls.push("finishOnboarding")
     },
+    openStore() {
+      calls.push("openStore")
+    },
+    searchStore(providerId, query) {
+      calls.push(`searchStore:${providerId}:${query}`)
+    },
+    openStoreEntry(entryId) {
+      calls.push(`openStoreEntry:${entryId}`)
+    },
   }
 }
 

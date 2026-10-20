@@ -53,5 +53,13 @@ export function createRecordingHost(): RecordingHost {
     retry: record("retry"),
     dismiss: record("dismiss"),
     reload: record("reload"),
+    scanWifi: record("scanWifi"),
+    connectWifi: networkId => calls.push(`connectWifi:${networkId}`),
+    connectHiddenWifi: ssid => calls.push(`connectHiddenWifi:${ssid}`),
+    finishOnboarding: record("finishOnboarding"),
+    openStore: record("openStore"),
+    searchStore: (providerId, query) =>
+      calls.push(`searchStore:${providerId}:${query}`),
+    openStoreEntry: entryId => calls.push(`openStoreEntry:${entryId}`),
   }
 }

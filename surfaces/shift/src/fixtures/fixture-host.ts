@@ -32,6 +32,15 @@ export function createFixtureHost(
     connectWifi() {},
     connectHiddenWifi() {},
     finishOnboarding() {},
+    openStore() {
+      calls.push("openStore")
+    },
+    searchStore(providerId, query) {
+      calls.push(`searchStore:${providerId}:${query}`)
+    },
+    openStoreEntry(entryId) {
+      calls.push(`openStoreEntry:${entryId}`)
+    },
     press(action) {
       for (const listener of [...(listeners.get(action) ?? [])]) listener()
     },
