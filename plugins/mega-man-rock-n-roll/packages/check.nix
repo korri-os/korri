@@ -15,7 +15,6 @@ pkgs.runCommand "mega-man-rock-n-roll-check"
     mkdir plugin
     cp -r ${../game} plugin/game
     cp -r ${../runner} plugin/runner
-    cp ${../plugin.ts} plugin/plugin.ts
     chmod -R u+w plugin
     (cd plugin && python3 -m unittest -v game/test_unpack.py runner/test_launch.py)
     bash -n plugin/runner/fex-launch.sh

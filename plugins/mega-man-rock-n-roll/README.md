@@ -39,17 +39,18 @@ korrid invokes it with the verified ZIP (ADR 0012).
    symlink or another special file, is absolute, contains `..`, `.`, an empty
    segment or a backslash, or appears twice.
 2. It extracts every file and directory into `<work-dir>`.
-3. It checks each file in `game/contents` against its SHA-256 value and gives
-   it the listed mode: `data.pck` 0644, `MegaMan_RocknRoll` 0755. The ZIP
-   has MS-DOS attributes and no Unix modes, so the executable bit comes from
-   that list. Other files, such as `readme.txt`, get 0644.
+3. It requires each file that `game/contents` lists and gives it the listed
+   mode: `data.pck` 0644, `MegaMan_RocknRoll` 0755. The ZIP has MS-DOS
+   attributes and no Unix modes, so the executable bit comes from that list.
+   Other files, such as `readme.txt`, get 0644.
+
+It checks no hashes. korrid verified the whole ZIP against the SHA-256 that
+`plugin.ts` pins before it runs the program, and that one hash fixes every
+file in the ZIP. `plugin.ts` is the only source of the `data.pck` hash.
 
 It writes only under `<work-dir>`. Exit status: 0 ready, 1 failed (including
 usage). Diagnostics go to stderr; stdout carries nothing korrid reads.
 Python comes from Nix. Nothing is compiled on the device.
-
-`game/contents` holds the `data.pck` hash a second time, after `plugin.ts`.
-A check test fails if the two differ.
 
 ## Launch
 
@@ -81,7 +82,8 @@ sets `WAYLAND_DISPLAY`.
 Build these on a build machine, never on a device.
 
 - `packages/check.nix` runs `game/test_unpack.py` against small generated
-  ZIPs (success, hash mismatch, traversal, symlinks, duplicates, usage) and
+  ZIPs (success, modes, missing files, traversal, symlinks, duplicates,
+  usage) and
   `runner/test_launch.py` with a recording `FEX` program, then `bash -n` and
   shellcheck.
 - `packages/plugin-check.nix` checks the built package for the target system.

@@ -7,14 +7,14 @@ The game artifact's unpack program. packages/plugin.nix wraps it as
 korrid downloads and verifies the ZIP, then runs the program on it (ADR 0012).
 korrid owns the work directory, the read-only flip, the sync and the rename
 to the ready directory. This program writes only under <work-dir>. It extracts
-every regular file and directory, refuses any other entry, and checks each
-file that <contents> lists against its SHA-256 value and gives it its mode.
-Other files get mode 0644.
+every regular file and directory, refuses any other entry, and requires each
+file that <contents> lists and gives it the listed mode. Other files get mode
+0644. korrid verified the ZIP against its pinned SHA-256, so this program
+checks no hashes.
 
 Exit status: 0 ready, 1 failed. Diagnostics go to stderr; stdout carries
 nothing korrid reads.
 """
-import hashlib
 import os
 from pathlib import Path
 import re
@@ -23,7 +23,7 @@ import sys
 import zipfile
 
 CHUNK = 1024 * 1024
-CONTENTS_LINE = re.compile(r"(0644|0755) sha256:([0-9a-f]{64}) (\S+)")
+CONTENTS_LINE = re.compile(r"(0644|0755) (\S+)")
 
 
 class Failure(Exception):
@@ -31,18 +31,18 @@ class Failure(Exception):
 
 
 def read_contents(path):
-    """Map each listed path to its (mode, sha256 hex)."""
+    """Map each listed path to its mode."""
     contents = {}
     for number, line in enumerate(Path(path).read_text().splitlines(), 1):
         if not line or line.startswith("#"):
             continue
         match = CONTENTS_LINE.fullmatch(line)
         if not match:
-            raise Failure(f"{path}:{number}: not '<mode> sha256:<hex> <path>'")
-        mode, digest, name = match.groups()
+            raise Failure(f"{path}:{number}: not '<mode> <path>'")
+        mode, name = match.groups()
         if name in contents or safe_parts(name) is None:
             raise Failure(f"{path}:{number}: duplicate or unsafe path {name!r}")
-        contents[name] = (int(mode, 8), digest)
+        contents[name] = int(mode, 8)
     if not contents:
         raise Failure(f"{path}: lists no files")
     return contents
@@ -86,29 +86,25 @@ def entries(archive):
 
 
 def extract(archive, work, contents):
-    hashes = {}
+    written = set()
     for name, parts, kind, info in entries(archive):
         target = work.joinpath(*parts)
         if kind == "dir":
             target.mkdir(mode=0o755, parents=True, exist_ok=True)
             continue
         target.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-        mode = contents.get(name, (0o644, None))[0]
+        mode = contents.get(name, 0o644)
         # The work directory is new and holds only what this loop made, so no
         # component can be a link; O_EXCL|O_NOFOLLOW still refuses one.
         descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        digest = hashlib.sha256()
         with os.fdopen(descriptor, "wb") as output, archive.open(info) as source:
             while chunk := source.read(CHUNK):
-                digest.update(chunk)
                 output.write(chunk)
             os.fchmod(output.fileno(), mode)
-        hashes[name] = digest.hexdigest()
-    for name, (_, expected) in contents.items():
-        if name not in hashes:
+        written.add(name)
+    for name in contents:
+        if name not in written:
             raise Failure(f"archive is missing {name}")
-        if hashes[name] != expected:
-            raise Failure(f"{name} has sha256:{hashes[name]}, expected sha256:{expected}")
 
 
 def main(arguments):

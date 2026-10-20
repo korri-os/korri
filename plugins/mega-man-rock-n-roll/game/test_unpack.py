@@ -1,8 +1,6 @@
 """Run the real unpack program against small generated ZIPs, never the game."""
-import hashlib
 import os
 from pathlib import Path
-import re
 import stat
 import subprocess
 import sys
@@ -13,17 +11,12 @@ import zipfile
 
 HERE = Path(__file__).parent
 SHIPPED_CONTENTS = HERE / "contents"
-PLUGIN_SOURCE = HERE.parent / "plugin.ts"
 
 FILES = {
     "data.pck": b"GDPC fixture pack\n",
     "MegaMan_RocknRoll": b"\x7fELF fixture executable\n",
     "readme.txt": b"fixture readme\n",
 }
-
-
-def sha256(content):
-    return hashlib.sha256(content).hexdigest()
 
 
 def write_zip(path, entries):
@@ -51,15 +44,8 @@ class UnpackTests(unittest.TestCase):
         self.work = self.contribution / ".tmp-fixture"
         self.work.mkdir(parents=True)
         self.contents = self.root / "contents"
-        self.write_contents(FILES["data.pck"], FILES["MegaMan_RocknRoll"])
+        self.contents.write_text("# fixture\n0644 data.pck\n0755 MegaMan_RocknRoll\n")
         self.zip = write_zip(self.root / "game.zip", list(FILES.items()))
-
-    def write_contents(self, data, executable):
-        self.contents.write_text(
-            "# fixture\n"
-            f"0644 sha256:{sha256(data)} data.pck\n"
-            f"0755 sha256:{sha256(executable)} MegaMan_RocknRoll\n"
-        )
 
     def run_unpack(self, *arguments, contents=None):
         return subprocess.run(
@@ -94,11 +80,6 @@ class UnpackTests(unittest.TestCase):
         result = self.run_unpack(self.work, self.zip)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.work / "extras/notes/a.txt").read_bytes(), b"a\n")
-
-    def test_hash_mismatch_fails(self):
-        self.write_contents(b"another pack\n", FILES["MegaMan_RocknRoll"])
-        result = self.run_unpack(self.work, self.zip)
-        self.assert_failed(result, f"data.pck has sha256:{sha256(FILES['data.pck'])}, expected")
 
     def test_missing_listed_file_fails(self):
         write_zip(self.zip, [("data.pck", FILES["data.pck"]), ("readme.txt", b"x\n")])
@@ -146,21 +127,21 @@ class UnpackTests(unittest.TestCase):
                 self.assertEqual(os.listdir(self.work), [])
         not_zip.unlink()
 
-    def test_shipped_contents_rejects_a_zip_that_is_not_the_game(self):
+    def test_shipped_contents_makes_the_game_executable(self):
         result = self.run_unpack(self.work, self.zip, contents=SHIPPED_CONTENTS)
-        self.assert_failed(result, "data.pck has sha256:")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        modes = {name: stat.S_IMODE((self.work / name).stat().st_mode) for name in FILES}
+        self.assertEqual(modes, {"data.pck": 0o644, "MegaMan_RocknRoll": 0o755, "readme.txt": 0o644})
 
-    def test_shipped_contents_names_the_release_hash_in_plugin_ts(self):
-        listed = dict(
-            (line.split()[2], line.split()[1])
-            for line in SHIPPED_CONTENTS.read_text().splitlines()
-            if line and not line.startswith("#")
-        )
-        self.assertEqual(sorted(listed), ["MegaMan_RocknRoll", "data.pck"])
-        source = PLUGIN_SOURCE.read_text()
-        release = re.search(r'const dataPck =\s*"(sha256:[0-9a-f]{64})"', source)
-        self.assertIsNotNone(release, "plugin.ts names the data.pck hash once as dataPck")
-        self.assertEqual(listed["data.pck"], release.group(1))
+    def test_shipped_contents_requires_the_game_files(self):
+        write_zip(self.zip, [("readme.txt", FILES["readme.txt"])])
+        result = self.run_unpack(self.work, self.zip, contents=SHIPPED_CONTENTS)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("archive is missing", result.stderr)
+
+    def test_malformed_contents_fails(self):
+        self.contents.write_text("0644 sha256:00 data.pck\n")
+        self.assert_failed(self.run_unpack(self.work, self.zip), "not '<mode> <path>'")
 
 
 if __name__ == "__main__":

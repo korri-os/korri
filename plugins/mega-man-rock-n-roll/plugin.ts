@@ -14,13 +14,12 @@ export const description =
   "Public Linux 1.3 ZIP for Dennis Engelhard's Mega Man Rock N Roll."
 
 // The release identity: the SHA-256 of `data.pck`, not of the ZIP (ADR 0013).
-// game/contents lists the same value for the unpack check.
 const dataPck =
   "sha256:eb6fc0155b1996c5fcc5b42d6ec3f9c3aea4ba1e9aca5389cd7da8070310bd41"
 
 // `bytes` is the size of the file downloaded on 2026-10-17 and 2026-10-20.
 // korrid downloads and verifies it, then runs `game-unpack`, which extracts
-// it and checks `data.pck` and `MegaMan_RocknRoll`.
+// it and requires `data.pck` and `MegaMan_RocknRoll`.
 export const artifacts = {
   game: {
     id: "@korri:mega-man-rock-n-roll/game",
