@@ -409,3 +409,11 @@ export function entryHeading(entry: ZoneOptionsEntry): {
       return { title: "Password", name: entry.ssid, secret: true, maxLength: WIFI_PASSWORD_MAX }
   }
 }
+
+/** The page's own state, as the page reads it: src/state/options.ts's model
+ * is one of these. */
+export interface ZoneOptionsView {
+  readonly focused?: string | undefined
+  readonly keyboard?: ZoneOptionsKeyboard | undefined
+  readonly dialog?: ZoneOptionsDialog | undefined
+}

@@ -12,7 +12,6 @@ export type ZoneRunWithOpen = Exclude<SurfaceRunnerChoice, { readonly _tag: "Clo
 export type ZoneRunWithState = ZoneRunWithOpen["_tag"]
 
 export const zoneRouteRowId = (runnerId: string) => `route:${runnerId}`
-export const zoneRunWithActionId = (actionId: string) => `action:${actionId}`
 
 /** A route and how the saved choices name it. */
 export interface ZoneRunWithRoute {
@@ -26,7 +25,7 @@ export interface ZoneRunWithPlan {
   readonly routes: readonly ZoneRunWithRoute[]
   /** Saved choices whose runner no route offers (a Stale choice). */
   readonly orphans: readonly { readonly label: string; readonly runnerId: string }[]
-  /** Every focusable id, top to bottom. */
+  /** Every focusable id, top to bottom: a route's row id, or an action's own id. */
   readonly ids: readonly string[]
   /** Every action on the page by its id, to run it. */
   readonly actions: ReadonlyMap<string, SurfaceAction>
@@ -41,8 +40,8 @@ export function runWithPlan(choice: ZoneRunWithOpen): ZoneRunWithPlan {
   const orphans = choice.saved.filter(saved => !choice.routes.some(route => route.runnerId === saved.runnerId))
   const all = [...choice.routes.flatMap(route => route.actions), ...choice.actions]
   const ids = [
-    ...routes.flatMap(entry => [entry.id, ...entry.route.actions.map(action => zoneRunWithActionId(action.id))]),
-    ...choice.actions.map(action => zoneRunWithActionId(action.id)),
+    ...routes.flatMap(entry => [entry.id, ...entry.route.actions.map(action => action.id)]),
+    ...choice.actions.map(action => action.id),
   ]
   return { routes, orphans, ids, actions: new Map(all.map(action => [action.id, action])) }
 }

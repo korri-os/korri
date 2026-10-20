@@ -1,0 +1,16 @@
+/* Tags, row, warnings, actions, one under the next. The tags and the
+ * warnings sit in from the row's slant; the actions take the row's width. */
+.zone-run-with-route {
+  display: grid;
+  row-gap: var(--zone-row-space);
+  min-width: 0;
+}
+
+/* The tag strip takes the note size and only the width its words need. */
+.zone-run-with-route-tags {
+  --zone-tag-row-base: var(--zone-type-note);
+  display: flex;
+  justify-self: start;
+  max-width: 100%;
+  padding-left: var(--zone-slant);
+}

@@ -510,3 +510,17 @@
   /** @label Act ink */
   --zone-act-ink: var(--zone-black);
 }
+
+/* ---- options ---- */
+/* The OPTIONS and RUN WITH pages. Appended by the options worker; the lines
+ * above are untouched. */
+.zone-theme {
+  /** The widest the OPTIONS rows run, centred in the body. @label Options measure @min 320 @max 1600 @step 10 */
+  --zone-options-measure: 960px;
+  /** The room between two OPTIONS groups. @label Options group gap @min 0 @max 60 @step 1 */
+  --zone-options-group-gap: 18px;
+  /** The room over the OPTIONS banner and under it. @label Options head space @min 0 @max 40 @step 1 */
+  --zone-options-head-space: 8px;
+  /** The widest the NO / YES dialog grows over OPTIONS. @label Options dialog width @min 240 @max 1200 @step 10 */
+  --zone-options-dialog-width: 760px;
+}

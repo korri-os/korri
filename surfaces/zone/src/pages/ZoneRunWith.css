@@ -1,0 +1,67 @@
+/* The banner row over the scroll. The scroll gives way; the banner row
+ * wraps its title and tag under the banner before any of them is cut. */
+.zone-run-with {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  row-gap: var(--zone-options-head-space);
+  height: 100%;
+  min-height: 0;
+  padding: var(--zone-options-head-space) var(--zone-strip-margin-min) 0;
+}
+
+.zone-run-with-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--zone-row-space) var(--zone-strip-gap);
+  min-width: 0;
+}
+
+/* The game's title: a readout, so it truncates before the banner does. */
+.zone-run-with-title {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: clamp(var(--zone-type-row-min), 3.2cqi, var(--zone-type-row));
+}
+
+.zone-run-with-state {
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: calc(var(--zone-type-note) * var(--zone-tag-row-height));
+  --zone-tag-type: var(--zone-type-note);
+}
+
+.zone-run-with-scroll {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+
+.zone-run-with-rows {
+  display: grid;
+  row-gap: var(--zone-options-group-gap);
+  width: min(100%, var(--zone-options-measure));
+  margin: 0 auto;
+  padding-bottom: var(--zone-options-group-gap);
+  font-size: clamp(var(--zone-type-row-min), 3.2cqi, var(--zone-type-row));
+}
+
+/* Korri's message: one line of white caps on the ground, wrapped when it is
+ * longer than the column, never cut. */
+.zone-run-with-message {
+  margin: 0;
+  padding: 0 var(--zone-slant);
+  font-size: var(--zone-type-note);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.zone-run-with-actions {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
