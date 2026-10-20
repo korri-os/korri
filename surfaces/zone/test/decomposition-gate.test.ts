@@ -331,6 +331,18 @@ describe("every component has a consumer", () => {
     expect(AWAITING_PAGE.filter((name) => importedNames.has(name))).toEqual([])
   })
 
+  /**
+   * Pages built as shapes before the wire stage mounts them. Each entry is
+   * a decision with a date: when ZoneSurface reaches the page, the entry
+   * goes. An entry the binding already reaches is itself a failure.
+   */
+  const AWAITING_MOUNT: readonly string[] = [
+    // 2026-10-20, the options worker: OPTIONS and RUN WITH take plain props
+    // and report through callbacks; the wire stage mounts them.
+    "ZoneOptions",
+    "ZoneRunWith",
+  ]
+
   test("every page is reached from the surface binding", () => {
     const binding = readFileSync(join(SRC, "ZoneSurface.tsx"), "utf8")
     const pages = componentFiles
@@ -349,7 +361,8 @@ describe("every component has a consumer", () => {
         if (hit) queue.push(readFileSync(hit, "utf8"))
       }
     }
-    expect(pages.filter((p) => !reachable.has(p))).toEqual([])
+    expect(pages.filter((p) => !reachable.has(p) && !AWAITING_MOUNT.includes(p))).toEqual([])
+    expect(AWAITING_MOUNT.filter((p) => reachable.has(p))).toEqual([])
   })
 })
 

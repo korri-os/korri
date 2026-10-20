@@ -1,0 +1,76 @@
+/* The banner over the scroll. The scroll is the one part that gives way,
+ * so the banner stays and the rows run under it. The layers lie over both. */
+.zone-options {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  row-gap: var(--zone-options-head-space);
+  height: 100%;
+  min-height: 0;
+  padding: var(--zone-options-head-space) var(--zone-strip-margin-min) 0;
+}
+
+/* The banner repeats the tab above it, so it is the first thing to give
+ * way: its type follows the body's height, from the tab's size on a tall
+ * body down to a row's least size on a short one. */
+.zone-options-head {
+  --zone-shell-tab-type: clamp(var(--zone-type-row-min), 4cqb, var(--zone-type-tab-wide));
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+/* The groups scroll in a column no wider than the measure, centred, as
+ * Mania's OPTIONS rows sit in the middle of the screen. No scrollbar: a row
+ * cut off at the bottom edge says there is more. */
+.zone-options-scroll {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+  scroll-padding-block: var(--zone-row-height);
+}
+
+.zone-options-groups {
+  display: grid;
+  row-gap: var(--zone-options-group-gap);
+  width: min(100%, var(--zone-options-measure));
+  margin: 0 auto;
+  padding-bottom: var(--zone-options-group-gap);
+}
+
+/* WI-FI lists SSIDs, which are names: its words keep their own case, and
+ * Zone's own words in it are written in caps. */
+.zone-options-group[data-verbatim] {
+  text-transform: none;
+}
+
+/* A layer covers the page body. The keyboard rises from the foot and may
+ * take all of the body's height; the dialog sits in the middle. */
+.zone-options-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  min-height: 0;
+  padding: var(--zone-options-head-space) var(--zone-strip-margin-min);
+}
+
+.zone-options-layer[data-kind="keyboard"] {
+  grid-template-rows: minmax(0, 1fr);
+  align-items: end;
+}
+
+.zone-options-layer[data-kind="dialog"] {
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+}
+
+/* The dialog's box: no wider than the dialog measure, no taller than the body. */
+.zone-options-dialog {
+  display: grid;
+  width: min(100%, var(--zone-options-dialog-width));
+  max-height: 100%;
+  min-height: 0;
+}

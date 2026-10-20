@@ -1,0 +1,31 @@
+/* A run of red lines, each only as wide as its words up to the run's width,
+ * so a short warning is a short slab and a long one wraps inside it. */
+.zone-warning-lines {
+  display: grid;
+  justify-items: start;
+  row-gap: var(--zone-drop-edge);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.zone-warning-line {
+  position: relative;
+  isolation: isolate;
+  max-width: 100%;
+  padding: calc(var(--zone-row-space) / 2) calc(var(--zone-slant) + var(--zone-row-gap));
+  color: var(--zone-problem-ink);
+  font-size: var(--zone-type-note);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  text-shadow: none;
+}
+
+.zone-warning-line::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: polygon(var(--zone-slant) 0, 100% 0, calc(100% - var(--zone-slant)) 100%, 0 100%);
+}

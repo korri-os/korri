@@ -1,0 +1,60 @@
+/* The heading over the keyboard, the keyboard under it. The keyboard is the
+ * part that gives way: it scrolls its keys in a short box, and the heading
+ * and the clear key stay. */
+.zone-options-entry {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  font-size: clamp(var(--zone-type-row-min), 3.2cqi, var(--zone-type-row));
+}
+
+/* The heading and the clear key on one line while they fit; the clear key
+ * drops under the heading before either is cut. They stand on a blue band
+ * that grows out of the keyboard panel's top edge along its slant, so the
+ * entry reads as one panel over the rows. */
+.zone-options-entry-head {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--zone-row-space) var(--zone-row-gap);
+  min-width: 0;
+  padding: var(--zone-keyboard-pad) calc(var(--zone-keyboard-slant) * 2) 0;
+}
+
+.zone-options-entry-head::before {
+  content: "";
+  position: absolute;
+  /* Reaches under the keyboard so no seam shows the rows behind. */
+  inset: 0 0 calc(var(--zone-row-space) * -1);
+  z-index: -1;
+  background: var(--zone-keyboard-panel);
+  clip-path: polygon(calc(var(--zone-keyboard-slant) * 1.4) 0, 100% 0, 100% 100%, var(--zone-keyboard-slant) 100%);
+}
+
+.zone-options-entry-title {
+  display: inline-flex;
+  gap: 0.4em;
+  min-width: 0;
+}
+
+.zone-options-entry-clear {
+  --zone-shell-button-type: var(--zone-type-row-min);
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.zone-options-entry-keys {
+  display: grid;
+  min-height: 0;
+}
+
+/* Korri's reason takes its own line under the heading. */
+.zone-options-entry-problem {
+  flex: 1 0 100%;
+  min-width: 0;
+}

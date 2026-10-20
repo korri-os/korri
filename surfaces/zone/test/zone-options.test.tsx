@@ -1,0 +1,273 @@
+/**
+ * The OPTIONS page, end to end through the fixture host: the real page on
+ * the real update, every request performed on a host that records it.
+ * Asserted by the words on the page and the calls the host received, one
+ * block per capability (C12 to C15, C21 to C23).
+ */
+import { afterEach, describe, expect, test } from "bun:test"
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import { useRef, useSyncExternalStore } from "react"
+import { createFixtureHost, type FixtureHost } from "../src/fixtures/fixture-host"
+import {
+  createOptionsProgram,
+  fixtureNetworkConnecting,
+  fixtureNetworkMany,
+  fixtureNetworkNoAdapter,
+  fixtureNetworkOffline,
+  fixtureNetworkRejected,
+  fixtureNetworkScanning,
+  fixtureNetworkWired,
+  fixtureOptions,
+  fixtureSeatsId,
+  optionsCallbacks,
+  type OptionsProgram,
+  type OptionsScript,
+} from "../src/fixtures/fixture-options"
+import type { ZoneOptionsSlices } from "../src/plan/options"
+import { ZoneOptions } from "../src/pages/ZoneOptions"
+import { performZoneRequest } from "../src/zone-host"
+
+afterEach(cleanup)
+
+let program: OptionsProgram | undefined
+
+function Harness({ korri, script, host }: { korri: ZoneOptionsSlices; script: readonly OptionsScript[]; host: FixtureHost }) {
+  const ref = useRef<OptionsProgram | null>(null)
+  ref.current ??= createOptionsProgram(korri, script, request => performZoneRequest(host, request))
+  program = ref.current
+  const snapshot = useSyncExternalStore(ref.current.subscribe, ref.current.get)
+  return <ZoneOptions korri={snapshot.korri} view={snapshot.state} {...optionsCallbacks(ref.current.dispatch)} />
+}
+
+function mount(korri: ZoneOptionsSlices = fixtureOptions, script: readonly OptionsScript[] = []) {
+  const host = createFixtureHost()
+  render(<Harness host={host} korri={korri} script={script} />)
+  return host
+}
+
+/** The row button that carries a label. */
+const row = (label: string) => {
+  const button = within(screen.getByRole("main")).getByText(label).closest("button")
+  if (button === null) throw new Error(`no row ${label}`)
+  return button
+}
+const key = (entry: HTMLElement, name: string) => within(entry).getByRole("button", { name })
+const typeInto = (entry: HTMLElement, text: string) => {
+  for (const char of text) fireEvent.click(key(entry, char))
+}
+
+describe("C12 groups and items", () => {
+  test("every group by its title, in order, then SYSTEM and WI-FI", () => {
+    mount()
+    const titles = screen.getAllByRole("heading", { level: 2 }).map(heading => heading.textContent)
+    expect(titles).toEqual(["Device", "Controllers", "Metadata", "Games", "System information", "System", "WI-FI"])
+  })
+  test("each item's label and value; the description under the focused row only", () => {
+    mount(fixtureOptions, [{ _tag: "FocusedRow", rowId: "device-name" }])
+    expect(screen.getByText("Name")).toBeTruthy()
+    expect(screen.getByText("mini")).toBeTruthy()
+    expect(screen.getByText("14 games")).toBeTruthy()
+    expect(screen.getByText("What other devices call this one")).toBeTruthy()
+    expect(screen.queryByText("Declared in catalog/library.yaml")).toBeNull()
+  })
+  test("focus follows the host: the row it lands on is the row the page marks", () => {
+    mount()
+    act(() => {
+      fireEvent.focus(row("Player seats"))
+    })
+    expect(program?.get().state.focused).toBe(fixtureSeatsId)
+    expect(row("Player seats").parentElement?.dataset.focused).toBe("true")
+  })
+})
+
+describe("C13 interactions", () => {
+  test("choice: left and right change it at once", () => {
+    const host = mount(fixtureOptions, [{ _tag: "FocusedRow", rowId: fixtureSeatsId }])
+    fireEvent.keyDown(row("Player seats"), { key: "ArrowRight" })
+    expect(host.calls).toEqual([`setting:${fixtureSeatsId}=3`])
+    fireEvent.keyDown(row("Player seats"), { key: "ArrowLeft" })
+    expect(host.calls).toEqual([`setting:${fixtureSeatsId}=3`, `setting:${fixtureSeatsId}=2`])
+  })
+  test("text: A raises the keyboard with the value; DONE commits", () => {
+    const host = mount()
+    fireEvent.click(row("Name"))
+    const entry = screen.getByRole("dialog", { name: "Name" })
+    expect(entry.textContent).toContain("mini")
+    typeInto(entry, "z")
+    fireEvent.click(key(entry, "Done"))
+    expect(host.calls).toEqual(["setting:device-name=miniz"])
+    expect(screen.queryByRole("dialog", { name: "Name" })).toBeNull()
+  })
+  test("text: menu commits, B cancels", () => {
+    const host = mount(fixtureOptions, [{ _tag: "PressedRow", rowId: "device-name" }])
+    act(() => program?.dispatch({ _tag: "PressedBack" }))
+    expect(host.calls).toEqual([])
+    expect(screen.queryByRole("dialog", { name: "Name" })).toBeNull()
+    fireEvent.click(row("Name"))
+    act(() => program?.dispatch({ _tag: "PressedMenu" }))
+    expect(host.calls).toEqual(["setting:device-name=mini"])
+  })
+  test("sensitiveText: dots on the row and in the keyboard, never the value; CLEAR sends empty", () => {
+    const host = mount()
+    expect(screen.queryByText("Configured")).toBeNull()
+    expect(screen.getByText("•".repeat("Configured".length))).toBeTruthy()
+    fireEvent.click(row("SteamGridDB API key"))
+    const entry = screen.getByRole("dialog", { name: "SteamGridDB API key" })
+    typeInto(entry, "ab1")
+    expect(entry.textContent).toContain("•••")
+    expect(entry.textContent).not.toContain("ab1")
+    fireEvent.click(within(entry).getByText("Clear saved key").closest("button")!)
+    expect(host.calls).toEqual(["setting:steamgriddb-credential="])
+  })
+  test("action: fires on A", () => {
+    const host = mount()
+    fireEvent.click(row("Rescan game folders"))
+    expect(host.calls).toEqual(["action:game-folder-rescan"])
+  })
+  test("action with a confirmation: Korri's title, message and label; NO lit and harmless", () => {
+    const host = mount()
+    fireEvent.click(row("/run/media/mini/roms"))
+    const dialog = screen.getByRole("dialog", { name: "Remove game folder?" })
+    expect(dialog.textContent).toContain("Korri will remove games it added from this folder.")
+    const no = within(dialog).getByRole("button", { name: "No" })
+    expect(no.dataset.focused).toBe("true")
+    fireEvent.click(no)
+    expect(host.calls).toEqual([])
+    fireEvent.click(row("/run/media/mini/roms"))
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Remove game folder?" })).getByRole("button", { name: "Remove folder" }))
+    expect(host.calls).toEqual(["action:game-folder-remove:roms"])
+  })
+})
+
+describe("C14 saving and problem", () => {
+  test("Saving: that one row's value is a blinking caret", () => {
+    mount({ ...fixtureOptions, settingsStatus: { _tag: "Saving", settingId: fixtureSeatsId } })
+    const saving = screen.getAllByRole("img", { name: "Saving" })
+    expect(saving).toHaveLength(1)
+    expect(row("Player seats").contains(saving[0]!)).toBe(true)
+  })
+  test("Problem: the message in red under the row, DISMISS dismisses", () => {
+    const host = mount({
+      ...fixtureOptions,
+      settingsStatus: { _tag: "Problem", settingId: "device-name", message: "That name is already used." },
+    })
+    expect(screen.getByRole("alert").textContent).toBe("That name is already used.")
+    fireEvent.click(row("Dismiss"))
+    expect(host.calls).toEqual(["dismissSettingsProblem"])
+    expect(screen.queryByRole("alert")).toBeNull()
+  })
+})
+
+describe("C15 device actions", () => {
+  test("SYSTEM lists Korri's actions; A runs one", () => {
+    const host = mount()
+    const system = screen.getByRole("region", { name: "System" })
+    expect(within(system).getAllByRole("button").map(button => button.textContent))
+      .toEqual(["Allow controllersGo", "Restart KorriGo", "SleepUnavailable", "Power offGo"])
+    fireEvent.click(row("Restart Korri"))
+    expect(host.calls).toEqual(["action:restart-korri"])
+  })
+  test("an inert action is drawn and does nothing", () => {
+    const host = mount()
+    fireEvent.click(row("Sleep"))
+    expect(host.calls).toEqual([])
+  })
+  test("a destructive one asks NO / YES first", () => {
+    const host = mount()
+    fireEvent.click(row("Power off"))
+    const dialog = screen.getByRole("dialog", { name: "Power off" })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Yes" }))
+    expect(host.calls).toEqual(["action:power-off"])
+  })
+  test("system lands on SYSTEM's first row", () => {
+    mount(fixtureOptions, [{ _tag: "FocusSystem" }])
+    expect(row("Allow controllers").parentElement?.dataset.focused).toBe("true")
+  })
+})
+
+describe("C21 connection", () => {
+  test("WI-FI's first row reads the SSID, bars and strength", () => {
+    mount()
+    const wifi = screen.getByRole("region", { name: "WI-FI" })
+    const first = within(wifi).getAllByRole("button")[0]!
+    expect(first.textContent).toBe("CONNECTIONhummingbird-lake ▂▄▆▁ 72%")
+  })
+  test("WIRED and OFFLINE", () => {
+    mount({ ...fixtureOptions, network: fixtureNetworkWired })
+    expect(screen.getByText("WIRED")).toBeTruthy()
+    cleanup()
+    mount({ ...fixtureOptions, network: fixtureNetworkOffline })
+    expect(screen.getAllByText("OFFLINE").length).toBeGreaterThan(0)
+  })
+})
+
+describe("C22 Wi-Fi list", () => {
+  test("SCAN, the networks strongest first with LOCK and KNOWN, then HIDDEN NETWORK", () => {
+    const host = mount({ ...fixtureOptions, network: fixtureNetworkMany })
+    const wifi = screen.getByRole("region", { name: "WI-FI" })
+    const labels = within(wifi).getAllByRole("button").map(button => button.firstChild?.textContent)
+    expect(labels).toEqual([
+      "CONNECTION", "SCAN", "hummingbird-lake", "Attic 5G", "cafe-guest", "NETGEAR-7F3A",
+      "DIRECT-42-HP OfficeJet", "the-very-long-network-name-xyz12", "Living Room TV", "far-away", "HIDDEN NETWORK",
+    ])
+    expect(row("hummingbird-lake").textContent).toContain("LOCK KNOWN")
+    expect(row("cafe-guest").textContent).not.toContain("LOCK")
+    fireEvent.click(row("SCAN"))
+    expect(host.calls).toEqual(["scanWifi"])
+  })
+  test("scanning reads SCANNING…", () => {
+    mount({ ...fixtureOptions, network: fixtureNetworkScanning })
+    expect(screen.getByText("SCANNING…")).toBeTruthy()
+  })
+  test("no adapter: one row NO WI-FI ADAPTER and no SCAN", () => {
+    mount({ ...fixtureOptions, network: fixtureNetworkNoAdapter })
+    expect(screen.getByText("NO WI-FI ADAPTER")).toBeTruthy()
+    expect(screen.queryByText("SCAN")).toBeNull()
+    expect(screen.queryByText("HIDDEN NETWORK")).toBeNull()
+  })
+  test("Connecting: that row's value is the caret, CONNECTING under it", () => {
+    mount({ ...fixtureOptions, network: fixtureNetworkConnecting }, [{ _tag: "FocusedRow", rowId: "zone:wifi:network:ap-attic" }])
+    expect(within(row("Attic 5G")).getByRole("img", { name: "Saving" })).toBeTruthy()
+    expect(screen.getByText("CONNECTING")).toBeTruthy()
+  })
+  test("Failed with the key rejected: the message in red, the keyboard back for that network", () => {
+    const host = mount({ ...fixtureOptions, network: fixtureNetworkConnecting })
+    act(() => program?.publish({ ...fixtureOptions, network: fixtureNetworkRejected }))
+    expect(screen.getAllByText("The password for Attic 5G was not accepted.").length).toBe(2)
+    const entry = screen.getByRole("dialog", { name: "Password" })
+    expect(entry.textContent).toContain("Attic 5G")
+    typeInto(entry, "k2")
+    fireEvent.click(key(entry, "Done"))
+    expect(host.calls).toEqual(["connectWifi:ap-attic:password"])
+  })
+})
+
+describe("C23 join", () => {
+  test("an open or known network joins on A", () => {
+    const host = mount({ ...fixtureOptions, network: fixtureNetworkOffline })
+    fireEvent.click(row("cafe-guest"))
+    fireEvent.click(row("hummingbird-lake"))
+    expect(host.calls).toEqual(["connectWifi:ap-cafe"])
+  })
+  test("a secured network Korri does not know asks its password in secret", () => {
+    const host = mount()
+    fireEvent.click(row("Attic 5G"))
+    const entry = screen.getByRole("dialog", { name: "Password" })
+    typeInto(entry, "tide")
+    expect(entry.textContent).not.toContain("tide")
+    fireEvent.click(key(entry, "Done"))
+    expect(host.calls).toEqual(["connectWifi:ap-attic:password"])
+  })
+  test("HIDDEN NETWORK asks the name, then the password, empty allowed", () => {
+    const host = mount()
+    fireEvent.click(row("HIDDEN NETWORK"))
+    const name = screen.getByRole("dialog", { name: "Network name" })
+    typeInto(name, "attic")
+    expect(name.textContent).toContain("attic")
+    fireEvent.click(key(name, "Done"))
+    const password = screen.getByRole("dialog", { name: "Password" })
+    expect(password.textContent).toContain("attic")
+    fireEvent.click(key(password, "Done"))
+    expect(host.calls).toEqual(["connectHiddenWifi:attic"])
+  })
+})
