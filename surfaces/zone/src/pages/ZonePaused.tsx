@@ -5,14 +5,13 @@ import type {
   SurfaceGameplayOverlayPresentation,
 } from "@contracts/surface/korri-surface"
 import { useRef } from "react"
-import { ZONE_PAUSED_STEPS_MOST, zonePausedStep } from "../plan/paused"
+import { zonePausedStairs, zonePausedStep } from "../plan/paused"
 import { useZoneFit } from "../use-zone-fit"
 import { useZoneLayerFocus } from "../use-zone-layer-focus"
 import { useZonePausedPlan } from "../use-zone-paused-plan"
 import { useZoneStairClip } from "../use-zone-stair-clip"
-import { ZoneCaps } from "../ui/atoms/ZoneCaps"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
-import { ZonePanel } from "../ui/atoms/ZonePanel"
+import { ZoneSlab } from "../ui/atoms/ZoneSlab"
 import { ZoneVeil } from "../ui/atoms/ZoneVeil"
 import { ZoneWords } from "../ui/atoms/ZoneWords"
 import { ZoneDialog } from "../ui/molecules/ZoneDialog"
@@ -90,11 +89,9 @@ export function ZonePaused({
   const question = useRef<HTMLDivElement | null>(null)
   const heading = useRef<HTMLHeadingElement | null>(null)
   const band = useRef<HTMLElement | null>(null)
-  const slab = useRef<HTMLSpanElement | null>(null)
   const rows = useRef<HTMLDivElement | null>(null)
   useZonePausedPlan(page)
   useZoneStairClip(band, { left: "straight" })
-  useZoneStairClip(slab)
   useZoneLayerFocus(wedge, asking === undefined ? focusedId : undefined)
   useZoneLayerFocus(question, asking === undefined ? undefined : `answer:${answer}`)
 
@@ -105,10 +102,14 @@ export function ZonePaused({
   const asked = asking === undefined ? undefined : all.find(control => control.id === asking.controlId)
 
   // Each row and each group's tag takes the next step down the stair.
-  let place = 0
-  const nextStep = () => zonePausedStep(place++)
   const items = overlay.controls.length + overlay.groups.reduce((sum, group) => sum + 1 + group.controls.length, 0)
-  const stairs = Math.min(ZONE_PAUSED_STEPS_MOST, Math.max(0, items - 1))
+  const stairs = zonePausedStairs(items)
+  let place = 0
+  const nextStep = () => {
+    const step = zonePausedStep(place, items)
+    place += 1
+    return step
+  }
 
   const row = (control: SurfaceGameplayControl) => (
     <ZonePausedControl
@@ -136,7 +137,7 @@ export function ZonePaused({
       </div>
       <header className="zone-paused-band" ref={band}>
         <h1 className="zone-paused-title" ref={heading}>
-          <span aria-hidden="true" className="zone-paused-title-slab" ref={slab} />
+          <ZoneSlab />
           <span className="zone-paused-title-text">
             <ZoneWords>{title}</ZoneWords>
           </span>
@@ -149,9 +150,10 @@ export function ZonePaused({
             {overlay.groups.map(group => (
               <section aria-label={group.label} className="zone-paused-group" key={group.id}>
                 <h2 className="zone-paused-group-label" data-step={nextStep()}>
-                  <ZonePanel edge={false} tone="blue">
-                    <ZoneCaps size="caps-1">{group.label}</ZoneCaps>
-                  </ZonePanel>
+                  <span className="zone-paused-group-tag">
+                    <ZoneSlab />
+                    <ZoneWords>{group.label}</ZoneWords>
+                  </span>
                 </h2>
                 {group.controls.map(row)}
               </section>

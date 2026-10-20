@@ -1,0 +1,20 @@
+/* Behind the words, in the box of its positioned parent, from
+ * --zone-slab-top down. Its body is the stair polygon; the pink drop sits
+ * under the body, in the slab's own stacking context. */
+.zone-slab {
+  position: absolute;
+  inset: var(--zone-slab-top, 0%) 0 0 0;
+  z-index: -1;
+  isolation: isolate;
+  display: block;
+  pointer-events: none;
+}
+
+.zone-slab::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-slab-colour, var(--zone-panel));
+  clip-path: var(--zone-panel-shape, polygon(1em 0, 100% 0, calc(100% - 1em) 100%, 0 100%));
+}

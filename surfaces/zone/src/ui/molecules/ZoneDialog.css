@@ -6,7 +6,7 @@
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template: auto minmax(0, 1fr) auto / minmax(0, 1fr);
   justify-items: center;
   row-gap: var(--zone-dialog-space);
   width: 100%;
@@ -16,6 +16,16 @@
   background: var(--zone-dialog-panel);
   color: var(--zone-cap);
   text-align: center;
+}
+
+/* A line as wide as the panel and no height: the fit watches it, since the
+ * panel's own height moves as its type steps. */
+.zone-dialog-ruler {
+  position: absolute;
+  inset: 0 0 auto;
+  display: block;
+  height: 0;
+  pointer-events: none;
 }
 
 /* The two black wedges, each a right-angled stair in its corner of the
@@ -97,13 +107,17 @@
 }
 
 /* NO and YES, or Korri's actions: one row at caps-2, then caps-1, and only
- * then a second row; no button ever shrinks under its words. */
+ * then a second row; no button ever shrinks under its words. The row keeps
+ * clear of the bottom-right wedge where it crosses the row's foot, so no
+ * black slab stands on black. */
 .zone-dialog-actions {
+  --zone-dialog-actions-clear: calc((var(--zone-dialog-pad-block) + var(--zone-drop-focus)) * var(--zone-px));
   display: flex;
   flex-wrap: nowrap;
   justify-content: center;
   gap: var(--zone-dialog-space) calc(var(--zone-dialog-button-gap) * var(--zone-px));
   max-width: 100%;
+  margin-right: max(0%, var(--zone-dialog-wedge-leg, 0%) - var(--zone-dialog-actions-clear));
   padding-bottom: calc(var(--zone-drop-focus) * var(--zone-px));
   font-size: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
 }
@@ -112,11 +126,17 @@
   flex-wrap: wrap;
 }
 
-/* A button: its black slab (ZonePanel) as wide as the button, the lit one
- * on the pink drop, 3 art px deep. */
+/* A button: its black slab (ZoneSlab) as big as the button, leaning as far
+ * as it is tall, the lit one on the pink drop, 3 art px deep. */
 .zone-dialog-action {
+  --zone-dialog-action-pad: calc(var(--zone-slab-pad) * var(--zone-px));
+  position: relative;
+  isolation: isolate;
   display: grid;
+  place-items: center;
   flex: 0 0 auto;
+  padding: var(--zone-dialog-action-pad) calc(1em + var(--zone-dialog-action-pad) * 2 + calc(var(--zone-panel-pad) * var(--zone-px)));
+  line-height: 1;
   min-width: min(calc(var(--zone-dialog-button-width) * var(--zone-px)), 100%);
   max-width: 100%;
   --zone-underline-depth: var(--zone-drop-focus);
@@ -127,9 +147,11 @@
   translate: calc(var(--zone-press-sink) * var(--zone-px)) calc(var(--zone-press-sink) * var(--zone-px));
 }
 
-/* Present but inert: Korri's rule is dimmed, never hidden. */
+/* Present but inert: Korri's rule is drawn in the inert grey-blue, never
+ * hidden and never see-through. */
 .zone-dialog-action:disabled {
-  opacity: var(--zone-triangle-dim);
+  color: var(--zone-inert-ink);
+  --zone-caps-shade: currentColor;
 }
 
 /* M4's closing copy (useZoneDialogMotion): pinned where the dialog stood,

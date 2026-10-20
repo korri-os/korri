@@ -38,6 +38,7 @@
   height: 100%;
   object-fit: cover;
   filter: grayscale(1);
+  image-rendering: pixelated;
 }
 
 /* The red band across the top-left, its right end a 45 degree stair. It
@@ -60,19 +61,20 @@
 }
 
 /* The title: caps-3, stepping to caps-2 then caps-1 when the band is too
- * narrow, and only then wrapping between words. Its black slab starts 4 art
- * px under the lettering's top, so the caps rise over it, and leans as far
- * as it is tall. */
+ * narrow, and only then wrapping between words. Its black slab (ZoneSlab)
+ * starts 4 art px under the cap's top (the cap stands from 0.2 of its 1.4
+ * line), so the caps rise over it, and leans as far as it is tall. */
 .zone-paused-title {
   --zone-paused-overhang-at: calc(var(--zone-paused-overhang) * var(--zone-px));
   --zone-paused-slab-foot-at: calc(var(--zone-paused-slab-foot) * var(--zone-px));
+  --zone-slab-top: calc(0.2em + var(--zone-paused-overhang-at));
   position: relative;
   isolation: isolate;
   display: flex;
   min-width: 0;
   max-width: 100%;
-  margin: var(--zone-paused-overhang-at) 0 0;
-  padding: 0 calc(1em - var(--zone-paused-overhang-at) + var(--zone-paused-slab-foot-at) + calc(var(--zone-panel-pad) * var(--zone-px))) var(--zone-paused-slab-foot-at);
+  margin: 0;
+  padding: 0 calc(1.2em - var(--zone-paused-overhang-at) + var(--zone-paused-slab-foot-at) + calc(var(--zone-panel-pad) * var(--zone-px))) var(--zone-paused-slab-foot-at);
   font: inherit;
   font-size: calc(var(--zone-caps-3) * var(--zone-px) * var(--zone-fit, 1));
   line-height: 1;
@@ -81,15 +83,6 @@
 
 .zone-paused-title[data-zone-fit-floor] {
   white-space: normal;
-}
-
-.zone-paused-title-slab {
-  position: absolute;
-  inset: var(--zone-paused-overhang-at) 0 0 0;
-  z-index: -1;
-  display: block;
-  background: var(--zone-panel);
-  clip-path: var(--zone-panel-shape, polygon(1em 0, 100% 0, calc(100% - 1em) 100%, 0 100%));
 }
 
 .zone-paused-title-text {
@@ -116,21 +109,18 @@
 
 /* The rows' column: under the band, from planPaused's left to the right
  * margin, resting at the bottom when few and scrolling when many. A row
- * scrolled up passes under the band; the focused one is always brought
- * out below it. */
+ * scrolled up is cut on one straight line under the band, so the cut row
+ * says there is more; the focused one is always brought into view. */
 .zone-paused-list {
   position: absolute;
-  inset: 0 0 0 var(--zone-paused-rows-left, 40cqi);
+  inset: calc(var(--zone-paused-band-at) + var(--zone-paused-margin)) 0 0 var(--zone-paused-rows-left, 40cqi);
   display: flex;
   flex-direction: column;
-  padding:
-    calc(var(--zone-paused-band-at) + var(--zone-paused-margin))
-    var(--zone-paused-margin)
-    calc(var(--zone-paused-margin) + calc(var(--zone-drop-focus) * var(--zone-px)));
+  padding: 0 var(--zone-paused-margin) calc(var(--zone-paused-margin) + calc(var(--zone-drop-focus) * var(--zone-px)));
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
-  scroll-padding: calc(var(--zone-paused-band-at) + var(--zone-paused-margin)) 0 var(--zone-paused-margin);
+  scroll-padding: 0 0 var(--zone-paused-margin);
 }
 
 /* The rows at caps-2, a whole step smaller together when the column is
@@ -195,6 +185,22 @@
 
 .zone-paused-group-label[data-step="4"] {
   --zone-paused-step: 4;
+}
+
+/* The tag: Korri's word in caps-1 on a blue slab, wrapping between words
+ * rather than losing any. */
+.zone-paused-group-tag {
+  --zone-slab-colour: var(--zone-panel-blue);
+  --zone-paused-tag-pad: calc(var(--zone-slab-pad) * var(--zone-px));
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--zone-paused-tag-pad) calc(1em + var(--zone-paused-tag-pad) * 2 + calc(var(--zone-panel-pad) * var(--zone-px)));
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+  line-height: 1;
+  white-space: normal;
 }
 
 /* B BACK, bottom-left over the grey. */

@@ -4,8 +4,7 @@ import { useZoneDialogMotion } from "../../use-zone-dialog-motion"
 import { useZoneDialogShape } from "../../use-zone-dialog-shape"
 import { useZoneFit } from "../../use-zone-fit"
 import { ZoneCaps } from "../atoms/ZoneCaps"
-import { ZonePanel } from "../atoms/ZonePanel"
-import { ZoneUnderline } from "../atoms/ZoneUnderline"
+import { ZoneSlab } from "../atoms/ZoneSlab"
 import { ZoneWords } from "../atoms/ZoneWords"
 
 export interface ZoneDialogAction {
@@ -65,13 +64,15 @@ export function ZoneDialog({
   readonly onFocusAction?: (index: number) => void
 }) {
   const panel = useRef<HTMLElement | null>(null)
+  const ruler = useRef<HTMLElement | null>(null)
   const head = useRef<HTMLHeadingElement | null>(null)
   const row = useRef<HTMLDivElement | null>(null)
   useZoneDialogShape(panel)
   useZoneDialogMotion(panel)
-  useZoneFit(panel, [head, row], `${headline}|${actions.map(action => action.label).join("|")}`)
+  useZoneFit(ruler, [head, row], `${headline}|${actions.map(action => action.label).join("|")}`)
   return (
     <section aria-label={headline} className="zone-dialog" ref={panel} role="dialog">
+      <i aria-hidden="true" className="zone-dialog-ruler" ref={ruler} />
       <span className="zone-dialog-wedge" data-wedge="start" />
       <span className="zone-dialog-wedge" data-wedge="end" />
       <h2 className="zone-dialog-headline" ref={head}>
@@ -101,10 +102,8 @@ export function ZoneDialog({
             onFocus={onFocusAction === undefined ? undefined : () => onFocusAction(index)}
             type="button"
           >
-            <ZonePanel edge={false}>
-              <ZoneCaps ink={action.destructive ? "danger" : "white"}>{action.label}</ZoneCaps>
-              {index === focused && !action.disabled ? <ZoneUnderline /> : null}
-            </ZonePanel>
+            <ZoneSlab lit={index === focused && !action.disabled} />
+            <ZoneCaps ink={action.destructive && !action.disabled ? "danger" : "white"}>{action.label}</ZoneCaps>
           </button>
         ))}
       </div>

@@ -4,8 +4,8 @@ import { useEffect, useLayoutEffect, useRef } from "react"
 import { useZoneHorizontal } from "../../use-zone-horizontal"
 import { useZoneStairClip } from "../../use-zone-stair-clip"
 import { ZoneCaps } from "../atoms/ZoneCaps"
+import { ZoneSlab } from "../atoms/ZoneSlab"
 import { ZoneTriangle } from "../atoms/ZoneTriangle"
-import { ZoneUnderline } from "../atoms/ZoneUnderline"
 import { ZoneWords } from "../atoms/ZoneWords"
 
 /** A range's value as a number to the step's precision. */
@@ -59,14 +59,12 @@ export function ZonePausedControl({
   readonly onStep?: (direction: -1 | 1) => void
 }) {
   const button = useRef<HTMLButtonElement | null>(null)
-  const slab = useRef<HTMLSpanElement | null>(null)
   const meter = useRef<HTMLSpanElement | null>(null)
   const fill = useRef<HTMLElement | null>(null)
   const interaction = control.interaction
   const steps = interaction.kind !== "command" && control.enabled
 
   const horizontal = useZoneHorizontal(button, steps, interaction.kind, onStep)
-  useZoneStairClip(slab)
   useZoneStairClip(meter)
   useZoneStairClip(fill, { left: "straight" })
 
@@ -107,12 +105,10 @@ export function ZonePausedControl({
         ref={button}
         type="button"
       >
-        <span aria-hidden="true" className="zone-paused-control-slab" ref={slab}>
-          {focused ? <ZoneUnderline /> : null}
-        </span>
+        <ZoneSlab lit={focused} />
         <span className="zone-paused-control-face">
           <span className="zone-paused-control-label">
-            <ZoneWords ink={control.destructive ? "danger" : "white"}>{control.label}</ZoneWords>
+            <ZoneWords ink={control.destructive && control.enabled ? "danger" : "white"}>{control.label}</ZoneWords>
           </span>
           {shown === undefined ? null : (
             <span className="zone-paused-control-value" data-moving={moving || undefined}>

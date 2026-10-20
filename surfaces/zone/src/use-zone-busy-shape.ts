@@ -1,8 +1,7 @@
 /**
  * Cut the busy strip's panel on the art grid: measure its height in art px
  * and write the chamfer polygon (`zoneStairChamfer`) as
- * `--zone-busy-strip-shape` and the cut's depth as `--zone-busy-strip-cut`
- * on the panel.
+ * `--zone-busy-strip-shape` on the panel.
  *
  * The panel's height comes from Korri's words, so its stairs can only be
  * counted once it is laid out: a DOM mechanic, as useZoneStairClip's is.
@@ -11,7 +10,7 @@
  * panel itself cannot loop.
  */
 import { useLayoutEffect, type RefObject } from "react"
-import { zoneBusyCut, zoneStairChamfer } from "./plan/busy-strip"
+import { zoneBusyCut, zoneStairChamfer } from "./plan/slab"
 import { zoneArtPxOf } from "./use-zone-plan"
 
 export function useZoneBusyShape(panel: RefObject<HTMLElement | null>): void {
@@ -21,9 +20,7 @@ export function useZoneBusyShape(panel: RefObject<HTMLElement | null>): void {
     const apply = (height: number) => {
       if (!(height > 0)) return
       const hArt = Math.round(height / zoneArtPxOf(element))
-      const cut = zoneBusyCut(hArt)
-      element.style.setProperty("--zone-busy-strip-shape", zoneStairChamfer(hArt, cut))
-      element.style.setProperty("--zone-busy-strip-cut", `calc(${cut} * var(--zone-px))`)
+      element.style.setProperty("--zone-busy-strip-shape", zoneStairChamfer(hArt, zoneBusyCut(hArt)))
     }
     apply(element.offsetHeight)
     if (typeof ResizeObserver === "undefined") return

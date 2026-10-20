@@ -879,6 +879,10 @@
   /** The dither's tile: 2 art px, one black pixel in each row and column. Art px. @label Veil tile @min 2 @max 2 @step 2 */
   --zone-veil-tile: 2;
 
+  /* The slab behind a control's words (ZoneSlab). */
+  /** The room above and below a slab's caps. Art px. @label Slab padding @min 0 @max 12 @step 1 */
+  --zone-slab-pad: 4;
+
   /* The sky dialog. */
   /** The room above and below the dialog's words. Art px. @label Dialog padding, block @min 0 @max 40 @step 1 */
   --zone-dialog-pad-block: 12;
@@ -894,8 +898,8 @@
   --zone-dialog-line-ink: var(--zone-white);
 
   /* The busy strip. */
-  /** The corner cut before the strip is measured. Art px. @label Busy cut, unmeasured @min 0 @max 40 @step 1 */
-  --zone-busy-cut-least: 22;
+  /** The deepest corner cut, which the words stand clear of (plan: ZONE_BUSY_CUT). Art px. @label Busy cut @min 22 @max 22 @step 1 */
+  --zone-busy-cut: 22;
   /** The room between the kicker, the detail and the meter. Art px. @label Busy gap @min 0 @max 16 @step 1 */
   --zone-busy-gap: 4;
   /** The panel's least width before the actions drop under it. Art px. @label Busy panel, least @min 60 @max 300 @step 1 */
@@ -928,6 +932,8 @@
   --zone-paused-meter-rows: 6;
   /** One square of the grey checker. Art px. @label Paused checker @min 4 @max 32 @step 1 */
   --zone-paused-checker: 16;
+  /** An inert control's words (a disabled row, button or action): the grey-blue of Mania's OPTIONS rings, never an opacity. @label Inert ink */
+  --zone-inert-ink: #84a2b5;
   /** @label Paused checker, dark */
   --zone-paused-checker-dark: var(--zone-grey-dark);
   /** @label Paused checker, light */

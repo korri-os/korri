@@ -2,25 +2,37 @@
  * the actions keep their size and, once their caps have stepped down to
  * caps-1, wrap under it when the strip is narrower than both. */
 .zone-busy-strip {
+  position: relative;
   display: flex;
   flex-wrap: nowrap;
   align-items: stretch;
   gap: calc(var(--zone-strip-gap) * var(--zone-px));
   width: 100%;
   color: var(--zone-cap);
-  font-size: calc(var(--zone-caps-2) * var(--zone-px));
+  font-size: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
 }
 
-.zone-busy-strip:has(> .zone-busy-strip-actions[data-zone-fit-floor]) {
+/* A line as wide as the strip and no height: the fit watches it, since the
+ * strip's own height moves as its type steps. */
+.zone-busy-strip-ruler {
+  position: absolute;
+  inset: 0 0 auto;
+  display: block;
+  height: 0;
+  pointer-events: none;
+}
+
+.zone-busy-strip[data-zone-fit-floor] {
   flex-wrap: wrap;
 }
 
 /* The black panel: kicker over detail over meter, left-aligned. Its
  * top-left and bottom-right corners are cut on the art grid
- * (useZoneBusyShape); the kicker stands clear of the first cut and the
- * meter of the second. */
+ * (useZoneBusyShape), never deeper than --zone-busy-cut; the kicker stands
+ * clear of the first cut and the meter of the second by that depth, so the
+ * words never move when the panel is measured. */
 .zone-busy-strip-panel {
-  --zone-busy-strip-cut-at: var(--zone-busy-strip-cut, calc(var(--zone-busy-cut-least) * var(--zone-px)));
+  --zone-busy-strip-cut-at: calc(var(--zone-busy-cut) * var(--zone-px));
   position: relative;
   isolation: isolate;
   display: flex;
@@ -48,12 +60,11 @@
 .zone-busy-strip-kicker {
   display: block;
   margin-left: var(--zone-busy-strip-cut-at);
-  font-size: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
   line-height: 1;
   white-space: nowrap;
 }
 
-.zone-busy-strip-kicker[data-zone-fit-floor] {
+.zone-busy-strip[data-zone-fit-floor] .zone-busy-strip-kicker {
   white-space: normal;
 }
 
@@ -80,17 +91,24 @@
   gap: calc(var(--zone-strip-gap) * var(--zone-px));
   max-width: 100%;
   padding-bottom: calc(var(--zone-drop-focus) * var(--zone-px));
-  font-size: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
 }
 
-.zone-busy-strip-actions[data-zone-fit-floor] {
+.zone-busy-strip[data-zone-fit-floor] .zone-busy-strip-actions {
   flex-wrap: wrap;
   margin-left: auto;
 }
 
+/* A button: its black slab (ZoneSlab) leaning as far as it is tall, the
+ * lit one on the pink drop. */
 .zone-busy-strip-action {
+  --zone-busy-strip-action-pad: calc(var(--zone-slab-pad) * var(--zone-px));
+  position: relative;
+  isolation: isolate;
   display: grid;
+  place-items: center;
   flex: 0 0 auto;
+  padding: var(--zone-busy-strip-action-pad) calc(1em + var(--zone-busy-strip-action-pad) * 2 + calc(var(--zone-panel-pad) * var(--zone-px)));
+  line-height: 1;
   --zone-underline-depth: var(--zone-drop-focus);
   transition: translate var(--zone-press-time) var(--zone-bounce);
 }
@@ -99,9 +117,11 @@
   translate: calc(var(--zone-press-sink) * var(--zone-px)) calc(var(--zone-press-sink) * var(--zone-px));
 }
 
-/* Present but inert: Korri's rule is dimmed, never hidden. */
+/* Present but inert: Korri's rule is drawn in the inert grey-blue, never
+ * hidden and never see-through. */
 .zone-busy-strip-action:disabled {
-  opacity: var(--zone-triangle-dim);
+  color: var(--zone-inert-ink);
+  --zone-caps-shade: currentColor;
 }
 
 /* Korri's progress: SPECIAL STAGE's bar under the detail, the sizes at

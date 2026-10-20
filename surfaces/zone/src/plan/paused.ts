@@ -13,8 +13,10 @@
  *  - The rows' column: from a little inside the wedge's bottom-left corner
  *    to the right margin, at least ROWS_LEAST wide (all of a narrow page).
  *  - The steps: each row stands one cap further left than the row above
- *    it, up to STEPS_MOST steps; rows past that stand in line with the
- *    last step, so a long list never walks off the page.
+ *    it, down to the last row, over at most STEPS_MOST steps; a longer
+ *    list's upper rows stand in line with the top step, so the stair is
+ *    always the list's foot (where a short list rests) and a long list
+ *    never walks off the page.
  *
  * Thresholds are named constants in art px, guesses until measured on a
  * device (each is tested one art px either side).
@@ -31,7 +33,7 @@ export const ZONE_PAUSED_BAND_MOST = 72
 export const ZONE_PAUSED_WEDGE_TOP = 8
 
 /** How far inside the wedge's bottom-left corner the rows' column starts. */
-export const ZONE_PAUSED_ROWS_INSET = 24
+export const ZONE_PAUSED_ROWS_INSET = 8
 /** The rows' column is never narrower than this (or the page, when it is narrower). */
 export const ZONE_PAUSED_ROWS_LEAST = 200
 
@@ -59,10 +61,17 @@ export function planPaused(wArt: number, hArt: number): ZonePausedPlan {
   return { bandArt, wedgeArt, rowsLeftArt }
 }
 
+/** How many steps a list of `count` rows takes: one fewer than its rows, at most STEPS_MOST. */
+export function zonePausedStairs(count: number): number {
+  return clamp(Math.floor(count) - 1, 0, ZONE_PAUSED_STEPS_MOST)
+}
+
 /**
- * A row's step down-left: how many rows stand above it in the list,
- * held at the last step.
+ * The step down-left of row `index` (0 at the top) in a list of `count`:
+ * the last row stands on the last step, each row above it one step less,
+ * none less than 0.
  */
-export function zonePausedStep(index: number): number {
-  return clamp(Math.floor(index), 0, ZONE_PAUSED_STEPS_MOST)
+export function zonePausedStep(index: number, count: number): number {
+  const stairs = zonePausedStairs(count)
+  return clamp(stairs - (Math.floor(count) - 1 - Math.floor(index)), 0, stairs)
 }

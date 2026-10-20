@@ -27,7 +27,7 @@
 /** A wedge's leg as a share of the panel's height... */
 export const ZONE_DIALOG_WEDGE_SHARE = 0.78
 /** ...and never more than this share of its width. */
-export const ZONE_DIALOG_WEDGE_WIDTH_SHARE = 0.4
+export const ZONE_DIALOG_WEDGE_WIDTH_SHARE = 0.25
 
 /** Each wedge's leg, whole art px, for a panel wArt by hArt. */
 export function zoneDialogWedgeArt(wArt: number, hArt: number): number {

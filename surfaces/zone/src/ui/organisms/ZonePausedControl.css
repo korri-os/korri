@@ -28,9 +28,15 @@
   --zone-paused-step: 4;
 }
 
-/* The whole row is one focus stop. Its lettering's top is the button's
- * top; the slab starts 4 art px lower, so the caps rise over its edge. */
+/* The whole row is one focus stop. Its label's line is 1.4 caps with the
+ * cap from 0.2; the black slab (ZoneSlab) starts 4 art px under the cap's
+ * top, so the caps rise over its edge, and runs to the slab's foot under
+ * the line. It leans as far as it is tall, and the row leaves that room
+ * either side of its words. */
 .zone-paused-control-button {
+  --zone-paused-overhang-at: calc(var(--zone-paused-overhang) * var(--zone-px));
+  --zone-paused-slab-foot-at: calc(var(--zone-paused-slab-foot) * var(--zone-px));
+  --zone-slab-top: calc(0.2em + var(--zone-paused-overhang-at));
   position: relative;
   isolation: isolate;
   display: grid;
@@ -38,37 +44,15 @@
   min-width: 0;
   padding:
     0
-    calc(1em - var(--zone-paused-overhang-at) + var(--zone-paused-slab-foot-at) + calc(var(--zone-panel-pad) * var(--zone-px)))
+    calc(1.2em - var(--zone-paused-overhang-at) + var(--zone-paused-slab-foot-at) + calc(var(--zone-panel-pad) * var(--zone-px)))
     var(--zone-paused-slab-foot-at);
   text-align: left;
-  --zone-paused-overhang-at: calc(var(--zone-paused-overhang) * var(--zone-px));
-  --zone-paused-slab-foot-at: calc(var(--zone-paused-slab-foot) * var(--zone-px));
   --zone-underline-depth: var(--zone-drop-focus);
   transition: translate var(--zone-press-time) var(--zone-bounce);
 }
 
 .zone-paused-control-button:active {
   translate: calc(var(--zone-press-sink) * var(--zone-px)) calc(var(--zone-press-sink) * var(--zone-px));
-}
-
-/* The black slab under the lettering, a 45 degree parallelogram cut on the
- * art grid (useZoneStairClip writes its shape); the pink drop under it when
- * focused. */
-.zone-paused-control-slab {
-  position: absolute;
-  inset: var(--zone-paused-overhang-at) 0 0 0;
-  z-index: -1;
-  isolation: isolate;
-  display: block;
-}
-
-.zone-paused-control-slab::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--zone-panel);
-  clip-path: var(--zone-panel-shape, polygon(1em 0, 100% 0, calc(100% - 1em) 100%, 0 100%));
 }
 
 /* Label left, value right. The label keeps a few letters' room and wraps
@@ -84,9 +68,11 @@
   line-height: 1;
 }
 
+/* The label never shrinks under its own words: while the rows stand on
+ * one line each, a label that does not fit overflows its row, so the fit
+ * steps the caps down; at caps-1 it wraps between words instead. */
 .zone-paused-control-label {
   flex: 1 1 var(--zone-paused-label-least);
-  min-width: 0;
   white-space: var(--zone-paused-label-wrap, nowrap);
 }
 
@@ -149,9 +135,11 @@
   transition: width var(--zone-press-time) var(--zone-bounce);
 }
 
-/* Disabled: the row dims and stays where it was. */
+/* Disabled: the words turn to the inert grey-blue and the row stays where
+ * it was. No opacity: nothing on the wedge blends. */
 .zone-paused-control[data-disabled] .zone-paused-control-button {
-  opacity: var(--zone-disabled-opacity);
+  color: var(--zone-inert-ink);
+  --zone-caps-shade: currentColor;
 }
 
 /* Korri's words under the row, why it is disabled or what it does: Jersey

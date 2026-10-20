@@ -1,23 +1,28 @@
 /**
- * The busy strip's panel on the art grid (REFINEMENT.md, 4 "Busy with
- * progress"): a black panel whose top-left and bottom-right corners are cut
- * by 45 degree stairs, one step per art px, as the sky dialog's wedges cut
- * the same corners.
+ * Slabs that grow taller than one line, on the art grid: a black panel
+ * whose top-left and bottom-right corners are cut by 45 degree stairs, one
+ * step per art px, as the sky dialog's wedges cut the same corners.
  *
- * Mania's panels lean as far as they are tall. A strip of one line does
+ * Mania's panels lean as far as they are tall. A slab of one line does
  * exactly that: its cut is its height, so it is the parallelogram every
- * other panel is. A strip that grows with Korri's detail and its meter
- * keeps the cut at one kicker line (ZONE_BUSY_CUT), so the lean never eats
- * the width the words need; the panel is then a slab with its two leading
- * corners cut, never a wider and wider rhombus.
+ * other panel is. A slab that grows with more lines (the busy strip with
+ * Korri's detail and meter, a PAUSED row whose label wraps) keeps the cut
+ * at one line, so the lean never eats the width the words need: the slab
+ * is then a panel with its two leading corners cut, never a wider and
+ * wider rhombus.
  */
 
-/** The deepest corner cut, art px: about one caps-2 kicker line. */
+/** The busy strip's deepest corner cut, art px: about one caps-2 kicker line. */
 export const ZONE_BUSY_CUT = 22
 
-/** The cut for a panel `hArt` tall: its height (a parallelogram) up to ZONE_BUSY_CUT. */
+/** The cut for a slab `hArt` tall whose line is `lineArt`: its height (a parallelogram) up to one line. */
+export function zoneSlabCut(hArt: number, lineArt: number): number {
+  return Math.max(0, Math.min(Math.round(lineArt), Math.round(hArt)))
+}
+
+/** The busy strip's cut for a panel `hArt` tall. */
 export function zoneBusyCut(hArt: number): number {
-  return Math.max(0, Math.min(ZONE_BUSY_CUT, Math.round(hArt)))
+  return zoneSlabCut(hArt, ZONE_BUSY_CUT)
 }
 
 const near = (art: number): string => (art === 0 ? "0" : `calc(${art} * var(--zone-px))`)

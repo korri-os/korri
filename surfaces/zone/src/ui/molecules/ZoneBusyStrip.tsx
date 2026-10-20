@@ -7,8 +7,7 @@ import { useZoneBusyShape } from "../../use-zone-busy-shape"
 import { useZoneFit } from "../../use-zone-fit"
 import { useZoneStairClip } from "../../use-zone-stair-clip"
 import { ZoneCaps } from "../atoms/ZoneCaps"
-import { ZonePanel } from "../atoms/ZonePanel"
-import { ZoneUnderline } from "../atoms/ZoneUnderline"
+import { ZoneSlab } from "../atoms/ZoneSlab"
 import { ZoneWords } from "../atoms/ZoneWords"
 
 /**
@@ -22,8 +21,8 @@ import { ZoneWords } from "../atoms/ZoneWords"
  * too, so cancellation is never inferred from a label. A disabled action
  * stays, dimmed; a destructive one is in the danger ink. Type steps, never
  * shrinks: the kicker and the actions stand at caps-2 and step to caps-1
- * when the strip is narrow; only then does the kicker wrap between words
- * and the actions drop under the panel.
+ * together when the strip is narrow; only then does the kicker wrap
+ * between words and the actions drop under the panel.
  *
  * With Korri's `progress` (C32) a meter stands under the detail: SPECIAL
  * STAGE's bar, 4 art px tall with 45 degree stair ends, a red fill under a
@@ -59,17 +58,16 @@ export function ZoneBusyStrip({
   /** The host's cursor arrived on an action: its index, left to right. */
   readonly onFocusAction?: (index: number) => void
 }) {
-  const strip = useRef<HTMLDivElement>(null)
+  const ruler = useRef<HTMLElement>(null)
   const panel = useRef<HTMLDivElement>(null)
-  const head = useRef<HTMLSpanElement>(null)
-  const row = useRef<HTMLDivElement>(null)
+  const strip = useRef<HTMLDivElement>(null)
   const meter = useRef<HTMLDivElement>(null)
   const bar = useRef<HTMLSpanElement>(null)
   const fill = useRef<HTMLSpanElement>(null)
   useZoneBusyShape(panel)
   useZoneStairClip(bar)
   useZoneStairClip(fill, { left: "straight" })
-  useZoneFit(strip, [head, row], `${kicker}|${actions.map(action => action.label).join("|")}`)
+  useZoneFit(ruler, [strip], `${kicker}|${actions.map(action => action.label).join("|")}`)
   const share = progress === undefined ? undefined : zoneProgressShare(progress)
   // The fill's share is a measurement written to the DOM, not state.
   useLayoutEffect(() => {
@@ -83,8 +81,9 @@ export function ZoneBusyStrip({
     : total === undefined ? done : `${done} / ${total}`
   return (
     <div aria-live="polite" className="zone-busy-strip" ref={strip} role="status">
+      <i aria-hidden="true" className="zone-busy-strip-ruler" ref={ruler} />
       <div className="zone-busy-strip-panel" ref={panel}>
-        <span className="zone-busy-strip-kicker" ref={head}>
+        <span className="zone-busy-strip-kicker">
           <ZoneWords>{kicker}</ZoneWords>
         </span>
         {detail !== undefined ? <span className="zone-busy-strip-detail">{detail}</span> : null}
@@ -118,7 +117,7 @@ export function ZoneBusyStrip({
         )}
       </div>
       {actions.length > 0 ? (
-        <div className="zone-busy-strip-actions" ref={row}>
+        <div className="zone-busy-strip-actions">
           {actions.map((action, index) => (
             <button
               className="zone-busy-strip-action"
@@ -130,10 +129,8 @@ export function ZoneBusyStrip({
               onFocus={onFocusAction === undefined ? undefined : () => onFocusAction(index)}
               type="button"
             >
-              <ZonePanel edge={false}>
-                <ZoneCaps ink={action.destructive ? "danger" : "white"}>{action.label}</ZoneCaps>
-                {index === focused && action.enabled ? <ZoneUnderline /> : null}
-              </ZonePanel>
+              <ZoneSlab lit={index === focused && action.enabled} />
+              <ZoneCaps ink={action.destructive && action.enabled ? "danger" : "white"}>{action.label}</ZoneCaps>
             </button>
           ))}
         </div>
