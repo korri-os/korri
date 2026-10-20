@@ -72,6 +72,7 @@
  * line; a word longer than the line breaks at its end with a hyphen. */
 .zone-busy-strip-detail {
   max-inline-size: var(--zone-dialog-measure);
+  text-shadow: none;
   font-family: var(--zone-font-fact);
   font-size: calc(var(--zone-fact) * var(--zone-px));
   line-height: calc(var(--zone-dialog-line-leading) * var(--zone-px));

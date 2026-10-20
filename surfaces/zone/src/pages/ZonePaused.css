@@ -136,8 +136,11 @@
   font-size: var(--zone-paused-row-type);
 }
 
-.zone-paused-rows[data-zone-fit-floor] {
-  --zone-paused-label-wrap: normal;
+/* Above caps-1 each row holds one line, so a row too narrow overflows and
+ * the fit steps the caps down; at caps-1 rows wrap (the rows' default). */
+.zone-paused-rows:not([data-zone-fit-floor]) {
+  --zone-paused-label-wrap: nowrap;
+  --zone-paused-face-wrap: nowrap;
 }
 
 .zone-paused-rows[data-steps="1"] {

@@ -64,14 +64,29 @@
 }
 
 /* Korri's lines: Jersey 10 as written, the warm white inside a black ring
- * one art px wide (inherited from the screen), at most about 52 characters
- * a line. They scroll when the panel is short, and keep one line's height
+ * one art px wide, at most about 52 characters a line. They scroll when the panel is short, and keep one line's height
  * so a short panel still shows there is a reason. */
 .zone-dialog-body {
   max-width: 100%;
   min-height: calc(var(--zone-dialog-line-leading) * var(--zone-px));
   overflow-y: auto;
   scrollbar-width: none;
+}
+
+.zone-dialog-line,
+.zone-dialog-title[data-case="verbatim"] {
+  /* The ring at this element's own art pixel (a dialog in a part frame has
+   * a smaller one than the screen around it). */
+  --zone-dialog-ring: calc(var(--zone-cap-outline) * var(--zone-px));
+  text-shadow:
+    calc(var(--zone-dialog-ring) * -1) calc(var(--zone-dialog-ring) * -1) 0 var(--zone-ink-white-outline),
+    0 calc(var(--zone-dialog-ring) * -1) 0 var(--zone-ink-white-outline),
+    var(--zone-dialog-ring) calc(var(--zone-dialog-ring) * -1) 0 var(--zone-ink-white-outline),
+    calc(var(--zone-dialog-ring) * -1) 0 0 var(--zone-ink-white-outline),
+    var(--zone-dialog-ring) 0 0 var(--zone-ink-white-outline),
+    calc(var(--zone-dialog-ring) * -1) var(--zone-dialog-ring) 0 var(--zone-ink-white-outline),
+    0 var(--zone-dialog-ring) 0 var(--zone-ink-white-outline),
+    var(--zone-dialog-ring) var(--zone-dialog-ring) 0 var(--zone-ink-white-outline);
 }
 
 .zone-dialog-line {
@@ -108,9 +123,12 @@
 
 /* NO and YES, or Korri's actions: one row at caps-2, then caps-1, and only
  * then a second row; no button ever shrinks under its words. The row keeps
- * clear of the bottom-right wedge: a slab's top-right corner is its right-
- * most point, and the wedge reaches its leg less the row's height and the
- * panel's foot there, so no black slab stands on black. */
+ * clear of the bottom-right wedge at its widest (its leg is never more than
+ * --zone-dialog-wedge-reach of the width): a slab's top-right corner is its
+ * rightmost point, and the wedge reaches its leg less the row's height and
+ * the panel's foot there, so no black slab stands on black. The clearance
+ * reads no measurement, so the buttons cannot move the wedges that move
+ * them. */
 .zone-dialog-actions {
   --zone-dialog-actions-clear: calc((var(--zone-dialog-pad-block) + var(--zone-drop-focus) + var(--zone-slab-pad) * 2) * var(--zone-px) + 1em);
   display: flex;
@@ -118,7 +136,7 @@
   justify-content: center;
   gap: var(--zone-dialog-space) calc(var(--zone-dialog-button-gap) * var(--zone-px));
   max-width: 100%;
-  margin-right: max(0%, var(--zone-dialog-wedge-leg, 0%) - var(--zone-dialog-actions-clear));
+  margin-right: max(0%, var(--zone-dialog-wedge-reach) - var(--zone-dialog-actions-clear));
   padding-bottom: calc(var(--zone-drop-focus) * var(--zone-px));
   font-size: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
 }

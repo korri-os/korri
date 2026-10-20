@@ -892,6 +892,8 @@
   --zone-dialog-line-leading: 16;
   /** The longest line of Korri's words: about 52 characters. @label Fact measure @min 20ch @max 80ch @step 1ch */
   --zone-dialog-measure: 46ch;
+  /** The widest a wedge's leg gets, as a share of the panel's width (plan: ZONE_DIALOG_WEDGE_WIDTH_SHARE). @label Wedge reach @min 25% @max 25% @step 1% */
+  --zone-dialog-wedge-reach: 25%;
   /** The closing copy's place over the page. @label Dialog leaving layer @min 1 @max 100 @step 1 */
   --zone-dialog-leave-layer: 20;
   /** @label Dialog line ink */

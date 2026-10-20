@@ -2,15 +2,15 @@
  * The dialog's two black wedges as pixel stairs: measure the panel in art
  * px and write each wedge's polygon (`zoneStairWedge`) on the panel, as
  * `--zone-dialog-wedge-start-shape` (top-left) and
- * `--zone-dialog-wedge-end-shape` (bottom-right), and the leg as
- * `--zone-dialog-wedge-leg`, so the buttons can stand clear of the
- * bottom-right wedge.
+ * `--zone-dialog-wedge-end-shape` (bottom-right).
  *
  * The panel's height comes from Korri's words, so the wedges can only be
  * cut once it is laid out. Writing custom properties is a DOM mechanic, as
  * useZoneStairClip's is: nothing re-renders, and the stylesheet keeps a
  * smooth wedge for a panel never measured (a test DOM). The wedges never
- * change the panel's box, so observing it cannot loop.
+ * change the panel's box, so observing it cannot loop: nothing laid out
+ * reads the leg (the buttons keep clear of the widest a wedge can be, a
+ * share of the width, in the stylesheet).
  */
 import { useLayoutEffect, type RefObject } from "react"
 import { zoneDialogWedgeArt } from "./plan/dialog"
@@ -27,7 +27,6 @@ export function useZoneDialogShape(panel: RefObject<HTMLElement | null>): void {
       const leg = zoneDialogWedgeArt(Math.round(width / px), Math.round(height / px))
       element.style.setProperty("--zone-dialog-wedge-start-shape", zoneStairWedge(leg, "top-left"))
       element.style.setProperty("--zone-dialog-wedge-end-shape", zoneStairWedge(leg, "bottom-right"))
-      element.style.setProperty("--zone-dialog-wedge-leg", `calc(${leg} * var(--zone-px))`)
     }
     apply(element.offsetWidth, element.offsetHeight)
     if (typeof ResizeObserver === "undefined") return

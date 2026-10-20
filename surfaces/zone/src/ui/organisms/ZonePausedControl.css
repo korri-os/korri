@@ -55,12 +55,14 @@
   translate: calc(var(--zone-press-sink) * var(--zone-px)) calc(var(--zone-press-sink) * var(--zone-px));
 }
 
-/* Label left, value right. The label keeps a few letters' room and wraps
- * only between words; when the row cannot hold both, the value drops under
- * the label and stays at the right. */
+/* Label left, value right. While PAUSED's rows stand above caps-1 they
+ * hold one line (the rows say so), so a row that cannot hold both
+ * overflows and the fit steps the caps down. At caps-1, or standing
+ * alone, the label wraps between words, and when the row still cannot
+ * hold both the value drops under the label and stays at the right. */
 .zone-paused-control-face {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: var(--zone-paused-face-wrap, wrap);
   align-items: flex-start;
   justify-content: space-between;
   gap: calc(var(--zone-paused-gap) * var(--zone-px)) calc(var(--zone-row-gap) * var(--zone-px));
@@ -68,18 +70,18 @@
   line-height: 1;
 }
 
-/* The label never shrinks under its own words: while the rows stand on
- * one line each, a label that does not fit overflows its row, so the fit
- * steps the caps down; at caps-1 it wraps between words instead. */
+/* The label never shrinks under its own words: on one line it overflows
+ * its row (and the fit steps down); wrapping, its least is its longest
+ * word. */
 .zone-paused-control-label {
   flex: 1 1 var(--zone-paused-label-least);
-  white-space: var(--zone-paused-label-wrap, nowrap);
+  white-space: var(--zone-paused-label-wrap, normal);
 }
 
 
 .zone-paused-control-value {
   display: inline-flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   align-items: center;
   gap: calc(var(--zone-row-gap) * var(--zone-px));
   min-width: 0;

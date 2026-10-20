@@ -119,6 +119,10 @@ describe("the sky dialog's wedges", () => {
     expect(zoneDialogWedgeArt(w + 4, h)).toBe(Math.round(h * ZONE_DIALOG_WEDGE_SHARE))
     expect(zoneDialogWedgeArt(0, 0)).toBe(1)
   })
+
+  test("the buttons keep clear of the widest wedge the plan can cut", () => {
+    expect(token("--zone-dialog-wedge-reach")).toBe(`${ZONE_DIALOG_WEDGE_WIDTH_SHARE * 100}%`)
+  })
 })
 
 describe("M4, the dialog as a function of time", () => {
