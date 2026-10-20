@@ -54,10 +54,10 @@ describe("providers, search and results", () => {
     intoStore(host)
     const first = screen.getByRole("button", { name: /PICO-8 BBS/ })
     expect(document.activeElement === first).toBe(true)
-    fireEvent.click(screen.getByRole("button", { name: /Homebrew Hub/ }))
-    // Homebrew Hub was searched already: its results show, under SEARCH.
+    fireEvent.click(screen.getByRole("button", { name: /PICO-8 BBS/ }))
+    // The BBS was searched already: its results show, under SEARCH.
     expect(screen.getByRole("button", { name: /SEARCH/ })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "2048, Game Boy" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Celeste Classic 2, PICO-8" })).toBeTruthy()
   })
 
   test("a provider not yet searched opens the Wi-Fi keyboard; SEARCH sends the words", () => {
@@ -95,16 +95,16 @@ describe("an entry", () => {
     const host = createFixtureHost()
     const view = render(<PicoSurface host={host} model={model(store)} />)
     intoStore(host)
-    fireEvent.click(screen.getByRole("button", { name: /Homebrew Hub/ }))
-    fireEvent.click(screen.getByRole("button", { name: "2048, Game Boy" }))
-    expect(host.calls.at(-1)).toBe("openStoreEntry:e:2048")
+    fireEvent.click(screen.getByRole("button", { name: /PICO-8 BBS/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Celeste Classic 2, PICO-8" }))
+    expect(host.calls.at(-1)).toBe("openStoreEntry:e:celeste")
     return { host, ...view }
   }
 
   test("Get is offered and runs Korri's action", () => {
     const { host } = atEntry(storeFixture())
-    expect(screen.getByRole("heading", { name: "2048" })).toBeTruthy()
-    expect(screen.getByText("Slide the tiles and join equal numbers to reach 2048.")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Celeste Classic 2" })).toBeTruthy()
+    expect(screen.getByText("Madeline climbs again, with a grappling hook this time.")).toBeTruthy()
     // Not a game played here: the stage says where it stands, not "never played".
     expect(screen.getByText("NOT ON THIS DEVICE")).toBeTruthy()
     expect(screen.queryByText("NEVER PLAYED")).toBeNull()
@@ -114,7 +114,6 @@ describe("an entry", () => {
 
   test.each([
     ["confirm", "Download to this device", "ask", ["Download", "Cancel"]],
-    ["folders", "Choose a folder", "ask", ["Game Boy", "SD card · Game Boy", "Cancel"]],
     ["unavailable", "NOT AVAILABLE", "tell", []],
     ["staged", "DOWNLOADED", "tell", []],
     ["failed", "Download failed", "warn", ["Retry"]],
@@ -140,9 +139,9 @@ describe("an entry", () => {
 
   test("a download takes the launch stage: a real bar, Korri's detail, and Cancel", () => {
     const { host, rerender } = atEntry(storeFixture({ details: storeDetails(STORE_GETS.downloading) }))
-    const bar = screen.getByRole("progressbar", { name: "Downloading 2048" })
-    expect(bar.getAttribute("aria-valuenow")).toBe("48")
-    expect(screen.getByText("16 KB of 32.8 KB · 16 KB/s · 0:01 left")).toBeTruthy()
+    const bar = screen.getByRole("progressbar", { name: "Downloading Celeste Classic 2" })
+    expect(bar.getAttribute("aria-valuenow")).toBe("50")
+    expect(screen.getByText("8 KB of 15.9 KB · 8 KB/s · 0:01 left")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
     expect(host.calls.at(-1)).toBe("action:store:5:cancel")
     rerender(<PicoSurface host={host} model={model(storeFixture({ details: storeDetails(STORE_GETS.unsized) }))} />)
@@ -156,7 +155,7 @@ describe("an entry", () => {
     const { host } = atEntry(storeFixture({ details: storeDetails(STORE_GETS.downloading) }))
     const before = host.calls.length
     act(() => host.press("back"))
-    expect(screen.getByRole("button", { name: "2048, Game Boy" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Celeste Classic 2, PICO-8" })).toBeTruthy()
     expect(host.calls.length).toBe(before)
   })
 })

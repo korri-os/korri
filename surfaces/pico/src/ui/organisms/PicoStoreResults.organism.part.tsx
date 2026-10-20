@@ -5,12 +5,12 @@ export const name = "Store results"
 export const note = "One provider's search: the SEARCH row, then Korri's results or what stands in for them"
 
 const none = () => undefined
-const PROVIDER = "@korri:homebrewhub"
+const PROVIDER = "@korri:pico8"
 
 export default function PicoStoreResultsPart() {
   return (
     <PicoStoreResults
-      onAction={none} onOpen={none} onSearch={none} providerTitle="Homebrew Hub"
+      onAction={none} onOpen={none} onSearch={none} providerTitle="PICO-8 BBS"
       search={{ _tag: "Ready", providerId: PROVIDER, query: "", entries: STORE_ENTRIES }}
     />
   )
@@ -54,8 +54,8 @@ export function NothingFound() {
 export function OneResult() {
   return (
     <PicoStoreResults
-      onAction={none} onOpen={none} onSearch={none} providerTitle="Homebrew Hub"
-      search={{ _tag: "Ready", providerId: PROVIDER, query: "2048", entries: STORE_ENTRIES.slice(0, 1) }}
+      onAction={none} onOpen={none} onSearch={none} providerTitle="PICO-8 BBS"
+      search={{ _tag: "Ready", providerId: PROVIDER, query: "celeste", entries: STORE_ENTRIES.slice(0, 1) }}
     />
   )
 }
