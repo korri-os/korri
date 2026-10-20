@@ -26,7 +26,7 @@ export const composition = {
     { part: "src/ui/molecules/ZoneActionRow.molecule.part.tsx", state: "OneButton" },
     { part: "src/ui/molecules/ZoneFoot.molecule.part.tsx", state: "Wifi" },
   ],
-  Loading: [{ part: "src/ui/molecules/ZoneBusyStrip.molecule.part.tsx", state: "KickerOnly" }],
+  Loading: [{ part: "src/ui/molecules/ZoneBusyStrip.molecule.part.tsx", state: "default" }],
   Error: [{ part: "src/ui/molecules/ZoneDialog.molecule.part.tsx", state: "OneButton" }],
   Empty: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "NoCards" }],
   Sections: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "Sections" }],
@@ -34,11 +34,11 @@ export const composition = {
   FortyGames: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "FortyCards" }],
   TwoPlaceChoice: [{ part: "src/ui/molecules/ZoneActionRow.molecule.part.tsx", state: "TwoButtons" }],
   GameOpts: [
-    { part: "src/ui/molecules/ZoneOptionGroup.molecule.part.tsx", state: "FiveRows" },
+    { part: "src/ui/molecules/ZoneOptionGroup.molecule.part.tsx", state: "default" },
     { part: "src/ui/molecules/ZoneDialog.molecule.part.tsx", state: "FocusedNo" },
   ],
-  FindOpen: [{ part: "src/ui/molecules/ZoneKeyboard.molecule.part.tsx", state: "Letters" }],
-  Idle: [{ part: "src/ui/molecules/ZoneTitleCard.molecule.part.tsx", state: "ShortTitle" }],
+  FindOpen: [{ part: "src/ui/molecules/ZoneKeyboard.molecule.part.tsx", state: "default" }],
+  Idle: [{ part: "src/ui/molecules/ZoneTitleCard.molecule.part.tsx", state: "default" }],
   Narrow: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "Narrow" }],
 } as const
 

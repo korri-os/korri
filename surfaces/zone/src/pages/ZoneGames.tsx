@@ -89,6 +89,8 @@ export interface ZoneGamesProps {
   /** The plan's two answers: height picks the strips, width the band. */
   readonly strips: "tall" | "short"
   readonly band: "wide" | "narrow"
+  /** The plan's answer for the facts line: its own row, or in the action strip. */
+  readonly factsAt: "row" | "inline"
   readonly tab: ZoneGamesTab
   readonly tabCursor: ZoneGamesTab
   readonly zone: ZoneGamesZone
@@ -186,10 +188,16 @@ const indexIn = (region: Element, target: EventTarget): number =>
  */
 export function ZoneGames(props: ZoneGamesProps) {
   const {
-    strips, band, tab, tabCursor, zone, catalog, cards, focusedCard, facts, launches, focusedAction,
+    strips, band, factsAt, tab, tabCursor, zone, catalog, cards, focusedCard, facts, launches, focusedAction,
     find, finding, opts, idle, clock, device, connection, build, onEvent,
   } = props
   const root = useRef<HTMLDivElement | null>(null)
+  // True while the page itself moves DOM focus to where the props say it is:
+  // that move is not news, and reporting it would wake idle.
+  const syncing = useRef(false)
+  const report = (event: ZoneGamesEvent) => {
+    if (!syncing.current) onEvent(event)
+  }
   const games = tab === "games"
   const game = games ? cards[focusedCard] : undefined
   const ready = catalog._tag === "Ready" && cards.length > 0
@@ -206,6 +214,8 @@ export function ZoneGames(props: ZoneGamesProps) {
     : failed ? ["error", 0]
     : zone === "actions" && ready ? ["actions", focusedAction]
     : ready ? ["band", focusedCard]
+    // A find that matches nothing: the cursor waits on FIND, to change it.
+    : catalog._tag === "Ready" ? ["find", 0]
     : catalog._tag === "Empty" ? ["tabs", 0]
     : undefined
   const targetKey = target === undefined ? "" : `${target[0]}:${target[1]}:${idle === undefined ? "awake" : "idle"}`
@@ -217,7 +227,10 @@ export function ZoneGames(props: ZoneGamesProps) {
     const button = typeof at === "number"
       ? buttons[Math.min(at, buttons.length - 1)]
       : buttons.find(candidate => keyIdOf(candidate.textContent ?? "") === at) ?? buttons[0]
-    if (button !== undefined && document.activeElement !== button) button.focus({ preventScroll: true })
+    if (button === undefined || document.activeElement === button) return
+    syncing.current = true
+    button.focus({ preventScroll: true })
+    syncing.current = false
     // targetKey names everything target says; the effect follows it alone.
   }, [targetKey])
 
@@ -226,11 +239,13 @@ export function ZoneGames(props: ZoneGamesProps) {
       ? {
         id: action.id,
         label: action.label,
+        value: "Run",
         description: action.description,
         interaction: { kind: "action", actionId: action.id, destructive: action.destructive },
       }
+      // Korri says why it cannot: its description stands where the verb would.
       : { id: action.id, label: action.label, value: action.description }),
-    { id: RUN_WITH, label: "Run with", interaction: { kind: "action", actionId: RUN_WITH } },
+    { id: RUN_WITH, label: "Run with", value: "Choose", interaction: { kind: "action", actionId: RUN_WITH } },
   ]
 
   const actions: readonly ZoneAction[] = launches.map(launch => ({ id: launch.id, label: launchLabel(launch) }))
@@ -241,11 +256,11 @@ export function ZoneGames(props: ZoneGamesProps) {
 
   const onKeysFocus = (event: FocusEvent<HTMLDivElement>) => {
     const button = (event.target as Element).closest("button")
-    if (button !== null) onEvent({ _tag: "FocusedKey", id: keyIdOf(button.textContent ?? "") })
+    if (button !== null) report({ _tag: "FocusedKey", id: keyIdOf(button.textContent ?? "") })
   }
   const onAnswerFocus = (event: FocusEvent<HTMLDivElement>) => {
     const index = indexIn(event.currentTarget, event.target)
-    if (index >= 0) onEvent({ _tag: "FocusedAnswer", index })
+    if (index >= 0) report({ _tag: "FocusedAnswer", index })
   }
 
   const factLines = facts === undefined ? [] : [
@@ -255,28 +270,15 @@ export function ZoneGames(props: ZoneGamesProps) {
   ]
 
   const tabsSlot = (
-    <>
-      <div className="zone-games-tabs" data-games-region="tabs">
-        <ZoneTabStrip
-          active={tab}
-          focused={zone === "tabs" || !games ? tabCursor : undefined}
-          onFocus={id => onEvent({ _tag: "FocusedTab", tab: id as ZoneGamesTab })}
-          onSelect={id => onEvent({ _tag: "ChoseTab", tab: id as ZoneGamesTab })}
-          tabs={TABS}
-        />
-      </div>
-      {games ? (
-        <div className="zone-games-find" data-games-region="find">
-          <ZoneButton
-            focused={zone === "find" && layer !== "keyboard"}
-            label="Find"
-            lit={find.draft !== ""}
-            onFocus={() => onEvent({ _tag: "FocusedFind" })}
-            onPress={() => onEvent({ _tag: "ChoseFind" })}
-          />
-        </div>
-      ) : null}
-    </>
+    <div className="zone-games-tabs" data-games-region="tabs">
+      <ZoneTabStrip
+        active={tab}
+        focused={target?.[0] === "tabs" ? TABS[Number(target[1])]?.id : undefined}
+        onFocus={id => report({ _tag: "FocusedTab", tab: id as ZoneGamesTab })}
+        onSelect={id => onEvent({ _tag: "ChoseTab", tab: id as ZoneGamesTab })}
+        tabs={TABS}
+      />
+    </div>
   )
 
   return (
@@ -290,7 +292,7 @@ export function ZoneGames(props: ZoneGamesProps) {
         tabs={tabsSlot}
       >
         {games ? (
-          <div className="zone-games-body">
+          <div className="zone-games-body" data-facts={factsAt}>
             <div className="zone-games-band" data-games-region="band" inert={layer !== "none"}>
               {catalog._tag === "Loading" ? (
                 <div className="zone-games-loading" inert>
@@ -300,7 +302,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                 <ZoneCardBand
                   cards={catalog._tag === "Ready" ? cards : []}
                   focusedIndex={focusedCard}
-                  onFocus={index => onEvent({ _tag: "FocusedCard", index })}
+                  onFocus={index => report({ _tag: "FocusedCard", index })}
                   visible={band === "wide" ? 5 : 3}
                 />
               )}
@@ -312,6 +314,17 @@ export function ZoneGames(props: ZoneGamesProps) {
                 </div>
               )}
             </div>
+            {catalog._tag !== "Ready" ? null : (
+              <div className="zone-games-find" data-games-region="find" inert={layer !== "none"}>
+                <ZoneButton
+                  focused={target?.[0] === "find"}
+                  label="Find"
+                  lit={find.draft !== ""}
+                  onFocus={() => report({ _tag: "FocusedFind" })}
+                  onPress={() => onEvent({ _tag: "ChoseFind" })}
+                />
+              </div>
+            )}
             {finding ? (
               <div className="zone-games-keys" data-block-exit="" data-games-region="keys" onFocus={onKeysFocus}>
                 <ZoneKeyboard
@@ -324,8 +337,14 @@ export function ZoneGames(props: ZoneGamesProps) {
               </div>
             ) : (
               <>
-                <div className="zone-games-facts" inert={layer !== "none"}>
-                  {factLines.length === 0 || game === undefined ? null : (
+                <div className="zone-games-facts" data-empty={factLines.length === 0 || undefined} inert={layer !== "none"}>
+                  {factLines.length === 0 || game === undefined ? (
+                    // The line keeps its height when Korri has no facts, so the band
+                    // does not jump as the cursor passes a game never played.
+                    <ZonePanel edge={false}>
+                      <ZoneCaps>{"\u00a0"}</ZoneCaps>
+                    </ZonePanel>
+                  ) : (
                     <ZonePanel edge={false}>
                       <span className="zone-games-fact-run">
                         {factLines.map(([label, value]) => (
@@ -339,13 +358,17 @@ export function ZoneGames(props: ZoneGamesProps) {
                   )}
                 </div>
                 <div className="zone-games-actions" data-games-region="actions" inert={layer !== "none"}>
-                  {catalog._tag === "Loading" ? <ZoneBusyStrip kicker="Loading" /> : null}
+                  {catalog._tag === "Loading" ? (
+                    <div className="zone-games-busy">
+                      <ZoneBusyStrip kicker="Loading" />
+                    </div>
+                  ) : null}
                   {ready && game !== undefined ? (
                     <ZoneActionRow
                       actions={actions}
                       focused={focusedLaunch}
                       lit={lit}
-                      onFocus={id => onEvent({ _tag: "FocusedAction", index: launches.findIndex(launch => launch.id === id) })}
+                      onFocus={id => report({ _tag: "FocusedAction", index: launches.findIndex(launch => launch.id === id) })}
                       onPress={id => {
                         const launch = launches.find(candidate => candidate.id === id)
                         if (launch !== undefined) onEvent({ _tag: "ChoseLaunch", gameId: game.id, locationId: launch.locationId })
@@ -369,7 +392,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                 >
                   <ZoneOptionGroup
                     focusedId={optRows[opts.row]?.id}
-                    onFocus={id => onEvent({ _tag: "FocusedGameOpt", index: optRows.findIndex(row => row.id === id) })}
+                    onFocus={id => report({ _tag: "FocusedGameOpt", index: optRows.findIndex(row => row.id === id) })}
                     onPress={id => {
                       if (id === RUN_WITH) return onEvent({ _tag: "OpenedRunWith", gameId: game.id })
                       const action = opts.actions.find(candidate => candidate.id === id)
