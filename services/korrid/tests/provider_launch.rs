@@ -54,6 +54,7 @@ fn runtime(root: &Path, name: &str, keys: &[&str]) -> EnabledPackage {
             .map(|key| ((*key).to_owned(), root.join(format!("{name}-{key}"))))
             .collect(),
         requires: Vec::new(),
+        hosts: vec![],
     }
 }
 
@@ -73,6 +74,7 @@ fn installed(root: &Path) -> PluginRegistry {
             sources: vec!["plugin.ts".into()],
             files: BTreeMap::from([("steam-session".into(), root.join("steam-session"))]),
             requires: vec![fex.package.clone(), proton.package.clone()],
+            hosts: vec![],
         },
         fex,
         proton,

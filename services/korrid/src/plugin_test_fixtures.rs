@@ -92,6 +92,7 @@ fn core_package(root: &Path, name: &str, source: String) -> EnabledPackage {
             "settings.ts".into(),
         ],
         requires: Vec::new(),
+        hosts: vec![],
     }
 }
 
@@ -134,6 +135,7 @@ pub fn installed(root: &Path) -> PluginRegistry {
             "settings.ts".into(),
         ],
         requires: Vec::new(),
+        hosts: vec![],
     }])
     .unwrap()
 }
@@ -169,6 +171,7 @@ pub fn steam(root: &Path) -> PluginRegistry {
             entry: "plugin.ts".into(),
             sources: vec!["plugin.ts".into()],
             requires: vec![],
+            hosts: vec![],
             files: keys
                 .into_iter()
                 .map(|key| (key.into(), directory.join(key)))
@@ -186,6 +189,7 @@ pub fn steam(root: &Path) -> PluginRegistry {
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
         requires,
+        hosts: vec![],
     });
     PluginRegistry::from_installed(dependencies).unwrap()
 }

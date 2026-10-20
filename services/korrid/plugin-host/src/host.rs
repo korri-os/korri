@@ -1799,6 +1799,7 @@ impl Host {
                 entry: report.entry,
                 sources: report.sources,
                 requires: report.requires,
+                hosts: report.hosts,
             })
             .collect();
         #[cfg(test)]
@@ -2157,6 +2158,7 @@ mod tests {
             .unwrap(),
             native_units: BTreeMap::new(),
             ports: Ports::default(),
+            hosts: Vec::new(),
             packages: BTreeMap::new(),
             files: BTreeMap::new(),
             entry: "plugin.ts".into(),
@@ -2448,6 +2450,23 @@ mod tests {
             loads(&runtime),
             ["load:@test:clock", "load:@test:idle", "load:@test:weather"]
         );
+    }
+
+    #[test]
+    fn enabled_packages_project_the_declared_provider_hosts() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let mut shop = report("@test:shop", "shop-hosts");
+        shop.hosts = vec!["www.lexaloffle.com".into()];
+        let runtime = runtime(std::slice::from_ref(&shop));
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime).unwrap();
+        install(&host, shop.clone());
+        host.set_enabled(&shop.id, true).unwrap();
+        let selections = serde_json::from_slice::<Vec<crate::plugin_installation::EnabledPackage>>(
+            &published(&host).0,
+        )
+        .unwrap();
+        assert_eq!(selections[0].hosts, ["www.lexaloffle.com"]);
     }
 
     #[test]

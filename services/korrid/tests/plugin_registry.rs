@@ -115,6 +115,7 @@ fn install(root: &Path, id: &str, source: &str, files: &[&str]) -> EnabledPackag
         entry: "plugin.ts".into(),
         sources,
         requires: Vec::new(),
+        hosts: vec![],
     }
 }
 

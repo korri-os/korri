@@ -46,6 +46,7 @@ fn installed(root: &Path) -> PluginRegistry {
             "settings.ts".into(),
         ],
         requires: Vec::new(),
+        hosts: vec![],
     }])
     .unwrap()
 }

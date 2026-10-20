@@ -25,6 +25,8 @@ pub struct EnabledPackage {
     pub sources: Vec<String>,
     /// The manifest's exact required plugin outputs, as the host verified them.
     pub requires: Vec<PathBuf>,
+    /// The manifest's declared provider hosts (ADR 0013), as the host verified them.
+    pub hosts: Vec<String>,
 }
 
 pub fn encode(selections: &[EnabledPackage]) -> Result<Vec<u8>, String> {
