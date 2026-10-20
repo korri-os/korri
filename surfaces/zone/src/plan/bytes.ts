@@ -46,3 +46,21 @@ export function formatZoneBytes(bytes: number): string {
   }
   return `${value.toFixed(decimals)} ${UNITS[index]!.name}`
 }
+
+/** Korri's measured progress, in bytes (the treaty's `Busy.progress`). */
+export interface ZoneProgress {
+  readonly done: number
+  /** Absent when Korri knows how far it has got but not how far it goes. */
+  readonly total?: number
+}
+
+/**
+ * The filled share of a known total, 0 to 1; undefined without a total (the
+ * bar has no end). A total of 0 or less fills nothing; done past the total
+ * fills the bar and no more.
+ */
+export function zoneProgressShare({ done, total }: ZoneProgress): number | undefined {
+  if (total === undefined) return undefined
+  if (!(total > 0) || !Number.isFinite(done)) return 0
+  return Math.min(1, Math.max(0, done / total))
+}

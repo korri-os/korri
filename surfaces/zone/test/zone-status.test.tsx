@@ -20,6 +20,10 @@ import {
   statusConfirmThree,
   statusProblem,
   statusProblemNoRetry,
+  statusProgressKnown,
+  statusProgressNearlyDone,
+  statusProgressNoTotal,
+  statusProgressUnpacking,
   statusRunning,
 } from "../src/fixtures/fixture-layers"
 import { createStatusProgram } from "../src/fixtures/layer-program"
@@ -311,6 +315,45 @@ describe("ZoneStatusLayer", () => {
     expect(asking.host.calls).toEqual(["action:acquisition:1:download"])
     expect(screen.queryByRole("dialog")).toBeNull()
     expect(document.activeElement?.textContent).toBe("Page card")
+  })
+
+  test("C32: a known total is a real bar: its share, and DONE / TOTAL at its end", () => {
+    mount(statusProgressKnown)
+    const strip = screen.getByRole("status")
+    const bar = within(strip).getByRole("progressbar", { name: "Downloading FEX rootfs" })
+    expect(bar.getAttribute("data-meter")).toBe("progress")
+    expect(bar.getAttribute("aria-valuenow")).toBe("52")
+    expect(bar.getAttribute("aria-valuetext")).toBe("612.0 MB / 1.2 GB")
+    expect(bar.textContent).toBe("612.0 MB/1.2 GB")
+    expect(bar.style.getPropertyValue("--zone-busy-strip-share")).toBe(String(612_000_000 / 1_160_000_000))
+    // Korri's detail stays, verbatim, above the bar.
+    expect(within(strip).getByText("612 MB of 1.2 GB · 6.4 MB/s · 1:30 left")).toBeDefined()
+    expect(screen.getByRole("button", { name: "Cancel" }).getAttribute("data-focused")).toBe("true")
+  })
+
+  test("C32: nearly done fills all but the last sliver", () => {
+    mount(statusProgressNearlyDone)
+    const bar = screen.getByRole("progressbar")
+    expect(bar.getAttribute("aria-valuenow")).toBe("99")
+    expect(bar.textContent).toBe("1.2 GB/1.2 GB")
+  })
+
+  test("C32: done without a total claims no share: the size so far and the moving stripe", () => {
+    mount(statusProgressNoTotal)
+    const bar = screen.getByRole("progressbar")
+    expect(bar.getAttribute("data-meter")).toBe("indeterminate")
+    expect(bar.hasAttribute("aria-valuenow")).toBe(false)
+    expect(bar.textContent).toBe("212.4 MB")
+  })
+
+  test("C32: nothing done and no end (unpacking) is the stripe alone; no progress is no bar", () => {
+    mount(statusProgressUnpacking)
+    const bar = screen.getByRole("progressbar")
+    expect(bar.getAttribute("data-meter")).toBe("indeterminate")
+    expect(bar.textContent).toBe("")
+    cleanup()
+    mount(statusBusyCancel)
+    expect(screen.queryByRole("progressbar")).toBeNull()
   })
 
   test("C10: the problem dialog never offers RELOAD", () => {

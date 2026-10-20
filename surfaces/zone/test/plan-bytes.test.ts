@@ -3,7 +3,7 @@
  * one byte either side of the decimal threshold.
  */
 import { describe, expect, test } from "bun:test"
-import { formatZoneBytes, ZONE_BYTES_DECIMAL_FROM } from "../src/plan/bytes"
+import { formatZoneBytes, ZONE_BYTES_DECIMAL_FROM, zoneProgressShare } from "../src/plan/bytes"
 
 describe("formatZoneBytes", () => {
   test("bytes under 1 KB are whole bytes", () => {
@@ -55,5 +55,19 @@ describe("formatZoneBytes", () => {
     expect(formatZoneBytes(-5)).toBe("0 B")
     expect(formatZoneBytes(Number.NaN)).toBe("0 B")
     expect(formatZoneBytes(Number.POSITIVE_INFINITY)).toBe("0 B")
+  })
+})
+
+describe("zoneProgressShare", () => {
+  test("a known total fills its share, clamped to the bar", () => {
+    expect(zoneProgressShare({ done: 612, total: 1_224 })).toBe(0.5)
+    expect(zoneProgressShare({ done: 0, total: 100 })).toBe(0)
+    expect(zoneProgressShare({ done: 100, total: 100 })).toBe(1)
+    expect(zoneProgressShare({ done: 200, total: 100 })).toBe(1)
+    expect(zoneProgressShare({ done: -5, total: 100 })).toBe(0)
+  })
+  test("no total has no share; a total of 0 fills nothing", () => {
+    expect(zoneProgressShare({ done: 212 })).toBeUndefined()
+    expect(zoneProgressShare({ done: 5, total: 0 })).toBe(0)
   })
 })

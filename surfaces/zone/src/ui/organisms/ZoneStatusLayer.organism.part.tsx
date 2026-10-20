@@ -13,6 +13,7 @@ import {
   statusProblem,
   statusProblemLong,
   statusProblemNoRetry,
+  statusProgressKnown,
   statusRunning,
 } from "../../fixtures/fixture-layers"
 import { createStatusProgram } from "../../fixtures/layer-program"
@@ -121,4 +122,9 @@ export function ConfirmThreeActions() {
 /** The question belongs to one game: its title in yellow under the detail. */
 export function ConfirmForGame() {
   return <Scenario page={standInPage} status={statusConfirmForGame} />
+}
+
+/** Korri's download with a known end over the page: the red bar under the detail, CANCEL lit. */
+export function BusyProgress() {
+  return <Scenario page={standInPage} status={statusProgressKnown} />
 }

@@ -19,7 +19,8 @@ export type ZoneStatusProblemButton = "dismiss" | "retry"
  *  - Browsing: nothing. The page is the page.
  *  - Busy (C7): the busy strip drops over the page's middle with Korri's
  *    kicker and detail, the game it belongs to in yellow above it, and
- *    Korri's actions (CANCEL) beside it. The page dims and goes inert;
+ *    Korri's actions (CANCEL) beside it. With Korri's progress (C32) the
+ *    strip's meter shows how far the work has got. The page dims and goes inert;
  *    focus moves into the strip when it has an action.
  *  - Running (C8): a small black parallelogram at the top of the page:
  *    the kicker, an OPEN tag and the game's title. It takes no focus and
@@ -105,6 +106,7 @@ export function ZoneStatusLayer({
             focused={(status.actions?.length ?? 0) > 0 ? focus : undefined}
             kicker={status.kicker}
             onAction={onBusyAction}
+            progress={status.progress}
             onFocusAction={onFocusButton}
           />
         </div>

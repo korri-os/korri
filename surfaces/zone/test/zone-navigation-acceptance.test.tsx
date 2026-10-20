@@ -517,6 +517,55 @@ describe("status", () => {
     confirm()
     expect(calls(host).at(-1)).toEqual(["runAction", "acquisition:1:download"])
   })
+
+  test("C32 progress", () => {
+    const { host, publish, press } = mount()
+    moveTo(button("Hollow Knight"))
+    confirm()
+    const cancel = { id: "acquisition:1:cancel", label: "Cancel", enabled: true }
+    const busy = (progress?: { readonly done: number; readonly total?: number }, detail?: string): SurfaceModel => ({
+      ...HOME,
+      status: {
+        _tag: "Busy",
+        kicker: "Downloading FEX rootfs",
+        gameId: "hollow",
+        actions: [cancel],
+        ...(detail === undefined ? {} : { detail }),
+        ...(progress === undefined ? {} : { progress }),
+      },
+    })
+    // A known end: a real bar, its share and both sizes.
+    publish(busy({ done: 612_000_000, total: 1_160_000_000 }, "612 MB of 1.2 GB · 6.4 MB/s · 1:30 left"))
+    const strip = screen.getByRole("status")
+    expect(strip.textContent).toContain("Downloading FEX rootfs")
+    expect(strip.textContent).toContain("612 MB of 1.2 GB · 6.4 MB/s · 1:30 left")
+    expect(document.querySelector(".zone-status-layer-busy")?.textContent).toContain("Hollow Knight")
+    const bar = within(strip).getByRole("progressbar")
+    expect(bar.getAttribute("data-meter")).toBe("progress")
+    expect(bar.getAttribute("aria-valuenow")).toBe("52")
+    expect(bar.textContent).toBe("612.0 MB/1.2 GB")
+    // Korri counts on: the same strip, the bar moves, the cursor stays on CANCEL.
+    publish(busy({ done: 1_154_000_000, total: 1_160_000_000 }))
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("99")
+    expect(screen.getByRole("progressbar").textContent).toBe("1.2 GB/1.2 GB")
+    expect(focusedText()).toBe("Cancel")
+    // How far, with no end: the size so far and no share claimed.
+    publish(busy({ done: 212_400_000 }))
+    expect(screen.getByRole("progressbar").getAttribute("data-meter")).toBe("indeterminate")
+    expect(screen.getByRole("progressbar").hasAttribute("aria-valuenow")).toBe(false)
+    expect(screen.getByRole("progressbar").textContent).toBe("212.4 MB")
+    // B cancels nothing; Korri's CANCEL is reported by its id.
+    press("back")
+    expect(calls(host)).toEqual([["launchGame", "hollow"]])
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "acquisition:1:cancel"])
+    // Without progress the strip says only that work is under way.
+    publish(busy(undefined, "Keeping what was downloaded so far"))
+    expect(screen.queryByRole("progressbar")).toBeNull()
+    expect(screen.getByRole("status").textContent).toContain("Keeping what was downloaded so far")
+    publish(HOME)
+    expect(focusedText()).toContain("Hollow Knight")
+  })
 })
 
 // ---- C11: Korri's runner choice ----
