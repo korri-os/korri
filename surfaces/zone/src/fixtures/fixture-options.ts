@@ -127,6 +127,38 @@ export const fixturePluginsGroup: SurfaceSettingGroup = {
   })),
 }
 
+/**
+ * The stress set's lengths: a long path as a label and as a value, a long
+ * label of Korri's that wraps between words, one with no break in it, and
+ * an empty value. The focused row is the long path value.
+ */
+export const fixtureLongFactsGroup: SurfaceSettingGroup = {
+  title: "Saves and folders",
+  items: [
+    {
+      id: "save-folder",
+      label: "Save folder",
+      value: "/home/mini/.local/share/korri/saves/retroarch-mgba-1.19.1",
+      description: "Where Korri keeps every save on this device",
+      interaction: { kind: "text", maxLength: 256 },
+    },
+    {
+      id: "game-folder:gba",
+      label: "/run/media/mini/roms/nintendo/game-boy-advance",
+      value: "Registered",
+      interaction: { kind: "action", actionId: "game-folder-remove:gba", destructive: true },
+    },
+    {
+      id: "layout-memory",
+      label: "Remember the controller layout for every game",
+      value: "On",
+      interaction: { kind: "choice", choices: onOff },
+    },
+    { id: "long-word", label: "Supercalifragilisticexpialidocious", value: "0" },
+    { id: "empty-value", label: "Last backup", value: "" },
+  ],
+}
+
 // ---- Device actions (SYSTEM) ----
 
 export const fixtureSystemActions: readonly SurfaceAction[] = [

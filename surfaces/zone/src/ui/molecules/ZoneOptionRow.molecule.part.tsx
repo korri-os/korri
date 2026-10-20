@@ -99,3 +99,45 @@ export function DescriptionShown() {
     />
   )
 }
+
+/** A path Korri publishes as the value: cut in the middle, its tail kept, whole on the line under the focused row. */
+export function LongPathValue() {
+  return (
+    <ZoneOptionRow
+      focused
+      interaction={{ kind: "text", maxLength: 256 }}
+      label="Save folder"
+      value="/home/mini/.local/share/korri/saves/retroarch-mgba-1.19.1"
+      verbatimValue
+    />
+  )
+}
+
+/** Disabled: the steel face, Korri's reason under it. */
+export function Disabled() {
+  return (
+    <ZoneOptionRow
+      description="Not while a game is running"
+      disabled
+      interaction={{ kind: "action", actionId: "sleep" }}
+      label="Sleep"
+      value="Go"
+    />
+  )
+}
+
+/** Korri is joining: the value stays, the caret blinks at its end, Zone's CONNECTING under it. */
+export function Connecting() {
+  return (
+    <ZoneOptionRow
+      description="CONNECTING"
+      descriptionCaps
+      focused
+      interaction={{ kind: "action", actionId: "join" }}
+      label="Attic 5G"
+      saving
+      value="64% LOCKED"
+      verbatimLabel
+    />
+  )
+}

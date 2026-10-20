@@ -39,6 +39,7 @@
  * edge; the rows stand in the measure, centred, inset from the band's
  * sides. */
 .zone-options-groups {
+  --zone-option-group-backing: var(--zone-options-band);
   --zone-option-group-rows: min(calc(100% - calc(var(--zone-options-band-inset) * var(--zone-px)) * 2), calc(var(--zone-options-measure) * var(--zone-px)));
   display: grid;
   grid-template-columns: minmax(0, 1fr);

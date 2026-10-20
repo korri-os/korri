@@ -3,7 +3,6 @@ import type { SurfaceRunnerChoice } from "@contracts/surface/korri-surface"
 import { useEffect, useRef } from "react"
 import { runWithPlan, zoneSavedRowId, type ZoneRunWithState } from "../plan/options-run-with"
 import { ZoneBanner } from "../ui/atoms/ZoneBanner"
-import { ZoneCaps } from "../ui/atoms/ZoneCaps"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
 import { ZonePanel } from "../ui/atoms/ZonePanel"
 import { ZoneTag, type ZoneTagKind } from "../ui/atoms/ZoneTag"
@@ -101,9 +100,9 @@ export function ZoneRunWith({
     >
       <div className="zone-run-with" data-state={choice._tag}>
         <div className="zone-run-with-head" ref={head}>
-          <span className="zone-run-with-title" ref={title}>
+          <span className="zone-run-with-title">
             <ZonePanel>
-              <ZoneCaps>{choice.gameTitle}</ZoneCaps>
+              <span className="zone-run-with-title-words" ref={title}>{choice.gameTitle}</span>
             </ZonePanel>
           </span>
           <span className="zone-run-with-state">

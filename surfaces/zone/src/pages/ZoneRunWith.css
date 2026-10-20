@@ -27,7 +27,24 @@
   display: inline-flex;
   flex: 0 1 auto;
   min-width: 0;
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+}
+
+/* The title's words: Zone Caps in the white ink on black, the face over
+ * lavender lower rows (a hard stop; the line is the cap). */
+.zone-run-with-title-words {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
   font-size: calc(calc(var(--zone-caps-2) * var(--zone-px)) * var(--zone-fit, 1));
+  line-height: 1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow: none;
+  color: var(--zone-cap);
+  background: linear-gradient(to bottom, var(--zone-cap) 0% 70%, var(--zone-ink-white-shade) 70% 100%) 0 0 / 100% 1em repeat-y;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .zone-run-with-state {

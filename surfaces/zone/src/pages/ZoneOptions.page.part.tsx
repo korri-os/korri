@@ -10,6 +10,7 @@ import {
   fixtureNetworkRejected,
   fixtureNetworkScanning,
   fixtureNetworkWired,
+  fixtureLongFactsGroup,
   fixtureOptions,
   fixturePluginsGroup,
   fixtureSeatsId,
@@ -45,6 +46,7 @@ export const composition = {
     { part: "src/ui/molecules/ZoneKeyboard.molecule.part.tsx", state: "SecretDots" },
   ],
   ActionConfirm: [{ part: "src/ui/molecules/ZoneDialog.molecule.part.tsx", state: "FocusedNo" }],
+  LongFacts: [{ part: "src/ui/molecules/ZoneOptionRow.molecule.part.tsx", state: "LongPathValue" }],
   Destructive: [{ part: "src/ui/molecules/ZoneDialog.molecule.part.tsx", state: "FocusedNo" }],
   Saving: [{ part: "src/ui/molecules/ZoneOptionRow.molecule.part.tsx", state: "Saving" }],
   Problem: [{ part: "src/ui/molecules/ZoneOptionRow.molecule.part.tsx", state: "Problem" }],
@@ -262,6 +264,34 @@ export function ManyRows() {
       script={[{ _tag: "FocusedRow", rowId: "plugin:mgba" }]}
     />
   )
+}
+
+/** The stress set's lengths: a long path value cut in its middle and whole under the focused row, a long path label, a label that wraps between words, one unbroken word, an empty value. */
+export function LongFacts() {
+  return (
+    <Live
+      korri={{ ...fixtureOptions, settings: [fixtureLongFactsGroup, ...fixtureSettings] }}
+      script={[{ _tag: "FocusedRow", rowId: "save-folder" }]}
+    />
+  )
+}
+
+/** The same lengths in a narrow column: label over value, facts cut, nothing broken inside a word. */
+export function LongFactsNarrow() {
+  return (
+    <ZonePartFrame shape="narrow-tall">
+      <Live
+        korri={{ ...fixtureOptions, settings: [fixtureLongFactsGroup] }}
+        script={[{ _tag: "FocusedRow", rowId: "game-folder:gba" }]}
+        share={0.36}
+      />
+    </ZonePartFrame>
+  )
+}
+
+/** A disabled device action: the steel face, Korri's reason under it whether or not it is focused. */
+export function Disabled() {
+  return <Live korri={{ ...fixtureOptions, settings: [] }} script={[{ _tag: "FocusedRow", rowId: "zone:system:sleep" }]} />
 }
 
 /** A narrow-tall column: labels and values wrap, nothing is dropped. */

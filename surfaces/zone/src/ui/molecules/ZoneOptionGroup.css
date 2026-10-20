@@ -11,30 +11,41 @@
   min-height: 0;
 }
 
-/* The title: caps-2 (caps-1 when it must) on a black panel flush with the
- * group's left edge and leaning at its right, as VIDEO heads Mania's page.
- * Its words start where the rows' words start. It holds at the top of a
- * scrolling box, over the rows that pass under it. */
+/* The title's row holds at the top of a scrolling box, over the rows that
+ * pass under it, in the holder's backing colour (none by default). */
 .zone-option-group-title {
   position: sticky;
   top: 0;
   z-index: 1;
-  isolation: isolate;
-  justify-self: start;
-  max-width: 100%;
+  display: flex;
+  min-width: 0;
   margin: 0;
+  padding-bottom: calc(var(--zone-option-group-space) * var(--zone-px));
+  margin-bottom: calc(var(--zone-option-group-space) * var(--zone-px) * -1);
+  background: var(--zone-option-group-backing, transparent);
+  font: inherit;
+  line-height: 1;
+  text-shadow: none;
+}
+
+/* The title: caps-2 (caps-1 when it must) on a black panel flush with the
+ * group's left edge and leaning at its right, as VIDEO heads Mania's page.
+ * Its words start where the rows' words start. */
+.zone-option-group-wedge {
+  position: relative;
+  isolation: isolate;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
   padding:
     calc(var(--zone-option-group-pad) * var(--zone-px))
     calc(calc(var(--zone-option-group-pad) * var(--zone-px)) + 1.3em)
     calc(var(--zone-option-group-pad) * var(--zone-px))
     calc(calc(100% - var(--zone-option-group-width)) / 2 + calc(var(--zone-option-text-inset) * var(--zone-px)));
-  font: inherit;
   font-size: calc(calc(var(--zone-caps-2) * var(--zone-px)) * var(--zone-fit, 1));
-  line-height: 1;
-  text-shadow: none;
 }
 
-.zone-option-group-title::before {
+.zone-option-group-wedge::before {
   content: "";
   position: absolute;
   inset: 0;

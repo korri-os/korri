@@ -30,7 +30,10 @@ export interface ZoneOptionGroupRow extends SurfaceSettingItem {
  *
  * A holder that centres the rows in a measure sets
  * `--zone-option-group-rows` (their width); the title's words then start
- * where the rows' words do.
+ * where the rows' words do. A holder that scrolls the group sets
+ * `--zone-option-group-backing` to its own colour: the title's row is then
+ * that colour across the box, so a row passing under it is cut on one
+ * straight line, as a lip cuts it.
  *
  * The group takes the height it is given. Its rows scroll inside it when
  * they do not fit, and a cut-off row at the bottom edge says there is more;
@@ -58,13 +61,15 @@ export function ZoneOptionGroup({
   readonly onFocus?: (settingId: string) => void
 }) {
   const section = useRef<HTMLElement>(null)
-  const heading = useRef<HTMLHeadingElement>(null)
+  const heading = useRef<HTMLSpanElement>(null)
   useZoneFit(section, [heading], title)
   useZoneStairClip(heading, { left: "straight", right: "slash" })
   return (
     <section aria-label={title} className="zone-option-group" ref={section}>
-      <h2 className="zone-option-group-title" ref={heading}>
-        <ZoneCaps>{title}</ZoneCaps>
+      <h2 className="zone-option-group-title">
+        <span className="zone-option-group-wedge" ref={heading}>
+          <ZoneCaps>{title}</ZoneCaps>
+        </span>
       </h2>
       <div className="zone-option-group-rows">
         {rows.map((row) => (
