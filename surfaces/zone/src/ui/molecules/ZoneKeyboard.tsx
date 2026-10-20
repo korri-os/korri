@@ -2,8 +2,10 @@ import "./ZoneKeyboard.css"
 import { ZoneCaps } from "../atoms/ZoneCaps"
 import "../../zone-motion.css"
 import { useEffect, useLayoutEffect, useRef } from "react"
+import { ZONE_KEYBOARD_ROWS, type ZoneKeyboardLayerName } from "../../plan/keyboard"
+import { useZoneKeyboardFit } from "../../use-zone-keyboard-fit"
 
-export type ZoneKeyboardLayer = "letters" | "shift" | "symbols" | "uri"
+export type ZoneKeyboardLayer = ZoneKeyboardLayerName
 
 /** What a key does when A lands on it. */
 export type ZoneKey =
@@ -29,13 +31,8 @@ export function zoneKeyId(key: ZoneKey): string {
 
 export const ZONE_KEYBOARD_LAYERS: readonly ZoneKeyboardLayer[] = ["letters", "shift", "symbols", "uri"]
 
-/** Four rows of characters per layer. Digits head every layer. */
-const ROWS: Record<ZoneKeyboardLayer, readonly string[]> = {
-  letters: ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"],
-  shift: ["1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"],
-  symbols: ["1234567890", "!@#$%^&*()", "-_=+[]{}\\|", ";:'\",.<>/?~`"],
-  uri: ["1234567890", "qwertyuiop:/", "asdfghjkl.-_", "zxcvbnm?=&@"],
-}
+/** Four rows of characters per layer, as the plan lays them out. */
+const ROWS: Record<ZoneKeyboardLayer, readonly string[]> = ZONE_KEYBOARD_ROWS
 
 /** The glyphs on the layer keys: what the layer types, not its name. */
 const LAYER_LABELS: Record<ZoneKeyboardLayer, string> = {
@@ -66,7 +63,11 @@ const DOT = "•"
  * until the first character is typed.
  *
  * Rows wrap before a key gets too small to read, so no key is ever lost at
- * a narrow width. Focus is a prop: `focusedKey` is a key's id. When the
+ * a narrow width. Every key's height and width is a step of the plan
+ * (src/plan/keyboard.ts): a holder that plans the keyboard hands its
+ * numbers down; else the keyboard takes the first step its holder's room
+ * holds (useZoneKeyboardFit), so no key is cut and the keys do not
+ * scroll. Focus is a prop: `focusedKey` is a key's id. When the
  * host moves DOM focus onto a key, `onFocusKey` reports that key's id; a
  * page that moves DOM focus to a key finds it by `data-key-id`.
  *
@@ -83,6 +84,7 @@ export function ZoneKeyboard({
   placeholder,
   onKey,
   onFocusKey,
+  planned = false,
 }: {
   readonly draft: string
   /** The insertion point: 0 to draft.length. */
@@ -97,8 +99,12 @@ export function ZoneKeyboard({
   readonly onKey?: (key: ZoneKey) => void
   /** The host's cursor arrived on a key: its id, as `zoneKeyId` names it. */
   readonly onFocusKey?: (id: string) => void
+  /** The holder plans the keys and hands its numbers down (FIND); the keyboard does not fit itself. */
+  readonly planned?: boolean
 }) {
   const panel = useRef<HTMLDivElement | null>(null)
+  // The keys' sizes are the plan's steps, never a share of the box.
+  useZoneKeyboardFit(panel, !planned)
   const slab = useRef<HTMLDivElement | null>(null)
   const mark = useRef<HTMLSpanElement | null>(null)
   const shown = secret ? DOT.repeat(draft.length) : draft
@@ -131,7 +137,7 @@ export function ZoneKeyboard({
         className="zone-keyboard-key"
         data-current={value.kind === "layer" && value.layer === layer ? true : undefined}
         data-focused={id === focusedKey || undefined}
-        data-face={value.kind === "char" && value.char !== value.char.toUpperCase() ? "fact" : undefined}
+        data-face={(value.kind === "char" || value.kind === "layer") && label !== label.toUpperCase() ? "fact" : undefined}
         data-key-id={id}
         data-role={extra}
         key={id}

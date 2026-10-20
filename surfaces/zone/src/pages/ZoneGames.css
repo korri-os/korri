@@ -202,6 +202,28 @@
   display: none;
 }
 
+/* The focused game's title, only while its card has no room to draw it:
+ * whole, in Jersey 10 as Korri writes it (a fact among facts), wrapping
+ * between words. Generated content, so the page's text holds the title
+ * once (the card's). */
+.zone-games-fact-title {
+  min-width: 0;
+  color: var(--zone-cap);
+  font-family: var(--zone-font-fact);
+  font-size: calc(1em * var(--zone-fact) / var(--zone-caps-1));
+  line-height: 0.75;
+  text-transform: none;
+  white-space: normal;
+}
+
+.zone-games-fact-title::after {
+  content: attr(data-title) / "";
+}
+
+.zone-games-fact-title[data-hidden] {
+  display: none;
+}
+
 .zone-games-fact {
   display: inline-flex;
   flex: 0 1 auto;
@@ -226,14 +248,27 @@
   padding: 0 calc(var(--zone-band-margin) * var(--zone-px));
 }
 
-/* The keyboard rises from the foot over the facts and the actions. */
+/* The keyboard rises from the foot over the facts and the actions. Its
+ * size is planned (src/plan/keyboard.ts, through useZoneFindPlan): every
+ * key and line of keys is a known height, so the keyboard takes exactly
+ * what it needs and the band takes the rest. No cap cuts it. */
 .zone-games-keys {
+  --zone-games-keys-margin: calc(var(--zone-find-margin, var(--zone-band-margin)) * var(--zone-px));
+  position: relative;
+  /* Over the inert FIND key when the keys reach the body's top. */
+  z-index: 3;
   display: flex;
+  align-items: flex-end;
   justify-self: center;
-  width: min(100%, calc(var(--zone-games-keys-max) * var(--zone-px)));
+  width: min(100%, calc(var(--zone-games-keys-max) * var(--zone-px) + 2 * var(--zone-games-keys-margin)));
   min-height: 0;
-  max-height: calc(100cqh - calc(var(--zone-games-band-min) * var(--zone-px)));
-  padding: 0 calc(var(--zone-band-margin) * var(--zone-px)) calc(var(--zone-strip-inset) * var(--zone-px));
+  padding: 0 var(--zone-games-keys-margin) calc(var(--zone-find-inset, var(--zone-strip-inset)) * var(--zone-px));
+}
+
+/* The keys took the band's least: the band hides while typing, and DONE
+ * shows the result. */
+.zone-games[data-find-band="hidden"] .zone-games-band {
+  visibility: hidden;
 }
 
 /* A screen too short for the keys inside the body: the keyboard rises over

@@ -78,10 +78,13 @@
   white-space: normal;
 }
 
-/* A side card too narrow for one of its title's words at caps-1 draws no
- * title rather than a cut one: the cover names the game, the card is read
- * by its name, and the title stands whole once the card is focused. */
-.zone-card[data-size="side"] .zone-card-title[data-zone-words-long] {
+/* A card too narrow for one of its title's words at caps-1, or too short
+ * for its lines, draws no title rather than a cut one or one past its
+ * edge: the cover names the game, the card is read by its name, and the
+ * title stands whole on the facts line (focused) or once focused (a side
+ * card). */
+.zone-card-title[data-zone-words-long],
+.zone-card-title[data-zone-words-tall] {
   max-height: 0;
   margin-block: 0;
   overflow: hidden;

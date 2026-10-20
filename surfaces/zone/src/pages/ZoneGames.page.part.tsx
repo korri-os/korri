@@ -47,10 +47,144 @@ export const composition = {
   ],
   GameOptsAsking: [{ part: "src/ui/molecules/ZoneDialog.molecule.part.tsx", state: "FocusedNo" }],
   FindOpen: [{ part: "src/ui/molecules/ZoneKeyboard.molecule.part.tsx", state: "default" }],
+  FindOpenNarrow: [{ part: "src/ui/molecules/ZoneKeyboard.molecule.part.tsx", state: "default" }],
+  FindOpenStrip: [{ part: "src/ui/molecules/ZoneKeyboard.molecule.part.tsx", state: "default" }],
   Idle: [{ part: "src/ui/molecules/ZoneTitleCard.molecule.part.tsx", state: "default" }],
   Narrow: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "Narrow" }],
   DownloadFocused: [{ part: "src/ui/molecules/ZoneCard.molecule.part.tsx", state: "Download" }],
 } as const
+
+/* The helpers Caliper hands an authored check, typed locally: Zone imports
+ * nothing from Caliper (test/authoring-gate.test.ts). */
+interface CheckTools {
+  readonly canvas: { getByRole(role: string, options: { name: RegExp }): HTMLElement }
+  readonly expect: (value: unknown) => { toBe(expected: unknown): void }
+  readonly waitFor: (assertion: () => void) => Promise<void>
+}
+
+/** The art pixel an element stands on, in CSS px. */
+const artPxOf = (element: Element): number =>
+  Number.parseFloat(getComputedStyle(element).getPropertyValue("--zone-px")) || 1
+
+/** The boxes of an element's own words (its text nodes' line boxes). */
+function wordBoxes(element: Element): DOMRect[] {
+  const boxes: DOMRect[] = []
+  const walk = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+  for (let node = walk.nextNode(); node !== null; node = walk.nextNode()) {
+    if ((node.textContent ?? "").trim() === "") continue
+    const range = document.createRange()
+    range.selectNodeContents(node)
+    boxes.push(...Array.from(range.getClientRects()).filter(box => box.width > 0))
+  }
+  return boxes
+}
+
+/** Where a key's baseline stands: a zero-size probe on it, put back at once. */
+function baselineOf(key: HTMLElement): number {
+  const probe = document.createElement("i")
+  probe.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline"
+  key.append(probe)
+  const at = probe.getBoundingClientRect().bottom
+  probe.remove()
+  return at
+}
+
+/**
+ * Every key whose label is not whole, read off the real keyboard in
+ * Chromium, and why. A label is whole when its letters (the cap above the
+ * baseline, a descender under it, and the 1-art-px drop) stand inside its
+ * own key and the key stands inside the panel, unscrolled, on the screen.
+ */
+function keysNotWhole(keyboard: HTMLElement): string {
+  const px = artPxOf(keyboard)
+  const panel = keyboard.getBoundingClientRect()
+  const screen = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight }
+  const problems: string[] = []
+  if (keyboard.scrollHeight > keyboard.clientHeight + 1) problems.push(`panel scrolls ${keyboard.scrollHeight}/${keyboard.clientHeight}`)
+  const keys = Array.from(keyboard.querySelectorAll<HTMLElement>(".zone-keyboard-key"))
+  for (const key of keys) {
+    const name = key.textContent ?? ""
+    const box = key.getBoundingClientRect()
+    const words = wordBoxes(key)
+    if (words.length === 0) {
+      problems.push(`${name}: no label`)
+      continue
+    }
+    const fact = key.dataset["face"] === "fact"
+    const descends = fact ? /[gjpqy]/.test(name) : /[,;Q]/.test(name)
+    const baseline = baselineOf(key)
+    const ink = {
+      left: Math.min(...words.map(word => word.left)),
+      right: Math.max(...words.map(word => word.right)),
+      top: baseline - 10 * px,
+      bottom: baseline + (descends ? 3 * px : 0) + px,
+    }
+    const inside = (outer: { left: number; top: number; right: number; bottom: number }) =>
+      ink.left >= outer.left - 0.5 && ink.right <= outer.right + 0.5 && ink.top >= outer.top - 0.5 && ink.bottom <= outer.bottom + 0.5
+    if (!inside(box)) problems.push(`${name}: past its key (${Math.round(ink.left - box.left)},${Math.round(ink.top - box.top)} to ${Math.round(box.right - ink.right)},${Math.round(box.bottom - ink.bottom)})`)
+    else if (!inside(panel)) problems.push(`${name}: past the panel`)
+    else if (!inside(screen)) problems.push(`${name}: off the screen`)
+  }
+  return problems.join("; ")
+}
+
+/**
+ * The focused card's title stands inside its card, or (when a word or its
+ * lines have no room) is not drawn on it and stands whole on the facts
+ * line instead.
+ */
+function focusedTitleSpill(): string {
+  const card = document.querySelector<HTMLElement>(".zone-card[data-focused=\"true\"]")
+  if (card === null) return ""
+  const title = card.querySelector<HTMLElement>(".zone-card-title")
+  if (title === null) return ""
+  const box = card.getBoundingClientRect()
+  const words = wordBoxes(title)
+  // A title the card does not draw (no room, or the band hidden under the keys) cannot spill.
+  if (words.length === 0 || title.getBoundingClientRect().height === 0 || !title.checkVisibility({ visibilityProperty: true })) return ""
+  return words.some(word => word.left < box.left - 0.5 || word.right > box.right + 0.5 || word.top < box.top - 0.5 || word.bottom > box.bottom + 0.5)
+    ? `${title.textContent ?? ""} spills out of its card`
+    : ""
+}
+
+/** The keys' check: every label whole, the panel unscrolled. */
+async function keysWhole({ canvas, expect, waitFor }: CheckTools): Promise<void> {
+  await waitFor(() => {
+    expect(keysNotWhole(canvas.getByRole("group", { name: /Keyboard/ }))).toBe("")
+  })
+}
+
+/** The card's check: the focused title inside its card, or not drawn there. */
+async function titleInCard({ expect, waitFor }: CheckTools): Promise<void> {
+  await waitFor(() => {
+    expect(focusedTitleSpill()).toBe("")
+  })
+}
+
+/* FIND's keyboard is planned from the body, so at every size its keys
+ * stand whole and unscrolled; the band yields first, then the keys' room.
+ * The focused card's title never spills out of its card, at rest or with
+ * the band shrunk under the keys. */
+export const checks = {
+  default: {
+    "the focused card's title stands inside its card": (tools: CheckTools) => titleInCard(tools),
+  },
+  Narrow: {
+    "the focused card's title stands inside its card": (tools: CheckTools) => titleInCard(tools),
+  },
+  FindOpen: {
+    "every key's label is whole: no key cut, none scrolled away": (tools: CheckTools) => keysWhole(tools),
+    "the focused card's title stands inside its card": (tools: CheckTools) => titleInCard(tools),
+  },
+  FindOpenNarrow: {
+    "every key's label is whole: no key cut, none scrolled away": (tools: CheckTools) => keysWhole(tools),
+    "the focused card's title stands inside its card": (tools: CheckTools) => titleInCard(tools),
+  },
+  FindOpenStrip: {
+    "every key's label is whole: no key cut, none scrolled away": (tools: CheckTools) => keysWhole(tools),
+    "the focused card's title stands inside its card": (tools: CheckTools) => titleInCard(tools),
+  },
+}
 
 type Opening = NonNullable<Parameters<typeof useZoneGames>[3]>
 
@@ -174,6 +308,24 @@ export function FindOpen() {
       model={fixtureReadyModel}
       opening={[{ _tag: "ChoseFind" }, { _tag: "PressedKey", key: { kind: "char", char: "o" } }]}
     />
+  )
+}
+
+/** FIND in a column 480 wide: the rows wrap, the band yields to the keys. */
+export function FindOpenNarrow() {
+  return (
+    <ZonePartFrame shape="w480">
+      <FindOpen />
+    </ZonePartFrame>
+  )
+}
+
+/** FIND on a strip 300 tall: one CSS px an art px, the band kept over the keys. */
+export function FindOpenStrip() {
+  return (
+    <ZonePartFrame shape="strip-300">
+      <FindOpen />
+    </ZonePartFrame>
   )
 }
 

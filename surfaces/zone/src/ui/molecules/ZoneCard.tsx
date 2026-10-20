@@ -59,13 +59,15 @@ export const cardTags = ({ system, places, resumable, download }: ZoneCardFacts)
  * wears the pink edge and the two red triangles that point at it; at an
  * end of the band, the triangle with nothing beyond it dims.
  *
- * No letter is ever cut. The focused title is caps-2 and steps to caps-1,
- * then wraps between words, the well giving way; a word longer than the
- * card stands whole past its edge. A side card's title is caps-1, wraps the
- * same way, and draws no title at all when one word is wider than the card
- * (whole once focused): never a cut word. The tag row steps its caps, then drops its last tags; the
- * focused card reports how many it kept (`onTagsShown`), so the page shows
- * the rest on the facts line.
+ * No letter is ever cut and the title never leaves its card. The focused
+ * title is caps-2 and steps to caps-1, then wraps between words, the well
+ * giving way; a side card's title is caps-1 and wraps the same way. A card
+ * draws no title at all when one word is wider than the card or its lines
+ * are taller than the card's room (a band shrunk under the keyboard), and
+ * says so (`onTitleShown`), so the page shows the title whole on the facts
+ * line. The tag row steps its caps, then drops its last tags; the focused
+ * card reports how many it kept (`onTagsShown`), so the page shows the
+ * rest on the facts line.
  *
  * A native button: the host puts DOM focus on it and the card reports the
  * focus through `onFocus`, and A (a click) through `onPress`. Its size comes from the band through
@@ -85,6 +87,7 @@ export function ZoneCard({
   onFocus,
   onPress,
   onTagsShown,
+  onTitleShown,
 }: ZoneCardFacts & {
   readonly focused?: boolean
   readonly position?: ZoneCardPosition
@@ -94,10 +97,18 @@ export function ZoneCard({
   readonly onPress?: () => void
   /** How many tags the row kept after its fit. */
   readonly onTagsShown?: (count: number) => void
+  /** Whether the card draws its title, after every fit. */
+  readonly onTitleShown?: (shown: boolean) => void
 }) {
   const card = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLSpanElement>(null)
-  useZoneWordsFit(card, heading, title)
+  useZoneWordsFit(card, heading, title, holder => {
+    // The width fit has run with the title drawn: a card whose body now
+    // runs past its own box has no room for these lines.
+    const box = card.current
+    holder.toggleAttribute("data-zone-words-tall", box !== null && box.scrollHeight > box.clientHeight + 1)
+    onTitleShown?.(!holder.hasAttribute("data-zone-words-long") && !holder.hasAttribute("data-zone-words-tall"))
+  })
   return (
     <button
       className="zone-card"

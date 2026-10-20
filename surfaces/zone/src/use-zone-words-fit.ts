@@ -17,7 +17,7 @@
  * the floor mark on the holder, refits when the box resizes and once the
  * faces have loaded, and re-renders nothing.
  */
-import { useLayoutEffect, type RefObject } from "react"
+import { useLayoutEffect, useRef, type RefObject } from "react"
 import { zoneFitSteps } from "./use-zone-fit"
 import { zoneArtPxOf } from "./use-zone-plan"
 
@@ -44,6 +44,8 @@ export function fitZoneWords(holder: HTMLElement): void {
   holder.style.setProperty("--zone-fit", "1")
   holder.removeAttribute("data-zone-fit-floor")
   holder.removeAttribute("data-zone-words-long")
+  // A holder's own height mark (set in its `after`) is measured anew too.
+  holder.removeAttribute("data-zone-words-tall")
   const words = holder.querySelector<HTMLElement>(".zone-words")
   const px = zoneArtPxOf(holder)
   const fontSize = Number.parseFloat(getComputedStyle(holder).fontSize)
@@ -61,14 +63,24 @@ export function fitZoneWords(holder: HTMLElement): void {
   }
 }
 
+/**
+ * `after` runs after every fit, with the holder: a holder that must also
+ * decide on its height (the card, whose title has a box's room) does it
+ * there.
+ */
 export function useZoneWordsFit(
   box: RefObject<HTMLElement | null>,
   holder: RefObject<HTMLElement | null>,
   key: string,
+  after?: (holder: HTMLElement) => void,
 ): void {
+  const then = useRef(after)
+  then.current = after
   useLayoutEffect(() => {
     const fit = () => {
-      if (holder.current !== null) fitZoneWords(holder.current)
+      if (holder.current === null) return
+      fitZoneWords(holder.current)
+      then.current?.(holder.current)
     }
     fit()
     let live = true

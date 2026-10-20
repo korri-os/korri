@@ -71,6 +71,7 @@ export function ZoneCardBand({
   onFocus,
   onChoose,
   onFocusedTagsShown,
+  onFocusedTitleShown,
 }: {
   readonly cards: readonly ZoneBandCard[]
   readonly focusedIndex: number
@@ -81,6 +82,8 @@ export function ZoneCardBand({
   readonly onChoose?: (index: number) => void
   /** How many tags the focused card's row kept after its fit. */
   readonly onFocusedTagsShown?: (count: number) => void
+  /** Whether the focused card draws its title, after its fit. */
+  readonly onFocusedTitleShown?: (shown: boolean) => void
 }) {
   const track = useRef<HTMLDivElement>(null)
   const focus = Math.min(Math.max(0, focusedIndex), Math.max(0, cards.length - 1))
@@ -151,6 +154,7 @@ export function ZoneCardBand({
                 onFocus={onFocus === undefined ? undefined : () => onFocus(index)}
                 onPress={onChoose === undefined ? undefined : () => onChoose(index)}
                 onTagsShown={index === focus ? onFocusedTagsShown : undefined}
+                onTitleShown={index === focus ? onFocusedTitleShown : undefined}
                 places={card.places}
                 position={positionOf(index, cards.length)}
                 resumable={card.resumable}

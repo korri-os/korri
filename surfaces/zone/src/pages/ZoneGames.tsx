@@ -3,6 +3,7 @@ import type { SurfaceAction, SurfaceNetworkConnection, SurfaceSettingItem } from
 import { useLayoutEffect, useRef } from "react"
 import { formatZoneBytes } from "../plan/bytes"
 import { ZONE_SHEET_MS, zoneSheetFrame } from "../plan/motion"
+import { useZoneFindPlan } from "../use-zone-find-plan"
 import { useZoneMoment } from "../use-zone-moment"
 import { ZoneButton } from "../ui/atoms/ZoneButton"
 import { ZoneCaps } from "../ui/atoms/ZoneCaps"
@@ -231,6 +232,8 @@ export function ZoneGames(props: ZoneGamesProps) {
     find, finding, opts, idle, launchHeld = false, tally, clock, device, connection, build, onEvent,
   } = props
   const root = useRef<HTMLDivElement | null>(null)
+  const body = useRef<HTMLDivElement | null>(null)
+  const keysBox = useRef<HTMLDivElement | null>(null)
   // GAME OPTS. slides in over the band from the right (M2's incoming rows).
   const sheet = useRef<HTMLDivElement | null>(null)
   useZoneMoment(sheet, {
@@ -250,6 +253,9 @@ export function ZoneGames(props: ZoneGamesProps) {
   const choice = launches.length > 1
   const failed = games && catalog._tag === "Error"
   const layer = opts !== undefined ? "opts" : finding ? "keyboard" : failed ? "error" : "none"
+  // The keys and the band share the box under the tabs by plan, so no key
+  // is ever cut and the keys never scroll.
+  useZoneFindPlan(root, body, keysBox, finding && games ? keysAt : undefined)
   // The tally covers the page, makes it inert and holds the cursor itself.
   // The launch card (drawn over the page by the status layer) does too
   // once Korri has named the launch.
@@ -340,6 +346,13 @@ export function ZoneGames(props: ZoneGamesProps) {
     }, 0)
   }
 
+  // A focused card with no room for its title (a word wider than the card,
+  // lines taller than its room) draws none; the facts line shows it whole.
+  const titleLine = useRef<HTMLSpanElement | null>(null)
+  const titleFrom = (shown: boolean) => {
+    setTimeout(() => titleLine.current?.toggleAttribute("data-hidden", shown), 0)
+  }
+
   const tabsSlot = (
     <div className="zone-games-tabs" data-games-region="tabs">
       <ZoneTabStrip
@@ -353,7 +366,7 @@ export function ZoneGames(props: ZoneGamesProps) {
   )
 
   const keyboard = (
-    <div className="zone-games-keys" data-block-exit="" data-games-region="keys" data-keys={keysAt}>
+    <div className="zone-games-keys" data-block-exit="" data-games-region="keys" data-keys={keysAt} ref={keysBox}>
       <ZoneKeyboard
         caret={find.caret}
         draft={find.draft}
@@ -362,6 +375,7 @@ export function ZoneGames(props: ZoneGamesProps) {
         maxLength={find.max}
         onFocusKey={id => report({ _tag: "FocusedKey", id })}
         onKey={key => onEvent({ _tag: "PressedKey", key })}
+        planned
       />
     </div>
   )
@@ -379,7 +393,7 @@ export function ZoneGames(props: ZoneGamesProps) {
         tabs={tabsSlot}
       >
         {games ? (
-          <div className="zone-games-body" data-facts={factsAt}>
+          <div className="zone-games-body" data-facts={factsAt} ref={body}>
             <div className="zone-games-band" data-games-region="band" inert={layer !== "none"}>
               {catalog._tag === "Loading" ? (
                 <div className="zone-games-loading" inert>
@@ -392,6 +406,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                   onChoose={index => onEvent({ _tag: "ChoseCard", index })}
                   onFocus={index => report({ _tag: "FocusedCard", index })}
                   onFocusedTagsShown={spillFrom}
+                  onFocusedTitleShown={titleFrom}
                   visible={band === "wide" ? 5 : 3}
                 />
               )}
@@ -422,6 +437,10 @@ export function ZoneGames(props: ZoneGamesProps) {
                 <div className="zone-games-factline" data-none={factLines.length === 0 || undefined} inert={layer !== "none"}>
                   <span className="zone-games-fact-panel">
                     <span className="zone-games-fact-run">
+                      {game === undefined ? null : (
+                        // Generated from the attribute: no second copy of the title in the page's text.
+                        <span className="zone-games-fact-title" data-hidden="" data-title={game.title} ref={titleLine} />
+                      )}
                       <span className="zone-games-spill" data-empty="" ref={spill}>
                         {spillTags.map(tag => (
                           <ZoneTag key={`${tag.kind}:${tag.label}`} kind={tag.kind} label={tag.label} />

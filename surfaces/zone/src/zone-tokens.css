@@ -450,7 +450,7 @@
   /** The room between keys. Art px. @label Key gap @min 0 @max 20 @step 1 */
   --zone-key-gap: 3;
   /** A key never gets narrower than this; a row wraps instead. Art px. @label Key width, least @min 16 @max 80 @step 1 */
-  --zone-key-min: 18;
+  --zone-key-min: 16;
   /** The slant of the keyboard panel itself. Art px. @label Keyboard slant @min 0 @max 80 @step 1 */
   --zone-keyboard-slant: 14;
   /** The typed slab's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Slab type @min 10 @max 30 @step 10 */
@@ -1230,4 +1230,40 @@
   --zone-paused-checker-dark: var(--zone-grey-dark);
   /** @label Paused checker, light */
   --zone-paused-checker-light: var(--zone-grey-light);
+}
+
+/* ---- refine-final ---- */
+/* The review's fixes: FIND's planned keyboard (src/plan/keyboard.ts holds
+ * the same numbers, test/plan-keyboard.test.ts holds them equal). */
+.zone-theme {
+  /** A shorter key, the second step the keys take once the band has gone. Art px. @label Key height, short @min 14 @max 40 @step 1 */
+  --zone-key-height-short: 18;
+  /** The least key: a caps-1 label with its drop, or a Jersey 10 descender, still whole. Art px. @label Key height, least @min 14 @max 40 @step 1 */
+  --zone-key-height-least: 16;
+  /** The room between keys at the tight spacing. Art px. @label Key gap, tight @min 0 @max 20 @step 1 */
+  --zone-key-gap-tight: 2;
+  /** The room inside the keyboard panel at the tight spacing. Art px. @label Keyboard padding, tight @min 0 @max 60 @step 1 */
+  --zone-keyboard-pad-tight: 4;
+  /** The typed slab at the tight spacing: a Jersey line is 14. Art px. @label Slab height, tight @min 14 @max 100 @step 1 */
+  --zone-slab-height-tight: 18;
+  /** The room either side of the FIND keyboard at the tight spacing. Art px. @label Find margin, tight @min 0 @max 40 @step 1 */
+  --zone-find-margin-tight: 2;
+  /** The keyboard panel's lean at the tight spacing. Art px. @label Keyboard slant, tight @min 0 @max 80 @step 1 */
+  --zone-keyboard-slant-tight: 7;
+  /** The room under the FIND keyboard at the tight spacing. Art px. @label Find inset, tight @min 0 @max 20 @step 1 */
+  --zone-find-inset-tight: 2;
+  /** The room a control key's label keeps either side, for the key's slant. Art px. @label Key label side @min 0 @max 12 @step 1 */
+  --zone-key-label-side: 4;
+  /** The abc key's label (Jersey 10, one Jersey pixel an art pixel). Art px. @label Key label abc @min 8 @max 60 @step 1 */
+  --zone-key-label-abc: 17;
+  /** The ABC key's label (Zone Caps, caps-1, 7 a letter). Art px. @label Key label ABC @min 8 @max 60 @step 1 */
+  --zone-key-label-shift: 21;
+  /** The #?! and :// keys' labels. Art px. @label Key label symbols @min 8 @max 60 @step 1 */
+  --zone-key-label-symbols: 17;
+  /** SPACE's label. Art px. @label Key label SPACE @min 8 @max 80 @step 1 */
+  --zone-key-label-space: 35;
+  /** DELETE's label. Art px. @label Key label DELETE @min 8 @max 80 @step 1 */
+  --zone-key-label-delete: 42;
+  /** DONE's label. Art px. @label Key label DONE @min 8 @max 80 @step 1 */
+  --zone-key-label-done: 28;
 }

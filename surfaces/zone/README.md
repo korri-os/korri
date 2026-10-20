@@ -1613,3 +1613,68 @@ stood 45 px down. Two causes, both fixed where they start:
   are tested in `test/plan-layers.test.ts`.
 - **Shared files touched:** none. `ZonePausedControl.tsx` loses its
   `scrollIntoView`; only ZonePaused holds the control.
+
+## The review's fixes (decided without asking: final)
+
+The review of the refinement found the FIND keyboard cutting letters and
+eight smaller faults. Where this section disagrees with one above, this
+one holds.
+
+- **FIND's keyboard is planned, not capped.** `planZoneFind(wArt, hArt)`
+  (`src/plan/keyboard.ts`) lays out the keyboard from the box under the
+  tabs, in art px: the key unit (whole art px, at least 16), how many keys
+  a line holds, the lines the four rows and the control row wrap to, and
+  so the keyboard's exact height. `useZoneFindPlan` measures the GAMES
+  body (or the screen below the tabs when the keyboard rises over the
+  foot) and writes the answer as `--zone-kb-*` properties ZoneKeyboard
+  reads (the page passes the keyboard `planned`), and `data-find-band` on
+  the page. The old cap
+  (`100cqh - band-min`) and the key height's `8cqb` clamp are gone. The
+  yield order: the band down to its least (60 art px), then the
+  keyboard's spacing (padding, gaps, side margins, the panel's lean and
+  the slab's room: `full`, then `tight`), then the band hides while
+  typing (DONE shows the result), then the keys get shorter (20, 18, 16
+  art px). Key type is caps-1 at every size already, the least Zone Caps
+  step, so the "key type steps down" of the review is the keys' height
+  here; a caps-1 label with its drop and a Jersey 10 descender stand whole
+  in 16. Only a box under about 120 art rows lets the panel scroll, as a
+  last resort. At 640x480 and 1280x720 the band hides while typing (the
+  keys need 140 of the body's 182 art rows, leaving 42 under the 60 the
+  band needs); 1280x300 keeps an 81-row band, and 480x800 a tall one.
+- **A control key is at least its label.** SPACE, DELETE, DONE and the
+  layer keys are at least their label's advance and 4 art px either side
+  for the key's slant (`--zone-key-label-*`, held to Zone Caps' grid by
+  `test/plan-keyboard.test.ts`). The control row stands on one line at
+  its preferred widths, else at its least with SPACE taking the rest of
+  the line, else it wraps. DELETE was cut by its own key at 640x480.
+- **Every other keyboard fits itself by the same steps.** OPTIONS' entry,
+  SAVE DATA's entry and first boot's NAME step do not plan their keyboard,
+  so `useZoneKeyboardFit` tries the plan's steps in the same order
+  (`ZONE_KEYBOARD_STEPS`: spacing, then key height), writing each on the
+  panel, and keeps the first whose keys the holder's room holds unscrolled.
+  Before, those keyboards shrank their keys to a share of the box (the
+  same `8cqb` clamp) and cut their letters; with whole keys and no fit,
+  OPTIONS' join keyboard at 640x480 scrolled DONE away.
+- **The abc key is Jersey 10 at the fact size.** Its label is lower case,
+  which Zone Caps has not got, so it fell back to Jersey 10 at caps-1's
+  em: half a Jersey pixel an art pixel, a mixel. A layer key with a lower
+  case label now takes the fact face, as a letter key does.
+- **The keyboard stands over the FIND key** (`z-index` 3), which is inert
+  while typing, when the keys reach the body's top.
+- **A card never lets its title out.** Supersedes "a word longer than the
+  card stands whole past its edge" (games). A card, focused or not, draws
+  no title when one word is wider than the card or its lines are taller
+  than the card's room (`data-zone-words-tall`, measured after the width
+  fit). The focused card reports it (`onTitleShown`, through ZoneCardBand's
+  `onFocusedTitleShown`), and the facts line then shows the title whole at
+  its start, in Jersey 10 as Korri writes it, as generated content so the
+  page's text holds the title once. While typing the facts line is down;
+  the title is back on the card or the line after DONE.
+- **The proof is in the part.** `ZoneGames.page.part.tsx` exports Caliper
+  checks: FindOpen, FindOpenNarrow (480 wide) and FindOpenStrip (300
+  tall) find every key's label whole (its letters, a descender and the
+  drop, measured from the key's baseline, inside its own key, the panel
+  and the screen) and the panel unscrolled; those three, default and
+  Narrow find the focused title inside its card or not drawn. Run at
+  640x480, 1280x720 and on two devices added for the run (480x800,
+  1280x300); with the keys planted at 12 art px the key check fails.
