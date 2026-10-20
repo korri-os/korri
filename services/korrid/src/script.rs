@@ -269,6 +269,22 @@ fn evaluate_module(
                 "discovery provider has no callable discovery.discover handler".to_owned()
             })?;
         }
+        // An explicit providers export is an acquisition provider (ADR 0013).
+        if declaration
+            .get("providers")
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|providers| !providers.is_empty())
+        {
+            for operation in [
+                "claims.search",
+                "claims.details",
+                "artifact.resolve-download",
+            ] {
+                handler(&exports, operation).map_err(|_| {
+                    format!("acquisition provider has no callable {operation} handler")
+                })?;
+            }
+        }
         let result = if let Some(invocation) = invocation {
             let operation = invocation.operation;
             let handler = handler(&exports, operation)?;
