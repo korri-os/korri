@@ -95,8 +95,9 @@ interface.
 On x86, the disposable VM tests offline image receipts, invalid approval
 refusal, incomplete proof refusal, actual key-only SSH login, disable,
 re-enable, reboot recovery, and the published mGBA registry consumed by
-korrid. It also checks the pack's exact required runtime, tampered graph approval
-refusal, required-runtime disable refusal and dependency-aware re-enable.
+korrid. It also seeds the pack's exact required FAKE-08, Solarus and ZQuest
+Classic runtimes, and checks tampered graph approval refusal, required-runtime
+disable refusal and dependency-aware re-enable.
 It uses the production publisher key and the exact published packages. It
 creates no test-signed replacement packages. ARM image proofs run on the
 build host; native ARM lifecycle and handheld behavior remain separate tests.

@@ -1,6 +1,7 @@
 # Acceptance consumes immutable outputs already substituted by the caller.
 # No plugin producers, test signing keys, NAR cache, or plugin derivations.
-# publishedPaths has the selected SSH, mGBA, FAKE-08 and Starter pack paths;
+# publishedPaths has the selected SSH, mGBA and Starter pack paths and the
+# pack's exact required FAKE-08, Solarus and ZQuest Classic paths;
 # metadata is the checked union of the corresponding offline proof archives.
 {
   pkgs,
@@ -18,6 +19,8 @@ let
     publishedPaths.ssh
     publishedPaths.mgba
     publishedPaths.fake08
+    publishedPaths.solarus
+    publishedPaths.zquestClassic
     publishedPaths.starterPack
   ];
   # Reject recipe-backed values even if their output exists in a warm store.
@@ -204,8 +207,8 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("korrid.service")
     peer.wait_for_unit("multi-user.target")
     paths = ${builtins.toJSON (map builtins.unsafeDiscardStringContext paths)}
-    ssh_path, mgba_path, fake08_path, pack_path = paths
-    expected_packages = {"@korri:ssh": ssh_path, "@korri:mgba": mgba_path, "@korri:fake08": fake08_path, "@korri:starter-pack": pack_path}
+    ssh_path, mgba_path, fake08_path, solarus_path, zquest_path, pack_path = paths
+    expected_packages = {"@korri:ssh": ssh_path, "@korri:mgba": mgba_path, "@korri:fake08": fake08_path, "@korri:solarus": solarus_path, "@korri:zquest-classic": zquest_path, "@korri:starter-pack": pack_path}
     cache_url = ${builtins.toJSON binding.cacheUrl}
     package_args = " ".join(shlex.quote(path) for path in paths)
     generation = machine.succeed("readlink -f /run/current-system").strip()
@@ -285,9 +288,11 @@ pkgs.testers.runNixOSTest {
     ssh_receipt_path, ssh_receipt = seeded("@korri:ssh", ssh_path)
     mgba_receipt_path, mgba_receipt = seeded("@korri:mgba", mgba_path)
     fake08_receipt_path, fake08_receipt = seeded("@korri:fake08", fake08_path)
+    solarus_receipt_path, solarus_receipt = seeded("@korri:solarus", solarus_path)
+    zquest_receipt_path, zquest_receipt = seeded("@korri:zquest-classic", zquest_path)
     pack_receipt_path, pack_receipt = seeded("@korri:starter-pack", pack_path)
     pack_manifest = json.loads(machine.succeed("cat " + pack_path + "/manifest.json"))
-    assert pack_manifest["requires"] == [fake08_path], pack_manifest
+    assert pack_manifest["requires"] == [fake08_path, solarus_path, zquest_path], pack_manifest
     ssh_manifest = json.loads(machine.succeed("cat " + ssh_path + "/manifest.json"))
     assert len(ssh_manifest["services"]) == 1, ssh_manifest
     native_name, native_source = next(iter(ssh_manifest["services"].items()))
@@ -334,6 +339,8 @@ pkgs.testers.runNixOSTest {
     assert ssh["approval"] == ssh_receipt["approval"]
     assert mgba["approval"] == mgba_receipt["approval"]
     assert reports["@korri:fake08"]["approval"] == fake08_receipt["approval"]
+    assert reports["@korri:solarus"]["approval"] == solarus_receipt["approval"]
+    assert reports["@korri:zquest-classic"]["approval"] == zquest_receipt["approval"]
     assert reports["@korri:starter-pack"]["approval"] == pack_receipt["approval"]
     assert reports["@korri:starter-pack"]["native_units"] == {}
     # The signed pack must recover through the same exact graph approval as
@@ -412,7 +419,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin restore-all")
     assert json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json")) == enabled
     assert [game["id"] for game in games()] == ["wario-land-4"]
-    machine.succeed("korri-plugin disable @korri:starter-pack; korri-plugin disable @korri:fake08; korri-plugin disable @korri:ssh; korri-plugin disable @korri:mgba; korri-plugin restore-all")
+    machine.succeed("korri-plugin disable @korri:starter-pack; korri-plugin disable @korri:fake08; korri-plugin disable @korri:solarus; korri-plugin disable @korri:zquest-classic; korri-plugin disable @korri:ssh; korri-plugin disable @korri:mgba; korri-plugin restore-all")
     ports(False)
     login(success=False)
     assert games() == []
