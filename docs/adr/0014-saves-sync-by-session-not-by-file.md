@@ -34,6 +34,24 @@ can record what each session started from.
   game, or has newer saves that this device has not received. The warning has
   no expiry, names the device and since when, and always offers to launch
   anyway. It never blocks; the split check still protects the launch.
+- Before a launch, korrid waits up to 3 seconds for the person's other devices,
+  with a Skip action. When none answers, it asks before launch only if the last
+  news from another device said it held the game in use or had newer saves.
+  Otherwise it launches and shows that it did not check with other devices.
+- When the latest snapshot ran a different release than the one about to
+  launch, Korri names both releases, warns, and allows the launch.
+- Snapshots move right after they are made, to every reachable device of the
+  person; whenever two of the person's devices come in contact; and before
+  every launch.
+- Each device keeps the latest snapshot of every game it can play and both
+  sides of every open split. Older snapshots stay on the device that made them.
+  Korri keeps the last 10 snapshots of each game, plus every side of a split
+  that was not picked.
+- "Delete save" records an empty snapshot that syncs everywhere. Earlier
+  snapshots stay restorable.
+- After an identity switch, the previous owner's saves stay on the device,
+  untouched, and stop syncing. They sync again if that person owns the device
+  again.
 - Snapshots move only between the person's own devices. A hosted store is out
   of scope until a separate spike.
 - Every runner plugin's games are in scope, not only emulators.
@@ -43,7 +61,7 @@ can record what each session started from.
 | Element | Comes from | Delta and why |
 |---|---|---|
 | Sync before launch and after exit | legacy `work/parking-lot/01KSRGFP090VJBVE7MNCGWYF9R-steam-like-savestate-sync.md` ("pull the latest before launch … on session exit, upload") | None |
-| Ask before launch when progress is not safe | legacy `docs/jobs/safe-game-resume.md` SGR-O1 | A split always requires a choice. Behaviour when no peer can be reached is still open. |
+| Ask before launch when progress is not safe | legacy `docs/jobs/safe-game-resume.md` SGR-O1 | A split always requires a choice. When no device answers, Korri asks only on a known risk, not on every unverified launch: saves move only between the person's devices, so an offline handheld could never verify and would ask on every launch. |
 | Choice between two saves side by side | legacy `product/surfaces/web/pico/pages/future/CloudSaveConflict.tsx` | Renamed from conflict to split (CONTEXT.md) |
 | Per-person save location | `PluginLaunchInput.account_root` (`services/korrid/src/launcher/plugin_launch.rs`) | None |
 | Session start and exit hooks | `HostSessionControl::prepare_inner` and the completion path in `services/korrid/src/host/session_state.rs` | None |
@@ -80,8 +98,8 @@ Savestates of 0.5 to 2 GB make storage and transfer cost real.
 Not decided yet, and not to be assumed by an implementation:
 
 - Which files on disk belong to one game's save snapshot, and who declares them.
-- What a launch does when no other device of the person can be reached.
-- Which devices keep which snapshots, and how long older snapshots are kept.
-- What happens to a previous device owner's saves after an identity switch.
-- How "Delete save" behaves in a save history.
+- Per-person save folders: `account_root` is `users/default` for everyone today
+  (`services/korrid/src/launcher/linux_plugin.rs:110`).
+- Games whose saves land outside `account_root`, and Steam games.
+- How a split choice reaches the person's other devices.
 - The data model, storage format and wire messages.
