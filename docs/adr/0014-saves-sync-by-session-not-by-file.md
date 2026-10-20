@@ -54,6 +54,19 @@ can record what each session started from.
   again.
 - The runner plugin declares the save locations of each launch in its launch
   declaration. korrid snapshots them; the plugin performs no effect.
+- For a program that does not let the plugin choose where it saves, the plugin
+  declares where the program writes and which save location that maps to.
+  korrid binds the save location there for that launch only. The plugin
+  declares the bind; korrid performs it.
+- A game whose runner declares no save locations launches as today and shows
+  that its saves are not synced.
+- When sync first starts, games whose saves are byte-identical on two devices
+  join without a question. Every other game with saves on more than one device
+  is listed once in a one-time review, and the person picks per game.
+- Two snapshots with byte-identical content are not a split, even when they
+  started from the same snapshot. Korri compares content hashes, never clocks.
+- A split found during a live session is shown after the session ends, or
+  earlier if the person opens the gameplay overlay.
 - Each person gets their own `account_root` under `users/`, keyed like the play
   log keys a person (`services/korrid/src/host/play_log.rs`). Today every person
   shares `users/default` (`services/korrid/src/launcher/linux_plugin.rs:110`).
@@ -116,5 +129,7 @@ Not decided yet, and not to be assumed by an implementation:
 - How a runner whose folder is shared by every game names one game's files.
 - Games whose saves land outside `account_root` (OpenGOAL, Fallout 1/2 CE,
   Skate 3): being checked plugin by plugin, including legacy.
-- The shape of the save-location declaration in the plugin contract.
+- The shape of the save-location and bind declarations in the plugin contract,
+  and how a bind is set up inside korrid's launch (systemd scope, launch
+  modifiers such as Gamescope, runners that already sandbox themselves).
 - The data model, storage format and wire messages.
