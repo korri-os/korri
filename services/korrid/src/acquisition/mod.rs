@@ -112,7 +112,12 @@ impl AcquisitionCoordinator {
             .into_iter()
             .map(|(_, artifact)| artifact.id.clone())
             .collect();
-        self.enqueue(root, private_root, registry, &ids, false)?;
+        // One artifact that can no longer be queued must not hold back others.
+        for id in ids {
+            if let Err(failure) = self.enqueue(root, private_root, registry, &[id], false) {
+                eprintln!("korrid acquisition recovery: {}", failure.message);
+            }
+        }
         Ok(())
     }
 
@@ -421,7 +426,10 @@ impl AcquisitionCoordinator {
                 None
             } else if let Some(running) = queue.running.as_ref().filter(|run| run.base == base) {
                 let _ = running.stop.send(Stop::Cancel);
-                Some(Some(running.done.clone()))
+                let done = running.done.clone();
+                // A job a launch just paused is also back in the queue.
+                queue.waiting.retain(|item| *item != base);
+                Some(Some(done))
             } else {
                 queue.waiting.retain(|item| *item != base);
                 if let Some(job) = queue.jobs.get_mut(&base) {

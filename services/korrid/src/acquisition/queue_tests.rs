@@ -16,9 +16,11 @@ const FIRST: usize = 16 * 1024;
 
 /// Serves `/slow` (sends FIRST bytes, then waits for the gate unless the
 /// request resumes with Range) and `/a`, `/b` at once. Logs path and offset.
+type RequestLog = Arc<Mutex<Vec<(String, Option<usize>)>>>;
+
 struct Server {
     address: std::net::SocketAddr,
-    log: Arc<Mutex<Vec<(String, Option<usize>)>>>,
+    log: RequestLog,
     gate: Arc<AtomicBool>,
     slow: Vec<u8>,
 }
@@ -219,7 +221,7 @@ async fn one_job_at_a_time_and_a_launch_goes_first_while_the_background_job_paus
     assert_eq!(paths[2].0, "/slow");
     assert!(paths[2]
         .1
-        .is_some_and(|offset| offset >= FIRST && offset < SLOW));
+        .is_some_and(|offset| (FIRST..SLOW).contains(&offset)));
     assert_eq!(paths[3], ("/b".to_owned(), None));
     let artifact = registry.artifact(slow).unwrap();
     assert_eq!(
