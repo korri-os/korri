@@ -242,7 +242,7 @@ function type(text: string, keyboard: HTMLElement = keyboardOnScreen()) {
 }
 const keyboardOnScreen = () => screen.getByRole("group", { name: "Keyboard" })
 const focusedText = () => document.activeElement?.textContent ?? ""
-const onScreen = (text: string | RegExp) => screen.getAllByText(text).length > 0
+const onScreen = (text: string | RegExp) => screen.queryAllByText(text).length > 0
 const currentTab = () => document.querySelector("[role='tablist'] [aria-current='page']")?.textContent ?? ""
 const cardTitles = () => [...document.querySelectorAll(".zone-card-title")].map(node => node.textContent)
 const calls = (host: FakeHost) => host.calls.map(call => [call.method, ...call.args])
@@ -504,5 +504,92 @@ describe("runner choice", () => {
     publish({ ...HOME, runnerChoice: { _tag: "Closed" } })
     expect(document.querySelector(".zone-run-with")).toBeNull()
     expect(cardTitles()).toHaveLength(GAMES.length)
+  })
+})
+
+// ---- C12 to C15: OPTIONS ----
+
+describe("settings", () => {
+  test("C12 groups and items", () => {
+    const { press } = mount()
+    openOptions(press)
+    const titles = [...document.querySelectorAll(".zone-options-scroll h2")].map(heading => heading.textContent)
+    expect(titles).toEqual(["Device", "System information", "System", "WI-FI"])
+    expect(onScreen("Device name")).toBe(true)
+    expect(onScreen("mini")).toBe(true)
+    expect(onScreen("14 games")).toBe(true)
+    // The description shows under the focused row.
+    expect(onScreen("What other devices call this one")).toBe(false)
+    moveTo(row("Device name"))
+    expect(onScreen("What other devices call this one")).toBe(true)
+  })
+
+  test("C13 interactions", () => {
+    const { host, press } = mount()
+    openOptions(press)
+    // choice: right and left step it, sent at once.
+    moveTo(row("Player seats"))
+    sideways("right")
+    sideways("left")
+    expect(calls(host)).toEqual([["changeSetting", SEATS, "3"], ["changeSetting", SEATS, "1"]])
+    // text: A raises the keyboard with the value; DONE commits.
+    moveTo(row("Device name"))
+    confirm()
+    const name = screen.getByRole("dialog", { name: "Device name" })
+    type("2", name)
+    moveTo(button("Done", name))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["changeSetting", "device-name", "mini2"])
+    // sensitiveText: dots, never the value; Korri's clear label clears it.
+    expect(onScreen("Configured")).toBe(false)
+    moveTo(row("SteamGridDB API key"))
+    expect(onScreen("Clear saved key")).toBe(true)
+    confirm()
+    const secret = screen.getByRole("dialog", { name: "SteamGridDB API key" })
+    type("ab1", secret)
+    expect(secret.textContent).toContain("•••")
+    expect(secret.textContent).not.toContain("ab1")
+    moveTo(button("Clear saved key", secret))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["changeSetting", "steamgriddb", ""])
+    // action with Korri's confirmation: its title, message and confirm label.
+    moveTo(row("Library"))
+    confirm()
+    const ask = screen.getByRole("dialog", { name: "Rescan the library?" })
+    expect(ask.textContent).toContain("Every folder is read again")
+    expect(focusedText()).toBe("No")
+    moveTo(button("Rescan", ask))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "rescan-library"])
+  })
+
+  test("C14 saving and problem", () => {
+    const { host, publish, press } = mount()
+    openOptions(press)
+    publish({ ...HOME, settingsStatus: { _tag: "Saving", settingId: SEATS } })
+    expect(row("Player seats").querySelector("[aria-label='Saving']")).not.toBeNull()
+    publish({ ...HOME, settingsStatus: { _tag: "Problem", settingId: SEATS, message: "Seats could not be saved." } })
+    expect(screen.getByRole("alert").textContent).toBe("Seats could not be saved.")
+    moveTo(row("Dismiss"))
+    confirm()
+    expect(calls(host)).toEqual([["dismissSettingsProblem"]])
+  })
+
+  test("C15 device actions", () => {
+    const { host, press } = mount()
+    // `system` lands on the SYSTEM group's first row.
+    press("system")
+    expect(currentTab()).toContain("Options")
+    expect(focusedText()).toContain("Pair controller")
+    confirm()
+    expect(calls(host)).toEqual([["runAction", "pair"]])
+    // A destructive one asks first, under its label, with Korri's description.
+    moveTo(row("Restart"))
+    confirm()
+    const ask = screen.getByRole("dialog", { name: "Restart" })
+    expect(ask.textContent).toContain("Closes every game")
+    moveTo(button("Yes", ask))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "restart"])
   })
 })
