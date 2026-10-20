@@ -171,6 +171,11 @@
   text-shadow: none;
 }
 
+/* Korri's placeholder in place of an empty value: dimmed, so it never reads as the value. */
+.zone-option-row-text[data-placeholder] {
+  opacity: var(--zone-placeholder-opacity);
+}
+
 /* A disabled row: dimmed like a disabled button, still focusable so Korri's
  * reason under it can be read. */
 .zone-option-row[data-disabled] .zone-option-row-control {

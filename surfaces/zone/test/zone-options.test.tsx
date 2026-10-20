@@ -107,13 +107,15 @@ describe("C13 interactions", () => {
     act(() => program?.dispatch({ _tag: "PressedMenu" }))
     expect(host.calls).toEqual(["setting:device-name=mini"])
   })
-  test("sensitiveText: dots on the row and in the keyboard, never the value; CLEAR sends empty", () => {
+  test("sensitiveText: Korri's status on the row, its placeholder then dots on the keyboard, never what is typed; CLEAR sends empty", () => {
     const host = mount()
-    expect(screen.queryByText("Configured")).toBeNull()
-    expect(screen.getByText("•".repeat("Configured".length))).toBeTruthy()
+    expect(row("SteamGridDB API key").querySelector(".zone-option-row-text")?.textContent).toBe("Configured")
+    expect(screen.queryByText("•".repeat("Configured".length))).toBeNull()
     fireEvent.click(row("SteamGridDB API key"))
     const entry = screen.getByRole("dialog", { name: "SteamGridDB API key" })
+    expect(entry.querySelector(".zone-keyboard-placeholder")?.textContent).toBe("Paste API key")
     typeInto(entry, "ab1")
+    expect(entry.querySelector(".zone-keyboard-placeholder")).toBeNull()
     expect(entry.textContent).toContain("•••")
     expect(entry.textContent).not.toContain("ab1")
     fireEvent.click(within(entry).getByText("Clear saved key").closest("button")!)

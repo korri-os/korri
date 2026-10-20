@@ -212,6 +212,7 @@ function press(state: ZoneOptions, rowId: string, korri: ZoneOptionsSlices, plan
         secret: action.secret,
         ...(action.maxLength === undefined ? {} : { maxLength: action.maxLength }),
         ...(action.clearLabel === undefined ? {} : { clearLabel: action.clearLabel }),
+        ...(action.placeholder === undefined ? {} : { placeholder: action.placeholder }),
       }
       return stay({ ...here, keyboard: openKeyboard(entry, action.draft) })
     }

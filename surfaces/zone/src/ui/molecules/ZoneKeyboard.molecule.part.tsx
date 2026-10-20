@@ -55,7 +55,7 @@ function createDraftStore(initial: Draft) {
 }
 
 /** Unexported: the scenario around the real keyboard. The lit key follows the host's cursor through `onFocusKey`. */
-function Typing({ initial, secret = false, maxLength }: { initial: Draft; secret?: boolean; maxLength?: number }) {
+function Typing({ initial, secret = false, maxLength, placeholder }: { initial: Draft; secret?: boolean; maxLength?: number; placeholder?: string }) {
   const store = useRef<ReturnType<typeof createDraftStore> | null>(null)
   store.current ??= createDraftStore(initial)
   const state = useSyncExternalStore(store.current.subscribe, store.current.get)
@@ -68,6 +68,7 @@ function Typing({ initial, secret = false, maxLength }: { initial: Draft; secret
       maxLength={maxLength}
       onFocusKey={(id) => store.current?.focus(id)}
       onKey={(key) => store.current?.press(key, maxLength)}
+      placeholder={placeholder}
       secret={secret}
     />
   )
@@ -108,6 +109,11 @@ export function LongDraft() {
 /** Nothing typed yet: the caret alone on the slab. */
 export function Empty() {
   return <Typing initial={{ draft: "", caret: 0, layer: "letters", focusedKey: "q" }} maxLength={24} />
+}
+
+/** Nothing typed yet, and Korri has a hint: the placeholder, dimmed, after the caret. It goes with the first key. */
+export function Placeholder() {
+  return <Typing initial={{ draft: "", caret: 0, layer: "letters", focusedKey: "q" }} maxLength={256} placeholder="Paste API key" secret />
 }
 
 /** A column: rows wrap before a key gets too small, the panel scrolls to the focused key, and the slab scrolls to the caret. */

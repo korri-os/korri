@@ -34,11 +34,19 @@ export const fixtureTextRow: SurfaceSettingItem = {
   interaction: { kind: "text", placeholder: "Name", maxLength: 24 },
 }
 
+/** A secret as the portal publishes one: its value is Korri's status word, never the secret. */
 export const fixtureSecretRow: SurfaceSettingItem = {
-  id: "wifi-password",
-  label: "Wi-Fi password",
-  value: "hummingbird",
-  interaction: { kind: "sensitiveText", maxLength: 63, clearLabel: "Clear" },
+  id: "steamgriddb-credential",
+  label: "SteamGridDB API key",
+  value: "Configured",
+  interaction: { kind: "sensitiveText", placeholder: "Paste API key", maxLength: 256, clearLabel: "Clear saved key" },
+}
+
+/** A text setting Korri has no value for: the row shows its placeholder. */
+export const fixtureEmptyTextRow: SurfaceSettingItem = {
+  id: "device-name",
+  label: "Name",
+  interaction: { kind: "text", placeholder: "This device", maxLength: 64 },
 }
 
 export const fixtureActionRow: SurfaceSettingItem = {

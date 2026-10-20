@@ -13,8 +13,12 @@ import { useZoneHorizontal } from "../../use-zone-horizontal"
  *  - `choice`: red triangles flank the value while the row is focused;
  *    left and right step it (`onStep`).
  *  - `text`: the value shows as given; A raises the keyboard (`onPress`).
- *  - `sensitiveText`: one dot per character, never the characters, and the
- *    X keycap with Korri's `clearLabel` beside it while focused.
+ *  - `sensitiveText`: the value shows as given, because Korri's value for
+ *    a secret is its status ("Configured", "Not set"), never the secret;
+ *    the X keycap with Korri's `clearLabel` stands beside it while focused.
+ *    Dots are only for what the person types, on the keyboard.
+ *  - `text` and `sensitiveText` with no value: Korri's `placeholder`,
+ *    dimmed, stands in the value's place.
  *  - `action`: the value is the command; a destructive one is red.
  *  - absent: the row is read-only and draws nothing it cannot do.
  *
@@ -23,7 +27,7 @@ import { useZoneHorizontal } from "../../use-zone-horizontal"
  * `data-korri-horizontal-control` while it can step), never as keys.
  *
  * `valueNode` draws the value when a word is not enough (a ZoneSignal's
- * bars); `value` still names it for the dots and for assistive tech.
+ * bars); `value` still names it for assistive tech.
  * `disabled` dims the row and keeps it focusable; Korri's `description`
  * stands under it whether or not it is focused, so the reason is on screen;
  * A does nothing.
@@ -78,7 +82,8 @@ export function ZoneOptionRow({
   const kind = interaction?.kind ?? "readonly"
   const destructive = interaction?.kind === "action" && interaction.destructive === true
   const clearLabel = interaction?.kind === "sensitiveText" ? interaction.clearLabel : undefined
-  const shown = value === undefined ? undefined : kind === "sensitiveText" ? "•".repeat(value.length) : value
+  const placeholder = (value === undefined || value === "")
+    && (interaction?.kind === "text" || interaction?.kind === "sensitiveText") ? interaction.placeholder : undefined
   const steps = kind === "choice" && focused && !saving && !disabled
   const horizontal = useZoneHorizontal(control, steps && onStep !== undefined, kind, onStep)
 
@@ -109,7 +114,9 @@ export function ZoneOptionRow({
             ? <span aria-label="Saving" className="zone-option-row-caret" role="img" />
             : valueNode !== undefined
               ? <span className="zone-option-row-text">{valueNode}</span>
-              : <span className="zone-option-row-text">{shown}</span>}
+              : placeholder !== undefined
+                ? <span className="zone-option-row-text" data-placeholder>{placeholder}</span>
+                : <span className="zone-option-row-text">{value}</span>}
           {steps ? <span className="zone-option-row-step zone-option-row-step-forward" /> : null}
         </span>
       </button>

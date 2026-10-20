@@ -199,6 +199,7 @@ export function ZoneOptions({
               onClear={onClear}
               onFocusKey={onKeyFocus}
               onKey={onKey ?? (() => undefined)}
+              placeholder={heading.placeholder}
               problem={entryProblem}
               secret={heading.secret}
               title={heading.title}

@@ -2,6 +2,7 @@ import {
   fixtureActionRow,
   fixtureChoiceRow,
   fixtureDestructiveRow,
+  fixtureEmptyTextRow,
   fixtureLongRow,
   fixtureSecretRow,
   fixtureTextRow,
@@ -27,9 +28,26 @@ export function Text() {
   return <ZoneOptionRow focused interaction={fixtureTextRow.interaction} label={fixtureTextRow.label} value={fixtureTextRow.value} />
 }
 
-/** A secret: one dot per character and Korri's clear label on the X keycap. */
+/** No value from Korri: its placeholder, dimmed, in the value's place. */
+export function TextPlaceholder() {
+  return <ZoneOptionRow focused interaction={fixtureEmptyTextRow.interaction} label={fixtureEmptyTextRow.label} value={fixtureEmptyTextRow.value} />
+}
+
+/** A secret: Korri's status word as given (never dots, never the secret) and its clear label on the X keycap. */
 export function SensitiveText() {
   return <ZoneOptionRow focused interaction={fixtureSecretRow.interaction} label={fixtureSecretRow.label} value={fixtureSecretRow.value} />
+}
+
+/** A secret Korri holds none of: its word for that, and no clear key. */
+export function SensitiveNotSet() {
+  return (
+    <ZoneOptionRow
+      focused
+      interaction={{ kind: "sensitiveText", placeholder: "Paste API key", maxLength: 256 }}
+      label={fixtureSecretRow.label}
+      value="Not configured"
+    />
+  )
 }
 
 /** An action row: the value is the command. */

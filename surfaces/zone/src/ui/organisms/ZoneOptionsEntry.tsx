@@ -32,6 +32,7 @@ export function ZoneOptionsEntry({
   focusedKey,
   maxLength,
   clearLabel,
+  placeholder,
   problem,
   onKey,
   onFocusKey,
@@ -47,6 +48,8 @@ export function ZoneOptionsEntry({
   readonly maxLength?: number
   /** Korri's words for clearing a saved secret. */
   readonly clearLabel?: string
+  /** Korri's hint for an empty draft, dimmed on the slab. */
+  readonly placeholder?: string
   /** Korri's reason the last try failed, verbatim. */
   readonly problem?: string
   readonly onKey: (key: ZoneKey) => void
@@ -94,6 +97,7 @@ export function ZoneOptionsEntry({
           maxLength={maxLength}
           onFocusKey={onFocusKey}
           onKey={onKey}
+          placeholder={placeholder}
           secret={secret}
         />
       </div>

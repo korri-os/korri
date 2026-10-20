@@ -339,6 +339,8 @@
   --zone-type-reason-scale: 0.5;
   /** How much of a disabled button's panel shows. @label Disabled opacity @min 0 @max 1 @step 0.05 */
   --zone-disabled-opacity: 0.5;
+  /** How much of Korri's placeholder shows, in a row's value and on the keyboard's slab. @label Placeholder opacity @min 0.3 @max 1 @step 0.05 */
+  --zone-placeholder-opacity: 0.6;
   /** The TIME label as a share of the foot's type. @label Timer label scale @min 0.3 @max 1 @step 0.02 */
   --zone-type-timer-label-scale: 0.74;
   /** The device tag as a share of the foot's type. @label Device tag scale @min 0.3 @max 1 @step 0.02 */

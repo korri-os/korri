@@ -5,7 +5,7 @@
  * surface depends on are asserted by those words.
  */
 import { afterEach, describe, expect, test } from "bun:test"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { ComponentType } from "react"
 import * as panel from "../src/ui/atoms/ZonePanel.atom.part"
 import * as caps from "../src/ui/atoms/ZoneCaps.atom.part"
@@ -132,10 +132,26 @@ describe("the words the surface depends on", () => {
     expect(screen.getByText(/^yes$/i)).toBeTruthy()
   })
 
-  test("a sensitive option row shows dots, never the secret", () => {
+  test("a sensitive option row shows Korri's status word as given, and no typed secret", () => {
     const { container } = render(<optionRow.SensitiveText />)
-    const text = container.textContent ?? ""
-    expect(text).toMatch(/[•●*]/)
+    const value = container.querySelector(".zone-option-row-text")?.textContent ?? ""
+    expect(value).toBe("Configured")
+    expect(container.textContent ?? "").not.toMatch(/[•●*]/)
+  })
+
+  test("an option row with no value shows Korri's placeholder, dimmed", () => {
+    const { container } = render(<optionRow.TextPlaceholder />)
+    const value = container.querySelector(".zone-option-row-text")
+    expect(value?.textContent).toBe("This device")
+    expect(value?.hasAttribute("data-placeholder")).toBe(true)
+  })
+
+  test("the keyboard shows Korri's placeholder on an empty draft, and drops it at the first key", () => {
+    const { container } = render(<keyboard.Placeholder />)
+    expect(container.querySelector(".zone-keyboard-placeholder")?.textContent).toBe("Paste API key")
+    fireEvent.click(screen.getByRole("button", { name: "a" }))
+    expect(container.querySelector(".zone-keyboard-placeholder")).toBeNull()
+    expect(container.querySelector(".zone-keyboard-draft")?.textContent).toBe("•")
   })
 
   test("the secret keyboard draft shows dots, never the secret", () => {

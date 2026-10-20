@@ -119,7 +119,7 @@ const HOME: SurfaceModel = {
           id: "steamgriddb",
           label: "SteamGridDB API key",
           value: "Configured",
-          interaction: { kind: "sensitiveText", clearLabel: "Clear saved key" },
+          interaction: { kind: "sensitiveText", placeholder: "Paste API key", clearLabel: "Clear saved key" },
         },
         {
           id: "rescan",
@@ -516,7 +516,7 @@ describe("runner choice", () => {
 
 describe("settings", () => {
   test("C12 groups and items", () => {
-    const { press } = mount()
+    const { press, publish } = mount()
     openOptions(press)
     const titles = [...document.querySelectorAll(".zone-options-scroll h2")].map(heading => heading.textContent)
     expect(titles).toEqual(["Device", "System information", "System", "WI-FI"])
@@ -527,6 +527,15 @@ describe("settings", () => {
     expect(onScreen("What other devices call this one")).toBe(false)
     moveTo(row("Name"))
     expect(onScreen("What other devices call this one")).toBe(true)
+    // No name from Korri: the row shows Korri's placeholder, dimmed, in its place.
+    const unnamed = HOME.settings.map(group => ({
+      ...group,
+      items: group.items.map(item => (item.id === "device-name" ? { ...item, value: undefined } : item)),
+    }))
+    publish({ ...HOME, settings: unnamed })
+    const value = row("Name").querySelector(".zone-option-row-text")
+    expect(value?.textContent).toBe("This device")
+    expect(value?.hasAttribute("data-placeholder")).toBe(true)
   })
 
   test("C13 interactions", () => {
@@ -545,13 +554,16 @@ describe("settings", () => {
     moveTo(button("Done", name))
     confirm()
     expect(calls(host).at(-1)).toEqual(["changeSetting", "device-name", "mini2"])
-    // sensitiveText: dots, never the value; Korri's clear label clears it.
-    expect(onScreen("Configured")).toBe(false)
+    // sensitiveText: Korri's status word on the row as given; dots only for what is typed.
+    expect(row("SteamGridDB API key").textContent).toContain("Configured")
     moveTo(row("SteamGridDB API key"))
     expect(onScreen("Clear saved key")).toBe(true)
     confirm()
     const secret = screen.getByRole("dialog", { name: "SteamGridDB API key" })
+    // Korri's placeholder on the empty slab, dimmed, until the first key.
+    expect(secret.querySelector(".zone-keyboard-placeholder")?.textContent).toBe("Paste API key")
     type("ab1", secret)
+    expect(secret.querySelector(".zone-keyboard-placeholder")).toBeNull()
     expect(secret.textContent).toContain("•••")
     expect(secret.textContent).not.toContain("ab1")
     moveTo(button("Clear saved key", secret))

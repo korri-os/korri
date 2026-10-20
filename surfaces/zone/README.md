@@ -324,6 +324,16 @@ bun run lint
 - **A secret's keyboard starts empty.** Korri's value for a secret is its
   word about it ("Configured"), never the secret. DONE on an empty secret
   closes without a request; clearing is the clear key alone.
+- **A secret's row shows Korri's status word as given.** "Configured" or
+  "Not configured" is a status, not the secret, so it is not turned into
+  dots. Dots are only for what the person types on the keyboard.
+- **Placeholders.** Korri's `interaction.placeholder` (text and
+  sensitiveText) stands dimmed (`--zone-placeholder-opacity`, 0.6) in the
+  keyboard's slab after the caret while the draft is empty, and in a row's
+  value while Korri's value is empty. On first boot the NAME keyboard shows
+  it too. At 0.6 the dimmed ink still reaches about 5.7:1 on the white slab
+  and about 7:1 on the black panel; the contrast gate does not compute
+  blended pairs.
 - **Destructive without Korri's words** asks NO / YES under the row's (or
   action's) label, with the action's description as the line when there is
   one. Zone writes no sentence of its own.

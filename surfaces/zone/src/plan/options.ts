@@ -47,6 +47,8 @@ export type ZoneOptionsPress =
       readonly secret: boolean
       readonly maxLength?: number
       readonly clearLabel?: string
+      /** Korri's hint for an empty draft. */
+      readonly placeholder?: string
     }
   | { readonly _tag: "Run"; readonly actionId: string; readonly confirm?: ZoneOptionsConfirm }
   | { readonly _tag: "DismissProblem" }
@@ -159,6 +161,7 @@ function settingPress(item: SurfaceSettingItem): ZoneOptionsPress {
         draft: item.value ?? "",
         secret: false,
         ...(interaction.maxLength === undefined ? {} : { maxLength: interaction.maxLength }),
+        ...(interaction.placeholder === undefined ? {} : { placeholder: interaction.placeholder }),
       }
     case "sensitiveText":
       // A secret's value is Korri's word about it ("Configured"), never the
@@ -171,6 +174,7 @@ function settingPress(item: SurfaceSettingItem): ZoneOptionsPress {
         secret: true,
         ...(interaction.maxLength === undefined ? {} : { maxLength: interaction.maxLength }),
         ...(interaction.clearLabel === undefined ? {} : { clearLabel: interaction.clearLabel }),
+        ...(interaction.placeholder === undefined ? {} : { placeholder: interaction.placeholder }),
       }
     case "action": {
       const confirm: ZoneOptionsConfirm | undefined = interaction.confirmation !== undefined
@@ -373,6 +377,7 @@ export type ZoneOptionsEntry =
       readonly secret: boolean
       readonly maxLength?: number
       readonly clearLabel?: string
+      readonly placeholder?: string
     }
   | { readonly _tag: "WifiPassword"; readonly networkId: string; readonly ssid: string }
   | { readonly _tag: "HiddenSsid" }
@@ -406,6 +411,8 @@ export function entryHeading(entry: ZoneOptionsEntry): {
   readonly secret: boolean
   readonly maxLength?: number
   readonly clearLabel?: string
+  /** Korri's hint, dimmed on the slab while the draft is empty. */
+  readonly placeholder?: string
 } {
   switch (entry._tag) {
     case "Setting":
@@ -414,6 +421,7 @@ export function entryHeading(entry: ZoneOptionsEntry): {
         secret: entry.secret,
         ...(entry.maxLength === undefined ? {} : { maxLength: entry.maxLength }),
         ...(entry.clearLabel === undefined ? {} : { clearLabel: entry.clearLabel }),
+        ...(entry.placeholder === undefined ? {} : { placeholder: entry.placeholder }),
       }
     case "WifiPassword":
       return { title: "Password", name: entry.ssid, secret: true, maxLength: WIFI_PASSWORD_MAX }

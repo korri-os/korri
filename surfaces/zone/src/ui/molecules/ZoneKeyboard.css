@@ -57,6 +57,13 @@
   display: inline-block;
 }
 
+/* Korri's hint while nothing is typed: the slab's ink, dimmed, after the caret. */
+.zone-keyboard-placeholder {
+  opacity: var(--zone-placeholder-opacity);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* The red caret: a triangle on the baseline that blinks. */
 .zone-keyboard-caret {
   display: inline-block;

@@ -42,7 +42,7 @@ const press = (rowId: string, state: ZoneOptions = OPTIONS_START, model: ZoneOpt
   after(state, { _tag: "PressedRow", rowId }, model)
 const typing = (keyboard: Omit<ZoneOptionsKeyboard, "caret" | "layer"> & Partial<ZoneOptionsKeyboard>): ZoneOptions =>
   at({ keyboard: { caret: keyboard.draft.length, layer: "letters", ...keyboard } })
-const nameEntry = { _tag: "Setting", settingId: "device-name", label: "Name", secret: false, maxLength: 64 } as const
+const nameEntry = { _tag: "Setting", settingId: "device-name", label: "Name", secret: false, maxLength: 64, placeholder: "This device" } as const
 const keyEntry = {
   _tag: "Setting",
   settingId: "steamgriddb-credential",
@@ -50,6 +50,7 @@ const keyEntry = {
   secret: true,
   maxLength: 256,
   clearLabel: "Clear saved key",
+  placeholder: "Paste API key",
 } as const
 const powerOff = zoneSystemRowId("power-off")
 

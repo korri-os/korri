@@ -209,6 +209,7 @@ export function ZoneOnboarding({
   const nameStatus: SurfaceSettingsStatus = settingsStatus._tag !== "Idle" && settingsStatus.settingId === nameSetting?.id
     ? { ...settingsStatus, settingId: ONBOARDING_TARGET.name } : { _tag: "Idle" }
   const maxLength = nameSetting?.interaction?.kind === "text" ? nameSetting.interaction.maxLength : undefined
+  const placeholder = nameSetting?.interaction?.kind === "text" ? nameSetting.interaction.placeholder : undefined
   const forward = step === "identity"
     ? { id: ONBOARDING_TARGET.finish, label: "Finish", disabled: !started }
     : { id: ONBOARDING_TARGET.next, label: "Next", disabled: !canGoOn }
@@ -307,6 +308,7 @@ export function ZoneOnboarding({
               maxLength={maxLength}
               onFocusKey={onFocusKey}
               onKey={onKey}
+              placeholder={placeholder}
             />
           </div>
         )}

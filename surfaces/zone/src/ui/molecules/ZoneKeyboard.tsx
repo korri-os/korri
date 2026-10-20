@@ -56,7 +56,9 @@ const DOT = "•"
  * The draft and the caret are props; every key reports through `onKey`.
  * The slab scrolls sideways to keep the caret in view, so a forty-character
  * identity string is typed in the same panel. `secret` shows one dot per
- * character and never the characters.
+ * character and never the characters. `placeholder` is Korri's hint for
+ * an empty draft (`interaction.placeholder`), drawn dimmed in the slab
+ * until the first character is typed.
  *
  * Rows wrap before a key gets too small to read, so no key is ever lost at
  * a narrow width. Focus is a prop: `focusedKey` is a key's id. When the
@@ -73,6 +75,7 @@ export function ZoneKeyboard({
   layer,
   focusedKey,
   maxLength,
+  placeholder,
   onKey,
   onFocusKey,
 }: {
@@ -84,6 +87,8 @@ export function ZoneKeyboard({
   /** The focused key's id, as `zoneKeyId` names it. */
   readonly focusedKey?: string
   readonly maxLength?: number
+  /** Korri's hint, shown dimmed while the draft is empty. */
+  readonly placeholder?: string
   readonly onKey?: (key: ZoneKey) => void
   /** The host's cursor arrived on a key: its id, as `zoneKeyId` names it. */
   readonly onFocusKey?: (id: string) => void
@@ -141,6 +146,9 @@ export function ZoneKeyboard({
           <span aria-hidden className="zone-keyboard-caret" ref={mark} />
           {after}
         </span>
+        {draft === "" && placeholder !== undefined && placeholder !== ""
+          ? <span className="zone-keyboard-placeholder">{placeholder}</span>
+          : null}
       </div>
       {maxLength !== undefined ? (
         <span className="zone-keyboard-count">{draft.length}/{maxLength}</span>
