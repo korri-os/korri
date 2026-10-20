@@ -1678,3 +1678,14 @@ one holds.
   Narrow find the focused title inside its card or not drawn. Run at
   640x480, 1280x720 and on two devices added for the run (480x800,
   1280x300); with the keys planted at 12 art px the key check fails.
+- **A fact one pixel too wide is cut, and named.** At 640x480 RUN WITH's
+  focused route read "RetroArch mG…" with its program whole nowhere:
+  in Chromium the name is 214 px in a 213 px cell, the stylesheet's
+  ellipsis ends it, and the row's cut test allowed a pixel's slack, so it
+  did not mark the label cut and the whole line stayed hidden. The test is
+  strict now (`cutCell` in `use-zone-option-row.ts`, and the middle cut's
+  probe), so whatever the ellipsis ends the focused row shows whole on its
+  own line. Cost: a fact that only rounds a pixel over may show whole
+  twice. `test/zone-run-with.test.tsx` holds the 213/214 case, and
+  RUN WITH's part has a Caliper check that the focused row's cut facts
+  stand whole under it.

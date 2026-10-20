@@ -39,6 +39,46 @@ export const composition = {
   Loading: [{ part: "src/ui/atoms/ZoneTag.atom.part.tsx", state: "Continue" }],
 } as const
 
+/* The helpers Caliper hands an authored check, typed locally: Zone imports
+ * nothing from Caliper (test/authoring-gate.test.ts). */
+interface CheckTools {
+  readonly expect: (value: unknown) => { toBe(expected: unknown): void }
+  readonly waitFor: (assertion: () => void) => Promise<void>
+}
+
+/**
+ * The focused row's facts the screen does not show whole, and whether each
+ * stands whole on the row's own line: a cut label or value with no whole
+ * line is a fact the screen has lost.
+ */
+function lostFacts(): string {
+  const row = document.querySelector<HTMLElement>(".zone-option-row[data-focused]")
+  if (row === null) return "no focused row"
+  const lost: string[] = []
+  for (const cell of row.querySelectorAll<HTMLElement>("[data-cut-for]")) {
+    const whole = cell.matches("[data-whole-words]") ? cell : cell.querySelector<HTMLElement>(":scope > [data-whole-words]")
+    if (whole === null) continue
+    const cut = cell.dataset["cut"] !== undefined || whole.scrollWidth > whole.clientWidth
+    if (!cut) continue
+    const name = cell.dataset["cutFor"] ?? ""
+    const line = row.querySelector<HTMLElement>(`.zone-option-row-whole-line[data-for="${name}"]`)
+    if (line === null || getComputedStyle(line).display === "none") lost.push(`${name}: ${whole.textContent ?? ""}`)
+  }
+  return lost.join("; ")
+}
+
+/* A route's program or build the row cuts stands whole on the focused
+ * row's own line. */
+export const checks = {
+  default: {
+    "the focused route's cut facts stand whole under it": async ({ expect, waitFor }: CheckTools) => {
+      await waitFor(() => {
+        expect(lostFacts()).toBe("")
+      })
+    },
+  },
+}
+
 /** Unexported: the real page on a live program, so focus and actions answer. */
 function Live({ choice, share = 1 }: { readonly choice: SurfaceRunnerChoice; readonly share?: number }) {
   const program = useRef<ReturnType<typeof createRunWithProgram> | null>(null)

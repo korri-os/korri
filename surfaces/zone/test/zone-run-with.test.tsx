@@ -117,6 +117,33 @@ describe("C11 runner choice", () => {
     expect(screen.getByText(byWords("Reload runners")).closest("button")?.dataset.focused).toBe("on")
   })
 
+  test("a program cut by one pixel shows whole on the focused route's own line", () => {
+    // Chromium at 640x480: "RetroArch mGBA" is 214 px in a 213 px cell, so
+    // the stylesheet's ellipsis reads "RetroArch mG…". The row must name
+    // the cut and show the whole name while the route is focused.
+    const widths = (element: HTMLElement): { client: number; scroll: number } => {
+      if (element.classList.contains("zone-option-row")) return { client: 600, scroll: 600 }
+      const fit = element.closest<HTMLElement>("[data-cut-for]")
+      if (fit?.dataset.cutFor !== "label") return { client: 0, scroll: 0 }
+      return { client: 213, scroll: 214 }
+    }
+    const client = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")
+    const scroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth")
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get(this: HTMLElement) { return widths(this).client } })
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get(this: HTMLElement) { return widths(this).scroll } })
+    try {
+      mount(fixtureRunnerReady)
+      const row = route("RetroArch mGBA").querySelector<HTMLElement>(".zone-option-row")
+      expect(row?.dataset.focused).toBe("true")
+      expect(row?.dataset.truncated?.split(" ")).toContain("label")
+      const line = row?.querySelector<HTMLElement>(".zone-option-row-whole-line[data-for=\"label\"]")
+      expect(line?.dataset.whole).toBe("RetroArch mGBA")
+    } finally {
+      if (client !== undefined) Object.defineProperty(HTMLElement.prototype, "clientWidth", client)
+      if (scroll !== undefined) Object.defineProperty(HTMLElement.prototype, "scrollWidth", scroll)
+    }
+  })
+
   test("Closed renders nothing", () => {
     const { view } = mount({ _tag: "Closed" })
     expect(view.container.textContent).toBe("")

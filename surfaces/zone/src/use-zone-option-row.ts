@@ -48,16 +48,24 @@ export function applyOptionClips(root: HTMLElement): void {
   for (const element of root.querySelectorAll<HTMLElement>("[data-option-clip]")) applyOptionClip(element, px)
 }
 
-/** Cut one fact cell to its box; true when it no longer shows whole. */
-function cutCell(cell: HTMLElement): boolean {
+/**
+ * Cut one fact cell to its box; true when it no longer shows whole.
+ *
+ * Strict: the stylesheet's ellipsis ends a line that runs past its box by
+ * any part of a pixel, so a fact one pixel too wide is cut and must be
+ * named, or the focused row would show "RetroArch mG…" with the whole
+ * name nowhere. A fact that only rounds a pixel over may then show whole
+ * twice; that costs a line, never a fact.
+ */
+export function cutCell(cell: HTMLElement): boolean {
   // Zone Caps words that wrap are their own cell: they are cut only when
   // one word is longer than the line, and only at the end.
-  if (cell.dataset.wholeWords !== undefined) return cell.clientWidth > 0 && cell.scrollWidth > cell.clientWidth + 1
+  if (cell.dataset.wholeWords !== undefined) return cell.clientWidth > 0 && cell.scrollWidth > cell.clientWidth
   const whole = cell.querySelector<HTMLElement>(":scope > [data-whole-words]")
   delete cell.dataset.cut
   const available = cell.clientWidth
   if (whole === null || available <= 0) return false
-  if (whole.scrollWidth <= available + 1) return false
+  if (whole.scrollWidth <= available) return false
   const mode = (cell.dataset.cutMode ?? "end") as ZoneCutMode
   if (mode === "end") return true
   const probe = whole.cloneNode(false) as HTMLElement
@@ -67,7 +75,7 @@ function cutCell(cell: HTMLElement): boolean {
   const text = whole.textContent ?? ""
   const cut = zoneLongestCut(text, mode, candidate => {
     probe.textContent = candidate
-    return probe.scrollWidth <= available + 1
+    return probe.scrollWidth <= available
   })
   probe.remove()
   cell.dataset.cut = cut
