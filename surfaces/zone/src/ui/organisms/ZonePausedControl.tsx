@@ -1,18 +1,10 @@
 import "./ZonePausedControl.css"
 import type { SurfaceGameplayControl } from "@contracts/surface/korri-surface"
-import { type KeyboardEvent, useEffect, useLayoutEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
+import { useZoneHorizontal } from "../../use-zone-horizontal"
 import { ZonePanel } from "../atoms/ZonePanel"
 import { ZoneTriangle } from "../atoms/ZoneTriangle"
 import { ZoneUnderline } from "../atoms/ZoneUnderline"
-
-/* The portal delivers left and right to the focused element marked
- * data-korri-horizontal-control as these DOM events instead of moving focus
- * (clients/portal/src/input/spatial-focus.ts). Arrow keys are handled too,
- * for a keyboard with no portal in front of it. */
-const DIRECTION_EVENT = "korri-semantic-direction"
-
-const wayOf = (direction: unknown): -1 | 1 | undefined =>
-  direction === "left" || direction === "ArrowLeft" ? -1 : direction === "right" || direction === "ArrowRight" ? 1 : undefined
 
 /** A range's value as a number to the step's precision. */
 function rangeText(value: number, step: number): string {
@@ -59,35 +51,14 @@ export function ZonePausedControl({
 }) {
   const button = useRef<HTMLButtonElement | null>(null)
   const meter = useRef<HTMLSpanElement | null>(null)
-  const step = useRef(onStep)
-  useEffect(() => {
-    step.current = onStep
-  })
-
   const interaction = control.interaction
   const steps = interaction.kind !== "command" && control.enabled
 
-  useEffect(() => {
-    const node = button.current
-    if (node === null || !steps) return
-    const onDirection = (event: Event) => {
-      const way = wayOf((event as CustomEvent<{ readonly direction?: string }>).detail?.direction)
-      if (way !== undefined) step.current?.(way)
-    }
-    node.addEventListener(DIRECTION_EVENT, onDirection)
-    return () => node.removeEventListener(DIRECTION_EVENT, onDirection)
-  }, [steps])
+  const horizontal = useZoneHorizontal(button, steps, interaction.kind, onStep)
 
   useEffect(() => {
     if (focused) button.current?.scrollIntoView({ block: "nearest" })
   }, [focused])
-
-  const onKeyDown = steps ? (event: KeyboardEvent<HTMLButtonElement>) => {
-    const way = wayOf(event.key)
-    if (way === undefined) return
-    event.preventDefault()
-    step.current?.(way)
-  } : undefined
 
   const value = interaction.kind === "range" ? rangeValue ?? interaction.value : undefined
   const span = interaction.kind === "range" ? interaction.max - interaction.min : 0
@@ -115,10 +86,10 @@ export function ZonePausedControl({
       <button
         aria-disabled={control.enabled ? undefined : "true"}
         className="zone-paused-control-button"
-        data-korri-horizontal-control={steps ? interaction.kind : undefined}
+        data-korri-horizontal-control={horizontal["data-korri-horizontal-control"]}
         onClick={control.enabled ? onPress : undefined}
         onFocus={onFocus}
-        onKeyDown={onKeyDown}
+        onKeyDown={horizontal.onKeyDown}
         ref={button}
         type="button"
       >
