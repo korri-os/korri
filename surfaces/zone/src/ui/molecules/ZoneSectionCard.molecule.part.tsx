@@ -17,3 +17,8 @@ export function DeviceName() {
 export function LongCaption() {
   return <ZoneSectionCard caption="Supercalifragilisticexpialidocious-handheld" />
 }
+
+/** The narrow band's divider: a hairline spine, the caption its name only. */
+export function Hairline() {
+  return <ZoneSectionCard caption="This device" spine="hairline" />
+}

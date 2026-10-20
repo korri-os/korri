@@ -15,6 +15,30 @@ const positionOf = (index: number, count: number): ZoneCardPosition =>
   count === 1 ? "only" : index === 0 ? "first" : index === count - 1 ? "last" : "middle"
 
 /**
+ * The most section dividers that ever stand between the focused card and
+ * the last visible card on one side, over every focus. The track is centred
+ * on the focused card, so each side must hold its own dividers; the fit
+ * reserves this many per side, the same for every focus, so the cards keep
+ * one size while the cursor crosses a section.
+ */
+export function bandSpinesPerSide(cards: readonly { readonly section?: string }[], visible: 3 | 5): number {
+  const half = Math.floor(visible / 2)
+  const opens = cards.map(card => card.section !== undefined)
+  let most = 0
+  for (let focus = 0; focus < cards.length; focus += 1) {
+    // Left: dividers before the focused card and before each visible card
+    // left of it, except the leftmost (its divider lies outside the view).
+    let left = 0
+    for (let index = Math.max(0, focus - half + 1); index <= focus; index += 1) if (opens[index]) left += 1
+    // Right: dividers before each visible card right of the focus.
+    let right = 0
+    for (let index = focus + 1; index <= Math.min(cards.length - 1, focus + half); index += 1) if (opens[index]) right += 1
+    most = Math.max(most, left, right)
+  }
+  return most
+}
+
+/**
  * The horizontal band of cards: the focused one centred and large, the
  * others at the plan's side scale either side of it, `visible` of them in
  * view and the rest run out past the edges. The red triangles are the
@@ -28,9 +52,12 @@ const positionOf = (index: number, count: number): ZoneCardPosition =>
  * translation follows with the one-bounce snap.
  *
  * A card that opens a section has a divider before it: a narrow spine with
- * the caption, never focusable. The band writes how many dividers stand
- * before the focused card to `--zone-band-dividers`, so the centring sum
- * stays exact.
+ * the caption, never focusable, or a hairline spine on the narrow band
+ * (three visible). The band writes how many dividers stand before the
+ * focused card to `--zone-band-dividers`, so the centring sum stays exact,
+ * and how many it must hold on each side of the focus to
+ * `--zone-band-spines`, so the fit leaves them room and the focused card
+ * and its neighbours are never cut.
  *
  * With no cards it is an empty band with one caps line.
  */
@@ -54,11 +81,14 @@ export function ZoneCardBand({
   const half = Math.floor(visible / 2)
 
   const dividers = cards.slice(0, focus + 1).filter(card => card.section !== undefined).length
+  const spines = bandSpinesPerSide(cards, visible)
+  const spine = visible === 3 ? "hairline" : "full"
 
   useLayoutEffect(() => {
     track.current?.style.setProperty("--zone-band-focus", String(focus))
     track.current?.style.setProperty("--zone-band-dividers", String(dividers))
-  }, [focus, dividers])
+    track.current?.style.setProperty("--zone-band-spines", String(spines))
+  }, [focus, dividers, spines])
 
   return (
     <div className="zone-card-band" data-visible={visible}>
@@ -72,7 +102,7 @@ export function ZoneCardBand({
                 data-beyond={index - focus > half || focus - index >= half ? "true" : undefined}
                 data-section="true"
               >
-                <ZoneSectionCard caption={card.section} />
+                <ZoneSectionCard caption={card.section} spine={spine} />
               </div>
             )}
             <div

@@ -666,6 +666,8 @@
   --zone-strip-gap-least: 4px;
   /** The least slant of a panel in a narrow strip; a bigger type still leans by its own size. @label Panel slant, least @min 0 @max 32 @step 1 */
   --zone-slant-least: 6px;
+  /** A section divider's width on the narrow band (three visible): a hairline spine. @label Section hairline @min 2 @max 24 @step 1 */
+  --zone-section-hairline: 6px;
   /** A part frame 480 wide, for the top strip's ladder. @label Part frame, 480 @min 120px @max 1280px @step 10px */
   --zone-part-w480: 480px;
   /** A part frame 360 wide. @label Part frame, 360 @min 120px @max 1280px @step 10px */

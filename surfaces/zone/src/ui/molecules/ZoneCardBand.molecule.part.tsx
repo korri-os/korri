@@ -51,3 +51,16 @@ export function Sections() {
   }))
   return <ZoneCardBand cards={sectioned} focusedIndex={1} />
 }
+
+/**
+ * Korri's sections on a narrow band: the dividers narrow to a hairline
+ * spine and the band counts them in its fit, so the focused card and both
+ * neighbours stand whole even with a divider either side of the focus.
+ */
+export function NarrowSections() {
+  const sectioned = fixtureCards.map((card, index) => ({
+    ...card,
+    section: index === 0 ? "Continue" : index === 1 ? "This device" : index === 2 ? "zao" : undefined,
+  }))
+  return <ZoneCardBand cards={sectioned} focusedIndex={1} visible={3} />
+}

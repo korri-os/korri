@@ -562,3 +562,13 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   the title's is a quarter, not half, so a single word wider than the card
   stays whole (tiny) instead of cut. A column's title type follows 11% of
   the width, not 7.5%, since the column has height to spare.
+- **Narrow bands draw hairline spines, and every band counts its spines.**
+  On the three-card band a section divider is a 6 px stripe in a black
+  hairline frame (`--zone-section-hairline`); its caption stays as the
+  separator's accessible name. The caption's facts survive on the cards'
+  own tags (HERE, the device, CONTINUE). Both bands reserve room for the
+  most dividers a side of the focus ever holds (`bandSpinesPerSide`), the
+  same number for every focus, so the cards never change size as the
+  cursor crosses a section. Cost: on a sectioned catalog the cards are a
+  little smaller at width-bound sizes (about 5% at 640x480, about 15% at
+  1280x720 when a side can hold two full spines).
