@@ -1159,4 +1159,3 @@ left open is recorded here.
   slant token, not 45 degrees. The card triangles are smooth polygons, not
   stairs. Live takes at 1280x720 failed on this machine (the recorder fell
   behind); every move has a seek-built take at both sizes instead.
-
