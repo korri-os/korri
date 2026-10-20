@@ -207,12 +207,13 @@ fn declaration() -> (String, crate::plugin::DeclaredGame) {
             provider: "@test:games".into(),
             key: "wario".into(),
             title: "Declared Wario".into(),
-            releases: BTreeMap::from([
+            releases: indexmap::IndexMap::from([
                 (
                     "original".into(),
                     crate::plugin::DeclaredRelease {
                         system: Some("gba".into()),
                         hashes: vec![format!("sha1:{}", "a".repeat(40))],
+                        artifacts: Vec::new(),
                         file: None,
                     },
                 ),
@@ -221,7 +222,10 @@ fn declaration() -> (String, crate::plugin::DeclaredGame) {
                     crate::plugin::DeclaredRelease {
                         system: None,
                         hashes: vec![hash('b')],
-                        file: Some("built/game".into()),
+                        artifacts: Vec::new(),
+                        file: Some(crate::plugin::DeclaredReleaseFile::AccountRoot(
+                            "built/game".into(),
+                        )),
                     },
                 ),
             ]),

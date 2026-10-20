@@ -538,7 +538,11 @@ fn resolve_declared_files(
         let root = account.root.canonicalize();
         for (game_key, game) in games {
             for (release_key, release) in &game.releases {
-                let Some(file) = &release.file else { continue };
+                // Only account-root files are hashed here. An artifact file
+                // lives in korrid's cache, which discovery never scans.
+                let Some(file) = release.account_root_file() else {
+                    continue;
+                };
                 let result = match &root {
                     Ok(root) => declared_identity(root, Path::new(file), cache, paths),
                     Err(_) => Err(IdentifyError::Unsupported(
@@ -581,7 +585,7 @@ fn resolve_declared_files(
                     game: game_key.clone(),
                     release_key: release_key.clone(),
                     storage_id: account.storage_id.clone(),
-                    path: file.clone(),
+                    path: file.to_owned(),
                     status,
                 });
             }
