@@ -46,6 +46,11 @@ export type ZoneMessage =
   | { readonly _tag: "FocusedKey"; readonly id: string }
   /** A on a key. */
   | { readonly _tag: "PressedKey"; readonly key: ZoneFindKey }
+  // GET GAMES
+  /** The cursor is on the GET GAMES key. */
+  | { readonly _tag: "FocusedGetGames" }
+  /** A on GET GAMES: the wire stage opens the GET GAMES page. */
+  | { readonly _tag: "ChoseGetGames" }
   // GAME OPTS.
   /** A on OPTS. at the end of the action row: GAME OPTS. opens, as `options` opens it. */
   | { readonly _tag: "ChoseGameOpts" }

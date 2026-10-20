@@ -62,6 +62,16 @@ export function launchStatusView(
         canRetry: false,
         ...(status.gameId ? { gameId: status.gameId } : {}),
       }
+    // A question before Korri acts reads like work about to start; its
+    // answers are Korri's actions on the rail.
+    case "Confirm":
+      return {
+        tone: "launching",
+        kicker: status.kicker,
+        ...(status.detail ? { reason: status.detail } : {}),
+        canRetry: false,
+        ...(status.gameId ? { gameId: status.gameId } : {}),
+      }
     case "Running":
       return { tone: "launched", kicker: status.kicker, canRetry: false }
     case "Problem":

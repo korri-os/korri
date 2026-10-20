@@ -180,8 +180,14 @@ export function ShiftCinematicHome({
   const stageRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const preloadedImageUrlsRef = useRef<Set<string>>(new Set())
-  const busy = surfaceStatus?._tag === "Busy"
-  const busyGameId = surfaceStatus?._tag === "Busy" ? surfaceStatus.gameId : undefined
+  // Work under way and a question Korri asks before it acts (Confirm, #115)
+  // own the rail the same way: Korri's actions are the only things on it.
+  const working =
+    surfaceStatus?._tag === "Busy" || surfaceStatus?._tag === "Confirm"
+      ? surfaceStatus
+      : undefined
+  const busy = working !== undefined
+  const busyGameId = working?.gameId
   // During startup, progress and its controls own the rail. Browsing tiles
   // must not push Cancel beyond the container or keep the initial focus.
   const railGames = useMemo(() => busy ? [] : games, [busy, games])
@@ -192,15 +198,15 @@ export function ShiftCinematicHome({
   // Restore Library as Shift's dedicated destination, then append host-backed
   // actions such as Settings. Each occupies one focus slot past the games.
   const affordances = useMemo<readonly RailAffordance[]>(
-    () => surfaceStatus?._tag === "Busy"
-      ? (surfaceStatus.actions ?? []).map(action => ({ kind: "action" as const, action }))
+    () => working !== undefined
+      ? (working.actions ?? []).map(action => ({ kind: "action" as const, action }))
       : [
           ...(onOpenLibrary
             ? [{ kind: "library" as const, onConfirm: onOpenLibrary }]
             : []),
           ...(actions ?? []).map(action => ({ kind: "action" as const, action })),
         ],
-    [onOpenLibrary, actions, surfaceStatus],
+    [onOpenLibrary, actions, working],
   )
   const railIndex = busy
     ? Math.min(actionIndex, Math.max(0, affordances.length - 1))
@@ -414,25 +420,27 @@ export function ShiftCinematicHome({
   // describe. Both nodes are hoisted here so the band composes them in one row.
   // Several host actions during work are a choice between launches. The hero
   // names the focused one in full, because a tile can only show part of it.
+  // A question names its answer in full too, even when it offers only one.
   const busyChoice =
-    surfaceStatus?._tag === "Busy" && (surfaceStatus.actions?.length ?? 0) > 1 &&
+    working !== undefined &&
+    (working._tag === "Confirm" || (working.actions?.length ?? 0) > 1) &&
     activeAffordance?.kind === "action"
       ? activeAffordance.action
       : undefined
-  const busyChoiceNote = busyChoice?.description ?? (
-    surfaceStatus?._tag === "Busy" ? surfaceStatus.detail : undefined
-  )
+  const busyChoiceNote = busyChoice?.description ?? working?.detail
   const heroNode =
-    surfaceStatus?._tag === "Busy" ? (
-      busyChoice ? <ShiftCineActionHero kicker={surfaceStatus.kicker} label={busyChoice.label}
+    working !== undefined ? (
+      busyChoice ? <ShiftCineActionHero kicker={working.kicker} label={busyChoice.label}
             {...(busyChoiceNote === undefined ? {} : { description: busyChoiceNote })} />
       : statusGame ? <ShiftCineHero game={statusGame} status={status} resuming={resuming} />
-        : <ShiftCineActionHero label={surfaceStatus.kicker}
-            {...(surfaceStatus.detail === undefined ? {} : { description: surfaceStatus.detail })} />
+        : <ShiftCineActionHero label={working.kicker}
+            {...(working.detail === undefined ? {} : { description: working.detail })} />
     ) : activeAffordance?.kind === "library" ? (
       <ShiftCineLibraryHero />
     ) : activeAffordance?.kind === "action" ? (
       <ShiftCineActionHero
+        // The store is a destination, not setup: it gets its own word.
+        {...(activeAffordance.action.id === "shift:store" ? { kicker: "Store" } : {})}
         label={activeAffordance.action.label}
         {...(activeAffordance.action.description
           ? { description: activeAffordance.action.description }

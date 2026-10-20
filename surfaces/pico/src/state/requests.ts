@@ -42,6 +42,12 @@ export type PicoRequest =
   | { readonly _tag: "ConnectWifi"; readonly networkId: string; readonly password?: string }
   /** Join a network that does not broadcast its name; no password joins an open one. */
   | { readonly _tag: "ConnectHiddenWifi"; readonly ssid: string; readonly password?: string }
+  /** Read the providers again. They arrive in `model.store.providers`. */
+  | { readonly _tag: "OpenStore" }
+  /** Search one provider; results arrive in `model.store.search`. */
+  | { readonly _tag: "SearchStore"; readonly providerId: string; readonly query: string }
+  /** Read one entry of the results; it arrives in `model.store.details`. */
+  | { readonly _tag: "OpenStoreEntry"; readonly entryId: string }
   /** First-boot setup is done. Korri drops `onboarding` from its model. */
   | { readonly _tag: "FinishOnboarding" }
   /** Pico's own setting: stored by Pico on this device, never sent to Korri. */

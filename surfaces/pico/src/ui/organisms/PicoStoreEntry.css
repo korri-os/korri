@@ -1,0 +1,30 @@
+/* The entry fills the shell body; its stage decides art and facts. Under the
+ * facts: the provider's words at a reading width, then where getting it
+ * stands. Room above it scales with the body, as a game's own screen does. */
+.pico-store-entry {
+	box-sizing: border-box;
+	height: 100%;
+	min-height: 0;
+	padding-top: min(3cqh, calc(var(--pico-u) * 3));
+}
+
+.pico-store-entry-description {
+	max-width: 60ch;
+	margin: 0;
+	font-size: var(--pico-text);
+	line-height: 1.5;
+	color: var(--pico-ink-dim);
+	overflow-wrap: anywhere;
+}
+
+.pico-store-entry-get {
+	display: grid;
+	justify-items: start;
+	gap: var(--pico-u);
+}
+
+.pico-store-entry-note {
+	margin: 0;
+	font-size: var(--pico-text);
+	color: var(--pico-ink-dim);
+}

@@ -46,6 +46,9 @@ export type VisitEvent =
   /** Korri asks you to choose between pieces of its work, at the decks under
    * the TV. You put down what you carry, so no tape stands in front of one. */
   | { readonly _tag: "ChoiceShown" }
+  /** A tape the order desk got you: it comes into your hand, and you are
+   * at the TV, so one confirm on the deck puts it in. */
+  | { readonly _tag: "Fetch"; readonly tapeId: string }
 
 export type VisitCommand =
   | {
@@ -143,6 +146,15 @@ export function step(
         ? { visit: free }
         : { visit: { ...free, spot: spots.viewing, cameFrom: visit.spot } }
     }
+    case "Fetch":
+      return {
+        visit: {
+          ...visit,
+          spot: spots.viewing,
+          cameFrom: visit.spot,
+          hand: { _tag: "Holding", tapeId: event.tapeId, face: "front", pose: "carrying" },
+        },
+      }
     case "ProblemShown":
       return visit.spot === spots.viewing
         ? { visit }

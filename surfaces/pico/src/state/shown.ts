@@ -6,13 +6,14 @@
  * only while its game is on the shelf, so a launch from it takes the screen
  * the way a launch from the shelf does.
  */
-import type { SurfaceGame, SurfaceModel } from "@contracts/surface/korri-surface"
+import type { SurfaceGame, SurfaceModel, SurfaceStore } from "@contracts/surface/korri-surface"
 import { type PicoScreenView, picoScreenViewFromModel } from "../pico-screen-view"
-import type { Detail, Home, PicoNavigation, Search, Settings } from "./navigation"
+import type { Detail, Home, PicoNavigation, Search, Settings, StorePlace } from "./navigation"
 
 export type PicoShown =
   | { readonly _tag: "Settings"; readonly settings: Settings }
   | { readonly _tag: "Find"; readonly search: Search }
+  | { readonly _tag: "Store"; readonly place: StorePlace; readonly store: SurfaceStore }
   | { readonly _tag: "Detail"; readonly detail: Detail; readonly game: SurfaceGame }
   /** Home also draws Korri's loading, Busy, Running and Problem screens. */
   | { readonly _tag: "Home"; readonly home: Home; readonly view: PicoScreenView }
@@ -25,6 +26,9 @@ export function shownScreen(nav: PicoNavigation, korri: SurfaceModel): PicoShown
     : undefined
 
   if (nav.settings !== undefined && browsing) return { _tag: "Settings", settings: nav.settings }
+  if (nav.store && browsing && game === undefined && korri.store !== undefined) {
+    return { _tag: "Store", place: nav.storePlace, store: korri.store }
+  }
   if (nav.find && browsing && game === undefined) return { _tag: "Find", search: nav.search }
   if (nav.detail !== undefined && game !== undefined) return { _tag: "Detail", detail: nav.detail, game }
   return { _tag: "Home", home: nav.home, view }

@@ -25,6 +25,7 @@ export function PicoGameStage({
   artUrl,
   kicker,
   stats,
+  statsEmptyLabel,
   resumable = false,
   download,
   level = 1,
@@ -36,6 +37,8 @@ export function PicoGameStage({
   readonly artUrl?: string
   readonly kicker?: string
   readonly stats: readonly { readonly figure: string; readonly caption: string }[]
+  /** What the facts say with no stats, for a game that is not played here. */
+  readonly statsEmptyLabel?: string
   readonly resumable?: boolean
   /** What playing fetches first, already worded ("1.5 GB DOWNLOAD"). */
   readonly download?: string
@@ -63,6 +66,7 @@ export function PicoGameStage({
             level={level}
             resumable={resumable}
             stats={stats}
+            statsEmptyLabel={statsEmptyLabel}
             subtitle={subtitle}
             title={title}
           />

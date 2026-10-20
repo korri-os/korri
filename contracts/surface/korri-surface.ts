@@ -44,6 +44,27 @@ export interface SurfaceLaunchLocation {
   readonly label: string
 }
 
+/**
+ * Measured progress, in bytes. A surface draws a real bar from it. `total` is
+ * absent when Korri knows how far it has got but not how far it goes.
+ */
+export interface SurfaceProgress {
+  readonly done: number
+  readonly total?: number
+}
+
+/**
+ * Where one download stands, wherever it shows: a game's own download and a
+ * store entry being got. Korri fetches one thing at a time, so a download can
+ * wait its turn. Surfaces word both facts themselves.
+ */
+export interface SurfaceDownloadState {
+  /** Waiting behind another download. */
+  readonly queued?: true
+  /** While it downloads. No `total` means no known end. */
+  readonly progress?: SurfaceProgress
+}
+
 export interface SurfaceGame {
   readonly id: string
   readonly title: string
@@ -79,16 +100,11 @@ export interface SurfaceGame {
   /**
    * Present when this game needs anything downloaded to this device: its own
    * files, or a runtime it depends on. `bytes` is the total still to fetch;
-   * absent when Korri does not know the size. `queued` while the download
-   * waits behind another one. `progress` while it downloads, in the shape of
-   * `Busy.progress`: no `total` means no known end. Surfaces format all of it;
-   * Korri never ships a label. Absent when nothing is needed.
+   * absent when Korri does not know the size. `queued` and `progress` say
+   * where the download stands (`SurfaceDownloadState`). Surfaces format all
+   * of it; Korri never ships a label. Absent when nothing is needed.
    */
-  readonly download?: {
-    readonly bytes?: number
-    readonly queued?: true
-    readonly progress?: { readonly done: number; readonly total?: number }
-  }
+  readonly download?: SurfaceDownloadState & { readonly bytes?: number }
 }
 
 /**
@@ -207,12 +223,10 @@ export type SurfaceStatus =
       /** Optional progress detail. Never an error code or raw output. */
       readonly detail?: string
       /**
-       * Measured progress, in bytes, when the work has a known position. A
-       * surface draws a real bar from it; without it the work has no known
-       * end and the surface shows only that it is under way. `total` is
-       * absent when Korri knows how far it has got but not how far it goes.
+       * Measured progress when the work has a known position; without it the
+       * work has no known end and the surface shows only that it is under way.
        */
-      readonly progress?: { readonly done: number; readonly total?: number }
+      readonly progress?: SurfaceProgress
       /** Actions supplied by the host for this work, such as real cancellation.
        * The surface renders them; it never infers cancellation from a label. */
       readonly actions?: readonly SurfaceAction[]
@@ -428,6 +442,132 @@ export interface SurfaceOnboarding {
   readonly controllers: readonly SurfaceController[]
 }
 
+/**
+ * Getting a game from a provider: a place, such as the PICO-8 BBS, that a
+ * provider plugin can search and fetch from. Each surface lists whatever
+ * providers Korri publishes; there may be one. Grounded in legacy Shift's store
+ * (search, results, detail, Get/Getting/Play, the ungetable guard) and the
+ * legacy acquisition protocol (`ProviderClaim`,
+ * `ProviderClaimDetails`, `AcquireJobStatus`).
+ *
+ * The host owns every request, the download and its job; the surface owns
+ * which of these it shows and when. Each value below is what Korri last
+ * learned for the one provider list, the one search and the one open entry it
+ * holds. Every action is published by the host and run through `runAction`
+ * unchanged; an action the host no longer publishes does nothing.
+ */
+export interface SurfaceStoreProvider {
+  /** Opaque. Hand it back unchanged to `searchStore`. */
+  readonly id: string
+  readonly title: string
+}
+
+/** One game a provider offers, in the provider's words. It carries no art:
+ * a provider's images are on its own site, which the portal never reaches,
+ * so a surface draws its own stand-in. */
+export interface SurfaceStoreEntry {
+  /** Opaque. Hand it back unchanged to `openStoreEntry`. */
+  readonly id: string
+  readonly title: string
+  /** What the game runs on, as the provider says it, such as "PICO-8".
+   * Absent when the provider does not say. */
+  readonly system?: string
+}
+
+export type SurfaceStoreProviders =
+  | { readonly _tag: "Loading" }
+  /** Korri could not list its providers. `actions` holds its Retry. */
+  | { readonly _tag: "Problem"; readonly message: string; readonly actions: readonly SurfaceAction[] }
+  /** Empty when no provider plugin is enabled on this device. */
+  | { readonly _tag: "Ready"; readonly providers: readonly SurfaceStoreProvider[] }
+
+export type SurfaceStoreSearch =
+  /** Nothing has been asked yet. */
+  | { readonly _tag: "Idle" }
+  | { readonly _tag: "Searching"; readonly providerId: string; readonly query: string }
+  /** The provider did not answer, or answered with something Korri could not
+   * read. `message` is user-facing; `actions` holds its Retry. */
+  | {
+      readonly _tag: "Problem"
+      readonly providerId: string
+      readonly query: string
+      readonly message: string
+      readonly actions: readonly SurfaceAction[]
+    }
+  /** `entries` is empty when the provider found nothing. */
+  | {
+      readonly _tag: "Ready"
+      readonly providerId: string
+      readonly query: string
+      readonly entries: readonly SurfaceStoreEntry[]
+    }
+
+/**
+ * Where getting the open entry stands. Every string is finished, user-facing
+ * copy; a surface renders the actions it is given and infers nothing from a
+ * label.
+ */
+export type SurfaceStoreGet =
+  /** Get is on offer (`actions`). `note` says what happened last, such as a
+   * cancelled download. */
+  | { readonly _tag: "Offer"; readonly note?: string; readonly actions: readonly SurfaceAction[] }
+  /** This entry cannot be fetched to this device, and why: the provider
+   * hands it out only on its website, or it does not say what it runs on, or
+   * this device cannot play what it runs on. Nothing was downloaded. */
+  | { readonly _tag: "Unavailable"; readonly reason: string }
+  /** Korri needs the person's say-so first: the download and its size. */
+  | {
+      readonly _tag: "Confirm"
+      readonly kicker: string
+      readonly detail?: string
+      readonly actions: readonly SurfaceAction[]
+    }
+  /** Under way, in Korri's words. Where the download stands is the same
+   * `SurfaceDownloadState` a game's own download uses: `queued` while it waits
+   * its turn, `progress` while it moves, neither while there is no position
+   * (finding the file, placing it). `actions` holds Cancel while cancelling is
+   * real. */
+  | ({
+      readonly _tag: "Working"
+      readonly kicker: string
+      readonly detail?: string
+      readonly actions: readonly SurfaceAction[]
+    } & SurfaceDownloadState)
+  /** The game is in the library. `gameId` is its `SurfaceGame.id` for
+   * `launchGame`, present once the catalog holds it. */
+  | { readonly _tag: "InLibrary"; readonly detail?: string; readonly gameId?: string }
+  /** The download did not finish. `actions` holds Retry when one helps. */
+  | {
+      readonly _tag: "Problem"
+      readonly kicker: string
+      readonly reason: string
+      readonly actions: readonly SurfaceAction[]
+    }
+
+export type SurfaceStoreDetails =
+  | { readonly _tag: "Closed" }
+  | { readonly _tag: "Loading"; readonly entry: SurfaceStoreEntry }
+  | {
+      readonly _tag: "Problem"
+      readonly entry: SurfaceStoreEntry
+      readonly message: string
+      readonly actions: readonly SurfaceAction[]
+    }
+  | {
+      readonly _tag: "Ready"
+      readonly entry: SurfaceStoreEntry
+      readonly description?: string
+      readonly get: SurfaceStoreGet
+    }
+
+export interface SurfaceStore {
+  readonly providers: SurfaceStoreProviders
+  readonly search: SurfaceStoreSearch
+  /** The entry last opened with `openStoreEntry`. A download keeps going
+   * while another entry is open, and shows again when its entry is. */
+  readonly details: SurfaceStoreDetails
+}
+
 /** Everything Korri publishes to the surface. Replaced wholesale on change. */
 export interface SurfaceModel {
   readonly presentation: SurfacePresentation
@@ -450,6 +590,8 @@ export interface SurfaceModel {
   readonly network?: SurfaceNetwork
   /** Absent once first-boot setup is finished, and in hosts without it. */
   readonly onboarding?: SurfaceOnboarding
+  /** Absent in hosts that cannot get games from providers. */
+  readonly store?: SurfaceStore
 }
 
 /** Everything the surface may ask Korri to do. */
@@ -511,6 +653,14 @@ export interface SurfaceHost {
   connectHiddenWifi(ssid: string, password?: string): void
   /** Record that first-boot setup is finished on this device. */
   finishOnboarding(): void
+  /** Read the providers again. The list arrives in `model.store.providers`. */
+  openStore(): void
+  /** Search one provider. Results arrive in `model.store.search`; a newer
+   * search replaces an older one. */
+  searchStore(providerId: string, query: string): void
+  /** Read one entry of the current results. It arrives in
+   * `model.store.details`, with where getting it stands. */
+  openStoreEntry(entryId: string): void
 }
 
 /**

@@ -49,7 +49,8 @@ const MODE_LABELS: Record<PicoHomeMode, string> = {
 export type PicoHomeMode = "shelf" | "grid" | "hero"
 
 /**
- * Home's MENU key and its list: FIND, SETTINGS and VIEW, which the treaty's
+ * Home's MENU key and its list: FIND, GET GAMES (where Korri offers a store),
+ * SETTINGS and VIEW. FIND, SETTINGS and VIEW are also reached by the treaty's
  * `options`, `system` and `menu` buttons also reach. Whether the list is open
  * belongs to the owner, because Back closes it and Back arrives through the
  * host.
@@ -60,6 +61,8 @@ export interface PicoHomeMenu {
   readonly returning: boolean
   readonly onToggle: () => void
   readonly onFind: () => void
+  /** GET GAMES: present only where Korri can get games from providers. */
+  readonly onStore?: () => void
   readonly onSettings: () => void
   readonly onView: () => void
   readonly onReturned: () => void
@@ -154,6 +157,7 @@ export function PicoHome({
           claimFocus={menu.returning}
           entries={[
             { label: "FIND", onPress: menu.onFind },
+            ...(menu.onStore === undefined ? [] : [{ label: "GET GAMES", onPress: menu.onStore }]),
             { label: "SETTINGS", onPress: menu.onSettings },
             { detail: `◀ ${VIEW_WORDS[mode]} ▶`, label: "VIEW", onPress: menu.onView },
           ]}

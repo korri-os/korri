@@ -12,10 +12,24 @@ export const NO_STORE = { _tag: "NoStore" } as const
 export function BoxbusterNotice({
   view,
   onReload,
+  onOrderDesk,
 }: {
   view: BoxbusterStoreView | typeof NO_STORE
   onReload: () => void
+  /** Present where Korri can get games: the board points to the order desk. */
+  onOrderDesk?: () => void
 }) {
+  const desk = onOrderDesk === undefined ? null : (
+    <button
+      type="button"
+      className="boxbuster-notice-action"
+      // The only control on the board: focus it so one confirm goes there.
+      autoFocus
+      onClick={onOrderDesk}
+    >
+      Go to the order desk
+    </button>
+  )
   switch (view._tag) {
     case "Open":
       return null
@@ -26,7 +40,9 @@ export function BoxbusterNotice({
         <BoxbusterNoticeBoard
           sign="The store cannot open on this device"
           detail="Boxbuster draws the store in 3D, and this device's browser has no 3D graphics."
-        />
+        >
+          {desk}
+        </BoxbusterNoticeBoard>
       )
     case "Loading":
       return <BoxbusterNoticeBoard sign="Opening the store…" />
@@ -34,8 +50,12 @@ export function BoxbusterNotice({
       return (
         <BoxbusterNoticeBoard
           sign="The shelves are empty"
-          detail="Games Korri finds on this device or its peers are shelved here."
-        />
+          detail={onOrderDesk === undefined
+            ? "Games Korri finds on this device or its peers are shelved here."
+            : "Games Korri finds on this device or its peers are shelved here. The order desk can get you one."}
+        >
+          {desk}
+        </BoxbusterNoticeBoard>
       )
     case "Error":
       return (

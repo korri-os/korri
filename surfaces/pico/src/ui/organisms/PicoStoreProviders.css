@@ -1,0 +1,33 @@
+/* The provider list: one column of rows that scrolls when it is longer than
+ * the room, under one quiet line saying what the list is for. */
+.pico-store-providers {
+	display: grid;
+	align-content: start;
+	gap: calc(var(--pico-u) * 2);
+	height: 100%;
+	min-height: 0;
+	padding: var(--pico-u) calc(var(--pico-u) * 2);
+	overflow-y: auto;
+	scrollbar-width: none;
+	font-size: var(--pico-text-sm);
+}
+
+.pico-store-providers-lead {
+	margin: 0;
+	font-size: var(--pico-text);
+	color: var(--pico-ink-dim);
+}
+
+.pico-store-providers-list {
+	display: grid;
+	gap: var(--pico-px);
+	width: min(100%, calc(var(--pico-px) * 280));
+	margin: 0;
+	padding: 0 var(--pico-drop) var(--pico-drop) 0;
+	list-style: none;
+}
+
+.pico-store-providers-item {
+	display: grid;
+	min-width: 0;
+}

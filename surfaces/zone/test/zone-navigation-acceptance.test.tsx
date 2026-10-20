@@ -30,6 +30,8 @@ import type {
   SurfaceInputAction,
   SurfaceModel,
   SurfaceNetwork,
+  SurfaceStore,
+  SurfaceStoreGet,
 } from "@contracts/surface/korri-surface"
 import { ZoneSurface } from "../src/index"
 
@@ -197,6 +199,9 @@ function fakeHost(actions: readonly SurfaceAction[] = GAME_ACTIONS): FakeHost {
     connectWifi: record("connectWifi"),
     connectHiddenWifi: record("connectHiddenWifi"),
     finishOnboarding: record("finishOnboarding"),
+    openStore: record("openStore"),
+    searchStore: record("searchStore"),
+    openStoreEntry: record("openStoreEntry"),
   }
 }
 
@@ -611,6 +616,149 @@ describe("status", () => {
     expect(screen.getByRole("status").textContent).toContain("Keeping what was downloaded so far")
     publish(HOME)
     expect(focusedText()).toContain("Hollow Knight")
+  })
+})
+
+// ---- GET GAMES: a game from a provider ----
+
+describe("get games", () => {
+  const PICO8 = "@korri:pico8"
+  const CELESTE_2 = { id: "celeste_classic_2-5", title: "Celeste Classic 2", system: "PICO-8" }
+  const WIP = { id: "wip-3", title: "untitled work in progress" }
+  const action = (id: string, label: string): SurfaceAction => ({ id, label, enabled: true })
+  const store = (over: Partial<SurfaceStore> = {}): SurfaceStore => ({
+    providers: { _tag: "Ready", providers: [{ id: PICO8, title: "PICO-8 BBS" }] },
+    search: { _tag: "Idle" },
+    details: { _tag: "Closed" },
+    ...over,
+  })
+  const found = store({ search: { _tag: "Ready", providerId: PICO8, query: "cel", entries: [CELESTE_2, WIP] } })
+  const entry = (get: SurfaceStoreGet): SurfaceStore =>
+    ({ ...found, details: { _tag: "Ready", entry: CELESTE_2, description: "Madeline climbs again.", get } })
+  const EMPTY: SurfaceModel = { ...HOME, catalog: { _tag: "Ready", games: [] } }
+  const page = () => document.querySelector(".zone-store")
+
+  test("an empty library offers GET GAMES; a game is found, got and played", () => {
+    const { host, publish } = mount({ ...EMPTY, store: store({ providers: { _tag: "Loading" } }) })
+    expect(onScreen("No games")).toBe(true)
+    // The one thing to do on an empty library has the cursor.
+    expect(focusedText()).toBe("Get games")
+    confirm()
+    expect(calls(host)).toEqual([["openStore"]])
+    expect(onScreen("Loading")).toBe(true)
+
+    publish({ ...EMPTY, store: store() })
+    expect(focusedText()).toContain("PICO-8 BBS")
+    confirm()
+    // A provider not asked yet opens on the keyboard.
+    type("cel")
+    moveTo(button("Done", keyboardOnScreen()))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["searchStore", PICO8, "cel"])
+
+    publish({ ...EMPTY, store: store({ search: { _tag: "Searching", providerId: PICO8, query: "cel" } }) })
+    expect(onScreen("Searching")).toBe(true)
+    // Korri's trouble in its words, with its RETRY.
+    publish({ ...EMPTY, store: store({ search: {
+      _tag: "Problem", providerId: PICO8, query: "cel",
+      message: "The provider did not answer.", actions: [action("store:1:search-retry", "Retry")],
+    } }) })
+    expect(onScreen("The provider did not answer.")).toBe(true)
+    moveTo(button("Retry"))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "store:1:search-retry"])
+
+    // Results: the system as the provider says it, nothing when it does not.
+    publish({ ...EMPTY, store: found })
+    expect(button("Celeste Classic 2").textContent).toContain("PICO-8")
+    expect(button("untitled work in progress").textContent).toBe("untitled work in progress")
+    moveTo(button("Celeste Classic 2"))
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["openStoreEntry", "celeste_classic_2-5"])
+
+    publish({ ...EMPTY, store: { ...found, details: { _tag: "Loading", entry: CELESTE_2 } } })
+    expect(onScreen("Loading")).toBe(true)
+    publish({ ...EMPTY, store: entry({ _tag: "Offer", actions: [action("store:2:get", "Get")] }) })
+    expect(onScreen("Madeline climbs again.")).toBe(true)
+    expect(focusedText()).toBe("Get")
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "store:2:get"])
+
+    // Korri's question, its own buttons in its order, the first lit.
+    publish({ ...EMPTY, store: entry({
+      _tag: "Confirm", kicker: "Download to this device", detail: "Celeste Classic 2, 15.9 KB",
+      actions: [action("store:3:download", "Download"), action("store:3:cancel", "Cancel")],
+    }) })
+    expect(screen.getByRole("dialog", { name: "Download to this device" }).textContent).toContain("15.9 KB")
+    expect(focusedText()).toBe("Download")
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["runAction", "store:3:download"])
+
+    // The meter from Korri's bytes, and its CANCEL.
+    publish({ ...EMPTY, store: entry({
+      _tag: "Working", kicker: "Downloading Celeste Classic 2", detail: "8 KB of 15.9 KB",
+      progress: { done: 8_000, total: 15_872 }, actions: [action("store:4:cancel", "Cancel")],
+    }) })
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("50")
+    expect(focusedText()).toBe("Cancel")
+
+    // Waiting its turn: QUEUED, Korri's words, still CANCEL.
+    publish({ ...EMPTY, store: entry({
+      _tag: "Working", kicker: "Waiting to download", detail: "Waiting for the download before it",
+      queued: true, actions: [action("store:5:cancel", "Cancel")],
+    }) })
+    expect(onScreen("Queued")).toBe(true)
+    expect(screen.queryByRole("progressbar")).toBeNull()
+
+    // In the library: PLAY launches it, and GAMES comes back on its card.
+    const got: SurfaceGame = { id: "bbs:celeste_classic_2-5", title: "Celeste Classic 2", subtitle: "PICO-8" }
+    const library: SurfaceModel = { ...HOME, catalog: { _tag: "Ready", games: [...GAMES, got] } }
+    publish({ ...library, store: entry({ _tag: "InLibrary", detail: "In your library", gameId: got.id }) })
+    expect(onScreen("In your library")).toBe(true)
+    expect(focusedText()).toBe("Play")
+    confirm()
+    expect(calls(host).at(-1)).toEqual(["launchGame", got.id])
+    expect(page()).toBeNull()
+    expect(focusedText()).toContain("Celeste Classic 2")
+  })
+
+  test("B walks back out and never cancels; menu, options and system do nothing there", () => {
+    const working = entry({
+      _tag: "Working", kicker: "Downloading Celeste Classic 2",
+      progress: { done: 8_000, total: 15_872 }, actions: [action("store:4:cancel", "Cancel")],
+    })
+    const { host, press, publish } = mount({ ...HOME, store: found })
+    press("menu")
+    press("menu")
+    press("menu")
+    // Menu: the tabs, FIND, then GET GAMES.
+    expect(focusedText()).toBe("Get games")
+    confirm()
+    moveTo(button("PICO-8 BBS"))
+    confirm()
+    moveTo(button("Celeste Classic 2"))
+    confirm()
+    publish({ ...HOME, store: working })
+    expect(focusedText()).toBe("Cancel")
+    for (const action of ["menu", "options", "system"] as const) press(action)
+    expect(page()).not.toBeNull()
+    const asked = calls(host).length
+    press("back")
+    // The results, the cursor on the entry it came from; the download runs on.
+    expect(focusedText()).toContain("Celeste Classic 2")
+    press("back")
+    expect(focusedText()).toContain("PICO-8 BBS")
+    press("back")
+    expect(page()).toBeNull()
+    expect(focusedText()).toBe("Get games")
+    expect(calls(host).length).toBe(asked)
+  })
+
+  test("a host that cannot get games shows no GET GAMES", () => {
+    mount(EMPTY)
+    expect(screen.queryByText("Get games")).toBeNull()
+    mount(HOME)
+    expect(screen.queryAllByText("Get games")).toEqual([])
   })
 })
 

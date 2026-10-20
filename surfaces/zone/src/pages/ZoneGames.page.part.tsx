@@ -8,6 +8,8 @@ import {
   fixtureEmptyModel,
   fixtureErrorModel,
   fixtureFortyModel,
+  fixtureGetGamesEmptyModel,
+  fixtureGetGamesModel,
   fixtureLoadingModel,
   fixtureOneGameModel,
   fixtureReadyModel,
@@ -48,6 +50,8 @@ export const composition = {
   Idle: [{ part: "src/ui/molecules/ZoneTitleCard.molecule.part.tsx", state: "default" }],
   Narrow: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "Narrow" }],
   DownloadFocused: [{ part: "src/ui/molecules/ZoneCard.molecule.part.tsx", state: "Download" }],
+  GetGames: [{ part: "src/ui/atoms/ZoneButton.atom.part.tsx", state: "default" }],
+  GetGamesEmpty: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "NoCards" }],
 } as const
 
 type Opening = NonNullable<Parameters<typeof useZoneGames>[3]>
@@ -165,6 +169,31 @@ export function Filtered() {
   return (
     <Games
       model={fixtureReadyModel}
+      opening={[
+        { _tag: "ChoseFind" },
+        { _tag: "PressedKey", key: { kind: "char", char: "l" } },
+        { _tag: "PressedKey", key: { kind: "char", char: "a" } },
+        { _tag: "PressedKey", key: { kind: "done" } },
+      ]}
+    />
+  )
+}
+
+/** Korri can get games: GET GAMES in the body's top left, the cursor on it. */
+export function GetGames() {
+  return <Games model={fixtureGetGamesModel} opening={[{ _tag: "FocusedCard", index: 1 }, { _tag: "FocusedGetGames" }]} />
+}
+
+/** An empty library where Korri can get games: GET GAMES has the cursor. */
+export function GetGamesEmpty() {
+  return <Games model={fixtureGetGamesEmptyModel} />
+}
+
+/** GET GAMES with a kept filter: FIND: LA stands under it. */
+export function GetGamesFiltered() {
+  return (
+    <Games
+      model={fixtureGetGamesModel}
       opening={[
         { _tag: "ChoseFind" },
         { _tag: "PressedKey", key: { kind: "char", char: "l" } },

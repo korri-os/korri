@@ -1,0 +1,291 @@
+/*
+ * The order desk: the door board grown into a counter. Store-blue board,
+ * trim-yellow rules and buttons, cream print, the counter's monospace. The
+ * board fills the surface less its margin and scrolls when a page is taller
+ * than the room; focus scrolls the control it lands on into view.
+ */
+.boxbuster-desk {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	padding: var(--bb-space);
+}
+
+.boxbuster-desk-board {
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr);
+	gap: var(--bb-space);
+	width: min(100%, 52em);
+	max-height: 100%;
+	padding: var(--bb-space) calc(var(--bb-space) * 1.5);
+	border-block: var(--bb-rule) solid var(--bb-trim);
+	background: var(--bb-wall);
+	color: var(--bb-label);
+	font-family: var(--bb-font);
+	font-size: var(--bb-text-body);
+	overflow: hidden;
+}
+
+.boxbuster-desk-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: calc(var(--bb-space) / 2) var(--bb-space);
+}
+
+.boxbuster-desk-sign {
+	margin: 0;
+	min-width: 0;
+	color: var(--bb-trim);
+	font-size: var(--bb-text-sign);
+	line-height: 1.1;
+	text-shadow: 2px 2px 0 var(--bb-shadow);
+	overflow-wrap: anywhere;
+}
+
+.boxbuster-desk-page {
+	display: grid;
+	align-content: start;
+	gap: var(--bb-space);
+	min-height: 0;
+	overflow-y: auto;
+	scrollbar-width: thin;
+	padding: var(--bb-rule);
+}
+
+.boxbuster-desk-list {
+	display: grid;
+	gap: calc(var(--bb-space) / 2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.boxbuster-desk-row,
+.boxbuster-desk-button,
+.boxbuster-desk-key,
+.boxbuster-desk-leave {
+	min-height: 2.75em;
+	border: var(--bb-rule) solid var(--bb-trim);
+	background: var(--bb-night);
+	color: var(--bb-trim);
+	font: inherit;
+	cursor: pointer;
+}
+
+.boxbuster-desk-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0 var(--bb-space);
+	width: 100%;
+	padding: 0.4em 1em;
+	text-align: start;
+}
+
+.boxbuster-desk-row-title {
+	min-width: 0;
+	color: var(--bb-label);
+	overflow-wrap: anywhere;
+}
+
+.boxbuster-desk-row-meta {
+	color: var(--bb-label-dim);
+}
+
+.boxbuster-desk-button {
+	padding: 0 1.5em;
+}
+
+.boxbuster-desk-leave {
+	min-height: 2.25em;
+	padding: 0 1em;
+	border-color: var(--bb-label-dim);
+	color: var(--bb-label-dim);
+}
+
+.boxbuster-desk-row:focus,
+.boxbuster-desk-button:focus,
+.boxbuster-desk-key:focus,
+.boxbuster-desk-leave:focus {
+	outline: var(--bb-rule) solid var(--bb-label);
+	outline-offset: var(--bb-rule);
+	background: var(--bb-trim);
+	color: var(--bb-night);
+}
+
+.boxbuster-desk-row:focus .boxbuster-desk-row-title,
+.boxbuster-desk-row:focus .boxbuster-desk-row-meta {
+	color: var(--bb-night);
+}
+
+.boxbuster-desk-button:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+
+.boxbuster-desk-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: calc(var(--bb-space) / 2);
+}
+
+.boxbuster-desk-note,
+.boxbuster-desk-description,
+.boxbuster-desk-meta {
+	margin: 0;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+
+.boxbuster-desk-meta {
+	color: var(--bb-label-dim);
+}
+
+/* A slip clipped to the order: a reason that ends the order here. */
+.boxbuster-desk-slip {
+	margin: 0;
+	padding: 0.5em 0.75em;
+	border-inline-start: var(--bb-rule) solid var(--bb-trim);
+	background: var(--bb-night);
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+
+.boxbuster-desk-kicker {
+	margin: 0;
+	color: var(--bb-trim);
+	font-size: var(--bb-text-title);
+	line-height: 1.15;
+}
+
+/* A queued order: a rubber stamp on the order, in the store's trim. */
+.boxbuster-desk-hold {
+	justify-self: start;
+	margin: 0;
+	padding: 0.15em 0.5em;
+	border: var(--bb-rule) solid var(--bb-trim);
+	color: var(--bb-trim);
+	font-size: var(--bb-text-title);
+	line-height: 1.15;
+	text-transform: uppercase;
+}
+
+.boxbuster-desk-kicker[data-tone="alarm"] {
+	color: var(--bb-alarm);
+}
+
+.boxbuster-desk-title {
+	margin: 0;
+	color: var(--bb-label);
+	font-size: var(--bb-text-title);
+	line-height: 1.15;
+	overflow-wrap: anywhere;
+}
+
+.boxbuster-desk-entry {
+	display: grid;
+	gap: calc(var(--bb-space) / 2);
+	justify-items: start;
+}
+
+/* The order form: one written line, then the desk's keys. */
+.boxbuster-desk-form {
+	display: grid;
+	gap: var(--bb-space);
+}
+
+.boxbuster-desk-line {
+	display: flex;
+	align-items: baseline;
+	gap: 0.75em;
+	margin: 0;
+	padding-bottom: 0.25em;
+	border-bottom: var(--bb-rule) dashed var(--bb-label-dim);
+}
+
+.boxbuster-desk-line-label,
+.boxbuster-desk-line-count {
+	color: var(--bb-label-dim);
+}
+
+.boxbuster-desk-line-text {
+	flex: 1 1 auto;
+	min-width: 0;
+	color: var(--bb-label);
+	white-space: pre;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	direction: rtl;
+	text-align: start;
+}
+
+.boxbuster-desk-keys {
+	display: grid;
+	grid-template-columns: repeat(10, minmax(0, 1fr));
+	gap: max(2px, calc(var(--bb-space) / 4));
+}
+
+.boxbuster-desk-key {
+	min-width: 0;
+	min-height: 2.25em;
+	padding: 0;
+}
+
+.boxbuster-desk-key[data-wide] {
+	grid-column: span 3;
+}
+
+.boxbuster-desk-key[data-wide]:last-child {
+	grid-column: span 4;
+}
+
+/* The VCR counter: sixteen cells, lit from Korri's bytes. */
+.boxbuster-desk-counter {
+	display: grid;
+	grid-template-columns: repeat(16, minmax(0, 1fr));
+	gap: max(2px, calc(var(--bb-rule) / 2));
+	width: min(100%, 24em);
+	height: 1.1em;
+}
+
+.boxbuster-desk-cell {
+	background: var(--bb-night);
+	border: max(1px, calc(var(--bb-rule) / 2)) solid var(--bb-trim);
+}
+
+.boxbuster-desk-cell[data-lit="on"] {
+	background: var(--bb-trim);
+}
+
+/* No known end: a band walks along, one cell lit at a time. */
+.boxbuster-desk-counter[data-counter="band"] .boxbuster-desk-cell,
+.boxbuster-desk-counter[data-counter="clock"] .boxbuster-desk-cell {
+	animation: boxbuster-desk-walk 1.6s steps(1) infinite;
+}
+
+@keyframes boxbuster-desk-walk {
+	0% { background: var(--bb-trim); }
+	6.25%, 100% { background: var(--bb-night); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.boxbuster-desk-counter[data-counter="band"] .boxbuster-desk-cell,
+	.boxbuster-desk-counter[data-counter="clock"] .boxbuster-desk-cell {
+		animation: none;
+	}
+}
+
+/* A short room: the sign steps down and the keys flatten, so the form and
+ * Search stay on one screen at the 320x240 floor. */
+@container (height < 420px) {
+	.boxbuster-desk-sign {
+		font-size: var(--bb-text-title);
+	}
+	.boxbuster-desk-key {
+		min-height: 1.9em;
+	}
+}

@@ -3209,3 +3209,133 @@ button.shift-sheet-control:is(:hover, :focus, [data-korri-active-focus]) {
 @keyframes shift-setting-spin {
 	to { transform: rotate(360deg); }
 }
+
+/* ========================================================================== *
+ * STORE JOURNEY (providers → search → results → one entry)
+ *
+ * What Korri can serve today, on the harvested store scope above: a provider
+ * index, the finder's search segment with a Search button, the browse-tile
+ * grid, and the detail split with where getting the entry stands. One accent
+ * (the sky) marks the bar and the primary verb; nothing else is coloured.
+ * ========================================================================== */
+
+.shift-store-page {
+	height: 100%;
+}
+
+[data-shift-store] .shift-store-query {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--shift-space-2);
+	width: 100%;
+}
+
+/* The search segment stands alone here, so it takes the pill's rounding. */
+[data-shift-store] .shift-store-query .shift-store-finder-search {
+	flex: 1 1 calc(var(--intrinsic-base) * 12);
+	min-width: 0;
+	border-radius: 9999px;
+	background: var(--shift-pill-bg);
+	border: 1px solid var(--shift-rule);
+	padding: var(--shift-space-2) var(--shift-space-3);
+}
+
+[data-shift-store] .shift-store-query-input {
+	flex: 1 1 auto;
+	width: auto;
+}
+
+[data-shift-store] .shift-store-retry:disabled {
+	cursor: default;
+	opacity: 0.55;
+}
+
+[data-shift-store] .shift-store-tile-system {
+	font-size: var(--shift-text-fine);
+	color: var(--shift-ink-faint);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+[data-shift-store] .shift-store-get {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--shift-space-2);
+	width: min(100%, var(--shift-measure-notice));
+}
+
+[data-shift-store] .shift-store-get .shift-detail-actions {
+	flex-wrap: wrap;
+}
+
+[data-shift-store] .shift-store-get-kicker {
+	margin: 0;
+	font-size: var(--shift-text-body);
+	font-weight: 800;
+	color: var(--shift-ink);
+}
+
+[data-shift-store] .shift-store-get-kicker[data-tone="failed"] {
+	color: var(--shift-danger);
+}
+
+[data-shift-store] .shift-store-get-note {
+	margin: 0;
+	max-width: var(--shift-measure-prose);
+	font-size: var(--shift-text-fine);
+	line-height: 1.45;
+	color: var(--shift-ink-dim);
+	overflow-wrap: anywhere;
+}
+
+[data-shift-store] .shift-store-get-note[data-tone="done"] {
+	color: var(--shift-accent);
+	font-weight: 700;
+}
+
+[data-shift-store] .shift-store-get-note[data-tone="blocked"] {
+	color: var(--shift-ink);
+}
+
+[data-shift-store] .shift-store-progress {
+	position: relative;
+	width: 100%;
+	height: max(6px, calc(var(--intrinsic-base) * 0.28));
+	border-radius: 9999px;
+	overflow: hidden;
+	background: var(--shift-pill-bg);
+}
+
+[data-shift-store] .shift-store-progress-fill {
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: 0;
+	border-radius: inherit;
+	background: var(--shift-accent);
+	transition: width 600ms ease;
+}
+
+/* No known end: a band that travels, so the bar never claims a position. */
+[data-shift-store] .shift-store-progress[data-indeterminate] .shift-store-progress-fill {
+	width: 32%;
+	animation: shift-store-band 1.4s ease-in-out infinite;
+}
+
+@keyframes shift-store-band {
+	from { transform: translateX(-100%); }
+	to { transform: translateX(320%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	[data-shift-store] .shift-store-progress-fill {
+		transition: none;
+	}
+	[data-shift-store] .shift-store-progress[data-indeterminate] .shift-store-progress-fill {
+		animation: none;
+		width: 100%;
+		opacity: 0.4;
+	}
+}

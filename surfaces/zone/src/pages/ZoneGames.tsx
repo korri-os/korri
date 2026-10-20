@@ -18,7 +18,7 @@ import { ZoneTitleCard } from "../ui/molecules/ZoneTitleCard"
 import { ZoneShell } from "../ui/templates/ZoneShell"
 
 export type ZoneGamesTab = "games" | "options" | "savedata"
-export type ZoneGamesZone = "tabs" | "find" | "cards" | "actions"
+export type ZoneGamesZone = "tabs" | "find" | "get" | "cards" | "actions"
 
 /** What Korri says about the catalog, without the games (they come as cards). */
 export type ZoneGamesCatalog =
@@ -69,6 +69,8 @@ export type ZoneGamesEvent =
   | { readonly _tag: "ChoseTab"; readonly tab: ZoneGamesTab }
   | { readonly _tag: "FocusedFind" }
   | { readonly _tag: "ChoseFind" }
+  | { readonly _tag: "FocusedGetGames" }
+  | { readonly _tag: "ChoseGetGames" }
   | { readonly _tag: "FocusedCard"; readonly index: number }
   | { readonly _tag: "ChoseCard"; readonly index: number }
   | { readonly _tag: "FocusedAction"; readonly index: number }
@@ -100,6 +102,8 @@ export interface ZoneGamesProps {
   readonly tabCursor: ZoneGamesTab
   readonly zone: ZoneGamesZone
   readonly catalog: ZoneGamesCatalog
+  /** Korri can get games from a provider here: the GET GAMES key shows. */
+  readonly getGames: boolean
   /** The band: the catalog through the find draft, sections marked. */
   readonly cards: readonly ZoneBandCard[]
   readonly focusedCard: number
@@ -161,8 +165,10 @@ const buttonsIn = (region: Element | null): HTMLButtonElement[] =>
 /**
  * The GAMES page: Zone's home and the zone select a person sees on power-on.
  *
- * The shell's top strip holds the B and A hints, the three tabs and the
- * FIND key at their right end. The body is the card band with the focused
+ * The shell's top strip holds the B and A hints and the three tabs. The
+ * body's top corners hold two keys: FIND on the right, under the A hint,
+ * and GET GAMES on the left, under the B hint, whenever Korri can get
+ * games (an empty library too, where it is the one thing to do). The body is the card band with the focused
  * game centred, a line of Korri's session facts under it, and the action
  * row: PLAY, CONTINUE, or one button per place when there is a choice,
  * then OPTS., which opens GAME OPTS. as the host's `options` does. The
@@ -179,7 +185,7 @@ const buttonsIn = (region: Element | null): HTMLButtonElement[] =>
  */
 export function ZoneGames(props: ZoneGamesProps) {
   const {
-    strips, band, factsAt, keysAt, tab, tabCursor, zone, catalog, cards, focusedCard, facts, launches, focusedAction,
+    strips, band, factsAt, keysAt, tab, tabCursor, zone, catalog, getGames, cards, focusedCard, facts, launches, focusedAction,
     find, finding, opts, idle, clock, device, connection, build, onEvent,
   } = props
   const root = useRef<HTMLDivElement | null>(null)
@@ -202,12 +208,13 @@ export function ZoneGames(props: ZoneGamesProps) {
     : finding ? ["keys", find.key]
     : zone === "tabs" || !games ? ["tabs", Math.max(0, TABS.findIndex(item => item.id === tabCursor))]
     : zone === "find" ? ["find", 0]
+    : zone === "get" && getGames ? ["get", 0]
     : failed ? ["error", 0]
     : zone === "actions" && ready ? ["actions", focusedAction]
     : ready ? ["band", focusedCard]
     // A find that matches nothing: the cursor waits on FIND, to change it.
     : catalog._tag === "Ready" ? ["find", 0]
-    : catalog._tag === "Empty" ? ["tabs", 0]
+    : catalog._tag === "Empty" ? (getGames ? ["get", 0] : ["tabs", 0])
     : undefined
   const targetKey = target === undefined ? "" : `${target[0]}:${target[1]}:${idle === undefined ? "awake" : "idle"}`
 
@@ -308,14 +315,30 @@ export function ZoneGames(props: ZoneGamesProps) {
                   visible={band === "wide" ? 5 : 3}
                 />
               )}
-              {find.draft === "" ? null : (
-                <div className="zone-games-find-tag">
-                  <ZonePanel>
-                    <ZoneCaps>{`Find: ${find.draft}`}</ZoneCaps>
-                  </ZonePanel>
-                </div>
-              )}
             </div>
+            {/* The body's top left: GET GAMES, then the kept filter's tag
+                under it, over the first card's corner. */}
+            {!getGames && find.draft === "" ? null : (
+              <div className="zone-games-corner" inert={layer !== "none"}>
+                {getGames ? (
+                  <div className="zone-games-get" data-games-region="get">
+                    <ZoneButton
+                      focused={target?.[0] === "get"}
+                      label="Get games"
+                      onFocus={() => report({ _tag: "FocusedGetGames" })}
+                      onPress={() => onEvent({ _tag: "ChoseGetGames" })}
+                    />
+                  </div>
+                ) : null}
+                {find.draft === "" ? null : (
+                  <div className="zone-games-find-tag">
+                    <ZonePanel>
+                      <ZoneCaps>{`Find: ${find.draft}`}</ZoneCaps>
+                    </ZonePanel>
+                  </div>
+                )}
+              </div>
+            )}
             {catalog._tag !== "Ready" ? null : (
               <div className="zone-games-find" data-games-region="find" inert={layer !== "none"}>
                 <ZoneButton

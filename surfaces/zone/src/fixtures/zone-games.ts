@@ -14,6 +14,7 @@ import type {
   SurfaceModel,
 } from "@contracts/surface/korri-surface"
 import { createFixtureHost, fixtureGames, fixtureModel, type FixtureHost } from "./fixture-host"
+import { fixtureStore } from "./fixture-store"
 import {
   ZONE_ART_BLOCKS,
   ZONE_ART_BRAMBLE,
@@ -123,3 +124,7 @@ export const fixtureDownloadGames: readonly SurfaceGame[] = fixtureLibrary.map(g
     : game.id === "spelunky" ? { ...game, download: {} }
     : game)
 export const fixtureDownloadModel = gamesModel({ _tag: "Ready", games: fixtureDownloadGames })
+
+/** A host that can get games from a provider: GET GAMES shows. */
+export const fixtureGetGamesModel: SurfaceModel = { ...fixtureReadyModel, store: fixtureStore() }
+export const fixtureGetGamesEmptyModel: SurfaceModel = { ...fixtureEmptyModel, store: fixtureStore() }
