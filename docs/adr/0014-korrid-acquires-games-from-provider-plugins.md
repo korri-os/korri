@@ -82,7 +82,8 @@ boundaries).
   outside them, for provider turns and the game download alike.
 - Local `/rpc` gains `app.acquisition.providers`, `.search`, `.details`,
   `.acquire`, `.acquire-status` and `.acquire-cancel`, portal capability only,
-  on the local brain (it alone runs discovery).
+  wherever discovery runs on the device's library (the brain, and since
+  ADR 0015 the device korrid with an installed library root).
 - korrid downloads a resolved cart once, in ADR 0013's queue, publishes it in
   its cache, writes the game, release and provider link once, and reports
   `Imported { gameId }`. The route reaches the cart by hash and passes it as
