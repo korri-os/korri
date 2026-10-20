@@ -265,144 +265,59 @@ pub(super) fn remove_game_staging(directory: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
-/// Legacy `artifact-placement.ts`: at most 20 names are tried.
-const PLACEMENT_ATTEMPTS: usize = 20;
-const PLACEMENT_TEMP_PREFIX: &str = ".korri-acquire-";
-
-#[derive(Debug, Eq, PartialEq)]
-pub(super) struct Placed {
-    /// Path relative to the source root, `/`-separated.
-    pub relative: String,
-    pub path: PathBuf,
-    /// Identical bytes were already there (legacy `alreadyPresent`).
-    pub reused: bool,
-}
-
-/// Place a staged game inside a paired source without clobbering anything.
-/// Identical SHA-256 present: reuse. Different file: `name (n).ext`, where
-/// `ext` is the system extension the name matched. Written to a hidden temp
-/// in the target directory, synced, then linked into place so a concurrent
-/// writer's file is never replaced. `directory` is relative to the source root.
-pub(super) fn place_game(
+/// ADR 0014: publish a downloaded cart into its ready directory,
+/// `<provider cache>/<sha256 hex>/<URL basename>` (ADR 0012 grammar: the
+/// version directory holds the file named by the URL's last segment). The
+/// file moves into a `.tmp-*` work directory, is frozen and synced, and the
+/// directory is renamed atomically. Identical bytes already published are
+/// reused. Returns the ready directory.
+pub(super) fn publish_cart(
+    provider_cache: &Path,
     staged: &Path,
-    sha256: &str,
-    source_root: &Path,
-    directory: &str,
-    file_name: &str,
-    extension_len: usize,
-) -> Result<Placed, Failure> {
-    if !super::claims::safe_file_name(file_name)
-        || file_name.starts_with('.')
-        || extension_len + 1 >= file_name.len()
-        || !file_name.is_char_boundary(file_name.len() - extension_len - 1)
-    {
+    name: &str,
+    sha256_hex: &str,
+) -> Result<PathBuf, Failure> {
+    if !super::claims::safe_file_name(name) || name.starts_with('.') {
         return Err(Failure::UnsafePath);
     }
-    let root = fs::canonicalize(source_root).map_err(|_| Failure::Storage)?;
-    if !root.is_dir() {
-        return Err(Failure::Storage);
+    let ready = provider_cache.join(sha256_hex);
+    if is_ready(&ready) {
+        return Ok(ready);
     }
-    let segments: Vec<_> = directory
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect();
-    if segments
-        .iter()
-        .any(|segment| matches!(*segment, "." | "..") || segment.contains('\0'))
-    {
-        return Err(Failure::UnsafePath);
-    }
-    let mut target = root.clone();
-    for segment in segments {
-        target.push(segment);
-        match fs::symlink_metadata(&target) {
-            Ok(metadata) if metadata.is_dir() => {}
-            Ok(_) => return Err(Failure::UnsafePath),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::create_dir(&target)?,
+    let work = provider_cache.join(format!(".tmp-{:032x}", rand::random::<u128>()));
+    fs::create_dir(&work)?;
+    fs::set_permissions(&work, fs::Permissions::from_mode(0o755))?;
+    let outcome = (|| {
+        fs::rename(staged, work.join(name))?;
+        fs::set_permissions(work.join(name), fs::Permissions::from_mode(0o644))?;
+        freeze_and_sync(&work)?;
+        match fs::rename(&work, &ready) {
+            Ok(()) => (),
+            // A concurrent job published the same bytes first.
+            Err(_) if is_ready(&ready) => (),
             Err(error) => return Err(error.into()),
         }
-    }
-    if fs::canonicalize(&target)? != target || !target.starts_with(&root) {
-        return Err(Failure::UnsafePath);
-    }
-    let (stem, dot_extension) = file_name.split_at(file_name.len() - extension_len - 1);
-    for attempt in 0..PLACEMENT_ATTEMPTS {
-        let candidate = if attempt == 0 {
-            file_name.to_owned()
-        } else {
-            format!("{stem} ({attempt}){dot_extension}")
-        };
-        let path = target.join(&candidate);
-        let relative = path
-            .strip_prefix(&root)
-            .map_err(|_| Failure::UnsafePath)?
-            .to_str()
-            .ok_or(Failure::UnsafePath)?
-            .to_owned();
-        match fs::symlink_metadata(&path) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                match link_new(staged, &target, &path) {
-                    Ok(()) => {
-                        return Ok(Placed {
-                            relative,
-                            path,
-                            reused: false,
-                        })
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                    Err(error) => return Err(error.into()),
-                }
-            }
-            Ok(metadata) if metadata.is_file() => {
-                if file_sha256(&path)? == sha256 {
-                    return Ok(Placed {
-                        relative,
-                        path,
-                        reused: true,
-                    });
-                }
-            }
-            // A directory, symlink or special file occupies the name.
-            Ok(_) => {}
-            Err(error) => return Err(error.into()),
-        }
-    }
-    Err(Failure::NameTaken)
-}
-
-fn link_new(staged: &Path, directory: &Path, path: &Path) -> std::io::Result<()> {
-    let temp = directory.join(format!(
-        "{PLACEMENT_TEMP_PREFIX}{:032x}",
-        rand::random::<u128>()
-    ));
-    let result = (|| {
-        let mut output = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o644)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(&temp)?;
-        let mut input = File::options()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(staged)?;
-        std::io::copy(&mut input, &mut output)?;
-        output.sync_all()?;
-        // link(2) never replaces an existing name, unlike rename(2).
-        fs::hard_link(&temp, path)?;
-        File::open(directory)?.sync_all()
+        File::open(provider_cache)?.sync_all()?;
+        Ok(())
     })();
-    let _ = fs::remove_file(&temp);
-    result
+    if work.exists() {
+        let _ = discard_work(&work);
+    }
+    outcome.map(|()| ready)
 }
 
-fn file_sha256(path: &Path) -> Result<String, Failure> {
-    use sha2::{Digest, Sha256};
-    let mut file = File::options()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)?;
-    let mut hash = Sha256::new();
-    std::io::copy(&mut file, &mut hash)?;
-    Ok(hex::encode(hash.finalize()))
+/// The one file in a cart's ready directory, when the directory is ready.
+pub(crate) fn cart_file(ready: &Path) -> Option<PathBuf> {
+    if !is_ready(ready) {
+        return None;
+    }
+    let mut files = fs::read_dir(ready)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry.file_type().is_ok_and(|kind| kind.is_file())
+                && !entry.file_name().to_string_lossy().starts_with('.')
+        });
+    let file = files.next()?;
+    files.next().is_none().then(|| file.path())
 }

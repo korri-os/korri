@@ -152,7 +152,6 @@ pub struct DetailsRequest {
 
 /// Legacy `AcquireArtifactRequest` minus `url`, `size`, `artifactFormat`,
 /// `system`, `title` and `artUrl`: korrid takes those from the claim it holds.
-/// `sourceId` chooses among several eligible paired sources.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -165,12 +164,6 @@ pub struct AcquireArtifactRequest {
         deserialize_with = "crate::plugin::deserialize_optional_non_null"
     )]
     pub file_name: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::plugin::deserialize_optional_non_null"
-    )]
-    pub source_id: Option<String>,
 }
 
 /// Legacy `AcquireStatusRequest`.
@@ -189,24 +182,14 @@ pub struct AcquireCancelRequest {
     pub job_id: String,
 }
 
-/// One eligible paired source, with `DiscoverySource`'s own `id` and `label`.
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AcquireSourceChoice {
-    pub id: String,
-    pub label: String,
-}
-
 /// Legacy job states as a tagged union with ADR 0012 progress fields.
-/// `ChooseSource` is terminal: no download started; the host asks the person
-/// and calls `acquire` again with `sourceId`, which starts a new job.
+/// `Queued` mirrors ADR 0013's `ArtifactState::Queued`: the job waits for its
+/// turn in the one-at-a-time queue.
 #[typeshare(serialized_as = "AcquireJobStateWire")]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag")]
 pub enum AcquireJobState {
-    ChooseSource {
-        sources: Vec<AcquireSourceChoice>,
-    },
+    Queued,
     Resolving,
     Downloading {
         #[serde(rename = "bytesDone")]
@@ -222,9 +205,6 @@ pub enum AcquireJobState {
     Imported {
         #[serde(rename = "gameId")]
         game_id: String,
-    },
-    Staged {
-        message: String,
     },
     Failed {
         reason: RpcFailure,
@@ -300,8 +280,6 @@ pub(super) enum Failure {
     Empty,
     /// The file does not match the target system's declared content rules.
     NotSystemFile,
-    /// Legacy placement: 20 different files already hold the name.
-    NameTaken,
 }
 impl Failure {
     pub(super) fn rpc(self) -> RpcFailure {
@@ -321,7 +299,6 @@ impl Failure {
             Self::WebPage => "The source sent a web page instead of the game file.",
             Self::Empty => "The source sent an empty file.",
             Self::NotSystemFile => "The downloaded file is not a game for this system.",
-            Self::NameTaken => "The library folder already has different files with this name.",
         };
         RpcFailure {
             code: "AcquisitionFailed".into(),

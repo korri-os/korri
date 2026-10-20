@@ -75,28 +75,31 @@ fn linux_route_candidates_for_runner(
                         .and_then(|system| system.title.clone().or_else(|| system.name.clone()))
                 });
             let route =
-                |file_target, provider_target, artifact_target, flattened_target| ResolvedRoute {
-                    playable_id: game_id.into(),
-                    title: game.title.clone(),
-                    release_id: key.into(),
-                    identity: snapshot.game_identity(game_id),
-                    provider_id: runner
-                        .family
-                        .clone()
-                        .unwrap_or_else(|| runner.id.split_once('/').unwrap().0.into()),
-                    system_id: system_id.into(),
-                    system_title: system_title.clone(),
-                    runner_id: runner.id.clone(),
-                    family_id: runner.family.clone(),
-                    integration_token: String::new(),
-                    flattened_target,
-                    linux_runner: Some(ResolvedLinuxRunner {
-                        program: program.display().to_string(),
-                    }),
-                    core_path: core_path.clone(),
-                    file_target,
-                    provider_target,
-                    artifact_target,
+                |file_target, provider_target, artifact_target, cache_target, flattened_target| {
+                    ResolvedRoute {
+                        playable_id: game_id.into(),
+                        title: game.title.clone(),
+                        release_id: key.into(),
+                        identity: snapshot.game_identity(game_id),
+                        provider_id: runner
+                            .family
+                            .clone()
+                            .unwrap_or_else(|| runner.id.split_once('/').unwrap().0.into()),
+                        system_id: system_id.into(),
+                        system_title: system_title.clone(),
+                        runner_id: runner.id.clone(),
+                        family_id: runner.family.clone(),
+                        integration_token: String::new(),
+                        flattened_target,
+                        linux_runner: Some(ResolvedLinuxRunner {
+                            program: program.display().to_string(),
+                        }),
+                        core_path: core_path.clone(),
+                        file_target,
+                        provider_target,
+                        artifact_target,
+                        cache_target,
+                    }
                 };
             // A saved location is tried before the declaration's artifact.
             let mut routed = false;
@@ -188,7 +191,13 @@ fn linux_route_candidates_for_runner(
                         (Some(target), None, format!("{}:{}", storage.0, path))
                     };
                 emitted.insert(runner.id.clone());
-                candidates.push(route(file_target, provider_target, None, flattened_target));
+                candidates.push(route(
+                    file_target,
+                    provider_target,
+                    None,
+                    None,
+                    flattened_target,
+                ));
                 routed = true;
                 break;
             }
@@ -198,7 +207,19 @@ fn linux_route_candidates_for_runner(
                 if let Some(target) = artifact_target(registry, key) {
                     let flattened = format!("{}:{}", target.artifact_id, target.path);
                     emitted.insert(runner.id.clone());
-                    candidates.push(route(None, None, Some(target), flattened));
+                    candidates.push(route(None, None, Some(target), None, flattened));
+                    routed = true;
+                }
+            }
+            // ADR 0014: no location and no declaration, but a provider linked
+            // to this game holds the release's cart in its cache.
+            if !routed {
+                if let Some(path) =
+                    crate::acquisition::cart_content(root, registry, snapshot, game_id, key)
+                {
+                    let flattened = format!("cache:{}", path.display());
+                    emitted.insert(runner.id.clone());
+                    candidates.push(route(None, None, None, Some(path), flattened));
                 }
             }
         }

@@ -52,8 +52,9 @@ pub fn launch_route(
         &route.file_target,
         &route.provider_target,
         &route.artifact_target,
+        &route.cache_target,
     ) {
-        (Some(target), None, None) => {
+        (Some(target), None, None, None) => {
             let content =
                 storage::resolve_file_target(root, snapshot, target).map_err(|storage| {
                     if storage.is_missing_target() {
@@ -66,8 +67,16 @@ pub fn launch_route(
                 })?;
             (Some(content.path.display().to_string()), None)
         }
-        (None, Some(target), None) => (None, Some(target.provider_ref.clone())),
-        (None, None, Some(target)) => (
+        (None, Some(target), None, None) => (None, Some(target.provider_ref.clone())),
+        (None, None, None, Some(path)) => {
+            if !path.is_file() {
+                return Err(LaunchError::RomMissing(
+                    "the downloaded game is no longer in the cache".into(),
+                ));
+            }
+            (Some(path.display().to_string()), None)
+        }
+        (None, None, Some(target), None) => (
             Some(
                 crate::acquisition::artifact_content_path(root, registry, target)
                     .map_err(|failure| error(failure.message))?
