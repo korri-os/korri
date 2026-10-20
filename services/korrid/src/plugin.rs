@@ -345,6 +345,10 @@ pub struct SessionControlRecord {
 #[derive(Clone, Debug)]
 pub struct Plugin {
     discovery: Vec<ReleaseDiscoveryProvider>,
+    /// Provider ids explicitly exported in `providers`: the acquisition
+    /// providers (ADR 0013). The implicit own-id record is not one of them,
+    /// even when an explicit record has the same id.
+    acquisition_providers: BTreeSet<String>,
     id: String,
     config: Option<BTreeMap<String, serde_json::Value>>,
     title: String,
@@ -391,6 +395,8 @@ pub struct PluginRegistry {
     registered_transport_ids: BTreeSet<String>,
     registered_session_controls: BTreeMap<String, SessionControlRecord>,
     providers: BTreeMap<String, ProviderRecord>,
+    /// Enabled acquisition provider id -> owning plugin id.
+    acquisition_providers: BTreeMap<String, String>,
     systems: BTreeMap<String, SystemRecord>,
     families: BTreeMap<String, FamilyRecord>,
     runners: BTreeMap<String, RunnerRecord>,
@@ -426,6 +432,7 @@ impl PluginRegistry {
         let mut registered_transport_ids = BTreeSet::new();
         let mut registered_session_controls = BTreeMap::new();
         let mut providers = BTreeMap::new();
+        let mut acquisition_providers = BTreeMap::new();
         let mut systems = BTreeMap::new();
         let mut families = BTreeMap::new();
         let mut runners = BTreeMap::new();
@@ -461,6 +468,9 @@ impl PluginRegistry {
 
             for (record_id, record) in &plugin.providers {
                 insert_unique(&mut providers, record_id.clone(), record.clone())?;
+            }
+            for record_id in &plugin.acquisition_providers {
+                acquisition_providers.insert(record_id.clone(), plugin_id.clone());
             }
             for (local_id, record) in &plugin.systems {
                 insert_unique(
@@ -593,6 +603,7 @@ impl PluginRegistry {
             registered_transport_ids,
             registered_session_controls,
             providers,
+            acquisition_providers,
             systems,
             families,
             runners,
@@ -819,6 +830,43 @@ impl PluginRegistry {
         &self.providers
     }
 
+    /// Enabled acquisition providers: records explicitly exported in
+    /// `providers`, with their owning plugin id (ADR 0013).
+    pub fn acquisition_providers(&self) -> impl Iterator<Item = (&ProviderRecord, &str)> {
+        self.acquisition_providers
+            .iter()
+            .map(|(id, owner)| (&self.providers[id], owner.as_str()))
+    }
+
+    pub fn acquisition_provider(&self, id: &str) -> Option<(&ProviderRecord, &str)> {
+        self.acquisition_providers
+            .get(id)
+            .map(|owner| (&self.providers[id], owner.as_str()))
+    }
+
+    /// The exact hosts an installed plugin may reach. A plugin without an
+    /// installed package (bundled or test composition) has no network.
+    pub fn plugin_hosts(&self, plugin_id: &str) -> &[String] {
+        self.installed
+            .get(plugin_id)
+            .map_or(&[], |package| package.hosts.as_slice())
+    }
+
+    pub fn plugin_source(
+        &self,
+        plugin_id: &str,
+    ) -> Result<script::source::SourceSnapshot, PluginError> {
+        let package = self.installed.get(plugin_id).ok_or_else(|| {
+            PluginError::Evaluation(format!("{plugin_id} is not installed and enabled"))
+        })?;
+        script::source::SourceSnapshot::package_plugin(
+            &package.package,
+            &package.entry,
+            &package.sources,
+        )
+        .map_err(PluginError::Evaluation)
+    }
+
     pub fn systems(&self) -> &BTreeMap<String, SystemRecord> {
         &self.systems
     }
@@ -1007,6 +1055,7 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         .title
         .unwrap_or_else(|| titleize(&declaration.name));
     let mut providers = BTreeMap::new();
+    let mut acquisition_providers = BTreeSet::new();
 
     for (record_id, contribution) in declaration.providers {
         if !is_provider_id(&record_id) {
@@ -1025,6 +1074,18 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 });
             }
         }
+        if contribution
+            .title
+            .as_deref()
+            .is_none_or(|title| title.trim().is_empty())
+        {
+            return Err(PluginError::InvalidContribution {
+                kind: "provider",
+                record_id,
+                reason: "an acquisition provider needs a non-empty title".to_owned(),
+            });
+        }
+        acquisition_providers.insert(record_id.clone());
         providers.insert(
             record_id.clone(),
             ProviderRecord {
@@ -1404,6 +1465,7 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         .map_err(|reason| invalid_contribution("discovery", &id, &reason))?;
     Ok(Plugin {
         discovery: declaration.discovery,
+        acquisition_providers,
         config: declaration.config,
         id,
         title,
@@ -2076,6 +2138,75 @@ mod tests {
         // Declaration order, not key order: `prepared` is declared first.
         assert_eq!(registry.declared_hash(&hash)[0].release_key, "prepared");
         assert!(registry.declared_hash("sha1:unknown").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod acquisition_provider_tests {
+    use super::*;
+
+    const HANDLERS: &str = "export const handlers = {'claims.search': () => [], 'claims.details': () => ({}), 'artifact.resolve-download': () => ({})};";
+
+    #[test]
+    fn only_explicit_provider_records_are_acquisition_providers_even_with_the_own_id() {
+        let shop = load_plugin_source(
+            "@korri",
+            &format!("export const name = 'pico8'; export const title = 'PICO-8'; export const providers = {{'@korri:pico8': {{id: '@korri:pico8', title: 'PICO-8 BBS'}}}}; {HANDLERS}"),
+        )
+        .unwrap();
+        let plain = load_plugin_source("@korri", "export const name = 'plain';").unwrap();
+        let registry = PluginRegistry::new(
+            vec![shop, plain],
+            ["@korri:pico8".into(), "@korri:plain".into()],
+        )
+        .unwrap();
+        let listed: Vec<_> = registry
+            .acquisition_providers()
+            .map(|(record, owner)| (record.id.as_str(), record.title.as_deref(), owner))
+            .collect();
+        assert_eq!(
+            listed,
+            [("@korri:pico8", Some("PICO-8 BBS"), "@korri:pico8")]
+        );
+        // The implicit own-id record of the plain plugin still exists, but it
+        // is not an acquisition provider.
+        assert!(registry.providers().contains_key("@korri:plain"));
+        assert!(registry.acquisition_provider("@korri:plain").is_none());
+        assert!(registry.plugin_hosts("@korri:pico8").is_empty());
+    }
+
+    #[test]
+    fn an_explicit_provider_needs_a_title_and_the_three_handlers() {
+        let provider =
+            "export const providers = {'@korri:pico8': {id: '@korri:pico8', title: 'PICO-8 BBS'}};";
+        for missing in [
+            "claims.search",
+            "claims.details",
+            "artifact.resolve-download",
+        ] {
+            let handlers = HANDLERS
+                .replace(&format!("'{missing}': () => [], "), "")
+                .replace(&format!("'{missing}': () => ({{}}), "), "")
+                .replace(&format!(", '{missing}': () => ({{}})"), "");
+            assert!(!handlers.contains(missing), "{handlers}");
+            let error = load_plugin_source(
+                "@korri",
+                &format!("export const name = 'pico8'; {provider} {handlers}"),
+            )
+            .err()
+            .unwrap()
+            .to_string();
+            assert!(error.contains(missing), "{error}");
+        }
+        for record in ["{id: '@korri:pico8'}", "{id: '@korri:pico8', title: ' '}"] {
+            assert!(load_plugin_source(
+                "@korri",
+                &format!("export const name = 'pico8'; export const providers = {{'@korri:pico8': {record}}}; {HANDLERS}"),
+            )
+            .is_err());
+        }
+        // A plugin without providers needs none of these handlers.
+        load_plugin_source("@korri", "export const name = 'plain';").unwrap();
     }
 }
 
