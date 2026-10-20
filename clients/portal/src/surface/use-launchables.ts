@@ -103,6 +103,9 @@ export interface Launchables {
   dismissNotice(): void
   /** Re-read every source. */
   reload(): void
+  /** Re-read the catalog in place, without showing it as loading: a game
+   * acquired from a provider joins it. */
+  refresh(): void
 }
 
 export type LocalGamesListOutcomeWithCoverUrls =
@@ -980,6 +983,7 @@ export function useLaunchables(korrid: KorridClient): Launchables {
   }, [confirmEntry, publish])
 
   const reload = useCallback(() => { void load(); networkOnboarding.dismissProblem(); void networkOnboarding.refresh() }, [load, networkOnboarding])
+  const refresh = useCallback(() => { void load(true) }, [load])
 
   return {
     network: networkState.network,
@@ -1010,5 +1014,6 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     stopSession,
     dismissNotice,
     reload,
+    refresh,
   }
 }
