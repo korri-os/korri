@@ -82,3 +82,9 @@ field. The portal obtains the artifact IDs from
 An explicit `runnerId` uses the same selected-runner resolution as
 `app.session.start`; omission retains the saved/default route rules. This
 clarification was approved during implementation on 2026-10-19.
+
+## Amendment
+
+[ADR 0013](0013-declared-games-can-come-from-artifacts.md) lets declared game
+releases name artifacts, and changes Cancel: it now deletes the `.part` files,
+so a `.part` file with no ready directory always means an interrupted download.

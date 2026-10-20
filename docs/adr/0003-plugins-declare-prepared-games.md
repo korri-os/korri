@@ -14,3 +14,7 @@ Before this, OpenGOAL's prepared Jak files reached the catalog only because the 
 [ADR 0011](0011-steam-installed-manifest-discovery.md) permits enabled Steam
 provider releases from a closed manifest-only scan in plugin data. It does not
 permit scanning prepared files or build output.
+
+[ADR 0013](0013-declared-games-can-come-from-artifacts.md) lets a declared
+release come from artifacts in korrid's cache. Such a game is in the library
+before its files exist. Discovery still never scans the cache.
