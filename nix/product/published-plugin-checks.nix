@@ -30,12 +30,20 @@ builtins.listToAttrs (
     import ../../services/korrid/plugin-host/published-vm-test.nix {
       inherit pkgs hostPackage korridPackage;
       hostModule = korri.nixosModules.korri-plugin-host;
-      publishedPaths = {
-        ssh = published.korri-plugin-ssh;
-        mgba = published.korri-plugin-mgba;
-        fake08 = published.korri-plugin-fake08;
-        starterPack = published.korri-plugin-starter-pack;
-      };
+      inherit published;
+      roots = [
+        "korri-plugin-ssh"
+        "korri-plugin-mgba"
+        "korri-plugin-starter-pack"
+      ];
+      # The pinned Starter pack's exact requirements, which image selection
+      # must also select (plugin-selection.nix). Pure evaluation cannot read
+      # its manifest; the VM test reads it and requires exactly this list.
+      requires.korri-plugin-starter-pack = [
+        "korri-plugin-fake08"
+        "korri-plugin-solarus"
+        "korri-plugin-zquest-classic"
+      ];
       metadata = import ./published-plugin-metadata.nix {
         inherit pkgs system;
         pluginPackages = builtins.attrValues published;

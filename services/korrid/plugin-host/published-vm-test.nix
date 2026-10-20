@@ -1,25 +1,50 @@
 # Acceptance consumes immutable outputs already substituted by the caller.
 # No plugin producers, test signing keys, NAR cache, or plugin derivations.
-# publishedPaths has the selected SSH, mGBA, FAKE-08 and Starter pack paths;
-# metadata is the checked union of the corresponding offline proof archives.
+# published maps package names to exact published paths; roots names the
+# selected SSH, mGBA and Starter pack. requires names, per package, the exact
+# published plugins its pinned manifest requires. Pure evaluation cannot read
+# that manifest, so the VM reads it from the store bytes and requires exactly
+# this list. The selection adds every required plugin, because image seeding
+# approves only selected packages. metadata is the checked union of the
+# corresponding offline proof archives.
 {
   pkgs,
   hostModule,
   hostPackage,
   korridPackage,
-  publishedPaths,
+  published,
+  roots,
+  requires,
   metadata,
 }:
 let
   lib = pkgs.lib;
   binding =
     (import ../../../nix/product/requirements.nix { korri = { }; }).constants.publishers."@korri";
-  paths = [
-    publishedPaths.ssh
-    publishedPaths.mgba
-    publishedPaths.fake08
-    publishedPaths.starterPack
-  ];
+  requiredNames = name: requires.${name} or [ ];
+  # Roots first, then requirements: dependents precede what they require,
+  # which is also a valid disable order.
+  selection = map (item: item.key) (
+    builtins.genericClosure {
+      startSet = map (name: { key = name; }) roots;
+      operator = item: map (name: { key = name; }) (requiredNames item.key);
+    }
+  );
+  # Same id rule as published-plugin-check.nix; seeded() checks each receipt id.
+  idOf = name: "@korri:" + lib.removePrefix "korri-plugin-" name;
+  paths = map (name: published.${name}) selection;
+  selected = builtins.listToAttrs (
+    map (name: {
+      name = idOf name;
+      value = builtins.unsafeDiscardStringContext published.${name};
+    }) selection
+  );
+  requiredIds = builtins.listToAttrs (
+    map (name: {
+      name = idOf name;
+      value = map idOf (requiredNames name);
+    }) selection
+  );
   # Reject recipe-backed values even if their output exists in a warm store.
   exact =
     path:
@@ -204,8 +229,17 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("korrid.service")
     peer.wait_for_unit("multi-user.target")
     paths = ${builtins.toJSON (map builtins.unsafeDiscardStringContext paths)}
-    ssh_path, mgba_path, fake08_path, pack_path = paths
-    expected_packages = {"@korri:ssh": ssh_path, "@korri:mgba": mgba_path, "@korri:fake08": fake08_path, "@korri:starter-pack": pack_path}
+    # id -> exact path for every seeded plugin, and id -> the ids its pinned
+    # manifest requires. Order: dependents before their requirements.
+    selected = json.loads(${builtins.toJSON (builtins.toJSON selected)})
+    requires = json.loads(${builtins.toJSON (builtins.toJSON requiredIds)})
+    order = ${builtins.toJSON (map idOf selection)}
+    ssh_path = selected["@korri:ssh"]
+    mgba_path = selected["@korri:mgba"]
+    pack_path = selected["@korri:starter-pack"]
+    pack_requires = requires["@korri:starter-pack"]
+    assert pack_requires, requires
+    expected_packages = dict(selected)
     cache_url = ${builtins.toJSON binding.cacheUrl}
     package_args = " ".join(shlex.quote(path) for path in paths)
     generation = machine.succeed("readlink -f /run/current-system").strip()
@@ -282,12 +316,14 @@ pkgs.testers.runNixOSTest {
         assert machine.succeed("readlink " + root + "/active").strip() == package
         return receipt_path, receipt
 
-    ssh_receipt_path, ssh_receipt = seeded("@korri:ssh", ssh_path)
-    mgba_receipt_path, mgba_receipt = seeded("@korri:mgba", mgba_path)
-    fake08_receipt_path, fake08_receipt = seeded("@korri:fake08", fake08_path)
-    pack_receipt_path, pack_receipt = seeded("@korri:starter-pack", pack_path)
-    pack_manifest = json.loads(machine.succeed("cat " + pack_path + "/manifest.json"))
-    assert pack_manifest["requires"] == [fake08_path], pack_manifest
+    receipts = {id: seeded(id, package) for id, package in selected.items()}
+    ssh_receipt_path, ssh_receipt = receipts["@korri:ssh"]
+    pack_receipt_path, pack_receipt = receipts["@korri:starter-pack"]
+    # Every seeded manifest's full requirement list, read from the store bytes
+    # in the VM, must be exactly the required plugins seeded with it, in order.
+    for id, required in requires.items():
+        manifest = json.loads(machine.succeed("cat " + selected[id] + "/manifest.json"))
+        assert manifest.get("requires", []) == [selected[r] for r in required], (id, manifest)
     ssh_manifest = json.loads(machine.succeed("cat " + ssh_path + "/manifest.json"))
     assert len(ssh_manifest["services"]) == 1, ssh_manifest
     native_name, native_source = next(iter(ssh_manifest["services"].items()))
@@ -331,10 +367,8 @@ pkgs.testers.runNixOSTest {
         manifest = json.loads(machine.succeed("cat " + package + "/manifest.json"))
         for field in ["entry", "sources", "files"]:
             assert report[field] == manifest[field], (field, report, manifest)
-    assert ssh["approval"] == ssh_receipt["approval"]
-    assert mgba["approval"] == mgba_receipt["approval"]
-    assert reports["@korri:fake08"]["approval"] == fake08_receipt["approval"]
-    assert reports["@korri:starter-pack"]["approval"] == pack_receipt["approval"]
+    for id, (_, receipt) in receipts.items():
+        assert reports[id]["approval"] == receipt["approval"], (id, reports[id], receipt)
     assert reports["@korri:starter-pack"]["native_units"] == {}
     # The signed pack must recover through the same exact graph approval as
     # ordinary installation. A changed seeded digest cannot authorize it.
@@ -350,9 +384,10 @@ pkgs.testers.runNixOSTest {
     machine.succeed("cp -a " + original_pack + " " + pack_receipt_path + "; korri-plugin restore-all", timeout=300)
     machine.succeed("cmp " + original_pack + " " + pack_receipt_path)
     machine.succeed("systemctl start korri-plugin-host.service korrid.service")
-    refusal = machine.fail("korri-plugin disable @korri:fake08 2>&1", timeout=300)
-    assert "actively required by @korri:starter-pack" in refusal, refusal
-    machine.succeed("korri-plugin disable @korri:starter-pack; korri-plugin disable @korri:fake08")
+    for id in pack_requires:
+        refusal = machine.fail("korri-plugin disable " + shlex.quote(id) + " 2>&1", timeout=300)
+        assert "actively required by @korri:starter-pack" in refusal, (id, refusal)
+    machine.succeed("; ".join("korri-plugin disable " + shlex.quote(id) for id in ["@korri:starter-pack", *pack_requires]))
     machine.succeed("korri-plugin enable @korri:starter-pack; korri-plugin restore-all", timeout=300)
     assert {p["id"]: p["package"] for p in json.loads(machine.succeed("korri-plugin enabled-packages"))} == expected_packages
     assert ssh["policy"].startswith("policy-root-v3:")
@@ -412,7 +447,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin restore-all")
     assert json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json")) == enabled
     assert [game["id"] for game in games()] == ["wario-land-4"]
-    machine.succeed("korri-plugin disable @korri:starter-pack; korri-plugin disable @korri:fake08; korri-plugin disable @korri:ssh; korri-plugin disable @korri:mgba; korri-plugin restore-all")
+    machine.succeed("; ".join("korri-plugin disable " + shlex.quote(id) for id in order) + "; korri-plugin restore-all")
     ports(False)
     login(success=False)
     assert games() == []
