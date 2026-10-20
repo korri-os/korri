@@ -32,6 +32,7 @@ describe("every dialog over a page has the veil", () => {
     ["OPTIONS' destructive confirmation", options.Destructive],
     ["SAVE DATA's question", saveData.ConfirmDelete],
     ["GAMES' error", games.Error],
+    ["GAME OPTS.' question", games.GameOptsAsking],
     ["Korri's problem", status.default],
     ["Korri's question", status.Confirm],
   ]

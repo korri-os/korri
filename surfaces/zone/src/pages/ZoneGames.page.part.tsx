@@ -45,6 +45,7 @@ export const composition = {
     { part: "src/ui/molecules/ZoneOptionGroup.molecule.part.tsx", state: "default" },
     { part: "src/ui/molecules/ZoneDialog.molecule.part.tsx", state: "FocusedNo" },
   ],
+  GameOptsAsking: [{ part: "src/ui/molecules/ZoneDialog.molecule.part.tsx", state: "FocusedNo" }],
   FindOpen: [{ part: "src/ui/molecules/ZoneKeyboard.molecule.part.tsx", state: "default" }],
   Idle: [{ part: "src/ui/molecules/ZoneTitleCard.molecule.part.tsx", state: "default" }],
   Narrow: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "Narrow" }],
@@ -149,6 +150,21 @@ export function DownloadFocused() {
 /** options on Spelunky: Korri's actions, the disabled one dimmed with its reason. */
 export function GameOpts() {
   return <Games model={fixtureReadyModel} opening={[{ _tag: "FocusedCard", index: 3 }, { _tag: "PressedOptions" }]} />
+}
+
+/** DELETE SAVE chosen on GAME OPTS.: the NO / YES question over the sheet, the veil between. */
+export function GameOptsAsking() {
+  return (
+    <Games
+      model={fixtureReadyModel}
+      opening={[
+        { _tag: "FocusedCard", index: 3 },
+        { _tag: "PressedOptions" },
+        { _tag: "FocusedGameOpt", index: 1 },
+        { _tag: "ChoseGameAction", gameId: "spelunky", actionId: "delete-save", enabled: true, destructive: true },
+      ]}
+    />
+  )
 }
 
 /** FIND with "o" typed: the keyboard up, the band filtered live behind it. */
