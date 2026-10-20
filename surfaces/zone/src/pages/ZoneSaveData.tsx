@@ -154,9 +154,13 @@ export function ZoneSaveData({
   const status = identity?.status
   const send = (event: ZoneSaveDataEvent) => onEvent?.(event)
   const backup = status?._tag === "BackupReady" ? status.encryptedSecret : undefined
-  // The cursor on the backup's slab leaves the band unmarked, so the QR code
-  // in BACK UP's well needs no room for the card's triangles.
-  const marked = !(backup !== undefined && flow._tag === "showSecret" && flow.onSlab)
+  // One cursor on screen. A step over the band holds it; so does the
+  // backup's slab, which also lets the QR code in BACK UP's well take the
+  // room the card's triangles would need.
+  const onSlab = backup !== undefined && flow._tag === "showSecret" && flow.onSlab
+  const layered = status?._tag === "Problem" || status?._tag === "Switched"
+    || (flow._tag !== "idle" && flow._tag !== "showSecret")
+  const marked = !onSlab && !layered
   const cards = cardsOf(identity, marked)
 
   // When a step opens or closes, the cursor goes to it: DOM mechanics only.
@@ -263,7 +267,7 @@ export function ZoneSaveData({
           </div>
           {backup === undefined ? null : (
             <div className="zone-save-data-slab">
-              <ZoneSecretSlab focused={!marked} label="Backup secret" onFocus={() => send({ _tag: "FocusedSecret" })} secret={backup} />
+              <ZoneSecretSlab focused={onSlab && !layered} label="Backup secret" onFocus={() => send({ _tag: "FocusedSecret" })} secret={backup} />
             </div>
           )}
         </div>

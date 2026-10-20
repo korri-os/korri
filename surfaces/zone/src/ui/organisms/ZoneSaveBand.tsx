@@ -21,6 +21,8 @@ export interface ZoneSaveBandCard {
  * edges and are cut there. A red triangle at each edge of the band points
  * the way more cards lie, dimmed on a side with none, so the band shows
  * that more exists even when the cards happen to end flush with its edge.
+ * While the cursor is elsewhere on the page (`marked` off) the band wears
+ * neither, so there is only ever one cursor on screen.
  *
  * The band is a size container. A card's height is the least of the cap,
  * the band's height less its padding, and the height at which one card and
@@ -40,7 +42,7 @@ export function ZoneSaveBand({
 }: {
   readonly cards: readonly ZoneSaveBandCard[]
   readonly focusedIndex: number
-  /** Whether the centred card wears the cursor: off while the cursor is elsewhere on the page. */
+  /** Whether the band holds the cursor: the centred card wears it and the edge triangles show. Off while the cursor is elsewhere on the page. */
   readonly marked?: boolean
   readonly onFocus?: (index: number) => void
   readonly onChoose?: (index: number) => void
@@ -54,7 +56,7 @@ export function ZoneSaveBand({
 
   return (
     <div className="zone-save-band">
-      {cards.length > 1 ? (
+      {marked && cards.length > 1 ? (
         <>
           <span className="zone-save-band-more" data-side="start">
             <ZoneTriangle direction="left" dimmed={focus === 0} nudge={false} size="narrow" />
