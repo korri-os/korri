@@ -9,7 +9,8 @@ download feature. This is an explicit exception to the rule in AGENTS.md
 There are two reasons. The precedent already exists: `steam-session` downloads
 Valve's client through `steam-arm64-seed`
 (`plugins/steam/session/steam-session.sh`,
-`plugins/steam/packages/steam-korri/scripts/steam-arm64-seed`). A
+`plugins/steam/packages/steam-korri/scripts/steam-arm64-seed`, now in
+`korri-os/plugins`). A
 korrid-owned download needs the capability model, and AGENTS.md says not to
 build that model before real cases need it. The planned upgrade is
 korrid-owned downloads that show their progress in the portal. The pinned

@@ -7,7 +7,8 @@ is only provider releases described by the closed first-party manifest table in
 `services/korrid/src/plugin_discovery.rs`. Its one entry maps
 `@korri:steam/installed-apps` to `steam/steamapps/appmanifest_*.acf`, relative to
 each existing account root. This is the Steam home already produced by
-`plugins/steam/plugin.ts` (`${accountRoot}/steam`), not a new storage layout.
+`plugins/steam/plugin.ts` in `korri-os/plugins` (`${accountRoot}/steam`), not
+a new storage layout.
 Paired-source discovery still excludes plugin data. Prepared games still use
 ADR 0003's `games` declarations and hashes. Build trees are never scanned.
 
