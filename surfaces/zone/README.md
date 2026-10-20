@@ -189,3 +189,7 @@ bun run lint
 - **Catalog titles for now.** `ZoneSurface` lists the catalog's game titles
   as plain text in the shell's body until the card band lands, so the
   package renders end to end with a real `SurfaceModel`.
+
+### OPTIONS and RUN WITH (the options worker)
+
+- *(in progress; filled in as the pages land)*
