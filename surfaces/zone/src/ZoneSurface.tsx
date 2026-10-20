@@ -223,6 +223,7 @@ function zonePage(
           nameSetting={deviceNameSetting(model)}
           network={model.network}
           onFinish={() => send.onboarding({ _tag: "ChoseFinish" })}
+          onFocusKey={id => send.onboarding({ _tag: "FocusedKey", id })}
           onFocusTarget={target => send.onboarding({ _tag: "FocusedTarget", target })}
           onJoin={networkId => send.onboarding(onboardingJoin(networkId))}
           onKey={key => send.onboarding({ _tag: "PressedKey", key })}

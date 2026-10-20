@@ -13,6 +13,9 @@ import type { SurfaceAction } from "@contracts/surface/korri-surface"
  * block yields first and wraps, the buttons keep their size, and when the
  * row is too narrow for both the buttons drop under the kicker.
  *
+ * Focus is a prop; when the host moves DOM focus onto an action,
+ * `onFocusAction` reports its index.
+ *
  * The parallelograms and the underline are drawn here; they become
  * ZonePanel, ZoneButton and ZoneUnderline after the merge.
  */
@@ -22,6 +25,7 @@ export function ZoneBusyStrip({
   actions = [],
   focused,
   onAction,
+  onFocusAction,
 }: {
   readonly kicker: string
   readonly detail?: string
@@ -29,6 +33,8 @@ export function ZoneBusyStrip({
   /** The index of the focused action, if the cursor is on one. */
   readonly focused?: number
   readonly onAction?: (actionId: string) => void
+  /** The host's cursor arrived on an action: its index, left to right. */
+  readonly onFocusAction?: (index: number) => void
 }) {
   return (
     <div aria-live="polite" className="zone-busy-strip" role="status">
@@ -46,6 +52,7 @@ export function ZoneBusyStrip({
               disabled={!action.enabled}
               key={action.id}
               onClick={onAction === undefined ? undefined : () => onAction(action.id)}
+              onFocus={onFocusAction === undefined ? undefined : () => onFocusAction(index)}
               type="button"
             >
               {action.label}

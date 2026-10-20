@@ -146,6 +146,7 @@ export function ZoneOnboarding({
   onJoin,
   onOpenName,
   onKey,
+  onFocusKey,
   onStart,
   onFinish,
 }: {
@@ -171,6 +172,8 @@ export function ZoneOnboarding({
   readonly onJoin?: (networkId: string) => void
   readonly onOpenName?: () => void
   readonly onKey?: (key: ZoneKey) => void
+  /** The host's cursor arrived on a key: its id, as `zoneKeyId` names it. */
+  readonly onFocusKey?: (id: string) => void
   readonly onStart?: () => void
   readonly onFinish?: () => void
 }) {
@@ -302,6 +305,7 @@ export function ZoneOnboarding({
               focusedKey={entry.focusedKey}
               layer={entry.layer}
               maxLength={maxLength}
+              onFocusKey={onFocusKey}
               onKey={onKey}
             />
           </div>

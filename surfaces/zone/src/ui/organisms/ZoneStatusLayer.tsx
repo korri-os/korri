@@ -1,7 +1,7 @@
 import "./ZoneStatusLayer.css"
 import "../../zone-motion.css"
 import type { SurfaceStatus } from "@contracts/surface/korri-surface"
-import { type FocusEvent, type ReactNode, useRef } from "react"
+import { type ReactNode, useRef } from "react"
 import { useZoneLayerFocus } from "../../use-zone-layer-focus"
 import { ZoneCaps } from "../atoms/ZoneCaps"
 import { ZonePanel } from "../atoms/ZonePanel"
@@ -11,17 +11,6 @@ import { ZoneDialog } from "../molecules/ZoneDialog"
 
 /** The problem dialog's two ways out, left to right. */
 export type ZoneStatusProblemButton = "dismiss" | "retry"
-
-/**
- * The index of the button that took DOM focus among the busy strip's
- * buttons. ZoneBusyStrip has no focus callback of its own; the problem
- * dialog reports through ZoneDialog's `onFocusAction`.
- */
-function focusedIndex(event: FocusEvent<HTMLElement>): number | undefined {
-  const buttons = [...event.currentTarget.querySelectorAll("button")]
-  const at = buttons.indexOf(event.target as HTMLButtonElement)
-  return at === -1 ? undefined : at
-}
 
 /**
  * Korri's status over any page. The page is drawn under it; the layer
@@ -72,10 +61,6 @@ export function ZoneStatusLayer({
   const gameTitle = status._tag === "Problem"
     ? status.gameTitle ?? (status.gameId === undefined ? undefined : titleOf(status.gameId))
     : status._tag === "Browsing" || status.gameId === undefined ? undefined : titleOf(status.gameId)
-  const onFocus = onFocusButton === undefined ? undefined : (event: FocusEvent<HTMLElement>) => {
-    const index = focusedIndex(event)
-    if (index !== undefined) onFocusButton(index)
-  }
 
   return (
     <div className="zone-status-layer" data-status={status._tag}>
@@ -96,7 +81,7 @@ export function ZoneStatusLayer({
         </div>
       ) : null}
       {status._tag === "Busy" ? (
-        <div className="zone-status-layer-busy" data-block-exit onFocus={onFocus} ref={layer}>
+        <div className="zone-status-layer-busy" data-block-exit ref={layer}>
           {gameTitle === undefined ? null : (
             <span className="zone-status-layer-busy-game">
               <ZonePanel edge={false}>
@@ -110,6 +95,7 @@ export function ZoneStatusLayer({
             focused={(status.actions?.length ?? 0) > 0 ? focus : undefined}
             kicker={status.kicker}
             onAction={onBusyAction}
+            onFocusAction={onFocusButton}
           />
         </div>
       ) : null}

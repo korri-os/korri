@@ -117,6 +117,12 @@ describe("updateOnboarding", () => {
     expect(send(at("name"), { _tag: "OpenedName" }, { ...heard, settings: [] }).model.entry).toBeUndefined()
   })
 
+  test("FocusedKey lights the key the host's cursor is on; with the keyboard down it does nothing", () => {
+    const typing = send(at("name"), { _tag: "OpenedName" }).model
+    expect(send(typing, { _tag: "FocusedKey", id: "q" }).model.entry?.focusedKey).toBe("q")
+    expect(send(at("name"), { _tag: "FocusedKey", id: "q" }).model).toEqual(send(at("name"), { _tag: "KorriPublished" }).model)
+  })
+
   test("PressedKey types at the caret, within Korri's maxLength, deletes and switches layers", () => {
     const typing = send(at("name"), { _tag: "OpenedName" }).model
     const typed = send(typing, { _tag: "PressedKey", key: { kind: "char", char: "2" } }).model

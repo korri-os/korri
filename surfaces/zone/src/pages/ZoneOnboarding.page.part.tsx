@@ -75,6 +75,7 @@ function Scenario({
       nameSetting={deviceNameSetting(context)}
       network={context.network}
       onFinish={() => dispatch({ _tag: "ChoseFinish" })}
+      onFocusKey={(id) => dispatch({ _tag: "FocusedKey", id })}
       onFocusTarget={(target) => dispatch({ _tag: "FocusedTarget", target })}
       onJoin={(networkId) => dispatch({ _tag: "OnboardingJoin", networkId })}
       onKey={(key) => dispatch({ _tag: "PressedKey", key })}

@@ -519,8 +519,8 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   Controller names keep their case on the cards.
 - **Zero controllers show one WAITING card**, COMPETITION's empty seat.
   Seats are numbered in heard order; 1P blue, 2P red, 3P yellow, 4P mint.
-- **The keyboard's lit key follows the last press**, as its own part does:
-  `ZoneKeyboard` reports no key focus, and editing it was out of scope.
+- **The keyboard's lit key follows DOM focus** through `FocusedKey`
+  (superseded the last-press rule).
 - **The save card's START is a click on a wrapper.** `ZoneSaveCard` has no
   press callback; the host's confirm is a real click and bubbles to it.
 - **Parts reach the models through a fixture.** The atomic gate forbids a
@@ -732,10 +732,11 @@ C30 the pink edge and underline on whatever holds DOM focus, on every page and l
   OPTIONS, SAVE DATA, PAUSED, `ZoneStatusLayer`'s problem dialog,
   `ZoneOptionsEntry` and `ZoneSaveEntry` use them. GAMES moved DOM focus to
   a key by reading its glyph; each key now carries `data-key-id`, and the
-  page finds it by that. The busy strip still reports by button index,
-  since `ZoneBusyStrip` has no callback (out of this fix). The onboarding
-  keyboard still lights the last pressed key: its model has no focus
-  message, and the fix was to keep behaviour identical.
+  page finds it by that. `ZoneBusyStrip` calls `onFocusAction(index)` too,
+  and first boot's keyboard reports `FocusedKey` to its model, so every
+  keyboard, two-way dialog and busy strip follows DOM focus
+  (`test/zone-focus-callbacks.test.tsx` checks each use passes its
+  callback).
 - **OPTIONS and GAME OPTS. use ZoneOptionRow's `valueNode` and
   `disabled`.** Supersedes "Rows are strings" and "An inert device action
   ... UNAVAILABLE" and GAME OPTS.' description-as-value. The plan marks a

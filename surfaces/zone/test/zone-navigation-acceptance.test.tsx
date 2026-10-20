@@ -1099,4 +1099,71 @@ describe("chrome and input", () => {
     expect(css).toContain("@media (prefers-reduced-motion: reduce)")
     expect(css).toMatch(/animation: none !important;\s*transition: none !important;/)
   })
+
+  test("C30 focus on first boot's keyboard, PAUSED and RUN WITH", () => {
+    const LIT = "[data-focused]:not([data-focused='off']):not([data-focused='false'])"
+    /** The one control drawn lit in `scope` is the one with DOM focus. */
+    const markOnFocus = (scope: HTMLElement) => {
+      const focused = document.activeElement
+      expect(focused instanceof HTMLElement && scope.contains(focused)).toBe(true)
+      const lit = [...scope.querySelectorAll<HTMLElement>(LIT)]
+        .map(node => (node.matches("button, [tabindex]") ? node : node.querySelector<HTMLElement>("button, [tabindex]") ?? node))
+      expect(lit).toEqual([focused as HTMLElement])
+    }
+    const pad = { id: "pad-1", name: "Xbox Wireless Controller", heard: true }
+    const { publish } = mount({ ...HOME, onboarding: { controllers: [pad] } })
+    // First boot's NAME keyboard: the mark follows the cursor off DONE.
+    moveTo(button("Next", document.querySelector<HTMLElement>(".zone-onboarding-actions")!))
+    confirm()
+    moveTo(button("Next", document.querySelector<HTMLElement>(".zone-onboarding-actions")!))
+    confirm()
+    moveTo(button("Name", document.querySelector<HTMLElement>(".zone-onboarding-group")!))
+    confirm()
+    markOnFocus(keyboardOnScreen())
+    expect(focusedText()).toBe("Done")
+    moveTo(button("q", keyboardOnScreen()))
+    markOnFocus(keyboardOnScreen())
+    moveTo(button("Space", keyboardOnScreen()))
+    markOnFocus(keyboardOnScreen())
+    // PAUSED: its rows, then its question.
+    const overlay: SurfaceGameplayOverlayPresentation = {
+      kind: "gameplay-overlay",
+      title: "Wario Land 4",
+      controls: [
+        { id: "resume", label: "Continue", enabled: true, destructive: false, dismissOnSuccess: true, interaction: { kind: "command" } },
+        { id: "exit", label: "Exit", enabled: true, destructive: true, dismissOnSuccess: true, interaction: { kind: "command" } },
+      ],
+      groups: [],
+    }
+    publish({ ...HOME, presentation: overlay })
+    const wedge = document.querySelector<HTMLElement>(".zone-paused-wedge")!
+    markOnFocus(wedge)
+    moveTo(button("Exit", wedge))
+    markOnFocus(wedge)
+    confirm()
+    const question = screen.getByRole("dialog", { name: "Exit" })
+    markOnFocus(question)
+    moveTo(button("Yes", question))
+    markOnFocus(question)
+    // RUN WITH: Korri's routes and actions.
+    publish({
+      ...HOME,
+      runnerChoice: {
+        _tag: "Ready",
+        gameTitle: "Wario Land 4",
+        message: "Choose what plays it",
+        routes: [{ runnerId: "mgba", systemId: "gba", runnerBuild: "/nix/store/abc-mgba", program: "mGBA", warnings: [],
+          actions: [{ id: "runner:launch:mgba", label: "Play with mGBA", enabled: true }] }],
+        saved: [],
+        warnings: [],
+        actions: [{ id: "runner:cancel", label: "Close", enabled: true }],
+      },
+    })
+    const page = document.querySelector<HTMLElement>(".zone-run-with")!
+    markOnFocus(page)
+    moveTo(button("Close", page))
+    markOnFocus(page)
+    moveTo(button("Play with mGBA", page))
+    markOnFocus(page)
+  })
 })

@@ -1,12 +1,14 @@
 /**
- * ZoneKeyboard and ZoneDialog report the host's cursor themselves, so no
- * page or organism reads a key's glyph or a button's place in the DOM to
- * learn where the cursor is.
+ * ZoneKeyboard, ZoneDialog and ZoneBusyStrip report the host's cursor
+ * themselves, so no page or organism reads a key's glyph or a button's
+ * place in the DOM to learn where the cursor is, and every use passes the
+ * callback, so the drawn mark follows DOM focus.
  */
 import { afterEach, describe, expect, test } from "bun:test"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { ZoneBusyStrip } from "../src/ui/molecules/ZoneBusyStrip"
 import { ZoneDialog } from "../src/ui/molecules/ZoneDialog"
 import { ZoneKeyboard } from "../src/ui/molecules/ZoneKeyboard"
 
@@ -38,6 +40,17 @@ describe("ZoneDialog onFocusAction", () => {
   })
 })
 
+describe("ZoneBusyStrip onFocusAction", () => {
+  test("reports the focused action's index, left to right", () => {
+    const seen: number[] = []
+    const actions = [{ id: "cancel", label: "Cancel", enabled: true }, { id: "stop", label: "Stop", enabled: true }]
+    render(<ZoneBusyStrip actions={actions} kicker="Starting" onFocusAction={index => seen.push(index)} />)
+    fireEvent.focus(screen.getByRole("button", { name: "Stop" }))
+    fireEvent.focus(screen.getByRole("button", { name: "Cancel" }))
+    expect(seen).toEqual([1, 0])
+  })
+})
+
 describe("no page or organism reads the DOM to find the cursor", () => {
   const SRC = join(import.meta.dir, "..", "src")
   const sources = ["pages", join("ui", "organisms")].flatMap(dir =>
@@ -48,6 +61,28 @@ describe("no page or organism reads the DOM to find the cursor", () => {
       return /textContent/.test(text) || /onFocus=\{(heard|followFocus|followDialogFocus|onKeysFocus|onAnswerFocus|onQuestionFocus|heardChoice)\}/.test(text)
     })
     expect(offenders).toEqual([])
+  })
+  /** Each `<Name ... />` element in the file, as source text. */
+  const uses = (text: string, name: string): string[] => {
+    const found: string[] = []
+    for (let at = text.indexOf(`<${name}\n`); at !== -1; at = text.indexOf(`<${name}\n`, at + 1)) {
+      found.push(text.slice(at, text.indexOf("/>", at)))
+    }
+    return found
+  }
+  test("every keyboard, two-way dialog and busy strip with actions passes its focus callback", () => {
+    const missing = sources.flatMap(file => {
+      const text = readFileSync(join(SRC, file), "utf8")
+      return [
+        ...uses(text, "ZoneKeyboard").filter(use => !use.includes("onFocusKey=")).map(() => `${file} ZoneKeyboard`),
+        // A dialog with one button drawn lit (focused={0}) has no cursor to follow.
+        ...uses(text, "ZoneDialog").filter(use => !use.includes("onFocusAction=") && !use.includes("focused={0}"))
+          .map(() => `${file} ZoneDialog`),
+        ...uses(text, "ZoneBusyStrip").filter(use => use.includes("actions=") && !use.includes("onFocusAction="))
+          .map(() => `${file} ZoneBusyStrip`),
+      ]
+    })
+    expect(missing).toEqual([])
   })
 })
 

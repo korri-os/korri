@@ -5,7 +5,8 @@
  *     step       CONTROLLERS, WI-FI, NAME or IDENTITY, in that order
  *     focus      the control the cursor is on in the step, by target id
  *     entry      the keyboard over the NAME step: the draft, its caret,
- *                the layer and the lit key; absent while the keyboard is down
+ *                the layer and the lit key, which follows DOM focus
+ *                (`FocusedKey`); absent while the keyboard is down
  *     started    START was pressed on the NEW SAVE card; FINISH is reachable
  *     finishing  FINISH was pressed; setup waits for Korri to drop it
  *     join       a secured network the player chose that needs a password:
@@ -95,6 +96,8 @@ export type ZoneOnboardingMessage =
   | { readonly _tag: "OpenedName" }
   /** A on a key of the keyboard. */
   | { readonly _tag: "PressedKey"; readonly key: ZoneEntryKey }
+  /** The host's cursor arrived on a key of the keyboard: its id, as the keyboard names it. */
+  | { readonly _tag: "FocusedKey"; readonly id: string }
   /** A on the NEW SAVE card. */
   | { readonly _tag: "ChoseStart" }
   /** A on FINISH. */
@@ -197,7 +200,7 @@ const nextStep = (step: ZoneOnboardingStep): ZoneOnboardingStep =>
 const previousStep = (step: ZoneOnboardingStep): ZoneOnboardingStep =>
   ZONE_ONBOARDING_STEPS[Math.max(ZONE_ONBOARDING_STEPS.indexOf(step) - 1, 0)] ?? step
 
-/** The id the keyboard names a key by, so the lit key follows the press. */
+/** The id the keyboard names a key by, so the lit key follows the press and the cursor. */
 export function entryKeyId(key: ZoneEntryKey): string {
   switch (key.kind) {
     case "char":
@@ -246,6 +249,9 @@ function step(model: ZoneOnboardingModel, message: ZoneOnboardingMessage, korri:
     }
     case "PressedKey":
       return pressKey(model, message.key, korri)
+    case "FocusedKey":
+      return model.entry === undefined || model.entry.focusedKey === message.id
+        ? stay(model) : stay({ ...model, entry: { ...model.entry, focusedKey: message.id } })
     case "ChoseStart":
       return model.step === "identity" ? stay({ ...model, started: true, focus: TARGET.finish }) : stay(model)
     case "ChoseFinish":
