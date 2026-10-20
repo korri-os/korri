@@ -193,19 +193,22 @@ function zonePage(
         />
       )
     case "paused":
+      // PAUSED stands over a game that is still there: a dialog named for it.
       return model.presentation.kind !== "gameplay-overlay" ? null : (
-        <ZonePaused
-          answer={state.overlay.answer}
-          asking={state.overlay.asking}
-          focusedId={state.overlay.focusedId}
-          moving={state.overlay.moving}
-          onAnswer={yes => send.paused({ _tag: "ChoseAnswer", yes })}
-          onFocusAnswer={index => send.paused({ _tag: "FocusedAnswer", index })}
-          onFocusControl={controlId => send.paused({ _tag: "FocusedControl", controlId })}
-          onPressControl={controlId => send.paused({ _tag: "PressedControl", controlId })}
-          onStepControl={(controlId, direction) => send.paused({ _tag: "SteppedControl", controlId, direction })}
-          overlay={model.presentation}
-        />
+        <div aria-label={model.presentation.title ?? "Paused"} aria-modal="true" className="zone-surface-paused" role="dialog">
+          <ZonePaused
+            answer={state.overlay.answer}
+            asking={state.overlay.asking}
+            focusedId={state.overlay.focusedId}
+            moving={state.overlay.moving}
+            onAnswer={yes => send.paused({ _tag: "ChoseAnswer", yes })}
+            onFocusAnswer={index => send.paused({ _tag: "FocusedAnswer", index })}
+            onFocusControl={controlId => send.paused({ _tag: "FocusedControl", controlId })}
+            onPressControl={controlId => send.paused({ _tag: "PressedControl", controlId })}
+            onStepControl={(controlId, direction) => send.paused({ _tag: "SteppedControl", controlId, direction })}
+            overlay={model.presentation}
+          />
+        </div>
       )
     case "onboarding": {
       const onboarding = state.onboarding

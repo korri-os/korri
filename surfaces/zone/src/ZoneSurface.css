@@ -1,2 +1,7 @@
 /* The root is styled by zone.css (.zone-screen); the ground and the page
- * fill it. Nothing else lives here. */
+ * fill it. PAUSED's dialog wrapper fills it too, so the page inside keeps
+ * the whole screen. */
+.zone-surface-paused {
+  width: 100%;
+  height: 100%;
+}

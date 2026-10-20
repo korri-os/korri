@@ -41,6 +41,14 @@ describe("the surface registry", () => {
     expect(portalSurfaceFor("gameplay-overlay", "pico").id).toBe("pico")
   })
 
+  test("Zone serves both presentations and is chosen only when asked for", () => {
+    // Zone draws its own PAUSED page, so a paused game stays in Zone.
+    expect(portalSurfaceById("zone")?.presentations).toEqual(["catalog", "gameplay-overlay"])
+    expect(portalSurfaceFor("catalog", "zone").id).toBe("zone")
+    expect(portalSurfaceFor("gameplay-overlay", "zone").id).toBe("zone")
+    expect(DEFAULT_SURFACE_ID).not.toBe("zone")
+  })
+
   test("Boxbuster serves the catalog and hands a running game to the default", () => {
     // Boxbuster has no gameplay overlay yet; drawing nothing over a live game
     // would take the device away from the user.

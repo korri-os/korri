@@ -46,7 +46,7 @@ for (const specifier of [
   "react-dom/client",
 ]) {
   const hostExports = requireFromPortal(specifier)
-  for (const surface of ["@korri/shift", "@korri/pico"]) {
+  for (const surface of ["@korri/shift", "@korri/pico", "@korri/zone"]) {
     const peerPath = createRequire(import.meta.resolve(surface)).resolve(specifier)
     if (peerPath !== requireFromPortal.resolve(specifier)) {
       mock.module(peerPath, () => hostExports)

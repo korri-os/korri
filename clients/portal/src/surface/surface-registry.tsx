@@ -4,6 +4,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { PicoSurface } from "@korri/pico"
 import { ShiftSurface } from "@korri/shift"
+import { ZoneSurface } from "@korri/zone"
 import { lazy, type ReactNode, Suspense } from "react"
 
 /**
@@ -53,6 +54,12 @@ export const PORTAL_SURFACES: readonly PortalSurface[] = [
     title: "Pico",
     presentations: ["catalog", "gameplay-overlay"],
     render: ({ model, host }) => <PicoSurface host={host} model={model} />,
+  },
+  {
+    id: "zone",
+    title: "Zone",
+    presentations: ["catalog", "gameplay-overlay"],
+    render: ({ model, host }) => <ZoneSurface host={host} model={model} />,
   },
   {
     id: "boxbuster",
