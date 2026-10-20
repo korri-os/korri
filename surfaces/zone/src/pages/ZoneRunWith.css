@@ -3,19 +3,19 @@
 .zone-run-with {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  row-gap: var(--zone-options-head-space);
+  row-gap: calc(var(--zone-options-head-space) * var(--zone-px));
   height: 100%;
   min-height: 0;
-  padding: var(--zone-options-head-space) var(--zone-strip-margin-min) 0;
+  padding: calc(var(--zone-options-head-space) * var(--zone-px)) calc(var(--zone-strip-margin-min) * var(--zone-px)) 0;
 }
 
 .zone-run-with-head {
-  --zone-shell-tab-type: clamp(var(--zone-type-row-min), 4cqb, var(--zone-type-tab-wide));
+  --zone-shell-tab-type: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 4cqb, calc(var(--zone-type-tab-wide) * var(--zone-px)));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: var(--zone-row-space) var(--zone-strip-gap);
+  gap: calc(var(--zone-row-space) * var(--zone-px)) calc(var(--zone-strip-gap) * var(--zone-px));
   min-width: 0;
 }
 
@@ -24,14 +24,14 @@
   display: inline-flex;
   flex: 0 1 auto;
   min-width: 0;
-  font-size: clamp(var(--zone-type-row-min), 3.2cqi, var(--zone-type-row));
+  font-size: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 3.2cqi, calc(var(--zone-type-row) * var(--zone-px)));
 }
 
 .zone-run-with-state {
   display: inline-flex;
   flex: 0 0 auto;
-  height: calc(var(--zone-type-note) * var(--zone-tag-row-height));
-  --zone-tag-type: var(--zone-type-note);
+  height: calc(calc(var(--zone-type-note) * var(--zone-px)) * var(--zone-tag-row-height));
+  --zone-tag-type: calc(var(--zone-type-note) * var(--zone-px));
 }
 
 .zone-run-with-scroll {
@@ -40,27 +40,28 @@
   overflow-y: auto;
   scrollbar-width: none;
   overscroll-behavior: contain;
-  scroll-padding-block: var(--zone-row-height);
+  scroll-padding-block: calc(var(--zone-row-height) * var(--zone-px));
 }
 
 .zone-run-with-rows {
-  --zone-shell-button-type: clamp(var(--zone-type-row-min), 2.4cqi, var(--zone-type-button-short));
+  --zone-shell-button-type: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 2.4cqi, calc(var(--zone-type-button-short) * var(--zone-px)));
   display: grid;
-  row-gap: var(--zone-options-group-gap);
-  width: min(100%, var(--zone-options-measure));
+  row-gap: calc(var(--zone-options-group-gap) * var(--zone-px));
+  width: min(100%, calc(var(--zone-options-measure) * var(--zone-px)));
   margin: 0 auto;
-  padding-bottom: var(--zone-options-group-gap);
-  font-size: clamp(var(--zone-type-row-min), 3.2cqi, var(--zone-type-row));
+  padding-bottom: calc(var(--zone-options-group-gap) * var(--zone-px));
+  font-size: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 3.2cqi, calc(var(--zone-type-row) * var(--zone-px)));
 }
 
 /* Korri's message: one line of white caps on the ground, wrapped when it is
  * longer than the column, never cut. */
 .zone-run-with-message {
   margin: 0;
-  padding: 0 var(--zone-slant);
-  font-size: var(--zone-type-note);
+  padding: 0 calc(var(--zone-slant) * var(--zone-px));
+  font-size: calc(var(--zone-type-note) * var(--zone-px));
   line-height: 1.3;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
 .zone-run-with-actions {

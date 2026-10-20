@@ -2,18 +2,18 @@
  * so the spine scales with the band. In the band, the band hands down both;
  * standing alone it takes the plan's focused height from its container. */
 .zone-section-card {
-  --zone-section-base: var(--zone-card-h, min(var(--zone-card-focus-max), calc(100cqh - 2 * var(--zone-band-pad))));
+  --zone-section-base: var(--zone-card-h, min(calc(var(--zone-card-focus-max) * var(--zone-px)), calc(100cqh - 2 * calc(var(--zone-band-pad) * var(--zone-px)))));
   --zone-section-width: var(--zone-band-section-w, calc(var(--zone-section-base) * var(--zone-section-share)));
   position: relative;
   display: flex;
   flex: 0 0 auto;
   align-items: stretch;
-  gap: var(--zone-card-pad);
+  gap: calc(var(--zone-card-pad) * var(--zone-px));
   width: var(--zone-section-width);
   height: calc(var(--zone-section-base) * var(--zone-card-side-scale));
-  padding: var(--zone-card-pad);
+  padding: calc(var(--zone-card-pad) * var(--zone-px));
   background: var(--zone-panel);
-  box-shadow: var(--zone-drop-edge) var(--zone-drop-edge) 0 var(--zone-panel-edge);
+  box-shadow: calc(var(--zone-drop-edge) * var(--zone-px)) calc(var(--zone-drop-edge) * var(--zone-px)) 0 var(--zone-panel-edge);
 }
 
 /* The three stripe colours down the spine's edge, meeting on hard lines. */
@@ -45,16 +45,16 @@
   writing-mode: vertical-rl;
   rotate: 180deg;
   text-align: start;
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
 }
 
 /* The hairline spine: the stripe in a black hairline frame, as wide as the
  * band hands down (or the hairline token), with its drop edge. The caption
  * is the separator's name only. */
 .zone-section-card[data-spine="hairline"] {
-  --zone-section-width: var(--zone-band-section-w, var(--zone-section-hairline));
+  --zone-section-width: var(--zone-band-section-w, calc(var(--zone-section-hairline) * var(--zone-px)));
   gap: 0;
-  padding: var(--zone-hairline);
+  padding: calc(var(--zone-hairline) * var(--zone-px));
 }
 
 .zone-section-card[data-spine="hairline"] .zone-section-card-stripe {

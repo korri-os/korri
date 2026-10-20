@@ -9,7 +9,7 @@
   align-items: center;
   min-width: 0;
   max-width: 100%;
-  font-size: var(--zone-shell-button-type, var(--zone-type-button-tall));
+  font-size: var(--zone-shell-button-type, calc(var(--zone-type-button-tall) * var(--zone-px)));
 }
 
 .zone-button-face {
@@ -25,7 +25,7 @@
 /* The press: the panel sinks into its underline. */
 .zone-button[data-pressed="on"] .zone-button-face {
   --zone-underline-press: 1;
-  translate: var(--zone-press-sink) var(--zone-press-sink);
+  translate: calc(var(--zone-press-sink) * var(--zone-px)) calc(var(--zone-press-sink) * var(--zone-px));
 }
 
 .zone-button-body {
@@ -65,7 +65,7 @@
   display: block;
   max-width: 100%;
   overflow: hidden;
-  margin-top: var(--zone-drop-edge);
+  margin-top: calc(var(--zone-drop-edge) * var(--zone-px));
   font-size: calc(var(--zone-type-reason-scale) * 1em);
   text-overflow: ellipsis;
   white-space: nowrap;

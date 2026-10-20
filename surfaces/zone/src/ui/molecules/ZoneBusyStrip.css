@@ -2,18 +2,18 @@
  * shrinks; the actions keep their size and wrap under it when the strip is
  * narrower than both. */
 .zone-busy-strip {
-  --zone-busy-strip-type-kicker: clamp(var(--zone-type-row), 2.8cqi, var(--zone-type-kicker));
-  --zone-busy-strip-type-detail: clamp(var(--zone-type-note), 1.8cqi, var(--zone-type-detail));
+  --zone-busy-strip-type-kicker: clamp(calc(var(--zone-type-row) * var(--zone-px)), 2.8cqi, calc(var(--zone-type-kicker) * var(--zone-px)));
+  --zone-busy-strip-type-detail: clamp(calc(var(--zone-type-note) * var(--zone-px)), 1.8cqi, calc(var(--zone-type-detail) * var(--zone-px)));
   --zone-busy-strip-shape: polygon(
-    var(--zone-slant) 0,
+    calc(var(--zone-slant) * var(--zone-px)) 0,
     100% 0,
-    calc(100% - var(--zone-slant)) 100%,
+    calc(100% - calc(var(--zone-slant) * var(--zone-px))) 100%,
     0 100%
   );
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
-  gap: var(--zone-strip-gap);
+  gap: calc(var(--zone-strip-gap) * var(--zone-px));
   width: 100%;
   color: var(--zone-cap);
 }
@@ -26,11 +26,11 @@
   flex: 1 1 0;
   flex-direction: column;
   justify-content: center;
-  gap: calc(var(--zone-row-space) / 2);
-  min-width: min(100%, calc(var(--zone-busy-height) * 3));
-  min-height: var(--zone-busy-height);
-  padding: var(--zone-row-space) calc(var(--zone-slant) + var(--zone-row-gap) * 2);
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  gap: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2);
+  min-width: min(100%, calc(calc(var(--zone-busy-height) * var(--zone-px)) * 3));
+  min-height: calc(var(--zone-busy-height) * var(--zone-px));
+  padding: calc(var(--zone-row-space) * var(--zone-px)) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)) * 2);
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
 }
 
 .zone-busy-strip-panel::before {
@@ -45,13 +45,15 @@
 .zone-busy-strip-kicker {
   font-size: var(--zone-busy-strip-type-kicker);
   line-height: 1.05;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
 .zone-busy-strip-detail {
   font-size: var(--zone-busy-strip-type-detail);
   line-height: 1.15;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
 /* Korri's actions, as buttons beside the panel. */
@@ -59,7 +61,7 @@
   display: flex;
   flex: 0 0 auto;
   align-items: stretch;
-  gap: var(--zone-strip-gap);
+  gap: calc(var(--zone-strip-gap) * var(--zone-px));
   font-size: var(--zone-busy-strip-type-kicker);
 }
 
@@ -68,10 +70,10 @@
   isolation: isolate;
   display: flex;
   align-items: center;
-  min-height: var(--zone-busy-height);
-  padding: var(--zone-row-space) calc(var(--zone-slant) + var(--zone-row-gap) * 2);
+  min-height: calc(var(--zone-busy-height) * var(--zone-px));
+  padding: calc(var(--zone-row-space) * var(--zone-px)) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)) * 2);
   line-height: 1;
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
   transition: translate var(--zone-press-time) var(--zone-bounce);
 }
 
@@ -91,11 +93,11 @@
   z-index: -2;
   background: var(--zone-focus);
   clip-path: var(--zone-busy-strip-shape);
-  translate: calc(var(--zone-drop-edge) * -1) var(--zone-drop-edge);
+  translate: calc(calc(var(--zone-drop-edge) * var(--zone-px)) * -1) calc(var(--zone-drop-edge) * var(--zone-px));
 }
 
 .zone-busy-strip-action:active {
-  translate: var(--zone-press-sink) var(--zone-press-sink);
+  translate: calc(var(--zone-press-sink) * var(--zone-px)) calc(var(--zone-press-sink) * var(--zone-px));
 }
 
 /* Present but inert: Korri's rule is dimmed, never hidden. */
@@ -112,14 +114,14 @@
  * sizes standing at its right end. When the strip is too narrow for both,
  * the sizes drop under the bar. */
 .zone-busy-strip-meter {
-  --zone-busy-strip-meter-height: clamp(var(--zone-meter-height-least), 1.6cqi, var(--zone-meter-height));
+  --zone-busy-strip-meter-height: clamp(calc(var(--zone-meter-height-least) * var(--zone-px)), 1.6cqi, calc(var(--zone-meter-height) * var(--zone-px)));
   --zone-busy-strip-meter-slant: var(--zone-busy-strip-meter-height);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: calc(var(--zone-row-space) / 2) var(--zone-row-gap);
-  margin-top: calc(var(--zone-row-space) / 2);
+  gap: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(var(--zone-row-gap) * var(--zone-px));
+  margin-top: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2);
   font-size: var(--zone-busy-strip-type-detail);
   line-height: 1;
 }
@@ -127,8 +129,8 @@
 /* The track: the whole bar in blue, leaning as every panel leans. */
 .zone-busy-strip-bar {
   position: relative;
-  flex: 1 1 var(--zone-meter-least);
-  min-width: min(100%, var(--zone-meter-least));
+  flex: 1 1 calc(var(--zone-meter-least) * var(--zone-px));
+  min-width: min(100%, calc(var(--zone-meter-least) * var(--zone-px)));
   height: var(--zone-busy-strip-meter-height);
   overflow: hidden;
   background: var(--zone-meter-track);
@@ -178,7 +180,7 @@
   display: flex;
   flex: 0 0 auto;
   align-items: baseline;
-  gap: calc(var(--zone-row-gap) / 2);
+  gap: calc(calc(var(--zone-row-gap) * var(--zone-px)) / 2);
   white-space: nowrap;
 }
 

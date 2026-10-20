@@ -13,13 +13,14 @@
  */
 import { useLayoutEffect, type RefObject } from "react"
 import { planTopStrip, topStripAttribute } from "./plan/top-strip"
+import { zoneArtPxOf } from "./use-zone-plan"
 
 export function applyTopStrip(element: HTMLElement, width: number): void {
   if (width <= 0) {
     delete element.dataset.top
     return
   }
-  element.dataset.top = topStripAttribute(planTopStrip(width))
+  element.dataset.top = topStripAttribute(planTopStrip(Math.floor(width / zoneArtPxOf(element))))
 }
 
 export function useZoneTopStrip(shell: RefObject<HTMLElement | null>): void {

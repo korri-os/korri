@@ -6,7 +6,7 @@
   grid-template-rows: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
-  padding: var(--zone-options-head-space) var(--zone-strip-margin-min) 0;
+  padding: calc(var(--zone-options-head-space) * var(--zone-px)) calc(var(--zone-strip-margin-min) * var(--zone-px)) 0;
 }
 
 /* The groups scroll in a column no wider than the measure, centred, as
@@ -18,15 +18,15 @@
   overflow-y: auto;
   scrollbar-width: none;
   overscroll-behavior: contain;
-  scroll-padding-block: var(--zone-row-height);
+  scroll-padding-block: calc(var(--zone-row-height) * var(--zone-px));
 }
 
 .zone-options-groups {
   display: grid;
-  row-gap: var(--zone-options-group-gap);
-  width: min(100%, var(--zone-options-measure));
+  row-gap: calc(var(--zone-options-group-gap) * var(--zone-px));
+  width: min(100%, calc(var(--zone-options-measure) * var(--zone-px)));
   margin: 0 auto;
-  padding-bottom: var(--zone-options-group-gap);
+  padding-bottom: calc(var(--zone-options-group-gap) * var(--zone-px));
 }
 
 /* WI-FI lists SSIDs, which are names: its words keep their own case, and
@@ -43,7 +43,7 @@
   z-index: 1;
   display: grid;
   min-height: 0;
-  padding: var(--zone-options-head-space) var(--zone-strip-margin-min);
+  padding: calc(var(--zone-options-head-space) * var(--zone-px)) calc(var(--zone-strip-margin-min) * var(--zone-px));
 }
 
 .zone-options-layer[data-kind="keyboard"] {
@@ -59,7 +59,7 @@
 /* The dialog's box: no wider than the dialog measure, no taller than the body. */
 .zone-options-dialog {
   display: grid;
-  width: min(100%, var(--zone-options-dialog-width));
+  width: min(100%, calc(var(--zone-options-dialog-width) * var(--zone-px)));
   max-height: 100%;
   min-height: 0;
 }
@@ -78,7 +78,7 @@
 .zone-options-network {
   display: inline-flex;
   align-items: center;
-  gap: var(--zone-row-gap);
+  gap: calc(var(--zone-row-gap) * var(--zone-px));
   min-width: 0;
 }
 

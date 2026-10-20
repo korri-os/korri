@@ -4,12 +4,12 @@
  * a side card by the side scale, the title by its share of the width, and
  * the tags and the band by their shares of the title. */
 .zone-card {
-  --zone-card-base: var(--zone-card-h, min(var(--zone-card-focus-max), calc(100cqh - 2 * var(--zone-band-pad))));
+  --zone-card-base: var(--zone-card-h, min(calc(var(--zone-card-focus-max) * var(--zone-px)), calc(100cqh - 2 * calc(var(--zone-band-pad) * var(--zone-px)))));
   --zone-card-scale: 1;
   --zone-card-share: var(--zone-type-card-share);
   --zone-card-width: calc(var(--zone-card-base) * var(--zone-card-scale) * var(--zone-card-ratio));
   --zone-card-type: calc(var(--zone-card-width) * var(--zone-card-share));
-  --zone-card-tri: var(--zone-band-tri, var(--zone-triangle-wide));
+  --zone-card-tri: var(--zone-band-tri, calc(var(--zone-triangle-wide) * var(--zone-px)));
   --zone-tag-row-base: calc(var(--zone-card-type) * var(--zone-tag-type-share));
   position: relative;
   display: flex;
@@ -17,9 +17,9 @@
   flex-direction: column;
   width: var(--zone-card-width);
   height: calc(var(--zone-card-base) * var(--zone-card-scale));
-  padding: var(--zone-card-pad);
+  padding: calc(var(--zone-card-pad) * var(--zone-px));
   background: var(--zone-panel);
-  box-shadow: var(--zone-drop-edge) var(--zone-drop-edge) 0 var(--zone-panel-edge);
+  box-shadow: calc(var(--zone-drop-edge) * var(--zone-px)) calc(var(--zone-drop-edge) * var(--zone-px)) 0 var(--zone-panel-edge);
   text-align: center;
   transition:
     width var(--zone-snap-time) var(--zone-bounce),
@@ -31,15 +31,15 @@
 .zone-card[data-size="side"] {
   --zone-card-scale: var(--zone-card-side-scale);
   --zone-card-share: var(--zone-type-side-share);
-  padding: var(--zone-card-pad-side);
+  padding: calc(var(--zone-card-pad-side) * var(--zone-px));
 }
 
 /* Focus: the pink edge around the card and a deeper drop edge. */
 .zone-card[data-focused="true"] {
   z-index: 1;
   box-shadow:
-    0 0 0 var(--zone-focus-edge) var(--zone-focus),
-    var(--zone-drop-edge-focus) var(--zone-drop-edge-focus) 0 var(--zone-panel-edge);
+    0 0 0 calc(var(--zone-focus-edge) * var(--zone-px)) var(--zone-focus),
+    calc(var(--zone-drop-edge-focus) * var(--zone-px)) calc(var(--zone-drop-edge-focus) * var(--zone-px)) 0 var(--zone-panel-edge);
 }
 
 /* The title, the band and the tags sit at the foot; the well above them
@@ -57,13 +57,13 @@
  * never shown. White caps with the blue edge, as on every panel. */
 .zone-card-title {
   display: block;
-  max-height: calc(var(--zone-card-type) * var(--zone-fit, 1) * 0.98 * 2 + var(--zone-hairline));
+  max-height: calc(var(--zone-card-type) * var(--zone-fit, 1) * 0.98 * 2 + calc(var(--zone-hairline) * var(--zone-px)));
   overflow: hidden;
   font-size: calc(var(--zone-card-type) * var(--zone-fit, 1));
   line-height: 0.98;
   letter-spacing: 0.01em;
-  overflow-wrap: anywhere;
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  overflow-wrap: normal;
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
 }
 
 /* The orange, blue and mint diagonal band: three colours meeting on hard
@@ -102,13 +102,13 @@
 
 .zone-card-tri[data-side="left"] {
   right: 100%;
-  margin-right: var(--zone-nudge-near);
+  margin-right: calc(var(--zone-nudge-near) * var(--zone-px));
   animation: zone-nudge-left var(--zone-nudge-time) ease-in-out infinite alternate;
 }
 
 .zone-card-tri[data-side="right"] {
   left: 100%;
-  margin-left: var(--zone-nudge-near);
+  margin-left: calc(var(--zone-nudge-near) * var(--zone-px));
   scale: -1 1;
   animation: zone-nudge-right var(--zone-nudge-time) ease-in-out infinite alternate;
 }

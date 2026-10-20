@@ -1,12 +1,12 @@
 /* The plan's answers, as the values the strips read. Tall and wide are the
  * defaults; the two data attributes switch them. */
 .zone-shell {
-  --zone-shell-top: var(--zone-tab-strip-tall);
-  --zone-shell-foot: var(--zone-foot-strip-tall);
-  --zone-shell-foot-type: var(--zone-type-foot-tall);
-  --zone-shell-tab-type: var(--zone-type-tab-wide);
-  --zone-shell-hint-type: var(--zone-type-hint-wide);
-  --zone-shell-margin: clamp(var(--zone-strip-margin-min), 1.6cqw, var(--zone-strip-margin));
+  --zone-shell-top: calc(var(--zone-tab-strip-tall) * var(--zone-px));
+  --zone-shell-foot: calc(var(--zone-foot-strip-tall) * var(--zone-px));
+  --zone-shell-foot-type: calc(var(--zone-type-foot-tall) * var(--zone-px));
+  --zone-shell-tab-type: calc(var(--zone-type-tab-wide) * var(--zone-px));
+  --zone-shell-hint-type: calc(var(--zone-type-hint-wide) * var(--zone-px));
+  --zone-shell-margin: clamp(calc(var(--zone-strip-margin-min) * var(--zone-px)), 1.6cqw, calc(var(--zone-strip-margin) * var(--zone-px)));
   position: relative;
   display: grid;
   grid-template-rows: var(--zone-shell-top) minmax(0, 1fr) auto;
@@ -15,14 +15,14 @@
 }
 
 .zone-shell[data-strips="short"] {
-  --zone-shell-top: var(--zone-tab-strip-short);
-  --zone-shell-foot: var(--zone-foot-strip-short);
-  --zone-shell-foot-type: var(--zone-type-foot-short);
+  --zone-shell-top: calc(var(--zone-tab-strip-short) * var(--zone-px));
+  --zone-shell-foot: calc(var(--zone-foot-strip-short) * var(--zone-px));
+  --zone-shell-foot-type: calc(var(--zone-type-foot-short) * var(--zone-px));
 }
 
 .zone-shell[data-band="narrow"] {
-  --zone-shell-tab-type: var(--zone-type-tab-narrow);
-  --zone-shell-hint-type: var(--zone-type-hint-narrow);
+  --zone-shell-tab-type: calc(var(--zone-type-tab-narrow) * var(--zone-px));
+  --zone-shell-hint-type: calc(var(--zone-type-hint-narrow) * var(--zone-px));
 }
 
 /* The top strip's yield, as planTopStrip(width) writes it (src/plan/
@@ -34,10 +34,10 @@
 .zone-shell[data-top="keys"],
 .zone-shell[data-top="stacked"],
 .zone-shell[data-top="stacked-keys"] {
-  --zone-shell-gap: var(--zone-strip-gap-least);
-  --zone-shell-margin: var(--zone-strip-margin-min);
-  --zone-shell-tab-type: var(--zone-type-tab-least);
-  --zone-shell-hint-type: var(--zone-type-hint-least);
+  --zone-shell-gap: calc(var(--zone-strip-gap-least) * var(--zone-px));
+  --zone-shell-margin: calc(var(--zone-strip-margin-min) * var(--zone-px));
+  --zone-shell-tab-type: calc(var(--zone-type-tab-least) * var(--zone-px));
+  --zone-shell-hint-type: calc(var(--zone-type-hint-least) * var(--zone-px));
 }
 
 .zone-shell[data-top="keys"],
@@ -49,8 +49,8 @@
  * least slant take the strip's least gap, so a small type is not lost in
  * chrome. The body's panels keep theirs. */
 .zone-shell:is([data-top="tight"], [data-top="keys"], [data-top="stacked"], [data-top="stacked-keys"]) :is(.zone-shell-top, .zone-shell-foot) {
-  --zone-panel-pad: var(--zone-strip-gap-least);
-  --zone-slant: var(--zone-slant-least);
+  --zone-panel-pad: calc(var(--zone-strip-gap-least) * var(--zone-px));
+  --zone-slant: calc(var(--zone-slant-least) * var(--zone-px));
 }
 
 /* The room a keycap hint keeps beside the tabs, for a tabs slot that sizes
@@ -63,7 +63,7 @@
 .zone-shell[data-top="stacked"],
 .zone-shell[data-top="stacked-keys"] {
   --zone-shell-hint-room: var(--zone-shell-margin);
-  --zone-shell-hint-row: calc(var(--zone-shell-hint-type) * var(--zone-keycap-scale) + var(--zone-strip-inset));
+  --zone-shell-hint-row: calc(var(--zone-shell-hint-type) * var(--zone-keycap-scale) + calc(var(--zone-strip-inset) * var(--zone-px)));
   grid-template-rows: calc(var(--zone-shell-hint-row) + var(--zone-shell-top)) minmax(0, 1fr) auto;
 }
 
@@ -74,7 +74,7 @@
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: var(--zone-shell-gap, var(--zone-strip-gap));
+  gap: var(--zone-shell-gap, calc(var(--zone-strip-gap) * var(--zone-px)));
   padding: 0 var(--zone-shell-margin);
   font-size: var(--zone-shell-tab-type);
   container: zone-top / inline-size;
@@ -96,7 +96,7 @@
   display: flex;
   align-items: center;
   justify-self: center;
-  gap: var(--zone-shell-gap, var(--zone-strip-gap));
+  gap: var(--zone-shell-gap, calc(var(--zone-strip-gap) * var(--zone-px)));
   min-width: 0;
 }
 
@@ -145,7 +145,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--zone-shell-gap, var(--zone-strip-gap));
+  gap: var(--zone-shell-gap, calc(var(--zone-strip-gap) * var(--zone-px)));
   height: var(--zone-shell-foot);
   padding: 0 var(--zone-shell-margin);
   font-size: var(--zone-shell-foot-type);
@@ -155,7 +155,7 @@
 .zone-shell-foot-end {
   display: flex;
   align-items: center;
-  gap: var(--zone-strip-gap);
+  gap: calc(var(--zone-strip-gap) * var(--zone-px));
   min-width: 0;
 }
 

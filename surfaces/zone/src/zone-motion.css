@@ -16,7 +16,7 @@
 /* Something landing: it rises from its own drop edge and overshoots once. */
 @keyframes zone-snap {
   from {
-    translate: 0 var(--zone-drop-edge);
+    translate: 0 calc(var(--zone-drop-edge) * var(--zone-px));
     scale: 0.96;
   }
   to {
@@ -28,20 +28,20 @@
 /* The left cursor triangle, breathing toward the card on its right. */
 @keyframes zone-nudge-left {
   from {
-    margin-right: var(--zone-nudge-near);
+    margin-right: calc(var(--zone-nudge-near) * var(--zone-px));
   }
   to {
-    margin-right: var(--zone-nudge-far);
+    margin-right: calc(var(--zone-nudge-far) * var(--zone-px));
   }
 }
 
 /* The right cursor triangle, breathing toward the card on its left. */
 @keyframes zone-nudge-right {
   from {
-    margin-left: var(--zone-nudge-near);
+    margin-left: calc(var(--zone-nudge-near) * var(--zone-px));
   }
   to {
-    margin-left: var(--zone-nudge-far);
+    margin-left: calc(var(--zone-nudge-far) * var(--zone-px));
   }
 }
 

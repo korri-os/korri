@@ -7,16 +7,18 @@
  * how many go across, height decides how many rows can stand. Every card
  * stays on screen; only below the least width does the stage scroll.
  *
- * The constants are tokens too (zone-tokens.css), held equal by
+ * Every length is in art px (src/plan/art-px.ts): the page divides the
+ * stage by its art pixel first and multiplies the card's width back. The
+ * constants are tokens too (zone-tokens.css), held equal by
  * test/zone-onboarding.test.tsx.
  */
 
 /** A card's widest. */
-export const ZONE_CONTROLLER_CARD_MAX = 220
+export const ZONE_CONTROLLER_CARD_MAX = 110
 /** A card's narrowest; below it the stage scrolls rather than shrink a name past reading. */
-export const ZONE_CONTROLLER_CARD_MIN = 72
+export const ZONE_CONTROLLER_CARD_MIN = 36
 /** The room between cards, across and down: the band's wide card gap. */
-export const ZONE_CONTROLLER_CARD_GAP = 20
+export const ZONE_CONTROLLER_CARD_GAP = 10
 /** How much taller than wide a card stands: the square body plus the name bar and frame. */
 export const ZONE_CONTROLLER_CARD_TALL = 1.5
 

@@ -1,13 +1,13 @@
 /* The panel: blue, slanted, rising with the snap. The slab sits over the
  * rows; the count, when there is one, sits at the slab's end. */
 .zone-keyboard {
-  --zone-keyboard-type-key: clamp(calc(var(--zone-type-key) * 0.6), 2.4cqi, var(--zone-type-key));
-  --zone-keyboard-type-slab: clamp(var(--zone-type-row-min), 4cqi, var(--zone-type-slab));
-  --zone-keyboard-key-height: clamp(calc(var(--zone-key-height) * 0.7), 8cqb, var(--zone-key-height));
+  --zone-keyboard-type-key: clamp(calc(calc(var(--zone-type-key) * var(--zone-px)) * 0.6), 2.4cqi, calc(var(--zone-type-key) * var(--zone-px)));
+  --zone-keyboard-type-slab: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 4cqi, calc(var(--zone-type-slab) * var(--zone-px)));
+  --zone-keyboard-key-height: clamp(calc(calc(var(--zone-key-height) * var(--zone-px)) * 0.7), 8cqb, calc(var(--zone-key-height) * var(--zone-px)));
   --zone-keyboard-shape: polygon(
-    var(--zone-slant) 0,
+    calc(var(--zone-slant) * var(--zone-px)) 0,
     100% 0,
-    calc(100% - var(--zone-slant)) 100%,
+    calc(100% - calc(var(--zone-slant) * var(--zone-px))) 100%,
     0 100%
   );
   position: relative;
@@ -15,18 +15,18 @@
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: auto auto;
   align-items: center;
-  column-gap: var(--zone-key-gap);
-  row-gap: var(--zone-keyboard-pad);
+  column-gap: calc(var(--zone-key-gap) * var(--zone-px));
+  row-gap: calc(var(--zone-keyboard-pad) * var(--zone-px));
   width: 100%;
   max-height: 100%;
-  padding: var(--zone-keyboard-pad) calc(var(--zone-keyboard-pad) + var(--zone-keyboard-slant));
+  padding: calc(var(--zone-keyboard-pad) * var(--zone-px)) calc(calc(var(--zone-keyboard-pad) * var(--zone-px)) + calc(var(--zone-keyboard-slant) * var(--zone-px)));
   overflow-y: auto;
   scrollbar-width: none;
   background: var(--zone-keyboard-panel);
   clip-path: polygon(
-    var(--zone-keyboard-slant) 0,
+    calc(var(--zone-keyboard-slant) * var(--zone-px)) 0,
     100% 0,
-    calc(100% - var(--zone-keyboard-slant)) 100%,
+    calc(100% - calc(var(--zone-keyboard-slant) * var(--zone-px))) 100%,
     0 100%
   );
   color: var(--zone-cap);
@@ -42,8 +42,8 @@
   grid-column: 1;
   display: flex;
   align-items: center;
-  height: var(--zone-slab-height);
-  padding: 0 var(--zone-row-gap);
+  height: calc(var(--zone-slab-height) * var(--zone-px));
+  padding: 0 calc(var(--zone-row-gap) * var(--zone-px));
   overflow: hidden;
   background: var(--zone-slab);
   color: var(--zone-slab-ink);
@@ -67,8 +67,8 @@
 /* The red caret: a triangle on the baseline that blinks. */
 .zone-keyboard-caret {
   display: inline-block;
-  width: var(--zone-caret);
-  height: calc(var(--zone-caret) * var(--zone-triangle-aspect));
+  width: calc(var(--zone-caret) * var(--zone-px));
+  height: calc(calc(var(--zone-caret) * var(--zone-px)) * var(--zone-triangle-aspect));
   vertical-align: baseline;
   background: var(--zone-caret-colour);
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
@@ -81,13 +81,13 @@
   top: 0;
   z-index: 1;
   grid-column: 2;
-  font-size: var(--zone-type-note);
+  font-size: calc(var(--zone-type-note) * var(--zone-px));
 }
 
 .zone-keyboard-rows {
   grid-column: 1 / -1;
   display: grid;
-  row-gap: var(--zone-key-gap);
+  row-gap: calc(var(--zone-key-gap) * var(--zone-px));
 }
 
 /* Keys are equal: a twelfth of the row less the gaps, never narrower than
@@ -96,14 +96,14 @@
  * is lost, so every key stays reachable at every size. */
 .zone-keyboard-row {
   --zone-keyboard-key-width: clamp(
-    var(--zone-key-min),
-    calc((100% - var(--zone-key-gap) * 11) / 12),
-    calc(var(--zone-key-height) * 1.8)
+    calc(var(--zone-key-min) * var(--zone-px)),
+    calc((100% - calc(var(--zone-key-gap) * var(--zone-px)) * 11) / 12),
+    calc(calc(var(--zone-key-height) * var(--zone-px)) * 1.8)
   );
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: var(--zone-key-gap);
+  gap: calc(var(--zone-key-gap) * var(--zone-px));
 }
 
 /* A key: caps with the blue edge on a black parallelogram. Keys keep their
@@ -112,12 +112,12 @@
   position: relative;
   isolation: isolate;
   flex: 0 1 var(--zone-keyboard-key-width);
-  min-width: var(--zone-key-min);
+  min-width: calc(var(--zone-key-min) * var(--zone-px));
   height: var(--zone-keyboard-key-height);
   font-size: var(--zone-keyboard-type-key);
   line-height: 1;
   text-transform: none;
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
   transition: translate var(--zone-press-time) var(--zone-bounce);
 }
 
@@ -137,11 +137,11 @@
   z-index: -2;
   background: var(--zone-focus);
   clip-path: var(--zone-keyboard-shape);
-  translate: calc(var(--zone-drop-edge) * -1) var(--zone-drop-edge);
+  translate: calc(calc(var(--zone-drop-edge) * var(--zone-px)) * -1) calc(var(--zone-drop-edge) * var(--zone-px));
 }
 
 .zone-keyboard-key:active {
-  translate: var(--zone-press-sink) var(--zone-press-sink);
+  translate: calc(var(--zone-press-sink) * var(--zone-px)) calc(var(--zone-press-sink) * var(--zone-px));
 }
 
 /* The control row: the layer keys are narrow, SPACE is wide, DELETE and
@@ -155,11 +155,11 @@
 }
 
 .zone-keyboard-key[data-role="space"] {
-  flex-basis: calc(var(--zone-keyboard-key-width) * 4 + var(--zone-key-gap) * 3);
+  flex-basis: calc(var(--zone-keyboard-key-width) * 4 + calc(var(--zone-key-gap) * var(--zone-px)) * 3);
 }
 
 .zone-keyboard-key[data-role="wide"] {
-  flex-basis: calc(var(--zone-keyboard-key-width) * 2 + var(--zone-key-gap));
+  flex-basis: calc(var(--zone-keyboard-key-width) * 2 + calc(var(--zone-key-gap) * var(--zone-px)));
 }
 
 .zone-keyboard-key[data-current] {

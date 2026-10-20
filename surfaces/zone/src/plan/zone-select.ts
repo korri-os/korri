@@ -9,46 +9,56 @@
  * and when even those do not fit, every card scales down by one factor so
  * the full set still fits.
  *
- * Every constant is also a token in zone-tokens.css, so Caliper can turn
- * it; test/plan-zone-select.test.ts holds the two equal.
+ * Every length and threshold is in art px (src/plan/art-px.ts): the plan
+ * divides the container by its art pixel first, so 640x480 is planned as a
+ * 320x240 canvas and 1280x720 as 426x240, and a stylesheet multiplies each
+ * answer by `--zone-px`. Every constant is also a token in zone-tokens.css,
+ * so Caliper can turn it; test/plan-zone-select.test.ts holds the two
+ * equal. The thresholds are first guesses on the art grid, re-measured for
+ * the refinement (docs/design/surfaces/zone/REFINEMENT.md, 2a).
  */
+import { zoneArt } from "./art-px"
 
-/** Five cards show at or above this width; three below. */
-export const ZONE_WIDE_WIDTH = 1000
-/** The strips take their tall heights at or above this height. */
-export const ZONE_TALL_HEIGHT = 600
+/** Five cards show at or above this width in art px; three below (1000 CSS px on the old grid, 333 art px at 720p). */
+export const ZONE_WIDE_WIDTH = 333
+/** The strips take their tall heights at or above this height in art px: a portrait screen. Every landscape screen holds 240 to 479 art rows. */
+export const ZONE_TALL_HEIGHT = 320
 /**
- * Below this height the GAMES page's body is too short for its rows. On a
- * wide screen the facts line joins the action strip instead of taking a row
- * of its own: the band gets the row back, and the plentiful width pays for
- * it. On any screen the find keyboard rises over the whole screen below the
- * tabs instead of inside the body, since the body cannot hold its keys.
+ * Below this height in art px the GAMES page's body is too short for its
+ * rows. On a wide screen the facts line joins the action strip instead of
+ * taking a row of its own: the band gets the row back, and the plentiful
+ * width pays for it. On any screen the find keyboard rises over the whole
+ * screen below the tabs instead of inside the body, since the body cannot
+ * hold its keys. Every screen whose short side is 240 CSS px or more holds
+ * 240 art rows, so only a box shorter than that (at one CSS px per art px)
+ * falls under it.
  */
-export const ZONE_SHORT_HEIGHT = 400
+export const ZONE_SHORT_HEIGHT = 240
 
 export const ZONE_VISIBLE_CARDS = { wide: 5, narrow: 3 } as const
-export const ZONE_TAB_STRIP = { tall: 74, short: 56 } as const
-export const ZONE_ACTION_STRIP = { tall: 66, short: 52 } as const
-export const ZONE_FOOT_STRIP = { tall: 58, short: 46 } as const
-export const ZONE_TRIANGLE = { wide: 36, narrow: 26 } as const
-export const ZONE_CARD_GAP = { wide: 20, narrow: 14 } as const
-export const ZONE_TYPE_TAB = { wide: 24, narrow: 17 } as const
-export const ZONE_TYPE_HINT = { wide: 20, narrow: 15 } as const
-export const ZONE_TYPE_BUTTON = { tall: 24, short: 19 } as const
-export const ZONE_TYPE_FOOT = { tall: 28, short: 22 } as const
+export const ZONE_TAB_STRIP = { tall: 36, short: 32 } as const
+export const ZONE_ACTION_STRIP = { tall: 30, short: 26 } as const
+export const ZONE_FOOT_STRIP = { tall: 24, short: 22 } as const
+export const ZONE_TRIANGLE = { wide: 14, narrow: 12 } as const
+export const ZONE_CARD_GAP = { wide: 10, narrow: 7 } as const
+/** Type sizes are em sizes in art px. Zone Caps' em is its cap, so 10 is caps-1. */
+export const ZONE_TYPE_TAB = { wide: 10, narrow: 10 } as const
+export const ZONE_TYPE_HINT = { wide: 10, narrow: 10 } as const
+export const ZONE_TYPE_BUTTON = { tall: 10, short: 10 } as const
+export const ZONE_TYPE_FOOT = { tall: 10, short: 10 } as const
 
 /** The focused card never grows past this height. */
-export const ZONE_CARD_FOCUS_MAX = 400
+export const ZONE_CARD_FOCUS_MAX = 133
 /** Width over height of a card. */
 export const ZONE_CARD_RATIO = 0.78
 /** A side card's height as a share of the focused card's. */
 export const ZONE_CARD_SIDE_SCALE = 0.68
 /** Room above and below the band for the pink edge and the drop edge. */
-export const ZONE_BAND_PAD = 26
+export const ZONE_BAND_PAD = 13
 /** Horizontal margin either side of the band. */
-export const ZONE_BAND_MARGIN = 24
+export const ZONE_BAND_MARGIN = 12
 /** The room between a cursor triangle and the card it points at. */
-export const ZONE_TRIANGLE_GAP = 16
+export const ZONE_TRIANGLE_GAP = 8
 /** The focused card's title as a share of its width; a side card's likewise. */
 export const ZONE_TYPE_CARD_SHARE = 0.125
 export const ZONE_TYPE_SIDE_SHARE = 0.115
@@ -59,6 +69,11 @@ export type ZoneFacts = "row" | "inline"
 export type ZoneKeys = "body" | "screen"
 
 export interface ZonePlan {
+  /** CSS px per art px; every other length here is in art px. */
+  readonly px: number
+  /** The container in whole art px. */
+  readonly wArt: number
+  readonly hArt: number
   readonly band: ZoneBand
   readonly strips: ZoneStrips
   /** Where the GAMES page's facts line stands: its own row, or in the action strip. */
@@ -88,7 +103,14 @@ export interface ZonePlan {
   readonly sideFs: number
 }
 
+/** The plan for a container measured in CSS px: its art pixel, then the plan on the art grid. */
 export function plan(width: number, height: number): ZonePlan {
+  const art = zoneArt(width, height)
+  return planArt(art.wArt, art.hArt, art.px)
+}
+
+/** The plan on the art grid: every threshold and length in art px. */
+export function planArt(width: number, height: number, px = 1): ZonePlan {
   const band: ZoneBand = width >= ZONE_WIDE_WIDTH ? "wide" : "narrow"
   const strips: ZoneStrips = height >= ZONE_TALL_HEIGHT ? "tall" : "short"
   const facts: ZoneFacts = height < ZONE_SHORT_HEIGHT && band === "wide" ? "inline" : "row"
@@ -116,6 +138,9 @@ export function plan(width: number, height: number): ZonePlan {
   sideW = Math.round(sideW * scale)
 
   return {
+    px,
+    wArt: width,
+    hArt: height,
     band,
     strips,
     facts,

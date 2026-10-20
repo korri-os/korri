@@ -2,28 +2,28 @@
  * of its cut ends is the panel slant, held under half a line so a small
  * tag on a side card keeps its lean. */
 .zone-tag {
-  --zone-tag-slant: min(var(--zone-slant), 0.55em);
-  --zone-tag-slant-pad: calc(var(--zone-tag-slant) / 2 + var(--zone-tag-pad));
+  --zone-tag-slant: min(calc(var(--zone-slant) * var(--zone-px)), 0.55em);
+  --zone-tag-slant-pad: calc(var(--zone-tag-slant) / 2 + calc(var(--zone-tag-pad) * var(--zone-px)));
   flex: 1 1 0;
   display: inline-grid;
   place-items: center;
   min-width: 0;
   height: 100%;
   min-height: calc(1em * var(--zone-tag-row-height));
-  padding: 0 var(--zone-tag-pad);
+  padding: 0 calc(var(--zone-tag-pad) * var(--zone-px));
   overflow: hidden;
   background: var(--zone-tag-system);
   color: var(--zone-tag-ink);
-  font-size: var(--zone-tag-type, var(--zone-type-button-tall));
+  font-size: var(--zone-tag-type, calc(var(--zone-type-button-tall) * var(--zone-px)));
   line-height: 1;
   white-space: nowrap;
   text-overflow: ellipsis;
   text-shadow:
-    calc(var(--zone-cap-outline) * -0.5) 0 0 var(--zone-cap-outline-colour),
-    calc(var(--zone-cap-outline) * 0.5) 0 0 var(--zone-cap-outline-colour),
-    0 calc(var(--zone-cap-outline) * -0.5) 0 var(--zone-cap-outline-colour),
-    0 calc(var(--zone-cap-outline) * 0.5) 0 var(--zone-cap-outline-colour),
-    calc(var(--zone-cap-outline) * 0.5) calc(var(--zone-cap-outline) * 0.5) 0 var(--zone-cap-outline-colour);
+    calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -0.5) 0 0 var(--zone-cap-outline-colour),
+    calc(calc(var(--zone-cap-outline) * var(--zone-px)) * 0.5) 0 0 var(--zone-cap-outline-colour),
+    0 calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -0.5) 0 var(--zone-cap-outline-colour),
+    0 calc(calc(var(--zone-cap-outline) * var(--zone-px)) * 0.5) 0 var(--zone-cap-outline-colour),
+    calc(calc(var(--zone-cap-outline) * var(--zone-px)) * 0.5) calc(calc(var(--zone-cap-outline) * var(--zone-px)) * 0.5) 0 var(--zone-cap-outline-colour);
 }
 
 /* Joined tags overlap by one slant so the cut of one lies on the cut of the

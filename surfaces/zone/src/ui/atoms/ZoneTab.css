@@ -6,7 +6,7 @@
 .zone-tab {
   position: relative;
   display: inline-flex;
-  --zone-tab-type: calc(var(--zone-shell-tab-type, var(--zone-type-tab-wide)) * var(--zone-tab-fit, 1));
+  --zone-tab-type: calc(var(--zone-shell-tab-type, calc(var(--zone-type-tab-wide) * var(--zone-px))) * var(--zone-tab-fit, 1));
   flex: 0 max(0, calc((0.51 - var(--zone-tab-fit, 1)) * 100)) auto;
   align-items: stretch;
   min-width: 0;
@@ -17,7 +17,7 @@
 
 /* The focused tab lifts. */
 .zone-tab[data-focused="on"] {
-  translate: 0 calc(var(--zone-tab-lift) * -1);
+  translate: 0 calc(calc(var(--zone-tab-lift) * var(--zone-px)) * -1);
 }
 
 /* Label over sub-line, both centred. The sub-line is the panel's caps at

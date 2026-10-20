@@ -4,7 +4,7 @@
  * to 1 and sinks its panel by the press sink; the underline moves back by
  * the same amount, so the panel sinks into it and the mark holds still. */
 .zone-underline {
-  --zone-underline-slant: max(var(--zone-slant), calc(var(--zone-lean) * 1em));
+  --zone-underline-slant: max(calc(var(--zone-slant) * var(--zone-px)), calc(var(--zone-lean) * 1em));
   position: absolute;
   inset: 0;
   z-index: -2;
@@ -20,7 +20,7 @@
     )
   );
   translate:
-    calc(var(--zone-drop-edge) * -1 - var(--zone-press-sink) * var(--zone-underline-press, 0))
-    calc(var(--zone-drop-edge) - var(--zone-press-sink) * var(--zone-underline-press, 0));
+    calc(calc(var(--zone-drop-edge) * var(--zone-px)) * -1 - calc(var(--zone-press-sink) * var(--zone-px)) * var(--zone-underline-press, 0))
+    calc(calc(var(--zone-drop-edge) * var(--zone-px)) - calc(var(--zone-press-sink) * var(--zone-px)) * var(--zone-underline-press, 0));
   pointer-events: none;
 }

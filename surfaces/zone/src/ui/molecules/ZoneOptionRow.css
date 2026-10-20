@@ -3,19 +3,19 @@
  * their words rather than cut them, so a long label makes a taller row and
  * never a shorter one. */
 .zone-option-row {
-  --zone-option-row-type: clamp(var(--zone-type-row-min), 3.2cqi, var(--zone-type-row));
-  --zone-option-row-label-width: calc((100% - var(--zone-row-gap)) * var(--zone-row-label-share));
+  --zone-option-row-type: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 3.2cqi, calc(var(--zone-type-row) * var(--zone-px)));
+  --zone-option-row-label-width: calc((100% - calc(var(--zone-row-gap) * var(--zone-px))) * var(--zone-row-label-share));
   --zone-option-row-shape: polygon(
-    var(--zone-slant) 0,
+    calc(var(--zone-slant) * var(--zone-px)) 0,
     100% 0,
-    calc(100% - var(--zone-slant)) 100%,
+    calc(100% - calc(var(--zone-slant) * var(--zone-px))) 100%,
     0 100%
   );
   display: grid;
   grid-template-columns: minmax(0, var(--zone-option-row-label-width)) minmax(0, 1fr);
-  column-gap: var(--zone-row-gap);
-  row-gap: var(--zone-drop-edge);
-  padding-bottom: var(--zone-row-space);
+  column-gap: calc(var(--zone-row-gap) * var(--zone-px));
+  row-gap: calc(var(--zone-drop-edge) * var(--zone-px));
+  padding-bottom: calc(var(--zone-row-space) * var(--zone-px));
   font-size: var(--zone-option-row-type);
   color: var(--zone-cap);
 }
@@ -26,7 +26,7 @@
   display: grid;
   grid-column: 1 / -1;
   grid-template-columns: minmax(0, var(--zone-option-row-label-width)) minmax(0, 1fr);
-  column-gap: var(--zone-row-gap);
+  column-gap: calc(var(--zone-row-gap) * var(--zone-px));
   align-items: stretch;
   width: 100%;
   text-align: left;
@@ -40,11 +40,11 @@
   isolation: isolate;
   display: flex;
   align-items: center;
-  min-height: var(--zone-row-height);
-  padding: calc(var(--zone-row-space) / 2) calc(var(--zone-slant) + var(--zone-row-gap));
-  border-top: var(--zone-hairline) solid var(--zone-panel);
-  overflow-wrap: anywhere;
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  min-height: calc(var(--zone-row-height) * var(--zone-px));
+  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)));
+  border-top: calc(var(--zone-hairline) * var(--zone-px)) solid var(--zone-panel);
+  overflow-wrap: normal;
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
 }
 
 .zone-option-row-label::before,
@@ -79,13 +79,13 @@
   z-index: -2;
   background: var(--zone-focus);
   clip-path: var(--zone-option-row-shape);
-  translate: calc(var(--zone-drop-edge) * -1) var(--zone-drop-edge);
+  translate: calc(calc(var(--zone-drop-edge) * var(--zone-px)) * -1) calc(var(--zone-drop-edge) * var(--zone-px));
 }
 
 /* A choice's red triangles, breathing toward the value they step. */
 .zone-option-row-step {
-  width: var(--zone-choice-triangle);
-  height: calc(var(--zone-choice-triangle) * var(--zone-triangle-aspect));
+  width: calc(var(--zone-choice-triangle) * var(--zone-px));
+  height: calc(calc(var(--zone-choice-triangle) * var(--zone-px)) * var(--zone-triangle-aspect));
   background: var(--zone-cursor);
 }
 
@@ -104,8 +104,8 @@
 /* Saving: the value is a red caret that blinks until Korri answers. */
 .zone-option-row-caret {
   grid-column: 2;
-  width: var(--zone-caret);
-  height: calc(var(--zone-caret) * var(--zone-triangle-aspect));
+  width: calc(var(--zone-caret) * var(--zone-px));
+  height: calc(calc(var(--zone-caret) * var(--zone-px)) * var(--zone-triangle-aspect));
   background: var(--zone-caret-colour);
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
   animation: zone-blink var(--zone-blink-time) steps(1) infinite alternate;
@@ -124,10 +124,10 @@
   position: relative;
   isolation: isolate;
   justify-self: start;
-  padding: calc(var(--zone-row-space) / 2) calc(var(--zone-slant) + var(--zone-row-gap));
-  font-size: var(--zone-type-note);
+  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)));
+  font-size: calc(var(--zone-type-note) * var(--zone-px));
   line-height: 1.15;
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
 }
 
 .zone-option-row-description::before,
@@ -155,19 +155,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: calc(var(--zone-row-gap) / 2);
-  font-size: var(--zone-type-note);
+  gap: calc(calc(var(--zone-row-gap) * var(--zone-px)) / 2);
+  font-size: calc(var(--zone-type-note) * var(--zone-px));
 }
 
 .zone-option-row-keycap {
   display: inline-grid;
   place-items: center;
-  width: var(--zone-hint-keycap);
-  height: var(--zone-hint-keycap);
-  border: var(--zone-keycap-ring) solid var(--zone-key-ring);
+  width: calc(var(--zone-hint-keycap) * var(--zone-px));
+  height: calc(var(--zone-hint-keycap) * var(--zone-px));
+  border: calc(var(--zone-keycap-ring) * var(--zone-px)) solid var(--zone-key-ring);
   border-radius: 50%;
   background: var(--zone-key);
-  font-size: calc(var(--zone-hint-keycap) * 0.6);
+  font-size: calc(calc(var(--zone-hint-keycap) * var(--zone-px)) * 0.6);
   text-shadow: none;
 }
 

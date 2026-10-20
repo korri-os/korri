@@ -2,12 +2,12 @@
  * wedge: at least its least width (all of a narrow page), at most its share
  * of a wide one. The rows always clear the band. */
 .zone-paused {
-  --zone-paused-band-h: clamp(var(--zone-paused-band-min), 19cqb, var(--zone-paused-band-max));
+  --zone-paused-band-h: clamp(calc(var(--zone-paused-band-min) * var(--zone-px)), 19cqb, calc(var(--zone-paused-band-max) * var(--zone-px)));
   --zone-paused-band-cut: min(calc(var(--zone-paused-band-h) * var(--zone-paused-band-lean)), 15cqi);
-  --zone-paused-wedge-w: clamp(min(100cqi, var(--zone-paused-wedge-min)), calc(var(--zone-paused-wedge-share) * 100cqi), 100cqi);
+  --zone-paused-wedge-w: clamp(min(100cqi, calc(var(--zone-paused-wedge-min) * var(--zone-px))), calc(var(--zone-paused-wedge-share) * 100cqi), 100cqi);
   --zone-paused-wedge-cut: calc(var(--zone-paused-wedge-w) * var(--zone-paused-wedge-lean));
-  --zone-paused-margin: clamp(var(--zone-strip-margin-min), 3cqi, var(--zone-strip-margin));
-  --zone-paused-row-type: clamp(var(--zone-type-row-min), min(4.4cqi, 6cqb), var(--zone-type-paused-row));
+  --zone-paused-margin: clamp(calc(var(--zone-strip-margin-min) * var(--zone-px)), 3cqi, calc(var(--zone-strip-margin) * var(--zone-px)));
+  --zone-paused-row-type: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), min(4.4cqi, 6cqb), calc(var(--zone-type-paused-row) * var(--zone-px)));
   position: relative;
   width: 100%;
   height: 100%;
@@ -45,7 +45,7 @@
   display: flex;
   align-items: center;
   width: fit-content;
-  min-width: clamp(min(100cqi, var(--zone-paused-band-least)), calc(var(--zone-paused-band-share) * 100cqi), 100cqi);
+  min-width: clamp(min(100cqi, calc(var(--zone-paused-band-least) * var(--zone-px))), calc(var(--zone-paused-band-share) * 100cqi), 100cqi);
   max-width: 100cqi;
   height: var(--zone-paused-band-h);
   padding: 0 calc(var(--zone-paused-band-cut) + var(--zone-paused-margin)) 0 var(--zone-paused-margin);
@@ -59,7 +59,7 @@
   min-width: 0;
   margin: 0;
   font: inherit;
-  font-size: clamp(var(--zone-type-paused-title-min), min(calc(var(--zone-paused-band-h) * 0.5), 9cqi), var(--zone-type-paused-title));
+  font-size: clamp(calc(var(--zone-type-paused-title-min) * var(--zone-px)), min(calc(var(--zone-paused-band-h) * 0.5), 9cqi), calc(var(--zone-type-paused-title) * var(--zone-px)));
 }
 
 /* The yellow wedge: full height on the right, its left edge on the slant. */
@@ -85,8 +85,8 @@
   flex-direction: column;
   padding:
     calc(var(--zone-paused-band-h) + var(--zone-paused-margin))
-    calc(var(--zone-paused-margin) + var(--zone-drop-edge))
-    calc(var(--zone-paused-margin) * 2 + var(--zone-drop-edge) + var(--zone-type-hint-wide) * var(--zone-keycap-scale))
+    calc(var(--zone-paused-margin) + calc(var(--zone-drop-edge) * var(--zone-px)))
+    calc(var(--zone-paused-margin) * 2 + calc(var(--zone-drop-edge) * var(--zone-px)) + calc(var(--zone-type-hint-wide) * var(--zone-px)) * var(--zone-keycap-scale))
     calc(var(--zone-paused-wedge-cut) * var(--zone-paused-list-inset));
   overflow-x: hidden;
   overflow-y: auto;
@@ -98,15 +98,15 @@
  * still scrolls from its first row. */
 .zone-paused-rows {
   display: grid;
-  gap: var(--zone-paused-row-gap);
+  gap: calc(var(--zone-paused-row-gap) * var(--zone-px));
   margin-top: auto;
-  padding-left: var(--zone-drop-edge);
+  padding-left: calc(var(--zone-drop-edge) * var(--zone-px));
 }
 
 .zone-paused-group {
   display: grid;
-  gap: var(--zone-paused-row-gap);
-  margin-top: var(--zone-paused-row-gap);
+  gap: calc(var(--zone-paused-row-gap) * var(--zone-px));
+  margin-top: calc(var(--zone-paused-row-gap) * var(--zone-px));
 }
 
 .zone-paused-group-label {
@@ -119,7 +119,7 @@
 
 .zone-paused-group-text {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   white-space: normal;
   line-height: 1.05;
 }
@@ -142,6 +142,6 @@
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   align-items: center;
   padding: var(--zone-paused-margin)
-    max(var(--zone-paused-margin), calc((100cqi - var(--zone-layer-dialog-width)) / 2));
+    max(var(--zone-paused-margin), calc((100cqi - calc(var(--zone-layer-dialog-width) * var(--zone-px))) / 2));
   animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
 }

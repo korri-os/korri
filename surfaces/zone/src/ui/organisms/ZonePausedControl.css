@@ -2,9 +2,9 @@
  * --zone-paused-row-type, or the row token standing alone. */
 .zone-paused-control {
   display: grid;
-  row-gap: var(--zone-drop-edge);
+  row-gap: calc(var(--zone-drop-edge) * var(--zone-px));
   min-width: 0;
-  font-size: var(--zone-paused-row-type, var(--zone-type-row));
+  font-size: var(--zone-paused-row-type, calc(var(--zone-type-row) * var(--zone-px)));
 }
 
 /* The whole row is one focus stop; the panel inside it fills its width. */
@@ -17,7 +17,7 @@
 }
 
 .zone-paused-control-button:active {
-  translate: var(--zone-press-sink) var(--zone-press-sink);
+  translate: calc(var(--zone-press-sink) * var(--zone-px)) calc(var(--zone-press-sink) * var(--zone-px));
 }
 
 /* Label left, value right. The label wraps rather than cuts and keeps a
@@ -29,7 +29,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: calc(var(--zone-row-space) / 2) var(--zone-row-gap);
+  gap: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(var(--zone-row-gap) * var(--zone-px));
   min-width: 0;
   min-height: 1.2em;
   white-space: normal;
@@ -38,9 +38,9 @@
 .zone-paused-control-label {
   flex: 1 1 var(--zone-paused-label-least);
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   line-height: 1.05;
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
 }
 
 /* Destructive: the label is red, as a destructive option's value is. */
@@ -53,7 +53,7 @@
   display: inline-flex;
   flex: 0 1 auto;
   align-items: center;
-  gap: calc(var(--zone-row-gap) / 2);
+  gap: calc(calc(var(--zone-row-gap) * var(--zone-px)) / 2);
   min-width: 0;
   max-width: 100%;
   margin-left: auto;
@@ -61,8 +61,8 @@
 
 .zone-paused-control-text {
   min-width: 0;
-  overflow-wrap: anywhere;
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  overflow-wrap: normal;
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
 }
 
 /* The triangles' room is kept when the row is not focused. */
@@ -120,10 +120,11 @@
 /* Korri's words under the row: why it is disabled, or what it does. Black
  * caps on the wedge's yellow, no outline. */
 .zone-paused-control-note {
-  padding-left: var(--zone-slant);
-  overflow-wrap: anywhere;
+  padding-left: calc(var(--zone-slant) * var(--zone-px));
+  overflow-wrap: break-word;
+  hyphens: auto;
   color: var(--zone-paused-note-ink);
-  font-size: max(var(--zone-type-note), calc(var(--zone-type-reason-scale) * 1em));
+  font-size: max(calc(var(--zone-type-note) * var(--zone-px)), calc(var(--zone-type-reason-scale) * 1em));
   line-height: 1.15;
   text-shadow: none;
 }

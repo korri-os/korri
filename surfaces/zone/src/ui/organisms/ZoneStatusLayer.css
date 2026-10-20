@@ -2,7 +2,7 @@
  * a size container, so the strip and the dialog size against the page they
  * cover, not the device. */
 .zone-status-layer {
-  --zone-status-layer-margin: clamp(var(--zone-strip-margin-min), 3cqi, var(--zone-strip-margin));
+  --zone-status-layer-margin: clamp(calc(var(--zone-strip-margin-min) * var(--zone-px)), 3cqi, calc(var(--zone-strip-margin) * var(--zone-px)));
   position: relative;
   width: 100%;
   height: 100%;
@@ -45,7 +45,7 @@
   left: 50%;
   display: flex;
   max-width: calc(100% - var(--zone-status-layer-margin) * 2);
-  font-size: clamp(var(--zone-type-note), 3cqi, var(--zone-type-row));
+  font-size: clamp(calc(var(--zone-type-note) * var(--zone-px)), 3cqi, calc(var(--zone-type-row) * var(--zone-px)));
   pointer-events: none;
   translate: -50% 0;
   animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
@@ -54,7 +54,7 @@
 .zone-status-layer-running-line {
   display: flex;
   align-items: center;
-  gap: var(--zone-row-gap);
+  gap: calc(var(--zone-row-gap) * var(--zone-px));
   min-width: 0;
 }
 
@@ -83,9 +83,9 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: var(--zone-strip-gap);
+  gap: calc(var(--zone-strip-gap) * var(--zone-px));
   padding: var(--zone-status-layer-margin)
-    max(var(--zone-status-layer-margin), calc((100cqi - var(--zone-layer-busy-width)) / 2));
+    max(var(--zone-status-layer-margin), calc((100cqi - calc(var(--zone-layer-busy-width) * var(--zone-px))) / 2));
   overflow-y: auto;
   scrollbar-width: none;
   animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
@@ -94,7 +94,7 @@
 .zone-status-layer-busy-game {
   display: flex;
   max-width: 100%;
-  font-size: clamp(var(--zone-type-note), 2.6cqi, var(--zone-type-row));
+  font-size: clamp(calc(var(--zone-type-note) * var(--zone-px)), 2.6cqi, calc(var(--zone-type-row) * var(--zone-px)));
 }
 
 /* Problem and Confirm: the blue dialog in the middle of the page, never
@@ -107,6 +107,6 @@
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   align-items: center;
   padding: var(--zone-status-layer-margin)
-    max(var(--zone-status-layer-margin), calc((100cqi - var(--zone-layer-dialog-width)) / 2));
+    max(var(--zone-status-layer-margin), calc((100cqi - calc(var(--zone-layer-dialog-width) * var(--zone-px))) / 2));
   animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
 }

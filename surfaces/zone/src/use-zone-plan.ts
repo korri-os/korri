@@ -5,8 +5,14 @@
  * read through useSyncExternalStore so no component keeps React state. The
  * root is measured on subscribe and on every resize; a resize that lands on
  * the same plan renders nothing.
+ *
+ * The root also wears the plan's art pixel: `data-px` and `--zone-px` (a
+ * length, so every stylesheet below multiplies its art-px tokens by it).
+ * Writing a custom property is a DOM mechanic, as useZoneFit's is; it
+ * renders nothing.
  */
 import { useCallback, useRef, useSyncExternalStore, type RefObject } from "react"
+import { ZONE_ART_PX_LEAST } from "./plan/art-px"
 import { plan, type ZonePlan } from "./plan/zone-select"
 
 interface Store {
@@ -27,6 +33,7 @@ export function useZonePlan(root: RefObject<HTMLElement | null>): ZonePlan {
     const element = root.current
     const measure = (width: number, height: number) => {
       const next = plan(width, height)
+      if (element !== null) writeArtPx(element, next.px)
       if (same(next, current.current)) return
       current.current = next
       for (const notify of [...current.listeners]) notify()
@@ -45,4 +52,23 @@ export function useZonePlan(root: RefObject<HTMLElement | null>): ZonePlan {
   }, [root])
   const getSnapshot = useCallback(() => store.current!.current, [])
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+/** The root's art pixel, as the stylesheets read it. */
+function writeArtPx(element: HTMLElement, px: number): void {
+  element.dataset.px = String(px)
+  element.style.setProperty("--zone-px", `${px}px`)
+}
+
+/**
+ * The art pixel an element stands on, read from its computed `--zone-px`
+ * (registered as a length, so it computes to `3px`), for a hook that
+ * measures its own box in CSS px and plans in art px. 1 where nothing is
+ * computed, as in a test DOM.
+ */
+export function zoneArtPxOf(element: Element): number {
+  const view = element.ownerDocument.defaultView
+  if (view === null) return ZONE_ART_PX_LEAST
+  const value = Number.parseFloat(view.getComputedStyle(element).getPropertyValue("--zone-px"))
+  return Number.isFinite(value) && value >= ZONE_ART_PX_LEAST ? Math.round(value) : ZONE_ART_PX_LEAST
 }

@@ -16,14 +16,14 @@
   white-space: nowrap;
   text-shadow: var(
     --zone-caps-shadow,
-    var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour),
-    calc(var(--zone-cap-outline) * -1) 0 0 var(--zone-cap-outline-colour),
-    var(--zone-cap-outline) 0 0 var(--zone-cap-outline-colour),
-    0 calc(var(--zone-cap-outline) * -1) 0 var(--zone-cap-outline-colour),
-    0 var(--zone-cap-outline) 0 var(--zone-cap-outline-colour),
-    calc(var(--zone-cap-edge) + var(--zone-cap-outline)) var(--zone-cap-edge) 0 var(--zone-cap-outline-colour),
-    var(--zone-cap-edge) calc(var(--zone-cap-edge) + var(--zone-cap-outline)) 0 var(--zone-cap-outline-colour),
-    calc(var(--zone-cap-edge) + var(--zone-cap-outline)) calc(var(--zone-cap-edge) + var(--zone-cap-outline)) 0 var(--zone-cap-outline-colour)
+    calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour),
+    calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -1) 0 0 var(--zone-cap-outline-colour),
+    calc(var(--zone-cap-outline) * var(--zone-px)) 0 0 var(--zone-cap-outline-colour),
+    0 calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -1) 0 var(--zone-cap-outline-colour),
+    0 calc(var(--zone-cap-outline) * var(--zone-px)) 0 var(--zone-cap-outline-colour),
+    calc(calc(var(--zone-cap-edge) * var(--zone-px)) + calc(var(--zone-cap-outline) * var(--zone-px))) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-outline-colour),
+    calc(var(--zone-cap-edge) * var(--zone-px)) calc(calc(var(--zone-cap-edge) * var(--zone-px)) + calc(var(--zone-cap-outline) * var(--zone-px))) 0 var(--zone-cap-outline-colour),
+    calc(calc(var(--zone-cap-edge) * var(--zone-px)) + calc(var(--zone-cap-outline) * var(--zone-px))) calc(calc(var(--zone-cap-edge) * var(--zone-px)) + calc(var(--zone-cap-outline) * var(--zone-px))) 0 var(--zone-cap-outline-colour)
   );
 }
 
@@ -35,17 +35,17 @@
 /* The named sizes read the shell's strip when they stand in one, and the
  * wide or tall token when they stand alone. */
 .zone-caps[data-size="tab"] {
-  font-size: var(--zone-shell-tab-type, var(--zone-type-tab-wide));
+  font-size: var(--zone-shell-tab-type, calc(var(--zone-type-tab-wide) * var(--zone-px)));
 }
 
 .zone-caps[data-size="hint"] {
-  font-size: var(--zone-shell-hint-type, var(--zone-type-hint-wide));
+  font-size: var(--zone-shell-hint-type, calc(var(--zone-type-hint-wide) * var(--zone-px)));
 }
 
 .zone-caps[data-size="button"] {
-  font-size: var(--zone-type-button-tall);
+  font-size: calc(var(--zone-type-button-tall) * var(--zone-px));
 }
 
 .zone-caps[data-size="foot"] {
-  font-size: var(--zone-shell-foot-type, var(--zone-type-foot-tall));
+  font-size: var(--zone-shell-foot-type, calc(var(--zone-type-foot-tall) * var(--zone-px)));
 }

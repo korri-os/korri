@@ -14,9 +14,32 @@
  *
  * Every declaration is a literal with a knob hint, so Caliper offers it as a
  * live control. Outputs are derived in component stylesheets with calc().
+ *
+ * Every length is a whole number of art pixels, written as a bare number
+ * (docs/design/surfaces/zone/REFINEMENT.md, 2b). A stylesheet multiplies it
+ * by `--zone-px` where it uses it: `calc(var(--zone-slant) * var(--zone-px))`.
+ * `--zone-px` is the art pixel in CSS px, a whole number: the root writes it
+ * from the plan (src/plan/art-px.ts); a part outside the root derives the
+ * same number in zone.css. Only the part frames' sizes stay in CSS px,
+ * since they stand in for a device.
  */
 
+/* The art pixel, registered so it computes to a length where it is declared
+ * and children inherit the length, not the formula. Not a knob: it is an
+ * output of the container's size. */
+@property --zone-px {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 2px;
+}
+
 .zone-theme {
+  /* ---- 0. The art grid ---- */
+  /** How many art pixels the short side holds at least (plan: ZONE_ART_ROWS). @label Art rows @min 240 @max 240 @step 1 */
+  --zone-art-rows: 240;
+  /** The least art pixel (plan: ZONE_ART_PX_LEAST). @label Art pixel, least @min 1px @max 1px @step 1px */
+  --zone-px-least: 1px;
+
   /* ---- 1. The palette ---- */
   /** The ground and the stripe band. @label Mint */
   --zone-mint: #3fe0a0;
@@ -36,120 +59,130 @@
   --zone-pink: #e889b0;
 
   /* ---- 2. Geometry ---- */
-  /** How far a parallelogram's top edge leads its bottom edge. @label Panel slant @min 0 @max 32 @step 1 */
-  --zone-slant: 12px;
+  /** How far a parallelogram's top edge leads its bottom edge. Art px. @label Panel slant @min 0 @max 32 @step 1 */
+  --zone-slant: 6;
   /** The angle of the three-colour stripe under a card title. @label Stripe angle @min -90 @max 90 @step 1 */
   --zone-stripe-angle: -62deg;
-  /** The hard offset of a panel's blue edge and a lit underline. @label Drop edge @min 0 @max 16 @step 1 */
-  --zone-drop-edge: 6px;
-  /** The drop edge of the focused card. @label Focused drop edge @min 0 @max 24 @step 1 */
-  --zone-drop-edge-focus: 9px;
-  /** The pink edge around the focused card. @label Focus edge @min 1 @max 12 @step 1 */
-  --zone-focus-edge: 4px;
-  /** The pink underline under a lit button or tab. @label Underline @min 1 @max 12 @step 1 */
-  --zone-underline: 6px;
-  /** The blue edge behind white caps on a panel. @label Cap edge @min 0 @max 4 @step 1 */
-  --zone-cap-edge: 2px;
-  /** The black outline around white caps on colour. @label Cap outline @min 0 @max 4 @step 1 */
-  --zone-cap-outline: 2px;
-  /** The black extrusion behind the banner's yellow caps. @label Banner extrusion @min 0 @max 8 @step 1 */
-  --zone-banner-extrude: 4px;
-  /** The blue border of a cover well. @label Well edge @min 0 @max 6 @step 1 */
-  --zone-well-edge: 2px;
-  /** The ring around a keycap. @label Keycap ring @min 0 @max 4 @step 1 */
-  --zone-keycap-ring: 2px;
-  /** A hairline rule. @label Hairline @min 1 @max 3 @step 1 */
-  --zone-hairline: 1px;
-  /** How far a tab lifts when focused. @label Tab lift @min 0 @max 12 @step 1 */
-  --zone-tab-lift: 4px;
-  /** How far a pressed button sinks. @label Press sink @min 0 @max 8 @step 1 */
-  --zone-press-sink: 3px;
+  /** The hard offset of a panel's blue edge and a lit underline. Art px. @label Drop edge @min 0 @max 16 @step 1 */
+  --zone-drop-edge: 2;
+  /** The drop edge of the focused card. Art px. @label Focused drop edge @min 0 @max 24 @step 1 */
+  --zone-drop-edge-focus: 3;
+  /** The pink edge around the focused card. Art px. @label Focus edge @min 1 @max 12 @step 1 */
+  --zone-focus-edge: 2;
+  /** The pink underline under a lit button or tab. Art px. @label Underline @min 1 @max 12 @step 1 */
+  --zone-underline: 2;
+  /** The blue edge behind white caps on a panel. Art px. @label Cap edge @min 0 @max 4 @step 1 */
+  --zone-cap-edge: 1;
+  /** The black outline around white caps on colour. Art px. @label Cap outline @min 0 @max 4 @step 1 */
+  --zone-cap-outline: 1;
+  /** The black extrusion behind the banner's yellow caps. Art px. @label Banner extrusion @min 0 @max 8 @step 1 */
+  --zone-banner-extrude: 2;
+  /** The blue border of a cover well. Art px. @label Well edge @min 0 @max 6 @step 1 */
+  --zone-well-edge: 1;
+  /** The ring around a keycap. Art px. @label Keycap ring @min 0 @max 4 @step 1 */
+  --zone-keycap-ring: 1;
+  /** A hairline rule. Art px. @label Hairline @min 1 @max 3 @step 1 */
+  --zone-hairline: 1;
+  /** How far a tab lifts when focused. Art px. @label Tab lift @min 0 @max 12 @step 1 */
+  --zone-tab-lift: 2;
+  /** How far a pressed button sinks. Art px. @label Press sink @min 0 @max 8 @step 1 */
+  --zone-press-sink: 1;
 
   /* The plan's two thresholds. The plan (src/plan/zone-select.ts) reads its
    * own constants; these are the same numbers, held equal by test, so a
    * design tool can see and turn them. */
-  /** Five cards show at or above this width; three below. @label Wide at @min 320 @max 2000 @step 10 */
-  --zone-wide-width: 1000px;
-  /** The strips take their tall heights at or above this. @label Tall at @min 200 @max 1200 @step 10 */
-  --zone-tall-height: 600px;
+  /** Five cards show at or above this width; three below. Art px. @label Wide at @min 320 @max 2000 @step 10 */
+  --zone-wide-width: 333;
+  /** The strips take their tall heights at or above this. Art px. @label Tall at @min 200 @max 1200 @step 10 */
+  --zone-tall-height: 320;
 
   /* The strips, tall (height >= 600) and short. The plan picks one. */
-  /** The tab strip on a tall screen. @label Tab strip, tall @min 40 @max 120 @step 1 */
-  --zone-tab-strip-tall: 74px;
-  /** The tab strip on a short screen. @label Tab strip, short @min 32 @max 100 @step 1 */
-  --zone-tab-strip-short: 56px;
-  /** The action row on a tall screen. @label Action strip, tall @min 40 @max 120 @step 1 */
-  --zone-action-strip-tall: 66px;
-  /** The action row on a short screen. @label Action strip, short @min 32 @max 100 @step 1 */
-  --zone-action-strip-short: 52px;
-  /** The foot strip on a tall screen. @label Foot strip, tall @min 32 @max 100 @step 1 */
-  --zone-foot-strip-tall: 58px;
-  /** The foot strip on a short screen. @label Foot strip, short @min 24 @max 80 @step 1 */
-  --zone-foot-strip-short: 46px;
-  /** The room a strip keeps above and below its panels. @label Strip inset @min 0 @max 24 @step 1 */
-  --zone-strip-inset: 8px;
-  /** The horizontal margin of a strip. @label Strip margin @min 0 @max 40 @step 1 */
-  --zone-strip-margin: 22px;
-  /** The smallest horizontal margin of a strip. @label Strip margin, least @min 0 @max 24 @step 1 */
-  --zone-strip-margin-min: 8px;
-  /** The gap between items in a strip. @label Strip gap @min 0 @max 40 @step 1 */
-  --zone-strip-gap: 10px;
+  /** The tab strip on a tall screen. Art px. @label Tab strip, tall @min 40 @max 120 @step 1 */
+  --zone-tab-strip-tall: 36;
+  /** The tab strip on a short screen. Art px. @label Tab strip, short @min 32 @max 100 @step 1 */
+  --zone-tab-strip-short: 32;
+  /** The action row on a tall screen. Art px. @label Action strip, tall @min 40 @max 120 @step 1 */
+  --zone-action-strip-tall: 30;
+  /** The action row on a short screen. Art px. @label Action strip, short @min 32 @max 100 @step 1 */
+  --zone-action-strip-short: 26;
+  /** The foot strip on a tall screen. Art px. @label Foot strip, tall @min 32 @max 100 @step 1 */
+  --zone-foot-strip-tall: 24;
+  /** The foot strip on a short screen. Art px. @label Foot strip, short @min 24 @max 80 @step 1 */
+  --zone-foot-strip-short: 22;
+  /** The room a strip keeps above and below its panels. Art px. @label Strip inset @min 0 @max 24 @step 1 */
+  --zone-strip-inset: 4;
+  /** The horizontal margin of a strip. Art px. @label Strip margin @min 0 @max 40 @step 1 */
+  --zone-strip-margin: 11;
+  /** The smallest horizontal margin of a strip. Art px. @label Strip margin, least @min 0 @max 24 @step 1 */
+  --zone-strip-margin-min: 4;
+  /** The gap between items in a strip. Art px. @label Strip gap @min 0 @max 40 @step 1 */
+  --zone-strip-gap: 5;
 
   /* The card band. */
   /** Width over height of a card. @label Card ratio @min 0.5 @max 1.2 @step 0.01 */
   --zone-card-ratio: 0.78;
-  /** The focused card never grows past this. @label Focused card, max @min 120 @max 800 @step 1 */
-  --zone-card-focus-max: 400px;
+  /** The focused card never grows past this. Art px. @label Focused card, max @min 120 @max 800 @step 1 */
+  --zone-card-focus-max: 133;
   /** A side card's height as a share of the focused card's. @label Side card scale @min 0.3 @max 1 @step 0.01 */
   --zone-card-side-scale: 0.68;
-  /** Room above and below the band for the pink edge and the drop edge. @label Band padding @min 0 @max 60 @step 1 */
-  --zone-band-pad: 26px;
-  /** Horizontal margin either side of the band. @label Band margin @min 0 @max 80 @step 1 */
-  --zone-band-margin: 24px;
-  /** The gap between cards on a wide screen. @label Card gap, wide @min 0 @max 60 @step 1 */
-  --zone-card-gap-wide: 20px;
-  /** The gap between cards on a narrow screen. @label Card gap, narrow @min 0 @max 60 @step 1 */
-  --zone-card-gap-narrow: 14px;
-  /** A cursor triangle's width on a wide screen. @label Triangle, wide @min 8 @max 80 @step 1 */
-  --zone-triangle-wide: 36px;
-  /** A cursor triangle's width on a narrow screen. @label Triangle, narrow @min 8 @max 80 @step 1 */
-  --zone-triangle-narrow: 26px;
+  /** Room above and below the band for the pink edge and the drop edge. Art px. @label Band padding @min 0 @max 60 @step 1 */
+  --zone-band-pad: 13;
+  /** Horizontal margin either side of the band. Art px. @label Band margin @min 0 @max 80 @step 1 */
+  --zone-band-margin: 12;
+  /** The gap between cards on a wide screen. Art px. @label Card gap, wide @min 0 @max 60 @step 1 */
+  --zone-card-gap-wide: 10;
+  /** The gap between cards on a narrow screen. Art px. @label Card gap, narrow @min 0 @max 60 @step 1 */
+  --zone-card-gap-narrow: 7;
+  /** A cursor triangle's width on a wide screen. Art px. @label Triangle, wide @min 8 @max 80 @step 1 */
+  --zone-triangle-wide: 14;
+  /** A cursor triangle's width on a narrow screen. Art px. @label Triangle, narrow @min 8 @max 80 @step 1 */
+  --zone-triangle-narrow: 12;
   /** Height over width of a cursor triangle. @label Triangle aspect @min 0.5 @max 2 @step 0.05 */
   --zone-triangle-aspect: 1.1;
-  /** The room between a triangle and the card it points at. @label Triangle gap @min 0 @max 40 @step 1 */
-  --zone-triangle-gap: 16px;
-  /** A triangle's rest distance from its target. @label Nudge, near @min 0 @max 24 @step 1 */
-  --zone-nudge-near: 6px;
-  /** A triangle's far distance when it nudges. @label Nudge, far @min 0 @max 32 @step 1 */
-  --zone-nudge-far: 12px;
-  /** The focused card's padding. @label Card padding @min 0 @max 16 @step 1 */
-  --zone-card-pad: 6px;
-  /** A side card's padding. @label Side card padding @min 0 @max 16 @step 1 */
-  --zone-card-pad-side: 5px;
+  /** The room between a triangle and the card it points at. Art px. @label Triangle gap @min 0 @max 40 @step 1 */
+  --zone-triangle-gap: 8;
+  /** A triangle's rest distance from its target. Art px. @label Nudge, near @min 0 @max 24 @step 1 */
+  --zone-nudge-near: 2;
+  /** A triangle's far distance when it nudges. Art px. @label Nudge, far @min 0 @max 32 @step 1 */
+  --zone-nudge-far: 4;
+  /** The focused card's padding. Art px. @label Card padding @min 0 @max 16 @step 1 */
+  --zone-card-pad: 3;
+  /** A side card's padding. Art px. @label Side card padding @min 0 @max 16 @step 1 */
+  --zone-card-pad-side: 2;
 
   /* ---- The type scale ---- */
-  /** The one face. @label Face */
-  --zone-font: "Zone Anton", "Anton", sans-serif;
-  /** Tracking for every word. @label Tracking @min 0 @max 0.1 @step 0.005 */
-  --zone-tracking: 0.02em;
-  /** A tab's caps on a wide screen. @label Tab type, wide @min 10 @max 48 @step 1 */
-  --zone-type-tab-wide: 24px;
-  /** A tab's caps on a narrow screen. @label Tab type, narrow @min 10 @max 48 @step 1 */
-  --zone-type-tab-narrow: 17px;
-  /** The banner's caps as a multiple of the tab's. @label Banner scale @min 1 @max 2 @step 0.05 */
-  --zone-type-banner-scale: 1.3;
-  /** A keycap hint on a wide screen. @label Hint type, wide @min 8 @max 40 @step 1 */
-  --zone-type-hint-wide: 20px;
-  /** A keycap hint on a narrow screen. @label Hint type, narrow @min 8 @max 40 @step 1 */
-  --zone-type-hint-narrow: 15px;
-  /** An action button's caps on a tall screen. @label Button type, tall @min 10 @max 48 @step 1 */
-  --zone-type-button-tall: 24px;
-  /** An action button's caps on a short screen. @label Button type, short @min 10 @max 48 @step 1 */
-  --zone-type-button-short: 19px;
-  /** The foot's caps on a tall screen. @label Foot type, tall @min 10 @max 48 @step 1 */
-  --zone-type-foot-tall: 28px;
-  /** The foot's caps on a short screen. @label Foot type, short @min 10 @max 48 @step 1 */
-  --zone-type-foot-short: 22px;
+  /** Zone's own words: Zone Caps, then Jersey 10, then the system's sans. @label Face */
+  --zone-font: "Zone Caps", "Zone Jersey 10", sans-serif;
+  /** Korri's facts and sentences, in their own case: Jersey 10, then the system's sans. @label Fact face */
+  --zone-font-fact: "Zone Jersey 10", sans-serif;
+  /** Tracking for every word: none, since each glyph carries its own 1-px gap and tracking would leave the art grid. @label Tracking @min 0 @max 0.1 @step 0.005 */
+  --zone-tracking: 0;
+  /** caps-1: rows, tabs, tags, hints, buttons. The em in art px; Zone Caps' em is its 10-px cap. @label Caps 1 @min 10 @max 10 @step 10 */
+  --zone-caps-1: 10;
+  /** caps-2: the banner, a dialog's headline and buttons, PAUSED's rows, the focused card's title, group headers. @label Caps 2 @min 20 @max 20 @step 10 */
+  --zone-caps-2: 20;
+  /** caps-3: the title card's name, PAUSED, the tally's heading. @label Caps 3 @min 30 @max 30 @step 10 */
+  --zone-caps-3: 30;
+  /** A fact's font-size in art px: Jersey 10 draws one pixel per 75 units of a 1400-unit em, so 18.6667 art px puts one of its pixels on one art pixel (cap 10, x-height 8). @label Fact size @min 18.6667 @max 18.6667 @step 18.6667 */
+  --zone-fact: 18.6667;
+  /** A tab's caps on a wide screen. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Tab type, wide @min 10 @max 30 @step 10 */
+  --zone-type-tab-wide: 10;
+  /** A tab's caps on a narrow screen. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Tab type, narrow @min 10 @max 30 @step 10 */
+  --zone-type-tab-narrow: 10;
+  /** The banner's caps as a multiple of the tab's: caps-2 over caps-1 tabs. Whole numbers only, so the banner stays on the art grid. @label Banner scale @min 1 @max 3 @step 1 */
+  --zone-type-banner-scale: 2;
+  /** A keycap hint on a wide screen. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Hint type, wide @min 10 @max 30 @step 10 */
+  --zone-type-hint-wide: 10;
+  /** A keycap hint on a narrow screen. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Hint type, narrow @min 10 @max 30 @step 10 */
+  --zone-type-hint-narrow: 10;
+  /** An action button's caps on a tall screen. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Button type, tall @min 10 @max 30 @step 10 */
+  --zone-type-button-tall: 10;
+  /** An action button's caps on a short screen. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Button type, short @min 10 @max 30 @step 10 */
+  --zone-type-button-short: 10;
+  /** The foot's caps on a tall screen. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Foot type, tall @min 10 @max 30 @step 10 */
+  --zone-type-foot-tall: 10;
+  /** The foot's caps on a short screen. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Foot type, short @min 10 @max 30 @step 10 */
+  --zone-type-foot-short: 10;
   /** The focused card's title as a share of its width. @label Card title share @min 0.05 @max 0.3 @step 0.005 */
   --zone-type-card-share: 0.125;
   /** A side card's title as a share of its width. @label Side title share @min 0.05 @max 0.3 @step 0.005 */
@@ -268,8 +301,8 @@
   --zone-well-stripe-angle: -28deg;
   /** How much a greyed well shows through. @label Greyed well @min 0 @max 1 @step 0.05 */
   --zone-well-greyed-opacity: 0.45;
-  /** The gutter between a tag's slant and its caps. @label Tag padding @min 0 @max 16 @step 1 */
-  --zone-tag-pad: 6px;
+  /** The gutter between a tag's slant and its caps. Art px. @label Tag padding @min 0 @max 16 @step 1 */
+  --zone-tag-pad: 3;
   /** A tag's caps as a share of the card's title size. @label Tag type share @min 0.3 @max 1 @step 0.01 */
   --zone-tag-type-share: 0.58;
   /** A tag row's height as a multiple of its caps. @label Tag row height @min 1 @max 2.5 @step 0.05 */
@@ -284,8 +317,8 @@
   --zone-type-save-share: 0.2;
   /** A save card's cursor triangle as a share of its width. @label Save triangle share @min 0.05 @max 0.4 @step 0.01 */
   --zone-save-triangle-share: 0.14;
-  /** The caps line of an empty band. @label Empty band type @min 10 @max 64 @step 1 */
-  --zone-type-empty: 28px;
+  /** The caps line of an empty band. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Empty band type @min 10 @max 30 @step 10 */
+  --zone-type-empty: 20;
   /** @label Saved tag */
   --zone-tag-saved: var(--zone-mint);
   /** @label Open tag */
@@ -315,8 +348,8 @@
 .zone-theme {
   /** A panel's slant as a multiple of its type size: Mania's panels lean about as far as a capital is tall, whatever their height. Never less than the slant token. @label Lean @min 0 @max 2 @step 0.05 */
   --zone-lean: 1;
-  /** The room a panel keeps beside its words, beyond the slant. @label Panel padding @min 0 @max 32 @step 1 */
-  --zone-panel-pad: 10px;
+  /** The room a panel keeps beside its words, beyond the slant. Art px. @label Panel padding @min 0 @max 32 @step 1 */
+  --zone-panel-pad: 5;
   /** A keycap's diameter as a multiple of its hint type. @label Keycap size @min 1 @max 2.5 @step 0.05 */
   --zone-keycap-scale: 1.5;
   /** The tail a keycap's word tab trails past the word, in multiples of its type. @label Keycap tail @min 0 @max 4 @step 0.1 */
@@ -353,16 +386,16 @@
   --zone-build-tracking: 0.04em;
   /** The badge may take this much of the foot before its SSID truncates. @label Badge share @min 0.1 @max 1 @step 0.02 */
   --zone-badge-share: 46%;
-  /** One signal bar's width. @label Bar width @min 1 @max 12 @step 1 */
-  --zone-bar-width: 4px;
-  /** The gap between signal bars. @label Bar gap @min 0 @max 8 @step 1 */
-  --zone-bar-gap: 2px;
-  /** The tallest signal bar. @label Bars height @min 4 @max 40 @step 1 */
-  --zone-bars-height: 13px;
+  /** One signal bar's width. Art px. @label Bar width @min 1 @max 12 @step 1 */
+  --zone-bar-width: 2;
+  /** The gap between signal bars. Art px. @label Bar gap @min 0 @max 8 @step 1 */
+  --zone-bar-gap: 1;
+  /** The tallest signal bar. Art px. @label Bars height @min 4 @max 40 @step 1 */
+  --zone-bars-height: 8;
   /** How much an unlit signal bar shows. @label Unlit bar opacity @min 0 @max 1 @step 0.05 */
   --zone-bar-off-opacity: 0.3;
-  /** The foot's panels keep this much room above and below. @label Foot inset @min 0 @max 24 @step 1 */
-  --zone-foot-inset: 8px;
+  /** The foot's panels keep this much room above and below. Art px. @label Foot inset @min 0 @max 24 @step 1 */
+  --zone-foot-inset: 4;
   /** @label X keycap ink */
   --zone-key-x-ink: var(--zone-blue);
   /** @label Y keycap ink */
@@ -385,90 +418,90 @@
  * dialogs worker; the lines above are untouched. */
 .zone-theme {
   /* Option rows. */
-  /** A row's caps. @label Row type @min 10 @max 40 @step 1 */
-  --zone-type-row: 22px;
-  /** The smallest a row's caps shrink to in a narrow body. @label Row type, least @min 8 @max 30 @step 1 */
-  --zone-type-row-min: 15px;
-  /** A row parallelogram's least height. @label Row height @min 24 @max 80 @step 1 */
-  --zone-row-height: 42px;
-  /** The room between a row's label and its value. @label Row gap @min 0 @max 40 @step 1 */
-  --zone-row-gap: 10px;
-  /** The room between rows. @label Row space @min 0 @max 24 @step 1 */
-  --zone-row-space: 6px;
+  /** A row's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Row type @min 10 @max 30 @step 10 */
+  --zone-type-row: 10;
+  /** The smallest a row's caps shrink to in a narrow body. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Row type, least @min 10 @max 30 @step 10 */
+  --zone-type-row-min: 10;
+  /** A row parallelogram's least height. Art px. @label Row height @min 24 @max 80 @step 1 */
+  --zone-row-height: 22;
+  /** The room between a row's label and its value. Art px. @label Row gap @min 0 @max 40 @step 1 */
+  --zone-row-gap: 5;
+  /** The room between rows. Art px. @label Row space @min 0 @max 24 @step 1 */
+  --zone-row-space: 3;
   /** The share of a row the label takes. @label Label share @min 0.3 @max 0.8 @step 0.01 */
   --zone-row-label-share: 0.56;
-  /** A description or a problem line under a row. @label Note type @min 8 @max 30 @step 1 */
-  --zone-type-note: 15px;
-  /** A group title's caps. @label Group title type @min 12 @max 60 @step 1 */
-  --zone-type-group-title: 30px;
-  /** The room between a group's title and its first row. @label Group title space @min 0 @max 40 @step 1 */
-  --zone-group-title-space: 10px;
-  /** The triangle that flanks a choice value. @label Choice triangle @min 6 @max 40 @step 1 */
-  --zone-choice-triangle: 16px;
-  /** A keycap hint beside a secret value. @label Hint keycap @min 10 @max 40 @step 1 */
-  --zone-hint-keycap: 20px;
+  /** A description or a problem line under a row. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Note type @min 10 @max 30 @step 10 */
+  --zone-type-note: 10;
+  /** A group title's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Group title type @min 10 @max 30 @step 10 */
+  --zone-type-group-title: 20;
+  /** The room between a group's title and its first row. Art px. @label Group title space @min 0 @max 40 @step 1 */
+  --zone-group-title-space: 5;
+  /** The triangle that flanks a choice value. Art px. @label Choice triangle @min 6 @max 40 @step 1 */
+  --zone-choice-triangle: 8;
+  /** A keycap hint beside a secret value. Art px. @label Hint keycap @min 10 @max 40 @step 1 */
+  --zone-hint-keycap: 10;
 
   /* The dialog. */
-  /** The headline's caps. @label Dialog headline @min 14 @max 80 @step 1 */
-  --zone-type-dialog-headline: 40px;
-  /** A body line's caps. @label Dialog line @min 10 @max 40 @step 1 */
-  --zone-type-dialog-line: 22px;
-  /** A dialog button's caps. @label Dialog button @min 12 @max 60 @step 1 */
-  --zone-type-dialog-button: 34px;
-  /** The room inside the dialog panel. @label Dialog padding @min 0 @max 80 @step 1 */
-  --zone-dialog-pad: 28px;
+  /** The headline's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Dialog headline @min 10 @max 30 @step 10 */
+  --zone-type-dialog-headline: 20;
+  /** A body line's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Dialog line @min 10 @max 30 @step 10 */
+  --zone-type-dialog-line: 10;
+  /** A dialog button's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Dialog button @min 10 @max 30 @step 10 */
+  --zone-type-dialog-button: 20;
+  /** The room inside the dialog panel. Art px. @label Dialog padding @min 0 @max 80 @step 1 */
+  --zone-dialog-pad: 14;
   /** How far across the panel each black wedge reaches. @label Wedge reach @min 0 @max 50 @step 1 */
   --zone-dialog-wedge-reach: 26%;
   /** How far down the panel each black wedge reaches. @label Wedge depth @min 0 @max 100 @step 1 */
   --zone-dialog-wedge-depth: 72%;
-  /** The room between the two buttons. @label Dialog button gap @min 0 @max 120 @step 1 */
-  --zone-dialog-button-gap: 48px;
-  /** A dialog button's least width. @label Dialog button width @min 60 @max 400 @step 1 */
-  --zone-dialog-button-width: 180px;
+  /** The room between the two buttons. Art px. @label Dialog button gap @min 0 @max 120 @step 1 */
+  --zone-dialog-button-gap: 24;
+  /** A dialog button's least width. Art px. @label Dialog button width @min 60 @max 400 @step 1 */
+  --zone-dialog-button-width: 90;
 
   /* The busy strip. */
-  /** The kicker's caps. @label Kicker type @min 12 @max 60 @step 1 */
-  --zone-type-kicker: 26px;
-  /** The detail's caps under the kicker. @label Detail type @min 8 @max 40 @step 1 */
-  --zone-type-detail: 16px;
-  /** The strip's least height. @label Busy strip height @min 32 @max 140 @step 1 */
-  --zone-busy-height: 60px;
+  /** The kicker's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Kicker type @min 10 @max 30 @step 10 */
+  --zone-type-kicker: 20;
+  /** The detail's caps under the kicker. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Detail type @min 10 @max 30 @step 10 */
+  --zone-type-detail: 10;
+  /** The strip's least height. Art px. @label Busy strip height @min 32 @max 140 @step 1 */
+  --zone-busy-height: 30;
 
   /* The keyboard. */
-  /** A key's caps. @label Key type @min 10 @max 40 @step 1 */
-  --zone-type-key: 22px;
-  /** A key's height. @label Key height @min 24 @max 80 @step 1 */
-  --zone-key-height: 40px;
-  /** The room between keys. @label Key gap @min 0 @max 20 @step 1 */
-  --zone-key-gap: 6px;
-  /** A key never gets narrower than this; a row wraps instead. @label Key width, least @min 16 @max 80 @step 1 */
-  --zone-key-min: 36px;
-  /** The slant of the keyboard panel itself. @label Keyboard slant @min 0 @max 80 @step 1 */
-  --zone-keyboard-slant: 28px;
-  /** The typed slab's caps. @label Slab type @min 12 @max 48 @step 1 */
-  --zone-type-slab: 26px;
-  /** The typed slab's height. @label Slab height @min 24 @max 100 @step 1 */
-  --zone-slab-height: 48px;
-  /** The red caret's width. @label Caret @min 4 @max 30 @step 1 */
-  --zone-caret: 12px;
-  /** The room inside the keyboard panel. @label Keyboard padding @min 0 @max 60 @step 1 */
-  --zone-keyboard-pad: 14px;
+  /** A key's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Key type @min 10 @max 30 @step 10 */
+  --zone-type-key: 10;
+  /** A key's height. Art px. @label Key height @min 24 @max 80 @step 1 */
+  --zone-key-height: 20;
+  /** The room between keys. Art px. @label Key gap @min 0 @max 20 @step 1 */
+  --zone-key-gap: 3;
+  /** A key never gets narrower than this; a row wraps instead. Art px. @label Key width, least @min 16 @max 80 @step 1 */
+  --zone-key-min: 18;
+  /** The slant of the keyboard panel itself. Art px. @label Keyboard slant @min 0 @max 80 @step 1 */
+  --zone-keyboard-slant: 14;
+  /** The typed slab's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Slab type @min 10 @max 30 @step 10 */
+  --zone-type-slab: 10;
+  /** The typed slab's height. Art px. @label Slab height @min 24 @max 100 @step 1 */
+  --zone-slab-height: 24;
+  /** The red caret's width. Art px. @label Caret @min 4 @max 30 @step 1 */
+  --zone-caret: 6;
+  /** The room inside the keyboard panel. Art px. @label Keyboard padding @min 0 @max 60 @step 1 */
+  --zone-keyboard-pad: 7;
   /** One phase of a blink. @label Blink @min 100 @max 2000 @step 50 */
   --zone-blink-time: 500ms;
 
   /* The QR well. */
-  /** The room between the well's edge and the code's paper. @label QR well padding @min 0 @max 40 @step 1 */
-  --zone-qr-pad: 10px;
+  /** The room between the well's edge and the code's paper. Art px. @label QR well padding @min 0 @max 40 @step 1 */
+  --zone-qr-pad: 5;
 
   /* The title card. */
-  /** The title's caps. @label Title type @min 20 @max 160 @step 1 */
-  --zone-type-title: 96px;
-  /** The smallest the title shrinks to. @label Title type, least @min 12 @max 80 @step 1 */
-  --zone-type-title-min: 24px;
-  /** The ACT word in the circle. @label Act word type @min 8 @max 40 @step 1 */
-  --zone-type-act-word: 16px;
-  /** The act line in the circle. @label Act type @min 12 @max 80 @step 1 */
-  --zone-type-act: 48px;
+  /** The title's caps. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Title type @min 10 @max 30 @step 10 */
+  --zone-type-title: 30;
+  /** The smallest the title shrinks to. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Title type, least @min 10 @max 30 @step 10 */
+  --zone-type-title-min: 10;
+  /** The ACT word in the circle. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Act word type @min 10 @max 30 @step 10 */
+  --zone-type-act-word: 10;
+  /** The act line in the circle. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Act type @min 10 @max 30 @step 10 */
+  --zone-type-act: 30;
   /** The orange circle, as a share of the card's height. @label Act circle share @min 0.1 @max 0.6 @step 0.01 */
   --zone-act-circle-share: 0.34;
   /** A diagonal band's thickness, as a share of the card's width. @label Title band share @min 0.02 @max 0.4 @step 0.01 */
@@ -525,16 +558,16 @@
   --zone-games-behind-opacity: 0.35;
   /** How much of the stripe-well cards shows while Korri loads. @label Loading cards opacity @min 0 @max 1 @step 0.05 */
   --zone-games-loading-opacity: 0.45;
-  /** The widest GAME OPTS. grows. @label GAME OPTS. width @min 240px @max 1200px @step 10px */
-  --zone-games-opts-max: 640px;
-  /** The widest a dialog over the games page grows. @label Games dialog width @min 240px @max 1200px @step 10px */
-  --zone-games-dialog-max: 620px;
-  /** The widest the find keyboard grows. @label Find keyboard width @min 320px @max 1280px @step 10px */
-  --zone-games-keys-max: 900px;
-  /** The band height the find keyboard always leaves. @label Band kept while finding @min 60px @max 400px @step 10px */
-  --zone-games-band-min: 120px;
-  /** Below this screen height the facts line joins the action strip on a wide screen and the find keyboard rises over the screen (plan: ZONE_SHORT_HEIGHT). @label Short screen below @min 200px @max 720px @step 10px */
-  --zone-short-height: 400px;
+  /** The widest GAME OPTS. grows. Art px. @label GAME OPTS. width @min 240 @max 1200 @step 10 */
+  --zone-games-opts-max: 320;
+  /** The widest a dialog over the games page grows. Art px. @label Games dialog width @min 240 @max 1200 @step 10 */
+  --zone-games-dialog-max: 310;
+  /** The widest the find keyboard grows. Art px. @label Find keyboard width @min 320 @max 1280 @step 10 */
+  --zone-games-keys-max: 450;
+  /** The band height the find keyboard always leaves. Art px. @label Band kept while finding @min 60 @max 400 @step 10 */
+  --zone-games-band-min: 60;
+  /** Below this screen height the facts line joins the action strip on a wide screen and the find keyboard rises over the screen (plan: ZONE_SHORT_HEIGHT). Art px. @label Short screen below @min 200 @max 720 @step 10 */
+  --zone-short-height: 240;
   /** A handheld screen's width, for a part shown inside a bigger device. @label Handheld width @min 320px @max 1280px @step 10px */
   --zone-part-handheld-width: 640px;
   /** A handheld screen's height, likewise. @label Handheld height @min 240px @max 720px @step 10px */
@@ -545,14 +578,14 @@
 /* The OPTIONS and RUN WITH pages. Appended by the options worker; the lines
  * above are untouched. */
 .zone-theme {
-  /** The widest the OPTIONS rows run, centred in the body. @label Options measure @min 320 @max 1600 @step 10 */
-  --zone-options-measure: 960px;
-  /** The room between two OPTIONS groups. @label Options group gap @min 0 @max 60 @step 1 */
-  --zone-options-group-gap: 18px;
-  /** The room over the OPTIONS banner and under it. @label Options head space @min 0 @max 40 @step 1 */
-  --zone-options-head-space: 8px;
-  /** The widest the NO / YES dialog grows over OPTIONS. @label Options dialog width @min 240 @max 1200 @step 10 */
-  --zone-options-dialog-width: 760px;
+  /** The widest the OPTIONS rows run, centred in the body. Art px. @label Options measure @min 320 @max 1600 @step 10 */
+  --zone-options-measure: 480;
+  /** The room between two OPTIONS groups. Art px. @label Options group gap @min 0 @max 60 @step 1 */
+  --zone-options-group-gap: 9;
+  /** The room over the OPTIONS banner and under it. Art px. @label Options head space @min 0 @max 40 @step 1 */
+  --zone-options-head-space: 4;
+  /** The widest the NO / YES dialog grows over OPTIONS. Art px. @label Options dialog width @min 240 @max 1200 @step 10 */
+  --zone-options-dialog-width: 380;
 }
 
 /* ---- savedata ---- */
@@ -575,40 +608,40 @@
   /* The status layer. */
   /** How much a covered page dims. @label Covered page dim @min 0 @max 1 @step 0.05 */
   --zone-layer-dim-opacity: 0.55;
-  /** The busy strip's widest. @label Busy strip width @min 320 @max 1600 @step 10 */
-  --zone-layer-busy-width: 880px;
-  /** The problem dialog's widest. @label Problem dialog width @min 320 @max 1600 @step 10 */
-  --zone-layer-dialog-width: 960px;
+  /** The busy strip's widest. Art px. @label Busy strip width @min 320 @max 1600 @step 10 */
+  --zone-layer-busy-width: 440;
+  /** The problem dialog's widest. Art px. @label Problem dialog width @min 320 @max 1600 @step 10 */
+  --zone-layer-dialog-width: 480;
   /** @label Covered page sheet */
   --zone-layer-dim: var(--zone-black);
 
   /* PAUSED. */
-  /** The red band's least height. @label Paused band, least @min 32 @max 200 @step 1 */
-  --zone-paused-band-min: 56px;
-  /** The red band's greatest height. @label Paused band, most @min 40 @max 300 @step 1 */
-  --zone-paused-band-max: 150px;
+  /** The red band's least height. Art px. @label Paused band, least @min 32 @max 200 @step 1 */
+  --zone-paused-band-min: 28;
+  /** The red band's greatest height. Art px. @label Paused band, most @min 40 @max 300 @step 1 */
+  --zone-paused-band-max: 75;
   /** The band's diagonal cut, as a share of its height. @label Paused band lean @min 0 @max 2 @step 0.05 */
   --zone-paused-band-lean: 1;
   /** The band's width as a share of the page. @label Paused band share @min 0.2 @max 1 @step 0.01 */
   --zone-paused-band-share: 0.58;
-  /** The band's least width. @label Paused band, least width @min 120 @max 800 @step 10 */
-  --zone-paused-band-least: 300px;
-  /** The yellow wedge's least width (all of a page narrower than it). @label Paused wedge, least @min 200 @max 900 @step 10 */
-  --zone-paused-wedge-min: 440px;
+  /** The band's least width. Art px. @label Paused band, least width @min 120 @max 800 @step 10 */
+  --zone-paused-band-least: 150;
+  /** The yellow wedge's least width (all of a page narrower than it). Art px. @label Paused wedge, least @min 200 @max 900 @step 10 */
+  --zone-paused-wedge-min: 220;
   /** The wedge's width as a share of the page. @label Paused wedge share @min 0.3 @max 1 @step 0.01 */
   --zone-paused-wedge-share: 0.56;
   /** The wedge's slanted edge: how far its top starts in, as a share of its width. @label Paused wedge lean @min 0 @max 0.8 @step 0.01 */
   --zone-paused-wedge-lean: 0.34;
   /** How far the rows sit in from the wedge's left, as a share of the slant. @label Paused rows inset @min 0 @max 1 @step 0.05 */
   --zone-paused-list-inset: 0.6;
-  /** A row's caps at most. @label Paused row type @min 14 @max 48 @step 1 */
-  --zone-type-paused-row: 38px;
-  /** The title's caps at most. @label Paused title type @min 20 @max 120 @step 1 */
-  --zone-type-paused-title: 72px;
-  /** The title's caps at least. @label Paused title type, least @min 12 @max 60 @step 1 */
-  --zone-type-paused-title-min: 20px;
-  /** Room between rows. @label Paused row gap @min 0 @max 40 @step 1 */
-  --zone-paused-row-gap: 10px;
+  /** A row's caps at most. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Paused row type @min 10 @max 30 @step 10 */
+  --zone-type-paused-row: 20;
+  /** The title's caps at most. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Paused title type @min 10 @max 30 @step 10 */
+  --zone-type-paused-title: 30;
+  /** The title's caps at least. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Paused title type, least @min 10 @max 30 @step 10 */
+  --zone-type-paused-title-min: 10;
+  /** Room between rows. Art px. @label Paused row gap @min 0 @max 40 @step 1 */
+  --zone-paused-row-gap: 5;
   /** A group label's caps against a row's. @label Paused group label scale @min 0.4 @max 1.2 @step 0.05 */
   --zone-paused-group-scale: 0.75;
   /** The room a label keeps beside its value before the value drops under it. @label Paused label room @min 1em @max 20em @step 0.5 */
@@ -637,16 +670,16 @@
   --zone-paused-note-ink: var(--zone-black);
 
   /* First boot. */
-  /** A controller card's frame. @label Controller card frame @min 0 @max 16 @step 1 */
-  --zone-controller-frame: 6px;
-  /** A controller card's widest. @label Controller card width @min 80 @max 400 @step 1 */
-  --zone-controller-card-max: 220px;
+  /** A controller card's frame. Art px. @label Controller card frame @min 0 @max 16 @step 1 */
+  --zone-controller-frame: 3;
+  /** A controller card's widest. Art px. @label Controller card width @min 80 @max 400 @step 1 */
+  --zone-controller-card-max: 110;
   /** The lean of the waiting card's stripes. @label Controller stripe angle @min -90 @max 90 @step 1 */
   --zone-controller-stripe-angle: 128deg;
-  /** The step strip's widest. @label Step strip width @min 200 @max 1200 @step 10 */
-  --zone-onboarding-steps-width: 620px;
-  /** The room each keycap hint keeps beside the step strip. @label Step strip hint room @min 40 @max 300 @step 1 */
-  --zone-onboarding-hint-room: 128px;
+  /** The step strip's widest. Art px. @label Step strip width @min 200 @max 1200 @step 10 */
+  --zone-onboarding-steps-width: 310;
+  /** The room each keycap hint keeps beside the step strip. Art px. @label Step strip hint room @min 40 @max 300 @step 1 */
+  --zone-onboarding-hint-room: 64;
   /** @label Controller heard frame */
   --zone-controller-heard: var(--zone-red);
 }
@@ -656,22 +689,22 @@
  * and the part frames that prove it. Appended by the polish worker; the
  * lines above are untouched. */
 .zone-theme {
-  /** A tab's caps once a narrow top strip has yielded its gaps (plan: planTopStrip, tight). @label Tab type, least @min 8 @max 30 @step 1 */
-  --zone-type-tab-least: 14px;
-  /** A keycap hint's caps likewise. @label Hint type, least @min 8 @max 30 @step 1 */
-  --zone-type-hint-least: 13px;
-  /** The gap between items in a narrow top strip, and its panels' padding. @label Strip gap, least @min 0 @max 20 @step 1 */
-  --zone-strip-gap-least: 4px;
-  /** The least slant of a panel in a narrow strip; a bigger type still leans by its own size. @label Panel slant, least @min 0 @max 32 @step 1 */
-  --zone-slant-least: 6px;
-  /** A section divider's width on the narrow band (three visible): a hairline spine. @label Section hairline @min 2 @max 24 @step 1 */
-  --zone-section-hairline: 6px;
-  /** The least width the backup's slab keeps beside its QR code. @label Backup slab, least width @min 120px @max 600px @step 10px */
-  --zone-save-slab-least: 220px;
-  /** The widest the backup's slab grows beside its QR code: one line of the secret at the slab type, with room. @label Backup slab, widest @min 240px @max 1200px @step 10px */
-  --zone-save-slab-most: 640px;
-  /** The least height the backup's slab keeps under its QR code. @label Backup slab, least height @min 60px @max 400px @step 10px */
-  --zone-save-slab-least-block: 130px;
+  /** A tab's caps once a narrow top strip has yielded its gaps (plan: planTopStrip, tight). Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Tab type, least @min 10 @max 30 @step 10 */
+  --zone-type-tab-least: 10;
+  /** A keycap hint's caps likewise. Art px of em: 10 is caps-1, 20 caps-2, 30 caps-3. @label Hint type, least @min 10 @max 30 @step 10 */
+  --zone-type-hint-least: 10;
+  /** The gap between items in a narrow top strip, and its panels' padding. Art px. @label Strip gap, least @min 0 @max 20 @step 1 */
+  --zone-strip-gap-least: 2;
+  /** The least slant of a panel in a narrow strip; a bigger type still leans by its own size. Art px. @label Panel slant, least @min 0 @max 32 @step 1 */
+  --zone-slant-least: 3;
+  /** A section divider's width on the narrow band (three visible): a hairline spine. Art px. @label Section hairline @min 2 @max 24 @step 1 */
+  --zone-section-hairline: 3;
+  /** The least width the backup's slab keeps beside its QR code. Art px. @label Backup slab, least width @min 120 @max 600 @step 10 */
+  --zone-save-slab-least: 110;
+  /** The widest the backup's slab grows beside its QR code: one line of the secret at the slab type, with room. Art px. @label Backup slab, widest @min 240 @max 1200 @step 10 */
+  --zone-save-slab-most: 320;
+  /** The least height the backup's slab keeps under its QR code. Art px. @label Backup slab, least height @min 60 @max 400 @step 10 */
+  --zone-save-slab-least-block: 65;
   /** A part frame 300 tall, for a 1280x300 strip inside the 720p device. @label Part frame, strip height @min 120px @max 720px @step 10px */
   --zone-part-strip-height: 300px;
   /** A part frame 480 wide, for the top strip's ladder. @label Part frame, 480 @min 120px @max 1280px @step 10px */
@@ -688,12 +721,12 @@
  * treaty worker; the lines above are untouched. */
 .zone-theme {
   /* The busy strip's meter: SPECIAL STAGE's red slanted bar. */
-  /** The bar's thickness at its largest. @label Meter height @min 4 @max 40 @step 1 */
-  --zone-meter-height: 14px;
-  /** The bar's thickness at its least, on a small page. @label Meter height, least @min 2 @max 30 @step 1 */
-  --zone-meter-height-least: 8px;
-  /** The shortest the bar gets before the sizes drop under it. @label Meter, least length @min 40 @max 400 @step 10 */
-  --zone-meter-least: 120px;
+  /** The bar's thickness at its largest. Art px. @label Meter height @min 4 @max 40 @step 1 */
+  --zone-meter-height: 7;
+  /** The bar's thickness at its least, on a small page. Art px. @label Meter height, least @min 2 @max 30 @step 1 */
+  --zone-meter-height-least: 4;
+  /** The shortest the bar gets before the sizes drop under it. Art px. @label Meter, least length @min 40 @max 400 @step 10 */
+  --zone-meter-least: 60;
   /** Room for the size done, so the figures do not jump as they count (Anton has no tabular figures). @label Meter figures width @min 4 @max 14 @step 0.5 */
   --zone-meter-figures: 8.5ch;
   /** One pass of the moving stripe when Korri knows no end. @label Meter sweep time @min 100 @max 4000 @step 50 */

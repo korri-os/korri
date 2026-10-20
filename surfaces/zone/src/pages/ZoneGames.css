@@ -2,18 +2,18 @@
  * the idle title card lies over all of it. The action strip's height is the
  * plan's answer for the screen's height, like the shell's own strips. */
 .zone-games {
-  --zone-games-act: var(--zone-action-strip-tall);
-  --zone-games-top: var(--zone-tab-strip-tall);
-  --zone-shell-button-type: var(--zone-type-button-tall);
+  --zone-games-act: calc(var(--zone-action-strip-tall) * var(--zone-px));
+  --zone-games-top: calc(var(--zone-tab-strip-tall) * var(--zone-px));
+  --zone-shell-button-type: calc(var(--zone-type-button-tall) * var(--zone-px));
   position: relative;
   width: 100%;
   height: 100%;
 }
 
 .zone-games[data-strips="short"] {
-  --zone-games-act: var(--zone-action-strip-short);
-  --zone-games-top: var(--zone-tab-strip-short);
-  --zone-shell-button-type: var(--zone-type-button-short);
+  --zone-games-act: calc(var(--zone-action-strip-short) * var(--zone-px));
+  --zone-games-top: calc(var(--zone-tab-strip-short) * var(--zone-px));
+  --zone-shell-button-type: calc(var(--zone-type-button-short) * var(--zone-px));
 }
 
 .zone-games-tabs {
@@ -28,8 +28,8 @@
  * so moving right off SAVE DATA lands on it. */
 .zone-games-find {
   position: absolute;
-  top: var(--zone-strip-inset);
-  right: var(--zone-band-margin);
+  top: calc(var(--zone-strip-inset) * var(--zone-px));
+  right: calc(var(--zone-band-margin) * var(--zone-px));
   z-index: 2;
   font-size: var(--zone-shell-button-type);
 }
@@ -70,7 +70,7 @@
   grid-column: 1;
   align-items: center;
   justify-content: flex-start;
-  font-size: var(--zone-type-note);
+  font-size: calc(var(--zone-type-note) * var(--zone-px));
 }
 
 .zone-games-body[data-facts="inline"] .zone-games-actions {
@@ -107,10 +107,10 @@
 /* The FIND: <draft> tag at the band's start, over the first card's corner. */
 .zone-games-find-tag {
   position: absolute;
-  top: var(--zone-strip-inset);
-  left: var(--zone-band-margin);
+  top: calc(var(--zone-strip-inset) * var(--zone-px));
+  left: calc(var(--zone-band-margin) * var(--zone-px));
   z-index: 2;
-  max-width: calc(100% - 2 * var(--zone-band-margin));
+  max-width: calc(100% - 2 * calc(var(--zone-band-margin) * var(--zone-px)));
   font-size: var(--zone-shell-button-type);
 }
 
@@ -121,8 +121,8 @@
   display: flex;
   justify-content: center;
   min-width: 0;
-  padding: 0 var(--zone-band-margin);
-  font-size: clamp(var(--zone-type-note), 2.6cqi, var(--zone-type-row));
+  padding: 0 calc(var(--zone-band-margin) * var(--zone-px));
+  font-size: clamp(calc(var(--zone-type-note) * var(--zone-px)), 2.6cqi, calc(var(--zone-type-row) * var(--zone-px)));
 }
 
 .zone-games-facts[data-empty] {
@@ -163,17 +163,17 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
-  padding: 0 var(--zone-band-margin);
+  padding: 0 calc(var(--zone-band-margin) * var(--zone-px));
 }
 
 /* The keyboard rises from the foot over the facts and the actions. */
 .zone-games-keys {
   display: flex;
   justify-self: center;
-  width: min(100%, var(--zone-games-keys-max));
+  width: min(100%, calc(var(--zone-games-keys-max) * var(--zone-px)));
   min-height: 0;
-  max-height: calc(100cqh - var(--zone-games-band-min));
-  padding: 0 var(--zone-band-margin) var(--zone-strip-inset);
+  max-height: calc(100cqh - calc(var(--zone-games-band-min) * var(--zone-px)));
+  padding: 0 calc(var(--zone-band-margin) * var(--zone-px)) calc(var(--zone-strip-inset) * var(--zone-px));
 }
 
 /* A screen too short for the keys inside the body: the keyboard rises over
@@ -193,12 +193,12 @@
  * share of the width; the rows scroll inside when they do not fit. */
 .zone-games-opts {
   position: absolute;
-  inset: var(--zone-strip-inset) var(--zone-band-margin) 0;
+  inset: calc(var(--zone-strip-inset) * var(--zone-px)) calc(var(--zone-band-margin) * var(--zone-px)) 0;
   z-index: 3;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   justify-items: center;
-  row-gap: var(--zone-strip-inset);
+  row-gap: calc(var(--zone-strip-inset) * var(--zone-px));
   pointer-events: none;
 }
 
@@ -208,7 +208,7 @@
 
 .zone-games-opts-rows {
   display: flex;
-  width: min(100%, var(--zone-games-opts-max));
+  width: min(100%, calc(var(--zone-games-opts-max) * var(--zone-px)));
   min-height: 0;
   pointer-events: auto;
 }
@@ -223,13 +223,13 @@
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   place-items: center;
-  padding: var(--zone-strip-inset) var(--zone-band-margin);
+  padding: calc(var(--zone-strip-inset) * var(--zone-px)) calc(var(--zone-band-margin) * var(--zone-px));
   pointer-events: none;
 }
 
 .zone-games-dialog {
   display: flex;
-  width: min(100%, var(--zone-games-dialog-max));
+  width: min(100%, calc(var(--zone-games-dialog-max) * var(--zone-px)));
   max-height: 100%;
   min-height: 0;
   pointer-events: auto;
@@ -240,7 +240,7 @@
   display: grid;
   place-items: center;
   height: 100%;
-  font-size: var(--zone-type-group-title);
+  font-size: calc(var(--zone-type-group-title) * var(--zone-px));
 }
 
 /* Idle: the title card over the whole screen. */

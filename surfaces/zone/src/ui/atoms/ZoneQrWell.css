@@ -8,8 +8,8 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  padding: var(--zone-qr-pad);
-  border: var(--zone-well-edge) solid var(--zone-well-edge-colour);
+  padding: calc(var(--zone-qr-pad) * var(--zone-px));
+  border: calc(var(--zone-well-edge) * var(--zone-px)) solid var(--zone-well-edge-colour);
   background: var(--zone-qr-well);
 }
 

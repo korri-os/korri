@@ -2,7 +2,7 @@
  * focused height when the card stands alone. The width is the save card's
  * own ratio, taller than a zone card. */
 .zone-save-card {
-  --zone-save-card-height: var(--zone-card-h, min(var(--zone-card-focus-max), calc(100cqh - 2 * var(--zone-band-pad))));
+  --zone-save-card-height: var(--zone-card-h, min(calc(var(--zone-card-focus-max) * var(--zone-px)), calc(100cqh - 2 * calc(var(--zone-band-pad) * var(--zone-px)))));
   --zone-save-card-width: calc(var(--zone-save-card-height) * var(--zone-save-card-ratio));
   --zone-save-type: calc(var(--zone-save-card-width) * var(--zone-type-save-share));
   --zone-save-tri: calc(var(--zone-save-card-width) * var(--zone-save-triangle-share));
@@ -13,9 +13,9 @@
   flex-direction: column;
   width: var(--zone-save-card-width);
   height: var(--zone-save-card-height);
-  padding: var(--zone-card-pad);
+  padding: calc(var(--zone-card-pad) * var(--zone-px));
   background: var(--zone-panel);
-  box-shadow: var(--zone-drop-edge) var(--zone-drop-edge) 0 var(--zone-panel-edge);
+  box-shadow: calc(var(--zone-drop-edge) * var(--zone-px)) calc(var(--zone-drop-edge) * var(--zone-px)) 0 var(--zone-panel-edge);
   text-align: center;
   transition: box-shadow var(--zone-lift-time) linear;
 }
@@ -23,8 +23,8 @@
 .zone-save-card[data-focused="true"] {
   z-index: 1;
   box-shadow:
-    0 0 0 var(--zone-focus-edge) var(--zone-focus),
-    var(--zone-drop-edge-focus) var(--zone-drop-edge-focus) 0 var(--zone-panel-edge);
+    0 0 0 calc(var(--zone-focus-edge) * var(--zone-px)) var(--zone-focus),
+    calc(var(--zone-drop-edge-focus) * var(--zone-px)) calc(var(--zone-drop-edge-focus) * var(--zone-px)) 0 var(--zone-panel-edge);
 }
 
 /* The NEW-style header: a mint panel with a yellow stripe above the white
@@ -36,7 +36,7 @@
   flex: 0 0 auto;
   place-items: center;
   height: calc(var(--zone-save-card-height) * var(--zone-save-header-share));
-  margin-bottom: var(--zone-card-pad);
+  margin-bottom: calc(var(--zone-card-pad) * var(--zone-px));
   overflow: hidden;
   background: var(--zone-save-header);
 }
@@ -73,7 +73,7 @@
   position: relative;
   display: block;
   width: 100%;
-  padding: 0.08em var(--zone-tag-pad);
+  padding: 0.08em calc(var(--zone-tag-pad) * var(--zone-px));
   overflow: hidden;
   background: var(--zone-save-header-band);
   color: var(--zone-save-header-ink);
@@ -110,12 +110,12 @@
 }
 
 .zone-save-card-tri[data-side="up"] {
-  top: var(--zone-card-pad);
+  top: calc(var(--zone-card-pad) * var(--zone-px));
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
 
 .zone-save-card-tri[data-side="down"] {
-  bottom: var(--zone-card-pad);
+  bottom: calc(var(--zone-card-pad) * var(--zone-px));
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
@@ -126,7 +126,7 @@
   padding: 0 0.3em;
   font-size: min(14cqw, 30cqh);
   line-height: 1.05;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 
 /* A key is a fact Korri publishes: it keeps its own case. */
@@ -139,5 +139,5 @@
   display: flex;
   flex: 0 0 auto;
   justify-content: flex-end;
-  margin-top: var(--zone-card-pad);
+  margin-top: calc(var(--zone-card-pad) * var(--zone-px));
 }

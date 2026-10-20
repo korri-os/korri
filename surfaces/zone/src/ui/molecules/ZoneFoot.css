@@ -2,9 +2,9 @@
  * for its readouts scales its type by the fit its hook sets (--zone-fit). Inside the shell the
  * shell's values win; alone, or when a part pins them, the tokens. */
 .zone-foot {
-  --zone-foot-height: var(--zone-shell-foot, var(--zone-foot-strip-tall));
-  --zone-foot-type: var(--zone-shell-foot-type, var(--zone-type-foot-tall));
-  --zone-foot-margin: var(--zone-shell-margin, var(--zone-strip-margin));
+  --zone-foot-height: var(--zone-shell-foot, calc(var(--zone-foot-strip-tall) * var(--zone-px)));
+  --zone-foot-type: var(--zone-shell-foot-type, calc(var(--zone-type-foot-tall) * var(--zone-px)));
+  --zone-foot-margin: var(--zone-shell-margin, calc(var(--zone-strip-margin) * var(--zone-px)));
   --zone-foot-fit: var(--zone-fit, 1);
   position: absolute;
   right: 0;
@@ -12,21 +12,21 @@
   left: 0;
   display: flex;
   align-items: stretch;
-  gap: clamp(var(--zone-strip-margin-min), 1.6cqw, var(--zone-strip-gap));
+  gap: clamp(calc(var(--zone-strip-margin-min) * var(--zone-px)), 1.6cqw, calc(var(--zone-strip-gap) * var(--zone-px)));
   height: var(--zone-foot-height);
-  padding: var(--zone-foot-inset) var(--zone-foot-margin);
+  padding: calc(var(--zone-foot-inset) * var(--zone-px)) var(--zone-foot-margin);
   font-size: calc(var(--zone-foot-type) * var(--zone-foot-fit));
   line-height: 1;
 }
 
 .zone-foot[data-strips="tall"] {
-  --zone-foot-height: var(--zone-foot-strip-tall);
-  --zone-foot-type: var(--zone-type-foot-tall);
+  --zone-foot-height: calc(var(--zone-foot-strip-tall) * var(--zone-px));
+  --zone-foot-type: calc(var(--zone-type-foot-tall) * var(--zone-px));
 }
 
 .zone-foot[data-strips="short"] {
-  --zone-foot-height: var(--zone-foot-strip-short);
-  --zone-foot-type: var(--zone-type-foot-short);
+  --zone-foot-height: calc(var(--zone-foot-strip-short) * var(--zone-px));
+  --zone-foot-type: calc(var(--zone-type-foot-short) * var(--zone-px));
 }
 
 /* One row: timer, device, the room between, the badge, the build. The room
@@ -45,10 +45,10 @@
 }
 
 .zone-foot-timer-label {
-  margin-right: var(--zone-strip-gap);
+  margin-right: calc(var(--zone-strip-gap) * var(--zone-px));
   color: var(--zone-timer-label);
   font-size: calc(var(--zone-type-timer-label-scale) * 1em);
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-outline-colour);
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-outline-colour);
 }
 
 .zone-foot-timer-digits {

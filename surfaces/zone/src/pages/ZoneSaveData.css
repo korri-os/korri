@@ -3,8 +3,8 @@
  * what is left. The active tab names the page, so the body has no banner.
  * A step of a flow stands over all of it. */
 .zone-save-data {
-  --zone-save-data-margin: clamp(var(--zone-row-gap), 2cqw, var(--zone-band-margin));
-  --zone-save-data-space: clamp(var(--zone-row-space), 1.6cqh, var(--zone-row-gap));
+  --zone-save-data-margin: clamp(calc(var(--zone-row-gap) * var(--zone-px)), 2cqw, calc(var(--zone-band-margin) * var(--zone-px)));
+  --zone-save-data-space: clamp(calc(var(--zone-row-space) * var(--zone-px)), 1.6cqh, calc(var(--zone-row-gap) * var(--zone-px)));
   position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr);
@@ -75,7 +75,7 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
-  min-height: var(--zone-action-strip-short);
+  min-height: calc(var(--zone-action-strip-short) * var(--zone-px));
   padding: 0 var(--zone-save-data-margin) var(--zone-save-data-space);
 }
 
@@ -86,15 +86,15 @@
 .zone-save-data-backup {
   --zone-save-backup-beside: min(
     calc(100cqh - var(--zone-save-data-space)),
-    calc(100cqw - 2 * var(--zone-save-data-margin) - var(--zone-save-data-space) - var(--zone-save-slab-least))
+    calc(100cqw - 2 * var(--zone-save-data-margin) - var(--zone-save-data-space) - calc(var(--zone-save-slab-least) * var(--zone-px)))
   );
   --zone-save-backup-under: min(
     calc(100cqw - 2 * var(--zone-save-data-margin)),
-    calc(100cqh - 2 * var(--zone-save-data-space) - var(--zone-save-slab-least-block))
+    calc(100cqh - 2 * var(--zone-save-data-space) - calc(var(--zone-save-slab-least-block) * var(--zone-px)))
   );
   display: grid;
   grid-template-rows: minmax(0, 1fr);
-  grid-template-columns: var(--zone-save-backup-beside) minmax(0, var(--zone-save-slab-most));
+  grid-template-columns: var(--zone-save-backup-beside) minmax(0, calc(var(--zone-save-slab-most) * var(--zone-px)));
   justify-content: center;
   gap: var(--zone-save-data-space);
   min-height: 0;
@@ -112,7 +112,7 @@
 /* The square is all code: the well keeps only a hairline of black round
  * the white paper, whose quiet zone is the code's own. */
 .zone-save-data-qr-square {
-  --zone-qr-pad: var(--zone-hairline);
+  --zone-qr-pad: calc(var(--zone-hairline) * var(--zone-px));
   display: block;
   width: var(--zone-save-backup-beside);
   height: var(--zone-save-backup-beside);

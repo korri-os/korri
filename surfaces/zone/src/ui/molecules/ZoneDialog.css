@@ -1,14 +1,14 @@
 /* The blue panel. Headline, body, buttons: the body is the one row that
  * gives way, so the buttons stay on screen however long Korri's reason is. */
 .zone-dialog {
-  --zone-dialog-type-headline: clamp(var(--zone-type-dialog-line), 4cqi, var(--zone-type-dialog-headline));
-  --zone-dialog-type-line: clamp(var(--zone-type-note), 2.6cqi, var(--zone-type-dialog-line));
-  --zone-dialog-type-button: clamp(var(--zone-type-row), 3.6cqi, var(--zone-type-dialog-button));
-  --zone-dialog-space: clamp(var(--zone-row-space), 5cqb, var(--zone-dialog-pad));
+  --zone-dialog-type-headline: clamp(calc(var(--zone-type-dialog-line) * var(--zone-px)), 4cqi, calc(var(--zone-type-dialog-headline) * var(--zone-px)));
+  --zone-dialog-type-line: clamp(calc(var(--zone-type-note) * var(--zone-px)), 2.6cqi, calc(var(--zone-type-dialog-line) * var(--zone-px)));
+  --zone-dialog-type-button: clamp(calc(var(--zone-type-row) * var(--zone-px)), 3.6cqi, calc(var(--zone-type-dialog-button) * var(--zone-px)));
+  --zone-dialog-space: clamp(calc(var(--zone-row-space) * var(--zone-px)), 5cqb, calc(var(--zone-dialog-pad) * var(--zone-px)));
   --zone-dialog-shape: polygon(
-    var(--zone-slant) 0,
+    calc(var(--zone-slant) * var(--zone-px)) 0,
     100% 0,
-    calc(100% - var(--zone-slant)) 100%,
+    calc(100% - calc(var(--zone-slant) * var(--zone-px))) 100%,
     0 100%
   );
   position: relative;
@@ -18,7 +18,7 @@
   row-gap: var(--zone-dialog-space);
   width: 100%;
   max-height: 100%;
-  padding: var(--zone-dialog-space) calc(var(--zone-dialog-pad) + var(--zone-slant));
+  padding: var(--zone-dialog-space) calc(calc(var(--zone-dialog-pad) * var(--zone-px)) + calc(var(--zone-slant) * var(--zone-px)));
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
@@ -55,7 +55,7 @@
   font: inherit;
   font-size: var(--zone-dialog-type-headline);
   line-height: 1.05;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 
 /* Korri's reason, line by line. It scrolls when the panel is short, and
@@ -70,14 +70,15 @@
 
 .zone-dialog-line {
   margin: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
 /* The game the trouble belongs to, in yellow. */
 .zone-dialog-title {
-  margin: var(--zone-row-space) 0 0;
+  margin: calc(var(--zone-row-space) * var(--zone-px)) 0 0;
   color: var(--zone-dialog-title-ink);
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 
 /* A key keeps its own case. */
@@ -91,7 +92,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: var(--zone-dialog-space) var(--zone-dialog-button-gap);
+  gap: var(--zone-dialog-space) calc(var(--zone-dialog-button-gap) * var(--zone-px));
   font-size: var(--zone-dialog-type-button);
 }
 
@@ -100,10 +101,10 @@
   position: relative;
   isolation: isolate;
   flex: 0 1 auto;
-  min-width: min(var(--zone-dialog-button-width), 100%);
-  padding: var(--zone-dialog-space) calc(var(--zone-slant) + var(--zone-row-gap) * 2);
+  min-width: min(calc(var(--zone-dialog-button-width) * var(--zone-px)), 100%);
+  padding: var(--zone-dialog-space) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)) * 2);
   line-height: 1;
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
   transition: translate var(--zone-press-time) var(--zone-bounce);
 }
 
@@ -124,11 +125,11 @@
   z-index: -2;
   background: var(--zone-focus);
   clip-path: var(--zone-dialog-shape);
-  translate: calc(var(--zone-drop-edge) * -1) var(--zone-drop-edge);
+  translate: calc(calc(var(--zone-drop-edge) * var(--zone-px)) * -1) calc(var(--zone-drop-edge) * var(--zone-px));
 }
 
 .zone-dialog-action:active {
-  translate: var(--zone-press-sink) var(--zone-press-sink);
+  translate: calc(var(--zone-press-sink) * var(--zone-px)) calc(var(--zone-press-sink) * var(--zone-px));
 }
 
 /* Present but inert: Korri's rule is dimmed, never hidden. */

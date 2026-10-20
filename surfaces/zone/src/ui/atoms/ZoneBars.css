@@ -3,13 +3,13 @@
   display: inline-flex;
   flex: 0 0 auto;
   align-items: flex-end;
-  gap: var(--zone-bar-gap);
-  height: var(--zone-bars-height);
+  gap: calc(var(--zone-bar-gap) * var(--zone-px));
+  height: calc(var(--zone-bars-height) * var(--zone-px));
 }
 
 .zone-bars-bar {
   display: block;
-  width: var(--zone-bar-width);
+  width: calc(var(--zone-bar-width) * var(--zone-px));
   background: var(--zone-bar-off);
   opacity: var(--zone-bar-off-opacity);
 }

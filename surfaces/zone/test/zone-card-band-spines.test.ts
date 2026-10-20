@@ -48,18 +48,19 @@ describe("bandSpinesPerSide", () => {
  * spine stands on both sides of the focus.
  */
 describe("the narrow band at 640x480 keeps the focus and its neighbours whole", () => {
-  const HAIRLINE = 6
-  const GAP = 14
-  const TRI = 26
+  // Art px: the plan and the tokens are both on the art grid.
+  const HAIRLINE = 3
+  const GAP = 7
+  const TRI = 12
   test("with spines counted, both neighbours end inside the band", () => {
     const p = plan(640, 480)
     expect(p.visible).toBe(3)
-    const width = 640
+    const width = p.wArt
     const height = p.bandH
     const spines = 1
     const fixed = 2 * GAP + 2 * (TRI + ZONE_TRIANGLE_GAP) + 2 * ZONE_BAND_MARGIN + 2 * spines * (GAP + HAIRLINE)
     const fit = (width - fixed) / (ZONE_CARD_RATIO * (1 + 2 * ZONE_CARD_SIDE_SCALE))
-    const h = Math.min(ZONE_CARD_FOCUS_MAX, height - 52, fit)
+    const h = Math.min(ZONE_CARD_FOCUS_MAX, height - 26, fit)
     const focusW = h * ZONE_CARD_RATIO
     const sideW = h * ZONE_CARD_SIDE_SCALE * ZONE_CARD_RATIO
     const reach = focusW / 2 + TRI + ZONE_TRIANGLE_GAP + spines * (HAIRLINE + GAP) + GAP + sideW
@@ -71,6 +72,6 @@ describe("the narrow band at 640x480 keeps the focus and its neighbours whole", 
     expect(css).toMatch(/--zone-band-fixed: calc\([^;]*2 \* var\(--zone-band-spines, 0\) \* \(var\(--zone-band-gap\) \+ var\(--zone-band-spine-fixed\)\)/)
     expect(css).toMatch(/--zone-band-fit: calc\([^;]*2 \* var\(--zone-band-spines, 0\) \* var\(--zone-band-spine-share\)/)
     expect(css).toMatch(/--zone-band-section-w: calc\(var\(--zone-card-h\) \* var\(--zone-band-spine-share\) \+ var\(--zone-band-spine-fixed\)\)/)
-    expect(css).toMatch(/\.zone-card-band\[data-visible="3"\] \{[^}]*--zone-band-spine-fixed: var\(--zone-section-hairline\)/)
+    expect(css).toMatch(/\.zone-card-band\[data-visible="3"\] \{[^}]*--zone-band-spine-fixed: calc\(var\(--zone-section-hairline\) \* var\(--zone-px\)\)/)
   })
 })

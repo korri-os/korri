@@ -6,9 +6,9 @@
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: center;
-  gap: var(--zone-strip-inset) calc(var(--zone-triangle-inline) * 2em + var(--zone-nudge-far) * 2 + var(--zone-strip-gap));
+  gap: calc(var(--zone-strip-inset) * var(--zone-px)) calc(var(--zone-triangle-inline) * 2em + calc(var(--zone-nudge-far) * var(--zone-px)) * 2 + calc(var(--zone-strip-gap) * var(--zone-px)));
   min-width: 0;
   max-width: 100%;
-  padding: 0 calc(var(--zone-triangle-inline) * 1em + var(--zone-nudge-far));
-  font-size: var(--zone-shell-button-type, var(--zone-type-button-tall));
+  padding: 0 calc(var(--zone-triangle-inline) * 1em + calc(var(--zone-nudge-far) * var(--zone-px)));
+  font-size: var(--zone-shell-button-type, calc(var(--zone-type-button-tall) * var(--zone-px)));
 }

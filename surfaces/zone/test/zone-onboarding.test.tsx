@@ -191,9 +191,9 @@ describe("planControllerCards", () => {
   })
 
   test("a narrow, tall stage takes fewer columns rather than tiny cards", () => {
-    const layout = planControllerCards(300, 700, 4)
+    const layout = planControllerCards(150, 350, 4)
     expect(layout.columns).toBe(2)
-    expect(layout.cardWidth).toBe(Math.floor((300 - ZONE_CONTROLLER_CARD_GAP) / 2))
+    expect(layout.cardWidth).toBe(Math.floor((150 - ZONE_CONTROLLER_CARD_GAP) / 2))
   })
 
   test("a wide, short stage keeps one row", () => {
@@ -207,8 +207,8 @@ describe("planControllerCards", () => {
 
   test("the plan's constants are the tokens", () => {
     const tokens = readFileSync(join(import.meta.dir, "..", "src", "zone-tokens.css"), "utf8")
-    expect(tokens).toContain(`--zone-controller-card-max: ${ZONE_CONTROLLER_CARD_MAX}px;`)
-    expect(tokens).toContain(`--zone-card-gap-wide: ${ZONE_CONTROLLER_CARD_GAP}px;`)
+    expect(tokens).toContain(`--zone-controller-card-max: ${ZONE_CONTROLLER_CARD_MAX};`)
+    expect(tokens).toContain(`--zone-card-gap-wide: ${ZONE_CONTROLLER_CARD_GAP};`)
   })
 })
 

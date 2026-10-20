@@ -5,13 +5,6 @@ import { useZoneFit } from "../../use-zone-fit"
 /** One of Zone's eight colours, by name. The stylesheet maps it to its token. */
 export type ZoneColour = "mint" | "black" | "white" | "yellow" | "blue" | "orange" | "red" | "pink"
 
-/**
- * How far the title may shrink to keep its longest word whole: a quarter,
- * below the usual half, because the title wraps only between words and a
- * word wider than the card would otherwise be cut.
- */
-const ZONE_TITLE_FIT_FLOOR = 0.25
-
 /** The reference card's bands: orange, blue, mint across a yellow ground. */
 export const ZONE_TITLE_BANDS: readonly [ZoneColour, ZoneColour, ZoneColour] = ["orange", "blue", "mint"]
 
@@ -22,8 +15,9 @@ export const ZONE_TITLE_BANDS: readonly [ZoneColour, ZoneColour, ZoneColour] = [
  * system where Mania writes the act number.
  *
  * The card fills the box it is given. The title's type follows the width,
- * and shrinks further (to half, by `useZoneFit`) until its longest word
- * fits; it wraps only between words, never inside one. The circle takes a
+ * and steps down a whole cap at a time (caps-3, caps-2, caps-1, by
+ * `useZoneFit`) until its longest word fits; it wraps only between words,
+ * never inside one. The circle takes a
  * share of the height and stands beside the title, or under it when the
  * card is taller than wide (`ZONE_TITLE_STACK_ASPECT`). With no act there
  * is no circle, not an empty one.
@@ -44,7 +38,7 @@ export function ZoneTitleCard({
 }) {
   const card = useRef<HTMLDivElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
-  useZoneFit(card, [heading], title, ZONE_TITLE_FIT_FLOOR)
+  useZoneFit(card, [heading], title)
   return (
     <div className="zone-title-card" data-ground={ground} ref={card}>
       <div aria-hidden className="zone-title-card-bands">

@@ -3,7 +3,7 @@
  * Every other panel shape in Zone (the tab, the keycap's word, the banner's
  * points) derives from this one length. */
 .zone-panel {
-  --zone-panel-slant: max(var(--zone-slant), calc(var(--zone-lean) * 1em));
+  --zone-panel-slant: max(calc(var(--zone-slant) * var(--zone-px)), calc(var(--zone-lean) * 1em));
   --zone-panel-shape: polygon(
     var(--zone-panel-slant) 0,
     100% 0,
@@ -16,7 +16,7 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
-  padding: 0.3em calc(var(--zone-panel-slant) + var(--zone-panel-pad));
+  padding: 0.3em calc(var(--zone-panel-slant) + calc(var(--zone-panel-pad) * var(--zone-px)));
   color: var(--zone-cap);
   white-space: nowrap;
 }
@@ -40,7 +40,7 @@
   z-index: -3;
   background: var(--zone-panel-edge);
   clip-path: var(--zone-panel-shape);
-  translate: var(--zone-drop-edge) var(--zone-drop-edge);
+  translate: calc(var(--zone-drop-edge) * var(--zone-px)) calc(var(--zone-drop-edge) * var(--zone-px));
 }
 
 .zone-panel[data-tone="blue"]::before {

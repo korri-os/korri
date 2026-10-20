@@ -46,6 +46,25 @@ const partFiles = allFiles.filter((file) => file.endsWith(".part.tsx"))
 const cssFiles = allFiles.filter((file) => file.endsWith(".css"))
 
 const read = (file: string) => readFileSync(file, "utf8")
+
+/** A value's space-separated parts, keeping a `calc(a * b)` whole. */
+const topLevelTokens = (value: string): string[] => {
+  const tokens: string[] = []
+  let depth = 0
+  let current = ""
+  for (const char of value) {
+    if (char === "(") depth += 1
+    if (char === ")") depth -= 1
+    if (/\s/.test(char) && depth === 0) {
+      if (current !== "") tokens.push(current)
+      current = ""
+    } else {
+      current += char
+    }
+  }
+  if (current !== "") tokens.push(current)
+  return tokens
+}
 const rel = (file: string) => relative(SRC, file)
 const css = (file: string) => read(file).replace(/\/\*[\s\S]*?\*\//g, "")
 
@@ -280,7 +299,7 @@ describe("eight colours, hard edges", () => {
     const offenders = cssFiles.flatMap((file) =>
       [...css(file).matchAll(/box-shadow\s*:\s*([^;]+);/g)].flatMap((match) =>
         (match[1] ?? "").split(/,(?![^(]*\))/).flatMap((shadow) => {
-          const lengths = shadow.trim().replace(/^inset\s+/, "").split(/\s+/)
+          const lengths = topLevelTokens(shadow.trim().replace(/^inset\s+/, ""))
             .filter((token) => /^-?[\d.]+(?:px|em|rem|%)?$/.test(token) || /^(?:calc|var)\(/.test(token))
           const blur = lengths[2]
           return blur !== undefined && blur !== "0" ? [`${rel(file)}: ${shadow.trim()}`] : []

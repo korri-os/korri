@@ -2,8 +2,8 @@
  * when it stands alone. */
 .zone-keycap {
   --zone-keycap-diameter: calc(var(--zone-keycap-scale) * 1em);
-  font-size: var(--zone-shell-hint-type, var(--zone-type-hint-wide));
-  --zone-keycap-slant: max(var(--zone-slant), calc(var(--zone-lean) * 1em));
+  font-size: var(--zone-shell-hint-type, calc(var(--zone-type-hint-wide) * var(--zone-px)));
+  --zone-keycap-slant: max(calc(var(--zone-slant) * var(--zone-px)), calc(var(--zone-lean) * 1em));
   display: inline-flex;
   align-items: center;
   height: var(--zone-keycap-diameter);
@@ -22,7 +22,7 @@
   height: var(--zone-keycap-diameter);
   border-radius: 50%;
   background: var(--zone-key);
-  box-shadow: 0 0 0 var(--zone-keycap-ring) var(--zone-key-ring);
+  box-shadow: 0 0 0 calc(var(--zone-keycap-ring) * var(--zone-px)) var(--zone-key-ring);
   font-size: 0.95em;
   text-shadow: none;
 }

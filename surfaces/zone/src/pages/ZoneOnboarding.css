@@ -11,9 +11,9 @@
 /* The step strip in the tabs' place: four joined tags, the tabs' type,
  * as wide as the room the two keycap hints leave, up to its token. */
 .zone-onboarding-steps {
-  --zone-tag-row-base: var(--zone-shell-tab-type, var(--zone-type-tab-wide));
+  --zone-tag-row-base: var(--zone-shell-tab-type, calc(var(--zone-type-tab-wide) * var(--zone-px)));
   display: flex;
-  width: min(var(--zone-onboarding-steps-width), calc(100cqi - var(--zone-shell-hint-room, var(--zone-onboarding-hint-room)) * 2));
+  width: min(calc(var(--zone-onboarding-steps-width) * var(--zone-px)), calc(100cqi - var(--zone-shell-hint-room, calc(var(--zone-onboarding-hint-room) * var(--zone-px))) * 2));
 }
 
 /* The step over its way forward. The step gives way; the action row keeps
@@ -23,8 +23,8 @@
   inset: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  gap: var(--zone-strip-gap);
-  padding: var(--zone-strip-inset) clamp(var(--zone-strip-margin-min), 3cqi, var(--zone-strip-margin));
+  gap: calc(var(--zone-strip-gap) * var(--zone-px));
+  padding: calc(var(--zone-strip-inset) * var(--zone-px)) clamp(calc(var(--zone-strip-margin-min) * var(--zone-px)), 3cqi, calc(var(--zone-strip-margin) * var(--zone-px)));
 }
 
 /* A size container, so the save card and the controller cards size to the
@@ -46,7 +46,7 @@
   grid-template-columns: repeat(var(--zone-onboarding-columns, 4), auto);
   justify-content: center;
   align-content: center;
-  gap: var(--zone-card-gap-wide);
+  gap: calc(var(--zone-card-gap-wide) * var(--zone-px));
 }
 
 /* An OPTIONS group, as wide as a page of rows reads well, its rows
@@ -54,10 +54,10 @@
 .zone-onboarding-group {
   display: grid;
   align-self: stretch;
-  width: min(100%, var(--zone-layer-dialog-width));
+  width: min(100%, calc(var(--zone-layer-dialog-width) * var(--zone-px)));
   height: 100%;
   min-height: 0;
-  padding-top: var(--zone-strip-inset);
+  padding-top: calc(var(--zone-strip-inset) * var(--zone-px));
 }
 
 .zone-onboarding-save {
@@ -67,16 +67,16 @@
 .zone-onboarding-actions {
   display: flex;
   justify-content: center;
-  padding-bottom: var(--zone-strip-inset);
+  padding-bottom: calc(var(--zone-strip-inset) * var(--zone-px));
 }
 
 /* The keyboard rises over the lower body, the step left above it. */
 .zone-onboarding-keyboard {
   position: absolute;
-  right: clamp(var(--zone-strip-margin-min), 3cqi, var(--zone-strip-margin));
-  bottom: var(--zone-strip-inset);
-  left: clamp(var(--zone-strip-margin-min), 3cqi, var(--zone-strip-margin));
+  right: clamp(calc(var(--zone-strip-margin-min) * var(--zone-px)), 3cqi, calc(var(--zone-strip-margin) * var(--zone-px)));
+  bottom: calc(var(--zone-strip-inset) * var(--zone-px));
+  left: clamp(calc(var(--zone-strip-margin-min) * var(--zone-px)), 3cqi, calc(var(--zone-strip-margin) * var(--zone-px)));
   display: flex;
-  max-height: calc(100% - var(--zone-strip-inset) * 2);
+  max-height: calc(100% - calc(var(--zone-strip-inset) * var(--zone-px)) * 2);
   animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
 }

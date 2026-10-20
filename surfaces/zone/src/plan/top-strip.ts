@@ -17,25 +17,25 @@
  *               (`ZONE_TOP_STACK_WORDS_WIDTH`), and the tabs shrink to fit
  *               the row rather than lose one.
  *
- * No tab and no hint is ever hidden. Every threshold was measured at the
- * narrow type (tabs 17 px, hints 15 px) with GAMES, OPTIONS and SAVE DATA
- * and their sub-lines: the row needs 592 px at plan size, about 500 at the
- * least type and about 375 with the keycaps alone. Each threshold keeps a
- * little room over that. They are guesses until measured on a real screen
- * with a longer word in a tab.
+ * No tab and no hint is ever hidden. Every threshold is in art px (src/plan/
+ * art-px.ts): the shell divides its width by its art pixel first. They were
+ * measured in Chromium with Zone Caps at caps-1 tabs and hints and the
+ * caps-2 banner, with GAMES, OPTIONS and SAVE DATA and their sub-lines, and
+ * keep a little room over what each row needs. They are guesses until
+ * measured on a real screen with a longer word in a tab.
  *
  * The shell measures its own box and writes the answer as `data-top`; its
  * stylesheet follows the attribute. The plan never reads CSS.
  */
 
-/** At and above this width the strip takes its plan size. */
-export const ZONE_TOP_INLINE_WIDTH = 620
+/** At and above this width in art px the strip takes its plan size. */
+export const ZONE_TOP_INLINE_WIDTH = 460
 /** At and above this width (and under inline) the gaps and type take their least. */
-export const ZONE_TOP_TIGHT_WIDTH = 530
+export const ZONE_TOP_TIGHT_WIDTH = 430
 /** At and above this width (and under tight) the hints keep only their keycaps. */
-export const ZONE_TOP_KEYS_WIDTH = 400
+export const ZONE_TOP_KEYS_WIDTH = 300
 /** In two rows, the hints keep their words at and above this width. */
-export const ZONE_TOP_STACK_WORDS_WIDTH = 240
+export const ZONE_TOP_STACK_WORDS_WIDTH = 160
 
 export type ZoneTopLevel = "inline" | "tight" | "keys" | "stacked"
 

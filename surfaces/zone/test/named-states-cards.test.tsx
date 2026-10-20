@@ -16,7 +16,7 @@ import * as well from "../src/ui/atoms/ZoneCoverWell.atom.part"
 import { initialsOf, stripeSetOf } from "../src/ui/atoms/ZoneCoverWell"
 import { ZoneCardBand } from "../src/ui/molecules/ZoneCardBand"
 import { fixtureCards } from "../src/fixtures/zone-cards"
-import { fitZoneType } from "../src/use-zone-fit"
+import { fitZoneType, zoneFitSteps } from "../src/use-zone-fit"
 
 afterEach(cleanup)
 
@@ -388,16 +388,39 @@ describe("ZoneCardBand", () => {
 })
 
 describe("the fit", () => {
-  test("stops at one when nothing overflows, and at the floor when everything does", () => {
-    const fits = document.createElement("span")
-    document.body.append(fits)
-    fitZoneType(fits)
-    expect(fits.style.getPropertyValue("--zone-fit")).toBe("1.00")
+  /** A span whose stylesheet size is 30 CSS px at one CSS px per art px, overflowing above `fitsAt` caps steps. */
+  const fitted = (fitsAt: number) => {
+    const element = document.createElement("span")
+    element.style.fontSize = "30px"
+    document.body.append(element)
+    Object.defineProperty(element, "clientWidth", { value: 100 })
+    Object.defineProperty(element, "scrollWidth", {
+      get: () => (Number(element.dataset.zoneFit) > fitsAt ? 200 : 100),
+    })
+    return element
+  }
 
-    const overflowing = document.createElement("span")
-    Object.defineProperty(overflowing, "scrollHeight", { value: 100 })
-    Object.defineProperty(overflowing, "clientHeight", { value: 10 })
+  test("steps whole caps only: caps-3 when it fits, then caps-2, then caps-1, never between", () => {
+    const fits = fitted(3)
+    fitZoneType(fits)
+    expect([fits.dataset.zoneFit, fits.style.getPropertyValue("--zone-fit")]).toEqual(["3", "1.0000"])
+    expect(fits.hasAttribute("data-zone-fit-floor")).toBe(false)
+
+    const two = fitted(2)
+    fitZoneType(two)
+    expect([two.dataset.zoneFit, two.style.getPropertyValue("--zone-fit")]).toEqual(["2", "0.6667"])
+
+    const overflowing = fitted(0)
     fitZoneType(overflowing)
-    expect(overflowing.style.getPropertyValue("--zone-fit")).toBe("0.50")
+    expect([overflowing.dataset.zoneFit, overflowing.style.getPropertyValue("--zone-fit")]).toEqual(["1", "0.3333"])
+    expect(overflowing.hasAttribute("data-zone-fit-floor")).toBe(true)
+  })
+
+  test("a stylesheet size between two steps snaps down to the step under it", () => {
+    expect(zoneFitSteps(25, 1)).toEqual([{ step: 2, factor: 0.8 }, { step: 1, factor: 0.4 }])
+    expect(zoneFitSteps(90, 3).map(({ step }) => step)).toEqual([3, 2, 1])
+    expect(zoneFitSteps(120, 1)[0]).toEqual({ step: 3, factor: 0.25 })
+    expect(zoneFitSteps(16, 2)).toEqual([{ step: 1, factor: 1.25 }])
+    for (const { step, factor } of zoneFitSteps(47, 2)) expect(Math.abs(47 * factor - step * 20)).toBeLessThan(1e-9)
   })
 })

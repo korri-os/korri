@@ -5,7 +5,7 @@
  * white parallelogram through the middle at the band opacity; it is the
  * ground's kind of drawing, with no edge to blur. */
 .zone-banner {
-  --zone-banner-type: calc(var(--zone-type-banner-scale) * var(--zone-banner-base, var(--zone-shell-tab-type, var(--zone-type-tab-wide))));
+  --zone-banner-type: calc(var(--zone-type-banner-scale) * var(--zone-banner-base, var(--zone-shell-tab-type, calc(var(--zone-type-tab-wide) * var(--zone-px)))));
   --zone-banner-point-depth: calc(var(--zone-banner-point) * var(--zone-banner-type));
   position: relative;
   isolation: isolate;
@@ -13,7 +13,7 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
-  padding: 0.2em calc(var(--zone-banner-point-depth) + var(--zone-panel-pad));
+  padding: 0.2em calc(var(--zone-banner-point-depth) + calc(var(--zone-panel-pad) * var(--zone-px)));
   font-size: var(--zone-banner-type);
   white-space: nowrap;
 }
@@ -43,7 +43,7 @@
   height: calc(var(--zone-banner-band-share) * 100%);
   background: var(--zone-banner-band);
   opacity: var(--zone-banner-band-opacity);
-  clip-path: polygon(var(--zone-slant) 0, calc(100% - var(--zone-slant)) 0, 100% 100%, 0 100%);
+  clip-path: polygon(calc(var(--zone-slant) * var(--zone-px)) 0, calc(100% - calc(var(--zone-slant) * var(--zone-px))) 0, 100% 100%, 0 100%);
   translate: 0 -50%;
 }
 
@@ -56,10 +56,10 @@
   line-height: 1;
   text-overflow: ellipsis;
   text-shadow:
-    calc(var(--zone-cap-outline) * -1) 0 0 var(--zone-banner-extrude-colour),
-    var(--zone-cap-outline) 0 0 var(--zone-banner-extrude-colour),
-    0 calc(var(--zone-cap-outline) * -1) 0 var(--zone-banner-extrude-colour),
-    0 var(--zone-cap-outline) 0 var(--zone-banner-extrude-colour),
-    calc(var(--zone-banner-extrude) * 0.75) calc(var(--zone-banner-extrude) * 0.75) 0 var(--zone-banner-extrude-colour),
-    var(--zone-banner-extrude) var(--zone-banner-extrude) 0 var(--zone-banner-extrude-colour);
+    calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -1) 0 0 var(--zone-banner-extrude-colour),
+    calc(var(--zone-cap-outline) * var(--zone-px)) 0 0 var(--zone-banner-extrude-colour),
+    0 calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -1) 0 var(--zone-banner-extrude-colour),
+    0 calc(var(--zone-cap-outline) * var(--zone-px)) 0 var(--zone-banner-extrude-colour),
+    calc(calc(var(--zone-banner-extrude) * var(--zone-px)) * 0.75) calc(calc(var(--zone-banner-extrude) * var(--zone-px)) * 0.75) 0 var(--zone-banner-extrude-colour),
+    calc(var(--zone-banner-extrude) * var(--zone-px)) calc(var(--zone-banner-extrude) * var(--zone-px)) 0 var(--zone-banner-extrude-colour);
 }

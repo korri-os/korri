@@ -10,7 +10,7 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  border: var(--zone-well-edge) solid var(--zone-well-edge-colour);
+  border: calc(var(--zone-well-edge) * var(--zone-px)) solid var(--zone-well-edge-colour);
   background: var(--zone-panel);
   container-type: size;
 }
@@ -84,11 +84,11 @@
   font-size: min(38cqw, 60cqh);
   line-height: 1;
   text-shadow:
-    calc(var(--zone-cap-outline) * -1) 0 0 var(--zone-cap-outline-colour),
-    var(--zone-cap-outline) 0 0 var(--zone-cap-outline-colour),
-    0 calc(var(--zone-cap-outline) * -1) 0 var(--zone-cap-outline-colour),
-    0 var(--zone-cap-outline) 0 var(--zone-cap-outline-colour),
-    calc(var(--zone-cap-outline) * 1.5) calc(var(--zone-cap-outline) * 1.5) 0 var(--zone-cap-outline-colour);
+    calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -1) 0 0 var(--zone-cap-outline-colour),
+    calc(var(--zone-cap-outline) * var(--zone-px)) 0 0 var(--zone-cap-outline-colour),
+    0 calc(calc(var(--zone-cap-outline) * var(--zone-px)) * -1) 0 var(--zone-cap-outline-colour),
+    0 calc(var(--zone-cap-outline) * var(--zone-px)) 0 var(--zone-cap-outline-colour),
+    calc(calc(var(--zone-cap-outline) * var(--zone-px)) * 1.5) calc(calc(var(--zone-cap-outline) * var(--zone-px)) * 1.5) 0 var(--zone-cap-outline-colour);
 }
 
 /* Greyed: the colour drains and the well dims. The edge stays blue so the

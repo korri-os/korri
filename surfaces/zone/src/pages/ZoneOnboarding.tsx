@@ -8,6 +8,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { useLayoutEffect, useRef } from "react"
 import { planControllerCards } from "../plan/onboarding"
+import { zoneArtPxOf } from "../use-zone-plan"
 import { useZoneLayerFocus } from "../use-zone-layer-focus"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
 import type { ZoneTagItem } from "../ui/atoms/ZoneTag"
@@ -199,8 +200,9 @@ export function ZoneOnboarding({
     const grid = cards.current
     if (room === null || grid === null) return
     const apply = () => {
-      const layout = planControllerCards(room.clientWidth, room.clientHeight, cardCount)
-      grid.style.setProperty("--zone-onboarding-card-w", `${layout.cardWidth}px`)
+      const px = zoneArtPxOf(room)
+      const layout = planControllerCards(room.clientWidth / px, room.clientHeight / px, cardCount)
+      grid.style.setProperty("--zone-onboarding-card-w", `${layout.cardWidth * px}px`)
       grid.style.setProperty("--zone-onboarding-columns", String(layout.columns))
     }
     apply()

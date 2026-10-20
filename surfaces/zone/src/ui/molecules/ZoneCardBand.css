@@ -3,10 +3,10 @@
  * and narrow answers); five is the default. */
 .zone-card-band {
   --zone-band-n: 5;
-  --zone-band-tri: var(--zone-triangle-wide);
-  --zone-band-gap: var(--zone-card-gap-wide);
+  --zone-band-tri: calc(var(--zone-triangle-wide) * var(--zone-px));
+  --zone-band-gap: calc(var(--zone-card-gap-wide) * var(--zone-px));
   --zone-band-spine-share: var(--zone-section-share);
-  --zone-band-spine-fixed: calc(var(--zone-hairline) * 0);
+  --zone-band-spine-fixed: calc(calc(var(--zone-hairline) * var(--zone-px)) * 0);
   position: relative;
   width: 100%;
   height: 100%;
@@ -19,10 +19,10 @@
 /* Three visible: the dividers are hairline spines of a fixed width. */
 .zone-card-band[data-visible="3"] {
   --zone-band-n: 3;
-  --zone-band-tri: var(--zone-triangle-narrow);
-  --zone-band-gap: var(--zone-card-gap-narrow);
+  --zone-band-tri: calc(var(--zone-triangle-narrow) * var(--zone-px));
+  --zone-band-gap: calc(var(--zone-card-gap-narrow) * var(--zone-px));
   --zone-band-spine-share: 0;
-  --zone-band-spine-fixed: var(--zone-section-hairline);
+  --zone-band-spine-fixed: calc(var(--zone-section-hairline) * var(--zone-px));
 }
 
 /* The plan's sums. The width the cards do not get is the gaps, the two
@@ -46,8 +46,8 @@
 .zone-card-band-track {
   --zone-band-fixed: calc(
     (var(--zone-band-n) - 1) * var(--zone-band-gap)
-    + 2 * (var(--zone-band-tri) + var(--zone-triangle-gap))
-    + 2 * var(--zone-band-margin)
+    + 2 * (var(--zone-band-tri) + calc(var(--zone-triangle-gap) * var(--zone-px)))
+    + 2 * calc(var(--zone-band-margin) * var(--zone-px))
     + 2 * var(--zone-band-spines, 0) * (var(--zone-band-gap) + var(--zone-band-spine-fixed))
   );
   --zone-band-fit: calc(
@@ -57,13 +57,13 @@
       + 2 * var(--zone-band-spines, 0) * var(--zone-band-spine-share)
     )
   );
-  --zone-card-h: min(var(--zone-card-focus-max), calc(100cqh - 2 * var(--zone-band-pad)), var(--zone-band-fit));
+  --zone-card-h: min(calc(var(--zone-card-focus-max) * var(--zone-px)), calc(100cqh - 2 * calc(var(--zone-band-pad) * var(--zone-px))), var(--zone-band-fit));
   --zone-band-side-w: calc(var(--zone-card-h) * var(--zone-card-side-scale) * var(--zone-card-ratio));
   --zone-band-section-w: calc(var(--zone-card-h) * var(--zone-band-spine-share) + var(--zone-band-spine-fixed));
   --zone-band-centre: calc(
     var(--zone-band-focus, 0) * (var(--zone-band-side-w) + var(--zone-band-gap))
     + var(--zone-band-dividers, 0) * (var(--zone-band-section-w) + var(--zone-band-gap))
-    + var(--zone-band-tri) + var(--zone-triangle-gap)
+    + var(--zone-band-tri) + calc(var(--zone-triangle-gap) * var(--zone-px))
     + var(--zone-card-h) * var(--zone-card-ratio) / 2
   );
   position: absolute;
@@ -89,7 +89,7 @@
 }
 
 .zone-card-band-slot[data-focus="true"] {
-  margin: 0 calc(var(--zone-band-tri) + var(--zone-triangle-gap));
+  margin: 0 calc(var(--zone-band-tri) + calc(var(--zone-triangle-gap) * var(--zone-px)));
 }
 
 .zone-card-band-slot[data-beyond="true"] {
@@ -103,5 +103,5 @@
   display: grid;
   place-items: center;
   margin: 0;
-  font-size: var(--zone-type-empty);
+  font-size: calc(var(--zone-type-empty) * var(--zone-px));
 }

@@ -7,18 +7,18 @@
   flex: 0 1 auto;
   min-width: 0;
   max-width: var(--zone-signal-share, var(--zone-badge-share));
-  font-size: var(--zone-signal-type, calc(var(--zone-type-badge-scale) * var(--zone-shell-foot-type, var(--zone-type-foot-tall)) * var(--zone-foot-fit, 1)));
+  font-size: var(--zone-signal-type, calc(var(--zone-type-badge-scale) * var(--zone-shell-foot-type, calc(var(--zone-type-foot-tall) * var(--zone-px))) * var(--zone-foot-fit, 1)));
 }
 
 .zone-signal-name {
   display: inline-flex;
   min-width: 0;
-  margin-right: var(--zone-strip-gap);
+  margin-right: calc(var(--zone-strip-gap) * var(--zone-px));
 }
 
 .zone-signal-strength {
   flex: 0 0 auto;
-  margin-left: var(--zone-strip-gap);
+  margin-left: calc(var(--zone-strip-gap) * var(--zone-px));
   color: var(--zone-badge-strength);
   font-variant-numeric: tabular-nums;
   text-shadow: none;

@@ -3,7 +3,7 @@
 .zone-option-group {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  row-gap: var(--zone-group-title-space);
+  row-gap: calc(var(--zone-group-title-space) * var(--zone-px));
   width: 100%;
   max-height: 100%;
   min-height: 0;
@@ -16,10 +16,10 @@
   isolation: isolate;
   justify-self: start;
   margin: 0;
-  padding: calc(var(--zone-row-space) / 2) calc(var(--zone-slant) + var(--zone-row-gap) * 2);
+  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(calc(var(--zone-slant) * var(--zone-px)) + calc(var(--zone-row-gap) * var(--zone-px)) * 2);
   font: inherit;
-  font-size: clamp(var(--zone-type-row), 3cqi, var(--zone-type-group-title));
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  font-size: clamp(calc(var(--zone-type-row) * var(--zone-px)), 3cqi, calc(var(--zone-type-group-title) * var(--zone-px)));
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
 }
 
 .zone-option-group-title::before {
@@ -29,9 +29,9 @@
   z-index: -1;
   background: var(--zone-panel);
   clip-path: polygon(
-    var(--zone-slant) 0,
+    calc(var(--zone-slant) * var(--zone-px)) 0,
     100% 0,
-    calc(100% - var(--zone-slant)) 100%,
+    calc(100% - calc(var(--zone-slant) * var(--zone-px))) 100%,
     0 100%
   );
 }
@@ -43,6 +43,6 @@
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
-  padding: 0 var(--zone-drop-edge);
-  scroll-padding-block: var(--zone-row-height);
+  padding: 0 calc(var(--zone-drop-edge) * var(--zone-px));
+  scroll-padding-block: calc(var(--zone-row-height) * var(--zone-px));
 }

@@ -10,11 +10,11 @@
 }
 
 .zone-triangle[data-size="wide"] {
-  --zone-triangle-width: var(--zone-triangle-wide);
+  --zone-triangle-width: calc(var(--zone-triangle-wide) * var(--zone-px));
 }
 
 .zone-triangle[data-size="narrow"] {
-  --zone-triangle-width: var(--zone-triangle-narrow);
+  --zone-triangle-width: calc(var(--zone-triangle-narrow) * var(--zone-px));
 }
 
 .zone-triangle[data-size="inline"] {
@@ -24,12 +24,12 @@
 /* The near distance is its rest; the nudge, when it runs, takes over the
  * margin and gives it back under reduced motion. */
 .zone-triangle[data-direction="right"] {
-  margin-right: var(--zone-nudge-near);
+  margin-right: calc(var(--zone-nudge-near) * var(--zone-px));
   clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
 
 .zone-triangle[data-direction="left"] {
-  margin-left: var(--zone-nudge-near);
+  margin-left: calc(var(--zone-nudge-near) * var(--zone-px));
   clip-path: polygon(100% 0, 0 50%, 100% 100%);
 }
 

@@ -5,8 +5,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr;
-  width: var(--zone-onboarding-card-w, var(--zone-controller-card-max));
-  border: var(--zone-controller-frame) solid var(--zone-panel);
+  width: var(--zone-onboarding-card-w, calc(var(--zone-controller-card-max) * var(--zone-px)));
+  border: calc(var(--zone-controller-frame) * var(--zone-px)) solid var(--zone-panel);
   background: var(--zone-panel);
   container-type: inline-size;
   animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
@@ -36,12 +36,12 @@
     var(--zone-controller-heard) 66% 74%,
     var(--zone-stripe-3) 74% 100%
   );
-  font-size: clamp(var(--zone-type-note), 15cqi, var(--zone-type-kicker));
+  font-size: clamp(calc(var(--zone-type-note) * var(--zone-px)), 15cqi, calc(var(--zone-type-kicker) * var(--zone-px)));
 }
 
 .zone-controller-card-slab {
   width: 100%;
-  padding: calc(var(--zone-row-space) / 2) 0;
+  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) 0;
   background: var(--zone-slab);
   color: var(--zone-slab-ink);
   text-align: center;
@@ -50,7 +50,7 @@
 
 /* The seat in the top corner. */
 .zone-controller-card-seat {
-  --zone-tag-type: clamp(var(--zone-type-note), 11cqi, var(--zone-type-row));
+  --zone-tag-type: clamp(calc(var(--zone-type-note) * var(--zone-px)), 11cqi, calc(var(--zone-type-row) * var(--zone-px)));
   position: absolute;
   top: 0;
   right: 0;
@@ -63,9 +63,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: calc(var(--zone-row-gap) / 2);
-  padding: calc(var(--zone-row-space) / 2) var(--zone-row-space);
-  font-size: clamp(calc(var(--zone-type-note) * 0.75), 10cqi, var(--zone-type-row));
+  gap: calc(calc(var(--zone-row-gap) * var(--zone-px)) / 2);
+  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(var(--zone-row-space) * var(--zone-px));
+  font-size: clamp(calc(calc(var(--zone-type-note) * var(--zone-px)) * 0.75), 10cqi, calc(var(--zone-type-row) * var(--zone-px)));
 }
 
 /* Two lines at most; a longer name ends in an ellipsis on screen and stays
@@ -74,11 +74,11 @@
   display: -webkit-box;
   min-width: 0;
   overflow: hidden;
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
   text-align: center;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   text-transform: none;
   line-height: 1.05;
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
 }

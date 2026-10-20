@@ -1,9 +1,9 @@
 /* The card: a flat ground that fills its box and clips the bands. The
  * ground and each band name a colour; the map below turns it into a token. */
 .zone-title-card {
-  --zone-title-card-type-title: clamp(var(--zone-type-title-min), 7.5cqi, var(--zone-type-title));
-  --zone-title-card-type-act: clamp(var(--zone-type-note), 6cqb, var(--zone-type-act));
-  --zone-title-card-type-act-word: clamp(calc(var(--zone-type-act-word) * 0.6), 2.4cqb, var(--zone-type-act-word));
+  --zone-title-card-type-title: clamp(calc(var(--zone-type-title-min) * var(--zone-px)), 7.5cqi, calc(var(--zone-type-title) * var(--zone-px)));
+  --zone-title-card-type-act: clamp(calc(var(--zone-type-note) * var(--zone-px)), 6cqb, calc(var(--zone-type-act) * var(--zone-px)));
+  --zone-title-card-type-act-word: clamp(calc(calc(var(--zone-type-act-word) * var(--zone-px)) * 0.6), 2.4cqb, calc(var(--zone-type-act-word) * var(--zone-px)));
   --zone-title-card-circle: calc(var(--zone-act-circle-share) * 100cqh);
   --zone-title-card-colour: var(--zone-title-ground);
   position: relative;
@@ -75,7 +75,7 @@
   gap: calc(var(--zone-title-card-circle) * 0.2);
   width: 100%;
   height: 100%;
-  padding: min(var(--zone-band-margin), 4cqmin);
+  padding: min(calc(var(--zone-band-margin) * var(--zone-px)), 4cqmin);
 }
 
 /* The title: caps with the blue edge on a black parallelogram. Its type
@@ -88,7 +88,7 @@
   min-width: 0;
   max-width: 100%;
   margin: 0;
-  padding: calc(var(--zone-row-space) * 2) calc(var(--zone-slant) * 2 + min(var(--zone-row-gap) * 2, 4cqi));
+  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) * 2) calc(calc(var(--zone-slant) * var(--zone-px)) * 2 + min(calc(var(--zone-row-gap) * var(--zone-px)) * 2, 4cqi));
   font: inherit;
   font-size: calc(var(--zone-title-card-type-title) * var(--zone-fit, 1));
   line-height: 1;
@@ -96,7 +96,7 @@
   text-wrap: balance;
   overflow-wrap: normal;
   word-break: keep-all;
-  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
 }
 
 .zone-title-card-title::before {
@@ -106,9 +106,9 @@
   z-index: -1;
   background: var(--zone-panel);
   clip-path: polygon(
-    calc(var(--zone-slant) * 2) 0,
+    calc(calc(var(--zone-slant) * var(--zone-px)) * 2) 0,
     100% 0,
-    calc(100% - var(--zone-slant) * 2) 100%,
+    calc(100% - calc(var(--zone-slant) * var(--zone-px)) * 2) 100%,
     0 100%
   );
 }
@@ -117,7 +117,7 @@
  * circle moves under the title, and the title has the card's whole width. */
 @container (aspect-ratio < 1) {
   .zone-title-card-face {
-    --zone-title-card-type-title: clamp(var(--zone-type-title-min), 11cqi, var(--zone-type-title));
+    --zone-title-card-type-title: clamp(calc(var(--zone-type-title-min) * var(--zone-px)), 11cqi, calc(var(--zone-type-title) * var(--zone-px)));
     --zone-title-card-circle: min(calc(var(--zone-act-circle-share) * 100cqh), 60cqw);
     flex-direction: column;
   }
@@ -144,10 +144,10 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: calc(var(--zone-row-space) / 2);
+  gap: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2);
   max-width: calc(var(--zone-title-card-circle) * 0.76);
   min-width: min-content;
-  padding: calc(var(--zone-row-space) * 2) var(--zone-row-gap);
+  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) * 2) calc(var(--zone-row-gap) * var(--zone-px));
   background: var(--zone-act-slab);
   color: var(--zone-act-ink);
   text-align: center;

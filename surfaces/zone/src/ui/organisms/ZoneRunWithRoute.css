@@ -2,18 +2,18 @@
  * warnings sit in from the row's slant; the actions take the row's width. */
 .zone-run-with-route {
   display: grid;
-  row-gap: var(--zone-row-space);
+  row-gap: calc(var(--zone-row-space) * var(--zone-px));
   min-width: 0;
 }
 
 /* The tag strip at the note size, as wide as a dozen of its letters or
  * the row, whichever is less; a long saved name truncates in its tag. */
 .zone-run-with-route-tags {
-  --zone-tag-row-base: var(--zone-type-note);
+  --zone-tag-row-base: calc(var(--zone-type-note) * var(--zone-px));
   display: flex;
   justify-self: start;
-  width: min(100%, calc(var(--zone-type-note) * 16));
-  padding-left: var(--zone-slant);
+  width: min(100%, calc(calc(var(--zone-type-note) * var(--zone-px)) * 16));
+  padding-left: calc(var(--zone-slant) * var(--zone-px));
 }
 
 /* A program's name and a build's path are data: the row keeps their case. */

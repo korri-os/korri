@@ -15,9 +15,8 @@
  * composition root. The host decides how big a screen is; Zone fills exactly
  * what it is given and never reaches outside its own root.
  *
- * Every word in Zone is caps in the one face. Text standing on the ground
- * wears the black outline; a panel's own stylesheet swaps it for the blue
- * edge.
+ * Every word Zone writes itself is Zone Caps, upper case, on the art grid.
+ * The ground's colour comes from the palette `data-ground` names.
  */
 .zone-screen {
   position: relative;
@@ -34,13 +33,36 @@
   text-transform: uppercase;
   letter-spacing: var(--zone-tracking);
   line-height: 1;
+  -webkit-font-smoothing: none;
+}
+
+/**
+ * The art pixel for a screen the root has not planned: a part shown alone
+ * in Caliper. The same number the plan gives (src/plan/art-px.ts): the
+ * container's short side over the art rows, floored, never under one. The
+ * root writes `data-px` and its own `--zone-px` from the plan, so this
+ * stands aside there. Declared on the children because a container's own
+ * `cq` units measure its ancestor, not itself.
+ */
+.zone-screen:not([data-px]) > * {
+  --zone-px: max(var(--zone-px-least), round(down, calc(min(100cqw, 100cqh) / var(--zone-art-rows)), var(--zone-px-least)));
+}
+
+/* Words on the ground wear the black outline: a ring one art pixel wide,
+ * all eight neighbours, no blur. A panel's or an ink's own stylesheet
+ * replaces it. Declared on the children so the ring computes with their art
+ * pixel. */
+.zone-screen > * {
+  --zone-ring: calc(var(--zone-cap-outline) * var(--zone-px));
   text-shadow:
-    calc(var(--zone-cap-outline) * -1) 0 0 var(--zone-cap-outline-colour),
-    var(--zone-cap-outline) 0 0 var(--zone-cap-outline-colour),
-    0 calc(var(--zone-cap-outline) * -1) 0 var(--zone-cap-outline-colour),
-    0 var(--zone-cap-outline) 0 var(--zone-cap-outline-colour),
-    var(--zone-cap-outline) var(--zone-cap-outline) 0 var(--zone-cap-outline-colour);
-  -webkit-font-smoothing: antialiased;
+    calc(var(--zone-ring) * -1) calc(var(--zone-ring) * -1) 0 var(--zone-cap-outline-colour),
+    0 calc(var(--zone-ring) * -1) 0 var(--zone-cap-outline-colour),
+    var(--zone-ring) calc(var(--zone-ring) * -1) 0 var(--zone-cap-outline-colour),
+    calc(var(--zone-ring) * -1) 0 0 var(--zone-cap-outline-colour),
+    var(--zone-ring) 0 0 var(--zone-cap-outline-colour),
+    calc(var(--zone-ring) * -1) var(--zone-ring) 0 var(--zone-cap-outline-colour),
+    0 var(--zone-ring) 0 var(--zone-cap-outline-colour),
+    var(--zone-ring) var(--zone-ring) 0 var(--zone-cap-outline-colour);
 }
 
 /* Controls start from nothing: every button in Zone is drawn by its
