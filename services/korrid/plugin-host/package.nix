@@ -48,7 +48,7 @@ let
     rm -f "$out/plugin-host/tests/fixtures/ppsspp.plugin.ts"
     cp ${../../../plugins/ppsspp/plugin.ts} "$out/plugin-host/tests/fixtures/ppsspp.plugin.ts"
     rm -f "$out/plugin-host/tests/fixtures/steam.plugin.ts"
-    cp ${../../../plugins/steam/plugin.ts} "$out/plugin-host/tests/fixtures/steam.plugin.ts"
+    cp ${../tests/fixtures/first-party/steam/plugin.ts} "$out/plugin-host/tests/fixtures/steam.plugin.ts"
   '';
 in
 craneLib.buildPackage (

@@ -1,9 +1,0 @@
-// Steam-owned comment must survive
-"InstallConfigStore"
-{
-    "Software" { "Valve" { "Steam"
-    {
-        "Unrelated" "keep\\this\"value"
-        "CompatToolMapping" { "999" { "name" "other-proton" } }
-    } } }
-}

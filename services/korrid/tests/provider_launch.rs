@@ -38,7 +38,8 @@ fn runtime(root: &Path, name: &str, keys: &[&str]) -> EnabledPackage {
     fs::write(
         package.join("plugin.ts"),
         fs::read_to_string(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../plugins/{name}/plugin.ts")),
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("tests/fixtures/first-party/{name}/plugin.ts")),
         )
         .unwrap(),
     )
@@ -59,7 +60,8 @@ fn runtime(root: &Path, name: &str, keys: &[&str]) -> EnabledPackage {
 fn installed(root: &Path) -> PluginRegistry {
     let package = root.join("plugin-steam");
     fs::create_dir_all(&package).unwrap();
-    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/steam/plugin.ts");
+    let source =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/first-party/steam/plugin.ts");
     fs::copy(source, package.join("plugin.ts")).unwrap();
     let fex = runtime(root, "fex", &["fex-unpack", "config"]);
     let proton = runtime(root, "proton", &["cachyos-unpack"]);

@@ -4,7 +4,7 @@ use korrid::{
     script::{call_plugin_operation_ts, LAUNCH_PREPARE},
 };
 
-const STEAM_PLUGIN: &str = include_str!("../../../plugins/steam/plugin.ts");
+const STEAM_PLUGIN: &str = include_str!("fixtures/first-party/steam/plugin.ts");
 
 fn input() -> serde_json::Value {
     serde_json::json!({
@@ -31,9 +31,13 @@ fn steam_declares_only_its_system_and_native_session_runner() {
     let registry = PluginRegistry::new(
         vec![
             plugin,
-            load_plugin_source("@korri", include_str!("../../../plugins/fex/plugin.ts")).unwrap(),
-            load_plugin_source("@korri", include_str!("../../../plugins/proton/plugin.ts"))
+            load_plugin_source("@korri", include_str!("fixtures/first-party/fex/plugin.ts"))
                 .unwrap(),
+            load_plugin_source(
+                "@korri",
+                include_str!("fixtures/first-party/proton/plugin.ts"),
+            )
+            .unwrap(),
         ],
         [
             "@korri:steam".into(),

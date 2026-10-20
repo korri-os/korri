@@ -1,1 +1,1 @@
-../../../../../plugins/steam/plugin.ts
+../../../tests/fixtures/first-party/steam/plugin.ts

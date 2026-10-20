@@ -186,7 +186,7 @@ fn steam_provider_launch_composes_the_prepared_session_before_native_exec() {
     let fex = package_with_files(
         root.path(),
         "@korri:fex",
-        include_str!("../../../plugins/fex/plugin.ts"),
+        include_str!("fixtures/first-party/fex/plugin.ts"),
         None,
         BTreeMap::from([
             ("fex-unpack".into(), root.path().join("fex-unpack")),
@@ -196,14 +196,14 @@ fn steam_provider_launch_composes_the_prepared_session_before_native_exec() {
     let proton = package_with_files(
         root.path(),
         "@korri:proton",
-        include_str!("../../../plugins/proton/plugin.ts"),
+        include_str!("fixtures/first-party/proton/plugin.ts"),
         None,
         BTreeMap::from([("cachyos-unpack".into(), root.path().join("cachyos-unpack"))]),
     );
     let mut runner = package_with_files(
         root.path(),
         "@korri:steam",
-        include_str!("../../../plugins/steam/plugin.ts"),
+        include_str!("fixtures/first-party/steam/plugin.ts"),
         None,
         BTreeMap::from([("steam-session".into(), Path::new("/bin/sh").to_path_buf())]),
     );

@@ -25,17 +25,9 @@ let
         "services/korrid"
         "contracts"
         "contracts/input"
-        # The Steam discovery/launch tests embed the real Steam and runtime sources
-        # (plugin_test_fixtures.rs, discovery/provider/tests.rs). Test data
-        # only: korrid still loads plugins solely from the installed registry.
-        "plugins"
-        "plugins/steam"
-        "plugins/steam/plugin.ts"
-        "plugins/fex"
-        "plugins/fex/plugin.ts"
-        "plugins/proton"
-        "plugins/proton/plugin.ts"
       ]
+      # Immutable producer declaration snapshots for consumer tests only.
+      || lib.hasPrefix "services/korrid/tests/fixtures/first-party/" relative
       || ((inCrate || inTreaty) && craneLib.filterCargoSources path type)
       # The shared scheduler is host runtime source included by completion.rs.
       || relative == "services/korrid/src/script/completion.js"
@@ -45,7 +37,7 @@ let
   src = proseqlSource.composeCargoSource cleanSource;
   commonArgs = {
     inherit src;
-    postUnpack = ''sourceRoot+=/services/korrid'';
+    postUnpack = "sourceRoot+=/services/korrid";
     # crane reads Cargo.lock and .cargo/config.toml during evaluation. Vendor
     # from the filtered checkout so evaluating this package for another
     # platform does not force a build of the composed source derivation.

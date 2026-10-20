@@ -144,19 +144,19 @@ pub fn steam(root: &Path) -> PluginRegistry {
     fs::create_dir_all(&package).unwrap();
     fs::write(
         package.join("plugin.ts"),
-        include_str!("../../../plugins/steam/plugin.ts"),
+        include_str!("../tests/fixtures/first-party/steam/plugin.ts"),
     )
     .unwrap();
     let mut dependencies = Vec::new();
     for (name, source, keys) in [
         (
             "fex",
-            include_str!("../../../plugins/fex/plugin.ts"),
+            include_str!("../tests/fixtures/first-party/fex/plugin.ts"),
             vec!["fex-unpack", "config"],
         ),
         (
             "proton",
-            include_str!("../../../plugins/proton/plugin.ts"),
+            include_str!("../tests/fixtures/first-party/proton/plugin.ts"),
             vec!["cachyos-unpack"],
         ),
     ] {
