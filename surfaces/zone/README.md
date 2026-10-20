@@ -1076,8 +1076,11 @@ states), `ZonePaused` (`OnTheGame`, `OnTheCover`), and the new atoms
   in PAUSED, as Mania's does. Each wedge's legs are 0.78 of the panel's
   height and never more than a quarter of its width (`zoneDialogWedgeArt`,
   measured on the reference: 505 of 645 px). The buttons keep clear of the
-  bottom-right wedge (the shape hook writes `--zone-dialog-wedge-leg`), so
-  no black slab stands on black. Korri's lines are Jersey 10 as written in
+  bottom-right wedge at its widest (`--zone-dialog-wedge-reach`, a quarter
+  of the width, held equal to the plan), so no black slab stands on black.
+  The clearance reads no measurement: an earlier cut read the measured leg,
+  the leg moved with the panel's height, the buttons moved the height, and
+  Caliper reported a ResizeObserver loop. Korri's lines are Jersey 10 as written in
   the warm white with the screen's black ring, 16 art px apart, at most
   46ch wide: about 44 to 50 characters of Korri's real sentences a line,
   under the brief's 52. The headline and the buttons stand at caps-2 and
@@ -1097,8 +1100,10 @@ states), `ZonePaused` (`OnTheGame`, `OnTheCover`), and the new atoms
   gate's canvas allowance is unchanged. Under reduced motion, and on a box
   never laid out (a test DOM), neither runs. `OpenAndClose` toggles on T
   and exposes `window.seek(ms)` for takes. Measured on the takes'
-  filmstrips (100 ms a cell): open 2 cells (180 ms), close 1 to 2 cells
-  (140 ms); the reduced-motion take shows end states only.
+  filmstrips (100 ms a cell): the open's mid frames fill 1 to 2 cells
+  (180 ms), the close's 1 to 2 (140 ms); `window.seek(95)` holds the open
+  at three sixths and `seek(70)` the close at three sixths; the
+  reduced-motion takes show end states only.
 - **The busy strip has one fit for itself.** The kicker and Korri's
   actions step to caps-1 together (CANCEL never towers over the kicker),
   and only then does the kicker wrap and the actions drop under the panel.
@@ -1156,11 +1161,12 @@ states), `ZonePaused` (`OnTheGame`, `OnTheCover`), and the new atoms
 
 ### Known gaps, after the layers
 
-- **A first fit can run before the web fonts load.** On the 720p take the
-  first dialog opened at caps-2 buttons, which do not fit there; the same
-  dialog reopened at caps-1. `useZoneFit` (the foundation's) measures at
-  mount and on resize only; a refit on `document.fonts.ready` would close
-  this everywhere. Suggested issue.
 - **Pages' own dialogs** (OPTIONS' confirmation, GAME OPTS.' NO / YES,
   SAVE DATA's steps) now have the sky look and M4, but no veil under them:
   their pages place them.
+- **The launch title card is not passed yet.** `ZoneStatusLayer` takes
+  `stage` and `busyAt`; the games worker's card is the stage, and
+  `ZoneSurface` passes nothing until that card lands.
+- **The 52-character measure is in `ch`.** Jersey 10 is proportional, so
+  46ch holds 44 to 50 characters of Korri's real sentences; a line of
+  narrow letters (i, l, t) could pass 52.
