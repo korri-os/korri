@@ -258,45 +258,59 @@ describe("ZoneCard", () => {
 
 describe("ZoneSaveCard", () => {
   const saveNode = () => document.querySelector(".zone-save-card")!
+  /** MANIA MODE's foot strip: the status as a bar across the card, not a tag. */
+  const barsIn = (): string[] =>
+    [...document.querySelectorAll(".zone-save-card-foot")].map((node) => node.textContent ?? "")
+  const emblemIn = () => document.querySelector(".zone-save-card-window [data-emblem]")?.getAttribute("data-emblem")
 
-  test("New: the header reads NEW over art, with no tag", () => {
+  test("New: the header reads NEW over art, with no status bar", () => {
     render(<saveCard.New />)
     expect(screen.getByText("New")).toBeTruthy()
     expect(document.querySelector(".zone-cover-well-art")).not.toBeNull()
+    expect(barsIn()).toEqual([])
     expect(tagsIn()).toEqual([])
   })
 
-  test("Default is the NEW card", () => {
+  test("Default is first boot's card: NEW on the bar, START under the key", () => {
     render(<saveCard.default />)
-    expect(screen.getByText("New")).toBeTruthy()
+    expect(screen.getByText("New").closest(".zone-save-card-heading")).not.toBeNull()
+    expect(screen.getByText("Start").closest(".zone-save-card-tag")).not.toBeNull()
+    expect(emblemIn()).toBe("key")
   })
 
-  test("WithText: BACK UP over a line of text, tagged SAVED", () => {
+  test("WithText: BACK UP over the key and its word, the SAVED bar at the foot", () => {
     render(<saveCard.WithText />)
     expect(screen.getByText("Back up")).toBeTruthy()
     expect(screen.getByText("This device")).toBeTruthy()
-    expect(tagsIn()).toEqual(["Saved"])
+    expect(emblemIn()).toBe("key")
+    expect(barsIn()).toEqual(["Saved"])
+    expect(document.querySelector(".zone-save-card-foot")?.getAttribute("data-kind")).toBe("saved")
   })
 
-  test("WithQr: the QR node stands in the well, tagged OPEN", () => {
+  test("WithQr: the QR node stands in the well, the OPEN bar at the foot", () => {
     render(<saveCard.WithQr />)
     expect(screen.getByText("Back up")).toBeTruthy()
     expect(screen.getByRole("img", { name: "QR code" })).toBeTruthy()
-    expect(tagsIn()).toEqual(["Open"])
+    expect(barsIn()).toEqual(["Open"])
   })
 
-  test("Focused: the pink edge and two triangles, tagged HERE", () => {
+  test("Focused: the pink edge and two triangles, the HERE bar", () => {
     render(<saveCard.Focused />)
     expect(screen.getByText("Switch")).toBeTruthy()
     expect(saveNode().getAttribute("data-focused")).toBe("true")
     expect(document.querySelectorAll(".zone-save-card-tri")).toHaveLength(2)
-    expect(tagsIn()).toEqual(["Here"])
+    expect(emblemIn()).toBe("restore")
+    expect(barsIn()).toEqual(["Here"])
   })
 
-  test("LongHeader keeps the whole header in the DOM", () => {
+  test("LongHeader keeps the whole header in the DOM; a key keeps its case and breaks only after its ellipsis", () => {
     render(<saveCard.LongHeader />)
     expect(screen.getByText("Retired identity backup")).toBeTruthy()
-    expect(tagsIn()).toEqual(["Zao"])
+    const key = document.querySelector(".zone-save-card-text")!
+    expect(key.getAttribute("data-case")).toBe("verbatim")
+    expect(key.textContent).toBe("npub1qy3…8x7lk2m0")
+    expect(key.querySelectorAll("wbr")).toHaveLength(1)
+    expect(barsIn()).toEqual(["Zao"])
   })
 
   test("every state is covered", () => {

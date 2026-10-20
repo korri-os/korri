@@ -17,6 +17,7 @@ import { plan } from "../plan/zone-select"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
 import { ZoneFoot } from "../ui/molecules/ZoneFoot"
 import { ZoneTabStrip } from "../ui/molecules/ZoneTabStrip"
+import { ZoneGround } from "../ui/organisms/ZoneGround"
 import { ZoneSaveData } from "./ZoneSaveData"
 
 export const name = "Save data"
@@ -63,29 +64,33 @@ function Scene({ initial, narrow = false, screen }: {
     ? [windowWidth, windowHeight]
     : [Math.min(windowWidth, screen[0]), Math.min(windowHeight, screen[1])]
   const layout = plan(narrow ? width * 0.36 : width, height)
+  // The root stands the page on SAVE DATA's teal ground; the part does too.
   return (
-    <ZoneSaveData
-      card={scene.model.card}
-      flow={scene.model.flow}
-      frame={{
-        band: layout.band,
-        strips: layout.strips,
-        hintBack: <ZoneKeycap button="B" word="Back" />,
-        hintConfirm: <ZoneKeycap button="A" word="Confirm" />,
-        tabs: <ZoneTabStrip active="savedata" focused="savedata" onSelect={() => undefined} tabs={tabItems} />,
-        foot: (
-          <ZoneFoot
-            build={fixtureModel.buildLabel}
-            clock={fixtureModel.clockLabel}
-            connection={fixtureModel.network?.connection}
-            device="Mini"
-            strips={layout.strips}
-          />
-        ),
-      }}
-      identity={scene.identity}
-      onEvent={event => store.current?.dispatch(event)}
-    />
+    <div className="zone-theme zone-screen" data-ground="savedata">
+      <ZoneGround />
+      <ZoneSaveData
+        card={scene.model.card}
+        flow={scene.model.flow}
+        frame={{
+          band: layout.band,
+          strips: layout.strips,
+          hintBack: <ZoneKeycap button="B" word="Back" />,
+          hintConfirm: <ZoneKeycap button="A" word="Confirm" />,
+          tabs: <ZoneTabStrip active="savedata" focused="savedata" onSelect={() => undefined} tabs={tabItems} />,
+          foot: (
+            <ZoneFoot
+              build={fixtureModel.buildLabel}
+              clock={fixtureModel.clockLabel}
+              connection={fixtureModel.network?.connection}
+              device="Mini"
+              strips={layout.strips}
+            />
+          ),
+        }}
+        identity={scene.identity}
+        onEvent={event => store.current?.dispatch(event)}
+      />
+    </div>
   )
 }
 

@@ -1098,3 +1098,118 @@
   /** The share of a WI-FI row the SSID takes; bars, strength and words take the rest. @label Wi-Fi label share @min 0.2 @max 0.8 @step 0.01 */
   --zone-options-wifi-label-share: 0.46;
 }
+
+/* ---- refine-savedata ---- */
+/* SAVE DATA as MANIA MODE's save select and first boot as COMPETITION:
+ * the save card's window and foot bar, Zone's own emblems, the earned
+ * checker behind the backup's QR code, the step pips and the controller
+ * cards' corner tab and VS. Appended by the save-data refinement worker;
+ * the lines above are untouched. */
+.zone-theme {
+  /* Zone's emblems (ZoneEmblem): one ink per letter of the grids. */
+  /** An emblem's side. Art px. @label Emblem side @min 16 @max 16 @step 1 */
+  --zone-emblem-side: 16;
+  /** @label Emblem outline */
+  --zone-emblem-k: var(--zone-black);
+  /** @label Emblem white */
+  --zone-emblem-w: var(--zone-white);
+  /** @label Emblem white, shade */
+  --zone-emblem-s: var(--zone-white-shade);
+  /** @label Emblem gold */
+  --zone-emblem-y: var(--zone-yellow);
+  /** @label Emblem gold, shade */
+  --zone-emblem-o: var(--zone-orange);
+  /** @label Emblem red */
+  --zone-emblem-r: var(--zone-red);
+  /** @label Emblem blue */
+  --zone-emblem-b: var(--zone-blue);
+  /** @label Emblem grey, light */
+  --zone-emblem-l: var(--zone-grey-light);
+  /** @label Emblem grey, dark */
+  --zone-emblem-m: var(--zone-grey-dark);
+  /** @label Emblem pad body */
+  --zone-emblem-d: var(--zone-key-disc);
+  /** @label Emblem pad B */
+  --zone-emblem-p: var(--zone-key-b);
+  /** @label Emblem pad A */
+  --zone-emblem-g: var(--zone-key-a);
+
+  /* The save card (MANIA MODE's). */
+  /** Width over height of a save card: room for FROM BACKUP on one line at caps-1. @label Save card aspect @min 0.4 @max 1 @step 0.01 */
+  --zone-save-card-aspect: 0.7;
+  /** The save card's black frame. Art px. @label Save card frame @min 1 @max 8 @step 1 */
+  --zone-save-frame: 4;
+  /** The striped header's height. Art px. @label Save header height @min 20 @max 60 @step 1 */
+  --zone-save-header-height: 34;
+  /** The white bar's padding over and under its word. Art px. @label Save header bar padding @min 0 @max 8 @step 1 */
+  --zone-save-bar-pad: 3;
+  /** The window's black word tag's padding. Art px. @label Save window tag padding @min 0 @max 8 @step 1 */
+  --zone-save-tag-pad: 2;
+  /** The room between the window's emblem and its word. Art px. @label Save window gap @min 0 @max 12 @step 1 */
+  --zone-save-window-gap: 3;
+  /** The cursor triangles over and under the window. Art px wide. @label Save triangle @min 4 @max 20 @step 1 */
+  --zone-save-tri: 8;
+  /** The lean of the window's diagonal. @label Save window stripe angle @min -90 @max 90 @step 1 */
+  --zone-save-window-angle: 135deg;
+  /** @label Save header ground */
+  --zone-save-head-ground: var(--zone-stripe-light);
+  /** @label Save window */
+  --zone-save-window: var(--zone-stripe-light);
+  /** @label Save window diagonal */
+  --zone-save-window-stripe: var(--zone-stripe-teal);
+  /** @label Save window tag */
+  --zone-save-window-tag: var(--zone-black);
+  /** @label Save foot bar ink, dark */
+  --zone-save-bar-dark-ink: var(--zone-black);
+
+  /* The earned checker behind the backup's QR code (REFINEMENT.md 3). */
+  /** @label Checker blue */
+  --zone-checker-blue: #2e4bd6;
+  /** @label Checker white */
+  --zone-checker-white: var(--zone-white);
+  /** One square of the checker. Art px. @label Checker square @min 4 @max 16 @step 1 */
+  --zone-checker-square: 8;
+  /** The checker's border round the QR code's paper: two squares. Art px. @label Checker margin @min 8 @max 32 @step 1 */
+  --zone-checker-margin: 16;
+
+  /* The backup's secret on its slab, in Jersey 10 (a Jersey pixel is a
+   * whole number of CSS px: the type steps by --zone-fact px). */
+  /** One line of the secret, 32 characters in 8 groups, in Jersey ems (measured 15.7 to 16.6 on bech32; a wider line breaks at its middle). @label Secret line, Jersey ems @min 8 @max 30 @step 0.25 */
+  --zone-secret-fact-line-ems: 16.75;
+  /** The secret's line: 18 Jersey pixels, the cap and 8 between. @label Secret leading, Jersey @min 0.75 @max 1.5 @step 0.0001 */
+  --zone-secret-fact-leading: 0.9643;
+  /** The widest the backup's slab grows beside its QR code: one line of the secret in Jersey 10 at one Jersey pixel an art pixel, with its padding. Art px. @label Backup slab, widest (Jersey) @min 240 @max 1200 @step 10 */
+  --zone-save-slab-widest: 400;
+  /** The largest the secret grows, in Jersey pixels an art pixel. @label Secret type, most @min 1 @max 3 @step 1 */
+  --zone-secret-most: 2;
+
+  /* First boot: the step pips under the banner's lip. */
+  /** A pip's diamond, its outline round it. Art px. @label Step pip @min 5 @max 5 @step 1 */
+  --zone-pip: 5;
+  /** The room between two pips. Art px. @label Step pip gap @min 1 @max 12 @step 1 */
+  --zone-pip-gap: 4;
+  /** The room between the banner's lip and the pips. Art px. @label Step pips drop @min 0 @max 12 @step 1 */
+  --zone-pip-drop: 4;
+  /** @label Step pip, done or here */
+  --zone-pip-on: var(--zone-yellow);
+  /** @label Step pip outline */
+  --zone-pip-edge: var(--zone-black);
+
+  /* First boot: COMPETITION's cards. */
+  /** The heard and waiting card's frame. Art px. @label Controller frame @min 1 @max 8 @step 1 */
+  --zone-seat-frame: 4;
+  /** The seat's corner tab: its padding beside the caps. Art px. @label Seat tab padding @min 0 @max 8 @step 1 */
+  --zone-seat-tab-pad: 3;
+  /** The VS panel's width between the two seats. Art px (plan: ZONE_CONTROLLER_VS). @label VS width @min 40 @max 120 @step 1 */
+  --zone-vs-width: 80;
+  /** The VS panel's height when the seats stand in a column. Art px (plan: ZONE_CONTROLLER_VS_TALL). @label VS height @min 20 @max 40 @step 1 */
+  --zone-vs-height: 28;
+  /** @label Seat card body */
+  --zone-seat-body: var(--zone-stripe-light);
+  /** @label Seat card stripe, red */
+  --zone-seat-stripe-red: var(--zone-key-b);
+  /** @label Seat card stripe, blue */
+  --zone-seat-stripe-blue: var(--zone-blue);
+  /** @label Seat tab */
+  --zone-seat-tab: var(--zone-black);
+}

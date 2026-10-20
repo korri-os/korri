@@ -1,6 +1,7 @@
 import "./ZoneSaveBand.css"
 import "../../zone-motion.css"
 import { useLayoutEffect, useRef } from "react"
+import { useZoneSaveBandFit } from "../../use-zone-save-band-fit"
 import type { ZoneTagItem } from "../atoms/ZoneTag"
 import { ZoneTriangle } from "../atoms/ZoneTriangle"
 import { ZoneSaveCard, type ZoneSaveBody } from "../molecules/ZoneSaveCard"
@@ -23,6 +24,10 @@ export interface ZoneSaveBandCard {
  * that more exists even when the cards happen to end flush with its edge.
  * While the cursor is elsewhere on the page (`marked` off) the band wears
  * neither, so there is only ever one cursor on screen.
+ *
+ * Every card's header takes the same caps step, the largest at which all
+ * of them fit (caps-2, else caps-1), so the band reads as one row of
+ * MANIA MODE's cards rather than a row of differently sized words.
  *
  * The band is a size container. A card's height is the least of the cap,
  * the band's height less its padding, and the height at which one card and
@@ -47,15 +52,18 @@ export function ZoneSaveBand({
   readonly onFocus?: (index: number) => void
   readonly onChoose?: (index: number) => void
 }) {
+  const band = useRef<HTMLDivElement>(null)
   const track = useRef<HTMLDivElement>(null)
   const focus = Math.min(Math.max(0, focusedIndex), Math.max(0, cards.length - 1))
+  // Every header in the band takes one caps step: the largest at which all fit.
+  useZoneSaveBandFit(band, track, cards.map(card => card.header).join("|"))
 
   useLayoutEffect(() => {
     track.current?.style.setProperty("--zone-save-band-focus", String(focus))
   }, [focus])
 
   return (
-    <div className="zone-save-band">
+    <div className="zone-save-band" ref={band}>
       {marked && cards.length > 1 ? (
         <>
           <span className="zone-save-band-more" data-side="start">
@@ -76,6 +84,7 @@ export function ZoneSaveBand({
           >
             <ZoneSaveCard
               body={card.body}
+              fitHeader={false}
               focused={marked && index === focus}
               header={card.header}
               onFocus={onFocus === undefined ? undefined : () => onFocus(index)}

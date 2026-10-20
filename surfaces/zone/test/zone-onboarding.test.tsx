@@ -21,9 +21,12 @@ import { createOnboardingProgram } from "../src/fixtures/layer-program"
 import { ONBOARDING_TARGET, onboardingNetworkTarget, ZoneOnboarding } from "../src/pages/ZoneOnboarding"
 import {
   planControllerCards,
+  ZONE_CONTROLLER_ARROWS_LEAST,
   ZONE_CONTROLLER_CARD_GAP,
   ZONE_CONTROLLER_CARD_MAX,
   ZONE_CONTROLLER_CARD_MIN,
+  ZONE_CONTROLLER_VS,
+  ZONE_CONTROLLER_VS_TALL,
 } from "../src/plan/onboarding"
 import {
   canGoOn,
@@ -205,10 +208,36 @@ describe("planControllerCards", () => {
     expect(planControllerCards(1200, 500, 0)).toEqual({ columns: 1, rows: 1, cardWidth: ZONE_CONTROLLER_CARD_MAX })
   })
 
+  test("VS takes its room from the row: two cards and VS across", () => {
+    const width = 2 * ZONE_CONTROLLER_CARD_MAX + 2 * ZONE_CONTROLLER_CARD_GAP + ZONE_CONTROLLER_VS
+    // A landscape stage: too short to stack the two cards.
+    expect(planControllerCards(width, 200, 2, true)).toEqual({ columns: 2, rows: 1, cardWidth: ZONE_CONTROLLER_CARD_MAX, versus: "row" })
+    // Two art px narrower and the cards give them up, not VS.
+    expect(planControllerCards(width - 2, 200, 2, true).cardWidth).toBe(ZONE_CONTROLLER_CARD_MAX - 1)
+    // Without VS the same room fits the cards at their widest with room to spare.
+    expect(planControllerCards(width - 2, 200, 2)).toEqual({ columns: 2, rows: 1, cardWidth: ZONE_CONTROLLER_CARD_MAX })
+  })
+
+  test("in a column VS stands between the two cards and takes its room from the height", () => {
+    const layout = planControllerCards(120, 500, 2, true)
+    expect(layout).toMatchObject({ columns: 1, rows: 2, versus: "column" })
+    const down = Math.floor((500 - ZONE_CONTROLLER_CARD_GAP * 2 - ZONE_CONTROLLER_VS_TALL) / 2 / 1.5)
+    expect(layout.cardWidth).toBe(Math.min(ZONE_CONTROLLER_CARD_MAX, 120, down))
+  })
+
+  test("VS only for two seats: three or four stand as the four-up", () => {
+    expect(planControllerCards(1200, 500, 3, true).versus).toBeUndefined()
+    expect(planControllerCards(1200, 500, 4, true).versus).toBeUndefined()
+  })
+
   test("the plan's constants are the tokens", () => {
     const tokens = readFileSync(join(import.meta.dir, "..", "src", "zone-tokens.css"), "utf8")
     expect(tokens).toContain(`--zone-controller-card-max: ${ZONE_CONTROLLER_CARD_MAX};`)
     expect(tokens).toContain(`--zone-card-gap-wide: ${ZONE_CONTROLLER_CARD_GAP};`)
+    expect(tokens).toContain(`--zone-vs-width: ${ZONE_CONTROLLER_VS};`)
+    expect(tokens).toContain(`--zone-vs-height: ${ZONE_CONTROLLER_VS_TALL};`)
+    expect(ZONE_CONTROLLER_ARROWS_LEAST).toBeGreaterThan(ZONE_CONTROLLER_CARD_MIN)
+    expect(ZONE_CONTROLLER_ARROWS_LEAST).toBeLessThanOrEqual(ZONE_CONTROLLER_CARD_MAX)
   })
 })
 
@@ -246,17 +275,32 @@ const mount = (korri: SurfaceModel, init: Partial<ZoneOnboardingModel> = {}) => 
   return program
 }
 
+/** The step the banner names. */
 const currentStep = () => {
   const strip = screen.getByRole("group", { name: "Setup steps" })
-  return within(strip).getAllByText(/^\d /).find(tag => tag.getAttribute("data-kind") === "here")?.textContent
+  return strip.querySelector(".zone-banner .zone-caps")?.textContent
 }
+/** Each pip's state, in order. */
+const pips = () => [...screen.getByRole("group", { name: "Setup steps" }).querySelectorAll<HTMLElement>(".zone-step-pip")]
+  .map(pip => pip.dataset["state"])
 
 describe("ZoneOnboarding", () => {
-  test("C25: the strip shows four steps and where you are", () => {
+  test("C25: the banner names the step; four pips show where you are", () => {
     mount(waiting)
     const strip = screen.getByRole("group", { name: "Setup steps" })
-    expect(within(strip).getAllByText(/^\d /).map(tag => tag.textContent)).toEqual(["1 Controllers", "2 Wi-Fi", "3 Name", "4 Identity"])
-    expect(currentStep()).toBe("1 Controllers")
+    // One banner, naming the step; the pips under it count four steps.
+    expect(strip.querySelectorAll(".zone-banner")).toHaveLength(1)
+    expect(currentStep()).toBe("Controllers")
+    expect(within(strip).getByRole("img", { name: "Step 1 of 4" })).toBeDefined()
+    expect(pips()).toEqual(["here", "ahead", "ahead", "ahead"])
+    // No tag strip any more: the per-step colours went with it.
+    expect(strip.querySelector(".zone-tag")).toBeNull()
+  })
+
+  test("C25: the pips fill gold for the steps done and the step you are on", () => {
+    mount(online, { step: "identity", focus: TARGET.save })
+    expect(currentStep()).toBe("Identity")
+    expect(pips()).toEqual(["done", "done", "done", "here"])
   })
 
   test("C25: a controller not yet heard reads WAITING, and NEXT does nothing", () => {
@@ -274,13 +318,37 @@ describe("ZoneOnboarding", () => {
     expect(screen.getByText("Xbox Wireless Controller")).toBeDefined()
     expect(screen.getByText("1P")).toBeDefined()
     fireEvent.click(screen.getByRole("button", { name: "Next" }))
-    expect(currentStep()).toBe("2 Wi-Fi")
+    expect(currentStep()).toBe("Wi-Fi")
   })
 
   test("C25: four controllers take their seats in heard order; the unheard one waits", () => {
     mount(onboardingModel(controllersFour))
     expect(["1P", "2P", "3P"].map(seat => screen.getByText(seat).textContent)).toEqual(["1P", "2P", "3P"])
     expect(screen.getByText("DualSense")).toBeDefined()
+    expect(screen.getAllByRole("group", { name: "Waiting" })).toHaveLength(1)
+    // Three or four seats: Mania's four-up, no VS.
+    expect(screen.queryByText("VS")).toBeNull()
+  })
+
+  test("C25: every seat wears the same black corner tab; no seat has a colour of its own", () => {
+    mount(onboardingModel(controllersFour))
+    const tabs = ["1P", "2P", "3P"].map(seat => screen.getByText(seat).closest<HTMLElement>(".zone-controller-card-seat"))
+    expect(tabs.every(tab => tab !== null)).toBe(true)
+    expect(document.querySelector(".zone-controller-card .zone-tag")).toBeNull()
+    // A heard card draws Zone's controller emblem where Mania draws a portrait.
+    expect(document.querySelectorAll(".zone-controller-card [data-emblem='pad']")).toHaveLength(3)
+  })
+
+  test("C25: exactly two seats, both heard: VS stands between 1P and 2P", () => {
+    const two = controllersFour.slice(0, 2).map(controller => ({ ...controller, heard: true }))
+    mount(onboardingModel(two))
+    const cards = document.querySelector(".zone-onboarding-cards")!
+    expect([...cards.children].map(child => child.textContent)).toEqual(["1PXbox Wireless Controller", "VS", "2P8BitDo Pro 2"])
+  })
+
+  test("C25: two seats, one still waiting: no VS until both are heard", () => {
+    mount(onboardingModel([controllerPad, { ...controllersFour[1]!, heard: false }]))
+    expect(screen.queryByText("VS")).toBeNull()
     expect(screen.getAllByRole("group", { name: "Waiting" })).toHaveLength(1)
   })
 
@@ -303,13 +371,15 @@ describe("ZoneOnboarding", () => {
     fireEvent.click(screen.getByText("Scan"))
     expect(program.host.calls).toEqual(["scanWifi"])
     fireEvent.click(screen.getByText("Skip"))
-    expect(currentStep()).toBe("3 Name")
+    expect(currentStep()).toBe("Name")
   })
 
   test("C25: NAME opens the keyboard on Korri's name and DONE saves it with changeSetting", () => {
     const program = mount(online, { step: "name", focus: TARGET.name })
-    expect(screen.getByText("Name")).toBeDefined()
-    fireEvent.click(screen.getByText("Name"))
+    // The banner names the step NAME too; the row is Korri's setting.
+    const group = document.querySelector<HTMLElement>(".zone-onboarding-group")!
+    expect(within(group).getByText("Name")).toBeDefined()
+    fireEvent.click(within(group).getByText("Name"))
     const keyboard = screen.getByRole("group", { name: "Keyboard" })
     fireEvent.click(within(keyboard).getByRole("button", { name: "2" }))
     fireEvent.click(within(keyboard).getByRole("button", { name: "Done" }))
@@ -318,10 +388,11 @@ describe("ZoneOnboarding", () => {
     expect(screen.getByText("mini2")).toBeDefined()
   })
 
-  test("C25: IDENTITY offers the NEW SAVE card; START lights FINISH; FINISH ends setup", () => {
+  test("C25: IDENTITY offers the save card headed NEW; START lights FINISH; FINISH ends setup", () => {
     const program = mount(online, { step: "identity", focus: TARGET.save })
-    expect(screen.getByText("New save")).toBeDefined()
-    expect(screen.getByText("Start")).toBeDefined()
+    // As on SAVE DATA: NEW on the header's bar, START in the window under the key.
+    expect(screen.getByText("New").closest(".zone-save-card-heading")).not.toBeNull()
+    expect(screen.getByText("Start").closest(".zone-save-card-window")?.querySelector("[data-emblem='key']")).not.toBeNull()
     const finish = screen.getByRole("button", { name: "Finish" })
     expect(finish.getAttribute("aria-disabled")).toBe("true")
     fireEvent.click(finish)
@@ -336,6 +407,6 @@ describe("ZoneOnboarding", () => {
   test("C25: B goes back a step", () => {
     const program = mount(heard, { step: "wifi" })
     act(() => program.dispatch({ _tag: "PressedBack" }))
-    expect(currentStep()).toBe("1 Controllers")
+    expect(currentStep()).toBe("Controllers")
   })
 })

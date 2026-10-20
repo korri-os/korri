@@ -101,6 +101,25 @@ describe("the band", () => {
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull()
   })
 
+  test("MANIA MODE's cards: each window carries Zone's own emblem; the page stands on SAVE DATA's ground", () => {
+    mount(identityOf())
+    const emblem = (name: RegExp) => card(name).querySelector(".zone-save-card-window [data-emblem]")?.getAttribute("data-emblem")
+    expect(emblem(/Back up/)).toBe("key")
+    expect(emblem(/From backup/)).toBe("restore")
+    expect(emblem(/Bunker/)).toBe("link")
+    expect(screen.getAllByText("Retired").map(node => node.closest("button")?.querySelector("[data-emblem]")?.getAttribute("data-emblem")))
+      .toEqual(["retired", "retired"])
+    expect(document.querySelector(".zone-shell")?.getAttribute("data-ground")).toBe("savedata")
+  })
+
+  test("the status is a bar across BACK UP's foot, not a tag", () => {
+    mount(identityOf())
+    const foot = card(/Back up/).querySelector(".zone-save-card-foot")
+    expect(foot?.textContent).toBe("New")
+    expect(foot?.getAttribute("data-kind")).toBe("open")
+    expect(card(/Back up/).querySelector(".zone-tag")).toBeNull()
+  })
+
   test("BACK UP reads NEW without a local backup and BACKED UP with one", () => {
     mount(identityOf())
     expect(within(card(/Back up/)).getByText("New")).toBeTruthy()
@@ -163,6 +182,16 @@ describe("C16 back up", () => {
     publish(identityOf({ _tag: "Idle" }, { localBackupAvailable: true }))
     expect(within(card(/Back up/)).getByText("Backed up")).toBeTruthy()
     expect(screen.queryByRole("img", { name: "Backup QR code" })).toBeNull()
+  })
+
+  test("the checker is earned: it stands round the QR code only once Korri has made the backup", () => {
+    const { publish } = mount(identityOf())
+    expect(document.querySelector("[data-earned]")).toBeNull()
+    publish(identityOf({ _tag: "BackupReady", encryptedSecret: SECRET }, { localBackupAvailable: true }))
+    const qr = screen.getByRole("img", { name: "Backup QR code" })
+    // The checker is the well behind the paper; the paper, quiet zone and all, is the SVG over it.
+    expect(qr.parentElement?.hasAttribute("data-earned")).toBe(true)
+    expect(document.querySelectorAll("[data-earned]")).toHaveLength(1)
   })
 
   test("the QR code's paper keeps a quiet zone of four modules on every side", () => {

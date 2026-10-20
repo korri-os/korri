@@ -1,0 +1,12 @@
+/* A black parallelogram: its ends lean at 45 degrees (--zone-panel-shape,
+ * measured; a smooth lean until then), padded by its own height so the
+ * caps stand clear of both slants. */
+.zone-versus {
+  --zone-versus-lean: calc((var(--zone-caps-2) + 2 * var(--zone-seat-tab-pad)) * var(--zone-px));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--zone-seat-tab-pad) * var(--zone-px)) var(--zone-versus-lean);
+  background: var(--zone-panel);
+  clip-path: var(--zone-panel-shape, polygon(var(--zone-versus-lean) 0, 100% 0, calc(100% - var(--zone-versus-lean)) 100%, 0 100%));
+}

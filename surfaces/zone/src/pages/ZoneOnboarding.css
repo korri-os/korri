@@ -8,14 +8,6 @@
   container: zone-onboarding / size;
 }
 
-/* The step strip in the tabs' place: four joined tags, the tabs' type,
- * as wide as the room the two keycap hints leave, up to its token. */
-.zone-onboarding-steps {
-  --zone-tag-row-base: var(--zone-shell-tab-type, calc(var(--zone-type-tab-wide) * var(--zone-px)));
-  display: flex;
-  width: min(calc(var(--zone-onboarding-steps-width) * var(--zone-px)), calc(100cqi - var(--zone-shell-hint-room, calc(var(--zone-onboarding-hint-room) * var(--zone-px))) * 2));
-}
-
 /* The step over its way forward. The step gives way; the action row keeps
  * its height, so NEXT and FINISH are always on screen. */
 .zone-onboarding-body {
@@ -46,7 +38,23 @@
   grid-template-columns: repeat(var(--zone-onboarding-columns, 4), auto);
   justify-content: center;
   align-content: center;
+  align-items: center;
   gap: calc(var(--zone-card-gap-wide) * var(--zone-px));
+}
+
+/* VS between the two seats: its own column in a row (as wide as the plan
+ * gives it), its own row in a column. */
+.zone-onboarding-versus {
+  display: flex;
+  justify-content: center;
+}
+
+.zone-onboarding-cards[data-versus="row"] .zone-onboarding-versus {
+  width: calc(var(--zone-vs-width) * var(--zone-px));
+}
+
+.zone-onboarding-cards[data-versus="column"] .zone-onboarding-versus {
+  height: calc(var(--zone-vs-height) * var(--zone-px));
 }
 
 /* An OPTIONS group, as wide as a page of rows reads well, its rows

@@ -1,6 +1,7 @@
 /* The well: black inside a blue edge, the code centred and square. The
  * well fills the box it is given; the code takes the shorter side. */
 .zone-qr-well {
+  --zone-qr-room: calc(min(100cqw, 100cqh) - 2 * calc(var(--zone-hairline) * var(--zone-px)));
   container-type: size;
   display: grid;
   place-items: center;
@@ -13,13 +14,31 @@
   background: var(--zone-qr-well);
 }
 
-/* The paper is the SVG: white, with the quiet zone inside the viewBox, so
- * the code reads against the black well at any scale. */
+/* Earned: a blue and white checker of 8-art-px squares round the paper,
+ * centred on it, with no edge; the paper stands one square in from every
+ * side, so the checker frames it and never reaches its quiet zone. */
+.zone-qr-well[data-earned] {
+  --zone-qr-room: calc(min(100cqw, 100cqh) - 2 * calc(var(--zone-checker-square) * var(--zone-px)));
+  padding: 0;
+  border: 0;
+  background:
+    conic-gradient(
+      var(--zone-checker-blue) 0deg 90deg,
+      var(--zone-checker-white) 90deg 180deg,
+      var(--zone-checker-blue) 180deg 270deg,
+      var(--zone-checker-white) 270deg 360deg
+    )
+    50% 50% / calc(2 * var(--zone-checker-square) * var(--zone-px)) calc(2 * var(--zone-checker-square) * var(--zone-px));
+}
+
+/* The paper is the SVG: white, with the quiet zone inside the viewBox, a
+ * whole number of px a module (at least one), ringed by a black hairline. */
 .zone-qr-well-code {
   display: block;
-  width: min(100%, 100cqh);
+  width: max(calc(var(--zone-qr-span, 1) * var(--zone-hairline) * var(--zone-px-least)), round(down, var(--zone-qr-room), calc(var(--zone-qr-span, 1) * var(--zone-px-least))));
   height: auto;
   aspect-ratio: 1;
+  outline: calc(var(--zone-hairline) * var(--zone-px)) solid var(--zone-panel);
   background: var(--zone-qr-paper);
   fill: var(--zone-qr-ink);
   shape-rendering: crispEdges;

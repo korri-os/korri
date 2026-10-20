@@ -94,25 +94,30 @@ const RETIRED_ACTIONS = [
 
 const retiredActionOf = (id: string): ZoneSaveDataRetiredAction => id === "delete" ? "delete" : "backup"
 
-/** The cards, in band order. The words are the page's labels; the keys are Korri's. */
+/**
+ * The cards, in band order. The words are the page's labels; the keys are
+ * Korri's. Each window carries Zone's own emblem: the key for this device's
+ * key, an arrow into a card for a backup, a link for a bunker, the key in
+ * greys for a key this device no longer uses (and for no identity at all).
+ */
 function cardsOf(identity: SurfaceIdentityManagement | undefined): readonly ZoneSaveBandCard[] {
   if (identity === undefined) {
-    return [{ id: "unavailable", header: "Identity", body: { kind: "text", text: "Not available" } }]
+    return [{ id: "unavailable", header: "Identity", body: { kind: "text", text: "Not available", emblem: "retired" } }]
   }
   const backup: ZoneSaveBandCard = {
     id: "backup",
     header: "Back up",
-    body: { kind: "text", text: "This key" },
+    body: { kind: "text", text: "This key", emblem: "key" },
     tag: identity.localBackupAvailable ? { kind: "saved", label: "Backed up" } : { kind: "open", label: "New" },
   }
   return [
     backup,
-    { id: "switch-backup", header: "Switch", body: { kind: "text", text: "From backup" } },
-    { id: "switch-bunker", header: "Switch", body: { kind: "text", text: "Bunker" } },
+    { id: "switch-backup", header: "Switch", body: { kind: "text", text: "From backup", emblem: "restore" } },
+    { id: "switch-bunker", header: "Switch", body: { kind: "text", text: "Bunker", emblem: "link" } },
     ...identity.retiredPublicKeys.map((key): ZoneSaveBandCard => ({
       id: `retired:${key}`,
       header: "Retired",
-      body: { kind: "text", text: shortKey(key), verbatim: true },
+      body: { kind: "text", text: shortKey(key), verbatim: true, emblem: "retired" },
     })),
   ]
 }
@@ -266,7 +271,7 @@ export function ZoneSaveData({
   }
 
   return (
-    <ZoneShell {...frame}>
+    <ZoneShell ground="savedata" {...frame}>
       <div className="zone-save-data" data-busy={status?._tag === "Working" || undefined} ref={root}>
         {status?._tag === "Working" ? (
           <div className="zone-save-data-busy">
@@ -303,7 +308,7 @@ export function ZoneSaveData({
             <div className="zone-save-data-backup">
               <div className="zone-save-data-qr">
                 <span className="zone-save-data-qr-square">
-                  <ZoneQrWell label="Backup QR code" value={backup} />
+                  <ZoneQrWell earned label="Backup QR code" value={backup} />
                 </span>
               </div>
               <div className="zone-save-data-slab">

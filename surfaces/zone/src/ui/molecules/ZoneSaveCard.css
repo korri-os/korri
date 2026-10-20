@@ -1,19 +1,19 @@
 /* One height, as the zone card: the band's --zone-card-h, or the plan's
- * focused height when the card stands alone. The width is the save card's
- * own ratio, taller than a zone card. */
+ * focused height when the card stands alone. Both sides land on whole art
+ * px, so the frame's edges stay on the grid. The width is the save card's
+ * own aspect, taller than a zone card. */
 .zone-save-card {
-  --zone-save-card-height: var(--zone-card-h, min(calc(var(--zone-card-focus-max) * var(--zone-px)), calc(100cqh - 2 * calc(var(--zone-band-pad) * var(--zone-px)))));
-  --zone-save-card-width: calc(var(--zone-save-card-height) * var(--zone-save-card-ratio));
-  --zone-save-type: calc(var(--zone-save-card-width) * var(--zone-type-save-share));
-  --zone-save-tri: calc(var(--zone-save-card-width) * var(--zone-save-triangle-share));
-  --zone-tag-type: calc(var(--zone-save-type) * var(--zone-tag-type-share));
+  --zone-save-card-height: round(down, var(--zone-card-h, min(calc(var(--zone-card-focus-max) * var(--zone-px)), calc(100cqh - 2 * calc(var(--zone-band-pad) * var(--zone-px))))), var(--zone-px));
+  --zone-save-card-width: round(down, calc(var(--zone-save-card-height) * var(--zone-save-card-aspect)), var(--zone-px));
+  --zone-save-gap: calc(var(--zone-save-frame) * var(--zone-px) / 2);
   position: relative;
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
+  gap: var(--zone-save-gap);
   width: var(--zone-save-card-width);
   height: var(--zone-save-card-height);
-  padding: calc(var(--zone-card-pad) * var(--zone-px));
+  padding: calc(var(--zone-save-frame) * var(--zone-px));
   background: var(--zone-panel);
   box-shadow: calc(var(--zone-drop) * var(--zone-px)) calc(var(--zone-drop) * var(--zone-px)) 0 var(--zone-panel-edge);
   text-align: center;
@@ -27,18 +27,17 @@
     calc(var(--zone-drop-focus) * var(--zone-px)) calc(var(--zone-drop-focus) * var(--zone-px)) 0 var(--zone-panel-edge);
 }
 
-/* The NEW-style header: a mint panel with a yellow stripe above the white
- * band and a red and a blue stripe below it, each a parallelogram. The
- * header word sits on the white band in black caps. */
+/* The header: pale teal, a yellow stripe over the white bar and a red and
+ * a blue stripe under it, each a parallelogram. The label sits on the bar
+ * in black caps. A short card gives the header no more than 30% of it. */
 .zone-save-card-header {
   position: relative;
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  height: calc(var(--zone-save-card-height) * var(--zone-save-header-share));
-  margin-bottom: calc(var(--zone-card-pad) * var(--zone-px));
+  height: min(calc(var(--zone-save-header-height) * var(--zone-px)), round(down, calc(var(--zone-save-card-height) * 0.3), var(--zone-px)));
   overflow: hidden;
-  background: var(--zone-save-header);
+  background: var(--zone-save-head-ground);
 }
 
 .zone-save-card-stripe {
@@ -50,57 +49,72 @@
 
 .zone-save-card-stripe[data-stripe="upper"] {
   top: 0;
-  bottom: 62%;
+  bottom: 50%;
   background: var(--zone-save-stripe-upper);
-  clip-path: polygon(38% 0, 64% 0, 92% 100%, 66% 100%);
+  clip-path: polygon(46% 0, 74% 0, 100% 52%, 100% 100%, 92% 100%);
 }
 
 .zone-save-card-stripe[data-stripe="lower"] {
-  top: 62%;
+  top: 50%;
   bottom: 0;
   background: var(--zone-save-stripe-lower);
-  clip-path: polygon(14% 0, 40% 0, 72% 100%, 46% 100%);
+  clip-path: polygon(10% 0, 38% 0, 70% 100%, 42% 100%);
 }
 
 .zone-save-card-stripe[data-stripe="lowest"] {
-  top: 62%;
+  top: 50%;
   bottom: 0;
   background: var(--zone-save-stripe-lowest);
-  clip-path: polygon(40% 0, 100% 0, 100% 100%, 72% 100%);
+  clip-path: polygon(38% 0, 100% 0, 100% 100%, 70% 100%);
 }
 
+/* The white bar across the header's middle, the label on it: caps-2,
+ * stepped to caps-1 by the fit; at caps-1 a label too long truncates. */
 .zone-save-card-heading {
   position: relative;
-  display: block;
+  display: flex;
+  justify-content: center;
   width: 100%;
-  padding: 0.08em calc(var(--zone-tag-pad) * var(--zone-px));
+  min-width: 0;
+  padding: calc(var(--zone-save-bar-pad) * var(--zone-px)) calc(var(--zone-save-tag-pad) * var(--zone-px));
   overflow: hidden;
   background: var(--zone-save-header-band);
   color: var(--zone-save-header-ink);
   --zone-caps-shade: currentColor;
-  font-size: calc(var(--zone-save-type) * var(--zone-fit, 1));
+  font-size: calc(var(--zone-caps-2) * var(--zone-px) * var(--zone-fit, 1));
   line-height: 1;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  text-shadow: none;
 }
 
-/* The well's slot: the well fills it, and the two cursor triangles stand
- * over the well's top and bottom when the card is focused. */
+/* The window's slot: pale teal with a teal diagonal, Mania's lower window.
+ * A size container, so the emblem takes a whole multiple of its grid. */
 .zone-save-card-well {
   position: relative;
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
+  background: linear-gradient(
+    var(--zone-save-window-angle),
+    var(--zone-save-window) 0% 52%,
+    var(--zone-save-window-stripe) 52% 74%,
+    var(--zone-save-window) 74% 100%
+  );
+  container-type: size;
 }
 
+/* Art and nodes keep the dark well they always had. */
+.zone-save-card-well[data-kind="art"],
+.zone-save-card-well[data-kind="node"] {
+  background: none;
+}
+
+/* The two cursor triangles, over and under the window, when focused. */
 .zone-save-card-tri {
   position: absolute;
   left: 50%;
   z-index: 1;
   display: none;
-  width: var(--zone-save-tri);
-  height: calc(var(--zone-save-tri) / var(--zone-triangle-aspect));
+  width: calc(var(--zone-save-tri) * var(--zone-px));
+  height: calc(var(--zone-save-tri) * var(--zone-px) / 2);
   background: var(--zone-cursor);
   translate: -50% 0;
   pointer-events: none;
@@ -111,37 +125,105 @@
 }
 
 .zone-save-card-tri[data-side="up"] {
-  top: calc(var(--zone-card-pad) * var(--zone-px));
+  top: var(--zone-px);
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
 
 .zone-save-card-tri[data-side="down"] {
-  bottom: calc(var(--zone-card-pad) * var(--zone-px));
+  bottom: var(--zone-px);
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
-/* A line of text in the well: white caps, sized by the well, wrapping. */
-.zone-save-card-text {
+/* The emblem over its word, centred between the triangles. */
+.zone-save-card-window {
+  --zone-emblem-size: max(
+    calc(var(--zone-emblem-side) * var(--zone-px)),
+    round(down, min(50cqw, 50cqh), calc(var(--zone-emblem-side) * var(--zone-px)))
+  );
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--zone-save-window-gap) * var(--zone-px));
+  min-width: 0;
+  padding: calc(var(--zone-save-tri) * var(--zone-px) / 2 + 2 * var(--zone-px)) 0;
+}
+
+.zone-save-card-emblem {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+/* The word's black tag: caps-1, one line while it fits, then between words. */
+.zone-save-card-tag {
   display: block;
   max-width: 100%;
-  padding: 0 0.3em;
-  font-size: min(14cqw, 30cqh);
-  line-height: 1.05;
+  padding: calc(var(--zone-save-tag-pad) * var(--zone-px));
+  background: var(--zone-save-window-tag);
+}
+
+/* Zone's word in Zone Caps, white over the lavender lower three rows of
+ * each line: a hard-stop fill clipped to the letters, one em a line. On
+ * the black tag the ring would not show, so there is none. */
+.zone-save-card-text {
+  display: block;
+  font-family: var(--zone-font);
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+  line-height: 1;
+  color: transparent;
+  text-transform: uppercase;
+  text-shadow: none;
   overflow-wrap: normal;
+  background: linear-gradient(to bottom, var(--zone-ink-white-face) 0% 70%, var(--zone-ink-white-shade) 70% 100%) 0 0 / 100% 1em repeat-y;
+  background-clip: text;
 }
 
 /* A key is a fact Korri publishes: it keeps its own case, in Jersey 10,
- * as tall as the caps around it. */
+ * one Jersey pixel an art pixel; it breaks only after its ellipsis. */
 .zone-save-card-text[data-case="verbatim"] {
   font-family: var(--zone-font-fact);
-  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
+  font-size: calc(var(--zone-fact) * var(--zone-px));
+  line-height: 0.75;
+  color: var(--zone-ink-white-face);
   text-transform: none;
+  background: none;
 }
 
-/* The foot: one tag at the right, as CPZ sits under its well. */
+/* The foot: the status as a bar across the card, MANIA MODE's foot strip. */
 .zone-save-card-foot {
   display: flex;
   flex: 0 0 auto;
-  justify-content: flex-end;
-  margin-top: calc(var(--zone-card-pad) * var(--zone-px));
+  justify-content: center;
+  padding: calc(var(--zone-save-tag-pad) * var(--zone-px));
+  overflow: hidden;
+  background: var(--zone-tag-open);
+  color: var(--zone-save-bar-dark-ink);
+  --zone-caps-shade: currentColor;
+}
+
+.zone-save-card-foot[data-kind="saved"] {
+  background: var(--zone-tag-saved);
+}
+
+.zone-save-card-foot[data-kind="here"] {
+  background: var(--zone-tag-here);
+}
+
+.zone-save-card-foot[data-kind="system"] {
+  background: var(--zone-tag-system);
+  color: var(--zone-tag-ink);
+}
+
+.zone-save-card-foot[data-kind="remote"] {
+  background: var(--zone-tag-remote);
+  color: var(--zone-tag-ink);
+}
+
+.zone-save-card-foot[data-kind="continue"] {
+  background: var(--zone-tag-continue);
+}
+
+.zone-save-card-foot[data-kind="download"] {
+  background: var(--zone-tag-download);
 }

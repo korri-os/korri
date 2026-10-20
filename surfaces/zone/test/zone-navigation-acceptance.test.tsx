@@ -1147,8 +1147,8 @@ describe("onboarding", () => {
     expect(calls(host).at(-1)).toEqual(["changeSetting", "device-name", "minix"])
     moveTo(next())
     confirm()
-    // IDENTITY: START on the NEW SAVE card, then FINISH.
-    moveTo(button("New save"))
+    // IDENTITY: START on the save card headed NEW, then FINISH.
+    moveTo(button("New"))
     confirm()
     moveTo(button("Finish"))
     confirm()
