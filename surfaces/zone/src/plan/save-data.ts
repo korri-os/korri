@@ -3,12 +3,14 @@
  *
  * Height decides structure, width decides content (as in zone-select.ts):
  *
- *  - The backup's white slab stands under the band while the page is not
- *    much wider than tall, and beside it once the page is a wide strip
- *    (`ZONE_SAVE_SLAB_BESIDE_ASPECT`). A 1280x300 screen spends its width on
- *    the slab instead of squeezing the band and the slab into 200 pixels of
- *    height. The page's stylesheet holds the same number in its container
- *    query; test/plan-save-data.test.ts holds the two equal.
+ *  - The backup's white slab stands under the band while the page is a
+ *    column, and beside it once the page is wider than tall by
+ *    `ZONE_SAVE_SLAB_BESIDE_ASPECT`. Height is what the QR code in the
+ *    BACK UP card needs to be scannable (the card's size follows the band's
+ *    height), so wherever width can pay for the slab, it does. A 640x480 or
+ *    1280x300 screen keeps the band's full height; a 480x800 column stacks.
+ *    The page's stylesheet holds the same number in its container query;
+ *    test/plan-save-data.test.ts holds the two equal.
  *  - The secret is drawn in groups of `ZONE_SECRET_GROUP` characters,
  *    `ZONE_SECRET_LINE` to a line, so a person copying it by hand can keep
  *    their place. A line too wide for its slab wraps whole groups, never
@@ -18,7 +20,7 @@
  */
 
 /** Body width over body height at and above which the slab stands beside the band. */
-export const ZONE_SAVE_SLAB_BESIDE_ASPECT = 3
+export const ZONE_SAVE_SLAB_BESIDE_ASPECT = 1.25
 /** Characters in one group of the secret. */
 export const ZONE_SECRET_GROUP = 4
 /** Characters on one line of the secret. */

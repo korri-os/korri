@@ -43,3 +43,21 @@
   display: flex;
   flex: 0 0 auto;
 }
+
+/* The way to more cards: a triangle at each edge, over the cut cards. */
+.zone-save-band-more {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: flex;
+  translate: 0 -50%;
+  pointer-events: none;
+}
+
+.zone-save-band-more[data-side="start"] {
+  left: 0;
+}
+
+.zone-save-band-more[data-side="end"] {
+  right: 0;
+}

@@ -23,6 +23,7 @@
 
 .zone-save-data-busy {
   display: flex;
+  grid-row: 2;
   padding: 0 var(--zone-save-data-margin);
 }
 
@@ -30,6 +31,7 @@
  * while the page is not a wide strip; the band keeps the larger share. */
 .zone-save-data-main {
   display: grid;
+  grid-row: 3;
   grid-template-rows: minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
   gap: var(--zone-save-data-space);
@@ -41,12 +43,13 @@
   padding-bottom: var(--zone-save-data-space);
 }
 
-/* A wide strip (src/plan/save-data.ts, ZONE_SAVE_SLAB_BESIDE_ASPECT): the
- * width pays for the slab, beside the band, instead of the height. */
-@container zone-save-data (min-aspect-ratio: 3 / 1) {
+/* Wider than tall (src/plan/save-data.ts, ZONE_SAVE_SLAB_BESIDE_ASPECT):
+ * the width pays for the slab, beside the band, and the band keeps the
+ * height the QR code needs. */
+@container zone-save-data (min-aspect-ratio: 5 / 4) {
   .zone-save-data-main[data-slab="shown"] {
     grid-template-rows: minmax(0, 1fr);
-    grid-template-columns: minmax(0, var(--zone-save-band-share)) minmax(0, var(--zone-save-slab-share));
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     padding-right: var(--zone-save-data-margin);
   }
 }
@@ -54,6 +57,19 @@
 .zone-save-data-band {
   min-width: 0;
   min-height: 0;
+}
+
+/* The QR code stands clear of the card's cursor triangles: a reader needs
+ * every module and the quiet zone round them. The triangles are a share of
+ * the card's width; the well this stands in is a size container a little
+ * narrower than the card, so its width is the measure (the card's own
+ * lengths are written in the band's container units and would resolve
+ * against the well here). */
+.zone-save-data-qr {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding-block: calc(var(--zone-card-pad) + 100cqw * var(--zone-save-triangle-share) / var(--zone-triangle-aspect));
 }
 
 .zone-save-data-slab {

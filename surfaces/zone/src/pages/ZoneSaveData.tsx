@@ -89,7 +89,14 @@ function cardsOf(identity: SurfaceIdentityManagement | undefined): readonly Zone
     id: "backup",
     header: "Back up",
     body: status._tag === "BackupReady"
-      ? { kind: "node", node: <ZoneQrWell label="Backup QR code" value={status.encryptedSecret} /> }
+      ? {
+        kind: "node",
+        node: (
+          <span className="zone-save-data-qr">
+            <ZoneQrWell label="Backup QR code" value={status.encryptedSecret} />
+          </span>
+        ),
+      }
       : { kind: "text", text: "This key" },
     tag: identity.localBackupAvailable ? { kind: "saved", label: "Backed up" } : { kind: "open", label: "New" },
   }

@@ -2,6 +2,7 @@ import "./ZoneSaveBand.css"
 import "../../zone-motion.css"
 import { useLayoutEffect, useRef } from "react"
 import type { ZoneTagItem } from "../atoms/ZoneTag"
+import { ZoneTriangle } from "../atoms/ZoneTriangle"
 import { ZoneSaveCard, type ZoneSaveBody } from "../molecules/ZoneSaveCard"
 
 export interface ZoneSaveBandCard {
@@ -17,7 +18,9 @@ export interface ZoneSaveBandCard {
  * one size, the focused one centred with the pink edge and its red
  * triangles. The track slides with the one-bounce snap so the focused card
  * sits at the band's centre; the cards either side run out past the band's
- * edges and are cut there, which is how the band shows that more exists.
+ * edges and are cut there. A red triangle at each edge of the band points
+ * the way more cards lie, dimmed on a side with none, so the band shows
+ * that more exists even when the cards happen to end flush with its edge.
  *
  * The band is a size container. A card's height is the least of the cap,
  * the band's height less its padding, and the height at which one card and
@@ -48,6 +51,16 @@ export function ZoneSaveBand({
 
   return (
     <div className="zone-save-band">
+      {cards.length > 1 ? (
+        <>
+          <span className="zone-save-band-more" data-side="start">
+            <ZoneTriangle direction="left" dimmed={focus === 0} nudge={false} size="narrow" />
+          </span>
+          <span className="zone-save-band-more" data-side="end">
+            <ZoneTriangle direction="right" dimmed={focus >= cards.length - 1} nudge={false} size="narrow" />
+          </span>
+        </>
+      ) : null}
       <div className="zone-save-band-track" ref={track}>
         {cards.map((card, index) => (
           <div

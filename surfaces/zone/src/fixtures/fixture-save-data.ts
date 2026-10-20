@@ -29,7 +29,7 @@ function bech32Of(prefix: string, length: number, seed: number): string {
   let out = prefix
   while (out.length < length) {
     state = (state * 1103515245 + 12345) % 2147483648
-    out += BECH32[state % BECH32.length]
+    out += BECH32[(state >>> 16) % BECH32.length]
   }
   return out
 }
