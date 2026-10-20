@@ -599,7 +599,7 @@ method with `AcquisitionUnavailable`.
 | `app.acquisition.providers` | `AcquisitionPluginsPayload {}` | `PluginListOutcome` | `PluginListResponse { providers: AcquisitionProvider[] }`, `AcquisitionProvider { id, title, pluginId }` |
 | `app.acquisition.search` | `SearchRequest { query, providerIds }` (exactly one id) | `SearchOutcome` | `SearchResponse { claims: ProviderClaim[] }` |
 | `app.acquisition.details` | `DetailsRequest { providerId, id }` | `DetailsOutcome` | `ProviderClaimDetails` |
-| `app.acquisition.acquire` | `AcquireArtifactRequest { providerId, id, fileName?, sourceId? }` | `AcquireJobOutcome` | `AcquireJobStatus` |
+| `app.acquisition.acquire` | `AcquireArtifactRequest { providerId, id, fileName? }` | `AcquireJobOutcome` | `AcquireJobStatus` |
 | `app.acquisition.acquire-status` | `AcquireStatusRequest { jobId }` | `AcquireJobOutcome` | `AcquireJobStatus` |
 | `app.acquisition.acquire-cancel` | `AcquireCancelRequest { jobId }` | `AcquireJobOutcome` | `AcquireJobStatus` |
 
@@ -608,73 +608,97 @@ interface AcquireJobStatus {
   jobId: string
   providerId: string
   id: string
-  fileName?: string     // the request's fileName, then the downloaded file's name
+  fileName?: string     // the request's fileName, then the cart's file name
   system?: string       // the claim's artifact.system
-  message?: string      // the Staged message or the Failed reason message, else absent
+  message?: string      // the Failed reason message, else absent
   state: AcquireJobState
 }
 type AcquireJobState =
-  | { _tag: "ChooseSource"; sources: AcquireSourceChoice[] }  // { id, label }
+  | { _tag: "Queued" }      // waiting in ADR 0013's one-at-a-time queue
   | { _tag: "Resolving" }
   | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number }
-  | { _tag: "Placing" }
+  | { _tag: "Placing" }     // publishing into the cache and writing the library record
   | { _tag: "Imported"; gameId: string }
-  | { _tag: "Staged"; message: string }
   | { _tag: "Failed"; reason: RpcFailure }
   | { _tag: "Cancelled" }
 ```
 
-`acquire` needs a claim that `search` or `details` returned in this process:
-korrid takes the URL, title and system from the claim it holds, never from the
-caller. `details` replaces the held claim's fields. A repeated `acquire` for a
-claim whose newest job is live (`Resolving`, `Downloading`, `Placing`) or
-`Imported` returns that job (legacy `activeByClaim`); after `ChooseSource`,
-`Failed`, `Cancelled` or `Staged` it starts a new job. `acquire-cancel` stops a
-`Resolving` or `Downloading` job and removes its staging file; a `Placing` or
-finished job is returned unchanged. Jobs and claims live in memory only. After
-a restart `acquire-status` answers `AcquisitionUnknownJob`, startup removes
-leftover staging files, and Retry starts the download from zero.
+`acquire` checks, in this order:
 
-Placement is decided before any network request. korrid alone decides
-eligibility: the paired file sources whose system, or system group, contains
-the claim's system. None answers `AcquisitionNoSource`. One is used. Several
-answer `Ok` with a job in `ChooseSource { sources }`, each entry
-`AcquireSourceChoice { id, label }` with `DiscoverySource`'s own `id` and
-`label`. No download starts, and the state is terminal. The host asks the
-person and calls `acquire` again with `sourceId`, which starts a new job. A
-`sourceId` that is not an eligible source answers `AcquisitionCaller`.
+1. A live job for the same claim (`Queued`, `Resolving`, `Downloading`,
+   `Placing`) answers again (legacy `activeByClaim`).
+2. The provider link `<providerId>/<id>` names a game whose cart is in the
+   cache: a new job answers `Imported { gameId }` at once. This needs no claim
+   in memory and no network, so Get on an owned cart works after a restart.
+3. Otherwise korrid needs a claim that `search` or `details` returned in this
+   process (`AcquisitionUnknownClaim`). It takes the URL, title and system
+   from that claim, never from the caller; `details` replaces the held
+   claim's fields. A claim whose system is unknown answers
+   `AcquisitionSystemUnknown`. A new job starts `Queued`.
+
+`acquire-cancel` stops a `Queued`, `Resolving` or `Downloading` job; a queued
+job leaves the queue and a downloading one loses its staging file. A `Placing`
+or finished job is returned unchanged. Claims and jobs live in memory only.
+After a restart `acquire-status` answers `AcquisitionUnknownJob`, startup
+removes leftover staging files and `.tmp-*` directories, and a store download
+never continues: korrid holds no expected hash and no saved URL.
 
 `RpcFailure.code` values for `Err`: `AcquisitionUnavailable` (no local
 registry or discovery on this device), `AcquisitionCaller` (malformed request,
-several or zero provider ids, `fileName` or `sourceId` not usable),
+several or zero provider ids, an unusable `fileName`),
 `AcquisitionUnknownProvider`, `AcquisitionUnknownClaim`,
-`AcquisitionUnknownJob`, `AcquisitionSystemUnknown` (the claim cannot be
-acquired), `AcquisitionNoSource`, `ProviderUnreachable` (transport) and `ProviderFailed` (plugin error, invalid
-output, exceeded bound). `Failed.reason.code` values: `DownloadNotFinal`
-(`NonFinalDownload`), `DownloadResolutionFailed` (`FailedDownload`),
-`ProviderUnreachable`, `ProviderFailed`, `AcquisitionNoSource` (the source
-disappeared before placement) and `AcquisitionFailed` for download, validation
-and placement failures. Every message is fixed plain copy: none contains a
-URL, path, query, header value, HTTP status or plugin-supplied text.
+`AcquisitionUnknownJob`, `AcquisitionSystemUnknown`, `ProviderUnreachable`
+(transport) and `ProviderFailed` (plugin error, invalid output, exceeded
+bound). `Failed.reason.code` values: `DownloadNotFinal` (`NonFinalDownload`),
+`DownloadResolutionFailed` (`FailedDownload`), `ProviderUnreachable`,
+`ProviderFailed` and `AcquisitionFailed` for download, validation, publication
+and library-record failures. Every message is fixed plain copy: none contains
+a URL, path, query, header value, HTTP status or plugin-supplied text.
 
-The game download stages under the provider plugin's reconstructible cache,
-`<storage-root>/cache/<plugin short name>/<provider name>/.downloads/`
-(ADR 0012 grammar; the provider name is the part of the provider id after
-`:`), private (0700), with a random temporary name. It follows the declared
-hosts and the SSRF/redirect policy, ADR 0012's connect timeout and stall
-detection, and a 2 GiB cap (legacy `MAX_FALLBACK_DOWNLOAD_BYTES`). It refuses
-an empty body and a web page (legacy `rejectNonArtifactPayload`: an HTML
-content type or an HTML lead tag), then the target system's declared content
-rules: the file name must end in one of its extensions (longest suffix,
-ignoring case), and a matching header rule must leave content after the
-header. SHA-256 is computed while writing; it is byte identity, not
-authentication. Placement follows legacy `artifact-placement.ts` (identical
-SHA-256 reused, otherwise `name (n).ext` with the matched system extension, 20
-names) inside the source's first layout directory; content already located in
-that source is reused instead of copied again. korrid then seeds discovery's
-hash cache with the digests it computed, rescans, waits at most 120 s, and
-reports `Imported { gameId }` only when the library holds the placed release;
-otherwise `Staged`. ADR 0014 records the grounding and the limits.
+#### A store cart stays in korrid's cache
+
+This builds on ADR 0013 (declared games can come from artifacts): korrid never
+writes into a person's source. A store cart has no declaration, so it reuses
+ADR 0012/0013's cache grammar, readiness, content-hash identity and
+`contentPath`, plus the ADR 0002 provider link (owner answers Q1-Q6, ADR 0014).
+
+- **Queue.** A store job waits in ADR 0013's one-at-a-time queue behind
+  earlier downloads and holds its deep-sleep block. It is never paused for a
+  launch; a launch's download runs after it.
+- **Download.** The cart stages under
+  `<storage-root>/cache/<plugin short name>/<provider name>/.downloads/`
+  (the provider name is the part of the provider id after `:`), private
+  (0700), with a random `.acquire-*` name. It follows the declared hosts and
+  the SSRF/redirect policy, ADR 0012's connect timeout and stall detection,
+  and a 2 GiB cap (legacy `MAX_FALLBACK_DOWNLOAD_BYTES`). It refuses an empty
+  body and a web page (legacy `rejectNonArtifactPayload`). SHA-256 is computed
+  while writing; it is byte identity, not authentication.
+- **Content rules.** The file name is the `FinalDownload.url`'s last segment
+  (ADR 0012). It must end in one of the claim system's extensions (checked
+  before the download), and a matching header rule must leave content.
+- **Ready folder.** korrid publishes
+  `<storage-root>/cache/<plugin>/<provider>/<sha256 hex>/<URL basename>`
+  through a `.tmp-*` directory and an atomic rename, read-only. Ready means
+  the folder exists. Identical bytes share one folder.
+- **Library record.** Once, under discovery's publication lock: the game
+  (title from the claim), its release (`identity: { kind: hash, value:
+  "sha256:<hex>" }`, `system` from the claim) and the provider link
+  `provider-links."<providerId>/<claim id>" = { provider, playable, refs:
+  [{ kind: provider-item-id, value: <claim id> }] }`. No location is saved.
+  Identical bytes from another claim join the same game with a second link;
+  an existing link keeps its game. A copy that discovery finds in a source
+  joins the same game by hash.
+- **Route.** For a release with no saved location and no declared artifact,
+  the resolver looks in the caches of the acquisition providers linked to the
+  game for `<sha256 hex>/`, and the runner gets the one file in it as
+  `contentPath` (`ResolvedRoute.cache_target`). No ready folder, no route: the
+  release is unavailable, like a missing file.
+- **Remove download.** `app.acquisition.remove { gameId }` also removes the
+  game's cart folders, unless another game's release names the same hash. The
+  game, release and provider link stay as history. It refuses while the game
+  runs (`ActiveSessionConflict`) and while a store job for the game works
+  (`AcquisitionBusy`). Saves are never touched. A removed cart comes back only
+  through Get in the store, into the same game through the provider link.
 
 ### Native runners for specific content
 
