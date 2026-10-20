@@ -42,7 +42,7 @@ pub struct Report {
     pub declaration: Declaration,
     pub native_units: BTreeMap<String, crate::native_unit::NativeUnit>,
     pub ports: crate::firewall::Ports,
-    /// Exact DNS names a provider plugin may reach (ADR 0013). Empty: no network.
+    /// Exact DNS names a provider plugin may reach (ADR 0014). Empty: no network.
     pub hosts: Vec<String>,
     pub packages: BTreeMap<String, PathBuf>,
     pub files: BTreeMap<String, PathBuf>,

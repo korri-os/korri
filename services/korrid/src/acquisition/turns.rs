@@ -1,6 +1,6 @@
 //! Request/response turns: a provider handler never performs I/O. It returns
 //! its legacy result or the HTTP requests it needs; korrid fetches them and
-//! calls the handler again with every response so far (ADR 0013).
+//! calls the handler again with every response so far (ADR 0014).
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -202,7 +202,7 @@ enum Turn<T> {
 }
 
 /// Run one operation to its result: call, fetch the requested responses,
-/// call again with all responses so far, within the ADR 0013 bounds.
+/// call again with all responses so far, within the ADR 0014 bounds.
 async fn run<T>(
     engine: &super::download::DownloadEngine,
     context: &ProviderContext,

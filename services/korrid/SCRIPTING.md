@@ -378,7 +378,7 @@ releases names. Runner artifacts and device-wide status omit the field.
 
 ### Acquisition providers
 
-ADR 0013 records the decision. A provider plugin finds games on one site and
+ADR 0014 records the decision. A provider plugin finds games on one site and
 says where their files are. It performs no I/O: korrid makes every HTTP request
 and every download, and the plugin only reads what korrid fetched. Legacy
 names come from `product/platform/protocol/acquisition/*.ts`,
@@ -674,7 +674,7 @@ names) inside the source's first layout directory; content already located in
 that source is reused instead of copied again. korrid then seeds discovery's
 hash cache with the digests it computed, rescans, waits at most 120 s, and
 reports `Imported { gameId }` only when the library holds the placed release;
-otherwise `Staged`. ADR 0013 records the grounding and the limits.
+otherwise `Staged`. ADR 0014 records the grounding and the limits.
 
 ### Native runners for specific content
 
