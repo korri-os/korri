@@ -6,6 +6,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import type { SurfaceStatus } from "@contracts/surface/korri-surface"
 import { useRef, useSyncExternalStore } from "react"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import {
   fixtureTitleOf,
   statusBrowsing,
@@ -231,5 +233,23 @@ describe("ZoneStatusLayer", () => {
   test("C10: the problem dialog never offers RELOAD", () => {
     mount(statusProblem)
     expect(screen.queryByRole("button", { name: "Reload" })).toBeNull()
+  })
+})
+
+describe("the dim covers the whole page", () => {
+  const css = readFileSync(join(import.meta.dir, "..", "src", "ui", "organisms", "ZoneStatusLayer.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+  test("the page's own layers are shut in a stacking context under the sheet", () => {
+    expect(css).toMatch(/\.zone-status-layer-page \{[^}]*isolation: isolate;/)
+    expect(css).toMatch(/\.zone-status-layer-content \{[^}]*z-index: 0;[^}]*isolation: isolate;/)
+    expect(css).toMatch(/\.zone-status-layer-page\[data-covered\]::after \{[^}]*z-index: 1;/)
+  })
+  test("busy over home: FIND is inside the covered, inert content", async () => {
+    const games = await import("../src/pages/ZoneGames.page.part")
+    render(<games.BusyOverHome />)
+    const find = screen.getByRole("button", { name: /find/i })
+    expect(find.closest(".zone-status-layer-content")).not.toBeNull()
+    expect(find.closest(".zone-status-layer-page")?.hasAttribute("data-covered")).toBe(true)
+    expect(find.closest("[inert]")).not.toBeNull()
   })
 })

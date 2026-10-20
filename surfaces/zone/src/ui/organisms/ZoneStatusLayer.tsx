@@ -80,7 +80,7 @@ export function ZoneStatusLayer({
   return (
     <div className="zone-status-layer" data-status={status._tag}>
       <div className="zone-status-layer-page" data-covered={covers || undefined} inert={covers}>
-        {page}
+        <div className="zone-status-layer-content">{page}</div>
       </div>
       {status._tag === "Running" ? (
         <div aria-live="polite" className="zone-status-layer-running" role="status">

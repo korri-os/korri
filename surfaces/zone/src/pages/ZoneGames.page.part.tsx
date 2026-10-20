@@ -1,5 +1,6 @@
-import type { SurfaceModel } from "@contracts/surface/korri-surface"
+import type { SurfaceModel, SurfaceStatus } from "@contracts/surface/korri-surface"
 import { type ComponentProps, useRef } from "react"
+import { fixtureTitleOf, statusBusyDetail } from "../fixtures/fixture-layers"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import {
   createGamesFixtureHost,
@@ -12,6 +13,7 @@ import {
   fixtureSectionsModel,
 } from "../fixtures/zone-games"
 import { ZoneGround } from "../ui/organisms/ZoneGround"
+import { ZoneStatusLayer } from "../ui/organisms/ZoneStatusLayer"
 import { useZoneGames } from "../use-zone-games"
 import { ZoneGames } from "./ZoneGames"
 
@@ -33,6 +35,7 @@ export const composition = {
   OneGame: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "OneCard" }],
   FortyGames: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "FortyCards" }],
   TwoPlaceChoice: [{ part: "src/ui/molecules/ZoneActionRow.molecule.part.tsx", state: "TwoButtons" }],
+  BusyOverHome: [{ part: "src/ui/organisms/ZoneStatusLayer.organism.part.tsx", state: "OverPage" }],
   GameOpts: [
     { part: "src/ui/molecules/ZoneOptionGroup.molecule.part.tsx", state: "default" },
     { part: "src/ui/molecules/ZoneDialog.molecule.part.tsx", state: "FocusedNo" },
@@ -50,18 +53,22 @@ type Opening = NonNullable<Parameters<typeof useZoneGames>[3]>
 function Games({
   model,
   opening = [],
+  status,
 }: {
   readonly model: SurfaceModel
   readonly opening?: Opening
+  /** Korri's status over the page, as the status layer draws it. */
+  readonly status?: SurfaceStatus
 }) {
   const root = useRef<HTMLDivElement | null>(null)
   const fixture = useRef<ReturnType<typeof createGamesFixtureHost> | null>(null)
   if (fixture.current === null) fixture.current = createGamesFixtureHost()
   const { page } = useZoneGames(model, fixture.current, root, opening)
+  const home = <ZoneGames {...(page satisfies ComponentProps<typeof ZoneGames>)} />
   return (
     <div className="zone-theme zone-screen" ref={root}>
       <ZoneGround />
-      <ZoneGames {...(page satisfies ComponentProps<typeof ZoneGames>)} />
+      {status === undefined ? home : <ZoneStatusLayer page={home} status={status} titleOf={fixtureTitleOf} />}
     </div>
   )
 }
@@ -109,6 +116,14 @@ export function TwoPlaceChoice() {
 /** Celeste can be continued: CONTINUE, and the CONTINUE tag. */
 export function Resumable() {
   return <Games model={fixtureReadyModel} />
+}
+
+/**
+ * Korri busy over home: the whole page dims under the sheet, FIND and the
+ * tabs with it, and the busy strip stands clear above.
+ */
+export function BusyOverHome() {
+  return <Games model={fixtureReadyModel} status={statusBusyDetail} />
 }
 
 /** options on Spelunky: Korri's actions, the disabled one dimmed with its reason. */

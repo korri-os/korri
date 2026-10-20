@@ -9,9 +9,21 @@
   container: zone-layer / size;
 }
 
+/* The page and its sheet share one stacking context, and the page's own
+ * layers (FIND, GAME OPTS., a page's dialogs, each with its z-index) are
+ * shut inside a second one under the sheet: no z-index in a page can rise
+ * through the dim. */
 .zone-status-layer-page {
   position: absolute;
   inset: 0;
+  isolation: isolate;
+}
+
+.zone-status-layer-content {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  isolation: isolate;
 }
 
 /* Covered: the page dims under a flat black sheet. No blur, one opacity. */
@@ -19,6 +31,7 @@
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 1;
   background: var(--zone-layer-dim);
   opacity: var(--zone-layer-dim-opacity);
   pointer-events: none;

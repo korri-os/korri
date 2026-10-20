@@ -628,3 +628,9 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   what its label said, so it, the page's `OpenedRunWith` event and their
   tests are gone. `navigation.ts` still holds the message for the wire
   worker to remove; its update test went with the row.
+- **The status layer's dim covers the page's own layers.** The page under
+  `ZoneStatusLayer` now sits in `.zone-status-layer-content`, its own
+  stacking context (`isolation: isolate`, `z-index: 0`) inside the
+  isolated `.zone-status-layer-page`, and the sheet is `z-index: 1` over
+  it. Before, FIND (`z-index: 5` on the GAMES page) painted through the
+  dim. The GAMES part's `BusyOverHome` state shows it.
