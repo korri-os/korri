@@ -405,7 +405,10 @@ describe("SurfaceRoot", () => {
     )
     await waitFor(() => expect(buttonNamed("Settings", view.container)).toBeDefined(), "settings navigation")
     await click(buttonNamed("Settings", view.container))
-    for (const label of ["Name: Browser", "SteamGridDB API key: Configured", "mGBA: On", "RetroArch: On"]) {
+    // Plugin rows are no longer settings writes: they come from the plugin
+    // repository flow (plugin-repositories.ts) and turn on and off through
+    // setPluginEnabled, so they are not part of this read-only check.
+    for (const label of ["Name: Browser", "SteamGridDB API key: Configured"]) {
       const row = view.container.querySelector<HTMLElement>(`[aria-label="${label}"]`)
       if (row === null) throw new Error(`Missing read-only setting ${label}`)
       expect(row.tagName).toBe("DIV")

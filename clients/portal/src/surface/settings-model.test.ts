@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { SecretSettingStatus, type SettingsSnapshot } from "@contracts/generated/korrid"
+import { toggleSettingId } from "./plugin-repositories"
 import { type DeviceFacts, settingsFrom } from "./settings-model"
 
 const configuration: SettingsSnapshot = {
@@ -62,33 +63,29 @@ describe("settingsFrom", () => {
     expect(notConfigured?.interaction).not.toHaveProperty("clearLabel")
   })
 
-  it("makes plugin enablement an On/Off choice", () => {
-    expect(group({ settings: configuration }, "Plugins")?.items).toEqual([
-      {
-        id: "@korri:mgba",
-        label: "mGBA",
-        value: "On",
-        interaction: {
-          kind: "choice",
-          choices: [
-            { value: "true", label: "On" },
-            { value: "false", label: "Off" },
-          ],
-        },
+  it("shows no plugin group where korrid offers no plugin repositories", () => {
+    expect(group({ settings: configuration }, "Plugins")).toBeUndefined()
+  })
+
+  it("puts the plugin groups between Metadata and Games, toggled through their own ids", () => {
+    const groups = settingsFrom({
+      settings: configuration,
+      localGameCount: 0,
+      plugins: {
+        repositories: { _tag: "Ready", value: { official: null, userAdded: [], repositoryInstalls: [] } },
+        catalogs: {},
+        reviews: {},
+        needsReview: [],
       },
-      {
-        id: "@korri:retroarch",
-        label: "RetroArch",
-        value: "Off",
-        interaction: {
-          kind: "choice",
-          choices: [
-            { value: "true", label: "On" },
-            { value: "false", label: "Off" },
-          ],
-        },
-      },
+    })
+    expect(groups.map(candidate => candidate.title)).toEqual([
+      "Device", "Controllers", "Metadata", "Plugins", "Other installed plugins", "Games",
     ])
+    expect(groups.find(candidate => candidate.title === "Other installed plugins")?.items.map(item => [item.id, item.label, item.value]))
+      .toEqual([
+        [toggleSettingId("@korri:mgba"), "mGBA", "On"],
+        [toggleSettingId("@korri:retroarch"), "RetroArch", "Off"],
+      ])
   })
 
   it("offers the complete seat range only to the authorized Linux count writer", () => {
@@ -103,8 +100,6 @@ describe("settingsFrom", () => {
       ["device-name", "usu"],
       ["host.preferences.playerCount", "4"],
       ["steamgriddb-credential", "Configured"],
-      ["@korri:mgba", "On"],
-      ["@korri:retroarch", "Off"],
     ])
     expect(items.filter(item => item.interaction !== undefined).map(item => item.id))
       .toEqual(["host.preferences.playerCount"])
@@ -152,7 +147,7 @@ describe("settingsFrom", () => {
   it("keeps read-only snapshots readable and accepts an absent snapshot", () => {
     const items = settingsFrom({ settings: { ...configuration, editableSettingIds: [] } })
       .flatMap(group => group.items)
-    expect(items).toHaveLength(5)
+    expect(items).toHaveLength(3)
     expect(items.every(item => item.interaction === undefined)).toBe(true)
     expect(settingsFrom({})).toEqual([])
   })

@@ -30,6 +30,11 @@ import {
   type SessionStartResult,
 } from "../korrid/client"
 import { createNetworkOnboarding } from "./network-onboarding"
+import { initialPluginFacts, type PluginFacts } from "./plugin-repositories"
+import {
+  createPluginRepositoriesController,
+  supportsPluginRepositories,
+} from "./plugin-repositories-controller"
 import { SETUP_RESTART_ACTION_ID, type DeviceFacts } from "./settings-model"
 import {
   entryKey,
@@ -137,6 +142,12 @@ export function useLaunchables(korrid: KorridClient): Launchables {
   const factsRef = useRef(facts)
   factsRef.current = facts
   const settingsBusyRef = useRef(false)
+  // Plugin repositories. Absent where this korrid client has no plugin
+  // repository methods; then Settings shows no plugin group.
+  const [pluginFacts, setPluginFacts] = useState<PluginFacts | undefined>(() =>
+    supportsPluginRepositories(korrid) ? initialPluginFacts : undefined)
+  const pluginFactsRef = useRef(pluginFacts)
+  const reloadRef = useRef<() => void>(() => {})
   const discoveryWasActive = useRef(false)
   const discoveryPoller = useRef(
     createDiscoverySnapshotPoller(korrid, snapshot => {
@@ -194,6 +205,25 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     setSettingsStatus(next)
   }, [])
 
+  const plugins = useMemo(() => {
+    if (!supportsPluginRepositories(korrid)) return undefined
+    return createPluginRepositoriesController(korrid, {
+      facts: () => pluginFactsRef.current ?? initialPluginFacts,
+      publish: next => {
+        pluginFactsRef.current = next
+        setPluginFacts(next)
+      },
+      status: publishSettingsStatus,
+      busy: {
+        get: () => settingsBusyRef.current,
+        set: value => { settingsBusyRef.current = value },
+      },
+      // Installing or switching a plugin changes what can be played.
+      changed: () => reloadRef.current(),
+      alive: () => mountedRef.current,
+    })
+  }, [korrid, publishSettingsStatus])
+
   const settingsProblem = useCallback(
     (settingId: string, message: string) => {
       publishSettingsStatus({ _tag: "Problem", settingId, message })
@@ -215,6 +245,8 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     const action = actionSeq.current
     // Overlapping loads: only the latest invocation may write state.
     const seq = ++loadSeq.current
+    // Plugin facts are read beside the rest and publish on their own.
+    void plugins?.refresh()
     const [games, localGames, session, health, settings, discovery, identity] =
       await Promise.all([
         korrid.catalogSnapshot(),
@@ -282,7 +314,8 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     }
     publish(preserveAction && current._tag === "Ready" && current.notice !== null && loaded._tag === "Ready"
       ? { ...loaded, notice: current.notice } : loaded)
-  }, [korrid, publish, sessionStatusWithTimeout])
+  }, [korrid, plugins, publish, sessionStatusWithTimeout])
+  reloadRef.current = () => void load(true)
 
   useEffect(() => {
     mountedRef.current = true
@@ -412,6 +445,7 @@ export function useLaunchables(korrid: KorridClient): Launchables {
 
   const runDeviceAction = useCallback(
     (actionId: string) => {
+      if (plugins?.run(actionId)) return
       if (actionId === SETUP_RESTART_ACTION_ID) {
         // Korri republishes `onboarding` once the marker is gone; a failure
         // surfaces through the same system problem as a failed finish.
@@ -461,11 +495,13 @@ export function useLaunchables(korrid: KorridClient): Launchables {
       }
       settingsProblem(actionId, "This setting is not available")
     },
-    [korrid, networkOnboarding, publishSettingsStatus, settingsProblem],
+    [korrid, networkOnboarding, plugins, publishSettingsStatus, settingsProblem],
   )
 
   const changeSetting = useCallback(
     (settingId: string, value: string) => {
+      // Plugin rows have their own korrid commands and the same settings lock.
+      if (plugins?.change(settingId, value)) return
       // React may defer the Saving render; close the same-frame double-confirm
       // gap synchronously so two writes cannot turn one success into a conflict.
       if (settingsBusyRef.current) return
@@ -513,7 +549,7 @@ export function useLaunchables(korrid: KorridClient): Launchables {
         void load()
       })
     },
-    [korrid, load, publishSettingsStatus, settingsProblem],
+    [korrid, load, plugins, publishSettingsStatus, settingsProblem],
   )
 
   const dismissSettingsProblem = useCallback(
@@ -979,6 +1015,11 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     confirmEntry({ kind: "now-playing", session })
   }, [confirmEntry, publish])
 
+  const factsWithPlugins = useMemo(
+    () => (pluginFacts === undefined ? facts : { ...facts, plugins: pluginFacts }),
+    [facts, pluginFacts],
+  )
+
   const reload = useCallback(() => { void load(); networkOnboarding.dismissProblem(); void networkOnboarding.refresh() }, [load, networkOnboarding])
 
   return {
@@ -991,7 +1032,7 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     finishOnboarding: networkOnboarding.finishOnboarding,
     state,
     getState: () => stateRef.current,
-    facts,
+    facts: factsWithPlugins,
     settingsStatus,
     ...(identityManagement === undefined ? {} : { identityManagement }),
     changeSetting,

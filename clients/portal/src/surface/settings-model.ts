@@ -8,6 +8,7 @@ import {
   type DiscoverySnapshot,
   type SettingsSnapshot,
 } from "@contracts/generated/korrid"
+import { pluginSettingGroups, type PluginFacts } from "./plugin-repositories"
 
 /* Every fact here comes from korrid. The permission, streaming-host, and
  * system-information facts came from the shell, which no longer exists. */
@@ -18,6 +19,9 @@ export interface DeviceFacts {
   readonly discovery?: DiscoverySnapshot
   /** Absent until Korri has read setup progress. */
   readonly onboardingNeeded?: boolean
+  /** Plugin repositories and the approval path. Absent where this korrid
+   * cannot manage plugins; then no plugin group shows. */
+  readonly plugins?: PluginFacts
 }
 
 /** Setting-local action that puts the device back into first-boot setup. */
@@ -35,11 +39,6 @@ const group = (
   )
   return present.length > 0 ? { title, items: present } : undefined
 }
-
-const onOff = [
-  { value: "true", label: "On" },
-  { value: "false", label: "Off" },
-] as const
 
 // The device-only setting accepts the existing positive-u8 seat range.
 const playerCounts = Array.from({ length: 255 }, (_, index) => {
@@ -141,15 +140,9 @@ export function settingsFrom(
             } : {}),
           },
     ]),
-    group(
-      "Plugins",
-      facts.settings?.plugins.map(plugin => ({
-        id: plugin.id,
-        label: plugin.title,
-        value: plugin.enabled ? "On" : "Off",
-        ...(canEdit(plugin.id) ? { interaction: { kind: "choice" as const, choices: onOff } } : {}),
-      })) ?? [],
-    ),
+    // Plugins: one group per repository, built from korrid's repository
+    // facts. Toggles go through setPluginEnabled, never updateSetting.
+    ...(facts.plugins === undefined ? [] : pluginSettingGroups(facts.plugins, facts.settings?.plugins)),
     group("Games", [
       facts.localGameCount === undefined
         ? undefined
