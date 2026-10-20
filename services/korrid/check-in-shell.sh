@@ -39,7 +39,7 @@ bun install --frozen-lockfile --ignore-scripts
 # Every registered surface compiles from source and must share the portal's
 # React instance. A missing local dependency must not fall through to a parent
 # checkout when this check runs in a worktree.
-for surface in shift pico boxbuster; do
+for surface in shift pico boxbuster zone; do
   cd "$ROOT/surfaces/$surface"
   bun install --frozen-lockfile --ignore-scripts
   for package in react react-dom; do
