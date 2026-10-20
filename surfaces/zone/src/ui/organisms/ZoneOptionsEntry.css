@@ -29,7 +29,8 @@
 .zone-options-entry-head::before {
   content: "";
   position: absolute;
-  inset: 0;
+  /* Reaches under the keyboard so no seam shows the rows behind. */
+  inset: 0 0 calc(var(--zone-row-space) * -1);
   z-index: -1;
   background: var(--zone-keyboard-panel);
   clip-path: polygon(calc(var(--zone-keyboard-slant) * 1.4) 0, 100% 0, 100% 100%, var(--zone-keyboard-slant) 100%);

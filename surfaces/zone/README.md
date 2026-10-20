@@ -192,4 +192,61 @@ bun run lint
 
 ### OPTIONS and RUN WITH (the options worker)
 
-- *(in progress; filled in as the pages land)*
+- **Shared row plan in `src/plan/`.** Pages may not import `src/state`, so
+  what OPTIONS shows (`src/plan/options.ts`: groups, rows, what A does on
+  each, the keyboard and dialog types) and what RUN WITH shows
+  (`src/plan/options-run-with.ts`) are pure functions there. The state
+  models and the pages both read them, so they cannot disagree about which
+  rows exist. The page takes `korri` (the model slices) and `view` (the
+  state model's value, structurally) and reports through plain callbacks.
+- **Rows are strings.** ZoneOptionRow takes a string value, and it is not
+  this worker's to change. So Wi-Fi bars are glyphs (`▂▄▆▁`) followed by
+  the strength, LOCK and KNOWN are words, CONNECTING is the focused row's
+  description beside the Saving caret (the caret alone is the value), and
+  the connection row reads SSID, bars and % as text. ZoneSignal shows the
+  same facts in the foot. An issue is suggested to let a row take a node.
+- **A on a choice steps it forward**, as right does. The real host delivers
+  left and right to a control only through `korri-semantic-direction`,
+  which ZoneOptionRow does not listen to yet; A keeps every choice reachable.
+- **A secret's keyboard starts empty.** Korri's value for a secret is its
+  word about it ("Configured"), never the secret. DONE on an empty secret
+  closes without a request; clearing is the clear key alone.
+- **Destructive without Korri's words** asks NO / YES under the row's (or
+  action's) label, with the action's description as the line when there is
+  one. Zone writes no sentence of its own.
+- **SYSTEM and WI-FI are omitted when empty.** No device actions, no SYSTEM
+  heading; no `network`, no WI-FI. `focusSystemGroup(state)` sets the
+  cursor to the SYSTEM key; it resolves to the group's first row, or the
+  page's first row when there is no SYSTEM. It leaves an open keyboard or
+  dialog alone. `optionsLayer(state)` tells the wire stage what is open, so
+  B and menu go to `update` (`PressedBack`, `PressedMenu`) while it is.
+- **An inert device action** is drawn read-only with the value UNAVAILABLE
+  (ZoneOptionRow cannot dim), its description under it when focused.
+- **NoAdapter keeps the connection row**, then NO WI-FI ADAPTER: a wired
+  device still says it is wired.
+- **The network in use, and any network while Korri is joining one, does
+  nothing on A** (as Pico). A rejected key reopens the keyboard once per
+  failure; Korri's reason stands in red in the keyboard's heading, since
+  the keyboard covers the row.
+- **The body banner yields.** The brief puts a ZoneBanner reading OPTIONS
+  in the body although the active tab already wears one; its type follows
+  the body's height (`4cqb`, clamped) so a short screen gives it little.
+- **RUN WITH keeps case for programs and builds** (a build is a package
+  path) and for SSIDs on OPTIONS; Zone's own words there are written in
+  caps. Its state tag: Ready blue, Busy yellow, Stale and Warnings orange,
+  Conflict and Error red, Loading white. Mint is the ground, so SAVED is
+  yellow. A saved choice with no route (Stale) is drawn as its own route:
+  SAVED, the runner id, UNAVAILABLE. Korri's message wraps rather than cuts.
+  Back does nothing on RUN WITH: the way out is the host's own action, and
+  Zone never infers which action that is. The page traps the cursor
+  (`data-block-exit`) and has no tabs.
+- **Parts run the real update.** `src/fixtures/fixture-options.ts` holds
+  the fixtures and a small live program around `src/state`'s update; a
+  part imports that, never `src/state`. With no Korri behind it the program
+  plays Korri's part in the smallest way (a changed value lands, a join
+  starts connecting). A part reads the frame once for the plan's strips
+  and band.
+- **Pages awaiting their mount.** The decomposition gate requires every
+  page to be reached from ZoneSurface, which only the wire stage edits. It
+  now has an `AWAITING_MOUNT` list (ZoneOptions, ZoneRunWith), checked both
+  ways like `AWAITING_PAGE`.
