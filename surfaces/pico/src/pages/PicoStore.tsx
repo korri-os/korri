@@ -104,7 +104,9 @@ export function PicoStore({
           detail={working.detail}
           gameTitle={details.entry.title}
           kicker={working.kicker}
-          progress={working.progress}
+          // Waiting in korrid's queue or for the provider has no position: the
+          // band walks rather than the clock filling, so nothing looks like a bar.
+          progress={working.progress ?? { done: 0 }}
         />
       ) : (
         <PicoStoreEntry details={details} onAction={onAction} onPlay={onPlay} providerTitle={providerTitle} />

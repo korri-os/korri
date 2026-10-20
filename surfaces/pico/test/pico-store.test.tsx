@@ -154,8 +154,8 @@ describe("an entry", () => {
     const { host } = atEntry(storeFixture({ details: storeDetails(STORE_GETS.queued) }))
     expect(screen.getByText("Waiting to download")).toBeTruthy()
     expect(screen.getByText("Waiting for the download before it")).toBeTruthy()
-    // No position to show: the meter is the clock, never a bar.
-    expect(document.querySelector(".pico-launch-stage-meter")?.getAttribute("data-meter")).toBe("clock")
+    // No position to show: a walking band, never a bar or a filling clock.
+    expect(document.querySelector(".pico-launch-stage-meter")?.getAttribute("data-meter")).toBe("indeterminate")
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
     expect(host.calls.at(-1)).toBe("action:store:9:cancel")
   })
