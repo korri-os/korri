@@ -1,7 +1,7 @@
 use super::*;
 use std::os::unix::fs::symlink;
 
-const PLUGIN: &str = include_str!("../../../../../plugins/steam/plugin.ts");
+const PLUGIN: &str = include_str!("../../../tests/fixtures/first-party/steam/plugin.ts");
 
 fn file(text: &str) -> ReleaseDiscoveryFile {
     ReleaseDiscoveryFile {

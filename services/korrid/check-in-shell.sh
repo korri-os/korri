@@ -21,7 +21,7 @@ if [[ "${1:-}" == "--types-only" && $# == 1 ]]; then
 fi
 cargo fmt --check
 cargo check
-bun test "$ROOT/plugins/steam/plugin.test.ts"
+(cd "$CRATE/tests/fixtures/first-party" && sha256sum -c SHA256SUMS)
 KORRI_SCRIPT_FIXTURES_IN_SHELL=1 bash "$CRATE/script-fixtures-setup.sh"
 cargo test
 KORRI_CONFIG_REVIEW_IN_SHELL=1 "$CRATE/config-snapshot-review.sh"
@@ -29,7 +29,7 @@ typeshare . --lang=typescript --output-file="$GENERATED_TS"
 # Typeshare 1.13 emits trailing spaces and an extra final blank line.
 sed -i -e 's/[[:space:]]\+$//' -e '${/^$/d;}' "$GENERATED_TS"
 
-# Check every in-repo declaration against the freshly generated Rust treaty.
+# Check local and pinned external first-party declarations against the fresh treaty.
 nix build --no-link -L \
   "$ROOT#checks.$(nix eval --raw --impure --expr builtins.currentSystem).korri-plugins-typecheck"
 
