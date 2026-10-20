@@ -3,6 +3,12 @@ import "./ZoneDialog.css"
 export interface ZoneDialogAction {
   readonly label: string
   readonly onPress?: () => void
+  /** A stable key when labels may repeat (Korri's action id). Default: the label. */
+  readonly id?: string
+  /** Present but inert: Korri's rule is dimmed, never hidden. */
+  readonly disabled?: boolean
+  /** Destructive: the caps are red, as the busy strip marks it. */
+  readonly destructive?: boolean
 }
 
 /**
@@ -35,7 +41,7 @@ export function ZoneDialog({
   readonly lines: readonly string[]
   /** A third line in yellow: the game's title. */
   readonly title?: string
-  /** One or two buttons, left to right: NO then YES. */
+  /** The buttons, left to right: NO then YES, or Korri's actions in its order. */
   readonly actions: readonly ZoneDialogAction[]
   /** The index of the focused button. */
   readonly focused?: number
@@ -61,8 +67,10 @@ export function ZoneDialog({
         {actions.map((action, index) => (
           <button
             className="zone-dialog-action"
+            data-destructive={action.destructive || undefined}
             data-focused={index === focused || undefined}
-            key={action.label}
+            disabled={action.disabled}
+            key={action.id ?? action.label}
             onClick={action.onPress}
             onFocus={onFocusAction === undefined ? undefined : () => onFocusAction(index)}
             type="button"

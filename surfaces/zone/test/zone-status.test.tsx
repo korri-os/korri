@@ -1,5 +1,5 @@
 /**
- * The status layer (C7 to C10): the pure model, then the organism on the
+ * The status layer (C7 to C10, C31, C32): the pure model, then the organism on the
  * real model with a fixture host recording what Korri was asked.
  */
 import { afterEach, describe, expect, test } from "bun:test"
@@ -15,6 +15,9 @@ import {
   statusBusyDetail,
   statusBusyKicker,
   statusBusyTwo,
+  statusConfirm,
+  statusConfirmForGame,
+  statusConfirmThree,
   statusProblem,
   statusProblemNoRetry,
   statusRunning,
@@ -89,6 +92,38 @@ describe("updateStatus", () => {
       .toEqual([])
   })
 
+  test("C31 KorriPublished: Confirm is its own layer, its first action lit, the focus brought in", () => {
+    expect(settled(statusConfirm)).toEqual({ shown: "confirm", focus: 0 })
+    expect(shownFor(statusConfirm)).toBe("confirm")
+    expect(statusTakesFocus(statusConfirm)).toBe(true)
+    const onThird = { shown: "confirm", focus: 2 } as const
+    expect(settled(statusConfirmThree, onThird)).toBe(onThird)
+    expect(settled(statusConfirm, onThird).focus).toBe(1)
+    expect(settled(statusConfirm, { shown: "busy", focus: 1 })).toEqual({ shown: "confirm", focus: 0 })
+    const none: SurfaceStatus = { _tag: "Confirm", kicker: "Needs a download", actions: [] }
+    expect(statusTakesFocus(none)).toBe(false)
+  })
+
+  test("C31 ChoseConfirmAction runs Korri's action by its id, and only an enabled one of the question", () => {
+    const asked = settled(statusConfirmThree)
+    expect(updateStatus(asked, { _tag: "ChoseConfirmAction", actionId: "acquisition:1:remote" }, statusConfirmThree).requests)
+      .toEqual([{ _tag: "RunAction", actionId: "acquisition:1:remote" }])
+    expect(updateStatus(asked, { _tag: "ChoseConfirmAction", actionId: "nope" }, statusConfirmThree).requests).toEqual([])
+    const inert: SurfaceStatus = { _tag: "Confirm", kicker: "Needs a download", actions: [{ id: "go", label: "Download", enabled: false }] }
+    expect(updateStatus(settled(inert), { _tag: "ChoseConfirmAction", actionId: "go" }, inert).requests).toEqual([])
+    // Not asked any more: nothing runs.
+    expect(updateStatus(settled(statusBusyCancel), { _tag: "ChoseConfirmAction", actionId: "cancel" }, statusBusyCancel).requests)
+      .toEqual([])
+    expect(updateStatus(asked, { _tag: "ChoseBusyAction", actionId: "acquisition:1:cancel" }, statusConfirmThree).requests)
+      .toEqual([])
+  })
+
+  test("C31 PressedBack answers nothing: Korri's actions are the only ways out", () => {
+    const step = updateStatus(settled(statusConfirm), { _tag: "PressedBack" }, statusConfirm)
+    expect(step.requests).toEqual([])
+    expect(step.model).toEqual(settled(statusConfirm))
+  })
+
   test("the problem dialog offers RETRY only when Korri can; focus belongs in a layer with a button", () => {
     expect(problemButtons(statusProblem)).toEqual(["dismiss", "retry"])
     expect(problemButtons(statusProblemNoRetry)).toEqual(["dismiss"])
@@ -108,6 +143,7 @@ function Harness({ program }: { readonly program: ReturnType<typeof createStatus
     <ZoneStatusLayer
       focus={model.focus}
       onBusyAction={(actionId) => program.dispatch({ _tag: "ChoseBusyAction", actionId })}
+      onConfirmAction={(actionId) => program.dispatch({ _tag: "ChoseConfirmAction", actionId })}
       onFocusButton={(index) => program.dispatch({ _tag: "FocusedStatusButton", index })}
       onProblemButton={(button) => program.dispatch({ _tag: "ChoseProblemButton", button })}
       page={page.current}
@@ -216,6 +252,63 @@ describe("ZoneStatusLayer", () => {
     expect(document.activeElement?.textContent).toBe("Dismiss")
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }))
     expect(problem.host.calls).toEqual(["dismiss"])
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(document.activeElement?.textContent).toBe("Page card")
+  })
+
+  test("C31: Confirm asks Korri's question: the kicker as headline, the detail, the host's actions in order, the first lit", () => {
+    mount(statusConfirmThree)
+    const dialog = screen.getByRole("dialog", { name: "Needs a download" })
+    expect(within(dialog).getByText("Proton-CachyOS, size unknown. This device is on a metered connection.")).toBeDefined()
+    const buttons = within(dialog).getAllByRole("button")
+    expect(buttons.map(button => button.textContent)).toEqual(["Download", "Play on zao instead", "Cancel"])
+    expect(buttons[0]?.getAttribute("data-focused")).toBe("true")
+    expect(document.activeElement).toBe(buttons[0] ?? null)
+    expect(pageOf()).not.toBeNull()
+    expect(within(dialog).queryByText("Spelunky")).toBeNull()
+  })
+
+  test("C31: the game the question belongs to stands in yellow", () => {
+    mount(statusConfirmForGame)
+    const dialog = screen.getByRole("dialog", { name: "Needs a download" })
+    expect(within(dialog).getByText("Hollow Knight").className).toBe("zone-dialog-title")
+  })
+
+  test("C31: any action, the last as well, is reported by its id; none is treated as no", () => {
+    const program = mount(statusConfirmThree)
+    const cancel = screen.getByRole("button", { name: "Cancel" })
+    act(() => {
+      fireEvent.focus(cancel)
+    })
+    expect(program.get().model.focus).toBe(2)
+    expect(screen.getByRole("button", { name: "Cancel" }).getAttribute("data-focused")).toBe("true")
+    fireEvent.click(cancel)
+    expect(program.host.calls).toEqual(["action:acquisition:1:cancel"])
+  })
+
+  test("C31: an inert action is drawn dimmed and runs nothing", () => {
+    const inert: SurfaceStatus = {
+      _tag: "Confirm",
+      kicker: "Needs a download",
+      actions: [{ id: "go", label: "Download", enabled: false }, { id: "no", label: "Cancel", enabled: true, destructive: true }],
+    }
+    const program = mount(inert)
+    const go = screen.getByRole("button", { name: "Download" })
+    expect(go.hasAttribute("disabled")).toBe(true)
+    fireEvent.click(go)
+    expect(program.host.calls).toEqual([])
+    expect(screen.getByRole("button", { name: "Cancel" }).hasAttribute("data-destructive")).toBe(true)
+  })
+
+  test("C31: focus moves into the question and back to the page when Korri answers", () => {
+    const program = createStatusProgram(statusBrowsing)
+    const view = render(<Harness program={program} />)
+    screen.getByRole("button", { name: "Page card" }).focus()
+    const asking = createStatusProgram(statusConfirm)
+    view.rerender(<Harness program={asking} />)
+    expect(document.activeElement?.textContent).toBe("Download")
+    fireEvent.click(screen.getByRole("button", { name: "Download" }))
+    expect(asking.host.calls).toEqual(["action:acquisition:1:download"])
     expect(screen.queryByRole("dialog")).toBeNull()
     expect(document.activeElement?.textContent).toBe("Page card")
   })

@@ -5,6 +5,7 @@
  * so a part can only show what Korri can publish.
  */
 import type {
+  SurfaceAction,
   SurfaceController,
   SurfaceGameplayControl,
   SurfaceGameplayOverlayPresentation,
@@ -81,6 +82,78 @@ export const statusProblemLong: SurfaceStatus = {
   canRetry: true,
   gameId: "oracle-of-seasons",
   gameTitle: "The Legend of Zelda: Oracle of Seasons",
+}
+
+// ---- The treaty's question and progress (C31, C32) ----
+
+const download: SurfaceAction = { id: "acquisition:1:download", label: "Download", enabled: true }
+const cancelDownload: SurfaceAction = { id: "acquisition:1:cancel", label: "Cancel", enabled: true }
+
+/** Korri's question with no game named: the portal's own words and two actions. */
+export const statusConfirm: SurfaceStatus = {
+  _tag: "Confirm",
+  kicker: "Needs a download",
+  detail: "FEX rootfs and Proton-CachyOS, 1.5 GB",
+  actions: [download, cancelDownload],
+}
+
+/** Three host actions, the middle one long; none is read as yes or no. */
+export const statusConfirmThree: SurfaceStatus = {
+  _tag: "Confirm",
+  kicker: "Needs a download",
+  detail: "Proton-CachyOS, size unknown. This device is on a metered connection.",
+  actions: [
+    download,
+    { id: "acquisition:1:remote", label: "Play on zao instead", enabled: true },
+    cancelDownload,
+  ],
+}
+
+/** The question for one game: its title in yellow. */
+export const statusConfirmForGame: SurfaceStatus = {
+  _tag: "Confirm",
+  kicker: "Needs a download",
+  detail: "FEX rootfs and Proton-CachyOS, 1.5 GB",
+  actions: [download, cancelDownload],
+  gameId: "hollow-knight",
+}
+
+/** Downloading with a known end: 612 MB of 1.2 GB. */
+export const statusProgressKnown: SurfaceStatus = {
+  _tag: "Busy",
+  kicker: "Downloading FEX rootfs",
+  detail: "612 MB of 1.2 GB · 6.4 MB/s · 1:30 left",
+  progress: { done: 612_000_000, total: 1_160_000_000 },
+  actions: [cancelDownload],
+  gameId: "hollow-knight",
+}
+
+/** Korri knows how far it has got, not how far it goes. */
+export const statusProgressNoTotal: SurfaceStatus = {
+  _tag: "Busy",
+  kicker: "Downloading Proton-CachyOS",
+  detail: "212 MB so far · 6.4 MB/s",
+  progress: { done: 212_400_000 },
+  actions: [cancelDownload],
+  gameId: "hollow-knight",
+}
+
+/** One step from the end: the fill all but meets the bar's slanted end. */
+export const statusProgressNearlyDone: SurfaceStatus = {
+  _tag: "Busy",
+  kicker: "Downloading FEX rootfs",
+  detail: "1.2 GB of 1.2 GB · 6.4 MB/s · 0:01 left",
+  progress: { done: 1_154_000_000, total: 1_160_000_000 },
+  actions: [cancelDownload],
+  gameId: "hollow-knight",
+}
+
+/** Unpacking: the portal publishes a position of nothing and no end. */
+export const statusProgressUnpacking: SurfaceStatus = {
+  _tag: "Busy",
+  kicker: "Unpacking FEX rootfs",
+  progress: { done: 0 },
+  gameId: "hollow-knight",
 }
 
 // ---- The gameplay overlay (C24) ----
