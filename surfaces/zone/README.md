@@ -499,11 +499,12 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   cancels busy work.
 - **Problem's game** is Korri's `gameTitle`, else the catalog's title for
   its `gameId`.
-- **Onboarding's device-name lookup** is by label: the first settings item,
-  in any group, whose label reads "Device name" (case and outer space
-  ignored) and whose interaction is `text` (`deviceNameSetting` in
-  `onboarding.ts`). Korri publishes it as `device-name` today; Zone does not
-  rely on the id. Absent, the row is read-only.
+- **Onboarding's device-name lookup** is by id: the first settings item,
+  in any group, with the id `device-name`, which is the id the portal
+  publishes (`clients/portal/src/surface/settings-model.ts`, label "Name").
+  The label is Korri's word and is not read. Without a `text` interaction
+  the row shows Korri's value read-only and A on it does nothing; absent,
+  the row is read-only and empty.
 - **No identity call at first boot.** The treaty asks for none: the device
   already has its own identity. START on the NEW SAVE card is the player's
   choice, held in the model, and FINISH waits for it. Restoring a save is
@@ -601,7 +602,8 @@ and system do nothing there.
   Korri's title or PAUSED). The portal's own test renders every overlay
   surface and finds its overlay by that role and name.
 - **The foot's device tag** shows the value of Korri's device-name setting,
-  found as first boot finds it (by its label). Absent, the tag is empty.
+  found as first boot finds it (by its id), editable or not. Absent, the
+  tag is empty.
 - **Ground.** The root draws ZoneGround under GAMES, OPTIONS, SAVE DATA and
   RUN WITH; PAUSED and first boot draw their own.
 - **Wide art.** Zone's cards are portrait; `wideArtUrl` is not drawn. A game

@@ -28,7 +28,7 @@ export const fixtureChoiceRow: SurfaceSettingItem = {
 
 export const fixtureTextRow: SurfaceSettingItem = {
   id: "device-name",
-  label: "Device name",
+  label: "Name",
   value: "mini",
   description: "What other devices call this one",
   interaction: { kind: "text", placeholder: "Name", maxLength: 24 },

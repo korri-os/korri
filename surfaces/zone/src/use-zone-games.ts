@@ -65,7 +65,8 @@ export function zoneBandCards(games: readonly SurfaceGame[]): readonly ZoneBandC
 
 /**
  * The device's name for the foot: the value of Korri's device-name setting,
- * found as first boot finds it (by its label). Absent, the tag is empty.
+ * found as first boot finds it (by its id, `device-name`), editable or not.
+ * Absent, the tag is empty.
  */
 export const zoneDeviceName = (korri: SurfaceModel): string | undefined => deviceNameSetting(korri)?.value
 

@@ -159,7 +159,7 @@ export function ZoneOnboarding({
   readonly canGoOn?: boolean
   readonly controllers: readonly SurfaceController[]
   readonly network?: SurfaceNetwork
-  /** Korri's device-name setting, as the binding found it; absent, the row is read-only. */
+  /** Korri's device-name setting, as the binding found it (by its id); absent or without a text interaction, the row is read-only. */
   readonly nameSetting?: SurfaceSettingItem
   readonly settingsStatus?: SurfaceSettingsStatus
   readonly strips?: ZoneStrips

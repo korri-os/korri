@@ -213,10 +213,10 @@ export const onboardingModel = (controllers: readonly SurfaceController[], netwo
     title: "Device",
     items: [{
       id: "device-name",
-      label: "Device name",
+      label: "Name",
       value: "mini",
       description: "What other devices call this one",
-      interaction: { kind: "text", placeholder: "Name", maxLength: 24 },
+      interaction: { kind: "text", placeholder: "This device", maxLength: 24 },
     }],
   }],
   onboarding: { controllers },

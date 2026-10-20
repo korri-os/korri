@@ -108,7 +108,7 @@ const HOME: SurfaceModel = {
     {
       title: "Device",
       items: [
-        { id: "device-name", label: "Device name", value: "mini", description: "What other devices call this one", interaction: { kind: "text", maxLength: 24 } },
+        { id: "device-name", label: "Name", value: "mini", description: "What other devices call this one", interaction: { kind: "text", placeholder: "This device", maxLength: 64 } },
         {
           id: SEATS,
           label: "Player seats",
@@ -516,12 +516,12 @@ describe("settings", () => {
     openOptions(press)
     const titles = [...document.querySelectorAll(".zone-options-scroll h2")].map(heading => heading.textContent)
     expect(titles).toEqual(["Device", "System information", "System", "WI-FI"])
-    expect(onScreen("Device name")).toBe(true)
+    expect(onScreen("Name")).toBe(true)
     expect(onScreen("mini")).toBe(true)
     expect(onScreen("14 games")).toBe(true)
     // The description shows under the focused row.
     expect(onScreen("What other devices call this one")).toBe(false)
-    moveTo(row("Device name"))
+    moveTo(row("Name"))
     expect(onScreen("What other devices call this one")).toBe(true)
   })
 
@@ -534,9 +534,9 @@ describe("settings", () => {
     sideways("left")
     expect(calls(host)).toEqual([["changeSetting", SEATS, "3"], ["changeSetting", SEATS, "1"]])
     // text: A raises the keyboard with the value; DONE commits.
-    moveTo(row("Device name"))
+    moveTo(row("Name"))
     confirm()
-    const name = screen.getByRole("dialog", { name: "Device name" })
+    const name = screen.getByRole("dialog", { name: "Name" })
     type("2", name)
     moveTo(button("Done", name))
     confirm()
@@ -936,7 +936,7 @@ describe("onboarding", () => {
     moveTo(next())
     confirm()
     // NAME: Korri's device-name setting, typed on the keyboard.
-    moveTo(button("Device name"))
+    moveTo(button("Name", document.querySelector<HTMLElement>(".zone-onboarding-group")!))
     confirm()
     type("x")
     moveTo(button("Done", keyboardOnScreen()))
@@ -1078,7 +1078,7 @@ describe("chrome and input", () => {
     moveTo(button("Options"))
     confirm()
     drawn()
-    moveTo(row("Device name"))
+    moveTo(row("Name"))
     drawn()
     confirm()
     drawn()

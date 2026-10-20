@@ -103,19 +103,23 @@ export type ZoneOnboardingMessage =
 /** What the WI-FI step's network row dispatches. */
 export const onboardingJoin = (networkId: string): ZoneOnboardingMessage => ({ _tag: "OnboardingJoin", networkId })
 
-/** The label Korri gives the device's name, compared without case. */
-export const DEVICE_NAME_LABEL = "device name"
+/** The id the portal gives the device's name setting
+ * (`clients/portal/src/surface/settings-model.ts`). */
+export const DEVICE_NAME_SETTING_ID = "device-name"
 
 /**
- * Korri's device-name setting. The treaty names no setting ids, so Zone
- * finds it by its label: the first item, in any group, whose label reads
- * "Device name" (case and outer space ignored) and which takes text. Korri
- * publishes it today with the id `device-name`; Zone does not rely on that.
- * Absent, the NAME row shows read-only and A on it does nothing.
+ * Korri's device-name setting: the first item, in any group, with the id
+ * `device-name`. Its label is Korri's word ("Name") and is not read. A
+ * read-only one (no `text` interaction) is still the device's name.
  */
 export function deviceNameSetting(korri: SurfaceModel): SurfaceSettingItem | undefined {
-  return korri.settings.flatMap(group => group.items)
-    .find(item => item.label.trim().toLowerCase() === DEVICE_NAME_LABEL && item.interaction?.kind === "text")
+  return korri.settings.flatMap(group => group.items).find(item => item.id === DEVICE_NAME_SETTING_ID)
+}
+
+/** The device-name setting when Korri lets it be typed; absent, A on the NAME row does nothing. */
+function editableName(korri: SurfaceModel): SurfaceSettingItem | undefined {
+  const setting = deviceNameSetting(korri)
+  return setting?.interaction?.kind === "text" ? setting : undefined
 }
 
 /** At least one controller has been heard since setup began. */
@@ -235,7 +239,7 @@ function step(model: ZoneOnboardingModel, message: ZoneOnboardingMessage, korri:
     case "OnboardingJoin":
       return chooseNetwork(model, message.networkId, korri)
     case "OpenedName": {
-      const setting = deviceNameSetting(korri)
+      const setting = editableName(korri)
       if (model.step !== "name" || setting === undefined) return stay(model)
       const draft = setting.value ?? ""
       return stay({ ...model, focus: TARGET.name, entry: { draft, caret: draft.length, layer: "letters", focusedKey: "done" } })
@@ -268,7 +272,7 @@ function chooseNetwork(model: ZoneOnboardingModel, networkId: string, korri: Sur
 /** A key on the NAME step's keyboard. DONE sends the name when it changed. */
 function pressKey(model: ZoneOnboardingModel, key: ZoneEntryKey, korri: SurfaceModel): ZoneStep<ZoneOnboardingModel> {
   const entry = model.entry
-  const setting = deviceNameSetting(korri)
+  const setting = editableName(korri)
   if (entry === undefined || setting === undefined) return stay(model)
   const lit = { ...entry, focusedKey: entryKeyId(key) }
   const maxLength = setting.interaction?.kind === "text" ? setting.interaction.maxLength : undefined
@@ -299,7 +303,7 @@ function pressKey(model: ZoneOnboardingModel, key: ZoneEntryKey, korri: SurfaceM
  * goes down if the name setting goes away.
  */
 function settle(model: ZoneOnboardingModel, korri: SurfaceModel): ZoneOnboardingModel {
-  const entry = model.entry !== undefined && deviceNameSetting(korri) === undefined ? undefined : model.entry
+  const entry = model.entry !== undefined && editableName(korri) === undefined ? undefined : model.entry
   const focus = onboardingTargets(model, korri).includes(model.focus) ? model.focus : firstTarget(model, korri)
   return entry === model.entry && focus === model.focus ? model : { ...model, entry, focus }
 }

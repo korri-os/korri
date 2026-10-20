@@ -128,7 +128,7 @@ describe("updateOnboarding", () => {
     expect(send(full, { _tag: "PressedKey", key: { kind: "char", char: "y" } }).model.entry?.draft).toBe("x".repeat(24))
   })
 
-  test("PressedKey DONE saves a changed name on the setting found by label, and closes", () => {
+  test("PressedKey DONE saves a changed name on the setting found by id, and closes", () => {
     const typing = send(at("name"), { _tag: "OpenedName" }).model
     const typed = send(typing, { _tag: "PressedKey", key: { kind: "char", char: "2" } }).model
     const done = send(typed, { _tag: "PressedKey", key: { kind: "done" } })
@@ -137,14 +137,22 @@ describe("updateOnboarding", () => {
     expect(send(typing, { _tag: "PressedKey", key: { kind: "done" } }).requests).toEqual([])
   })
 
-  test("deviceNameSetting finds Korri's setting by its label, not its id", () => {
-    const renamed: SurfaceModel = {
+  test("deviceNameSetting finds Korri's setting by its id, not its label", () => {
+    const labelled: SurfaceModel = {
       ...heard,
-      settings: [{ title: "System", items: [{ id: "host.name", label: "  DEVICE NAME ", value: "zao", interaction: { kind: "text" } }] }],
+      settings: [{ title: "System", items: [{ id: "host.name", label: "Device name", value: "zao", interaction: { kind: "text" } }] }],
     }
-    expect(deviceNameSetting(renamed)?.id).toBe("host.name")
-    const readOnly: SurfaceModel = { ...heard, settings: [{ title: "System", items: [{ id: "device-name", label: "Device name", value: "zao" }] }] }
-    expect(deviceNameSetting(readOnly)).toBeUndefined()
+    expect(deviceNameSetting(labelled)).toBeUndefined()
+    const portal: SurfaceModel = {
+      ...heard,
+      settings: [{ title: "Device", items: [{ id: "device-name", label: "Name", value: "zao", interaction: { kind: "text", placeholder: "This device", maxLength: 64 } }] }],
+    }
+    expect(deviceNameSetting(portal)?.value).toBe("zao")
+    // Read-only is still the name, but A on the NAME row opens no keyboard.
+    const readOnly: SurfaceModel = { ...heard, settings: [{ title: "Device", items: [{ id: "device-name", label: "Name", value: "zao" }] }] }
+    expect(deviceNameSetting(readOnly)?.value).toBe("zao")
+    expect(updateOnboarding({ ...ZONE_ONBOARDING_START, step: "name", focus: TARGET.name }, { _tag: "OpenedName" }, readOnly).model.entry)
+      .toBeUndefined()
   })
 
   test("ChoseStart chooses the new save and moves the cursor to FINISH", () => {
@@ -294,8 +302,8 @@ describe("ZoneOnboarding", () => {
 
   test("C25: NAME opens the keyboard on Korri's name and DONE saves it with changeSetting", () => {
     const program = mount(online, { step: "name", focus: TARGET.name })
-    expect(screen.getByText("Device name")).toBeDefined()
-    fireEvent.click(screen.getByText("Device name"))
+    expect(screen.getByText("Name")).toBeDefined()
+    fireEvent.click(screen.getByText("Name"))
     const keyboard = screen.getByRole("group", { name: "Keyboard" })
     fireEvent.click(within(keyboard).getByRole("button", { name: "2" }))
     fireEvent.click(within(keyboard).getByRole("button", { name: "Done" }))
