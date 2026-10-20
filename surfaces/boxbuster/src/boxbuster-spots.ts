@@ -58,6 +58,9 @@ export interface StoreSpots {
  * store is built. */
 export const DOOR_SPOT: SpotId = "door"
 export const VIEWING_SPOT: SpotId = "viewing"
+/** The order desk by the door. Not a place you stand in the room: walking
+ * there opens the desk's board (boxbuster-desk.ts), which replaces the view. */
+export const ORDER_DESK_SPOT: SpotId = "order-desk"
 
 export const EYE_HEIGHT = 1.7
 /** Just above the carpet, so a step mark never fights the floor. */
@@ -107,6 +110,8 @@ interface Segment {
 export function spotsFrom(
   map: StoreMap,
   placed: readonly PlacedTape[],
+  /** Korri can get games: the door has a way to the order desk. */
+  options: { readonly orderDesk?: boolean } = {},
 ): StoreSpots {
   const spots: Mutable[] = []
   const add = (spot: Omit<Mutable, "tapeIds" | "exits">) => {
@@ -140,6 +145,16 @@ export function spotsFrom(
   })
   for (const tape of placed) {
     if (tape.rest._tag === "Cart") door.tapeIds.push(tape.game.id)
+  }
+  // The order desk stands by the entrance, to the right of the cart: a worn
+  // patch at the front of the store, in view from the door.
+  if (options.orderDesk === true) {
+    door.exits.push({
+      to: ORDER_DESK_SPOT,
+      label: "Order desk",
+      anchor: { x: door.eye.x + 1.6, y: FLOOR_MARK, z: door.eye.z - 2.4 },
+      glide: false,
+    })
   }
 
   // ── the lobby, looking at the viewing-room archway ──

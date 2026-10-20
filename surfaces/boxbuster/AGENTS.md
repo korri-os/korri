@@ -46,6 +46,23 @@
 > that text stays legible. This replaces the "never the only way in" rule
 > below, which is struck. Without WebGL there is no store, so the door says
 > Boxbuster cannot open on this device.
+>
+> **The order desk is the door board's third use** (decided 2026-10-20). The
+> door board (`BoxbusterNotice`) was allowed for two things: no store to walk
+> into, and Korri's work with nowhere else to show. Getting a game from a
+> provider is the third: that journey needs typing and must work from an
+> empty library, and the 3D room can offer neither, because an empty library
+> draws no store. The desk (`BoxbusterOrderDesk.tsx`, rules in
+> `boxbuster-desk.ts`) is the board grown into a counter, in the store's own
+> palette and type. You reach it from the empty-store board ("Go to the
+> order desk", also without WebGL) and, in a stocked store, by a worn patch
+> at the door marked "Order desk"; walking there replaces the view, and Back
+> walks the desk's pages and then returns you to the door. Its keys are
+> focusable buttons the host's focus moves through; the desk reads no key
+> codes. Korri's launch status keeps its in-world presentation (the TV and
+> the decks): the desk shows only the store's own facts, and gives way when
+> a launch status appears. A game the desk got is played the Boxbuster way:
+> "Take it to the TV" puts the tape in your hand in the viewing room.
 
 `boxbuster` is the PS1-era 3D video-store browse surface (`@korri:boxbuster`). It is an
 attempt to make a game launcher that feels like **somewhere you go**, not **something you

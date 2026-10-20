@@ -16,10 +16,13 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { BoxbusterNotice, BoxbusterWorkNotice, NO_STORE } from "./BoxbusterNotice"
+import { BoxbusterOrderDesk } from "./BoxbusterOrderDesk"
+import { DESK_START, type DeskPlace, deskBack, deskSearchFor } from "./boxbuster-desk"
 import { type BoxbusterStoreDrawing, webglStore } from "./BoxbusterStore"
 import { BoxbusterTargets } from "./BoxbusterTargets"
-import { DOOR_SPOT, spotsFrom } from "./boxbuster-spots"
+import { DOOR_SPOT, ORDER_DESK_SPOT, spotsFrom } from "./boxbuster-spots"
 import {
+  deskStoreFrom,
   storeSignature,
   storeViewFrom,
   tapeFactsFrom,
@@ -57,11 +60,14 @@ export function BoxbusterSurface({
   // `model` and `now` are deliberately absent from the dependencies: the
   // signature stands in for both.
   const view = useMemo(() => storeViewFrom(model, now), [signature])
+  // Where Korri can get games, the door has a way to the order desk.
+  const hasDesk = model.store !== undefined
   const store = useMemo(() => {
     if (view._tag !== "Open") return undefined
     const placed = placeTapes(view.map)
-    return { map: view.map, placed, spots: spotsFrom(view.map, placed) }
-  }, [view])
+    return { map: view.map, placed, spots: spotsFrom(view.map, placed, { orderDesk: hasDesk }) }
+  }, [view, hasDesk])
+  const deskStore = model.store === undefined ? undefined : deskStoreFrom(model.store)
   // Tape facts also read what the store ignores (launch locations, play
   // counts), so they follow the catalog as well as tape placement.
   const tapes = useMemo(
@@ -77,6 +83,10 @@ export function BoxbusterSurface({
   const choosing = (work?.length ?? 0) > 1
 
   const [held, setVisit] = useState<Visit>(() => closedVisit({ door: DOOR_SPOT }))
+  // The order desk (boxbuster-desk.ts): whether you are at it, and where.
+  // Both outlive the desk, so walking back to it finds the same page.
+  const [atDesk, setAtDesk] = useState(false)
+  const [deskPlace, setDeskPlace] = useState<DeskPlace>(DESK_START)
   // A republished catalog may have taken a tape away, rebuilt the store, or
   // stocked it for the first time; settle the visit before anything renders
   // with a stale one.
@@ -86,8 +96,13 @@ export function BoxbusterSurface({
 
   // Input handlers are registered once, so they read the visit as it is
   // when the button is pressed, not as it was when they were registered.
-  const latest = useRef({ visit, status, store })
-  latest.current = { visit, status, store }
+  const desk = atDesk && deskStore !== undefined && model.status._tag === "Browsing"
+  const latest = useRef({ visit, status, store, desk, deskPlace, deskStore })
+  latest.current = { visit, status, store, desk, deskPlace, deskStore }
+  const openDesk = () => {
+    setAtDesk(true)
+    host.openStore()
+  }
   const dispatch = (event: VisitEvent) => {
     const { visit: current, store: built } = latest.current
     if (built === undefined) return
@@ -104,15 +119,23 @@ export function BoxbusterSurface({
   dispatchRef.current = dispatch
 
   useEffect(() => {
-    const offBack = host.input.on("back", () =>
+    const offBack = host.input.on("back", () => {
+      // At the desk, Back walks the desk's pages, then back into the store.
+      const { desk: open, deskPlace: place, deskStore: orders } = latest.current
+      if (open && orders !== undefined) {
+        const next = deskBack(place, deskSearchFor(orders, place.providerId)._tag !== "Idle")
+        if (next === "Leave") setAtDesk(false)
+        else setDeskPlace(next)
+        return
+      }
       dispatchRef.current({
         _tag: "Back",
         problem: latest.current.status._tag === "Problem",
-      }),
-    )
-    const offOptions = host.input.on("options", () =>
-      dispatchRef.current({ _tag: "Turn" }),
-    )
+      })
+    })
+    const offOptions = host.input.on("options", () => {
+      if (!latest.current.desk) dispatchRef.current({ _tag: "Turn" })
+    })
     return () => {
       offBack()
       offOptions()
@@ -136,6 +159,29 @@ export function BoxbusterSurface({
   const size = useBoxbusterSize(surface)
   const drawable = useMemo(() => drawing.available(), [drawing])
 
+  // The order desk replaces the view, wherever you came to it from: the empty
+  // store's board or the door's way to it.
+  if (desk && deskStore !== undefined) {
+    return (
+      <div className="boxbuster-surface" data-boxbuster-surface="" data-spot={ORDER_DESK_SPOT} ref={surface}>
+        <BoxbusterOrderDesk
+          canFetch={gameId => store !== undefined && tapes.some(tape => tape.id === gameId)}
+          onAction={actionId => host.runAction(actionId)}
+          onLeave={() => setAtDesk(false)}
+          onOpenEntry={entryId => host.openStoreEntry(entryId)}
+          onPlace={setDeskPlace}
+          onPlay={tapeId => {
+            setAtDesk(false)
+            dispatch({ _tag: "Fetch", tapeId })
+          }}
+          onSearch={(providerId, query) => host.searchStore(providerId, query)}
+          place={deskPlace}
+          store={deskStore}
+        />
+      </div>
+    )
+  }
+
   // Without a store, Korri's work and its actions still need a place: the door.
   const doorWork =
     (model.status._tag === "Busy" || model.status._tag === "Confirm") && (work?.length ?? 0) > 0 ? (
@@ -149,14 +195,14 @@ export function BoxbusterSurface({
   if (view._tag !== "Open" || store === undefined) {
     return (
       <div className="boxbuster-surface" data-boxbuster-surface="" ref={surface}>
-        {doorWork ?? <BoxbusterNotice view={view} onReload={() => host.reload()} />}
+        {doorWork ?? <BoxbusterNotice view={view} onReload={() => host.reload()} {...(hasDesk ? { onOrderDesk: openDesk } : {})} />}
       </div>
     )
   }
   if (!drawable) {
     return (
       <div className="boxbuster-surface" data-boxbuster-surface="" ref={surface}>
-        {doorWork ?? <BoxbusterNotice view={NO_STORE} onReload={() => host.reload()} />}
+        {doorWork ?? <BoxbusterNotice view={NO_STORE} onReload={() => host.reload()} {...(hasDesk ? { onOrderDesk: openDesk } : {})} />}
       </div>
     )
   }
@@ -227,7 +273,7 @@ export function BoxbusterSurface({
         tapes={tapes}
         onFocusChange={setFocused}
         onTape={tapeId => dispatch({ _tag: "PickUp", tapeId })}
-        onExit={exit => dispatch({ _tag: "Walk", to: exit.to })}
+        onExit={exit => exit.to === ORDER_DESK_SPOT ? openDesk() : dispatch({ _tag: "Walk", to: exit.to })}
         onDeck={locationId =>
           dispatch(
             locationId === undefined

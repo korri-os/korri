@@ -10,7 +10,9 @@ import type {
   SurfaceGame,
   SurfaceModel,
   SurfaceStatus,
+  SurfaceStore,
 } from "@contracts/surface/korri-surface"
+import type { DeskStore } from "./boxbuster-desk"
 import {
   computeMap,
   type StoreGame,
@@ -288,4 +290,12 @@ export function tvStatusFrom(model: SurfaceModel): TvStatus {
         lines: status.actions.map(action => action.label),
       }
   }
+}
+
+// ── what the order desk says ──────────────────────────────────────────────────
+
+/** Korri's store as the order desk reads it. The shapes match the treaty's
+ * on purpose: the desk prints Korri's words and runs Korri's actions. */
+export function deskStoreFrom(store: SurfaceStore): DeskStore {
+  return store
 }
