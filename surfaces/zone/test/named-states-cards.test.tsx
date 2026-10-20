@@ -229,7 +229,7 @@ describe("ZoneCard", () => {
     expect(tagsIn()).toEqual(["PC", "Here", "zao", "Download"])
   })
 
-  test.each([
+  test.each<[string, readonly string[]]>([
     ["SideOneTag", ["GB"]],
     ["SideTwoTags", ["Switch", "Here"]],
     ["SideThreeTags", ["PICO-8", "Here", "Continue"]],
@@ -244,9 +244,8 @@ describe("ZoneCard", () => {
     expect(tagsIn()).toEqual(tags)
     // No tag is ever cut: every tag stays in the row, its label entire, and
     // only a hidden mark (never a shorter word) answers a narrow row.
-    for (const node of document.querySelectorAll(".zone-tag")) {
-      expect(node.textContent).toBe(tags[[...document.querySelectorAll(".zone-tag")].indexOf(node)])
-    }
+    const drawn = [...document.querySelectorAll(".zone-tag")]
+    drawn.forEach((node, index) => expect(node.textContent).toBe(tags[index] ?? ""))
   })
 
   test("every state is covered", () => {
