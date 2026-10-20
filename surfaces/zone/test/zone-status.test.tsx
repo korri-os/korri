@@ -19,11 +19,9 @@ import {
   statusProblemNoRetry,
   statusRunning,
 } from "../src/fixtures/fixture-layers"
-import { createFixtureHost } from "../src/fixtures/fixture-host"
 import { createStatusProgram } from "../src/fixtures/layer-program"
 import {
   problemButtons,
-  reloadRequest,
   shownFor,
   statusTakesFocus,
   updateStatus,
@@ -31,7 +29,6 @@ import {
   type ZoneStatusModel,
 } from "../src/state/status"
 import { ZoneStatusLayer } from "../src/ui/organisms/ZoneStatusLayer"
-import { performZoneRequest } from "../src/zone-host"
 
 afterEach(cleanup)
 
@@ -100,13 +97,6 @@ describe("updateStatus", () => {
     expect(statusTakesFocus(statusBusyCancel)).toBe(true)
     expect(statusTakesFocus(statusRunning)).toBe(false)
     expect(statusTakesFocus(statusProblemNoRetry)).toBe(true)
-  })
-
-  test("C10: reloadRequest asks Korri to read everything again", () => {
-    const host = createFixtureHost()
-    expect(reloadRequest()).toEqual({ _tag: "Reload" })
-    performZoneRequest(host, reloadRequest())
-    expect(host.calls).toEqual(["reload"])
   })
 })
 

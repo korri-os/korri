@@ -31,7 +31,7 @@ export type ZoneStatusProblemButton = "dismiss" | "retry"
  * Every word is Korri's except DISMISS, RETRY and OPEN. `focus` is the
  * model's lit button; focus returns to the page when the layer closes.
  * RELOAD is not here: Korri's Problem never asks for it (C10 lives on the
- * catalog's Error state and the SYSTEM group).
+ * catalog's Error dialog on GAMES).
  */
 export function ZoneStatusLayer({
   status,

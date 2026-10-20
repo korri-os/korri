@@ -16,7 +16,7 @@
  * value, as navigation receives the whole model.
  */
 import type { SurfaceStatus } from "@contracts/surface/korri-surface"
-import { ask, stay, type ZoneRequest, type ZoneStep } from "./requests"
+import { ask, stay, type ZoneStep } from "./requests"
 
 export type ZoneStatusShown = "none" | "busy" | "running" | "problem"
 
@@ -76,13 +76,6 @@ export function statusButtonCount(status: SurfaceStatus): number {
 
 /** Whether focus belongs in the layer: it has a button to hold it. */
 export const statusTakesFocus = (status: SurfaceStatus): boolean => statusButtonCount(status) > 0
-
-/**
- * Ask Korri to read everything again. Not the status layer's call: Korri
- * offers no "reload" in a Problem, so the catalog's Error state and the
- * SYSTEM group under OPTIONS use this one request (C10).
- */
-export const reloadRequest = (): ZoneRequest => ({ _tag: "Reload" })
 
 export function updateStatus(
   model: ZoneStatusModel,
