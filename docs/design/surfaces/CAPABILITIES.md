@@ -32,6 +32,9 @@ Rules for an answer:
   consecutively), `subtitle`, cover art, wide art, and a game with no art.
 - **C3 Game facts.** `lastPlayedAt`, `playCount`, `totalPlaytimeSeconds`,
   `resumable`.
+- **C33 Download before launch.** `download` on a game: launching it first
+  needs something fetched to this device; `bytes` is the size, formatted by
+  the surface, and may be absent.
 - **C4 Launch.** One place, or a choice among `launchLocations` that the
   person must make (never a silent default); `launchGame(gameId,
   launchLocationId?)`.
@@ -48,6 +51,13 @@ Rules for an answer:
 - **C9 Problem.** `kicker`, `reason`, `retry()` when `canRetry`, `dismiss()`,
   stated against `gameTitle` and not whatever is on screen.
 - **C10 Reload.** `reload()` when the model needs a fresh start.
+- **C31 Confirm.** Korri asks before it does something, such as a large
+  download: `kicker` is the question, `detail` names what and how much; the
+  surface renders exactly the host's `actions` and reports the chosen one
+  with `runAction`, never inferring from a label which one agrees.
+- **C32 Progress.** `Busy.progress`: a real bar from `done` and `total`;
+  with `done` and no `total`, how far it has got without an end; without
+  `progress`, only that work is under way.
 
 ## Runner choice (`SurfaceModel.runnerChoice`)
 

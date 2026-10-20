@@ -71,8 +71,10 @@ any well-made product could wear.
 
 The bar is the treaty, `contracts/surface/korri-surface.ts`: every field of
 `SurfaceModel` and every method of `SurfaceHost`. Pico is the proof that the
-bar is reachable, not the template. `CAPABILITIES.md` lists the bar as thirty
-numbered items, C1 to C30, each grounded in the treaty.
+bar is reachable, not the template. `CAPABILITIES.md` lists the bar as numbered
+items, C1 to C33, each grounded in the treaty (C31 to C33 were
+added on 2026-10-20 when the treaty grew Confirm, Busy.progress and
+SurfaceGame.download).
 
 Parity is by capability, never by page. Every kept direction's
 `DIRECTION.md` ends with a `## Capability map` section: one line per item,
