@@ -252,16 +252,18 @@ describe("design inputs are addressable", () => {
   })
 })
 
-describe("eight colours, hard edges", () => {
+describe("hard edges: flat colours, stairs and dither", () => {
   /**
-   * Mania's menus are flat vector shapes: a panel is black, its edge is a
-   * solid offset in blue, a band is three colours meeting on a hard line.
-   * A blur, a blend, a smooth gradient or a soft shadow is the one thing that
-   * would give Zone away as a web page.
+   * Mania's menus are flat pixel shapes: a panel is black, its edge a solid
+   * offset, a band colours meeting on a hard line, a veil a checker of
+   * black. A blur, a blend, a smooth gradient or a soft shadow is the one
+   * thing that would give Zone away as a web page. (The refinement brief
+   * retired the old "eight colours" rule; the palettes are per screen
+   * group now, and the rule that stays is: no blend.)
    */
   test("no stylesheet blurs, blends or grades a colour", () => {
     const offenders = cssFiles.flatMap((file) =>
-      [...css(file).matchAll(/color-mix\(|radial-gradient\(|conic-gradient\(|mix-blend-mode|backdrop-filter|blur\(|drop-shadow\(/g)]
+      [...css(file).matchAll(/color-mix\(|radial-gradient\(|mix-blend-mode|backdrop-filter|blur\(|drop-shadow\(/g)]
         .map((match) => `${rel(file)}: ${match[0]}`))
       .sort()
 
@@ -269,18 +271,20 @@ describe("eight colours, hard edges", () => {
   })
 
   /**
-   * A linear-gradient is allowed only as a stripe pattern: every stop names
-   * two positions, and each stop starts where the one before it ended, so no
-   * two colours ever blend. The first part may be an angle, a side, or an
-   * angle token (`var(--zone-stripe-angle)`), so the lean stays a knob.
+   * A gradient is allowed only as a hard-stop pattern: every stop names two
+   * positions, and each stop starts where the one before it ended, so no
+   * two colours ever blend. A linear one is a stripe or a two-tone; a conic
+   * one is a dither or a checker (the veil, PAUSED's stand-in). The first
+   * part may be an angle, a side, `from` an angle, or an angle token
+   * (`var(--zone-stripe-angle)`), so the lean stays a knob.
    */
-  test("every linear-gradient is a hard-stop stripe", () => {
+  test("every linear-gradient and conic-gradient is hard-stop", () => {
     const offenders = cssFiles.flatMap((file) =>
-      [...css(file).matchAll(/linear-gradient\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g)].flatMap((match) => {
-        const parts = (match[1] ?? "").split(/,(?![^(]*\))/).map((part) => part.trim())
+      [...css(file).matchAll(/(linear|conic)-gradient\(([^()]*(?:\([^()]*(?:\([^()]*\)[^()]*)*\)[^()]*)*)\)/g)].flatMap((match) => {
+        const parts = (match[2] ?? "").split(/,(?![^(]*\))/).map((part) => part.trim())
         const stops = parts.filter((part, index) =>
-          !/^(?:-?[\d.]+(?:deg|turn)|to\s)/.test(part) && !(index === 0 && /^var\(--[a-z0-9-]*angle\)$/.test(part)))
-        const edges = stops.map((stop) => stop.match(/\s(-?[\d.]+%?)\s+(-?[\d.]+%?)$/))
+          !/^(?:-?[\d.]+(?:deg|turn)|to\s|from\s|at\s)/.test(part) && !(index === 0 && /^var\(--[a-z0-9-]*angle\)$/.test(part)))
+        const edges = stops.map((stop) => stop.match(/\s(-?[\d.]+(?:%|deg|turn)?)\s+(-?[\d.]+(?:%|deg|turn)?)$/))
         if (edges.some((edge) => edge === null)) return [`${rel(file)}: ${match[0]} (a stop with one position)`]
         for (let index = 1; index < edges.length; index += 1) {
           if (edges[index]?.[1] !== edges[index - 1]?.[2]) {
@@ -323,6 +327,57 @@ describe("fixtures stay out of the product", () => {
       && !file.endsWith(".part.tsx")
       && !rel(file).startsWith("fixtures/"))
     const offenders = product.filter((file) => /from\s+"[^"]*\/fixtures\//.test(read(file))).map(rel)
+    expect(offenders).toEqual([])
+  })
+})
+
+describe("the ground is the one drawing", () => {
+  /**
+   * The canvas ground is drawing, not state: it paints from refs and the
+   * computed style and re-renders nothing (REFINEMENT.md, 2b). It is the
+   * only place allowed to draw on a canvas or run a frame clock; anything
+   * else that animates does it in a stylesheet, where reduced motion stops
+   * it, and anything else that shows a value shows it from the model.
+   */
+  const CANVAS_ALLOWANCE = ["ui/organisms/ZoneGround.tsx", "use-zone-ground.ts"]
+
+  test("only ZoneGround and its hook draw on a canvas or run a frame clock", () => {
+    const offenders = tsxFiles
+      .filter((file) => !file.endsWith(".part.tsx"))
+      .filter((file) => /getContext\(|requestAnimationFrame\(|<canvas\b/.test(read(file)))
+      .map(rel)
+      .filter((file) => !CANVAS_ALLOWANCE.includes(file))
+      .sort()
+    expect(offenders).toEqual([])
+  })
+
+  test("the allowance names files that exist and still draw", () => {
+    for (const file of CANVAS_ALLOWANCE) {
+      expect(/getContext\(|requestAnimationFrame\(|<canvas\b/.test(read(join(SRC, file)))).toBe(true)
+    }
+  })
+})
+
+describe("no word breaks inside itself", () => {
+  /**
+   * Zone's own words wrap between words or truncate with "…"; they never
+   * break inside a word (REFINEMENT.md, 4: "Config/ured"). The one allowed
+   * break is in a sentence Korri publishes, at the line's end, with a
+   * hyphen where the language has one: `overflow-wrap: break-word` with
+   * `hyphens: auto`, in the same rule.
+   */
+  test("no stylesheet breaks a word anywhere", () => {
+    const offenders = cssFiles.flatMap((file) =>
+      [...css(file).matchAll(/overflow-wrap:\s*anywhere|word-break:\s*break-(?:all|word)|line-break:\s*anywhere/g)]
+        .map((match) => `${rel(file)}: ${match[0]}`))
+    expect(offenders).toEqual([])
+  })
+
+  test("a word breaks at a line's end only in a rule that hyphenates: Korri's sentences", () => {
+    const offenders = cssFiles.flatMap((file) =>
+      [...css(file).matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+        .filter(([, , body]) => /overflow-wrap:\s*break-word/.test(body ?? "") && !/hyphens:\s*auto/.test(body ?? ""))
+        .map(([, selector]) => `${rel(file)}: ${(selector ?? "").trim()}`))
     expect(offenders).toEqual([])
   })
 })

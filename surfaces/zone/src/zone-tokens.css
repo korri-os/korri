@@ -878,11 +878,11 @@
 .zone-theme [data-ground="paused"],
 .zone-theme[data-ground="paused"] {
   /** @label Ground */
-  --zone-ground: var(--zone-grey-dark);
+  --zone-ground: var(--zone-grey-light);
   /** @label Ring A */
-  --zone-ring-a: var(--zone-grey-light);
+  --zone-ring-a: var(--zone-grey-dark);
   /** @label Ring B */
-  --zone-ring-b: var(--zone-grey-light);
+  --zone-ring-b: var(--zone-grey-dark);
   /** @label Shade */
   --zone-shade: var(--zone-black);
   /** @label Rings @min 0 @max 1 @step 1 */

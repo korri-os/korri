@@ -1,15 +1,23 @@
 /**
  * Every lettering pair Zone draws stays readable.
  *
- * Zone has eight colours and draws words in a handful of pairs: white caps on
- * a black panel, yellow on the blue banner, white on a blue or red tag, black
- * on a yellow tag, black on the mint ground for the build string, yellow and
- * mint on black in the foot. Anton caps at Zone's sizes are large text, so the
- * WCAG 2 floor is 3:1; the two small readouts (the build string and the
- * badge's SSID) need 4.5:1.
+ * Zone draws words in a handful of pairs: caps on a black panel, the banner
+ * ink on the banner, white on a blue or red tag, black on a yellow tag,
+ * black on each screen group's ground for the build string, the keycap's
+ * letters on its dark disc. Zone Caps at caps-1 and up is large text (a
+ * 10-art-px cap is 20 CSS px at its least common size), so the WCAG 2 floor
+ * is 3:1; the two small readouts (the build string and the badge's SSID)
+ * need 4.5:1.
+ *
+ * Outlined lettering is judged face against outline, not against whatever
+ * stands behind it: an ink's ring one art px wide is the edge the eye reads,
+ * so white with a black ring is readable on the sky dialog, the mint ground
+ * or a photograph alike (REFINEMENT.md, 5). Both rows of a two-tone face
+ * meet the ring, so the shade is judged as well as the face.
  *
  * The colours are read from zone-tokens.css through their role names, so a
- * palette edit that breaks a pair fails here, not on a device.
+ * palette edit that breaks a pair fails here, not on a device. Each screen
+ * group's ground (`data-ground`) is judged on its own.
  */
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
@@ -27,7 +35,19 @@ function declarations(source: string): Map<string, string> {
   return found
 }
 
-const tokens = declarations(read("zone-tokens.css"))
+const source = read("zone-tokens.css")
+
+/** The rules that declare the theme itself, without a ground of their own. */
+const theme = new Map<string, string>()
+/** Each screen group's own token set, by its `data-ground` name. */
+const grounds = new Map<string, Map<string, string>>()
+for (const [, selector, body] of source.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+  const named = [...(selector ?? "").matchAll(/data-ground="([a-z]+)"/g)].map(match => match[1] ?? "")
+  const declared = declarations(body ?? "")
+  if (named.length === 0 || /\.zone-theme\s*,/.test(selector ?? "")) for (const [name, value] of declared) theme.set(name, value)
+  for (const ground of named) grounds.set(ground, new Map([...(grounds.get(ground) ?? []), ...declared]))
+}
+let tokens = theme
 
 function resolve(value: string): string {
   const reference = value.match(/^var\((--[a-z0-9-]+)\)$/)
@@ -51,7 +71,7 @@ const contrast = (a: string, b: string) => {
 const LARGE = 3
 const SMALL = 4.5
 
-/** Ink on ground, by role, and the floor the pair must reach. */
+/** Ink on ground, by role, and the floor the pair must reach, on the default ground. */
 const PAIRS: readonly (readonly [ink: string, ground: string, floor: number])[] = [
   ["--zone-cap", "--zone-panel", LARGE],
   ["--zone-banner-ink", "--zone-banner", LARGE],
@@ -65,16 +85,59 @@ const PAIRS: readonly (readonly [ink: string, ground: string, floor: number])[] 
   ["--zone-save-header-ink", "--zone-save-header-band", LARGE],
   ["--zone-timer-label", "--zone-panel", LARGE],
   ["--zone-badge-strength", "--zone-panel", LARGE],
-  ["--zone-key-b-ink", "--zone-panel", LARGE],
-  ["--zone-key-a-ink", "--zone-panel", LARGE],
-  ["--zone-build-ink", "--zone-ground", SMALL],
+  ["--zone-key-b-ink", "--zone-key", LARGE],
+  ["--zone-key-a-ink", "--zone-key", LARGE],
+  ["--zone-ink-white-face", "--zone-key-tail", LARGE],
   ["--zone-cap", "--zone-panel", SMALL],
+  ["--zone-ink-ink-face", "--zone-white", LARGE],
 ]
 
-describe("lettering on Zone's panels and ground", () => {
+/** Outlined inks: the face, and the shade of its lower rows, against the ring. */
+const OUTLINED: readonly (readonly [face: string, outline: string, floor: number])[] = [
+  ["--zone-ink-white-face", "--zone-ink-white-outline", LARGE],
+  ["--zone-ink-white-shade", "--zone-ink-white-outline", LARGE],
+  ["--zone-ink-hud-face", "--zone-ink-hud-outline", LARGE],
+  ["--zone-banner-ink", "--zone-ink-white-outline", LARGE],
+  ["--zone-ink-banner-band", "--zone-ink-white-outline", LARGE],
+  ["--zone-ink-danger-face", "--zone-ink-white-outline", LARGE],
+  ["--zone-ink-danger-shade", "--zone-ink-white-outline", LARGE],
+]
+
+/** On each screen group's ground, by role. */
+const ON_GROUND: readonly (readonly [ink: string, floor: number])[] = [
+  ["--zone-build-ink", SMALL],
+]
+
+describe("lettering on Zone's panels", () => {
   for (const [ink, ground, floor] of PAIRS) {
     test(`${ink} on ${ground} reaches ${floor}:1`, () => {
       expect(contrast(resolve(`var(${ink})`), resolve(`var(${ground})`))).toBeGreaterThanOrEqual(floor)
     })
+  }
+})
+
+describe("outlined lettering, face against outline", () => {
+  for (const [face, outline, floor] of OUTLINED) {
+    test(`${face} inside its ${outline} ring reaches ${floor}:1`, () => {
+      expect(contrast(resolve(`var(${face})`), resolve(`var(${outline})`))).toBeGreaterThanOrEqual(floor)
+    })
+  }
+})
+
+describe("lettering on every screen group's ground", () => {
+  test("every group the brief names has a ground", () => {
+    expect([...grounds.keys()].sort()).toEqual(["gameopts", "games", "options", "paused", "savedata", "tally", "titlecard"])
+  })
+  for (const [name, set] of grounds) {
+    for (const [ink, floor] of ON_GROUND) {
+      test(`${ink} on the ${name} ground reaches ${floor}:1`, () => {
+        tokens = new Map([...theme, ...set])
+        try {
+          expect(contrast(resolve(`var(${ink})`), resolve("var(--zone-ground)"))).toBeGreaterThanOrEqual(floor)
+        } finally {
+          tokens = theme
+        }
+      })
+    }
   }
 })
