@@ -190,7 +190,14 @@ export function ZoneOptionRow({
         />
       ) : null}
       {focused && cutValue ? (
-        <span aria-hidden="true" className="zone-option-row-whole-line" data-for="value" data-option-clip="slash" data-whole={zoneWholeLine(shown)} />
+        <span
+          aria-hidden="true"
+          className="zone-option-row-whole-line"
+          data-face={verbatimValue ? undefined : "caps"}
+          data-for="value"
+          data-option-clip="slash"
+          data-whole={verbatimValue ? zoneWholeLine(shown) : shown}
+        />
       ) : null}
       {(focused || disabled) && description !== undefined ? (
         <span className="zone-option-row-description" data-case={descriptionCaps ? undefined : "sentence"} data-option-clip="slash">
