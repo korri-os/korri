@@ -12,7 +12,7 @@
 import { useLayoutEffect, type RefObject } from "react"
 import { zoneFitSteps } from "./use-zone-fit"
 import { zoneArtPxOf } from "./use-zone-plan"
-import { useZoneLookKey } from "./use-zone-look"
+import { onZoneAntonLoaded, useZoneLookKey } from "./use-zone-look"
 
 const HEADING = ".zone-save-card-heading"
 
@@ -52,10 +52,15 @@ export function useZoneSaveBandFit(
       if (track.current !== null) fitZoneSaveBand(track.current)
     }
     fit()
+    // Anton arriving (the first time a look asks for it) changes every width.
+    const offAnton = onZoneAntonLoaded(box.current?.ownerDocument, fit)
     const element = box.current
-    if (element === null || typeof ResizeObserver === "undefined") return
+    if (element === null || typeof ResizeObserver === "undefined") return offAnton
     const observer = new ResizeObserver(fit)
     observer.observe(element)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      offAnton()
+    }
   }, [box, track, key, look])
 }

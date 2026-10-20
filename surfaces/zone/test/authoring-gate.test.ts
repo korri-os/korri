@@ -405,7 +405,7 @@ describe("no see-through", () => {
 
   test("the one see-through is Modern's veil: Retro, Blend, a bare veil and any other file still fail", () => {
     const veil = SEE_THROUGH.file
-    const rule = (selector: string, value = SEE_THROUGH.value) => `${selector} { opacity: ${value}; }`
+    const rule = (selector: string, value: string = SEE_THROUGH.value) => `${selector} { opacity: ${value}; }`
     expect(seeThrough(veil, rule(SEE_THROUGH.selector))).toEqual([])
     expect(seeThrough(veil, rule('[data-look="retro"] .zone-veil'))).toHaveLength(1)
     expect(seeThrough(veil, rule('[data-look="blend"] .zone-veil'))).toHaveLength(1)

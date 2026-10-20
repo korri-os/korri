@@ -37,3 +37,21 @@ export function zoneLookOf(element: Element): ZoneLook {
 export function zoneDrawingOf(element: Element): ZoneLookDrawing {
   return zoneLookDrawing(zoneLookOf(element))
 }
+
+/**
+ * Call `then` each time an Anton face finishes loading in `document`. Anton
+ * loads on demand, the first time a look (Modern, Blend) draws in it, and
+ * a fit measured before it arrived measured the fallback. Only Anton: the
+ * pixel faces load as they did before the looks, so Retro fits exactly as
+ * it did. Returns the unsubscribe.
+ */
+export function onZoneAntonLoaded(document: Document | undefined, then: () => void): () => void {
+  const fonts = document?.fonts as (FontFaceSet & EventTarget) | undefined
+  if (fonts?.addEventListener === undefined) return () => undefined
+  const loaded = (event: Event) => {
+    const faces = (event as Event & { readonly fontfaces?: readonly FontFace[] }).fontfaces ?? []
+    if (faces.some(face => face.family.replace(/"/g, "").startsWith("Zone Anton"))) then()
+  }
+  fonts.addEventListener("loadingdone", loaded)
+  return () => fonts.removeEventListener("loadingdone", loaded)
+}

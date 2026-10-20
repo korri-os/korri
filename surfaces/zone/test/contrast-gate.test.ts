@@ -18,6 +18,15 @@
  * The colours are read from zone-tokens.css through their role names, so a
  * palette edit that breaks a pair fails here, not on a device. Each screen
  * group's ground (`data-ground`) is judged on its own.
+ *
+ * Every pair is judged in every look (`data-look`: Modern, Blend, Retro),
+ * with that look's tokens over the theme's: Modern's flat faces and Anton's
+ * words, Blend's Anton facts, Retro's pixel faces. Where a look draws in
+ * Anton, the large-text floor is earned, not assumed: Anton's least size
+ * (caps-1 at the common least art pixel, 2 CSS px, times the size-adjust
+ * that sets its cap to Zone Caps' or Jersey 10's in zone-fonts.css) must
+ * reach WCAG's large bold text, 18.66 CSS px (Anton is a heavy display
+ * face: every stroke as thick as a bold grotesque's).
  */
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
@@ -37,17 +46,53 @@ function declarations(source: string): Map<string, string> {
 
 const source = read("zone-tokens.css")
 
-/** The rules that declare the theme itself, without a ground of their own. */
+/** The rules that declare the theme itself, without a ground or a look of their own. */
 const theme = new Map<string, string>()
 /** Each screen group's own token set, by its `data-ground` name. */
 const grounds = new Map<string, Map<string, string>>()
+/** Each look's own token set, by its `data-look` name. */
+const looks = new Map<string, Map<string, string>>()
 for (const [, selector, body] of source.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
   const named = [...(selector ?? "").matchAll(/data-ground="([a-z]+)"/g)].map(match => match[1] ?? "")
+  const look = /data-look="([a-z]+)"/.exec(selector ?? "")?.[1]
   const declared = declarations(body ?? "")
+  if (look !== undefined) {
+    looks.set(look, new Map([...(looks.get(look) ?? []), ...declared]))
+    continue
+  }
   if (named.length === 0 || /\.zone-theme\s*,/.test(selector ?? "")) for (const [name, value] of declared) theme.set(name, value)
   for (const ground of named) grounds.set(ground, new Map([...(grounds.get(ground) ?? []), ...declared]))
 }
 let tokens = theme
+
+/** The theme in one look: its own tokens over the theme's. */
+const inLook = (look: string): Map<string, string> => new Map([...theme, ...(looks.get(look) ?? [])])
+
+/** Run `body` with `set` as the tokens. */
+function judged(set: Map<string, string>, body: () => void): void {
+  tokens = set
+  try {
+    body()
+  } finally {
+    tokens = theme
+  }
+}
+
+/** The family a stack draws in: its first name. */
+const family = (stack: string): string => /^"([^"]+)"/.exec(stack)?.[1] ?? stack
+
+/** The size-adjust of each @font-face family in zone-fonts.css, 1 where none. */
+const sizeAdjust = new Map<string, number>()
+for (const [, body] of read("zone-fonts.css").matchAll(/@font-face\s*\{([^}]*)\}/g)) {
+  const name = /font-family:\s*"([^"]+)"/.exec(body ?? "")?.[1]
+  const adjust = /size-adjust:\s*([\d.]+)%/.exec(body ?? "")?.[1]
+  if (name !== undefined) sizeAdjust.set(name, adjust === undefined ? 1 : Number(adjust) / 100)
+}
+
+/** WCAG 2's large text, bold: 14 pt, in CSS px. */
+const LARGE_BOLD_PX = 18.66
+/** The least art pixel Zone is drawn at on a handheld (640x480). */
+const COMMON_LEAST_PX = 2
 
 function resolve(value: string): string {
   const reference = value.match(/^var\((--[a-z0-9-]+)\)$/)
@@ -116,36 +161,61 @@ const ON_GROUND: readonly (readonly [ink: string, floor: number])[] = [
   ["--zone-build-ink", SMALL],
 ]
 
-describe("lettering on Zone's panels", () => {
-  for (const [ink, ground, floor] of PAIRS) {
-    test(`${ink} on ${ground} reaches ${floor}:1`, () => {
-      expect(contrast(resolve(`var(${ink})`), resolve(`var(${ground})`))).toBeGreaterThanOrEqual(floor)
-    })
-  }
-})
-
-describe("outlined lettering, face against outline", () => {
-  for (const [face, outline, floor] of OUTLINED) {
-    test(`${face} inside its ${outline} ring reaches ${floor}:1`, () => {
-      expect(contrast(resolve(`var(${face})`), resolve(`var(${outline})`))).toBeGreaterThanOrEqual(floor)
-    })
-  }
-})
-
-describe("lettering on every screen group's ground", () => {
-  test("every group the brief names has a ground", () => {
-    expect([...grounds.keys()].sort()).toEqual(["gameopts", "games", "options", "paused", "savedata", "tally", "titlecard"])
+describe("the looks", () => {
+  test("every look has its token set, and a look never names a ground", () => {
+    expect([...looks.keys()].sort()).toEqual(["blend", "modern", "retro"])
+    for (const set of looks.values()) {
+      for (const name of ["--zone-ground", "--zone-ring-a", "--zone-ring-b", "--zone-shade"]) expect(set.has(name)).toBe(false)
+    }
   })
-  for (const [name, set] of grounds) {
-    for (const [ink, floor] of ON_GROUND) {
-      test(`${ink} on the ${name} ground reaches ${floor}:1`, () => {
-        tokens = new Map([...theme, ...set])
-        try {
-          expect(contrast(resolve(`var(${ink})`), resolve("var(--zone-ground)"))).toBeGreaterThanOrEqual(floor)
-        } finally {
-          tokens = theme
-        }
+  for (const look of looks.keys()) {
+    for (const role of ["--zone-font", "--zone-font-fact"]) {
+      const face = family(inLook(look).get(role) ?? "")
+      if (!face.startsWith("Zone Anton")) continue
+      test(`${look}: ${role} is Anton (${face}), large enough at caps-1 for the large-text floor`, () => {
+        const caps1 = Number(inLook(look).get("--zone-caps-1"))
+        // A fact's em is the fact size; Anton Fact's adjust brings its cap to caps-1's.
+        const em = role === "--zone-font-fact" ? Number(inLook(look).get("--zone-fact")) : caps1
+        const drawn = em * COMMON_LEAST_PX * (sizeAdjust.get(face) ?? Number.NaN)
+        expect(drawn).toBeGreaterThanOrEqual(LARGE_BOLD_PX)
       })
     }
   }
 })
+
+for (const look of looks.keys()) {
+  describe(`${look}: lettering on Zone's panels`, () => {
+    for (const [ink, ground, floor] of PAIRS) {
+      test(`${ink} on ${ground} reaches ${floor}:1`, () => {
+        judged(inLook(look), () => {
+          expect(contrast(resolve(`var(${ink})`), resolve(`var(${ground})`))).toBeGreaterThanOrEqual(floor)
+        })
+      })
+    }
+  })
+
+  describe(`${look}: outlined lettering, face against outline`, () => {
+    for (const [face, outline, floor] of OUTLINED) {
+      test(`${face} inside its ${outline} ring reaches ${floor}:1`, () => {
+        judged(inLook(look), () => {
+          expect(contrast(resolve(`var(${face})`), resolve(`var(${outline})`))).toBeGreaterThanOrEqual(floor)
+        })
+      })
+    }
+  })
+
+  describe(`${look}: lettering on every screen group's ground`, () => {
+    test("every group the brief names has a ground", () => {
+      expect([...grounds.keys()].sort()).toEqual(["gameopts", "games", "options", "paused", "savedata", "tally", "titlecard"])
+    })
+    for (const [name, set] of grounds) {
+      for (const [ink, floor] of ON_GROUND) {
+        test(`${ink} on the ${name} ground reaches ${floor}:1`, () => {
+          judged(new Map([...inLook(look), ...set]), () => {
+            expect(contrast(resolve(`var(${ink})`), resolve("var(--zone-ground)"))).toBeGreaterThanOrEqual(floor)
+          })
+        })
+      }
+    }
+  })
+}

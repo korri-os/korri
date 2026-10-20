@@ -28,7 +28,7 @@
  */
 import { useLayoutEffect, type RefObject } from "react"
 import { zoneArtPxOf } from "./use-zone-plan"
-import { useZoneLookKey } from "./use-zone-look"
+import { onZoneAntonLoaded, useZoneLookKey } from "./use-zone-look"
 
 /** The cap, in art px, that one step of Zone Caps adds: caps-1 is 10. */
 export const ZONE_CAPS_STEP = 10
@@ -87,16 +87,14 @@ export function useZoneFit(
       for (const target of targets) if (target.current !== null) fitZoneType(target.current)
     }
     fit()
-    // A face that finishes loading (Anton, the first time a look asks for
-    // it) changes every width: fit again in it.
-    const fonts = box.current?.ownerDocument.fonts as FontFaceSet | undefined
-    fonts?.addEventListener?.("loadingdone", fit)
+    // Anton arriving (the first time a look asks for it) changes every width.
+    const offAnton = onZoneAntonLoaded(box.current?.ownerDocument, fit)
     const element = box.current
     const observer = element === null || typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(fit)
     if (element !== null) observer?.observe(element)
     return () => {
       observer?.disconnect()
-      fonts?.removeEventListener?.("loadingdone", fit)
+      offAnton()
     }
     // The targets are refs, whose identity never changes; `key` (the text
     // being fitted) is what re-runs the fit.
