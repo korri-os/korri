@@ -867,3 +867,10 @@ C33 ZoneCard's orange DOWNLOAD tag with the size, and DOWNLOAD <size> at the end
   isolated `.zone-status-layer-page`, and the sheet is `z-index: 1` over
   it. Before, FIND (`z-index: 5` on the GAMES page) painted through the
   dim. The GAMES part's `BusyOverHome` state shows it.
+
+## The pixel refinement: foundation (decided without asking)
+
+The refinement brief (`docs/design/surfaces/zone/REFINEMENT.md`) supersedes
+the "eight colours" and "one face: Anton" rules above. This section records
+the shared pieces the foundation worker built and every choice it made
+without asking. The four screen workers build on them.
