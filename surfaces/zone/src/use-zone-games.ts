@@ -92,6 +92,7 @@ export function zoneGamesProps(
     zone: nav.zone,
     catalog: catalog._tag === "Ready" && catalog.games.length === 0 ? { _tag: "Empty" }
       : catalog._tag === "Ready" ? { _tag: "Ready" } : catalog,
+    getGames: korri.store !== undefined,
     cards: zoneBandCards(games),
     focusedCard: nav.card,
     facts: game === undefined ? undefined : {

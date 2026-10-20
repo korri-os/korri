@@ -40,6 +40,9 @@ export type ZoneRequest =
   | { readonly _tag: "ConnectWifi"; readonly networkId: string; readonly password?: string }
   | { readonly _tag: "ConnectHiddenWifi"; readonly ssid: string; readonly password?: string }
   | { readonly _tag: "FinishOnboarding" }
+  | { readonly _tag: "OpenStore" }
+  | { readonly _tag: "SearchStore"; readonly providerId: string; readonly query: string }
+  | { readonly _tag: "OpenStoreEntry"; readonly entryId: string }
 
 /** One step of a program: the next model, and what to ask for. */
 export interface ZoneStep<Model> {

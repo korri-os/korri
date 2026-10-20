@@ -94,7 +94,9 @@
 .zone-games[data-layer="opts"] .zone-games-actions,
 .zone-games[data-layer="opts"] .zone-games-find,
 .zone-games[data-layer="error"] .zone-games-band,
-.zone-games[data-layer="error"] .zone-games-find {
+.zone-games[data-layer="error"] .zone-games-find,
+.zone-games[data-layer="opts"] .zone-games-corner,
+.zone-games[data-layer="error"] .zone-games-corner {
   opacity: var(--zone-games-behind-opacity);
 }
 
@@ -104,14 +106,31 @@
   opacity: var(--zone-games-loading-opacity);
 }
 
-/* The FIND: <draft> tag at the band's start, over the first card's corner. */
-.zone-games-find-tag {
+/* The body's top left, under the B hint: GET GAMES, then the FIND: <draft>
+ * tag under it, over the first card's corner. Korri moves focus by
+ * geometry; moving up off the first card, or left and down off GAMES,
+ * lands on GET GAMES. */
+.zone-games-corner {
   position: absolute;
   top: var(--zone-strip-inset);
   left: var(--zone-band-margin);
   z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  row-gap: var(--zone-row-space);
   max-width: calc(100% - 2 * var(--zone-band-margin));
   font-size: var(--zone-shell-button-type);
+  transition: opacity var(--zone-lift-time) linear;
+}
+
+.zone-games-get {
+  display: flex;
+  max-width: 100%;
+}
+
+.zone-games-find-tag {
+  max-width: 100%;
 }
 
 /* One line of Korri's session facts on a black parallelogram, yellow labels
