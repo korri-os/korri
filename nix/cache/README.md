@@ -90,8 +90,15 @@ everywhere; a signature bypass is never the fix for a failed download.
 ## Publishing
 
 `github-cache.py` is vendored from [korri-os/plugins](https://github.com/korri-os/plugins)
-`nix/github-cache.py`, unchanged apart from this note, so both repositories
-publish the same format and a consumer needs one importer.
+`nix/github-cache.py`, with one intentional Korri patch: after a failed upload
+POST, refresh the release and its assets. Accept an already-uploaded asset only
+from the same release ID with unchanged draft state and no immutability flag,
+using the existing size, SHA-256 digest, and uploaded-state checks. Narinfos may
+instead pass the existing equivalence check, which preserves the first URL and
+requires all other fields, including signatures, to match. If refresh or
+verification fails, preserve the original POST failure. Never retry a write,
+clobber, or delete an asset. Both repositories still publish the same format;
+this patch changes only concurrent-upload reconciliation, not the cache protocol.
 
 Name the devices, from any checkout, on any machine that can build them:
 
@@ -185,6 +192,11 @@ nix run .#korri-nix-cache-check
 The checks use real signed file caches and shared compressed NARs. They cover
 partial and complete filtering, unavailable and mismatched metadata, preserved
 signatures, and downloads into an empty local store with builds disabled.
+Two concurrent uploader processes also exercise a file-backed `gh api`
+release-assets contract. A barrier makes both clients read the initial asset
+snapshot before either POSTs. The checks cover duplicate NARs, equivalent
+narinfos, mismatched bytes/signatures, unfinished assets, changed releases, and
+failed refreshes without contacting GitHub.
 
 Proven on 2026-09-11 from zao against an empty chroot store, `require-sigs =
 true`, `max-jobs = 0`, `fallback = false`:

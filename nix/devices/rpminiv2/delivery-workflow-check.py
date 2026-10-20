@@ -2,6 +2,7 @@
 """Keep cache prerequisites ahead of device closure evaluation in CI."""
 
 from pathlib import Path
+import shlex
 import sys
 
 import yaml
@@ -11,11 +12,11 @@ workflow = yaml.safe_load(Path(sys.argv[1]).read_text())
 steps = workflow["jobs"]["devices"]["steps"]
 
 
-def step_running(command):
+def step_running(command, job_steps=steps):
     matches = [
-        index for index, step in enumerate(steps) if command in step.get("run", "")
+        index for index, step in enumerate(job_steps) if command in step.get("run", "")
     ]
-    assert len(matches) == 1, f"expected one device step running {command}, got {matches}"
+    assert len(matches) == 1, f"expected one step running {command}, got {matches}"
     return matches[0]
 
 
@@ -26,8 +27,28 @@ assert steps[fetch]["run"].strip() == (
     'bash .github/workflows/fetch-image-plugins.sh "${{ matrix.device }}"'
 ), "fetch the selected matrix device's signed plugins"
 assert trust < fetch, "configure the device cache before adding the plugin cache"
-for command in (".#rpminiv2-check", ".#r36tmax-check", ".#korri-nix-cache-publish"):
+for command in (
+    ".#checks.aarch64-linux.rpminiv2",
+    ".#checks.aarch64-linux.rpminiv2-inputd-action",
+    ".#r36tmax-check",
+    ".#korri-nix-cache-publish",
+):
     assert fetch < step_running(command), f"fetch signed plugins before {command}"
+
+native = step_running(".#checks.aarch64-linux.rpminiv2")
+assert steps[native]["if"] == "${{ matrix.device == 'rpminiv2' }}"
+assert shlex.split(steps[native]["run"].replace("\\\n", "")) == [
+    "nix",
+    "build",
+    "--no-link",
+    ".#checks.aarch64-linux.rpminiv2",
+    ".#checks.aarch64-linux.rpminiv2-inputd-action",
+], "the ARM runner must run both native checks without the KVM volume VM"
+assert all(
+    "rpminiv2-volume" not in step.get("run", "")
+    and ".#rpminiv2-check" not in step.get("run", "")
+    for step in steps
+), "the ARM runner cannot run the full local app or its KVM volume VM"
 
 cross_steps = workflow["jobs"]["cross"]["steps"]
 cross_publish = [
@@ -55,4 +76,33 @@ check = cache_checks[0]
 assert "if" not in cross_steps[check], "always check the cache publisher"
 assert check < publish, "check the cache publisher before signing and publication"
 
-print("PASS: cache prerequisites precede device checks and publication")
+assert workflow["jobs"]["cross"]["runs-on"] == "ubuntu-latest", "run the VM on x86"
+assert workflow["jobs"]["devices"]["needs"] == "cross", "ARM jobs must wait for the VM"
+vm = step_running(".#checks.x86_64-linux.rpminiv2-volume", cross_steps)
+assert "if" not in cross_steps[vm], "always run the volume VM before ARM jobs"
+assert cross_steps[vm].get("continue-on-error", False) is False, "VM failures must fail CI"
+assert workflow["jobs"]["cross"].get("continue-on-error", False) is False
+assert shlex.split(cross_steps[vm]["run"]) == [
+    "nix",
+    "build",
+    "--no-link",
+    ".#checks.x86_64-linux.rpminiv2-volume",
+], "run the real volume VM without overriding required system features"
+assert step_running(".github/workflows/trust-korri-cache.sh", cross_steps) < vm < publish
+kvm = step_running("/etc/udev/rules.d/99-kvm4all.rules", cross_steps)
+assert "if" not in cross_steps[kvm], "always prepare real KVM access"
+assert cross_steps[kvm]["run"].strip().splitlines() == [
+    "echo 'KERNEL==\"kvm\", GROUP=\"kvm\", MODE=\"0666\", OPTIONS+=\"static_node=kvm\"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules",
+    "sudo udevadm control --reload-rules",
+    "sudo udevadm trigger --settle --name-match=kvm",
+    "test -r /dev/kvm -a -w /dev/kvm",
+], "settle KVM permissions and verify access before Nix detects its features"
+installers = [
+    index
+    for index, step in enumerate(cross_steps)
+    if step.get("uses", "").startswith("DeterminateSystems/nix-installer-action@")
+]
+assert len(installers) == 1, "expected one cross Nix installer"
+assert kvm < installers[0] < vm, "prepare KVM before installing Nix and running the VM"
+
+print("PASS: signed fetches precede native checks; KVM volume VM gates ARM publication")

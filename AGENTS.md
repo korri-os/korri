@@ -25,6 +25,9 @@ the `legacy` branch apply here unless this file says so.
   `priority: …`, then any `device: …`, `area: …`, `performance`,
   `security`, `needs-hardware`, `upstream` that apply. Never create a label;
   propose one in the issue text instead.
+- In GitHub text (issues, PRs, comments), put every `@korri…` name in inline
+  code. A bare `@korri` mentions and subscribes the unrelated GitHub user
+  Korri; backticks stop it, an HTML entity does not.
 
 ## Map
 

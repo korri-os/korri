@@ -10,6 +10,10 @@ Issues and specs for this repo live as GitHub issues on `korri-os/korri`. Use th
 
 The `wayfinder:*` labels used below do not exist on `korri-os/korri` yet. Before the first `/wayfinder` run, ask the user to approve creating them.
 
+## Do not mention the GitHub user Korri
+
+`@korri` is a real, unrelated GitHub user. GitHub reads a bare `@korri` in an issue, PR or comment as a mention of that user, notifies them, and subscribes them to the thread. This includes plugin IDs such as `@korri:pico8/fake08`. Write every `@korri…` name in inline code or a fenced block; GitHub does not parse mentions there. An HTML entity such as `&#64;korri` still mentions the user. Before you post, check that no `@korri` sits outside backticks. Removing a mention later does not remove the subscription.
+
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.

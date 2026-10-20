@@ -214,6 +214,26 @@ describe("ShiftSurface", () => {
     expect(running.lastPlayedLabel).toBe("Ready to continue")
   })
 
+  for (const resumable of [undefined, false, true]) {
+    test(`play history does not decide whether a game resumes (${resumable})`, () => {
+      render(<ShiftSurface host={createFixtureHost()} model={model({
+        catalog: {
+          _tag: "Ready",
+          games: [{
+            id: "played",
+            title: "Played game",
+            lastPlayedAt: Date.now() - 3 * 60 * 60 * 1000,
+            ...(resumable === undefined ? {} : { resumable }),
+          }],
+        },
+      })} />)
+
+      expect(screen.getByText("3h ago")).toBeDefined()
+      expect(screen.getByText(resumable ? "Continue playing" : "Ready to play")).toBeDefined()
+      expect(screen.getAllByText(resumable ? "Continue" : "Play").length).toBeGreaterThan(0)
+    })
+  }
+
   test("draws a title monogram when the host has no cover art", () => {
     const { container } = render(
       <ShiftSurface model={model()} host={createFixtureHost()} />,

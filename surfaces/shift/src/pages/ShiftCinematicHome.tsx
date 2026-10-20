@@ -385,7 +385,7 @@ export function ShiftCinematicHome({
   // With a trailing affordance a game may not sit under focus (the slot has no
   // game); only bail when neither a game nor an affordance is active.
   if (!busy && !game && !activeAffordance) return null
-  const resuming = Boolean(game?.resumable ?? game?.lastPlayedLabel)
+  const resuming = Boolean(game?.resumable)
 
   // The legend's hint set changes with focus and launch state: the Library slot
   // shows a single Open; browsing shows Play/Options/Favorite; a shown failure

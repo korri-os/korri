@@ -44,6 +44,15 @@ jobs:
         with:
           hatchet-protocol: cleave
 
+      # Nix detects KVM during installation. Settle real device permissions
+      # first, as in published-plugin-checks.yml; do not advertise a missing KVM.
+      - name: Enable the RP Mini V2 volume VM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --settle --name-match=kvm
+          test -r /dev/kvm -a -w /dev/kvm
+
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
       - name: Trust Korri's cache
@@ -51,6 +60,11 @@ jobs:
 
       - name: Check the signed cache publisher
         run: nix run .#korri-nix-cache-check
+
+      # The volume boundary uses native PipeWire and wpctl, not board hardware.
+      # Run its real KVM test here: the hosted ARM runners do not provide KVM.
+      - name: Check the RP Mini V2 volume sandbox
+        run: nix build --no-link .#checks.x86_64-linux.rpminiv2-volume
 
       - name: Stage the signing key
         env:
@@ -151,7 +165,10 @@ jobs:
 
       - name: Check RP Mini V2 device contracts
         if: ${{ matrix.device == 'rpminiv2' }}
-        run: nix run .#rpminiv2-check
+        run: |
+          nix build --no-link \
+            .#checks.aarch64-linux.rpminiv2 \
+            .#checks.aarch64-linux.rpminiv2-inputd-action
 
       - name: Check R36T Max device contracts
         if: ${{ matrix.device == 'r36tmax' }}
