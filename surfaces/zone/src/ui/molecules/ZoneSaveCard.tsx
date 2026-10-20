@@ -58,6 +58,7 @@ export function ZoneSaveCard({
   tag,
   focused = false,
   label,
+  fitHeader = true,
   onFocus,
 }: {
   readonly header: string
@@ -67,11 +68,13 @@ export function ZoneSaveCard({
   readonly focused?: boolean
   /** The card's name for a reader, when the words on it say less. */
   readonly label?: string
+  /** Whether the card steps its own header down to fit; a band fits every card's header to one step instead. */
+  readonly fitHeader?: boolean
   readonly onFocus?: () => void
 }) {
   const card = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLSpanElement>(null)
-  useZoneFit(card, [heading], header)
+  useZoneFit(card, fitHeader ? [heading] : [], header)
   return (
     <button
       aria-label={label}

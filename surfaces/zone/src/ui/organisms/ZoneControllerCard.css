@@ -6,8 +6,9 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr;
   width: var(--zone-onboarding-card-w, calc(var(--zone-controller-card-max) * var(--zone-px)));
-  border: calc(var(--zone-controller-frame) * var(--zone-px)) solid var(--zone-panel);
+  border: calc(var(--zone-seat-frame) * var(--zone-px)) solid var(--zone-panel);
   background: var(--zone-panel);
+  box-shadow: calc(var(--zone-drop) * var(--zone-px)) calc(var(--zone-drop) * var(--zone-px)) 0 var(--zone-panel-edge);
   container-type: inline-size;
   animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
 }
@@ -22,9 +23,47 @@
   display: grid;
   aspect-ratio: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
-/* The empty seat: Mania's stripes with WAITING across them on a white slab. */
+/* The portrait: the pale card, a red corner at the top left and a blue
+ * band across the bottom right, the controller emblem in the middle at a
+ * whole multiple of its grid. */
+.zone-controller-card-portrait {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: var(--zone-seat-body);
+}
+
+.zone-controller-card-corner,
+.zone-controller-card-band {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.zone-controller-card-corner {
+  background: var(--zone-seat-stripe-red);
+  clip-path: polygon(0 0, 46% 0, 0 46%);
+}
+
+.zone-controller-card-band {
+  background: var(--zone-seat-stripe-blue);
+  clip-path: polygon(100% 54%, 100% 78%, 78% 100%, 54% 100%);
+}
+
+.zone-controller-card-emblem {
+  --zone-emblem-size: max(
+    calc(var(--zone-emblem-side) * var(--zone-px)),
+    round(down, 50cqi, calc(var(--zone-emblem-side) * var(--zone-px)))
+  );
+  position: relative;
+  display: flex;
+}
+
+/* The empty seat: Mania's stripes with WAITING across them on a white
+ * slab, in black caps: caps-2 where the card is wide enough, else caps-1. */
 .zone-controller-card-waiting {
   display: grid;
   place-items: center;
@@ -36,50 +75,78 @@
     var(--zone-controller-heard) 66% 74%,
     var(--zone-stripe-3) 74% 100%
   );
-  font-size: clamp(calc(var(--zone-type-note) * var(--zone-px)), 15cqi, calc(var(--zone-type-kicker) * var(--zone-px)));
+  font-size: max(
+    calc(var(--zone-caps-1) * var(--zone-px)),
+    round(down, min(calc(var(--zone-caps-2) * var(--zone-px)), calc(100cqi / 4.6)), calc(var(--zone-caps-1) * var(--zone-px)))
+  );
 }
 
 .zone-controller-card-slab {
+  display: flex;
+  justify-content: center;
   width: 100%;
-  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) 0;
+  padding: calc(var(--zone-seat-tab-pad) * var(--zone-px)) 0;
+  overflow: hidden;
   background: var(--zone-slab);
   color: var(--zone-slab-ink);
   --zone-caps-shade: currentColor;
-  text-align: center;
-  text-shadow: none;
 }
 
-/* The seat in the top corner. */
+/* The seat: a black tab in the top-right corner, its left edge a 45
+ * degree stair (--zone-panel-shape), 1P to 4P in white caps-1. */
 .zone-controller-card-seat {
-  --zone-tag-type: clamp(calc(var(--zone-type-note) * var(--zone-px)), 11cqi, calc(var(--zone-type-row) * var(--zone-px)));
   position: absolute;
   top: 0;
   right: 0;
   display: flex;
-  height: calc(var(--zone-tag-type) * var(--zone-tag-row-height));
+  align-items: center;
+  padding:
+    calc(var(--zone-seat-tab-pad) * var(--zone-px))
+    calc(var(--zone-seat-tab-pad) * var(--zone-px))
+    calc(var(--zone-seat-tab-pad) * var(--zone-px))
+    calc((var(--zone-caps-1) + 3 * var(--zone-seat-tab-pad)) * var(--zone-px));
+  background: var(--zone-seat-tab);
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+  clip-path: var(--zone-panel-shape, polygon(0 0, 100% 0, 100% 100%, calc(var(--zone-caps-1) * var(--zone-px) + 2 * var(--zone-seat-tab-pad) * var(--zone-px)) 100%));
 }
 
-/* The name along the foot, between two red triangles. */
+.zone-controller-card-seat[hidden] {
+  display: none;
+}
+
+/* The name along the foot, between two red triangles; one Jersey line
+ * tall even while the seat waits with no name. */
 .zone-controller-card-name {
   display: flex;
+  min-height: calc((var(--zone-fact) * 0.75 + 2 * var(--zone-seat-tab-pad)) * var(--zone-px));
   align-items: center;
   justify-content: space-between;
-  gap: calc(calc(var(--zone-row-gap) * var(--zone-px)) / 2);
-  padding: calc(calc(var(--zone-row-space) * var(--zone-px)) / 2) calc(var(--zone-row-space) * var(--zone-px));
-  font-size: clamp(calc(calc(var(--zone-type-note) * var(--zone-px)) * 0.75), 10cqi, calc(var(--zone-type-row) * var(--zone-px)));
+  gap: calc(var(--zone-seat-tab-pad) * var(--zone-px));
+  padding: calc(var(--zone-seat-tab-pad) * var(--zone-px));
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
 }
 
-/* Two lines at most; a longer name ends in an ellipsis on screen and stays
- * whole in the card's label. */
+/* The triangles stand aside on a card too narrow for them and the name
+ * (the page writes --zone-seat-arrows from the plan). */
+.zone-controller-card-arrow {
+  display: var(--zone-seat-arrows, flex);
+}
+
+/* Korri's name for the controller: Jersey 10 in its own case, one Jersey
+ * pixel an art pixel, on one line as COMPETITION's names are. A name
+ * longer than the bar ends in "…" and stays whole in the card's label;
+ * no letter is ever cut. */
 .zone-controller-card-name-text {
-  display: -webkit-box;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  overflow-wrap: normal;
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) * var(--zone-px));
+  line-height: 0.75;
+  color: var(--zone-ink-white-face);
   text-align: center;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  text-overflow: ellipsis;
   text-transform: none;
-  line-height: 1.05;
-  text-shadow: calc(var(--zone-cap-edge) * var(--zone-px)) calc(var(--zone-cap-edge) * var(--zone-px)) 0 var(--zone-cap-edge-colour);
+  text-shadow: none;
+  white-space: nowrap;
 }

@@ -1019,8 +1019,10 @@
   --zone-seat-frame: 4;
   /** The seat's corner tab: its padding beside the caps. Art px. @label Seat tab padding @min 0 @max 8 @step 1 */
   --zone-seat-tab-pad: 3;
-  /** The VS panel's width between the two seats. Art px (plan: ZONE_CONTROLLER_VS). @label VS width @min 20 @max 80 @step 1 */
-  --zone-vs-width: 40;
+  /** The VS panel's width between the two seats. Art px (plan: ZONE_CONTROLLER_VS). @label VS width @min 40 @max 120 @step 1 */
+  --zone-vs-width: 80;
+  /** The VS panel's height when the seats stand in a column. Art px (plan: ZONE_CONTROLLER_VS_TALL). @label VS height @min 20 @max 40 @step 1 */
+  --zone-vs-height: 28;
   /** @label Seat card body */
   --zone-seat-body: var(--zone-stripe-light);
   /** @label Seat card stripe, red */

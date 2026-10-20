@@ -7,18 +7,18 @@ import type {
   SurfaceSettingsStatus,
 } from "@contracts/surface/korri-surface"
 import { useLayoutEffect, useRef } from "react"
-import { planControllerCards } from "../plan/onboarding"
+import { planControllerCards, ZONE_CONTROLLER_ARROWS_LEAST } from "../plan/onboarding"
 import { zoneArtPxOf } from "../use-zone-plan"
 import { useZoneLayerFocus } from "../use-zone-layer-focus"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
-import type { ZoneTagItem } from "../ui/atoms/ZoneTag"
+import { ZoneVersus } from "../ui/atoms/ZoneVersus"
 import { ZoneActionRow } from "../ui/molecules/ZoneActionRow"
 import { ZoneKeyboard, type ZoneKey, type ZoneKeyboardLayer } from "../ui/molecules/ZoneKeyboard"
 import { ZoneOptionGroup, type ZoneOptionGroupRow } from "../ui/molecules/ZoneOptionGroup"
 import { ZoneSaveCard } from "../ui/molecules/ZoneSaveCard"
-import { ZoneTagRow } from "../ui/molecules/ZoneTagRow"
 import { ZoneControllerCard } from "../ui/organisms/ZoneControllerCard"
 import { ZoneGround } from "../ui/organisms/ZoneGround"
+import { ZoneStepStrip } from "../ui/organisms/ZoneStepStrip"
 import { ZoneShell, type ZoneBand, type ZoneStrips } from "../ui/templates/ZoneShell"
 
 export type ZoneOnboardingStepId = "controllers" | "wifi" | "name" | "identity"
@@ -48,21 +48,14 @@ export const ONBOARDING_TARGET = {
 
 export const onboardingNetworkTarget = (networkId: string): string => `net:${networkId}`
 
+/** The steps, in order: the banner names the one you are on. */
 const STEPS: readonly { readonly id: ZoneOnboardingStepId; readonly label: string }[] = [
-  { id: "controllers", label: "1 Controllers" },
-  { id: "wifi", label: "2 Wi-Fi" },
-  { id: "name", label: "3 Name" },
-  { id: "identity", label: "4 Identity" },
+  { id: "controllers", label: "Controllers" },
+  { id: "wifi", label: "Wi-Fi" },
+  { id: "name", label: "Name" },
+  { id: "identity", label: "Identity" },
 ]
-
-/** The step strip: done steps blue, this one yellow, the rest white. */
-function stepTags(step: ZoneOnboardingStepId): readonly ZoneTagItem[] {
-  const at = STEPS.findIndex(item => item.id === step)
-  return STEPS.map((item, index) => ({
-    kind: index < at ? "system" : index === at ? "here" : "continue",
-    label: item.label,
-  }))
-}
+const STEP_LABELS = STEPS.map(item => item.label)
 
 function connectionText(network: SurfaceNetwork): string {
   switch (network.connection._tag) {
@@ -121,15 +114,18 @@ function wifiStatus(network: SurfaceNetwork | undefined): SurfaceSettingsStatus 
 }
 
 /**
- * First boot (C25), in four steps under a strip that shows where you are.
+ * First boot (C25), in four steps. The one banner names the step you are
+ * on, and four diamond pips under its lip count the way.
  *
  *  1. CONTROLLERS: COMPETITION's row of cards, one per controller Korri
- *     sees, WAITING until it is heard, then its name and seat. NEXT lights
- *     once any is heard.
+ *     sees, WAITING until it is heard, then its name and seat. With exactly
+ *     two seats, both heard, VS stands between them, as COMPETITION's
+ *     1P VS 2P. NEXT lights once any is heard.
  *  2. WI-FI: an OPTIONS group: the connection, each network Korri found
  *     (A joins), SCAN, and SKIP. NEXT lights once the device is online.
  *  3. NAME: the DEVICE NAME row; A raises the keyboard, DONE saves it.
- *  4. IDENTITY: the NEW SAVE card; START chooses it, and FINISH ends setup.
+ *  4. IDENTITY: the save card headed NEW, START in its window, as on SAVE
+ *     DATA; START chooses it, and FINISH ends setup.
  *
  * B goes back a step (the binding routes it). Every fact is Korri's; the
  * step, the cursor and the draft are the onboarding model's, as props.
@@ -195,23 +191,29 @@ export function ZoneOnboarding({
   // The cards' grid follows the stage's size: a measurement written to the
   // DOM, as the band writes its focus, not state.
   const cardCount = Math.max(1, controllers.length)
+  const heardOrder = controllers.filter(controller => controller.heard).map(controller => controller.id)
+  // COMPETITION's VS: exactly two seats, both heard. Three or four seats
+  // stand as Mania's four-up, with none.
+  const versus = controllers.length === 2 && heardOrder.length === 2
   useLayoutEffect(() => {
     const room = stage.current
     const grid = cards.current
     if (room === null || grid === null) return
     const apply = () => {
       const px = zoneArtPxOf(room)
-      const layout = planControllerCards(room.clientWidth / px, room.clientHeight / px, cardCount)
+      const layout = planControllerCards(room.clientWidth / px, room.clientHeight / px, cardCount, versus)
       grid.style.setProperty("--zone-onboarding-card-w", `${layout.cardWidth * px}px`)
-      grid.style.setProperty("--zone-onboarding-columns", String(layout.columns))
+      grid.style.setProperty("--zone-onboarding-columns", String(layout.columns + (layout.versus === "row" ? 1 : 0)))
+      grid.style.setProperty("--zone-seat-arrows", layout.cardWidth >= ZONE_CONTROLLER_ARROWS_LEAST ? "flex" : "none")
+      if (layout.versus === undefined) grid.removeAttribute("data-versus")
+      else grid.setAttribute("data-versus", layout.versus)
     }
     apply()
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(apply)
     observer?.observe(room)
     return () => observer?.disconnect()
-  }, [cardCount, step])
+  }, [cardCount, step, versus])
 
-  const heardOrder = controllers.filter(controller => controller.heard).map(controller => controller.id)
   // Korri's name for the device is a fact: it keeps its case.
   const nameRow: ZoneOptionGroupRow = nameSetting === undefined
     ? { id: ONBOARDING_TARGET.name, label: "Device name" }
@@ -239,21 +241,23 @@ export function ZoneOnboarding({
         hintBack={<ZoneKeycap button="B" word="Back" />}
         hintConfirm={<ZoneKeycap button="A" word="Confirm" />}
         strips={strips}
-        tabs={(
-          <span aria-label="Setup steps" className="zone-onboarding-steps" role="group">
-            <ZoneTagRow tags={stepTags(step)} />
-          </span>
-        )}
+        tabs={<ZoneStepStrip current={STEPS.findIndex(item => item.id === step)} steps={STEP_LABELS} />}
       >
         <div className="zone-onboarding-body" inert={entry !== undefined} ref={body}>
           <div className="zone-onboarding-stage" ref={stage}>
             {step === "controllers" ? (
               <div className="zone-onboarding-cards" ref={cards}>
-                {controllers.length === 0 ? <ZoneControllerCard /> : controllers.map(controller => {
+                {controllers.length === 0 ? <ZoneControllerCard /> : controllers.map((controller, index) => {
                   const seat = heardOrder.indexOf(controller.id)
-                  return controller.heard
+                  const card = controller.heard
                     ? <ZoneControllerCard key={controller.id} name={controller.name} seat={seat + 1} />
                     : <ZoneControllerCard key={controller.id} />
+                  return versus && index === 1 ? [
+                    <span className="zone-onboarding-versus" key="versus">
+                      <ZoneVersus />
+                    </span>,
+                    card,
+                  ] : card
                 })}
               </div>
             ) : null}
@@ -284,9 +288,9 @@ export function ZoneOnboarding({
             {step === "identity" ? (
               <span className="zone-onboarding-save" onClick={started || finishing ? undefined : onStart}>
                 <ZoneSaveCard
-                  body={{ kind: "text", text: "Start" }}
+                  body={{ kind: "text", text: "Start", emblem: "key" }}
                   focused={focus === ONBOARDING_TARGET.save}
-                  header="New save"
+                  header="New"
                   onFocus={onFocusTarget === undefined ? undefined : () => onFocusTarget(ONBOARDING_TARGET.save)}
                   tag={started ? { kind: "saved", label: "Ready" } : undefined}
                 />

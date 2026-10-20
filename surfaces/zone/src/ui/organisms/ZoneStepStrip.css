@@ -1,0 +1,44 @@
+/* The banner, with the pips hung under its lip: they take no room in the
+ * strip, so the strip keeps the height every tab strip has. */
+.zone-step-strip {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Four diamonds, centred under the banner, one lip and a gap below it. */
+.zone-step-strip-pips {
+  position: absolute;
+  top: calc(100% + calc(var(--zone-banner-lip) + var(--zone-pip-drop)) * var(--zone-px));
+  right: 0;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  gap: calc(var(--zone-pip-gap) * var(--zone-px));
+  pointer-events: none;
+}
+
+/* A diamond 5 art px across inside a one-pixel black outline. */
+.zone-step-pip {
+  display: block;
+  flex: 0 0 auto;
+  width: calc((var(--zone-pip) + 2) * var(--zone-px));
+  height: calc((var(--zone-pip) + 2) * var(--zone-px));
+  shape-rendering: crispEdges;
+}
+
+.zone-step-pip-edge {
+  fill: var(--zone-pip-edge);
+}
+
+.zone-step-pip-face {
+  fill: none;
+}
+
+/* The step you are on and the steps done are gold. */
+.zone-step-pip[data-state="here"] .zone-step-pip-face,
+.zone-step-pip[data-state="done"] .zone-step-pip-face {
+  fill: var(--zone-pip-on);
+}

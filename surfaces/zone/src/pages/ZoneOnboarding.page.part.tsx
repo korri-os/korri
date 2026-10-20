@@ -14,12 +14,16 @@ import type { ZoneBand, ZoneStrips } from "../ui/templates/ZoneShell"
 import { ZoneOnboarding, type ZoneOnboardingStepId } from "./ZoneOnboarding"
 
 export const name = "Onboarding"
-export const note = "First boot: controllers, Wi-Fi, the device name, a new save, under a strip of four steps"
+export const note = "First boot: controllers, Wi-Fi, the device name, a new save; the banner names the step, four pips count the way"
 
 export const composition = {
   default: [
     { part: "src/ui/organisms/ZoneControllerCard.organism.part.tsx", state: "default" },
-    { part: "src/ui/molecules/ZoneTagRow.molecule.part.tsx", state: "default" },
+    { part: "src/ui/organisms/ZoneStepStrip.organism.part.tsx", state: "default" },
+  ],
+  TwoHeard: [
+    { part: "src/ui/organisms/ZoneControllerCard.organism.part.tsx", state: "Heard" },
+    { part: "src/ui/atoms/ZoneVersus.atom.part.tsx", state: "default" },
   ],
   OneHeard: [{ part: "src/ui/organisms/ZoneControllerCard.organism.part.tsx", state: "Heard" }],
   FourControllers: [
@@ -100,6 +104,16 @@ export default function Waiting() {
 /** It has been heard: its name and 1P, and NEXT lights. */
 export function OneHeard() {
   return <Scenario korri={onboardingModel([controllerPad])} />
+}
+
+/** Two controllers, both heard: COMPETITION's 1P VS 2P. */
+export function TwoHeard() {
+  return <Scenario korri={onboardingModel(controllersFour.slice(0, 2).map(controller => ({ ...controller, heard: true })))} />
+}
+
+/** Two controllers, one heard: no VS until both are; the second seat waits. */
+export function OneOfTwo() {
+  return <Scenario korri={onboardingModel([controllerPad, { ...controllersFour[1]!, heard: false }])} />
 }
 
 /** Four controllers, three heard: 1P, 2P, 3P and one still WAITING. */
