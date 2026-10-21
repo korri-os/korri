@@ -1,4 +1,6 @@
 //! Session-bound save history. No filesystem path crosses the peer boundary.
+pub mod record;
+pub mod store;
 pub mod types;
 
 use std::{fs::File, io::Read};
