@@ -48,6 +48,8 @@ assert c.systemd.sockets.korri-limits.socketConfig.SocketGroup == "korrid";
 assert c.systemd.services.korri-limits.environment.LIMITSD_PEER_UID == "976";
 assert c.systemd.services.korri-limits.environment.LIMITSD_GPU_NODES == "gpu";
 assert c.systemd.slices.korri-games.sliceConfig.CPUWeight == 100;
+assert c.systemd.slices.korri.sliceConfig.CPUWeight == 100;
+assert c.systemd.slices.korri.sliceConfig.CPUAccounting;
 pkgs.runCommand "korri-limits-module-check" { } ''
   root="$TMPDIR/sys"
   cpu="$root/devices/system/cpu/cpufreq/policy0"

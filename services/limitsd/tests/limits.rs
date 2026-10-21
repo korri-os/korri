@@ -60,6 +60,8 @@ fn fixture() -> (TempDir, Limitsd) {
             value,
         );
     }
+    put(dir.path(), "cgroup/korri.slice/cgroup.subtree_control", "");
+    put(dir.path(), "cgroup/korri.slice/cpu.uclamp.min", "0");
     put(
         dir.path(),
         "cgroup/korri.slice/korri-games.slice/cgroup.subtree_control",
@@ -110,6 +112,18 @@ fn boot_defaults_and_describe_wire_contract() {
     assert_eq!(cpu(&dir, "scaling_governor"), "schedutil");
     assert_eq!(cpu(&dir, "scaling_min_freq"), "400");
     assert_eq!(cpu(&dir, "scaling_max_freq"), "600");
+    assert_eq!(read(&dir, "cgroup/korri.slice/cpu.uclamp.min"), "max");
+    assert_eq!(
+        read(&dir, "cgroup/korri.slice/cgroup.subtree_control"),
+        "+cpu"
+    );
+    assert_eq!(
+        read(
+            &dir,
+            "cgroup/korri.slice/korri-games.slice/cgroup.subtree_control"
+        ),
+        "+cpu"
+    );
     assert_eq!(
         read(&dir, "cgroup/korri.slice/korri-games.slice/cpu.uclamp.min"),
         "max"
@@ -261,22 +275,28 @@ fn rejects_bad_ranges_units_governors_and_stale_ends_without_writes() {
 }
 
 #[test]
-fn rejects_cgroup_outside_slice() {
-    let (dir, mut service) = fixture();
-    let path = dir
-        .path()
-        .join(format!("cgroup/korri.slice/korri-games.slice/{UNIT}"));
-    let outside = dir.path().join("outside");
-    fs::rename(&path, &outside).unwrap();
-    symlink(outside, &path).unwrap();
-    assert_eq!(
-        apply_session(
-            &mut service,
-            json!({"min":0,"max":100}),
-            json!({"min":0,"max":100})
-        )["_tag"],
-        "Err"
-    );
+fn rejects_cgroup_outside_slice_or_alias_to_another_unit() {
+    for outside_slice in [true, false] {
+        let (dir, mut service) = fixture();
+        let path = dir
+            .path()
+            .join(format!("cgroup/korri.slice/korri-games.slice/{UNIT}"));
+        let target = if outside_slice {
+            dir.path().join("outside")
+        } else {
+            dir.path().join("cgroup/korri.slice/korri-games.slice/korri-game-ffffffffffffffffffffffffffffffff.service")
+        };
+        fs::rename(&path, &target).unwrap();
+        symlink(target, &path).unwrap();
+        assert_eq!(
+            apply_session(
+                &mut service,
+                json!({"min":0,"max":100}),
+                json!({"min":0,"max":100})
+            )["_tag"],
+            "Err"
+        );
+    }
 }
 
 #[test]
@@ -431,12 +451,23 @@ fn every_policy_uses_its_own_top_clock_and_validates_governor() {
 #[test]
 fn reassert_repairs_external_resets_and_stale_end_cannot_stop_session() {
     let (dir, mut service) = fixture();
+    put(dir.path(), "cgroup/korri.slice/cpu.uclamp.min", "0");
+    put(
+        dir.path(),
+        "cgroup/korri.slice/korri-games.slice/cpu.uclamp.min",
+        "0",
+    );
     put(
         dir.path(),
         "sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq",
         "1800",
     );
     service.reassert().unwrap();
+    assert_eq!(read(&dir, "cgroup/korri.slice/cpu.uclamp.min"), "max");
+    assert_eq!(
+        read(&dir, "cgroup/korri.slice/korri-games.slice/cpu.uclamp.min"),
+        "max"
+    );
     assert_eq!(cpu(&dir, "scaling_max_freq"), "600");
     apply_session(
         &mut service,
@@ -485,6 +516,29 @@ fn reassert_repairs_external_resets_and_stale_end_cannot_stop_session() {
         ),
         "70"
     );
+}
+
+#[test]
+fn reassert_discovers_cpu_policies_registered_after_boot() {
+    let (dir, _) = fixture();
+    let policy = dir.path().join("sys/devices/system/cpu/cpufreq/policy0");
+    let late = dir.path().join("late-policy");
+    fs::rename(&policy, &late).unwrap();
+    fs::write(late.join("scaling_max_freq"), "1800").unwrap();
+    fs::write(late.join("scaling_governor"), "performance").unwrap();
+    let mut service = Limitsd::start(
+        Roots {
+            sysfs: dir.path().join("sys"),
+            cgroup: dir.path().join("cgroup"),
+        },
+        defaults(),
+        &["gpu".into()],
+    )
+    .unwrap();
+    fs::rename(late, policy).unwrap();
+    service.reassert().unwrap();
+    assert_eq!(cpu(&dir, "scaling_max_freq"), "600");
+    assert_eq!(cpu(&dir, "scaling_governor"), "schedutil");
 }
 
 #[test]

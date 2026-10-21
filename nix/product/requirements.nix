@@ -125,6 +125,21 @@ in
     (setting "korri home creation" [ "users" "users" "korri" "createHome" ] true)
 
     (setting "launch limits helper enabled" [ "services" "korri" "limits" "enable" ] true)
+    (setting "Korri parent slice enabled" [ "systemd" "slices" "korri" "enable" ] true)
+    (setting "Korri parent slice CPU controller" [
+      "systemd"
+      "slices"
+      "korri"
+      "sliceConfig"
+      "CPUWeight"
+    ] 100)
+    (setting "Korri parent slice CPU accounting" [
+      "systemd"
+      "slices"
+      "korri"
+      "sliceConfig"
+      "CPUAccounting"
+    ] true)
     (setting "game slice enabled" [ "systemd" "slices" "korri-games" "enable" ] true)
     (setting "game slice CPU controller" [
       "systemd"

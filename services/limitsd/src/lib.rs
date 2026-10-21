@@ -10,6 +10,8 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, String>;
+const PARENT_SLICE: &str = "korri.slice";
+const GAME_SLICE: &str = "korri-games.slice";
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -85,8 +87,11 @@ impl Roots {
     fn gpu(&self, name: &str) -> PathBuf {
         self.sysfs.join("class/devfreq").join(name)
     }
+    fn parent_slice(&self) -> PathBuf {
+        self.cgroup.join(PARENT_SLICE)
+    }
     fn slice(&self) -> PathBuf {
-        self.cgroup.join("korri.slice/korri-games.slice")
+        self.parent_slice().join(GAME_SLICE)
     }
 }
 
@@ -184,51 +189,56 @@ pub fn validate_unit(unit: &str) -> Result<()> {
     Ok(())
 }
 
+fn cpu_policies(roots: &Roots) -> Result<Vec<CpuPolicy>> {
+    let mut policies = vec![];
+    let cpu_root = roots.sysfs.join("devices/system/cpu/cpufreq");
+    match fs::read_dir(&cpu_root) {
+        Ok(entries) => {
+            for entry in entries {
+                let entry = entry.map_err(|e| e.to_string())?;
+                let name = entry
+                    .file_name()
+                    .into_string()
+                    .map_err(|_| "non-UTF8 CPU policy")?;
+                if !name.strip_prefix("policy").is_some_and(|suffix| {
+                    !suffix.is_empty() && suffix.bytes().all(|c| c.is_ascii_digit())
+                }) {
+                    continue;
+                }
+                let path = roots.cpu(&name);
+                let top = number(&path.join("cpuinfo_max_freq"))?;
+                let bottom = number(&path.join("cpuinfo_min_freq"))?;
+                if bottom == 0 || top < bottom {
+                    return Err(format!("invalid hardware frequency range for {name}"));
+                }
+                policies.push(CpuPolicy {
+                    name,
+                    cpuinfo_max_freq: top,
+                    min_freq: bottom,
+                    cpus: read(&path.join("related_cpus"))?
+                        .split_whitespace()
+                        .map(|s| s.parse().map_err(|_| "invalid related_cpus".into()))
+                        .collect::<Result<_>>()?,
+                    available_frequencies: frequencies(
+                        &path.join("scaling_available_frequencies"),
+                    )?,
+                    available_governors: read(&path.join("scaling_available_governors"))?
+                        .split_whitespace()
+                        .map(str::to_owned)
+                        .collect(),
+                });
+            }
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("read {}: {e}", cpu_root.display())),
+    }
+    policies.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(policies)
+}
+
 impl Limitsd {
     pub fn start(roots: Roots, defaults: Defaults, gpu_nodes: &[String]) -> Result<Self> {
-        let mut policies = vec![];
-        let cpu_root = roots.sysfs.join("devices/system/cpu/cpufreq");
-        match fs::read_dir(&cpu_root) {
-            Ok(entries) => {
-                for entry in entries {
-                    let entry = entry.map_err(|e| e.to_string())?;
-                    let name = entry
-                        .file_name()
-                        .into_string()
-                        .map_err(|_| "non-UTF8 CPU policy")?;
-                    if !name.strip_prefix("policy").is_some_and(|suffix| {
-                        !suffix.is_empty() && suffix.bytes().all(|c| c.is_ascii_digit())
-                    }) {
-                        continue;
-                    }
-                    let path = roots.cpu(&name);
-                    let top = number(&path.join("cpuinfo_max_freq"))?;
-                    let bottom = number(&path.join("cpuinfo_min_freq"))?;
-                    if bottom == 0 || top < bottom {
-                        return Err(format!("invalid hardware frequency range for {name}"));
-                    }
-                    policies.push(CpuPolicy {
-                        name,
-                        cpuinfo_max_freq: top,
-                        min_freq: bottom,
-                        cpus: read(&path.join("related_cpus"))?
-                            .split_whitespace()
-                            .map(|s| s.parse().map_err(|_| "invalid related_cpus".into()))
-                            .collect::<Result<_>>()?,
-                        available_frequencies: frequencies(
-                            &path.join("scaling_available_frequencies"),
-                        )?,
-                        available_governors: read(&path.join("scaling_available_governors"))?
-                            .split_whitespace()
-                            .map(str::to_owned)
-                            .collect(),
-                    });
-                }
-            }
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-            Err(e) => return Err(format!("read {}: {e}", cpu_root.display())),
-        }
-        policies.sort_by(|a, b| a.name.cmp(&b.name));
+        let policies = cpu_policies(&roots)?;
         let mut gpus = vec![];
         for name in gpu_nodes {
             if name.is_empty()
@@ -259,11 +269,10 @@ impl Limitsd {
             session: None,
         };
         service.validate_device(&service.defaults)?;
-        service.write(
-            &service.roots.slice().join("cgroup.subtree_control"),
-            "+cpu",
-        )?;
-        service.write(&service.roots.slice().join("cpu.uclamp.min"), "max")?;
+        for slice in [service.roots.parent_slice(), service.roots.slice()] {
+            service.write(&slice.join("cgroup.subtree_control"), "+cpu")?;
+            service.write(&slice.join("cpu.uclamp.min"), "max")?;
+        }
         service.apply_device(&service.device)?;
         Ok(service)
     }
@@ -374,17 +383,20 @@ impl Limitsd {
 
     fn cgroup(&self, unit: &str) -> Result<PathBuf> {
         validate_unit(unit)?;
-        let slice = self
+        let root = self
+            .roots
+            .cgroup
+            .canonicalize()
+            .map_err(|e| format!("resolve cgroup root: {e}"))?;
+        let expected = root.join(PARENT_SLICE).join(GAME_SLICE).join(unit);
+        let path = self
             .roots
             .slice()
-            .canonicalize()
-            .map_err(|e| format!("resolve korri-games.slice: {e}"))?;
-        let path = slice
             .join(unit)
             .canonicalize()
             .map_err(|e| format!("resolve game cgroup: {e}"))?;
-        if path.parent() != Some(slice.as_path()) {
-            return Err("game cgroup is not under korri-games.slice".into());
+        if path != expected {
+            return Err("game cgroup must resolve at korri.slice/korri-games.slice/<unit>".into());
         }
         Ok(path)
     }
@@ -441,8 +453,11 @@ impl Limitsd {
         Ok(())
     }
     pub fn reassert(&mut self) -> Result<()> {
+        self.policies = cpu_policies(&self.roots)?;
         self.poll_session()?;
-        self.write(&self.roots.slice().join("cpu.uclamp.min"), "max")?;
+        for slice in [self.roots.parent_slice(), self.roots.slice()] {
+            self.write(&slice.join("cpu.uclamp.min"), "max")?;
+        }
         if let Some(Session::Active {
             unit,
             device,
@@ -458,6 +473,8 @@ impl Limitsd {
     }
 
     fn execute(&mut self, request: Request) -> Result<Value> {
+        // CPU policies can register after userspace starts or change on wake.
+        self.policies = cpu_policies(&self.roots)?;
         match request {
             Request::Describe {} => {
                 return Ok(
@@ -480,6 +497,7 @@ impl Limitsd {
                 validate_unit(&unit)?;
                 cpu.validate()?;
                 gpu.validate()?;
+                self.validate_device(&self.device)?;
                 if self.session.is_some() {
                     return Err("a session is already active".into());
                 }

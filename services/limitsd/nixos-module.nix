@@ -66,6 +66,14 @@ in
         message = "Korri GPU min percent must not exceed max.";
       }
     ];
+    systemd.slices.korri = {
+      description = "Korri resource hierarchy";
+      wantedBy = [ "multi-user.target" ];
+      sliceConfig = {
+        CPUAccounting = true;
+        CPUWeight = 100;
+      };
+    };
     systemd.slices.korri-games = {
       description = "Korri game sessions";
       wantedBy = [ "multi-user.target" ];

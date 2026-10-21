@@ -76,14 +76,19 @@ Every error returns a plain diagnostic message, without a second error schema:
 - A failed session application or end enters recovery. Recovery retries until
   every revert write succeeds, even if the game remains populated. Errors are
   explicit; no successful response hides a failed write.
-- Startup applies the Nix defaults. Every 30 seconds limitsd reasserts the
-  current state after checking for an ended session. This also repairs
+- Startup applies the Nix defaults. Every 30 seconds limitsd rediscovers CPU
+  policies and reasserts the current state after checking for an ended session.
+  Requests also refresh CPU policy information, so a late cpufreq registration
+  cannot leave a new policy unmanaged. This also repairs
   suspend/resume resets. Failed sysfs writes remount `/sys` writable and retry
   once, following the existing clock-governor posture. Cgroups are not remounted.
-- The helper enables the slice's CPU controller and writes its `cpu.uclamp.min`
-  to `max` at startup (and reasserts that clamp periodically). This is intended
-  to let each game unit's own min take effect. **Kernel clamp nesting remains
-  unverified on RG353M hardware.** Kernel thermal throttling is the only guard.
+- The Nix module enables CPU accounting/weight on **both** `korri.slice` and
+  `korri-games.slice`. At startup the helper enables `+cpu` in both slices'
+  `cgroup.subtree_control` and writes both slices' `cpu.uclamp.min` to `max`
+  (and reasserts those clamps periodically). Each ancestor caps the child's
+  effective min, so both slices must permit the game's own min. Sibling units
+  retain their own default min of 0. **Kernel clamp nesting remains unverified
+  on RG353M hardware.** Kernel thermal throttling is the only guard.
 
 The remaining clock-governor loop owns GPU governor selection and configured
 cpuidle disables, never CPU governors or frequency limits.
