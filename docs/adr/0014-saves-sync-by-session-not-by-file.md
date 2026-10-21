@@ -132,7 +132,7 @@ can record what each session started from.
   slice, korrid in that group can reach runtime-created descendants, including
   `STEAM_HOME`, except where Steam narrows access. This slice adds no named
   korrid grant there and never visits that subtree. Strict Steam credential
-  isolation remains a follow-up; the pinned Steam package is unchanged.
+  isolation remains a follow-up (#139); the pinned Steam package is unchanged.
 - The split notice shows on every device of the person that knows about the
   split, until it is resolved.
 - Picking a side of a split makes a new snapshot with the picked content that
@@ -232,16 +232,30 @@ merge them; it makes sure the person sees both and chooses. korrid gains its
 first peer-to-peer data replication and its first store for user files.
 Savestates of 0.5 to 2 GB make storage and transfer cost real.
 
+## Slice 1 as built (#126, 2026-10-21)
+
+The owner approved the slice-1 contract: the per-person `account_root`, the
+per-game `saveRoot`, `saveLocations` with kinds, the private snapshot store,
+the content-derived records, the peer and local `app.saves.*` methods, the
+`/peer-saves-object` route, and the surface facts. Limits that ship with it:
+
+- The split choice shows no screenshots yet. No local route serves images to
+  the portal (#129); the records keep every screenshot hash.
+- The release and runner mismatch warnings name the game and the device, not
+  the releases or the runner, because neither has a display name yet. They name
+  both once display names exist.
+- A transfer resumes after a dropped connection, but not after a korrid
+  restart.
+- A game whose route can't be resolved yet is skipped for baseline capture and
+  retried at the next start or contact. Its local files are never touched.
+
 ## Open
 
 Not decided yet, and not to be assumed by an implementation:
 
-- The shape of the save-location, bind and overlay declarations in the plugin
-  contract.
-- The data model, storage layout and wire messages. Per AGENTS.md these are
-  unresolved: an implementation proposes them from a real producer (RetroArch's
-  per-game folders, the play log's person key, ADR 0012's hash grammar) and the
-  owner approves them before they are built.
+- The shape of the bind and overlay declarations in the plugin contract
+  (ADR 0015).
+- Strict Steam credential isolation from korrid (#139).
 
 ## One-off deployment cut
 
