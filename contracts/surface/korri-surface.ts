@@ -459,7 +459,9 @@ export interface SurfaceStoreProvider {
   readonly title: string
 }
 
-/** One game a provider offers, in the provider's words. */
+/** One game a provider offers, in the provider's words. It carries no art:
+ * a provider's images are on its own site, which the portal never reaches,
+ * so a surface draws its own stand-in. */
 export interface SurfaceStoreEntry {
   /** Opaque. Hand it back unchanged to `openStoreEntry`. */
   readonly id: string
@@ -467,8 +469,6 @@ export interface SurfaceStoreEntry {
   /** What the game runs on, as the provider says it, such as "Game Boy".
    * Absent when the provider does not say. */
   readonly system?: string
-  /** Art the provider offers. Absent when it has none. */
-  readonly thumbnailUrl?: string
 }
 
 export type SurfaceStoreProviders =

@@ -130,7 +130,7 @@ describe("Shift store", () => {
   test.each([
     ["offer", ["Get"], undefined],
     ["cancelled", ["Get"], "Download cancelled. Nothing was kept."],
-    ["confirm", ["Download", "Cancel"], "2048, 32.8 KB"],
+    ["confirm", ["Download", "Cancel"], "2048, size unknown"],
     ["folders", ["Game Boy", "SD card · Game Boy", "Cancel"], "More than one folder on this device holds Game Boy games. Choose where this one goes."],
     ["downloading", ["Cancel"], "16 KB of 32.8 KB · 16 KB/s · 0:01 left"],
     ["placing", [], undefined],

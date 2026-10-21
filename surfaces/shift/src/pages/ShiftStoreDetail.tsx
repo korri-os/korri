@@ -3,8 +3,9 @@
  *
  * Harvested from legacy Shift's store detail: the committed game-detail split
  * atoms, so an entry feels native to Shift, with the play-history verbs
- * swapped for getting it. The provider's words fill the synopsis; absent
- * art leaves the panel bare rather than inventing any.
+ * swapped for getting it. The provider's words fill the synopsis. The art
+ * panel wears the title monogram: the provider's own art is on its site,
+ * which the portal never reaches.
  */
 import type { SurfaceStoreDetails } from "@contracts/surface/korri-surface"
 import { SHIFT_DESIGN_PARTS, shiftDesignPartAttrs } from "../shift-design-parts"
@@ -35,7 +36,7 @@ export function ShiftStoreDetail({ details, providerTitle, onAction, onPlay }: S
       className="shift-detail-split intrinsic"
       {...shiftDesignPartAttrs(SHIFT_DESIGN_PARTS.storeDetail)}
     >
-      <ShiftDetailArt artUrl={entry.thumbnailUrl ?? ""} />
+      <ShiftDetailArt artUrl="" monogramTitle={entry.title} />
       <div className="shift-detail-split-info">
         <ShiftDetailTitle title={entry.title} />
         {tags ? <ShiftDetailTags tags={tags} /> : null}

@@ -27,10 +27,9 @@ import type {
 } from "@contracts/surface/korri-surface"
 import type { KorridClient } from "../korrid/client"
 import {
-  ACQUIRE_FAILURE,
+  ACQUISITION_CODE,
   type AcquireJobState,
   type AcquireJobStatus,
-  type AcquireSourceChoice,
   type AcquisitionProvider,
   type ProviderClaim,
   type ProviderClaimDetails,
@@ -74,7 +73,8 @@ export interface StoreAcquisition {
 /** Where one claim's download stands, as the host keeps it. */
 type Job =
   | { readonly _tag: "Confirming" }
-  | { readonly _tag: "ChoosingSource"; readonly sources: readonly AcquireSourceChoice[] }
+  /** korrid's ChooseSource job: several folders can take it. */
+  | { readonly _tag: "ChoosingSource"; readonly sources: readonly { readonly id: string; readonly label: string }[] }
   /** acquire sent, not answered. A Cancel waits for the answer. */
   | { readonly _tag: "Starting"; readonly cancelRequested: boolean }
   | { readonly _tag: "Active"; readonly jobId: string; readonly state: AcquireJobState; readonly cancelling: boolean }
@@ -118,7 +118,9 @@ type Details =
   | { readonly _tag: "Closed" }
   | { readonly _tag: "Loading"; readonly claim: ProviderClaim }
   | { readonly _tag: "Problem"; readonly claim: ProviderClaim; readonly message: string; readonly version: number }
-  | { readonly _tag: "Ready"; readonly details: ProviderClaimDetails }
+  /** The claim from the results and what `details` added: details carry the
+   * description, the claim the platform and art. */
+  | { readonly _tag: "Ready"; readonly claim: ProviderClaim; readonly details: ProviderClaimDetails }
 
 /** The opaque id a surface hands back for one claim. */
 export const storeEntryId = (claim: Pick<ProviderClaim, "providerId" | "id">): string =>
@@ -133,20 +135,24 @@ export const STOPPED_REASON =
 export const CANCELLED_NOTE = "Download cancelled. Nothing was kept."
 export const STAGED_MESSAGE =
   "Downloaded to this device, but your library did not recognise it as a game."
+export const NOT_AVAILABLE_KICKER = "Not available"
 
+/** Nothing a Retry here could change: no folder, no known system, or a
+ * provider that hands out a page instead of the file. */
 const UNAVAILABLE_CODES: ReadonlySet<string> = new Set([
-  ACQUIRE_FAILURE.noSource,
-  ACQUIRE_FAILURE.unknownSystem,
-  ACQUIRE_FAILURE.unavailable,
+  ACQUISITION_CODE.noSource,
+  ACQUISITION_CODE.systemUnknown,
+  ACQUISITION_CODE.notFinal,
 ])
 
+/** A claim as the surface sees it. `thumbnailUrl` is not carried: it is on
+ * the provider's site, and the portal talks only to its own korrid. */
 function entryFrom(claim: ProviderClaim): SurfaceStoreEntry {
   const system = claim.platform ?? claim.artifact?.system
   return {
     id: storeEntryId(claim),
     title: claim.title,
     ...(system === undefined ? {} : { system }),
-    ...(claim.thumbnailUrl === undefined ? {} : { thumbnailUrl: claim.thumbnailUrl }),
   }
 }
 
@@ -177,9 +183,16 @@ function jobFrom(status: AcquireJobStatus, cancelling = false): Job {
     case "Cancelled":
       return { _tag: "Cancelled" }
     case "Failed":
-      return UNAVAILABLE_CODES.has(state.reason.code)
-        ? { _tag: "Unavailable", reason: state.reason.message }
-        : { _tag: "Failed", kicker: "Download failed", reason: state.reason.message, retry: true }
+      if (UNAVAILABLE_CODES.has(state.reason.code)) return { _tag: "Unavailable", reason: state.reason.message }
+      // The provider said it cannot give the file now; it may later.
+      return {
+        _tag: "Failed",
+        kicker: state.reason.code === ACQUISITION_CODE.resolutionFailed ? NOT_AVAILABLE_KICKER : "Download failed",
+        reason: state.reason.message,
+        retry: true,
+      }
+    case "ChooseSource":
+      return { _tag: "ChoosingSource", sources: state.sources }
     case "Resolving":
     case "Downloading":
     case "Placing":
@@ -237,24 +250,25 @@ export function createStoreAcquisition(
     }
   }
 
-  const getView = (claim: ProviderClaimDetails): SurfaceStoreGet => {
+  const getView = (claim: ProviderClaim, details: ProviderClaimDetails): SurfaceStoreGet => {
     const key = storeEntryId(claim)
     const slot = jobs.get(key)
     const cancel = () => jobAction(key, slot, "cancel", "Cancel")
     const job = slot?.job
+    const artifact = details.artifact ?? claim.artifact
     if (job === undefined) {
-      if (claim.artifact?.system === undefined) return { _tag: "Unavailable", reason: NO_SYSTEM_REASON }
+      if (artifact?.system === undefined) return { _tag: "Unavailable", reason: NO_SYSTEM_REASON }
       return { _tag: "Offer", actions: [jobAction(key, slot, "get", "Get")] }
     }
     switch (job._tag) {
       case "Cancelled":
         return { _tag: "Offer", note: CANCELLED_NOTE, actions: [jobAction(key, slot, "get", "Get")] }
       case "Confirming": {
-        const bytes = claim.artifact?.file?.sizeBytes
+        const bytes = artifact?.file?.sizeBytes
         return {
           _tag: "Confirm",
           kicker: "Download to this device",
-          detail: `${claim.title}, ${bytes === undefined ? "size unknown" : formatBytes(bytes)}`,
+          detail: `${details.title}, ${bytes === undefined ? "size unknown" : formatBytes(bytes)}`,
           actions: [jobAction(key, slot, "download", "Download"), cancel()],
         }
       }
@@ -262,7 +276,7 @@ export function createStoreAcquisition(
         return {
           _tag: "Confirm",
           kicker: "Choose a folder",
-          detail: `More than one folder on this device holds ${claim.platform ?? claim.artifact?.system ?? "these"} games. Choose where this one goes.`,
+          detail: `More than one folder on this device holds ${claim.platform ?? artifact?.system ?? "these"} games. Choose where this one goes.`,
           actions: [
             ...job.sources.map((source, index) => jobAction(key, slot, `source.${index}`, source.label)),
             cancel(),
@@ -278,7 +292,7 @@ export function createStoreAcquisition(
         if (state._tag === "Downloading") {
           return {
             _tag: "Working",
-            kicker: `Downloading ${claim.title}`,
+            kicker: `Downloading ${details.title}`,
             detail: storeDownloadDetail(state),
             progress: { done: state.bytesDone, ...(state.bytesTotal === undefined ? {} : { total: state.bytesTotal }) },
             actions: [cancel()],
@@ -316,9 +330,9 @@ export function createStoreAcquisition(
       case "Ready":
         return {
           _tag: "Ready",
-          entry: entryFrom(details.details),
+          entry: { ...entryFrom(details.claim), title: details.details.title },
           ...(details.details.description === undefined ? {} : { description: details.details.description }),
-          get: getView(details.details),
+          get: getView(details.claim, details.details),
         }
     }
   }
@@ -354,7 +368,7 @@ export function createStoreAcquisition(
       if (!mine() || now?._tag !== "Active") return
       if (result._tag === "Err") {
         // korrid restarted: the job is gone, and with it any partial file.
-        if (result.payload.code === ACQUIRE_FAILURE.jobNotFound) {
+        if (result.payload.code === ACQUISITION_CODE.unknownJob) {
           settle(key, claim, { _tag: "Failed", kicker: STOPPED_KICKER, reason: STOPPED_REASON, retry: true })
           return
         }
@@ -379,7 +393,7 @@ export function createStoreAcquisition(
     const result = await korrid.acquisitionAcquireCancel(active.jobId)
     if (disposed || jobs.get(key)?.job._tag !== "Active") return
     if (result._tag === "Err") {
-      if (result.payload.code === ACQUIRE_FAILURE.jobNotFound) {
+      if (result.payload.code === ACQUISITION_CODE.unknownJob) {
         settle(key, claim, { _tag: "Cancelled" })
         return
       }
@@ -404,9 +418,7 @@ export function createStoreAcquisition(
     if (result._tag === "Err") {
       const failure = result.payload
       if (now.cancelRequested) setJob(key, claim, { _tag: "Cancelled" })
-      else if (failure.code === ACQUIRE_FAILURE.severalSources && (failure.sources?.length ?? 0) > 1) {
-        setJob(key, claim, { _tag: "ChoosingSource", sources: failure.sources ?? [] })
-      } else if (UNAVAILABLE_CODES.has(failure.code)) setJob(key, claim, { _tag: "Unavailable", reason: failure.message })
+      else if (UNAVAILABLE_CODES.has(failure.code)) setJob(key, claim, { _tag: "Unavailable", reason: failure.message })
       else {
         setJob(key, claim, {
           _tag: "Failed", kicker: "Couldn't start the download", reason: failure.message, retry: true,
@@ -417,8 +429,9 @@ export function createStoreAcquisition(
     }
     const job = jobFrom(result.payload)
     if (job._tag !== "Active") {
-      // Already in the library, or finished: korrid returned the claim's job.
-      settle(key, claim, job)
+      // Already in the library, finished, or asking which folder: korrid
+      // returned the claim's job, and nothing is downloading.
+      settle(key, claim, now.cancelRequested && job._tag === "ChoosingSource" ? { _tag: "Cancelled" } : job)
       return
     }
     // A Cancel pressed while the acquire was unanswered: what it started is
@@ -462,10 +475,10 @@ export function createStoreAcquisition(
     const result = await korrid.acquisitionDetails({ providerId: claim.providerId, id: claim.id })
     if (disposed || seq !== detailsSeq) return
     if (result._tag === "Ok") {
-      details = { _tag: "Ready", details: result.payload }
+      details = { _tag: "Ready", claim, details: result.payload }
     } else if (UNAVAILABLE_CODES.has(result.payload.code)) {
-      // The provider no longer offers it: say so where Get would be.
-      details = { _tag: "Ready", details: claim }
+      // It cannot be had here: say so where Get would be.
+      details = { _tag: "Ready", claim, details: { ...claim, _tag: "ProviderClaimDetails" } }
       const key = storeEntryId(claim)
       if (jobs.get(key)?.job._tag !== "Active") {
         jobs.set(key, { claim, job: { _tag: "Unavailable", reason: result.payload.message }, version: next() })
@@ -493,7 +506,7 @@ export function createStoreAcquisition(
   }
 
   const actOnJob = (kind: string, key: string) => {
-    const open = details._tag === "Ready" ? details.details : undefined
+    const open = details._tag === "Ready" ? details.claim : undefined
     if (open === undefined || storeEntryId(open) !== key) return
     const job = jobs.get(key)?.job
     if (kind === "get") {

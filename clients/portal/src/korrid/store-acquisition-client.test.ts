@@ -24,16 +24,16 @@ test("the six acquisition methods use the tagged /rpc wire with the capability",
   } })
   try {
     const client = createHttpKorridClient(server.url.origin, "private-capability")
-    expect(await client.acquisitionProviders()).toMatchObject({ _tag: "Ok", payload: { providers: [{ id: "@korri:homebrewhub" }, {}, {}] } })
+    expect(await client.acquisitionProviders()).toMatchObject({ _tag: "Ok", payload: { providers: [{ id: "@korri:pico8" }, { id: "@korri:homebrewhub" }, { id: "@korri:retrobrews" }] } })
     expect(await client.acquisitionSearch({ query: "2048", providerIds: ["@korri:homebrewhub"] }))
-      .toMatchObject({ _tag: "Ok", payload: { claims: [{ id: "2048gb", title: "2048" }, { id: "basil-termini" }] } })
+      .toMatchObject({ _tag: "Ok", payload: { claims: [{ _tag: "ProviderClaim", id: "2048gb", title: "2048" }] } })
     expect(await client.acquisitionDetails({ providerId: "@korri:homebrewhub", id: "2048gb" }))
-      .toMatchObject({ _tag: "Ok", payload: { artifact: { system: "gb", file: { sizeBytes: 32_768 } } } })
+      .toMatchObject({ _tag: "Ok", payload: { _tag: "ProviderClaimDetails", artifact: { system: "gb", file: { name: "2048.gb" } } } })
     const job = await client.acquisitionAcquire({ providerId: "@korri:homebrewhub", id: "2048gb" })
     expect(job).toMatchObject({ _tag: "Ok", payload: { jobId: "job-1", state: { _tag: "Resolving" } } })
     expect(await client.acquisitionAcquireStatus("job-1")).toMatchObject({ _tag: "Ok", payload: { jobId: "job-1" } })
     expect(await client.acquisitionAcquireCancel("job-1")).toMatchObject({ _tag: "Ok", payload: { state: { _tag: "Cancelled" } } })
-    expect(await client.acquisitionAcquireStatus("job-9")).toMatchObject({ _tag: "Err", payload: { code: "NotFound" } })
+    expect(await client.acquisitionAcquireStatus("job-9")).toMatchObject({ _tag: "Err", payload: { code: "AcquisitionUnknownJob" } })
     expect(requests.map(request => request._tag)).toEqual([
       "app.acquisition.providers",
       "app.acquisition.search",

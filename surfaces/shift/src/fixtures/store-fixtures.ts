@@ -11,15 +11,16 @@ import type {
 } from "@contracts/surface/korri-surface"
 
 export const STORE_PROVIDERS = [
+  { id: "@korri:pico8", title: "PICO-8 BBS" },
   { id: "@korri:homebrewhub", title: "Homebrew Hub" },
   { id: "@korri:retrobrews", title: "RetroBrews" },
-  { id: "@korri:pico8", title: "PICO-8 BBS" },
 ] as const
 
 export const STORE_ENTRIES: readonly SurfaceStoreEntry[] = [
   { id: "e:2048", title: "2048", system: "Game Boy" },
-  { id: "e:tobu", title: "Tobu Tobu Girl", system: "Game Boy" },
-  { id: "e:long", title: "Ｔｈｅ　Ｌｅｇｅｎｄ　of the Supercalifragilisticexpialidocious Lighthouse Keeper", system: "Game Boy Color" },
+  { id: "e:celeste", title: "Celeste Classic 2", system: "PICO-8" },
+  // Stress: the longest title shape the BBS allows in practice, with an unbroken word.
+  { id: "e:long", title: "The Legend of the Supercalifragilisticexpialidocious Lighthouse Keeper", system: "Game Boy Advance" },
   { id: "e:nosys", title: "untitled work in progress" },
 ]
 
@@ -29,7 +30,7 @@ export const STORE_GETS = {
   offer: { _tag: "Offer", actions: [action("store:1:get", "Get")] },
   cancelled: { _tag: "Offer", note: "Download cancelled. Nothing was kept.", actions: [action("store:2:get", "Get")] },
   unavailable: { _tag: "Unavailable", reason: "No folder on this device holds Game Boy games. Add one in Settings, then get this game again." },
-  confirm: { _tag: "Confirm", kicker: "Download to this device", detail: "2048, 32.8 KB", actions: [action("store:3:download", "Download"), action("store:3:cancel", "Cancel")] },
+  confirm: { _tag: "Confirm", kicker: "Download to this device", detail: "2048, size unknown", actions: [action("store:3:download", "Download"), action("store:3:cancel", "Cancel")] },
   folders: {
     _tag: "Confirm", kicker: "Choose a folder",
     detail: "More than one folder on this device holds Game Boy games. Choose where this one goes.",
@@ -56,7 +57,7 @@ export const STORE_GETS = {
 export const storeDetails = (get: SurfaceStoreGet, entry: SurfaceStoreEntry = STORE_ENTRIES[0]!): SurfaceStoreDetails => ({
   _tag: "Ready",
   entry,
-  description: "Slide the tiles and join equal numbers to reach 2048. A Game Boy port of the puzzle.",
+  description: "Slide the tiles and join equal numbers to reach 2048.",
   get,
 })
 
