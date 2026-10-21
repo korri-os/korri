@@ -64,6 +64,18 @@ can record what each session started from.
   every game (RetroArch saves and screenshots, PPSSPP's memory stick, ZQuest)
   points the program at a folder for that game on each launch, as legacy
   RetroArch did. A save location is always a whole folder.
+- A save location is identified by a stable key that the plugin declares, not
+  by its path. Runners that declare the same key share those files; different
+  keys never mix. A plugin update may move a folder without breaking history.
+  The keys themselves are proposed from real plugins and approved later.
+- The person cannot turn sync off for a game, runner or system. Every game
+  whose runner declares save locations syncs.
+- When a device shuts down from light sleep with a frozen session, korrid stops
+  the game, makes an interrupted snapshot during shutdown, and pushes it if a
+  peer is reachable.
+- The split choice shows, for each side, the device that made it, when the
+  session ended by that device's clock (display only), how long it lasted, and
+  its newest screenshot or savestate thumbnail.
 - A save location is always inside the person's own folder. A program that
   expects its saves elsewhere gets a folder bind or an overlay from there.
 - A plugin may declare folder binds and overlays. An overlay keeps a game
