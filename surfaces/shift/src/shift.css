@@ -3928,3 +3928,163 @@ button.shift-sheet-control:is(:hover, :focus, [data-korri-active-focus]) {
 [data-shift-library] .shift-lib-focus-saves[data-saves="Split"] {
 	color: var(--shift-attention);
 }
+
+/* ========================================================================== *
+ * Save screens on a short container (intrinsic-design: height decides
+ * structure; yield space, then readouts, never controls).
+ *
+ * The surface root is the size container, so these read its HEIGHT only.
+ * Thresholds are guesses until measured on hardware; the harness proves one
+ * pixel either side of each:
+ *
+ *   SHORT  <= 420px  space and chrome give way first: a tighter status bar
+ *                    and stage, a heading-size title, a one-line lede. A
+ *                    split card turns into a row (picture left, words right)
+ *                    so its device, end time and session length never lose
+ *                    their lines to the picture; the cards region scrolls
+ *                    instead of squeezing them.
+ *   TINY   <= 280px  the kicker and title share one line; the lede and the
+ *                    legend go (the legend repeats what the footer's buttons
+ *                    and the cards already say); the picture becomes a small
+ *                    thumbnail.
+ *
+ * Footer buttons keep their 48px floor at every height: they are controls.
+ * ========================================================================== */
+
+[data-shift-saves] .shift-save-sides,
+[data-shift-saves] .shift-saves-viewport {
+	/* Never squeeze below one usable row; the stage gives up head space and
+	 * the region scrolls before this. */
+	min-height: min(5.2em, 40cqh);
+}
+
+@container (max-height: 420px) {
+	[data-shift-saves] .shift-cine-top {
+		padding: var(--shift-space-2) var(--shift-space-5);
+	}
+
+	[data-shift-saves] .shift-saves-stage {
+		gap: var(--shift-space-2);
+		padding: calc(var(--shift-space-5) + var(--shift-space-5))
+			var(--shift-space-4) var(--shift-space-3);
+	}
+
+	[data-shift-saves] .shift-saves-head {
+		gap: 0;
+	}
+
+	[data-shift-saves] .shift-saves-head .shift-cine-title {
+		font-size: var(--shift-text-heading);
+		-webkit-line-clamp: 1;
+		line-clamp: 1;
+	}
+
+	[data-shift-saves] .shift-saves-lede,
+	[data-shift-saves] .shift-saves-detail {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 100%;
+	}
+
+	/* The cards region is a collection now: it scrolls, rows stay whole, and
+	 * focus brings the focused card into view. */
+	[data-shift-saves] .shift-save-sides {
+		grid-auto-rows: auto;
+		align-content: start;
+		overflow-y: auto;
+		scrollbar-width: thin;
+		scroll-padding-block: 4px;
+	}
+
+	[data-shift-saves] .shift-save-side {
+		flex-direction: row;
+		align-items: stretch;
+		min-height: max(48px, 4.2em);
+	}
+
+	[data-shift-saves] .shift-save-side-shot {
+		flex: 0 0 auto;
+		width: clamp(4.5em, 22cqi, 9em);
+		min-height: 0;
+		aspect-ratio: 3 / 2;
+		align-self: center;
+		margin-left: var(--shift-space-2);
+		border-radius: calc(var(--intrinsic-base) * 0.3);
+	}
+
+	[data-shift-saves] .shift-save-side-noshot span {
+		display: none;
+	}
+
+	[data-shift-saves] .shift-save-side-copy {
+		flex: 1 1 auto;
+		min-width: 0;
+		justify-content: center;
+		padding: var(--shift-space-2) var(--shift-space-3);
+	}
+
+	[data-shift-saves] .shift-save-side-device {
+		font-size: var(--shift-text-body);
+		-webkit-line-clamp: 1;
+		line-clamp: 1;
+	}
+
+	[data-shift-saves] .shift-save-side-meta {
+		font-size: var(--shift-text-fine);
+	}
+
+	[data-shift-saves] .shift-saves-footer {
+		gap: var(--shift-space-2) var(--shift-space-3);
+	}
+
+	[data-shift-saves] .shift-saves-action {
+		min-block-size: 48px;
+		padding: 0 var(--shift-space-4);
+	}
+}
+
+@container (max-height: 280px) {
+	[data-shift-saves] .shift-saves-stage {
+		padding-top: calc(var(--shift-space-5) + var(--shift-space-4));
+		padding-bottom: var(--shift-space-2);
+	}
+
+	[data-shift-saves] .shift-saves-head {
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: baseline;
+		column-gap: var(--shift-space-3);
+	}
+
+	[data-shift-saves] .shift-saves-head .shift-cine-title {
+		font-size: var(--shift-text-title);
+		min-width: 0;
+		flex: 1 1 8em;
+	}
+
+	[data-shift-saves] .shift-saves-head .shift-cine-kicker {
+		flex: 0 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	[data-shift-saves] .shift-saves-lede {
+		display: none;
+	}
+
+	[data-shift-saves] .shift-saves-detail {
+		flex: 0 0 100%;
+		font-size: var(--shift-text-fine);
+	}
+
+	[data-shift-saves] .shift-saves-footer .shift-cine-legend {
+		display: none;
+	}
+
+	[data-shift-saves] .shift-save-side-shot {
+		width: clamp(3.2em, 16cqi, 6em);
+	}
+}
