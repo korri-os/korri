@@ -31,13 +31,6 @@ runners:
     settings:
       core-skip-bios: true
 
-profiles:
-  handheld:
-    title: Handheld
-    runner: "@korri:mgba/mgba"
-    env:
-      SCALE: profile
-
 hooks:
   battery-saver:
     before:

@@ -254,6 +254,11 @@ in
       type = lib.types.str;
       default = "/var/lib/korri-local-signer";
     };
+    limitsSocket = lib.mkOption {
+      type = lib.types.str;
+      default = "/run/korri-limits/limits.sock";
+      description = "Unix socket for the root launch-limits helper. The service already runs in its korrid access group.";
+    };
     localSignerSocket = lib.mkOption {
       type = lib.types.str;
       default = "/run/korri-local-signer/signer.sock";
@@ -805,6 +810,7 @@ in
         KORRID_RUNTIME_GID = toString cfg.runtimeGid;
         KORRID_RELAYS = relayJson;
         KORRID_UPSTREAMS = nativePeersJson;
+        KORRID_LIMITS_SOCKET = cfg.limitsSocket;
         KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
         KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
       }

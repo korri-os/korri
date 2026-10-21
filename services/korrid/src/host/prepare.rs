@@ -5,7 +5,9 @@ use super::{
     session_state::HostSessionControl,
     systemd_unit::{LaunchUnitBackend, PortalUnit, SystemdLaunchUnitBackend, SystemdPortalUnit},
 };
-use crate::{RpcFailure, SessionPrepared};
+use crate::RpcFailure;
+#[cfg(test)]
+use crate::SessionPrepared;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -142,6 +144,7 @@ impl HostLauncher {
         self.prepare_command(game_id, person_public_key, Ok(&game.command))
     }
 
+    #[cfg(test)]
     pub fn prepare_command(
         &self,
         game_id: &str,
@@ -156,19 +159,39 @@ impl HostLauncher {
         )
     }
 
+    pub fn prepare_command_with_limits(
+        &self,
+        game_id: &str,
+        person_public_key: Option<&str>,
+        configured_command: Result<&[String], RpcFailure>,
+        limits: Option<&crate::launch_settings::session::SessionLimits>,
+        warnings: Vec<crate::launcher::typed_settings::LaunchWarning>,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
+        self.control.prepare_with_limits(
+            game_id,
+            person_public_key,
+            configured_command,
+            &self.environment,
+            limits,
+            warnings,
+        )
+    }
+
     pub fn prepare_fresh_route(
         &self,
         game_id: &str,
         runner_id: &str,
         person_public_key: Option<&str>,
         configured_command: Result<&[String], RpcFailure>,
-    ) -> Result<SessionPrepared, RpcFailure> {
+        limits: Option<&crate::launch_settings::session::SessionLimits>,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         self.control.prepare_fresh_route(
             game_id,
             runner_id,
             person_public_key,
             configured_command,
             &self.environment,
+            limits,
         )
     }
 
@@ -177,12 +200,14 @@ impl HostLauncher {
         reservation: &super::launch_reservation::LaunchReservation,
         runner_id: Option<&str>,
         configured_command: Result<&[String], RpcFailure>,
-    ) -> Result<SessionPrepared, RpcFailure> {
+        limits: Option<&crate::launch_settings::session::SessionLimits>,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         self.control.prepare_reserved(
             reservation,
             runner_id,
             configured_command,
             &self.environment,
+            limits,
         )
     }
 

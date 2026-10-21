@@ -957,7 +957,7 @@ mod tests {
         else {
             panic!("secure peer status must report the prepared session")
         };
-        assert_eq!(active.launch_id, prepared.launch_id);
+        assert_eq!(active.launch_id, prepared.session.launch_id);
         assert_eq!(active.game_id.as_deref(), Some("neverball"));
         let freeze_client = crate::upstream_native::NativeClient::new_secure_at(
             base.clone(),
@@ -968,10 +968,10 @@ mod tests {
             token(12),
         );
         let frozen = freeze_client
-            .session_freeze(&prepared.launch_id)
+            .session_freeze(&prepared.session.launch_id)
             .await
             .unwrap();
-        assert_eq!(frozen.launch_id, prepared.launch_id);
+        assert_eq!(frozen.launch_id, prepared.session.launch_id);
         assert_eq!(frozen.state, crate::SessionFreezerState::Frozen);
         assert!(frozen.changed);
         let stale_thaw_client = crate::upstream_native::NativeClient::new_secure_at(
@@ -998,7 +998,7 @@ mod tests {
             token(16),
         );
         assert!(matches!(
-            thaw_client.session_thaw(&prepared.launch_id).await,
+            thaw_client.session_thaw(&prepared.session.launch_id).await,
             Err(crate::upstreams::UpstreamError::Tagged { code, message })
                 if code == "HostFocusFailed"
                     && message == "compositor focus authority is not configured"
@@ -1028,7 +1028,7 @@ mod tests {
         );
         assert!(matches!(
             stop_client
-                .session_stop(&prepared.launch_id, false)
+                .session_stop(&prepared.session.launch_id, false)
                 .await
                 .unwrap(),
             crate::upstream::UpstreamSessionStop::Stopped { .. }

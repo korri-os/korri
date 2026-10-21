@@ -719,11 +719,7 @@ async fn package_games_resolve_content_path_offline_and_become_unavailable_when_
         };
         assert_eq!(launched["outcome"]["_tag"], "Ok", "{launched}");
         let payload = &launched["outcome"]["payload"];
-        let launch_id = if method == "app.session.prepare" {
-            &payload["launchId"]
-        } else {
-            &payload["session"]["launchId"]
-        };
+        let launch_id = &payload["session"]["launchId"];
         let stopped = fixture
             .call("app.session.stop", json!({"expectedLaunchId":launch_id}))
             .await;

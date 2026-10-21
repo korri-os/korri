@@ -1,5 +1,5 @@
 pub mod cascade;
-mod catalog;
+pub(crate) mod catalog;
 pub use catalog::ReleaseKey;
 pub mod library;
 pub mod modifiers;
@@ -33,7 +33,6 @@ pub(crate) const DEVICE_SECTIONS: &[&str] = &[
     "families",
     "runners",
     "modifiers",
-    "profiles",
     "hooks",
     "locations",
     "sources",
@@ -64,7 +63,6 @@ pub struct ConfigSnapshot {
     pub families: BTreeMap<String, FamilyPayload>,
     pub runners: BTreeMap<String, RunnerPayload>,
     pub modifiers: modifiers::ModifierConfigs,
-    pub profiles: BTreeMap<String, ProfilePayload>,
     pub hooks: BTreeMap<String, HookProfilePayload>,
     pub library: BTreeMap<String, LibraryItemPayload>,
     pub sources: BTreeMap<String, SourcePayload>,
@@ -138,8 +136,6 @@ struct RawDocument {
     runners: SectionRecords<RunnerPayload>,
     #[serde(default, deserialize_with = "optional_non_null")]
     modifiers: Option<modifiers::ModifierConfigs>,
-    #[serde(default)]
-    profiles: SectionRecords<ProfilePayload>,
     #[serde(default)]
     hooks: SectionRecords<HookProfilePayload>,
     #[serde(default)]
@@ -247,13 +243,13 @@ pub fn decode_config_documents(
         families: device.families.records,
         runners: device.runners.records,
         modifiers: device.modifiers.unwrap_or_default(),
-        profiles: device.profiles.records,
         hooks: device.hooks.records,
         locations: device.locations.records,
         sources: device.sources.records,
         provider_links: device.provider_links.records,
         library: library.library.records,
     };
+    crate::launch_settings::config::validate(&snapshot)?;
     catalog::validate(&snapshot)?;
     Ok(snapshot)
 }
@@ -273,7 +269,6 @@ impl RawDocument {
             "families" => self.families.present,
             "runners" => self.runners.present,
             "modifiers" => self.modifiers.is_some(),
-            "profiles" => self.profiles.present,
             "hooks" => self.hooks.present,
             "library" => self.library.present,
             "sources" => self.sources.present,
@@ -302,9 +297,6 @@ fn validate_document_keys(
     }
     for key in document.runners.keys() {
         validate_non_empty_key(file, "runners", key)?;
-    }
-    for key in document.profiles.keys() {
-        validate_non_empty_key(file, "profiles", key)?;
     }
     for key in document.hooks.keys() {
         validate_non_empty_key(file, "hooks", key)?;
@@ -373,13 +365,6 @@ pub fn classify_snapshot_support(snapshot: &ConfigSnapshot) -> Result<(), Unsupp
     if let Some(host) = &snapshot.host {
         host.collect_support_issues("host", &mut issues);
     }
-    if !snapshot.profiles.is_empty() {
-        push_issue(
-            &mut issues,
-            "profiles",
-            "profile records are not executable in this slice",
-        );
-    }
     if !snapshot.hooks.is_empty() {
         push_issue(
             &mut issues,
@@ -414,6 +399,19 @@ fn push_issue(issues: &mut Vec<SupportIssue>, path: &str, message: &str) {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostPayload {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub cpu: Option<crate::launch_settings::config::DeviceCpu>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub gpu: Option<crate::launch_settings::config::Limits>,
+
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -580,6 +578,19 @@ pub struct ProviderPayload {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SystemPayload {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub cpu: Option<crate::launch_settings::config::Limits>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub gpu: Option<crate::launch_settings::config::Limits>,
+
     #[serde(default)]
     pub modifiers: modifiers::ModifierConfigs,
     #[serde(
@@ -628,6 +639,19 @@ pub type FamilyPayload = cascade::RunnerConfig;
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunnerPayload {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub cpu: Option<crate::launch_settings::config::Limits>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub gpu: Option<crate::launch_settings::config::Limits>,
+
     #[serde(flatten)]
     pub runner: cascade::RunnerConfig,
     #[serde(default)]
@@ -637,28 +661,11 @@ impl From<cascade::RunnerConfig> for RunnerPayload {
     fn from(runner: cascade::RunnerConfig) -> Self {
         Self {
             runner,
+            cpu: None,
+            gpu: None,
             modifiers: Default::default(),
         }
     }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProfilePayload {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub title: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub runner: Option<NonEmptyString>,
-    #[serde(flatten)]
-    pub inheritable: InheritableLayer,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -778,6 +785,19 @@ pub struct FileSetPart {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct InheritableLayer {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub cpu: Option<crate::launch_settings::config::Limits>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub gpu: Option<crate::launch_settings::config::Limits>,
+
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1247,7 +1267,7 @@ impl<'de> Deserialize<'de> for Volume {
 
 impl Eq for Volume {}
 
-fn optional_non_null<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+pub(crate) fn optional_non_null<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,

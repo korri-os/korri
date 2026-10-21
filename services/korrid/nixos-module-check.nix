@@ -335,6 +335,7 @@ assert
     KORRID_RUNTIME_GID = "1000";
     KORRID_RUNTIME_UID = "1000";
     KORRID_HOST_CONFIG = toString deviceConfig;
+    KORRID_LIMITS_SOCKET = "/run/korri-limits/limits.sock";
     KORRID_MODE = "host";
     KORRID_PRIVATE_STATE_ROOT = "/var/lib/korrid";
     KORRID_LOCAL_SIGNER_SOCKET = "/run/korri-local-signer/signer.sock";
@@ -351,6 +352,8 @@ assert service.environment.KORRID_RUNTIME_GID == "1000";
 assert service.environment.KORRID_CONTROL_PEER_UID == "977";
 assert service.environment.KORRID_CONTROL_PEER_GID == "977";
 assert service.environment.KORRID_SYSTEMD_RUN == "${pkgs.systemd}/bin/systemd-run";
+assert service.environment.KORRID_LIMITS_SOCKET == "/run/korri-limits/limits.sock";
+assert service.serviceConfig.Group == "korrid";
 assert service.environment.KORRID_SYSTEMCTL == "${pkgs.systemd}/bin/systemctl";
 assert service.environment.KORRID_ADDRESS == "127.0.0.1:43117";
 assert service.environment.KORRID_PRIVATE_STATE_ROOT == "/var/lib/korrid";

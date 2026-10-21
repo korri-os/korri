@@ -146,7 +146,7 @@ pub struct LaunchSettingsSnapshot {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LaunchSettingsSnapshotRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_id: Option<String>,
@@ -178,7 +178,7 @@ pub enum LaunchLimitValue {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LaunchSettingsSetRequest {
     pub scope: LaunchSettingsScope,
     pub setting: LaunchSetting,
@@ -189,7 +189,7 @@ pub struct LaunchSettingsSetRequest {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LaunchProfileSaveRequest {
     pub game_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -200,7 +200,7 @@ pub struct LaunchProfileSaveRequest {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LaunchProfileRemoveRequest {
     pub game_id: String,
     pub profile_id: String,
@@ -209,7 +209,7 @@ pub struct LaunchProfileRemoveRequest {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LaunchProfileSelectRequest {
     pub game_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -221,7 +221,7 @@ pub struct LaunchProfileSelectRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum LaunchSettingsSnapshotOutcome {
-    Ok(LaunchSettingsSnapshot),
+    Ok(Box<LaunchSettingsSnapshot>),
     Err(RpcFailure),
 }
 
@@ -232,6 +232,17 @@ pub enum LaunchSettingsWriteOutcome {
     Ok(RunnerChoiceRevisions),
     Err(RpcFailure),
 }
+pub mod config;
+pub mod helper;
+pub(crate) mod resolution;
+mod store;
+pub use resolution::{resolve, snapshot};
+pub use store::{remove_profile, save_profile, select_profile, set};
+
+pub mod session;
+
+#[cfg(test)]
+mod tests;
 
 /// Resolved values use only the layers present when a route is not selected.
 #[typeshare]

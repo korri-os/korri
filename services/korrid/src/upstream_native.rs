@@ -1,11 +1,11 @@
 use crate::{
-    CatalogSnapshot, CatalogSnapshotOutcome, MoonlightCertificateAttestOutcome,
-    MoonlightCertificateAttestRequest, MoonlightCertificateAttested,
-    MoonlightCertificateProvisionOutcome, MoonlightCertificateProvisionRequest,
-    MoonlightCertificateProvisioned, MoonlightCertificateRevokeOutcome,
-    MoonlightCertificateRevokeRequest, MoonlightCertificateRevoked, RpcFailure, RpcRequest,
-    RpcResponse, SessionFreezeOutcome, SessionFreezeRequest, SessionFreezeResult,
-    SessionPrepareOutcome, SessionPrepareRequest, SessionPrepared, SessionStatusOutcome,
+    game_routes::SelectedGameLaunchOutcome, CatalogSnapshot, CatalogSnapshotOutcome,
+    MoonlightCertificateAttestOutcome, MoonlightCertificateAttestRequest,
+    MoonlightCertificateAttested, MoonlightCertificateProvisionOutcome,
+    MoonlightCertificateProvisionRequest, MoonlightCertificateProvisioned,
+    MoonlightCertificateRevokeOutcome, MoonlightCertificateRevokeRequest,
+    MoonlightCertificateRevoked, RpcFailure, RpcRequest, RpcResponse, SessionFreezeOutcome,
+    SessionFreezeRequest, SessionFreezeResult, SessionPrepareRequest, SessionStatusOutcome,
     SessionStatusRequest, SessionStopOutcome, SessionStopPhase, SessionStopRequest,
     SessionThawRequest, SourceStatus, SourceStatusOutcome, SourceStatusRequest,
 };
@@ -282,7 +282,10 @@ impl NativeClient {
         }
     }
 
-    pub async fn prepare_stream(&self, game_id: &str) -> Result<SessionPrepared, UpstreamError> {
+    pub async fn prepare_stream(
+        &self,
+        game_id: &str,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, UpstreamError> {
         match self
             .call(RpcRequest::SessionPrepare(SessionPrepareRequest {
                 game_id: game_id.into(),
@@ -290,8 +293,8 @@ impl NativeClient {
             }))
             .await?
         {
-            RpcResponse::SessionPrepare(SessionPrepareOutcome::Ok(prepared)) => Ok(prepared),
-            RpcResponse::SessionPrepare(SessionPrepareOutcome::Err(failure)) => {
+            RpcResponse::SessionPrepare(SelectedGameLaunchOutcome::Ok(prepared)) => Ok(prepared),
+            RpcResponse::SessionPrepare(SelectedGameLaunchOutcome::Err(failure)) => {
                 Err(Self::tagged_failure(failure))
             }
             response => Err(UpstreamError::Wire(format!(
@@ -658,8 +661,8 @@ fn checked_response(
             SessionStatusOutcome::Err(e) => Some(e),
         },
         (RpcRequest::SessionPrepare(_), RpcResponse::SessionPrepare(outcome)) => match outcome {
-            SessionPrepareOutcome::Ok(_) => None,
-            SessionPrepareOutcome::Err(e) => Some(e),
+            SelectedGameLaunchOutcome::Ok(_) => None,
+            SelectedGameLaunchOutcome::Err(e) => Some(e),
         },
         (RpcRequest::SessionStop(_), RpcResponse::SessionStop(outcome)) => match outcome {
             SessionStopOutcome::Ok(_) => None,
@@ -822,18 +825,18 @@ command = ["neverball"]
         assert_eq!(catalog.games[0].host.as_deref(), Some("zao"));
 
         let prepared = client.prepare_stream("neverball").await.unwrap();
-        assert_eq!(prepared.game_id, "neverball");
+        assert_eq!(prepared.session.game_id, "neverball");
         let UpstreamSessionStatus::SessionStatus {
             active: Some(active),
         } = client.session_status().await.unwrap()
         else {
             panic!("native host must report the prepared session")
         };
-        assert_eq!(active.launch_id, prepared.launch_id);
+        assert_eq!(active.launch_id, prepared.session.launch_id);
         assert_eq!(active.game_id.as_deref(), Some("neverball"));
         assert!(matches!(
             client
-                .session_stop(&prepared.launch_id, false)
+                .session_stop(&prepared.session.launch_id, false)
                 .await
                 .unwrap(),
             UpstreamSessionStop::Stopped { .. }
@@ -853,13 +856,19 @@ command = ["neverball"]
         let client = NativeClient::new(base_url);
         let prepared = client.prepare_stream("neverball").await.unwrap();
 
-        let frozen = client.session_freeze(&prepared.launch_id).await.unwrap();
+        let frozen = client
+            .session_freeze(&prepared.session.launch_id)
+            .await
+            .unwrap();
         assert_eq!(frozen.state, crate::SessionFreezerState::Frozen);
         assert!(frozen.changed);
-        let again = client.session_freeze(&prepared.launch_id).await.unwrap();
+        let again = client
+            .session_freeze(&prepared.session.launch_id)
+            .await
+            .unwrap();
         assert!(!again.changed);
         assert!(matches!(
-            client.session_thaw(&prepared.launch_id).await,
+            client.session_thaw(&prepared.session.launch_id).await,
             Err(UpstreamError::Tagged { code, message })
                 if code == "HostFocusFailed"
                     && message == "compositor focus authority is not configured"
@@ -878,7 +887,7 @@ command = ["neverball"]
             .await,
         );
         assert!(matches!(
-            wrong.session_freeze(&prepared.launch_id).await,
+            wrong.session_freeze(&prepared.session.launch_id).await,
             Err(UpstreamError::Wire(_))
         ));
         let wrong = NativeClient::new(
@@ -889,7 +898,7 @@ command = ["neverball"]
             .await,
         );
         assert!(matches!(
-            wrong.session_thaw(&prepared.launch_id).await,
+            wrong.session_thaw(&prepared.session.launch_id).await,
             Err(UpstreamError::Wire(_))
         ));
 
@@ -901,7 +910,7 @@ command = ["neverball"]
             .await,
         );
         assert!(matches!(
-            replaced.session_thaw(&prepared.launch_id).await,
+            replaced.session_thaw(&prepared.session.launch_id).await,
             Err(UpstreamError::Tagged { code, .. })
                 if code == "SelectedRemoteSessionReplaced"
         ));

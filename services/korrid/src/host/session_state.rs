@@ -240,6 +240,7 @@ impl Drop for SessionStateGuard<'_> {
 #[derive(Clone)]
 pub struct HostSessionControl {
     backend: Arc<dyn LaunchUnitBackend>,
+    limits_client: crate::launch_settings::helper::Client,
     input_seats: Arc<dyn InputSeatManager>,
     identity_root: PathBuf,
     play_log: PlayLogStore,
@@ -296,6 +297,7 @@ impl HostSessionControl {
         let identity_root = private_state_root.join("host-session");
         Self {
             backend,
+            limits_client: crate::launch_settings::helper::Client::default(),
             input_seats,
             identity_root,
             play_log: PlayLogStore::new(private_state_root),
@@ -819,6 +821,7 @@ impl HostSessionControl {
         let Some(record) = read_active(&self.identity_root)? else {
             return Ok(());
         };
+        crate::launch_settings::session::end(&self.limits_client, record.launch_id());
         self.input_seats.end_session(record.launch_id())?;
         let store = NativeSaveStore::new(
             self.identity_root
@@ -1127,6 +1130,31 @@ impl HostSessionControl {
         mutation()
     }
 
+    pub fn prepare_with_limits(
+        &self,
+        game_id: &str,
+        person_public_key: Option<&str>,
+        configured_command: Result<&[String], RpcFailure>,
+        environment: &BTreeMap<String, String>,
+        limits: Option<&crate::launch_settings::session::SessionLimits>,
+        initial_warnings: Vec<crate::launcher::typed_settings::LaunchWarning>,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
+        let mut warnings = initial_warnings;
+        let session = self.prepare_inner(
+            game_id,
+            person_public_key,
+            configured_command,
+            environment,
+            true,
+            None,
+            None,
+            limits,
+            &mut warnings,
+        )?;
+        Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
+    }
+
+    #[cfg(test)]
     pub fn prepare(
         &self,
         game_id: &str,
@@ -1142,6 +1170,8 @@ impl HostSessionControl {
             true,
             None,
             None,
+            None,
+            &mut Vec::new(),
         )
     }
 
@@ -1155,8 +1185,10 @@ impl HostSessionControl {
         person_public_key: Option<&str>,
         configured_command: Result<&[String], RpcFailure>,
         environment: &BTreeMap<String, String>,
-    ) -> Result<SessionPrepared, RpcFailure> {
-        self.prepare_inner(
+        limits: Option<&crate::launch_settings::session::SessionLimits>,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
+        let mut warnings = Vec::new();
+        let session = self.prepare_inner(
             game_id,
             person_public_key,
             configured_command,
@@ -1164,7 +1196,10 @@ impl HostSessionControl {
             false,
             Some(runner_id),
             None,
-        )
+            limits,
+            &mut warnings,
+        )?;
+        Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
     }
 
     pub(super) fn prepare_reserved(
@@ -1173,8 +1208,10 @@ impl HostSessionControl {
         runner_id: Option<&str>,
         configured_command: Result<&[String], RpcFailure>,
         environment: &BTreeMap<String, String>,
-    ) -> Result<SessionPrepared, RpcFailure> {
-        self.prepare_inner(
+        limits: Option<&crate::launch_settings::session::SessionLimits>,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
+        let mut warnings = Vec::new();
+        let session = self.prepare_inner(
             &reservation.identity.game_id,
             reservation.person.as_deref(),
             configured_command,
@@ -1182,7 +1219,10 @@ impl HostSessionControl {
             false,
             runner_id,
             Some(reservation),
-        )
+            limits,
+            &mut warnings,
+        )?;
+        Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
     }
 
     fn prepare_inner(
@@ -1194,6 +1234,8 @@ impl HostSessionControl {
         resume_same_game: bool,
         runner_id: Option<&str>,
         reservation: Option<&LaunchReservation>,
+        limits: Option<&crate::launch_settings::session::SessionLimits>,
+        warnings: &mut Vec<crate::launcher::typed_settings::LaunchWarning>,
     ) -> Result<SessionPrepared, RpcFailure> {
         if self.shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
             return Err(failure("HostStopping", "korrid is stopping"));
@@ -1218,6 +1260,7 @@ impl HostSessionControl {
                 }
                 self.reconcile_portal(&state)
                     .map_err(|message| failure("InputTransitionFailed", message))?;
+                warnings.clear();
                 return Ok(SessionPrepared {
                     game_id: game_id.into(),
                     launch_id: launch_id.clone(),
@@ -1468,6 +1511,11 @@ impl HostSessionControl {
                 }
             }
         }
+        if let Some(limits) = limits {
+            if let Some(warning) = limits.apply(&self.limits_client, &launch_id) {
+                warnings.push(warning);
+            }
+        }
         match self.backend.state(&launch_id) {
             Ok(
                 observed @ (LaunchUnitState::Running
@@ -1702,6 +1750,7 @@ impl HostSessionControl {
     /// player. Nothing is logged.
     fn discard_active(&self) -> Result<(), String> {
         if let Some(record) = read_active(&self.identity_root)? {
+            crate::launch_settings::session::end(&self.limits_client, record.launch_id());
             self.input_seats.end_session(record.launch_id())?;
         }
         consume_active(&self.identity_root).map(|_| ())
@@ -6679,5 +6728,221 @@ mod tests {
             assert!(backend.state.lock().unwrap().units.is_empty());
             assert!(!root.path().join("host-session").exists());
         }
+    }
+}
+
+#[cfg(test)]
+mod launch_settings_lifecycle_tests {
+    use super::*;
+    use crate::{
+        host::control::InMemoryLaunchUnitBackend,
+        launch_settings::{helper::Client, session::SessionLimits, LaunchPercentRange},
+    };
+    use serde_json::{json, Value};
+    use std::{
+        io::{BufRead, BufReader, Write},
+        os::unix::net::UnixListener,
+        thread,
+    };
+
+    fn limits() -> SessionLimits {
+        SessionLimits {
+            cpu: LaunchPercentRange { min: 20, max: 60 },
+            gpu: LaunchPercentRange { min: 0, max: 80 },
+            runner_id: "@test:runner/main".into(),
+            build: "build".into(),
+        }
+    }
+    fn client(root: &Path, replies: Vec<Value>) -> (Client, thread::JoinHandle<Vec<Value>>) {
+        let socket = root.join("limits.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let handle = thread::spawn(move || {
+            replies
+                .into_iter()
+                .map(|reply| {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    let mut request = String::new();
+                    BufReader::new(stream.try_clone().unwrap())
+                        .read_line(&mut request)
+                        .unwrap();
+                    stream.write_all(format!("{reply}\n").as_bytes()).unwrap();
+                    serde_json::from_str(&request).unwrap()
+                })
+                .collect()
+        });
+        (Client { socket }, handle)
+    }
+    #[test]
+    fn launch_settings_new_unit_applies_once_resume_does_not_reapply_and_stop_restores() {
+        let root = tempfile::tempdir().unwrap();
+        let (client, server) = client(
+            root.path(),
+            vec![
+                json!({"_tag":"Ok","payload":{}}),
+                json!({"_tag":"Ok","payload":{}}),
+            ],
+        );
+        let backend = Arc::new(InMemoryLaunchUnitBackend::default());
+        let mut control = HostSessionControl::new(root.path(), backend.clone());
+        control.limits_client = client;
+        let command = vec!["game".into()];
+        let first = control
+            .prepare_with_limits(
+                "game",
+                None,
+                Ok(&command),
+                &BTreeMap::new(),
+                Some(&limits()),
+                Vec::new(),
+            )
+            .unwrap();
+        assert!(first.warnings.is_empty());
+        assert!(matches!(
+            control.status(),
+            HostSessionStatus::Running { .. }
+        ));
+        let resumed = control
+            .prepare_with_limits(
+                "game",
+                None,
+                Ok(&command),
+                &BTreeMap::new(),
+                Some(&limits()),
+                Vec::new(),
+            )
+            .unwrap();
+        assert_eq!(first.session.launch_id, resumed.session.launch_id);
+        assert!(resumed.warnings.is_empty());
+        assert!(matches!(
+            control.stop(&first.session.launch_id),
+            HostSessionStop::Completed { .. }
+        ));
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0]["_tag"], "ApplySession");
+        assert_eq!(requests[0]["payload"]["cpu"], json!({"min":20,"max":60}));
+        assert_eq!(requests[1]["_tag"], "EndSession");
+        assert_eq!(
+            requests[0]["payload"]["unit"],
+            requests[1]["payload"]["unit"]
+        );
+        assert_eq!(
+            requests[0]["payload"]["unit"],
+            format!("korri-game-{}.service", first.session.launch_id)
+        );
+    }
+    #[test]
+    fn launch_settings_helper_error_or_absence_is_a_warning_not_a_failed_game_start() {
+        for refused in [true, false] {
+            let root = tempfile::tempdir().unwrap();
+            let (client, server) = if refused {
+                let (client, server) = client(
+                    root.path(),
+                    vec![
+                        json!({"_tag":"Err","payload":{"message":"not supported"}}),
+                        json!({"_tag":"Err","payload":{"message":"already restored"}}),
+                    ],
+                );
+                (client, Some(server))
+            } else {
+                (
+                    Client {
+                        socket: root.path().join("absent.sock"),
+                    },
+                    None,
+                )
+            };
+            let mut control = HostSessionControl::new(
+                root.path(),
+                Arc::new(InMemoryLaunchUnitBackend::default()),
+            );
+            control.limits_client = client;
+            let launch = control
+                .prepare_with_limits(
+                    "game",
+                    None,
+                    Ok(&["game".into()]),
+                    &BTreeMap::new(),
+                    Some(&limits()),
+                    Vec::new(),
+                )
+                .unwrap();
+            assert_eq!(launch.warnings.len(), 1);
+            assert_eq!(launch.warnings[0].setting, "launch-settings");
+            assert!(matches!(
+                control.status(),
+                HostSessionStatus::Running { .. }
+            ));
+            assert!(matches!(
+                control.stop(&launch.session.launch_id),
+                HostSessionStop::Completed { .. }
+            ));
+            if let Some(server) = server {
+                assert_eq!(server.join().unwrap().len(), 2);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod launch_settings_completion_tests {
+    use super::*;
+    use crate::{
+        host::control::InMemoryLaunchUnitBackend,
+        launch_settings::{helper::Client, session::SessionLimits, LaunchPercentRange},
+    };
+    use std::{
+        io::{BufRead, BufReader, Write},
+        os::unix::net::UnixListener,
+        thread,
+    };
+    #[test]
+    fn launch_settings_natural_unit_completion_restores_device_values() {
+        let root = tempfile::tempdir().unwrap();
+        let socket = root.path().join("limits.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let server = thread::spawn(move || {
+            (0..2)
+                .map(|_| {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    let mut line = String::new();
+                    BufReader::new(stream.try_clone().unwrap())
+                        .read_line(&mut line)
+                        .unwrap();
+                    stream
+                        .write_all(b"{\"_tag\":\"Ok\",\"payload\":{}}\n")
+                        .unwrap();
+                    serde_json::from_str::<serde_json::Value>(&line).unwrap()
+                })
+                .collect::<Vec<_>>()
+        });
+        let backend = Arc::new(InMemoryLaunchUnitBackend::default());
+        let mut control = HostSessionControl::new(root.path(), backend.clone());
+        control.limits_client = Client { socket };
+        let limits = SessionLimits {
+            cpu: LaunchPercentRange { min: 0, max: 80 },
+            gpu: LaunchPercentRange { min: 0, max: 75 },
+            runner_id: "runner".into(),
+            build: "build".into(),
+        };
+        let launch = control
+            .prepare_with_limits(
+                "game",
+                None,
+                Ok(&["game".into()]),
+                &BTreeMap::new(),
+                Some(&limits),
+                Vec::new(),
+            )
+            .unwrap();
+        assert!(launch.warnings.is_empty());
+        backend.complete_live();
+        assert!(matches!(
+            control.status(),
+            HostSessionStatus::Completed { .. }
+        ));
+        let requests = server.join().unwrap();
+        assert_eq!(requests[0]["_tag"], "ApplySession");
+        assert_eq!(requests[1]["_tag"], "EndSession");
     }
 }

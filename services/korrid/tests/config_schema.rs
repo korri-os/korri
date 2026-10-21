@@ -40,7 +40,6 @@ fn readable_sections_keep_non_executable_opinions_decodable() {
     assert_eq!(snapshot.systems.len(), 2);
     assert_eq!(snapshot.families.len(), 1);
     assert_eq!(snapshot.runners.len(), 1);
-    assert_eq!(snapshot.profiles.len(), 1);
     assert_eq!(snapshot.hooks.len(), 1);
     assert!(classify_snapshot_support(&snapshot).is_err());
 }

@@ -1014,11 +1014,7 @@ async fn the_device_finds_downloads_and_launches_a_store_game_over_its_rpc() {
             } else {
                 assert_eq!(launched["outcome"]["_tag"], "Ok", "{launched}");
                 let payload = &launched["outcome"]["payload"];
-                let launch_id = if method == "app.session.prepare" {
-                    &payload["launchId"]
-                } else {
-                    &payload["session"]["launchId"]
-                };
+                let launch_id = &payload["session"]["launchId"];
                 let stopped = world
                     .call(
                         "app.session.stop",

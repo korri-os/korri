@@ -138,16 +138,16 @@ async fn roster_catalog_source_session_and_optional_moonlight_survive_rebuild_an
         .unwrap();
     let prepared = registry.prepare_stream("game", None).await.unwrap();
     assert!(registry
-        .session_freeze(Some(&prepared.launch_id))
+        .session_freeze(Some(&prepared.session.launch_id))
         .await
         .is_ok());
     assert!(matches!(
-        registry.session_thaw(Some(&prepared.launch_id)).await,
+        registry.session_thaw(Some(&prepared.session.launch_id)).await,
         Err(crate::upstreams::UpstreamError::Tagged { code, .. })
             if code == "HostFocusFailed"
     ));
     assert!(registry
-        .session_stop(Some(&prepared.launch_id), false)
+        .session_stop(Some(&prepared.session.launch_id), false)
         .await
         .is_ok());
     assert_eq!(d.snapshot().unwrap()[0].state, PeerState::Ready);
@@ -377,7 +377,7 @@ async fn deferred_static_file_preserves_selected_route_while_using_live_director
     // Resolving OnceLock must retain the previously selected exact launch even
     // though its mutable display label changed with the new static overlay.
     assert!(registry
-        .session_freeze(Some(&prepared.launch_id))
+        .session_freeze(Some(&prepared.session.launch_id))
         .await
         .is_ok());
     let crate::upstream::UpstreamSessionStatus::SessionStatus {
@@ -387,9 +387,9 @@ async fn deferred_static_file_preserves_selected_route_while_using_live_director
         panic!("selected route lost")
     };
     assert_eq!(active.host.as_deref(), Some("Static"));
-    assert_eq!(active.launch_id, prepared.launch_id);
+    assert_eq!(active.launch_id, prepared.session.launch_id);
     assert!(registry
-        .session_stop(Some(&prepared.launch_id), false)
+        .session_stop(Some(&prepared.session.launch_id), false)
         .await
         .is_ok());
 }
@@ -889,9 +889,11 @@ async fn revoked_selection_allows_new_prepare_without_stopping_the_old_execution
     )
     .unwrap();
     let b = registry.prepare_stream("game", Some("B")).await.unwrap();
-    assert_ne!(a.launch_id, b.launch_id);
+    assert_ne!(a.session.launch_id, b.session.launch_id);
     assert!(matches!(
-        registry.session_stop(Some(&a.launch_id), false).await,
+        registry
+            .session_stop(Some(&a.session.launch_id), false)
+            .await,
         Err(crate::upstreams::UpstreamError::StaleLaunchIdentity)
     ));
     let crate::upstream::UpstreamSessionStatus::SessionStatus {
@@ -900,7 +902,7 @@ async fn revoked_selection_allows_new_prepare_without_stopping_the_old_execution
     else {
         panic!("B selection lost")
     };
-    assert_eq!(active.launch_id, b.launch_id);
+    assert_eq!(active.launch_id, b.session.launch_id);
     // A did not receive the local revocation. Retiring local control is not
     // evidence of a remote stop: its real runtime still has the old launch.
     let crate::upstream::UpstreamSessionStatus::SessionStatus {
@@ -912,9 +914,9 @@ async fn revoked_selection_allows_new_prepare_without_stopping_the_old_execution
     else {
         panic!("retirement must not stop A")
     };
-    assert_eq!(active.launch_id, a.launch_id);
+    assert_eq!(active.launch_id, a.session.launch_id);
     registry
-        .session_stop(Some(&b.launch_id), false)
+        .session_stop(Some(&b.session.launch_id), false)
         .await
         .unwrap();
 }
@@ -938,15 +940,15 @@ async fn revoked_selected_controls_report_unavailable_not_a_remote_stop() {
         let result = match operation {
             "status" => registry.session_status().await.map(|_| ()),
             "stop" => registry
-                .session_stop(Some(&prepared.launch_id), false)
+                .session_stop(Some(&prepared.session.launch_id), false)
                 .await
                 .map(|_| ()),
             "freeze" => registry
-                .session_freeze(Some(&prepared.launch_id))
+                .session_freeze(Some(&prepared.session.launch_id))
                 .await
                 .map(|_| ()),
             "thaw" => registry
-                .session_thaw(Some(&prepared.launch_id))
+                .session_thaw(Some(&prepared.session.launch_id))
                 .await
                 .map(|_| ()),
             _ => unreachable!(),
@@ -973,7 +975,7 @@ async fn revoked_selected_controls_report_unavailable_not_a_remote_stop() {
         else {
             panic!("{operation} must not stop A")
         };
-        assert_eq!(active.launch_id, prepared.launch_id);
+        assert_eq!(active.launch_id, prepared.session.launch_id);
     }
 }
 
@@ -1021,9 +1023,9 @@ async fn selected_peer_outage_does_not_retire_control_or_allow_a_second_prepare(
     else {
         panic!("outage lost selection")
     };
-    assert_eq!(active.launch_id, prepared.launch_id);
+    assert_eq!(active.launch_id, prepared.session.launch_id);
     registry
-        .session_stop(Some(&prepared.launch_id), false)
+        .session_stop(Some(&prepared.session.launch_id), false)
         .await
         .unwrap();
 }

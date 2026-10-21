@@ -207,7 +207,9 @@ async fn host_count_rejects_running_frozen_and_focus_failed_without_mutation() {
     )
     .await;
     assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
-    let launch = prepared["outcome"]["payload"]["launchId"].as_str().unwrap();
+    let launch = prepared["outcome"]["payload"]["session"]["launchId"]
+        .as_str()
+        .unwrap();
     let identity = fixture.root.path().join("private/host-session/active.json");
     let journal = std::fs::read(&identity).unwrap();
     for phase in ["running", "frozen", "focus-failed"] {

@@ -198,3 +198,27 @@ fn grouped_cue_discs_keep_every_descriptor_and_explicit_track_role() {
     fs::remove_file(root.path().join("Game (Disc 2).cue")).unwrap();
     assert!(linux_route_candidates(readable.path(), &state.snapshot, &registry, "game").is_err());
 }
+
+#[test]
+fn launch_settings_release_layer_matches_the_real_route_content_identity() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("game.gba"), b"game").unwrap();
+    let registry = registry(root.path(), false);
+    let library = library(true).replace(
+        "        identity:",
+        "        cpu: {max: 37}\n        gpu: {min: 12}\n        identity:",
+    );
+    let config = decode_config_documents(&device(root.path()), &library).unwrap();
+    let route = linux_route_candidates(root.path(), &config, &registry, "game")
+        .unwrap()
+        .remove(0);
+    assert_ne!(route.release_id, config.library["game"].releases[0].id.0);
+    let limits = korrid::launch_settings::session::SessionLimits::for_route(
+        &config,
+        &route,
+        "build".into(),
+        None,
+    )
+    .unwrap();
+    assert_eq!((limits.cpu.max, limits.gpu.min), (37, 12));
+}

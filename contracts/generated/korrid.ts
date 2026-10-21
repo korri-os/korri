@@ -1661,6 +1661,11 @@ export enum PluginRepositoryRemoveResult {
 }
 
 export type RpcRequest =
+	| { _tag: "app.launch-settings.snapshot", payload: LaunchSettingsSnapshotRequest }
+	| { _tag: "app.launch-settings.set", payload: LaunchSettingsSetRequest }
+	| { _tag: "app.launch-settings.profile.save", payload: LaunchProfileSaveRequest }
+	| { _tag: "app.launch-settings.profile.remove", payload: LaunchProfileRemoveRequest }
+	| { _tag: "app.launch-settings.profile.select", payload: LaunchProfileSelectRequest }
 	| { _tag: "app.saves.status", payload: SaveStatusRequest }
 	| { _tag: "app.saves.history", payload: SaveGameRequest }
 	| { _tag: "app.saves.choose", payload: SavePickRequest }
@@ -1732,6 +1737,11 @@ export type RpcRequest =
 	| { _tag: "system.plugins.setEnabled", payload: PluginSetEnabledRequest };
 
 export type RpcResponse =
+	| { _tag: "app.launch-settings.snapshot", outcome: LaunchSettingsSnapshotOutcome }
+	| { _tag: "app.launch-settings.set", outcome: LaunchSettingsWriteOutcome }
+	| { _tag: "app.launch-settings.profile.save", outcome: LaunchSettingsWriteOutcome }
+	| { _tag: "app.launch-settings.profile.remove", outcome: LaunchSettingsWriteOutcome }
+	| { _tag: "app.launch-settings.profile.select", outcome: LaunchSettingsWriteOutcome }
 	| { _tag: "app.saves.status", outcome: SaveStatusOutcome }
 	| { _tag: "app.saves.history", outcome: SaveHistoryOutcome }
 	| { _tag: "app.saves.choose", outcome: SaveHistoryOutcome }

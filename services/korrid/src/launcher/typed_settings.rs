@@ -70,6 +70,7 @@ pub fn validate(
     runner_id: &str,
     build: &str,
 ) -> Result<Vec<LaunchWarning>, String> {
+    let mut warnings = describe(snapshot, runner_id, build)?.diagnostics;
     let input = serde_json::to_string(&ValidateInput {
         runner_id,
         values: settings,
@@ -78,20 +79,84 @@ pub fn validate(
     let result =
         match script::call_plugin_operation_snapshot(snapshot, script::SETTINGS_VALIDATE, &input) {
             Ok(result) => result,
-            Err(failure) if failure.is_unimplemented() => return Ok(Vec::new()),
+            Err(failure) if failure.is_unimplemented() => return Ok(warnings),
             Err(failure) => return Err(failure.to_string()),
         };
     let validation: SettingsValidation = serde_json::from_str(&result)
         .map_err(|error| format!("invalid settings.validate result: {error}"))?;
-    Ok(validation
-        .diagnostics
-        .into_iter()
-        .filter(|diagnostic| diagnostic.severity != DiagnosticSeverity::Info)
-        .map(|diagnostic| LaunchWarning {
-            setting: diagnostic.path.first().cloned().unwrap_or_default(),
-            runner_id: runner_id.to_owned(),
-            build: build.to_owned(),
-            message: diagnostic.message,
-        })
-        .collect())
+    warnings.extend(
+        validation
+            .diagnostics
+            .into_iter()
+            .filter(|diagnostic| diagnostic.severity != DiagnosticSeverity::Info)
+            .map(|diagnostic| LaunchWarning {
+                setting: diagnostic.path.first().cloned().unwrap_or_default(),
+                runner_id: runner_id.to_owned(),
+                build: build.to_owned(),
+                message: diagnostic.message,
+            }),
+    );
+    Ok(warnings)
+}
+
+/// Scope belongs to a setting kind, never to an authored layer (ADR 0018).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SettingScope {
+    Shared,
+    Device,
+}
+#[derive(Debug)]
+pub struct SettingsDescription {
+    pub scopes: HashMap<String, SettingScope>,
+    pub diagnostics: Vec<LaunchWarning>,
+}
+/// Retain the marks for future settings consumers; plugins own their schema.
+pub fn describe(
+    snapshot: &script::source::SourceSnapshot,
+    runner_id: &str,
+    build: &str,
+) -> Result<SettingsDescription, String> {
+    let input = serde_json::json!({"runnerId":runner_id}).to_string();
+    let result =
+        match script::call_plugin_operation_snapshot(snapshot, script::SETTINGS_DESCRIBE, &input) {
+            Ok(result) => result,
+            Err(failure) if failure.is_unimplemented() => {
+                return Ok(SettingsDescription {
+                    scopes: HashMap::new(),
+                    diagnostics: Vec::new(),
+                })
+            }
+            Err(failure) => return Err(failure.to_string()),
+        };
+    let value: serde_json::Value = serde_json::from_str(&result)
+        .map_err(|e| format!("invalid settings.describe result: {e}"))?;
+    let mut scopes = HashMap::new();
+    let mut diagnostics = Vec::new();
+    if let Some(properties) = value
+        .get("schema")
+        .and_then(|s| s.get("properties"))
+        .and_then(serde_json::Value::as_object)
+    {
+        for (key, property) in properties {
+            match property.get("x-korri-scope") {
+                None => {
+                    scopes.insert(key.clone(), SettingScope::Shared);
+                }
+                Some(serde_json::Value::String(scope)) if scope == "device" => {
+                    scopes.insert(key.clone(), SettingScope::Device);
+                }
+                Some(_) => diagnostics.push(LaunchWarning {
+                    setting: key.clone(),
+                    runner_id: runner_id.into(),
+                    build: build.into(),
+                    message: "x-korri-scope must be \"device\" or absent for shared settings"
+                        .into(),
+                }),
+            }
+        }
+    }
+    Ok(SettingsDescription {
+        scopes,
+        diagnostics,
+    })
 }

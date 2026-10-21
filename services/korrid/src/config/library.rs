@@ -16,6 +16,27 @@ pub const LIBRARY_FILE_NAME: &str = "catalog/library.yaml";
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LibraryItemPayload {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub cpu: Option<crate::launch_settings::config::Limits>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub gpu: Option<crate::launch_settings::config::Limits>,
+    #[serde(default)]
+    pub profiles: BTreeMap<String, crate::launch_settings::config::Profile>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub profile: Option<NonEmptyString>,
+
     #[serde(default)]
     pub modifiers: super::modifiers::ModifierConfigs,
     #[serde(

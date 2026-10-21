@@ -22,6 +22,7 @@ impl PortalPermission {
             | RpcRequest::SavesHistory(_)
             | RpcRequest::NetworkStatus(_)
             | RpcRequest::OnboardingStatus(_)
+            | RpcRequest::LaunchSettingsSnapshot(_)
             | RpcRequest::GameRoutes(_)
             | RpcRequest::CatalogSnapshot(_)
             | RpcRequest::Health(_)
@@ -45,6 +46,10 @@ impl PortalPermission {
             | RpcRequest::WifiConnectHidden(_)
             | RpcRequest::OnboardingFinish(_)
             | RpcRequest::OnboardingRestart(_)
+            | RpcRequest::LaunchSettingsSet(_)
+            | RpcRequest::LaunchProfileSave(_)
+            | RpcRequest::LaunchProfileRemove(_)
+            | RpcRequest::LaunchProfileSelect(_)
             | RpcRequest::GameRunnerSet(_)
             | RpcRequest::SelectedGameLaunch(_)
             | RpcRequest::AcquisitionStart(_)
@@ -122,6 +127,11 @@ impl PortalPermission {
                         | RpcRequest::SessionReserve(_)
                         | RpcRequest::SessionStart(_)
                         | RpcRequest::SessionCancel(_)
+                        // The kiosk on this device edits launch settings; values are percents and profile names, applied by limitsd's own checks.
+                        | RpcRequest::LaunchSettingsSet(_)
+                        | RpcRequest::LaunchProfileSave(_)
+                        | RpcRequest::LaunchProfileRemove(_)
+                        | RpcRequest::LaunchProfileSelect(_)
                         // The kiosk on this device drives first-boot setup and Settings Wi-Fi.
                         // NetworkManager polkit limits korrid to three actions.
                         | RpcRequest::WifiScan(_)
@@ -713,13 +723,20 @@ mod tests {
             "absent_key"
         );
         assert_eq!(
-            launch["outcome"]["payload"]["warnings"][1],
-            serde_json::Value::Null
+            launch["outcome"]["payload"]["warnings"][1]["setting"],
+            "launch-settings"
+        );
+        assert_eq!(
+            launch["outcome"]["payload"]["warnings"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
         );
         let resumed = rpc(&app, "app.session.prepare", json!({"gameId":game_id})).await;
         assert_eq!(resumed["outcome"]["_tag"], "Ok", "{resumed}");
         assert_eq!(
-            resumed["outcome"]["payload"], launch["outcome"]["payload"]["session"],
+            resumed["outcome"]["payload"]["session"], launch["outcome"]["payload"]["session"],
             "ordinary prepare must resume the explicit launch despite the stale preference"
         );
         let repeated = rpc(
@@ -823,7 +840,7 @@ mod tests {
         let resumed = rpc(&app, "app.session.prepare", json!({"gameId":game_id})).await;
         assert_eq!(resumed["outcome"]["_tag"], "Ok", "{resumed}");
         assert_eq!(
-            resumed["outcome"]["payload"],
+            resumed["outcome"]["payload"]["session"],
             launch["outcome"]["payload"]["session"]
         );
         let switched = rpc(
@@ -884,8 +901,13 @@ mod tests {
         );
         let prepared = rpc(&app, "app.session.prepare", json!({"gameId":"neverball"})).await;
         assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
-        assert_eq!(prepared["outcome"]["payload"]["gameId"], "neverball");
-        let launch_id = prepared["outcome"]["payload"]["launchId"].as_str().unwrap();
+        assert_eq!(
+            prepared["outcome"]["payload"]["session"]["gameId"],
+            "neverball"
+        );
+        let launch_id = prepared["outcome"]["payload"]["session"]["launchId"]
+            .as_str()
+            .unwrap();
         assert_eq!(launch_id.len(), 32);
         let repeated = rpc(&app, "app.session.prepare", json!({"gameId":"neverball"})).await;
         assert_eq!(repeated, prepared);
@@ -923,5 +945,39 @@ mod tests {
         let status = rpc(&app, "app.session.status", json!({})).await;
         assert_eq!(status["outcome"]["_tag"], "Err");
         assert_eq!(status["outcome"]["payload"]["code"], "SessionCompleted");
+    }
+}
+
+#[cfg(test)]
+mod launch_settings_permission_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn launch_settings_local_sessions_may_edit_but_runner_choice_stays_forbidden() {
+        for (tag, payload) in [
+            (
+                "app.launch-settings.set",
+                json!({"scope":{"_tag":"Device"},"setting":"cpu.max","value":60,"expectedRevision":"rev"}),
+            ),
+            (
+                "app.launch-settings.profile.save",
+                json!({"gameId":"game","title":"Quiet","expectedRevision":"rev"}),
+            ),
+            (
+                "app.launch-settings.profile.remove",
+                json!({"gameId":"game","profileId":"quiet","expectedRevision":"rev"}),
+            ),
+            (
+                "app.launch-settings.profile.select",
+                json!({"gameId":"game","expectedRevision":"rev"}),
+            ),
+        ] {
+            let request: RpcRequest =
+                serde_json::from_value(json!({"_tag":tag,"payload":payload})).unwrap();
+            assert!(PortalPermission::LocalSessions.permits(&request), "{tag}");
+            assert!(!PortalPermission::ReadOnly.permits(&request), "{tag}");
+        }
+        let request: RpcRequest = serde_json::from_value(json!({"_tag":"app.local-games.runner.set","payload":{"scope":{"_tag":"Game","id":"game"},"expectedRevision":"rev"}})).unwrap();
+        assert!(!PortalPermission::LocalSessions.permits(&request));
     }
 }

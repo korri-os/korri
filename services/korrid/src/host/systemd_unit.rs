@@ -22,7 +22,7 @@ const DEFAULT_CONTROL_DIRECTORY: &str = "/run/korrid-control";
 const DEFAULT_BROWSER_RUNTIME_DIRECTORY: &str = "/run/korrid-browser";
 const DEFAULT_COMPOSITOR_CONTROL_DIRECTORY: &str = "/run/korri-compositor";
 /// Control group of a system unit started by systemd-run.
-const DEFAULT_UNIT_CGROUP_ROOT: &str = "/sys/fs/cgroup/system.slice";
+const DEFAULT_UNIT_CGROUP_ROOT: &str = "/sys/fs/cgroup/korri.slice/korri-games.slice";
 const DEFAULT_CERTIFICATE_CONTROL_DIRECTORY: &str = "/run/korri-certificate-control";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1089,6 +1089,8 @@ impl SystemdLaunchUnitBackend {
             // The controller stops and resets the exact failed unit after reading it.
             "--service-type=exec".into(),
             format!("--unit={unit}"),
+            "--slice=korri-games.slice".into(),
+            "--property=CPUWeight=100".into(),
             format!("--uid={}", self.runtime_uid),
             format!("--gid={}", self.runtime_gid),
             "--property=KillMode=control-group".into(),
@@ -1801,6 +1803,19 @@ mod tests {
     }
 
     const PORTAL: &str = "korri-chromium-kiosk.service";
+
+    #[test]
+    fn launch_settings_units_use_the_games_slice_with_an_enabled_cpu_controller() {
+        let args = backend(1000)
+            .launch_arguments(LAUNCH_ID, &["/bin/game".into()], &BTreeMap::new())
+            .unwrap();
+        assert!(args.contains(&"--slice=korri-games.slice".into()));
+        assert!(args.contains(&"--property=CPUWeight=100".into()));
+        assert_eq!(
+            DEFAULT_UNIT_CGROUP_ROOT,
+            "/sys/fs/cgroup/korri.slice/korri-games.slice"
+        );
+    }
 
     #[test]
     fn portal_native_calls_need_no_unit_reference_or_extra_authority() {

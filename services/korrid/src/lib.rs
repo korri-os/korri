@@ -1243,6 +1243,16 @@ pub enum PluginChangeOutcome {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum RpcRequest {
+    #[serde(rename = "app.launch-settings.snapshot")]
+    LaunchSettingsSnapshot(launch_settings::LaunchSettingsSnapshotRequest),
+    #[serde(rename = "app.launch-settings.set")]
+    LaunchSettingsSet(launch_settings::LaunchSettingsSetRequest),
+    #[serde(rename = "app.launch-settings.profile.save")]
+    LaunchProfileSave(launch_settings::LaunchProfileSaveRequest),
+    #[serde(rename = "app.launch-settings.profile.remove")]
+    LaunchProfileRemove(launch_settings::LaunchProfileRemoveRequest),
+    #[serde(rename = "app.launch-settings.profile.select")]
+    LaunchProfileSelect(launch_settings::LaunchProfileSelectRequest),
     #[typeshare(skip)]
     #[serde(rename = "app.saves.heads")]
     SaveHeads(saves::types::SaveHeadsRequest),
@@ -1400,6 +1410,16 @@ pub enum RpcRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "outcome")]
 pub enum RpcResponse {
+    #[serde(rename = "app.launch-settings.snapshot")]
+    LaunchSettingsSnapshot(launch_settings::LaunchSettingsSnapshotOutcome),
+    #[serde(rename = "app.launch-settings.set")]
+    LaunchSettingsSet(launch_settings::LaunchSettingsWriteOutcome),
+    #[serde(rename = "app.launch-settings.profile.save")]
+    LaunchProfileSave(launch_settings::LaunchSettingsWriteOutcome),
+    #[serde(rename = "app.launch-settings.profile.remove")]
+    LaunchProfileRemove(launch_settings::LaunchSettingsWriteOutcome),
+    #[serde(rename = "app.launch-settings.profile.select")]
+    LaunchProfileSelect(launch_settings::LaunchSettingsWriteOutcome),
     #[typeshare(skip)]
     #[serde(rename = "app.saves.heads")]
     SaveHeads(saves::peer::SaveHeadsOutcome),
@@ -2663,6 +2683,68 @@ async fn dispatch(
                 game_routes::GameRoutesOutcome::Err(installed_routes_unsupported())
             }
         }),
+        RpcRequest::LaunchSettingsSnapshot(request) => {
+            RpcResponse::LaunchSettingsSnapshot(match &state.mode {
+                ServerMode::Host(host) => host
+                    .launch_settings_snapshot(request)
+                    .await
+                    .map(|snapshot| {
+                        launch_settings::LaunchSettingsSnapshotOutcome::Ok(Box::new(snapshot))
+                    })
+                    .unwrap_or_else(launch_settings::LaunchSettingsSnapshotOutcome::Err),
+                ServerMode::Brain(_) => launch_settings::LaunchSettingsSnapshotOutcome::Err(
+                    installed_routes_unsupported(),
+                ),
+            })
+        }
+        RpcRequest::LaunchSettingsSet(request) => {
+            RpcResponse::LaunchSettingsSet(match &state.mode {
+                ServerMode::Host(host) => host
+                    .launch_settings_set(request)
+                    .await
+                    .map(launch_settings::LaunchSettingsWriteOutcome::Ok)
+                    .unwrap_or_else(launch_settings::LaunchSettingsWriteOutcome::Err),
+                ServerMode::Brain(_) => {
+                    launch_settings::LaunchSettingsWriteOutcome::Err(installed_routes_unsupported())
+                }
+            })
+        }
+        RpcRequest::LaunchProfileSave(request) => {
+            RpcResponse::LaunchProfileSave(match &state.mode {
+                ServerMode::Host(host) => host
+                    .launch_profile_save(request)
+                    .await
+                    .map(launch_settings::LaunchSettingsWriteOutcome::Ok)
+                    .unwrap_or_else(launch_settings::LaunchSettingsWriteOutcome::Err),
+                ServerMode::Brain(_) => {
+                    launch_settings::LaunchSettingsWriteOutcome::Err(installed_routes_unsupported())
+                }
+            })
+        }
+        RpcRequest::LaunchProfileRemove(request) => {
+            RpcResponse::LaunchProfileRemove(match &state.mode {
+                ServerMode::Host(host) => host
+                    .launch_profile_remove(request)
+                    .await
+                    .map(launch_settings::LaunchSettingsWriteOutcome::Ok)
+                    .unwrap_or_else(launch_settings::LaunchSettingsWriteOutcome::Err),
+                ServerMode::Brain(_) => {
+                    launch_settings::LaunchSettingsWriteOutcome::Err(installed_routes_unsupported())
+                }
+            })
+        }
+        RpcRequest::LaunchProfileSelect(request) => {
+            RpcResponse::LaunchProfileSelect(match &state.mode {
+                ServerMode::Host(host) => host
+                    .launch_profile_select(request)
+                    .await
+                    .map(launch_settings::LaunchSettingsWriteOutcome::Ok)
+                    .unwrap_or_else(launch_settings::LaunchSettingsWriteOutcome::Err),
+                ServerMode::Brain(_) => {
+                    launch_settings::LaunchSettingsWriteOutcome::Err(installed_routes_unsupported())
+                }
+            })
+        }
         RpcRequest::GameRunnerSet(request) => RpcResponse::GameRunnerSet(match &state.mode {
             ServerMode::Host(host) => host
                 .set_game_runner(request)
@@ -2842,8 +2924,8 @@ async fn dispatch(
             };
             RpcResponse::SessionReserve(
                 outcome
-                    .map(SessionPrepareOutcome::Ok)
-                    .unwrap_or_else(SessionPrepareOutcome::Err),
+                    .map(SessionReserveOutcome::Ok)
+                    .unwrap_or_else(SessionReserveOutcome::Err),
             )
         }
         RpcRequest::SessionStart(request) => {
@@ -2891,19 +2973,21 @@ async fn dispatch(
                     .upstream
                     .prepare_stream(&request.game_id, request.host.as_deref())
                     .await
-                    .map(SessionPrepareOutcome::Ok)
-                    .unwrap_or_else(|error| SessionPrepareOutcome::Err(upstream_failure(error))),
+                    .map(game_routes::SelectedGameLaunchOutcome::Ok)
+                    .unwrap_or_else(|error| {
+                        game_routes::SelectedGameLaunchOutcome::Err(upstream_failure(error))
+                    }),
                 (ServerMode::Host(host), RpcSurface::Lan) => host
                     .prepare(
                         &request.game_id,
                         authorization.person_public_key(host.owner_public_key().as_deref()),
                     )
                     .await
-                    .map(SessionPrepareOutcome::Ok)
-                    .unwrap_or_else(SessionPrepareOutcome::Err),
+                    .map(game_routes::SelectedGameLaunchOutcome::Ok)
+                    .unwrap_or_else(game_routes::SelectedGameLaunchOutcome::Err),
                 (ServerMode::Brain(_), RpcSurface::LocalControl)
                 | (ServerMode::Host(_), RpcSurface::LocalControl) => {
-                    SessionPrepareOutcome::Err(RpcFailure {
+                    game_routes::SelectedGameLaunchOutcome::Err(RpcFailure {
                         code: "OperationUnsupported".into(),
                         message: "session prepare is unavailable on the local control listener"
                             .into(),
@@ -6324,7 +6408,7 @@ command = ["sh", "-c", "sleep 1"]
         )
         .await;
         assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
-        let launch_id = prepared["outcome"]["payload"]["launchId"]
+        let launch_id = prepared["outcome"]["payload"]["session"]["launchId"]
             .as_str()
             .unwrap()
             .to_owned();
@@ -6510,7 +6594,7 @@ command = ["game-two"]
                 .to_string(),
         )
         .await;
-        let launch_a = prepared_a["outcome"]["payload"]["launchId"]
+        let launch_a = prepared_a["outcome"]["payload"]["session"]["launchId"]
             .as_str()
             .unwrap()
             .to_owned();
@@ -6541,7 +6625,7 @@ command = ["game-two"]
                 .to_string(),
         )
         .await;
-        let launch_b = prepared_b["outcome"]["payload"]["launchId"]
+        let launch_b = prepared_b["outcome"]["payload"]["session"]["launchId"]
             .as_str()
             .unwrap()
             .to_owned();
@@ -6594,7 +6678,7 @@ command = ["game-one"]
             r#"{"_tag":"app.session.prepare","payload":{"gameId":"one"}}"#,
         )
         .await;
-        let launch_id = prepared["outcome"]["payload"]["launchId"]
+        let launch_id = prepared["outcome"]["payload"]["session"]["launchId"]
             .as_str()
             .unwrap()
             .to_owned();
@@ -6748,7 +6832,7 @@ command = ["game-two"]
             r#"{"_tag":"app.session.prepare","payload":{"gameId":"one"}}"#,
         )
         .await;
-        let first = prepared["outcome"]["payload"]["launchId"]
+        let first = prepared["outcome"]["payload"]["session"]["launchId"]
             .as_str()
             .unwrap()
             .to_owned();
@@ -6817,7 +6901,7 @@ command = ["game-two"]
             r#"{"_tag":"app.session.prepare","payload":{"gameId":"two"}}"#,
         )
         .await;
-        let second = replacement["outcome"]["payload"]["launchId"]
+        let second = replacement["outcome"]["payload"]["session"]["launchId"]
             .as_str()
             .unwrap();
         assert_ne!(second, first);

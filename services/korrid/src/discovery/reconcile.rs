@@ -456,6 +456,10 @@ impl DiscoveryCoordinator {
                 after.library.insert(
                     id.clone(),
                     LibraryItemPayload {
+                        cpu: None,
+                        gpu: None,
+                        profiles: Default::default(),
+                        profile: None,
                         modifiers: Default::default(),
                         title: Some(acquired.title.to_owned()),
                         version_of: None,

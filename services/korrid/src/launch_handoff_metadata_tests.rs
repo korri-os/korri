@@ -151,7 +151,10 @@ async fn metadata_delayed_prepare_success_preserves_newer_native_home() {
     assert_overlay(&app, id).await;
     gate.release();
     let prepared = preparing.await.unwrap();
-    assert_eq!(prepared["outcome"]["payload"]["launchId"], id, "{prepared}");
+    assert_eq!(
+        prepared["outcome"]["payload"]["session"]["launchId"], id,
+        "{prepared}"
+    );
     assert_overlay(&app, id).await;
 }
 

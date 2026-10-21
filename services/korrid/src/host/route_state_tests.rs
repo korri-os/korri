@@ -386,8 +386,8 @@ async fn ordinary_prepare_returns_to_the_exact_live_session_after_content_disapp
     let returned = rpc(&app, "app.session.prepare", json!({"gameId": GAME})).await;
     assert_eq!(returned["_tag"], "Ok", "{returned}");
     assert_eq!(
-        returned["payload"]["launchId"],
-        started["payload"]["launchId"]
+        returned["payload"]["session"]["launchId"],
+        started["payload"]["session"]["launchId"]
     );
 }
 
@@ -459,4 +459,43 @@ async fn unowned_device_can_browse_and_reserve_but_native_start_needs_an_owner()
     );
     assert_eq!(backend.launch_count(), 0);
     assert!(!root.path().join("users").exists());
+}
+
+#[tokio::test]
+async fn launch_settings_snapshot_explains_missing_route_layers_and_resolves_only_present_layers() {
+    for choose in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let app = library(root.path(), choose);
+        let path = root.path().join("catalog/library.yaml");
+        let mut value: serde_yaml::Value =
+            serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        value["library"][GAME]["cpu"] = serde_yaml::from_str("{max: 75}").unwrap();
+        value["library"][GAME]["profiles"] =
+            serde_yaml::from_str("{quiet: {title: Quiet, cpu: {max: 40}}}").unwrap();
+        value["library"][GAME]["profile"] = "quiet".into();
+        value["library"][GAME]["releases"][0]["gpu"] = serde_yaml::from_str("{max: 66}").unwrap();
+        fs::write(path, serde_yaml::to_string(&value).unwrap()).unwrap();
+        let snap = rpc(&app, "app.launch-settings.snapshot", json!({"gameId":GAME})).await;
+        assert_eq!(snap["_tag"], "Ok", "{snap}");
+        let payload = &snap["payload"];
+        assert_eq!(payload["resolved"]["cpu"]["max"]["value"], 40);
+        assert_eq!(payload["profiles"][0]["id"], "quiet");
+        assert_eq!(payload["selectedProfile"], "quiet");
+        if choose {
+            assert_eq!(payload["routeLayers"]["_tag"], "NeedsRunnerChoice");
+            assert_eq!(payload["layers"].as_array().unwrap().len(), 3);
+            assert_eq!(payload["resolved"]["gpu"]["max"]["value"], 100);
+        } else {
+            assert_eq!(payload["routeLayers"]["_tag"], "Present");
+            assert_eq!(payload["layers"].as_array().unwrap().len(), 6);
+            assert_eq!(payload["resolved"]["gpu"]["max"]["value"], 66);
+        }
+        fs::remove_file(root.path().join("roms/wl4.gba")).unwrap();
+        let snap = rpc(&app, "app.launch-settings.snapshot", json!({"gameId":GAME})).await;
+        assert_eq!(snap["_tag"], "Ok", "{snap}");
+        assert_eq!(snap["payload"]["routeLayers"]["_tag"], "Unavailable");
+        assert!(snap["payload"]["routeLayers"]["message"].is_string());
+        assert_eq!(snap["payload"]["layers"].as_array().unwrap().len(), 3);
+        assert_eq!(snap["payload"]["resolved"]["cpu"]["max"]["value"], 40);
+    }
 }

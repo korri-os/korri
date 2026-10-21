@@ -687,3 +687,79 @@ async fn fresh_units_require_an_owner_but_reservation_and_existing_resume_do_not
     assert_eq!(resumed["outcome"], started["outcome"], "{resumed}");
     assert_eq!(backend.launch_count(), 1);
 }
+
+#[tokio::test]
+async fn launch_settings_rpc_snapshot_set_profiles_and_revision_conflict_round_trip() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("catalog")).unwrap();
+    std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
+    std::fs::write(
+        root.path().join("catalog/library.yaml"),
+        "library: {one: {title: One, releases: [{id: gba, system: gba}]}}\n",
+    )
+    .unwrap();
+    let (runtime, _) = runtime(root.path());
+    let runtime = runtime.with_route_registry(
+        root.path().to_owned(),
+        plugin_test_fixtures::claims_only_registry(),
+    );
+    let full = router(runtime.clone(), root.path(), TOKEN, PortalPermission::Full);
+    let read_only = router(runtime, root.path(), TOKEN, PortalPermission::ReadOnly);
+    let initial = rpc(&full, "app.launch-settings.snapshot", json!({})).await;
+    assert_eq!(initial["outcome"]["_tag"], "Ok", "{initial}");
+    let revision = initial["outcome"]["payload"]["revisions"]["games"]
+        .as_str()
+        .unwrap();
+    let save = json!({"gameId":"one","title":"Quiet","expectedRevision":revision});
+    let (status, _) = call(
+        &read_only,
+        TOKEN,
+        "app.launch-settings.profile.save",
+        save.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let saved = rpc(&full, "app.launch-settings.profile.save", save.clone()).await;
+    assert_eq!(saved["outcome"]["_tag"], "Ok", "{saved}");
+    let stale = rpc(&full, "app.launch-settings.profile.save", save).await;
+    assert_eq!(
+        stale["outcome"]["payload"]["code"], "SettingsConflict",
+        "{stale}"
+    );
+    let revision = saved["outcome"]["payload"]["games"].as_str().unwrap();
+    let selected = rpc(
+        &full,
+        "app.launch-settings.profile.select",
+        json!({"gameId":"one","profileId":"quiet","expectedRevision":revision}),
+    )
+    .await;
+    assert_eq!(selected["outcome"]["_tag"], "Ok", "{selected}");
+    let revision = selected["outcome"]["payload"]["games"].as_str().unwrap();
+    let set = rpc(&full,"app.launch-settings.set",json!({"scope":{"_tag":"Profile","id":{"gameId":"one","profileId":"quiet"}},"setting":"cpu.max","value":45,"expectedRevision":revision})).await;
+    assert_eq!(set["outcome"]["_tag"], "Ok", "{set}");
+    let snap = crate::config::settings::runner_choice_snapshot(root.path())
+        .unwrap()
+        .0;
+    assert_eq!(snap.library["one"].profile.as_ref().unwrap().0, "quiet");
+    assert_eq!(
+        snap.library["one"].profiles["quiet"]
+            .cpu
+            .as_ref()
+            .unwrap()
+            .max,
+        Some(45)
+    );
+}
+
+#[tokio::test]
+async fn launch_settings_legacy_prepare_returns_launch_result_not_a_session_identity() {
+    let root = tempfile::tempdir().unwrap();
+    let (runtime, _) = runtime(root.path());
+    let app = router(runtime, root.path(), TOKEN, PortalPermission::Full);
+    let response = rpc(&app, "app.session.prepare", json!({"gameId":"one"})).await;
+    let launch = &response["outcome"]["payload"];
+    assert_eq!(launch["session"]["gameId"], "one", "{response}");
+    assert!(launch["session"]["launchId"].is_string());
+    assert_eq!(launch["warnings"], json!([]));
+    assert!(launch["session"].get("warnings").is_none());
+}

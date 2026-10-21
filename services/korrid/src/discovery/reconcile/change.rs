@@ -331,6 +331,10 @@ fn reconcile_artifact_and_package_releases(
                     next.library.insert(
                         id.clone(),
                         LibraryItemPayload {
+                            cpu: None,
+                            gpu: None,
+                            profiles: Default::default(),
+                            profile: None,
                             modifiers: Default::default(),
                             title: Some(declared.title.clone()),
                             version_of: None,
@@ -434,6 +438,10 @@ fn reconcile_providers(
                 next.library.insert(
                     id.clone(),
                     LibraryItemPayload {
+                        cpu: None,
+                        gpu: None,
+                        profiles: Default::default(),
+                        profile: None,
                         modifiers: Default::default(),
                         title: Some(observation.release.title.clone()),
                         version_of: None,
@@ -535,6 +543,10 @@ fn add_unit(
             next.library.insert(
                 id.clone(),
                 LibraryItemPayload {
+                    cpu: None,
+                    gpu: None,
+                    profiles: Default::default(),
+                    profile: None,
                     modifiers: Default::default(),
                     title: Some(title.into()),
                     version_of: None,

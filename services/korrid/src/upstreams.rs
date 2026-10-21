@@ -888,7 +888,7 @@ impl UpstreamRegistry {
         &self,
         game_id: &str,
         host_label: Option<&str>,
-    ) -> Result<SessionPrepared, UpstreamError> {
+    ) -> Result<crate::game_routes::SelectedGameLaunch, UpstreamError> {
         let registry = self.resolved()?;
         registry.prepare_stream_resolved(game_id, host_label).await
     }
@@ -897,7 +897,7 @@ impl UpstreamRegistry {
         &self,
         game_id: &str,
         host_label: Option<&str>,
-    ) -> Result<SessionPrepared, UpstreamError> {
+    ) -> Result<crate::game_routes::SelectedGameLaunch, UpstreamError> {
         let host = match host_label {
             Some(label) => {
                 let mut matches = self.hosts.iter().filter(|host| host.label == label);
@@ -944,7 +944,10 @@ impl UpstreamRegistry {
                     launch_id: prepared.launch_id.clone(),
                     viewer: None,
                 });
-                prepared
+                crate::game_routes::SelectedGameLaunch {
+                    session: prepared,
+                    warnings: Vec::new(),
+                }
             }
             RegisteredClient::Native(client) => {
                 let moonlight_address = host
@@ -962,7 +965,7 @@ impl UpstreamRegistry {
                     route: SelectedRemoteRoute::Native {
                         device_public_key: route_key,
                     },
-                    launch_id: prepared.launch_id.clone(),
+                    launch_id: prepared.session.launch_id.clone(),
                     viewer: Some(SelectedViewer {
                         moonlight_address: moonlight_address.clone(),
                         confirmed_live: false,
@@ -971,7 +974,7 @@ impl UpstreamRegistry {
                 self.set_selected(selected.clone());
                 if let Err(error) = self
                     .viewer
-                    .start(&prepared.launch_id, &moonlight_address)
+                    .start(&prepared.session.launch_id, &moonlight_address)
                     .await
                 {
                     return self
@@ -1960,9 +1963,10 @@ mod tests {
         Json(request): Json<crate::RpcRequest>,
     ) -> Json<crate::RpcResponse> {
         use crate::{
-            ActiveSession, RpcFailure, RpcResponse, SessionFreezeOutcome, SessionFreezeResult,
-            SessionFreezerState, SessionPrepareOutcome, SessionPrepared, SessionStatus,
-            SessionStatusOutcome, SessionStopOutcome, SessionStopPhase, SessionStopResult,
+            game_routes::SelectedGameLaunchOutcome, ActiveSession, RpcFailure, RpcResponse,
+            SessionFreezeOutcome, SessionFreezeResult, SessionFreezerState, SessionPrepared,
+            SessionStatus, SessionStatusOutcome, SessionStopOutcome, SessionStopPhase,
+            SessionStopResult,
         };
         let response = match request {
             crate::RpcRequest::SessionStatus(_) => {
@@ -1984,10 +1988,15 @@ mod tests {
             }
             crate::RpcRequest::SessionPrepare(_) => {
                 *state.active_phase.lock().unwrap() = Some("running".into());
-                RpcResponse::SessionPrepare(SessionPrepareOutcome::Ok(SessionPrepared {
-                    game_id: "game".into(),
-                    launch_id: state.launch_id.clone(),
-                }))
+                RpcResponse::SessionPrepare(SelectedGameLaunchOutcome::Ok(
+                    crate::game_routes::SelectedGameLaunch {
+                        session: SessionPrepared {
+                            game_id: "game".into(),
+                            launch_id: state.launch_id.clone(),
+                        },
+                        warnings: Vec::new(),
+                    },
+                ))
             }
             crate::RpcRequest::SessionFreeze(request) => {
                 if request.expected_launch_id.as_deref() != Some(state.launch_id.as_str()) {
@@ -2533,7 +2542,7 @@ command = ["native-game"]
         else {
             panic!("selected legacy session must stay visible")
         };
-        assert_eq!(active.launch_id, prepared.launch_id);
+        assert_eq!(active.launch_id, prepared.session.launch_id);
         assert_eq!(active.host.as_deref(), Some("aka"));
         assert!(matches!(
             registry.session_stop(Some("stale-launch"), true).await,
@@ -2541,7 +2550,7 @@ command = ["native-game"]
         ));
         assert!(matches!(
             registry
-                .session_stop(Some(&prepared.launch_id), true)
+                .session_stop(Some(&prepared.session.launch_id), true)
                 .await
                 .unwrap(),
             UpstreamSessionStop::Stopped { .. }
@@ -2693,7 +2702,7 @@ command = ["native-game"]
 
         let prepared = registry.prepare_stream("shared", None).await.unwrap();
 
-        assert_eq!(prepared.launch_id, "legacy-session");
+        assert_eq!(prepared.session.launch_id, "legacy-session");
         assert!(matches!(
             registry.session_status().await.unwrap(),
             UpstreamSessionStatus::HostUnavailable {}
@@ -2787,7 +2796,7 @@ command = ["native-game"]
 
         let prepared = registry.prepare_stream("game", None).await.unwrap();
 
-        assert_eq!(prepared.launch_id, state.launch_id);
+        assert_eq!(prepared.session.launch_id, state.launch_id);
         assert_eq!(
             viewer.calls(),
             vec![LinuxViewerCall {
@@ -2853,7 +2862,7 @@ command = ["native-game"]
         let prepared = registry.prepare_stream("game", None).await.unwrap();
 
         registry
-            .session_freeze(Some(&prepared.launch_id))
+            .session_freeze(Some(&prepared.session.launch_id))
             .await
             .unwrap();
         assert_eq!(
@@ -2861,7 +2870,7 @@ command = ["native-game"]
             Some("frozen")
         );
         registry
-            .session_thaw(Some(&prepared.launch_id))
+            .session_thaw(Some(&prepared.session.launch_id))
             .await
             .unwrap();
         assert_eq!(
@@ -2869,7 +2878,7 @@ command = ["native-game"]
             Some("running")
         );
         registry
-            .session_stop(Some(&prepared.launch_id), false)
+            .session_stop(Some(&prepared.session.launch_id), false)
             .await
             .unwrap();
         assert!(state.active_phase.lock().unwrap().is_none());
@@ -2880,15 +2889,24 @@ command = ["native-game"]
                 .map(|call| (call.action, call.launch_id))
                 .collect::<Vec<_>>(),
             vec![
-                (LinuxViewerAction::Start, prepared.launch_id.clone()),
-                (LinuxViewerAction::Status, prepared.launch_id.clone()),
-                (LinuxViewerAction::Background, prepared.launch_id.clone()),
-                (LinuxViewerAction::Status, prepared.launch_id.clone()),
+                (LinuxViewerAction::Start, prepared.session.launch_id.clone()),
+                (
+                    LinuxViewerAction::Status,
+                    prepared.session.launch_id.clone()
+                ),
+                (
+                    LinuxViewerAction::Background,
+                    prepared.session.launch_id.clone()
+                ),
+                (
+                    LinuxViewerAction::Status,
+                    prepared.session.launch_id.clone()
+                ),
                 (
                     LinuxViewerAction::ResumeAndFocus,
-                    prepared.launch_id.clone()
+                    prepared.session.launch_id.clone()
                 ),
-                (LinuxViewerAction::Stop, prepared.launch_id),
+                (LinuxViewerAction::Stop, prepared.session.launch_id),
             ]
         );
     }
@@ -2954,7 +2972,7 @@ command = ["native-game"]
         viewer.fail_next(LinuxViewerAction::Background, "background failed");
 
         assert!(matches!(
-            registry.session_freeze(Some(&prepared.launch_id)).await,
+            registry.session_freeze(Some(&prepared.session.launch_id)).await,
             Err(UpstreamError::Tagged { code, message })
                 if code == "ViewerControlFailed"
                     && message.contains("far change was compensated")
@@ -2963,7 +2981,10 @@ command = ["native-game"]
             state.active_phase.lock().unwrap().as_deref(),
             Some("running")
         );
-        assert_eq!(registry.selected().unwrap().launch_id, prepared.launch_id);
+        assert_eq!(
+            registry.selected().unwrap().launch_id,
+            prepared.session.launch_id
+        );
     }
 
     #[tokio::test]
@@ -2974,13 +2995,13 @@ command = ["native-game"]
             .with_linux_viewer(Arc::new(viewer.clone()));
         let prepared = registry.prepare_stream("game", None).await.unwrap();
         registry
-            .session_freeze(Some(&prepared.launch_id))
+            .session_freeze(Some(&prepared.session.launch_id))
             .await
             .unwrap();
         viewer.fail_next(LinuxViewerAction::ResumeAndFocus, "focus failed");
 
         assert!(matches!(
-            registry.session_thaw(Some(&prepared.launch_id)).await,
+            registry.session_thaw(Some(&prepared.session.launch_id)).await,
             Err(UpstreamError::Tagged { code, message })
                 if code == "ViewerControlFailed"
                     && message.contains("far change was compensated")
@@ -2989,7 +3010,10 @@ command = ["native-game"]
             state.active_phase.lock().unwrap().as_deref(),
             Some("frozen")
         );
-        assert_eq!(registry.selected().unwrap().launch_id, prepared.launch_id);
+        assert_eq!(
+            registry.selected().unwrap().launch_id,
+            prepared.session.launch_id
+        );
     }
 
     #[tokio::test]
@@ -3003,7 +3027,7 @@ command = ["native-game"]
         state.fail_next_thaw();
 
         assert!(matches!(
-            registry.session_freeze(Some(&prepared.launch_id)).await,
+            registry.session_freeze(Some(&prepared.session.launch_id)).await,
             Err(UpstreamError::Tagged { code, message })
                 if code == "ViewerControlCompensationUncertain"
                     && message.contains("far compensation failed")
@@ -3012,7 +3036,10 @@ command = ["native-game"]
             state.active_phase.lock().unwrap().as_deref(),
             Some("frozen")
         );
-        assert_eq!(registry.selected().unwrap().launch_id, prepared.launch_id);
+        assert_eq!(
+            registry.selected().unwrap().launch_id,
+            prepared.session.launch_id
+        );
     }
 
     #[tokio::test]
@@ -3023,14 +3050,14 @@ command = ["native-game"]
             .with_linux_viewer(Arc::new(viewer.clone()));
         let prepared = registry.prepare_stream("game", None).await.unwrap();
         registry
-            .session_freeze(Some(&prepared.launch_id))
+            .session_freeze(Some(&prepared.session.launch_id))
             .await
             .unwrap();
         viewer.fail_next(LinuxViewerAction::ResumeAndFocus, "focus failed");
         state.fail_next_freeze();
 
         assert!(matches!(
-            registry.session_thaw(Some(&prepared.launch_id)).await,
+            registry.session_thaw(Some(&prepared.session.launch_id)).await,
             Err(UpstreamError::Tagged { code, message })
                 if code == "ViewerControlCompensationUncertain"
                     && message.contains("far compensation failed")
@@ -3039,7 +3066,10 @@ command = ["native-game"]
             state.active_phase.lock().unwrap().as_deref(),
             Some("running")
         );
-        assert_eq!(registry.selected().unwrap().launch_id, prepared.launch_id);
+        assert_eq!(
+            registry.selected().unwrap().launch_id,
+            prepared.session.launch_id
+        );
     }
 
     #[tokio::test]
@@ -3054,7 +3084,7 @@ command = ["native-game"]
 
         assert!(matches!(
             registry
-                .session_stop(Some(&prepared.launch_id), false)
+                .session_stop(Some(&prepared.session.launch_id), false)
                 .await,
             Err(UpstreamError::Unreachable(_))
         ));
@@ -3066,7 +3096,10 @@ command = ["native-game"]
                 .count(),
             0
         );
-        assert_eq!(registry.selected().unwrap().launch_id, prepared.launch_id);
+        assert_eq!(
+            registry.selected().unwrap().launch_id,
+            prepared.session.launch_id
+        );
     }
 
     #[tokio::test]
@@ -3228,7 +3261,7 @@ command = ["native-game"]
         else {
             panic!("selected native session must be active")
         };
-        assert_eq!(active.launch_id, prepared.launch_id);
+        assert_eq!(active.launch_id, prepared.session.launch_id);
         assert_eq!(active.host.as_deref(), Some("zao"));
         assert_eq!(active.game_id.as_deref(), Some("neverball"));
         assert!(matches!(
@@ -3241,10 +3274,13 @@ command = ["native-game"]
                 .await,
             Err(UpstreamError::StaleLaunchIdentity)
         ));
-        assert_eq!(registry.selected().unwrap().launch_id, prepared.launch_id);
+        assert_eq!(
+            registry.selected().unwrap().launch_id,
+            prepared.session.launch_id
+        );
         assert!(matches!(
             registry
-                .session_stop(Some(&prepared.launch_id), false)
+                .session_stop(Some(&prepared.session.launch_id), false)
                 .await
                 .unwrap(),
             UpstreamSessionStop::Stopped { .. }
@@ -3273,10 +3309,10 @@ command = ["native-game"]
             Err(UpstreamError::StaleLaunchIdentity)
         ));
         let frozen = registry
-            .session_freeze(Some(&prepared.launch_id))
+            .session_freeze(Some(&prepared.session.launch_id))
             .await
             .unwrap();
-        assert_eq!(frozen.launch_id, prepared.launch_id);
+        assert_eq!(frozen.launch_id, prepared.session.launch_id);
         assert_eq!(frozen.state, crate::SessionFreezerState::Frozen);
         assert!(frozen.changed);
         let UpstreamSessionStatus::SessionStatus {
@@ -3286,17 +3322,23 @@ command = ["native-game"]
             panic!("frozen session stays active")
         };
         assert_eq!(active.phase.as_deref(), Some("frozen"));
-        assert_eq!(registry.selected().unwrap().launch_id, prepared.launch_id);
+        assert_eq!(
+            registry.selected().unwrap().launch_id,
+            prepared.session.launch_id
+        );
 
         // A fresh registry with no cached route recovers the frozen session.
         let recovered = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)]);
         assert!(matches!(
-            recovered.session_thaw(Some(&prepared.launch_id)).await,
+            recovered.session_thaw(Some(&prepared.session.launch_id)).await,
             Err(UpstreamError::Tagged { code, message })
                 if code == "HostFocusFailed"
                     && message == "compositor focus authority is not configured"
         ));
-        assert_eq!(recovered.selected().unwrap().launch_id, prepared.launch_id);
+        assert_eq!(
+            recovered.selected().unwrap().launch_id,
+            prepared.session.launch_id
+        );
         assert!(matches!(
             recovered.session_thaw(None).await,
             Err(UpstreamError::ExpectedLaunchIdRequired)
@@ -3304,7 +3346,7 @@ command = ["native-game"]
 
         assert!(matches!(
             registry
-                .session_stop(Some(&prepared.launch_id), false)
+                .session_stop(Some(&prepared.session.launch_id), false)
                 .await
                 .unwrap(),
             UpstreamSessionStop::Stopped { .. }
@@ -3312,7 +3354,9 @@ command = ["native-game"]
         // The other registry still holds the route; the host reports no
         // active launch, which clears it.
         assert!(matches!(
-            recovered.session_freeze(Some(&prepared.launch_id)).await,
+            recovered
+                .session_freeze(Some(&prepared.session.launch_id))
+                .await,
             Err(UpstreamError::NoActiveSession)
         ));
         assert_eq!(
@@ -3320,11 +3364,11 @@ command = ["native-game"]
                 .selected()
                 .as_ref()
                 .map(|selected| selected.launch_id.as_str()),
-            Some(prepared.launch_id.as_str())
+            Some(prepared.session.launch_id.as_str())
         );
         assert!(matches!(
             recovered
-                .session_stop(Some(&prepared.launch_id), false)
+                .session_stop(Some(&prepared.session.launch_id), false)
                 .await
                 .unwrap(),
             UpstreamSessionStop::NothingToStop {}
@@ -3346,23 +3390,27 @@ command = ["native-game"]
         let second = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)]);
         assert!(matches!(
             second
-                .session_stop(Some(&prepared.launch_id), false)
+                .session_stop(Some(&prepared.session.launch_id), false)
                 .await
                 .unwrap(),
             UpstreamSessionStop::Stopped { .. }
         ));
         let replacement = second.prepare_stream("neverball", None).await.unwrap();
-        assert_ne!(replacement.launch_id, prepared.launch_id);
+        assert_ne!(replacement.session.launch_id, prepared.session.launch_id);
 
         // The peer reports the replacement for the old launch. The first
         // brain refuses control and preserves the exact old evidence without
         // touching its viewer or retargeting the replacement.
         assert!(matches!(
-            first.session_freeze(Some(&prepared.launch_id)).await,
+            first
+                .session_freeze(Some(&prepared.session.launch_id))
+                .await,
             Err(UpstreamError::SelectedRemoteSessionReplaced)
         ));
         assert!(matches!(
-            first.session_stop(Some(&prepared.launch_id), false).await,
+            first
+                .session_stop(Some(&prepared.session.launch_id), false)
+                .await,
             Err(UpstreamError::SelectedRemoteSessionReplaced)
         ));
         assert_eq!(
@@ -3370,7 +3418,7 @@ command = ["native-game"]
                 .selected()
                 .as_ref()
                 .map(|selected| selected.launch_id.as_str()),
-            Some(prepared.launch_id.as_str())
+            Some(prepared.session.launch_id.as_str())
         );
         assert_eq!(
             viewer
@@ -3387,7 +3435,7 @@ command = ["native-game"]
         else {
             panic!("replacement launch must be active")
         };
-        assert_eq!(active.launch_id, replacement.launch_id);
+        assert_eq!(active.launch_id, replacement.session.launch_id);
         assert_eq!(active.phase.as_deref(), Some("running"));
     }
 
@@ -3530,7 +3578,7 @@ command = ["native-game"]
         else {
             panic!("recovery fan-out must find the active native session")
         };
-        assert_eq!(active.launch_id, prepared.launch_id);
+        assert_eq!(active.launch_id, prepared.session.launch_id);
         assert_eq!(
             recovered
                 .selected_remote_session
@@ -3538,11 +3586,11 @@ command = ["native-game"]
                 .unwrap()
                 .as_ref()
                 .map(|selected| selected.launch_id.as_str()),
-            Some(prepared.launch_id.as_str())
+            Some(prepared.session.launch_id.as_str())
         );
         assert!(matches!(
             recovered
-                .session_stop(Some(&prepared.launch_id), false)
+                .session_stop(Some(&prepared.session.launch_id), false)
                 .await
                 .unwrap(),
             UpstreamSessionStop::Stopped { .. }
@@ -3563,7 +3611,10 @@ command = ["native-game"]
             registry.prepare_stream("two", Some("sobo")).await,
             Err(UpstreamError::ActiveRemoteSessionConflict)
         ));
-        assert_eq!(registry.selected().unwrap().launch_id, first.launch_id);
+        assert_eq!(
+            registry.selected().unwrap().launch_id,
+            first.session.launch_id
+        );
     }
 
     #[tokio::test]
@@ -3637,7 +3688,7 @@ command = ["native-game"]
             Err(UpstreamError::StaleLaunchIdentity)
         ));
         assert!(
-            matches!(registry.session_stop(Some(&prepared.launch_id), false).await,
+            matches!(registry.session_stop(Some(&prepared.session.launch_id), false).await,
             Err(UpstreamError::Wire(message)) if message == "selected native peer disappeared")
         );
     }
@@ -3678,7 +3729,7 @@ command = ["native-game"]
         ]);
         let first = registry.prepare_stream("one", Some("zao")).await.unwrap();
         NativeClient::new(zao)
-            .session_stop(&first.launch_id, false)
+            .session_stop(&first.session.launch_id, false)
             .await
             .unwrap();
         let second = NativeClient::new(sobo).prepare_stream("two").await.unwrap();
@@ -3688,10 +3739,13 @@ command = ["native-game"]
             Err(UpstreamError::Tagged { code, .. })
                 if code == "NativeViewerRecoveryIncomplete"
         ));
-        assert_eq!(registry.selected().unwrap().launch_id, first.launch_id);
+        assert_eq!(
+            registry.selected().unwrap().launch_id,
+            first.session.launch_id
+        );
         assert!(matches!(
             registry
-                .session_stop(Some(&first.launch_id), false)
+                .session_stop(Some(&first.session.launch_id), false)
                 .await
                 .unwrap(),
             UpstreamSessionStop::NothingToStop {}
@@ -3703,9 +3757,12 @@ command = ["native-game"]
         else {
             panic!("full native recovery must find the replacement peer")
         };
-        assert_eq!(active.launch_id, second.launch_id);
+        assert_eq!(active.launch_id, second.session.launch_id);
         assert_eq!(active.host.as_deref(), Some("sobo"));
-        assert_eq!(registry.selected().unwrap().launch_id, second.launch_id);
+        assert_eq!(
+            registry.selected().unwrap().launch_id,
+            second.session.launch_id
+        );
     }
 
     #[tokio::test]

@@ -364,3 +364,21 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
     }
     assert!(!output.files[0].content.contains("absent_key"));
 }
+
+#[test]
+fn plugin_settings_scope_mark_defaults_shared_and_only_accepts_device() {
+    use korrid::launcher::typed_settings::{describe, SettingScope};
+    let source = SourceSnapshot::plugin("export const name = 'scope'; export const handlers = {'settings.describe': () => ({schema:{properties:{video:{type:'string'}, clock:{type:'number','x-korri-scope':'device'},bad:{'x-korri-scope':'shared'},number:{'x-korri-scope':1},nil:{'x-korri-scope':null}}}})};").unwrap();
+    let result = describe(&source, "@test:runner/main", "build").unwrap();
+    assert_eq!(result.scopes["video"], SettingScope::Shared);
+    assert_eq!(result.scopes["clock"], SettingScope::Device);
+    assert!(!result.scopes.contains_key("bad"));
+    assert_eq!(result.diagnostics.len(), 3);
+    assert!(result
+        .diagnostics
+        .iter()
+        .all(|d| d.runner_id == "@test:runner/main" && d.message.contains("x-korri-scope")));
+    // Diagnostics still reach launch warnings even without settings.validate.
+    let warnings = validate(&source, &Default::default(), "@test:runner/main", "build").unwrap();
+    assert_eq!(warnings.len(), 3);
+}

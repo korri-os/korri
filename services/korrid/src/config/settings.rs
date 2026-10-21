@@ -470,7 +470,10 @@ fn set_plugin_enabled(
     Ok(())
 }
 
-fn mapping_at<'a>(parent: &'a mut Mapping, key: &str) -> Result<&'a mut Mapping, SettingsError> {
+pub(crate) fn mapping_at<'a>(
+    parent: &'a mut Mapping,
+    key: &str,
+) -> Result<&'a mut Mapping, SettingsError> {
     let key = Value::String(key.into());
     if !parent.contains_key(&key) {
         parent.insert(key.clone(), Value::Mapping(Mapping::new()));
@@ -481,7 +484,7 @@ fn mapping_at<'a>(parent: &'a mut Mapping, key: &str) -> Result<&'a mut Mapping,
         .ok_or_else(|| SettingsError::Invalid(format!("{key:?} must be a record")))
 }
 
-fn parse_mapping(config: &str) -> Result<Mapping, SettingsError> {
+pub(crate) fn parse_mapping(config: &str) -> Result<Mapping, SettingsError> {
     let value: Value = serde_yaml::from_str(config)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     match value {
@@ -512,11 +515,11 @@ fn ensure_fixed_files(root: &Path) -> Result<(), SettingsError> {
     Ok(())
 }
 
-fn read_fixed(root: &Path, name: &str) -> Result<String, SettingsError> {
+pub(crate) fn read_fixed(root: &Path, name: &str) -> Result<String, SettingsError> {
     fs::read_to_string(root.join(name)).map_err(|error| SettingsError::Storage(error.to_string()))
 }
 
-fn revision(content: &str) -> String {
+pub(crate) fn revision(content: &str) -> String {
     hex::encode(Sha256::digest(content.as_bytes()))
 }
 
@@ -558,7 +561,7 @@ fn sync_directory(path: &Path) {
     }
 }
 
-fn write_atomically(
+pub(crate) fn write_atomically(
     path: &Path,
     content: &[u8],
     expected_revision: &str,
