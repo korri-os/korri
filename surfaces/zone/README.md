@@ -2195,8 +2195,10 @@ stairs, no opacity, no cut letters, the one clock).
   on the OPTIONS ground. The fixtures use the portal's words
   (`clients/portal/src/surface/store-acquisition.ts`). The GAMES part has
   `GetGames`, `GetGamesEmpty` and `GetGamesFiltered`.
-- **Known gaps.** At 640x480 the band under Working's strip is short and
-  cuts the well (the words and CANCEL stand whole). Caliper's axe check
+- **Known gaps.** On a short body (640x480, and rpminiv2's 1240x1080 at
+  four CSS px an art px) the band over Working's strip is short and its
+  lip cuts the well, as it cuts any row it cannot hold; the band scrolls,
+  and Korri's words, the meter and CANCEL stand whole. Caliper's axe check
   reports `target-size` on the search keys in `KeyboardNarrow` on the
   rg353m device, where the narrow-tall frame is 230 CSS px wide at one CSS
   px an art px: the keys are FIND's at their least planned size (16 art
