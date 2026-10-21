@@ -2161,7 +2161,9 @@ stairs, no opacity, no cut letters, the one clock).
 - **Korri's question and trouble are the sky dialog over the band.**
   Confirm, a download's Problem, an entry that could not be read, and a
   provider list or search that failed each open ZoneDialog in a layer over
-  the page's body, which lays its veil over the band. Korri's kicker or an
+  the whole page under the banner, which lays its veil over the head and
+  the band. Over the body alone, three lines of Korri's reason put RETRY
+  under the foot at 640x480. Korri's kicker or an
   entry's title is its headline (`korriHeadline`); PROVIDERS and SEARCH
   are Zone's headlines for Korri's message. Its buttons are Korri's
   actions in Korri's order, the first enabled one lit.
