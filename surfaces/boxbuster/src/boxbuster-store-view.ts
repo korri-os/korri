@@ -7,6 +7,7 @@
  * same store — the charter's first test of place.
  */
 import type {
+  SurfaceAction,
   SurfaceGame,
   SurfaceModel,
   SurfaceStatus,
@@ -278,14 +279,54 @@ export function tvStatusFrom(model: SurfaceModel): TvStatus {
         ...(status.gameTitle === undefined ? {} : { title: status.gameTitle }),
       }
     // A question before Korri acts: the TV states it and the decks answer it,
-    // the same way they run the actions of work under way.
+    // the same way they run the actions of work under way. A save split is
+    // that question with one answer per side.
     case "Confirm":
+    case "ChooseSave": {
+      const actions = statusActionsFrom(status) ?? []
       return {
         _tag: "Working",
         kicker: status.kicker,
         ...(status.detail === undefined ? {} : { detail: status.detail }),
         ...(status.gameId === undefined ? {} : { tapeId: status.gameId }),
-        lines: status.actions.map(action => action.label),
+        lines: actions.map(action => action.label),
       }
+    }
+  }
+}
+
+/** "Oct 21, 9:18 PM": when a side's session ended, by that device's clock.
+ * Display only; Boxbuster never compares it. */
+export function saveTimeLabel(at: number): string {
+  const date = new Date(at)
+  if (Number.isNaN(date.getTime())) return "unknown time"
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+}
+
+/**
+ * What the decks run while Korri works or asks: Busy's and Confirm's own
+ * actions, and for a save split one answer per side (its device and end time,
+ * running the side's own action id) before Korri's other actions (Not now).
+ * Undefined while Korri neither works nor asks.
+ */
+export function statusActionsFrom(status: SurfaceStatus): readonly SurfaceAction[] | undefined {
+  switch (status._tag) {
+    case "Busy":
+      return status.actions ?? []
+    case "Confirm":
+      return status.actions
+    case "ChooseSave":
+      return [
+        ...status.sides.map(side => ({
+          id: side.actionId,
+          label: `${side.device}, ${saveTimeLabel(side.endedAt)}`,
+          enabled: true,
+        })),
+        ...status.actions,
+      ]
+    case "Browsing":
+    case "Running":
+    case "Problem":
+      return undefined
   }
 }

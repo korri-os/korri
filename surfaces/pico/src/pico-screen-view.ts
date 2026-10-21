@@ -1,4 +1,4 @@
-import type { SurfaceAction, SurfaceModel } from "@contracts/surface/korri-surface"
+import type { SurfaceAction, SurfaceModel, SurfaceStatus } from "@contracts/surface/korri-surface"
 import { type PicoHomeView, picoHomeViewFromCatalog } from "./pico-home-view"
 
 /**
@@ -31,7 +31,8 @@ export type PicoScreenView =
       readonly actions?: readonly SurfaceAction[]
       readonly cart?: PicoLaunchCart
     }
-  /** Korri asks before it acts. The actions are Korri's; Pico renders them. */
+  /** Korri asks before it acts. The actions are Korri's; Pico renders them.
+   * A save split (ChooseSave) asks the same way: one answer per side first. */
   | {
       readonly _tag: "Confirm"
       readonly kicker: string
@@ -83,6 +84,16 @@ export function picoScreenViewFromModel(model: SurfaceModel): PicoScreenView {
         ...(cart === undefined ? {} : { cart }),
       }
     }
+    case "ChooseSave": {
+      const cart = cartFor(model, status.gameId)
+      return {
+        _tag: "Confirm",
+        kicker: status.kicker,
+        ...(status.detail === undefined ? {} : { detail: status.detail }),
+        actions: picoChooseSaveActions(status),
+        ...(cart === undefined ? {} : { cart }),
+      }
+    }
     case "Running": {
       const cart = cartFor(model, status.gameId)
       return {
@@ -104,6 +115,34 @@ export function picoScreenViewFromModel(model: SurfaceModel): PicoScreenView {
     case "Browsing":
       return picoHomeViewFromCatalog(model.catalog)
   }
+}
+
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+const two = (n: number) => String(n).padStart(2, "0")
+
+/** "OCT 21 09:18": when a side's session ended, by that device's clock.
+ * Display only; Pico never compares it. */
+export function picoSaveTime(at: number): string {
+  const date = new Date(at)
+  if (Number.isNaN(date.getTime())) return "--"
+  return `${MONTHS[date.getMonth()] ?? ""} ${date.getDate()} ${two(date.getHours())}:${two(date.getMinutes())}`
+}
+
+/**
+ * A save split as Confirm answers: one per side (its device and end time,
+ * running the side's own action id), then Korri's other actions (Not now).
+ */
+export function picoChooseSaveActions(
+  status: Extract<SurfaceStatus, { _tag: "ChooseSave" }>,
+): readonly SurfaceAction[] {
+  return [
+    ...status.sides.map(side => ({
+      id: side.actionId,
+      label: `${side.device}, ${picoSaveTime(side.endedAt)}`,
+      enabled: true,
+    })),
+    ...status.actions,
+  ]
 }
 
 /** The catalog's own entry for Korri's id, or nothing: never a guess. */

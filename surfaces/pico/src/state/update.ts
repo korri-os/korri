@@ -153,10 +153,14 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
     case "PressedStatusAction":
       // Only what Korri publishes now, enabled, is authority. A press that
       // lands after the work ended or the action went inert sends nothing.
-      return (korri.status._tag === "Busy" || korri.status._tag === "Confirm") &&
-        (korri.status.actions ?? []).some(action => action.id === message.actionId && action.enabled)
-        ? ask(nav, { _tag: "RunAction", actionId: message.actionId })
-        : stay(nav)
+      // A save split's sides are Confirm answers in the screen view.
+      {
+        const view = picoScreenViewFromModel(korri)
+        return (view._tag === "Busy" || view._tag === "Confirm") &&
+          (view.actions ?? []).some(action => action.id === message.actionId && action.enabled)
+          ? ask(nav, { _tag: "RunAction", actionId: message.actionId })
+          : stay(nav)
+      }
 
     // Find
     case "TypedCharacter":

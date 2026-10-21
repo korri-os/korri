@@ -96,6 +96,8 @@ const names = (status: SurfaceStatus, gameId: string): boolean => {
     case "Confirm":
     case "Running":
       return status.gameId === undefined || status.gameId === gameId
+    case "ChooseSave":
+      return status.gameId === gameId
     case "Browsing":
     case "Problem":
       return false

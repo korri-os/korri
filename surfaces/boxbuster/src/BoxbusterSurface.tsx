@@ -22,6 +22,7 @@ import { type BoxbusterStoreDrawing, webglStore } from "./BoxbusterStore"
 import { BoxbusterTargets } from "./BoxbusterTargets"
 import { DOOR_SPOT, ORDER_DESK_SPOT, spotsFrom } from "./boxbuster-spots"
 import {
+  statusActionsFrom,
   storeSignature,
   storeViewFrom,
   tapeFactsFrom,
@@ -77,8 +78,8 @@ export function BoxbusterSurface({
   // While Korri works, the decks run its actions. Several actions are a
   // choice between launches, so Korri calls you to the TV to make it. A
   // question Korri asks before it acts (Confirm) is answered the same way.
-  const work = model.status._tag === "Busy" ? (model.status.actions ?? [])
-    : model.status._tag === "Confirm" ? model.status.actions : undefined
+  // A save split (ChooseSave) is that question with one answer per side.
+  const work = statusActionsFrom(model.status)
   const choosing = (work?.length ?? 0) > 1
 
   const [held, setVisit] = useState<Visit>(() => closedVisit({ door: DOOR_SPOT }))
@@ -183,7 +184,7 @@ export function BoxbusterSurface({
 
   // Without a store, Korri's work and its actions still need a place: the door.
   const doorWork =
-    (model.status._tag === "Busy" || model.status._tag === "Confirm") && (work?.length ?? 0) > 0 ? (
+    (model.status._tag === "Busy" || model.status._tag === "Confirm" || model.status._tag === "ChooseSave") && (work?.length ?? 0) > 0 ? (
       <BoxbusterWorkNotice
         kicker={model.status.kicker}
         {...(model.status.detail === undefined ? {} : { detail: model.status.detail })}

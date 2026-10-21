@@ -20,6 +20,7 @@ import { ZoneLaunchCard } from "./ui/organisms/ZoneLaunchCard"
 import { ZoneStatusLayer } from "./ui/organisms/ZoneStatusLayer"
 import { useZoneSurface, zoneDeviceName, zoneGamesPage, type ZoneSurfaceProgram } from "./use-zone-games"
 import { ZoneLookContext } from "./use-zone-look"
+import { zoneModelOf } from "./zone-save-split"
 
 /** The tabs as every page names them. */
 const TABS: readonly ZoneTabItem[] = [
@@ -101,7 +102,9 @@ type Senders = ReturnType<typeof senders>
  * focus to the tabs themselves, the cursor goes to the tab navigation names
  * when it is on the tabs (a tab chosen, `menu`).
  */
-export function ZoneSurface({ model, host }: { readonly model: SurfaceModel; readonly host: SurfaceHost }) {
+export function ZoneSurface({ model: published, host }: { readonly model: SurfaceModel; readonly host: SurfaceHost }) {
+  // A save split is read as Korri's Confirm from here down (zone-save-split.ts).
+  const model = useMemo(() => zoneModelOf(published), [published])
   const root = useRef<HTMLDivElement | null>(null)
   const program = useZoneSurface(model, host, root)
   const { state, dispatch } = program

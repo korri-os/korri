@@ -62,6 +62,7 @@ export function shownFor(status: SurfaceStatus): ZoneStatusShown {
     case "Problem":
       return "problem"
     case "Confirm":
+    case "ChooseSave":
       return "confirm"
   }
 }
@@ -80,6 +81,9 @@ export function statusButtonCount(status: SurfaceStatus): number {
       return problemButtons(status).length
     case "Confirm":
       return status.actions.length
+    case "ChooseSave":
+      // One answer per side, then Korri's own (src/zone-save-split.ts).
+      return status.sides.length + status.actions.length
     case "Browsing":
     case "Running":
       return 0
