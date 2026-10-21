@@ -56,8 +56,17 @@ fn modifiers_refuse_runner_subrecords_and_unsafe_config_parts() {
 
 #[test]
 fn legacy_launch_is_an_unknown_field_in_host_profiles_and_releases() {
-    for device in ["host: {launch: {}}", "profiles: {local: {launch: {}}}"] {
-        let error = decode_config_documents(device, "{}")
+    for (device, library) in [
+        ("host: {launch: {}}".to_owned(), "{}".to_owned()),
+        (
+            "{}".to_owned(),
+            format!(
+                "{}    profiles: {{local: {{title: Local, launch: {{}}}}}}\n",
+                readable::gba_library()
+            ),
+        ),
+    ] {
+        let error = decode_config_documents(&device, &library)
             .unwrap_err()
             .to_string();
         assert!(error.contains("unknown field `launch`"), "{error}");
@@ -69,6 +78,14 @@ fn legacy_launch_is_an_unknown_field_in_host_profiles_and_releases() {
     .unwrap_err()
     .to_string();
     assert!(error.contains("unknown field `launch`"), "{error}");
+}
+
+#[test]
+fn device_top_level_profiles_is_an_unknown_field() {
+    let error = decode_config_documents("profiles: {local: {title: Local}}", "{}")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown field `profiles`"), "{error}");
 }
 
 fn route() -> korrid::config::resolver::ResolvedRoute {
