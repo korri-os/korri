@@ -440,6 +440,134 @@ export interface SurfaceOnboarding {
   readonly starterPack?: SurfaceStarterPack
 }
 
+/**
+ * Getting a game from a provider: a place, such as a homebrew archive, that a
+ * provider plugin can search and fetch from. Grounded in legacy Shift's store
+ * (search, results, detail, Get/Getting/Play, the ungetable guard, the staged
+ * notice) and the legacy acquisition protocol (`ProviderClaim`,
+ * `ProviderClaimDetails`, `AcquireJobStatus`).
+ *
+ * The host owns every request, the download and its job; the surface owns
+ * which of these it shows and when. Each value below is what Korri last
+ * learned for the one provider list, the one search and the one open entry it
+ * holds. Every action is published by the host and run through `runAction`
+ * unchanged; an action the host no longer publishes does nothing.
+ */
+export interface SurfaceStoreProvider {
+  /** Opaque. Hand it back unchanged to `searchStore`. */
+  readonly id: string
+  readonly title: string
+}
+
+/** One game a provider offers, in the provider's words. */
+export interface SurfaceStoreEntry {
+  /** Opaque. Hand it back unchanged to `openStoreEntry`. */
+  readonly id: string
+  readonly title: string
+  /** What the game runs on, as the provider says it, such as "Game Boy".
+   * Absent when the provider does not say. */
+  readonly system?: string
+  /** Art the provider offers. Absent when it has none. */
+  readonly thumbnailUrl?: string
+}
+
+export type SurfaceStoreProviders =
+  | { readonly _tag: "Loading" }
+  /** Korri could not list its providers. `actions` holds its Retry. */
+  | { readonly _tag: "Problem"; readonly message: string; readonly actions: readonly SurfaceAction[] }
+  /** Empty when no provider plugin is enabled on this device. */
+  | { readonly _tag: "Ready"; readonly providers: readonly SurfaceStoreProvider[] }
+
+export type SurfaceStoreSearch =
+  /** Nothing has been asked yet. */
+  | { readonly _tag: "Idle" }
+  | { readonly _tag: "Searching"; readonly providerId: string; readonly query: string }
+  /** The provider did not answer, or answered with something Korri could not
+   * read. `message` is user-facing; `actions` holds its Retry. */
+  | {
+      readonly _tag: "Problem"
+      readonly providerId: string
+      readonly query: string
+      readonly message: string
+      readonly actions: readonly SurfaceAction[]
+    }
+  /** `entries` is empty when the provider found nothing. */
+  | {
+      readonly _tag: "Ready"
+      readonly providerId: string
+      readonly query: string
+      readonly entries: readonly SurfaceStoreEntry[]
+    }
+
+/**
+ * Where getting the open entry stands. Every string is finished, user-facing
+ * copy; a surface renders the actions it is given and infers nothing from a
+ * label.
+ */
+export type SurfaceStoreGet =
+  /** Get is on offer (`actions`). `note` says what happened last, such as a
+   * cancelled download. */
+  | { readonly _tag: "Offer"; readonly note?: string; readonly actions: readonly SurfaceAction[] }
+  /** This entry cannot be fetched to this device, and why: the provider no
+   * longer offers it, it does not say what it runs on, or no folder on this
+   * device holds that kind of game. Nothing was downloaded. */
+  | { readonly _tag: "Unavailable"; readonly reason: string }
+  /** Korri needs the person's say-so first: the download and its size, or
+   * which of several folders to put it in (one action each). */
+  | {
+      readonly _tag: "Confirm"
+      readonly kicker: string
+      readonly detail?: string
+      readonly actions: readonly SurfaceAction[]
+    }
+  /** Under way. `progress` is measured bytes, as in `SurfaceStatus.Busy`:
+   * absent while there is no position to show, `total` absent when the size
+   * is unknown. `actions` holds Cancel while cancelling is real. */
+  | {
+      readonly _tag: "Working"
+      readonly kicker: string
+      readonly detail?: string
+      readonly progress?: { readonly done: number; readonly total?: number }
+      readonly actions: readonly SurfaceAction[]
+    }
+  /** The game is in the library. `gameId` is its `SurfaceGame.id` for
+   * `launchGame`, present once the catalog holds it. */
+  | { readonly _tag: "InLibrary"; readonly detail?: string; readonly gameId?: string }
+  /** Downloaded to this device, but the library did not recognise it as a
+   * game. Nothing more can be done from here. */
+  | { readonly _tag: "Staged"; readonly message: string }
+  /** The download did not finish. `actions` holds Retry when one helps. */
+  | {
+      readonly _tag: "Problem"
+      readonly kicker: string
+      readonly reason: string
+      readonly actions: readonly SurfaceAction[]
+    }
+
+export type SurfaceStoreDetails =
+  | { readonly _tag: "Closed" }
+  | { readonly _tag: "Loading"; readonly entry: SurfaceStoreEntry }
+  | {
+      readonly _tag: "Problem"
+      readonly entry: SurfaceStoreEntry
+      readonly message: string
+      readonly actions: readonly SurfaceAction[]
+    }
+  | {
+      readonly _tag: "Ready"
+      readonly entry: SurfaceStoreEntry
+      readonly description?: string
+      readonly get: SurfaceStoreGet
+    }
+
+export interface SurfaceStore {
+  readonly providers: SurfaceStoreProviders
+  readonly search: SurfaceStoreSearch
+  /** The entry last opened with `openStoreEntry`. A download keeps going
+   * while another entry is open, and shows again when its entry is. */
+  readonly details: SurfaceStoreDetails
+}
+
 /** Everything Korri publishes to the surface. Replaced wholesale on change. */
 export interface SurfaceModel {
   readonly presentation: SurfacePresentation
@@ -462,6 +590,8 @@ export interface SurfaceModel {
   readonly network?: SurfaceNetwork
   /** Absent once first-boot setup is finished, and in hosts without it. */
   readonly onboarding?: SurfaceOnboarding
+  /** Absent in hosts that cannot get games from providers. */
+  readonly store?: SurfaceStore
 }
 
 /** Everything the surface may ask Korri to do. */
@@ -523,6 +653,14 @@ export interface SurfaceHost {
   connectHiddenWifi(ssid: string, password?: string): void
   /** Record that first-boot setup is finished on this device. */
   finishOnboarding(): void
+  /** Read the providers again. The list arrives in `model.store.providers`. */
+  openStore(): void
+  /** Search one provider. Results arrive in `model.store.search`; a newer
+   * search replaces an older one. */
+  searchStore(providerId: string, query: string): void
+  /** Read one entry of the current results. It arrives in
+   * `model.store.details`, with where getting it stands. */
+  openStoreEntry(entryId: string): void
 }
 
 /**
