@@ -119,7 +119,7 @@ export function SearchProblem() {
   )
 }
 
-/** Korri's results: the system each runs on, a long title, one with no system. */
+/** Korri's results: the system each runs on, a long title, one with no system (its value empty). */
 export function Results() {
   return <Live opening="results" store={fixtureStore()} />
 }

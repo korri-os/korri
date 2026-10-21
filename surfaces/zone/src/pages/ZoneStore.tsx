@@ -331,8 +331,9 @@ function resultsBody(
                 rows={search.entries.map((entry): ZoneOptionGroupRow => ({
                   id: zoneStoreEntryRow(entry.id),
                   label: entry.title,
-                  // The system as the provider says it; UNKNOWN when it does not say.
-                  value: entry.system ?? "Unknown",
+                  // The system as the provider says it. When it does not say, the
+                  // value is absent and Zone writes nothing in its place.
+                  ...(entry.system === undefined ? {} : { value: entry.system }),
                   interaction: { kind: "action", actionId: entry.id },
                 }))}
                 title="Results"
