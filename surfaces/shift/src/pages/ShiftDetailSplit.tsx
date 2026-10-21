@@ -59,6 +59,7 @@ export function ShiftDetailSplit({
           playtimeLabel={game.playtimeLabel}
           favorite={game.favorite}
           download={game.download}
+          saves={game.saves}
         />
         <ShiftDetailActions
           game={game}

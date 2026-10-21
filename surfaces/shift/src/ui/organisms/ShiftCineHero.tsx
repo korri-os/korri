@@ -95,6 +95,7 @@ export function ShiftCineHero({
                 favorite={game.favorite}
                 fresh={game.fresh}
                 download={game.download}
+                saves={game.saves}
               />
             </>
           )}

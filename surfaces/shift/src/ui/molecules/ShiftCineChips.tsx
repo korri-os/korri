@@ -1,3 +1,4 @@
+import { SAVE_MARK_LABELS, type ShiftSaveState, SPLIT_NOTICE } from "../../save-sync-labels"
 import { ShiftCineChip } from "../atoms/ShiftCineChip"
 
 /** The single glanceable metadata row under the hero title — composed of
@@ -16,6 +17,9 @@ export interface ShiftCineChipsProps {
   /** What the game still has to fetch ("Downloading 41%"). Leads the row: it
    * is why Options offers Download, Cancel download or Remove download. */
   readonly download?: string
+  /** The game's save mark. A split leads the row: the next launch asks first.
+   * The other marks follow the provenance line. */
+  readonly saves?: ShiftSaveState
 }
 
 export function ShiftCineChips({
@@ -27,12 +31,19 @@ export function ShiftCineChips({
   favorite,
   fresh,
   download,
+  saves,
 }: ShiftCineChipsProps) {
   return (
     <div className="shift-cine-chips">
       {download ? <ShiftCineChip tone="download">{download}</ShiftCineChip> : null}
+      {saves === "Split" ? (
+        <ShiftCineChip tone="attention">{SPLIT_NOTICE}</ShiftCineChip>
+      ) : null}
       {fresh ? <ShiftCineChip tone="reason">Fresh pick</ShiftCineChip> : null}
       {subtitle ? <ShiftCineChip>{subtitle}</ShiftCineChip> : null}
+      {saves !== undefined && saves !== "Split" ? (
+        <ShiftCineChip tone="saves">{SAVE_MARK_LABELS[saves]}</ShiftCineChip>
+      ) : null}
       {genre ? <ShiftCineChip>{genre}</ShiftCineChip> : null}
       {developer ? <ShiftCineChip>{developer}</ShiftCineChip> : null}
       {lastPlayedLabel ? (

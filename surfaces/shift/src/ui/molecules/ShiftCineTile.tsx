@@ -21,6 +21,9 @@ export interface ShiftCineTileProps {
   readonly renderImage?: boolean
   /** Flags a discovery/recommended pick — draws a small "Fresh" corner marker. */
   readonly fresh?: boolean
+  /** Saves split between devices: a corner marker, because the next launch
+   * asks for a choice first. */
+  readonly split?: boolean
   readonly onFocus: () => void
   readonly onActivate: () => void
 }
@@ -34,6 +37,7 @@ export function ShiftCineTile({
   focused,
   renderImage = true,
   fresh,
+  split,
   onFocus,
   onActivate,
 }: ShiftCineTileProps) {
@@ -46,7 +50,7 @@ export function ShiftCineTile({
       {...shiftDesignPartAttrs(SHIFT_DESIGN_PARTS.tile, title)}
       className="shift-cine-tile"
       style={tileAspectStyle(aspectRatio)}
-      aria-label={title}
+      aria-label={split ? `${title}, saves split` : title}
       onFocus={onFocus}
       onClick={onActivate}
     >
@@ -54,6 +58,7 @@ export function ShiftCineTile({
         <ShiftCoverArt src={artUrl} loading="eager" title={title} />
       ) : null}
       {fresh ? <span className="shift-cine-tile-fresh">Fresh</span> : null}
+      {split ? <span className="shift-cine-tile-split">Split</span> : null}
     </button>
   )
 }

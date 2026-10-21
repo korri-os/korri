@@ -447,6 +447,37 @@ export const SHIFT_DESIGN_PARTS = {
     layer: "organism",
     name: "Home Defect",
   },
+  // Save sync (ADR 0014).
+  saveChoice: {
+    id: "shift.save-choice",
+    layer: "page",
+    name: "Split Choice",
+  },
+  saveSideCard: {
+    id: "shift.save-side-card",
+    layer: "molecule",
+    name: "Split Side Card",
+  },
+  saveReview: {
+    id: "shift.save-review",
+    layer: "page",
+    name: "Split Review",
+  },
+  saveHistory: {
+    id: "shift.save-history",
+    layer: "page",
+    name: "Save History",
+  },
+  saveRow: {
+    id: "shift.save-row",
+    layer: "molecule",
+    name: "Save Row",
+  },
+  saveNotice: {
+    id: "shift.save-notice",
+    layer: "molecule",
+    name: "Split Notice",
+  },
 } as const satisfies Record<string, ShiftDesignPart>
 
 export function shiftDesignPartAttrs(

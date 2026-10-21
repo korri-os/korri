@@ -12,4 +12,6 @@ export interface ShiftLibraryGame {
   readonly favorite?: boolean
   readonly lastPlayedAt?: number
   readonly playtimeMinutes?: number
+  /** Saves split between devices: the tile carries a marker. */
+  readonly split?: boolean
 }

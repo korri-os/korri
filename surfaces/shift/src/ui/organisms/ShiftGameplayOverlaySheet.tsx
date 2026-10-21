@@ -6,6 +6,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { useState } from "react"
 import { useSurfaceAction, useSurfaceHost } from "../../host/surface-host"
+import { SPLIT_NOTICE } from "../../save-sync-labels"
 import { ShiftSheetAction } from "../molecules/ShiftSheetAction"
 import { ShiftSheetChoice } from "../molecules/ShiftSheetChoice"
 import { ShiftSheetRange } from "../molecules/ShiftSheetRange"
@@ -20,6 +21,9 @@ import { ShiftSheetTitle } from "./ShiftSheetTitle"
 export interface ShiftGameplayOverlaySheetProps {
   readonly presentation: SurfaceGameplayOverlayPresentation
   readonly status: SurfaceStatus
+  /** Title of the running game when its saves are split (ADR 0014: a split
+   * found during a session shows when the person opens this overlay). */
+  readonly splitGameTitle?: string
 }
 
 function GameplayControl({
@@ -77,6 +81,7 @@ function GameplayControl({
 export function ShiftGameplayOverlaySheet({
   presentation,
   status,
+  splitGameTitle,
 }: ShiftGameplayOverlaySheetProps) {
   const host = useSurfaceHost()
   const [confirming, setConfirming] = useState<SurfaceGameplayControl | undefined>()
@@ -103,6 +108,18 @@ export function ShiftGameplayOverlaySheet({
               <ShiftSheetTitle>{title}</ShiftSheetTitle>
             </ShiftSheetHeader>
             <ShiftSheetBody>
+              {splitGameTitle ? (
+                <ShiftSheetGroup title="Saves">
+                  <p className="shift-gameplay-overlay-split" role="status">
+                    {/* The sheet title already names the game when they match. */}
+                    {splitGameTitle === title ? null : <strong>{splitGameTitle}</strong>}
+                    <span>{SPLIT_NOTICE}</span>
+                    <span className="shift-sheet-control-description">
+                      Korri asks which save to keep before the next launch.
+                    </span>
+                  </p>
+                </ShiftSheetGroup>
+              ) : null}
               <ShiftSheetGroup title="Gameplay">
                 {presentation.controls.map(control => (
                   <GameplayControl

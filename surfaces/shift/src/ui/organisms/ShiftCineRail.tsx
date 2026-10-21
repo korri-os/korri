@@ -16,6 +16,8 @@ export interface ShiftCineRailGame {
   readonly tileArtAspectRatio?: string
   /** Discovery/recommended pick — surfaces a "Fresh" marker on the tile. */
   readonly fresh?: boolean
+  /** Save mark; a split draws a corner marker, since it blocks the launch. */
+  readonly saves?: string
   /** Section this game belongs to; consecutive games sharing a section are
    * grouped under one caption below the group. */
   readonly section?: string
@@ -99,6 +101,7 @@ export function ShiftCineRail({
       artUrl={game.tileArtUrl}
       aspectRatio={game.tileArtAspectRatio}
       fresh={game.fresh}
+      split={game.saves === "Split"}
       focused={i === index}
       renderImage={
         !imageWindow || (i >= imageWindow.start && i <= imageWindow.end)

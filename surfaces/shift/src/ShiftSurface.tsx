@@ -24,6 +24,9 @@ import { ShiftHomeEmptyBody } from "./pages/ShiftHomeEmptyBody"
 import { ShiftHomeLoadErrorBody } from "./pages/ShiftHomeLoadErrorBody"
 import { ShiftHomeLoadingBody } from "./pages/ShiftHomeLoadingBody"
 import { ShiftDetailSplit } from "./pages/ShiftDetailSplit"
+import { ShiftSaveChoice } from "./pages/ShiftSaveChoice"
+import { ShiftSaveHistory } from "./pages/ShiftSaveHistory"
+import { ShiftSaveReview, shiftSplitGames } from "./pages/ShiftSaveReview"
 import { ShiftLibraryLens } from "./pages/ShiftLibraryLens"
 import { playtimeLabel, relativeLastPlayed } from "./play-labels"
 import { shiftDownloadLabel } from "./shift-download-label"
@@ -73,6 +76,7 @@ export function shiftGameFromSurfaceGame(
     ...(game.lastPlayedAt === undefined
       ? {}
       : { lastPlayedAt: game.lastPlayedAt }),
+    ...(game.saves === undefined ? {} : { saves: game.saves._tag }),
     ...labels,
   }
 }
@@ -92,6 +96,7 @@ export function shiftLibraryGameFromSurfaceGame(
       ? {}
       : { lastPlayedAt: game.lastPlayedAt }),
     ...(minutes === undefined ? {} : { playtimeMinutes: minutes }),
+    ...(game.saves?._tag === "Split" ? { split: true } : {}),
   }
 }
 
@@ -107,6 +112,7 @@ export function shiftDetailGameFromSurfaceGame(
     artUrl: game.coverArtUrl ?? "",
     ...labels,
     ...(download === undefined ? {} : { download }),
+    ...(game.saves === undefined ? {} : { saves: game.saves._tag }),
     // A running session outranks history: it is the thing you continue.
     ...(game.resumable ? { lastPlayedLabel: "Ready to continue" } : {}),
   }
@@ -200,6 +206,27 @@ const SETTINGS_AFFORDANCE: SurfaceAction = {
   enabled: true,
 }
 
+/**
+ * The rail's Saves destination: the split review (ADR 0014). Shift owns it the
+ * way it owns Settings. It appears once Korri states a save mark for any game,
+ * so a host without save sync shows no empty destination.
+ */
+export const SHIFT_SAVES_ACTION_ID = "shift:saves"
+
+function savesAffordance(splitCount: number): SurfaceAction {
+  return {
+    id: SHIFT_SAVES_ACTION_ID,
+    label: "Saves",
+    description:
+      splitCount === 0
+        ? "All saves match."
+        : splitCount === 1
+          ? "1 game has saves split between two devices."
+          : `${splitCount} games have saves split between two devices.`,
+    enabled: true,
+  }
+}
+
 export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
   const runner = model.runnerChoice
   const runnerOpen = runner !== undefined && runner._tag !== "Closed"
@@ -214,7 +241,7 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
     readonly action: SurfaceAction
   } | null>(null)
   const [screen, setScreen] = useState<
-    "home" | "library" | "detail" | "settings" | "store"
+    "home" | "library" | "detail" | "settings" | "store" | "saves"
   >("home")
   // Where the person was in the store: it opens there again.
   const [storePlace, setStorePlace] = useState<ShiftStorePlace>(SHIFT_STORE_START)
@@ -299,13 +326,17 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
     [identityGroup, model.settings],
   )
 
+  const splitGames = useMemo(() => shiftSplitGames(surfaceGames), [surfaceGames])
+  const splitTitles = useMemo(() => splitGames.map(game => game.title), [splitGames])
+  const savesKnown = surfaceGames.some(game => game.saves !== undefined)
   const hasStore = model.store !== undefined
   const railActions = useMemo<readonly SurfaceAction[]>(
     () => [
       ...(hasStore ? [STORE_AFFORDANCE] : []),
+      ...(savesKnown ? [savesAffordance(splitGames.length)] : []),
       ...(settingsGroups.length > 0 ? [SETTINGS_AFFORDANCE] : []),
     ],
-    [hasStore, settingsGroups],
+    [hasStore, savesKnown, splitGames.length, settingsGroups],
   )
 
   const runRailAction = useCallback((actionId: string) => {
@@ -314,6 +345,7 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
       setScreen("store")
       host.openStore()
     }
+    else if (actionId === SHIFT_SAVES_ACTION_ID) setScreen("saves")
     else host.runAction(actionId)
   }, [host])
 
@@ -337,12 +369,40 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
     model.catalog._tag === "Ready" &&
     model.catalog.games.some(game => host.gameActions(game.id).length > 0)
 
-  // Startup owns the screen even when it began from Library or Detail, and
-  // so does a question Korri asks before it starts (#115).
-  const shownScreen = model.status._tag === "Busy" || model.status._tag === "Confirm" ? "home" : screen
+  // Startup, and a question Korri asks before it starts (#115), own the
+  // screen even when they began from Library, Detail or the store.
+  const ownsScreen = model.status._tag === "Busy" || model.status._tag === "Confirm"
+  const shownScreen = ownsScreen ? "home" : screen
+  const statusGameOf = (gameId: string | undefined) =>
+    gameId === undefined ? undefined : surfaceGames.find(game => game.id === gameId)
+  const runningGame =
+    model.status._tag === "Running" ? statusGameOf(model.status.gameId) : undefined
+  const historyGame = statusGameOf(model.saveHistory?.gameId)
   const body =
     model.presentation.kind === "gameplay-overlay" ? null
-    : shownScreen === "store" && model.store !== undefined ? (
+    : model.status._tag === "ChooseSave" ? (
+      <ShiftSaveChoice
+        key={model.status.gameId}
+        status={model.status}
+        {...(statusGameOf(model.status.gameId)?.title === undefined
+          ? {}
+          : { gameTitle: statusGameOf(model.status.gameId)?.title })}
+        {...(statusGameOf(model.status.gameId)?.wideArtUrl === undefined
+          ? {}
+          : { backdropArtUrl: statusGameOf(model.status.gameId)?.wideArtUrl })}
+        {...(model.clockLabel === undefined ? {} : { time: model.clockLabel })}
+        onAction={actionId => host.runAction(actionId)}
+      />
+    ) : model.saveHistory && !ownsScreen ? (
+      <ShiftSaveHistory
+        key={model.saveHistory.gameId}
+        history={model.saveHistory}
+        {...(historyGame?.title === undefined ? {} : { gameTitle: historyGame.title })}
+        {...(historyGame?.wideArtUrl === undefined ? {} : { backdropArtUrl: historyGame.wideArtUrl })}
+        {...(model.clockLabel === undefined ? {} : { time: model.clockLabel })}
+        onAction={actionId => host.runAction(actionId)}
+      />
+    ) : shownScreen === "store" && model.store !== undefined ? (
       <ShiftStore
         store={model.store}
         place={storePlace}
@@ -375,6 +435,13 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
       />
     ) : shownScreen !== "home" && model.catalog._tag === "Empty" ? (
       <ShiftHomeEmptyBody />
+    ) : shownScreen === "saves" ? (
+      <ShiftSaveReview
+        games={surfaceGames}
+        {...(model.clockLabel === undefined ? {} : { time: model.clockLabel })}
+        onChoose={(gameId, actionId) => host.runGameAction(gameId, actionId)}
+        onBack={() => setScreen("home")}
+      />
     ) : shownScreen === "library" ? (
       <ShiftLibraryLens
         games={libraryGames}
@@ -436,6 +503,7 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
         onRetry={() => host.retry()}
         onDismiss={() => host.dismiss()}
         {...(hasGameActions ? { onOptions: setSheetGameId } : {})}
+        splitTitles={splitTitles}
       />
     )
 
@@ -457,6 +525,9 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
           <ShiftGameplayOverlaySheet
             presentation={model.presentation}
             status={model.status}
+            {...(runningGame?.saves?._tag === "Split"
+              ? { splitGameTitle: runningGame.title }
+              : {})}
           />
         ) : null}
         {sheetGame ? (

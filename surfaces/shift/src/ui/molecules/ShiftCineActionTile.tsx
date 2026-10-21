@@ -1,6 +1,7 @@
 import {
   Download,
   type LucideIcon,
+  Save,
   Settings,
   Square,
   Wrench,
@@ -24,6 +25,7 @@ import {
 const ACTION_ICONS: Record<string, LucideIcon> = {
   "shift:settings": Settings,
   "shift:store": Download,
+  "shift:saves": Save,
   stop: Square,
   "cancel-launch": X,
 }

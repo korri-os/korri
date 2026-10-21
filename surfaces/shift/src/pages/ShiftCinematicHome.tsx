@@ -24,10 +24,12 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSurfaceAction } from "../host/surface-host"
 import { launchStatusView } from "../launch-failure-copy"
+import type { ShiftSaveState } from "../save-sync-labels"
 import { SHIFT_DESIGN_PARTS, shiftDesignPartAttrs } from "../shift-design-parts"
 import { ShiftCineActionTile } from "../ui/molecules/ShiftCineActionTile"
 import { ShiftCineBackdrop } from "../ui/molecules/ShiftCineBackdrop"
 import { ShiftCineLibraryTile } from "../ui/molecules/ShiftCineLibraryTile"
+import { ShiftSaveNotice } from "../ui/molecules/ShiftSaveNotice"
 import {
   type ShiftCineHintSpec,
   ShiftCineLegend,
@@ -65,6 +67,8 @@ export interface ShiftCinematicGame {
   readonly section?: string
   /** What it still has to fetch, already worded ("Needs a 1.5 GB download"). */
   readonly download?: string
+  /** The game's save mark (ADR 0014). Absent when Korri states none. */
+  readonly saves?: ShiftSaveState
 }
 
 /**
@@ -156,6 +160,8 @@ export interface ShiftCinematicHomeProps {
   readonly onAction?: (actionId: string) => void
   /** Open the focused game's command sheet. Omitted = no Options affordance. */
   readonly onOptions?: (gameId: string) => void
+  /** Titles of games whose saves are split, for the standing split notice. */
+  readonly splitTitles?: readonly string[]
 }
 
 export function ShiftCinematicHome({
@@ -173,6 +179,7 @@ export function ShiftCinematicHome({
   actions,
   onAction,
   onOptions,
+  splitTitles = [],
 }: ShiftCinematicHomeProps) {
   const [index, setIndex] = useState(0)
   const [actionIndex, setActionIndex] = useState(0)
@@ -321,14 +328,16 @@ export function ShiftCinematicHome({
   // otherwise bring it to focus. Mirrors the legend's "A".
   const activate = useCallback(
     (target: number) => {
-      if (status) {
+      // Work and questions put only host actions on the rail; the focused one
+      // is the one to run (focus moves with the cursor before the click).
+      if (status || busy) {
         confirm()
         return
       }
       if (target === index) confirm()
       else setIndex(target)
     },
-    [status, index, confirm],
+    [status, busy, index, confirm],
   )
 
   // `back` is a semantic action (not a focus move or a click), so the component
@@ -465,6 +474,7 @@ export function ShiftCinematicHome({
       <ShiftStatusBar time={time} battery={battery} network={network} />
 
       <div className="shift-cine-stage" ref={stageRef}>
+        {!busy && !status ? <ShiftSaveNotice titles={splitTitles} /> : null}
         <div className="shift-cine-midrow">
           <div className="shift-cine-heroband">
             {heroNode}
