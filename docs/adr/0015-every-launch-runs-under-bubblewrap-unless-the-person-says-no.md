@@ -13,6 +13,10 @@ If bubblewrap cannot start, Korri refuses the launch and reports why. It never
 starts the game without it: an unwrapped launch would write saves to the wrong
 place without a warning.
 
+When the person turns bubblewrap off for a runner whose plugin declares binds
+or overlays, the launch goes ahead without them, and Korri shows that the
+game's saves are not synced (ADR 0014).
+
 Korri's default settings turn bubblewrap off for the Steam runner, and the
 person can see and change that. Steam starts its own bubblewrap
 (pressure-vessel) for each game, and Steam saves are left to Steam Cloud

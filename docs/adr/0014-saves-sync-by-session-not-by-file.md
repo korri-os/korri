@@ -98,7 +98,11 @@ can record what each session started from.
 - Screenshots never cause a split by themselves. Both sides' screenshots are
   kept as a union. Saves and savestates follow the strict rule.
 - Changes to different files of one game on two devices are a split, never a
-  file-level merge: every snapshot equals something a real session wrote.
+  file-level merge: every snapshot equals something a real session wrote. This
+  holds when two devices played the game through different runners with
+  different save keys.
+- When the person turns bubblewrap off for a runner whose plugin declares binds
+  or overlays, its games launch and show that their saves are not synced.
 - Restoring an older snapshot makes a new snapshot with that content, which
   syncs to every device. Two different restores made apart are a split.
 - A device never drops a snapshot that no other device has confirmed
