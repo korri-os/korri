@@ -1,6 +1,7 @@
 /* GET GAMES stands as RUN WITH does: the head row over OPTIONS' band. The
  * band gives way; the head wraps its name and tags before any is cut. */
 .zone-store {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
@@ -64,6 +65,8 @@
  * from this box (useZoneFindPlan). A dialog lies over both. */
 .zone-store-body {
   position: relative;
+  /* The second row, also when the head has nothing to name and is gone. */
+  grid-row: 2;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
@@ -217,8 +220,10 @@
   padding: calc(var(--zone-options-band-room) * var(--zone-px)) var(--zone-store-keys-margin) 0;
 }
 
-/* Korri's question or trouble: the sky dialog in the middle of the body,
- * its veil over the band (ZoneDialog lays it over this layer). */
+/* Korri's question or trouble: the sky dialog in the middle of the page,
+ * its veil over the head and the band (ZoneDialog lays it over this
+ * layer). The whole page's height, so its buttons stand on screen at
+ * 640x480 under three lines of Korri's reason. */
 .zone-store-layer {
   position: absolute;
   inset: 0;

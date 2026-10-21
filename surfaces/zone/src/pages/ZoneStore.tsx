@@ -229,27 +229,27 @@ export function ZoneStore({
               />
             </div>
           )}
-          {dialog === undefined ? null : (
-            <div className="zone-store-layer" data-block-exit="true">
-              <div className="zone-store-dialog">
-                <ZoneDialog
-                  actions={dialog.actions.map(action => ({
-                    id: action.id,
-                    label: action.label,
-                    disabled: !action.enabled,
-                    destructive: action.destructive,
-                    onPress: () => run(action.id),
-                  }))}
-                  focused={enabledFrom(dialog.actions, view.dialog)}
-                  headline={dialog.headline}
-                  korriHeadline={dialog.korri}
-                  lines={dialog.line === undefined ? [] : [dialog.line]}
-                  onFocusAction={onDialogFocus}
-                />
-              </div>
-            </div>
-          )}
         </div>
+        {dialog === undefined ? null : (
+          <div className="zone-store-layer" data-block-exit="true">
+            <div className="zone-store-dialog">
+              <ZoneDialog
+                actions={dialog.actions.map(action => ({
+                  id: action.id,
+                  label: action.label,
+                  disabled: !action.enabled,
+                  destructive: action.destructive,
+                  onPress: () => run(action.id),
+                }))}
+                focused={enabledFrom(dialog.actions, view.dialog)}
+                headline={dialog.headline}
+                korriHeadline={dialog.korri}
+                lines={dialog.line === undefined ? [] : [dialog.line]}
+                onFocusAction={onDialogFocus}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </ZoneShell>
   )
