@@ -47,7 +47,8 @@
 > below, which is struck. Without WebGL there is no store, so the door says
 > Boxbuster cannot open on this device.
 >
-> **The order desk is the door board's third use** (decided 2026-10-20). The
+> **The order desk is the door board's third use** (decided by the coordinator
+> for the owner's workflow, 2026-10-20). The
 > door board (`BoxbusterNotice`) was allowed for two things: no store to walk
 > into, and Korri's work with nowhere else to show. Getting a game from a
 > provider is the third: that journey needs typing and must work from an
