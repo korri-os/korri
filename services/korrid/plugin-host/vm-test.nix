@@ -1277,33 +1277,6 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin remove @korri:tailscale --purge")
     assert plugin_ok("system.plugins.repositories", {})["userAdded"] == [source_b, source_a]
 
-    # A catalog record may name an exact output in the publisher's signed Nix
-    # cache instead of an archive. korri-publish cache-record is its producer.
-    # The host imports it only from the cache bound to the plugin's publisher,
-    # through the raw-cache import and signature check.
-    source_c = "https://cache/repositories/c.json"
-    signed_record = json.loads(cache.succeed("korri-publish cache-record ${tailscalePackage} signed-v1 ${pkgs.stdenv.hostPlatform.system} http://cache:5000"))
-    assert signed_record["cache_url"] == "http://cache:5000" and "archive_url" not in signed_record, signed_record
-    assert signed_record["store_path"] == "${tailscalePackage}", signed_record
-    write_catalog("c", [signed_record, dict(signed_record, release_version="elsewhere", cache_url="https://cache/split/plugin")])
-    assert plugin_ok("system.plugins.repository.add", {"url": source_c}) == "Added"
-    signed_entries = plugin_ok("system.plugins.catalog", {"url": source_c})["entries"]
-    assert [entry["releaseVersion"] for entry in signed_entries] == ["signed-v1", "elsewhere"], signed_entries
-    signed = {"url": source_c, "pluginId": "@korri:tailscale"}
-    elsewhere = plugin_err("system.plugins.inspect", dict(signed, releaseVersion="elsewhere"))
-    assert "bound to cache http://cache:5000" in elsewhere["message"], elsewhere
-    signed_inspection = plugin_ok("system.plugins.inspect", dict(signed, releaseVersion="signed-v1"))
-    assert plugin_ok("system.plugins.install", dict(signed, releaseVersion="signed-v1", approval=signed_inspection["approval"])) == {}
-    signed_receipt = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
-    assert signed_receipt["package"] == "${tailscalePackage}", signed_receipt
-    assert signed_receipt["provenance"] == {"kind": "RawCache", "cache_url": "http://cache:5000"}, signed_receipt
-    assert signed_receipt["desired"] == {"state": "Disabled"}, signed_receipt
-    assert plugin_ok("system.plugins.setEnabled", {"id": "@korri:tailscale", "enabled": True}) == {}
-    machine.wait_for_unit(report["unit"])
-    assert plugin_ok("system.plugins.setEnabled", {"id": "@korri:tailscale", "enabled": False}) == {}
-    machine.succeed("korri-plugin remove @korri:tailscale --purge")
-    assert plugin_ok("system.plugins.repository.remove", {"url": source_c}) == "Removed"
-
     machine.succeed("korri-plugin repository install " + source_a + " @korri:tailscale v1 " + report["approval"])
     unit = report["unit"]
     machine.fail("systemctl is-active " + unit)

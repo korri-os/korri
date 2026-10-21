@@ -18,12 +18,6 @@
 //   The device downloads and verifies this before import.
 // - `archive_sha256`: lowercase hex SHA-256 of the archive bytes, measured by
 //   the publisher over the file it produced. The device re-measures before use.
-// - `cache_url`: instead of the two archive fields, a record may name the
-//   signed Nix cache that holds `store_path`. The value is the publisher's
-//   existing cache binding (`PublisherBinding.cacheUrl`, the cache of
-//   `Provenance::RawCache`). The device imports from it only when it equals
-//   the binding of the plugin's namespace, through the same signed-cache
-//   import and publisher check as `korri-plugin install CACHE PACKAGE`.
 //
 // The catalog carries no approval, unit policy, or device-specific data.
 // Those are the host's responsibility (package.rs, host.rs).
@@ -32,129 +26,37 @@ use crate::declaration::validate_id;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-/// Where the device gets a record's exact `store_path`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Artifact {
-    /// A complete Nix file-cache tar at an HTTPS URL, checked by SHA-256.
-    Archive {
-        archive_url: String,
-        archive_sha256: String,
-    },
-    /// The signed Nix cache bound to the plugin's publisher on this device.
-    SignedCache { cache_url: String },
-}
-
-/// One release entry inside a catalog file. The JSON form is flat: either
-/// `archive_url` and `archive_sha256`, or `cache_url`.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(try_from = "RecordFields", into = "RecordFields")]
+/// One release entry inside a catalog file.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CatalogRecord {
     /// Plugin identity in "@namespace:name" form.
     pub plugin_id: String,
     /// Human-readable title sourced from the declaration (optional).
+    #[serde(
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub title: Option<String>,
     /// Human-readable description sourced from the declaration (optional).
+    #[serde(
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub description: Option<String>,
     /// Publisher-assigned release label, independent of upstream binary version.
     /// ASCII letters, digits and -._+ are accepted; no ordering is inferred.
     pub release_version: String,
     /// Nix system string for this record's binary (e.g. "x86_64-linux").
     pub platform: String,
-    /// Exact /nix/store output: content-addressed for an archive record, the
-    /// published output for a signed-cache record.
+    /// Content-addressed /nix/store path produced by make-content-addressed.
     pub store_path: String,
-    pub artifact: Artifact,
-}
-
-/// The catalog file's field set. Field order is the archive record's
-/// existing serialized order, so an archive catalog stays byte-identical.
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct RecordFields {
-    plugin_id: String,
-    #[serde(
-        default,
-        deserialize_with = "optional_non_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    title: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "optional_non_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    description: Option<String>,
-    release_version: String,
-    platform: String,
-    store_path: String,
-    #[serde(
-        default,
-        deserialize_with = "optional_non_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    archive_url: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "optional_non_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    archive_sha256: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "optional_non_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    cache_url: Option<String>,
-}
-
-impl TryFrom<RecordFields> for CatalogRecord {
-    type Error = String;
-    fn try_from(fields: RecordFields) -> Result<Self, String> {
-        let artifact =
-            match (fields.archive_url, fields.archive_sha256, fields.cache_url) {
-                (Some(archive_url), Some(archive_sha256), None) => Artifact::Archive {
-                    archive_url,
-                    archive_sha256,
-                },
-                (None, None, Some(cache_url)) => Artifact::SignedCache { cache_url },
-                _ => return Err(
-                    "a catalog record names either archive_url and archive_sha256, or cache_url"
-                        .into(),
-                ),
-            };
-        Ok(Self {
-            plugin_id: fields.plugin_id,
-            title: fields.title,
-            description: fields.description,
-            release_version: fields.release_version,
-            platform: fields.platform,
-            store_path: fields.store_path,
-            artifact,
-        })
-    }
-}
-
-impl From<CatalogRecord> for RecordFields {
-    fn from(record: CatalogRecord) -> Self {
-        let (archive_url, archive_sha256, cache_url) = match record.artifact {
-            Artifact::Archive {
-                archive_url,
-                archive_sha256,
-            } => (Some(archive_url), Some(archive_sha256), None),
-            Artifact::SignedCache { cache_url } => (None, None, Some(cache_url)),
-        };
-        Self {
-            plugin_id: record.plugin_id,
-            title: record.title,
-            description: record.description,
-            release_version: record.release_version,
-            platform: record.platform,
-            store_path: record.store_path,
-            archive_url,
-            archive_sha256,
-            cache_url,
-        }
-    }
+    /// HTTPS URL of the published archive containing the complete Nix file cache.
+    pub archive_url: String,
+    /// Lowercase hex SHA-256 of the archive file bytes.
+    pub archive_sha256: String,
 }
 
 /// A parsed and validated catalog file.
@@ -174,19 +76,9 @@ impl CatalogRecord {
 
         crate::package::validate_store_path(std::path::Path::new(&self.store_path))?;
 
-        match &self.artifact {
-            Artifact::Archive {
-                archive_url,
-                archive_sha256,
-            } => {
-                validate_archive_url(archive_url)?;
-                validate_sha256_hex(archive_sha256, "archive_sha256")?;
-            }
-            Artifact::SignedCache { cache_url } => {
-                crate::package::validate_cache_source(cache_url)
-                    .map_err(|error| format!("cache_url: {error}"))?;
-            }
-        }
+        validate_archive_url(&self.archive_url)?;
+
+        validate_sha256_hex(&self.archive_sha256, "archive_sha256")?;
 
         if let Some(t) = &self.title {
             if t.is_empty() || t.len() > 128 || t.chars().any(char::is_control) {

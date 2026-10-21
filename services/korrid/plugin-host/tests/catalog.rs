@@ -1,18 +1,4 @@
-use korri_plugin_host::catalog::{Artifact, Catalog, CatalogRecord};
-
-fn archive(url: impl Into<String>, sha256: impl Into<String>) -> Artifact {
-    Artifact::Archive {
-        archive_url: url.into(),
-        archive_sha256: sha256.into(),
-    }
-}
-
-fn set_archive_url(record: &mut CatalogRecord, url: &str) {
-    let Artifact::Archive { archive_sha256, .. } = &record.artifact else {
-        panic!("archive record expected")
-    };
-    record.artifact = archive(url, archive_sha256.clone());
-}
+use korri_plugin_host::catalog::{Catalog, CatalogRecord};
 
 // A minimal valid record; tests mutate fields to exercise rejection paths.
 fn valid_record() -> CatalogRecord {
@@ -23,10 +9,8 @@ fn valid_record() -> CatalogRecord {
         release_version: "1.0.0".into(),
         platform: "x86_64-linux".into(),
         store_path: "/nix/store/00000000000000000000000000000000-network-1.0.0".into(),
-        artifact: archive(
-            "https://example.com/network-1.0.0-x86_64-linux.tar",
-            "a".repeat(64),
-        ),
+        archive_url: "https://example.com/network-1.0.0-x86_64-linux.tar".into(),
+        archive_sha256: "a".repeat(64),
     }
 }
 
@@ -37,9 +21,8 @@ fn catalog_with(records: Vec<CatalogRecord>) -> Vec<u8> {
 #[test]
 fn rejects_archive_urls_that_exceed_the_limit_after_normalization() {
     let mut record = valid_record();
-    let url = format!("https://example.com/{}.tar", "é".repeat(700));
-    assert!(url.len() < 4096);
-    set_archive_url(&mut record, &url);
+    record.archive_url = format!("https://example.com/{}.tar", "é".repeat(700));
+    assert!(record.archive_url.len() < 4096);
     assert!(Catalog::from_json(&catalog_with(vec![record])).is_err());
 }
 
@@ -146,7 +129,7 @@ fn non_https_archive_url_is_rejected() {
         "file:///tmp/a.tar",
     ] {
         let mut r = valid_record();
-        set_archive_url(&mut r, bad);
+        r.archive_url = bad.into();
         assert!(
             Catalog::from_json(&catalog_with(vec![r])).is_err(),
             "expected rejection for archive_url={bad}"
@@ -163,7 +146,7 @@ fn malformed_sha256_is_rejected() {
         &"g".repeat(64),
     ] {
         let mut r = valid_record();
-        r.artifact = archive("https://example.com/network-1.0.0-x86_64-linux.tar", bad);
+        r.archive_sha256 = bad.into();
         assert!(
             Catalog::from_json(&catalog_with(vec![r])).is_err(),
             "expected rejection for archive_sha256={bad:?}"
@@ -274,7 +257,7 @@ fn archive_url_real_url_parsing_enforced() {
         "http://example.com/a.tar",            // insecure scheme
     ] {
         let mut r = valid_record();
-        set_archive_url(&mut r, bad_url);
+        r.archive_url = bad_url.into();
         assert!(
             Catalog::from_json(&catalog_with(vec![r])).is_err(),
             "expected rejection for archive_url={bad_url:?}"
@@ -305,151 +288,5 @@ fn serialized_catalog_round_trips_through_from_json() {
     let bytes = catalog.to_json().unwrap();
     let reparsed = Catalog::from_json(&bytes).unwrap();
     assert_eq!(reparsed.records.len(), 1);
-    assert_eq!(
-        reparsed.records[0].artifact,
-        archive(
-            "https://example.com/network-1.0.0-x86_64-linux.tar",
-            "a".repeat(64)
-        )
-    );
-}
-
-/// An archive catalog written before signed-cache records existed parses
-/// and re-serializes byte for byte.
-#[test]
-fn archive_catalogs_are_byte_identical() {
-    let compact = concat!(
-        r#"{"records":[{"plugin_id":"@example:network","title":"Network","#,
-        r#""description":"Provides networking.","release_version":"1.0.0","#,
-        r#""platform":"x86_64-linux","#,
-        r#""store_path":"/nix/store/00000000000000000000000000000000-network-1.0.0","#,
-        r#""archive_url":"https://example.com/network-1.0.0-x86_64-linux.tar","#,
-        r#""archive_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}"#
-    );
-    let catalog = Catalog::from_json(compact.as_bytes()).unwrap();
-    assert_eq!(catalog.to_json().unwrap(), compact.as_bytes());
-    let pretty = catalog.to_json_pretty().unwrap();
-    assert_eq!(
-        Catalog::from_json(&pretty)
-            .unwrap()
-            .to_json_pretty()
-            .unwrap(),
-        pretty
-    );
-    assert_eq!(catalog.records[0], valid_record());
-}
-
-fn cache_record() -> CatalogRecord {
-    CatalogRecord {
-        artifact: Artifact::SignedCache {
-            cache_url: "https://github.com/korri-os/plugins/releases/download/cache/".into(),
-        },
-        ..valid_record()
-    }
-}
-
-#[test]
-fn signed_cache_records_round_trip_beside_archive_records() {
-    let bytes = Catalog {
-        records: vec![
-            valid_record(),
-            CatalogRecord {
-                release_version: "1.0.1".into(),
-                ..cache_record()
-            },
-        ],
-    }
-    .to_json()
-    .unwrap();
-    let text = String::from_utf8(bytes.clone()).unwrap();
-    assert!(text.contains(
-        r#""store_path":"/nix/store/00000000000000000000000000000000-network-1.0.0","cache_url":"https://github.com/korri-os/plugins/releases/download/cache/"}"#
-    ));
-    let catalog = Catalog::from_json(&bytes).unwrap();
-    assert_eq!(catalog.records[0], valid_record());
-    assert_eq!(
-        catalog.records[1],
-        CatalogRecord {
-            release_version: "1.0.1".into(),
-            ..cache_record()
-        }
-    );
-    assert_eq!(catalog.to_json().unwrap(), bytes);
-}
-
-#[test]
-fn a_record_names_exactly_one_artifact_kind() {
-    let base = serde_json::to_value(valid_record()).unwrap();
-    let cache = "https://cache.example/";
-    let mut both = base.clone();
-    both["cache_url"] = cache.into();
-    let mut neither = base.clone();
-    neither.as_object_mut().unwrap().remove("archive_url");
-    neither.as_object_mut().unwrap().remove("archive_sha256");
-    let mut half = neither.clone();
-    half["archive_sha256"] = "a".repeat(64).into();
-    half["cache_url"] = cache.into();
-    let mut null_cache = neither.clone();
-    null_cache["cache_url"] = serde_json::Value::Null;
-    for record in [both, neither, half, null_cache] {
-        let bytes = serde_json::to_vec(&serde_json::json!({ "records": [record] })).unwrap();
-        assert!(Catalog::from_json(&bytes).is_err(), "{record}");
-    }
-    for bad in ["ftp://cache.example/", "https://cache.example/a b", ""] {
-        let record = CatalogRecord {
-            artifact: Artifact::SignedCache {
-                cache_url: bad.into(),
-            },
-            ..valid_record()
-        };
-        assert!(
-            Catalog::from_json(&catalog_with(vec![record])).is_err(),
-            "{bad:?}"
-        );
-    }
-}
-
-/// `korri-publish cache-record` is the producer of signed-cache records.
-#[test]
-fn published_cache_record_round_trips_through_the_reader() {
-    let declaration = korri_plugin_host::declaration::Declaration::evaluate(
-        "@example",
-        r#"export const name = "network"; export const title = "Network"; export const description = "Provides networking."; export const services = [];"#,
-    )
-    .unwrap();
-    let store_path =
-        std::path::Path::new("/nix/store/00000000000000000000000000000000-network-1.0.0");
-    let record = korri_plugin_host::publisher::cache_record_for(
-        &declaration,
-        store_path,
-        "1.0.1",
-        "x86_64-linux",
-        "https://github.com/korri-os/plugins/releases/download/cache/",
-    )
-    .unwrap();
-    assert_eq!(
-        record,
-        CatalogRecord {
-            release_version: "1.0.1".into(),
-            ..cache_record()
-        }
-    );
-    let directory = tempfile::tempdir().unwrap();
-    let file = directory.path().join("record.json");
-    std::fs::write(&file, serde_json::to_vec_pretty(&record).unwrap()).unwrap();
-    let bytes = korri_plugin_host::publisher::catalog_from_records(&[file]).unwrap();
-    assert_eq!(Catalog::from_json(&bytes).unwrap().records, vec![record]);
-    for (path, cache) in [
-        ("/tmp/network", "https://cache.example/"),
-        (store_path.to_str().unwrap(), "ftp://cache.example/"),
-    ] {
-        assert!(korri_plugin_host::publisher::cache_record_for(
-            &declaration,
-            std::path::Path::new(path),
-            "1.0.1",
-            "x86_64-linux",
-            cache,
-        )
-        .is_err());
-    }
+    assert_eq!(reparsed.records[0].archive_sha256, "a".repeat(64));
 }

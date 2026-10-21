@@ -306,28 +306,19 @@ impl Host {
         crate::catalog::validate_release_version(release)?;
         let catalog = self.catalog(config, source)?;
         let record = catalog.record(id, release, current_platform())?;
-        let (archive_url, archive_sha256) = match &record.artifact {
-            crate::catalog::Artifact::Archive {
-                archive_url,
-                archive_sha256,
-            } => (archive_url, archive_sha256),
-            crate::catalog::Artifact::SignedCache { cache_url } => {
-                return self.inspect_signed_cache_record(id, cache_url, &record.store_path)
-            }
-        };
         self.state.cleanup_staging()?;
         let stage = self.state.staging()?;
         let archive_path = stage.path().join("archive.tar");
         repository::download(
             &config.curl,
-            &SourceUrl::parse(archive_url)?,
+            &SourceUrl::parse(&record.archive_url)?,
             config.ca_bundle.as_deref(),
             &archive_path,
             repository::TransferBounds::Unlimited {
                 stall: repository::ARCHIVE_STALL,
             },
         )?;
-        repository::verify_archive_hash(&archive_path, archive_sha256)?;
+        repository::verify_archive_hash(&archive_path, &record.archive_sha256)?;
         let cache = stage.path().join("cache");
         storage::directory(&cache)?;
         archive::extract(&archive_path, &cache)?;
@@ -340,37 +331,9 @@ impl Host {
             plugin_id: record.plugin_id.clone(),
             release_version: record.release_version.clone(),
             platform: record.platform.clone(),
-            archive_sha256: archive_sha256.clone(),
+            archive_sha256: record.archive_sha256.clone(),
         };
         self.load(package, provenance)
-    }
-
-    /// A signed-cache catalog record names its publisher's bound cache. Refuse
-    /// any other cache before contacting it, then use the exact raw-cache
-    /// import and publisher check (`korri-plugin inspect CACHE PACKAGE`). The
-    /// receipt records that cache as `Provenance::RawCache`.
-    fn inspect_signed_cache_record(
-        &self,
-        id: &str,
-        cache_url: &str,
-        store_path: &str,
-    ) -> Result<Report, String> {
-        let namespace = id.split_once(':').ok_or("invalid plugin ID")?.0;
-        let binding = self
-            .publishers
-            .get(namespace)
-            .ok_or_else(|| format!("publisher {namespace} is not bound on this device"))?;
-        if binding.cache_url != cache_url {
-            return Err(format!(
-                "publisher {namespace} is bound to cache {}",
-                binding.cache_url
-            ));
-        }
-        let report = self.inspect(cache_url, Path::new(store_path))?;
-        if report.id != id {
-            return Err("catalog plugin identity differs from the declaration".into());
-        }
-        Ok(report)
     }
 
     fn load(&self, selected: &Path, provenance: Provenance) -> Result<Report, String> {
@@ -3945,44 +3908,6 @@ mod tests {
             }),
         ));
         assert_eq!(code, CODE_REFUSED);
-    }
-
-    #[test]
-    fn signed_cache_records_import_only_from_the_publishers_bound_cache() {
-        let root = tempfile::tempdir().unwrap();
-        // A nix that records any call: a refused record must never reach it.
-        let calls = root.path().join("nix-calls");
-        let nix = cleanup_program(
-            root.path(),
-            &format!("printf '%s\\n' \"$*\" >> {}; exit 1", calls.display()),
-        );
-        let mut host = Host::for_test(root.path(), nix, permitted_policy(), runtime(&[])).unwrap();
-        host.publishers.insert(
-            "@korri".into(),
-            package::PublisherBinding {
-                public_key: "korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=".into(),
-                cache_url: "https://bound.example/cache/".into(),
-            },
-        );
-        let package = "/nix/store/00000000000000000000000000000000-tailscale";
-        for (id, cache, expected) in [
-            (
-                "@korri:tailscale",
-                "https://other.example/cache/",
-                "publisher @korri is bound to cache https://bound.example/cache/",
-            ),
-            (
-                "@other:tailscale",
-                "https://bound.example/cache/",
-                "publisher @other is not bound on this device",
-            ),
-        ] {
-            match host.inspect_signed_cache_record(id, cache, package) {
-                Err(error) => assert_eq!(error, expected),
-                Ok(_) => panic!("{id} from {cache} must be refused"),
-            }
-        }
-        assert!(!calls.exists(), "a refused record contacted nix");
     }
 
     fn repository_report(id: &str, suffix: &str, source: &str, release: &str) -> Report {
