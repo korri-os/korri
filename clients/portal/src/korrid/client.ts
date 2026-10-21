@@ -39,7 +39,6 @@ import type {
   SessionControls,
   SessionControlsOutcome,
   SessionFreezeOutcome,
-  SessionPrepareOutcome,
   SessionStatusOutcome,
   SessionStopOutcome,
   SensitiveSettingOutcome,
@@ -153,7 +152,7 @@ export interface KorridClient extends StoreAcquisitionMethods, LaunchSettingsMet
   sessionReserve(request: SessionReserveRequest): Promise<SessionReserveResult>
   sessionStart(request: SessionStartRequest): Promise<SessionStartResult>
   sessionCancel(request: SessionCancelRequest): Promise<SessionCancelResult>
-  sessionPrepare(gameId: string, host?: string): Promise<SessionPrepareOutcome>
+  sessionPrepare(gameId: string, host?: string): Promise<SelectedGameLaunchOutcome>
   sessionStatus(timeoutMs?: number): Promise<SessionStatusOutcome>
   /** Existing SessionStopRequest field; callers must name the displayed launch. */
   sessionStop(expectedLaunchId?: string): Promise<SessionStopOutcome>
@@ -1824,8 +1823,7 @@ export function createInMemoryKorridClient(
       return {
         _tag: "Ok",
         payload: {
-          gameId,
-          launchId: `in-memory:${host ?? "local"}:${gameId}`,
+          session: { gameId, launchId: `in-memory:${host ?? "local"}:${gameId}` },
           warnings: structuredClone([...(config.prepareWarnings?.[gameId] ?? [])]),
         },
       }

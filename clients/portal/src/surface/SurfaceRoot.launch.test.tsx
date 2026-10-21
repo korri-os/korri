@@ -328,3 +328,33 @@ test("Back while the reservation is in flight cancels the shared startup without
   await waitFor(() => view.model().status._tag === "Browsing")
   expect(view.currentId()).toBeUndefined()
 })
+
+test("prepare-path launch warnings show in the same Warnings panel as a selected launch", async () => {
+  const remote: Game = { id: "wl4", title: "Wario Land 4", host: "zao", supportsRunnerSelection: false, source: { label: "zao", isLocal: false } }
+  const view = await mount(false, {
+    games: [remote],
+    gameRoutes: [],
+    prepareWarnings: { wl4: [{ setting: "cpu.max", runnerId: "retroarch/mgba", build: "/nix/store/exact-mgba", message: "CPU limit could not be applied" }] },
+  })
+  await invoke(() => view.host().launchGame("game:zao:wl4"))
+  await waitFor(() => view.model().runnerChoice?._tag === "Warnings")
+  const warnings = view.model().runnerChoice
+  if (!warnings || warnings._tag !== "Warnings") throw new Error("expected warnings")
+  expect(warnings).toMatchObject({ gameTitle: "Wario Land 4", message: "Launched with settings warnings" })
+  expect(warnings.warnings).toEqual(["cpu.max · retroarch/mgba · /nix/store/exact-mgba: CPU limit could not be applied"])
+  const done = warnings.actions.find(action => action.label === "Done")
+  if (!done) throw new Error("missing published Done action")
+  await invoke(() => view.host().runAction(done.id))
+  expect(view.model().runnerChoice?._tag).toBe("Closed")
+})
+
+test("a prepare without warnings opens no panel", async () => {
+  const remote: Game = { id: "wl4", title: "Wario Land 4", host: "zao", supportsRunnerSelection: false, source: { label: "zao", isLocal: false } }
+  const view = await mount(false, { games: [remote], gameRoutes: [] })
+  const prepares = spyOn(view.korrid, "sessionPrepare")
+  await invoke(() => view.host().launchGame("game:zao:wl4"))
+  await waitFor(() => prepares.mock.calls.length > 0)
+  await waitFor(() => view.model().status._tag === "Browsing")
+  expect(view.model().runnerChoice?._tag).toBe("Closed")
+  prepares.mockRestore()
+})

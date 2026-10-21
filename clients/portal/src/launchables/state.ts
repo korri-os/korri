@@ -3,7 +3,7 @@ import type {
   CatalogSnapshotOutcome,
   Game,
   LocalGamesListOutcome,
-  SessionPrepareOutcome,
+  SelectedGameLaunchOutcome,
   SessionPrepared,
   SessionStatusOutcome,
   SessionStopOutcome,
@@ -472,7 +472,7 @@ export const LaunchablesState = {
 
   withPrepareOutcome: (
     state: LaunchablesState,
-    outcome: SessionPrepareOutcome,
+    outcome: SelectedGameLaunchOutcome,
   ): LaunchablesState => {
     if (state._tag !== "Preparing") return state
     if (outcome._tag === "Ok") return { ...state, notice: null }
@@ -485,7 +485,7 @@ export const LaunchablesState = {
   /** Prepare proves an owned launch exists; no native activity swap follows on Linux. */
   withLocalCatalogPrepareOutcome: (
     state: LaunchablesState,
-    outcome: SessionPrepareOutcome,
+    outcome: SelectedGameLaunchOutcome,
     game: Game,
   ): LaunchablesState => {
     if (state._tag !== "Preparing") return state
@@ -493,7 +493,7 @@ export const LaunchablesState = {
       return readyFrom(state, `${outcome.payload.code}: ${outcome.payload.message}`)
     }
     return LaunchablesState.withLocalCatalogAcknowledgement(
-      { _tag: "Ready", entries: state.entries, notice: null }, outcome.payload, game,
+      { _tag: "Ready", entries: state.entries, notice: null }, outcome.payload.session, game,
     )
   },
 

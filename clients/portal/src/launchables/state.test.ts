@@ -104,7 +104,7 @@ describe("catalog session locality", () => {
     const ready: State = { _tag: "Ready", entries: [{ kind: "game", game: catalogGame }], notice: null }
     const preparing = LaunchablesState.beginPreparing(ready, catalogGame.title)
     const acknowledged = LaunchablesState.withLocalCatalogPrepareOutcome(preparing, {
-      _tag: "Ok", payload: { gameId: catalogGame.id, launchId: session.launchId },
+      _tag: "Ok", payload: { session: { gameId: catalogGame.id, launchId: session.launchId }, warnings: [] },
     }, catalogGame)
     expect(acknowledged._tag).toBe("Ready")
     expect(nowPlayingEntry(acknowledged)).toEqual({ kind: "now-playing", session: { ...session, title: catalogGame.title }, localCatalogGame: catalogGame })
@@ -465,7 +465,7 @@ describe("LaunchablesState preparing", () => {
     const preparing = LaunchablesState.beginPreparing(ready, "Skate 3")
     const prepared = LaunchablesState.withPrepareOutcome(preparing, {
       _tag: "Ok",
-      payload: { gameId: "skate3", launchId: "launch-2" },
+      payload: { session: { gameId: "skate3", launchId: "launch-2" }, warnings: [] },
     })
     if (prepared._tag !== "Preparing") throw new Error("unreachable")
     expect(prepared.title).toBe("Skate 3")

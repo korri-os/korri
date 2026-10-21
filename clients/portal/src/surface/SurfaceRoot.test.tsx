@@ -10,7 +10,7 @@ import type {
   LocalGame,
   LocalGamesListOutcome,
   SessionFreezeOutcome,
-  SessionPrepareOutcome,
+  SelectedGameLaunchOutcome,
   SessionStatusOutcome,
   SessionStopOutcome,
   SettingsSnapshotOutcome,
@@ -185,11 +185,11 @@ function buildKorrid(sources: Sources, calls: Calls): KorridClient {
     async localGames(): Promise<LocalGamesListOutcome> {
       return okLocalGames(sources.localGames)
     },
-    async sessionPrepare(gameId, host): Promise<SessionPrepareOutcome> {
+    async sessionPrepare(gameId, host): Promise<SelectedGameLaunchOutcome> {
       calls.prepared.push({ gameId, host })
       return {
         _tag: "Ok",
-        payload: { gameId, launchId: `surface-root-prepared-${gameId}` },
+        payload: { session: { gameId, launchId: `surface-root-prepared-${gameId}` }, warnings: [] },
       }
     },
     async sessionStatus(): Promise<SessionStatusOutcome> {
