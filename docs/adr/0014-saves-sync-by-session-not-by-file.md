@@ -242,3 +242,70 @@ Not decided yet, and not to be assumed by an implementation:
   unresolved: an implementation proposes them from a real producer (RetroArch's
   per-game folders, the play log's person key, ADR 0012's hash grammar) and the
   owner approves them before they are built.
+
+## One-off deployment cut
+
+Deploy the new korrid and RetroArch plugin together. The plugin now receives
+`saveRoot` and declares `saves`, `states`, and `screenshots`; an old host cannot
+supply that input. There is no runtime fallback to `users/default` or the old
+shared save folders.
+
+On each device, before starting the new korrid:
+
+1. End every session, including frozen sessions. Let the old korrid finish its
+   journal recovery. Stop `korrid.service` and keep it stopped through both
+   migrations. Back up `users/` and the private state root while stopped.
+2. Use the scripts in `services/korrid/deploy/save-sync-migration/`. Supply the
+   actual `services.korri.storageRoot` and `privateStateRoot`, not a new empty
+   root. The defaults are `/var/lib/korri` and `/var/lib/korrid`:
+
+   ```sh
+   ./migrate-account.py --storage-root /var/lib/korri \
+     --private-state-root /var/lib/korrid --dry-run
+   ./migrate-account.py --storage-root /var/lib/korri \
+     --private-state-root /var/lib/korrid
+   ./migrate-retroarch.py --storage-root /var/lib/korri \
+     --private-state-root /var/lib/korrid --dry-run
+   ./migrate-retroarch.py --storage-root /var/lib/korri \
+     --private-state-root /var/lib/korrid
+   ```
+
+   Run from that script directory as an operator with permission to read the
+   private state and preserve file ownership. Make the scripts' Nix Python
+   dependencies available as prebuilt downloads; do not build on the device.
+   Review each dry run before its corresponding write command. The second dry
+   run requires the first migration to have completed.
+3. Review every `UNMATCHED` and `AMBIGUOUS` line. Those files stay where they
+   are; the new runner will not load them. Resolve their game identity before
+   playing if they contain progress to keep. Do not delete them.
+4. Activate the new product and plugin, restart korrid, and launch the GBA game.
+   Confirm its old progress loads. End the session and check save history.
+   The first peer contact can require the first-sync review; do not overwrite
+   another device's files to avoid that review.
+
+The first script reads the existing `identity/owner.event.json` owner public
+key (`pubkey`) and requires an `owned` binding. It trusts this private,
+previously daemon-validated event; it neither reads the private key nor repeats
+signature verification. Check `korrid identity status` with the old installation
+before stopping if the binding's validity is uncertain. The destination uses
+exactly the play log's `encodeURIComponent` path codec.
+
+The second script joins `catalog/library.yaml` release `identity.value` to
+`device.yaml` file `locations` and matches each content filename's stem. These
+are the existing `config/library.rs` and `config/mod.rs` shapes, not a new
+migration manifest. Multiple releases of one game can match; a stem shared by
+different games is ambiguous and stays untouched. The slice covers `.srm`,
+`states/<runnerId>/<stem>.*`, and RetroArch's plain or dated PNG/BMP screenshots.
+The raw runner id is preserved, including its nested folders. Provider and
+multi-file locations, custom screenshot names and files without a catalog
+match are not guessed.
+
+Both commands refuse any nonempty `host-session` journal, including pending
+completion or recovery files. Recover with the old korrid; never delete that
+journal to force migration. A stopped daemon remains an operator precondition:
+checking a journal does not lock out a concurrent launch. Dry runs write
+nothing. Moves preserve file metadata, reject symlinks and existing
+destinations, and never merge or overwrite files. A rerun skips completed
+moves. A failure can leave earlier moves complete; review another dry run
+before continuing. Cross-filesystem moves are refused rather than copied.
+These are one-off operator actions, not daemon migrations.
