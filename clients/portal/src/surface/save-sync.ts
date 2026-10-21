@@ -77,7 +77,8 @@ type Phase =
       readonly flow: Flow
       readonly kicker: string
       readonly reason: string
-      readonly retry: () => void
+      /** Absent when trying again cannot help (korrid refused the start). */
+      readonly retry?: () => void
     }
 
 type HistoryPhase =
@@ -112,6 +113,9 @@ export interface SaveSync {
   choose(game: SaveGameRef): void
   /** korrid refused a launch over a split (SavesSplit): ask, then `proceed`. */
   resolveSplit(game: SaveGameRef, proceed: () => void, abandon?: () => void): void
+  /** korrid refused a start for a reason the person must fix first
+   * (DeviceNeedsOwner): say so in plain words; Dismiss or Back closes. */
+  refuseStart(game: SaveGameRef, failure: RpcFailure, abandon?: () => void): void
   openHistory(game: SaveGameRef): void
   /** A published `saves:` action id. True when consumed. */
   act(actionId: string): boolean
@@ -156,6 +160,8 @@ export function saveFailureReason(failure: RpcFailure): string {
       return "That older save's files are not on any device in reach. Try again when the device that made it is on."
     case "ActiveSessionConflict":
       return "A game is running. Stop it, then try again."
+    case "DeviceNeedsOwner":
+      return "This device needs an owner before it can start a game."
     case "SavesUnavailable":
       return "Korri could not read or update the saves on this device."
     case "BrainUnreachable":
@@ -311,7 +317,7 @@ export function createSaveSync(
           _tag: "Problem",
           kicker: next.kicker,
           reason: next.reason,
-          canRetry: true,
+          canRetry: next.retry !== undefined,
           gameId,
           gameTitle: next.flow.game.title,
         }
@@ -472,9 +478,9 @@ export function createSaveSync(
     publish({ _tag: "Choosing", flow, sides, ...(check === undefined ? {} : { check }), offline })
   }
 
-  const failed = (flow: Flow, kicker: string, reason: string, retry: () => void) => {
+  const failed = (flow: Flow, kicker: string, reason: string, retry?: () => void) => {
     generation++
-    publish({ _tag: "Failed", flow, kicker, reason, retry })
+    publish({ _tag: "Failed", flow, kicker, reason, ...(retry === undefined ? {} : { retry }) })
   }
 
   const check = async (flow: Flow) => {
@@ -603,6 +609,10 @@ export function createSaveSync(
         if (current(operation)) void readSides(flow, undefined, false)
       })
     },
+    refuseStart: (game, failure, abandon = () => {}) => {
+      if (disposed || phase._tag !== "Idle") return
+      failed({ game, abandon }, `Couldn't start ${game.title}`, saveFailureReason(failure))
+    },
     openHistory: game => {
       if (disposed) return
       void loadHistory(game)
@@ -650,7 +660,7 @@ export function createSaveSync(
     },
     retry: () => {
       if (phase._tag !== "Failed") return false
-      phase.retry()
+      phase.retry?.()
       return true
     },
     dismiss: () => {

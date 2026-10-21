@@ -249,6 +249,31 @@ describe("split choice", () => {
   }, 30_000)
 })
 
+describe("a start korrid refuses", () => {
+  test("DeviceNeedsOwner is a Problem in plain words, never the code, with nothing to retry", async () => {
+    const view = await mount({ games: synced })
+    view.korrid.sessionStart = async request => {
+      await view.korrid.sessionCancel({ expectedLaunchId: request.expectedLaunchId })
+      return { _tag: "Err", payload: { code: "DeviceNeedsOwner", message: "This device needs an owner before starting a game." } }
+    }
+    await invoke(() => view.host().launchGame("game:wl4"))
+    await waitFor(() => view.status()._tag === "Problem")
+    expect(view.status()).toEqual({
+      _tag: "Problem",
+      kicker: "Couldn't start Wario Land 4",
+      reason: "This device needs an owner before it can start a game.",
+      canRetry: false,
+      gameId: "game:wl4",
+      gameTitle: "Wario Land 4",
+    })
+    expect(JSON.stringify(view.model())).not.toContain("DeviceNeedsOwner")
+    await invoke(() => view.host().dismiss())
+    await waitFor(() => view.status()._tag === "Browsing")
+    expect(JSON.stringify(view.model())).not.toContain("DeviceNeedsOwner")
+    expect(await view.session()).toBeUndefined()
+  }, 30_000)
+})
+
 describe("questions before a launch", () => {
   test("in use on another device: Confirm names it and since when, Launch anyway or Cancel", async () => {
     const since = new Date(2026, 9, 21, 16, 2).getTime()
@@ -334,7 +359,7 @@ describe("save history", () => {
 
 describe("words and order", () => {
   test("no failure code reaches the person", () => {
-    for (const code of ["SavesSplit", "SaveContentUnavailable", "ActiveSessionConflict", "SavePayloadUnavailable",
+    for (const code of ["SavesSplit", "SaveContentUnavailable", "ActiveSessionConflict", "SavePayloadUnavailable", "DeviceNeedsOwner",
       "SavesUnavailable", "BrainUnreachable", "PermissionDenied", "GameNotFound", "SomethingNew"]) {
       const reason = saveFailureReason({ code, message: `${code}: raw` })
       expect(reason).not.toContain(code)

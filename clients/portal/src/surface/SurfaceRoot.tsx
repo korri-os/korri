@@ -229,6 +229,13 @@ export function SurfaceRoot({
           saves.resolveSplit(game, proceed, abandon)
           return
         }
+        // No owner: nothing to retry until the person sets one up. Plain
+        // words, never the code.
+        if (outcome?._tag === "Err" && outcome.payload.code === "DeviceNeedsOwner") {
+          launchablesRef.current.dismissNotice()
+          saves.refuseStart(game, outcome.payload, abandon)
+          return
+        }
         resolve(outcome)
       })
     }
