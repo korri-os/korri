@@ -1,0 +1,39 @@
+//! Session-bound save history. No filesystem path crosses the peer boundary.
+pub mod types;
+
+use std::{fs::File, io::Read};
+use types::{SaveHeads, SnapshotRecord};
+
+#[derive(Debug, thiserror::Error)]
+pub enum SaveError {
+    #[error("save storage is unavailable: {0}")]
+    Storage(String),
+    #[error("invalid save data: {0}")]
+    Invalid(String),
+    #[error("save content is missing")]
+    Missing,
+    #[error("saves split between devices; choose one before launch")]
+    Split,
+    #[error("save locations cannot change while the game is live")]
+    InUse,
+}
+
+/// Native persistence boundary shared by session lifecycle and peer transfer.
+/// A record may arrive before its objects. It is confirmed only after every
+/// referenced object is present and verified. All operations are person-scoped;
+/// object reads must prove the hash occurs in that person's stored records.
+/// Implementations serialize mutation and apply the play log's private-file rules.
+pub trait SaveRepository: Send + Sync {
+    fn heads(&self, person: &str) -> Result<SaveHeads, SaveError>;
+    fn records(&self, person: &str, game: &str) -> Result<Vec<SnapshotRecord>, SaveError>;
+    /// Validates and canonicalizes the immutable record; returns its content id.
+    fn put_record(&self, person: &str, record: &SnapshotRecord) -> Result<String, SaveError>;
+    /// Returns a verified regular file, positioned at byte zero for Range reads.
+    fn object(&self, person: &str, hash: &str) -> Result<File, SaveError>;
+    /// Streams into a private temporary and publishes only after hash validation.
+    /// The hash must already be named by one of this person's stored records.
+    fn put_object(&self, person: &str, hash: &str, input: &mut dyn Read) -> Result<(), SaveError>;
+    fn complete(&self, person: &str, game: &str, id: &str) -> Result<bool, SaveError>;
+    /// Persists an authenticated peer's acknowledgement, never inferred by time.
+    fn confirm(&self, person: &str, game: &str, id: &str, device: &str) -> Result<(), SaveError>;
+}

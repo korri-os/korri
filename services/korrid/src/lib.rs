@@ -48,6 +48,7 @@ pub mod portal_access;
 pub mod portal_input;
 pub mod relay;
 pub mod remote_signer;
+pub mod saves;
 
 pub use play_log::{PlayEntry, PlayLog};
 use plugin_admin::{PluginAdminRequest, PluginAdminResponse};
