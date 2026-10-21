@@ -285,7 +285,7 @@ pub fn reconcile(report: &ScanReport, current: &ConfigSnapshot, now: &str) -> Ca
     change
 }
 
-/// ADR 0013/0014: a release from artifacts or its own package enters the library.
+/// ADR 0013/0016: a release from artifacts or its own package enters the library.
 /// An artifact release is in the library before its
 /// download. It uses only the existing declared-game records (library item,
 /// release keyed by its first hash, provider link) and saves no location: the

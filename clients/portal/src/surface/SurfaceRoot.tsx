@@ -11,6 +11,7 @@ import type {
   SurfaceInputAction,
 } from "@contracts/surface/korri-surface"
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { createStarterPackOnboarding } from "./starter-pack-onboarding"
 import { createAcquisitionGate, type AcquisitionGameRef } from "./acquisition-gate"
 import { createGameDownloads, type DownloadGameRef } from "./game-downloads"
 import { createRunnerChooser } from "./runner-chooser"
@@ -200,6 +201,17 @@ export function SurfaceRoot({
     reload,
   } = launchables
 
+  const starterPackOnboarding = useMemo(() => createStarterPackOnboarding(korrid), [korrid])
+  const starterPack = useSyncExternalStore(starterPackOnboarding.subscribe, starterPackOnboarding.snapshot)
+  useEffect(() => {
+    starterPackOnboarding.setNeeded(onboardingNeeded === true)
+    return () => starterPackOnboarding.setNeeded(false)
+  }, [starterPackOnboarding, onboardingNeeded])
+
+  useEffect(() => {
+    if (starterPack?._tag === "Installed") reload()
+  }, [starterPack, reload])
+
   const settings = useMemo(
     () => settingsFrom({ ...facts, onboardingNeeded }),
     [facts, onboardingNeeded],
@@ -218,11 +230,11 @@ export function SurfaceRoot({
       settings,
       settingsStatus,
       network,
-      onboarding: onboardingNeeded === true ? { controllers: controllerList } : undefined,
+      onboarding: onboardingNeeded === true ? { controllers: controllerList, ...(starterPack === undefined ? {} : { starterPack }) } : undefined,
       systemProblem: networkProblem,
       ...(identityManagement === undefined ? {} : { identityManagement }),
     }),
-    [state, clockLabel, settings, settingsStatus, identityManagement, network, onboardingNeeded, controllerList, networkProblem],
+    [state, clockLabel, settings, settingsStatus, identityManagement, network, onboardingNeeded, controllerList, networkProblem, starterPack],
   )
   // Which local games still need a download is re-read when the set of local
   // games changes, and by the gate itself after a download it ran.
@@ -317,6 +329,7 @@ export function SurfaceRoot({
         confirm(entry)
       },
       runAction: id => {
+        if (starterPackOnboarding.act(id)) return
         if (acquisition.act(id)) return
         if (id.startsWith("cancel-pending:")) {
           launchablesRef.current.cancelPendingLaunch(id.slice("cancel-pending:".length))
@@ -393,6 +406,7 @@ export function SurfaceRoot({
     }),
     [
       acquisition,
+      starterPackOnboarding,
       downloads,
       downloadSubject,
       surfaceInput,

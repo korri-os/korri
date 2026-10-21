@@ -157,7 +157,7 @@ pub enum DeclaredReleaseFile {
     AccountRoot(String),
     /// A file inside one ready artifact directory.
     Artifact(ArtifactContentFile),
-    /// A file from the declaring plugin's own installed package (ADR 0014).
+    /// A file from the declaring plugin's own installed package (ADR 0016).
     Package(PackageContentFile),
 }
 

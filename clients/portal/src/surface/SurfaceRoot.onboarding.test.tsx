@@ -60,3 +60,27 @@ test("SurfaceRoot publishes controller evidence, Connecting and completion throu
   await settle(() => model?.onboarding === undefined)
   expect(restart()).toBeDefined()
 })
+
+test("SurfaceRoot offers the Starter pack and dispatches Install through runAction only during setup", async () => {
+  const client = createInMemoryKorridClient()
+  let model: SurfaceModel | undefined
+  let host: SurfaceHost | undefined
+  const seen: string[] = []
+  const container = document.createElement("div")
+  document.body.append(container)
+  root = createRoot(container)
+  await act(async () => root!.render(<SurfaceRoot bus={createInputBus()} korrid={client} surface={{
+    id: "observer", title: "Observer", presentations: ["catalog"],
+    render(props) { model = props.model; host = props.host; const tag = model.onboarding?.starterPack?._tag; if (tag) seen.push(tag); return null },
+  }} />))
+  await settle(() => model?.onboarding?.starterPack?._tag === "Offered")
+  await act(async () => host!.runAction("starter-pack-install"))
+  await settle(() => model?.onboarding?.starterPack?._tag === "Installed")
+  expect(seen).toContain("Installing")
+  await act(async () => host!.finishOnboarding())
+  await settle(() => model?.onboarding === undefined)
+  await act(async () => host!.runAction("setup-restart"))
+  await settle(() => model?.onboarding !== undefined)
+  await act(async () => { await Bun.sleep(5) })
+  expect(model?.onboarding?.starterPack).toBeUndefined()
+})

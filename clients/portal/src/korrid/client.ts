@@ -856,6 +856,7 @@ const samplePluginHost: InMemoryPluginHostConfig = {
     { id: "@korri:retro-clock", sourceUrl: "https://old.example/catalog.json", releaseVersion: "2.0.0", enabled: false },
   ],
   otherInstalls: [
+    { id: "@korri:starter-pack", title: "Starter pack", enabled: false },
     { id: "@korri:mgba", title: "mGBA", enabled: true },
     { id: "@korri:retroarch", title: "RetroArch", enabled: true },
     { id: "@korri:ssh", title: "SSH", enabled: false },

@@ -64,7 +64,7 @@ The pack retains its games, original cartridges, credits, notices and
 noncommercial CC BY-NC-SA 4.0. First-boot setup offers to install the pack;
 installation means enabling its approved local package, with no network.
 Declared `packageFile` releases then enter the library without saved locations
-(ADR 0014). The current published pack pins predate those declarations; the
+(ADR 0016). The current published pack pins predate those declarations; the
 27-game pack is pinned after publication. Into Ruins remains a known FAKE-08 failure.
 This change does not install software or write firmware on existing devices.
 Recovery images keep their existing no-default-plugin behavior. R36T Max
