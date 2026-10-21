@@ -2,7 +2,7 @@
 
 Generated test data from <https://github.com/korri-os/plugins>. `REVISION` is
 its full Git commit. `SHA256SUMS` records the exact producer bytes at
-`plugins/{fex,proton,steam}/plugin.ts`. These are not production plugins.
+`plugins/{fex,proton,steam,pico8,homebrewhub,retrobrews}/plugin.ts`. These are not production plugins.
 The publisher alone owns their source, native recipes, scripts and unit tests.
 
 Refresh from an immutable producer commit on a build host:

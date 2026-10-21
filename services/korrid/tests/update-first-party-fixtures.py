@@ -25,7 +25,7 @@ def main():
         f"{name}/plugin.ts": subprocess.check_output(
             ["git", "-C", checkout, "show", f"{revision}:plugins/{name}/plugin.ts"]
         )
-        for name in ("fex", "proton", "steam")
+        for name in ("fex", "proton", "steam", "pico8", "homebrewhub", "retrobrews")
     }
     root = Path(__file__).parent / "fixtures/first-party"
     for name, data in sources.items():
