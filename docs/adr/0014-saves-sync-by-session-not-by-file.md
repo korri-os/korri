@@ -60,6 +60,12 @@ can record what each session started from.
   declares the bind; korrid performs it.
 - A game whose runner declares no save locations launches as today and shows
   that its saves are not synced.
+- Every game gets its own save locations. A runner whose folder is shared by
+  every game (RetroArch saves and screenshots, PPSSPP's memory stick, ZQuest)
+  points the program at a folder for that game on each launch, as legacy
+  RetroArch did. A save location is always a whole folder.
+- A plugin may bind folders only. Single-file binds and overlays are not part
+  of this decision.
 - When sync first starts, games whose saves are byte-identical on two devices
   join without a question. Every other game with saves on more than one device
   is listed once in a one-time review, and the person picks per game.
@@ -93,11 +99,21 @@ can record what each session started from.
 | Ask before launch when progress is not safe | legacy `docs/jobs/safe-game-resume.md` SGR-O1 | A split always requires a choice. When no device answers, Korri asks only on a known risk, not on every unverified launch: saves move only between the person's devices, so an offline handheld could never verify and would ask on every launch. |
 | Choice between two saves side by side | legacy `product/surfaces/web/pico/pages/future/CloudSaveConflict.tsx` | Renamed from conflict to split (CONTEXT.md) |
 | Per-person save location | `PluginLaunchInput.account_root` (`services/korrid/src/launcher/plugin_launch.rs`) | None |
+| A save folder per game | legacy `product/plugins/retroarch/src/materializer.ts:251-294` (a save and a state folder per system and game identity) | main's `services/korrid/examples/libretro-retroarch.ts` shares one `saves/` folder across games; this returns to legacy's per-game folders |
 | Session start and exit hooks | `HostSessionControl::prepare_inner` and the completion path in `services/korrid/src/host/session_state.rs` | None |
 | Peers of the same person | owner roster on the relay (`services/korrid/src/relay.rs`), peer RPC (`services/korrid/src/peer_rpc.rs`) | Peers exchange no data today; this adds the first replication |
 
 Research behind the choice, with sources and an audit:
 `~/.cache/research/deterministic-save-sync-20261020/` (outside the repo).
+
+## First slice
+
+RetroArch with a GBA game. It holds: per-person save folders, a save folder
+per game, snapshots after exit, interrupted snapshots, push, meet and pull
+between the person's devices, split detection with notice and choice, the
+first-sync review, browsing and restoring older snapshots, the "saves not
+synced" mark, the in-use warning, and the release and runner mismatch
+warnings. Binds come in a later slice, with Fallout 1 CE.
 
 ## Plugin survey (2026-10-20)
 
@@ -143,7 +159,9 @@ Savestates of 0.5 to 2 GB make storage and transfer cost real.
 
 Not decided yet, and not to be assumed by an implementation:
 
-- How a runner whose folder is shared by every game names one game's files.
+- Where a save location may be on disk, and how a program that saves beside
+  its own files is handled (a single save file beside a Wine `.exe`): waiting on
+  research into Linux ways to force a program into a chosen folder.
 - The shape of the save-location and bind declarations in the plugin contract,
   and how a bind is set up inside korrid's launch (systemd scope, launch
   modifiers such as Gamescope, runners that already sandbox themselves).
