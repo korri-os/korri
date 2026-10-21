@@ -39,7 +39,7 @@ describe("Shift store", () => {
     render(<ShiftSurface host={host} model={model(storeFixture(), { catalog: { _tag: "Empty" } })} />)
     openStore(host)
     expect(screen.getByRole("heading", { name: "Get games" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Homebrew Hub" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "PICO-8 BBS" })).toBeTruthy()
   })
 
   test("providers: loading, a refusal with Retry, none turned on, and the list", () => {
@@ -56,7 +56,7 @@ describe("Shift store", () => {
     rerender(<ShiftSurface host={host} model={model(storeFixture({ providers: { _tag: "Ready", providers: [] } }))} />)
     expect(screen.getByText(/No provider is turned on/)).toBeTruthy()
     rerender(<ShiftSurface host={host} model={model(storeFixture())} />)
-    expect(["Homebrew Hub", "RetroBrews", "PICO-8 BBS"].every(name => screen.queryByRole("button", { name }) !== null)).toBe(true)
+    expect(["PICO-8 BBS"].every(name => screen.queryByRole("button", { name }) !== null)).toBe(true)
   })
 
   test("search: typing and Search ask the one provider shown, then every answer has a body", () => {
@@ -64,34 +64,37 @@ describe("Shift store", () => {
     const idle = storeFixture({ search: { _tag: "Idle" } })
     const { rerender } = render(<ShiftSurface host={host} model={model(idle)} />)
     openStore(host)
-    choose("Homebrew Hub")
-    expect(screen.getByRole("heading", { name: "Homebrew Hub" })).toBeTruthy()
-    expect(screen.getByText("Type what to look for, then search Homebrew Hub.")).toBeTruthy()
-    const field = screen.getByRole("searchbox", { name: "Search Homebrew Hub" })
-    fireEvent.change(field, { target: { value: " 2048 " } })
+    choose("PICO-8 BBS")
+    expect(screen.getByRole("heading", { name: "PICO-8 BBS" })).toBeTruthy()
+    expect(screen.getByText("Type what to look for, then search PICO-8 BBS.")).toBeTruthy()
+    const field = screen.getByRole("searchbox", { name: "Search PICO-8 BBS" })
+    fireEvent.change(field, { target: { value: " celeste " } })
     fireEvent.click(screen.getByRole("button", { name: "Search" }))
-    expect(host.calls).toContain("searchStore:@korri:homebrewhub:2048")
+    expect(host.calls).toContain("searchStore:@korri:pico8:celeste")
 
-    rerender(<ShiftSurface host={host} model={model(storeFixture({ search: { _tag: "Searching", providerId: "@korri:homebrewhub", query: "2048" } }))} />)
+    rerender(<ShiftSurface host={host} model={model(storeFixture({ search: { _tag: "Searching", providerId: "@korri:pico8", query: "celeste" } }))} />)
     expect(document.querySelector(".shift-store-empty")?.textContent).toBe("Searching…")
     expect((screen.getByRole("button", { name: "Searching…" }) as HTMLButtonElement).disabled).toBe(true)
 
     rerender(<ShiftSurface host={host} model={model(storeFixture({ search: {
-      _tag: "Problem", providerId: "@korri:homebrewhub", query: "2048",
-      message: "Homebrew Hub did not answer. Check the connection and try again.",
+      _tag: "Problem", providerId: "@korri:pico8", query: "celeste",
+      message: "The BBS did not answer. Check the connection and try again.",
       actions: [{ id: "store:2:search-retry", label: "Retry", enabled: true }],
     } }))} />)
-    expect(screen.getByText("Homebrew Hub did not answer. Check the connection and try again.")).toBeTruthy()
+    expect(screen.getByText("The BBS did not answer. Check the connection and try again.")).toBeTruthy()
     choose("Retry")
     expect(host.calls).toContain("action:store:2:search-retry")
 
-    rerender(<ShiftSurface host={host} model={model(storeFixture({ search: { _tag: "Ready", providerId: "@korri:homebrewhub", query: "zelda", entries: [] } }))} />)
-    expect(screen.getByText("Nothing on Homebrew Hub matches “zelda”. Try other words.")).toBeTruthy()
+    rerender(<ShiftSurface host={host} model={model(storeFixture({ search: { _tag: "Ready", providerId: "@korri:pico8", query: "zelda", entries: [] } }))} />)
+    expect(screen.getByText("Nothing on PICO-8 BBS matches “zelda”. Try other words.")).toBeTruthy()
 
     rerender(<ShiftSurface host={host} model={model(storeFixture())} />)
     expect(screen.getAllByRole("button").filter(button => button.classList.contains("shift-store-tile"))).toHaveLength(STORE_ENTRIES.length)
     // A result from another provider is not this page's to show.
-    rerender(<ShiftSurface host={host} model={model(storeFixture({ search: { _tag: "Ready", providerId: "@korri:pico8", query: "", entries: STORE_ENTRIES } }))} />)
+    rerender(<ShiftSurface host={host} model={model(storeFixture({
+      providers: { _tag: "Ready", providers: [{ id: "@korri:pico8", title: "PICO-8 BBS" }, { id: "@korri:other", title: "Other" }] },
+      search: { _tag: "Ready", providerId: "@korri:other", query: "", entries: STORE_ENTRIES },
+    }))} />)
     expect(screen.queryAllByRole("button").filter(button => button.classList.contains("shift-store-tile"))).toHaveLength(0)
   })
 
@@ -99,14 +102,14 @@ describe("Shift store", () => {
     const host = createFixtureHost()
     render(<ShiftSurface host={host} model={model(storeFixture())} />)
     openStore(host)
-    choose("Homebrew Hub")
-    choose("2048, Game Boy")
-    expect(host.calls).toContain("openStoreEntry:e:2048")
-    expect(screen.getByRole("heading", { name: "2048" })).toBeTruthy()
-    expect(screen.getByText("Homebrew Hub · Game Boy")).toBeTruthy()
+    choose("PICO-8 BBS")
+    choose("Celeste Classic 2, PICO-8")
+    expect(host.calls).toContain("openStoreEntry:e:celeste")
+    expect(screen.getByRole("heading", { name: "Celeste Classic 2" })).toBeTruthy()
+    expect(screen.getByText("PICO-8 BBS · PICO-8")).toBeTruthy()
     const before = host.calls.length
     act(() => host.press("back"))
-    expect(screen.getByRole("heading", { name: "Homebrew Hub" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "PICO-8 BBS" })).toBeTruthy()
     act(() => host.press("back"))
     expect(screen.getByRole("heading", { name: "Get games" })).toBeTruthy()
     act(() => host.press("back"))
@@ -118,29 +121,28 @@ describe("Shift store", () => {
     const host = createFixtureHost()
     render(<ShiftSurface host={host} model={model(storeFixture({ search: { _tag: "Idle" } }))} />)
     openStore(host)
-    choose("RetroBrews")
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "anguna" } })
+    choose("PICO-8 BBS")
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "celeste" } })
     act(() => host.press("back"))
     act(() => host.press("back"))
     openStore(host)
-    choose("RetroBrews")
-    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("anguna")
+    choose("PICO-8 BBS")
+    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("celeste")
   })
 
   test.each([
     ["offer", ["Get"], undefined],
     ["cancelled", ["Get"], "Download cancelled. Nothing was kept."],
-    ["confirm", ["Download", "Cancel"], "2048, size unknown"],
-    ["folders", ["Game Boy", "SD card · Game Boy", "Cancel"], "More than one folder on this device holds Game Boy games. Choose where this one goes."],
-    ["downloading", ["Cancel"], "16 KB of 32.8 KB · 16 KB/s · 0:01 left"],
+    ["confirm", ["Download", "Cancel"], "Celeste Classic 2, size unknown"],
+    ["downloading", ["Cancel"], "8 KB of 15.9 KB · 8 KB/s · 0:01 left"],
     ["placing", [], undefined],
     ["stopped", ["Retry"], "Korri restarted before the download finished. Nothing was kept, and your library is unchanged."],
   ] as const)("the %s state shows Korri's words and runs exactly its actions", (state, labels, words) => {
     const host = createFixtureHost()
     render(<ShiftSurface host={host} model={model(storeFixture({ details: storeDetails(STORE_GETS[state]) }))} />)
     openStore(host)
-    choose("Homebrew Hub")
-    choose("2048, Game Boy")
+    choose("PICO-8 BBS")
+    choose("Celeste Classic 2, PICO-8")
     const get = document.querySelector("[data-shift-store-get]")
     expect(get?.getAttribute("data-shift-store-get")).toBe(STORE_GETS[state]._tag)
     const buttons = [...(get?.querySelectorAll("button") ?? [])].map(button => button.textContent)
@@ -157,12 +159,12 @@ describe("Shift store", () => {
     const host = createFixtureHost()
     const { rerender } = render(<ShiftSurface host={host} model={model(storeFixture({ details: storeDetails(STORE_GETS.downloading) }))} />)
     openStore(host)
-    choose("Homebrew Hub")
-    choose("2048, Game Boy")
-    const bar = screen.getByRole("progressbar", { name: "Downloading 2048" })
-    expect(bar.getAttribute("aria-valuenow")).toBe("49")
+    choose("PICO-8 BBS")
+    choose("Celeste Classic 2, PICO-8")
+    const bar = screen.getByRole("progressbar", { name: "Downloading Celeste Classic 2" })
+    expect(bar.getAttribute("aria-valuenow")).toBe("50")
     rerender(<ShiftSurface host={host} model={model(storeFixture({ details: storeDetails(STORE_GETS.unsized) }))} />)
-    const band = screen.getByRole("progressbar", { name: "Downloading Ambushed" })
+    const band = screen.getByRole("progressbar", { name: "Downloading Celeste Classic 2" })
     expect(band.getAttribute("aria-valuenow")).toBeNull()
     expect(band.hasAttribute("data-indeterminate")).toBe(true)
   })
@@ -171,8 +173,8 @@ describe("Shift store", () => {
     const host = createFixtureHost()
     const { rerender } = render(<ShiftSurface host={host} model={model(storeFixture({ details: storeDetails(STORE_GETS.unavailable) }))} />)
     openStore(host)
-    choose("Homebrew Hub")
-    choose("2048, Game Boy")
+    choose("PICO-8 BBS")
+    choose("Celeste Classic 2, PICO-8")
     expect(screen.getByText(STORE_GETS.unavailable.reason)).toBeTruthy()
     expect(document.querySelectorAll("[data-shift-store-get] button")).toHaveLength(0)
     rerender(<ShiftSurface host={host} model={model(storeFixture({ details: storeDetails(STORE_GETS.staged) }))} />)
@@ -182,15 +184,15 @@ describe("Shift store", () => {
     choose("▶ Play")
     expect(host.calls.at(-1)).toBe("launch:local-game:wl4")
     // Play leaves the store for the launch.
-    expect(screen.queryByRole("heading", { name: "2048" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Celeste Classic 2" })).toBeNull()
   })
 
   test("in the library before the catalog has it: no Play to press yet", () => {
     const host = createFixtureHost()
     render(<ShiftSurface host={host} model={model(storeFixture({ details: storeDetails({ _tag: "InLibrary", detail: "In your library" }) }))} />)
     openStore(host)
-    choose("Homebrew Hub")
-    choose("2048, Game Boy")
+    choose("PICO-8 BBS")
+    choose("Celeste Classic 2, PICO-8")
     expect(screen.queryByRole("button", { name: "▶ Play" })).toBeNull()
     expect(screen.getByText("In your library")).toBeTruthy()
   })
@@ -200,11 +202,11 @@ describe("Shift store", () => {
     const entry = STORE_ENTRIES[0]!
     const { rerender } = render(<ShiftSurface host={host} model={model(storeFixture({ details: { _tag: "Loading", entry } }))} />)
     openStore(host)
-    choose("Homebrew Hub")
-    choose("2048, Game Boy")
+    choose("PICO-8 BBS")
+    choose("Celeste Classic 2, PICO-8")
     expect(screen.getByText("Reading this game…")).toBeTruthy()
     rerender(<ShiftSurface host={host} model={model(storeFixture({ details: {
-      _tag: "Problem", entry, message: "Homebrew Hub did not answer.", actions: [{ id: "store:9:details-retry", label: "Retry", enabled: true }],
+      _tag: "Problem", entry, message: "The BBS did not answer.", actions: [{ id: "store:9:details-retry", label: "Retry", enabled: true }],
     } }))} />)
     choose("Retry")
     expect(host.calls.at(-1)).toBe("action:store:9:details-retry")

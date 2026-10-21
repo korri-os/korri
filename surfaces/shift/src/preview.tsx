@@ -330,9 +330,9 @@ function sceneNode(scene: PreviewScene): ReactNode {
     case "store-detail": {
       const place: ShiftStorePlace = scene === "store-providers"
         ? { view: "providers", text: "" }
-        : { view: scene === "store-detail" ? "detail" : "results", providerId: "@korri:homebrewhub", text: "2048" }
+        : { view: scene === "store-detail" ? "detail" : "results", providerId: "@korri:pico8", text: "celeste" }
       const store = storeFixture({
-        ...(scene === "store-searching" ? { search: { _tag: "Searching", providerId: "@korri:homebrewhub", query: "2048" } } : {}),
+        ...(scene === "store-searching" ? { search: { _tag: "Searching", providerId: "@korri:pico8", query: "celeste" } } : {}),
         ...(scene === "store-detail" ? { details: storeDetails(STORE_GETS.downloading) } : {}),
       })
       return (
