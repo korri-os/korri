@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import type { Game } from "@contracts/generated/korrid"
 import type { SurfaceAction, SurfaceStore, SurfaceStoreGet } from "@contracts/surface/korri-surface"
 import {
   createInMemoryStoreAcquisition,
@@ -33,6 +34,11 @@ const base = (claims: InMemoryClaim[], extra: Partial<InMemoryStoreConfig> = {})
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
+/** The portal's lookup, over a list of library games. */
+const ownedIn = (library: readonly Game[]) => (providerId: string, claimId: string) =>
+  library.find(game => game.identity?.kind === "provider" &&
+    game.identity.value.provider === providerId && game.identity.value.ref === claimId)?.id
+
 /** A store over the in-memory korrid, with every RPC recorded. */
 function harness(config: InMemoryStoreConfig) {
   const korrid = createInMemoryStoreAcquisition(config)
@@ -51,7 +57,18 @@ function harness(config: InMemoryStoreConfig) {
     acquisitionAcquireStatus: record("status", (jobId: string) => korrid.acquisitionAcquireStatus(jobId)),
     acquisitionAcquireCancel: record("cancel", (jobId: string) => korrid.acquisitionAcquireCancel(jobId)),
   }
-  const store = createStoreAcquisition(client, { pollIntervalMs: 2, onImported: id => imported.push(id) })
+  // The in-memory korrid writes each imported game into this catalog, with
+  // the provider link as its identity, as korrid does (ADR 0014).
+  const library: Game[] = []
+  korrid.bindCatalog(game => { library.push(game) })
+  const store = createStoreAcquisition(client, {
+    pollIntervalMs: 2,
+    onImported: id => {
+      imported.push(id)
+      store.libraryChanged()
+    },
+    ownedGame: ownedIn(library),
+  })
   const seen: SurfaceStore[] = []
   store.subscribe(() => seen.push(store.getSnapshot()))
   const now = () => store.getSnapshot()
@@ -84,7 +101,7 @@ function harness(config: InMemoryStoreConfig) {
     store.openEntry(storeEntryId({ providerId: BBS, id }))
     await until("details", () => now().details._tag === "Ready")
   }
-  return { korrid, store, calls, imported, seen, now, get, until, press, open }
+  return { korrid, store, calls, imported, seen, now, get, until, press, open, library }
 }
 
 test("the provider list loads, and a refused list offers Retry", async () => {
@@ -295,7 +312,7 @@ test("Download runs with real progress and Cancel, places without Cancel, and la
   await h.until("half", () => (h.get() as { progress?: { done: number } }).progress?.done === 16_000)
   expect(h.get()).toMatchObject({ detail: "16 KB of 32 KB · 16 KB/s · 0:01 left" })
   await h.until("placing", () => h.get()._tag === "Working" && (h.get() as { kicker: string }).kicker === "Adding to your library…")
-  expect(h.get()).toEqual({ _tag: "Working", kicker: "Adding to your library…", progress: { done: 0 }, actions: [] })
+  expect(h.get()).toEqual({ _tag: "Working", kicker: "Adding to your library…", actions: [] })
   await h.until("imported", () => h.get()._tag === "InLibrary")
   expect(h.get()).toEqual({ _tag: "InLibrary", detail: "In your library", gameId: "store-korripico8-celeste" })
   expect(h.imported).toEqual(["store-korripico8-celeste"])
@@ -306,39 +323,35 @@ test("Download runs with real progress and Cancel, places without Cancel, and la
   expect(done).toEqual([...done].sort((a, b) => a - b))
 })
 
-test("already in the library: Get becomes Play without a second download", async () => {
+test("already in the library: the entry offers Play at once, in a new portal too", async () => {
   const h = harness(base([claim("celeste")]))
   await h.open("celeste")
   h.press("Get")
   h.press("Download")
   await h.until("imported", () => h.get()._tag === "InLibrary")
+  const bytes = h.korrid.downloadedBytes()
   // Reopening the entry in this portal: Play at once.
   h.store.openEntry(storeEntryId({ providerId: BBS, id: "celeste" }))
   await h.until("reopened", () => h.now().details._tag === "Ready")
-  expect(h.get()._tag).toBe("InLibrary")
+  expect(h.get()).toEqual({ _tag: "InLibrary", detail: "In your library", gameId: "store-korripico8-celeste" })
 
-  // A portal that reloaded knows nothing; korrid returns the claim's job.
-  const again = createStoreAcquisition(h.korrid, { pollIntervalMs: 2 })
-  again.openStore()
-  await flush()
-  again.search(BBS, "")
-  await flush()
-  await flush()
-  again.openEntry(storeEntryId({ providerId: BBS, id: "celeste" }))
-  await flush()
-  await flush()
-  const offer = again.getSnapshot().details
-  if (offer._tag !== "Ready" || offer.get._tag !== "Offer") throw new Error("expected Get")
-  again.act(offer.get.actions[0]!.id)
-  const confirm = again.getSnapshot().details
-  if (confirm._tag !== "Ready" || confirm.get._tag !== "Confirm") throw new Error("expected Confirm")
-  again.act(confirm.get.actions[0]!.id)
-  await flush()
-  await flush()
+  // A portal that reloaded knows no job; the catalog's provider identity is
+  // enough: Play, with no Get, no Confirm and no acquire.
+  const calls: string[] = []
+  const again = createStoreAcquisition({
+    ...h.korrid,
+    acquisitionProviders: () => h.korrid.acquisitionProviders(),
+    acquisitionSearch: request => h.korrid.acquisitionSearch(request),
+    acquisitionDetails: request => h.korrid.acquisitionDetails(request),
+    acquisitionAcquire: request => { calls.push("acquire"); return h.korrid.acquisitionAcquire(request) },
+  }, { pollIntervalMs: 2, ownedGame: ownedIn(h.library) })
+  again.openStore(); await flush()
+  again.search(BBS, ""); await flush(); await flush()
+  again.openEntry(storeEntryId({ providerId: BBS, id: "celeste" })); await flush(); await flush()
   expect(again.getSnapshot().details).toMatchObject({ get: { _tag: "InLibrary", gameId: "store-korripico8-celeste" } })
-  expect(h.korrid.downloadedBytes()).toBe(32_000)
+  expect(calls).toEqual([])
+  expect(h.korrid.downloadedBytes()).toBe(bytes)
 })
-
 test("Cancel during the download stops it, and Get is offered again", async () => {
   const h = harness(base([claim("celeste", { artifact: art("pico8", { name: "celeste.p8.png", sizeBytes: 160_000 }) })]))
   await h.open("celeste")
@@ -405,42 +418,25 @@ test("korrid restarting under a download: Download stopped, Retry starts from ze
   expect(h.calls.slice(before, before + 3).map(call => call.split(" ")[0])).toEqual(["acquire", "details", "acquire"])
 })
 
-test("a cart already in the library: after a korrid restart, Get answers Play with nothing downloaded", async () => {
+test("after a korrid restart an owned cart is still Play; a removed one offers Get again", async () => {
   const h = harness(base([claim("celeste")]))
   await h.open("celeste")
   h.press("Get")
   h.press("Download")
   await h.until("imported", () => h.get()._tag === "InLibrary")
-  const bytes = h.korrid.downloadedBytes()
-  // A portal that knows nothing of that job, over the same korrid.
-  const calls: string[] = []
-  const again = createStoreAcquisition({
-    ...h.korrid,
-    acquisitionProviders: () => h.korrid.acquisitionProviders(),
-    acquisitionSearch: request => h.korrid.acquisitionSearch(request),
-    acquisitionDetails: request => { calls.push("details"); return h.korrid.acquisitionDetails(request) },
-    acquisitionAcquire: request => { calls.push("acquire"); return h.korrid.acquisitionAcquire(request) },
-  }, { pollIntervalMs: 2 })
-  again.openStore(); await flush()
-  again.search(BBS, ""); await flush(); await flush()
-  again.openEntry(storeEntryId({ providerId: BBS, id: "celeste" })); await flush(); await flush()
-  // korrid restarts under the open entry: jobs and held claims are gone; the
-  // cart, its game and its release stay (section 11).
+  // korrid restarts: jobs and held claims are gone, the cart, its game and
+  // its provider link stay. The open entry is still Play, with no acquire.
+  const before = h.calls.length
   h.korrid.restart()
-  const offer = again.getSnapshot().details
-  if (offer._tag !== "Ready" || offer.get._tag !== "Offer") throw new Error("expected Get")
-  again.act(offer.get.actions[0]!.id)
-  const confirm = again.getSnapshot().details
-  if (confirm._tag !== "Ready" || confirm.get._tag !== "Confirm") throw new Error("expected Confirm")
-  again.act(confirm.get.actions[0]!.id)
-  for (let i = 0; i < 20; i++) await flush()
-  expect(again.getSnapshot().details).toMatchObject({ get: { _tag: "InLibrary", gameId: "store-korripico8-celeste" } })
-  // korrid answers an owned cart before it needs the claim: the details read
-  // is the entry opening; Get asked once, with no second read.
-  expect(calls).toEqual(["details", "acquire"])
-  expect(h.korrid.downloadedBytes()).toBe(bytes)
+  h.store.libraryChanged()
+  expect(h.get()).toEqual({ _tag: "InLibrary", detail: "In your library", gameId: "store-korripico8-celeste" })
+  expect(h.calls.length).toBe(before)
+  // Remove download (ADR 0013, ADR 0014 Q4): the game leaves the local
+  // catalog, so the entry offers Get again (Q6).
+  h.library.splice(0)
+  h.store.libraryChanged()
+  expect(h.get()).toMatchObject({ _tag: "Offer", actions: [{ label: "Get" }] })
 })
-
 test("a second Get waits in korrid's queue with Cancel, and moves when the first ends", async () => {
   const big = art("pico8", { name: "celeste.p8.png", sizeBytes: 64_000 })
   const h = harness(base([claim("celeste", { artifact: big }), claim("dusk"), claim("tide")]))
