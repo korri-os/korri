@@ -158,6 +158,7 @@ pub struct SessionPrepareRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionPrepared {
+    pub warnings: Vec<launcher::typed_settings::LaunchWarning>,
     pub game_id: String,
     /** Identity created by korrid while preparing this exact launch. */
     pub launch_id: String,

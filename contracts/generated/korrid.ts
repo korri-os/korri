@@ -845,6 +845,7 @@ export interface PeerListRequest {
 }
 
 export interface SessionPrepared {
+	warnings: LaunchWarning[];
 	gameId: string;
 	/** Identity created by korrid while preparing this exact launch. */
 	launchId: string;
