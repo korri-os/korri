@@ -76,6 +76,13 @@ describe("plugin repositories in the in-memory brain", () => {
     expect(ok(await client.pluginRepositories()).repositoryInstalls.find(item => item.id === "@korri:retro-clock")?.enabled).toBe(true)
   })
 
+  it("leaves official out until it is configured, as the host wire does", async () => {
+    const client = createInMemoryKorridClient({ pluginHost: { userAdded: [], repositories: [], installs: [] } })
+    const repositories = ok(await client.pluginRepositories())
+    expect("official" in repositories).toBe(false)
+    expect(repositories).toEqual({ userAdded: [], repositoryInstalls: [] })
+  })
+
   it("lists releases in catalog order with install and trust state", async () => {
     const client = createInMemoryKorridClient()
     const official = ok(await client.pluginCatalog(OFFICIAL)).entries

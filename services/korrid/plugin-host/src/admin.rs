@@ -170,6 +170,15 @@ pub fn handle(
     result.unwrap_or_else(PluginAdminResponse::Refused)
 }
 
+/// A receipt's on/off state; a receipt whose removal is unfinished has none.
+fn installed_state(desired: &Desired) -> Option<PluginInstalledState> {
+    match desired {
+        Desired::Enabled => Some(PluginInstalledState::Enabled),
+        Desired::Disabled => Some(PluginInstalledState::Disabled),
+        Desired::Removed { .. } => None,
+    }
+}
+
 fn repositories(host: &Host, config: &Configuration) -> Result<PluginAdminResponse, String> {
     let user_added = host
         .sources()?
@@ -181,11 +190,7 @@ fn repositories(host: &Host, config: &Configuration) -> Result<PluginAdminRespon
         .installed()?
         .into_iter()
         .filter_map(|receipt| {
-            let enabled = match receipt.desired {
-                Desired::Enabled => true,
-                Desired::Disabled => false,
-                Desired::Removed { .. } => return None,
-            };
+            let enabled = installed_state(&receipt.desired)? == PluginInstalledState::Enabled;
             match receipt.provenance {
                 Provenance::Repository {
                     source_url,
@@ -224,11 +229,7 @@ fn catalog(
         if !installed.contains_key(&record.plugin_id) {
             let state = host
                 .status(&record.plugin_id)?
-                .and_then(|receipt| match receipt.desired {
-                    Desired::Enabled => Some(PluginInstalledState::Enabled),
-                    Desired::Disabled => Some(PluginInstalledState::Disabled),
-                    Desired::Removed { .. } => None,
-                });
+                .and_then(|receipt| installed_state(&receipt.desired));
             installed.insert(record.plugin_id.clone(), state);
         }
         // Catalog validation already proved the "@namespace:name" form.

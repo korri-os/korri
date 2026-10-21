@@ -725,7 +725,7 @@ export interface PluginRepositoryInstall {
 
 export interface PluginRepositories {
 	/**
-	 * `null` until the device's trusted configuration names an official
+	 * Absent until the device's trusted configuration names an official
 	 * catalog (`services.korri.pluginHost.officialCatalogUrl`).
 	 */
 	official?: string;

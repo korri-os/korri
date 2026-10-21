@@ -274,8 +274,17 @@ changes restart the NixOS restore service before korrid.
 Korrid reads a bounded regular file, refuses symlinks and writable parents, and
 requires root ownership. The directory is mode 0755 and each published file is
 0644. Receipts, approvals, source administration, and the host lock remain
-private. There is no privileged reader RPC or WebView access to `korri-plugin`.
-The settings backend refuses native install/enable changes from browser callers.
+private. This reader grants no plugin authority. The settings backend still
+refuses plugin enable changes made as setting writes.
+
+Plugin administration from the portal has one separate route, approved
+2026-10-20: korrid, and only korrid's uid, reaches seven host operations
+through `korri-plugin-admin.socket` (see **korrid's admin socket** above):
+repository list, add, remove, catalog, inspect, install and enable/disable.
+The host keeps every check for those operations: the lock, catalog
+validation, archive hash, publisher signature and approval digest. korrid
+exposes them only to the full-permission local portal. Peer devices,
+including the owner's other devices, and read-only portals get nothing.
 
 Linux discovery reads these selections. Several
 claims for one system make one catalog candidate; a disagreement about the

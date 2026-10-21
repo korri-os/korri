@@ -32,8 +32,9 @@ pub const CODE_NEEDS_REVIEW: &str = "PluginNeedsReview";
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginRepositories {
-    /// `null` until the device's trusted configuration names an official
+    /// Absent until the device's trusted configuration names an official
     /// catalog (`services.korri.pluginHost.officialCatalogUrl`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub official: Option<String>,
     pub user_added: Vec<String>,
     pub repository_installs: Vec<PluginRepositoryInstall>,
