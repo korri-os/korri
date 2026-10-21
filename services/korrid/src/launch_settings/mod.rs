@@ -170,7 +170,7 @@ pub enum LaunchSetting {
 #[typeshare(serialized_as = "LaunchLimitValueWire")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum LaunchSettingValue {
+pub enum LaunchLimitValue {
     Percent(u8),
     Governor(String),
 }
@@ -182,7 +182,7 @@ pub struct LaunchSettingsSetRequest {
     pub scope: LaunchSettingsScope,
     pub setting: LaunchSetting,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<LaunchSettingValue>,
+    pub value: Option<LaunchLimitValue>,
     pub expected_revision: String,
 }
 

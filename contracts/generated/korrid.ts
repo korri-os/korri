@@ -21,7 +21,7 @@ export type FailedDownloadTag = "FailedDownload";
 
 export type FinalDownloadTag = "FinalDownload";
 
-export type LaunchSettingValue = number | string;
+export type LaunchLimitValue = number | string;
 
 export type LaunchSettingValue = boolean | number | string;
 
@@ -623,7 +623,7 @@ export enum LaunchSetting {
 export interface LaunchSettingsSetRequest {
 	scope: LaunchSettingsScope;
 	setting: LaunchSetting;
-	value?: LaunchSettingValue;
+	value?: LaunchLimitValue;
 	expectedRevision: string;
 }
 
