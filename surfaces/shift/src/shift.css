@@ -675,8 +675,9 @@
 	 * the title/eyebrow (which start at the hero edge). */
 	font-size: var(--shift-text-fine);
 	margin-top: var(--shift-space-1);
-	margin-left: calc(-1 * var(--shift-space-3));
-	max-width: calc(100% + var(--shift-space-3));
+	/* No negative pull: the mid row clips, so a pulled first pill lost its
+	 * left edge. The pills align with the title by their outer edge. */
+	max-width: 100%;
 	overflow: hidden;
 	-webkit-mask-image: linear-gradient(to right, #000 88%, transparent 100%);
 	mask-image: linear-gradient(to right, #000 88%, transparent 100%);
@@ -867,6 +868,13 @@
  * frame + focus lift, but a quiet accent-gradient panel with a motif instead of
  * cover art, so they read as destinations rather than games. */
 [data-shift-home] .shift-cine-tile-affordance {
+	/* A destination is as wide as its label needs (between a game tile's
+	 * width and 1.6 tile heights), so labels wrap only between words. */
+	aspect-ratio: auto;
+	width: max-content;
+	min-width: calc(var(--cine-tile) * 2 / 3);
+	max-width: calc(var(--cine-tile) * 1.6);
+	padding-inline: var(--shift-space-2);
 	opacity: 0.62;
 	background: linear-gradient(
 		155deg,
@@ -909,7 +917,10 @@
 	max-width: 100%;
 	padding-inline: var(--shift-space-1);
 	overflow: hidden;
-	overflow-wrap: anywhere;
+	/* Break between words only; never mid-word. */
+	overflow-wrap: normal;
+	word-break: normal;
+	hyphens: manual;
 	text-align: center;
 }
 
@@ -959,7 +970,16 @@
 	opacity: 0.92;
 }
 
+/* A failure reason is a sentence, not a tag: it wraps between words instead
+ * of running past a narrow frame, and its row drops the tail fade. */
+[data-shift-home] .shift-cine-chips:has(> .shift-cine-chip.is-reason:only-child) {
+	-webkit-mask-image: none;
+	mask-image: none;
+}
+
 [data-shift-home] .shift-cine-chip.is-reason {
+	white-space: normal;
+	border-radius: var(--shift-radius-panel);
 	border-color: color-mix(in srgb, var(--shift-danger) 55%, transparent);
 	color: var(--shift-danger);
 	background: color-mix(in srgb, var(--shift-danger) 12%, transparent);
@@ -3876,4 +3896,35 @@ button.shift-sheet-control:is(:hover, :focus, [data-korri-active-focus]) {
 	[data-shift-saves] .shift-saves-loading {
 		animation: none;
 	}
+}
+
+/* The library's focused game and its save mark, pinned under the grid. */
+[data-shift-library] .shift-lib-focus {
+	position: sticky;
+	bottom: 0;
+	margin-top: auto;
+	z-index: 3;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0 var(--shift-space-3);
+	margin-bottom: 0;
+	padding: var(--shift-space-3) 0;
+	background: linear-gradient(to top, rgba(0, 0, 0, 0.94) 60%, transparent);
+	font-size: var(--shift-text-body);
+}
+
+[data-shift-library] .shift-lib-focus-title {
+	font-weight: 700;
+	color: var(--shift-ink);
+	overflow-wrap: anywhere;
+}
+
+[data-shift-library] .shift-lib-focus-saves {
+	font-weight: 600;
+	color: var(--shift-ink-dim);
+}
+
+[data-shift-library] .shift-lib-focus-saves[data-saves="Split"] {
+	color: var(--shift-attention);
 }

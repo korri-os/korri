@@ -31,7 +31,7 @@ export function ShiftLibraryTile({
     <button
       type="button"
       className="shift-lib-tile"
-      aria-label={game.split ? `${game.title}, saves split` : game.title}
+      aria-label={game.saves === "Split" ? `${game.title}, saves split` : game.title}
       {...shiftDesignPartAttrs(SHIFT_DESIGN_PARTS.libraryTile, game.id)}
       data-shift-game-id={game.id}
       data-favorite={game.favorite || undefined}
@@ -41,7 +41,7 @@ export function ShiftLibraryTile({
       <span className="shift-lib-tile-art">
         <ShiftCoverArt src={game.artUrl} loading="lazy" title={game.title} />
         {game.favorite ? <ShiftLibraryTileBadge /> : null}
-        {game.split ? <span className="shift-lib-tile-split">Split</span> : null}
+        {game.saves === "Split" ? <span className="shift-lib-tile-split">Split</span> : null}
       </span>
       <ShiftLibraryTileTitle title={game.title} />
     </button>

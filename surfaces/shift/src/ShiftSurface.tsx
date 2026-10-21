@@ -96,7 +96,7 @@ export function shiftLibraryGameFromSurfaceGame(
       ? {}
       : { lastPlayedAt: game.lastPlayedAt }),
     ...(minutes === undefined ? {} : { playtimeMinutes: minutes }),
-    ...(game.saves?._tag === "Split" ? { split: true } : {}),
+    ...(game.saves === undefined ? {} : { saves: game.saves._tag }),
   }
 }
 

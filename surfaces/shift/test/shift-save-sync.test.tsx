@@ -195,6 +195,24 @@ describe("save marks and the split notice", () => {
     expect(screen.getByText("Saves split between two devices")).toBeTruthy()
   })
 
+  test("Library states the focused game's mark, for every mark", () => {
+    const { container } = render(<ShiftSurface host={createFixtureHost()} model={savesModel()} />)
+    fireEvent.click(screen.getByRole("button", { name: "Library" }))
+    fireEvent.click(screen.getByRole("button", { name: "Library" }))
+    const readout = () => container.querySelector(".shift-lib-focus")?.textContent ?? ""
+    const cases: readonly [string, string][] = [
+      ["Wario Land 4, saves split", "Saves split between two devices"],
+      ["The Legend of Zelda: The Minish Cap", "Saves synced"],
+      ["Advance Wars", "Not checked with other devices"],
+      ["Neverball", "Saves not synced"],
+      ["Hades", "Synced by Steam"],
+    ]
+    for (const [name, mark] of cases) {
+      fireEvent.focus(screen.getByRole("button", { name }))
+      expect(readout()).toContain(mark)
+    }
+  })
+
   test("the gameplay overlay states a split found during the session", () => {
     render(
       <ShiftSurface

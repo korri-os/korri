@@ -17,8 +17,8 @@ export interface ShiftCineChipsProps {
   /** What the game still has to fetch ("Downloading 41%"). Leads the row: it
    * is why Options offers Download, Cancel download or Remove download. */
   readonly download?: string
-  /** The game's save mark. A split leads the row: the next launch asks first.
-   * The other marks follow the provenance line. */
+  /** The game's save mark. It leads the row after a download, so the row's
+   * trailing fade on a narrow frame never hides it. */
   readonly saves?: ShiftSaveState
 }
 
@@ -38,12 +38,11 @@ export function ShiftCineChips({
       {download ? <ShiftCineChip tone="download">{download}</ShiftCineChip> : null}
       {saves === "Split" ? (
         <ShiftCineChip tone="attention">{SPLIT_NOTICE}</ShiftCineChip>
+      ) : saves !== undefined ? (
+        <ShiftCineChip tone="saves">{SAVE_MARK_LABELS[saves]}</ShiftCineChip>
       ) : null}
       {fresh ? <ShiftCineChip tone="reason">Fresh pick</ShiftCineChip> : null}
       {subtitle ? <ShiftCineChip>{subtitle}</ShiftCineChip> : null}
-      {saves !== undefined && saves !== "Split" ? (
-        <ShiftCineChip tone="saves">{SAVE_MARK_LABELS[saves]}</ShiftCineChip>
-      ) : null}
       {genre ? <ShiftCineChip>{genre}</ShiftCineChip> : null}
       {developer ? <ShiftCineChip>{developer}</ShiftCineChip> : null}
       {lastPlayedLabel ? (

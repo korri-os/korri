@@ -14,12 +14,15 @@ export interface ShiftLibraryShelfProps {
   readonly title: string
   readonly games: readonly ShiftLibraryGame[]
   readonly onSelect?: (id: string) => void
+  /** Real DOM focus landed on a tile. */
+  readonly onFocus?: (id: string) => void
 }
 
 export function ShiftLibraryShelf({
   title,
   games,
   onSelect,
+  onFocus,
 }: ShiftLibraryShelfProps) {
   return (
     <section
@@ -29,7 +32,7 @@ export function ShiftLibraryShelf({
       <ShiftLibraryShelfTitle title={title} />
       <div className="shift-lib-shelf-track">
         {games.map(game => (
-          <ShiftLibraryTile key={game.id} game={game} onSelect={onSelect} />
+          <ShiftLibraryTile key={game.id} game={game} onSelect={onSelect} onFocus={onFocus} />
         ))}
       </div>
     </section>

@@ -11,6 +11,7 @@
  */
 import { useSurfaceAction } from "../host/surface-host"
 import { useMemo, useState } from "react"
+import { SAVE_MARK_LABELS, SPLIT_NOTICE } from "../save-sync-labels"
 import {
   type ShiftLibraryLens as LibraryLens,
   ShiftLensRow,
@@ -70,6 +71,10 @@ export function ShiftLibraryLens({
       }),
     [games, sort, lens],
   )
+  // The focused game's save mark, so every game's protection can be read here
+  // (ADR 0014), not only a split's tile badge.
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  const focused = games.find(game => game.id === focusedId)
   const genreSections = useMemo(
     () => buildShiftLibraryGenreSections(games),
     [games],
@@ -86,12 +91,21 @@ export function ShiftLibraryLens({
       <ShiftLensRow lens={lens} onSelect={setLens} />
 
       {lens === "genre" ? (
-        <ShiftLibraryShelfStack sections={genreSections} onSelect={onSelect} />
+        <ShiftLibraryShelfStack sections={genreSections} onSelect={onSelect} onFocus={setFocusedId} />
       ) : flat.length > 0 ? (
-        <ShiftLibraryGridView games={flat} onSelect={onSelect} />
+        <ShiftLibraryGridView games={flat} onSelect={onSelect} onFocus={setFocusedId} />
       ) : (
         <ShiftLibraryEmpty message="No favorites yet." />
       )}
+
+      {focused?.saves ? (
+        <p className="shift-lib-focus" aria-live="polite">
+          <span className="shift-lib-focus-title">{focused.title}</span>
+          <span className="shift-lib-focus-saves" data-saves={focused.saves}>
+            {focused.saves === "Split" ? SPLIT_NOTICE : SAVE_MARK_LABELS[focused.saves]}
+          </span>
+        </p>
+      ) : null}
     </div>
   )
 }

@@ -12,11 +12,14 @@ import type { ShiftLibraryGame } from "./shift-library-game"
 export interface ShiftLibraryGridViewProps {
   readonly games: readonly ShiftLibraryGame[]
   readonly onSelect?: (id: string) => void
+  /** Real DOM focus landed on a tile. */
+  readonly onFocus?: (id: string) => void
 }
 
 export function ShiftLibraryGridView({
   games,
   onSelect,
+  onFocus,
 }: ShiftLibraryGridViewProps) {
   return (
     <div
@@ -24,7 +27,7 @@ export function ShiftLibraryGridView({
       {...shiftDesignPartAttrs(SHIFT_DESIGN_PARTS.libraryGridView)}
     >
       {games.map(game => (
-        <ShiftLibraryTile key={game.id} game={game} onSelect={onSelect} />
+        <ShiftLibraryTile key={game.id} game={game} onSelect={onSelect} onFocus={onFocus} />
       ))}
     </div>
   )

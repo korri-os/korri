@@ -12,11 +12,14 @@ import type { ShiftLibrarySection } from "./shift-library-sections"
 export interface ShiftLibraryShelfStackProps {
   readonly sections: readonly ShiftLibrarySection[]
   readonly onSelect?: (id: string) => void
+  /** Real DOM focus landed on a tile. */
+  readonly onFocus?: (id: string) => void
 }
 
 export function ShiftLibraryShelfStack({
   sections,
   onSelect,
+  onFocus,
 }: ShiftLibraryShelfStackProps) {
   return (
     <div
@@ -29,6 +32,7 @@ export function ShiftLibraryShelfStack({
           title={section.title}
           games={section.games}
           onSelect={onSelect}
+          onFocus={onFocus}
         />
       ))}
     </div>
