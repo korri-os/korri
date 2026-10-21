@@ -1043,6 +1043,7 @@ mod tests {
                 entry: "plugin.ts".into(),
                 sources: vec!["plugin.ts".into()],
                 requires: vec![],
+                hosts: vec![],
                 files: std::collections::BTreeMap::from([(
                     "program".into(),
                     PathBuf::from("/bin/sh"),

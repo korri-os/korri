@@ -22,6 +22,7 @@ use std::{
     time::Duration,
 };
 
+const PERSON: &str = "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9";
 const HOST: &str = "provider.test";
 const PROVIDER: &str = "@test:shop";
 
@@ -107,6 +108,7 @@ fn package(root: &Path, name: &str, source: &str, hosts: Vec<String>) -> Enabled
     let package = root.join(format!("package-{name}"));
     fs::create_dir_all(&package).unwrap();
     fs::write(package.join("plugin.ts"), source).unwrap();
+    fs::write(package.join("manifest.json"),serde_json::json!({"entry":"plugin.ts","sources":["plugin.ts"],"files":{"run":package.join("run")}}).to_string()).unwrap();
     EnabledPackage {
         id: format!("@test:{name}"),
         package: package.clone(),
@@ -189,6 +191,8 @@ struct World {
     blocks: Arc<sleep::InMemoryBlocks>,
     /// The device's local `/rpc` with the portal capability.
     app: axum::Router,
+    runtime: crate::host::HostRuntime,
+    backend: Arc<crate::host::control::InMemoryLaunchUnitBackend>,
 }
 
 fn engine() -> DownloadEngine {
@@ -209,11 +213,12 @@ fn world_with(server: HttpFixture, pinned: Option<(&str, &str)>) -> World {
     // discovery and the store on its own library.
     let config = root.join("host.toml");
     fs::write(&config, "label = \"device\"\ngames = []\n").unwrap();
+    let backend = Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default());
     let runtime = crate::host::HostRuntime::from_paths_with_backend(
         &config,
         Some(root.clone()),
         private.clone(),
-        Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
+        backend.clone(),
     )
     .with_route_registry(root.clone(), registry.clone())
     .with_library_discovery();
@@ -227,7 +232,7 @@ fn world_with(server: HttpFixture, pinned: Option<(&str, &str)>) -> World {
         ..Default::default()
     };
     let app = crate::secure_host_routers_with_acquisition(
-        runtime,
+        runtime.clone(),
         &private,
         Some(crate::PortalAccess::new(
             "device",
@@ -249,6 +254,8 @@ fn world_with(server: HttpFixture, pinned: Option<(&str, &str)>) -> World {
         coordinator,
         blocks,
         app,
+        runtime,
+        backend,
     }
 }
 
@@ -494,6 +501,7 @@ async fn the_route_reaches_the_download_by_hash_and_passes_it_as_content_path() 
         &route,
         None,
         None,
+        PERSON,
     )
     .unwrap();
     let input: crate::launcher::plugin_launch::PluginLaunchInput =
@@ -503,6 +511,20 @@ async fn the_route_reaches_the_download_by_hash_and_passes_it_as_content_path() 
         Some(download.display().to_string().as_str())
     );
     assert!(input.provider_ref.is_none());
+    let account = crate::saves::account_root(&world.root, PERSON).unwrap();
+    assert_eq!(input.account_root, account.display().to_string());
+    assert_eq!(
+        input.save_root,
+        account
+            .join("saves")
+            .join(crate::host::play_log::encode_uri_component(&game_id))
+            .display()
+            .to_string()
+    );
+    assert!(
+        !world.root.join("users").exists(),
+        "route inspection must not create account files"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -846,6 +868,7 @@ async fn remove_download_refuses_while_the_game_runs() {
     let world = world();
     world.search().await;
     let game_id = imported(&world.finish(world.acquire("2048").await.unwrap()).await);
+    world.runtime.claim_save_owner();
     let started = world.launch(&game_id).await;
     assert_eq!(started["outcome"]["_tag"], "Ok", "{started}");
     let refused = world
@@ -954,8 +977,59 @@ async fn the_device_finds_downloads_and_launches_a_store_game_over_its_rpc() {
     let game_id = done["outcome"]["payload"]["state"]["gameId"]
         .as_str()
         .unwrap();
-    let launched = world.launch(game_id).await;
-    assert_eq!(launched["outcome"]["_tag"], "Ok", "{launched}");
+    // Acquired content must take the same owner gate as file and package
+    // games, on every public fresh-start path. Claiming later needs no restart.
+    for owned in [false, true] {
+        if owned {
+            world.runtime.claim_save_owner();
+        }
+        for method in [
+            "app.session.start",
+            "app.local-games.launch.selected",
+            "app.session.prepare",
+        ] {
+            let launched = match method {
+                "app.session.start" => world.launch(game_id).await,
+                "app.local-games.launch.selected" => {
+                    world
+                        .call(
+                            method,
+                            serde_json::json!({"gameId":game_id,"runnerId":"@test:core/run"}),
+                        )
+                        .await
+                }
+                _ => {
+                    world
+                        .call(method, serde_json::json!({"gameId":game_id}))
+                        .await
+                }
+            };
+            if !owned {
+                assert_eq!(
+                    launched["outcome"]["payload"]["code"], "DeviceNeedsOwner",
+                    "{launched}"
+                );
+                assert_eq!(world.backend.launch_count(), 0);
+                assert!(!world.root.join("users").exists());
+            } else {
+                assert_eq!(launched["outcome"]["_tag"], "Ok", "{launched}");
+                let payload = &launched["outcome"]["payload"];
+                let launch_id = if method == "app.session.prepare" {
+                    &payload["launchId"]
+                } else {
+                    &payload["session"]["launchId"]
+                };
+                let stopped = world
+                    .call(
+                        "app.session.stop",
+                        serde_json::json!({"expectedLaunchId":launch_id}),
+                    )
+                    .await;
+                assert_eq!(stopped["outcome"]["_tag"], "Ok", "{stopped}");
+            }
+        }
+    }
+    assert_eq!(world.backend.launch_count(), 3);
 }
 
 /// ADR 0017: the device pairs a folder and rescans its own library, and the
@@ -1011,6 +1085,7 @@ async fn the_device_pairs_and_rescans_its_library_and_launches_what_it_found() {
                 .any(|r| r.identity.as_ref().is_some_and(|i| i.value() == key))
         })
         .expect("discovery recorded the found game");
+    world.runtime.claim_save_owner();
     let launched = world.launch(game_id).await;
     assert_eq!(launched["outcome"]["_tag"], "Ok", "{launched}");
     let rescan = world

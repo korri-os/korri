@@ -1646,7 +1646,7 @@ impl AppState {
         match &self.mode {
             ServerMode::Brain(brain) => Some(LocalLibrary {
                 discovery: &brain.discovery,
-                owner_public_key: brain.local_owner_public_key(),
+                owner_public_key: brain.local_owner_public_key().map(str::to_owned),
             }),
             ServerMode::Host(host) => host.library_discovery().map(|discovery| LocalLibrary {
                 discovery,
@@ -2213,7 +2213,7 @@ fn exact_host_launch_id(
 /// The device's own library and the owner key its changes answer to.
 struct LocalLibrary<'a> {
     discovery: &'a discovery::DiscoveryLifecycleCoordinator,
-    owner_public_key: Option<&'a str>,
+    owner_public_key: Option<String>,
 }
 
 fn library_unavailable(what: &str) -> RpcFailure {
@@ -3796,8 +3796,10 @@ fn discovery_mutation(
 ) -> DiscoverySnapshotOutcome {
     match state.local_library() {
         Some(library) => {
-            match require_discovery_owner(caller_is_owner(library.owner_public_key, authorization))
-            {
+            match require_discovery_owner(caller_is_owner(
+                library.owner_public_key.as_deref(),
+                authorization,
+            )) {
                 Ok(()) => operation(library.discovery)
                     .map(discovery_snapshot)
                     .map(DiscoverySnapshotOutcome::Ok)
