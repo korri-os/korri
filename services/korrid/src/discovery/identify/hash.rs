@@ -74,55 +74,6 @@ pub fn header_size(prefix: &[u8], size: u64, rules: &[HeaderRule]) -> u64 {
 }
 
 impl HashCache {
-    /// Bytes this cache read to hash files since it was loaded.
-    pub fn hashed_bytes(&self) -> u64 {
-        self.read_bytes
-    }
-
-    /// Record digests a writer computed while writing `path` (ADR 0014: the
-    /// acquisition digest, as legacy identityPolicy "skip" reused the staging
-    /// digest). The entry is valid only for this exact path, size and mtime,
-    /// and only when the rules strip no header, because the digests cover the
-    /// whole file. Returns whether an entry was recorded.
-    pub fn seed(
-        &mut self,
-        path: &Path,
-        rules: &[HeaderRule],
-        sha256_hex: &str,
-        sha1_hex: &str,
-    ) -> Result<bool, IdentifyError> {
-        let path = path.canonicalize()?;
-        let metadata = fs::metadata(&path)?;
-        if !metadata.is_file() {
-            return Ok(false);
-        }
-        let size = metadata.len();
-        let prefix = if rules.is_empty() {
-            Vec::new()
-        } else {
-            prefix(&path)?
-        };
-        if header_size(&prefix, size, rules) != 0 {
-            return Ok(false);
-        }
-        let modified_nanos = metadata.modified().ok().and_then(|time| {
-            time.duration_since(UNIX_EPOCH)
-                .ok()
-                .map(|duration| duration.as_nanos())
-        });
-        self.entries.insert(
-            path.to_string_lossy().into_owned(),
-            CacheEntry {
-                size,
-                modified_nanos,
-                header_size: 0,
-                hash: format!("sha256:{sha256_hex}"),
-                sha1: format!("sha1:{sha1_hex}"),
-            },
-        );
-        Ok(true)
-    }
-
     pub(super) fn hash(
         &mut self,
         path: &Path,

@@ -34,6 +34,15 @@ const HASH_CACHE_FILE: &str = "hash-cache.json";
 const OWNERSHIP_FILE: &str = "ownership.json";
 const REPAIR_FILE: &str = "repair.json";
 
+/// A cart the acquire job published in korrid's cache (ADR 0014).
+pub struct AcquiredCart<'a> {
+    pub provider: &'a str,
+    pub claim_id: &'a str,
+    pub title: &'a str,
+    pub system: &'a str,
+    pub sha256_hex: &'a str,
+}
+
 #[derive(Clone)]
 pub struct DiscoveryCoordinator {
     readable_root: PathBuf,
@@ -73,9 +82,6 @@ impl Default for DiscoveryOptions {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DiscoveryMutationReport {
     pub scan: ScanReport,
-    /// File bytes read to hash content during this scan; unchanged and
-    /// seeded files cost none.
-    pub hashed_bytes: u64,
     pub scan_duration_ms: u128,
     pub added_games: usize,
     pub removed_locations: usize,
@@ -205,30 +211,6 @@ impl DiscoveryCoordinator {
             .lock()
             .expect("discovery write lock poisoned");
         Documents::read(&self.readable_root)?.validate()
-    }
-
-    /// Seed the private hash cache with digests computed while writing
-    /// `path`, under the publication lock, so the next scan reads none of it.
-    pub fn seed_hash(
-        &self,
-        path: &Path,
-        rules: &[crate::plugin::HeaderRule],
-        sha256_hex: &str,
-        sha1_hex: &str,
-    ) -> Result<bool, DiscoveryError> {
-        let _guard = self
-            .write_lock
-            .lock()
-            .expect("discovery write lock poisoned");
-        let mut cache: HashCache = read_json(&state_file(&self.private_root, HASH_CACHE_FILE))?;
-        let seeded = cache
-            .seed(path, rules, sha256_hex, sha1_hex)
-            .map_err(|e| DiscoveryError::Storage(e.to_string()))?;
-        if seeded {
-            attention::atomic_save_json(&self.private_root, HASH_CACHE_FILE, &cache)
-                .map_err(|e| DiscoveryError::Storage(e.to_string()))?;
-        }
-        Ok(seeded)
     }
 
     fn mutate(
@@ -404,7 +386,6 @@ impl DiscoveryCoordinator {
             .map_err(|e| DiscoveryError::Storage(e.to_string()))?;
         scan.unpaired = unpaired;
         Ok(DiscoveryMutationReport {
-            hashed_bytes: cache.hashed_bytes(),
             scan,
             scan_duration_ms: started.elapsed().as_millis(),
             added_games: final_snapshot
@@ -421,6 +402,109 @@ impl DiscoveryCoordinator {
             storage_id,
             repaired,
         })
+    }
+
+    /// ADR 0014: record a cart the acquire job published in korrid's cache.
+    /// Written once, under the publication lock: the game (claim title), its
+    /// release (`sha256:` identity, the claim's system) and the provider link
+    /// `{ provider, ref: claim id }`. No location is saved. Identical bytes
+    /// already in the library join that game; an existing link keeps its game.
+    /// Returns the game id.
+    pub fn record_acquired(&self, cart: &AcquiredCart<'_>) -> Result<String, DiscoveryError> {
+        use crate::config::{
+            library::{
+                LibraryIdentity, LibraryItemPayload, LibraryReleasePayload, ProviderLinkPayload,
+                ProviderLinkRef, ProviderLinkRefKind,
+            },
+            InheritableLayer, NonEmptyString,
+        };
+        let _guard = self
+            .write_lock
+            .lock()
+            .expect("discovery write lock poisoned");
+        ensure_fixed_files(&self.readable_root)?;
+        let mut private = PrivateState::read(&self.private_root)?;
+        documents::recover(&self.readable_root, &self.private_root, &mut private)?;
+        let current = Documents::read(&self.readable_root)?;
+        let before = current.validate()?;
+        let mut after = before.clone();
+        let key = format!("sha256:{}", cart.sha256_hex);
+        let link_id = format!("{}/{}", cart.provider, cart.claim_id);
+        let holds = |game: &LibraryItemPayload| {
+            game.releases
+                .iter()
+                .any(|release| release.identity.as_ref().is_some_and(|i| i.value() == key))
+        };
+        let game_id = after
+            .provider_links
+            .get(&link_id)
+            .map(|link| link.playable.0.clone())
+            .filter(|id| after.library.contains_key(id))
+            .or_else(|| {
+                after
+                    .library
+                    .iter()
+                    .find(|(_, game)| holds(game))
+                    .map(|(id, _)| id.clone())
+            })
+            .unwrap_or_else(|| {
+                let id = change::unique_id(&change::slug(cart.title), |id| {
+                    after.library.contains_key(id)
+                });
+                after.library.insert(
+                    id.clone(),
+                    LibraryItemPayload {
+                        modifiers: Default::default(),
+                        title: Some(cart.title.to_owned()),
+                        version_of: None,
+                        relation: None,
+                        contains: None,
+                        display: None,
+                        metadata: None,
+                        runner: None,
+                        families: BTreeMap::new(),
+                        runners: BTreeMap::new(),
+                        releases: Vec::new(),
+                    },
+                );
+                id
+            });
+        if !after.library.values().any(holds) {
+            let game = after.library.get_mut(&game_id).expect("target game");
+            let id = change::unique_id(cart.system, |id| {
+                game.releases.iter().any(|release| release.id.0 == id)
+            });
+            game.releases.push(LibraryReleasePayload {
+                id: NonEmptyString(id),
+                system: Some(NonEmptyString(cart.system.to_owned())),
+                identity: Some(LibraryIdentity::Hash { value: key }),
+                display: None,
+                inheritable: InheritableLayer::default(),
+            });
+        }
+        after.provider_links.insert(
+            link_id,
+            ProviderLinkPayload {
+                provider: NonEmptyString(cart.provider.to_owned()),
+                playable: NonEmptyString(game_id.clone()),
+                release: None,
+                refs: vec![ProviderLinkRef {
+                    kind: ProviderLinkRefKind::ProviderItemId,
+                    value: NonEmptyString(cart.claim_id.to_owned()),
+                    scope: None,
+                    target_part: None,
+                }],
+            },
+        );
+        if after != before {
+            current.commit(
+                current.with_snapshot(&before, &after)?,
+                &self.readable_root,
+                &self.private_root,
+                &mut private,
+            )?;
+        }
+        Ok(game_id)
     }
 
     /// One-off migration title carry-over uses the same conflict gate and ownership journal.

@@ -78,6 +78,7 @@ fn linux_route_candidates_for_runner(
                          provider_target,
                          artifact_target,
                          package_target,
+                         cache_target,
                          flattened_target| ResolvedRoute {
                 playable_id: game_id.into(),
                 title: game.title.clone(),
@@ -101,6 +102,7 @@ fn linux_route_candidates_for_runner(
                 provider_target,
                 artifact_target,
                 package_target,
+                cache_target,
             };
             // A saved location is tried before the declaration's artifact.
             let mut routed = false;
@@ -197,6 +199,7 @@ fn linux_route_candidates_for_runner(
                     provider_target,
                     None,
                     None,
+                    None,
                     flattened_target,
                 ));
                 routed = true;
@@ -208,7 +211,8 @@ fn linux_route_candidates_for_runner(
                 if let Some(target) = artifact_target(registry, key) {
                     let flattened = format!("{}:{}", target.artifact_id, target.path);
                     emitted.insert(runner.id.clone());
-                    candidates.push(route(None, None, Some(target), None, flattened));
+                    candidates.push(route(None, None, Some(target), None, None, flattened));
+                    routed = true;
                 } else if let Some(target) = package_target(registry, key) {
                     let path = package_content_path(registry, &target)
                         .map_err(|error| failure(error.to_string()))?;
@@ -218,8 +222,21 @@ fn linux_route_candidates_for_runner(
                         None,
                         None,
                         Some(target),
+                        None,
                         path.display().to_string(),
                     ));
+                    routed = true;
+                }
+            }
+            // ADR 0014: no location and no declaration, but a provider linked
+            // to this game holds the release's cart in its cache.
+            if !routed {
+                if let Some(path) =
+                    crate::acquisition::cart_content(root, registry, snapshot, game_id, key)
+                {
+                    let flattened = format!("cache:{}", path.display());
+                    emitted.insert(runner.id.clone());
+                    candidates.push(route(None, None, None, None, Some(path), flattened));
                 }
             }
         }

@@ -550,6 +550,7 @@ fn package_games_resolve_content_path_offline_and_become_unavailable_when_disabl
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
         requires: vec![],
+        hosts: vec![],
         files: BTreeMap::from([("cartridges".into(), package.join("cartridges"))]),
     };
     let mut missing = pack.clone();
@@ -571,6 +572,7 @@ fn package_games_resolve_content_path_offline_and_become_unavailable_when_disabl
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
         requires: vec![],
+        hosts: vec![],
         files: BTreeMap::from([("run".into(), runner_package.join("run"))]),
     };
     let registry = plugin::PluginRegistry::from_installed(vec![pack, runner.clone()]).unwrap();

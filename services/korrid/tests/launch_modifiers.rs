@@ -90,6 +90,8 @@ fn route() -> korrid::config::resolver::ResolvedRoute {
         provider_target: None,
         artifact_target: None,
         package_target: None,
+
+        cache_target: None,
     }
 }
 

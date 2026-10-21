@@ -48,50 +48,60 @@ pub fn launch_route(
         .linux_runner
         .as_ref()
         .ok_or_else(|| error("native route has no program".into()))?;
-    let (content_path, provider_ref) = match (
-        &route.file_target,
-        &route.provider_target,
-        &route.artifact_target,
-        &route.package_target,
-    ) {
-        (Some(target), None, None, None) => {
-            let content =
-                storage::resolve_file_target(root, snapshot, target).map_err(|storage| {
-                    if storage.is_missing_target() {
-                        LaunchError::RomMissing(storage.to_string())
-                    } else if storage.is_storage_access() {
-                        LaunchError::StorageAccess(storage.to_string())
-                    } else {
-                        error(storage.to_string())
-                    }
-                })?;
-            (Some(content.path.display().to_string()), None)
-        }
-        (None, Some(target), None, None) => (None, Some(target.provider_ref.clone())),
-        (None, None, Some(target), None) => (
-            Some(
-                crate::acquisition::artifact_content_path(root, registry, target)
-                    .map_err(|failure| error(failure.message))?
-                    .display()
-                    .to_string(),
+    let (content_path, provider_ref) =
+        match (
+            &route.file_target,
+            &route.provider_target,
+            &route.artifact_target,
+            &route.package_target,
+            &route.cache_target,
+        ) {
+            (Some(target), None, None, None, None) => {
+                let content =
+                    storage::resolve_file_target(root, snapshot, target).map_err(|storage| {
+                        if storage.is_missing_target() {
+                            LaunchError::RomMissing(storage.to_string())
+                        } else if storage.is_storage_access() {
+                            LaunchError::StorageAccess(storage.to_string())
+                        } else {
+                            error(storage.to_string())
+                        }
+                    })?;
+                (Some(content.path.display().to_string()), None)
+            }
+            (None, Some(target), None, None, None) => (None, Some(target.provider_ref.clone())),
+            (None, None, Some(target), None, None) => (
+                Some(
+                    crate::acquisition::artifact_content_path(root, registry, target)
+                        .map_err(|failure| error(failure.message))?
+                        .display()
+                        .to_string(),
+                ),
+                None,
             ),
-            None,
-        ),
-        (None, None, None, Some(target)) => (
-            Some(
-                crate::config::resolver::package_content_path(registry, target)
-                    .map_err(|cause| error(cause.to_string()))?
-                    .display()
-                    .to_string(),
+            (None, None, None, Some(target), None) => (
+                Some(
+                    crate::config::resolver::package_content_path(registry, target)
+                        .map_err(|cause| error(cause.to_string()))?
+                        .display()
+                        .to_string(),
+                ),
+                None,
             ),
-            None,
-        ),
-        _ => {
-            return Err(error(
-                "native route must have one file, provider, artifact or package target".into(),
-            ))
-        }
-    };
+            // ADR 0016: a provider download in korrid's cache.
+            (None, None, None, None, Some(path)) => {
+                if !path.is_file() {
+                    return Err(LaunchError::RomMissing(
+                        "the downloaded game is no longer in the cache".into(),
+                    ));
+                }
+                (Some(path.display().to_string()), None)
+            }
+            _ => return Err(error(
+                "native route must have one file, provider, artifact, package or download target"
+                    .into(),
+            )),
+        };
     let overrides = overrides.map(|value| crate::config::cascade::RunnerConfig {
         settings: value.settings,
         config: value.config,

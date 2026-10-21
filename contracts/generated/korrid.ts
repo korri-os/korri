@@ -4,10 +4,10 @@
 
 /**
  * Legacy job states as a tagged union with ADR 0012 progress fields.
- * `ChooseSource` is terminal: no download started; the host asks the person
- * and calls `acquire` again with `sourceId`, which starts a new job.
+ * `Queued` mirrors ADR 0013's `ArtifactState::Queued`: the job waits for its
+ * turn in the one-at-a-time queue.
  */
-export type AcquireJobState = { _tag: "ChooseSource"; sources: AcquireSourceChoice[] } | { _tag: "Resolving" } | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number } | { _tag: "Placing" } | { _tag: "Imported"; gameId: string } | { _tag: "Staged"; message: string } | { _tag: "Failed"; reason: RpcFailure } | { _tag: "Cancelled" };
+export type AcquireJobState = { _tag: "Queued" } | { _tag: "Resolving" } | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number } | { _tag: "Placing" } | { _tag: "Imported"; gameId: string } | { _tag: "Failed"; reason: RpcFailure } | { _tag: "Cancelled" };
 
 export type ArtifactKind = "content" | "patch";
 
@@ -60,13 +60,11 @@ export type ProviderReleaseKind = "provider-ref-release";
 /**
  * Legacy `AcquireArtifactRequest` minus `url`, `size`, `artifactFormat`,
  * `system`, `title` and `artUrl`: korrid takes those from the claim it holds.
- * `sourceId` chooses among several eligible paired sources.
  */
 export interface AcquireArtifactRequest {
 	providerId: string;
 	id: string;
 	fileName?: string;
-	sourceId?: string;
 }
 
 /** Follows `AcquireStatusRequest`; legacy had no cancel. */
@@ -86,12 +84,6 @@ export interface AcquireJobStatus {
 	system?: string;
 	message?: string;
 	state: AcquireJobState;
-}
-
-/** One eligible paired source, with `DiscoverySource`'s own `id` and `label`. */
-export interface AcquireSourceChoice {
-	id: string;
-	label: string;
 }
 
 /** Legacy `AcquireStatusRequest`. */

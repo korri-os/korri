@@ -49,6 +49,10 @@ pub struct ResolvedRoute {
     pub artifact_target: Option<ResolvedArtifactTarget>,
     /// A release provided by its declaring plugin's installed package.
     pub package_target: Option<ResolvedPackageTarget>,
+
+    /// ADR 0014: a release with no saved location and no declared artifact
+    /// whose content is a cart in a linked provider's cache.
+    pub cache_target: Option<std::path::PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

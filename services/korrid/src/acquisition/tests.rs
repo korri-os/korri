@@ -177,6 +177,8 @@ pub(super) fn runner_route(runner: &str) -> crate::config::resolver::ResolvedRou
         provider_target: None,
         artifact_target: None,
         package_target: None,
+
+        cache_target: None,
     }
 }
 async fn until(

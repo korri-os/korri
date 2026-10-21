@@ -16,6 +16,7 @@ use crate::{
 };
 use indexmap::IndexSet;
 
+pub(crate) use game::cart_content;
 pub use game::GameContext;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -27,11 +28,11 @@ use tokio::sync::watch;
 use types::Failure;
 pub use types::{
     AcquireArtifactRequest, AcquireCancelRequest, AcquireJobOutcome, AcquireJobState,
-    AcquireJobStatus, AcquireSourceChoice, AcquireStatusRequest, AcquisitionCancelRequest,
-    AcquisitionDownloadRequest, AcquisitionOutcome, AcquisitionPluginsPayload, AcquisitionProvider,
-    AcquisitionRemoveRequest, AcquisitionSnapshot, AcquisitionStartRequest,
-    AcquisitionStatusRequest, ArtifactState, ArtifactStatus, DetailsOutcome, DetailsRequest,
-    PluginListOutcome, PluginListResponse, SearchOutcome, SearchRequest, SearchResponse,
+    AcquireJobStatus, AcquireStatusRequest, AcquisitionCancelRequest, AcquisitionDownloadRequest,
+    AcquisitionOutcome, AcquisitionPluginsPayload, AcquisitionProvider, AcquisitionRemoveRequest,
+    AcquisitionSnapshot, AcquisitionStartRequest, AcquisitionStatusRequest, ArtifactState,
+    ArtifactStatus, DetailsOutcome, DetailsRequest, PluginListOutcome, PluginListResponse,
+    SearchOutcome, SearchRequest, SearchResponse,
 };
 
 /// One job runs at a time. `waiting` is the person's order, front first; a
@@ -52,6 +53,56 @@ struct Queue {
     waiting: VecDeque<PathBuf>,
     running: Option<Running>,
     worker: bool,
+    /// ADR 0014: cart downloads waiting in the same line. The worker hands
+    /// each its turn and waits until the cart job reports it is done.
+    tickets: BTreeMap<PathBuf, tokio::sync::oneshot::Sender<watch::Sender<bool>>>,
+}
+
+/// A cart job's place in the one-at-a-time queue. Dropping it before the
+/// turn comes (cancel) leaves the queue.
+pub(super) struct TurnWait {
+    key: PathBuf,
+    turn: Option<tokio::sync::oneshot::Receiver<watch::Sender<bool>>>,
+    queue: Arc<Mutex<Queue>>,
+}
+/// The running turn. Dropping it lets the queue continue.
+pub(super) struct Turn(watch::Sender<bool>);
+impl Drop for Turn {
+    fn drop(&mut self) {
+        let _ = self.0.send(true);
+    }
+}
+impl TurnWait {
+    pub(super) async fn turn(mut self) -> Turn {
+        let receiver = self.turn.take().expect("one turn per ticket");
+        match receiver.await {
+            Ok(done) => Turn(done),
+            // The worker is gone; nothing else can run, so proceed alone.
+            Err(_) => Turn(watch::channel(false).0),
+        }
+    }
+}
+impl Drop for TurnWait {
+    fn drop(&mut self) {
+        if self.turn.is_some() {
+            let mut queue = self.queue.lock().expect("acquisition queue mutex poisoned");
+            queue.tickets.remove(&self.key);
+            queue.waiting.retain(|item| *item != self.key);
+        }
+    }
+}
+
+enum Next {
+    Ticket(PathBuf, tokio::sync::oneshot::Sender<watch::Sender<bool>>),
+    Artifact(
+        PathBuf,
+        ArtifactRecord,
+        Option<PathBuf>,
+        PathBuf,
+        PathBuf,
+        watch::Receiver<Stop>,
+        watch::Sender<bool>,
+    ),
 }
 struct Job {
     artifact: ArtifactRecord,
@@ -336,44 +387,87 @@ impl AcquisitionCoordinator {
         handle.spawn(self.clone().work());
     }
 
+    /// ADR 0014: a cart job joins the end of the one-at-a-time queue.
+    pub(super) fn queue_turn(&self, key: PathBuf) -> TurnWait {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        {
+            let mut queue = self.lock();
+            queue.tickets.insert(key.clone(), sender);
+            queue.waiting.push_back(key.clone());
+        }
+        self.ensure_worker();
+        TurnWait {
+            key,
+            turn: Some(receiver),
+            queue: self.queue.clone(),
+        }
+    }
+
     async fn work(self) {
         let mut sleep_guard = None;
         loop {
-            let (base, artifact, unpack, root, private_root, stop, done) = {
+            let next = {
                 let mut queue = self.lock();
                 let Some(base) = queue.waiting.pop_front() else {
                     queue.worker = false;
                     break;
                 };
-                let Some(job) = queue.jobs.get_mut(&base) else {
-                    continue;
-                };
-                job.state = ArtifactState::Downloading {
-                    file: 1,
-                    file_count: job.artifact.files.len() as u32,
-                    bytes_done: 0,
-                    bytes_total: declared_bytes(&job.artifact),
-                    bytes_per_second: None,
-                };
-                let next = (
-                    base.clone(),
-                    job.artifact.clone(),
-                    job.unpack.clone(),
-                    job.root.clone(),
-                    job.private_root.clone(),
-                );
-                let (stop, stop_rx) = watch::channel(Stop::Run);
-                let (done, done_rx) = watch::channel(false);
-                queue.running = Some(Running {
-                    base,
-                    stop,
-                    done: done_rx,
-                });
-                (next.0, next.1, next.2, next.3, next.4, stop_rx, done)
+                if let Some(go) = queue.tickets.remove(&base) {
+                    Next::Ticket(base, go)
+                } else {
+                    let Some(job) = queue.jobs.get_mut(&base) else {
+                        continue;
+                    };
+                    job.state = ArtifactState::Downloading {
+                        file: 1,
+                        file_count: job.artifact.files.len() as u32,
+                        bytes_done: 0,
+                        bytes_total: declared_bytes(&job.artifact),
+                        bytes_per_second: None,
+                    };
+                    let next = (
+                        base.clone(),
+                        job.artifact.clone(),
+                        job.unpack.clone(),
+                        job.root.clone(),
+                        job.private_root.clone(),
+                    );
+                    let (stop, stop_rx) = watch::channel(Stop::Run);
+                    let (done, done_rx) = watch::channel(false);
+                    queue.running = Some(Running {
+                        base,
+                        stop,
+                        done: done_rx,
+                    });
+                    Next::Artifact(next.0, next.1, next.2, next.3, next.4, stop_rx, done)
+                }
             };
             if sleep_guard.is_none() {
                 sleep_guard = Some(self.sleep.block().await);
             }
+            let (base, artifact, unpack, root, private_root, stop, done) = match next {
+                Next::Artifact(base, artifact, unpack, root, private_root, stop, done) => {
+                    (base, artifact, unpack, root, private_root, stop, done)
+                }
+                Next::Ticket(base, go) => {
+                    let (done, mut finished) = watch::channel(false);
+                    let (stop, _) = watch::channel(Stop::Run);
+                    self.lock().running = Some(Running {
+                        base,
+                        stop,
+                        done: finished.clone(),
+                    });
+                    if go.send(done).is_ok() {
+                        while !*finished.borrow() {
+                            if finished.changed().await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    self.lock().running = None;
+                    continue;
+                }
+            };
             let result = acquire(
                 &root,
                 &private_root,
@@ -511,6 +605,24 @@ impl AcquisitionCoordinator {
                 return Err(busy_failure());
             }
         }
+        // ADR 0014 Q4: a cart's ready directory is the release's own content.
+        // Another game naming the same release keeps it; a working job for
+        // this game asks for Cancel first.
+        if self.games.busy_for_game(&snapshot, game_id) {
+            return Err(busy_failure());
+        }
+        for (key, ready) in game::cart_dirs(root, registry, &snapshot, game_id) {
+            let shared = snapshot.library.iter().any(|(id, other)| {
+                id != game_id
+                    && other
+                        .releases
+                        .iter()
+                        .any(|release| release.identity.as_ref().is_some_and(|i| i.value() == key))
+            });
+            if !shared {
+                placement::discard_work(&ready).map_err(Failure::rpc)?;
+            }
+        }
         for id in &game.release {
             if runner_artifacts.contains(id.as_str()) || shared.contains(id) {
                 continue;
@@ -580,7 +692,7 @@ impl AcquisitionCoordinator {
         context: &GameContext,
         request: &AcquireArtifactRequest,
     ) -> Result<AcquireJobStatus, RpcFailure> {
-        self.games.acquire(context, request)
+        self.games.acquire(self, context, request)
     }
     pub fn acquire_status(&self, job_id: &str) -> Result<AcquireJobStatus, RpcFailure> {
         self.games.status(job_id)
@@ -904,8 +1016,6 @@ mod rpc_tests;
 
 #[cfg(test)]
 mod game_download_tests;
-#[cfg(test)]
-mod game_placement_tests;
 #[cfg(test)]
 mod http_fixture;
 #[cfg(test)]

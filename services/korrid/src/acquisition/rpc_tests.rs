@@ -320,7 +320,7 @@ async fn game_acquisition_methods_decode_and_need_the_local_brain() {
         ),
         (
             "app.acquisition.acquire",
-            json!({"providerId":"@korri:homebrewhub","id":"2048gb","sourceId":"gb"}),
+            json!({"providerId":"@korri:homebrewhub","id":"2048gb"}),
         ),
         ("app.acquisition.acquire-status", json!({"jobId":"x"})),
         ("app.acquisition.acquire-cancel", json!({"jobId":"x"})),

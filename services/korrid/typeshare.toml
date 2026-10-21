@@ -42,4 +42,4 @@ PluginHttpRequestsTagWire = '"HttpRequests"'
 PluginSearchOutputWire = "PluginHttpRequests | ProviderClaim[]"
 PluginDetailsOutputWire = "PluginHttpRequests | ProviderClaimDetails"
 PluginResolveDownloadOutputWire = "PluginHttpRequests | DownloadResolution"
-AcquireJobStateWire = '{ _tag: "ChooseSource"; sources: AcquireSourceChoice[] } | { _tag: "Resolving" } | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number } | { _tag: "Placing" } | { _tag: "Imported"; gameId: string } | { _tag: "Staged"; message: string } | { _tag: "Failed"; reason: RpcFailure } | { _tag: "Cancelled" }'
+AcquireJobStateWire = '{ _tag: "Queued" } | { _tag: "Resolving" } | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number } | { _tag: "Placing" } | { _tag: "Imported"; gameId: string } | { _tag: "Failed"; reason: RpcFailure } | { _tag: "Cancelled" }'
