@@ -33,7 +33,11 @@ export interface ShiftSaveReviewProps {
 export function ShiftSaveReview({ games, time, onChoose, onBack }: ShiftSaveReviewProps) {
   const split = shiftSplitGames(games)
   const [index, setIndex] = useState(0)
-  useSurfaceAction("back", onBack)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  // An open Details sheet owns Back.
+  useSurfaceAction("back", () => {
+    if (!detailsOpen) onBack()
+  })
 
   const focused = split[index]
   const selectable = focused?.saves.choose.enabled === true
@@ -51,6 +55,8 @@ export function ShiftSaveReview({ games, time, onChoose, onBack }: ShiftSaveRevi
             : `These ${split.length} games have different saves on two devices. Pick one save for each game.` })}
       {...(time === undefined ? {} : { time })}
       focusedIndex={index}
+      detailsOpen={detailsOpen}
+      onDetailsOpenChange={setDetailsOpen}
       state={empty ? (
         <ShiftSavesState
           headline="No game needs a choice."

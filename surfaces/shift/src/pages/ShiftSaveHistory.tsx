@@ -64,13 +64,15 @@ export function ShiftSaveHistory({
   const [index, setIndex] = useState(0)
   const [footerFocused, setOnActionFocus] = useState(false)
   const [confirming, setConfirming] = useState<SurfaceSaveHistoryEntry | null>(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const back = soleHostAction(history.actions)
   const entries = history._tag === "Ready" ? history.entries : []
   const focused = footerFocused ? undefined : entries[index]
   const restorable = focused?.restore?.enabled === true
 
   useSurfaceAction("back", () => {
-    if (confirming) return
+    // An open sheet (the restore question, Details) owns Back.
+    if (confirming || detailsOpen) return
     if (back) onAction(back.id)
   })
 
@@ -115,6 +117,8 @@ export function ShiftSaveHistory({
         actions={history.actions}
         onAction={onAction}
         onActionFocus={() => setOnActionFocus(true)}
+        detailsOpen={detailsOpen}
+        onDetailsOpenChange={setDetailsOpen}
         hints={[
           ...(restorable && focused?.restore
             ? [{ glyph: "A", label: focused.restore.label, primary: true }]

@@ -473,6 +473,11 @@ export const SHIFT_DESIGN_PARTS = {
     layer: "molecule",
     name: "Save Row",
   },
+  saveDetails: {
+    id: "shift.save-details",
+    layer: "organism",
+    name: "Save Details",
+  },
   saveNotice: {
     id: "shift.save-notice",
     layer: "molecule",

@@ -18,6 +18,8 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { useEffect, useRef, useState } from "react"
 import { useSurfaceAction } from "../host/surface-host"
+import { formatSaveEndedAt, formatSavePlayed } from "../save-sync-labels"
+import { ShiftSaveDetailsButton, ShiftSaveDetailsSheet } from "../ui/organisms/ShiftSaveDetailsSheet"
 import { SHIFT_DESIGN_PARTS, shiftDesignPartAttrs } from "../shift-design-parts"
 import { ShiftCineKicker } from "../ui/atoms/ShiftCineKicker"
 import { ShiftCineTitle } from "../ui/atoms/ShiftCineTitle"
@@ -60,8 +62,17 @@ export function ShiftSaveChoice({
   })
   const sidesRef = useRef<HTMLDivElement>(null)
   const back = soleHostAction(status.actions)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const closeDetails = () => {
+    setDetailsOpen(false)
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>("[data-shift-save-choice] .shift-saves-details")?.focus({ preventScroll: true })
+    })
+  }
 
+  // The open Details sheet owns Back (it closes itself).
   useSurfaceAction("back", () => {
+    if (detailsOpen) return
     if (back) onAction(back.id)
   })
 
@@ -100,9 +111,7 @@ export function ShiftSaveChoice({
         <header className="shift-saves-head" role="status" aria-live="polite">
           <ShiftCineKicker tone="attention">{status.kicker}</ShiftCineKicker>
           {gameTitle ? <ShiftCineTitle>{gameTitle}</ShiftCineTitle> : null}
-          <p className="shift-saves-lede">
-            Pick the save to continue from. The other stays in the save history.
-          </p>
+          <p className="shift-saves-lede">{CHOICE_LEDE}</p>
           {status.detail ? (
             <p className="shift-saves-detail">{status.detail}</p>
           ) : null}
@@ -132,6 +141,7 @@ export function ShiftSaveChoice({
 
         <footer className="shift-saves-footer">
           <div className="shift-saves-actions">
+            <ShiftSaveDetailsButton onOpen={() => setDetailsOpen(true)} />
             {status.actions.map((action, index) => (
               <button
                 key={action.id}
@@ -149,6 +159,21 @@ export function ShiftSaveChoice({
           {hints.length > 0 ? <ShiftCineLegend hints={hints} /> : null}
         </footer>
       </div>
+
+      <ShiftSaveDetailsSheet
+        open={detailsOpen}
+        title={gameTitle ?? status.kicker}
+        lines={[
+          status.kicker,
+          CHOICE_LEDE,
+          ...(status.detail === undefined ? [] : [status.detail]),
+          ...status.sides.map(side =>
+            `${side.device}: ${formatSaveEndedAt(side.endedAt, now)}. ${formatSavePlayed(side.durationSeconds)}.`),
+        ]}
+        onClose={closeDetails}
+      />
     </div>
   )
 }
+
+const CHOICE_LEDE = "Pick the save to continue from. The other stays in the save history."

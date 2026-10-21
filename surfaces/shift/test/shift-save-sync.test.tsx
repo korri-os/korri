@@ -117,6 +117,37 @@ describe("split choice (ChooseSave)", () => {
   })
 })
 
+describe("Details: the whole words a short screen cuts", () => {
+  test("the split choice's Details holds the kicker, both explanations and every side whole; Back closes only it", () => {
+    const host = createFixtureHost()
+    render(<ShiftSurface host={host} model={savesModel({ status: chooseSaveStressStatus() })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Details" }))
+    const sheet = screen.getByRole("dialog", { name: "Details: Wario Land 4" })
+    const lines = within(sheet).getAllByText(/./, { selector: ".shift-save-details-line" }).map(line => line.textContent)
+    expect(lines[0]).toBe("Saves split between two devices")
+    expect(lines[1]).toBe("Pick the save to continue from. The other stays in the save history.")
+    expect(lines[2]).toBe("No other device answered. Your pick syncs when your devices meet again.")
+    expect(lines[3]).toMatch(/^Retroid-Pocket-Mini-V2-living-room-handheld: .+\. Played 1,204 h 5 min\.$/)
+    expect(lines[4]).toMatch(/^zao: Today at .+\. Played under a minute\.$/)
+    // Each line is a focus stop, so directional input can scroll the sheet.
+    expect(document.activeElement?.textContent).toBe(lines[0])
+    act(() => host.press("back"))
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(host.calls).toEqual([])
+  })
+
+  test("the history's Details holds its explanation; Back closes only it", () => {
+    const host = createFixtureHost()
+    render(<ShiftSurface host={host} model={historyModel(historyStates().ready)} />)
+    fireEvent.click(screen.getByRole("button", { name: "Details" }))
+    const sheet = screen.getByRole("dialog", { name: "Details: Wario Land 4" })
+    expect(sheet.textContent).toContain("Newest first. Restoring makes a new save; nothing here is lost.")
+    act(() => host.press("back"))
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(host.calls).toEqual([])
+  })
+})
+
 describe("questions and checks before launch", () => {
   test("Busy checking other devices offers the host's Skip", () => {
     const host = createFixtureHost()

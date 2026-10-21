@@ -4088,3 +4088,70 @@ button.shift-sheet-control:is(:hover, :focus, [data-korri-active-focus]) {
 		width: clamp(3.2em, 16cqi, 6em);
 	}
 }
+
+/* Details: the footer control that opens a save screen's whole words. Only
+ * a short container cuts them, so only there is it offered (and focusable). */
+[data-shift-saves] .shift-saves-details {
+	display: none;
+}
+
+/* Long names wrap in a save list rather than lose their end. */
+[data-shift-saves] .shift-save-row-label {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+.shift-save-details {
+	display: flex;
+	flex-direction: column;
+	gap: var(--shift-space-2);
+}
+
+.shift-save-details-line {
+	margin: 0;
+	padding: var(--shift-space-2) var(--shift-space-3);
+	border-radius: var(--shift-radius-panel);
+	font-size: var(--shift-text-body);
+	line-height: 1.45;
+	color: var(--shift-ink);
+	overflow-wrap: anywhere;
+	outline: none;
+}
+
+.shift-save-details-line:is(:focus, [data-korri-active-focus]) {
+	background: var(--shift-pill-bg);
+	box-shadow: 0 0 0 3px var(--shift-focus-glow);
+}
+
+@container (max-height: 420px) {
+	[data-shift-saves] .shift-saves-details {
+		display: inline-flex;
+		align-items: center;
+	}
+}
+
+@container (max-height: 280px) {
+	/* One row of footer buttons at any width: a row that wrapped would push
+	 * itself off the bottom. Past the width it scrolls, and focus brings
+	 * each button into view; none is dropped. */
+	[data-shift-saves] .shift-saves-footer {
+		flex-wrap: nowrap;
+	}
+
+	[data-shift-saves] .shift-saves-actions {
+		flex: 1 1 auto;
+		flex-wrap: nowrap;
+		min-width: 0;
+		overflow-x: auto;
+		scrollbar-width: none;
+		/* Room for the focus ring inside the scrolling row. */
+		padding: 4px;
+		margin: -4px;
+	}
+
+	[data-shift-saves] .shift-saves-action {
+		flex: 0 0 auto;
+		white-space: nowrap;
+		padding: 0 var(--shift-space-3);
+	}
+}

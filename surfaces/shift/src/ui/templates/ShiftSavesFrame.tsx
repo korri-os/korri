@@ -21,6 +21,7 @@ import { ShiftCineTitle } from "../atoms/ShiftCineTitle"
 import { ShiftCineBackdrop } from "../molecules/ShiftCineBackdrop"
 import { type ShiftCineHintSpec, ShiftCineLegend } from "../molecules/ShiftCineLegend"
 import { ShiftStatusBar } from "../molecules/ShiftStatusBar"
+import { ShiftSaveDetailsButton, ShiftSaveDetailsSheet } from "../organisms/ShiftSaveDetailsSheet"
 
 /** Same spring as the rail and Settings. */
 const SPRING = { type: "spring", stiffness: 260, damping: 32 } as const
@@ -43,6 +44,10 @@ export interface ShiftSavesFrameProps {
   readonly onActionFocus?: () => void
   readonly hints: readonly ShiftCineHintSpec[]
   readonly attrs?: Readonly<Record<string, string>>
+  /** The Details sheet for the lede a short container cuts. The page owns
+   * whether it is open, so its own Back can wait while it is. */
+  readonly detailsOpen?: boolean
+  readonly onDetailsOpenChange?: (open: boolean) => void
 }
 
 export function ShiftSavesFrame({
@@ -60,7 +65,16 @@ export function ShiftSavesFrame({
   onActionFocus,
   hints,
   attrs,
+  detailsOpen = false,
+  onDetailsOpenChange,
 }: ShiftSavesFrameProps) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const closeDetails = () => {
+    onDetailsOpenChange?.(false)
+    requestAnimationFrame(() => {
+      rootRef.current?.querySelector<HTMLElement>(".shift-saves-details")?.focus({ preventScroll: true })
+    })
+  }
   const viewportRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const [trackY, setTrackY] = useState(0)
@@ -106,6 +120,7 @@ export function ShiftSavesFrame({
   return (
     <MotionConfig reducedMotion="user">
     <div
+      ref={rootRef}
       data-shift-saves
       className="shift-cine intrinsic relative h-full w-full overflow-hidden"
       {...shiftDesignPartAttrs(part)}
@@ -145,6 +160,9 @@ export function ShiftSavesFrame({
 
         <footer className="shift-saves-footer">
           <div className="shift-saves-actions">
+            {lede && onDetailsOpenChange ? (
+              <ShiftSaveDetailsButton onOpen={() => onDetailsOpenChange(true)} />
+            ) : null}
             {actions.map(action => (
               <button
                 key={action.id}
@@ -162,6 +180,15 @@ export function ShiftSavesFrame({
           {hints.length > 0 ? <ShiftCineLegend hints={hints} /> : null}
         </footer>
       </div>
+
+      {lede && onDetailsOpenChange ? (
+        <ShiftSaveDetailsSheet
+          open={detailsOpen}
+          title={title}
+          lines={[kicker, lede]}
+          onClose={closeDetails}
+        />
+      ) : null}
     </div>
     </MotionConfig>
   )
