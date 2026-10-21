@@ -223,3 +223,27 @@ pub struct SaveCheck {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runner_id: Option<String>,
 }
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum SaveStatusOutcome {
+    Ok(SaveStatus),
+    Err(crate::RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum SaveHistoryOutcome {
+    Ok(SaveHistory),
+    Err(crate::RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum SaveCheckOutcome {
+    Ok(SaveCheck),
+    Err(crate::RpcFailure),
+}

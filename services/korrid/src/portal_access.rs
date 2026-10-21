@@ -14,7 +14,9 @@ pub enum PortalPermission {
 impl PortalPermission {
     fn permits(self, request: &RpcRequest) -> bool {
         let initial_read = match request {
-            RpcRequest::NetworkStatus(_)
+            RpcRequest::SavesStatus(_)
+            | RpcRequest::SavesHistory(_)
+            | RpcRequest::NetworkStatus(_)
             | RpcRequest::OnboardingStatus(_)
             | RpcRequest::GameRoutes(_)
             | RpcRequest::CatalogSnapshot(_)
@@ -31,7 +33,10 @@ impl PortalPermission {
             | RpcRequest::SessionStatus(_)
             | RpcRequest::SessionControls(_)
             | RpcRequest::PluginRepositories(_) => true,
-            RpcRequest::WifiScan(_)
+            RpcRequest::SavesChoose(_)
+            | RpcRequest::SavesRestore(_)
+            | RpcRequest::SavesCheck(_)
+            | RpcRequest::WifiScan(_)
             | RpcRequest::WifiConnect(_)
             | RpcRequest::WifiConnectHidden(_)
             | RpcRequest::OnboardingFinish(_)
@@ -94,7 +99,10 @@ impl PortalPermission {
                         }
                         // The existing stop contract has no peer selector. The host
                         // executor enforces expectedLaunchId before changing a session.
-                        RpcRequest::SessionStop(_)
+                        RpcRequest::SavesChoose(_)
+                        | RpcRequest::SavesRestore(_)
+                        | RpcRequest::SavesCheck(_)
+                        | RpcRequest::SessionStop(_)
                         | RpcRequest::SessionFreeze(_)
                         | RpcRequest::SessionThaw(_)
                         | RpcRequest::SessionControlInvoke(_)

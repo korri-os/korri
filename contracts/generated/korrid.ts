@@ -1555,6 +1555,11 @@ export enum PluginRepositoryRemoveResult {
 }
 
 export type RpcRequest =
+	| { _tag: "app.saves.status", payload: SaveStatusRequest }
+	| { _tag: "app.saves.history", payload: SaveGameRequest }
+	| { _tag: "app.saves.choose", payload: SavePickRequest }
+	| { _tag: "app.saves.restore", payload: SavePickRequest }
+	| { _tag: "app.saves.check", payload: SaveCheckRequest }
 	| { _tag: "system.onboarding.restart", payload: OnboardingRestartRequest }
 	| { _tag: "app.acquisition.status", payload: AcquisitionStatusRequest }
 	| { _tag: "app.acquisition.start", payload: AcquisitionStartRequest }
@@ -1621,6 +1626,11 @@ export type RpcRequest =
 	| { _tag: "system.plugins.setEnabled", payload: PluginSetEnabledRequest };
 
 export type RpcResponse =
+	| { _tag: "app.saves.status", outcome: SaveStatusOutcome }
+	| { _tag: "app.saves.history", outcome: SaveHistoryOutcome }
+	| { _tag: "app.saves.choose", outcome: SaveHistoryOutcome }
+	| { _tag: "app.saves.restore", outcome: SaveHistoryOutcome }
+	| { _tag: "app.saves.check", outcome: SaveCheckOutcome }
 	| { _tag: "system.onboarding.restart", outcome: OnboardingStatusOutcome }
 	| { _tag: "app.acquisition.status", outcome: AcquisitionOutcome }
 	| { _tag: "app.acquisition.start", outcome: AcquisitionOutcome }
@@ -1685,6 +1695,18 @@ export type RpcResponse =
 	| { _tag: "system.plugins.inspect", outcome: PluginInspectOutcome }
 	| { _tag: "system.plugins.install", outcome: PluginChangeOutcome }
 	| { _tag: "system.plugins.setEnabled", outcome: PluginChangeOutcome };
+
+export type SaveCheckOutcome =
+	| { _tag: "Ok", payload: SaveCheck }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type SaveHistoryOutcome =
+	| { _tag: "Ok", payload: SaveHistory }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type SaveStatusOutcome =
+	| { _tag: "Ok", payload: SaveStatus }
+	| { _tag: "Err", payload: RpcFailure };
 
 export type SearchOutcome =
 	| { _tag: "Ok", payload: SearchResponse }

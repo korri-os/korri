@@ -187,6 +187,11 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         }
         RpcRequest::MoonlightCertificateRevoke(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SessionPrepare(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::SavesStatus(_)
+        | RpcRequest::SavesHistory(_)
+        | RpcRequest::SavesChoose(_)
+        | RpcRequest::SavesRestore(_)
+        | RpcRequest::SavesCheck(_) => PeerPolicy::LocalOnly,
         RpcRequest::AcquisitionStatus(_)
         | RpcRequest::AcquisitionStart(_)
         | RpcRequest::AcquisitionDownload(_)

@@ -1242,6 +1242,17 @@ pub enum PluginChangeOutcome {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum RpcRequest {
+    #[serde(rename = "app.saves.status")]
+    SavesStatus(saves::types::SaveStatusRequest),
+    #[serde(rename = "app.saves.history")]
+    SavesHistory(saves::types::SaveGameRequest),
+    #[serde(rename = "app.saves.choose")]
+    SavesChoose(saves::types::SavePickRequest),
+    #[serde(rename = "app.saves.restore")]
+    SavesRestore(saves::types::SavePickRequest),
+    #[serde(rename = "app.saves.check")]
+    SavesCheck(saves::types::SaveCheckRequest),
+
     #[serde(rename = "system.onboarding.restart")]
     OnboardingRestart(onboarding::OnboardingRestartRequest),
     #[serde(rename = "app.acquisition.status")]
@@ -1376,6 +1387,17 @@ pub enum RpcRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "outcome")]
 pub enum RpcResponse {
+    #[serde(rename = "app.saves.status")]
+    SavesStatus(saves::types::SaveStatusOutcome),
+    #[serde(rename = "app.saves.history")]
+    SavesHistory(saves::types::SaveHistoryOutcome),
+    #[serde(rename = "app.saves.choose")]
+    SavesChoose(saves::types::SaveHistoryOutcome),
+    #[serde(rename = "app.saves.restore")]
+    SavesRestore(saves::types::SaveHistoryOutcome),
+    #[serde(rename = "app.saves.check")]
+    SavesCheck(saves::types::SaveCheckOutcome),
+
     #[serde(rename = "system.onboarding.restart")]
     OnboardingRestart(onboarding::OnboardingStatusOutcome),
     #[serde(rename = "app.acquisition.status")]
@@ -2362,6 +2384,36 @@ async fn dispatch(
 ) -> Result<RpcResponse, authorization::AuthorizationDenied> {
     authorization::authorize(authorization, &request)?;
     let mut response = match request {
+        RpcRequest::SavesStatus(_) => {
+            RpcResponse::SavesStatus(saves::types::SaveStatusOutcome::Err(RpcFailure {
+                code: "SavesUnavailable".into(),
+                message: "save session integration is unavailable".into(),
+            }))
+        }
+        RpcRequest::SavesHistory(_) => {
+            RpcResponse::SavesHistory(saves::types::SaveHistoryOutcome::Err(RpcFailure {
+                code: "SavesUnavailable".into(),
+                message: "save session integration is unavailable".into(),
+            }))
+        }
+        RpcRequest::SavesChoose(_) => {
+            RpcResponse::SavesChoose(saves::types::SaveHistoryOutcome::Err(RpcFailure {
+                code: "SavesUnavailable".into(),
+                message: "save session integration is unavailable".into(),
+            }))
+        }
+        RpcRequest::SavesRestore(_) => {
+            RpcResponse::SavesRestore(saves::types::SaveHistoryOutcome::Err(RpcFailure {
+                code: "SavesUnavailable".into(),
+                message: "save session integration is unavailable".into(),
+            }))
+        }
+        RpcRequest::SavesCheck(_) => {
+            RpcResponse::SavesCheck(saves::types::SaveCheckOutcome::Err(RpcFailure {
+                code: "SavesUnavailable".into(),
+                message: "save session integration is unavailable".into(),
+            }))
+        }
         RpcRequest::AcquisitionStatus(request) => {
             let outcome = (|| {
                 let (root, registry) = state.acquisition_context()?;
