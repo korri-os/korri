@@ -75,6 +75,7 @@ export function PicoSettings({
   notice,
   lead,
   from,
+  banner,
 }: {
   readonly settings: PicoSettingsView
   /** Which settings group shows, kept by the owner. */
@@ -117,6 +118,8 @@ export function PicoSettings({
   readonly lead?: ReactNode
   /** Where Back leads from this screen, for the status bar. Absent: Korri's home. */
   readonly from?: string
+  /** One line above the groups about all of them, with its own controls. */
+  readonly banner?: ReactNode
 }) {
   const activate = (row: PicoSettingRowView) => {
     switch (row.control.kind) {
@@ -158,6 +161,7 @@ export function PicoSettings({
       {...(lead === undefined || typingOpen ? {} : { lead })}
     >
       <div className="pico-settings-list" hidden={typingOpen}>
+        {notice === undefined && banner !== undefined ? <div className="pico-settings-banner">{banner}</div> : null}
         {notice ?? (
           <PicoSettingsPanel
             group={group}

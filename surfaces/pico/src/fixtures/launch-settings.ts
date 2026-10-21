@@ -137,6 +137,7 @@ function profileLayer(profile: FixtureProfile, selected: boolean, values: Values
 export const LAUNCH_CLOSE = { id: "launch:cancel", label: "Close", enabled: true }
 export const LAUNCH_RELOAD = { id: "launch:reload", label: "Reload", enabled: true }
 export const LAUNCH_RETRY = { id: "launch:retry", label: "Retry", enabled: true }
+export const LAUNCH_RUNNER = { id: "launch:runner", label: "Choose a runner", enabled: true }
 
 const BATTERY: FixtureProfile = { id: "battery", title: "Battery saver" }
 
@@ -145,13 +146,15 @@ const BATTERY: FixtureProfile = { id: "battery", title: "Battery saver" }
  * the GPU at 75 %; the selected profile Battery saver caps the CPU at 61 %.
  * Every other value is inherited from the device's defaults.
  */
-function layers(steps: Steps, profiles: readonly FixtureProfile[], selected: string | undefined): readonly SurfaceLaunchSettingsLayer[] {
+function layers(steps: Steps, profiles: readonly FixtureProfile[], selected: string | undefined, route = true): readonly SurfaceLaunchSettingsLayer[] {
   const real = !steps.guessed
   const label = (index: number, list: readonly string[]) => list[index] ?? "?"
   const cpuMax = selected === BATTERY.id && profiles.includes(BATTERY)
     ? { value: real ? label(3, CPU) : "60 %", from: "Profile Battery saver", layer: `profile:${BATTERY.id}` }
     : { value: real ? label(5, CPU) : "90 %", from: "Device", layer: "device" }
-  const cpuMin = { value: real ? label(1, CPU) : "30 %", from: "Runner mGBA", layer: "runner:retroarch/mgba" }
+  const cpuMin = route
+    ? { value: real ? label(1, CPU) : "30 %", from: "Runner mGBA", layer: "runner:retroarch/mgba" }
+    : { value: "0 %", from: "Device (default)", layer: "" }
   const gpuMax = { value: real ? label(3, GPU) : "70 %", from: "Game", layer: "game" }
   const say = (layerId: string, resolved: { value: string; from: string; layer: string }) =>
     resolved.layer === layerId ? `from ${resolved.from}` : `${resolved.value} from ${resolved.from}`
@@ -161,7 +164,7 @@ function layers(steps: Steps, profiles: readonly FixtureProfile[], selected: str
     gpuMin: "0 % from Device (default)",
     gpuMax: say(layerId, gpuMax),
   })
-  return [
+  const all = [
     { id: "device", title: "Device", groups: valueGroups("device", { cpuMax: real ? label(5, CPU) : "90 %" }, sources("device"), steps, { source: real ? "schedutil from Device (default)" : "from Device (default)" }) },
     { id: "system:gba", title: "System gba", groups: valueGroups("system:gba", {}, sources("system:gba"), steps) },
     { id: "runner:retroarch/mgba", title: "Runner mGBA", groups: valueGroups("runner:retroarch/mgba", { cpuMin: cpuMin.value }, sources("runner:retroarch/mgba"), steps) },
@@ -175,11 +178,13 @@ function layers(steps: Steps, profiles: readonly FixtureProfile[], selected: str
       steps,
     )),
   ]
+  // Without the route korrid gives Device, Game and the profiles only.
+  return route ? all : all.filter(layer => layer.id === "device" || layer.id === "game" || layer.id.startsWith("profile:"))
 }
 
-const content = (steps: Steps, profiles: readonly FixtureProfile[], selected?: string) => ({
+const content = (steps: Steps, profiles: readonly FixtureProfile[], selected?: string, route = true) => ({
   gameTitle: "Wario Land 4",
-  layers: layers(steps, profiles, selected),
+  layers: layers(steps, profiles, selected, route),
   profiles,
   ...(selected === undefined ? {} : { selectedProfileId: selected }),
 })
@@ -196,6 +201,18 @@ export const launchSettingsFixtures = {
       { id: "long", title: "Speedrun any percent glitchless no-major-skips" },
       { id: "word", title: "Superextraordinarilyuncompromisingprofile" },
     ], BATTERY.id),
+    actions: [LAUNCH_RELOAD, LAUNCH_CLOSE],
+  },
+  needsRunner: {
+    _tag: "Ready",
+    ...content(REAL, [BATTERY], BATTERY.id, false),
+    note: "System, runner and release settings appear once you choose a runner. Values in force leave them out.",
+    actions: [LAUNCH_RUNNER, LAUNCH_RELOAD, LAUNCH_CLOSE],
+  },
+  routeUnavailable: {
+    _tag: "Ready",
+    ...content(REAL, [BATTERY], BATTERY.id, false),
+    note: "System, runner and release settings aren't available: The runner plugin did not load. Values in force leave them out.",
     actions: [LAUNCH_RELOAD, LAUNCH_CLOSE],
   },
   factsMissing: { _tag: "Ready", ...content(UNKNOWN, [BATTERY], BATTERY.id), actions: [LAUNCH_RELOAD, LAUNCH_CLOSE] },

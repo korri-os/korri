@@ -17,6 +17,7 @@ import { createAcquisitionGate, type AcquisitionGameRef } from "./acquisition-ga
 import { createGameDownloads, type DownloadGameRef } from "./game-downloads"
 import { createRunnerChooser } from "./runner-chooser"
 import { createLaunchSettings, LAUNCH_SETTINGS_ACTION_ID } from "./launch-settings"
+import { LAUNCH_ID } from "./launch-settings-model"
 import { createStoreAcquisition } from "./store-acquisition"
 import {
   createSaveSync,
@@ -249,22 +250,6 @@ export function SurfaceRoot({
     // The save check and its questions first, then the download gate.
     saves.launch(game, () => acquisition.launch(game, proceed, abandon), abandon)
   }), [acquisition, saves])
-  // The chooser speaks korrid ids; the gate's status names the presented entry.
-  const surfaceIdsRef = useRef<ReadonlyMap<string, string>>(new Map())
-  const runner = useMemo(() => createRunnerChooser(korrid, {
-    // The chooser resolves the runner; the gate then resolves that runner's
-    // artifacts, naming the same presented entry the chooser was opened from.
-    startLaunch: (id, runnerId) => {
-      const surfaceId = surfaceIdsRef.current.get(id) ?? id
-      const entry = entryForId(launchablesRef.current.getState(), surfaceId)
-      const title = entry?.kind === "game" ? entry.game.title : id
-      return gatedStart({ id, surfaceId, title, runnerId })
-    },
-    returnSession: session => launchablesRef.current.returnCatalogSession(session),
-    reload: () => launchablesRef.current.reload(),
-  }), [gatedStart, korrid])
-  runnerRef.current = runner
-  const runnerChoice = useSyncExternalStore(runner.subscribe, runner.getSnapshot)
   // Launch settings: Device settings' group and one game's editor. Back is
   // not taken here: the surface closes its own questions, then the editor.
   const launch = useMemo(() => createLaunchSettings(korrid), [korrid])
@@ -272,7 +257,35 @@ export function SurfaceRoot({
     void launch.refreshDevice()
     return () => launch.dispose()
   }, [launch])
+  // The chooser speaks korrid ids; the gate's status names the presented entry.
+  const surfaceIdsRef = useRef<ReadonlyMap<string, string>>(new Map())
+  const runner = useMemo(() => createRunnerChooser(korrid, {
+    // The chooser resolves the runner; the gate then resolves that runner's
+    // artifacts, naming the same presented entry the chooser was opened from.
+    startLaunch: (id, runnerId) => {
+      // A launch from the chooser leaves any launch settings it was opened from.
+      launch.cancel()
+      const surfaceId = surfaceIdsRef.current.get(id) ?? id
+      const entry = entryForId(launchablesRef.current.getState(), surfaceId)
+      const title = entry?.kind === "game" ? entry.game.title : id
+      return gatedStart({ id, surfaceId, title, runnerId })
+    },
+    returnSession: session => launchablesRef.current.returnCatalogSession(session),
+    reload: () => launchablesRef.current.reload(),
+  }), [gatedStart, korrid, launch])
+  runnerRef.current = runner
+  const runnerChoice = useSyncExternalStore(runner.subscribe, runner.getSnapshot)
   const launchState = useSyncExternalStore(launch.subscribe, launch.getSnapshot)
+  // The editor shows again once the runner chooser it opened closes, read
+  // afresh: a runner chosen there brings its layers.
+  useEffect(() => {
+    let previous = runner.getSnapshot()._tag
+    return runner.subscribe(() => {
+      const next = runner.getSnapshot()._tag
+      if (previous !== "Closed" && next === "Closed" && launch.isOpen()) launch.act(LAUNCH_ID.reload)
+      previous = next
+    })
+  }, [launch, runner])
   const acquisitionStatus = useSyncExternalStore(acquisition.subscribe, acquisition.getStatus)
   const saveStatus = useSyncExternalStore(saves.subscribe, saves.getStatus)
   const saveHistory = useSyncExternalStore(saves.subscribe, saves.getHistory)
@@ -546,7 +559,13 @@ export function SurfaceRoot({
         }
         if (actionId === LAUNCH_SETTINGS_ACTION_ID) {
           const korridId = surfaceToKorridIdRef.current.get(gameId)
-          if (korridId !== undefined && entry.kind === "game") launch.open(korridId, entry.game.title)
+          if (korridId === undefined || entry.kind !== "game") return
+          // The runner chooser, when this page offers it, fills in the layers
+          // that wait on a runner choice.
+          const local = current.unavailableSessionStatus === undefined ? localRunnerEntry(entry) : undefined
+          launch.open(korridId, entry.game.title, local === undefined ? undefined : () => {
+            void runner.open(local.game.id, local.game.title, "inspect")
+          })
           return
         }
         if (actionId === "runners") {

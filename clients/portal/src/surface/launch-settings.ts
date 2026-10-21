@@ -25,6 +25,7 @@ import {
   deviceLaunchGroup,
   LAUNCH_ID,
   launchLayersFrom,
+  launchNoteFrom,
   type LaunchSettingKey,
   launchValueFrom,
   parseLaunchId,
@@ -38,6 +39,7 @@ export const LAUNCH_SETTINGS_ACTION_ID = "launch-settings"
 const close: SurfaceAction = { id: LAUNCH_ID.cancel, label: "Close", enabled: true }
 const reload: SurfaceAction = { id: LAUNCH_ID.reload, label: "Reload", enabled: true }
 const retry: SurfaceAction = { id: LAUNCH_ID.retry, label: "Retry", enabled: true }
+const chooseRunner: SurfaceAction = { id: LAUNCH_ID.runner, label: "Choose a runner", enabled: true }
 const WIRE: Record<LaunchSettingKey, LaunchSetting> = {
   "cpu.min": LaunchSetting.CpuMin,
   "cpu.max": LaunchSetting.CpuMax,
@@ -63,6 +65,8 @@ export function createLaunchSettings(korrid: KorridClient) {
   let busy = false
   let gameId: string | undefined
   let gameTitle = ""
+  /** Opens the runner chooser for this game, when its page offers one. */
+  let openRunners: (() => void) | undefined
   let snapshot: LaunchSettingsSnapshot | undefined
   let deviceSnapshot: LaunchSettingsSnapshot | undefined
   /** What Retry runs again: the failed read or write. */
@@ -73,13 +77,20 @@ export function createLaunchSettings(korrid: KorridClient) {
     state = { ...state, ...next }
     for (const listener of listeners) listener()
   }
-  const content = () => ({
-    gameTitle,
-    layers: snapshot === undefined ? [] : launchLayersFrom(snapshot),
-    profiles: (snapshot?.profiles ?? []).map(profile => ({ id: profile.id, title: profile.title })),
-    ...(snapshot?.selectedProfile === undefined ? {} : { selectedProfileId: snapshot.selectedProfile }),
-  })
-  const ready = () => publish({ editor: { _tag: "Ready", ...content(), actions: [reload, close] } })
+  const content = () => {
+    const note = snapshot === undefined ? undefined : launchNoteFrom(snapshot)
+    return {
+      gameTitle,
+      layers: snapshot === undefined ? [] : launchLayersFrom(snapshot),
+      profiles: (snapshot?.profiles ?? []).map(profile => ({ id: profile.id, title: profile.title })),
+      ...(snapshot?.selectedProfile === undefined ? {} : { selectedProfileId: snapshot.selectedProfile }),
+      ...(note === undefined ? {} : { note }),
+    }
+  }
+  /** Choose a runner, when the layers wait on one and the game page offers it. */
+  const runnerAction = (): SurfaceAction[] =>
+    snapshot?.routeLayers._tag === "NeedsRunnerChoice" && openRunners !== undefined ? [chooseRunner] : []
+  const ready = () => publish({ editor: { _tag: "Ready", ...content(), actions: [...runnerAction(), reload, close] } })
   const failed = (failure: RpcFailure, operation: () => void) => {
     again = operation
     publish({
@@ -244,6 +255,10 @@ export function createLaunchSettings(korrid: KorridClient) {
       cancel()
       return true
     }
+    if (actionId === LAUNCH_ID.runner) {
+      if (state.editor._tag !== "Closed" && runnerAction().length > 0) openRunners?.()
+      return true
+    }
     if (actionId === LAUNCH_ID.reload) {
       if (state.editor._tag !== "Closed") void read(state.editor._tag === "Ready")
       return true
@@ -270,6 +285,7 @@ export function createLaunchSettings(korrid: KorridClient) {
   function cancel() {
     generation++
     gameId = undefined
+    openRunners = undefined
     snapshot = undefined
     again = undefined
     publish({ editor: { _tag: "Closed" }, ...(busy ? {} : { status: undefined }) })
@@ -284,10 +300,11 @@ export function createLaunchSettings(korrid: KorridClient) {
       }
     },
     /** Open the editor for one game, by korrid's id. */
-    open: (id: string, title: string) => {
+    open: (id: string, title: string, chooseRunners?: () => void) => {
       if (disposed) return
       gameId = id
       gameTitle = title
+      openRunners = chooseRunners
       void read(false)
     },
     refreshDevice,

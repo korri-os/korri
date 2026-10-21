@@ -15,6 +15,7 @@ import type {
   LaunchResolvedValue,
   LaunchSettingsLayer,
   LaunchSettingsProfile,
+  LaunchSettingsRouteLayers,
   LaunchSettingsScope,
   LaunchSettingsSetRequest,
   LaunchSettingsSnapshotOutcome,
@@ -27,6 +28,8 @@ export interface InMemoryLaunchGame {
   readonly systemId?: string
   readonly runner?: { readonly id: string; readonly title: string }
   readonly releaseId?: string
+  /** Whether korrid could give the route's layers. Absent: Present. */
+  readonly routeLayers?: LaunchSettingsRouteLayers
 }
 
 export interface InMemoryLaunchSettingsConfig {
@@ -91,6 +94,11 @@ export function createInMemoryLaunchSettings(config: InMemoryLaunchSettingsConfi
     const scopes: { scope: LaunchSettingsScope; title: string }[] = [{ scope: { _tag: "Device" }, title: "Device" }]
     if (gameId === undefined) return scopes
     const game = config.games?.[gameId] ?? {}
+    // Without the route, only Device, Game and the profiles: korrid's rule.
+    if ((game.routeLayers?._tag ?? "Present") !== "Present") {
+      scopes.push({ scope: { _tag: "Game", id: gameId }, title: "Game" })
+      return scopes
+    }
     if (game.systemId !== undefined) scopes.push({ scope: { _tag: "System", id: game.systemId }, title: `System ${game.systemId}` })
     if (game.runner !== undefined) scopes.push({ scope: { _tag: "Runner", id: game.runner.id }, title: `Runner ${game.runner.title}` })
     scopes.push({ scope: { _tag: "Game", id: gameId }, title: "Game" })
@@ -139,6 +147,7 @@ export function createInMemoryLaunchSettings(config: InMemoryLaunchSettingsConfi
       return {
         _tag: "Ok",
         payload: {
+          routeLayers: (gameId === undefined ? undefined : config.games?.[gameId]?.routeLayers) ?? { _tag: "Present" },
           layers: layerList,
           resolved: { cpu: range("cpu"), gpu: range("gpu"), ...(governor === undefined ? {} : { governor }) },
           profiles: structuredClone(gameProfiles),

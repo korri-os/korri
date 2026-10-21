@@ -42,6 +42,8 @@ export const LAUNCH_ID = {
   rename: (profileId: string) => `launch:profile:rename:${profileId}`,
   remove: (profileId: string) => `launch:profile:remove:${profileId}`,
   reload: "launch:reload",
+  /** Opens the runner chooser for this game, when its page offers one. */
+  runner: "launch:runner",
   retry: "launch:retry",
   cancel: "launch:cancel",
 } as const
@@ -304,6 +306,23 @@ export function deviceLaunchGroup(snapshot: LaunchSettingsSnapshot): SurfaceSett
 }
 
 const MAX_PROFILE_TITLE = 40
+
+/**
+ * What the editor says when korrid could not give the route's layers. The
+ * values in force then leave System, Runner and Release out, so the same
+ * line says so.
+ */
+export function launchNoteFrom(snapshot: LaunchSettingsSnapshot): string | undefined {
+  const partial = "Values in force leave them out."
+  switch (snapshot.routeLayers._tag) {
+    case "Present":
+      return undefined
+    case "NeedsRunnerChoice":
+      return `System, runner and release settings appear once you choose a runner. ${partial}`
+    case "Unavailable":
+      return `System, runner and release settings aren't available: ${snapshot.routeLayers.message.replace(/\.$/, "")}. ${partial}`
+  }
+}
 
 /** One game's editor: a layer per scope, most general first, then each profile. */
 export function launchLayersFrom(snapshot: LaunchSettingsSnapshot): readonly SurfaceLaunchSettingsLayer[] {

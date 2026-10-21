@@ -66,12 +66,23 @@ export function PicoLaunchSettings({
     <PicoNotice actions={actions} kicker="LAUNCH SETTINGS FAILED" message={launch.message} title={title} tone="warn" />
   ) : undefined
   const reload = launch.phase === "Ready"
-    ? launch.actions.find(action => action.id !== launch.closeActionId && action.enabled)
+    ? launch.actions.find(action => action.id.endsWith(":reload") && action.enabled)
     : undefined
+  // Korri's other actions (Choose a runner) belong to the note that explains them.
+  const extra = launch.actions.filter(action => action.id !== launch.closeActionId && action !== reload && action.enabled)
+  const banner = launch.note === undefined ? undefined : (
+    <div className="pico-launch-settings-note">
+      <p>{launch.note}</p>
+      {extra.map(action => (
+        <PicoButton key={action.id} label={action.label.toUpperCase()} onPress={() => onAction(action.id)} tone="quiet" />
+      ))}
+    </div>
+  )
   return (
     <div className="pico-launch-settings" ref={root}>
       <PicoSettings
         {...settings}
+        banner={banner}
         lead={reload === undefined ? undefined : <PicoButton label={reload.label.toUpperCase()} onPress={() => onAction(reload.id)} tone="quiet" />}
         notice={notice}
         onSubmitWifi={() => undefined}

@@ -5,6 +5,8 @@
  *   (none)     no device facts, as a browser has: 10 % steps, "clock steps unknown"
  *   rg353m     the RG353M's real CPU and GPU clock steps, with a runner, a game
  *              value and a profile already set on Neverball
+ *   needs-runner  Neverball has no runner chosen: Device, Game and profiles only
+ *   unavailable   Neverball's route cannot be read
  *   conflict   every write is refused as changed elsewhere
  *   error      the read fails
  *
@@ -31,6 +33,13 @@ export function inMemoryLaunchSettingsDevConfig(scenario: string | null): InMemo
         },
         profiles: { neverball: [{ id: "battery", title: "Battery saver", cpu: { max: 61 }, gpu: {} }] },
         selected: { neverball: "battery" },
+      }
+    case "needs-runner":
+      return { games: { ...games, neverball: { routeLayers: { _tag: "NeedsRunnerChoice" } } }, deviceFacts: RG353M_LAUNCH_FACTS }
+    case "unavailable":
+      return {
+        games: { ...games, neverball: { routeLayers: { _tag: "Unavailable", message: "The runner plugin did not load" } } },
+        deviceFacts: RG353M_LAUNCH_FACTS,
       }
     case "conflict":
       return { games, failures: { set: { code: "SettingsConflict", message: "Launch settings changed." }, profile: { code: "SettingsConflict", message: "Profiles changed." } } }

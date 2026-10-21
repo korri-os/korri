@@ -14,7 +14,7 @@ const ready = withLaunchSettings(fixtureModel, launch.ready)
 
 function story(model: SurfaceModel, ...messages: PicoMessage[]) {
   let nav = update(initialNavigation(), { _tag: "KorriPublished" }, model).model
-  let requests: unknown[] = []
+  let requests: readonly unknown[] = []
   for (const message of messages) {
     const next = update(nav, message, model)
     nav = next.model
@@ -137,5 +137,14 @@ describe("launch settings screen", () => {
   test("without device facts the rows say the clock steps are unknown", () => {
     render(<PicoSurface host={createFixtureHost()} model={withLaunchSettings(fixtureModel, launch.factsMissing)} />)
     expect(screen.getAllByText("Applies at next launch. Clock steps unknown.").length).toBeGreaterThan(0)
+  })
+
+  test("missing route layers keep the rest editable, say why, and offer the runner chooser", () => {
+    const host = createFixtureHost()
+    render(<PicoSurface host={host} model={withLaunchSettings(fixtureModel, launch.needsRunner)} />)
+    expect(screen.getByText(/appear once you choose a runner\. Values in force leave them out\./)).toBeTruthy()
+    expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["DEVICE", "GAME", "PROFILE BATTERY SAVER"])
+    fireEvent.click(screen.getByRole("button", { name: "CHOOSE A RUNNER" }))
+    expect(host.calls).toEqual(["action:launch:runner"])
   })
 })

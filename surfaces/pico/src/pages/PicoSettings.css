@@ -9,3 +9,16 @@
 	display: none;
 }
 
+
+/* A line about every group stands above them; the groups keep the rest of
+ * the body and scroll inside it as before. */
+.pico-settings-list:has(> .pico-settings-banner) {
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr);
+	height: 100%;
+	min-height: 0;
+}
+
+.pico-settings-banner {
+	padding: var(--pico-u) calc(var(--pico-u) * 2) 0;
+}

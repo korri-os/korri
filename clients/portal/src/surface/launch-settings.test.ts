@@ -189,4 +189,49 @@ describe("game launch settings editor", () => {
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(launch.getSnapshot().editor).toEqual({ _tag: "Closed" })
   })
+
+  it("without a runner choice keeps Device, Game and profiles editable, says what is missing, and offers the chooser", async () => {
+    const launch = createLaunchSettings(createInMemoryKorridClient({
+      launchSettings: { games: { wario: { ...games.wario, routeLayers: { _tag: "NeedsRunnerChoice" } } } },
+    }))
+    let opened = 0
+    launch.open("wario", "Wario Land 4", () => { opened++ })
+    await settle()
+    const editor = launch.getSnapshot().editor
+    if (editor._tag !== "Ready") throw new Error(editor._tag)
+    expect(editor.layers.map(layer => layer.title)).toEqual(["Device", "Game"])
+    expect(editor.note).toBe("System, runner and release settings appear once you choose a runner. Values in force leave them out.")
+    expect(editor.actions.map(action => action.id)).toEqual([LAUNCH_ID.runner, LAUNCH_ID.reload, LAUNCH_ID.cancel])
+    expect(launch.act(LAUNCH_ID.runner)).toBe(true)
+    expect(opened).toBe(1)
+  })
+
+  it("does not offer the chooser when the game page has none", async () => {
+    const launch = createLaunchSettings(createInMemoryKorridClient({
+      launchSettings: { games: { wario: { routeLayers: { _tag: "NeedsRunnerChoice" } } } },
+    }))
+    launch.open("wario", "Wario Land 4")
+    await settle()
+    const editor = launch.getSnapshot().editor
+    expect(editor._tag !== "Closed" && editor.actions.map(action => action.id)).toEqual([LAUNCH_ID.reload, LAUNCH_ID.cancel])
+  })
+
+  it("names why route layers are unavailable", async () => {
+    const launch = createLaunchSettings(createInMemoryKorridClient({
+      launchSettings: { games: { wario: { routeLayers: { _tag: "Unavailable", message: "The runner plugin did not load." } } } },
+    }))
+    launch.open("wario", "Wario Land 4", () => undefined)
+    await settle()
+    const editor = launch.getSnapshot().editor
+    if (editor._tag !== "Ready") throw new Error(editor._tag)
+    expect(editor.note).toBe("System, runner and release settings aren't available: The runner plugin did not load. Values in force leave them out.")
+    expect(editor.actions.map(action => action.id)).toEqual([LAUNCH_ID.reload, LAUNCH_ID.cancel])
+  })
+
+  it("has no note when the route's layers are present", async () => {
+    const launch = createLaunchSettings(createInMemoryKorridClient({ launchSettings: { games } }))
+    launch.open("wario", "Wario Land 4")
+    await settle()
+    expect(launch.getSnapshot().editor).not.toHaveProperty("note")
+  })
 })

@@ -16,6 +16,8 @@ export interface PicoLaunchView {
   readonly message?: string
   /** Korri's actions, Close last. Pico shows them on the notice that needs them. */
   readonly actions: readonly SurfaceAction[]
+  /** One plain line about the whole editor: layers Korri cannot show yet. */
+  readonly note?: string
   /** The action that closes the editor, for Back. */
   readonly closeActionId?: string
   readonly settings: PicoSettingsView
@@ -32,6 +34,7 @@ export function picoLaunchViewFromModel(model: SurfaceModel): PicoLaunchView | u
     ...(launch.gameTitle === undefined ? {} : { gameTitle: launch.gameTitle }),
     phase: launch._tag,
     ...(launch._tag === "Conflict" || launch._tag === "Error" ? { message: launch.message } : {}),
+    ...(launch.note === undefined ? {} : { note: launch.note }),
     actions: launch.actions,
     ...(close === undefined ? {} : { closeActionId: close.id }),
     settings: {

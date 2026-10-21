@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test"
+import { afterEach, expect, spyOn, test } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import type {
@@ -299,4 +299,35 @@ test("same-game Return uses exact thaw without reading routes or selecting again
   expect(await base.sessionStatus()).toMatchObject({
     payload: { active: { launchId: "existing" } },
   })
+})
+
+test("launch settings open from the game page, offer the runner chooser for missing layers, and read again after it", async () => {
+  const korrid = createInMemoryKorridClient({
+    games: [game()],
+    gameRoutes: [routes()],
+    launchSettings: { games: { wl4: { routeLayers: { _tag: "NeedsRunnerChoice" } } } },
+  })
+  const reads = spyOn(korrid, "launchSettingsSnapshot")
+  const view = await mount(korrid)
+  const id = view.id("wl4")
+  const action = view.host().gameActions(id).find(candidate => candidate.id === "launch-settings")
+  expect(action).toEqual({ id: "launch-settings", label: "Launch settings", enabled: true })
+  await invoke(() => view.host().runGameAction(id, "launch-settings"))
+  await waitFor(() => view.model().launchSettings?._tag === "Ready")
+  const editor = view.model().launchSettings
+  if (editor?._tag !== "Ready") throw new Error("expected the editor")
+  expect(editor.note).toContain("appear once you choose a runner")
+  expect(editor.layers.map(layer => layer.id)).toEqual(["device", "game"])
+  // While the editor is open, nothing on the page underneath launches.
+  await invoke(() => view.host().launchGame(id))
+  expect(view.model().runnerChoice?._tag).toBe("Closed")
+  await invoke(() => view.host().runAction("launch:runner"))
+  await waitFor(() => view.model().runnerChoice?._tag === "Ready")
+  const before = reads.mock.calls.filter(call => call[0] === "wl4").length
+  await invoke(() => view.host().runAction("runner:cancel"))
+  await waitFor(() => reads.mock.calls.filter(call => call[0] === "wl4").length > before)
+  expect(view.model().launchSettings?._tag).toBe("Ready")
+  await invoke(() => view.host().runAction("launch:cancel"))
+  expect(view.model().launchSettings?._tag).toBe("Closed")
+  reads.mockRestore()
 })

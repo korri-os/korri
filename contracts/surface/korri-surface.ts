@@ -420,6 +420,12 @@ export interface SurfaceLaunchSettingsContent {
   readonly profiles: readonly SurfaceLaunchProfile[]
   /** The profile the next launch uses. Absent: none. */
   readonly selectedProfileId?: string
+  /**
+   * One plain line about the whole editor, in Korri's words, such as layers
+   * Korri cannot show yet and that the values in force leave them out.
+   * Absent when there is nothing to say.
+   */
+  readonly note?: string
   /** Host actions such as Reload, Retry and Close. Ids go unchanged to
    * runAction; the host's close action ends with ":cancel". */
   readonly actions: readonly SurfaceAction[]

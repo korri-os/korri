@@ -3,3 +3,20 @@
 .pico-launch-settings {
 	height: 100%;
 }
+
+/* What Korri cannot show yet, in its words, and the action that fixes it.
+ * The button wraps under the sentence when the line is short of room. */
+.pico-launch-settings-note {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pico-px) calc(var(--pico-u) * 2);
+	font-size: var(--pico-text-sm);
+	line-height: 1.5;
+}
+
+.pico-launch-settings-note > p {
+	flex: 1 1 calc(var(--pico-px) * 160);
+	margin: 0;
+	overflow-wrap: anywhere;
+}
