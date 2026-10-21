@@ -7,7 +7,9 @@
  * one this device continues from. Shift keeps Korri's order and never sorts by
  * the clocks.
  *
- * Restoring asks first. Cancel comes first and takes the cursor, then the
+ * Restoring always asks first, whatever the host's destructive flag says, and
+ * Restore keeps the default tone: the replaced save stays in history, so
+ * nothing is lost. Cancel comes first and takes the cursor, then the
  * host's own restore action, sent unchanged through `runAction`. Leaving runs
  * the host's action when it offers exactly one; with several, the person picks
  * one in the footer.
@@ -158,7 +160,6 @@ export function ShiftSaveHistory({
                 <ShiftSheetAction label="Cancel" onSelect={closeConfirm} />
                 <ShiftSheetAction
                   label={confirming.restore.label}
-                  {...(confirming.restore.destructive ? { tone: "danger" as const } : {})}
                   onSelect={() => {
                     const id = confirming.restore?.id
                     closeConfirm()
