@@ -152,6 +152,26 @@ can record what each session started from.
 Research behind the choice, with sources and an audit:
 `~/.cache/research/deterministic-save-sync-20261020/` (outside the repo).
 
+## Changes from issue #7
+
+Issue #7, "Design deterministic plugin-declared peer data sync", holds the
+owner's earlier notes. This decision keeps its core and changes the rest. The
+later, explicit answers win; #7 stays open for the owner to close or reshape.
+
+Kept from #7: plugins declare and korrid acts; a declared group is the unit of
+choice and files from two runs never merge; no clocks decide anything;
+identical content does nothing; a choice spreads as data; two groups that
+chose differently while apart are asked again.
+
+| #7 said | This decision |
+|---|---|
+| The core syncs opaque data and knows no save, state or profile concepts | The core knows saves, savestates and screenshots: screenshots merge as a union, and savestate and release mismatches warn |
+| The losing package is discarded after the choice; no user-facing history | The other side stays in the save history and can be restored; the last 10 snapshots are kept; a restore screen is in the first slice |
+| Launcher paths stay device-local, with fixed paths, several roots and launcher-private data allowed | A save location is always inside the person's own folder; other paths get a bind or overlay under bubblewrap (ADR 0015) |
+| Any peer or an untrusted relay may store and forward | Each device keeps snapshots for games it can play; a hosted or relay store waits for a separate spike |
+| Full compressed packages first; chunking later | Content moves by hash, and only content the other device lacks is sent |
+| A narrow first proof: two devices, one data group, no cloud-save features | The first slice holds every feature listed below |
+
 ## First slice
 
 RetroArch with a GBA game. The owner kept every feature in it (2026-10-21). It holds: per-person save folders, a save folder
