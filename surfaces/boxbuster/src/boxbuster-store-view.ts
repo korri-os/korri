@@ -295,12 +295,17 @@ export function tvStatusFrom(model: SurfaceModel): TvStatus {
   }
 }
 
-/** "Oct 21, 9:18 PM": when a side's session ended, by that device's clock.
- * Display only; Boxbuster never compares it. */
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+/** "Oct 21, 9:18 PM" in local time: when a side's session ended, by that
+ * device's clock. Display only; Boxbuster never compares it. Built by hand,
+ * like the TV's other words, so it reads the same in every runtime locale. */
 export function saveTimeLabel(at: number): string {
   const date = new Date(at)
   if (Number.isNaN(date.getTime())) return "unknown time"
-  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+  const hours = date.getHours()
+  const minutes = String(date.getMinutes()).padStart(2, "0")
+  return `${MONTHS[date.getMonth()] ?? ""} ${date.getDate()}, ${hours % 12 === 0 ? 12 : hours % 12}:${minutes} ${hours < 12 ? "AM" : "PM"}`
 }
 
 /**
