@@ -182,7 +182,7 @@ A save snapshot made from what a game wrote before a crash or power loss, not af
 _Avoid_: recovered save, partial save
 
 **Split**:
-Two save snapshots that started from the same snapshot. The person picks one to continue from; the other stays in the save history.
+Two save snapshots that started from the same snapshot and hold different saves or savestates. The person picks one to continue from; the other stays in the save history. Screenshots alone never make a split.
 _Avoid_: conflict, divergence, fork
 
 **In-use warning**:

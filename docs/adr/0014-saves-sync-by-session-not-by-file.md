@@ -83,6 +83,24 @@ can record what each session started from.
   is listed once in a one-time review, and the person picks per game.
 - Two snapshots with byte-identical content are not a split, even when they
   started from the same snapshot. Korri compares content hashes, never clocks.
+- Screenshots never cause a split by themselves. Both sides' screenshots are
+  kept as a union. Saves and savestates follow the strict rule.
+- Changes to different files of one game on two devices are a split, never a
+  file-level merge: every snapshot equals something a real session wrote.
+- Restoring an older snapshot makes a new snapshot with that content, which
+  syncs to every device. Two different restores made apart are a split.
+- A device never drops a snapshot that no other device has confirmed
+  receiving, whatever retention says and whether or not the game is still on
+  the device.
+- On an identity switch away from an automatic identity, Korri offers to bring
+  its saves to the new owner. Each game then goes through the first-sync review.
+  A real person's saves stay theirs (above).
+- When a Link joins two games that each have a save history, the first-sync
+  rule applies: byte-identical saves join, otherwise the person picks, and both
+  histories are kept.
+- Peer RPC carries snapshot records. File content moves by hash over a separate
+  HTTP transfer between the person's devices, authenticated like peer RPC, and
+  only content the other device lacks is sent. Transfers run on battery too.
 - A split found during a live session is shown after the session ends, or
   earlier if the person opens the gameplay overlay.
 - Each person gets their own `account_root` under `users/`, keyed like the play
@@ -120,7 +138,7 @@ Research behind the choice, with sources and an audit:
 
 ## First slice
 
-RetroArch with a GBA game. It holds: per-person save folders, a save folder
+RetroArch with a GBA game. The owner kept every feature in it (2026-10-21). It holds: per-person save folders, a save folder
 per game, snapshots after exit, interrupted snapshots, push, meet and pull
 between the person's devices, split detection with notice and choice, the
 first-sync review, browsing and restoring older snapshots, the "saves not
