@@ -16,16 +16,23 @@ export interface ShiftStoreQueryProps {
   readonly onSearch: () => void
   /** A search is in flight: the button says so and waits. */
   readonly searching?: boolean
+  /** Nothing searched on this provider yet: the field is where to start. */
+  readonly unsearched?: boolean
 }
 
-export function ShiftStoreQuery({ providerTitle, text, onText, onSearch, searching = false }: ShiftStoreQueryProps) {
+export function ShiftStoreQuery({ providerTitle, text, onText, onSearch, searching = false, unsearched = false }: ShiftStoreQueryProps) {
   return (
     <form
       className="shift-store-query"
       role="search"
       onSubmit={event => {
         event.preventDefault()
-        if (!searching) onSearch()
+        if (searching) return
+        // Leave the field: the keyboard's arrows and Back are the field's own
+        // while it has focus, and the results are where the person goes next.
+        const field = event.currentTarget.querySelector("input")
+        field?.blur()
+        onSearch()
       }}
       {...shiftDesignPartAttrs(SHIFT_DESIGN_PARTS.storeFinder)}
     >
@@ -38,6 +45,7 @@ export function ShiftStoreQuery({ providerTitle, text, onText, onSearch, searchi
           placeholder={`Search ${providerTitle}`}
           aria-label={`Search ${providerTitle}`}
           enterKeyHint="search"
+          {...(unsearched ? { "data-unsearched": "" } : {})}
           onChange={event => onText(event.target.value)}
         />
       </span>

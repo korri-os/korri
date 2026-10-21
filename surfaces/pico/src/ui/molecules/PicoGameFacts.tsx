@@ -19,6 +19,7 @@ export function PicoGameFacts({
   title,
   subtitle,
   stats,
+  statsEmptyLabel,
   resumable = false,
   download,
   level = 1,
@@ -27,6 +28,8 @@ export function PicoGameFacts({
   readonly title: string
   readonly subtitle?: string
   readonly stats: readonly { readonly figure: string; readonly caption: string }[]
+  /** What the run says with no stats. Default: NEVER PLAYED. */
+  readonly statsEmptyLabel?: string
   readonly resumable?: boolean
   /** "1.5 GB DOWNLOAD": what playing fetches first. Absent when nothing. */
   readonly download?: string
@@ -45,7 +48,7 @@ export function PicoGameFacts({
       <div className="pico-game-facts-chips">
         {resumable ? <PicoBadge text="RESUME" tone="ok" /> : null}
         {download === undefined ? null : <PicoBadge text={download} tone="info" />}
-        <PicoStatRun stats={stats} />
+        <PicoStatRun {...(statsEmptyLabel === undefined ? {} : { emptyLabel: statsEmptyLabel })} stats={stats} />
       </div>
     </div>
   )

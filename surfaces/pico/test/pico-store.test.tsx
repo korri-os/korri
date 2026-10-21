@@ -105,6 +105,9 @@ describe("an entry", () => {
     const { host } = atEntry(storeFixture())
     expect(screen.getByRole("heading", { name: "2048" })).toBeTruthy()
     expect(screen.getByText("Slide the tiles and join equal numbers to reach 2048.")).toBeTruthy()
+    // Not a game played here: the stage says where it stands, not "never played".
+    expect(screen.getByText("NOT ON THIS DEVICE")).toBeTruthy()
+    expect(screen.queryByText("NEVER PLAYED")).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "GET" }))
     expect(host.calls.at(-1)).toBe("action:store:1:get")
   })

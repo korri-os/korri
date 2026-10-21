@@ -57,8 +57,10 @@ export function ShiftStore({ store, place, onPlace, onSearch, onOpenEntry, onAct
     if (scope === null) return
     const active = scope.ownerDocument.activeElement
     if (active !== null && active !== scope.ownerDocument.body && scope.contains(active) && active.isConnected) return
-    scope.querySelector<HTMLElement>("[data-shift-store-landing] button:not([disabled]), [data-shift-store-landing] input, button:not([disabled])")
-      ?.focus({ preventScroll: true })
+    // Before a first search the field takes focus; after it, the results do.
+    ;(scope.querySelector<HTMLElement>("[data-shift-store-landing] input[data-unsearched]") ??
+      scope.querySelector<HTMLElement>("[data-shift-store-landing] button:not([disabled])") ??
+      scope.querySelector<HTMLElement>("button:not([disabled])"))?.focus({ preventScroll: true })
   })
 
   const search = store.search
@@ -118,13 +120,14 @@ export function ShiftStore({ store, place, onPlace, onSearch, onOpenEntry, onAct
         <ShiftStoreEmpty message="Looking for providers…" />
       ) : (
         <>
-          <div data-shift-store-landing>
+          <div {...(shownSearch?._tag === "Ready" && shownSearch.entries.length > 0 ? {} : { "data-shift-store-landing": "" })}>
             <ShiftStoreQuery
               providerTitle={provider.title}
               text={place.text}
               onText={text => onPlace({ ...place, text })}
               onSearch={() => onSearch(provider.id, place.text.trim())}
               searching={shownSearch?._tag === "Searching"}
+              unsearched={shownSearch === undefined}
             />
           </div>
           {shownSearch === undefined ? (
@@ -143,7 +146,7 @@ export function ShiftStore({ store, place, onPlace, onSearch, onOpenEntry, onAct
           ) : shownSearch.entries.length === 0 ? (
             <ShiftStoreEmpty message={shownSearch.query === "" ? `${provider.title} lists nothing right now.` : `Nothing on ${provider.title} matches “${shownSearch.query}”. Try other words.`} />
           ) : (
-            <div className="shift-store-tiles">
+            <div className="shift-store-tiles" data-shift-store-landing>
               {shownSearch.entries.map(entry => (
                 <ShiftStoreBrowseTile
                   key={entry.id}
