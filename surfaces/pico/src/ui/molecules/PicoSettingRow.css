@@ -22,3 +22,17 @@
 	color: var(--pico-shell-warn-note);
 	background: var(--pico-warn);
 }
+
+/* Where a layered value comes from, and its device-only plate. Wraps under
+ * the label rather than squeezing the value beside it. */
+.pico-setting-row-source {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pico-px) calc(var(--pico-px) * 3);
+	margin: 0;
+	padding: 0 calc(var(--pico-px) * 4);
+	font-size: var(--pico-text-sm);
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}

@@ -1,0 +1,5 @@
+/* The editor takes the whole box Pico was given; the catalog under it is
+ * hidden while it shows, as under the runner picker. */
+.pico-launch-settings {
+	height: 100%;
+}

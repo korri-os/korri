@@ -7,6 +7,8 @@ import type {
 import { useCallback, useEffect, useRef } from "react"
 import { PicoGameDetail } from "./pages/PicoGameDetail"
 import { PicoRunnerPicker } from "./pages/PicoRunnerPicker"
+import { PicoLaunchSettings } from "./pages/PicoLaunchSettings"
+import { type PicoLaunchView, picoLaunchViewFromModel } from "./pico-launch-view"
 import { PicoHome } from "./pages/PicoHome"
 import { PicoAttract } from "./ui/organisms/PicoAttract"
 import { PicoLibrary } from "./pages/PicoLibrary"
@@ -29,7 +31,7 @@ import type { PicoTyping } from "./ui/molecules/PicoKeyboard"
 import { type PicoFontMessage, updateFont } from "./state/font"
 import { IDENTITY_FORM, type SettingsQuestion } from "./state/navigation"
 import { initialOverlay, type PicoOverlayMessage, type PicoOverlayState, rangeValue, updateOverlay } from "./state/overlay"
-import { attractShowing, identityAction, type PicoShown, runnerOpen, shownScreen } from "./state/shown"
+import { attractShowing, identityAction, launchOpen, type PicoShown, runnerOpen, shownScreen } from "./state/shown"
 import { usePicoNavigation } from "./use-pico-navigation"
 import { usePicoOnboarding } from "./use-pico-onboarding"
 import { usePicoProgram } from "./use-pico-program"
@@ -234,7 +236,8 @@ function PicoCatalogSurface({
     onToggleSymbols: () => dispatch({ _tag: "ToggledSymbols" }),
   }
   const runner = model.runnerChoice
-  const covered = runnerOpen(model)
+  const launch = runnerOpen(model) ? undefined : picoLaunchViewFromModel(model)
+  const covered = runnerOpen(model) || launchOpen(model)
   /* Set when a pointer press woke the screen, so the click that ends the same
    * press is swallowed too. DOM mechanics, not navigation. */
   const suppressWakeClick = useRef(false)
@@ -302,8 +305,38 @@ function PicoCatalogSurface({
       {runner !== undefined && runner._tag !== "Closed" ? (
         <PicoRunnerPicker choice={runner} onAction={actionId => dispatch({ _tag: "ChoseRunnerAction", actionId })} />
       ) : null}
+      {launch === undefined ? null : renderLaunch(launch, nav.launch?.question ?? { _tag: "None" }, nav.launch?.group ?? 0)}
     </>
   )
+
+  function renderLaunch(launchView: PicoLaunchView, question: SettingsQuestion, group: number) {
+    return (
+      <PicoLaunchSettings
+        asking={question._tag === "ConfirmingAction"
+          ? { actionId: question.actionId, confirmation: question.confirmation }
+          : undefined}
+        clockLabel={model.clockLabel}
+        editing={settingsEditing(question)}
+        group={group}
+        launch={launchView}
+        onAction={actionId => dispatch({ _tag: "PressedLaunchAction", actionId })}
+        onAsk={(actionId, confirmation) => dispatch({ _tag: "AskedSettingConfirmation", actionId, confirmation })}
+        onAskClear={() => dispatch({ _tag: "AskedClear" })}
+        onCancel={() => dispatch({ _tag: "CancelledSettingAction" })}
+        onCancelClear={() => dispatch({ _tag: "CancelledClear" })}
+        onChange={(settingId, value) => dispatch({ _tag: "ChangedSetting", settingId, value })}
+        onCloseEditor={() => dispatch({ _tag: "ClosedEditor" })}
+        onConfirm={() => dispatch({ _tag: "ConfirmedSettingAction" })}
+        onConfirmClear={() => dispatch({ _tag: "ConfirmedClear" })}
+        onDismissProblem={() => dispatch({ _tag: "DismissedSettingsProblem" })}
+        onEdit={settingId => dispatch({ _tag: "OpenedEditor", settingId })}
+        onGroup={index => dispatch({ _tag: "ChoseSettingsGroup", group: index })}
+        onRun={actionId => dispatch({ _tag: "PressedSettingAction", actionId })}
+        onSaveText={() => dispatch({ _tag: "SavedText" })}
+        typing={typing}
+      />
+    )
+  }
 
   function renderScreen(shown: PicoShown) {
     switch (shown._tag) {

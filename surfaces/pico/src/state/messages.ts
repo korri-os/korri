@@ -30,6 +30,9 @@ export type PicoMessage =
   | { readonly _tag: "MovedFocus" }
   // The runner picker
   | { readonly _tag: "ChoseRunnerAction"; readonly actionId: string }
+  // A game's launch settings. Its rows send the Settings messages.
+  /** Reload, Retry or Close, as Korri published them. */
+  | { readonly _tag: "PressedLaunchAction"; readonly actionId: string }
   // Home
   | { readonly _tag: "ToggledHomeMenu" }
   | { readonly _tag: "ChoseMenuFind" }

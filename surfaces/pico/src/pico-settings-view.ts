@@ -51,6 +51,10 @@ export interface PicoSettingRowView {
   readonly label: string
   readonly value?: string
   readonly description?: string
+  /** Where the value in force comes from, in Korri's words ("from Device (default)"). */
+  readonly source?: string
+  /** Korri says the value stays on this device. */
+  readonly deviceOnly?: boolean
   readonly control: PicoSettingControl
   /** What Korri says about this row right now. A `problem` is a settings
    * failure the player dismisses; `failed` is Korri's record of the last
@@ -183,7 +187,7 @@ function picoGroup(font: PicoFontId): PicoSettingsGroupView {
       id: PICO_FONT_SETTING,
       label: "Font",
       description: "Kept on this device. Changes at once.",
-      control: { kind: "step", next: next?.id ?? font, current: current?.name ?? font },
+      control: { kind: "step", next: next?.id ?? font, current: (current?.name ?? font).toUpperCase() },
       state: "idle",
     }],
   }
@@ -239,7 +243,7 @@ export function picoSettingsViewFromModel(
     groups: [
       ...model.settings.map((group) => ({
         title: group.title.toUpperCase(),
-        rows: group.items.map((item) => rowFor(item, model)),
+        rows: group.items.map((item) => picoSettingRowFrom(item, model)),
       })),
       ...(wifi === undefined ? [] : [wifi]),
       ...(identityRows.length ? [{ title: "IDENTITY", rows: identityRows }] : []),
@@ -249,7 +253,8 @@ export function picoSettingsViewFromModel(
   }
 }
 
-function rowFor(item: SurfaceSettingItem, model: SurfaceModel): PicoSettingRowView {
+/** One Korri setting as a row, with what Korri says about it now. */
+export function picoSettingRowFrom(item: SurfaceSettingItem, model: SurfaceModel): PicoSettingRowView {
   const status = model.settingsStatus
   const state =
     status._tag === "Saving" && status.settingId === item.id
@@ -262,6 +267,8 @@ function rowFor(item: SurfaceSettingItem, model: SurfaceModel): PicoSettingRowVi
     label: item.label,
     ...(item.value === undefined ? {} : { value: item.value }),
     ...(item.description === undefined ? {} : { description: item.description }),
+    ...(item.source === undefined ? {} : { source: item.source }),
+    ...(item.scope === "device" ? { deviceOnly: true } : {}),
     control: controlFor(item),
     state,
   }

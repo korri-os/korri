@@ -7,6 +7,7 @@
  * the way a launch from the shelf does.
  */
 import type { SurfaceGame, SurfaceModel, SurfaceStore } from "@contracts/surface/korri-surface"
+import { picoLaunchOpen } from "../pico-launch-view"
 import { type PicoScreenView, picoScreenViewFromModel } from "../pico-screen-view"
 import type { Detail, Home, PicoNavigation, Search, Settings, StorePlace } from "./navigation"
 
@@ -37,6 +38,10 @@ export function shownScreen(nav: PicoNavigation, korri: SurfaceModel): PicoShown
 export const runnerOpen = (korri: SurfaceModel): boolean =>
   korri.runnerChoice !== undefined && korri.runnerChoice._tag !== "Closed"
 
+/** Korri shows a game's launch settings. Like the runner picker, it covers
+ * everything else Pico draws. */
+export const launchOpen = picoLaunchOpen
+
 /**
  * Attract may show only over a shelf that is sitting there: never over a
  * running game, a launch, a failure, a library Korri is still reading, or any
@@ -46,6 +51,7 @@ export const runnerOpen = (korri: SurfaceModel): boolean =>
 export function canAttract(nav: PicoNavigation, korri: SurfaceModel): boolean {
   const shown = shownScreen(nav, korri)
   return !runnerOpen(korri)
+    && !launchOpen(korri)
     && shown._tag === "Home"
     && shown.view._tag === "Shelf"
     && nav.home.menu === "Closed"

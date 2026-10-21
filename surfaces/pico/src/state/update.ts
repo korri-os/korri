@@ -6,6 +6,7 @@
  */
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { isPicoFont } from "../pico-font-preference"
+import { picoLaunchViewFromModel } from "../pico-launch-view"
 import { picoScreenViewFromModel } from "../pico-screen-view"
 import { picoSessionReturnFromModel, picoSessionReturnOnPlay } from "../pico-session-return"
 import { PICO_STORE_QUERY_MAX } from "../pico-store-view"
@@ -38,7 +39,7 @@ import {
   topLayer,
 } from "./navigation"
 import { ask, type PicoRequest, type PicoStep, stay } from "./requests"
-import { attractShowing, canAttract, identityAction, runnerOpen } from "./shown"
+import { attractShowing, canAttract, identityAction, launchOpen, runnerOpen } from "./shown"
 import {
   editEntry,
   entryMaxLength,
@@ -51,8 +52,8 @@ import {
 } from "./wifi"
 
 export function update(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): PicoStep<PicoNavigation> {
-  const result = step(nav, message, korri)
-  const settled = settleIdle(settleEditor(settleSession(result.model, korri), korri), korri)
+  const result = step(settleLaunch(nav, korri), message, korri)
+  const settled = settleIdle(settleEditor(settleLaunch(settleSession(result.model, korri), korri), korri), korri)
   const identity = settleIdentity(nav, settled, korri)
   return { model: identity.model, requests: [...result.requests, ...identity.requests] }
 }
@@ -62,6 +63,15 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
   // host buttons wait for it to close.
   if (runnerOpen(korri) && isHostButton(message)) {
     return message._tag === "PressedBack" ? ask(nav, { _tag: "RunAction", actionId: "runner:cancel" }) : stay(nav)
+  }
+
+  // A game's launch settings cover everything too. Back withdraws its
+  // question first, then asks Korri to close it; the other buttons wait.
+  if (launchOpen(korri) && isHostButton(message)) {
+    if (message._tag !== "PressedBack") return stay(nav)
+    if (nav.launch !== undefined && nav.launch.question._tag !== "None") return stay(backInSettings(nav, nav.launch))
+    const close = picoLaunchViewFromModel(korri)?.closeActionId
+    return close === undefined ? stay(nav) : ask(nav, { _tag: "RunAction", actionId: close })
   }
 
   // A press while attract shows wakes the screen and does nothing else.
@@ -118,6 +128,11 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
 
     case "ChoseRunnerAction":
       return ask(nav, { _tag: "RunAction", actionId: message.actionId })
+    case "PressedLaunchAction":
+      // Only what Korri publishes now, enabled, is authority.
+      return picoLaunchViewFromModel(korri)?.actions.some(action => action.id === message.actionId && action.enabled) === true
+        ? ask(nav, { _tag: "RunAction", actionId: message.actionId })
+        : stay(nav)
 
     // Home
     case "ToggledHomeMenu":
@@ -272,6 +287,7 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
 
     // Settings
     case "ChoseSettingsGroup":
+      if (nav.launch !== undefined) return stay({ ...nav, launch: { ...nav.launch, group: message.group } })
       return stay(nav.settings === undefined ? nav : { ...nav, settings: { ...nav.settings, group: message.group } })
     case "PressedSettingAction": {
       if (message.actionId.startsWith("identity:")) {
@@ -290,7 +306,7 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
     case "AskedSettingConfirmation":
       return stay(withQuestion(nav, { _tag: "ConfirmingAction", actionId: message.actionId, confirmation: message.confirmation }))
     case "ConfirmedSettingAction": {
-      const question = nav.settings?.question
+      const question = activeSettings(nav)?.question
       if (question?._tag !== "ConfirmingAction") return stay(nav)
       return ask(withQuestion(nav, { _tag: "None" }), { _tag: "RunAction", actionId: question.actionId })
     }
@@ -516,13 +532,31 @@ function identityRequest(actionId: string, form: IdentityForm): PicoRequest | un
   return undefined
 }
 
-const textRow = (korri: SurfaceModel, settingId: string): PicoTextSettingRowView | undefined =>
-  picoTextSettingFrom(picoSettingsViewFromModel(korri), settingId)?.row
+const textRow = (korri: SurfaceModel, settingId: string): PicoTextSettingRowView | undefined => {
+  const launch = picoLaunchViewFromModel(korri)?.settings
+  return (launch === undefined ? undefined : picoTextSettingFrom(launch, settingId)?.row)
+    ?? picoTextSettingFrom(picoSettingsViewFromModel(korri), settingId)?.row
+}
+
+/**
+ * Korri opened or closed a game's launch settings. Opening starts on the
+ * first spine with no question; closing forgets both.
+ */
+function settleLaunch(nav: PicoNavigation, korri: SurfaceModel): PicoNavigation {
+  const open = launchOpen(korri)
+  if (open && nav.launch === undefined) return { ...nav, launch: SETTINGS }
+  if (!open && nav.launch !== undefined) return { ...nav, launch: undefined }
+  return nav
+}
+
+/** The settings layer questions go to: launch settings while Korri shows
+ * them, else Settings. */
+const activeSettings = (nav: PicoNavigation): Settings | undefined => nav.launch ?? nav.settings
 
 type OpenEditor = Extract<SettingsQuestion, { readonly _tag: "EditingText" | "ConfirmingClear" }>
 
 const openEditor = (nav: PicoNavigation): OpenEditor | undefined => {
-  const question = nav.settings?.question
+  const question = activeSettings(nav)?.question
   return question?._tag === "EditingText" || question?._tag === "ConfirmingClear" ? question : undefined
 }
 
@@ -602,7 +636,9 @@ function storeActionPublished(korri: SurfaceModel, actionId: string): boolean {
 
 const closeMenu = (home: Home): Home => (home.menu === "Closed" ? home : { ...home, menu: "Closed" })
 const withQuestion = (nav: PicoNavigation, question: SettingsQuestion): PicoNavigation =>
-  nav.settings === undefined ? nav : { ...nav, settings: { ...nav.settings, question } }
+  nav.launch !== undefined
+    ? { ...nav, launch: { ...nav.launch, question } }
+    : nav.settings === undefined ? nav : { ...nav, settings: { ...nav.settings, question } }
 const cycleMode = (nav: PicoNavigation): PicoNavigation => ({
   ...nav,
   home: { ...nav.home, mode: nav.home.mode === "shelf" ? "grid" : nav.home.mode === "grid" ? "hero" : "shelf" },

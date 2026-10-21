@@ -1,4 +1,5 @@
 import "./PicoSettings.css"
+import type { ReactNode } from "react"
 import {
   type PicoConfirmation,
   type PicoSettingRowView,
@@ -70,6 +71,10 @@ export function PicoSettings({
   onToggleShown,
   onDismissProblem,
   clockLabel,
+  title = "SETTINGS",
+  notice,
+  lead,
+  from,
 }: {
   readonly settings: PicoSettingsView
   /** Which settings group shows, kept by the owner. */
@@ -100,6 +105,18 @@ export function PicoSettings({
   readonly onToggleShown: () => void
   readonly onDismissProblem: () => void
   readonly clockLabel?: string
+  /** The screen's name in the status bar. A game's launch settings use the
+   * same screen under their own name. */
+  readonly title?: string
+  /** What Korri says about the whole screen (still reading, changed
+   * elsewhere, failed). It takes the groups' place until Korri is ready:
+   * values that changed elsewhere are not worth changing again. The spine
+   * shown is kept, so the person returns to it. */
+  readonly notice?: ReactNode
+  /** A control on the floor row, before the hints, while nothing is typed. */
+  readonly lead?: ReactNode
+  /** Where Back leads from this screen, for the status bar. Absent: Korri's home. */
+  readonly from?: string
 }) {
   const activate = (row: PicoSettingRowView) => {
     switch (row.control.kind) {
@@ -135,18 +152,21 @@ export function PicoSettings({
     <PicoScreenShell
       clockLabel={clockLabel}
       hints={typingOpen ? EDITOR_HINTS : HINTS}
-      label={place ?? "SETTINGS"}
+      label={place ?? title}
       readout={settings.buildLabel}
-      {...(place === undefined ? {} : { place: "SETTINGS" })}
+      {...(place === undefined ? (from === undefined ? {} : { place: from }) : { place: title })}
+      {...(lead === undefined || typingOpen ? {} : { lead })}
     >
       <div className="pico-settings-list" hidden={typingOpen}>
-        <PicoSettingsPanel
-          group={group}
-          onActivate={activate}
-          onGroup={onGroup}
-          onDismissProblem={onDismissProblem}
-          settings={settings}
-        />
+        {notice ?? (
+          <PicoSettingsPanel
+            group={group}
+            onActivate={activate}
+            onGroup={onGroup}
+            onDismissProblem={onDismissProblem}
+            settings={settings}
+          />
+        )}
       </div>
       {edited === undefined || editing === undefined ? null : (
         <PicoTextEditor

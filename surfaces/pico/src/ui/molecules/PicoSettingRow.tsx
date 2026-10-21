@@ -9,6 +9,10 @@ import { PicoNetworkMarks } from "./PicoNetworkMarks"
  * One setting: its label on the left, its state on the right, as a button when
  * Korri allows an interaction and as plain text when it does not.
  *
+ * A layered value (a launch setting) says under it where the value in force
+ * comes from, in Korri's words, and carries DEVICE-ONLY when Korri says it
+ * stays on this device.
+ *
  * A fact row is not a disabled button. Disabled reads as "you cannot", and the
  * truth is "there is nothing to do" — the software version is a fact, not a
  * locked control. The Wi-Fi network this device is on is a fact too.
@@ -31,7 +35,7 @@ export function PicoSettingRow({
       ) : row.control.kind === "cycle" ? (
         <PicoSegments current={row.control.current} options={row.control.options} />
       ) : row.control.kind === "step" ? (
-        <span>{`◀ ${row.control.current.toUpperCase()} ▶`}</span>
+        <span>{`◀ ${row.control.current} ▶`}</span>
       ) : row.value === undefined ? null : (
         <span>{row.value}</span>
       )}
@@ -47,6 +51,12 @@ export function PicoSettingRow({
         focusable={!interactive}
         onPress={interactive ? onActivate : undefined}
       />
+      {row.source === undefined && row.deviceOnly !== true ? null : (
+        <p className="pico-setting-row-source">
+          {row.source === undefined ? null : <span>{row.source}</span>}
+          {row.deviceOnly === true ? <PicoBadge text="DEVICE-ONLY" /> : null}
+        </p>
+      )}
       {row.description === undefined ? null : (
         <p className="pico-setting-row-description">{row.description}</p>
       )}

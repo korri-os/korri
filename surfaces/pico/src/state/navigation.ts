@@ -133,6 +133,10 @@ export interface PicoNavigation {
   readonly storePlace: StorePlace
   readonly detail: Detail | undefined
   readonly settings: Settings | undefined
+  /** A game's launch settings, while Korri shows its editor. Korri opens and
+   * closes it; the spine shown and the question asked in it are Pico's, with
+   * the same questions Settings asks. */
+  readonly launch: Settings | undefined
   readonly search: Search
   readonly idle: Idle
   /** Whether a game played from its own screen should, when it ends, return
@@ -165,6 +169,7 @@ export function initialNavigation(initial?: PicoInitialView): PicoNavigation {
     storePlace: STORE_PLACE,
     detail: initial?._tag === "Detail" ? { gameId: initial.gameId, question: { _tag: "None" } } : undefined,
     settings: initial?._tag === "Settings" ? SETTINGS : undefined,
+    launch: undefined,
     search: {
       query: "",
       section: initial?._tag === "Find" ? initial.section ?? PICO_ALL_SECTIONS : PICO_ALL_SECTIONS,

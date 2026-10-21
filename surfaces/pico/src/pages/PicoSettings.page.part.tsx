@@ -15,6 +15,7 @@ import {
   wrongPasswordNetwork,
 } from "../fixtures/onboarding"
 import { pluginIds, pluginModels } from "../fixtures/plugin-settings"
+import { deviceLaunchGroup } from "../fixtures/launch-settings"
 import { performPicoRequest } from "../pico-host"
 import {
   PICO_WIFI_HIDDEN_ACTION,
@@ -264,6 +265,19 @@ export function PluginsManyRepositories() {
 export function PluginsLongRepositoryName() {
   const model = pluginModels.many
   return <Settings model={model} opening={[openGroup(model, "codeberg.org/pixel-collective/korri-handheld-plugins-for-small-screens")]} />
+}
+
+// Settings → Launch settings: this device's CPU and GPU limits and governor.
+const launchModel: SurfaceModel = {
+  ...fixtureModel,
+  settings: [...fixtureModel.settings.slice(0, 1), deviceLaunchGroup, ...fixtureModel.settings.slice(1)],
+}
+export function LaunchSettings() {
+  return <Settings model={launchModel} opening={[openGroup(launchModel, "Launch settings")]} />
+}
+export function LaunchSettingsSaving() {
+  const model: SurfaceModel = { ...launchModel, settingsStatus: { _tag: "Saving", settingId: "launch-device:cpu.max" } }
+  return <Settings model={model} opening={[openGroup(model, "Launch settings")]} />
 }
 
 export default function PicoSettingsPagePart() {
