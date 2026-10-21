@@ -237,14 +237,16 @@ describe("plugin repositories controller", () => {
     expect(calls.at(-1)).toEqual(["inspectPlugin", RETRO, "@ada:netplay", "0.4.0"])
   })
 
-  it("a stale approval on Off needs review too, and the confirmed review installs without turning on", async () => {
+  it("a stale approval on Off needs review too, and the confirmed review installs, then turns it off", async () => {
     const { client, calls } = fakePluginClient({
       pluginRepositories: () => ok(repositories({
         userAdded: [RETRO],
         repositoryInstalls: [{ id: "@ada:netplay", sourceUrl: RETRO, releaseVersion: "0.4.0", enabled: true }],
       })),
       pluginCatalog: () => ok({ entries: retroCatalog }),
-      setPluginEnabled: () => err(NEEDS_REVIEW_CODE, "Approval is out of date"),
+      setPluginEnabled: (_id, enabled) => enabled === false && calls.every(call => call[0] !== "installPlugin")
+        ? err(NEEDS_REVIEW_CODE, "Approval is out of date")
+        : ok({}),
       inspectPlugin: () => ok({ ...inspection, id: "@ada:netplay" }),
       installPlugin: () => ok({}),
     })
@@ -259,10 +261,72 @@ describe("plugin repositories controller", () => {
     calls.length = 0
     h.controller.run(reviewActionId(netplay))
     await settle()
-    expect(calls[0]).toEqual(["installPlugin", RETRO, "@ada:netplay", "0.4.0", inspection.approval])
-    expect(calls.filter(call => call[0] === "setPluginEnabled")).toEqual([])
+    expect(calls.slice(0, 2)).toEqual([
+      ["installPlugin", RETRO, "@ada:netplay", "0.4.0", inspection.approval],
+      ["setPluginEnabled", "@ada:netplay", false],
+    ])
     expect(h.facts().needsReview).toEqual({})
     expect(h.last()).toEqual({ _tag: "Idle" })
+  })
+
+  it("regression: stale approval, Off, review, confirm leaves the plugin off", async () => {
+    // A small stateful host: a re-review keeps the plugin's state (host.rs),
+    // and a stale approval refuses any switch until it is re-installed.
+    let enabled = true
+    let stale = true
+    const { client } = fakePluginClient({
+      pluginRepositories: () => ok(repositories({
+        userAdded: [RETRO],
+        repositoryInstalls: [{ id: "@ada:netplay", sourceUrl: RETRO, releaseVersion: "0.4.0", enabled }],
+      })),
+      pluginCatalog: () => ok({ entries: retroCatalog }),
+      inspectPlugin: () => ok({ ...inspection, id: "@ada:netplay" }),
+      installPlugin: () => {
+        stale = false
+        return ok({})
+      },
+      setPluginEnabled: (_id, next) => {
+        if (stale) return err(NEEDS_REVIEW_CODE, "Approval is out of date")
+        enabled = next
+        return ok({})
+      },
+    })
+    const h = harness(client)
+    await h.controller.refresh()
+    const netplay = { sourceUrl: RETRO, pluginId: "@ada:netplay", releaseVersion: "0.4.0" }
+    h.controller.change(toggleSettingId("@ada:netplay"), "false")
+    await settle()
+    h.controller.run(inspectActionId(netplay))
+    await settle()
+    h.controller.run(reviewActionId(netplay))
+    await settle()
+    await settle()
+    expect(enabled).toBe(false)
+    expect(h.last()).toEqual({ _tag: "Idle" })
+    // The re-read after the change shows it off too.
+    const repos = h.facts().repositories
+    const install = repos._tag === "Ready"
+      ? repos.value.repositoryInstalls.find(candidate => candidate.id === "@ada:netplay")
+      : undefined
+    expect(install?.enabled).toBe(false)
+  })
+
+  it("an install that succeeds but cannot be switched shows why on the plugin's row", async () => {
+    const { client } = fakePluginClient({
+      ...baseAnswers,
+      inspectPlugin: () => ok(inspection),
+      installPlugin: () => ok({}),
+      setPluginEnabled: () => err("PermissionDenied", "Plugins can only be changed on this device"),
+    })
+    const h = harness(client)
+    await h.controller.refresh()
+    h.controller.run(inspectActionId(chiptune))
+    await settle()
+    h.controller.run(reviewActionId(chiptune))
+    await settle()
+    expect(h.last()).toEqual({ _tag: "Problem", settingId: toggleSettingId("@ada:chiptune"), message: "Plugins can only be changed on this device" })
+    expect(h.facts().reviews).toEqual({})
+    expect(h.busy()).toBe(false)
   })
 
   it("another refusal on a toggle shows the host's words", async () => {

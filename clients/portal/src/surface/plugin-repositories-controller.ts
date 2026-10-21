@@ -163,36 +163,44 @@ export function createPluginRepositoriesController(
     )
   }
 
-  /** Install exactly the reviewed release, then turn it on unless the person
-   * was turning it off when the host called its approval stale. */
+  /**
+   * Install exactly the reviewed release, then set the state the person asked
+   * for: on for a first install, or what they pressed when the host called
+   * the approval stale. Always set it: a re-review keeps the plugin's old
+   * state, so a plugin refused on Off is still on after the install.
+   */
   const approve = (target: ReleaseTarget) => {
     const review = reviewFor(host.facts(), target)
     // Nothing was inspected for this release, so nothing was shown to approve.
     if (review === undefined) return
-    const settingId = rowIdForRelease(host.facts(), target)
-    if (!begin(settingId)) return
-    void (async () => {
-      const installed = await client.installPlugin(
-        review.sourceUrl,
-        review.pluginId,
-        review.releaseVersion,
-        review.report.approval,
-      )
-      if (installed._tag === "Err") {
-        end()
-        if (host.alive()) problem(settingId, installed.payload.message)
-        return
-      }
-      // An install leaves the plugin off, which is all an "off" asked for.
-      const wanted = wantedAfterReview(host.facts(), review.pluginId)
-      update(facts => withoutReview(facts, target))
-      const enabled = wanted ? await client.setPluginEnabled(review.pluginId, true) : undefined
-      end()
-      if (!host.alive()) return
-      if (enabled?._tag === "Err") problem(toggleSettingId(review.pluginId), enabled.payload.message)
-      else host.status({ _tag: "Idle" })
-      host.changed()
-    })()
+    const wanted = wantedAfterReview(host.facts(), review.pluginId)
+    let installed = false
+    locked(
+      rowIdForRelease(host.facts(), target),
+      async () => {
+        const outcome = await client.installPlugin(
+          review.sourceUrl,
+          review.pluginId,
+          review.releaseVersion,
+          review.report.approval,
+        )
+        if (outcome._tag === "Err") return outcome
+        installed = true
+        update(facts => withoutReview(facts, target))
+        return client.setPluginEnabled(review.pluginId, wanted)
+      },
+      () => {
+        host.status({ _tag: "Idle" })
+        host.changed()
+      },
+      failure => {
+        if (!installed) return false
+        // Installed, but not switched: the plugin's own row says why.
+        problem(toggleSettingId(review.pluginId), failure.message)
+        host.changed()
+        return true
+      },
+    )
   }
 
   const toggle = (pluginId: string, enabled: boolean) => {
