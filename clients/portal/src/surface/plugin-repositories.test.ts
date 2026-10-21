@@ -219,16 +219,24 @@ describe("plugin settings groups", () => {
     ])
   })
 
-  it("lists plugins no repository installed under Other installed plugins", () => {
-    const groups = pluginSettingGroups(retroFacts(), [
-      { id: "@ada:netplay", title: "Netplay", enabled: true },
-      { id: "@korri:mgba", title: "mGBA", enabled: true },
+  it("lists otherInstalls under Other installed plugins, off ones included, never settings.plugins", () => {
+    const facts = readyFacts({ repositories: { _tag: "Ready", value: repositories({
+      otherInstalls: [
+        { id: "@korri:mgba", title: "mGBA", enabled: true },
+        { id: "@korri:ssh", enabled: false },
+      ],
+    }) } })
+    // settings.plugins lists only enabled plugins; it must not add or drop rows.
+    const groups = pluginSettingGroups(facts, [{ id: "@korri:retroarch", title: "RetroArch", enabled: true }])
+    expect(groupNamed(groups, OTHER_GROUP)?.items).toEqual([
+      { id: toggleSettingId("@korri:mgba"), label: "mGBA", value: "On", interaction: { kind: "choice", choices: [{ value: "true", label: "On" }, { value: "false", label: "Off" }] } },
+      { id: toggleSettingId("@korri:ssh"), label: "@korri:ssh", value: "Off", interaction: { kind: "choice", choices: [{ value: "true", label: "On" }, { value: "false", label: "Off" }] } },
     ])
-    expect(groupNamed(groups, OTHER_GROUP)?.items.map(item => [item.id, item.value])).toEqual([[toggleSettingId("@korri:mgba"), "On"]])
+    expect(groupNamed(pluginSettingGroups(readyFacts(), [{ id: "@korri:retroarch", title: "RetroArch", enabled: true }]), OTHER_GROUP)).toBeUndefined()
   })
 
   it("shows Needs review on an installed plugin whose approval went stale, and reviews it again", () => {
-    const facts = withNeedsReview(retroFacts(), "@ada:netplay")
+    const facts = withNeedsReview(retroFacts(), "@ada:netplay", true)
     const row = groupNamed(pluginSettingGroups(facts, []), "github.com/ada/retro-plugins")?.items
       .find(item => item.label === "Netplay")
     expect(row).toMatchObject({
@@ -260,6 +268,19 @@ describe("plugin settings groups", () => {
       ])
   })
 
+  it("a stale approval met on Off asks to review and turn off", () => {
+    const netplay = { sourceUrl: RETRO, pluginId: "@ada:netplay", releaseVersion: "0.4.0" }
+    const stale = withNeedsReview(retroFacts(), "@ada:netplay", false)
+    const row = () => groupNamed(pluginSettingGroups(facts, []), "github.com/ada/retro-plugins")?.items.find(item => item.label === "Netplay")
+    let facts = stale
+    expect(row()).toMatchObject({ value: "Needs review", description: "It changed since you approved it. Check it again to turn it off." })
+    facts = withReview(stale, netplay, { ...inspection, id: "@ada:netplay", title: "Netplay" })
+    expect(row()).toMatchObject({
+      value: "Review and turn off",
+      interaction: { kind: "action", confirmation: { title: "Turn off Netplay?", confirmLabel: "Turn off" } },
+    })
+  })
+
   it("says so while repositories load, and shows the host's words when they cannot be read", () => {
     expect(pluginSettingGroups(initialPluginFacts, [])[0]?.items.map(item => [item.id, item.label, item.value])).toEqual([
       [OFFICIAL_REPOSITORY_ROW, "Official plugins", "Checking…"],
@@ -268,7 +289,8 @@ describe("plugin settings groups", () => {
     const failed = withRepositories(initialPluginFacts, err("BrainUnreachable", "korrid is not answering"))
     const groups = pluginSettingGroups(failed, [{ id: "@korri:mgba", title: "mGBA", enabled: false }])
     expect(groups[0]?.items[0]).toMatchObject({ label: "Official plugins", value: "Can't read the list", description: "korrid is not answering" })
-    expect(groups[1]).toMatchObject({ title: OTHER_GROUP, items: [{ id: toggleSettingId("@korri:mgba"), value: "Off" }] })
+    // The installs arrive with the list, so none show without it.
+    expect(groups).toHaveLength(1)
   })
 
   it("keeps the last repositories when a re-read fails", () => {

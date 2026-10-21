@@ -38,6 +38,7 @@ export const inspection: PluginInspection = {
 export const repositories = (over: Partial<PluginRepositories> = {}): PluginRepositories => ({
   userAdded: [],
   repositoryInstalls: [],
+  otherInstalls: [],
   ...over,
 })
 
@@ -45,7 +46,7 @@ export const readyFacts = (over: Partial<PluginFacts> = {}): PluginFacts => ({
   repositories: { _tag: "Ready", value: repositories() },
   catalogs: {},
   reviews: {},
-  needsReview: [],
+  needsReview: {},
   ...over,
 })
 

@@ -72,10 +72,17 @@ describe("settingsFrom", () => {
       settings: configuration,
       localGameCount: 0,
       plugins: {
-        repositories: { _tag: "Ready", value: { userAdded: [], repositoryInstalls: [] } },
+        repositories: { _tag: "Ready", value: {
+          userAdded: [],
+          repositoryInstalls: [],
+          otherInstalls: [
+            { id: "@korri:mgba", title: "mGBA", enabled: true },
+            { id: "@korri:ssh", enabled: false },
+          ],
+        } },
         catalogs: {},
         reviews: {},
-        needsReview: [],
+        needsReview: {},
       },
     })
     expect(groups.map(candidate => candidate.title)).toEqual([
@@ -84,7 +91,7 @@ describe("settingsFrom", () => {
     expect(groups.find(candidate => candidate.title === "Other installed plugins")?.items.map(item => [item.id, item.label, item.value]))
       .toEqual([
         [toggleSettingId("@korri:mgba"), "mGBA", "On"],
-        [toggleSettingId("@korri:retroarch"), "RetroArch", "Off"],
+        [toggleSettingId("@korri:ssh"), "@korri:ssh", "Off"],
       ])
   })
 

@@ -229,12 +229,40 @@ describe("plugin repositories controller", () => {
     await h.controller.refresh()
     h.controller.change(toggleSettingId("@ada:netplay"), "true")
     await settle()
-    expect(h.facts().needsReview).toEqual(["@ada:netplay"])
+    expect(h.facts().needsReview).toEqual({ "@ada:netplay": true })
     expect(h.last()).toEqual({ _tag: "Idle" })
     h.controller.run(inspectActionId({ sourceUrl: RETRO, pluginId: "@ada:netplay", releaseVersion: "0.4.0" }))
     expect(h.last()).toEqual({ _tag: "Saving", settingId: toggleSettingId("@ada:netplay") })
     await settle()
     expect(calls.at(-1)).toEqual(["inspectPlugin", RETRO, "@ada:netplay", "0.4.0"])
+  })
+
+  it("a stale approval on Off needs review too, and the confirmed review installs without turning on", async () => {
+    const { client, calls } = fakePluginClient({
+      pluginRepositories: () => ok(repositories({
+        userAdded: [RETRO],
+        repositoryInstalls: [{ id: "@ada:netplay", sourceUrl: RETRO, releaseVersion: "0.4.0", enabled: true }],
+      })),
+      pluginCatalog: () => ok({ entries: retroCatalog }),
+      setPluginEnabled: () => err(NEEDS_REVIEW_CODE, "Approval is out of date"),
+      inspectPlugin: () => ok({ ...inspection, id: "@ada:netplay" }),
+      installPlugin: () => ok({}),
+    })
+    const h = harness(client)
+    await h.controller.refresh()
+    h.controller.change(toggleSettingId("@ada:netplay"), "false")
+    await settle()
+    expect(h.facts().needsReview).toEqual({ "@ada:netplay": false })
+    const netplay = { sourceUrl: RETRO, pluginId: "@ada:netplay", releaseVersion: "0.4.0" }
+    h.controller.run(inspectActionId(netplay))
+    await settle()
+    calls.length = 0
+    h.controller.run(reviewActionId(netplay))
+    await settle()
+    expect(calls[0]).toEqual(["installPlugin", RETRO, "@ada:netplay", "0.4.0", inspection.approval])
+    expect(calls.filter(call => call[0] === "setPluginEnabled")).toEqual([])
+    expect(h.facts().needsReview).toEqual({})
+    expect(h.last()).toEqual({ _tag: "Idle" })
   })
 
   it("another refusal on a toggle shows the host's words", async () => {

@@ -25,8 +25,13 @@ const installed = [
   { id: "@korri:mgba", title: "mGBA", enabled: true },
   { id: "@korri:retroarch", title: "RetroArch", enabled: false },
 ]
+const otherInstalls = [
+  { id: "@korri:mgba", title: "mGBA", enabled: true },
+  { id: "@korri:retroarch", title: "RetroArch", enabled: false },
+]
 const base: PluginFacts = readyFacts({
   repositories: { _tag: "Ready", value: repositories({
+    otherInstalls,
     userAdded: [RETRO, BROKEN],
     repositoryInstalls: [
       { id: "@ada:netplay", sourceUrl: RETRO, releaseVersion: "0.4.0", enabled: true },
@@ -50,7 +55,7 @@ const longRepos = [
   "https://homebrew.example/korri",
 ]
 const many: PluginFacts = readyFacts({
-  repositories: { _tag: "Ready", value: repositories({ official: OFFICIAL, userAdded: longRepos }) },
+  repositories: { _tag: "Ready", value: repositories({ official: OFFICIAL, userAdded: longRepos, otherInstalls }) },
   catalogs: {
     [OFFICIAL]: { _tag: "Ready", entries: [
       { pluginId: "@korri:tailscale", title: "Tailscale", description: "Reach this device from your other devices", releaseVersion: "1.76.1", publisherTrusted: true },
@@ -69,10 +74,10 @@ const pluginGroupsOf = (model: { readonly settings: readonly unknown[] }) => mod
 
 describe("Pico's plugin previews", () => {
   it("are exactly the rows the portal publishes", () => {
-    expect(pluginGroupsOf(pluginModels.officialOnly)).toEqual(pluginSettingGroups(readyFacts(), [{ id: "@korri:mgba", title: "mGBA", enabled: true }]))
+    expect(pluginGroupsOf(pluginModels.officialOnly)).toEqual(pluginSettingGroups(readyFacts({ repositories: { _tag: "Ready", value: repositories({ otherInstalls: [{ id: "@korri:mgba", title: "mGBA", enabled: true }] }) } }), []))
     expect(pluginGroupsOf(pluginModels.repositories)).toEqual(pluginSettingGroups(base, installed))
     expect(pluginGroupsOf(pluginModels.reviewing)).toEqual(pluginSettingGroups(withReview(base, chiptune, inspection), installed))
-    expect(pluginGroupsOf(pluginModels.needsReview)).toEqual(pluginSettingGroups(withNeedsReview(base, "@ada:netplay"), installed))
+    expect(pluginGroupsOf(pluginModels.needsReview)).toEqual(pluginSettingGroups(withNeedsReview(base, "@ada:netplay", true), installed))
     expect(pluginGroupsOf(pluginModels.many)).toEqual(pluginSettingGroups(many, installed))
   })
 })

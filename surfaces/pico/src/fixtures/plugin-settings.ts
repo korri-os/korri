@@ -1067,42 +1067,6 @@ const manyGroups: readonly SurfaceSettingGroup[] = [
     "title": "Other installed plugins",
     "items": [
       {
-        "id": "plugin-toggle:%40ada%3Anetplay",
-        "label": "Netplay",
-        "value": "On",
-        "interaction": {
-          "kind": "choice",
-          "choices": [
-            {
-              "value": "true",
-              "label": "On"
-            },
-            {
-              "value": "false",
-              "label": "Off"
-            }
-          ]
-        }
-      },
-      {
-        "id": "plugin-toggle:%40old%3Ashader",
-        "label": "Shader pack",
-        "value": "Off",
-        "interaction": {
-          "kind": "choice",
-          "choices": [
-            {
-              "value": "true",
-              "label": "On"
-            },
-            {
-              "value": "false",
-              "label": "Off"
-            }
-          ]
-        }
-      },
-      {
         "id": "plugin-toggle:%40korri%3Amgba",
         "label": "mGBA",
         "value": "On",

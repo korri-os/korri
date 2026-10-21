@@ -30,6 +30,7 @@ import {
   toggleSettingId,
   withCatalog,
   withNeedsReview,
+  wantedAfterReview,
   withoutRepository,
   withoutReview,
   withRepositories,
@@ -162,6 +163,8 @@ export function createPluginRepositoriesController(
     )
   }
 
+  /** Install exactly the reviewed release, then turn it on unless the person
+   * was turning it off when the host called its approval stale. */
   const approve = (target: ReleaseTarget) => {
     const review = reviewFor(host.facts(), target)
     // Nothing was inspected for this release, so nothing was shown to approve.
@@ -180,11 +183,13 @@ export function createPluginRepositoriesController(
         if (host.alive()) problem(settingId, installed.payload.message)
         return
       }
+      // An install leaves the plugin off, which is all an "off" asked for.
+      const wanted = wantedAfterReview(host.facts(), review.pluginId)
       update(facts => withoutReview(facts, target))
-      const enabled = await client.setPluginEnabled(review.pluginId, true)
+      const enabled = wanted ? await client.setPluginEnabled(review.pluginId, true) : undefined
       end()
       if (!host.alive()) return
-      if (enabled._tag === "Err") problem(toggleSettingId(review.pluginId), enabled.payload.message)
+      if (enabled?._tag === "Err") problem(toggleSettingId(review.pluginId), enabled.payload.message)
       else host.status({ _tag: "Idle" })
       host.changed()
     })()
@@ -201,7 +206,7 @@ export function createPluginRepositoriesController(
       failure => {
         if (failure.code !== NEEDS_REVIEW_CODE || installOf(host.facts(), pluginId) === undefined) return false
         // The row turns into Needs review; its next press inspects again.
-        update(facts => withNeedsReview(facts, pluginId))
+        update(facts => withNeedsReview(facts, pluginId, enabled))
         host.status({ _tag: "Idle" })
         return true
       },

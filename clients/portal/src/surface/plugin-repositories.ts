@@ -72,15 +72,16 @@ export interface PluginFacts {
   readonly catalogs: Readonly<Record<string, CatalogView>>
   /** Inspection reports waiting for the person's yes, by release key. */
   readonly reviews: Readonly<Record<string, PluginReview>>
-  /** Installed plugin ids whose stored approval the host called stale. */
-  readonly needsReview: readonly string[]
+  /** Installed plugins whose stored approval the host called stale, by id,
+   * with the state the person asked for when it refused (on or off). */
+  readonly needsReview: Readonly<Record<string, boolean>>
 }
 
 export const initialPluginFacts: PluginFacts = {
   repositories: { _tag: "Loading" },
   catalogs: {},
   reviews: {},
-  needsReview: [],
+  needsReview: {},
 }
 
 // ---------------------------------------------------------------- ids
@@ -236,11 +237,18 @@ export const reviewFor = (facts: PluginFacts, target: ReleaseTarget): PluginRevi
 /** After an install, or when a review is abandoned. */
 export const withoutReview = (facts: PluginFacts, target: ReleaseTarget): PluginFacts => {
   const { [releaseKey(target)]: _, ...reviews } = facts.reviews
-  return { ...facts, reviews, needsReview: facts.needsReview.filter(id => id !== target.pluginId) }
+  const { [target.pluginId]: __, ...needsReview } = facts.needsReview
+  return { ...facts, reviews, needsReview }
 }
 
-export const withNeedsReview = (facts: PluginFacts, pluginId: string): PluginFacts =>
-  facts.needsReview.includes(pluginId) ? facts : { ...facts, needsReview: [...facts.needsReview, pluginId] }
+/** The host refused to turn `pluginId` to `wanted` until it is reviewed again. */
+export const withNeedsReview = (facts: PluginFacts, pluginId: string, wanted: boolean): PluginFacts =>
+  ({ ...facts, needsReview: { ...facts.needsReview, [pluginId]: wanted } })
+
+/** What a confirmed review ends in: on for a first install, else what the
+ * person asked for when the host called the approval stale. */
+export const wantedAfterReview = (facts: PluginFacts, pluginId: string): boolean =>
+  facts.needsReview[pluginId] ?? true
 
 /** Where an installed plugin came from, so a stale one can be reviewed again. */
 export const installOf = (facts: PluginFacts, pluginId: string): PluginRepositoryInstall | undefined =>
@@ -312,21 +320,25 @@ const reviewRow = (
   label: string,
   review: PluginReview,
   description: string | undefined,
-): SurfaceSettingItem => ({
-  id,
-  label,
-  value: "Review and turn on",
-  ...(description === undefined ? {} : { description }),
-  interaction: {
-    kind: "action",
-    actionId: reviewActionId(review),
-    confirmation: {
-      title: `Turn on ${review.report.title ?? label}?`,
-      message: reviewMessage(review.report),
-      confirmLabel: "Turn on",
+  wanted: boolean,
+): SurfaceSettingItem => {
+  const verb = wanted ? "Turn on" : "Turn off"
+  return {
+    id,
+    label,
+    value: wanted ? "Review and turn on" : "Review and turn off",
+    ...(description === undefined ? {} : { description }),
+    interaction: {
+      kind: "action",
+      actionId: reviewActionId(review),
+      confirmation: {
+        title: `${verb} ${review.report.title ?? label}?`,
+        message: reviewMessage(review.report),
+        confirmLabel: verb,
+      },
     },
-  },
-})
+  }
+}
 
 const toggleRow = (
   pluginId: string,
@@ -336,15 +348,16 @@ const toggleRow = (
   description: string | undefined,
 ): SurfaceSettingItem => {
   const install = installOf(facts, pluginId)
-  if (facts.needsReview.includes(pluginId) && install !== undefined) {
+  const wanted = facts.needsReview[pluginId]
+  if (wanted !== undefined && install !== undefined) {
     const target = { sourceUrl: install.sourceUrl, pluginId, releaseVersion: install.releaseVersion }
     const review = reviewFor(facts, target)
-    if (review !== undefined) return reviewRow(toggleSettingId(pluginId), label, review, description)
+    if (review !== undefined) return reviewRow(toggleSettingId(pluginId), label, review, description, wanted)
     return {
       id: toggleSettingId(pluginId),
       label,
       value: "Needs review",
-      description: "It changed since you approved it. Check it again to turn it on.",
+      description: `It changed since you approved it. Check it again to turn it ${wanted ? "on" : "off"}.`,
       interaction: { kind: "action", actionId: inspectActionId(target) },
     }
   }
@@ -366,7 +379,7 @@ const releaseRow = (
 ): SurfaceSettingItem => {
   const review = reviewFor(facts, target)
   if (review !== undefined) {
-    return reviewRow(releaseRowId(target), label, review, several ? `Version ${target.releaseVersion}` : undefined)
+    return reviewRow(releaseRowId(target), label, review, several ? `Version ${target.releaseVersion}` : undefined, true)
   }
   return {
     id: releaseRowId(target),
@@ -484,9 +497,11 @@ export const OTHER_GROUP = "Other installed plugins"
  *   <repository>            what one added repository offers, then Remove
  *   Installed from removed repositories
  *   Other installed plugins installed some other way, such as in the image
+ *                           (`otherInstalls`, on or off)
  *
- * `installed` is `SettingsSnapshot.plugins`: titles for installs, and the
- * plugins no repository installed.
+ * `installed` is `SettingsSnapshot.plugins`, used only for the titles of
+ * repository installs the catalog does not name. It lists enabled plugins
+ * only, so it never decides which rows exist.
  */
 export function pluginSettingGroups(
   facts: PluginFacts,
@@ -514,12 +529,10 @@ export function pluginSettingGroups(
         addRow,
       ],
     }
-    // Without the install list, every installed plugin is shown as other.
-    const other = (installed ?? []).map(plugin =>
-      toggleRow(plugin.id, plugin.title, plugin.enabled, facts, undefined))
-    return other.length ? [hub, { title: OTHER_GROUP, items: other }] : [hub]
+    // The installs come with the list; until it is read there are none to show.
+    return [hub]
   }
-  const { userAdded, repositoryInstalls } = repositories.value
+  const { userAdded, repositoryInstalls, otherInstalls } = repositories.value
   const { official } = repositories.value
   const hub: SurfaceSettingGroup = {
     title: PLUGINS_GROUP,
@@ -593,12 +606,11 @@ export function pluginSettingGroups(
       )),
     })
   }
-  const fromRepositories = new Set(repositoryInstalls.map(install => install.id))
-  const other = (installed ?? []).filter(plugin => !fromRepositories.has(plugin.id))
-  if (other.length) {
+  if (otherInstalls.length) {
     groups.push({
       title: OTHER_GROUP,
-      items: other.map(plugin => toggleRow(plugin.id, plugin.title, plugin.enabled, facts, undefined)),
+      items: otherInstalls.map(plugin =>
+        toggleRow(plugin.id, plugin.title ?? plugin.id, plugin.enabled, facts, undefined)),
     })
   }
   return groups
