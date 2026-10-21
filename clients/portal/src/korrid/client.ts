@@ -1192,6 +1192,8 @@ export interface InMemoryKorridClientConfig {
   /** Launch warnings `app.session.prepare` returns, keyed by game id.
    * Absent: none, as korrid returns when every launch limit applied. */
   readonly prepareWarnings?: Readonly<Record<string, readonly LaunchWarning[]>>
+  /** First-boot setup still to do. Default true, as a fresh device. */
+  readonly onboardingNeeded?: boolean
   /** Launch settings and profiles. Absent: Device layer only, no device facts. */
   readonly launchSettings?: InMemoryLaunchSettingsConfig
 }
@@ -1459,7 +1461,7 @@ export function createInMemoryKorridClient(
     return scanning
   }
   // The first-boot prototype is the browser preview's real in-memory source.
-  let onboardingNeeded = true
+  let onboardingNeeded = config.onboardingNeeded ?? true
   let network: NetworkSnapshot = {
     connection: { _tag: "Offline" },
     wifi: { _tag: "Available", payload: { scanning: false, attempt: { _tag: "Idle" }, networks: [

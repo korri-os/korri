@@ -104,12 +104,16 @@ export function ZoneLaunchSettings({
   const dialogBox = useRef<HTMLDivElement | null>(null)
 
   // The cursor follows the state onto its row; with no row named and the
-  // cursor nowhere (Korri's state changed under it), onto the first control.
+  // cursor nowhere, or Korri's state changed under it (Loading to Ready),
+  // onto the first control.
+  const shownTag = useRef(launch._tag)
   useEffect(() => {
     const box = body.current
     if (box === null || layer !== "none") return
+    const changed = shownTag.current !== launch._tag
+    shownTag.current = launch._tag
     const active = document.activeElement
-    const lost = active === null || active === document.body || !box.contains(active)
+    const lost = changed || active === null || active === document.body || !box.contains(active)
     const named = rowId === undefined ? null : box.querySelector<HTMLButtonElement>(".zone-launch-scroll [data-focused] > button")
     if (named !== null && named !== active && (lost || active?.closest(".zone-option-row") !== null)) {
       named.focus({ preventScroll: true })

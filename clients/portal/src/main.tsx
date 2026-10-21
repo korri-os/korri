@@ -80,9 +80,10 @@ async function mountPortal() {
         linuxRuntime.korridCapability,
       )
     // Browser dev seeds save sync and launch settings so every state is
-    // reachable (`?saves=`, `?launch=`).
+    // reachable (`?saves=`, `?launch=`); `?setup=done` starts past first boot.
     : createInMemoryKorridClient(import.meta.env.DEV ? {
         ...inMemorySavesDevConfig(query.get("saves")),
+        ...(query.get("setup") === "done" ? { onboardingNeeded: false } : {}),
         launchSettings: inMemoryLaunchSettingsDevConfig(query.get("launch")),
       } : {})
   // The kiosk starts beside korrid at boot. The binding is already consumed;
