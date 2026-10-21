@@ -20,9 +20,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc};
-use typeshare::typeshare;
 
-#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum SaveHeadsOutcome {
@@ -30,7 +28,6 @@ pub enum SaveHeadsOutcome {
     Err(RpcFailure),
 }
 
-#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum SaveRecordsOutcome {
@@ -38,7 +35,6 @@ pub enum SaveRecordsOutcome {
     Err(RpcFailure),
 }
 
-#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum SaveInUseOutcome {

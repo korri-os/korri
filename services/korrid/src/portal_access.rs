@@ -872,6 +872,7 @@ mod tests {
             private.clone(),
             Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
         );
+        runtime.claim_save_owner();
         let (app, _) = crate::secure_host_routers(
             runtime,
             &private,

@@ -610,7 +610,7 @@ fn package_games_resolve_content_path_offline_and_become_unavailable_when_disabl
         expected
     );
     let spec =
-        launcher::linux_plugin::launch_route(root.path(), &snapshot, &registry, &route, None, None)
+        launcher::linux_plugin::launch_route(root.path(), &snapshot, &registry, &route, None, None, "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9")
             .unwrap();
     let input: launcher::plugin_launch::PluginLaunchInput =
         serde_json::from_str(&spec.command[3]).unwrap();
@@ -628,4 +628,16 @@ fn package_games_resolve_content_path_offline_and_become_unavailable_when_disabl
     )
     .is_err());
     assert_eq!(snapshot.library.len(), 1);
+}
+
+#[tokio::test]
+async fn an_unowned_start_refuses_before_artifact_readiness() {
+    let fixture = Fixture::new();
+    identity::DeviceIdentity::reset(&fixture.path().join("private")).unwrap();
+    let result = fixture.launch("rock-n-roll").await;
+    assert_eq!(
+        result["outcome"]["payload"]["code"], "DeviceNeedsOwner",
+        "{result}"
+    );
+    assert_eq!(fixture.backend.launch_count(), 0);
 }

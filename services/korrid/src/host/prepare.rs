@@ -129,6 +129,7 @@ impl HostLauncher {
         }
     }
 
+    #[cfg(test)]
     pub fn prepare(
         &self,
         game_id: &str,
@@ -160,7 +161,7 @@ impl HostLauncher {
         game_id: &str,
         runner_id: &str,
         person_public_key: Option<&str>,
-        configured_command: &[String],
+        configured_command: Result<&[String], RpcFailure>,
     ) -> Result<SessionPrepared, RpcFailure> {
         self.control.prepare_fresh_route(
             game_id,
@@ -175,7 +176,7 @@ impl HostLauncher {
         &self,
         reservation: &super::launch_reservation::LaunchReservation,
         runner_id: Option<&str>,
-        configured_command: &[String],
+        configured_command: Result<&[String], RpcFailure>,
     ) -> Result<SessionPrepared, RpcFailure> {
         self.control.prepare_reserved(
             reservation,

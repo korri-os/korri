@@ -59,12 +59,10 @@ pub struct SnapshotRecord {
     pub locations: Vec<SnapshotLocation>,
 }
 
-#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveHeadsRequest {}
 
-#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GameSaveHeads {
@@ -72,14 +70,12 @@ pub struct GameSaveHeads {
     pub heads: Vec<String>,
 }
 
-#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct SaveHeads {
     pub games: Vec<GameSaveHeads>,
 }
 
-#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveRecordsRequest {
@@ -89,7 +85,6 @@ pub struct SaveRecordsRequest {
     pub records: Option<Vec<SnapshotRecord>>,
 }
 
-#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SaveRecords {
@@ -113,17 +108,14 @@ pub enum SaveInUse {
     Idle(SaveInUseIdle),
 }
 
-#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveInUseActive {
     pub device: String,
     pub in_use: bool,
-    #[typeshare(serialized_as = "number")]
     pub since: u64,
 }
 
-#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveInUseIdle {
@@ -131,7 +123,6 @@ pub struct SaveInUseIdle {
     pub in_use: bool,
 }
 
-#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SaveObjectRequest {
@@ -220,10 +211,6 @@ pub struct SaveCheck {
     pub warnings: Vec<String>,
     pub status: SaveMark,
     pub in_use: Vec<SaveInUseWarning>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub release_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runner_id: Option<String>,
 }
 
 #[typeshare]

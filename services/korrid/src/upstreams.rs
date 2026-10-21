@@ -1912,6 +1912,7 @@ mod tests {
             private.clone(),
             Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
         );
+        runtime.claim_save_owner();
         let device_key = crate::identity::DeviceIdentity::load_or_create(&private)
             .unwrap()
             .device_public_key()

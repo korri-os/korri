@@ -211,6 +211,12 @@ fn identity_keys(private_state_root: &Path) -> (Option<String>, Option<String>) 
     (device_public_key, owner_public_key)
 }
 
+struct HostLaunchCommand {
+    command: Vec<String>,
+    runner_id: Option<String>,
+    warnings: Vec<crate::launcher::typed_settings::LaunchWarning>,
+}
+
 #[derive(Clone)]
 pub struct HostRuntime {
     save_service: Arc<std::sync::OnceLock<Arc<crate::saves::peer::SavePeerService>>>,
@@ -603,6 +609,66 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
+    /// Every fresh launch obtains its command through this owner gate. The
+    /// executor receives the Result and ignores a refusal only when resuming
+    /// the exact existing session. Route work stays outside its transition lock.
+    fn prepare_launch_command(
+        &self,
+        game_id: &str,
+        runner_id: Option<&str>,
+        overrides: Option<crate::launcher::plugin_launch::PluginLaunchOverrides>,
+    ) -> Result<HostLaunchCommand, RpcFailure> {
+        let owner = self.launch_person()?;
+        let config = self.config.as_ref().map_err(config_failure)?;
+        let launcher = self.launcher.as_ref().expect("valid host config");
+        if config.games.iter().any(|game| game.id == game_id) {
+            if let Some(dynamic) = &self.dynamic {
+                dynamic.load(Some(&owner))?.validate_static_games(config)?;
+            }
+            if runner_id.is_some() || overrides.is_some() {
+                return Err(dynamic_failure(
+                    "host command games do not accept installed runner choices or overrides",
+                ));
+            }
+            return Ok(HostLaunchCommand {
+                command: launcher.command(game_id)?.to_vec(),
+                runner_id: None,
+                warnings: Vec::new(),
+            });
+        }
+        if self.dynamic.is_none() {
+            return launcher.command(game_id).map(|command| HostLaunchCommand {
+                command: command.to_vec(),
+                runner_id: None,
+                warnings: Vec::new(),
+            });
+        }
+        let root = self.route_root()?;
+        let registry = self.route_registry()?;
+        let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
+            .map_err(crate::game_routes::settings_failure)?;
+        let route = crate::config::resolver::resolve_linux_route(
+            root, &snapshot, &registry, game_id, runner_id,
+        )
+        .map_err(|error| crate::route_diagnostic_failure(&error))?;
+        crate::acquisition::require_ready(root, &registry, &route)?;
+        let launch = linux_plugin::launch_route(
+            root,
+            &snapshot,
+            &registry,
+            &route,
+            overrides,
+            compositor_focus::launch_display(),
+            &owner,
+        )
+        .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
+        Ok(HostLaunchCommand {
+            command: launch.command,
+            runner_id: Some(route.runner_id),
+            warnings: launch.warnings,
+        })
+    }
+
     fn prepare_blocking(
         &self,
         game_id: &str,
@@ -611,30 +677,15 @@ impl HostRuntime {
         let launcher = self.launcher.as_ref().ok_or_else(|| {
             config_failure(self.config.as_ref().expect_err("invalid host config"))
         })?;
-        if let Some(dynamic) = &self.dynamic {
-            let dynamic = dynamic.load(self.owner_public_key().as_deref())?;
-            dynamic.validate_static_games(self.config.as_ref().map_err(config_failure)?)?;
-            if dynamic.declared_ids.contains(game_id) {
-                let command = self.route_root().and_then(|root| {
-                    crate::game_routes::default_launch(
-                        root,
-                        &self.route_registry()?,
-                        game_id,
-                        compositor_focus::launch_display(),
-                        &self.launch_person()?,
-                    )
-                    .map(|launch| launch.command)
-                });
-                // The session executor returns to an existing same-game live
-                // session before requiring a fresh, revalidated launch command.
-                return launcher.prepare_command(
-                    game_id,
-                    person_public_key,
-                    command.as_deref().map_err(Clone::clone),
-                );
-            }
-        }
-        launcher.prepare(game_id, person_public_key)
+        let launch = self.prepare_launch_command(game_id, None, None);
+        launcher.prepare_command(
+            game_id,
+            person_public_key,
+            launch
+                .as_ref()
+                .map(|launch| launch.command.as_slice())
+                .map_err(Clone::clone),
+        )
     }
 
     pub(crate) fn route_root(&self) -> Result<&Path, RpcFailure> {
@@ -917,53 +968,24 @@ impl HostRuntime {
         if let Some(probe) = &self.before_reserved_route {
             probe();
         }
-        let config = self.config.as_ref().map_err(config_failure)?;
-        let launcher = self.launcher.as_ref().expect("valid host config");
-        let (command, runner_id, warnings) =
-            if config.games.iter().any(|game| game.id == request.game_id) {
-                // Preserve the command producer's existing collision check.
-                if let Some(dynamic) = &self.dynamic {
-                    dynamic
-                        .load(self.owner_public_key().as_deref())?
-                        .validate_static_games(config)?;
-                }
-                if request.runner_id.is_some() || request.overrides.is_some() {
-                    return Err(dynamic_failure(
-                        "host command games do not accept installed runner choices or overrides",
-                    ));
-                }
-                (
-                    launcher.command(&request.game_id)?.to_vec(),
-                    None,
-                    Vec::new(),
-                )
-            } else {
-                let root = self.route_root()?;
-                let registry = self.route_registry()?;
-                let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
-                    .map_err(crate::game_routes::settings_failure)?;
-                let route = crate::config::resolver::resolve_linux_route(
-                    root,
-                    &snapshot,
-                    &registry,
-                    &request.game_id,
-                    request.runner_id.as_deref(),
-                )
-                .map_err(|error| crate::route_diagnostic_failure(&error))?;
-                crate::acquisition::require_ready(root, &registry, &route)?;
-                let launch = linux_plugin::launch_route(
-                    root,
-                    &snapshot,
-                    &registry,
-                    &route,
-                    request.overrides.clone(),
-                    compositor_focus::launch_display(),
-                    &self.launch_person()?,
-                )
-                .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
-                (launch.command, Some(route.runner_id), launch.warnings)
-            };
-        let session = launcher.prepare_reserved(reservation, runner_id.as_deref(), &command)?;
+        let launcher = self.launcher.as_ref().ok_or_else(|| {
+            config_failure(self.config.as_ref().expect_err("invalid host config"))
+        })?;
+        let launch = self.prepare_launch_command(
+            &request.game_id,
+            request.runner_id.as_deref(),
+            request.overrides.clone(),
+        );
+        let runner_id = launch
+            .as_ref()
+            .ok()
+            .and_then(|launch| launch.runner_id.as_deref());
+        let command = launch
+            .as_ref()
+            .map(|launch| launch.command.as_slice())
+            .map_err(Clone::clone);
+        let session = launcher.prepare_reserved(reservation, runner_id, command)?;
+        let warnings = launch?.warnings;
         // Delay only after the session transition releases its lock, allowing
         // native control to accept a newer Home before the start reply.
         #[cfg(test)]
@@ -998,32 +1020,26 @@ impl HostRuntime {
         let runtime = self.clone();
         let person_public_key = person_public_key.map(str::to_owned);
         tokio::task::spawn_blocking(move || {
-            let root = runtime.route_root()?;
-            let registry = runtime.route_registry()?;
-            let config = runtime.config.as_ref().map_err(config_failure)?;
-            if config.games.iter().any(|game| game.id == request.game_id) {
-                return Err(dynamic_failure("installed game collides with host.toml"));
-            }
-            let launch = crate::game_routes::selected_launch(
-                root,
-                &registry,
-                &request,
-                compositor_focus::launch_display(),
-                &runtime.launch_person()?,
+            let launch = runtime.prepare_launch_command(
+                &request.game_id,
+                Some(&request.runner_id),
+                request.overrides.clone(),
+            );
+            let launcher = runtime.launcher.as_ref().ok_or_else(|| {
+                config_failure(runtime.config.as_ref().expect_err("invalid host config"))
+            })?;
+            let session = launcher.prepare_fresh_route(
+                &request.game_id,
+                &request.runner_id,
+                person_public_key.as_deref(),
+                launch
+                    .as_ref()
+                    .map(|launch| launch.command.as_slice())
+                    .map_err(Clone::clone),
             )?;
-            let session = runtime
-                .launcher
-                .as_ref()
-                .expect("valid host config")
-                .prepare_fresh_route(
-                    &request.game_id,
-                    &request.runner_id,
-                    person_public_key.as_deref(),
-                    &launch.command,
-                )?;
             Ok(crate::game_routes::SelectedGameLaunch {
                 session,
-                warnings: launch.warnings,
+                warnings: launch?.warnings,
             })
         })
         .await
@@ -1687,6 +1703,7 @@ esac
                 root.path().join("private"),
                 backend.clone(),
             );
+            runtime.claim_save_owner();
             let (router, _) = crate::plain_host_routers_for_tests(runtime.clone());
             let fixture = Self {
                 root,
@@ -2333,6 +2350,7 @@ esac
             backend.clone(),
             pool.clone(),
         ));
+        runtime.claim_save_owner();
         runtime.prepare("one", None).await.unwrap();
         assert!(pool.session.lock().unwrap().is_some());
         let watcher = tokio::spawn(runtime.portal_watch(Duration::from_millis(10)).unwrap());
@@ -2630,8 +2648,12 @@ esac
         );
         let config = root.path().join("host.toml");
         fs::write(&config, "label = \"zao\"\n[[games]]\nid = \"static\"\ntitle = \"Static game\"\ncommand = [\"game\"]\n").unwrap();
-        let mut host =
-            HostRuntime::from_paths_with_private_state(&config, None, root.path().join("private"));
+        let mut host = HostRuntime::from_paths_with_backend(
+            &config,
+            None,
+            root.path().join("private"),
+            Arc::new(systemd_unit::InMemoryLaunchUnitBackend::default()),
+        );
         host.claim_save_owner();
         host.dynamic = Some(DynamicHostSource::Fixed(runtime));
         let catalog = host.catalog_snapshot().unwrap();

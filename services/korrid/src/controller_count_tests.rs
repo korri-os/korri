@@ -32,6 +32,7 @@ impl Fixture {
             backend.clone(),
         )
         .with_route_registry(root.path().into(), registry);
+        runtime.claim_save_owner();
         Self {
             root,
             runtime,

@@ -57,15 +57,14 @@ fn runtime(
     )
     .unwrap();
     let backend = Arc::new(host::control::InMemoryLaunchUnitBackend::default());
-    (
-        host::HostRuntime::from_paths_with_backend(
-            &config,
-            None,
-            root.join("private"),
-            backend.clone(),
-        ),
-        backend,
-    )
+    let runtime = host::HostRuntime::from_paths_with_backend(
+        &config,
+        None,
+        root.join("private"),
+        backend.clone(),
+    );
+    runtime.claim_save_owner();
+    (runtime, backend)
 }
 fn router(
     runtime: host::HostRuntime,
@@ -642,5 +641,49 @@ async fn cancel_during_commit_exposes_cleanup_recovery_failure_over_rpc() {
         .path()
         .join("private/host-session/active.json")
         .exists());
+    assert_eq!(backend.launch_count(), 1);
+}
+
+#[tokio::test]
+async fn fresh_units_require_an_owner_but_reservation_and_existing_resume_do_not() {
+    let root = tempfile::tempdir().unwrap();
+    let config = root.path().join("host.toml");
+    std::fs::write(
+        &config,
+        "label = \"unowned\"\n[[games]]\nid = \"one\"\ntitle = \"One\"\ncommand = [\"game\"]\n",
+    )
+    .unwrap();
+    let backend = Arc::new(host::control::InMemoryLaunchUnitBackend::default());
+    let runtime = host::HostRuntime::from_paths_with_backend(
+        &config,
+        None,
+        root.path().join("private"),
+        backend.clone(),
+    );
+    let app = router(
+        runtime.clone(),
+        root.path(),
+        TOKEN,
+        PortalPermission::LocalSessions,
+    );
+    let reserved = reserve(&app).await;
+    let refused = start(&app, &reserved).await;
+    assert_eq!(
+        refused["outcome"]["payload"]["code"], "DeviceNeedsOwner",
+        "{refused}"
+    );
+    let refused = rpc(&app, "app.session.prepare", json!({"gameId":"one"})).await;
+    assert_eq!(
+        refused["outcome"]["payload"]["code"], "DeviceNeedsOwner",
+        "{refused}"
+    );
+    assert_eq!(backend.launch_count(), 0);
+    runtime.claim_save_owner();
+    let started = rpc(&app, "app.session.prepare", json!({"gameId":"one"})).await;
+    assert_eq!(started["outcome"]["_tag"], "Ok", "{started}");
+    crate::identity::DeviceIdentity::reset(&root.path().join("private")).unwrap();
+    assert!(runtime.owner_public_key().is_none());
+    let resumed = rpc(&app, "app.session.prepare", json!({"gameId":"one"})).await;
+    assert_eq!(resumed["outcome"], started["outcome"], "{resumed}");
     assert_eq!(backend.launch_count(), 1);
 }

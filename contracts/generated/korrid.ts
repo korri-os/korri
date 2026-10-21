@@ -419,11 +419,6 @@ export interface GameRunnerSetRequest {
 	expectedRevision: string;
 }
 
-export interface GameSaveHeads {
-	gameId: string;
-	heads: string[];
-}
-
 export enum SaveMark {
 	Synced = "Synced",
 	Split = "Split",
@@ -1083,8 +1078,6 @@ export interface SaveCheck {
 	warnings: string[];
 	status: SaveMark;
 	inUse: SaveInUseWarning[];
-	releaseId?: string;
-	runnerId?: string;
 }
 
 export interface SaveCheckRequest {
@@ -1101,13 +1094,6 @@ export interface SaveFile {
 
 export interface SaveGameRequest {
 	gameId: string;
-}
-
-export interface SaveHeads {
-	games: GameSaveHeads[];
-}
-
-export interface SaveHeadsRequest {
 }
 
 export interface SnapshotLocation {
@@ -1140,36 +1126,9 @@ export interface SaveHistory {
 	current?: string;
 }
 
-export interface SaveInUseActive {
-	device: string;
-	inUse: boolean;
-	since: number;
-}
-
-export interface SaveInUseIdle {
-	device: string;
-	inUse: boolean;
-}
-
-export interface SaveObjectRequest {
-	sha256: string;
-}
-
 export interface SavePickRequest {
 	gameId: string;
 	snapshotId: string;
-}
-
-export interface SaveRecords {
-	records: SnapshotRecord[];
-	/** Only snapshots whose objects have been verified locally. */
-	confirmed: string[];
-}
-
-export interface SaveRecordsRequest {
-	gameId: string;
-	ids: string[];
-	records?: SnapshotRecord[];
 }
 
 export interface SaveStatus {
@@ -1557,10 +1516,6 @@ export enum PluginRepositoryRemoveResult {
 }
 
 export type RpcRequest =
-	| { _tag: "app.saves.heads", payload: SaveHeadsRequest }
-	| { _tag: "app.saves.records", payload: SaveRecordsRequest }
-	| { _tag: "app.saves.inUse", payload: SaveGameRequest }
-	| { _tag: "app.saves.object", payload: SaveObjectRequest }
 	| { _tag: "app.saves.status", payload: SaveStatusRequest }
 	| { _tag: "app.saves.history", payload: SaveGameRequest }
 	| { _tag: "app.saves.choose", payload: SavePickRequest }
@@ -1632,9 +1587,6 @@ export type RpcRequest =
 	| { _tag: "system.plugins.setEnabled", payload: PluginSetEnabledRequest };
 
 export type RpcResponse =
-	| { _tag: "app.saves.heads", outcome: SaveHeadsOutcome }
-	| { _tag: "app.saves.records", outcome: SaveRecordsOutcome }
-	| { _tag: "app.saves.inUse", outcome: SaveInUseOutcome }
 	| { _tag: "app.saves.status", outcome: SaveStatusOutcome }
 	| { _tag: "app.saves.history", outcome: SaveHistoryOutcome }
 	| { _tag: "app.saves.choose", outcome: SaveHistoryOutcome }
@@ -1709,20 +1661,8 @@ export type SaveCheckOutcome =
 	| { _tag: "Ok", payload: SaveCheck }
 	| { _tag: "Err", payload: RpcFailure };
 
-export type SaveHeadsOutcome =
-	| { _tag: "Ok", payload: SaveHeads }
-	| { _tag: "Err", payload: RpcFailure };
-
 export type SaveHistoryOutcome =
 	| { _tag: "Ok", payload: SaveHistory }
-	| { _tag: "Err", payload: RpcFailure };
-
-export type SaveInUseOutcome =
-	| { _tag: "Ok", payload: SaveInUseActive | SaveInUseIdle }
-	| { _tag: "Err", payload: RpcFailure };
-
-export type SaveRecordsOutcome =
-	| { _tag: "Ok", payload: SaveRecords }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type SaveStatusOutcome =

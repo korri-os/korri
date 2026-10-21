@@ -1153,13 +1153,13 @@ impl HostSessionControl {
         game_id: &str,
         runner_id: &str,
         person_public_key: Option<&str>,
-        configured_command: &[String],
+        configured_command: Result<&[String], RpcFailure>,
         environment: &BTreeMap<String, String>,
     ) -> Result<SessionPrepared, RpcFailure> {
         self.prepare_inner(
             game_id,
             person_public_key,
-            Ok(configured_command),
+            configured_command,
             environment,
             false,
             Some(runner_id),
@@ -1171,13 +1171,13 @@ impl HostSessionControl {
         &self,
         reservation: &LaunchReservation,
         runner_id: Option<&str>,
-        configured_command: &[String],
+        configured_command: Result<&[String], RpcFailure>,
         environment: &BTreeMap<String, String>,
     ) -> Result<SessionPrepared, RpcFailure> {
         self.prepare_inner(
             &reservation.identity.game_id,
             reservation.person.as_deref(),
-            Ok(configured_command),
+            configured_command,
             environment,
             false,
             runner_id,

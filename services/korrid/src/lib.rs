@@ -1242,12 +1242,16 @@ pub enum PluginChangeOutcome {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum RpcRequest {
+    #[typeshare(skip)]
     #[serde(rename = "app.saves.heads")]
     SaveHeads(saves::types::SaveHeadsRequest),
+    #[typeshare(skip)]
     #[serde(rename = "app.saves.records")]
     SaveRecords(saves::types::SaveRecordsRequest),
+    #[typeshare(skip)]
     #[serde(rename = "app.saves.inUse")]
     SaveInUse(saves::types::SaveGameRequest),
+    #[typeshare(skip)]
     #[serde(rename = "app.saves.object")]
     SaveObject(saves::types::SaveObjectRequest),
     #[serde(rename = "app.saves.status")]
@@ -1395,10 +1399,13 @@ pub enum RpcRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "outcome")]
 pub enum RpcResponse {
+    #[typeshare(skip)]
     #[serde(rename = "app.saves.heads")]
     SaveHeads(saves::peer::SaveHeadsOutcome),
+    #[typeshare(skip)]
     #[serde(rename = "app.saves.records")]
     SaveRecords(saves::peer::SaveRecordsOutcome),
+    #[typeshare(skip)]
     #[serde(rename = "app.saves.inUse")]
     SaveInUse(saves::peer::SaveInUseOutcome),
     #[serde(rename = "app.saves.status")]
@@ -2397,6 +2404,7 @@ async fn dispatch(
     authorization: &authorization::AuthorizationContext,
     request: RpcRequest,
 ) -> Result<RpcResponse, authorization::AuthorizationDenied> {
+    let request_arrived = tokio::time::Instant::now();
     authorization::authorize(authorization, &request)?;
     let mut response = match request {
         RpcRequest::SaveObject(_) => return Err(authorization::AuthorizationDenied),
@@ -2405,6 +2413,20 @@ async fn dispatch(
                 .saves
                 .as_ref()
                 .ok_or(authorization::AuthorizationDenied)?;
+            if matches!(
+                authorization,
+                authorization::AuthorizationContext::Peer(
+                    authorization::Principal::OwnerDevice { .. }
+                )
+            ) {
+                if let ServerMode::Host(host) = &state.mode {
+                    if let Err(error) = host.baseline_saves().await {
+                        return Ok(RpcResponse::SaveHeads(saves::peer::SaveHeadsOutcome::Err(
+                            error,
+                        )));
+                    }
+                }
+            }
             RpcResponse::SaveHeads(match service.heads(authorization).await {
                 Ok(value) => saves::peer::SaveHeadsOutcome::Ok(value),
                 Err(error) => saves::peer::SaveHeadsOutcome::Err(error.failure()),
@@ -2473,8 +2495,13 @@ async fn dispatch(
         RpcRequest::SavesCheck(request) => {
             let result = match &state.mode {
                 ServerMode::Host(host) => {
-                    host.save_check(request, state.saves.clone(), state.federation.clone())
-                        .await
+                    host.save_check(
+                        request,
+                        state.saves.clone(),
+                        state.federation.clone(),
+                        request_arrived,
+                    )
+                    .await
                 }
                 _ => Err(installed_routes_unsupported()),
             };
@@ -4213,6 +4240,7 @@ pub fn host_router_with_storage(
             private,
             Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
         );
+        runtime.claim_save_owner();
         plain_host_routers(runtime).0
     }
     #[cfg(not(test))]
@@ -4321,6 +4349,7 @@ fn host_routers_with_in_memory_units(config_path: impl AsRef<Path>) -> (Router, 
         private,
         Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
     );
+    runtime.claim_save_owner();
     plain_host_routers(runtime)
 }
 
@@ -7212,6 +7241,7 @@ command = ["game-two"]
             Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
             adapter,
         );
+        runtime.claim_save_owner();
         plain_host_routers(runtime)
     }
 
