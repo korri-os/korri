@@ -737,6 +737,13 @@ pub(crate) fn require_ready(
 
 /// `contentPath` for an artifact route: its ready directory joined with the
 /// declared path. Nothing else is derived.
+///
+/// Readiness is not checked here. Catalog and runner listings preflight every
+/// route through `launch_route` before anything is downloaded, and a game that
+/// still needs its download must stay listed and launchable through the
+/// download gate (ADR 0013). `require_ready` refuses the session start until
+/// every release and runner artifact is ready, so no launch reaches this path
+/// before its directory exists.
 pub(crate) fn artifact_content_path(
     root: &Path,
     registry: &PluginRegistry,
@@ -745,14 +752,7 @@ pub(crate) fn artifact_content_path(
     let artifact = registry
         .artifact(&target.artifact_id)
         .map_err(|_| unknown_artifact())?;
-    let ready = placement::ready_path(root, artifact);
-    if !placement::is_ready(&ready) {
-        return Err(RpcFailure {
-            code: "ArtifactsNotReady".into(),
-            message: "The game is not downloaded yet.".into(),
-        });
-    }
-    Ok(ready.join(&target.path))
+    Ok(placement::ready_path(root, artifact).join(&target.path))
 }
 
 pub(crate) fn launch_artifacts(

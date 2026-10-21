@@ -254,6 +254,33 @@ async fn an_artifact_game_shows_before_download_downloads_launches_and_removes()
     let refused = fixture.launch("rock-n-roll").await;
     assert_eq!(refused["outcome"]["payload"]["code"], "ArtifactsNotReady");
 
+    // Catalog and runner listings preflight every route before any download.
+    // A game that still needs its files stays listable; only the session
+    // start above refuses (RG353M regression: "The game is not downloaded
+    // yet" from the catalog).
+    let preflight = launcher::linux_plugin::launch_route(
+        fixture.path(),
+        &snapshot,
+        &fixture.registry,
+        &route,
+        None,
+        None,
+    )
+    .expect("listing preflight must not require downloaded artifacts");
+    let planned: launcher::plugin_launch::PluginLaunchInput =
+        serde_json::from_str(&preflight.command[3]).unwrap();
+    assert_eq!(
+        planned.content_path.as_deref(),
+        Some(
+            fixture
+                .ready("content")
+                .join("data.pck")
+                .display()
+                .to_string()
+                .as_str()
+        )
+    );
+
     // Download without launching fetches the whole default route.
     fixture.place_verified("content", CONTENT);
     fixture.place_verified("runtime", RUNTIME);
