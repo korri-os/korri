@@ -845,7 +845,6 @@ export interface PeerListRequest {
 }
 
 export interface SessionPrepared {
-	warnings: LaunchWarning[];
 	gameId: string;
 	/** Identity created by korrid while preparing this exact launch. */
 	launchId: string;
@@ -1756,8 +1755,8 @@ export type RpcResponse =
 	| { _tag: "app.moonlight.certificate.attest", outcome: MoonlightCertificateAttestOutcome }
 	| { _tag: "app.moonlight.certificate.provision", outcome: MoonlightCertificateProvisionOutcome }
 	| { _tag: "app.moonlight.certificate.revoke", outcome: MoonlightCertificateRevokeOutcome }
-	| { _tag: "app.session.prepare", outcome: SessionPrepareOutcome }
-	| { _tag: "app.session.reserve", outcome: SessionPrepareOutcome }
+	| { _tag: "app.session.prepare", outcome: SelectedGameLaunchOutcome }
+	| { _tag: "app.session.reserve", outcome: SessionReserveOutcome }
 	| { _tag: "app.session.start", outcome: SelectedGameLaunchOutcome }
 	| { _tag: "app.session.cancel", outcome: SessionStopOutcome }
 	| { _tag: "app.session.status", outcome: SessionStatusOutcome }
@@ -1832,7 +1831,7 @@ export type SessionFreezeOutcome =
 	| { _tag: "Ok", payload: SessionFreezeResult }
 	| { _tag: "Err", payload: RpcFailure };
 
-export type SessionPrepareOutcome =
+export type SessionReserveOutcome =
 	| { _tag: "Ok", payload: SessionPrepared }
 	| { _tag: "Err", payload: RpcFailure };
 

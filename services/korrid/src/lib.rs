@@ -158,7 +158,6 @@ pub struct SessionPrepareRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionPrepared {
-    pub warnings: Vec<launcher::typed_settings::LaunchWarning>,
     pub game_id: String,
     /** Identity created by korrid while preparing this exact launch. */
     pub launch_id: String,
@@ -1020,7 +1019,7 @@ pub enum CatalogSnapshotOutcome {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
-pub enum SessionPrepareOutcome {
+pub enum SessionReserveOutcome {
     Ok(SessionPrepared),
     Err(RpcFailure),
 }
@@ -1473,9 +1472,9 @@ pub enum RpcResponse {
     #[serde(rename = "app.moonlight.certificate.revoke")]
     MoonlightCertificateRevoke(MoonlightCertificateRevokeOutcome),
     #[serde(rename = "app.session.prepare")]
-    SessionPrepare(SessionPrepareOutcome),
+    SessionPrepare(game_routes::SelectedGameLaunchOutcome),
     #[serde(rename = "app.session.reserve")]
-    SessionReserve(SessionPrepareOutcome),
+    SessionReserve(SessionReserveOutcome),
     #[serde(rename = "app.session.start")]
     SessionStart(game_routes::SelectedGameLaunchOutcome),
     #[serde(rename = "app.session.cancel")]
