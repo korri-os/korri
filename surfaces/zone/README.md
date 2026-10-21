@@ -2032,6 +2032,48 @@ art and the drawn emblems stay pixel art in every look.
 - **One list of looks.** `vite.config.ts` imports `ZONE_LOOKS`,
   `isZoneLook` and `ZONE_DEFAULT_LOOK` from `src/plan/look.ts`.
 
+### Modern's motion (decided without asking: looks)
+
+Modern changes how M1 to M7 move, never what moves, when or for how long:
+translates fall where the easing puts them (no art-px rounding), hard
+steps become eases, and the ground glides. Blend and Retro keep the table
+in REFINEMENT.md 2d unchanged. Rows for Modern, with what the takes
+measured (seek-built at 30 frames a second, `window.seek(t)` per frame; a
+filmstrip cell is 100 ms, the `-33ms` strips one frame a cell):
+
+| Element | Kind | Trigger | Property | From → to | Start | Duration | Easing (Modern) | Measured |
+|---|---|---|---|---|---|---|---|---|
+| M1 band track | focus | left/right | `--zone-band-focus` → translateX, rounded to 1/64 CSS px | old → new centre | 0 | 220 ms | `cubic-bezier(.34,1.56,.64,1)` | overshoot at 4 frames, rest at 7 (233 ms) |
+| M1 red triangles | idle | focused card | margin | near → far | — | 480 ms, alternate | `ease-in-out` (was `steps(2)`) | stills |
+| M2 old ground | structural | tab chosen | clip, one straight 45° line | 0 → 100% | 60 | 280 ms | `cubic-bezier(.2,.8,.2,1)` | the rings show along a straight edge, frames 3 to 6 |
+| M2 banner | structural | tab chosen | translateY, sub-pixel | −8 art px → 0 | 160 | 200 ms | `cubic-bezier(.34,1.56,.64,1)` | rest by frame 11 |
+| M2 body | structural | tab chosen | translateX, sub-pixel | +wArt → 0 | 160 | 240 ms | `cubic-bezier(.34,1.3,.64,1)` | in from the right, rest by frame 11 (367 ms) |
+| M3 bands, ground, name, ZONE bar | structural | PLAY | translate, sub-pixel | off → rest | 0 to 260 | 320 / 260 ms | as 2d | rest by cell 6 (600 ms) |
+| M3 act disc | structural | PLAY | scale | 0 → 1 | 420 | 160 ms | `cubic-bezier(.34,1.56,.64,1)` (was `steps(4)`) | grows over 2 cells |
+| M3 out | structural | Busy ends | translate, sub-pixel; disc scale | rest → off | 0 | 400 ms (disc 200) | `cubic-bezier(.5,0,.9,.4)` (disc was `steps(4)`) | gone by frame 12 (400 ms) |
+| M4 dialog open | structural | dialog opens | scaleY from the middle; wedges translateX, sub-pixel | 0 → 1; ±w → 0 | 0 | 180 ms | `cubic-bezier(.2,.8,.2,1)` (was six held steps) | full at frame 6 (200 ms) |
+| M4 dialog close | structural | dialog closes | the same, reversed | 1 → 0 | 0 | 140 ms | `cubic-bezier(.5,0,.9,.4)` | gone at frame 5 (167 ms) |
+| M5 tally rows | structural | session ends | translateX, sub-pixel | +40 art px → 0 | 300 ms apart | 160 ms | `cubic-bezier(.34,1.3,.64,1)` | rows at 0, 300, 600 ms; counted by 1.8 s |
+| M5 tally count | structural | session ends | value, bar | 0 → value | 300 ms apart | 1200 ms | `steps(60)` (a count, kept) | 60 steps |
+| M6 attract stage pan | idle | idle | translateX, sub-pixel | 0 → −32 art px | 2900 | 2700 ms | linear | last frame equals the first (6000 ms loop) |
+| M7 ring dots | idle | always | arc position, unrounded, antialiased | one turn | — | 140 s / 200 s | linear, 60 fps (was 15) | glide, no 1-art-px hops |
+
+Takes, filmstrips and gifs, 640x480 and 1280x720 each, in
+`/tmp/zone-look/takes-modern/`: `take-m1-snap-*`, `take-m2-menu-*`,
+`take-m3-in-*`, `take-m3-out-*`, `take-m4-open-*`, `take-m4-close-*`,
+`take-m5-tally-*`, `take-m6-attract-*`, `take-m7-ground-*` (each `.webm`,
+`.gif`, `.filmstrip.png`, and `.filmstrip-33ms.png` for moves of 600 ms or
+less). Reduced motion, recorded live with no seek (the product's own
+reduced-motion path): `take-reduced-m1-snap-1280x720`,
+`take-reduced-m3-in-640x480`, `take-reduced-m4-open-640x480`,
+`take-reduced-m6-attract-640x480`; every cell is the end state. The
+recorder (`/tmp/zone-look/take.mjs`, `take.sh`, `strips.sh`,
+`takes-modern.sh`) holds every moment with `window.seek`; the dialog's
+close copy is removed by a real-time timer, which the recorder stretches
+for that take only. Checked against the table above: every row's
+duration within one cell, no snap at a move's first or last cell, focus
+on screen in every cell, nothing clipped mid-move.
+
 ### Not done (looks)
 
 - The keyboard's keys still lean by a token, not 45 degrees, in every
