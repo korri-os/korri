@@ -1970,15 +1970,18 @@ art and the drawn emblems stay pixel art in every look.
 - **What Retro adds.** Retro is main's rendering, with two expected
   differences: OPTIONS shows SYSTEM's new LOOK row, so its states that
   show SYSTEM (or scroll past it) differ; and the OPTIONS part has a new
-  state, `LookFocused`. Measured on 2026-10-20 against main at 8c2f8129a,
-  every part, state and device rendered with reduced motion (Caliper's
-  own renders differ run to run wherever a triangle nudges or a dot
-  drifts): of 878 Retro renders, 849 match main exactly and 2 match one of
-  main's two runs (main's own RUN WITH scroll varies); 23 OPTIONS states
-  differ only by the LOOK row, 2 are `LookFocused`, one is ZoneSignal's
-  "ResizeObserver loop" overlay, which main shows too, and one (first
-  boot's NameTyping at 1280x720, 27 pixels of the ring under the
-  keyboard's edge) matched main exactly when rendered again.
+  state, `LookFocused`. Measured on 2026-10-20, after review round 1,
+  against main at 8c2f8129a, every part, state and device rendered with
+  reduced motion (Caliper's own renders differ run to run wherever a
+  triangle nudges or a dot drifts): of 878 Retro renders, 847 match main
+  exactly and 3 match one of main's two runs; 22 OPTIONS states differ only
+  by the LOOK row and 2 are `LookFocused`. The other 4 are run-to-run
+  flakes, each also seen on main or gone on a second render: first boot's
+  NameTyping at 1280x720 (27 pixels of the ring under the keyboard's
+  edge; main itself renders both versions), ZoneSignal's "ResizeObserver
+  loop" overlay (main throws it too), and the keyboard's LongDraft at
+  640x480 and SAVE DATA's MidBand band at 1280x720 (both identical to main
+  when rendered again).
 - **The static stays.** A loading card's noise well and a greyed well's
   checker are the window's contents, like cover art, not edges or
   dimming; they stay pixel in Modern.
