@@ -130,6 +130,7 @@ pub fn resolve(layers: &[LaunchSettingsLayer]) -> LaunchSettingsResolved {
             LaunchResolvedValue {
                 value: 0,
                 source: LaunchSettingsScope::Device,
+                device_default: false,
                 adjusted: false,
             },
         );
@@ -138,6 +139,7 @@ pub fn resolve(layers: &[LaunchSettingsLayer]) -> LaunchSettingsResolved {
             LaunchResolvedValue {
                 value: 100,
                 source: LaunchSettingsScope::Device,
+                device_default: false,
                 adjusted: false,
             },
         );
@@ -149,6 +151,7 @@ pub fn resolve(layers: &[LaunchSettingsLayer]) -> LaunchSettingsResolved {
                     LaunchResolvedValue {
                         value,
                         source: layer.scope.clone(),
+                        device_default: false,
                         adjusted: false,
                     },
                 );
@@ -159,6 +162,7 @@ pub fn resolve(layers: &[LaunchSettingsLayer]) -> LaunchSettingsResolved {
                     LaunchResolvedValue {
                         value,
                         source: layer.scope.clone(),
+                        device_default: false,
                         adjusted: false,
                     },
                 );

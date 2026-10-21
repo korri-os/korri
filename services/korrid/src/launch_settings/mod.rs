@@ -61,6 +61,8 @@ pub struct LaunchSettingsLayer {
 pub struct LaunchResolvedValue {
     pub value: u8,
     pub source: LaunchSettingsScope,
+    /// True when this value comes from the shipped device defaults, not config.
+    pub device_default: bool,
     pub adjusted: bool,
 }
 

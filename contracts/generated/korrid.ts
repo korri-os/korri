@@ -568,6 +568,8 @@ export type LaunchSettingsScope =
 export interface LaunchResolvedValue {
 	value: number;
 	source: LaunchSettingsScope;
+	/** True when this value comes from the shipped device defaults, not config. */
+	deviceDefault: boolean;
 	adjusted: boolean;
 }
 
