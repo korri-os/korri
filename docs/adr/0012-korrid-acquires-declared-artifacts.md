@@ -88,3 +88,7 @@ clarification was approved during implementation on 2026-10-19.
 [ADR 0013](0013-declared-games-can-come-from-artifacts.md) lets declared game
 releases name artifacts, and changes Cancel: it now deletes the `.part` files,
 so a `.part` file with no ready directory always means an interrupted download.
+
+[ADR 0014](0014-korrid-acquires-games-from-provider-plugins.md) amends "Source
+acquisition (search, claims, resolve-download …) is OUT" for search provider
+plugins; their downloads stay in this cache grammar.

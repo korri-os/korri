@@ -608,7 +608,7 @@ interface AcquireJobStatus {
   jobId: string
   providerId: string
   id: string
-  fileName?: string     // the request's fileName, then the cart's file name
+  fileName?: string     // the request's fileName, then the downloaded file's name
   system?: string       // the claim's artifact.system
   message?: string      // the Failed reason message, else absent
   state: AcquireJobState
@@ -627,9 +627,9 @@ type AcquireJobState =
 
 1. A live job for the same claim (`Queued`, `Resolving`, `Downloading`,
    `Placing`) answers again (legacy `activeByClaim`).
-2. The provider link `<providerId>/<id>` names a game whose cart is in the
+2. The provider link `<providerId>/<id>` names a game whose download is in the
    cache: a new job answers `Imported { gameId }` at once. This needs no claim
-   in memory and no network, so Get on an owned cart works after a restart.
+   in memory and no network, so Get on an owned game works after a restart.
 3. Otherwise korrid needs a claim that `search` or `details` returned in this
    process (`AcquisitionUnknownClaim`). It takes the URL, title and system
    from that claim, never from the caller; `details` replaces the held
@@ -655,17 +655,17 @@ bound). `Failed.reason.code` values: `DownloadNotFinal` (`NonFinalDownload`),
 and library-record failures. Every message is fixed plain copy: none contains
 a URL, path, query, header value, HTTP status or plugin-supplied text.
 
-#### A store cart stays in korrid's cache
+#### A provider download stays in korrid's cache
 
 This builds on ADR 0013 (declared games can come from artifacts): korrid never
-writes into a person's source. A store cart has no declaration, so it reuses
+writes into a person's source. A provider download has no declaration, so it reuses
 ADR 0012/0013's cache grammar, readiness, content-hash identity and
 `contentPath`, plus the ADR 0002 provider link (owner answers Q1-Q6, ADR 0014).
 
 - **Queue.** A store job waits in ADR 0013's one-at-a-time queue behind
   earlier downloads and holds its deep-sleep block. It is never paused for a
   launch; a launch's download runs after it.
-- **Download.** The cart stages under
+- **Download.** The file stages under
   `<storage-root>/cache/<plugin short name>/<provider name>/.downloads/`
   (the provider name is the part of the provider id after `:`), private
   (0700), with a random `.acquire-*` name. It follows the declared hosts and
@@ -685,8 +685,9 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   "sha256:<hex>" }`, `system` from the claim) and the provider link
   `provider-links."<providerId>/<claim id>" = { provider, playable, refs:
   [{ kind: provider-item-id, value: <claim id> }] }`. No location is saved.
-  Identical bytes from another claim join the same game with a second link;
-  an existing link keeps its game. A copy that discovery finds in a source
+  Identical bytes from another claim join the same game with a second link.
+  When another game already holds the bytes, the link moves to that game;
+  otherwise an existing link keeps its game. A copy that discovery finds in a source
   joins the same game by hash.
 - **Route.** For a release with no saved location and no declared artifact,
   the resolver looks in the caches of the acquisition providers linked to the
@@ -694,11 +695,15 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   `contentPath` (`ResolvedRoute.cache_target`). No ready folder, no route: the
   release is unavailable, like a missing file.
 - **Remove download.** `app.acquisition.remove { gameId }` also removes the
-  game's cart folders, unless another game's release names the same hash. The
+  game's download folders, unless another game's release names the same hash. The
   game, release and provider link stay as history. It refuses while the game
   runs (`ActiveSessionConflict`) and while a store job for the game works
-  (`AcquisitionBusy`). Saves are never touched. A removed cart comes back only
+  (`AcquisitionBusy`). Saves are never touched. A removed download comes back only
   through Get in the store, into the same game through the provider link.
+- **Restart.** Startup removes staging files and `.tmp-*` folders and logs
+  one line per ready folder that no library release names (korrid stopped
+  between publishing and recording). Nothing deletes such a folder; the next
+  Get of that game records it.
 
 ### Native runners for specific content
 

@@ -1,3 +1,7 @@
+---
+status: proposed
+---
+
 # korrid acquires games from provider plugins
 
 **Owner decisions, 2026-10-19.**
@@ -41,8 +45,9 @@ withdrawn.
   provider link and its ready folder before it requires a held claim, so Get
   on an owned cart answers `Imported` with no network.
 
-ADR 0012 left source acquisition out. This decision adds it for search
-providers: a provider plugin finds games on one site and says where their
+This decision amends ADR 0012, which said "Source acquisition (search,
+claims, resolve-download, browser hand-off, provider health) is OUT". It adds
+search, claims and resolve-download for search providers: a provider plugin finds games on one site and says where their
 files are; korrid makes every HTTP request, downloads the cart into its cache,
 and writes the library record. Plugins stay effect-free (AGENTS.md, plugin
 boundaries).
@@ -93,7 +98,7 @@ boundaries).
 | `PluginHttpRequest { url, query?, headers?, timeoutMs? }` | legacy `request(url, PluginHttpRequestOptions)` (`product/platform/plugin/services.ts`), legacy `withQuery` | The call becomes a returned value. GET only: `method` and `body` are not carried (no in-scope provider posts). No default timeout is invented (legacy had none); connect timeout and stall detection still apply. `cookie`, `set-cookie`, `authorization`, `proxy-authorization` and `host` headers are refused (no auth provider in scope). |
 | `PluginHttpResponse { status, ok, url, headers, text }` | legacy `PluginHttpResponse` | `text()` becomes `text`; `setCookies` and `bytes` are not carried. Headers lower-cased, repeats joined with `", "`; UTF-8 with replacement (legacy `TextDecoder`). korrid follows redirects, so no 3xx reaches a plugin. |
 | Tag `HttpRequests` | — | New. Results keep their legacy shapes: an array for search, `_tag`-tagged objects otherwise. |
-| `ProviderClaim`, `ProviderClaimDetails`, `ArtifactAcquisitionHint`, `DownloadResolution`, `DownloadChoice` | legacy `claim.ts`, `download-resolution.ts`, `artifact.ts` | Dropped: `ref`, `playable`, `facets` (their only legacy consumer authored library entries; discovery owns library records on main) and `FinalDownload.requestHeaders` (no in-scope provider forwards Referer or Cookie). `SafeText`, `SafeUrl`, `SafeFileName`, `SEMANTIC_ID` and `SAFE_EXTENSION` are kept in korrid's admission. A claim id is 1 to 2048 characters (legacy `ProviderRef.value` bound). Details must name the asked id. |
+| `ProviderClaim`, `ProviderClaimDetails`, `ArtifactAcquisitionHint`, `DownloadResolution`, `DownloadChoice` | legacy `claim.ts`, `download-resolution.ts`, `artifact.ts` | Dropped: `ref`, `playable`, `facets`. Their only legacy consumer authored library entries from plugin-supplied hints; on main the acquire job writes one fixed record (claim title, the downloaded bytes' hash, the claim's system, a provider link), so no plugin-authored library data is needed and `FinalDownload.requestHeaders` (no in-scope provider forwards Referer or Cookie). `SafeText`, `SafeUrl`, `SafeFileName`, `SEMANTIC_ID` and `SAFE_EXTENSION` are kept in korrid's admission. A claim id is 1 to 2048 characters (legacy `ProviderRef.value` bound). Details must name the asked id. |
 | Unacquirable claim | legacy Shift "ungetable" guard | `artifact.system` absent or not an enabled system: shown, not acquired (`AcquisitionSystemUnknown`). |
 | `hosts` | owner decision 1; `ports` in `plugin.nix`, `firewall.rs` `Ports` bounds | Builder omits it when empty, like `requires`, so existing approvals do not change. Exact lowercase DNS names, no wildcard, port, scheme, trailing dot or IP literal, at most 128, and only with a `providers` export. Report field `hosts`; `EnabledPackage.hosts`. |
 | RPC methods | legacy `product/apps/portal/api/acquisition/*.rpc.ts` | `acquire-cancel` is new (legacy had no cancel). `search` needs exactly one provider id. `providers` answers `AcquisitionProvider { id, title, pluginId }`, replacing legacy `PluginMetadata` (`legalRisk`, `credentialRequired`, `module` have no main producer). |
@@ -145,6 +150,11 @@ bound, and the heap must hold the input. A 3.5 MiB page fits, as tested.
   `Failed { DownloadNotFinal }`. `fileName` on `acquire` is passed to
   `artifact.resolve-download` as legacy did.
 - Ports in provider URLs are not restricted; only the host name is declared.
+- If korrid stops after publishing a ready folder and before writing its
+  library record, the folder has no release that names it, so Remove download
+  cannot reach it. Startup recovery logs one line per such folder and deletes
+  nothing. The next Get of the same game records it (the folder is reused);
+  otherwise the folder stays until the cache is deleted.
 - Declaration evaluation refuses a plugin whose artifact key equals one of
   its provider names, so ADR 0012 artifact caches and ADR 0014 provider
   caches never share `cache/<plugin>/<key>/`.
