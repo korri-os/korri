@@ -12,6 +12,7 @@ import {
   createHttpKorridClient,
   createInMemoryKorridClient,
 } from "./korrid/client"
+import { inMemorySavesDevConfig } from "./korrid/in-memory-saves-dev"
 import { createInMemoryOverlayController } from "./overlay/in-memory-overlay-controller"
 import { createLiveOverlayController } from "./overlay/live-overlay-controller"
 import { OverlayRoot } from "./overlay/OverlayRoot"
@@ -77,7 +78,8 @@ async function mountPortal() {
         `http://127.0.0.1:${linuxRuntime.korridPort}`,
         linuxRuntime.korridCapability,
       )
-    : createInMemoryKorridClient()
+    // Browser dev seeds save sync so every state is reachable (`?saves=`).
+    : createInMemoryKorridClient(import.meta.env.DEV ? inMemorySavesDevConfig(query.get("saves")) : {})
   // The kiosk starts beside korrid at boot. The binding is already consumed;
   // hold the first surface and input connection until the brain answers.
   if (linuxRuntime) await waitForKorrid(korrid)

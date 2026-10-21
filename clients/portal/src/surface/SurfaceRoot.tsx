@@ -17,6 +17,12 @@ import { createAcquisitionGate, type AcquisitionGameRef } from "./acquisition-ga
 import { createGameDownloads, type DownloadGameRef } from "./game-downloads"
 import { createRunnerChooser } from "./runner-chooser"
 import { createStoreAcquisition } from "./store-acquisition"
+import {
+  createSaveSync,
+  SAVE_CHOOSE_ACTION_ID,
+  SAVE_HISTORY_ACTION_ID,
+  surfaceSavesFrom,
+} from "./save-sync"
 import { createControllers, type Controllers } from "../input/controllers"
 import { entryKey, type LaunchablesState, type PortalEntry } from "../launchables/state"
 import { createInputBus, type InputBus } from "../input/bus"
@@ -102,6 +108,27 @@ function storeForSurface(store: SurfaceStore, state: LaunchablesState): SurfaceS
   }
 }
 
+/** This device's own key, as a local catalog game's source states it. */
+function localDeviceKeysOf(state: LaunchablesState): ReadonlySet<string> {
+  const keys = new Set<string>()
+  if (state._tag === "Loading") return keys
+  for (const entry of state.entries) {
+    if (entry.kind === "game" && entry.game.source.isLocal && entry.game.source.devicePublicKey !== undefined) {
+      keys.add(entry.game.source.devicePublicKey)
+    }
+  }
+  return keys
+}
+
+/** korrid ids of local games with a live session, one per line. */
+function liveGameIdsOf(state: LaunchablesState): string {
+  if (state._tag === "Loading") return ""
+  return state.entries
+    .flatMap(entry => (entry.kind === "now-playing" ? [entry.session.gameId] : []))
+    .sort()
+    .join("\n")
+}
+
 function localRunnerEntry(entry: PortalEntry | undefined): Extract<PortalEntry, { kind: "game" }> | undefined {
   if (entry?.kind === "game" && entry.game.source.isLocal && entry.game.supportsRunnerSelection) return entry
   if (entry?.kind !== "game" && entry?.kind !== "local-game") return undefined
@@ -172,6 +199,13 @@ export function SurfaceRoot({
   }), [korrid])
   useEffect(() => () => store.dispose(), [store])
   const storeSnapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
+  // Save sync (ADR 0014): the marks, the history, and the check that comes
+  // before the download gate. Device names need this device's own key.
+  const localKeysRef = useRef<ReadonlySet<string>>(new Set())
+  const saves = useMemo(() => createSaveSync(korrid, {
+    localDeviceKeys: () => localKeysRef.current,
+  }), [korrid])
+  useEffect(() => () => saves.dispose(), [saves])
   /**
    * The shared startup behind the gate: once every artifact the game's runner
    * needs is Ready, the existing reserve/start lifecycle. Resolves undefined
@@ -180,18 +214,27 @@ export function SurfaceRoot({
    * only means the world moved. Ask again.
    */
   const gatedStart = useCallback((game: AcquisitionGameRef) => new Promise<SessionStartResult | undefined>(resolve => {
+    const abandon = () => resolve(undefined)
     const proceed = (): void => {
       void launchablesRef.current.startCatalogLaunch(game.id, game.runnerId).then(outcome => {
         if (outcome?._tag === "Err" && outcome.payload.code === "ArtifactsNotReady") {
           launchablesRef.current.dismissNotice()
-          acquisition.launch(game, proceed, () => resolve(undefined))
+          acquisition.launch(game, proceed, abandon)
+          return
+        }
+        // korrid refused over a split it found itself (the check was skipped,
+        // or a device met in between): ask for the choice, then start again.
+        if (outcome?._tag === "Err" && outcome.payload.code === "SavesSplit") {
+          launchablesRef.current.dismissNotice()
+          saves.resolveSplit(game, proceed, abandon)
           return
         }
         resolve(outcome)
       })
     }
-    acquisition.launch(game, proceed, () => resolve(undefined))
-  }), [acquisition])
+    // The save check and its questions first, then the download gate.
+    saves.launch(game, () => acquisition.launch(game, proceed, abandon), abandon)
+  }), [acquisition, saves])
   // The chooser speaks korrid ids; the gate's status names the presented entry.
   const surfaceIdsRef = useRef<ReadonlyMap<string, string>>(new Map())
   const runner = useMemo(() => createRunnerChooser(korrid, {
@@ -208,12 +251,19 @@ export function SurfaceRoot({
   }), [gatedStart, korrid])
   const runnerChoice = useSyncExternalStore(runner.subscribe, runner.getSnapshot)
   const acquisitionStatus = useSyncExternalStore(acquisition.subscribe, acquisition.getStatus)
+  const saveStatus = useSyncExternalStore(saves.subscribe, saves.getStatus)
+  const saveHistory = useSyncExternalStore(saves.subscribe, saves.getHistory)
+  const saveMarks = useSyncExternalStore(saves.subscribe, saves.getMarks)
   const downloadFacts = useSyncExternalStore(downloads.subscribe, downloads.getFacts)
   const downloadProblem = useSyncExternalStore(downloads.subscribe, downloads.getStatus)
   const surfaceInput = useMemo(createInputBus, [])
   useEffect(() => bus.on(action => {
     // One dispatch decision, before subscriber fanout: cancelling a chooser
     // must not deliver the same Back to the page underneath it.
+    if (saves.getStatus() !== undefined) {
+      if (action.type === "back") saves.back()
+      return
+    }
     if (acquisition.getStatus() !== undefined) {
       if (action.type === "back") acquisition.back()
       return
@@ -231,7 +281,7 @@ export function SurfaceRoot({
       return
     }
     surfaceInput.emit(action)
-  }), [acquisition, bus, runner, surfaceInput])
+  }), [acquisition, bus, runner, saves, surfaceInput])
   useEffect(() => () => runner.cancel(), [runner])
   const {
     state,
@@ -303,23 +353,40 @@ export function SurfaceRoot({
   // The library changed: a store entry may now be owned, or no longer be.
   useEffect(() => { store.libraryChanged() }, [store, state])
   const surfaceToKorridId = useMemo(() => localGameIdsBySurfaceId(state), [state])
+  localKeysRef.current = useMemo(() => localDeviceKeysOf(state), [state])
+  // Marks change when a session ends (korrid snapshots after exit), and the
+  // set of local games decides which marks there are to read.
+  const liveGameIds = useMemo(() => liveGameIdsOf(state), [state])
+  useEffect(() => {
+    if (localGameIds === "") return
+    void saves.refresh()
+  }, [saves, localGameIds, liveGameIds])
   surfaceIdsRef.current = useMemo(() => new Map([...surfaceToKorridId].map(([surfaceId, korridId]) => [korridId, surfaceId])), [surfaceToKorridId])
   // Chooser transitions are not new catalog observations. Keep that identity
   // so session-return consumers do not discard an outstanding launch request.
   const model = useMemo(() => {
-    const catalog = baseModel.catalog._tag !== "Ready" || downloadFacts.size === 0 ? baseModel.catalog : {
+    const catalog = baseModel.catalog._tag !== "Ready" || (downloadFacts.size === 0 && saveMarks.size === 0) ? baseModel.catalog : {
       _tag: "Ready" as const,
       games: baseModel.catalog.games.map(game => {
         const korridId = surfaceToKorridId.get(game.id)
         const download = korridId === undefined ? undefined : surfaceDownloadFrom(downloadFacts.get(korridId))
-        return download === undefined ? game : { ...game, download }
+        const marked = korridId === undefined ? undefined : surfaceSavesFrom(saveMarks.get(korridId))
+        return {
+          ...game,
+          ...(download === undefined ? {} : { download }),
+          ...(marked === undefined ? {} : { saves: marked }),
+        }
       }),
     }
     return {
-      ...baseModel, catalog, status: acquisitionStatus ?? downloadProblem ?? baseModel.status, runnerChoice,
+      ...baseModel,
+      catalog,
+      status: saveStatus ?? acquisitionStatus ?? downloadProblem ?? baseModel.status,
+      runnerChoice,
       store: storeForSurface(storeSnapshot, state),
+      ...(saveHistory === undefined ? {} : { saveHistory }),
     }
-  }, [baseModel, runnerChoice, acquisitionStatus, downloadProblem, downloadFacts, surfaceToKorridId, storeSnapshot, state])
+  }, [baseModel, runnerChoice, saveStatus, saveHistory, saveMarks, acquisitionStatus, downloadProblem, downloadFacts, surfaceToKorridId, storeSnapshot, state])
   const surfaceToKorridIdRef = useRef(surfaceToKorridId)
   surfaceToKorridIdRef.current = surfaceToKorridId
   /**
@@ -355,7 +422,7 @@ export function SurfaceRoot({
       },
       launchGame: (id, launchLocationId) => {
         const current = launchablesRef.current.getState()
-        if (runner.getSnapshot()._tag !== "Closed" || acquisition.getStatus() !== undefined || current._tag !== "Ready") return
+        if (runner.getSnapshot()._tag !== "Closed" || saves.getStatus() !== undefined || acquisition.getStatus() !== undefined || current._tag !== "Ready") return
         const entry = entryForId(current, id)
         if (!entry) return
         const confirm = (chosen: PortalEntry) => {
@@ -391,6 +458,7 @@ export function SurfaceRoot({
         confirm(entry)
       },
       runAction: id => {
+        if (saves.act(id)) return
         if (starterPackOnboarding.act(id)) return
         if (store.act(id)) return
         if (acquisition.act(id)) return
@@ -425,14 +493,25 @@ export function SurfaceRoot({
       gameActions: id => {
         const current = launchablesRef.current.getState()
         const entry = entryForId(current, id)
+        const korridId = surfaceToKorridIdRef.current.get(id)
+        const history = korridId !== undefined && saves.hasHistory(korridId)
         return [...gameActionsForEntry(entry, downloadSubject(id)?.context), ...(localRunnerEntry(entry) ? [{
           id: "runners", label: "Runners on this device", enabled: current._tag === "Ready" && current.unavailableSessionStatus === undefined,
-        }] : [])]
+        }] : []), ...(history ? [{ id: SAVE_HISTORY_ACTION_ID, label: "Save history", enabled: true }] : [])]
       },
       runGameAction: (gameId, actionId) => {
         const current = launchablesRef.current.getState()
         const entry = entryForId(current, gameId)
-        if (!entry || runner.getSnapshot()._tag !== "Closed" || acquisition.getStatus() !== undefined || current._tag !== "Ready") return
+        if (!entry || runner.getSnapshot()._tag !== "Closed" || saves.getStatus() !== undefined || acquisition.getStatus() !== undefined || current._tag !== "Ready") return
+        if (actionId === SAVE_HISTORY_ACTION_ID || actionId === SAVE_CHOOSE_ACTION_ID) {
+          const korridId = surfaceToKorridIdRef.current.get(gameId)
+          if (korridId === undefined || entry.kind !== "game") return
+          const fact = saves.getMarks().get(korridId)
+          const ref = { id: korridId, surfaceId: gameId, title: entry.game.title }
+          if (actionId === SAVE_HISTORY_ACTION_ID && saves.hasHistory(korridId)) saves.openHistory(ref)
+          else if (actionId === SAVE_CHOOSE_ACTION_ID && surfaceSavesFrom(fact)?._tag === "Split") saves.choose(ref)
+          return
+        }
         if (actionId === "runners") {
           if (current.unavailableSessionStatus !== undefined) return
           const local = localRunnerEntry(entry)
@@ -460,14 +539,15 @@ export function SurfaceRoot({
       // a failed launch, so retrying that means re-reading the world rather
       // than repeating the same request.
       retry: () => {
-        if (!acquisition.retry()) reload()
+        if (!saves.retry() && !acquisition.retry()) reload()
       },
       dismiss: () => {
-        if (!acquisition.dismiss() && !downloads.dismiss()) dismissNotice()
+        if (!saves.dismiss() && !acquisition.dismiss() && !downloads.dismiss()) dismissNotice()
       },
       reload: () => {
         reload()
         void downloads.refresh()
+        void saves.refresh()
       },
     }),
     [
@@ -478,6 +558,7 @@ export function SurfaceRoot({
       store,
       surfaceInput,
       runner,
+      saves,
       scanWifi,
       connectWifi,
       connectHiddenWifi,

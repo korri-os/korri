@@ -57,9 +57,13 @@ import type {
   PluginRepositoryRemoveOutcome,
   AcquisitionOutcome,
   ArtifactStatus,
+  SaveCheckOutcome,
+  SaveHistoryOutcome,
+  SaveStatusOutcome,
   RpcRequest,
   RpcResponse,
 } from "@contracts/generated/korrid"
+import { createInMemorySaves, type InMemorySavesConfig } from "./in-memory-saves"
 import {
   createInMemoryStoreAcquisition,
   httpStoreAcquisition,
@@ -200,6 +204,17 @@ export interface KorridClient extends StoreAcquisitionMethods {
   ): Promise<PluginChangeOutcome>
   /** Any installed plugin. A stale stored approval answers PluginNeedsReview. */
   setPluginEnabled(id: string, enabled: boolean): Promise<PluginChangeOutcome>
+  /** Every game's save mark and save heads for this device's owner (ADR 0014). */
+  savesStatus(): Promise<SaveStatusOutcome>
+  /** One game's save history, and the snapshot this device continues from. */
+  savesHistory(gameId: string): Promise<SaveHistoryOutcome>
+  /** Continue a split from one side; korrid makes the new snapshot. */
+  savesChoose(gameId: string, snapshotId: string): Promise<SaveHistoryOutcome>
+  /** Make a new snapshot with an older snapshot's content. */
+  savesRestore(gameId: string, snapshotId: string): Promise<SaveHistoryOutcome>
+  /** The pre-launch check with the owner's other devices. The caller bounds
+   * the wait; `timeoutMs` only bounds the HTTP call. */
+  savesCheck(gameId: string, runnerId?: string, timeoutMs?: number): Promise<SaveCheckOutcome>
 }
 
 const RPC_TIMEOUT_MS = 25_000
@@ -805,6 +820,32 @@ export function createHttpKorridClient(
         return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.setEnabled", payload: { id, enabled } }, PLUGIN_PACKAGE_TIMEOUT_MS)).outcome
       } catch (error) { return routeUnavailable(error) }
     },
+    async savesStatus() {
+      try {
+        return (await callKorrid(baseUrl, capability, { _tag: "app.saves.status", payload: {} })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async savesHistory(gameId) {
+      try {
+        return (await callKorrid(baseUrl, capability, { _tag: "app.saves.history", payload: { gameId } })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async savesChoose(gameId, snapshotId) {
+      try {
+        return (await callKorrid(baseUrl, capability, { _tag: "app.saves.choose", payload: { gameId, snapshotId } })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async savesRestore(gameId, snapshotId) {
+      try {
+        return (await callKorrid(baseUrl, capability, { _tag: "app.saves.restore", payload: { gameId, snapshotId } })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async savesCheck(gameId, runnerId, timeoutMs) {
+      try {
+        const payload = runnerId === undefined ? { gameId } : { gameId, runnerId }
+        return (await callKorrid(baseUrl, capability, { _tag: "app.saves.check", payload }, timeoutMs)).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
   }
 }
 
@@ -1091,6 +1132,9 @@ export interface InMemoryKorridClientConfig {
   /** Seed the dedicated gameplay-overlay browser/test consumer. */
   readonly sessionControls?: SessionControls
   readonly sessionControlBehavior?: "ok" | "unavailable" | "invoke-fail"
+  /** Save sync (ADR 0014). Absent: every save method answers SavesUnavailable,
+   * as korrid does until its save lifecycle lands. */
+  readonly saves?: InMemorySavesConfig
 }
 
 const sampleGames: readonly Game[] = [
@@ -1958,6 +2002,7 @@ export function createInMemoryKorridClient(
       }
       return gameList(gameId)
     },
+    ...createInMemorySaves(config.saves),
   }
 }
 
