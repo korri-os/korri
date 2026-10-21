@@ -58,6 +58,8 @@ pub enum PeerSaveError {
     Protocol,
     #[error("save peer check reached its deadline")]
     Deadline,
+    #[error("this save's files are not available on any reachable device")]
+    PayloadUnavailable,
 }
 
 impl PeerSaveError {
@@ -69,10 +71,15 @@ impl PeerSaveError {
                 Self::Protocol => "SavePeerInvalid",
                 Self::Network => "SavePeerUnavailable",
                 Self::Save(_) => "SaveStorageUnavailable",
+                Self::PayloadUnavailable => "SavePayloadUnavailable",
             }
             .into(),
             // Storage diagnostics can contain private paths. Never serialize them.
-            message: "Saves could not be checked with this device.".into(),
+            message: match self {
+                Self::PayloadUnavailable => "This save's files are not available on any reachable device. Connect a device that has this save and retry.",
+                Self::Deadline => "The save transfer timed out. Check that the other device is reachable and retry.",
+                _ => "Saves could not be checked with this device.",
+            }.into(),
         }
     }
 }
@@ -213,6 +220,19 @@ impl SavePeerService {
                 .map(snapshot_id)
                 .collect::<Result<Vec<_>, _>>()?;
             if !ids.is_empty() {
+                // The sender's advertised heads, not this receiver's temporarily
+                // incomplete graph, decide which pushed records need payloads.
+                let heads = self.remote_heads(&person, &peer).await?;
+                for record in records {
+                    let id = snapshot_id(record)?;
+                    if heads
+                        .games
+                        .iter()
+                        .any(|game| game.game_id == request.game_id && game.heads.contains(&id))
+                    {
+                        self.fetch_record_payload(&person, &peer, record).await?;
+                    }
+                }
                 let response = self
                     .remote_records(
                         &person,

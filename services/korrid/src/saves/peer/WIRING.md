@@ -93,14 +93,55 @@ The caller owns Skip by dropping that future. Each `PeerCheckResult` contains
 Use the repository's imported ancestry to decide split/choice. Only the session
 boundary code may materialize a selected snapshot into the game's folders.
 
+## Restore payload hook
+
+Before restoring a snapshot already in local history whose payload is not
+local, call:
+
+```rust
+save_peer_service
+    .fetch_snapshot_payload(game_id, snapshot_id, deadline)
+    .await?;
+```
+
+The exact signature is:
+
+```rust
+pub async fn fetch_snapshot_payload(
+    &self,
+    game: &str,
+    snapshot_id: &str,
+    deadline: tokio::time::Instant,
+) -> Result<(), PeerSaveError>
+```
+
+This uses the existing signed records and object routes. It tries owner peers
+concurrently, accepts only verified payloads, and returns immediately when the
+payload is already local. It does not select a snapshot, change the heads, or
+write a game's save folders. After success, the session coordinator still owns
+the confirmed restore and its new snapshot.
+
+`PeerSaveError::PayloadUnavailable` maps to `SavePayloadUnavailable` with a
+message asking the person to connect a device that has the save and retry.
+`PeerSaveError::Deadline` means the transfer did not finish within the caller's
+budget. Missing local record metadata and other local storage failures remain
+storage errors. No wire shape or
+`peer-wiring.patch` change is needed for this hook.
+
 ## Boundaries and costs
 
 - Incoming records are validated by the native canonical record implementation.
   Objects must be named by that person's stored records. Hash and length checks
   precede publication. A declaration alone never receives confirmation.
-- A push sends records; its receiver pulls missing objects over the signed
-  object route, then returns confirmed IDs. The receiver also obtains the
-  sender's signed confirmation. Both devices keep both ancestry heads.
+- Sync imports ancestor metadata, including ancestors whose payloads have been
+  pruned. Only advertised heads require payload transfer, including both sides
+  of an open split. Missing ancestor metadata remains an error: payload
+  retention must not remove ancestry evidence.
+- A push sends all record metadata. The receiver checks the sender's advertised
+  heads before fetching objects; its own partially imported graph must not
+  mistake a historical record for a head. Historical records do not cause
+  payload downloads. Confirmations still require locally verified objects.
+  The receiver also obtains the sender's signed confirmation.
 - Range supports one closed, open-ended or suffix range. Downloads resume after
   interruption, reset if Range is ignored or returns 416, and retry hash
   failures. They stop after six attempts. No battery policy prevents transfer.
@@ -122,4 +163,7 @@ children, keep both heads and the parent, verify all bytes, and inspect native
 persisted confirmations. Other tests cover missing/corrupt objects, Range
 resume, a response larger than the RPC envelope, replay, cross-owner refusal,
 route separation, the snapshot push hook, and pre-launch deadline handling.
-No in-memory save repository remains in these tests.
+Retention tests prove that pruned historical payloads do not block head
+exchange, historical pushes remain metadata-only, and restore fetch succeeds
+or reports unavailable content within its deadline. No in-memory save
+repository remains in these tests.

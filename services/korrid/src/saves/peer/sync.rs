@@ -1,4 +1,5 @@
 use super::*;
+use futures::{stream::FuturesUnordered, StreamExt};
 use std::collections::{BTreeSet, VecDeque};
 use tokio::time::Instant;
 
@@ -96,6 +97,90 @@ impl SavePeerService {
         Ok(futures::future::join_all(work).await)
     }
 
+    /// Fetch files for a snapshot already in local history into the private
+    /// repository, without selecting it or writing game save folders. Restore
+    /// owns that session-boundary step.
+    /// Query peers concurrently so an offline peer cannot consume the deadline
+    /// before a reachable device that still has the old payload is tried.
+    pub async fn fetch_snapshot_payload(
+        &self,
+        game: &str,
+        snapshot_id: &str,
+        deadline: Instant,
+    ) -> Result<(), PeerSaveError> {
+        validate_hash(snapshot_id)?;
+        let person = self.owner()?;
+        tokio::time::timeout_at(deadline, async {
+            let (person_key, game_key, id) =
+                (person.clone(), game.to_owned(), snapshot_id.to_owned());
+            let complete = self
+                .storage(move |repository| repository.complete(&person_key, &game_key, &id))
+                .await?;
+            if complete {
+                self.require_owner(&person)?;
+                return Ok(());
+            }
+            let mut work: FuturesUnordered<_> = self
+                .owner_peers(&person)?
+                .into_iter()
+                .map(|peer| {
+                    let person = person.clone();
+                    async move {
+                        let response = self
+                            .remote_records(
+                                &person,
+                                &peer,
+                                SaveRecordsRequest {
+                                    game_id: game.into(),
+                                    ids: vec![snapshot_id.into()],
+                                    records: None,
+                                },
+                            )
+                            .await?;
+                        if response.confirmed.iter().any(|id| id != snapshot_id)
+                            || response.records.len() > 1
+                        {
+                            return Err(PeerSaveError::Protocol);
+                        }
+                        let record = response
+                            .records
+                            .into_iter()
+                            .next()
+                            .ok_or(PeerSaveError::PayloadUnavailable)?;
+                        if !response.confirmed.iter().any(|id| id == snapshot_id) {
+                            return Err(PeerSaveError::PayloadUnavailable);
+                        }
+                        if record.game_id != game {
+                            return Err(PeerSaveError::Protocol);
+                        }
+                        self.import_record(&person, &peer, record.clone(), Some(snapshot_id))
+                            .await?;
+                        self.fetch_record_payload(&person, &peer, &record).await?;
+                        self.confirm_response(
+                            &person,
+                            &peer,
+                            game,
+                            &[snapshot_id.into()],
+                            response.confirmed,
+                        )
+                        .await
+                    }
+                })
+                .collect();
+            while let Some(result) = work.next().await {
+                self.require_owner(&person)?;
+                match result {
+                    Ok(()) => return Ok(()),
+                    Err(error @ PeerSaveError::Save(_)) => return Err(error),
+                    Err(_) => {} // A different owner peer may still hold this payload.
+                }
+            }
+            Err(PeerSaveError::PayloadUnavailable)
+        })
+        .await
+        .map_err(|_| PeerSaveError::Deadline)?
+    }
+
     async fn synchronize(
         &self,
         person: &str,
@@ -125,6 +210,8 @@ impl SavePeerService {
                 .collect();
             let advertised: BTreeSet<_> = pending.iter().cloned().collect();
             let mut visited = BTreeSet::new();
+            let mut head_records = Vec::new();
+            let mut confirmations = Vec::new();
             while let Some(id) = pending.pop_front() {
                 validate_hash(&id)?;
                 if !visited.insert(id.clone()) {
@@ -141,10 +228,8 @@ impl SavePeerService {
                         },
                     )
                     .await?;
-                // Missing pruned ancestors do not delete our retained history.
-                if response.records.len() > 1
-                    || (response.records.is_empty() && advertised.contains(&id))
-                {
+                // Retention prunes payloads, never the ancestry metadata.
+                if response.records.len() != 1 {
                     return Err(PeerSaveError::Protocol);
                 }
                 for record in response.records {
@@ -152,9 +237,21 @@ impl SavePeerService {
                         return Err(PeerSaveError::Protocol);
                     }
                     pending.extend(record.parents.clone());
-                    self.import_record(person, peer, record, Some(&id)).await?;
+                    self.import_record(person, peer, record.clone(), Some(&id))
+                        .await?;
+                    if advertised.contains(&id) {
+                        head_records.push(record);
+                    }
                 }
-                self.confirm_response(person, peer, &game, &[id], response.confirmed)
+                confirmations.push((id, response.confirmed));
+            }
+            // Import the full ancestry before a missing head payload can fail
+            // this contact. Metadata remains useful even during transfer failure.
+            for record in head_records {
+                self.fetch_record_payload(person, peer, &record).await?;
+            }
+            for (id, confirmed) in confirmations {
+                self.confirm_response(person, peer, &game, &[id], confirmed)
                     .await?;
             }
             let (person_key, game_key) = (person.to_owned(), game.clone());

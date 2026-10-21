@@ -171,8 +171,19 @@ impl SavePeerService {
         let incoming = record.clone();
         self.storage(move |repository| repository.put_record(&person_key, &incoming))
             .await?;
-        for location in record.locations {
-            for file in location.files {
+        Ok(id)
+    }
+
+    // Payload transfer is separate from ancestry import: historical records
+    // remain useful after retention has removed their objects.
+    pub(super) async fn fetch_record_payload(
+        &self,
+        person: &str,
+        peer: &str,
+        record: &SnapshotRecord,
+    ) -> Result<(), PeerSaveError> {
+        for location in &record.locations {
+            for file in &location.files {
                 let (person_key, hash) = (person.to_owned(), file.sha256.clone());
                 let present = self
                     .storage(
@@ -189,13 +200,13 @@ impl SavePeerService {
                     )
                     .await?;
                 if present.is_none() {
-                    self.download_object(person, peer, &file).await?;
+                    self.download_object(person, peer, file).await?;
                 } else if present != Some(file.bytes) {
                     return Err(PeerSaveError::Protocol);
                 }
             }
         }
-        Ok(id)
+        Ok(())
     }
 
     async fn download_object(

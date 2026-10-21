@@ -560,3 +560,268 @@ async fn snapshot_hook_pushes_to_each_verified_owner_peer() {
         .unwrap());
     assert!(a.confirmations()[&id(&record)].contains(&b.device()));
 }
+
+fn prune_payload(node: &Node, record: &SnapshotRecord) {
+    for file in record.locations.iter().flat_map(|location| &location.files) {
+        let path = node
+            ._root
+            .path()
+            .join("saves/objects")
+            .join(hash_hex(&file.sha256).unwrap());
+        if path.exists() {
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn meet_keeps_ancestor_metadata_when_historical_payloads_are_pruned() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let base = a.seed(b"old shared save", vec![]);
+    b.repository.put_record(&b.owner(), &base).unwrap();
+    let left_history = a.seed(b"old left save", vec![id(&base)]);
+    let right_history = b.seed(b"old right save", vec![id(&base)]);
+    let left = a.seed(b"current left save", vec![id(&left_history)]);
+    let right = b.seed(b"current right save", vec![id(&right_history)]);
+    prune_payload(&a, &base);
+    prune_payload(&a, &left_history);
+    prune_payload(&b, &right_history);
+
+    a.service.on_contact(&b.device()).await.unwrap();
+    for node in [&a, &b] {
+        let records = node
+            .repository
+            .records(&node.owner(), &base.game_id)
+            .unwrap();
+        for ancestor in [&base, &left_history, &right_history] {
+            assert!(records.contains(ancestor));
+            assert!(!node
+                .repository
+                .complete(&node.owner(), &base.game_id, &id(ancestor))
+                .unwrap());
+        }
+        let heads = node
+            .repository
+            .heads(&node.owner())
+            .unwrap()
+            .games
+            .remove(0)
+            .heads;
+        assert_eq!(
+            heads.into_iter().collect::<BTreeSet<_>>(),
+            [id(&left), id(&right)].into_iter().collect()
+        );
+        for head in [&left, &right] {
+            assert!(node
+                .repository
+                .complete(&node.owner(), &head.game_id, &id(head))
+                .unwrap());
+        }
+    }
+    let checks = b
+        .service
+        .pull_before_launch(
+            &base.game_id,
+            tokio::time::Instant::now() + Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+    assert!(checks.iter().all(|check| check.transfer.is_ok()));
+}
+
+#[tokio::test]
+async fn snapshot_push_does_not_fetch_historical_payload_even_when_available() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let old = a.seed(b"retain only at the making device", vec![]);
+    let head = a.seed(b"latest save", vec![id(&old)]);
+    let results = a.service.after_snapshot(&head.game_id).await.unwrap();
+    assert!(results.into_iter().all(|(_, result)| result.is_ok()));
+    assert!(b
+        .repository
+        .records(&b.owner(), &old.game_id)
+        .unwrap()
+        .contains(&old));
+    assert!(!b
+        .repository
+        .complete(&b.owner(), &old.game_id, &id(&old))
+        .unwrap());
+    assert!(b
+        .repository
+        .complete(&b.owner(), &head.game_id, &id(&head))
+        .unwrap());
+    assert!(!a
+        .confirmations()
+        .get(&id(&old))
+        .is_some_and(|devices| devices.contains(&b.device())));
+}
+
+#[tokio::test]
+async fn restore_fetch_gets_one_old_payload_without_changing_heads() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let old = a.seed(b"restorable old save", vec![]);
+    let head = a.seed(b"current save", vec![id(&old)]);
+    b.service.on_contact(&a.device()).await.unwrap();
+    assert!(!b
+        .repository
+        .complete(&b.owner(), &old.game_id, &id(&old))
+        .unwrap());
+    let before = b.repository.heads(&b.owner()).unwrap();
+
+    b.service
+        .fetch_snapshot_payload(
+            &old.game_id,
+            &id(&old),
+            tokio::time::Instant::now() + Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+
+    assert!(b
+        .repository
+        .complete(&b.owner(), &old.game_id, &id(&old))
+        .unwrap());
+    assert!(b
+        .repository
+        .complete(&b.owner(), &head.game_id, &id(&head))
+        .unwrap());
+    assert_eq!(b.repository.heads(&b.owner()).unwrap(), before);
+    assert!(b.confirmations()[&id(&old)].contains(&a.device()));
+}
+
+#[tokio::test]
+async fn restore_fetch_reports_when_no_reachable_peer_has_the_payload() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let old = a.seed(b"pruned everywhere", vec![]);
+    a.seed(b"retained head", vec![id(&old)]);
+    prune_payload(&a, &old);
+    b.service.on_contact(&a.device()).await.unwrap();
+
+    let error = b
+        .service
+        .fetch_snapshot_payload(
+            &old.game_id,
+            &id(&old),
+            tokio::time::Instant::now() + Duration::from_secs(3),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, PeerSaveError::PayloadUnavailable));
+    assert_eq!(error.failure().code, "SavePayloadUnavailable");
+    assert!(error.failure().message.contains("reachable device"));
+    assert!(!b
+        .repository
+        .complete(&b.owner(), &old.game_id, &id(&old))
+        .unwrap());
+}
+
+#[tokio::test]
+async fn restore_fetch_uses_local_content_offline_and_honors_the_deadline() {
+    let a = Node::new(
+        5,
+        3,
+        TransferBehaviour {
+            delay: Duration::from_millis(200),
+            ..Default::default()
+        },
+    )
+    .await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    let old = a.seed(b"restore on demand", vec![]);
+    a.service
+        .fetch_snapshot_payload(
+            &old.game_id,
+            &id(&old),
+            tokio::time::Instant::now() + Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+    b.remember(&a);
+    b.repository.put_record(&b.owner(), &old).unwrap();
+    let result = b
+        .service
+        .fetch_snapshot_payload(
+            &old.game_id,
+            &id(&old),
+            tokio::time::Instant::now() + Duration::from_millis(10),
+        )
+        .await;
+    assert!(matches!(result, Err(PeerSaveError::Deadline)));
+    assert!(!b
+        .repository
+        .complete(&b.owner(), &old.game_id, &id(&old))
+        .unwrap());
+}
+
+#[tokio::test]
+async fn missing_head_payload_still_imports_its_ancestor_metadata() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let old = a.seed(b"historical payload must not be fetched", vec![]);
+    let head = a.seed(b"missing head", vec![id(&old)]);
+    prune_payload(&a, &head);
+    assert!(b.service.on_contact(&a.device()).await.is_err());
+    let records = b.repository.records(&b.owner(), &head.game_id).unwrap();
+    assert!(records.contains(&head));
+    assert!(records.contains(&old));
+    assert!(!b
+        .repository
+        .complete(&b.owner(), &old.game_id, &id(&old))
+        .unwrap());
+}
+
+#[tokio::test]
+async fn restore_fetch_tries_a_reachable_replica_without_waiting_for_a_slow_peer() {
+    let slow = Node::new(
+        5,
+        3,
+        TransferBehaviour {
+            delay: Duration::from_secs(60),
+            ..Default::default()
+        },
+    )
+    .await;
+    let local = Node::new(6, 3, TransferBehaviour::default()).await;
+    let replica = Node::new(7, 3, TransferBehaviour::default()).await;
+    let bytes = b"available on a different owner device";
+    let old = slow.seed(bytes, vec![]);
+    local.repository.put_record(&local.owner(), &old).unwrap();
+    replica
+        .repository
+        .put_record(&replica.owner(), &old)
+        .unwrap();
+    replica
+        .repository
+        .put_object(&replica.owner(), &digest(bytes), &mut &bytes[..])
+        .unwrap();
+    local.remember(&slow);
+    local.remember(&replica);
+
+    local
+        .service
+        .fetch_snapshot_payload(
+            &old.game_id,
+            &id(&old),
+            tokio::time::Instant::now() + Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+    assert!(local
+        .repository
+        .complete(&local.owner(), &old.game_id, &id(&old))
+        .unwrap());
+    assert!(local.confirmations()[&id(&old)].contains(&replica.device()));
+}
