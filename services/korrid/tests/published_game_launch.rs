@@ -109,7 +109,7 @@ fn published_mgba_route_and_launch_prepare() {
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .expect("current Core must construct a route against the published runner");
-    assert_eq!(spec.command[1], "plugin-launch");
+    assert_eq!(spec.command[1], "plugin-prepare");
     assert_eq!(
         spec.command[2],
         package.join(&manifest.entry).display().to_string()

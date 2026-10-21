@@ -127,6 +127,8 @@ fn setup(root: &Path, record: &str) -> (Vec<String>, PluginLaunchInput, LaunchCo
     (spec.command, input, composition)
 }
 fn cli(command: &[String]) -> Command {
+    let command = korrid::launcher::plugin_launch::prepare_command(command)
+        .expect("host prepares the plan before the unit starts");
     let mut process = Command::new(env!("CARGO_BIN_EXE_korrid"));
     process
         .env_clear()
@@ -267,7 +269,7 @@ export const handlers = {'launch.compose': input => {
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap();
-    assert_eq!(spec.command[1], "plugin-launch");
+    assert_eq!(spec.command[1], "plugin-prepare");
     let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
     assert!(input.content_path.is_none());
     assert_eq!(input.provider_ref.as_deref(), Some("401710"));
@@ -314,9 +316,7 @@ fn compose_refusals_missing_sources_files_and_invalid_plans_stop_before_all_effe
     ] {
         let root = tempfile::tempdir().unwrap();
         let (command, input, _) = setup(root.path(), record);
-        let result = cli(&command).output().unwrap();
-        let reason = String::from_utf8_lossy(&result.stderr);
-        assert!(!result.status.success());
+        let reason = korrid::launcher::plugin_launch::prepare_command(&command).unwrap_err();
         assert!(reason.contains(expected), "{reason}");
         assert!(reason.contains("@test:wrapper/main"), "{reason}");
         assert!(!reason.contains("never-publish"), "{reason}");
@@ -326,22 +326,25 @@ fn compose_refusals_missing_sources_files_and_invalid_plans_stop_before_all_effe
         let root = tempfile::tempdir().unwrap();
         let (command, input, _) = setup(root.path(), "{enabled: true}");
         fs::remove_file(root.path().join("wrapper").join(remove)).unwrap();
-        let result = cli(&command).output().unwrap();
-        assert!(!result.status.success());
-        assert!(String::from_utf8_lossy(&result.stderr).contains("@test:wrapper/main"));
+        let reason = korrid::launcher::plugin_launch::prepare_command(&command).unwrap_err();
+        assert!(reason.contains("@test:wrapper/main"));
         assert!(!Path::new(&input.account_root).exists());
     }
     let root = tempfile::tempdir().unwrap();
     let (command, input, _) = setup(root.path(), "{enabled: true}");
     fs::write(root.path().join("wrapper/manifest.json"), r#"{"entry":"plugin.ts","sources":["compose.ts","plugin.ts"],"files":{"program":"/no/such/modifier-file"}}"#).unwrap();
-    let result = cli(&command).output().unwrap();
-    assert!(String::from_utf8_lossy(&result.stderr).contains("modifier file program is missing"));
+    let reason = korrid::launcher::plugin_launch::prepare_command(&command).unwrap_err();
+    assert!(reason.contains("modifier file program is missing"));
     assert!(!Path::new(&input.account_root).exists());
 }
 #[test]
-fn refused_compose_reports_its_reason_through_native_systemd_status() {
+fn unit_revalidates_the_prepared_plan_and_reports_refusal_through_systemd_status() {
     let root = tempfile::tempdir().unwrap();
-    let (command, _, _) = setup(root.path(), "{enabled: true, settings: {fail: true}}");
+    let (command, _, _) = setup(root.path(), "{enabled: true}");
+    let mut command = korrid::launcher::plugin_launch::prepare_command(&command).unwrap();
+    let mut handoff: serde_json::Value = serde_json::from_str(&command[5]).unwrap();
+    handoff["plan"]["command"] = "".into();
+    command[5] = handoff.to_string();
     let socket = root.path().join("notify.sock");
     let notify = UnixDatagram::bind(&socket).unwrap();
     notify
@@ -356,10 +359,13 @@ fn refused_compose_reports_its_reason_through_native_systemd_status() {
     let len = notify.recv(&mut bytes).unwrap();
     let status = std::str::from_utf8(&bytes[..len]).unwrap();
     assert!(
-        status.starts_with("STATUS=plugin-launch: modifier @test:wrapper/main:"),
+        status.starts_with("STATUS=plugin-launch: launch command must be non-empty"),
         "{status}"
     );
-    assert!(status.contains("compose refused"), "{status}");
+    assert!(
+        status.contains("launch command must be non-empty"),
+        "{status}"
+    );
 }
 #[test]
 fn modifier_declarations_cannot_claim_another_package_or_add_runner_fields() {
@@ -483,8 +489,7 @@ fn compose_causes_survive_empty_and_nonempty_native_append() {
         let record = serde_json::json!({"enabled":true,"settings":{"sharpness":21},"config":{"append":append}}).to_string();
         let root = tempfile::tempdir().unwrap();
         let (command, _, _) = setup(root.path(), &record);
-        let result = cli(&command).output().unwrap();
-        let reason = String::from_utf8_lossy(&result.stderr);
+        let reason = korrid::launcher::plugin_launch::prepare_command(&command).unwrap_err();
         assert!(
             reason.contains("setting sharpness must be an integer 0..20 (setting-range)"),
             "{reason}"
@@ -496,8 +501,7 @@ fn compose_causes_survive_empty_and_nonempty_native_append() {
         root.path(),
         "{enabled: true, settings: {requireDisplay: true}, config: {append: '--native-option'}}",
     );
-    let result = cli(&command).output().unwrap();
-    let reason = String::from_utf8_lossy(&result.stderr);
+    let reason = korrid::launcher::plugin_launch::prepare_command(&command).unwrap_err();
     assert!(
         reason.contains("missing logical display (display-unavailable)"),
         "{reason}"
@@ -511,8 +515,7 @@ fn malformed_append_refuses_with_a_fixed_message_without_echoing_words() {
         serde_json::json!({"enabled":true,"config":{"append":"--native 'private unfinished"}})
             .to_string();
     let (command, _, _) = setup(root.path(), &record);
-    let result = cli(&command).output().unwrap();
-    let reason = String::from_utf8_lossy(&result.stderr);
+    let reason = korrid::launcher::plugin_launch::prepare_command(&command).unwrap_err();
     assert!(
         reason.contains("config.append could not be split into words"),
         "{reason}"

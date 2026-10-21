@@ -2401,55 +2401,84 @@ async fn dispatch(
     let mut response = match request {
         RpcRequest::SaveObject(_) => return Err(authorization::AuthorizationDenied),
         RpcRequest::SaveHeads(_) => {
-            let service = state.saves.as_ref().ok_or(authorization::AuthorizationDenied)?;
+            let service = state
+                .saves
+                .as_ref()
+                .ok_or(authorization::AuthorizationDenied)?;
             RpcResponse::SaveHeads(match service.heads(authorization).await {
                 Ok(value) => saves::peer::SaveHeadsOutcome::Ok(value),
                 Err(error) => saves::peer::SaveHeadsOutcome::Err(error.failure()),
             })
         }
         RpcRequest::SaveRecords(request) => {
-            let service = state.saves.as_ref().ok_or(authorization::AuthorizationDenied)?;
+            let service = state
+                .saves
+                .as_ref()
+                .ok_or(authorization::AuthorizationDenied)?;
             RpcResponse::SaveRecords(match service.records(authorization, request).await {
                 Ok(value) => saves::peer::SaveRecordsOutcome::Ok(value),
                 Err(error) => saves::peer::SaveRecordsOutcome::Err(error.failure()),
             })
         }
         RpcRequest::SaveInUse(request) => {
-            let service = state.saves.as_ref().ok_or(authorization::AuthorizationDenied)?;
+            let service = state
+                .saves
+                .as_ref()
+                .ok_or(authorization::AuthorizationDenied)?;
             RpcResponse::SaveInUse(match service.in_use(authorization, &request.game_id) {
                 Ok(value) => saves::peer::SaveInUseOutcome::Ok(value),
                 Err(error) => saves::peer::SaveInUseOutcome::Err(error.failure()),
             })
         }
         RpcRequest::SavesStatus(_) => {
-            RpcResponse::SavesStatus(saves::types::SaveStatusOutcome::Err(RpcFailure {
-                code: "SavesUnavailable".into(),
-                message: "save session integration is unavailable".into(),
-            }))
+            let result = match &state.mode {
+                ServerMode::Host(host) => host.save_status().await,
+                _ => Err(installed_routes_unsupported()),
+            };
+            RpcResponse::SavesStatus(match result {
+                Ok(value) => saves::types::SaveStatusOutcome::Ok(value),
+                Err(error) => saves::types::SaveStatusOutcome::Err(error),
+            })
         }
-        RpcRequest::SavesHistory(_) => {
-            RpcResponse::SavesHistory(saves::types::SaveHistoryOutcome::Err(RpcFailure {
-                code: "SavesUnavailable".into(),
-                message: "save session integration is unavailable".into(),
-            }))
+        RpcRequest::SavesHistory(request) => {
+            let result = match &state.mode {
+                ServerMode::Host(host) => host.save_history(request.game_id).await,
+                _ => Err(installed_routes_unsupported()),
+            };
+            RpcResponse::SavesHistory(match result {
+                Ok(value) => saves::types::SaveHistoryOutcome::Ok(value),
+                Err(error) => saves::types::SaveHistoryOutcome::Err(error),
+            })
         }
-        RpcRequest::SavesChoose(_) => {
-            RpcResponse::SavesChoose(saves::types::SaveHistoryOutcome::Err(RpcFailure {
-                code: "SavesUnavailable".into(),
-                message: "save session integration is unavailable".into(),
-            }))
+        RpcRequest::SavesChoose(request) => {
+            let result = match &state.mode {
+                ServerMode::Host(host) => host.save_pick(request, false).await,
+                _ => Err(installed_routes_unsupported()),
+            };
+            RpcResponse::SavesChoose(match result {
+                Ok(value) => saves::types::SaveHistoryOutcome::Ok(value),
+                Err(error) => saves::types::SaveHistoryOutcome::Err(error),
+            })
         }
-        RpcRequest::SavesRestore(_) => {
-            RpcResponse::SavesRestore(saves::types::SaveHistoryOutcome::Err(RpcFailure {
-                code: "SavesUnavailable".into(),
-                message: "save session integration is unavailable".into(),
-            }))
+        RpcRequest::SavesRestore(request) => {
+            let result = match &state.mode {
+                ServerMode::Host(host) => host.save_pick(request, true).await,
+                _ => Err(installed_routes_unsupported()),
+            };
+            RpcResponse::SavesRestore(match result {
+                Ok(value) => saves::types::SaveHistoryOutcome::Ok(value),
+                Err(error) => saves::types::SaveHistoryOutcome::Err(error),
+            })
         }
-        RpcRequest::SavesCheck(_) => {
-            RpcResponse::SavesCheck(saves::types::SaveCheckOutcome::Err(RpcFailure {
-                code: "SavesUnavailable".into(),
-                message: "save session integration is unavailable".into(),
-            }))
+        RpcRequest::SavesCheck(request) => {
+            let result = match &state.mode {
+                ServerMode::Host(host) => host.save_check(request, state.saves.clone()).await,
+                _ => Err(installed_routes_unsupported()),
+            };
+            RpcResponse::SavesCheck(match result {
+                Ok(value) => saves::types::SaveCheckOutcome::Ok(value),
+                Err(error) => saves::types::SaveCheckOutcome::Err(error),
+            })
         }
         RpcRequest::AcquisitionStatus(request) => {
             let outcome = (|| {
@@ -2618,7 +2647,7 @@ async fn dispatch(
                 ServerMode::Host(host) => host
                     .prepare_selected(
                         request,
-                        authorization.person_public_key(host.owner_public_key()),
+                        authorization.person_public_key(host.owner_public_key().as_deref()),
                     )
                     .await
                     .map(game_routes::SelectedGameLaunchOutcome::Ok)
@@ -2649,7 +2678,9 @@ async fn dispatch(
                     .map(CatalogSnapshotOutcome::Ok)
                     .unwrap_or_else(|error| CatalogSnapshotOutcome::Err(upstream_failure(error))),
                 ServerMode::Host(host) => host
-                    .catalog_snapshot_for(authorization.person_public_key(host.owner_public_key()))
+                    .catalog_snapshot_for(
+                        authorization.person_public_key(host.owner_public_key().as_deref()),
+                    )
                     .await
                     .map(CatalogSnapshotOutcome::Ok)
                     .unwrap_or_else(CatalogSnapshotOutcome::Err),
@@ -2773,7 +2804,7 @@ async fn dispatch(
                 (Ok(caller), ServerMode::Host(host)) => host.reserve_launch(
                     &request.game_id,
                     caller,
-                    authorization.person_public_key(host.owner_public_key()),
+                    authorization.person_public_key(host.owner_public_key().as_deref()),
                 ),
                 (Err(failure), _) => Err(failure),
                 _ => Err(installed_routes_unsupported()),
@@ -2790,7 +2821,7 @@ async fn dispatch(
                     host.start_launch(
                         request,
                         caller,
-                        authorization.person_public_key(host.owner_public_key()),
+                        authorization.person_public_key(host.owner_public_key().as_deref()),
                     )
                     .await
                 }
@@ -2809,7 +2840,7 @@ async fn dispatch(
                     host.cancel_launch(
                         &request.expected_launch_id,
                         caller,
-                        authorization.person_public_key(host.owner_public_key()),
+                        authorization.person_public_key(host.owner_public_key().as_deref()),
                     )
                     .await,
                 ),
@@ -2834,7 +2865,7 @@ async fn dispatch(
                 (ServerMode::Host(host), RpcSurface::Lan) => host
                     .prepare(
                         &request.game_id,
-                        authorization.person_public_key(host.owner_public_key()),
+                        authorization.person_public_key(host.owner_public_key().as_deref()),
                     )
                     .await
                     .map(SessionPrepareOutcome::Ok)
@@ -2864,7 +2895,7 @@ async fn dispatch(
                         .ok()
                         .map(str::to_owned);
                     let person = authorization
-                        .person_public_key(host.owner_public_key())
+                        .person_public_key(host.owner_public_key().as_deref())
                         .map(str::to_owned);
                     let observed_caller = caller.clone();
                     let observed_person = person.clone();
@@ -4206,13 +4237,14 @@ pub fn host_routers_with_storage_and_private(
     let private_state_root = private_state_root.into();
     let resources =
         FederationResources::open(&private_state_root).expect("open federation authority");
-    host_routers_with_federation(
+    let (lan, local, _) = host_routers_with_federation(
         config_path,
         storage_root,
         private_state_root,
         resources,
         portal_access,
-    )
+    );
+    (lan, local)
 }
 
 async fn require_loopback_native(
@@ -4239,7 +4271,7 @@ pub fn host_routers_with_federation(
     private_state_root: impl Into<PathBuf>,
     resources: FederationResources,
     portal_access: Option<PortalAccess>,
-) -> (Router, Router) {
+) -> (Router, Router, host::HostRuntime) {
     let private_state_root = private_state_root.into();
     let native = portal_access.clone().map(|access| {
         portal_input::router(
@@ -4266,14 +4298,15 @@ pub fn host_routers_with_federation(
     );
     // A device that freezes its portal keeps observing its own session, so a
     // game that ends while the portal cannot poll still thaws it.
-    runtime.spawn_portal_watch();
-    secure_host_routers_with_federation(
-        runtime,
+    let (lan, local) = secure_host_routers_with_federation(
+        runtime.clone(),
         &private_state_root,
         resources,
         portal_access,
         native_router,
-    )
+    );
+    runtime.spawn_portal_watch();
+    (lan, local, runtime)
 }
 
 #[cfg(test)]
@@ -4418,7 +4451,22 @@ fn secure_host_routers_with_federation(
     native_router: Option<Router>,
 ) -> (Router, Router) {
     let private_input = runtime.private_input_router();
-    let (mut lan, mut local) = app_states(runtime);
+    let (mut lan, mut local) = app_states(runtime.clone());
+    let sessions = runtime.clone();
+    let save_peer = Arc::new(
+        saves::peer::SavePeerService::new(
+            Arc::new(saves::store::NativeSaveStore::new(private_state_root)),
+            resources.credentials.clone(),
+            resources.directory.clone(),
+            private_state_root.to_owned(),
+            Arc::new(move |person, game| sessions.save_in_use(person, game)),
+        )
+        .expect("save peer service"),
+    );
+    runtime.configure_save_peer(save_peer.clone(), resources.directory.clone());
+    lan.saves = Some(save_peer.clone());
+    local.saves = Some(save_peer);
+
     let identity_switch = std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET").map(|socket| {
         Arc::new(identity_switch::IdentitySwitchCoordinator::new(
             private_state_root.to_owned(),

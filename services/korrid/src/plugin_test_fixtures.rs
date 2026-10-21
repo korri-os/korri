@@ -77,6 +77,11 @@ fn core_package(root: &Path, name: &str, source: String) -> EnabledPackage {
     )
     .unwrap();
     fs::write(package.join("settings.ts"), SETTINGS_MODULE).unwrap();
+    fs::write(
+        package.join("manifest.json"),
+        r#"{"entry":"plugin.ts","sources":["plugin.ts","retroarch.ts","settings.ts"]}"#,
+    )
+    .unwrap();
     EnabledPackage {
         id: format!("@korri:{name}"),
         package,
@@ -118,6 +123,11 @@ pub fn installed(root: &Path) -> PluginRegistry {
     fs::write(
         mgba.join("settings.ts"),
         "export const version = \"1.22.2\"\nexport const keys = {\n  video_vsync: \"Boolean\",\n  audio_volume: \"Number\",\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        mgba.join("manifest.json"),
+        r#"{"entry":"plugin.ts","sources":["plugin.ts","retroarch.ts","settings.ts"]}"#,
     )
     .unwrap();
     PluginRegistry::from_installed(vec![EnabledPackage {

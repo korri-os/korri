@@ -18,6 +18,7 @@ pub(super) struct LaunchReservation {
     pub identity: SessionPrepared,
     caller: String,
     pub person: Option<String>,
+    since: u64,
     phase: AtomicU8,
 }
 
@@ -51,6 +52,12 @@ impl LaunchReservations {
             identity: identity.clone(),
             caller: caller.into(),
             person: person.map(str::to_owned),
+            since: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+                .try_into()
+                .unwrap_or(u64::MAX),
             phase: AtomicU8::new(RESERVED),
         });
         self.0
@@ -58,6 +65,20 @@ impl LaunchReservations {
             .expect("reservation mutex poisoned")
             .insert(identity.launch_id.clone(), reservation);
         identity
+    }
+
+    pub fn in_use(&self, person: &str, game: &str) -> Option<u64> {
+        self.0
+            .lock()
+            .expect("reservation mutex poisoned")
+            .values()
+            .filter(|r| {
+                r.person.as_deref() == Some(person)
+                    && r.identity.game_id == game
+                    && !r.is_cancelled()
+            })
+            .map(|r| r.since)
+            .min()
     }
 
     /// Copy only this caller's facts, preserving multiplicity. When both locks

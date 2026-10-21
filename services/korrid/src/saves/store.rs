@@ -499,6 +499,88 @@ impl NativeSaveStore {
         Ok(())
     }
 
+    pub fn remember_in_use(
+        &self,
+        person: &str,
+        game: &str,
+        device: &str,
+        since: Option<u64>,
+    ) -> Result<(), SaveError> {
+        let _guard = lock()?;
+        super::account_root(Path::new("/"), device).map_err(SaveError::Invalid)?;
+        let path = self.game(person, game, true)?.unwrap().join("in-use.json");
+        let mut devices: BTreeMap<String, u64> = match read_json(&path) {
+            Ok(v) => v,
+            Err(SaveError::Missing) => BTreeMap::new(),
+            Err(e) => return Err(e),
+        };
+        match since {
+            Some(since) => {
+                devices.insert(device.into(), since);
+            }
+            None => {
+                devices.remove(device);
+            }
+        }
+        let bytes = serde_json::to_vec(&devices).map_err(|e| invalid(&e.to_string()))?;
+        publish(&path, &mut bytes.as_slice(), None)
+    }
+    pub fn in_use_warnings(
+        &self,
+        person: &str,
+        game: &str,
+    ) -> Result<Vec<SaveInUseWarning>, SaveError> {
+        let _guard = lock()?;
+        let Some(path) = self.game(person, game, false)? else {
+            return Ok(vec![]);
+        };
+        let mut devices: BTreeMap<String, u64> = match read_json(&path.join("in-use.json")) {
+            Ok(v) => v,
+            Err(SaveError::Missing) => BTreeMap::new(),
+            Err(e) => return Err(e),
+        };
+        let records = self.read_records(person, game)?;
+        let heads = head_ids(&records)?;
+        for record in &records {
+            if heads.contains(&snapshot_id(record)?) && !self.record_complete(record)? {
+                let time = chrono::DateTime::parse_from_rfc3339(&record.ended_at)
+                    .map_err(|_| invalid("end time"))?
+                    .timestamp_millis();
+                if let Ok(since) = u64::try_from(time) {
+                    devices.entry(record.device.clone()).or_insert(since);
+                }
+            }
+        }
+        Ok(devices
+            .into_iter()
+            .map(|(device, since)| SaveInUseWarning { device, since })
+            .collect())
+    }
+    pub fn confirmed_elsewhere(
+        &self,
+        person: &str,
+        game: &str,
+        local_device: &str,
+    ) -> Result<bool, SaveError> {
+        let _guard = lock()?;
+        let Some(path) = self.game(person, game, false)? else {
+            return Ok(false);
+        };
+        let heads = head_ids(&self.read_records(person, game)?)?;
+        let confirmations: BTreeMap<String, BTreeSet<String>> =
+            match read_json(&path.join("confirmations.json")) {
+                Ok(v) => v,
+                Err(SaveError::Missing) => BTreeMap::new(),
+                Err(e) => return Err(e),
+            };
+        Ok(!heads.is_empty()
+            && heads.iter().all(|id| {
+                confirmations
+                    .get(id)
+                    .is_some_and(|devices| devices.iter().any(|d| d != local_device))
+            }))
+    }
+
     fn person(&self, person: &str, create: bool) -> Result<Option<PathBuf>, SaveError> {
         super::account_root(Path::new("/"), person).map_err(SaveError::Invalid)?;
         if !directory(&self.root, create)? {
@@ -528,6 +610,7 @@ impl NativeSaveStore {
             let name = entry.file_name();
             let name = name.to_str().ok_or_else(|| invalid("record filename"))?;
             if name == "confirmations.json"
+                || name == "in-use.json"
                 || (name.starts_with(".save-") && name.ends_with(".tmp"))
             {
                 continue;

@@ -199,10 +199,60 @@ pub fn prepare(
     prepare_with_diagnostics(source, input, composition).map(|prepared| prepared.plan)
 }
 
-struct PreparedLaunch {
-    plan: PluginLaunchOutput,
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct PreparedLaunch {
+    pub(crate) plan: PluginLaunchOutput,
     runner_argv: Vec<String>,
-    redaction: LaunchRedaction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) release_id: Option<String>,
+}
+
+/// Private CLI handoff: evaluate once in the host, before journaling saves.
+pub(crate) fn prepare_handoff(
+    source: &Path,
+    input: &PluginLaunchInput,
+    composition: &LaunchComposition,
+    release_id: &str,
+) -> Result<String, String> {
+    let mut prepared = prepare_with_diagnostics(source, input, composition)?;
+    prepared.release_id = Some(release_id.into());
+    serde_json::to_string(&prepared).map_err(|e| e.to_string())
+}
+
+/// Host-only preparation stage. The unit accepts only the resulting plugin-launch
+/// handoff, never this declaration request. This is not a plugin operation.
+pub fn prepare_command(command: &[String]) -> Result<Vec<String>, String> {
+    if command.get(1).map(String::as_str) != Some("plugin-prepare") {
+        return Ok(command.to_vec());
+    }
+    if command.len() != 6 {
+        return Err("invalid plugin preparation request".into());
+    }
+    let input: PluginLaunchInput = serde_json::from_str(&command[3]).map_err(|e| e.to_string())?;
+    let composition: LaunchComposition =
+        serde_json::from_str(&command[4]).map_err(|e| e.to_string())?;
+    let handoff = prepare_handoff(Path::new(&command[2]), &input, &composition, &command[5])?;
+    let mut command = command.to_vec();
+    command[1] = "plugin-launch".into();
+    command[5] = handoff;
+    Ok(command)
+}
+
+pub(crate) fn declared_saves(
+    command: &[String],
+) -> Result<Option<(PluginLaunchInput, PreparedLaunch)>, String> {
+    if command.get(1).map(String::as_str) != Some("plugin-launch") {
+        return Ok(None);
+    }
+    if command.len() != 6 {
+        return Err("invalid prepared plugin handoff".into());
+    }
+    let input: PluginLaunchInput = serde_json::from_str(&command[3]).map_err(|e| e.to_string())?;
+    let prepared: PreparedLaunch = serde_json::from_str(&command[5]).map_err(|e| e.to_string())?;
+    validate_plan(&prepared.plan)?;
+    validate_save_locations(&input.save_root, &prepared.plan.save_locations)?;
+    Ok(Some((input, prepared)))
 }
 
 fn prepare_with_diagnostics(
@@ -273,7 +323,7 @@ fn prepare_with_diagnostics(
     Ok(PreparedLaunch {
         plan,
         runner_argv,
-        redaction,
+        release_id: None,
     })
 }
 
@@ -351,7 +401,9 @@ fn validate_plan(plan: &PluginLaunchOutput) -> Result<(), String> {
 
 /// Used by the host before the unit starts. The handoff is authored only by korrid.
 pub(crate) fn has_modifiers(command: &[String]) -> bool {
-    command.get(1).is_some_and(|v| v == "plugin-launch")
+    command
+        .get(1)
+        .is_some_and(|v| v == "plugin-launch" || v == "plugin-prepare")
         && command
             .get(4)
             .and_then(|v| serde_json::from_str::<LaunchComposition>(v).ok())
@@ -359,7 +411,12 @@ pub(crate) fn has_modifiers(command: &[String]) -> bool {
 }
 
 /// CLI-only entrypoint. Refuse root even when invoked outside the unit.
-pub fn execute(source: &Path, input: &str, composition: &str) -> Result<(), String> {
+pub fn execute(
+    _source: &Path,
+    input: &str,
+    composition: &str,
+    prepared: &str,
+) -> Result<(), String> {
     if unsafe { libc::geteuid() } == 0 {
         return Err("plugin launch effects require an unprivileged runtime user".into());
     }
@@ -369,8 +426,12 @@ pub fn execute(source: &Path, input: &str, composition: &str) -> Result<(), Stri
     let PreparedLaunch {
         plan: output,
         runner_argv,
-        mut redaction,
-    } = prepare_with_diagnostics(source, &input, &composition)?;
+        ..
+    } = serde_json::from_str::<PreparedLaunch>(prepared).map_err(|e| e.to_string())?;
+    validate_plan(&output)?;
+    validate_save_locations(&input.save_root, &output.save_locations)?;
+    let mut redaction = LaunchRedaction::from_composition(&composition)?;
+    redaction.add_env(output.env.values().cloned());
     let mut environment: std::collections::BTreeMap<_, _> = std::env::vars().collect();
     for key in &output.env_unset {
         environment.remove(key);

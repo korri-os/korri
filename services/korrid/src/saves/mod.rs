@@ -1,9 +1,9 @@
 //! Session-bound save history. No filesystem path crosses the peer boundary.
 mod history;
+pub mod peer;
 pub mod record;
 pub mod store;
 pub mod types;
-pub mod peer;
 
 use std::{fs::File, io::Read};
 use types::{SaveHeads, SnapshotRecord};
@@ -54,4 +54,26 @@ pub fn account_root(root: &std::path::Path, person: &str) -> Result<std::path::P
     Ok(root
         .join("users")
         .join(crate::host::play_log::encode_uri_component(person)))
+}
+
+/// The one-time local side of first sync. Migrated files must enter history
+/// before any received snapshot may replace them at a launch boundary.
+pub(crate) fn capture_initial(
+    store: &store::NativeSaveStore,
+    person: &str,
+    locations: &[types::SaveLocation],
+    template: types::SnapshotRecord,
+) -> Result<(), SaveError> {
+    if store
+        .records(person, &template.game_id)?
+        .iter()
+        .any(|r| r.device == template.device)
+    {
+        return Ok(());
+    }
+    let record = store.capture(locations, template)?;
+    if record.locations.iter().any(|l| !l.files.is_empty()) {
+        store.put_record(person, &record)?;
+    }
+    Ok(())
 }

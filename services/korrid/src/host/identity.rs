@@ -20,7 +20,7 @@ use super::{play_log::PlayEntry, systemd_unit::validate_launch_id};
 
 pub(super) const ACTIVE_FILE: &str = "active.json";
 pub(super) const TEMP_ACTIVE_PREFIX: &str = ".active.json-";
-const MAX_ACTIVE_BYTES: usize = 4 * 1024;
+const MAX_ACTIVE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_GAME_ID_BYTES: usize = 1_024;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -39,6 +39,18 @@ pub(super) enum ActiveSession {
         person_public_key: Option<String>,
         #[serde(rename = "startedAt")]
         started_at: u64,
+        #[serde(rename = "saveBase", default, skip_serializing_if = "Option::is_none")]
+        save_base: Option<String>,
+        #[serde(rename = "releaseId", default, skip_serializing_if = "Option::is_none")]
+        release_id: Option<String>,
+        #[serde(rename = "runnerId", default, skip_serializing_if = "Option::is_none")]
+        runner_id: Option<String>,
+        #[serde(
+            rename = "saveLocations",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        save_locations: Option<Vec<crate::saves::types::SaveLocation>>,
     },
     CompletionPending {
         #[serde(rename = "launchId")]
@@ -50,6 +62,12 @@ pub(super) enum ActiveSession {
         #[serde(rename = "startedAt")]
         started_at: u64,
         entry: PlayEntry,
+        #[serde(
+            rename = "saveSnapshot",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        save_snapshot: Option<crate::saves::types::SnapshotRecord>,
     },
 }
 
@@ -65,6 +83,10 @@ impl ActiveSession {
             game_id,
             person_public_key,
             started_at,
+            save_base: None,
+            release_id: None,
+            runner_id: None,
+            save_locations: None,
         }
     }
 
@@ -110,6 +132,38 @@ impl ActiveSession {
             {
                 return Err("host recovery person identity is invalid".into());
             }
+        }
+        match self {
+            Self::Running {
+                save_base,
+                runner_id,
+                save_locations,
+                ..
+            } => {
+                if let Some(base) = save_base {
+                    crate::saves::record::hash_hex(base)
+                        .map_err(|_| "host recovery save base is invalid")?;
+                }
+                if save_locations
+                    .as_ref()
+                    .is_some_and(|locations| !locations.is_empty())
+                    && (runner_id.as_ref().is_none_or(|id| id.is_empty()) || person.is_none())
+                {
+                    return Err("host recovery save metadata is incomplete".into());
+                }
+            }
+            Self::CompletionPending {
+                game_id,
+                save_snapshot: Some(snapshot),
+                ..
+            } => {
+                if &snapshot.game_id != game_id {
+                    return Err("host recovery save game does not match".into());
+                }
+                crate::saves::record::canonical_record(snapshot)
+                    .map_err(|_| "host recovery save snapshot is invalid")?;
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -438,7 +492,7 @@ mod tests {
         );
         for extra in [
             "\"extra\":true".to_owned(),
-            "\"runnerId\":\"@korri:mgba/mgba\"".to_owned(),
+            "\"oldRunner\":\"@korri:mgba/mgba\"".to_owned(),
         ] {
             write(
                 format!(
@@ -515,6 +569,7 @@ mod tests {
         let state = root.path().join("host-session");
         persist_active(&state, &record()).unwrap();
         let pending = ActiveSession::CompletionPending {
+            save_snapshot: None,
             launch_id: LAUNCH.into(),
             game_id: "wario".into(),
             person_public_key: PERSON.into(),

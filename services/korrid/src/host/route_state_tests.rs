@@ -30,6 +30,7 @@ fn library_router(root: &Path, registry: crate::plugin::PluginRegistry) -> Route
         Arc::new(InMemoryLaunchUnitBackend::default()),
     )
     .with_route_registry(root.into(), registry);
+    runtime.claim_save_owner();
     crate::plain_host_routers_for_tests(runtime).0
 }
 

@@ -144,6 +144,7 @@ struct DirectoryState {
 
 #[derive(Clone)]
 pub struct FederationDirectory {
+    contacts: tokio::sync::broadcast::Sender<String>,
     state: Arc<Mutex<DirectoryState>>,
     credentials: PeerCredentials,
     authorization: Authorization,
@@ -152,6 +153,11 @@ pub struct FederationDirectory {
 }
 
 impl FederationDirectory {
+    /// Verified contact notifications for the owning host's replication task.
+    pub(crate) fn save_contacts(&self) -> tokio::sync::broadcast::Receiver<String> {
+        self.contacts.subscribe()
+    }
+
     pub fn reset_persisted_after_identity_switch(root: &Path) -> Result<(), FederationError> {
         let identity =
             DeviceIdentity::load_or_create(root).map_err(|_| FederationError::Identity)?;
@@ -261,6 +267,7 @@ impl FederationDirectory {
             })
             .map_err(|_| FederationError::Identity)??;
         Ok(Self {
+            contacts: tokio::sync::broadcast::channel(64).0,
             state: Arc::new(Mutex::new(state)),
             credentials,
             authorization,
@@ -540,6 +547,7 @@ impl FederationDirectory {
             peer.last_seen = peer.last_seen.max(now);
             state.store.save(encode(&memory)?)?;
             state.memory = memory;
+            let _ = self.contacts.send(endpoint.device_public_key);
             Ok(true)
         })
     }
@@ -610,9 +618,14 @@ impl FederationDirectory {
                 return Err(FederationError::Stale);
             }
             let attempt = next_epoch(live.attempt)?;
+            let contacted =
+                matches!(value, PeerState::Ready) && !matches!(live.state, PeerState::Ready);
             live.state = value;
             live.updated_at = live.updated_at.max(now);
             live.attempt = attempt;
+            if contacted {
+                let _ = self.contacts.send(device.into());
+            }
             Ok(())
         })
     }

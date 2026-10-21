@@ -15,6 +15,7 @@ mod private_input;
 pub(crate) mod retroarch_control;
 #[cfg(test)]
 mod route_state_tests;
+mod saves;
 mod session_state;
 mod systemd_unit;
 
@@ -219,6 +220,7 @@ fn identity_keys(private_state_root: &Path) -> (Option<String>, Option<String>) 
 
 #[derive(Clone)]
 pub struct HostRuntime {
+    save_service: Arc<std::sync::OnceLock<Arc<crate::saves::peer::SavePeerService>>>,
     private_state_root: PathBuf,
     route_write_lock: Arc<std::sync::Mutex<()>>,
     launch_reservations: launch_reservation::LaunchReservations,
@@ -235,7 +237,6 @@ pub struct HostRuntime {
     launcher: Option<HostLauncher>,
     dynamic: Option<DynamicHostSource>,
     device_public_key: Option<String>,
-    owner_public_key: Option<String>,
     moonlight_certificate: Arc<dyn MoonlightCertificateAdapter>,
     moonlight_certificate_permits: Arc<tokio::sync::Semaphore>,
     retroarch_control: Arc<dyn RetroarchControlExecutor>,
@@ -294,9 +295,10 @@ impl HostRuntime {
             launcher
         });
         let dynamic = storage_root.map(DynamicHostSource::Installed);
-        let (device_public_key, owner_public_key) = identity_keys(&private_state_root);
+        let (device_public_key, _) = identity_keys(&private_state_root);
         Self {
             private_state_root,
+            save_service: Arc::new(std::sync::OnceLock::new()),
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
             launch_reservations: launch_reservation::LaunchReservations::default(),
             #[cfg(test)]
@@ -311,7 +313,6 @@ impl HostRuntime {
             launcher,
             dynamic,
             device_public_key,
-            owner_public_key,
             moonlight_certificate: moonlight_certificate::production_adapter(),
             moonlight_certificate_permits: Arc::new(tokio::sync::Semaphore::new(
                 MAX_CONCURRENT_CERTIFICATE_CONTROLS,
@@ -339,9 +340,10 @@ impl HostRuntime {
             .ok()
             .map(|config| HostLauncher::with_backend(config, &private_state_root, backend));
         let dynamic = storage_root.map(DynamicHostSource::Installed);
-        let (device_public_key, owner_public_key) = identity_keys(&private_state_root);
+        let (device_public_key, _) = identity_keys(&private_state_root);
         Self {
             private_state_root,
+            save_service: Arc::new(std::sync::OnceLock::new()),
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
             launch_reservations: launch_reservation::LaunchReservations::default(),
             after_runner_choice_write: None,
@@ -352,7 +354,6 @@ impl HostRuntime {
             launcher,
             dynamic,
             device_public_key,
-            owner_public_key,
             moonlight_certificate: moonlight_certificate::production_adapter(),
             moonlight_certificate_permits: Arc::new(tokio::sync::Semaphore::new(
                 MAX_CONCURRENT_CERTIFICATE_CONTROLS,
@@ -438,7 +439,7 @@ impl HostRuntime {
         }
         let mut failures = Vec::new();
         if let Some(dynamic) = &self.dynamic {
-            let dynamic = dynamic.load(self.launch_person()?)?;
+            let dynamic = dynamic.load(&self.launch_person()?)?;
             dynamic.validate_static_games(config)?;
             failures.extend(
                 dynamic
@@ -468,14 +469,41 @@ impl HostRuntime {
         })
     }
 
-    fn launch_person(&self) -> Result<&str, RpcFailure> {
-        self.owner_public_key
-            .as_deref()
+    fn launch_person(&self) -> Result<String, RpcFailure> {
+        self.owner_public_key()
             .ok_or_else(|| dynamic_failure("device has no owner for per-person saves"))
     }
 
-    pub fn owner_public_key(&self) -> Option<&str> {
-        self.owner_public_key.as_deref()
+    pub fn owner_public_key(&self) -> Option<String> {
+        let identity = DeviceIdentity::load_or_create(&self.private_state_root).ok()?;
+        match identity.state() {
+            crate::identity::IdentityState::Owned {
+                owner_public_key, ..
+            } => Some(owner_public_key.clone()),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    fn claim_save_owner(&self) {
+        use nostr::prelude::{EventBuilder, FinalizeEvent, Keys, Kind, SecretKey, Tag, Timestamp};
+        let mut secret = [0u8; 32];
+        secret[31] = 3;
+        let keys = Keys::new(SecretKey::from_slice(&secret).unwrap());
+        let mut identity = DeviceIdentity::load_or_create(&self.private_state_root).unwrap();
+        let template = identity
+            .owner_statement_template(crate::identity::OwnerStatementStatus::Owned, 100)
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&template).unwrap();
+        let tags: Vec<Vec<String>> = serde_json::from_value(value["tags"].clone()).unwrap();
+        let event = EventBuilder::new(Kind::Custom(crate::identity::OWNER_EVENT_KIND), "")
+            .tags(tags.into_iter().map(|t| Tag::parse(t).unwrap()))
+            .custom_created_at(Timestamp::from(100))
+            .finalize(&keys)
+            .unwrap();
+        identity
+            .apply_signed_owner_binding(&template, &keys.public_key().to_hex(), &event.as_json())
+            .unwrap();
     }
 
     /// ADR 0017: give an installed library its discovery coordinator, on the
@@ -589,7 +617,7 @@ impl HostRuntime {
             config_failure(self.config.as_ref().expect_err("invalid host config"))
         })?;
         if let Some(dynamic) = &self.dynamic {
-            let dynamic = dynamic.load(self.launch_person()?)?;
+            let dynamic = dynamic.load(&self.launch_person()?)?;
             dynamic.validate_static_games(self.config.as_ref().map_err(config_failure)?)?;
             if dynamic.declared_ids.contains(game_id) {
                 let command = self.route_root().and_then(|root| {
@@ -598,7 +626,7 @@ impl HostRuntime {
                         &self.route_registry()?,
                         game_id,
                         compositor_focus::launch_display(),
-                        self.launch_person()?,
+                        &self.launch_person()?,
                     )
                     .map(|launch| launch.command)
                 });
@@ -658,7 +686,7 @@ impl HostRuntime {
                 runtime.route_root()?,
                 &registry,
                 &game_id,
-                runtime.launch_person()?,
+                &runtime.launch_person()?,
             )
         })
         .await
@@ -901,7 +929,7 @@ impl HostRuntime {
                 // Preserve the command producer's existing collision check.
                 if let Some(dynamic) = &self.dynamic {
                     dynamic
-                        .load(self.launch_person()?)?
+                        .load(&self.launch_person()?)?
                         .validate_static_games(config)?;
                 }
                 if request.runner_id.is_some() || request.overrides.is_some() {
@@ -935,7 +963,7 @@ impl HostRuntime {
                     &route,
                     request.overrides.clone(),
                     compositor_focus::launch_display(),
-                    self.launch_person()?,
+                    &self.launch_person()?,
                 )
                 .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
                 (launch.command, Some(route.runner_id), launch.warnings)
@@ -986,7 +1014,7 @@ impl HostRuntime {
                 &registry,
                 &request,
                 compositor_focus::launch_display(),
-                runtime.launch_person()?,
+                &runtime.launch_person()?,
             )?;
             let session = runtime
                 .launcher
@@ -1427,7 +1455,7 @@ impl HostRuntime {
         let title = game_id.and_then(|game_id| {
             self.dynamic
                 .as_ref()
-                .and_then(|dynamic| dynamic.load(self.launch_person().ok()?).ok())
+                .and_then(|dynamic| dynamic.load(&self.launch_person().ok()?).ok())
                 .and_then(|dynamic| {
                     dynamic
                         .games
@@ -1606,8 +1634,7 @@ mod tests {
             pool,
         ));
         runtime.control().unwrap().initialize_input(4).unwrap();
-        runtime.owner_public_key =
-            Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9".into());
+        runtime.claim_save_owner();
         runtime
     }
 
@@ -2495,7 +2522,7 @@ esac
         )
         .unwrap();
         let command = &launch.command;
-        assert_eq!(command[1], "plugin-launch");
+        assert_eq!(command[1], "plugin-prepare");
         let input: crate::launcher::plugin_launch::PluginLaunchInput =
             serde_json::from_str(&command[3]).unwrap();
         assert_eq!(input.program, executable.display().to_string());
@@ -2565,7 +2592,7 @@ esac
         )
         .unwrap();
         let command = &launch.command;
-        assert_eq!(command[1], "plugin-launch");
+        assert_eq!(command[1], "plugin-prepare");
         let input: crate::launcher::plugin_launch::PluginLaunchInput =
             serde_json::from_str(&command[3]).unwrap();
         assert_eq!(input.runner_id, "@korri:mgba/mgba");
@@ -2610,8 +2637,7 @@ esac
         fs::write(&config, "label = \"zao\"\n[[games]]\nid = \"static\"\ntitle = \"Static game\"\ncommand = [\"game\"]\n").unwrap();
         let mut host =
             HostRuntime::from_paths_with_private_state(&config, None, root.path().join("private"));
-        host.owner_public_key =
-            Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9".into());
+        host.claim_save_owner();
         host.dynamic = Some(DynamicHostSource::Fixed(runtime));
         let catalog = host.catalog_snapshot().unwrap();
         assert_eq!(catalog.games.len(), 2);

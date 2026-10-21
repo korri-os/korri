@@ -243,6 +243,8 @@ pub struct HostSessionControl {
     input_seats: Arc<dyn InputSeatManager>,
     identity_root: PathBuf,
     play_log: PlayLogStore,
+    save_push: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<String>>>>,
+    shutting_down: Arc<std::sync::atomic::AtomicBool>,
     clock: Arc<dyn WallClock>,
     state: Arc<Mutex<ActiveState>>,
     seat_lease: Arc<Mutex<Option<(String, Box<dyn InputSeatLease>)>>>,
@@ -297,6 +299,8 @@ impl HostSessionControl {
             input_seats,
             identity_root,
             play_log: PlayLogStore::new(private_state_root),
+            save_push: Arc::new(Mutex::new(None)),
+            shutting_down: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             clock,
             state: Arc::new(Mutex::new(ActiveState::RecoveryPending)),
             seat_lease: Arc::new(Mutex::new(None)),
@@ -807,11 +811,21 @@ impl HostSessionControl {
     /// `completionPending` is written before the log. Recording is
     /// idempotent for its exact entry, so restart at every boundary is safe.
     fn complete_active(&self) -> Result<(), String> {
+        self.complete_active_snapshot(self.shutting_down.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    fn complete_active_snapshot(&self, interrupted: bool) -> Result<(), String> {
+        use crate::saves::{store::NativeSaveStore, types::SnapshotRecord, SaveRepository};
         let Some(record) = read_active(&self.identity_root)? else {
             return Ok(());
         };
         self.input_seats.end_session(record.launch_id())?;
-        let (key, entry) = match record {
+        let store = NativeSaveStore::new(
+            self.identity_root
+                .parent()
+                .ok_or("private state root missing")?,
+        );
+        let (key, entry, save_snapshot) = match record {
             ActiveSession::Running {
                 person_public_key: None,
                 ..
@@ -824,7 +838,10 @@ impl HostSessionControl {
                 game_id,
                 person_public_key: Some(person),
                 started_at,
-                ..
+                save_base,
+                release_id,
+                runner_id,
+                save_locations,
             } => {
                 let key = PlayHistoryKey {
                     user_id: person.clone(),
@@ -836,6 +853,37 @@ impl HostSessionControl {
                     .play_log
                     .unique_completion_entry(&key, now.saturating_mul(1_000), duration_seconds)
                     .map_err(|error| error.to_string())?;
+                let save_snapshot = match (runner_id, save_locations) {
+                    (Some(runner_id), Some(locations)) if !locations.is_empty() => {
+                        let identity = crate::identity::DeviceIdentity::load_or_create(
+                            self.identity_root.parent().unwrap(),
+                        )
+                        .map_err(|e| e.to_string())?;
+                        let device = identity
+                            .device_public_key()
+                            .ok_or("device identity missing")?
+                            .to_owned();
+                        Some(
+                            store
+                                .capture(
+                                    &locations,
+                                    SnapshotRecord {
+                                        parents: save_base.into_iter().collect(),
+                                        game_id: game_id.clone(),
+                                        release_id,
+                                        runner_id,
+                                        device,
+                                        ended_at: entry.occurred_at.clone(),
+                                        duration_seconds: now.saturating_sub(started_at),
+                                        interrupted,
+                                        locations: Vec::new(),
+                                    },
+                                )
+                                .map_err(|e| e.to_string())?,
+                        )
+                    }
+                    _ => None,
+                };
                 replace_active(
                     &self.identity_root,
                     &ActiveSession::CompletionPending {
@@ -844,14 +892,16 @@ impl HostSessionControl {
                         person_public_key: person,
                         started_at,
                         entry: entry.clone(),
+                        save_snapshot: save_snapshot.clone(),
                     },
                 )?;
-                (key, entry)
+                (key, entry, save_snapshot)
             }
             ActiveSession::CompletionPending {
                 game_id,
                 person_public_key,
                 entry,
+                save_snapshot,
                 ..
             } => (
                 PlayHistoryKey {
@@ -859,12 +909,72 @@ impl HostSessionControl {
                     game_id,
                 },
                 entry,
+                save_snapshot,
             ),
         };
+        let has_snapshot = save_snapshot.is_some();
+        if let Some(snapshot) = save_snapshot {
+            store
+                .put_record(&key.user_id, &snapshot)
+                .map_err(|e| e.to_string())?;
+        }
         self.play_log
             .record(&key, entry)
             .map_err(|error| error.to_string())?;
-        clear_active(&self.identity_root)
+        clear_active(&self.identity_root)?;
+        if has_snapshot {
+            self.notify_save_snapshot(&key.game_id);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn set_save_push(&self, sender: tokio::sync::mpsc::UnboundedSender<String>) {
+        *self.save_push.lock().expect("save push lock poisoned") = Some(sender);
+    }
+    pub(crate) fn notify_save_snapshot(&self, game: &str) {
+        if let Some(sender) = self
+            .save_push
+            .lock()
+            .expect("save push lock poisoned")
+            .as_ref()
+        {
+            let _ = sender.send(game.into());
+        }
+    }
+    pub(crate) fn save_in_use(&self, person: &str, game: &str) -> Result<Option<u64>, String> {
+        let _guard = self.lock_state();
+        match read_active(&self.identity_root)? {
+            Some(ActiveSession::Running {
+                person_public_key: Some(owner),
+                game_id,
+                started_at,
+                ..
+            }) if owner == person && game_id == game => Ok(Some(started_at.saturating_mul(1000))),
+            _ => Ok(None),
+        }
+    }
+    pub(crate) fn shutdown(&self) -> Result<(), String> {
+        self.shutting_down
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let id = {
+            let _guard = self.lock_state();
+            read_active(&self.identity_root)?.map(|r| r.launch_id().to_owned())
+        };
+        if let Some(id) = id {
+            self.status();
+            self.stop(&id);
+            for _ in 0..100 {
+                self.status();
+                if read_active(&self.identity_root)?.is_none() {
+                    return Ok(());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            return Err(
+                "game did not exit during shutdown; interrupted snapshot remains pending".into(),
+            );
+        }
+        Ok(())
     }
 
     fn ensure_seats(&self, launch_id: &str) -> Result<(), String> {
@@ -1084,6 +1194,9 @@ impl HostSessionControl {
         runner_id: Option<&str>,
         reservation: Option<&LaunchReservation>,
     ) -> Result<SessionPrepared, RpcFailure> {
+        if self.shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(failure("HostStopping", "korrid is stopping"));
+        }
         let mut state = self.lock_state();
         self.input_seats
             .ready()
@@ -1125,7 +1238,9 @@ impl HostSessionControl {
         }
         // Stored route choices apply to new launches, not the running game.
         // Resolve failures only after resume and conflicts under the same lock.
-        let configured_command = configured_command?;
+        let prepared_command = crate::launcher::plugin_launch::prepare_command(configured_command?)
+            .map_err(|message| failure("LocalRouteUnavailable", message))?;
+        let configured_command = prepared_command.as_slice();
         if let Some(person) = person_public_key {
             self.play_log
                 .validate_key(&PlayHistoryKey {
@@ -1157,12 +1272,118 @@ impl HostSessionControl {
             }
             None => crate::generate_launch_id(),
         };
-        let active = ActiveSession::running(
+        let mut active = ActiveSession::running(
             launch_id.clone(),
             game_id.into(),
             person_public_key.map(str::to_owned),
             self.clock.now_epoch_seconds(),
         );
+        if let Some((input, prepared)) =
+            crate::launcher::plugin_launch::declared_saves(configured_command)
+                .map_err(|message| failure("SaveDeclarationInvalid", message))?
+        {
+            if !prepared.plan.save_locations.is_empty() {
+                use crate::saves::{store::NativeSaveStore, SaveRepository};
+                let person = person_public_key.ok_or_else(|| {
+                    failure(
+                        "SaveIdentityUnavailable",
+                        "save history requires a person identity",
+                    )
+                })?;
+                if std::path::Path::new(&input.account_root)
+                    .file_name()
+                    .and_then(|v| v.to_str())
+                    != Some(person)
+                {
+                    return Err(failure(
+                        "SaveIdentityChanged",
+                        "The device owner changed. Launch again.",
+                    ));
+                }
+                let store =
+                    NativeSaveStore::new(self.identity_root.parent().expect("private state root"));
+                let identity = crate::identity::DeviceIdentity::load_or_create(
+                    self.identity_root.parent().unwrap(),
+                )
+                .map_err(|e| failure("SaveIdentityUnavailable", e.to_string()))?;
+                crate::saves::capture_initial(
+                    &store,
+                    person,
+                    &prepared.plan.save_locations,
+                    crate::saves::types::SnapshotRecord {
+                        parents: vec![],
+                        game_id: game_id.into(),
+                        release_id: prepared.release_id.clone(),
+                        runner_id: input.runner_id.clone(),
+                        device: identity
+                            .device_public_key()
+                            .ok_or_else(|| {
+                                failure("SaveIdentityUnavailable", "device identity missing")
+                            })?
+                            .into(),
+                        ended_at: chrono::DateTime::from_timestamp(
+                            self.clock.now_epoch_seconds() as i64,
+                            0,
+                        )
+                        .ok_or_else(|| failure("SavesUnavailable", "invalid session time"))?
+                        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                        duration_seconds: 0,
+                        interrupted: false,
+                        locations: vec![],
+                    },
+                )
+                .map_err(|e| failure("SavesUnavailable", e.to_string()))?;
+                if store
+                    .reconcile(person, game_id)
+                    .map_err(|e| failure("SavesUnavailable", e.to_string()))?
+                    == crate::saves::types::SaveMark::Split
+                {
+                    return Err(failure(
+                        "SavesSplit",
+                        "Saves split between two devices. Choose one before launch.",
+                    ));
+                }
+                let heads = store
+                    .heads(person)
+                    .map_err(|e| failure("SavesUnavailable", e.to_string()))?
+                    .games
+                    .into_iter()
+                    .find(|g| g.game_id == game_id)
+                    .map(|g| g.heads)
+                    .unwrap_or_default();
+                if heads.len() > 1 {
+                    return Err(failure(
+                        "SavesUnavailable",
+                        "save content is still arriving",
+                    ));
+                }
+                let base = heads.into_iter().next();
+                if let Some(id) = &base {
+                    store
+                        .materialize(
+                            person,
+                            game_id,
+                            id,
+                            &input.save_root,
+                            &prepared.plan.save_locations,
+                        )
+                        .map_err(|e| failure("SavesUnavailable", e.to_string()))?;
+                }
+                if let ActiveSession::Running {
+                    save_base,
+                    release_id,
+                    runner_id,
+                    save_locations,
+                    ..
+                } = &mut active
+                {
+                    *save_base = base;
+                    *release_id = prepared.release_id;
+                    *runner_id = Some(input.runner_id);
+                    *save_locations = Some(prepared.plan.save_locations);
+                }
+            }
+        }
         persist_active(&self.identity_root, &active).map_err(|message| {
             *state = ActiveState::RecoveryBlocked;
             failure("HostRecoveryBlocked", message)
@@ -1448,7 +1669,7 @@ impl HostSessionControl {
     ) -> Result<(), ()> {
         if self.stop_seats(&launch_id).is_err()
             || self.clear_failed_unit(&launch_id).is_err()
-            || self.complete_active().is_err()
+            || self.complete_active_snapshot(true).is_err()
         {
             *state = ActiveState::RecoveryBlocked;
             return Err(());
@@ -1460,7 +1681,9 @@ impl HostSessionControl {
     fn recover_failed_unit(&self, launch_id: String, message: String) -> ActiveState {
         // Input is not initialized during recovery. As with normal completion,
         // input initialization later reconciles the receiver's retained lease.
-        if self.clear_failed_unit(&launch_id).is_err() || self.complete_active().is_err() {
+        if self.clear_failed_unit(&launch_id).is_err()
+            || self.complete_active_snapshot(true).is_err()
+        {
             ActiveState::RecoveryBlocked
         } else {
             ActiveState::Failed { launch_id, message }
@@ -2227,7 +2450,7 @@ impl HostSessionControl {
         match persisted {
             Ok(None) if live.is_empty() => ActiveState::NoActive,
             Ok(Some(ActiveSession::CompletionPending { .. })) if live.is_empty() => {
-                if self.complete_active().is_ok() {
+                if self.complete_active_snapshot(true).is_ok() {
                     ActiveState::NoActive
                 } else {
                     ActiveState::RecoveryBlocked
@@ -2254,7 +2477,9 @@ impl HostSessionControl {
                         launch_id: record.launch_id().to_owned(),
                         game_id: Some(record.game_id().to_owned()),
                     },
-                    Ok(LaunchUnitState::Completed) if self.complete_active().is_ok() => {
+                    Ok(LaunchUnitState::Completed)
+                        if self.complete_active_snapshot(true).is_ok() =>
+                    {
                         ActiveState::NoActive
                     }
                     Ok(LaunchUnitState::Completed) => ActiveState::RecoveryBlocked,
@@ -2266,7 +2491,9 @@ impl HostSessionControl {
             }
             Ok(Some(record @ ActiveSession::Running { .. })) if live.is_empty() => {
                 match backend.state(record.launch_id()) {
-                    Ok(LaunchUnitState::Completed) if self.complete_active().is_ok() => {
+                    Ok(LaunchUnitState::Completed)
+                        if self.complete_active_snapshot(true).is_ok() =>
+                    {
                         ActiveState::NoActive
                     }
                     Ok(LaunchUnitState::Completed) => ActiveState::RecoveryBlocked,
@@ -6144,6 +6371,117 @@ mod tests {
     }
 
     #[test]
+    fn save_session_captures_after_exit_and_not_while_live_or_frozen() {
+        use crate::saves::{store::NativeSaveStore, SaveRepository};
+        let root = tempfile::tempdir().unwrap();
+        let save_root = root.path().join("game");
+        let folder = save_root.join("saves");
+        fs::create_dir_all(&folder).unwrap();
+        let input = serde_json::json!({"runnerId":"mgba","program":"game","accountRoot":root.path().join("users").join(PERSON),"saveRoot":save_root,"cacheRoot":root.path(),"files":{},"artifacts":{}});
+        let handoff = serde_json::json!({"plan":{"command":"game","args":[],"saveLocations":[{"key":"saves","kind":"save","path":folder}]},"runnerArgv":["game"],"releaseId":"gba-release"});
+        let command = vec![
+            "korrid".into(),
+            "plugin-launch".into(),
+            "unused-source".into(),
+            input.to_string(),
+            "{\"modifiers\":[]}".into(),
+            handoff.to_string(),
+        ];
+        let backend = Arc::new(DeterministicBackend::default());
+        let clock = TestClock::at(1_700_000_000);
+        let control = control_with_clock(root.path(), backend.clone(), clock.clone());
+        let started = control
+            .prepare("gba/wario", Some(PERSON), Ok(&command), &BTreeMap::new())
+            .unwrap();
+        fs::write(folder.join("game.srm"), b"progress").unwrap();
+        let store = NativeSaveStore::new(root.path());
+        assert!(store.records(PERSON, "gba/wario").unwrap().is_empty());
+        control.freeze(&started.launch_id);
+        assert!(store.records(PERSON, "gba/wario").unwrap().is_empty());
+        clock.advance(30);
+        backend.insert(&started.launch_id, LaunchUnitState::Completed);
+        control.status();
+        let records = store.records(PERSON, "gba/wario").unwrap();
+        assert_eq!(records.len(), 1);
+        assert!(!records[0].interrupted);
+        assert_eq!(records[0].duration_seconds, 30);
+    }
+
+    #[test]
+    fn korrid_shutdown_stops_a_frozen_game_and_captures_an_interrupted_snapshot() {
+        use crate::saves::{store::NativeSaveStore, SaveRepository};
+        let root = tempfile::tempdir().unwrap();
+        let save_root = root.path().join("game");
+        let folder = save_root.join("saves");
+        fs::create_dir_all(&folder).unwrap();
+        let input = serde_json::json!({"runnerId":"mgba","program":"game","accountRoot":root.path().join("users").join(PERSON),"saveRoot":save_root,"cacheRoot":root.path(),"files":{},"artifacts":{}});
+        let handoff = serde_json::json!({"plan":{"command":"game","args":[],"saveLocations":[{"key":"saves","kind":"save","path":folder}]},"runnerArgv":["game"],"releaseId":"gba-release"});
+        let command = vec![
+            "korrid".into(),
+            "plugin-launch".into(),
+            "unused-source".into(),
+            input.to_string(),
+            "{\"modifiers\":[]}".into(),
+            handoff.to_string(),
+        ];
+        let backend = Arc::new(DeterministicBackend::default());
+        let clock = TestClock::at(1_700_000_000);
+        let control = control_with_clock(root.path(), backend.clone(), clock.clone());
+        let started = control
+            .prepare("gba/wario", Some(PERSON), Ok(&command), &BTreeMap::new())
+            .unwrap();
+        fs::write(folder.join("game.srm"), b"progress").unwrap();
+        let store = NativeSaveStore::new(root.path());
+        assert!(store.records(PERSON, "gba/wario").unwrap().is_empty());
+        control.freeze(&started.launch_id);
+        assert!(store.records(PERSON, "gba/wario").unwrap().is_empty());
+        clock.advance(30);
+        control.shutdown().unwrap();
+        let records = store.records(PERSON, "gba/wario").unwrap();
+        assert_eq!(records.len(), 1);
+        assert!(records[0].interrupted);
+        assert_eq!(records[0].duration_seconds, 30);
+    }
+
+    #[test]
+    fn restart_captures_interrupted_saves_on_the_recorded_base_once() {
+        use crate::saves::{store::NativeSaveStore, SaveRepository};
+        let root = tempfile::tempdir().unwrap();
+        let saves = root.path().join("game-saves");
+        fs::create_dir(&saves).unwrap();
+        fs::write(saves.join("game.srm"), b"interrupted progress").unwrap();
+        let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let base = format!("sha256:{}", "1".repeat(64));
+        let record: ActiveSession = serde_json::from_value(serde_json::json!({
+            "phase":"running","launchId":id,"gameId":"gba/wario","personPublicKey":PERSON,
+            "startedAt":1700000000,"saveBase":base,"runnerId":"mgba","releaseId":"gba-release",
+            "saveLocations":[{"key":"saves","kind":"save","path":saves}]
+        }))
+        .unwrap();
+        persist_active(&root.path().join("host-session"), &record).unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.insert(id, LaunchUnitState::Completed);
+        let recovered = control_with_clock(root.path(), backend, TestClock::at(1_700_000_120));
+        assert_eq!(recovered.status(), HostSessionStatus::NoActive);
+        let history = NativeSaveStore::new(root.path())
+            .records(PERSON, "gba/wario")
+            .unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].parents, vec![base]);
+        assert!(history[0].interrupted);
+        assert_eq!(history[0].release_id.as_deref(), Some("gba-release"));
+        assert_eq!(history[0].locations[0].files[0].bytes, 20);
+        assert_eq!(recovered.status(), HostSessionStatus::NoActive);
+        assert_eq!(
+            NativeSaveStore::new(root.path())
+                .records(PERSON, "gba/wario")
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
     fn restart_completion_uses_first_observation_time_once() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
@@ -6233,6 +6571,7 @@ mod tests {
         let state = root.path().join("host-session");
         let backend = Arc::new(DeterministicBackend::default());
         let pending = ActiveSession::CompletionPending {
+            save_snapshot: None,
             launch_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             game_id: "wario".into(),
             person_public_key: PERSON.into(),
@@ -6287,6 +6626,7 @@ mod tests {
             persist_active(
                 &state,
                 &ActiveSession::CompletionPending {
+                    save_snapshot: None,
                     launch_id: launch_id.into(),
                     game_id: "wario".into(),
                     person_public_key: PERSON.into(),

@@ -187,11 +187,12 @@ pub fn launch_route(
                 .map_err(|error_value| error(error_value.to_string()))?
                 .display()
                 .to_string(),
-            "plugin-launch".into(),
+            "plugin-prepare".into(),
             package.package.join(&package.entry).display().to_string(),
             serde_json::to_string(&input).map_err(|error_value| error(error_value.to_string()))?,
             serde_json::to_string(&composition)
                 .map_err(|error_value| error(error_value.to_string()))?,
+            route.release_id.clone(),
         ],
     })
 }

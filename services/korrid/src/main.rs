@@ -485,7 +485,7 @@ async fn main() {
         .is_some_and(|argument| argument == "plugin-launch")
     {
         let result = match arguments.as_slice() {
-            [_, source, input, composition] => input
+            [_, source, input, composition, prepared] => input
                 .to_str()
                 .ok_or_else(|| "launch input must be UTF-8".to_owned())
                 .and_then(|input| {
@@ -495,9 +495,13 @@ async fn main() {
                         composition
                             .to_str()
                             .ok_or("launch composition must be UTF-8")?,
+                        prepared.to_str().ok_or("prepared launch must be UTF-8")?,
                     )
                 }),
-            _ => Err("usage: korrid plugin-launch SOURCE INPUT_JSON COMPOSITION_JSON".into()),
+            _ => Err(
+                "usage: korrid plugin-launch SOURCE INPUT_JSON COMPOSITION_JSON PREPARED_JSON"
+                    .into(),
+            ),
         };
         if let Err(error) = result {
             korrid::launcher::plugin_launch::notify_failure(&error);
@@ -616,21 +620,21 @@ async fn main() {
         )
     };
     let wake = discovery.as_ref().map(|(control, _)| control.clone());
-    let (lan_router, local_control_router) = match mode {
-        Mode::Brain => (brain_router(resources, wake), None),
+    let (lan_router, local_control_router, host_runtime) = match mode {
+        Mode::Brain => (brain_router(resources, wake), None, None),
         Mode::Host => {
             let origin = std::env::var("KORRID_PORTAL_ORIGIN").ok();
             let credentials = std::env::var_os("CREDENTIALS_DIRECTORY").map(PathBuf::from);
             let portal = host_portal_access(origin.as_deref(), credentials.as_deref())
                 .unwrap_or_else(|error| panic!("invalid portal access: {error}"));
-            let (lan, local) = korrid::host_routers_with_federation(
+            let (lan, local, runtime) = korrid::host_routers_with_federation(
                 host_config_path(),
                 Some(host_storage_root()),
                 private_state_root.clone(),
                 resources,
                 portal,
             );
-            (lan, Some(local))
+            (lan, Some(local), Some(runtime))
         }
     };
     let configured_address = std::env::var("KORRID_ADDRESS").ok();
@@ -686,6 +690,11 @@ async fn main() {
             result = serving => Some(result),
         }
     };
+    if let Some(runtime) = host_runtime {
+        if let Err(error) = runtime.shutdown_sessions().await {
+            eprintln!("korrid shutdown: {}", error.message);
+        }
+    }
     if let Some((name, result)) = result {
         result.unwrap_or_else(|error| panic!("serve {name} korrid: {error}"));
         panic!("{name} korrid server exited unexpectedly");

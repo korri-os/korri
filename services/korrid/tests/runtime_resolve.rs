@@ -121,7 +121,7 @@ fn a_ready_runner_and_a_silent_runner_both_launch() {
         let root = tempfile::tempdir().unwrap();
         let spec = launch(root.path(), runtime_resolve)
             .unwrap_or_else(|error| panic!("{runtime_resolve:?} must launch: {error}"));
-        assert_eq!(spec.command[1], "plugin-launch");
+        assert_eq!(spec.command[1], "plugin-prepare");
     }
 }
 
