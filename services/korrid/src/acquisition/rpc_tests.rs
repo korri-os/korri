@@ -312,15 +312,15 @@ async fn game_acquisition_methods_decode_and_need_the_local_brain() {
         ("app.acquisition.providers", json!({})),
         (
             "app.acquisition.search",
-            json!({"query":"2048","providerIds":["@korri:homebrewhub"]}),
+            json!({"query":"2048","providerIds":["@test:shop"]}),
         ),
         (
             "app.acquisition.details",
-            json!({"providerId":"@korri:homebrewhub","id":"2048gb"}),
+            json!({"providerId":"@test:shop","id":"2048"}),
         ),
         (
             "app.acquisition.acquire",
-            json!({"providerId":"@korri:homebrewhub","id":"2048gb"}),
+            json!({"providerId":"@test:shop","id":"2048"}),
         ),
         ("app.acquisition.acquire-status", json!({"jobId":"x"})),
         ("app.acquisition.acquire-cancel", json!({"jobId":"x"})),

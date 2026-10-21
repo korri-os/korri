@@ -1,5 +1,5 @@
 //! Game acquisition (ADR 0014): provider search, details and acquire jobs.
-//! A downloaded cart stays in korrid's cache (ADR 0012 grammar) and becomes a
+//! A downloaded game stays in korrid's cache (ADR 0012 grammar) and becomes a
 //! library game through the records ADR 0013 already uses. Claims and jobs
 //! live in memory only; a restart forgets both.
 use std::{
@@ -12,7 +12,7 @@ use tokio::sync::watch;
 
 use super::{
     claims::{DownloadResolution, FailedDownloadReason, ProviderClaim, ProviderClaimDetails},
-    download::{DownloadEngine, StagedGame},
+    download::{DownloadEngine, DownloadedGame},
     placement,
     turns::{self, ProviderContext, ProviderError},
     types::{
@@ -23,7 +23,7 @@ use super::{
 };
 use crate::{
     config::ConfigSnapshot,
-    discovery::{reconcile::AcquiredCart, DiscoveryLifecycleCoordinator},
+    discovery::{reconcile::AcquiredGame, DiscoveryLifecycleCoordinator},
     plugin::PluginRegistry,
     RpcFailure,
 };
@@ -76,7 +76,7 @@ fn caller() -> RpcFailure {
 fn unknown_provider() -> RpcFailure {
     failure(
         "AcquisitionUnknownProvider",
-        "That game source is not available.",
+        "That game provider is not available.",
     )
 }
 
@@ -98,7 +98,7 @@ fn link_key(provider: &str, claim_id: &str) -> String {
 /// ADR 0014 Q3: the ready directory of one library release in the cache of
 /// a provider linked to its game: `cache/<plugin>/<provider>/<sha256 hex>/`.
 /// Returns the directories in the game's release order.
-pub(crate) fn cart_dirs(
+pub(crate) fn acquired_game_dirs(
     root: &Path,
     registry: &PluginRegistry,
     snapshot: &ConfigSnapshot,
@@ -125,24 +125,24 @@ pub(crate) fn cart_dirs(
             providers
                 .iter()
                 .map(|cache| cache.join(hex))
-                .find(|ready| placement::cart_file(ready).is_some())
+                .find(|ready| placement::ready_game_file(ready).is_some())
                 .map(|ready| (key.to_owned(), ready))
         })
         .collect()
 }
 
-/// ADR 0014 Q3: the cart file a route passes as `contentPath`.
-pub(crate) fn cart_content(
+/// ADR 0014 Q3: the acquired game file a route passes as `contentPath`.
+pub(crate) fn acquired_game_content(
     root: &Path,
     registry: &PluginRegistry,
     snapshot: &ConfigSnapshot,
     game_id: &str,
     key: &str,
 ) -> Option<PathBuf> {
-    cart_dirs(root, registry, snapshot, game_id)
+    acquired_game_dirs(root, registry, snapshot, game_id)
         .into_iter()
         .find(|(release, _)| release == key)
-        .and_then(|(_, ready)| placement::cart_file(&ready))
+        .and_then(|(_, ready)| placement::ready_game_file(&ready))
 }
 
 impl GameAcquisition {
@@ -329,7 +329,7 @@ impl GameAcquisition {
             }
         }
         // Already in the library, also after a restart and with no claim in
-        // memory: the provider link names the game and its cart is still in
+        // memory: the provider link names the game and its download is still in
         // the cache. No network is needed to answer Play.
         if let Some(game_id) = self.in_library(context, &request.provider_id, &request.id) {
             let (cancel, _) = watch::channel(false);
@@ -423,7 +423,7 @@ impl GameAcquisition {
             .playable
             .0
             .clone();
-        (!cart_dirs(&context.root, &context.registry, &snapshot, &game_id).is_empty())
+        (!acquired_game_dirs(&context.root, &context.registry, &snapshot, &game_id).is_empty())
             .then_some(game_id)
     }
 
@@ -451,7 +451,7 @@ impl GameAcquisition {
         job
     }
 
-    /// Startup: a cart download never resumes (no expected hash, no saved
+    /// Startup: a game download never resumes (no expected hash, no saved
     /// URL); remove every staging file and interrupted publication.
     pub(super) fn recover(&self, root: &Path, registry: &PluginRegistry) -> Result<(), Failure> {
         for (record, owner) in registry.acquisition_providers() {
@@ -531,15 +531,17 @@ impl Pipeline {
             DownloadResolution::NonFinal(_) => {
                 return Err(failed(failure(
                     "DownloadNotFinal",
-                    "This game cannot be downloaded directly from its source.",
+                    "This game cannot be downloaded directly from its provider.",
                 )))
             }
             DownloadResolution::Failed(failed_download) => {
                 return Err(failed(failure(
                     "DownloadResolutionFailed",
                     match failed_download.reason {
-                        FailedDownloadReason::NotFound => "The source no longer offers this game.",
-                        _ => "The source could not prepare this download. Please retry later.",
+                        FailedDownloadReason::NotFound => {
+                            "The provider no longer offers this game."
+                        }
+                        _ => "The provider could not prepare this download. Please retry later.",
                     },
                 )))
             }
@@ -583,10 +585,10 @@ impl Pipeline {
             bytes_per_second: None,
         });
         let flag = cancelled.clone();
-        let staged: StagedGame = tokio::select! {
+        let downloaded: DownloadedGame = tokio::select! {
             biased;
             _ = cancelled.changed() => return Err(AcquireJobState::Cancelled),
-            staged = self.engine.fetch_game(&download.url, &self.provider.hosts, &staging, |progress| {
+            downloaded = self.engine.fetch_game(&download.url, &self.provider.hosts, &staging, |progress| {
                 let mut job = self.job.lock().expect("job mutex poisoned");
                 if !*flag.borrow() {
                     job.status.state = AcquireJobState::Downloading {
@@ -595,7 +597,7 @@ impl Pipeline {
                         bytes_per_second: progress.rate,
                     };
                 }
-            }) => staged.map_err(download_failed)?,
+            }) => downloaded.map_err(download_failed)?,
         };
         {
             // Cancellation wins until placement starts; placing cannot be
@@ -618,7 +620,7 @@ impl Pipeline {
                 &context,
                 &cache,
                 &rules.header,
-                &staged,
+                &downloaded,
                 &name,
                 &provider,
                 &claim_id,
@@ -637,7 +639,7 @@ fn publish_and_record(
     context: &GameContext,
     cache: &Path,
     header: &[crate::plugin::HeaderRule],
-    staged: &StagedGame,
+    downloaded: &DownloadedGame,
     name: &str,
     provider: &str,
     claim_id: &str,
@@ -648,23 +650,26 @@ fn publish_and_record(
     let prefix = {
         use std::io::Read;
         let mut bytes = Vec::new();
-        std::fs::File::open(&staged.path)
+        std::fs::File::open(&downloaded.path)
             .and_then(|file| file.take(64 * 1024).read_to_end(&mut bytes))
             .map_err(|error| download_failed(error.into()))?;
         bytes
     };
-    if crate::discovery::identify::header_size(&prefix, staged.bytes, header) >= staged.bytes {
+    if crate::discovery::identify::header_size(&prefix, downloaded.bytes, header)
+        >= downloaded.bytes
+    {
         return Err(download_failed(Failure::NotSystemFile));
     }
-    placement::publish_cart(cache, &staged.path, name, &staged.sha256).map_err(download_failed)?;
+    placement::publish_acquired_game(cache, &downloaded.path, name, &downloaded.sha256)
+        .map_err(download_failed)?;
     let game_id = context
         .discovery
-        .record_acquired(&AcquiredCart {
+        .record_acquired(&AcquiredGame {
             provider,
             claim_id,
             title,
             system,
-            sha256_hex: &staged.sha256,
+            sha256_hex: &downloaded.sha256,
         })
         .map_err(|error| {
             log::debug!("acquisition library record: {error}");

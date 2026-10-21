@@ -51,7 +51,7 @@ pub struct ResolvedRoute {
     pub package_target: Option<ResolvedPackageTarget>,
 
     /// ADR 0014: a release with no saved location and no declared artifact
-    /// whose content is a cart in a linked provider's cache.
+    /// whose content is a download in a linked provider's cache.
     pub cache_target: Option<std::path::PathBuf>,
 }
 

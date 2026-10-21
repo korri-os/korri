@@ -296,8 +296,8 @@ impl Failure {
             Self::Cancelled => "The download was cancelled.",
             Self::UndeclaredHost => "The download address is not allowed.",
             Self::TooLarge => "The download is larger than 2 GiB.",
-            Self::WebPage => "The source sent a web page instead of the game file.",
-            Self::Empty => "The source sent an empty file.",
+            Self::WebPage => "The provider sent a web page instead of the game file.",
+            Self::Empty => "The provider sent an empty file.",
             Self::NotSystemFile => "The downloaded file is not a game for this system.",
         };
         RpcFailure {

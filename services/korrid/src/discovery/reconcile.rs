@@ -34,8 +34,8 @@ const HASH_CACHE_FILE: &str = "hash-cache.json";
 const OWNERSHIP_FILE: &str = "ownership.json";
 const REPAIR_FILE: &str = "repair.json";
 
-/// A cart the acquire job published in korrid's cache (ADR 0014).
-pub struct AcquiredCart<'a> {
+/// A game the acquire job published in korrid's cache (ADR 0014).
+pub struct AcquiredGame<'a> {
     pub provider: &'a str,
     pub claim_id: &'a str,
     pub title: &'a str,
@@ -404,13 +404,13 @@ impl DiscoveryCoordinator {
         })
     }
 
-    /// ADR 0014: record a cart the acquire job published in korrid's cache.
+    /// ADR 0014: record a game the acquire job published in korrid's cache.
     /// Written once, under the publication lock: the game (claim title), its
     /// release (`sha256:` identity, the claim's system) and the provider link
     /// `{ provider, ref: claim id }`. No location is saved. Identical bytes
     /// already in the library join that game; an existing link keeps its game.
     /// Returns the game id.
-    pub fn record_acquired(&self, cart: &AcquiredCart<'_>) -> Result<String, DiscoveryError> {
+    pub fn record_acquired(&self, acquired: &AcquiredGame<'_>) -> Result<String, DiscoveryError> {
         use crate::config::{
             library::{
                 LibraryIdentity, LibraryItemPayload, LibraryReleasePayload, ProviderLinkPayload,
@@ -428,8 +428,8 @@ impl DiscoveryCoordinator {
         let current = Documents::read(&self.readable_root)?;
         let before = current.validate()?;
         let mut after = before.clone();
-        let key = format!("sha256:{}", cart.sha256_hex);
-        let link_id = format!("{}/{}", cart.provider, cart.claim_id);
+        let key = format!("sha256:{}", acquired.sha256_hex);
+        let link_id = format!("{}/{}", acquired.provider, acquired.claim_id);
         let holds = |game: &LibraryItemPayload| {
             game.releases
                 .iter()
@@ -448,14 +448,14 @@ impl DiscoveryCoordinator {
                     .map(|(id, _)| id.clone())
             })
             .unwrap_or_else(|| {
-                let id = change::unique_id(&change::slug(cart.title), |id| {
+                let id = change::unique_id(&change::slug(acquired.title), |id| {
                     after.library.contains_key(id)
                 });
                 after.library.insert(
                     id.clone(),
                     LibraryItemPayload {
                         modifiers: Default::default(),
-                        title: Some(cart.title.to_owned()),
+                        title: Some(acquired.title.to_owned()),
                         version_of: None,
                         relation: None,
                         contains: None,
@@ -471,12 +471,12 @@ impl DiscoveryCoordinator {
             });
         if !after.library.values().any(holds) {
             let game = after.library.get_mut(&game_id).expect("target game");
-            let id = change::unique_id(cart.system, |id| {
+            let id = change::unique_id(acquired.system, |id| {
                 game.releases.iter().any(|release| release.id.0 == id)
             });
             game.releases.push(LibraryReleasePayload {
                 id: NonEmptyString(id),
-                system: Some(NonEmptyString(cart.system.to_owned())),
+                system: Some(NonEmptyString(acquired.system.to_owned())),
                 identity: Some(LibraryIdentity::Hash { value: key }),
                 display: None,
                 inheritable: InheritableLayer::default(),
@@ -485,12 +485,12 @@ impl DiscoveryCoordinator {
         after.provider_links.insert(
             link_id,
             ProviderLinkPayload {
-                provider: NonEmptyString(cart.provider.to_owned()),
+                provider: NonEmptyString(acquired.provider.to_owned()),
                 playable: NonEmptyString(game_id.clone()),
                 release: None,
                 refs: vec![ProviderLinkRef {
                     kind: ProviderLinkRefKind::ProviderItemId,
-                    value: NonEmptyString(cart.claim_id.to_owned()),
+                    value: NonEmptyString(acquired.claim_id.to_owned()),
                     scope: None,
                     target_part: None,
                 }],

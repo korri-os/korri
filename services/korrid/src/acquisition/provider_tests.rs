@@ -1,5 +1,5 @@
 //! ADR 0014 end to end with a real loopback provider site and a fixture
-//! provider plugin: search -> details -> acquire -> cart published in
+//! provider plugin: search -> details -> acquire -> download published in
 //! korrid's cache -> game, release and provider link written once -> route
 //! to contentPath -> Remove download, the shared queue and restarts.
 use super::{
@@ -318,7 +318,7 @@ fn imported(status: &AcquireJobStatus) -> String {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_cart_is_published_in_the_cache_and_recorded_once_with_the_claim_title() {
+async fn a_download_is_published_in_the_cache_and_recorded_once_with_the_claim_title() {
     let world = world();
     let api = world.api();
     let providers = api.providers(&world.context.registry).providers;
@@ -410,7 +410,7 @@ async fn a_cart_is_published_in_the_cache_and_recorded_once_with_the_claim_title
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_route_reaches_the_cart_by_hash_and_passes_it_as_content_path() {
+async fn the_route_reaches_the_download_by_hash_and_passes_it_as_content_path() {
     let world = world();
     world.search().await;
     let game_id = imported(&world.finish(world.acquire("2048").unwrap()).await);
@@ -423,8 +423,8 @@ async fn the_route_reaches_the_cart_by_hash_and_passes_it_as_content_path() {
         None,
     )
     .unwrap();
-    let cart = world.cache().join(sha_hex(ROM)).join("2048.gba");
-    assert_eq!(route.cache_target.as_ref(), Some(&cart));
+    let download = world.cache().join(sha_hex(ROM)).join("2048.gba");
+    assert_eq!(route.cache_target.as_ref(), Some(&download));
     assert!(
         route.file_target.is_none()
             && route.provider_target.is_none()
@@ -444,7 +444,7 @@ async fn the_route_reaches_the_cart_by_hash_and_passes_it_as_content_path() {
         serde_json::from_str(&launch.command[3]).unwrap();
     assert_eq!(
         input.content_path.as_deref(),
-        Some(cart.display().to_string().as_str())
+        Some(download.display().to_string().as_str())
     );
     assert!(input.provider_ref.is_none());
 }
@@ -521,7 +521,7 @@ async fn remove_download_keeps_the_game_in_history_and_get_downloads_into_it_aga
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn carts_wait_their_turn_behind_a_pinned_download_and_cancel_leaves_the_queue() {
+async fn provider_downloads_wait_their_turn_behind_a_pinned_download_and_cancel_leaves_the_queue() {
     // A pinned ADR 0012 artifact served slowly from the same loopback site.
     let server = site();
     let big = vec![7u8; 64 * 1024];
@@ -583,7 +583,7 @@ async fn carts_wait_their_turn_behind_a_pinned_download_and_cancel_leaves_the_qu
     let done = world.finish(first).await;
     imported(&done);
     assert!(matches!(state(&world), ArtifactState::Ready { .. }));
-    // The cart was resolved only after the pinned download finished.
+    // The download was resolved only after the pinned download finished.
     let order: Vec<_> = world
         .server
         .received()
@@ -767,10 +767,10 @@ async fn a_restart_drops_jobs_cleans_staging_and_get_answers_play_through_the_li
     );
 }
 
-/// The local RPC refuses Remove download while the cart's game runs, and
-/// the launch reaches the cart through the route (host-mode device).
+/// The local RPC refuses Remove download while the download's game runs, and
+/// the launch reaches the download through the route (host-mode device).
 #[tokio::test(flavor = "multi_thread")]
-async fn remove_download_refuses_while_the_cart_game_runs() {
+async fn remove_download_refuses_while_the_game_runs() {
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
     use serde_json::{json, Value};
@@ -780,7 +780,7 @@ async fn remove_download_refuses_while_the_cart_game_runs() {
     world.search().await;
     let game_id = imported(&world.finish(world.acquire("2048").unwrap()).await);
     let config = world.root.join("host.toml");
-    fs::write(&config, "label = \"carts\"\ngames = []\n").unwrap();
+    fs::write(&config, "label = \"downloads\"\ngames = []\n").unwrap();
     let runtime = crate::host::HostRuntime::from_paths_with_backend(
         &config,
         Some(world.root.clone()),
@@ -792,7 +792,7 @@ async fn remove_download_refuses_while_the_cart_game_runs() {
         runtime,
         &world.root.join("private"),
         Some(crate::PortalAccess::new(
-            "carts",
+            "downloads",
             "http://127.0.0.1:8099",
             crate::PortalPermission::LocalSessions,
         )),
@@ -807,7 +807,7 @@ async fn remove_download_refuses_while_the_cart_game_runs() {
                         .method("POST")
                         .uri("/rpc")
                         .header("Content-Type", "application/json")
-                        .header("Authorization", "Bearer carts")
+                        .header("Authorization", "Bearer downloads")
                         .header("Origin", "http://127.0.0.1:8099")
                         .body(Body::from(
                             json!({"_tag":tag, "payload":payload}).to_string(),

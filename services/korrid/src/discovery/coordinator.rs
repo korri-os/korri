@@ -466,12 +466,12 @@ impl DiscoveryLifecycleCoordinator {
         self.snapshot()
     }
 
-    /// ADR 0014: write an acquired cart's game, release and provider link.
+    /// ADR 0014: write an acquired game's library game, release and provider link.
     pub fn record_acquired(
         &self,
-        cart: &crate::discovery::reconcile::AcquiredCart<'_>,
+        acquired: &crate::discovery::reconcile::AcquiredGame<'_>,
     ) -> Result<String, DiscoveryError> {
-        self.reconciler.record_acquired(cart)
+        self.reconciler.record_acquired(acquired)
     }
 
     /// The published library and device documents, read fresh.

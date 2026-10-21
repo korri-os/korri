@@ -16,7 +16,7 @@ use crate::{
 };
 use indexmap::IndexSet;
 
-pub(crate) use game::cart_content;
+pub(crate) use game::acquired_game_content;
 pub use game::GameContext;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -53,12 +53,12 @@ struct Queue {
     waiting: VecDeque<PathBuf>,
     running: Option<Running>,
     worker: bool,
-    /// ADR 0014: cart downloads waiting in the same line. The worker hands
-    /// each its turn and waits until the cart job reports it is done.
+    /// ADR 0014: provider game downloads waiting in the same line. The worker hands
+    /// each its turn and waits until the game job reports it is done.
     tickets: BTreeMap<PathBuf, tokio::sync::oneshot::Sender<watch::Sender<bool>>>,
 }
 
-/// A cart job's place in the one-at-a-time queue. Dropping it before the
+/// A provider game job's place in the one-at-a-time queue. Dropping it before the
 /// turn comes (cancel) leaves the queue.
 pub(super) struct TurnWait {
     key: PathBuf,
@@ -387,7 +387,7 @@ impl AcquisitionCoordinator {
         handle.spawn(self.clone().work());
     }
 
-    /// ADR 0014: a cart job joins the end of the one-at-a-time queue.
+    /// ADR 0014: a provider game job joins the end of the one-at-a-time queue.
     pub(super) fn queue_turn(&self, key: PathBuf) -> TurnWait {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         {
@@ -605,13 +605,13 @@ impl AcquisitionCoordinator {
                 return Err(busy_failure());
             }
         }
-        // ADR 0014 Q4: a cart's ready directory is the release's own content.
+        // ADR 0014 Q4: an acquired game's ready directory is the release's own content.
         // Another game naming the same release keeps it; a working job for
         // this game asks for Cancel first.
         if self.games.busy_for_game(&snapshot, game_id) {
             return Err(busy_failure());
         }
-        for (key, ready) in game::cart_dirs(root, registry, &snapshot, game_id) {
+        for (key, ready) in game::acquired_game_dirs(root, registry, &snapshot, game_id) {
             let shared = snapshot.library.iter().any(|(id, other)| {
                 id != game_id
                     && other
