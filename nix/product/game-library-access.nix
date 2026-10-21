@@ -11,7 +11,6 @@ let
   root = config.services.korridLinuxDevice.storageRoot;
   user = config.services.korriLinuxHost.runtimeUser;
   group = config.services.korriLinuxHost.runtimeGroup;
-  account = "${root}/users/default";
   # One directory per library slug the SD card holds. The runtime user gets
   # read and traverse on each one, and inheritance for new content.
   systems = [
@@ -54,9 +53,9 @@ in
     # 2026-10-20). The game user gets read and traverse, never write.
     "A+ ${root}/games - - - - u:${user}:rX,d:u:${user}:rX,m::rX,d:m::rX"
     "d ${root}/users 2710 korrid ${group} -"
-    "a+ ${root}/users - - - - u:${user}:--x"
-    "d ${account} 2770 korrid ${group} -"
-    "a+ ${account} - - - - u:${user}:rwx,d:u:${user}:rwx,d:g:${group}:rwx"
+    # Both writers use the same per-person tree. Apply to existing data and
+    # inherit on new entries; never grant access to korrid's private snapshots.
+    "A+ ${root}/users - - - - u:korrid:rwX,u:${user}:rwX,d:u:korrid:rwX,d:u:${user}:rwX,m::rwX,d:m::rwX"
     # Reconstructible artifacts belong to korrid (ADR 0012). The game user
     # can read and traverse ready artifacts, but cannot replace a contribution.
     # Upgrade from prepare-owned caches requires the ADR's one-off deletion.
@@ -65,17 +64,9 @@ in
   ]
   ++ lib.concatMap (name: [
     "a+ ${root}/roms/${name} - - - - u:${user}:r-x,d:u:${user}:r-x"
-  ]) systems
-  ++
-    lib.concatMap
-      (name: [
-        "d ${account}/${name} 2770 korrid ${group} -"
-        "a+ ${account}/${name} - - - - u:${user}:rwx,d:u:${user}:rwx,d:g:${group}:rwx"
-      ])
-      [
-        "system"
-        "saves"
-        "states"
-        "screenshots"
-      ];
+  ]) systems;
+
+  # The shared ACL must exist before the unprivileged daemon writes users/.
+  systemd.services.korrid.after = [ "systemd-tmpfiles-setup.service" ];
+  systemd.services.korrid.requires = [ "systemd-tmpfiles-setup.service" ];
 }

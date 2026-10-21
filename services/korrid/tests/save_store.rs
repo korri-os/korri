@@ -221,8 +221,13 @@ fn boundary_capture_preserves_files_and_materializes_only_the_chosen_snapshot() 
     let root = tempfile::tempdir().unwrap();
     let store = NativeSaveStore::new(root.path());
     let saves = tempfile::tempdir().unwrap();
-    let folder = saves.path().join("saves");
-    std::fs::create_dir(&folder).unwrap();
+    let save_root = saves
+        .path()
+        .join("users")
+        .join(PERSON)
+        .join("saves/gba%2Fwario");
+    let folder = save_root.join("saves");
+    std::fs::create_dir_all(&folder).unwrap();
     std::fs::write(folder.join("game.srm"), b"progress").unwrap();
     let locations = vec![SaveLocation {
         key: "saves".into(),
@@ -237,7 +242,7 @@ fn boundary_capture_preserves_files_and_materializes_only_the_chosen_snapshot() 
             PERSON,
             "gba/wario",
             &id,
-            saves.path().to_str().unwrap(),
+            save_root.to_str().unwrap(),
             &locations,
         )
         .unwrap();

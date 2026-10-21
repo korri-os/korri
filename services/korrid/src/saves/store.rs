@@ -421,16 +421,21 @@ impl NativeSaveStore {
         if !self.progress_complete(&record)? {
             return Err(SaveError::Missing);
         }
-        let uid = runtime_id("KORRID_RUNTIME_UID", unsafe { libc::geteuid() })?;
-        let gid = runtime_id("KORRID_RUNTIME_GID", unsafe { libc::getegid() })?;
+        let save_root = runtime_save_directory(Path::new(save_root))?;
+        let users = restore_users_root(&save_root, person, game)?;
         let mut staged = Vec::new();
         let result = (|| {
             for location in locations {
-                let target = Path::new(&location.path);
+                let target = runtime_save_directory(Path::new(&location.path))?;
+                if !target.starts_with(&save_root) || target == save_root {
+                    return Err(invalid(
+                        "save location must stay inside its per-person save root",
+                    ));
+                }
                 let parent = target
                     .parent()
                     .ok_or_else(|| invalid("save location parent"))?;
-                runtime_directory(parent, uid, gid)?;
+                runtime_directory(parent, &users)?;
                 let stage = parent.join(format!(".save-{:016x}.tmp", rand::random::<u64>()));
                 fs::DirBuilder::new()
                     .mode(0o700)
@@ -444,7 +449,7 @@ impl NativeSaveStore {
                 {
                     for expected in &content.files {
                         let path = stage.join(&expected.path);
-                        runtime_directory(path.parent().unwrap(), uid, gid)?;
+                        runtime_directory(path.parent().unwrap(), &users)?;
                         let mut source = match self.verified_object(&expected.sha256) {
                             Ok(file) => file,
                             Err(SaveError::Missing) if location.kind == SaveKind::Screenshot => {
@@ -459,12 +464,16 @@ impl NativeSaveStore {
                             .open(&path)
                             .map_err(io)?;
                         std::io::copy(&mut source, &mut output).map_err(io)?;
-                        ownership(&output, uid, gid)?;
+                        inherited_write_access(&output)?;
                         output.sync_all().map_err(io)?;
                     }
                 }
-                let directory = File::open(&stage).map_err(io)?;
-                ownership(&directory, uid, gid)?;
+                let directory = OpenOptions::new()
+                    .read(true)
+                    .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
+                    .open(&stage)
+                    .map_err(io)?;
+                inherited_write_access(&directory)?;
                 directory.sync_all().map_err(io)?;
             }
             for (stage, target) in &staged {
@@ -938,29 +947,131 @@ impl SaveRepository for NativeSaveStore {
     }
 }
 
-fn runtime_id(name: &str, current: u32) -> Result<u32, SaveError> {
-    match std::env::var(name) {
-        Ok(value) => value
-            .parse::<u32>()
-            .ok()
-            .filter(|v| *v > 0)
-            .ok_or_else(|| invalid("invalid runtime identity")),
-        Err(std::env::VarError::NotPresent) => Ok(current),
-        Err(_) => Err(invalid("invalid runtime identity")),
+/// Resolve lexical components, rejecting every symlink and non-directory
+/// ancestor before any effect. No directory is created just to resolve `..`.
+fn runtime_save_directory(path: &Path) -> Result<PathBuf, SaveError> {
+    use std::path::Component;
+    if !path.is_absolute() {
+        return Err(invalid("save root must be absolute"));
     }
+    let mut normalized = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::CurDir => {}
+            other => normalized.push(other.as_os_str()),
+        }
+        match fs::symlink_metadata(&normalized) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+            Ok(_) => return Err(invalid("save ancestor is a symlink or not a directory")),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(io(error)),
+        }
+    }
+    Ok(normalized)
 }
-fn ownership(file: &File, uid: u32, gid: u32) -> Result<(), SaveError> {
-    use std::os::{fd::AsRawFd, unix::fs::MetadataExt};
-    let m = file.metadata().map_err(io)?;
-    if m.uid() == uid && m.gid() == gid {
-        return Ok(());
+
+fn restore_users_root(save_root: &Path, person: &str, game: &str) -> Result<PathBuf, SaveError> {
+    let saves = save_root
+        .parent()
+        .ok_or_else(|| invalid("per-person save root"))?;
+    let account = saves
+        .parent()
+        .ok_or_else(|| invalid("per-person account root"))?;
+    let users = account.parent().ok_or_else(|| invalid("users root"))?;
+    if save_root.file_name().and_then(|s| s.to_str()) != Some(codec(game).as_str())
+        || saves.file_name().and_then(|s| s.to_str()) != Some("saves")
+        || account.file_name().and_then(|s| s.to_str()) != Some(codec(person).as_str())
+        || users.file_name().and_then(|s| s.to_str()) != Some("users")
+    {
+        return Err(invalid("restore requires the per-person root inside users"));
     }
-    if unsafe { libc::fchown(file.as_raw_fd(), uid, gid) } != 0 {
+    // tmpfiles must have provisioned users/ and its shared default ACL before
+    // korrid starts. Do not create it with the storage root's default deny ACL.
+    let metadata = fs::symlink_metadata(users).map_err(io)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(invalid("users root is not a directory"));
+    }
+    Ok(users.to_owned())
+}
+
+/// Only called on entries we create beneath the validated users/ boundary.
+/// 0700/0600 creation masks inherited named-user grants. Reopen that mask,
+/// without chown and without changing owner, owning-group, other, or named
+/// entries. As in launch_diagnostics.rs, stat's group bits are ACL mask bits.
+fn inherited_write_access(file: &File) -> Result<(), SaveError> {
+    use std::os::fd::AsRawFd;
+    let fd = file.as_raw_fd();
+    let size = unsafe {
+        libc::fgetxattr(
+            fd,
+            c"system.posix_acl_access".as_ptr(),
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if size < 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ENODATA) {
+            return Ok(());
+        }
+        return Err(io(error));
+    }
+    if !(4..=65536).contains(&size) || (size - 4) % 8 != 0 {
+        return Err(invalid("invalid inherited ACL size"));
+    }
+    let mut acl = vec![0u8; size as usize];
+    if unsafe {
+        libc::fgetxattr(
+            fd,
+            c"system.posix_acl_access".as_ptr(),
+            acl.as_mut_ptr().cast(),
+            acl.len(),
+        )
+    } != size
+    {
+        return Err(io(std::io::Error::last_os_error()));
+    }
+    if acl[..4] != 2u32.to_le_bytes() {
+        return Err(invalid("unsupported inherited ACL"));
+    }
+    let metadata = file.metadata().map_err(io)?;
+    let permissions = if metadata.is_dir() {
+        7u16
+    } else if metadata.is_file() {
+        6u16
+    } else {
+        return Err(invalid("save entry is not a regular file or directory"));
+    };
+    let mut changed = false;
+    for entry in acl[4..].chunks_exact_mut(8) {
+        if u16::from_le_bytes([entry[0], entry[1]]) == 16 {
+            entry[2..4].copy_from_slice(&permissions.to_le_bytes());
+            changed = true;
+        }
+    }
+    if changed
+        && unsafe {
+            libc::fsetxattr(
+                fd,
+                c"system.posix_acl_access".as_ptr(),
+                acl.as_ptr().cast(),
+                acl.len(),
+                0,
+            )
+        } != 0
+    {
         return Err(io(std::io::Error::last_os_error()));
     }
     Ok(())
 }
-fn runtime_directory(path: &Path, uid: u32, gid: u32) -> Result<(), SaveError> {
+
+fn runtime_directory(path: &Path, users: &Path) -> Result<(), SaveError> {
+    if !path.starts_with(users) {
+        return Err(invalid("save directory is outside users"));
+    }
     match fs::symlink_metadata(path) {
         Ok(m) if m.is_dir() && !m.file_type().is_symlink() => {
             for ancestor in path.ancestors() {
@@ -972,15 +1083,15 @@ fn runtime_directory(path: &Path, uid: u32, gid: u32) -> Result<(), SaveError> {
             Ok(())
         }
         Ok(_) => Err(invalid("save ancestor is not a directory")),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            runtime_directory(
-                path.parent().ok_or_else(|| invalid("save parent"))?,
-                uid,
-                gid,
-            )?;
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && path != users => {
+            runtime_directory(path.parent().ok_or_else(|| invalid("save parent"))?, users)?;
             fs::DirBuilder::new().mode(0o700).create(path).map_err(io)?;
-            let file = File::open(path).map_err(io)?;
-            ownership(&file, uid, gid)?;
+            let file = OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
+                .open(path)
+                .map_err(io)?;
+            inherited_write_access(&file)?;
             file.sync_all().map_err(io)?;
             File::open(path.parent().unwrap())
                 .and_then(|f| f.sync_all())
