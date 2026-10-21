@@ -1,17 +1,11 @@
-# Shared CPU/GPU frequency-governor policy.
+# Shared GPU frequency-governor and cpuidle policy.
 #
-# Some Korri devices boot with `performance` governors on every CPU cluster
-# and GPU devfreq node, pinning all clocks at maximum regardless of load
-# (SM8550/Thor ships this way, and its fake-suspend wake path re-asserts it).
-# This module owns a small root loop that keeps load-following governors
-# applied: the kernel then scales each cluster to actual demand, which on
-# Thor measured ~30C cooler and dramatically quieter under light loads with
-# no measurable frame cost under heavy emulation.
+# Some Korri devices boot with `performance` on their GPU devfreq node and
+# reset it on wake. Keep the load-following GPU governor applied. CPU governor
+# selection and CPU/GPU frequency limits belong exclusively to limitsd.
 #
 # Scope discipline:
-#   - The loop writes ONLY governor selection files. It never touches
-#     scaling_min_freq/scaling_max_freq or devfreq min/max: per-game launch
-#     hooks own frequency caps, and this module must not fight them.
+#   - The loop never writes CPU governors or frequency limits.
 #   - Re-asserting every poll makes external resets (suspend/resume hooks,
 #     vendor scripts) self-healing within one interval, mirroring the fan
 #     module's posture toward the same wake-path interference.
@@ -49,7 +43,6 @@ let
 
     sysfs_root="''${KORRI_CLOCK_SYSFS_ROOT:-/sys}"
     max_iterations="''${KORRI_CLOCK_MAX_ITERATIONS:-0}"
-    cpu_governor=${lib.escapeShellArg cfg.cpuGovernor}
     gpu_governor=${lib.escapeShellArg cfg.gpuGovernor}
 
     log() { echo "korri-clock-governor: $*" >&2; }
@@ -84,15 +77,6 @@ let
     while :; do
       iteration=$((iteration + 1))
 
-      for policy in "$sysfs_root"/devices/system/cpu/cpufreq/policy*; do
-        [ -e "$policy/scaling_governor" ] || continue
-        # Only select governors the policy actually offers; devices without
-        # the requested governor keep their current one (fail-soft).
-        if grep -qw "$cpu_governor" "$policy/scaling_available_governors" 2>/dev/null; then
-          write_governor "$policy/scaling_governor" "$cpu_governor"
-        fi
-      done
-
       # Device facts arrive as space-separated unit environment. The option
       # types admit only sysfs-safe names, so word splitting is exact.
       for node in ''${KORRI_CLOCK_GPU_NODES:-}; do
@@ -118,15 +102,14 @@ let
 in
 {
   options.services.korri.clockGovernor = {
-    enable = lib.mkEnableOption "Korri CPU/GPU frequency-governor policy loop";
+    enable = lib.mkEnableOption "Korri GPU frequency-governor and cpuidle policy loop";
 
     cpuGovernor = lib.mkOption {
       type = lib.types.str;
       default = "schedutil";
       description = ''
-        cpufreq governor asserted on every CPU policy that offers it.
-        Load-following (schedutil) by default; policies without the requested
-        governor are left untouched.
+        Hardware's default CPU governor, consumed by the limits helper.
+        This loop does not write CPU governors.
       '';
     };
 
@@ -163,7 +146,7 @@ in
 
   config = lib.mkIf cfg.enable {
     systemd.services.korri-clock-governor = {
-      description = "Korri CPU/GPU frequency-governor policy (${cfg.cpuGovernor}/${cfg.gpuGovernor})";
+      description = "Korri GPU frequency-governor and cpuidle policy (${cfg.gpuGovernor})";
       wantedBy = [ "multi-user.target" ];
       after = [ "systemd-udevd.service" ];
       environment = {

@@ -377,6 +377,21 @@ let
 
 
 
+    limitsd-check = {
+      description = "Check the launch-limits helper with real filesystem and Unix socket tests, format and clippy.";
+      runtimeInputs = [
+        rustToolchain
+        pkgs.stdenv.cc
+      ];
+      script = ''
+        export CARGO_TARGET_DIR="$KORRI_ROOT/.cache/limitsd-target"
+        cd "$KORRI_ROOT/services/limitsd"
+        cargo fmt --check
+        cargo clippy --all-targets -- -D warnings
+        cargo test
+      '';
+    };
+
     korrid-test = {
       description = "Run the korrid host test suite.";
       needsProseql = true;

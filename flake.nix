@@ -68,6 +68,7 @@
         korri-bundle = import ./services/inputd/nix/korri-bundle-module.nix { korri = self; };
         korri-input = import ./services/inputd/nix/korri-input.nix { korri = self; };
         korrid-linux-device = import ./services/korrid/nixos-module.nix { korri = self; };
+        korri-limits = import ./services/limitsd/nixos-module.nix { korri = self; };
         korri-linux-host = import ./services/inputd/nix/korri-linux-host.nix { korri = self; };
         korri-portal = import ./clients/portal/nix/nixos-module.nix { korri = self; };
         korri-plugin-host = import ./services/korrid/plugin-host/nixos-module.nix { korri = self; };
@@ -151,6 +152,7 @@
         lib = import ./services/korrid/plugin-host/interface.nix;
         packages = {
           korrid = korridPackage;
+          korri-limitsd = import ./services/limitsd/package.nix { inherit pkgs crane; };
           korri-portal = import ./clients/portal/nix/package.nix { inherit pkgs; };
           default = self.packages.${system}.korrid;
         }
@@ -230,6 +232,10 @@
             hostPackage = pluginHost.packages.korri-plugin-host;
           })
           // {
+            korri-limits = import ./services/limitsd/module-check.nix {
+              inherit pkgs nixpkgs;
+              korri = self;
+            };
             korri-plugins-typecheck = import ./plugins/typecheck.nix { inherit pkgs; };
             korri-published-game-launch = import ./services/korrid/published-game-launch-check.nix {
               inherit pkgs korridPackage;

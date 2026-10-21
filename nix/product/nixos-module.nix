@@ -27,6 +27,7 @@ in
     ./kernel.nix
     ../../clients/portal/nix/kiosk-freezer.nix
     ../base/clock-governor.nix
+    (import ../../services/limitsd/nixos-module.nix { inherit korri; })
   ];
 
   options.services.korriProduct = {
@@ -74,6 +75,7 @@ in
     # Load-following CPU governor on every device. A device adds its GPU
     # devfreq nodes and SoC errata as hardware facts.
     services.korri.clockGovernor.enable = true;
+    services.korri.limits.enable = true;
 
     # networkd, where a device uses it, manages only the USB cable link, which
     # is never required for online. Its wait-online unit otherwise blocks

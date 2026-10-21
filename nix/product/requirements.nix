@@ -124,6 +124,22 @@ in
     (setting "korri home" [ "users" "users" "korri" "home" ] constants.runtimeAccount.home)
     (setting "korri home creation" [ "users" "users" "korri" "createHome" ] true)
 
+    (setting "launch limits helper enabled" [ "services" "korri" "limits" "enable" ] true)
+    (setting "game slice enabled" [ "systemd" "slices" "korri-games" "enable" ] true)
+    (setting "game slice CPU controller" [
+      "systemd"
+      "slices"
+      "korri-games"
+      "sliceConfig"
+      "CPUWeight"
+    ] 100)
+    (setting "game slice CPU accounting" [
+      "systemd"
+      "slices"
+      "korri-games"
+      "sliceConfig"
+      "CPUAccounting"
+    ] true)
     (setting "Linux host enabled" [ "services" "korriLinuxHost" "enable" ] true)
     (setting "runtime user" [
       "services"

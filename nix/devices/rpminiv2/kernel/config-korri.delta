@@ -1,4 +1,8 @@
 # Product = the full ROCKNIX 20260901 Mini V2 `config` plus these changes.
+# Per-game CPU utilization clamps, owned by the launch-limits helper.
+CONFIG_UCLAMP_TASK=y
+CONFIG_UCLAMP_BUCKETS_COUNT=5
+CONFIG_UCLAMP_TASK_GROUP=y
 # Regenerate config-korri with derive-config-korri.py. The build checks the
 # resolved configuration against this contract before compiling the kernel.
 # Owner-approved toolchain probes (2026-09-30, carried 2026-10-18): Nix GCC 15.3 / Binutils 2.46.
