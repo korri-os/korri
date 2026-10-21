@@ -97,6 +97,10 @@ export interface SurfaceGame {
   readonly playCount?: number
   /** Summed recorded session length. Absent together with lastPlayedAt. */
   readonly totalPlaytimeSeconds?: number
+  /** Save-sync facts for this person and game. Absent until Korri knows. */
+  readonly saves?:
+    | { readonly _tag: "Synced" | "NotChecked" | "NotSynced" | "SyncedBySteam" }
+    | { readonly _tag: "Split"; readonly choose: SurfaceAction }
   /**
    * Present when this game needs anything downloaded to this device: its own
    * files, or a runtime it depends on. `bytes` is the total still to fetch;
@@ -247,6 +251,24 @@ export type SurfaceStatus =
       readonly actions: readonly SurfaceAction[]
       /** The game this question belongs to, when it belongs to exactly one. */
       readonly gameId?: string
+    }
+  /** A save split needs a choice before this game can launch. Side action ids
+   * go unchanged to runAction; the surface never selects a side itself. */
+  | {
+      readonly _tag: "ChooseSave"
+      readonly gameId: string
+      readonly kicker: string
+      readonly detail?: string
+      readonly actions: readonly SurfaceAction[]
+      /** At least two sides. Gathering sides uses Busy instead. */
+      readonly sides: readonly {
+        readonly actionId: string
+        readonly device: string
+        /** UTC epoch milliseconds, by that device's clock. Display only. */
+        readonly endedAt: number
+        readonly durationSeconds: number
+        readonly imageUrl?: string
+      }[]
     }
   /** A launch is live. `gameId` is present when Korri knows which one. */
   | {
@@ -579,12 +601,36 @@ export interface SurfaceStore {
    * while another entry is open, and shows again when its entry is. */
   readonly details: SurfaceStoreDetails
 }
+/** One entry in a game's save history, newest first. */
+export interface SurfaceSaveHistoryEntry {
+  readonly snapshotId: string
+  /** Display name of the device that made it. */
+  readonly device: string
+  /** Session end, UTC epoch milliseconds, by that device's clock. Display only. */
+  readonly endedAt: number
+  readonly durationSeconds: number
+  /** Made from what the game wrote before a crash or stop, not a clean exit. */
+  readonly interrupted: boolean
+  /** The snapshot this device continues from. */
+  readonly current: boolean
+  /** Host action that restores this entry. Absent on the current entry. */
+  readonly restore?: SurfaceAction
+}
+
+/** Present while history is open. Ready with no entries is an empty history.
+ * Actions include the host's close action and go unchanged to runAction. */
+export type SurfaceSaveHistory =
+  | { readonly _tag: "Loading"; readonly gameId: string; readonly actions: readonly SurfaceAction[] }
+  | { readonly _tag: "Error"; readonly gameId: string; readonly message: string; readonly actions: readonly SurfaceAction[] }
+  | { readonly _tag: "Ready"; readonly gameId: string; readonly entries: readonly SurfaceSaveHistoryEntry[]; readonly actions: readonly SurfaceAction[] }
 
 /** Everything Korri publishes to the surface. Replaced wholesale on change. */
 export interface SurfaceModel {
   readonly presentation: SurfacePresentation
   readonly catalog: SurfaceCatalog
   readonly status: SurfaceStatus
+  /** Absent when save history is not open. */
+  readonly saveHistory?: SurfaceSaveHistory
   /** Absent in hosts that do not offer installed Linux runner selection. */
   readonly runnerChoice?: SurfaceRunnerChoice
   /** Preformatted local time. Absent when the surface should show no clock. */
