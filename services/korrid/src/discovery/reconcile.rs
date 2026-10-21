@@ -34,7 +34,7 @@ const HASH_CACHE_FILE: &str = "hash-cache.json";
 const OWNERSHIP_FILE: &str = "ownership.json";
 const REPAIR_FILE: &str = "repair.json";
 
-/// A game the acquire job published in korrid's cache (ADR 0014).
+/// A game the acquire job published in korrid's cache (ADR 0016).
 pub struct AcquiredGame<'a> {
     pub provider: &'a str,
     pub claim_id: &'a str,
@@ -404,7 +404,7 @@ impl DiscoveryCoordinator {
         })
     }
 
-    /// ADR 0014: record a game the acquire job published in korrid's cache.
+    /// ADR 0016: record a game the acquire job published in korrid's cache.
     /// Written once, under the publication lock: the game (claim title), its
     /// release (`sha256:` identity, the claim's system) and the provider link
     /// `{ provider, ref: claim id }`. No location is saved. Identical bytes

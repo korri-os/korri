@@ -89,6 +89,6 @@ clarification was approved during implementation on 2026-10-19.
 releases name artifacts, and changes Cancel: it now deletes the `.part` files,
 so a `.part` file with no ready directory always means an interrupted download.
 
-[ADR 0014](0014-korrid-acquires-games-from-provider-plugins.md) amends "Source
+[ADR 0016](0016-korrid-acquires-games-from-provider-plugins.md) amends "Source
 acquisition (search, claims, resolve-download …) is OUT" for search provider
 plugins; their downloads stay in this cache grammar.

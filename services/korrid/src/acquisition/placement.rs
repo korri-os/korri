@@ -265,7 +265,7 @@ pub(super) fn remove_game_staging(directory: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
-/// ADR 0014: publish a downloaded game into its ready directory,
+/// ADR 0016: publish a downloaded game into its ready directory,
 /// `<provider cache>/<sha256 hex>/<URL basename>` (ADR 0012 grammar: the
 /// version directory holds the file named by the URL's last segment). The
 /// file moves into a `.tmp-*` work directory, is frozen and synced, and the

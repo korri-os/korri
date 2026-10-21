@@ -1594,7 +1594,7 @@ impl AppState {
         }
     }
 
-    /// ADR 0015: this device's own library. Discovery and the store run on
+    /// ADR 0017: this device's own library. Discovery and the store run on
     /// it in both modes: the brain's local library, or the host's installed
     /// library root. A host with no installed library has none.
     fn local_library(&self) -> Option<LocalLibrary<'_>> {
@@ -4228,7 +4228,7 @@ fn app_states_with(
     runtime: host::HostRuntime,
     acquisition: acquisition::AcquisitionCoordinator,
 ) -> (AppState, AppState) {
-    // ADR 0015: one korrid finds, downloads and launches on its library.
+    // ADR 0017: one korrid finds, downloads and launches on its library.
     let runtime = runtime.with_library_discovery();
     let overlay_intent = Arc::new(Mutex::new(None));
     let network = network::NetworkService::default();

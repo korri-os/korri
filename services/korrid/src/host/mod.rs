@@ -232,7 +232,7 @@ pub struct HostRuntime {
     moonlight_certificate_permits: Arc<tokio::sync::Semaphore>,
     retroarch_control: Arc<dyn RetroarchControlExecutor>,
     input_coordinator: Option<Arc<input_coordination::SeatCoordinator>>,
-    /// ADR 0015: discovery and the store run on this device's own installed
+    /// ADR 0017: discovery and the store run on this device's own installed
     /// library, so one korrid finds, downloads and launches.
     library_discovery: Option<crate::discovery::DiscoveryLifecycleCoordinator>,
 }
@@ -464,7 +464,7 @@ impl HostRuntime {
         self.owner_public_key.as_deref()
     }
 
-    /// ADR 0015: give an installed library its discovery coordinator, on the
+    /// ADR 0017: give an installed library its discovery coordinator, on the
     /// same root, private state, publication lock and registry source the
     /// launch routes use. Its first scan runs on its own thread; nothing
     /// here waits for it. A host with no installed library gets none.

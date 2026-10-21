@@ -83,7 +83,7 @@ boundaries).
 - Local `/rpc` gains `app.acquisition.providers`, `.search`, `.details`,
   `.acquire`, `.acquire-status` and `.acquire-cancel`, portal capability only,
   wherever discovery runs on the device's library (the brain, and since
-  ADR 0015 the device korrid with an installed library root).
+  ADR 0017 the device korrid with an installed library root).
 - korrid downloads a resolved cart once, in ADR 0013's queue, publishes it in
   its cache, writes the game, release and provider link once, and reports
   `Imported { gameId }`. The route reaches the cart by hash and passes it as
@@ -157,6 +157,6 @@ bound, and the heap must hold the input. A 3.5 MiB page fits, as tested.
   nothing. The next Get of the same game records it (the folder is reused);
   otherwise the folder stays until the cache is deleted.
 - Declaration evaluation refuses a plugin whose artifact key equals one of
-  its provider names, so ADR 0012 artifact caches and ADR 0014 provider
+  its provider names, so ADR 0012 artifact caches and ADR 0016 provider
   caches never share `cache/<plugin>/<key>/`.
 - Device evidence is still owed; the Mini V2 was unreachable during this work.

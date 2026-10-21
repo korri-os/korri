@@ -1,7 +1,7 @@
 //! Legacy acquisition results, admitted from provider plugin output.
 //!
 //! Field names and unions are legacy `product/platform/protocol/acquisition/
-//! claim.ts` and `download-resolution.ts` verbatim, minus the ADR 0014 deltas:
+//! claim.ts` and `download-resolution.ts` verbatim, minus the ADR 0016 deltas:
 //! no `ref`, `playable`, `facets`, or `FinalDownload.requestHeaders`.
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;

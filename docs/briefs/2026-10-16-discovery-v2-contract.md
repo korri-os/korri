@@ -227,7 +227,7 @@ The shared data types (`SourceInput`, `SourceView`, `AccountRoot`, `FoundUnit`, 
 
 ## 6. RPC
 
-Brain mode only. (Amended by ADR 0015: a device korrid with an installed library root also runs these on its own library.) Responses use the existing `{ _tag: Ok|Err, payload }` outcome style.
+Brain mode only. (Amended by ADR 0017: a device korrid with an installed library root also runs these on its own library.) Responses use the existing `{ _tag: Ok|Err, payload }` outcome style.
 
 | `_tag` | Request | Response | Who |
 | --- | --- | --- | --- |

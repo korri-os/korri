@@ -293,7 +293,7 @@ async fn game_acquisition_methods_decode_and_need_a_device_library() {
     let root = tempfile::tempdir().unwrap();
     let config = root.path().join("host.toml");
     fs::write(&config, "label = \"acquisition\"\ngames = []\n").unwrap();
-    // ADR 0015: a host with no installed library root has no discovery and
+    // ADR 0017: a host with no installed library root has no discovery and
     // no store; one with a library runs both (provider_tests.rs).
     let runtime = host::HostRuntime::from_paths_with_backend(
         &config,

@@ -378,7 +378,7 @@ releases names. Runner artifacts and device-wide status omit the field.
 
 ### Acquisition providers
 
-ADR 0014 records the decision. A provider plugin finds games on one site and
+ADR 0016 records the decision. A provider plugin finds games on one site and
 says where their files are. It performs no I/O: korrid makes every HTTP request
 and every download, and the plugin only reads what korrid fetched. Legacy
 names come from `product/platform/protocol/acquisition/*.ts`,
@@ -592,7 +592,7 @@ Local `/rpc`, portal capability only (like `app.acquisition.status`), legacy
 method names. As for every method, the response is `{ _tag, outcome }`; each
 outcome is `{ _tag: "Ok", payload }` or `{ _tag: "Err", payload: RpcFailure }`.
 The store runs wherever discovery runs on the device's own library: the
-brain's local library, or a device korrid's installed library root (ADR 0015).
+brain's local library, or a device korrid's installed library root (ADR 0017).
 A korrid with no installed library answers every method with
 `AcquisitionUnavailable`.
 
@@ -662,7 +662,7 @@ a URL, path, query, header value, HTTP status or plugin-supplied text.
 This builds on ADR 0013 (declared games can come from artifacts): korrid never
 writes into a person's source. A provider download has no declaration, so it reuses
 ADR 0012/0013's cache grammar, readiness, content-hash identity and
-`contentPath`, plus the ADR 0002 provider link (owner answers Q1-Q6, ADR 0014).
+`contentPath`, plus the ADR 0002 provider link (owner answers Q1-Q6, ADR 0016).
 
 - **Queue.** A store job waits in ADR 0013's one-at-a-time queue behind
   earlier downloads and holds its deep-sleep block. It is never paused for a

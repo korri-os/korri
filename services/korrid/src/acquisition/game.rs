@@ -1,4 +1,4 @@
-//! Game acquisition (ADR 0014): provider search, details and acquire jobs.
+//! Game acquisition (ADR 0016): provider search, details and acquire jobs.
 //! A downloaded game stays in korrid's cache (ADR 0012 grammar) and becomes a
 //! library game through the records ADR 0013 already uses. Claims and jobs
 //! live in memory only; a restart forgets both.
@@ -95,7 +95,7 @@ fn link_key(provider: &str, claim_id: &str) -> String {
     format!("{provider}/{claim_id}")
 }
 
-/// ADR 0014 Q3: the ready directory of one library release in the cache of
+/// ADR 0016 Q3: the ready directory of one library release in the cache of
 /// a provider linked to its game: `cache/<plugin>/<provider>/<sha256 hex>/`.
 /// Returns the directories in the game's release order.
 pub(crate) fn acquired_game_dirs(
@@ -131,7 +131,7 @@ pub(crate) fn acquired_game_dirs(
         .collect()
 }
 
-/// ADR 0014 Q3: the acquired game file a route passes as `contentPath`.
+/// ADR 0016 Q3: the acquired game file a route passes as `contentPath`.
 pub(crate) fn acquired_game_content(
     root: &Path,
     registry: &PluginRegistry,

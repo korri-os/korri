@@ -471,7 +471,7 @@ impl DiscoveryLifecycleCoordinator {
         self.snapshot()
     }
 
-    /// ADR 0014: write an acquired game's library game, release and provider link.
+    /// ADR 0016: write an acquired game's library game, release and provider link.
     pub fn record_acquired(
         &self,
         acquired: &crate::discovery::reconcile::AcquiredGame<'_>,

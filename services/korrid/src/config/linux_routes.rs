@@ -228,7 +228,7 @@ fn linux_route_candidates_for_runner(
                     routed = true;
                 }
             }
-            // ADR 0014: no location and no declaration, but a provider linked
+            // ADR 0016: no location and no declaration, but a provider linked
             // to this game holds the release's download in its cache.
             if !routed {
                 if let Some(path) = crate::acquisition::acquired_game_content(

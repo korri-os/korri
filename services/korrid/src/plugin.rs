@@ -355,7 +355,7 @@ pub struct SessionControlRecord {
 pub struct Plugin {
     discovery: Vec<ReleaseDiscoveryProvider>,
     /// Provider ids explicitly exported in `providers`: the acquisition
-    /// providers (ADR 0014). The implicit own-id record is not one of them,
+    /// providers (ADR 0016). The implicit own-id record is not one of them,
     /// even when an explicit record has the same id.
     acquisition_providers: BTreeSet<String>,
     id: String,
@@ -847,7 +847,7 @@ impl PluginRegistry {
     }
 
     /// Enabled acquisition providers: records explicitly exported in
-    /// `providers`, with their owning plugin id (ADR 0014).
+    /// `providers`, with their owning plugin id (ADR 0016).
     pub fn acquisition_providers(&self) -> impl Iterator<Item = (&ProviderRecord, &str)> {
         self.acquisition_providers
             .iter()

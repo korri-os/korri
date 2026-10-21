@@ -1,4 +1,4 @@
-//! ADR 0014 end to end with a real loopback provider site and a fixture
+//! ADR 0016 end to end with a real loopback provider site and a fixture
 //! provider plugin: search -> details -> acquire -> download published in
 //! korrid's cache -> game, release and provider link written once -> route
 //! to contentPath -> Remove download, the shared queue and restarts.
@@ -205,7 +205,7 @@ fn world_with(server: HttpFixture, pinned: Option<(&str, &str)>) -> World {
         package(dirs[2].path(), "core", &core_source(pinned), vec![]),
     ])
     .unwrap();
-    // ADR 0015: the device korrid (host mode, installed library root) runs
+    // ADR 0017: the device korrid (host mode, installed library root) runs
     // discovery and the store on its own library.
     let config = root.join("host.toml");
     fs::write(&config, "label = \"device\"\ngames = []\n").unwrap();
@@ -899,7 +899,7 @@ async fn a_link_moves_to_the_game_that_already_holds_the_bytes() {
     assert_eq!(snapshot.library[&linked].releases.len(), 1);
 }
 
-/// ADR 0015 end to end over the device's own RPC: the store finds a game,
+/// ADR 0017 end to end over the device's own RPC: the store finds a game,
 /// downloads it and the same process launches it, with no restart.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_device_finds_downloads_and_launches_a_store_game_over_its_rpc() {
@@ -958,7 +958,7 @@ async fn the_device_finds_downloads_and_launches_a_store_game_over_its_rpc() {
     assert_eq!(launched["outcome"]["_tag"], "Ok", "{launched}");
 }
 
-/// ADR 0015: the device pairs a folder and rescans its own library, and the
+/// ADR 0017: the device pairs a folder and rescans its own library, and the
 /// game discovery found is launchable by the same process.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_device_pairs_and_rescans_its_library_and_launches_what_it_found() {
@@ -1020,7 +1020,7 @@ async fn the_device_pairs_and_rescans_its_library_and_launches_what_it_found() {
     idle().await;
 }
 
-/// ADR 0015 with ADR 0013: a declared-artifact game is in the device's
+/// ADR 0017 with ADR 0013: a declared-artifact game is in the device's
 /// library after the startup scan, before its download.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_declared_artifact_game_appears_in_the_device_library() {

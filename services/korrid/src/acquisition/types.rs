@@ -98,7 +98,7 @@ pub enum AcquisitionOutcome {
     Err(RpcFailure),
 }
 
-// Game acquisition RPC (ADR 0014). Legacy portal acquisition RPC names and
+// Game acquisition RPC (ADR 0016). Legacy portal acquisition RPC names and
 // fields, with korrid holding the claim the portal names.
 
 /// Legacy `AcquisitionPluginsPayload`.

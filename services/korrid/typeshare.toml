@@ -26,7 +26,7 @@ ProviderReleaseConfidenceWire = '"high"'
 # Exact ADR 0012 internally tagged union with ADR 0013's Queued, enforced by acquisition/types.rs.
 ArtifactStateWire = '{ _tag: "Missing" } | { _tag: "Queued" } | { _tag: "Downloading"; file: number; fileCount: number; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number } | { _tag: "Unpacking" } | { _tag: "Ready"; path: string } | { _tag: "Failed"; reason: RpcFailure }'
 
-# Exact ADR 0014 provider protocol literals and unions, enforced by
+# Exact ADR 0016 provider protocol literals and unions, enforced by
 # acquisition/claims.rs, acquisition/turns.rs and acquisition/types.rs.
 ProviderClaimTagWire = '"ProviderClaim"'
 ProviderClaimDetailsTagWire = '"ProviderClaimDetails"'

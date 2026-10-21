@@ -44,7 +44,7 @@ pub struct AcquisitionCoordinator {
     queue: Arc<Mutex<Queue>>,
     engine: download::DownloadEngine,
     sleep: sleep::SleepBlock,
-    /// Game acquisition: provider claims and acquire jobs (ADR 0014).
+    /// Game acquisition: provider claims and acquire jobs (ADR 0016).
     games: game::GameAcquisition,
 }
 #[derive(Default)]
@@ -53,7 +53,7 @@ struct Queue {
     waiting: VecDeque<PathBuf>,
     running: Option<Running>,
     worker: bool,
-    /// ADR 0014: provider game downloads waiting in the same line. The worker hands
+    /// ADR 0016: provider game downloads waiting in the same line. The worker hands
     /// each its turn and waits until the game job reports it is done.
     tickets: BTreeMap<PathBuf, tokio::sync::oneshot::Sender<watch::Sender<bool>>>,
 }
@@ -136,7 +136,7 @@ impl AcquisitionCoordinator {
     }
 
     /// ADR 0013 artifact recovery first, so pinned downloads resume; then
-    /// the ADR 0014 provider caches, whose errors are only logged.
+    /// the ADR 0016 provider caches, whose errors are only logged.
     pub(crate) fn recover(
         &self,
         root: &Path,
@@ -411,7 +411,7 @@ impl AcquisitionCoordinator {
         handle.spawn(self.clone().work());
     }
 
-    /// ADR 0014: a provider game job joins the end of the one-at-a-time queue.
+    /// ADR 0016: a provider game job joins the end of the one-at-a-time queue.
     pub(super) fn queue_turn(&self, key: PathBuf) -> TurnWait {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         {
@@ -629,7 +629,7 @@ impl AcquisitionCoordinator {
                 return Err(busy_failure());
             }
         }
-        // ADR 0014 Q4: an acquired game's ready directory is the release's own content.
+        // ADR 0016 Q4: an acquired game's ready directory is the release's own content.
         // Another game naming the same release keeps it; a working job for
         // this game asks for Cancel first.
         if self.games.busy_for_game(&snapshot, game_id) {
@@ -692,7 +692,7 @@ async fn discard_partials(base: &Path) -> Result<(), RpcFailure> {
     placement::remove_downloads(base).map_err(Failure::rpc)
 }
 
-/// Game acquisition RPC (ADR 0014); see `game.rs`.
+/// Game acquisition RPC (ADR 0016); see `game.rs`.
 impl AcquisitionCoordinator {
     pub fn providers(&self, registry: &PluginRegistry) -> PluginListResponse {
         self.games.providers(registry)

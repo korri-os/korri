@@ -15,7 +15,7 @@ only".
 Every device runs `KORRID_MODE = "host"`
 (`services/korrid/nixos-module.nix`) with an installed library root
 (`KORRID_STORAGE_ROOT`). Discovery, its library writer and the store
-(ADR 0014) ran only in brain mode, and a brain cannot launch installed games.
+(ADR 0016) ran only in brain mode, and a brain cannot launch installed games.
 So on a device:
 
 - `app.discovery.*` and the attention RPCs answered `OperationUnsupported`;
@@ -101,5 +101,5 @@ host and brain names is tracked separately.
   the device's owner (an owner device). Sources written by
   `korrid catalog migrate` are scanned at startup.
 - ADR 0013 declared-artifact games appear in a device's library after the
-  first scan. ADR 0014 store downloads are recorded on the device and launch
+  first scan. ADR 0016 store downloads are recorded on the device and launch
   from its cache.
