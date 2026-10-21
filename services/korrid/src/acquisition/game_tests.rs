@@ -533,8 +533,8 @@ async fn remove_download_refuses_while_session_recovery_is_unresolved() {
     assert!(fixture.ready("bonus").is_dir());
 }
 
-#[test]
-fn package_games_resolve_content_path_offline_and_become_unavailable_when_disabled() {
+#[tokio::test]
+async fn package_games_resolve_content_path_offline_and_become_unavailable_when_disabled() {
     let root = tempfile::tempdir().unwrap();
     let package = root.path().join("pack");
     fs::create_dir(&package).unwrap();
@@ -609,12 +609,26 @@ fn package_games_resolve_content_path_offline_and_become_unavailable_when_disabl
             .unwrap(),
         expected
     );
-    let spec =
-        launcher::linux_plugin::launch_route(root.path(), &snapshot, &registry, &route, None, None, "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9")
-            .unwrap();
+    let spec = launcher::linux_plugin::launch_route(
+        root.path(),
+        &snapshot,
+        &registry,
+        &route,
+        None,
+        None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
     let input: launcher::plugin_launch::PluginLaunchInput =
         serde_json::from_str(&spec.command[3]).unwrap();
     assert_eq!(input.content_path, Some(expected.display().to_string()));
+    let person = "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9";
+    let account = root.path().join("users").join(person);
+    assert_eq!(input.account_root, account.display().to_string());
+    assert_eq!(
+        input.save_root,
+        account.join("saves/offline-cart").display().to_string()
+    );
     assert!(acquisition::route_artifact_ids(&registry, &route)
         .unwrap()
         .is_empty());
@@ -628,6 +642,88 @@ fn package_games_resolve_content_path_offline_and_become_unavailable_when_disabl
     )
     .is_err());
     assert_eq!(snapshot.library.len(), 1);
+
+    // Starter pack entries are package-file releases too. All three launch
+    // entry points must use the same owner-gated producer, not a package path
+    // that skips person-specific preparation.
+    fs::create_dir_all(expected.parent().unwrap()).unwrap();
+    fs::write(&expected, CONTENT).unwrap();
+    fs::write(
+        runner_package.join("manifest.json"),
+        r#"{"entry":"plugin.ts","sources":["plugin.ts"]}"#,
+    )
+    .unwrap();
+    fs::create_dir_all(root.path().join("catalog")).unwrap();
+    fs::write(
+        root.path().join("catalog/library.yaml"),
+        change.library_yaml.unwrap(),
+    )
+    .unwrap();
+    fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
+    let config = root.path().join("host.toml");
+    fs::write(&config, "label = \"package-games\"\ngames = []\n").unwrap();
+    let private = root.path().join("private");
+    let backend = Arc::new(host::control::InMemoryLaunchUnitBackend::default());
+    let runtime = host::HostRuntime::from_paths_with_backend(
+        &config,
+        Some(root.path().into()),
+        private.clone(),
+        backend.clone(),
+    )
+    .with_route_registry(root.path().into(), registry.clone());
+    let app = secure_host_routers(
+        runtime.clone(),
+        &private,
+        Some(PortalAccess::new(
+            "artifact-games",
+            "http://127.0.0.1:8099",
+            PortalPermission::LocalSessions,
+        )),
+    )
+    .0;
+    let fixture = Fixture {
+        root,
+        registry,
+        backend,
+        app,
+    };
+    let refused = fixture.launch("offline-cart").await;
+    assert_eq!(
+        refused["outcome"]["payload"]["code"], "DeviceNeedsOwner",
+        "{refused}"
+    );
+    assert_eq!(fixture.backend.launch_count(), 0);
+    runtime.claim_save_owner();
+    for method in [
+        "app.session.start",
+        "app.local-games.launch.selected",
+        "app.session.prepare",
+    ] {
+        let launched = match method {
+            "app.session.start" => fixture.launch("offline-cart").await,
+            "app.local-games.launch.selected" => {
+                fixture
+                    .call(
+                        method,
+                        json!({"gameId":"offline-cart","runnerId":"@test:runner/run"}),
+                    )
+                    .await
+            }
+            _ => fixture.call(method, json!({"gameId":"offline-cart"})).await,
+        };
+        assert_eq!(launched["outcome"]["_tag"], "Ok", "{launched}");
+        let payload = &launched["outcome"]["payload"];
+        let launch_id = if method == "app.session.prepare" {
+            &payload["launchId"]
+        } else {
+            &payload["session"]["launchId"]
+        };
+        let stopped = fixture
+            .call("app.session.stop", json!({"expectedLaunchId":launch_id}))
+            .await;
+        assert_eq!(stopped["outcome"]["_tag"], "Ok", "{stopped}");
+    }
+    assert_eq!(fixture.backend.launch_count(), 3);
 }
 
 #[tokio::test]
