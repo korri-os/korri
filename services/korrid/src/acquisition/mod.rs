@@ -135,14 +135,38 @@ impl AcquisitionCoordinator {
         self.queue.lock().expect("acquisition queue mutex poisoned")
     }
 
+    /// ADR 0013 artifact recovery first, so pinned downloads resume; then
+    /// the ADR 0014 provider caches, whose errors are only logged.
     pub(crate) fn recover(
         &self,
         root: &Path,
         private_root: &Path,
         registry: &PluginRegistry,
     ) -> Result<(), RpcFailure> {
+        let artifacts = self.recover_artifacts(root, private_root, registry);
+        match self.games.recover(root, registry) {
+            Ok(unrecorded) => {
+                for (provider, hex) in unrecorded {
+                    eprintln!(
+                        "korrid acquisition recovery: {provider} cache folder {hex} has no library release; the next Get of that game records it"
+                    );
+                }
+            }
+            Err(error) => eprintln!(
+                "korrid acquisition recovery: provider caches: {}",
+                error.rpc().message
+            ),
+        }
+        artifacts
+    }
+
+    fn recover_artifacts(
+        &self,
+        root: &Path,
+        private_root: &Path,
+        registry: &PluginRegistry,
+    ) -> Result<(), RpcFailure> {
         let mut interrupted = Vec::new();
-        self.games.recover(root, registry).map_err(Failure::rpc)?;
         for artifact in registry.artifacts().values() {
             let base = placement::contribution(root, artifact);
             if !placement::is_ready(&base) {

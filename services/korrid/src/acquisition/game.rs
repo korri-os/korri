@@ -453,15 +453,46 @@ impl GameAcquisition {
 
     /// Startup: a game download never resumes (no expected hash, no saved
     /// URL); remove every staging file and interrupted publication.
-    pub(super) fn recover(&self, root: &Path, registry: &PluginRegistry) -> Result<(), Failure> {
+    ///
+    /// Returns `(provider, sha256 hex)` for every ready folder that no library
+    /// release names: korrid stopped between publishing it and writing the
+    /// record. Nothing deletes it; the next Get of that game records it.
+    pub(super) fn recover(
+        &self,
+        root: &Path,
+        registry: &PluginRegistry,
+    ) -> Result<Vec<(String, String)>, Failure> {
+        let library = crate::config::settings::runner_choice_snapshot(root)
+            .ok()
+            .map(|(snapshot, _)| snapshot);
+        let mut unrecorded = Vec::new();
         for (record, owner) in registry.acquisition_providers() {
             let cache = placement::provider_cache(root, owner, &record.id);
             placement::remove_game_staging(&cache.join(".downloads"))?;
-            if cache.is_dir() {
-                placement::clean_work(&cache)?;
+            if !cache.is_dir() {
+                continue;
+            }
+            placement::clean_work(&cache)?;
+            let Some(library) = &library else {
+                continue;
+            };
+            for entry in std::fs::read_dir(&cache)? {
+                let name = entry?.file_name().to_string_lossy().into_owned();
+                if name.len() != 64 || !name.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    continue;
+                }
+                let key = format!("sha256:{name}");
+                let named = library.library.values().any(|game| {
+                    game.releases
+                        .iter()
+                        .any(|release| release.identity.as_ref().is_some_and(|i| i.value() == key))
+                });
+                if !named {
+                    unrecorded.push((record.id.clone(), name));
+                }
             }
         }
-        Ok(())
+        Ok(unrecorded)
     }
 }
 
