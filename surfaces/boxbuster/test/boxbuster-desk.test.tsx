@@ -230,6 +230,21 @@ describe("ordering", () => {
   })
 })
 
+describe("the desk's cursor", () => {
+  test("an entry that is still reading lands on its first control once it arrives, not on Back to the store", () => {
+    const host = createRecordingHost()
+    const { drawing } = recordingDrawing()
+    const results = { _tag: "Ready" as const, providerId: BBS, query: "", entries: [celeste] }
+    const { rerender } = render(<BoxbusterSurface host={host} model={modelWith([], storeWith({ search: results }))} drawing={drawing} />)
+    go("Go to the order desk")
+    go("PICO-8 BBS")
+    rerender(<BoxbusterSurface host={host} model={modelWith([], storeWith({ search: results, details: { _tag: "Loading", entry: celeste } }))} drawing={drawing} />)
+    go(/^Celeste Classic 2/)
+    rerender(<BoxbusterSurface host={host} model={modelWith([], storeWith({ search: results, details: ready({ _tag: "Offer", actions: [action("store:1:get", "Get")] }) }))} drawing={drawing} />)
+    expect(document.activeElement?.textContent).toBe("Get")
+  })
+})
+
 describe("the desk's rules", () => {
   test("Back walks form, entry, results, providers, then leaves", () => {
     expect(deskBack({ view: "Form", providerId: BBS, text: "x" }, false)).toEqual({ view: "Providers", providerId: BBS, text: "x" })

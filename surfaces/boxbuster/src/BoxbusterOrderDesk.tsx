@@ -68,10 +68,14 @@ export function BoxbusterOrderDesk({
     const lost = active === null || active === root.ownerDocument.body || !active.isConnected ||
       (root.contains(active) && active.matches(":disabled"))
     if (!lost && seeded.current === page) return
-    seeded.current = page
-    ;(root.querySelector<HTMLButtonElement>("[data-desk-landing] button:not([disabled])") ??
+    // Land on the page's own controls. A page still reading has none yet:
+    // wait for them rather than parking the cursor on Back to the store.
+    const target = root.querySelector<HTMLButtonElement>("[data-desk-landing] button:not([disabled])") ??
       root.querySelector<HTMLButtonElement>(".boxbuster-desk-page button:not([disabled])") ??
-      root.querySelector<HTMLButtonElement>("button:not([disabled])"))?.focus()
+      (lost ? root.querySelector<HTMLButtonElement>("button:not([disabled])") : null)
+    if (target === null) return
+    if (target.closest(".boxbuster-desk-page") !== null) seeded.current = page
+    target.focus()
   })
 
   const actionButtons = (actions: readonly DeskAction[]) => actions.length === 0 ? null : (
