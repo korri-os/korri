@@ -140,7 +140,7 @@ test("korrid restarting under a download: Download stopped with Retry, and Retry
 
 test("a cart the library already holds offers PLAY at once, with no Get and no download", async () => {
   // A fresh portal over a korrid whose library holds the cart: the game korrid
-  // wrote carries the provider link as its identity (ADR 0014).
+  // wrote carries the provider link as its identity (ADR 0016).
   const owned: Game = {
     id: "celeste-cart", title: "Celeste Classic 2", supportsRunnerSelection: false,
     source: { label: "This device", isLocal: true },

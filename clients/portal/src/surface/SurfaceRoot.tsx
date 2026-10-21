@@ -69,7 +69,7 @@ function surfaceIdForKorridGame(state: LaunchablesState, gameId: string): string
 
 /**
  * The korrid id of a game this device can play that korrid linked to a
- * provider's claim (ADR 0014: provider link `{ provider, ref: claim id }`,
+ * provider's claim (ADR 0016: provider link `{ provider, ref: claim id }`,
  * carried as the game's provider identity). Only local copies count, and the
  * local catalog lists only games with a route, so a removed cart is absent.
  */

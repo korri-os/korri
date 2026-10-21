@@ -105,7 +105,7 @@ export interface InMemoryStoreConfig {
 export interface InMemoryStoreAcquisition extends StoreAcquisitionMethods {
   /** korrid restarted: every job and every held claim is gone, and no
    * partial file remains. A cart that finished stays in the library and the
-   * cache, so acquiring it again answers Imported at once (ADR 0014). */
+   * cache, so acquiring it again answers Imported at once (ADR 0016). */
   restart(): void
   /** Bytes korrid fetched in total, across every job: proves no second download. */
   readonly downloadedBytes: () => number
@@ -115,7 +115,7 @@ export interface InMemoryStoreAcquisition extends StoreAcquisitionMethods {
 
 /**
  * The browser preview's korrid: the one provider in scope that searches
- * (ADR 0014), the PICO-8 BBS. Homebrew Hub and RetroBrews
+ * (ADR 0016), the PICO-8 BBS. Homebrew Hub and RetroBrews
  * are declared games under ADR 0013, not providers. The BBS states no size,
  * so Confirm says the size is unknown and the size arrives with the download
  * (`contentLength`). No art: the portal never loads a provider's image. The

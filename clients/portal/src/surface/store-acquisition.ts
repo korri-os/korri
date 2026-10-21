@@ -1,6 +1,6 @@
 /**
  * Getting a game from a provider: the providers, one search, one open entry,
- * and every download a person started (ADR 0014; the wire is
+ * and every download a person started (ADR 0016; the wire is
  * services/korrid/SCRIPTING.md, "Acquisition providers").
  *
  * Host-owned, like the acquisition gate: no DOM, hardware or surface
@@ -15,12 +15,12 @@
  * at something else; it shows again on its entry.
  *
  * Whether a cart is already in the library is the library's fact, not this
- * module's memory: korrid links the game it writes to the claim (ADR 0014,
+ * module's memory: korrid links the game it writes to the claim (ADR 0016,
  * provider link `{ provider, ref: claim id }`), and the catalog carries that
  * link as the game's provider identity. An entry whose claim matches a game
  * this device can play offers Play at once, after a portal reload or a korrid
  * restart too. A removed cart has no route, so it leaves the local catalog and
- * its entry offers Get again (ADR 0014, Q4 and Q6).
+ * its entry offers Get again (ADR 0016, Q4 and Q6).
  *
  * Every action id carries the version of what it answers, so a press that
  * lands after the state moved on finds nothing published and sends nothing.

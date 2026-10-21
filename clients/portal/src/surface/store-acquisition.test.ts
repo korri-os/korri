@@ -58,7 +58,7 @@ function harness(config: InMemoryStoreConfig) {
     acquisitionAcquireCancel: record("cancel", (jobId: string) => korrid.acquisitionAcquireCancel(jobId)),
   }
   // The in-memory korrid writes each imported game into this catalog, with
-  // the provider link as its identity, as korrid does (ADR 0014).
+  // the provider link as its identity, as korrid does (ADR 0016).
   const library: Game[] = []
   korrid.bindCatalog(game => { library.push(game) })
   const store = createStoreAcquisition(client, {
@@ -431,7 +431,7 @@ test("after a korrid restart an owned cart is still Play; a removed one offers G
   h.store.libraryChanged()
   expect(h.get()).toEqual({ _tag: "InLibrary", detail: "In your library", gameId: "store-korripico8-celeste" })
   expect(h.calls.length).toBe(before)
-  // Remove download (ADR 0013, ADR 0014 Q4): the game leaves the local
+  // Remove download (ADR 0013, ADR 0016 Q4): the game leaves the local
   // catalog, so the entry offers Get again (Q6).
   h.library.splice(0)
   h.store.libraryChanged()
