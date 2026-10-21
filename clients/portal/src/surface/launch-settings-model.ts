@@ -135,54 +135,62 @@ interface Steps {
   readonly choices: readonly SurfaceSettingChoice[]
   /** True when the device did not say: 10 % steps, not real clocks. */
   readonly guessed: boolean
+  /** The device says it has none of these clocks (no devfreq GPU). */
+  readonly unavailable?: boolean
   readonly labelOf: (percent: number) => string
 }
 
-const ghz = (value: number) => {
-  const text = value.toFixed(2).replace(/0$/, "").replace(/\.0$/, "")
-  return text
+const GUESSED_PERCENTS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+
+const guessed: Steps = {
+  guessed: true,
+  labelOf: percent => `${percent} %`,
+  choices: GUESSED_PERCENTS.map(percent => ({ value: String(percent), label: `${percent} %` })),
 }
 
 /**
- * Real steps, as percents of each cluster's top clock, every cluster's clock
- * at that percent named in GHz. `unitsPerGhz` is 1e6 for cpufreq (kHz) and
- * 1e9 for devfreq (Hz).
+ * Real steps, by the launch helper's rule (ADR 0020): a step's percent is
+ * `Math.round(step * 100 / top)`, each distinct percent once, labelled with
+ * the GHz of the step it maps back to. `unitsPerGhz` is 1e6 for cpufreq
+ * (kHz) and 1e9 for devfreq (Hz). A percent that is no step (a value saved
+ * on another device, a default) is named by its percent alone.
  */
-function clockSteps(clusters: readonly { readonly top: number; readonly steps: readonly number[] }[], unitsPerGhz: number): Steps {
-  const usable = clusters.filter(cluster => cluster.top > 0 && cluster.steps.length > 0)
-  if (usable.length === 0) {
-    const percents = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-    const labelOf = (percent: number) => `${percent} %`
-    return { guessed: true, labelOf, choices: percents.map(percent => ({ value: String(percent), label: labelOf(percent) })) }
+function clockSteps(top: number, steps: readonly number[], unitsPerGhz: number): Steps {
+  const byPercent = new Map<number, number>()
+  for (const step of [...steps].sort((a, b) => a - b)) {
+    const percent = Math.round((step * 100) / top)
+    if (percent > 0 && percent <= 100 && !byPercent.has(percent)) byPercent.set(percent, step)
   }
-  const percentOf = (step: number, top: number) => Math.round((step / top) * 100)
-  const percents = [...new Set(usable.flatMap(cluster => cluster.steps.map(step => percentOf(step, cluster.top))))]
-    .filter(percent => percent > 0 && percent <= 100)
-    .sort((a, b) => a - b)
   const labelOf = (percent: number) => {
-    const clocks = usable.map(cluster => {
-      const target = (cluster.top * percent) / 100
-      // The real step this percent rounds to on this cluster.
-      const nearest = [...cluster.steps].sort((a, b) => Math.abs(a - target) - Math.abs(b - target))[0] ?? target
-      return ghz(nearest / unitsPerGhz)
-    })
-    return `${percent} % (${[...new Set(clocks)].join(" / ")} GHz)`
+    const step = byPercent.get(percent)
+    return step === undefined ? `${percent} %` : `${percent} % (${(step / unitsPerGhz).toFixed(2)} GHz)`
   }
-  return { guessed: false, labelOf, choices: percents.map(percent => ({ value: String(percent), label: labelOf(percent) })) }
+  return {
+    guessed: false,
+    labelOf,
+    choices: [...byPercent.keys()].map(percent => ({ value: String(percent), label: labelOf(percent) })),
+  }
 }
 
+/** The CPU policy with the highest top clock; 10 % steps when the device states none. */
 export function cpuSteps(facts: LaunchDeviceFacts | undefined): Steps {
-  return clockSteps(
-    (facts?.cpuPolicies ?? []).map(policy => ({ top: policy.cpuinfoMaxFreq || Math.max(0, ...policy.availableFrequencies), steps: policy.availableFrequencies })),
-    1e6,
-  )
+  const policy = [...(facts?.cpuPolicies ?? [])]
+    .filter(candidate => candidate.cpuinfoMaxFreq > 0 && candidate.availableFrequencies.length > 0)
+    .sort((a, b) => b.cpuinfoMaxFreq - a.cpuinfoMaxFreq)[0]
+  return policy === undefined ? guessed : clockSteps(policy.cpuinfoMaxFreq, policy.availableFrequencies, 1e6)
 }
 
+/**
+ * The GPU's steps against its highest frequency. Facts with no devfreq GPU
+ * mean this device has no GPU limits; no facts at all mean 10 % steps.
+ */
 export function gpuSteps(facts: LaunchDeviceFacts | undefined): Steps {
-  return clockSteps(
-    (facts?.gpuDevfreq ?? []).map(device => ({ top: Math.max(0, ...device.availableFrequencies), steps: device.availableFrequencies })),
-    1e9,
-  )
+  if (facts === undefined) return guessed
+  const device = [...facts.gpuDevfreq]
+    .filter(candidate => candidate.availableFrequencies.length > 0)
+    .sort((a, b) => Math.max(...b.availableFrequencies) - Math.max(...a.availableFrequencies))[0]
+  if (device === undefined) return { ...guessed, guessed: false, unavailable: true, choices: [] }
+  return clockSteps(Math.max(...device.availableFrequencies), device.availableFrequencies, 1e9)
 }
 
 /** Governors every cluster offers. Empty when the device did not say. */
@@ -288,10 +296,12 @@ function valueRows(
       percentRow(context, idOf("cpu.max"), layerId, "cpu.max", values.cpu.max),
       ...(withGovernor ? [governorRow(context, idOf("cpu.governor"))] : []),
     ],
-    gpu: [
-      percentRow(context, idOf("gpu.min"), layerId, "gpu.min", values.gpu.min),
-      percentRow(context, idOf("gpu.max"), layerId, "gpu.max", values.gpu.max),
-    ],
+    gpu: context.gpu.unavailable === true
+      ? [{ id: `${idOf("gpu.min")}:unavailable`, label: "GPU limits aren't available on this device" }]
+      : [
+          percentRow(context, idOf("gpu.min"), layerId, "gpu.min", values.gpu.min),
+          percentRow(context, idOf("gpu.max"), layerId, "gpu.max", values.gpu.max),
+        ],
   }
 }
 

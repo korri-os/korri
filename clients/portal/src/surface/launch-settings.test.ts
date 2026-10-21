@@ -21,8 +21,9 @@ describe("clock steps", () => {
     expect(steps.guessed).toBe(false)
     expect(steps.choices.map(choice => choice.value)).toEqual(["23", "33", "45", "61", "79", "89", "100"])
     expect(steps.choices[2]?.label).toBe("45 % (0.82 GHz)")
-    expect(steps.choices[6]?.label).toBe("100 % (1.8 GHz)")
-    expect(gpuSteps(RG353M_LAUNCH_FACTS).choices.map(choice => choice.label)).toContain("50 % (0.4 GHz)")
+    expect(steps.choices[3]?.label).toBe("61 % (1.10 GHz)")
+    expect(steps.choices[6]?.label).toBe("100 % (1.80 GHz)")
+    expect(gpuSteps(RG353M_LAUNCH_FACTS).choices.map(choice => choice.label)).toContain("50 % (0.40 GHz)")
   })
 
   it("fall back to 10 % steps without device facts", () => {
@@ -32,7 +33,7 @@ describe("clock steps", () => {
     expect(governors(undefined)).toEqual([])
   })
 
-  it("name every cluster's clock at one percent", () => {
+  it("come from the policy with the highest top clock", () => {
     const facts = {
       ...RG353M_LAUNCH_FACTS,
       cpuPolicies: [
@@ -40,8 +41,21 @@ describe("clock steps", () => {
         { name: "policy4", cpus: [4], cpuinfoMaxFreq: 3_000_000, availableFrequencies: [1_500_000, 3_000_000], availableGovernors: ["schedutil"] },
       ],
     }
-    expect(cpuSteps(facts).choices.map(choice => choice.label)).toEqual(["50 % (1 / 1.5 GHz)", "100 % (2 / 3 GHz)"])
+    expect(cpuSteps(facts).choices.map(choice => choice.label)).toEqual(["50 % (1.50 GHz)", "100 % (3.00 GHz)"])
     expect(governors(facts)).toEqual(["schedutil"])
+  })
+})
+
+describe("a device without a devfreq GPU", () => {
+  it("shows one read-only GPU line instead of choices", async () => {
+    const launch = createLaunchSettings(createInMemoryKorridClient({
+      launchSettings: { deviceFacts: { ...RG353M_LAUNCH_FACTS, gpuDevfreq: [] } },
+    }))
+    await launch.refreshDevice()
+    const items = launch.getSnapshot().deviceGroup?.items ?? []
+    expect(items.map(item => item.label)).toEqual(["CPU min", "CPU max", "GPU limits aren't available on this device", "CPU governor"])
+    expect(items[2]).toEqual({ id: "launch-device:gpu.min:unavailable", label: "GPU limits aren't available on this device" })
+    expect(items[0]?.description).toBe("Applies at next launch.")
   })
 })
 
@@ -63,7 +77,7 @@ describe("device launch settings", () => {
     expect(group?.title).toBe("Launch settings")
     expect(group?.items.map(item => item.label)).toEqual(["CPU min", "CPU max", "GPU min", "GPU max", "CPU governor"])
     const cpuMax = group?.items[1]
-    expect(cpuMax).toMatchObject({ value: "Inherit", source: "100 % (1.8 GHz) from Device (default)", scope: "device", description: "Applies at next launch." })
+    expect(cpuMax).toMatchObject({ value: "Inherit", source: "100 % (1.80 GHz) from Device (default)", scope: "device", description: "Applies at next launch." })
     expect(group?.items[4]).toMatchObject({ value: "Inherit", source: "schedutil from Device (default)" })
 
     launch.change(LAUNCH_ID.device("cpu.max"), "45")
@@ -94,8 +108,8 @@ describe("game launch settings editor", () => {
     expect(editor._tag).toBe("Ready")
     if (editor._tag === "Closed") return
     expect(editor.layers.map(layer => layer.title)).toEqual(["Device", "System gba", "Runner mGBA", "Game", "Release usa"])
-    expect(row(editor, "runner:retroarch/mgba", "CPU max")).toMatchObject({ value: "61 % (1.1 GHz)", source: "from Runner mGBA" })
-    expect(row(editor, "game", "CPU max")).toMatchObject({ value: "Inherit", source: "61 % (1.1 GHz) from Runner mGBA" })
+    expect(row(editor, "runner:retroarch/mgba", "CPU max")).toMatchObject({ value: "61 % (1.10 GHz)", source: "from Runner mGBA" })
+    expect(row(editor, "game", "CPU max")).toMatchObject({ value: "Inherit", source: "61 % (1.10 GHz) from Runner mGBA" })
     expect(row(editor, "game", "CPU governor")).toBeUndefined()
     expect(row(editor, "device", "CPU governor")?.scope).toBe("device")
   })

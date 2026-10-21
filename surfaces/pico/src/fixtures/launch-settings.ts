@@ -12,8 +12,8 @@ import type {
   SurfaceSettingItem,
 } from "@contracts/surface/korri-surface"
 
-const CPU = ["23 % (0.41 GHz)", "33 % (0.6 GHz)", "45 % (0.82 GHz)", "61 % (1.1 GHz)", "79 % (1.42 GHz)", "89 % (1.61 GHz)", "100 % (1.8 GHz)"]
-const GPU = ["25 % (0.2 GHz)", "38 % (0.3 GHz)", "50 % (0.4 GHz)", "75 % (0.6 GHz)", "88 % (0.7 GHz)", "100 % (0.8 GHz)"]
+const CPU = ["23 % (0.41 GHz)", "33 % (0.60 GHz)", "45 % (0.82 GHz)", "61 % (1.10 GHz)", "79 % (1.42 GHz)", "89 % (1.61 GHz)", "100 % (1.80 GHz)"]
+const GPU = ["25 % (0.20 GHz)", "38 % (0.30 GHz)", "50 % (0.40 GHz)", "75 % (0.60 GHz)", "88 % (0.70 GHz)", "100 % (0.80 GHz)"]
 const GUESSED = ["10 %", "20 %", "30 %", "40 %", "50 %", "60 %", "70 %", "80 %", "90 %", "100 %"]
 const GOVERNORS = ["conservative", "ondemand", "userspace", "powersave", "performance", "schedutil"]
 const NEXT = "Applies at next launch."
@@ -23,9 +23,11 @@ const choices = (labels: readonly string[]) => [
   ...labels.map(label => ({ value: label.split(" ")[0] ?? label, label })),
 ]
 
-interface Steps { readonly cpu: readonly string[]; readonly gpu: readonly string[]; readonly guessed: boolean }
+interface Steps { readonly cpu: readonly string[]; readonly gpu: readonly string[]; readonly guessed: boolean; readonly noGpu?: boolean }
 const REAL: Steps = { cpu: CPU, gpu: GPU, guessed: false }
 const UNKNOWN: Steps = { cpu: GUESSED, gpu: GUESSED, guessed: true }
+/** Facts present, but no devfreq GPU: one read-only GPU line. */
+const NO_GPU: Steps = { cpu: CPU, gpu: [], guessed: false, noGpu: true }
 
 function row(id: string, label: string, value: string | undefined, source: string, labels: readonly string[], guessed: boolean): SurfaceSettingItem {
   return {
@@ -63,10 +65,12 @@ function valueGroups(layerId: string, values: Values, sources: Sources, steps: S
     },
     {
       title: "GPU",
-      items: [
-        row(id("gpu.min"), "GPU min", values.gpuMin, sources.gpuMin, steps.gpu, steps.guessed),
-        row(id("gpu.max"), "GPU max", values.gpuMax, sources.gpuMax, steps.gpu, steps.guessed),
-      ],
+      items: steps.noGpu === true
+        ? [{ id: `${id("gpu.min")}:unavailable`, label: "GPU limits aren't available on this device" }]
+        : [
+            row(id("gpu.min"), "GPU min", values.gpuMin, sources.gpuMin, steps.gpu, steps.guessed),
+            row(id("gpu.max"), "GPU max", values.gpuMax, sources.gpuMax, steps.gpu, steps.guessed),
+          ],
     },
   ]
 }
@@ -148,14 +152,14 @@ const BATTERY: FixtureProfile = { id: "battery", title: "Battery saver" }
  */
 function layers(steps: Steps, profiles: readonly FixtureProfile[], selected: string | undefined, route = true): readonly SurfaceLaunchSettingsLayer[] {
   const real = !steps.guessed
-  const label = (index: number, list: readonly string[]) => list[index] ?? "?"
+  const label = (index: number, list: readonly string[], fallback = "?") => list[index] ?? fallback
   const cpuMax = selected === BATTERY.id && profiles.includes(BATTERY)
     ? { value: real ? label(3, CPU) : "60 %", from: "Profile Battery saver", layer: `profile:${BATTERY.id}` }
     : { value: real ? label(5, CPU) : "90 %", from: "Device", layer: "device" }
   const cpuMin = route
     ? { value: real ? label(1, CPU) : "30 %", from: "Runner mGBA", layer: "runner:retroarch/mgba" }
     : { value: "0 %", from: "Device (default)", layer: "" }
-  const gpuMax = { value: real ? label(3, GPU) : "70 %", from: "Game", layer: "game" }
+  const gpuMax = { value: real ? label(3, GPU, "75 %") : "70 %", from: "Game", layer: "game" }
   const say = (layerId: string, resolved: { value: string; from: string; layer: string }) =>
     resolved.layer === layerId ? `from ${resolved.from}` : `${resolved.value} from ${resolved.from}`
   const sources = (layerId: string): Sources => ({
@@ -215,6 +219,7 @@ export const launchSettingsFixtures = {
     note: "System, runner and release settings aren't available: The runner plugin did not load. Values in force leave them out.",
     actions: [LAUNCH_RELOAD, LAUNCH_CLOSE],
   },
+  noGpu: { _tag: "Ready", ...content(NO_GPU, [BATTERY], BATTERY.id), actions: [LAUNCH_RELOAD, LAUNCH_CLOSE] },
   factsMissing: { _tag: "Ready", ...content(UNKNOWN, [BATTERY], BATTERY.id), actions: [LAUNCH_RELOAD, LAUNCH_CLOSE] },
   conflict: {
     _tag: "Conflict",
@@ -244,7 +249,7 @@ export const deviceLaunchGroup: SurfaceSettingGroup = {
       cpuMin: "0 % from Device (default)",
       cpuMax: "from Device",
       gpuMin: "0 % from Device (default)",
-      gpuMax: "100 % (0.8 GHz) from Device (default)",
+      gpuMax: "100 % (0.80 GHz) from Device (default)",
     }, REAL, { source: "schedutil from Device (default)" })
     const items = [...(cpu?.items ?? []), ...(gpu?.items ?? [])].map(item => ({ ...item, id: item.id.replace("launch:set:device:", "launch-device:") }))
     const governor = items.find(item => item.label === "CPU governor")

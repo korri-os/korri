@@ -126,6 +126,8 @@ export function NeedsRunnerChoice() {
 export function RouteUnavailable() {
   return <Launch model={open(launch.routeUnavailable)} opening={[on(launch.routeUnavailable, "game")]} />
 }
+/** Facts present, but no devfreq GPU: one read-only GPU line instead of choices. */
+export function NoGpu() { return <Launch model={open(launch.noGpu)} opening={[on(launch.noGpu, "game")]} /> }
 /** No device facts: 10 % steps, and the rows say so. */
 export function FactsMissing() {
   return <Launch model={open(launch.factsMissing)} opening={[on(launch.factsMissing, "game")]} />

@@ -93,7 +93,7 @@ describe("launch settings screen", () => {
     expect(document.activeElement?.textContent).toContain("CPU min")
     const row = screen.getByRole("button", { name: /CPU max/ }).closest("li")
     if (row === null) throw new Error("no CPU max row")
-    expect(within(row).getByText("61 % (1.1 GHz) from Profile Battery saver")).toBeTruthy()
+    expect(within(row).getByText("61 % (1.10 GHz) from Profile Battery saver")).toBeTruthy()
     expect(within(row).getByText("DEVICE-ONLY")).toBeTruthy()
     expect(within(row).getByText("Applies at next launch.")).toBeTruthy()
     expect(row.textContent).toContain("◀ 89 % (1.61 GHz) ▶")
@@ -146,5 +146,11 @@ describe("launch settings screen", () => {
     expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["DEVICE", "GAME", "PROFILE BATTERY SAVER"])
     fireEvent.click(screen.getByRole("button", { name: "CHOOSE A RUNNER" }))
     expect(host.calls).toEqual(["action:launch:runner"])
+  })
+
+  test("a device with no GPU clocks shows one read-only GPU line", () => {
+    render(<PicoSurface host={createFixtureHost()} model={withLaunchSettings(fixtureModel, launch.noGpu)} />)
+    expect(screen.getByText("GPU limits aren't available on this device")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /GPU min/ })).toBeNull()
   })
 })
