@@ -133,6 +133,372 @@ impl NativeSaveStore {
             root: private_state_root.join("saves"),
         }
     }
+    pub fn reconcile(&self, person: &str, game: &str) -> Result<SaveMark, SaveError> {
+        let _guard = lock()?;
+        let records = self.read_records(person, game)?;
+        let ids = head_ids(&records)?;
+        if ids.len() <= 1 {
+            return Ok(SaveMark::NotChecked);
+        }
+        let heads: Vec<_> = records
+            .into_iter()
+            .filter(|r| ids.contains(&snapshot_id(r).expect("validated record")))
+            .collect();
+        match super::history::automatic_join(&heads)? {
+            None => Ok(SaveMark::Split),
+            Some(joined) => {
+                // Never claim continuation until every side's content is durable.
+                for head in &heads {
+                    if !self.record_complete(head)? {
+                        return Ok(SaveMark::NotChecked);
+                    }
+                }
+                self.write_record(person, &joined)?;
+                Ok(SaveMark::NotChecked)
+            }
+        }
+    }
+
+    /// A choice records both heads; the unpicked content remains in history.
+    pub fn choose(
+        &self,
+        person: &str,
+        game: &str,
+        id: &str,
+        device: &str,
+        ended_at: &str,
+    ) -> Result<String, SaveError> {
+        let _guard = lock()?;
+        let records = self.read_records(person, game)?;
+        let heads = head_ids(&records)?;
+        if heads.len() < 2 || !heads.iter().any(|head| head == id) {
+            return Err(invalid("choice no longer names an open split side"));
+        }
+        self.pick(person, &records, heads, id, device, ended_at)
+    }
+    /// Restore changes continuation by appending, never by rewriting history.
+    pub fn restore(
+        &self,
+        person: &str,
+        game: &str,
+        id: &str,
+        device: &str,
+        ended_at: &str,
+    ) -> Result<String, SaveError> {
+        let _guard = lock()?;
+        let records = self.read_records(person, game)?;
+        let heads = head_ids(&records)?;
+        self.pick(person, &records, heads, id, device, ended_at)
+    }
+    fn pick(
+        &self,
+        person: &str,
+        records: &[SnapshotRecord],
+        parents: Vec<String>,
+        id: &str,
+        device: &str,
+        ended_at: &str,
+    ) -> Result<String, SaveError> {
+        let mut picked = records
+            .iter()
+            .find(|r| snapshot_id(r).is_ok_and(|v| v == id))
+            .cloned()
+            .ok_or(SaveError::Missing)?;
+        if !self.record_complete(&picked)? {
+            return Err(SaveError::Missing);
+        }
+        picked.parents = parents;
+        picked.device = device.into();
+        picked.ended_at = ended_at.into();
+        picked.duration_seconds = 0;
+        picked.interrupted = false;
+        self.write_record(person, &picked)
+    }
+
+    /// Capture only after the executor proves exit. Objects become durable first;
+    /// the caller journals this record before publishing it, for exact replay.
+    pub fn capture(
+        &self,
+        locations: &[SaveLocation],
+        mut record: SnapshotRecord,
+    ) -> Result<SnapshotRecord, SaveError> {
+        let _guard = lock()?;
+        record.locations.clear();
+        fn walk(
+            store: &NativeSaveStore,
+            root: &Path,
+            path: &Path,
+            files: &mut Vec<SaveFile>,
+        ) -> Result<(), SaveError> {
+            let metadata = match fs::symlink_metadata(path) {
+                Ok(m) => m,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound && path == root => return Ok(()),
+                Err(e) => return Err(io(e)),
+            };
+            if metadata.file_type().is_symlink() {
+                return Err(invalid("symlink in save location"));
+            }
+            if metadata.is_dir() {
+                for entry in fs::read_dir(path).map_err(io)? {
+                    walk(store, root, &entry.map_err(io)?.path(), files)?;
+                }
+            } else if metadata.is_file() {
+                let mut file = OpenOptions::new()
+                    .read(true)
+                    .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+                    .open(path)
+                    .map_err(io)?;
+                if !file.metadata().map_err(io)?.is_file() {
+                    return Err(invalid("save is not a regular file"));
+                }
+                let mut sha = Sha256::new();
+                let mut bytes = 0u64;
+                let mut buffer = [0u8; 65536];
+                loop {
+                    let n = file.read(&mut buffer).map_err(io)?;
+                    if n == 0 {
+                        break;
+                    }
+                    sha.update(&buffer[..n]);
+                    bytes += n as u64;
+                }
+                let hash = format!("sha256:{}", hex::encode(sha.finalize()));
+                file.seek(SeekFrom::Start(0)).map_err(io)?;
+                publish(&store.object_path(&hash, true)?, &mut file, Some(&hash))?;
+                let relative = path
+                    .strip_prefix(root)
+                    .map_err(|_| invalid("save escaped location"))?
+                    .to_str()
+                    .ok_or_else(|| invalid("save filename is not UTF-8"))?
+                    .to_owned();
+                files.push(SaveFile {
+                    path: relative,
+                    sha256: hash,
+                    bytes,
+                });
+            } else {
+                return Err(invalid("special file in save location"));
+            }
+            Ok(())
+        }
+        for location in locations {
+            let root = Path::new(&location.path);
+            // A persisted declaration is trusted, but its ancestors may have changed.
+            for ancestor in root.ancestors() {
+                if let Ok(m) = fs::symlink_metadata(ancestor) {
+                    if m.file_type().is_symlink() {
+                        return Err(invalid("symlink in save ancestors"));
+                    }
+                }
+            }
+            let mut files = Vec::new();
+            walk(self, root, root, &mut files)?;
+            files.sort_by(|a, b| a.path.cmp(&b.path));
+            record.locations.push(SnapshotLocation {
+                key: location.key.clone(),
+                kind: location.kind.clone(),
+                files,
+            });
+        }
+        canonical_record(&record)?;
+        Ok(record)
+    }
+
+    /// Materialize a whole snapshot before launch, never while the executor is
+    /// live. Stage all content first. Each folder replacement is atomic; retrying
+    /// after interruption completes the same snapshot before any game can run.
+    pub fn materialize(
+        &self,
+        person: &str,
+        game: &str,
+        id: &str,
+        save_root: &str,
+        locations: &[SaveLocation],
+    ) -> Result<(), SaveError> {
+        let _guard = lock()?;
+        crate::launcher::plugin_launch::validate_save_locations(save_root, locations)
+            .map_err(SaveError::Invalid)?;
+        let record = self
+            .read_records(person, game)?
+            .into_iter()
+            .find(|r| snapshot_id(r).is_ok_and(|v| v == id))
+            .ok_or(SaveError::Missing)?;
+        if !self.record_complete(&record)? {
+            return Err(SaveError::Missing);
+        }
+        let uid = runtime_id("KORRID_RUNTIME_UID", unsafe { libc::geteuid() })?;
+        let gid = runtime_id("KORRID_RUNTIME_GID", unsafe { libc::getegid() })?;
+        let mut staged = Vec::new();
+        let result = (|| {
+            for location in locations {
+                let target = Path::new(&location.path);
+                let parent = target
+                    .parent()
+                    .ok_or_else(|| invalid("save location parent"))?;
+                runtime_directory(parent, uid, gid)?;
+                let stage = parent.join(format!(".save-{:016x}.tmp", rand::random::<u64>()));
+                fs::DirBuilder::new()
+                    .mode(0o700)
+                    .create(&stage)
+                    .map_err(io)?;
+                staged.push((stage.clone(), target.to_path_buf()));
+                if let Some(content) = record
+                    .locations
+                    .iter()
+                    .find(|l| l.key == location.key && l.kind == location.kind)
+                {
+                    for expected in &content.files {
+                        let path = stage.join(&expected.path);
+                        runtime_directory(path.parent().unwrap(), uid, gid)?;
+                        let mut source = self.verified_object(&expected.sha256)?;
+                        let mut output = OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .mode(0o600)
+                            .open(&path)
+                            .map_err(io)?;
+                        std::io::copy(&mut source, &mut output).map_err(io)?;
+                        ownership(&output, uid, gid)?;
+                        output.sync_all().map_err(io)?;
+                    }
+                }
+                let directory = File::open(&stage).map_err(io)?;
+                ownership(&directory, uid, gid)?;
+                directory.sync_all().map_err(io)?;
+            }
+            for (stage, target) in &staged {
+                match fs::symlink_metadata(target) {
+                    Ok(m) if m.is_dir() && !m.file_type().is_symlink() => {
+                        use std::os::unix::ffi::OsStrExt;
+                        let a = std::ffi::CString::new(stage.as_os_str().as_bytes())
+                            .map_err(|_| invalid("save path"))?;
+                        let b = std::ffi::CString::new(target.as_os_str().as_bytes())
+                            .map_err(|_| invalid("save path"))?;
+                        if unsafe {
+                            libc::renameat2(
+                                libc::AT_FDCWD,
+                                a.as_ptr(),
+                                libc::AT_FDCWD,
+                                b.as_ptr(),
+                                libc::RENAME_EXCHANGE,
+                            )
+                        } != 0
+                        {
+                            return Err(io(std::io::Error::last_os_error()));
+                        }
+                    }
+                    Ok(_) => return Err(invalid("save location is not a directory")),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        fs::rename(stage, target).map_err(io)?
+                    }
+                    Err(e) => return Err(io(e)),
+                }
+                File::open(target.parent().unwrap())
+                    .and_then(|f| f.sync_all())
+                    .map_err(io)?;
+            }
+            Ok(())
+        })();
+        for (stage, _) in staged {
+            if stage.exists() {
+                fs::remove_dir_all(stage).map_err(io)?;
+            }
+        }
+        result
+    }
+
+    /// Payload retention never removes record ancestry, unpicked split sides,
+    /// or a snapshot without another device's durable acknowledgement.
+    pub fn prune(&self, person: &str, game: &str, local_device: &str) -> Result<(), SaveError> {
+        let _guard = lock()?;
+        let mut records = self.read_records(person, game)?;
+        if records.len() <= 10 {
+            return Ok(());
+        }
+        let path = self.game(person, game, false)?.ok_or(SaveError::Missing)?;
+        let confirmations: BTreeMap<String, BTreeSet<String>> =
+            match read_json(&path.join("confirmations.json")) {
+                Ok(v) => v,
+                Err(SaveError::Missing) => BTreeMap::new(),
+                Err(e) => return Err(e),
+            };
+        let mut protected: BTreeSet<String> = head_ids(&records)?.into_iter().collect();
+        records.sort_by(|a, b| {
+            b.ended_at
+                .cmp(&a.ended_at)
+                .then_with(|| snapshot_id(a).unwrap().cmp(&snapshot_id(b).unwrap()))
+        });
+        for record in records.iter().take(10) {
+            protected.insert(snapshot_id(record)?);
+        }
+        for merge in records.iter().filter(|r| r.parents.len() > 1) {
+            for parent in &merge.parents {
+                if records.iter().any(|r| {
+                    snapshot_id(r).is_ok_and(|id| &id == parent)
+                        && super::history::progress(r) != super::history::progress(merge)
+                }) {
+                    protected.insert(parent.clone());
+                }
+            }
+        }
+        let mut prunable = BTreeSet::new();
+        let mut candidates = BTreeSet::new();
+        for record in &records {
+            let id = snapshot_id(record)?;
+            if !protected.contains(&id)
+                && confirmations
+                    .get(&id)
+                    .is_some_and(|devices| devices.iter().any(|device| device != local_device))
+            {
+                prunable.insert(id);
+                candidates.extend(
+                    record
+                        .locations
+                        .iter()
+                        .flat_map(|l| &l.files)
+                        .map(|f| f.sha256.clone()),
+                );
+            }
+        }
+        // Objects are shared across all people and games. A retained reference
+        // anywhere protects its bytes, including the previous owner's history.
+        for entry in fs::read_dir(&self.root).map_err(io)? {
+            let entry = entry.map_err(io)?;
+            let name = entry.file_name();
+            let name = name.to_str().ok_or_else(|| invalid("person directory"))?;
+            if name == "objects" {
+                continue;
+            }
+            for history in self.all_records(name)? {
+                for record in history {
+                    if name == person
+                        && record.game_id == game
+                        && prunable.contains(&snapshot_id(&record)?)
+                    {
+                        continue;
+                    }
+                    for file in record.locations.iter().flat_map(|l| &l.files) {
+                        candidates.remove(&file.sha256);
+                    }
+                }
+            }
+        }
+        for hash in candidates {
+            let path = self.object_path(&hash, false)?;
+            match regular(&path) {
+                Ok(_) => fs::remove_file(path).map_err(io)?,
+                Err(SaveError::Missing) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        if self.root.join("objects").exists() {
+            File::open(self.root.join("objects"))
+                .and_then(|f| f.sync_all())
+                .map_err(io)?;
+        }
+        Ok(())
+    }
+
     fn person(&self, person: &str, create: bool) -> Result<Option<PathBuf>, SaveError> {
         super::account_root(Path::new("/"), person).map_err(SaveError::Invalid)?;
         if !directory(&self.root, create)? {
@@ -351,5 +717,57 @@ impl SaveRepository for NativeSaveStore {
             .insert(device.into());
         let bytes = serde_json::to_vec(&confirmations).map_err(|e| invalid(&e.to_string()))?;
         publish(&path, &mut bytes.as_slice(), None)
+    }
+}
+
+fn runtime_id(name: &str, current: u32) -> Result<u32, SaveError> {
+    match std::env::var(name) {
+        Ok(value) => value
+            .parse::<u32>()
+            .ok()
+            .filter(|v| *v > 0)
+            .ok_or_else(|| invalid("invalid runtime identity")),
+        Err(std::env::VarError::NotPresent) => Ok(current),
+        Err(_) => Err(invalid("invalid runtime identity")),
+    }
+}
+fn ownership(file: &File, uid: u32, gid: u32) -> Result<(), SaveError> {
+    use std::os::{fd::AsRawFd, unix::fs::MetadataExt};
+    let m = file.metadata().map_err(io)?;
+    if m.uid() == uid && m.gid() == gid {
+        return Ok(());
+    }
+    if unsafe { libc::fchown(file.as_raw_fd(), uid, gid) } != 0 {
+        return Err(io(std::io::Error::last_os_error()));
+    }
+    Ok(())
+}
+fn runtime_directory(path: &Path, uid: u32, gid: u32) -> Result<(), SaveError> {
+    match fs::symlink_metadata(path) {
+        Ok(m) if m.is_dir() && !m.file_type().is_symlink() => {
+            for ancestor in path.ancestors() {
+                let m = fs::symlink_metadata(ancestor).map_err(io)?;
+                if m.file_type().is_symlink() {
+                    return Err(invalid("symlink in save ancestors"));
+                }
+            }
+            Ok(())
+        }
+        Ok(_) => Err(invalid("save ancestor is not a directory")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            runtime_directory(
+                path.parent().ok_or_else(|| invalid("save parent"))?,
+                uid,
+                gid,
+            )?;
+            fs::DirBuilder::new().mode(0o700).create(path).map_err(io)?;
+            let file = File::open(path).map_err(io)?;
+            ownership(&file, uid, gid)?;
+            file.sync_all().map_err(io)?;
+            File::open(path.parent().unwrap())
+                .and_then(|f| f.sync_all())
+                .map_err(io)
+        }
+        Err(e) => Err(io(e)),
     }
 }
