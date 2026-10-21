@@ -1761,10 +1761,10 @@ mod tests {
             "mixed/Mario.sfc",
             "mixed/Sonic.md",
             "mixed/Lynx.lnx",
-            "users/default/prepared-arm-x/a.o",
-            "users/default/prepared-arm-x/b.o",
-            "users/default/prepared-arm-x/README.md",
-            "users/default/old/MASTER.DAT",
+            "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/prepared-arm-x/a.o",
+            "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/prepared-arm-x/b.o",
+            "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/prepared-arm-x/README.md",
+            "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/old/MASTER.DAT",
         ];
         let mut games = BTreeMap::new();
         let mut releases = indexmap::IndexMap::new();
@@ -1834,7 +1834,7 @@ mod tests {
                     DeclaredRelease {
                         system: None,
                         hashes: vec![
-                            whole_hash(&root.join("users/default/old/MASTER.DAT")).unwrap()
+                            whole_hash(&root.join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/old/MASTER.DAT")).unwrap()
                         ],
                         artifacts: Vec::new(),
                         file: Some(crate::plugin::DeclaredReleaseFile::AccountRoot(
@@ -1902,15 +1902,22 @@ mod tests {
 
     fn prepared_fixture(root: &Path, private: &Path, old_file: &str, declared_file: &str) -> Rules {
         let mut rules = mini(root, private);
-        let old = root.join("users/default/old/MASTER.DAT");
-        let from = root.join("users/default").join(old_file);
+        let old = root.join(
+            "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/old/MASTER.DAT",
+        );
+        let from = root
+            .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9")
+            .join(old_file);
         if from != old {
             fs::create_dir_all(from.parent().unwrap()).unwrap();
             fs::rename(old, &from).unwrap();
         }
         let mut device = read_yaml(&root.join("device.yaml")).unwrap();
         device.as_mapping_mut().unwrap().remove("host");
-        device["locations"]["release-7"][0]["path"] = format!("users/default/{old_file}").into();
+        device["locations"]["release-7"][0]["path"] = format!(
+            "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/{old_file}"
+        )
+        .into();
         write_yaml(&root.join("device.yaml"), &device).unwrap();
         rules
             .games
@@ -1945,7 +1952,9 @@ mod tests {
             let root = tempfile::tempdir().unwrap();
             let private = tempfile::tempdir().unwrap();
             let rules = prepared_fixture(root.path(), private.path(), old_file, declared);
-            let account = root.path().join("users/default");
+            let account = root
+                .path()
+                .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9");
             for companion in ["CRITTER.DAT", "DATA/companion", "fallout.cfg", "saves/save"] {
                 put(&account.join(old_directory).join(companion), companion);
             }
@@ -1981,7 +1990,9 @@ mod tests {
                 _ => ("shared/one/MASTER.DAT", "first/one/MASTER.DAT"),
             };
             let mut rules = prepared_fixture(root.path(), private.path(), old, declared);
-            let account = root.path().join("users/default");
+            let account = root
+                .path()
+                .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9");
             if case == "existing" {
                 put(
                     &account.join("fallout-ce/CRITTER.DAT"),
@@ -2002,7 +2013,7 @@ mod tests {
                     serde_yaml::to_value(serde_json::json!({"game":"old-second"})).unwrap();
                 write_yaml(&root.path().join("catalog/releases.yaml"), &releases).unwrap();
                 let mut device = read_yaml(&root.path().join("device.yaml")).unwrap();
-                device["locations"]["second"] = serde_yaml::to_value(serde_json::json!([{"storage":"old","path":"users/default/shared/two/MASTER.DAT"}])).unwrap();
+                device["locations"]["second"] = serde_yaml::to_value(serde_json::json!([{"storage":"old","path":"users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/shared/two/MASTER.DAT"}])).unwrap();
                 write_yaml(&root.path().join("device.yaml"), &device).unwrap();
                 rules.games.insert(
                     "@test:fallout/second".into(),
@@ -2059,7 +2070,7 @@ mod tests {
             "fallout-ce/MASTER.DAT",
         );
         let registry = real_registry(&rules);
-        let file = root.path().join("users/default/fallout-ce/MASTER.DAT");
+        let file = root.path().join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/fallout-ce/MASTER.DAT");
         let before = fs::read(&file).unwrap();
         assert!(run(
             &["--plan".into(), file.clone().into_os_string()],
@@ -2108,7 +2119,9 @@ mod tests {
             "fallout-ce/MASTER.DAT",
             "fallout-ce/MASTER.DAT",
         );
-        let install = root.path().join("users/default/fallout-ce");
+        let install = root.path().join(
+            "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/fallout-ce",
+        );
         put(&install.join("CRITTER.DAT"), b"companion");
         put(&install.join("data/SAVEGAME/SLOT01/SAVE.DAT"), b"save");
         let outside = tempfile::tempdir().unwrap();
@@ -2546,7 +2559,7 @@ mod tests {
         let mut rules = mini(root.path(), private.path());
         let crate::discovery::identify::ContentIdentity::Hash { sha1, .. } =
             crate::discovery::identify::file_identity(
-                &root.path().join("users/default/old/MASTER.DAT"),
+                &root.path().join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/old/MASTER.DAT"),
                 &mut Default::default(),
             )
             .unwrap()
@@ -2609,8 +2622,12 @@ mod tests {
             to: root.path().join("games/gba/mixed/Wario.gba")
         }));
         assert!(plan.moves.contains(&FileMove {
-            from: root.path().join("users/default/old"),
-            to: root.path().join("users/default/fallout-ce")
+            from: root
+                .path()
+                .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/old"),
+            to: root.path().join(
+                "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/fallout-ce"
+            )
         }));
         assert_eq!(plan.play_logs.len(), 2);
         let path = default_plan_path(private.path());
@@ -2731,7 +2748,7 @@ mod tests {
         assert!(plan.moves.iter().all(|m| !m.from.exists() && m.to.exists()));
         assert!(root
             .path()
-            .join("users/default/prepared-arm-x/a.o")
+            .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/prepared-arm-x/a.o")
             .is_file());
         let library = read_yaml(&root.path().join("catalog/library.yaml")).unwrap();
         assert_eq!(report.plan.kept, plan.kept);
@@ -3015,7 +3032,10 @@ mod tests {
         let mut device = read_yaml(&root.path().join("device.yaml")).unwrap();
         device.as_mapping_mut().unwrap().remove("host");
         write_yaml(&root.path().join("device.yaml"), &device).unwrap();
-        let hash = whole_hash(&root.path().join("users/default/old/MASTER.DAT")).unwrap();
+        let hash = whole_hash(&root.path().join(
+            "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/old/MASTER.DAT",
+        ))
+        .unwrap();
         let source = format!(
             r#"export const name = "migration"; export const title = "Migration";
 export const systems = {{gba:{{id:"gba",content:{{extensions:["gba"]}}}},snes:{{id:"snes",content:{{extensions:["sfc"]}}}},megadrive:{{id:"megadrive",content:{{extensions:["md"]}}}},lynx:{{id:"lynx",content:{{extensions:["lnx"]}}}}}};

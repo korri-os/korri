@@ -78,6 +78,7 @@ impl DiscoveredGame {
             &self.route,
             None,
             None,
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
         )
     }
 
@@ -191,6 +192,7 @@ fn launch_preparation_takes_the_display_fact_as_plain_input() {
         &game.route,
         None,
         Some(display.clone()),
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap();
     let input: LaunchComposition = serde_json::from_str(&launch.command[4]).unwrap();
@@ -200,5 +202,30 @@ fn launch_preparation_takes_the_display_fact_as_plain_input() {
             .unwrap()
             .display
             .is_none()
+    );
+}
+
+#[test]
+fn launch_scopes_account_and_save_root_to_person_and_game() {
+    let game = DiscoveredGame::new();
+    let spec = game.launch().unwrap();
+    let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
+    assert_eq!(
+        input.account_root,
+        game.root
+            .path()
+            .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9")
+            .display()
+            .to_string()
+    );
+    assert_eq!(
+        input.save_root,
+        std::path::Path::new(&input.account_root)
+            .join("saves")
+            .join(crate::host::play_log::encode_uri_component(
+                &game.route.playable_id
+            ))
+            .display()
+            .to_string()
     );
 }

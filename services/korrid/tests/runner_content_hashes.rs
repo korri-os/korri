@@ -196,7 +196,13 @@ fn each_accepted_dump_offers_the_launcher_beside_the_system_runner() {
     let (snapshot, registry) = setup(root.path());
     for bytes in [b"first".as_slice(), b"second".as_slice()] {
         let id = game_id(&snapshot, bytes);
-        let routes = game_routes::list(root.path(), &registry, &id).unwrap();
+        let routes = game_routes::list(
+            root.path(),
+            &registry,
+            &id,
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        )
+        .unwrap();
         assert!(matches!(routes.selection, GameRouteSelection::Choose));
         assert_eq!(
             routes
@@ -215,6 +221,7 @@ fn each_accepted_dump_offers_the_launcher_beside_the_system_runner() {
                 overrides: None,
             },
             None,
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
         )
         .unwrap();
         let input: PluginLaunchInput = serde_json::from_str(&launch.command[3]).unwrap();
@@ -239,7 +246,13 @@ fn one_accepted_dump_is_enough_when_the_other_dump_is_absent() {
     let root = tempfile::tempdir().unwrap();
     let (snapshot, registry) = setup(root.path());
     fs::remove_file(root.path().join("roms/second.gba")).unwrap();
-    let routes = game_routes::list(root.path(), &registry, &game_id(&snapshot, b"first")).unwrap();
+    let routes = game_routes::list(
+        root.path(),
+        &registry,
+        &game_id(&snapshot, b"first"),
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
     assert!(routes
         .routes
         .iter()
@@ -251,7 +264,13 @@ fn an_unlisted_hash_keeps_only_the_system_runner_and_refuses_the_content_launche
     let root = tempfile::tempdir().unwrap();
     let (snapshot, registry) = setup(root.path());
     let id = game_id(&snapshot, b"unlisted");
-    let routes = game_routes::list(root.path(), &registry, &id).unwrap();
+    let routes = game_routes::list(
+        root.path(),
+        &registry,
+        &id,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
     assert_eq!(routes.routes.len(), 1);
     assert_eq!(routes.routes[0].runner_id, "@test:system/main");
     let error = game_routes::selected_launch(
@@ -263,6 +282,7 @@ fn an_unlisted_hash_keeps_only_the_system_runner_and_refuses_the_content_launche
             overrides: None,
         },
         None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap_err();
     assert_eq!(error.code, "LocalRouteUnavailable");
@@ -291,7 +311,13 @@ fn a_missing_accepted_dump_keeps_its_diagnostic_when_another_release_can_play() 
     fs::write(path, serde_yaml::to_string(&library).unwrap()).unwrap();
     fs::remove_file(root.path().join("roms/first.gba")).unwrap();
 
-    let routes = game_routes::list(root.path(), &registry, &id).unwrap();
+    let routes = game_routes::list(
+        root.path(),
+        &registry,
+        &id,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
     assert_eq!(routes.routes.len(), 1);
     assert_eq!(routes.routes[0].runner_id, "@test:system/main");
     let error = game_routes::selected_launch(
@@ -303,6 +329,7 @@ fn a_missing_accepted_dump_keeps_its_diagnostic_when_another_release_can_play() 
             overrides: None,
         },
         None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap_err();
     assert_eq!(error.code, "LocalRomMissing");
@@ -326,6 +353,7 @@ fn an_accepted_hash_with_a_missing_file_is_not_playable() {
             overrides: None,
         },
         None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap_err();
     assert_eq!(error.code, "LocalRomMissing");

@@ -101,7 +101,15 @@ impl Fixture {
             Some(RUNNER_ID),
         )
         .unwrap();
-        let spec = launch_route(self.path(), &snapshot, &registry, &route, None, None)?;
+        let spec = launch_route(
+            self.path(),
+            &snapshot,
+            &registry,
+            &route,
+            None,
+            None,
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        )?;
         let input = serde_json::from_str(&spec.command[3]).unwrap();
         Ok((registry, input))
     }
@@ -169,7 +177,10 @@ fn a_runner_receives_each_required_plugins_files_under_its_plugin_id() {
         ])
     );
     assert_eq!(input.cache_root, text(root.join("cache")));
-    assert_eq!(input.account_root, text(root.join("users/default")));
+    assert_eq!(
+        input.account_root,
+        text(root.join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"))
+    );
 
     let package = registry.installed_package(RUNNER_ID).unwrap();
     let source =

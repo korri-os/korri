@@ -112,7 +112,16 @@ fn setup(root: &Path, record: &str) -> (Vec<String>, PluginLaunchInput, LaunchCo
         Some("@korri:mgba/mgba"),
     )
     .unwrap();
-    let spec = launch_route(root, &snapshot, &registry, &route, None, None).unwrap();
+    let spec = launch_route(
+        root,
+        &snapshot,
+        &registry,
+        &route,
+        None,
+        None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
     let input = serde_json::from_str(&spec.command[3]).unwrap();
     let composition = serde_json::from_str(&spec.command[4]).unwrap();
     (spec.command, input, composition)
@@ -248,7 +257,16 @@ export const handlers = {'launch.compose': input => {
         Some("@korri:steam/steam"),
     )
     .unwrap();
-    let spec = launch_route(root.path(), &snapshot, &registry, &route, None, None).unwrap();
+    let spec = launch_route(
+        root.path(),
+        &snapshot,
+        &registry,
+        &route,
+        None,
+        None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
     assert_eq!(spec.command[1], "plugin-launch");
     let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
     assert!(input.content_path.is_none());
@@ -257,7 +275,9 @@ export const handlers = {'launch.compose': input => {
     assert_eq!(composition.modifiers.len(), 1);
     let plan = prepare(Path::new(&spec.command[2]), &input, &composition).unwrap();
     assert_eq!(plan.args[3..], ["/bin/sh", "401710"]);
-    let home = root.path().join("users/default/steam");
+    let home = root
+        .path()
+        .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/steam");
     assert_eq!(plan.env["STEAM_HOME"], home.display().to_string());
     assert_eq!(plan.directories, [home.display().to_string()]);
     assert!(!home.exists(), "prepare and compose have no effects");
@@ -385,7 +405,15 @@ fn enabled_modifiers_require_their_exact_installed_contribution() {
             Some("@korri:mgba/mgba"),
         )
         .unwrap();
-        let result = launch_route(root.path(), &snapshot, &registry, &route, None, None);
+        let result = launch_route(
+            root.path(),
+            &snapshot,
+            &registry,
+            &route,
+            None,
+            None,
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        );
         assert_eq!(result.is_ok(), success, "{id}: {result:?}");
         if let Err(error) = result {
             assert!(error.to_string().contains(id));
@@ -395,7 +423,10 @@ fn enabled_modifiers_require_their_exact_installed_contribution() {
     assert!(composition.modifiers.is_empty(), "absent enabled is off");
     let result = cli(&command).output().unwrap();
     assert!(result.status.success());
-    assert!(!root.path().join("users/default/wrapped").exists());
+    assert!(!root
+        .path()
+        .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/wrapped")
+        .exists());
 }
 
 #[test]
@@ -422,7 +453,16 @@ fn multiple_modifiers_compose_the_previous_plan_in_device_key_order() {
         Some("@korri:mgba/mgba"),
     )
     .unwrap();
-    let spec = launch_route(root.path(), &snapshot, &registry, &route, None, None).unwrap();
+    let spec = launch_route(
+        root.path(),
+        &snapshot,
+        &registry,
+        &route,
+        None,
+        None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
     let input = serde_json::from_str(&spec.command[3]).unwrap();
     let composition: LaunchComposition = serde_json::from_str(&spec.command[4]).unwrap();
     assert_eq!(

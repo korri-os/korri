@@ -151,6 +151,9 @@ pub fn account_roots(
         let user = entry.file_name().into_string().map_err(|_| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, "account name is not UTF-8")
         })?;
+        if crate::saves::account_root(readable_root, &user).is_err() {
+            continue;
+        }
         accounts.push(crate::discovery::identify::AccountRoot {
             storage_id: format!("account-{user}"),
             user,
@@ -201,12 +204,36 @@ mod tests {
         }
     }
     #[test]
+    fn discovery_uses_person_accounts_and_never_default() {
+        let readable = tempfile::tempdir().unwrap();
+        let person = "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9";
+        std::fs::create_dir_all(readable.path().join("users/default")).unwrap();
+        std::fs::create_dir_all(readable.path().join("users").join(person)).unwrap();
+        let accounts = account_roots(readable.path()).unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].user, person);
+    }
+
+    #[test]
     fn device_records_use_system_ids_and_accounts_use_launcher_roots() {
         let readable = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(readable.path().join("users/default")).unwrap();
+        std::fs::create_dir_all(
+            readable
+                .path()
+                .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),
+        )
+        .unwrap();
         let accounts = account_roots(readable.path()).unwrap();
-        assert_eq!(accounts[0].storage_id, "account-default");
-        assert_eq!(accounts[0].root, readable.path().join("users/default"));
+        assert_eq!(
+            accounts[0].storage_id,
+            "account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+        );
+        assert_eq!(
+            accounts[0].root,
+            readable
+                .path()
+                .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9")
+        );
         let (id, storage, source) =
             new_source_records(Path::new("/games"), "gba", &["gba".into(), "gba-2".into()]);
         assert_eq!(id, "gba-3");

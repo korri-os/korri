@@ -213,7 +213,9 @@ fn installed_steam_manifest_needs_no_authored_library_or_location() {
     let private = tempfile::tempdir().unwrap();
     let package = tempfile::tempdir().unwrap();
     let registry = crate::plugin_test_fixtures::steam(package.path());
-    let manifests = root.path().join("users/default/steam/steamapps");
+    let manifests = root.path().join(
+        "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/steam/steamapps",
+    );
     fs::create_dir_all(&manifests).unwrap();
     let manifest = manifests.join("appmanifest_401710.acf");
     let installed =
@@ -262,7 +264,9 @@ fn steam_disable_withdraws_owned_locations_but_not_authored_locations() {
     let root = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
     let package = tempfile::tempdir().unwrap();
-    let manifests = root.path().join("users/default/steam/steamapps");
+    let manifests = root.path().join(
+        "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/steam/steamapps",
+    );
     fs::create_dir_all(&manifests).unwrap();
     fs::write(
         manifests.join("appmanifest_401710.acf"),
@@ -311,7 +315,9 @@ fn assert_authored_steam_location_after_uninstall_survives(enabled: bool) {
     let root = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
     let package = tempfile::tempdir().unwrap();
-    let manifests = root.path().join("users/default/steam/steamapps");
+    let manifests = root.path().join(
+        "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/steam/steamapps",
+    );
     fs::create_dir_all(&manifests).unwrap();
     let manifest = manifests.join("appmanifest_401710.acf");
     fs::write(

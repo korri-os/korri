@@ -304,6 +304,7 @@ async fn an_artifact_game_shows_before_download_downloads_launches_and_removes()
         &route,
         None,
         None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap();
     let input: launcher::plugin_launch::PluginLaunchInput =

@@ -81,7 +81,15 @@ fn launch(
         Some(RUNNER_ID),
     )
     .unwrap();
-    launch_route(root, &snapshot, &registry, &route, None, None)
+    launch_route(
+        root,
+        &snapshot,
+        &registry,
+        &route,
+        None,
+        None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
 }
 
 #[test]
@@ -185,6 +193,7 @@ fn the_person_sees_the_refusal_through_the_existing_route_error() {
             overrides: None,
         },
         None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .expect_err("the launch must fail");
     assert_eq!(failure.code, "LocalRouteUnavailable");
@@ -195,8 +204,13 @@ fn the_person_sees_the_refusal_through_the_existing_route_error() {
 
     // Listing the routes for the game reports the same refusal. A route korrid
     // cannot start is not offered as a choice.
-    let failure = korrid::game_routes::list(root.path(), &registry, readable::GBA_ID)
-        .expect_err("an unstartable route must not be listed");
+    let failure = korrid::game_routes::list(
+        root.path(),
+        &registry,
+        readable::GBA_ID,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .expect_err("an unstartable route must not be listed");
     assert_eq!(failure.code, "LocalRouteUnavailable");
     assert_eq!(
         failure.message,

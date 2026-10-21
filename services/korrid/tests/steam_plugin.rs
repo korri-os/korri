@@ -11,7 +11,7 @@ fn input() -> serde_json::Value {
         "runnerId": "@korri:steam/steam",
         "program": "/nix/store/exact-steam/bin/steam-session",
         "ref": "401710",
-        "accountRoot": "/storage/korri/users/default",
+        "accountRoot": "/storage/korri/users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
         "cacheRoot": "/storage/korri/cache",
         "files": {
             "steam-session": "/nix/store/exact-steam/bin/steam-session",
@@ -81,12 +81,12 @@ fn steam_prepares_the_session_command_ref_and_account_home_without_a_file() {
             "command": "/nix/store/exact-steam/bin/steam-session",
             "args": ["401710"],
             "env": {
-                "STEAM_HOME": "/storage/korri/users/default/steam",
+                "STEAM_HOME": "/storage/korri/users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/steam",
                 "KORRI_FEX_ROOTFS": "/storage/korri/cache/fex/rootfs/archlinux-2026-01-08-mesa-26.1.2",
                 "KORRI_FEX_CONFIG": "/nix/store/exact-fex-config/share/fex-emu",
                 "KORRI_PROTON_CACHYOS": "/storage/korri/cache/proton/cachyos/11.0-20260601-slr-arm64",
             },
-            "directories": ["/storage/korri/users/default/steam"],
+            "directories": ["/storage/korri/users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/steam"],
             "envUnset": [],
         })
     );

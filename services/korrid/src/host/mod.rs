@@ -79,6 +79,7 @@ impl DynamicHostRuntime {
     fn from_root_with_registry(
         root: &Path,
         registry: &crate::plugin::PluginRegistry,
+        person: &str,
     ) -> Result<Self, RpcFailure> {
         let coordinator = ConfigSnapshotCoordinator::new(root);
         let state = coordinator.reload();
@@ -131,8 +132,15 @@ impl DynamicHostRuntime {
                 Ok(_) => {}
             }
             for route in &candidates {
-                match linux_plugin::launch_route(root, &state.snapshot, registry, route, None, None)
-                {
+                match linux_plugin::launch_route(
+                    root,
+                    &state.snapshot,
+                    registry,
+                    route,
+                    None,
+                    None,
+                    person,
+                ) {
                     Ok(launch) => {
                         failures.extend(launch.warnings.into_iter().map(|warning| RpcFailure {
                             code: "LaunchSettingUnsupported".into(),
@@ -169,16 +177,16 @@ enum DynamicHostSource {
 }
 
 impl DynamicHostSource {
-    fn load(&self) -> Result<DynamicHostRuntime, RpcFailure> {
+    fn load(&self, person: &str) -> Result<DynamicHostRuntime, RpcFailure> {
         match self {
             Self::Installed(root) => {
                 let registry = plugin_policy::installed_registry()
                     .map_err(|error| dynamic_failure(error.to_string()))?;
-                DynamicHostRuntime::from_root_with_registry(root, &registry)
+                DynamicHostRuntime::from_root_with_registry(root, &registry, person)
             }
             #[cfg(test)]
             Self::Selected(root, registry) => {
-                DynamicHostRuntime::from_root_with_registry(root, registry)
+                DynamicHostRuntime::from_root_with_registry(root, registry, person)
             }
             #[cfg(test)]
             Self::Fixed(runtime) => Ok(runtime.clone()),
@@ -430,7 +438,7 @@ impl HostRuntime {
         }
         let mut failures = Vec::new();
         if let Some(dynamic) = &self.dynamic {
-            let dynamic = dynamic.load()?;
+            let dynamic = dynamic.load(self.launch_person()?)?;
             dynamic.validate_static_games(config)?;
             failures.extend(
                 dynamic
@@ -458,6 +466,12 @@ impl HostRuntime {
             games,
             failures: (!failures.is_empty()).then_some(failures),
         })
+    }
+
+    fn launch_person(&self) -> Result<&str, RpcFailure> {
+        self.owner_public_key
+            .as_deref()
+            .ok_or_else(|| dynamic_failure("device has no owner for per-person saves"))
     }
 
     pub fn owner_public_key(&self) -> Option<&str> {
@@ -575,7 +589,7 @@ impl HostRuntime {
             config_failure(self.config.as_ref().expect_err("invalid host config"))
         })?;
         if let Some(dynamic) = &self.dynamic {
-            let dynamic = dynamic.load()?;
+            let dynamic = dynamic.load(self.launch_person()?)?;
             dynamic.validate_static_games(self.config.as_ref().map_err(config_failure)?)?;
             if dynamic.declared_ids.contains(game_id) {
                 let command = self.route_root().and_then(|root| {
@@ -584,6 +598,7 @@ impl HostRuntime {
                         &self.route_registry()?,
                         game_id,
                         compositor_focus::launch_display(),
+                        self.launch_person()?,
                     )
                     .map(|launch| launch.command)
                 });
@@ -639,7 +654,12 @@ impl HostRuntime {
         let runtime = self.clone();
         tokio::task::spawn_blocking(move || {
             let registry = runtime.route_registry()?;
-            crate::game_routes::list(runtime.route_root()?, &registry, &game_id)
+            crate::game_routes::list(
+                runtime.route_root()?,
+                &registry,
+                &game_id,
+                runtime.launch_person()?,
+            )
         })
         .await
         .map_err(host_worker_failure)?
@@ -880,7 +900,9 @@ impl HostRuntime {
             if config.games.iter().any(|game| game.id == request.game_id) {
                 // Preserve the command producer's existing collision check.
                 if let Some(dynamic) = &self.dynamic {
-                    dynamic.load()?.validate_static_games(config)?;
+                    dynamic
+                        .load(self.launch_person()?)?
+                        .validate_static_games(config)?;
                 }
                 if request.runner_id.is_some() || request.overrides.is_some() {
                     return Err(dynamic_failure(
@@ -913,6 +935,7 @@ impl HostRuntime {
                     &route,
                     request.overrides.clone(),
                     compositor_focus::launch_display(),
+                    self.launch_person()?,
                 )
                 .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
                 (launch.command, Some(route.runner_id), launch.warnings)
@@ -963,6 +986,7 @@ impl HostRuntime {
                 &registry,
                 &request,
                 compositor_focus::launch_display(),
+                runtime.launch_person()?,
             )?;
             let session = runtime
                 .launcher
@@ -1403,7 +1427,7 @@ impl HostRuntime {
         let title = game_id.and_then(|game_id| {
             self.dynamic
                 .as_ref()
-                .and_then(|dynamic| dynamic.load().ok())
+                .and_then(|dynamic| dynamic.load(self.launch_person().ok()?).ok())
                 .and_then(|dynamic| {
                     dynamic
                         .games
@@ -1582,6 +1606,8 @@ mod tests {
             pool,
         ));
         runtime.control().unwrap().initialize_input(4).unwrap();
+        runtime.owner_public_key =
+            Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9".into());
         runtime
     }
 
@@ -2448,15 +2474,26 @@ esac
         fs::write(&core, b"core").unwrap();
         fs::create_dir(&autoconfig).unwrap();
         let registry = crate::plugin_test_fixtures::installed(root.path());
-        let runtime = DynamicHostRuntime::from_root_with_registry(root.path(), &registry).unwrap();
+        let runtime = DynamicHostRuntime::from_root_with_registry(
+            root.path(),
+            &registry,
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        )
+        .unwrap();
 
         assert_eq!(runtime.games.len(), 1);
         // Discovery mints the catalog game id; the route must carry it through.
         assert_eq!(&runtime.games[0].id, game_id);
         assert_eq!(Some(&runtime.games[0].title), game.title.as_ref());
         assert!(runtime.failures.is_empty(), "{:?}", runtime.failures);
-        let launch =
-            crate::game_routes::default_launch(root.path(), &registry, game_id, None).unwrap();
+        let launch = crate::game_routes::default_launch(
+            root.path(),
+            &registry,
+            game_id,
+            None,
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        )
+        .unwrap();
         let command = &launch.command;
         assert_eq!(command[1], "plugin-launch");
         let input: crate::launcher::plugin_launch::PluginLaunchInput =
@@ -2504,7 +2541,12 @@ esac
             ),
         )
         .unwrap();
-        let runtime = DynamicHostRuntime::from_root_with_registry(root.path(), &registry).unwrap();
+        let runtime = DynamicHostRuntime::from_root_with_registry(
+            root.path(),
+            &registry,
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        )
+        .unwrap();
 
         assert_eq!(runtime.games.len(), 1);
         assert_eq!(runtime.games[0].id, "wario-land-4");
@@ -2514,9 +2556,14 @@ esac
                 "sha256:d16c7bf6e62bb84049fff1b387108fbd1e6e2cd38ca994ab5310dd9cbf9ba414".into()
             ))
         );
-        let launch =
-            crate::game_routes::default_launch(root.path(), &registry, &runtime.games[0].id, None)
-                .unwrap();
+        let launch = crate::game_routes::default_launch(
+            root.path(),
+            &registry,
+            &runtime.games[0].id,
+            None,
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        )
+        .unwrap();
         let command = &launch.command;
         assert_eq!(command[1], "plugin-launch");
         let input: crate::launcher::plugin_launch::PluginLaunchInput =
@@ -2534,15 +2581,25 @@ esac
             .unwrap()
             .push(serde_yaml::from_str("storage: selected\npath: wl4.gba\n").unwrap());
         fs::write(device_path, serde_yaml::to_string(&device).unwrap()).unwrap();
-        let runtime = DynamicHostRuntime::from_root_with_registry(root.path(), &registry).unwrap();
+        let runtime = DynamicHostRuntime::from_root_with_registry(
+            root.path(),
+            &registry,
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        )
+        .unwrap();
         assert_eq!(
             runtime.games.len(),
             1,
             "explicit copy must also materialize on Linux"
         );
-        let launch =
-            crate::game_routes::default_launch(root.path(), &registry, &runtime.games[0].id, None)
-                .unwrap();
+        let launch = crate::game_routes::default_launch(
+            root.path(),
+            &registry,
+            &runtime.games[0].id,
+            None,
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        )
+        .unwrap();
         let input: crate::launcher::plugin_launch::PluginLaunchInput =
             serde_json::from_str(&launch.command[3]).unwrap();
         assert_eq!(
@@ -2553,6 +2610,8 @@ esac
         fs::write(&config, "label = \"zao\"\n[[games]]\nid = \"static\"\ntitle = \"Static game\"\ncommand = [\"game\"]\n").unwrap();
         let mut host =
             HostRuntime::from_paths_with_private_state(&config, None, root.path().join("private"));
+        host.owner_public_key =
+            Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9".into());
         host.dynamic = Some(DynamicHostSource::Fixed(runtime));
         let catalog = host.catalog_snapshot().unwrap();
         assert_eq!(catalog.games.len(), 2);
@@ -2586,7 +2645,11 @@ esac
         )
         .unwrap();
         fs::remove_file(explicit.path().join("wl4.gba")).unwrap();
-        let missing_media = DynamicHostRuntime::from_root_with_registry(root.path(), &registry);
+        let missing_media = DynamicHostRuntime::from_root_with_registry(
+            root.path(),
+            &registry,
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        );
         assert!(
             missing_media.is_ok(),
             "configuration opinions do not redeclare plugin runners"

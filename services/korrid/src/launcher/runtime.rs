@@ -107,8 +107,11 @@ mod tests {
             core_path: None,
             content_path: Some("/games/target.rom".into()),
             provider_ref: None,
-            account_root: "/users/default".into(),
-            save_root: "/users/default/saves/game".into(),
+            account_root: "/users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+                .into(),
+            save_root:
+                "/users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/saves/game"
+                    .into(),
             cache_root: "/cache".into(),
             files: HashMap::new(),
             artifacts: Default::default(),

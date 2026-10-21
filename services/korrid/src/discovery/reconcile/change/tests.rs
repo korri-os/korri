@@ -238,13 +238,16 @@ fn declared_sha1_and_sha256_join_and_write_provider_links_with_account_storage()
     scan.declared_games = BTreeMap::from([declaration()]);
     scan.accounts = vec![AccountRoot {
         user: "default".into(),
-        storage_id: "account-default".into(),
-        root: "/korri/users/default".into(),
+        storage_id: "account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            .into(),
+        root: "/korri/users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            .into(),
     }];
     scan.declared.files.push(DeclaredFile {
         game: declaration().0,
         release_key: "prepared".into(),
-        storage_id: "account-default".into(),
+        storage_id: "account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            .into(),
         path: "built/game".into(),
         status: DeclaredFileStatus::Found(unit("unused", 'b').identity),
     });
@@ -258,8 +261,11 @@ fn declared_sha1_and_sha256_join_and_write_provider_links_with_account_storage()
     assert_eq!(game.releases[1].id.0, "prepared");
     assert!(game.releases[1].system.is_none());
     assert_eq!(
-        snapshot.storage["account-default"].root.0,
-        "/korri/users/default"
+        snapshot.storage
+            ["account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"]
+            .root
+            .0,
+        "/korri/users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
     );
     let link = &snapshot.provider_links[&declaration().0];
     assert_eq!(link.playable.0, "declared-wario");
@@ -403,7 +409,8 @@ fn declared_unreadable_and_mismatch_keep_locations_but_absent_marks_missing() {
     let mut scan = ScanReport {
         accounts: vec![AccountRoot {
             user: "default".into(),
-            storage_id: "account-default".into(),
+            storage_id: "account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+                .into(),
             root: root.path().into(),
         }],
         declared_games: BTreeMap::from([(key, game)]),

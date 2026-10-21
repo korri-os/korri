@@ -110,6 +110,7 @@ pub fn list(
     root: &Path,
     registry: &PluginRegistry,
     game_id: &str,
+    person: &str,
 ) -> Result<GameRoutes, RpcFailure> {
     let (snapshot, revisions) = settings::runner_choice_snapshot(root).map_err(settings_failure)?;
     let candidates = resolver::linux_route_candidates(root, &snapshot, registry, game_id)
@@ -134,8 +135,9 @@ pub fn list(
         {
             system_runners.insert(route.system_id.clone(), id.0.clone());
         }
-        let launch = linux_plugin::launch_route(root, &snapshot, registry, &route, None, None)
-            .map_err(|error| unavailable(error.to_string()))?;
+        let launch =
+            linux_plugin::launch_route(root, &snapshot, registry, &route, None, None, person)
+                .map_err(|error| unavailable(error.to_string()))?;
         let package = registry
             .installed_package(&route.runner_id)
             .map_err(|error| unavailable(error.to_string()))?;
@@ -167,6 +169,7 @@ pub fn selected_launch(
     registry: &PluginRegistry,
     request: &SelectedGameLaunchRequest,
     display: Option<PluginDisplay>,
+    person: &str,
 ) -> Result<linux_plugin::LinuxLaunchSpec, RpcFailure> {
     prepare_launch(
         root,
@@ -175,6 +178,7 @@ pub fn selected_launch(
         Some(&request.runner_id),
         request.overrides.clone(),
         display,
+        person,
     )
 }
 
@@ -183,8 +187,9 @@ pub(crate) fn default_launch(
     registry: &PluginRegistry,
     game_id: &str,
     display: Option<PluginDisplay>,
+    person: &str,
 ) -> Result<linux_plugin::LinuxLaunchSpec, RpcFailure> {
-    prepare_launch(root, registry, game_id, None, None, display)
+    prepare_launch(root, registry, game_id, None, None, display, person)
 }
 
 fn prepare_launch(
@@ -194,13 +199,16 @@ fn prepare_launch(
     runner_id: Option<&str>,
     overrides: Option<PluginLaunchOverrides>,
     display: Option<PluginDisplay>,
+    person: &str,
 ) -> Result<linux_plugin::LinuxLaunchSpec, RpcFailure> {
     let (snapshot, _) = settings::runner_choice_snapshot(root).map_err(settings_failure)?;
     let route = resolver::resolve_linux_route(root, &snapshot, registry, game_id, runner_id)
         .map_err(|error| crate::route_diagnostic_failure(&error))?;
     crate::acquisition::require_ready(root, registry, &route)?;
-    linux_plugin::launch_route(root, &snapshot, registry, &route, overrides, display)
-        .map_err(|error| unavailable(error.to_string()))
+    linux_plugin::launch_route(
+        root, &snapshot, registry, &route, overrides, display, person,
+    )
+    .map_err(|error| unavailable(error.to_string()))
 }
 
 pub(crate) fn settings_failure(error: settings::SettingsError) -> RpcFailure {

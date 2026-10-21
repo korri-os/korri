@@ -163,7 +163,16 @@ fn provider_launch_passes_ref_and_no_content_path_to_the_installed_runner() {
     let route = linux_route_candidates(root.path(), &snapshot, &registry, "flinthook")
         .unwrap()
         .remove(0);
-    let launch = launch_route(root.path(), &snapshot, &registry, &route, None, None).unwrap();
+    let launch = launch_route(
+        root.path(),
+        &snapshot,
+        &registry,
+        &route,
+        None,
+        None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
     let wire: serde_json::Value = serde_json::from_str(&launch.command[3]).unwrap();
     assert_eq!(wire["ref"], "401710");
     assert!(wire.get("contentPath").is_none());
@@ -180,7 +189,7 @@ fn provider_launch_passes_ref_and_no_content_path_to_the_installed_runner() {
     assert_eq!(
         plan.env["STEAM_HOME"],
         root.path()
-            .join("users/default/steam")
+            .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/steam")
             .display()
             .to_string()
     );
@@ -211,7 +220,13 @@ fn provider_release_reaches_the_portals_selected_launch_path() {
     let registry = installed(root.path());
     let state = ConfigSnapshotCoordinator::new(root.path()).reload();
     assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
-    let routes = game_routes::list(root.path(), &registry, "flinthook").unwrap();
+    let routes = game_routes::list(
+        root.path(),
+        &registry,
+        "flinthook",
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
     assert!(matches!(routes.selection, GameRouteSelection::Selected(_)));
     assert_eq!(routes.routes.len(), 1);
     assert_eq!(routes.routes[0].runner_id, RUNNER_ID);
@@ -224,6 +239,7 @@ fn provider_release_reaches_the_portals_selected_launch_path() {
             overrides: None,
         },
         None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap();
     let input: serde_json::Value = serde_json::from_str(&launch.command[3]).unwrap();

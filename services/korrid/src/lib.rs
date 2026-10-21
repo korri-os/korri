@@ -5873,7 +5873,7 @@ mod tests {
         let readable = tempfile::tempdir().unwrap();
         let private = tempfile::tempdir().unwrap();
         let packages = tempfile::tempdir().unwrap();
-        let steamapps = readable.path().join("users/default/steam/steamapps");
+        let steamapps = readable.path().join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/steam/steamapps");
         std::fs::create_dir_all(&steamapps).unwrap();
         let manifest = |appid: &str, name: &str| {
             format!(

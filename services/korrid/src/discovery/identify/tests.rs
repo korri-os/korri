@@ -85,8 +85,16 @@ fn a_readme_in_a_paired_mega_drive_source_is_claimed_by_the_md_extension() {
 #[test]
 fn mini_v2_build_trees_and_readmes_under_users_are_never_scanned() {
     let root = tempfile::tempdir().unwrap();
-    write(root.path(), "users/default/build/compiled.o", b"object");
-    write(root.path(), "users/default/README.md", b"documentation");
+    write(
+        root.path(),
+        "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/build/compiled.o",
+        b"object",
+    );
+    write(
+        root.path(),
+        "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/README.md",
+        b"documentation",
+    );
     let md = rules("md", &["md", "gen", "smd", "bin"]);
     let excluded = vec![root.path().join("users").canonicalize().unwrap()];
     let report = scan_options(
@@ -590,9 +598,15 @@ fn symlinks_and_descriptors_cannot_escape_root_or_enter_plugin_data() {
     symlink(&secret, root.path().join("escaped.bin")).unwrap();
     symlink(outside.path(), root.path().join("escaped-dir")).unwrap();
     write(root.path(), "escape.cue", b"FILE escaped.bin BINARY\n");
-    write(root.path(), "users/default/Game.bin", b"plugin data");
+    write(
+        root.path(),
+        "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/Game.bin",
+        b"plugin data",
+    );
     symlink(
-        root.path().join("users/default/Game.bin"),
+        root.path().join(
+            "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/Game.bin",
+        ),
         root.path().join("plugin.bin"),
     )
     .unwrap();
@@ -659,7 +673,8 @@ fn declared_files_match_sha1_without_system_headers_and_report_only_existing_mis
     )]);
     let accounts = [AccountRoot {
         user: "default".into(),
-        storage_id: "account-default".into(),
+        storage_id: "account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            .into(),
         root: root.path().to_owned(),
     }];
     let mut cache = HashCache::default();
@@ -677,7 +692,7 @@ fn declared_files_match_sha1_without_system_headers_and_report_only_existing_mis
     assert_eq!(report.found().next().unwrap().0.game, "@test:plugin/game");
     assert_eq!(
         report.found().next().unwrap().0.storage_id,
-        "account-default"
+        "account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
     );
     assert_eq!(report.attention.len(), 1);
     assert_eq!(report.attention[0].kind, AttentionKind::DeclaredMismatch);
@@ -718,7 +733,8 @@ fn declared_files_cannot_escape_the_account_root() {
     )]);
     let accounts = [AccountRoot {
         user: "default".into(),
-        storage_id: "account-default".into(),
+        storage_id: "account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            .into(),
         root: root.path().to_owned(),
     }];
     let report = resolve_declared_games(&accounts, &games, &mut HashCache::default());
@@ -825,7 +841,8 @@ fn declared_descriptor_files_are_hashed_as_bytes_instead_of_interpreted() {
     )]);
     let accounts = [AccountRoot {
         user: "default".into(),
-        storage_id: "account-default".into(),
+        storage_id: "account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            .into(),
         root: root.path().to_owned(),
     }];
     let report = resolve_declared_games(&accounts, &games, &mut HashCache::default());
@@ -990,7 +1007,8 @@ fn an_artifact_file_is_never_hashed_as_an_account_root_path() {
     )]);
     let accounts = [AccountRoot {
         user: "default".into(),
-        storage_id: "account-default".into(),
+        storage_id: "account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            .into(),
         root: root.path().to_owned(),
     }];
     let report = resolve_declared_games(&accounts, &games, &mut HashCache::default());

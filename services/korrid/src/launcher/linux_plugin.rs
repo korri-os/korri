@@ -30,8 +30,10 @@ pub fn launch_route(
     route: &ResolvedRoute,
     overrides: Option<PluginLaunchOverrides>,
     display: Option<PluginDisplay>,
+    person: &str,
 ) -> Result<LinuxLaunchSpec, LaunchError> {
     let error = |message| LaunchError::RouteUnavailable(message);
+    let account_root = crate::saves::account_root(root, person).map_err(error)?;
     // The route must still name a native runner this registry admits.
     registry
         .native_runner(&route.runner_id)
@@ -127,9 +129,9 @@ pub fn launch_route(
         core_path: route.core_path.clone(),
         content_path,
         provider_ref,
-        account_root: root.join("users/default").display().to_string(),
-        save_root: root
-            .join("users/default/saves")
+        account_root: account_root.display().to_string(),
+        save_root: account_root
+            .join("saves")
             .join(crate::host::play_log::encode_uri_component(
                 &route.playable_id,
             ))

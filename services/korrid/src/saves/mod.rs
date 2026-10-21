@@ -37,3 +37,17 @@ pub trait SaveRepository: Send + Sync {
     /// Persists an authenticated peer's acknowledgement, never inferred by time.
     fn confirm(&self, person: &str, game: &str, id: &str, device: &str) -> Result<(), SaveError>;
 }
+
+/// The owner key is the account identity, using the existing play-log codec.
+pub fn account_root(root: &std::path::Path, person: &str) -> Result<std::path::PathBuf, String> {
+    if person.len() != 64
+        || !person
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err("device owner public key is invalid".into());
+    }
+    Ok(root
+        .join("users")
+        .join(crate::host::play_log::encode_uri_component(person)))
+}

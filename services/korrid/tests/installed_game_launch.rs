@@ -63,7 +63,13 @@ fn setup(root: &Path) -> (korrid::config::ConfigSnapshot, PluginRegistry) {
 fn selected_runner_owns_frontend_core_callback_and_named_files() {
     let root = tempfile::tempdir().unwrap();
     let (snapshot, registry) = setup(root.path());
-    let routes = korrid::game_routes::list(root.path(), &registry, readable::GBA_ID).unwrap();
+    let routes = korrid::game_routes::list(
+        root.path(),
+        &registry,
+        readable::GBA_ID,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
     assert_eq!(routes.routes.len(), 1);
     let route = &routes.routes[0];
     assert_eq!(route.runner_id, "@korri:mgba/mgba");
@@ -86,7 +92,16 @@ fn selected_runner_owns_frontend_core_callback_and_named_files() {
         Some("@korri:mgba/mgba"),
     )
     .unwrap();
-    let spec = launch_route(root.path(), &snapshot, &registry, &resolved, None, None).unwrap();
+    let spec = launch_route(
+        root.path(),
+        &snapshot,
+        &registry,
+        &resolved,
+        None,
+        None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
     let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
     assert_eq!(input.runner_id, "@korri:mgba/mgba");
     assert_eq!(input.family_id.as_deref(), Some("@korri:retroarch"));
@@ -127,6 +142,7 @@ fn runner_callback_preserves_raw_native_override_semantics() {
         &route,
         Some(overrides),
         None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap();
     let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
@@ -143,7 +159,7 @@ fn runner_callback_preserves_raw_native_override_semantics() {
         [
             "--config",
             root.path()
-                .join("users/default/retroarch.cfg")
+                .join("users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/retroarch.cfg")
                 .to_str()
                 .unwrap(),
             "-L"

@@ -73,7 +73,13 @@ fn published_mgba_route_and_launch_prepare() {
         .reload()
         .snapshot)
         .clone();
-    let routes = korrid::game_routes::list(root.path(), &registry, readable::GBA_ID).unwrap();
+    let routes = korrid::game_routes::list(
+        root.path(),
+        &registry,
+        readable::GBA_ID,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
     assert_eq!(routes.routes.len(), 1);
     assert_eq!(routes.routes[0].runner_id, "@korri:mgba/mgba");
     assert_eq!(
@@ -100,6 +106,7 @@ fn published_mgba_route_and_launch_prepare() {
         &resolved,
         Some(overrides),
         None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .expect("current Core must construct a route against the published runner");
     assert_eq!(spec.command[1], "plugin-launch");
@@ -125,7 +132,9 @@ fn published_mgba_route_and_launch_prepare() {
     let output = evaluate_snapshot(&source, &input)
         .expect("current launch.prepare dispatch must evaluate the published callback");
     assert_eq!(output.command, input.program);
-    let config = root.path().join("users/default/retroarch.cfg");
+    let config = root.path().join(
+        "users/f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9/retroarch.cfg",
+    );
     assert_eq!(
         output.args,
         vec![

@@ -146,7 +146,8 @@ fn scan_skips_oversized_files_reports_caps_and_ignores_disabled_plugins() {
         .unwrap();
     let accounts = vec![AccountRoot {
         user: "default".into(),
-        storage_id: "account-default".into(),
+        storage_id: "account-f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+            .into(),
         root: root.path().into(),
     }];
     let mut diagnostics = Vec::new();
