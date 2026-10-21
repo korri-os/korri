@@ -33,6 +33,7 @@ import { shiftDownloadLabel } from "./shift-download-label"
 import type { ShiftLibraryGame } from "./pages/shift-library-game"
 import type { ShiftGameDetailView } from "./pages/shift-game-detail-view"
 import { ShiftSettings } from "./pages/ShiftSettings"
+import { ShiftLaunchSettings } from "./pages/ShiftLaunchSettings"
 import { SHIFT_STORE_START, ShiftStore, type ShiftStorePlace } from "./pages/ShiftStore"
 import { ShiftGameActionConfirmSheet } from "./ui/organisms/ShiftGameActionConfirmSheet"
 import { ShiftGameActionsSheet } from "./ui/organisms/ShiftGameActionsSheet"
@@ -230,6 +231,10 @@ function savesAffordance(splitCount: number): SurfaceAction {
 export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
   const runner = model.runnerChoice
   const runnerOpen = runner !== undefined && runner._tag !== "Closed"
+  /** A game's launch settings take the screen while Korri shows them. */
+  const launchSettings = model.launchSettings !== undefined && model.launchSettings._tag !== "Closed"
+    ? model.launchSettings
+    : undefined
   const [sheetGameId, setSheetGameId] = useState<string | null>(null)
   const [launchGameId, setLaunchGameId] = useState<string | null>(null)
   const [detailGameId, setDetailGameId] = useState<string | null>(null)
@@ -519,7 +524,19 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
         }
         className="shift-sheet-host intrinsic"
       >
-        <div className="shift-runner-background" inert={runnerOpen}>{body}</div>
+        <div className="shift-runner-background" inert={runnerOpen}>
+          {launchSettings === undefined ? body : (
+            // In place of the page, not over it: the page's own Back must not answer too.
+            <ShiftLaunchSettings
+              launch={launchSettings}
+              status={model.settingsStatus}
+              onChange={(settingId, value) => host.changeSetting(settingId, value)}
+              onAction={actionId => host.runAction(actionId)}
+              onDismissProblem={() => host.dismissSettingsProblem()}
+              {...(model.clockLabel === undefined ? {} : { time: model.clockLabel })}
+            />
+          )}
+        </div>
         {runnerOpen ? <ShiftRunnerSheet choice={runner} onAction={id => host.runAction(id)} /> : null}
         {model.presentation.kind === "gameplay-overlay" ? (
           <ShiftGameplayOverlaySheet

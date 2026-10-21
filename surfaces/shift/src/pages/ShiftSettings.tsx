@@ -58,6 +58,10 @@ export interface ShiftSettingsProps {
   readonly onDismissProblem: () => void
   /** Leave settings (B, or the surface's back action). */
   readonly onClose?: () => void
+  /** The word over the title. Default "Settings". */
+  readonly kicker?: string
+  /** One line about the whole page, under its title, in Korri's words. */
+  readonly notice?: string
 }
 
 /** Flatten groups into the focus order, keeping each row's absolute index so
@@ -82,6 +86,8 @@ export function ShiftSettings({
   onAction,
   onDismissProblem,
   onClose,
+  kicker = "Settings",
+  notice,
 }: ShiftSettingsProps) {
   const [index, setIndex] = useState(0)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -169,8 +175,9 @@ export function ShiftSettings({
 
       <div className="shift-settings-stage">
         <div className="shift-settings-head">
-          <ShiftCineKicker>Settings</ShiftCineKicker>
+          <ShiftCineKicker>{kicker}</ShiftCineKicker>
           <ShiftCineTitle>{title}</ShiftCineTitle>
+          {notice === undefined ? null : <p className="shift-settings-notice" role="status">{notice}</p>}
         </div>
 
         <div className="shift-settings-viewport" ref={viewportRef}>
@@ -206,6 +213,8 @@ export function ShiftSettings({
                         {...(item.description === undefined
                           ? {}
                           : { description: item.description })}
+                        {...(item.source === undefined ? {} : { source: item.source })}
+                        deviceOnly={item.scope === "device"}
                         {...(item.interaction === undefined || saving
                           ? {}
                           : {

@@ -11,6 +11,10 @@ export interface ShiftSettingRowProps {
   readonly index: number
   readonly value?: string
   readonly description?: string
+  /** Where a layered value in force comes from, in Korri's words. */
+  readonly source?: string
+  /** Korri says the value stays on this device. */
+  readonly deviceOnly?: boolean
   readonly focused?: boolean
   readonly saving?: boolean
   readonly onFocus?: () => void
@@ -24,11 +28,19 @@ function content(
   description: string | undefined,
   actionable: boolean,
   saving: boolean,
+  source: string | undefined,
+  deviceOnly: boolean,
 ): ReactNode {
   return (
     <>
       <span className="shift-setting-row-text">
         <span className="shift-setting-row-label">{label}</span>
+        {source !== undefined || deviceOnly ? (
+          <span className="shift-setting-row-source">
+            {deviceOnly ? <span className="shift-setting-row-mark">Device-only</span> : null}
+            {source === undefined ? null : <span>{source}</span>}
+          </span>
+        ) : null}
         {description ? (
           <span className="shift-setting-row-description">{description}</span>
         ) : null}
@@ -52,6 +64,8 @@ export function ShiftSettingRow({
   index,
   value,
   description,
+  source,
+  deviceOnly = false,
   focused = false,
   saving = false,
   onFocus,
@@ -67,7 +81,7 @@ export function ShiftSettingRow({
     onFocus,
     ...shiftDesignPartAttrs(SHIFT_DESIGN_PARTS.settingRow, label),
   }
-  const body = content(label, value, description, Boolean(onSelect), saving)
+  const body = content(label, value, description, Boolean(onSelect), saving, source, deviceOnly)
 
   return onSelect ? (
     <button type="button" onClick={onSelect} {...common}>

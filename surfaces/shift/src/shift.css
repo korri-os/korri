@@ -3145,6 +3145,54 @@ button.shift-sheet-control:is(:hover, :focus, [data-korri-active-focus]) {
 	text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45);
 }
 
+/* A layered value's provenance: the device-only mark, then where the value
+ * in force comes from. Wraps under the label rather than squeezing the value. */
+[data-shift-settings] .shift-setting-row-source {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.15em 0.5em;
+	font-size: var(--shift-text-fine);
+	font-weight: 500;
+	color: var(--shift-ink-dim);
+	overflow-wrap: anywhere;
+}
+
+[data-shift-settings] .shift-setting-row-mark {
+	flex: none;
+	padding: 0 0.45em;
+	border: 1px solid currentColor;
+	border-radius: 0.35em;
+	font-size: 0.85em;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	color: var(--shift-accent);
+}
+
+/* A layered row's provenance line is long and wraps; the value it explains is
+ * short. The text column takes the room that is left, so the value is never
+ * the one cut. */
+[data-shift-settings] .shift-setting-row:has(.shift-setting-row-source) .shift-setting-row-text {
+	flex: 1 1 0;
+}
+
+/* Its value is a short clock step; the tail takes the value's own width. A
+ * share of a content-sized tail, or a sub-pixel rounding of its width, would
+ * cut it ("Inh…"), so it is never clipped. */
+[data-shift-settings] .shift-setting-row:has(.shift-setting-row-source) .shift-setting-row-value {
+	max-width: none;
+	overflow: visible;
+}
+
+/* One line about the whole page: layers Korri cannot show yet, a change
+ * made elsewhere, a failure. Korri's words, at reading size. */
+[data-shift-settings] .shift-settings-notice {
+	max-width: 60ch;
+	margin: 0;
+	font-size: var(--shift-text-body);
+	color: var(--shift-ink);
+}
+
 [data-shift-settings] .shift-setting-row-description {
 	font-size: var(--shift-text-fine);
 	font-weight: 500;
