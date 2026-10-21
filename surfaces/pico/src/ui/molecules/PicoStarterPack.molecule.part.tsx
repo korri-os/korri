@@ -25,6 +25,11 @@ export function OfferedDimmed() {
   return <Stateful start={{ _tag: "Offered", actions: [{ id: fixtureStarterPackInstall.id, label: "Install Starter pack", enabled: false }] }} />
 }
 
+// Intentionally null: Korri offers no Starter pack, so there is no offer and no placeholder.
+export function NoStarterPack() {
+  return <Stateful start={{ _tag: "None" }} />
+}
+
 export function Installing() {
   return <Stateful start={{ _tag: "Installing" }} />
 }

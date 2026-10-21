@@ -25,6 +25,7 @@ const emptyStates = new Set([
   "ui/organisms/PicoGameActions.organism.part.tsx/NoActions",
   "ui/organisms/PicoIdentityDialog.organism.part.tsx/Closed",
   "ui/organisms/PicoResumeList.organism.part.tsx/NoResumableGames",
+  "ui/molecules/PicoStarterPack.molecule.part.tsx/NoStarterPack",
 ])
 
 const discoveredStates = new Set<string>()

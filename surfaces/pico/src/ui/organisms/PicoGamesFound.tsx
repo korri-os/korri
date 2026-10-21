@@ -43,8 +43,8 @@ export function PicoGamesFound({
   onDismissProblem,
 }: {
   readonly view: PicoGamesView
-  /** Absent when Korri offers no Starter pack. */
-  readonly starterPack?: PicoStarterPackView
+  /** `None` when Korri offers no Starter pack. */
+  readonly starterPack: PicoStarterPackView
   /** Install, or try again, by the id of Korri's action. */
   readonly onStarterPack: (actionId: string) => void
   readonly onScan: () => void
@@ -52,13 +52,20 @@ export function PicoGamesFound({
   /** OK on Korri's refusal to rescan. */
   readonly onDismissProblem: () => void
 }) {
-  const offer = starterPack === undefined ? null : <PicoStarterPack onAction={onStarterPack} view={starterPack} />
+  const offer = <PicoStarterPack onAction={onStarterPack} view={starterPack} />
+  const offered = starterPack._tag === "None" ? undefined : ""
   if (view._tag === "Scanning") {
     return (
-      <section aria-label="Games" className="pico-games-found" data-offer={starterPack === undefined ? undefined : ""}>
+      <section aria-label="Games" className="pico-games-found" data-offer={offered}>
         {offer}
         <PicoSetupHeading message="Korri is reading this device's games." title="Looking for games" />
         <PicoBusyMeter label="Looking for games" />
+        {/* Only while the Starter pack installs: it finishes by itself. */}
+        {view.canContinue ? (
+          <div className="pico-games-found-actions">
+            <PicoRow label="NEXT" onPress={onContinue} />
+          </div>
+        ) : null}
       </section>
     )
   }
@@ -66,7 +73,7 @@ export function PicoGamesFound({
   const games = view._tag === "Found" ? view.games : []
   const more = games.length - SHOWN
   return (
-    <section aria-label="Games" className="pico-games-found" data-offer={starterPack === undefined ? undefined : ""}>
+    <section aria-label="Games" className="pico-games-found" data-offer={offered}>
       {offer}
       <PicoSetupHeading message={message} title={title} />
       {games.length === 0 ? null : (

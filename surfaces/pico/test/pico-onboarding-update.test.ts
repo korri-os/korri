@@ -399,9 +399,31 @@ describe("the Starter pack", () => {
   })
 
   test("with no starterPack from Korri there is no offer", () => {
-    const screen = gamesScreen(storyFrom(games, korri).screen)
-    expect("starterPack" in screen).toBe(false)
+    expect(gamesScreen(storyFrom(games, korri).screen).starterPack).toEqual({ _tag: "None" })
     expect(storyFrom(games, korri, install).requests).toEqual([])
+  })
+
+  /** Korri reading the library: its rescan under way. */
+  const rescanning = (model: SurfaceModel): SurfaceModel =>
+    ({ ...model, settingsStatus: { _tag: "Saving", settingId: "game-folder-rescan" } })
+
+  test("Scan again during the install reads the library, and NEXT still goes on", () => {
+    const installing = withStarterPack(korri, starterPackInstalling)
+    expect(storyFrom(games, installing, { _tag: "ScannedGames" }).requests)
+      .toEqual([{ _tag: "RunAction", actionId: "game-folder-rescan" }])
+    const both = rescanning(installing)
+    expect(gamesScreen(storyFrom(games, both).screen).view).toEqual({ _tag: "Scanning", canContinue: true })
+    expect(storyFrom(games, both, next).nav.step).toBe("play")
+    // Korri's own read of the catalog, as after the pack is on, counts the same.
+    expect(storyFrom(games, { ...installing, catalog: { _tag: "Loading" } }, next).nav.step).toBe("play")
+  })
+
+  test("with no install under way, a library read still holds NEXT", () => {
+    for (const pack of [undefined, starterPackOffered, starterPackInstalled, starterPackFailed]) {
+      const scanning = rescanning(withStarterPack(korri, pack))
+      expect(gamesScreen(storyFrom(games, scanning).screen).view).toEqual({ _tag: "Scanning", canContinue: false })
+      expect(storyFrom(games, scanning, next).nav.step).toBe("games")
+    }
   })
 
   test("the cursor starts again when the offer changes, so it never rests on a row that went", () => {

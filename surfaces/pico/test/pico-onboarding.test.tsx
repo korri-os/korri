@@ -112,7 +112,9 @@ describe("the Starter pack on the games step", () => {
     fireEvent.click(screen.getByRole("button", { name: "NEXT" }))
     fireEvent.click(screen.getByRole("button", { name: "NEXT" }))
     expect(screen.getByRole("region", { name: "Games" })).toBeTruthy()
-    return { host, rerender: (next: SurfaceStarterPack | undefined) => view.rerender(<PicoSurface host={host} model={withStarterPack(ready, next)} />) }
+    const rerender = (next: SurfaceStarterPack | undefined, change: (model: SurfaceModel) => SurfaceModel = model => model) =>
+      view.rerender(<PicoSurface host={host} model={change(withStarterPack(ready, next))} />)
+    return { host, rerender }
   }
 
   test("is offered above the library, with the cursor on Install, which runs Korri's action", () => {
@@ -137,6 +139,26 @@ describe("the Starter pack on the games step", () => {
     expect(document.activeElement).toBe(next)
     fireEvent.click(next)
     expect(screen.getByRole("button", { name: /GO TO GAMES/ })).toBeTruthy()
+  })
+
+  test("a rescan during the install keeps NEXT, with the cursor on it, and NEXT goes on", () => {
+    const { host, rerender } = atGames(starterPackInstalling)
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }))
+    expect(host.calls.at(-1)).toBe("action:game-folder-rescan")
+    rerender(starterPackInstalling, model => ({ ...model, settingsStatus: { _tag: "Saving", settingId: "game-folder-rescan" } }))
+    expect(screen.getByText("Looking for games")).toBeTruthy()
+    const next = screen.getByRole("button", { name: "NEXT" })
+    expect(document.activeElement).toBe(next)
+    expect(screen.getByText("SELECT")).toBeTruthy()
+    fireEvent.click(next)
+    expect(screen.getByRole("button", { name: /GO TO GAMES/ })).toBeTruthy()
+  })
+
+  test("with no install under way, a library read shows no NEXT", () => {
+    const { rerender } = atGames(undefined)
+    rerender(undefined, model => ({ ...model, settingsStatus: { _tag: "Saving", settingId: "game-folder-rescan" } }))
+    expect(screen.getByText("Looking for games")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "NEXT" })).toBeNull()
   })
 
   test("installed: says so, and the library shows the games", () => {

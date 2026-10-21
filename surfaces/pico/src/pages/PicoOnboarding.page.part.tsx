@@ -385,6 +385,11 @@ export function GamesStarterPackInstalling() {
   return <Walk beats={[...games, install]} start={starterPackModel} />
 }
 
+/* Scan again during the install: Korri reads the library, and NEXT stays. */
+export function GamesStarterPackInstallingWhileScanning() {
+  return <Walk beats={[...games, install, { _tag: "ScannedGames" }]} start={starterPackModel} />
+}
+
 export function GamesStarterPackInstalled() {
   return <Walk beats={[...games, install, "answer"]} start={starterPackModel} />
 }

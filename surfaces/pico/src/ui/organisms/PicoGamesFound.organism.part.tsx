@@ -11,11 +11,13 @@ export const note = "What Korri found to play, as carts on a floor line, a resca
 export const composition = {
   StarterPackOffered: [{ part: "src/ui/molecules/PicoStarterPack.molecule.part.tsx", state: "default" }],
   StarterPackInstalling: [{ part: "src/ui/molecules/PicoStarterPack.molecule.part.tsx", state: "Installing" }],
+  StarterPackInstallingWhileScanning: [{ part: "src/ui/molecules/PicoStarterPack.molecule.part.tsx", state: "Installing" }],
   StarterPackInstalled: [{ part: "src/ui/molecules/PicoStarterPack.molecule.part.tsx", state: "Installed" }],
   StarterPackFailedLongMessage: [{ part: "src/ui/molecules/PicoStarterPack.molecule.part.tsx", state: "FailedLongMessage" }],
 } as const
 
 const games = fixtureModel.catalog._tag === "Ready" ? fixtureShelfGames(fixtureModel.catalog.games) : []
+const none: PicoStarterPackView = { _tag: "None" }
 const offered: PicoStarterPackView = {
   _tag: "Offered",
   actions: [{ id: fixtureStarterPackInstall.id, label: "Install Starter pack", enabled: true }],
@@ -38,15 +40,15 @@ function WithStarterPack({ start, library }: { readonly start: PicoStarterPackVi
 }
 
 export default function PicoGamesFoundPart() {
-  return <PicoGamesFound onContinue={() => undefined} onDismissProblem={() => undefined} onScan={() => undefined} onStarterPack={() => undefined} view={{ _tag: "Found", games, canScan: true }} />
+  return <PicoGamesFound onContinue={() => undefined} onDismissProblem={() => undefined} onScan={() => undefined} onStarterPack={() => undefined} starterPack={none} view={{ _tag: "Found", games, canScan: true }} />
 }
 
 export function Scanning() {
-  return <PicoGamesFound onContinue={() => undefined} onDismissProblem={() => undefined} onScan={() => undefined} onStarterPack={() => undefined} view={{ _tag: "Scanning" }} />
+  return <PicoGamesFound onContinue={() => undefined} onDismissProblem={() => undefined} onScan={() => undefined} onStarterPack={() => undefined} starterPack={none} view={{ _tag: "Scanning", canContinue: false }} />
 }
 
 export function Empty() {
-  return <PicoGamesFound onContinue={() => undefined} onDismissProblem={() => undefined} onScan={() => undefined} onStarterPack={() => undefined} view={{ _tag: "Empty", canScan: true }} />
+  return <PicoGamesFound onContinue={() => undefined} onDismissProblem={() => undefined} onScan={() => undefined} onStarterPack={() => undefined} starterPack={none} view={{ _tag: "Empty", canScan: true }} />
 }
 
 export function Failed() {
@@ -56,6 +58,7 @@ export function Failed() {
       onDismissProblem={() => undefined}
       onScan={() => undefined}
       onStarterPack={() => undefined}
+      starterPack={none}
       view={{ _tag: "Failed", message: "The library could not be read.", canScan: false, problem: "The game folders could not be scanned." }}
     />
   )
@@ -71,6 +74,11 @@ export function StarterPackOfferedWithLibrary() {
 
 export function StarterPackInstalling() {
   return <WithStarterPack library={{ _tag: "Empty", canScan: true }} start={{ _tag: "Installing" }} />
+}
+
+/* A rescan during the install: NEXT stays, because the install finishes by itself. */
+export function StarterPackInstallingWhileScanning() {
+  return <WithStarterPack library={{ _tag: "Scanning", canContinue: true }} start={{ _tag: "Installing" }} />
 }
 
 export function StarterPackInstalled() {

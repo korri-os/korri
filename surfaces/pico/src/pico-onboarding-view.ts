@@ -115,7 +115,9 @@ export interface PicoPadsView {
 }
 
 export type PicoGamesView =
-  | { readonly _tag: "Scanning" }
+  /** `canContinue`: NEXT is offered while Korri reads the library, which
+   * happens only while the Starter pack installs (`gamesCanContinue`). */
+  | { readonly _tag: "Scanning"; readonly canContinue: boolean }
   | { readonly _tag: "Found"; readonly games: readonly PicoShelfGame[]; readonly canScan: boolean; readonly problem?: string }
   | { readonly _tag: "Empty"; readonly canScan: boolean; readonly problem?: string }
   /** Korri could not read the library; `message` is its own. */
@@ -133,6 +135,8 @@ export interface PicoStarterPackAction {
 
 /** The Starter pack offer above the library, as Korri states it. */
 export type PicoStarterPackView =
+  /** Korri offers no Starter pack: no offer, and no placeholder. */
+  | { readonly _tag: "None" }
   | { readonly _tag: "Offered"; readonly actions: readonly PicoStarterPackAction[] }
   /** No percentage: Korri states none. */
   | { readonly _tag: "Installing" }
@@ -168,8 +172,7 @@ export type PicoOnboardingScreen =
       }
     }
   | { readonly _tag: "Pads"; readonly view: PicoPadsView }
-  /** `starterPack`: absent when Korri offers none. */
-  | { readonly _tag: "Games"; readonly view: PicoGamesView; readonly starterPack?: PicoStarterPackView }
+  | { readonly _tag: "Games"; readonly view: PicoGamesView; readonly starterPack: PicoStarterPackView }
   | { readonly _tag: "Play"; readonly facts: readonly PicoSetupFact[]; readonly finishing: boolean }
 
 /* ---- Korri's facts, found once ---- */
@@ -378,15 +381,25 @@ export function padsView(korri: SurfaceModel): PicoPadsView {
 export const gamesScanning = (korri: SurfaceModel): boolean =>
   korri.catalog._tag === "Loading" || settingSaving(korri, GAME_RESCAN_ACTION)
 
+/**
+ * Whether NEXT goes on from the games step. A library read holds it, except
+ * while the Starter pack installs: the install finishes by itself, and a
+ * rescan during it (Scan again, or Korri's own after the install) must not
+ * take NEXT away.
+ */
+export const gamesCanContinue = (korri: SurfaceModel): boolean =>
+  !gamesScanning(korri) || korri.onboarding?.starterPack?._tag === "Installing"
+
 function gamesView(korri: SurfaceModel): PicoGamesView {
-  if (gamesScanning(korri)) return { _tag: "Scanning" }
+  const scanning: PicoGamesView = { _tag: "Scanning", canContinue: gamesCanContinue(korri) }
+  if (gamesScanning(korri)) return scanning
   const canScan = canRescanGames(korri)
   const problem = settingProblem(korri, GAME_RESCAN_ACTION)
   const more = problem === undefined ? {} : { problem }
   const home = picoHomeViewFromCatalog(korri.catalog)
   switch (home._tag) {
     case "Loading":
-      return { _tag: "Scanning" }
+      return scanning
     case "Empty":
       return { _tag: "Empty", canScan, ...more }
     case "Failed":
@@ -396,21 +409,37 @@ function gamesView(korri: SurfaceModel): PicoGamesView {
   }
 }
 
-/** The Starter pack actions Korri offers now: Install, or the retry. */
-export function starterPackActions(korri: SurfaceModel): readonly SurfaceAction[] {
-  const pack = korri.onboarding?.starterPack
-  return pack?._tag === "Offered" || pack?._tag === "Failed" ? pack.actions : []
+/**
+ * The Starter pack actions on screen now: Install, or the retry, with any
+ * Korri adds. Empty in every other state. The one place that says which
+ * states can be acted on.
+ */
+export function starterPackChoices(view: PicoStarterPackView): readonly PicoStarterPackAction[] {
+  switch (view._tag) {
+    case "Offered":
+    case "Failed":
+      return view.actions
+    case "None":
+    case "Installing":
+    case "Installed":
+      return []
+  }
 }
+
+/** Whether the person can press one of the Starter pack's actions now. */
+export const starterPackActionable = (view: PicoStarterPackView): boolean =>
+  starterPackChoices(view).some(action => action.enabled)
 
 function starterPackAction(action: SurfaceAction, index: number, first: string): PicoStarterPackAction {
   return { id: action.id, label: index === 0 ? first : action.label, enabled: action.enabled }
 }
 
-function starterPackView(korri: SurfaceModel): PicoStarterPackView | undefined {
+/** The Starter pack as the games step shows it; `None` when Korri offers none. */
+export function starterPackView(korri: SurfaceModel): PicoStarterPackView {
   const pack = korri.onboarding?.starterPack
   switch (pack?._tag) {
     case undefined:
-      return undefined
+      return { _tag: "None" }
     case "Offered":
       return { _tag: "Offered", actions: pack.actions.map((action, index) => starterPackAction(action, index, "Install Starter pack")) }
     case "Installing":
@@ -478,12 +507,8 @@ export function picoOnboardingScreen(nav: OnboardingNav, korri: SurfaceModel): P
     }
     case "pads":
       return { _tag: "Pads", view: padsView(korri) }
-    case "games": {
-      const starterPack = starterPackView(korri)
-      return starterPack === undefined
-        ? { _tag: "Games", view: gamesView(korri) }
-        : { _tag: "Games", view: gamesView(korri), starterPack }
-    }
+    case "games":
+      return { _tag: "Games", view: gamesView(korri), starterPack: starterPackView(korri) }
     case "play":
       return { _tag: "Play", facts: facts(nav, korri), finishing: nav.finishing }
   }
@@ -533,7 +558,7 @@ export function picoSetupCursor(step: OnboardingStep, screen: PicoOnboardingScre
     case "Games":
       // The offer's state is in the key: Install goes when the install
       // starts, and the cursor must not stay on a control that is gone.
-      return { key: `games:${screen.starterPack?._tag ?? "None"}:${screen.view._tag}`, at: "first" }
+      return { key: `games:${screen.starterPack._tag}:${screen.view._tag}`, at: "first" }
     case "Play":
       return { key: "play", at: "last" }
   }
