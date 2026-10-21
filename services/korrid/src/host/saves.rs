@@ -745,6 +745,129 @@ mod tests {
     }
 
     #[test]
+    fn remembered_warning_survives_slow_object_publication() {
+        // Isolate the deliberately held process-wide object lock from other
+        // parallel tests, without replacing the real storage or check path.
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "host::saves::tests::slow_object_publication_child",
+                "--ignored",
+                "--nocapture",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "subprocess helper; holds the object-publication lock longer than the check budget"]
+    async fn slow_object_publication_child() {
+        struct SlowPublication {
+            entered: Option<std::sync::mpsc::Sender<()>>,
+            release: std::sync::mpsc::Receiver<()>,
+            bytes: std::io::Cursor<Vec<u8>>,
+        }
+        impl std::io::Read for SlowPublication {
+            fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+                if let Some(entered) = self.entered.take() {
+                    entered.send(()).unwrap();
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    self.release
+                        .recv_timeout(std::time::Duration::from_secs(10))
+                        .unwrap();
+                }
+                std::io::Read::read(&mut self.bytes, output)
+            }
+        }
+        let root = tempfile::tempdir().unwrap();
+        let host = test_host(root.path());
+        let store = host.save_store();
+        let peer = "1".repeat(64);
+        let other = "2".repeat(64);
+        let hash = crate::saves::record::hash(b"new save");
+        let record = SnapshotRecord {
+            parents: vec![],
+            game_id: "one".into(),
+            release_id: None,
+            runner_id: "runner".into(),
+            device: peer.clone(),
+            ended_at: "2026-10-21T00:00:00.000Z".into(),
+            duration_seconds: 1,
+            interrupted: false,
+            locations: vec![SnapshotLocation {
+                key: "saves".into(),
+                kind: SaveKind::Save,
+                files: vec![SaveFile {
+                    path: "game.srm".into(),
+                    sha256: hash.clone(),
+                    bytes: 8,
+                }],
+            }],
+        };
+        let id = store.put_record(PERSON, &record).unwrap();
+        let mut missing = record.clone();
+        missing.device = other.clone();
+        missing.locations[0].files[0].sha256 = crate::saves::record::hash(b"elsewhere");
+        missing.locations[0].files[0].bytes = 9;
+        store.put_record(PERSON, &missing).unwrap();
+        store
+            .remember_in_use(PERSON, "one", &peer, Some(42))
+            .unwrap();
+        let (entered, waiting) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        let publishing = store.clone();
+        let writer = std::thread::spawn(move || {
+            publishing.put_object(
+                PERSON,
+                &hash,
+                &mut SlowPublication {
+                    entered: Some(entered),
+                    release: released,
+                    bytes: std::io::Cursor::new(b"new save".to_vec()),
+                },
+            )
+        });
+        waiting
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        let started = tokio::time::Instant::now();
+        let checked = host
+            .save_check(
+                SaveCheckRequest {
+                    game_id: "one".into(),
+                    runner_id: None,
+                },
+                None,
+                None,
+                started,
+            )
+            .await;
+        let elapsed = started.elapsed();
+        release.send(()).unwrap();
+        writer.join().unwrap().unwrap();
+        let checked = checked.expect("object publication must not hide remembered warnings");
+        assert!(
+            elapsed < std::time::Duration::from_millis(2500),
+            "warning read exceeded its budget: {elapsed:?}"
+        );
+        assert!(checked
+            .in_use
+            .iter()
+            .any(|warning| warning.device == peer && warning.since == 42));
+        assert!(
+            checked.in_use.iter().any(|warning| warning.device == other),
+            "missing newer-head metadata must also survive object contention"
+        );
+        assert!(store.complete(PERSON, "one", &id).unwrap());
+    }
+
+    #[test]
     fn pruning_cannot_interleave_with_capture_or_completion_publication() {
         use super::super::identity::{clear_active, persist_active, replace_active, ActiveSession};
         use std::{sync::mpsc, time::Duration};

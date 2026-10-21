@@ -16,6 +16,14 @@ use std::{
 
 const MAX_RECORD: u64 = 8 * 1024 * 1024;
 static STORAGE: Mutex<()> = Mutex::new(());
+// Lock order is STORAGE -> FACTS, never the reverse. FACTS covers only small
+// record/advisory publications and reads, never object transfer or verification.
+static FACTS: Mutex<()> = Mutex::new(());
+fn facts_lock() -> Result<MutexGuard<'static, ()>, SaveError> {
+    FACTS
+        .lock()
+        .map_err(|_| invalid("save facts lock poisoned"))
+}
 fn lock() -> Result<MutexGuard<'static, ()>, SaveError> {
     STORAGE.lock().map_err(|_| invalid("storage lock poisoned"))
 }
@@ -38,7 +46,11 @@ fn directory(path: &Path, create: bool) -> Result<bool, SaveError> {
             if !create {
                 return Ok(false);
             }
-            fs::DirBuilder::new().mode(0o700).create(path).map_err(io)?;
+            match fs::DirBuilder::new().mode(0o700).create(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(io(error)),
+            }
             if let Some(parent) = path.parent() {
                 File::open(parent).and_then(|f| f.sync_all()).map_err(io)?;
             }
@@ -638,7 +650,7 @@ impl NativeSaveStore {
         device: &str,
         since: Option<u64>,
     ) -> Result<(), SaveError> {
-        let _guard = lock()?;
+        let _guard = facts_lock()?;
         super::account_root(Path::new("/"), device).map_err(SaveError::Invalid)?;
         let path = self.game(person, game, true)?.unwrap().join("in-use.json");
         let mut devices: BTreeMap<String, u64> = match read_json(&path) {
@@ -662,19 +674,21 @@ impl NativeSaveStore {
         person: &str,
         game: &str,
     ) -> Result<Vec<SaveInUseWarning>, SaveError> {
-        let _guard = lock()?;
-        let Some(path) = self.game(person, game, false)? else {
-            return Ok(vec![]);
+        let (mut devices, records) = {
+            let _facts = facts_lock()?;
+            let Some(path) = self.game(person, game, false)? else {
+                return Ok(vec![]);
+            };
+            let devices: BTreeMap<String, u64> = match read_json(&path.join("in-use.json")) {
+                Ok(value) => value,
+                Err(SaveError::Missing) => BTreeMap::new(),
+                Err(error) => return Err(error),
+            };
+            (devices, self.read_records(person, game)?)
         };
-        let mut devices: BTreeMap<String, u64> = match read_json(&path.join("in-use.json")) {
-            Ok(v) => v,
-            Err(SaveError::Missing) => BTreeMap::new(),
-            Err(e) => return Err(e),
-        };
-        let records = self.read_records(person, game)?;
         let heads = head_ids(&records)?;
         for record in &records {
-            if heads.contains(&snapshot_id(record)?) && !self.progress_complete(record)? {
+            if heads.contains(&snapshot_id(record)?) && !self.progress_present(record) {
                 let time = chrono::DateTime::parse_from_rfc3339(&record.ended_at)
                     .map_err(|_| invalid("end time"))?
                     .timestamp_millis();
@@ -793,6 +807,7 @@ impl NativeSaveStore {
             return Err(invalid("oversized record"));
         }
         let id = super::record::hash(&bytes);
+        let _facts = facts_lock()?;
         let path = self
             .game(person, &record.game_id, true)?
             .unwrap()
@@ -842,6 +857,27 @@ impl NativeSaveStore {
         } else {
             Err(SaveError::Missing)
         }
+    }
+    /// Advisory availability only: objects enter this private store after hash
+    /// verification and atomic publication. Presence/size checks never read
+    /// payloads or wait for their mutex. Enrichment and launch still verify them.
+    fn progress_present(&self, record: &SnapshotRecord) -> bool {
+        record
+            .locations
+            .iter()
+            .filter(|location| location.kind != SaveKind::Screenshot)
+            .flat_map(|location| &location.files)
+            .all(|file| {
+                self.object_path(&file.sha256, false)
+                    .ok()
+                    .and_then(|path| fs::symlink_metadata(path).ok())
+                    .is_some_and(|metadata| {
+                        metadata.is_file()
+                            && !metadata.file_type().is_symlink()
+                            && metadata.permissions().mode() & 0o077 == 0
+                            && metadata.len() == file.bytes
+                    })
+            })
     }
     fn progress_complete(&self, record: &SnapshotRecord) -> Result<bool, SaveError> {
         let mut progress = record.clone();
