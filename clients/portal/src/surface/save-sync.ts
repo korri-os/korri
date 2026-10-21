@@ -235,7 +235,9 @@ export function createSaveSync(
   let historyView: SurfaceSaveHistory | undefined
   let marks: ReadonlyMap<string, SaveMarkFact> = new Map()
   /** What the latest check found, until the next check of that game. */
-  const checked = new Map<string, SaveMark>()
+  /** The mark this device's last check found, and the heads korrid stated
+   * when it ran. New heads mean new snapshots: the check no longer speaks. */
+  const checked = new Map<string, { readonly mark: SaveMark; readonly heads: readonly string[] }>()
   let peers: ReadonlyMap<string, string> = new Map()
   let generation = 0
   let historyGeneration = 0
@@ -384,14 +386,22 @@ export function createSaveSync(
     marks = next
     notify()
   }
-  /** korrid's marks, with what this device's last check found laid over them. */
+  const sameHeads = (a: readonly string[], b: readonly string[]) =>
+    a.length === b.length && [...a].sort().every((head, index) => head === [...b].sort()[index])
+  /**
+   * korrid's marks, with what this device's last check found laid over them.
+   * A Split korrid states always wins, and a check made against other heads
+   * is dropped: korrid has seen snapshots the check did not.
+   */
   const merged = (base: ReadonlyMap<string, SaveMarkFact>) => {
     const out = new Map(base)
-    for (const [gameId, mark] of checked) {
+    for (const [gameId, check] of [...checked]) {
       const fact = out.get(gameId)
-      // A split korrid knows outranks a check that did not reach anyone.
-      if (fact?.mark === SaveMark.Split && mark === SaveMark.NotChecked) continue
-      out.set(gameId, { mark, heads: fact?.heads ?? [] })
+      if (fact !== undefined && (fact.mark === SaveMark.Split || !sameHeads(fact.heads, check.heads))) {
+        checked.delete(gameId)
+        continue
+      }
+      out.set(gameId, { mark: check.mark, heads: fact?.heads ?? check.heads })
     }
     return out
   }
@@ -433,7 +443,7 @@ export function createSaveSync(
     flow.proceed?.()
   }
   const noteChecked = (gameId: string, mark: SaveMark) => {
-    checked.set(gameId, mark)
+    checked.set(gameId, { mark, heads: base.get(gameId)?.heads ?? [] })
     setMarks(merged(base))
   }
 

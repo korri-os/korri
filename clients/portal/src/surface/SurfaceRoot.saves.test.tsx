@@ -8,11 +8,11 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import type { SurfaceHost, SurfaceModel, SurfaceStatus } from "@contracts/surface/korri-surface"
-import { PeerListState, SaveMark, type Game, type SaveHistoryEntry } from "@contracts/generated/korrid"
+import { PeerListState, SaveMark, type Game, type SaveCheckOutcome, type SaveHistoryEntry, type SaveStatusOutcome } from "@contracts/generated/korrid"
 import { createInputBus } from "../input/bus"
 import { createInMemoryKorridClient, type InMemoryKorridClientConfig } from "../korrid/client"
 import type { InMemorySavesConfig } from "../korrid/in-memory-saves"
-import { newestFirst, saveFailureReason } from "./save-sync"
+import { createSaveSync, newestFirst, saveFailureReason } from "./save-sync"
 import { SurfaceRoot } from "./SurfaceRoot"
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -274,7 +274,72 @@ describe("a start korrid refuses", () => {
   }, 30_000)
 })
 
+describe("a check this device made, against what korrid says later", () => {
+  /** A korrid whose status the test sets, and whose check says Synced. */
+  const probe = () => {
+    let status: SaveStatusOutcome = { _tag: "Ok", payload: { games: [{ gameId: "wl4", status: SaveMark.Synced, heads: ["a"] }] } }
+    const korrid = {
+      savesStatus: async () => status,
+      savesHistory: async () => ({ _tag: "Ok" as const, payload: { records: [] } }),
+      savesChoose: async () => ({ _tag: "Ok" as const, payload: { records: [] } }),
+      savesRestore: async () => ({ _tag: "Ok" as const, payload: { records: [] } }),
+      savesCheck: async (): Promise<SaveCheckOutcome> => ({ _tag: "Ok", payload: { status: SaveMark.Synced, inUse: [], warnings: [] } }),
+      peerList: async () => ({ _tag: "Ok" as const, payload: { peers: [] } }),
+    }
+    const sync = createSaveSync(korrid, { pollIntervalMs: 0 })
+    return { sync, set: (next: SaveStatusOutcome) => { status = next } }
+  }
+  const launched = async (sync: ReturnType<typeof createSaveSync>) => {
+    let went = false
+    sync.launch({ id: "wl4", surfaceId: "game:wl4", title: "Wario Land 4" }, () => { went = true })
+    for (let i = 0; i < 100 && !went; i++) await new Promise(done => setTimeout(done, 5))
+    expect(went).toBe(true)
+  }
+
+  test("a Split korrid finds later wins over a cached Synced check (the reviewer's probe)", async () => {
+    const { sync, set } = probe()
+    await sync.refresh()
+    await launched(sync)
+    expect(sync.getMarks().get("wl4")).toEqual({ mark: SaveMark.Synced, heads: ["a"] })
+    set({ _tag: "Ok", payload: { games: [{ gameId: "wl4", status: SaveMark.Split, heads: ["a", "b"] }] } })
+    await sync.refresh()
+    expect(sync.getMarks().get("wl4")).toEqual({ mark: SaveMark.Split, heads: ["a", "b"] })
+    sync.dispose()
+  })
+
+  test("new heads drop a cached check: korrid's mark for the new snapshot shows", async () => {
+    const { sync, set } = probe()
+    await sync.refresh()
+    // Skip: the check reached nobody.
+    sync.launch({ id: "wl4", surfaceId: "game:wl4", title: "Wario Land 4" }, () => {})
+    const skip = sync.getStatus()
+    if (skip?._tag !== "Busy") throw new Error("no check")
+    sync.act(skip.actions![0]!.id)
+    expect(sync.getMarks().get("wl4")?.mark).toBe(SaveMark.NotChecked)
+    // Same heads: still not checked.
+    await sync.refresh()
+    expect(sync.getMarks().get("wl4")?.mark).toBe(SaveMark.NotChecked)
+    // A device met and korrid has a newer snapshot: its word now.
+    set({ _tag: "Ok", payload: { games: [{ gameId: "wl4", status: SaveMark.Synced, heads: ["c"] }] } })
+    await sync.refresh()
+    expect(sync.getMarks().get("wl4")).toEqual({ mark: SaveMark.Synced, heads: ["c"] })
+    sync.dispose()
+  })
+})
+
 describe("questions before a launch", () => {
+  test("a check that answers just inside 3 s with an in-use device asks, it does not launch", async () => {
+    const since = Date.now() - 600_000
+    const view = await mount({ games: { ...synced, wl4: { ...synced!.wl4!, checkDelayMs: 2850, inUse: [{ device: ZAO, since }] } } })
+    await invoke(() => view.host().launchGame("game:wl4"))
+    await waitFor(() => view.status()._tag === "Busy")
+    await waitFor(() => view.status()._tag !== "Busy", 1000)
+    expect(view.status()).toMatchObject({ _tag: "Confirm", gameId: "game:wl4" })
+    expect((view.status() as { kicker: string }).kicker).toMatch(/^In use on zao since /)
+    expect(await view.session()).toBeUndefined()
+    expect(view.game("game:wl4")?.saves).toEqual({ _tag: "Synced" })
+  }, 30_000)
+
   test("in use on another device: Confirm names it and since when, Launch anyway or Cancel", async () => {
     const since = new Date(2026, 9, 21, 16, 2).getTime()
     const view = await mount({ games: { ...synced, wl4: { ...synced!.wl4!, inUse: [{ device: ZAO, since }] } } })
