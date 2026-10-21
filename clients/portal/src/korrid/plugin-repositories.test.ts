@@ -80,7 +80,7 @@ describe("plugin repositories in the in-memory brain", () => {
     const client = createInMemoryKorridClient({ pluginHost: { userAdded: [], repositories: [], installs: [] } })
     const repositories = ok(await client.pluginRepositories())
     expect("official" in repositories).toBe(false)
-    expect(repositories).toEqual({ userAdded: [], repositoryInstalls: [] })
+    expect(repositories).toEqual({ userAdded: [], repositoryInstalls: [], otherInstalls: [] })
   })
 
   it("lists releases in catalog order with install and trust state", async () => {
@@ -110,12 +110,33 @@ describe("plugin repositories in the in-memory brain", () => {
       .toBe(PluginInstalledState.Enabled)
   })
 
-  it("reports a stale approval as needing review", async () => {
+  it("reports a stale approval as needing review, and a new review clears it", async () => {
     const client = createInMemoryKorridClient()
     expect(await client.setPluginEnabled("@korri:tailscale", true)).toMatchObject({
       _tag: "Err", payload: { code: "PluginNeedsReview" },
     })
     expect(ok(await client.setPluginEnabled("@korri:tailscale", false))).toEqual({})
+    const report = ok(await client.inspectPlugin(OFFICIAL, "@korri:tailscale", "1.84.0"))
+    expect(ok(await client.installPlugin(OFFICIAL, "@korri:tailscale", "1.84.0", report.approval))).toEqual({})
+    expect(ok(await client.setPluginEnabled("@korri:tailscale", true))).toEqual({})
+    // Another release or source for an installed plugin is not a review.
+    expect(await client.installPlugin(OFFICIAL, "@korri:sunshine", "2026.10.1",
+      ok(await client.inspectPlugin(OFFICIAL, "@korri:sunshine", "2026.10.1")).approval)).toMatchObject({ _tag: "Ok" })
+    expect(await client.installPlugin(OFFICIAL, "@korri:sunshine", "2026.09.2",
+      ok(await client.inspectPlugin(OFFICIAL, "@korri:sunshine", "2026.09.2")).approval)).toMatchObject({
+      _tag: "Err", payload: { message: "plugin is installed; use update or explicit source switch" },
+    })
+  })
+
+  it("lists other installs on and off, and keeps a turned-off one listed", async () => {
+    const client = createInMemoryKorridClient()
+    const others = ok(await client.pluginRepositories()).otherInstalls
+    expect(others.filter(item => item.enabled).length).toBeGreaterThan(0)
+    expect(others.find(item => item.id === "@korri:ssh")).toEqual({ id: "@korri:ssh", title: "SSH", enabled: false })
+    ok(await client.setPluginEnabled("@korri:mgba", false))
+    expect(ok(await client.pluginRepositories()).otherInstalls.find(item => item.id === "@korri:mgba")?.enabled).toBe(false)
+    ok(await client.setPluginEnabled("@korri:ssh", true))
+    expect(ok(await client.pluginRepositories()).otherInstalls.find(item => item.id === "@korri:ssh")?.enabled).toBe(true)
   })
 
   it("adds and removes repositories the way the host does", async () => {

@@ -38,6 +38,9 @@ pub struct PluginRepositories {
     pub official: Option<String>,
     pub user_added: Vec<String>,
     pub repository_installs: Vec<PluginRepositoryInstall>,
+    /// Every other installed plugin, on or off: image-seeded, raw-cache and
+    /// signed-cache catalog installs.
+    pub other_installs: Vec<PluginOtherInstall>,
 }
 
 // Producer: `selection.rs:10` Receipt (`id`, `desired` Enabled/Disabled) with
@@ -50,6 +53,20 @@ pub struct PluginRepositoryInstall {
     pub id: String,
     pub source_url: String,
     pub release_version: String,
+    pub enabled: bool,
+}
+
+// Producers: `selection.rs:10` Receipt (`id`, `desired` Enabled/Disabled) for
+// every receipt whose provenance is not Provenance::Repository, and
+// `declaration.rs` Declaration.title of the installed package, left out when
+// that declaration cannot be read. Receipts in the Removed state are left out.
+#[typeshare]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginOtherInstall {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub enabled: bool,
 }
 

@@ -23,6 +23,11 @@ use std::{
 /// refusal as needing a new review.
 pub const APPROVAL_STALE: &str = "installed package or host policy no longer matches its approval";
 
+/// The installed receipt names exactly this package from exactly this source.
+fn same_selection(receipt: &Receipt, report: &Report) -> bool {
+    receipt.package == report.package && receipt.provenance == report.provenance
+}
+
 #[derive(Clone)]
 struct HostPaths {
     roots: PathBuf,
@@ -692,6 +697,24 @@ impl Host {
         }
     }
 
+    /// Install a reviewed selection from the admin socket. For an installed
+    /// plugin, accept only a new review of the exact installed package and
+    /// provenance, for example after the host policy changed its approval.
+    /// That is the existing update intent and keeps the desired state. Any
+    /// other selection for an installed plugin needs `repository update` or
+    /// `repository switch`, which the socket does not offer.
+    pub fn install_reviewed(&self, report: Report, approval: &str) -> Result<(), String> {
+        validate_id(&report.id)?;
+        let id = report.id.clone();
+        match self.receipt(&id)? {
+            None => self.install(report, approval, SelectionIntent::Install),
+            Some(old) if same_selection(&old, &report) => {
+                self.install(report, approval, SelectionIntent::Update { id: &id })
+            }
+            Some(_) => Err("plugin is installed; use update or explicit source switch".into()),
+        }
+    }
+
     pub fn install(
         &self,
         report: Report,
@@ -716,6 +739,13 @@ impl Host {
         )?;
         self.check_required_by(&report.id, false)?;
         let enabled_graph_transition = match old.as_ref() {
+            // A new review of the same package has the same requirements,
+            // and its old approval may be the stale one being replaced.
+            Some(old)
+                if matches!(old.desired, Desired::Enabled) && same_selection(old, &checked) =>
+            {
+                !checked.requires.is_empty()
+            }
             Some(old) if matches!(old.desired, Desired::Enabled) => {
                 !checked.requires.is_empty() || !self.approved(old)?.requires.is_empty()
             }
@@ -828,7 +858,23 @@ impl Host {
             &report.provenance,
         )?;
         self.prepare(&report.id)?;
-        self.recover_one(&report.id)?;
+        // A denied start of a stale approval leaves the installed package
+        // pinned as pending until checked cleanup, and that cleanup needs a
+        // valid approval. A new review of exactly that package takes over the
+        // journal: apply() below stops and restages it under the new approval.
+        let reviews_pending = match &old {
+            Some(old) if same_selection(old, &report) => {
+                match fs::read_link(self.root(&report.id, "pending")) {
+                    Ok(pending) => pending == report.package,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+                    Err(error) => return Err(error.to_string()),
+                }
+            }
+            _ => false,
+        };
+        if !reviews_pending {
+            self.recover_one(&report.id)?;
+        }
         let old = self.receipt(&report.id)?;
         intent.validate(
             &report.id,
@@ -836,6 +882,19 @@ impl Host {
             &report.provenance,
         )?;
         let candidate = match old {
+            Some(old) if same_selection(&old, &report) => {
+                // A new review of the exact installed selection replaces only
+                // its approval, which install() has just re-derived from the
+                // verified package. The old approval may be stale, so it is
+                // not kept as a previous selection to roll back to.
+                if matches!(old.desired, Desired::Removed { .. }) {
+                    return Err("plugin removal is unfinished".into());
+                }
+                Receipt {
+                    approval: report.approval.clone(),
+                    ..old
+                }
+            }
             Some(old) => {
                 // Retaining a prior approval does not require its publisher
                 // to remain authorized, but it must still match exact bytes.
@@ -3748,6 +3807,7 @@ mod tests {
                 official: Some(official.into()),
                 user_added: Vec::new(),
                 repository_installs: Vec::new(),
+                other_installs: Vec::new(),
             })
         );
         let (code, message) = admin_failure(handle(
@@ -3805,7 +3865,9 @@ mod tests {
             platform: current_platform().into(),
             archive_sha256: "a".repeat(64),
         };
-        let runtime = runtime(&[selected.clone()]);
+        // An image-seeded (raw-cache) plugin, installed and off.
+        let seeded = report("@test:seeded", "seeded-v1");
+        let runtime = runtime(&[selected.clone(), seeded.clone()]);
         let host = Host::for_test(
             root.path(),
             PathBuf::from("/unavailable-nix"),
@@ -3814,6 +3876,7 @@ mod tests {
         )
         .unwrap();
         install(&host, selected.clone());
+        install(&host, seeded.clone());
         let config = admin_configuration(None);
         let set_enabled = |enabled| {
             handle(
@@ -3845,6 +3908,13 @@ mod tests {
                     source_url: "https://removed.example/catalog.json".into(),
                     release_version: "v1".into(),
                     enabled: true,
+                }],
+                // Off plugins stay listed; the test package has no readable
+                // declaration, so its title is left out.
+                other_installs: vec![PluginOtherInstall {
+                    id: seeded.id.clone(),
+                    title: None,
+                    enabled: false,
                 }],
             })
         );
@@ -3913,5 +3983,118 @@ mod tests {
             }
         }
         assert!(!calls.exists(), "a refused record contacted nix");
+    }
+
+    fn repository_report(id: &str, suffix: &str, source: &str, release: &str) -> Report {
+        let mut selected = report(id, suffix);
+        selected.provenance = Provenance::Repository {
+            source_url: source.into(),
+            plugin_id: id.into(),
+            release_version: release.into(),
+            platform: current_platform().into(),
+            archive_sha256: "a".repeat(64),
+        };
+        selected
+    }
+
+    #[test]
+    fn a_new_review_of_the_installed_selection_replaces_a_stale_approval_and_keeps_its_state() {
+        let root = tempfile::tempdir().unwrap();
+        let source = "https://plugins.example/catalog.json";
+        let selected = repository_report("@test:clock", "clock-v1", source, "v1");
+        let runtime = runtime(std::slice::from_ref(&selected));
+        let host = Host::for_test(
+            root.path(),
+            PathBuf::from("/unavailable-nix"),
+            permitted_policy(),
+            runtime.clone(),
+        )
+        .unwrap();
+        host.install_reviewed(selected.clone(), &selected.approval)
+            .unwrap();
+        host.set_enabled(&selected.id, true).unwrap();
+        // The host policy changes: the stored approval is now stale.
+        let mut reviewed = selected.clone();
+        reviewed.approval = "clock-v1-new-policy-approval".into();
+        runtime
+            .reports
+            .borrow_mut()
+            .insert(reviewed.package.clone(), reviewed.clone());
+        assert_eq!(
+            host.set_enabled(&selected.id, true).unwrap_err(),
+            APPROVAL_STALE
+        );
+        // Only the freshly derived digest is accepted.
+        assert!(host
+            .install_reviewed(reviewed.clone(), &selected.approval)
+            .unwrap_err()
+            .contains("approval does not match"));
+        // The refused start turned the plugin off and left its cleanup
+        // journal pending. The review takes it over and keeps it off.
+        assert_eq!(
+            host.status(&selected.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+        host.install_reviewed(reviewed.clone(), &reviewed.approval)
+            .unwrap();
+        let receipt = host.status(&selected.id).unwrap().unwrap();
+        assert_eq!(receipt.approval, reviewed.approval);
+        assert_eq!(receipt.package, selected.package);
+        assert_eq!(receipt.provenance, selected.provenance);
+        assert_eq!(receipt.desired, Desired::Disabled);
+        assert_eq!(receipt.previous, None);
+        assert!(!host.root(&selected.id, "pending").exists());
+        host.set_enabled(&selected.id, true).unwrap();
+        assert!(runtime.running.borrow().contains(&selected.id));
+
+        // A review of an enabled plugin keeps it on and running.
+        let mut again = reviewed.clone();
+        again.approval = "clock-v1-third-policy-approval".into();
+        runtime
+            .reports
+            .borrow_mut()
+            .insert(again.package.clone(), again.clone());
+        host.install_reviewed(again.clone(), &again.approval)
+            .unwrap();
+        let receipt = host.status(&selected.id).unwrap().unwrap();
+        assert_eq!(receipt.approval, again.approval);
+        assert_eq!(receipt.desired, Desired::Enabled);
+        assert!(runtime.running.borrow().contains(&selected.id));
+    }
+
+    #[test]
+    fn an_installed_plugin_refuses_another_release_source_or_package_from_install() {
+        let root = tempfile::tempdir().unwrap();
+        let source = "https://plugins.example/catalog.json";
+        let selected = repository_report("@test:clock", "clock-v1", source, "v1");
+        let other_release = repository_report("@test:clock", "clock-v1", source, "v2");
+        let other_source = repository_report(
+            "@test:clock",
+            "clock-v1",
+            "https://other.example/catalog.json",
+            "v1",
+        );
+        let other_package = repository_report("@test:clock", "clock-v2", source, "v1");
+        let raw_cache = report("@test:clock", "clock-v1");
+        let host = Host::for_test(
+            root.path(),
+            PathBuf::from("/unavailable-nix"),
+            permitted_policy(),
+            runtime(&[selected.clone(), other_package.clone()]),
+        )
+        .unwrap();
+        host.install_reviewed(selected.clone(), &selected.approval)
+            .unwrap();
+        for candidate in [other_release, other_source, other_package, raw_cache] {
+            let approval = candidate.approval.clone();
+            assert_eq!(
+                host.install_reviewed(candidate, &approval).unwrap_err(),
+                "plugin is installed; use update or explicit source switch"
+            );
+        }
+        assert_eq!(
+            host.status(&selected.id).unwrap().unwrap().approval,
+            selected.approval
+        );
     }
 }

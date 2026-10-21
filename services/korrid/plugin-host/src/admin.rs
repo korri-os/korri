@@ -10,8 +10,9 @@
 pub use crate::plugin_admin::*;
 use crate::{
     host::{Host, APPROVAL_STALE},
+    package,
     package::Report,
-    provenance::{current_platform, Provenance, SelectionIntent},
+    provenance::{current_platform, Provenance},
     repository::{Configuration, SourceUrl},
     selection::Desired,
     source_store::{AddOutcome, RemoveOutcome},
@@ -152,7 +153,7 @@ pub fn handle(
             let report = host
                 .inspect_repository(config, &url, &request.plugin_id, &request.release_version)
                 .map_err(host_failure)?;
-            host.install(report, &request.approval, SelectionIntent::Install)
+            host.install_reviewed(report, &request.approval)
                 .map_err(host_failure)?;
             Ok(PluginAdminResponse::Applied(PluginChangeApplied {}))
         }),
@@ -186,30 +187,40 @@ fn repositories(host: &Host, config: &Configuration) -> Result<PluginAdminRespon
         .filter(|source| config.official.as_ref() != Some(source))
         .map(|source| source.to_string())
         .collect();
-    let repository_installs = host
-        .installed()?
-        .into_iter()
-        .filter_map(|receipt| {
-            let enabled = installed_state(&receipt.desired)? == PluginInstalledState::Enabled;
-            match receipt.provenance {
-                Provenance::Repository {
-                    source_url,
-                    release_version,
-                    ..
-                } => Some(PluginRepositoryInstall {
-                    id: receipt.id,
-                    source_url,
-                    release_version,
-                    enabled,
-                }),
-                Provenance::RawCache { .. } => None,
-            }
-        })
-        .collect();
+    let mut repository_installs = Vec::new();
+    let mut other_installs = Vec::new();
+    for receipt in host.installed()? {
+        let Some(state) = installed_state(&receipt.desired) else {
+            continue;
+        };
+        let enabled = state == PluginInstalledState::Enabled;
+        match receipt.provenance {
+            Provenance::Repository {
+                source_url,
+                release_version,
+                ..
+            } => repository_installs.push(PluginRepositoryInstall {
+                id: receipt.id,
+                source_url,
+                release_version,
+                enabled,
+            }),
+            // Image-seeded, raw-cache and signed-cache catalog installs. The
+            // title is the installed declaration's; a failed read omits it.
+            Provenance::RawCache { .. } => other_installs.push(PluginOtherInstall {
+                title: package::load_declaration(&receipt.package)
+                    .ok()
+                    .and_then(|declaration| declaration.title),
+                id: receipt.id,
+                enabled,
+            }),
+        }
+    }
     Ok(PluginAdminResponse::Repositories(PluginRepositories {
         official: config.official.as_ref().map(ToString::to_string),
         user_added,
         repository_installs,
+        other_installs,
     }))
 }
 

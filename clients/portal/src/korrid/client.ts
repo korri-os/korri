@@ -199,7 +199,9 @@ const RPC_TIMEOUT_MS = 25_000
 // The host bounds a catalog fetch to 10 s to connect plus 30 s to transfer.
 const PLUGIN_CATALOG_TIMEOUT_MS = 60_000
 // Inspect and install download a whole plugin archive with no size limit; the
-// host fails only a stalled transfer. This is the portal's wait, not the host's.
+// host fails only a stalled transfer. The host serves one request at a time, so
+// remove and on/off can wait behind an install for as long. This is the
+// portal's wait, not the host's.
 const PLUGIN_PACKAGE_TIMEOUT_MS = 900_000
 const IDENTITY_SWITCH_TIMEOUT_MS = 180_000
 
@@ -772,7 +774,7 @@ export function createHttpKorridClient(
     },
     async removePluginRepository(url) {
       try {
-        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.repository.remove", payload: { url } })).outcome
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.repository.remove", payload: { url } }, PLUGIN_PACKAGE_TIMEOUT_MS)).outcome
       } catch (error) { return routeUnavailable(error) }
     },
     async pluginCatalog(url) {
@@ -792,7 +794,7 @@ export function createHttpKorridClient(
     },
     async setPluginEnabled(id, enabled) {
       try {
-        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.setEnabled", payload: { id, enabled } })).outcome
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.setEnabled", payload: { id, enabled } }, PLUGIN_PACKAGE_TIMEOUT_MS)).outcome
       } catch (error) { return routeUnavailable(error) }
     },
   }
@@ -813,6 +815,9 @@ export interface InMemoryPluginHostConfig {
   readonly repositories: readonly InMemoryPluginRepository[]
   /** Installed receipts: repository installs and their on/off state. */
   readonly installs: readonly { id: string, sourceUrl: string, releaseVersion: string, enabled: boolean }[]
+  /** Installed receipts that are not from a repository: image-seeded,
+   * raw-cache and signed-cache catalog installs, on or off. */
+  readonly otherInstalls?: readonly { id: string, title?: string, enabled: boolean }[]
   /** Installed plugins whose stored approval the host now finds stale. */
   readonly staleApprovals?: readonly string[]
   readonly inspections?: Readonly<Record<string, Omit<PluginInspection, "approval">>>
@@ -850,6 +855,11 @@ const samplePluginHost: InMemoryPluginHostConfig = {
     { id: "@korri:syncthing", sourceUrl: "https://community.example/catalog.json", releaseVersion: "1.30.0", enabled: true },
     { id: "@korri:retro-clock", sourceUrl: "https://old.example/catalog.json", releaseVersion: "2.0.0", enabled: false },
   ],
+  otherInstalls: [
+    { id: "@korri:mgba", title: "mGBA", enabled: true },
+    { id: "@korri:retroarch", title: "RetroArch", enabled: true },
+    { id: "@korri:ssh", title: "SSH", enabled: false },
+  ],
   staleApprovals: ["@korri:tailscale"],
   inspections: {
     "@korri:sunshine": {
@@ -880,6 +890,7 @@ function createInMemoryPluginHost(
   const official = seed.official
   let userAdded = [...seed.userAdded]
   const installs = structuredClone([...seed.installs])
+  const otherInstalls = structuredClone([...(seed.otherInstalls ?? [])])
   const stale = new Set(seed.staleApprovals ?? [])
   const catalogs = new Map(seed.repositories.map(repository => [repository.url, repository.entries]))
   const approval = (pluginId: string, releaseVersion: string) => `in-memory-approval:${pluginId}@${releaseVersion}`
@@ -897,6 +908,7 @@ function createInMemoryPluginHost(
         ...(official === undefined ? {} : { official }),
         userAdded: [...userAdded],
         repositoryInstalls: structuredClone(installs),
+        otherInstalls: structuredClone(otherInstalls),
       }
       return { _tag: "Ok", payload }
     },
@@ -958,8 +970,15 @@ function createInMemoryPluginHost(
       if (digest !== approval(pluginId, releaseVersion)) {
         return pluginFailure("PluginHostRefused", "approval does not match this package and its execution policy; inspect it first")
       }
-      if (installs.some(install => install.id === pluginId)) {
-        return pluginFailure("PluginHostRefused", "plugin is installed; use update or explicit source switch")
+      const installed = installs.find(install => install.id === pluginId)
+      if (installed !== undefined || otherInstalls.some(install => install.id === pluginId)) {
+        // Only a new review of the exact installed selection is accepted. It
+        // replaces a stale approval and keeps the plugin on or off.
+        if (installed?.sourceUrl !== url || installed.releaseVersion !== releaseVersion) {
+          return pluginFailure("PluginHostRefused", "plugin is installed; use update or explicit source switch")
+        }
+        stale.delete(pluginId)
+        return { _tag: "Ok", payload: {} }
       }
       installs.push({ id: pluginId, sourceUrl: url, releaseVersion, enabled: false })
       return { _tag: "Ok", payload: {} }
@@ -967,7 +986,7 @@ function createInMemoryPluginHost(
     async setPluginEnabled(id, enabled) {
       // Image-seeded plugins are raw-cache receipts: installed, but not from
       // a repository. The host toggles both kinds the same way.
-      const install = installs.find(item => item.id === id)
+      const install = installs.find(item => item.id === id) ?? otherInstalls.find(item => item.id === id)
       if (install === undefined && !imagePlugins.has(id)) return pluginFailure("PluginHostRefused", "plugin is not installed")
       if (enabled && stale.has(id)) {
         return pluginFailure("PluginNeedsReview", "installed package or host policy no longer matches its approval")

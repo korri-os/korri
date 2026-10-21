@@ -53,7 +53,7 @@ The socket accepts seven JSON requests (`services/korrid/src/plugin_admin.rs`). 
 
 | Request | CLI command |
 |---|---|
-| `Repositories` | `repository list`, plus the installed receipts with `Repository` provenance |
+| `Repositories` | `repository list`, plus every installed receipt that is not being removed: `repositoryInstalls` for `Repository` provenance, `otherInstalls` (with the installed declaration's title) for the rest |
 | `RepositoryAdd` | `repository add URL` |
 | `RepositoryRemove` | `repository remove URL` |
 | `Catalog` | `repository catalog URL`, this platform only, with each plugin's receipt state and whether its namespace is bound |
@@ -61,7 +61,7 @@ The socket accepts seven JSON requests (`services/korrid/src/plugin_admin.rs`). 
 | `Install` | `repository install URL ID RELEASE APPROVAL` |
 | `SetEnabled` | `enable ID` / `disable ID` |
 
-Raw-cache install, update, switch, remove, purge, restore and `enabled-packages` are not reachable through the socket. Any other request is refused. Install re-inspects and refuses an approval that does not match, exactly as the CLI does. Refusals carry the host's own text. Codes: `PluginRepositoryUrlInvalid` for an address that fails the HTTPS URL policy, `PluginNeedsReview` when enable finds that the stored approval no longer matches the package or host policy, and `PluginHostRefused` for every other refusal.
+Raw-cache install, update, switch, remove, purge, restore and `enabled-packages` are not reachable through the socket. Any other request is refused. Install re-inspects and refuses an approval that does not match, exactly as the CLI does. For a plugin that is already installed, it accepts only a new review of the exact installed package and provenance, for example after a host policy change made the stored approval stale. That uses the existing update intent and keeps the plugin on or off. It replaces only the approval; the stale one is not kept as a rollback selection. Any other release, source or package for an installed plugin is refused with "use update or explicit source switch". Refusals carry the host's own text. Codes: `PluginRepositoryUrlInvalid` for an address that fails the HTTPS URL policy, `PluginNeedsReview` when enable finds that the stored approval no longer matches the package or host policy, and `PluginHostRefused` for every other refusal.
 
 ## Raw-cache installation and approval
 

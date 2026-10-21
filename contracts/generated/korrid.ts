@@ -716,6 +716,12 @@ export interface PluginLaunchInput {
 	overrides?: PluginLaunchOverrides;
 }
 
+export interface PluginOtherInstall {
+	id: string;
+	title?: string;
+	enabled: boolean;
+}
+
 export interface PluginRepositoryInstall {
 	id: string;
 	sourceUrl: string;
@@ -731,6 +737,11 @@ export interface PluginRepositories {
 	official?: string;
 	userAdded: string[];
 	repositoryInstalls: PluginRepositoryInstall[];
+	/**
+	 * Every other installed plugin, on or off: image-seeded, raw-cache and
+	 * signed-cache catalog installs.
+	 */
+	otherInstalls: PluginOtherInstall[];
 }
 
 export interface PluginRepositoriesRequest {

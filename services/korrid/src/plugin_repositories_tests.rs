@@ -93,6 +93,11 @@ fn answer(request: PluginAdminRequest) -> PluginAdminResponse {
                     release_version: "v1".into(),
                     enabled: true,
                 }],
+                other_installs: vec![PluginOtherInstall {
+                    id: "@korri:mgba".into(),
+                    title: Some("mGBA".into()),
+                    enabled: false,
+                }],
             })
         }
         PluginAdminRequest::RepositoryAdd(_) => {
@@ -146,7 +151,8 @@ async fn plugin_requests_reach_the_host_socket_and_return_its_answers() {
                 "sourceUrl":"https://removed.example/catalog.json",
                 "releaseVersion":"v1",
                 "enabled":true
-            }]
+            }],
+            "otherInstalls":[{"id":"@korri:mgba","title":"mGBA","enabled":false}]
         }})
     );
 
