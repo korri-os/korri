@@ -134,7 +134,7 @@ comes in as a prop and a change goes out through a callback.
 `src/state/navigation.ts` holds one value:
 
 - `tab`: `games | options | savedata`
-- `zone`: where focus is on the games page: `tabs | find | cards | actions`
+- `zone`: where focus is on the games page: `tabs | find | get | cards | actions`
 - `card`, `action`: indices; `card` counts the band, which is the catalog
   through the find draft
 - `find`: the find draft (the band's filter), its caret and the keyboard's
@@ -151,7 +151,8 @@ comes in as a prop and a change goes out through a callback.
   and its shortcut `options` push `gameopts`; 30 s without input pushes
   `idle` (the idle cycle itself is built later).
 
-`menu` jumps to the tabs. `system` jumps to the SYSTEM group under OPTIONS.
+`menu` jumps to the tabs, then on GAMES to FIND, then to GET GAMES when
+Korri can get games. `system` jumps to the SYSTEM group under OPTIONS.
 Everything is reachable with d-pad, confirm and back alone.
 
 ## Caliper
@@ -787,6 +788,7 @@ What takes the screen, first match wins (`zoneShown`):
 | OPTIONS' join keyboard | first boot handed a secured network to OPTIONS' join flow |
 | first boot (`ZoneOnboarding`) | `model.onboarding` exists |
 | RUN WITH (`ZoneRunWith`) | Korri's `runnerChoice` is open |
+| GET GAMES (`ZoneStore`) | GET GAMES was chosen and Korri publishes `store` |
 | the tab | GAMES (home), OPTIONS, SAVE DATA |
 
 `ZoneStatusLayer` is drawn over whichever it is.
@@ -798,8 +800,8 @@ What takes the screen, first match wins (`zoneShown`):
 | options | GAME OPTS. on GAMES, a shortcut for OPTS. in the action row; nothing on OPTIONS or SAVE DATA |
 | system | OPTIONS with the cursor on its SYSTEM group (`focusSystemGroup`) |
 
-PAUSED, first boot and RUN WITH have no tabs on screen, so menu, options
-and system do nothing there.
+PAUSED, first boot, RUN WITH and GET GAMES have no tabs on screen, so menu,
+options and system do nothing there.
 
 ### Decided without asking: the wire stage
 
@@ -892,6 +894,7 @@ C30 the pink edge and underline on whatever holds DOM focus, on every page and l
 C31 ZoneStatusLayer question: the blue ZoneDialog with Korri's kicker, detail and the game in yellow, one button per host action in its order, the first lit, Back answering nothing; the page inert and dimmed — test: zone-navigation-acceptance "C31 confirm"
 C32 ZoneBusyStrip meter: SPECIAL STAGE's red slanted bar, its share and DONE / TOTAL; with no total the size so far and sweeping stripes; without progress, the strip as before — test: zone-navigation-acceptance "C32 progress"
 C33 ZoneCard's orange DOWNLOAD tag with the size, and DOWNLOAD <size> at the end of the GAMES facts line — test: zone-navigation-acceptance "C33 download"
+GET GAMES (no C number yet; the treaty's `store`): the key on GAMES, Korri's providers, the search keyboard, results with their system, an entry's GET, Korri's question, the meter and CANCEL, QUEUED, NOT AVAILABLE, Korri's trouble with RETRY, PLAY; B walks out and never cancels — test: zone-navigation-acceptance "get games"
 ```
 
 ### Polish (decided without asking)
@@ -2084,3 +2087,73 @@ on screen in every cell, nothing clipped mid-move.
 - ZoneSignal's part throws "ResizeObserver loop" at 640x480 in every
   look, main included (baseline): not caused or fixed here. Suggested
   issue.
+
+## GET GAMES: a game from a provider
+
+The treaty's `store` (ADR 0014): Korri's providers, one search, one open
+entry and where getting it stands, each with Korri's own actions. Zone
+asks with `openStore`, `searchStore` and `openStoreEntry` and runs every
+action through `runAction` by its id. The model is `src/state/store.ts`;
+the row ids and the rules the page and the model share are
+`src/plan/store.ts`; the page is `pages/ZoneStore`.
+
+### Decided without asking: GET GAMES
+
+- **GET GAMES is a key in the body's top left, under the B hint**, the
+  mirror of FIND under the A hint. The top strip at 640 px has no room for
+  it, and the left side card starts below it at every size, as the right
+  one does below FIND. Korri's geometry focus reaches it up from the first
+  card or down and left from GAMES; `menu` reaches it after FIND. It shows
+  whenever Korri publishes `store`, an empty library too, and there it has
+  the cursor, since it is the one thing to do. A kept filter's FIND: <draft>
+  tag now stands under it in the same corner.
+- **GET GAMES is a page over GAMES, like RUN WITH**: its own banner, no
+  tabs, the foot's timer and build. Menu, options and system do nothing on
+  it. The page names where the person is beside the banner: the provider
+  on its results, the game on its entry.
+- **B walks out, one step at a time**: the keyboard, the entry (the cursor
+  back on its row), the results (back on the provider), the providers, then
+  GAMES with the cursor on GET GAMES. B never cancels a download and never
+  answers Korri's question; both are Korri's actions on screen.
+- **A provider not asked yet opens on the keyboard.** Typing is why the
+  person came. DONE asks the provider with the words trimmed; the keyboard
+  is FIND's, and the search holds 40 characters, as FIND's draft does. A
+  provider already asked opens on its results with the cursor on SEARCH
+  FOR, whose value is what was asked; A on it raises the keyboard with
+  those words.
+- **Rows are ZoneOptionRow.** A provider's value is OPEN. A result's value
+  is the system as the provider says it; when the provider does not say,
+  the value is UNKNOWN, a label for an absent fact, since an empty value
+  panel read as broken.
+- **An entry is a well and Korri's words.** Korri carries no provider art
+  (the treaty forbids remote images), so a ZoneCoverWell stands in with the
+  title's stripes and initials, portrait as a card's well is. Beside it, or
+  under it when the column is narrow: the provider's description, then
+  where getting it stands. Korri's Offer is a ZoneActionRow of its actions
+  with its note above; Confirm and Problem are a ZoneDialog with Korri's
+  kicker as the headline, its detail or reason as the line and its actions
+  as the buttons, the first enabled one lit; Working is the busy strip with
+  Korri's kicker, detail, meter (C32's rules) and CANCEL. The game's title
+  is not repeated in the dialog's yellow line: the banner row names it.
+- **Tags in the banner row say where getting it stands**, in the colours
+  Zone already uses for that kind of news: the system in blue, DOWNLOAD in
+  orange while it moves, QUEUED in white while it waits its turn
+  (`queued`), NOT AVAILABLE in red beside Korri's reason, IN LIBRARY in
+  blue only when Korri gives no detail (its detail says it otherwise).
+- **PLAY closes the page.** It launches the game Korri names
+  (`InLibrary.gameId`) and GAMES comes back with the cursor on that game's
+  card (navigation's `ShowedGame`, which lets go of a kept filter that
+  would hide it), so that is where the person returns after playing.
+- **Only an action Korri publishes now, enabled, is run.** A press on an
+  older answer's action does nothing (`zoneStoreActionLive`).
+- **DOM focus follows the view only when it has fallen to the document**
+  (the control it was on went away, or the page just opened), so the page
+  never takes focus from Korri's status layer or a control that still
+  stands. Unavailable has no control; B is the way out and its hint is on
+  screen.
+- **Parts.** `ZoneStore.page.part.tsx` runs the real model through
+  `src/fixtures/fixture-store.ts`, whose small pretend Korri answers a
+  search, opens an entry on offer and moves GET, DOWNLOAD and CANCEL along.
+  The fixtures use the portal's words
+  (`clients/portal/src/surface/store-acquisition.ts`). The GAMES part has
+  `GetGames`, `GetGamesEmpty` and `GetGamesFiltered`.
