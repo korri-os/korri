@@ -53,9 +53,11 @@ in
     # 2026-10-20). The game user gets read and traverse, never write.
     "A+ ${root}/games - - - - u:${user}:rX,d:u:${user}:rX,m::rX,d:m::rX"
     "d ${root}/users 2710 korrid ${group} -"
-    # Both writers use the same per-person tree. Apply to existing data and
-    # inherit on new entries; never grant access to korrid's private snapshots.
-    "A+ ${root}/users - - - - u:korrid:rwX,u:${user}:rwX,d:u:korrid:rwX,d:u:${user}:rwX,m::rwX,d:m::rwX"
+    # No recursive grant here: korrid creates person roots with the former
+    # account's runtime-user/group defaults and shares named korrid access only
+    # under saves/. Steam retains its narrower ACLs; the legacy group exposure
+    # outside saves/ is unchanged (ADR 0014).
+    "a+ ${root}/users - - - - u:korrid:rwx"
     # Reconstructible artifacts belong to korrid (ADR 0012). The game user
     # can read and traverse ready artifacts, but cannot replace a contribution.
     # Upgrade from prepare-owned caches requires the ADR's one-off deletion.
@@ -66,7 +68,7 @@ in
     "a+ ${root}/roms/${name} - - - - u:${user}:r-x,d:u:${user}:r-x"
   ]) systems;
 
-  # The shared ACL must exist before the unprivileged daemon writes users/.
+  # Provision users/ before the daemon creates person and save-root ACLs.
   systemd.services.korrid.after = [ "systemd-tmpfiles-setup.service" ];
   systemd.services.korrid.requires = [ "systemd-tmpfiles-setup.service" ];
 }

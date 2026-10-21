@@ -1047,7 +1047,9 @@ assert builtins.elem "A+ /var/lib/korri/games - - - - u:korri:rX,d:u:korri:rX,m:
 # Per-person save roots inherit access for both writers. No default account
 # is provisioned, and the daemon cannot start before tmpfiles applies the ACL.
 assert builtins.elem "d /var/lib/korri/users 2710 korrid korri -" rg353m.systemd.tmpfiles.rules;
-assert builtins.elem "A+ /var/lib/korri/users - - - - u:korrid:rwX,u:korri:rwX,d:u:korrid:rwX,d:u:korri:rwX,m::rwX,d:m::rwX" rg353m.systemd.tmpfiles.rules;
+assert builtins.elem "a+ /var/lib/korri/users - - - - u:korrid:rwx" rg353m.systemd.tmpfiles.rules;
+assert lib.all (rule: !(lib.hasPrefix "A+ /var/lib/korri/users" rule)) rg353m.systemd.tmpfiles.rules;
+assert lib.all (rule: !(lib.hasInfix "/var/lib/korri/users" rule) || !(lib.hasInfix ",d:" rule)) rg353m.systemd.tmpfiles.rules;
 assert lib.all (rule: !(lib.hasInfix "/users/default" rule)) rg353m.systemd.tmpfiles.rules;
 assert builtins.elem "systemd-tmpfiles-setup.service" rg353m.systemd.services.korrid.after;
 assert builtins.elem "systemd-tmpfiles-setup.service" rg353m.systemd.services.korrid.requires;

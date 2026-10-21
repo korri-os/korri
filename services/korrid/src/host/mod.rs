@@ -18,6 +18,7 @@ mod route_state_tests;
 mod saves;
 mod session_state;
 mod systemd_unit;
+pub(crate) use systemd_unit::configured_runtime_identity;
 
 use crate::plugin::{
     SessionControlDeclarationInteraction, SessionControlEffect, SessionControlOwnerKind,

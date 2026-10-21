@@ -126,6 +126,13 @@ can record what each session started from.
   owner's folder; no compatibility path stays.
 - Steam games are left to Steam Cloud, and Korri says so for those games. korrid
   keeps no access to Steam saves (`steam-session.sh` ACLs).
+  Deployment limitation (2026-10-21): named korrid sharing applies only under
+  each person's `saves/`. The former account's runtime-group defaults remain
+  unchanged for AccountRoot prepared games such as Fallout CE. As before this
+  slice, korrid in that group can reach runtime-created descendants, including
+  `STEAM_HOME`, except where Steam narrows access. This slice adds no named
+  korrid grant there and never visits that subtree. Strict Steam credential
+  isolation remains a follow-up; the pinned Steam package is unchanged.
 - The split notice shows on every device of the person that knows about the
   split, until it is resolved.
 - Picking a side of a split makes a new snapshot with the picked content that

@@ -1,4 +1,5 @@
 //! Session-bound save history. No filesystem path crosses the peer boundary.
+pub mod access;
 mod history;
 pub mod peer;
 pub mod record;

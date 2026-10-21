@@ -435,6 +435,10 @@ impl NativeSaveStore {
         }
         let save_root = runtime_save_directory(Path::new(save_root))?;
         let users = restore_users_root(&save_root, person, game)?;
+        super::access::prepare_account(
+            users.parent().ok_or_else(|| invalid("library root"))?,
+            person,
+        )?;
         let mut staged = Vec::new();
         let result = (|| {
             for location in locations {
@@ -985,7 +989,7 @@ impl SaveRepository for NativeSaveStore {
 
 /// Resolve lexical components, rejecting every symlink and non-directory
 /// ancestor before any effect. No directory is created just to resolve `..`.
-fn runtime_save_directory(path: &Path) -> Result<PathBuf, SaveError> {
+pub(super) fn runtime_save_directory(path: &Path) -> Result<PathBuf, SaveError> {
     use std::path::Component;
     if !path.is_absolute() {
         return Err(invalid("save root must be absolute"));
@@ -1024,8 +1028,8 @@ fn restore_users_root(save_root: &Path, person: &str, game: &str) -> Result<Path
     {
         return Err(invalid("restore requires the per-person root inside users"));
     }
-    // tmpfiles must have provisioned users/ and its shared default ACL before
-    // korrid starts. Do not create it with the storage root's default deny ACL.
+    // tmpfiles provisions users/; account scaffolding gives defaults only to
+    // the person root (legacy runtime group) and saves/ (named sharing).
     let metadata = fs::symlink_metadata(users).map_err(io)?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return Err(invalid("users root is not a directory"));

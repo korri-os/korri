@@ -745,10 +745,7 @@ impl SystemdLaunchUnitBackend {
         let systemctl = std::env::var_os("KORRID_SYSTEMCTL")
             .map(PathBuf::from)
             .unwrap_or_default();
-        let runtime_uid = configured_runtime_id("KORRID_RUNTIME_UID")
-            .unwrap_or_else(|| unsafe { libc::geteuid() });
-        let runtime_gid = configured_runtime_id("KORRID_RUNTIME_GID")
-            .unwrap_or_else(|| unsafe { libc::getegid() });
+        let (runtime_uid, runtime_gid) = configured_runtime_identity();
         let private_state_root =
             configured_path("KORRID_PRIVATE_STATE_ROOT", DEFAULT_PRIVATE_STATE_ROOT);
         let control_socket = configured_path("KORRID_CONTROL_SOCKET", DEFAULT_CONTROL_SOCKET);
@@ -1733,6 +1730,13 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         ids.dedup();
         Ok(ids)
     }
+}
+
+pub(crate) fn configured_runtime_identity() -> (u32, u32) {
+    (
+        configured_runtime_id("KORRID_RUNTIME_UID").unwrap_or_else(|| unsafe { libc::geteuid() }),
+        configured_runtime_id("KORRID_RUNTIME_GID").unwrap_or_else(|| unsafe { libc::getegid() }),
+    )
 }
 
 fn configured_runtime_id(name: &str) -> Option<u32> {

@@ -344,8 +344,14 @@ async fn an_artifact_game_shows_before_download_downloads_launches_and_removes()
         .await;
     fixture.wait_ready("second").await;
 
+    // Downloads do not create accounts. The owned launch provisions the
+    // account scaffold; removing a download must not touch progress there.
+    assert!(!fixture.path().join("users").exists());
     let started = fixture.launch("rock-n-roll").await;
     assert_eq!(started["outcome"]["_tag"], "Ok", "{started}");
+    let save = std::path::Path::new(&input.account_root).join("saves/second/progress.sav");
+    fs::create_dir_all(save.parent().unwrap()).unwrap();
+    fs::write(&save, b"keep this progress").unwrap();
     // A running game cannot lose its files.
     let running = fixture
         .call("app.acquisition.remove", json!({"gameId":"rock-n-roll"}))
@@ -378,8 +384,8 @@ async fn an_artifact_game_shows_before_download_downloads_launches_and_removes()
         ("Ready".to_owned(), Some(true))
     );
     assert_eq!(states["@test:rock/runtime"], ("Ready".to_owned(), None));
-    // Saves and account roots are never touched.
-    assert!(!fixture.path().join("users").exists());
+    assert_eq!(fs::read(&save).unwrap(), b"keep this progress");
+    assert!(std::path::Path::new(&input.account_root).is_dir());
 }
 
 #[tokio::test]

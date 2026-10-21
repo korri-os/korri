@@ -1283,24 +1283,37 @@ impl HostSessionControl {
             crate::launcher::plugin_launch::declared_saves(configured_command)
                 .map_err(|message| failure("SaveDeclarationInvalid", message))?
         {
+            let person = person_public_key.ok_or_else(|| {
+                failure(
+                    "SaveIdentityUnavailable",
+                    "save history requires a person identity",
+                )
+            })?;
+            if std::path::Path::new(&input.account_root)
+                .file_name()
+                .and_then(|v| v.to_str())
+                != Some(person)
+            {
+                return Err(failure(
+                    "SaveIdentityChanged",
+                    "The device owner changed. Launch again.",
+                ));
+            }
+            let account = std::path::Path::new(&input.account_root);
+            let root = account
+                .parent()
+                .and_then(std::path::Path::parent)
+                .ok_or_else(|| failure("SavesUnavailable", "invalid account root"))?;
+            if crate::saves::account_root(root, person).as_deref() != Ok(account) {
+                return Err(failure(
+                    "SavesUnavailable",
+                    "invalid per-person account root",
+                ));
+            }
+            crate::saves::access::prepare_account(root, person)
+                .map_err(|error| failure("SavesUnavailable", error.to_string()))?;
             if !prepared.plan.save_locations.is_empty() {
                 use crate::saves::store::NativeSaveStore;
-                let person = person_public_key.ok_or_else(|| {
-                    failure(
-                        "SaveIdentityUnavailable",
-                        "save history requires a person identity",
-                    )
-                })?;
-                if std::path::Path::new(&input.account_root)
-                    .file_name()
-                    .and_then(|v| v.to_str())
-                    != Some(person)
-                {
-                    return Err(failure(
-                        "SaveIdentityChanged",
-                        "The device owner changed. Launch again.",
-                    ));
-                }
                 let store =
                     NativeSaveStore::new(self.identity_root.parent().expect("private state root"));
                 let identity = crate::identity::DeviceIdentity::load_or_create(
