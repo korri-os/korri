@@ -10,6 +10,9 @@ pub struct PeerCheckResult {
     pub device: String,
     pub in_use: Option<SaveInUse>,
     pub transfer: Result<(), PeerSaveError>,
+    /// Signed heads arrived, but their validated head records did not arrive
+    /// during this check. This is process-local, not a wire or persisted field.
+    pub heads_without_records: Vec<String>,
 }
 
 impl SavePeerService {
@@ -35,7 +38,9 @@ impl SavePeerService {
         let work = self.owner_peers(&person)?.into_iter().map(|peer| {
             let person = person.clone();
             async move {
-                let result = self.synchronize(&person, &peer, Some(game)).await;
+                let result = self
+                    .synchronize(&person, &peer, Some(game), &mut BTreeSet::new())
+                    .await;
                 (peer, result)
             }
         });
@@ -46,7 +51,8 @@ impl SavePeerService {
     /// The directory is checked again; callers cannot supply an arbitrary origin.
     pub async fn on_contact(&self, peer: &str) -> Result<(), PeerSaveError> {
         let person = self.owner()?;
-        self.synchronize(&person, peer, None).await
+        self.synchronize(&person, peer, None, &mut BTreeSet::new())
+            .await
     }
 
     /// Caller owns the 3-second budget and Skip. Dropping this future cancels
@@ -73,6 +79,7 @@ impl SavePeerService {
                             device: peer,
                             in_use: None,
                             transfer: Err(error),
+                            heads_without_records: Vec::new(),
                         }
                     }
                     Err(_) => {
@@ -80,17 +87,28 @@ impl SavePeerService {
                             device: peer,
                             in_use: None,
                             transfer: Err(PeerSaveError::Deadline),
+                            heads_without_records: Vec::new(),
                         }
                     }
                 };
-                let transfer =
-                    tokio::time::timeout_at(deadline, self.synchronize(&person, &peer, Some(game)))
-                        .await
-                        .unwrap_or(Err(PeerSaveError::Deadline));
+                // This state outlives the timed-out future, but only this check.
+                let mut pending_head_records = BTreeSet::new();
+                let transfer = tokio::time::timeout_at(
+                    deadline,
+                    self.synchronize(&person, &peer, Some(game), &mut pending_head_records),
+                )
+                .await
+                .unwrap_or(Err(PeerSaveError::Deadline));
+                let heads_without_records = if pending_head_records.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![peer.clone()]
+                };
                 PeerCheckResult {
                     device: peer,
                     in_use: Some(in_use),
                     transfer,
+                    heads_without_records,
                 }
             }
         });
@@ -186,8 +204,16 @@ impl SavePeerService {
         person: &str,
         peer: &str,
         only_game: Option<&str>,
+        pending_head_records: &mut BTreeSet<String>,
     ) -> Result<(), PeerSaveError> {
         let remote = self.remote_heads(person, peer).await?;
+        pending_head_records.extend(
+            remote
+                .games
+                .iter()
+                .filter(|game| only_game.is_none_or(|id| game.game_id == id))
+                .flat_map(|game| game.heads.iter().cloned()),
+        );
         let person_key = person.to_owned();
         let local = self
             .storage(move |repository| repository.heads(&person_key))
@@ -233,9 +259,12 @@ impl SavePeerService {
                     return Err(PeerSaveError::Protocol);
                 }
                 for record in response.records {
-                    if record.game_id != game {
+                    if record.game_id != game || snapshot_id(&record)? != id {
                         return Err(PeerSaveError::Protocol);
                     }
+                    // The signed record is now validated, independently of
+                    // subsequent storage, ancestor or payload transfer work.
+                    pending_head_records.remove(&id);
                     pending.extend(record.parents.clone());
                     self.import_record(person, peer, record.clone(), Some(&id))
                         .await?;

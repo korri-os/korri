@@ -88,10 +88,17 @@ let checks = save_peer_service.pull_before_launch(game_id, deadline).await?;
 ```
 
 The caller owns Skip by dropping that future. Each `PeerCheckResult` contains
-`device`, `in_use`, and `transfer`. Preserve a known `in_use` warning even when
-`transfer` failed or reached the deadline. A failed check is not idle or Synced.
-Use the repository's imported ancestry to decide split/choice. Only the session
-boundary code may materialize a selected snapshot into the game's folders.
+`device`, `in_use`, `transfer`, and `heads_without_records: Vec<String>`. The
+last field contains the responding device's public key when signed heads for
+this game arrived but their validated head records did not arrive during the
+check. It stays empty when no signed heads arrived or only payload transfer is
+unfinished. Use it for a device-named warning without inventing a time. It is
+process-local only; it is neither serialized nor exported through Typeshare.
+
+Preserve a known `in_use` warning even when `transfer` failed or reached the
+deadline. A failed check is not idle or Synced. Use the repository's imported
+ancestry to decide split/choice. Only the session boundary code may materialize
+a selected snapshot into the game's folders. No wiring patch change is needed.
 
 ## Restore payload hook
 

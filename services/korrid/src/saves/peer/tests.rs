@@ -35,13 +35,35 @@ struct TransferBehaviour {
     fail_first: bool,
     corrupt: bool,
     delay: Duration,
+    records_delay: Duration,
 }
 async fn transfer_behaviour(
-    axum::extract::State(behaviour): axum::extract::State<TransferBehaviour>,
-    request: axum::extract::Request,
+    axum::extract::State((behaviour, credentials)): axum::extract::State<(
+        TransferBehaviour,
+        PeerCredentials,
+    )>,
+    mut request: axum::extract::Request,
     next: Next,
 ) -> Response {
     if request.uri().path() != "/peer-saves-object" {
+        if !behaviour.records_delay.is_zero() {
+            // Delay the real signed records request, not heads or in-use.
+            // Preserve its exact bytes for the shipping authentication boundary.
+            let (parts, body) = request.into_parts();
+            let body = axum::body::to_bytes(body, peer_rpc::MAX_PEER_EVENT_BYTES)
+                .await
+                .unwrap();
+            let plaintext = credentials
+                .identity_snapshot()
+                .unwrap()
+                .decrypt_event(std::str::from_utf8(&body).unwrap())
+                .unwrap();
+            let envelope: serde_json::Value = serde_json::from_str(&plaintext).unwrap();
+            request = axum::extract::Request::from_parts(parts, Body::from(body));
+            if envelope["request"]["_tag"] == "app.saves.records" {
+                tokio::time::sleep(behaviour.records_delay).await;
+            }
+        }
         tokio::time::sleep(behaviour.delay).await;
         return next.run(request).await;
     }
@@ -127,14 +149,18 @@ impl Node {
         );
         let (mut state, _) = crate::app_states(runtime);
         state.saves = Some(service.clone());
-        let server =
-            PeerRpcServer::with_shared_authority(state, root.path(), credentials, authorization)
-                .unwrap()
-                .router(None)
-                .layer(middleware::from_fn_with_state(
-                    behaviour,
-                    transfer_behaviour,
-                ));
+        let server = PeerRpcServer::with_shared_authority(
+            state,
+            root.path(),
+            credentials.clone(),
+            authorization,
+        )
+        .unwrap()
+        .router(None)
+        .layer(middleware::from_fn_with_state(
+            (behaviour, credentials),
+            transfer_behaviour,
+        ));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let task = tokio::spawn(async move {
@@ -312,6 +338,7 @@ async fn two_authenticated_korrids_exchange_both_children_objects_and_confirmati
         assert!(
             matches!(&warnings[0].in_use, Some(SaveInUse::Active(value)) if value.since == 123)
         );
+        assert!(warnings[0].heads_without_records.is_empty());
     }
 }
 
@@ -464,6 +491,7 @@ async fn corrupted_object_bytes_never_enter_repository_and_deadline_cancels_pull
         .await
         .unwrap();
     assert!(matches!(result[0].transfer, Err(PeerSaveError::Deadline)));
+    assert!(result[0].heads_without_records.is_empty());
 }
 
 #[tokio::test]
@@ -824,4 +852,47 @@ async fn restore_fetch_tries_a_reachable_replica_without_waiting_for_a_slow_peer
         .complete(&local.owner(), &old.game_id, &id(&old))
         .unwrap());
     assert!(local.confirmations()[&id(&old)].contains(&replica.device()));
+}
+
+#[tokio::test]
+async fn prelaunch_retains_peer_whose_signed_heads_arrive_but_records_time_out() {
+    let a = Node::new(
+        5,
+        3,
+        TransferBehaviour {
+            records_delay: Duration::from_secs(60),
+            ..Default::default()
+        },
+    )
+    .await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let head = a.seed(b"new head awaiting its record", vec![]);
+    let checks = b
+        .service
+        .pull_before_launch(
+            &head.game_id,
+            tokio::time::Instant::now() + Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+    assert_eq!(checks.len(), 1);
+    assert!(matches!(checks[0].transfer, Err(PeerSaveError::Deadline)));
+    assert_eq!(checks[0].heads_without_records, vec![a.device()]);
+    assert!(b
+        .repository
+        .records(&b.owner(), &head.game_id)
+        .unwrap()
+        .is_empty());
+    let other_game = b
+        .service
+        .pull_before_launch(
+            "another-game",
+            tokio::time::Instant::now() + Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+    assert!(other_game[0].transfer.is_ok());
+    assert!(other_game[0].heads_without_records.is_empty());
 }
