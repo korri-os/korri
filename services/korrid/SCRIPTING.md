@@ -623,7 +623,7 @@ export const games = {
 - `{ artifact, path }` names a file inside one ready artifact directory
   (ADR 0013).
 - `{ packageFile, path }` names a key in the declaring plugin's own installed
-  manifest `files`, joined with `path` (ADR 0014). It cannot name another
+  manifest `files`, joined with `path` (ADR 0016). It cannot name another
   plugin's files. The registry refuses a key missing from that package's
   `files`. It is ready whenever the plugin is enabled; no download or Confirm
   is needed.

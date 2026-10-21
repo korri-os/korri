@@ -201,16 +201,15 @@ export function SurfaceRoot({
     reload,
   } = launchables
 
-  const starterPackOnboarding = useMemo(() => createStarterPackOnboarding(korrid), [korrid])
+  const starterPackOnboarding = useMemo(() => createStarterPackOnboarding(korrid, {
+    onInstalled: () => launchablesRef.current.reload(),
+  }), [korrid])
   const starterPack = useSyncExternalStore(starterPackOnboarding.subscribe, starterPackOnboarding.snapshot)
+  useEffect(() => starterPackOnboarding.start(), [starterPackOnboarding])
   useEffect(() => {
     starterPackOnboarding.setNeeded(onboardingNeeded === true)
     return () => starterPackOnboarding.setNeeded(false)
   }, [starterPackOnboarding, onboardingNeeded])
-
-  useEffect(() => {
-    if (starterPack?._tag === "Installed") reload()
-  }, [starterPack, reload])
 
   const settings = useMemo(
     () => settingsFrom({ ...facts, onboardingNeeded }),

@@ -84,3 +84,64 @@ test("SurfaceRoot offers the Starter pack and dispatches Install through runActi
   await act(async () => { await Bun.sleep(5) })
   expect(model?.onboarding?.starterPack).toBeUndefined()
 })
+
+test("finishing setup mid-install still rescans and refreshes the library after discovery", async () => {
+  const base = createInMemoryKorridClient({ discoveryScan: { delayMs: 10 } })
+  let releaseEnable!: () => void
+  const enabled = new Promise<void>(resolve => { releaseEnable = resolve })
+  let rescans = 0
+  let libraryReads = 0
+  const client = { ...base,
+    async setPluginEnabled(id: string, value: boolean) { await enabled; return base.setPluginEnabled(id, value) },
+    async rescanDiscovery() { rescans++; return base.rescanDiscovery() },
+    async localGames() { libraryReads++; return base.localGames() },
+  }
+  let model: SurfaceModel | undefined
+  let host: SurfaceHost | undefined
+  const container = document.createElement("div")
+  document.body.append(container)
+  root = createRoot(container)
+  await act(async () => root!.render(<SurfaceRoot bus={createInputBus()} korrid={client} surface={{
+    id: "observer", title: "Observer", presentations: ["catalog"],
+    render(props) { model = props.model; host = props.host; return null },
+  }} />))
+  await settle(() => model?.onboarding?.starterPack?._tag === "Offered")
+  await act(async () => host!.runAction("starter-pack-install"))
+  expect(model?.onboarding?.starterPack?._tag).toBe("Installing")
+  await act(async () => host!.finishOnboarding())
+  await settle(() => model?.onboarding === undefined)
+  const before = libraryReads
+  await act(async () => releaseEnable())
+  await settle(() => rescans === 1 && libraryReads > before)
+  expect(model?.onboarding).toBeUndefined()
+  const repositories = await base.pluginRepositories()
+  expect(repositories._tag).toBe("Ok")
+  if (repositories._tag === "Ok") expect(repositories.payload.otherInstalls.find(install => install.id === "@korri:starter-pack")?.enabled).toBe(true)
+})
+
+test("SurfaceRoot unmount cleans up an active Starter pack discovery wait", async () => {
+  const base = createInMemoryKorridClient({ discoveryScan: { results: [{ _tag: "Enriching", payload: {} }] } })
+  let reads = 0
+  const client = { ...base,
+    async discoverySnapshot() { reads++; return base.discoverySnapshot() },
+  }
+  let model: SurfaceModel | undefined
+  let host: SurfaceHost | undefined
+  const container = document.createElement("div")
+  document.body.append(container)
+  root = createRoot(container)
+  await act(async () => root!.render(<SurfaceRoot bus={createInputBus()} korrid={client} surface={{
+    id: "observer", title: "Observer", presentations: ["catalog"],
+    render(props) { model = props.model; host = props.host; return null },
+  }} />))
+  await settle(() => model?.onboarding?.starterPack?._tag === "Offered")
+  const before = reads
+  await act(async () => host!.runAction("starter-pack-install"))
+  await settle(() => reads > before)
+  expect(model?.onboarding?.starterPack?._tag).toBe("Installing")
+  await act(async () => root!.unmount())
+  root = undefined
+  const stopped = reads
+  await Bun.sleep(300)
+  expect(reads).toBe(stopped)
+})

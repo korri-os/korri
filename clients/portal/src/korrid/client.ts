@@ -1067,6 +1067,11 @@ export interface InMemoryKorridClientConfig {
   readonly localGames?: readonly LocalGame[]
   readonly localFailures?: readonly { readonly code: string; readonly message: string }[]
   readonly discovery?: DiscoverySnapshot
+  /** In-memory scan completion, using the real discovery state treaty. */
+  readonly discoveryScan?: {
+    readonly delayMs?: number
+    readonly results?: readonly DiscoverySnapshot["state"][]
+  }
   /** Snapshot fixture only; catalog games do not imply peer liveness. */
   readonly peerList?: PeerListOutcome
   readonly discoveryReceipts?: readonly string[]
@@ -1323,14 +1328,15 @@ export function createInMemoryKorridClient(
     }
     return discovery
   }
+  const discoveryScanResults = structuredClone([...(config.discoveryScan?.results ?? [])])
   const scanningDiscovery = (
-    settleState: DiscoverySnapshot["state"] = { _tag: "Idle", payload: {} },
+    settleState: DiscoverySnapshot["state"] = discoveryScanResults.shift() ?? { _tag: "Idle", payload: {} },
   ): DiscoverySnapshot => {
     const token = ++discoveryScanRevision
     const scanning = nextDiscovery({ _tag: "Scanning", payload: {} })
     setTimeout(() => {
       if (token === discoveryScanRevision) nextDiscovery(settleState)
-    }, 0)
+    }, config.discoveryScan?.delayMs ?? 0)
     return scanning
   }
   // The first-boot prototype is the browser preview's real in-memory source.
