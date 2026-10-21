@@ -1,29 +1,29 @@
 /**
  * The six game-acquisition RPC methods, over HTTP and in memory.
  *
- * Kept apart from client.ts because their wire types are still the local
- * mirror in store-acquisition-types.ts (a GAP to delete at integration): the
- * HTTP half posts the mirror's tagged request through the same `/rpc` call
- * every other method uses. The in-memory half is the browser preview's and
+ * The HTTP half posts the generated tagged requests through the same `/rpc`
+ * call every other method uses. The in-memory half is the browser preview's and
  * the tests' korrid: providers, claims and a job that moves one step
  * per status read, so a polled observation is what moves it.
  */
-import type { Game, RpcFailure, RpcRequest } from "@contracts/generated/korrid"
-import {
-  ACQUISITION_CODE,
-  type AcquireArtifactRequest,
-  type AcquireJobOutcome,
-  type AcquireJobState,
-  type AcquireJobStatus,
-  type AcquisitionProvider,
-  type DetailsOutcome,
-  type DetailsRequest,
-  type PluginListOutcome,
-  type ProviderClaim,
-  type SearchOutcome,
-  type SearchRequest,
-  type StoreAcquisitionRpcRequest,
-} from "./store-acquisition-types"
+import type {
+  AcquireArtifactRequest,
+  AcquireJobOutcome,
+  AcquireJobState,
+  AcquireJobStatus,
+  AcquisitionProvider,
+  DetailsOutcome,
+  DetailsRequest,
+  Game,
+  PluginListOutcome,
+  ProviderClaim,
+  RpcFailure,
+  RpcRequest,
+  RpcResponse,
+  SearchOutcome,
+  SearchRequest,
+} from "@contracts/generated/korrid"
+import { ACQUISITION_CODE } from "./acquisition-codes"
 
 export interface StoreAcquisitionMethods {
   /** Providers every enabled provider plugin declares. */
@@ -37,27 +37,35 @@ export interface StoreAcquisitionMethods {
   acquisitionAcquireCancel(jobId: string): Promise<AcquireJobOutcome>
 }
 
-type Call = (request: RpcRequest) => Promise<{ readonly outcome: unknown }>
+/** client.ts's typed `/rpc` post: the response carries the request's tag. */
+type Call = <Request extends RpcRequest>(
+  request: Request,
+) => Promise<Extract<RpcResponse, { readonly _tag: Request["_tag"] }>>
 type Failed = (error: unknown) => { readonly _tag: "Err"; readonly payload: RpcFailure }
 
 /** The HTTP half. `call` is client.ts's `/rpc` post; `failed` its error map. */
 export function httpStoreAcquisition(call: Call, failed: Failed): StoreAcquisitionMethods {
-  const send = async <Outcome>(request: StoreAcquisitionRpcRequest): Promise<Outcome> => {
-    try {
-      // GAP: the mirror's requests are not in the generated RpcRequest union yet.
-      const response = await call(request as unknown as RpcRequest)
-      return response.outcome as Outcome
-    } catch (error) {
-      return failed(error) as Outcome
-    }
-  }
   return {
-    acquisitionProviders: () => send({ _tag: "app.acquisition.providers", payload: {} }),
-    acquisitionSearch: payload => send({ _tag: "app.acquisition.search", payload: { query: payload.query, providerIds: [...payload.providerIds] } }),
-    acquisitionDetails: payload => send({ _tag: "app.acquisition.details", payload }),
-    acquisitionAcquire: payload => send({ _tag: "app.acquisition.acquire", payload }),
-    acquisitionAcquireStatus: jobId => send({ _tag: "app.acquisition.acquire-status", payload: { jobId } }),
-    acquisitionAcquireCancel: jobId => send({ _tag: "app.acquisition.acquire-cancel", payload: { jobId } }),
+    async acquisitionProviders() {
+      try { return (await call({ _tag: "app.acquisition.providers", payload: {} })).outcome } catch (error) { return failed(error) }
+    },
+    async acquisitionSearch({ query, providerIds }) {
+      try {
+        return (await call({ _tag: "app.acquisition.search", payload: { query, providerIds: [...providerIds] } })).outcome
+      } catch (error) { return failed(error) }
+    },
+    async acquisitionDetails(payload) {
+      try { return (await call({ _tag: "app.acquisition.details", payload })).outcome } catch (error) { return failed(error) }
+    },
+    async acquisitionAcquire(payload) {
+      try { return (await call({ _tag: "app.acquisition.acquire", payload })).outcome } catch (error) { return failed(error) }
+    },
+    async acquisitionAcquireStatus(jobId) {
+      try { return (await call({ _tag: "app.acquisition.acquire-status", payload: { jobId } })).outcome } catch (error) { return failed(error) }
+    },
+    async acquisitionAcquireCancel(jobId) {
+      try { return (await call({ _tag: "app.acquisition.acquire-cancel", payload: { jobId } })).outcome } catch (error) { return failed(error) }
+    },
   }
 }
 

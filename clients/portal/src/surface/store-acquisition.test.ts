@@ -5,7 +5,7 @@ import {
   type InMemoryClaim,
   type InMemoryStoreConfig,
 } from "../korrid/store-acquisition-client"
-import { ACQUISITION_CODE } from "../korrid/store-acquisition-types"
+import { ACQUISITION_CODE } from "../korrid/acquisition-codes"
 import {
   CANCELLED_NOTE,
   createStoreAcquisition,

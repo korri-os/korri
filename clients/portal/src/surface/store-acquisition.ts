@@ -26,18 +26,18 @@ import type {
   SurfaceStoreSearch,
 } from "@contracts/surface/korri-surface"
 import type { KorridClient } from "../korrid/client"
-import {
-  ACQUISITION_CODE,
-  type AcquireJobState,
-  type AcquireJobStatus,
-  type AcquisitionProvider,
-  type ProviderClaim,
-  type ProviderClaimDetails,
-} from "../korrid/store-acquisition-types"
+import type {
+  AcquireJobState,
+  AcquireJobStatus,
+  AcquisitionProvider,
+  ProviderClaim,
+  ProviderClaimDetails,
+} from "@contracts/generated/korrid"
+import { ACQUISITION_CODE } from "../korrid/acquisition-codes"
 import { ACQUISITION_POLL_INTERVAL_MS, formatBytes, formatEta } from "./acquisition-gate"
 
 /** Unreachable reads tolerated in a row while watching a job: korrid
- * restarting answers nothing for a while, then NotFound. */
+ * restarting answers nothing for a while, then AcquisitionUnknownJob. */
 export const LOST_AFTER_POLLS = 30
 
 export type StoreAcquisitionClient = Pick<
