@@ -43,6 +43,9 @@ export type ZoneRequest =
   | { readonly _tag: "FinishOnboarding" }
   /** Zone's own: keep the look on this device. Korri is never told. */
   | { readonly _tag: "RememberLook"; readonly look: ZoneLook }
+  | { readonly _tag: "OpenStore" }
+  | { readonly _tag: "SearchStore"; readonly providerId: string; readonly query: string }
+  | { readonly _tag: "OpenStoreEntry"; readonly entryId: string }
 
 /** One step of a program: the next model, and what to ask for. */
 export interface ZoneStep<Model> {

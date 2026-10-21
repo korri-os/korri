@@ -4,7 +4,8 @@
  *
  *     tab      which page: GAMES, OPTIONS or SAVE DATA
  *     zone     where the cursor is on the games page: the tabs, the FIND
- *              key, the cards or the action row under the focused card.
+ *              key, the GET GAMES key, the cards or the action row under
+ *              the focused card.
  *              On OPTIONS and SAVE DATA only `tabs` or `cards` (the page's
  *              own rows), so `menu` knows whether to move it
  *     card     the focused card's index in the band (the filtered catalog)
@@ -52,7 +53,7 @@ import {
 } from "./tally"
 
 export type ZoneTab = "games" | "options" | "savedata"
-export type ZoneFocusZone = "tabs" | "find" | "cards" | "actions"
+export type ZoneFocusZone = "tabs" | "find" | "get" | "cards" | "actions"
 export type ZoneLayer = "gameopts" | "keyboard" | "busy" | "problem" | "confirm" | "overlay" | "onboarding" | "idle"
 
 /** The tabs in strip order. */
@@ -151,6 +152,8 @@ export type ZoneNavMessage =
   | { readonly _tag: "TallyLeft" }
   /** The launch title card's way out ended. */
   | { readonly _tag: "TitleCardLeft" }
+  /** GET GAMES played a game it got: the band shows it, under the cursor. */
+  | { readonly _tag: "ShowedGame"; readonly gameId: string }
 
 /** Messages that are no press: Korri publishing, and the runtime's own timers. */
 const unpressed = (message: ZoneNavMessage): boolean =>
@@ -200,10 +203,15 @@ function step(nav: ZoneNavigation, message: ZoneNavMessage, korri: SurfaceModel)
       return topLayer(nav) === "none" && nav.tab === "games" && bandGames(nav, korri).length > 0
         ? stay(push({ ...nav, opts: ZONE_OPTS_START }, "gameopts")) : stay(nav)
     case "PressedMenu":
-      // Once to the tabs; again, on GAMES, to the FIND key at their right end.
+      // Once to the tabs; again, on GAMES, to the FIND key at their right end;
+      // again to GET GAMES when Korri can get games. With no games to find,
+      // the second press goes straight to GET GAMES.
       if (topLayer(nav) !== "none") return stay(nav)
-      return nav.zone === "tabs" && nav.tab === "games"
-        ? stay({ ...nav, zone: "find" }) : stay({ ...nav, zone: "tabs", tabCursor: nav.tab })
+      if (nav.tab === "games" && nav.zone === "tabs") {
+        return stay({ ...nav, zone: cardCount(korri) === 0 && korri.store !== undefined ? "get" : "find" })
+      }
+      if (nav.tab === "games" && nav.zone === "find" && korri.store !== undefined) return stay({ ...nav, zone: "get" })
+      return stay({ ...nav, zone: "tabs", tabCursor: nav.tab })
     case "PressedSystem":
       // The cursor goes into the page, never onto the tabs: SYSTEM is a row.
       return topLayer(nav) === "none"
@@ -213,6 +221,16 @@ function step(nav: ZoneNavigation, message: ZoneNavMessage, korri: SurfaceModel)
       return nav.tab === "games" || nav.zone !== "tabs" ? stay(nav) : stay({ ...nav, zone: "cards" })
     case "LandedOptions":
       return nav.optionsGroup === undefined ? stay(nav) : stay({ ...nav, optionsGroup: undefined })
+    case "ShowedGame": {
+      // A kept filter that hides the game lets go, so the card is there. The
+      // launch title card opens for it, as for PLAY on its card.
+      const shown = bandGames(nav, korri).some(game => game.id === message.gameId) ? nav : { ...nav, find: ZONE_FIND_START }
+      const card = bandGames(shown, korri).findIndex(game => game.id === message.gameId)
+      return card < 0 ? stay(nav) : stay({
+        ...shown, tab: "games", tabCursor: "games", zone: "cards", card, action: 0,
+        launch: zoneLaunchOpen(korri, message.gameId),
+      })
+    }
     case "KorriPublished":
       return stay(nav)
     case "IdleElapsed": {
@@ -250,6 +268,11 @@ function step(nav: ZoneNavigation, message: ZoneNavMessage, korri: SurfaceModel)
       return ask({ ...nav, launch: zoneLaunchOpen(korri, message.gameId) }, launchGame(message.gameId, message.locationId))
     case "FocusedFind":
       return stay({ ...nav, zone: "find" })
+    case "FocusedGetGames":
+      return stay({ ...nav, zone: "get" })
+    case "ChoseGetGames":
+      // The wire stage opens the page; the cursor waits here for its return.
+      return topLayer(nav) === "none" && nav.tab === "games" ? stay({ ...nav, zone: "get" }) : stay(nav)
     case "ChoseFind":
       return topLayer(nav) === "none" && nav.tab === "games"
         ? stay(push({ ...nav, zone: "find", find: { ...nav.find, caret: nav.find.draft.length } }, "keyboard"))

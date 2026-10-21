@@ -64,6 +64,12 @@ export function performZoneRequest(host: SurfaceHost, request: ZoneRequest): voi
     // Zone's own preference: kept on the device, never sent to Korri.
     case "RememberLook":
       return rememberZoneLook(request.look)
+    case "OpenStore":
+      return host.openStore()
+    case "SearchStore":
+      return host.searchStore(request.providerId, request.query)
+    case "OpenStoreEntry":
+      return host.openStoreEntry(request.entryId)
   }
 }
 

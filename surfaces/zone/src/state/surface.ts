@@ -12,6 +12,7 @@
  *     onboarding  first boot, while Korri asks for it (onboarding.ts)
  *     look        the look this device shows Zone in, Zone's own (look.ts);
  *                 OPTIONS' LOOK row steps it
+ *     store       GET GAMES, while the person is getting a game (store.ts)
  *
  * The models stay pure and separate; this file only composes them. A page
  * reports in its own model's words (`Options`, `SaveData`, …) and the
@@ -28,8 +29,9 @@
  *     options  GAME OPTS. on GAMES; nothing anywhere else.
  *     system   OPTIONS with the cursor on its SYSTEM group.
  *
- * PAUSED, first boot and RUN WITH take the whole screen and the tabs are not
- * on it, so menu, options and system do nothing while one is shown.
+ * PAUSED, first boot, RUN WITH and GET GAMES take the whole screen and the
+ * tabs are not on it, so menu, options and system do nothing while one is
+ * shown.
  */
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { ZONE_DEFAULT_LOOK, type ZoneLook } from "../plan/look"
@@ -61,6 +63,7 @@ import { updateOverlay, ZONE_OVERLAY_START, type ZoneOverlayMessage, type ZoneOv
 import type { ZoneRequest, ZoneStep } from "./requests"
 import { RUN_WITH_START, update as updateRunWith, type ZoneRunWith, type ZoneRunWithMessage } from "./run-with"
 import { updateStatus, ZONE_STATUS_START, type ZoneStatusMessage, type ZoneStatusModel } from "./status"
+import { updateStore, ZONE_STORE_START, type ZoneStoreMessage, type ZoneStoreModel } from "./store"
 
 export interface ZoneSurfaceState {
   readonly nav: ZoneNavigation
@@ -71,6 +74,7 @@ export interface ZoneSurfaceState {
   readonly overlay: ZoneOverlayModel
   readonly onboarding: ZoneOnboardingModel
   readonly look: ZoneLook
+  readonly store: ZoneStoreModel
 }
 
 /** What OPTIONS reads: Korri's slices and Zone's own look, for its LOOK row. */
@@ -87,6 +91,7 @@ export type ZoneSurfaceMessage =
   | { readonly _tag: "Status"; readonly message: ZoneStatusMessage }
   | { readonly _tag: "Paused"; readonly message: ZoneOverlayMessage }
   | { readonly _tag: "Onboarding"; readonly message: ZoneOnboardingMessage }
+  | { readonly _tag: "Store"; readonly message: ZoneStoreMessage }
 
 /**
  * What takes the screen, first match wins:
@@ -97,11 +102,12 @@ export type ZoneSurfaceMessage =
  *     onboarding  Korri asks for first boot
  *     runwith     Korri's runner choice is open (it opens it itself on a
  *                 launch, or on its own game action)
+ *     store       GET GAMES is open and Korri can get games
  *     games | options | savedata   the tab
  *
  * The status layer is drawn over whichever it is.
  */
-export type ZoneShown = "paused" | "join" | "onboarding" | "runwith" | "games" | "options" | "savedata"
+export type ZoneShown = "paused" | "join" | "onboarding" | "runwith" | "store" | "games" | "options" | "savedata"
 
 export const runnerOpen = (korri: SurfaceModel): boolean =>
   korri.runnerChoice !== undefined && korri.runnerChoice._tag !== "Closed"
@@ -110,6 +116,7 @@ export function zoneShown(state: ZoneSurfaceState, korri: SurfaceModel): ZoneSho
   if (korri.presentation.kind === "gameplay-overlay") return "paused"
   if (korri.onboarding !== undefined) return state.options.keyboard === undefined ? "onboarding" : "join"
   if (runnerOpen(korri)) return "runwith"
+  if (state.store.open && korri.store !== undefined) return "store"
   return state.nav.tab
 }
 
@@ -128,6 +135,7 @@ export function zoneSurfaceStart(korri: SurfaceModel, look: ZoneLook): ZoneSurfa
     status: ZONE_STATUS_START,
     overlay: ZONE_OVERLAY_START,
     onboarding: ZONE_ONBOARDING_START,
+    store: ZONE_STORE_START,
   }
   return update(start, { _tag: "KorriPublished" }, korri).model
 }
@@ -198,6 +206,8 @@ function route(steps: Steps, message: ZoneSurfaceMessage, korri: SurfaceModel): 
       return
     case "Onboarding":
       return onboarding(steps, message.message, korri)
+    case "Store":
+      return store(steps, message.message, korri)
   }
 }
 
@@ -232,6 +242,7 @@ function published(steps: Steps, korri: SurfaceModel): void {
   steps.put("onboarding", korri.onboarding !== undefined
     ? updateOnboarding(state.onboarding, message, korri)
     : { model: ZONE_ONBOARDING_START, requests: [] })
+  steps.put("store", updateStore(state.store, message, korri))
 }
 
 /** Back: Korri's problem, then the page's own rule, then the GAMES tab. */
@@ -259,6 +270,9 @@ function back(steps: Steps, korri: SurfaceModel): void {
       return
     case "runwith":
       steps.put("runWith", updateRunWith(state.runWith, message, korri))
+      return
+    case "store":
+      steps.put("store", updateStore(state.store, message, korri))
       return
     case "games":
       steps.put("nav", updateNav(state.nav, message, korri))
@@ -311,6 +325,7 @@ function menu(steps: Steps, korri: SurfaceModel): void {
     case "paused":
     case "onboarding":
     case "runwith":
+    case "store":
       return
   }
 }
@@ -327,6 +342,7 @@ function system(steps: Steps, korri: SurfaceModel): void {
     case "join":
     case "onboarding":
     case "runwith":
+    case "store":
       return
   }
   if (state.nav.tab === "savedata" && identityHolds(state.identity, korri)) return
@@ -344,7 +360,26 @@ function system(steps: Steps, korri: SurfaceModel): void {
 function games(steps: Steps, message: ZoneNavMessage, korri: SurfaceModel): void {
   const state = steps.state
   if (message._tag === "IdleElapsed" && zoneShown(state, korri) !== "games") return
-  steps.put("nav", updateNav(state.nav, message, korri))
+  const nav = steps.put("nav", updateNav(state.nav, message, korri)).model
+  // GET GAMES opens over GAMES when nothing covers the page and the key was
+  // there to press.
+  if (message._tag === "ChoseGetGames" && nav.zone === "get" && zoneShown(steps.state, korri) === "games" && !covered(korri)) {
+    store(steps, { _tag: "OpenedStore" }, korri)
+  }
+}
+
+/**
+ * GET GAMES. PLAY on an entry closes the page and launches the game; the
+ * GAMES band comes back with the cursor on it, so that is where the person
+ * returns.
+ */
+function store(steps: Steps, message: ZoneStoreMessage, korri: SurfaceModel): void {
+  const step = steps.put("store", updateStore(steps.state.store, message, korri))
+  for (const request of step.requests) {
+    if (request._tag === "LaunchGame") {
+      steps.put("nav", updateNav(steps.state.nav, { _tag: "ShowedGame", gameId: request.gameId }, korri))
+    }
+  }
 }
 
 /**

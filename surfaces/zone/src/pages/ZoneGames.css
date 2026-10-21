@@ -91,10 +91,11 @@
   min-height: 0;
 }
 
-/* Under the error dialog there is nothing to show: no band, no FIND; the
- * dialog's own veil lies over the ground. GAME OPTS. covers the page with
- * its own sheet, and its NO / YES question veils the sheet. */
-.zone-games[data-layer="error"] .zone-games-find {
+/* Under the error dialog there is nothing to show: no band, no FIND, no
+ * GET GAMES; the dialog's own veil lies over the ground. GAME OPTS. covers
+ * the page with its own sheet, and its NO / YES question veils the sheet. */
+.zone-games[data-layer="error"] .zone-games-find,
+.zone-games[data-layer="error"] .zone-games-corner {
   visibility: hidden;
 }
 
@@ -121,13 +122,30 @@
   min-width: 0;
 }
 
-.zone-games-find-tag {
+/* The body's top left, under the B hint: GET GAMES, then the kept filter's
+ * tag under it, over the first card's corner. Korri moves focus by
+ * geometry; moving up off the first card, or left and down off GAMES,
+ * lands on GET GAMES. */
+.zone-games-corner {
   position: absolute;
   top: calc(var(--zone-strip-inset) * var(--zone-px));
   left: calc(var(--zone-band-margin) * var(--zone-px));
   z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  row-gap: calc(var(--zone-row-space) * var(--zone-px));
   max-width: calc(100% - 2 * calc(var(--zone-band-margin) * var(--zone-px)));
   font-size: var(--zone-shell-button-type);
+}
+
+.zone-games-get {
+  display: flex;
+  max-width: 100%;
+}
+
+.zone-games-find-tag {
+  max-width: 100%;
 }
 
 /* The facts line, as a HUD: the focused card's tags its row could not

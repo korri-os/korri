@@ -7,6 +7,7 @@ import { ZoneOptions } from "./pages/ZoneOptions"
 import { ZonePaused } from "./pages/ZonePaused"
 import { ZoneRunWith } from "./pages/ZoneRunWith"
 import { ZoneSaveData } from "./pages/ZoneSaveData"
+import { ZoneStore } from "./pages/ZoneStore"
 import { catalogGames } from "./state/games"
 import { ZONE_TABS, type ZoneTab } from "./state/navigation"
 import { canGoOn, deviceNameSetting, onboardingJoin } from "./state/onboarding"
@@ -35,8 +36,8 @@ const OWN_GROUND: readonly ZoneShown[] = ["paused", "onboarding"]
 /**
  * The palette each page stands on (REFINEMENT.md 2c): the root wears it as
  * `data-ground`, so the ground, the page and every layer over it read one
- * token set. First boot shares GAMES's mint; RUN WITH and OPTIONS' join
- * keyboard share OPTIONS's yellow.
+ * token set. First boot shares GAMES's mint; RUN WITH, GET GAMES and
+ * OPTIONS' join keyboard share OPTIONS's yellow.
  */
 function groundOf(shown: ZoneShown): ZoneGroundName {
   switch (shown) {
@@ -46,6 +47,7 @@ function groundOf(shown: ZoneShown): ZoneGroundName {
     case "options":
     case "join":
     case "runwith":
+    case "store":
       return "options"
     case "savedata":
       return "savedata"
@@ -64,6 +66,7 @@ function senders(dispatch: (message: ZoneSurfaceMessage) => void) {
     status: (message: Extract<ZoneSurfaceMessage, { _tag: "Status" }>["message"]) => dispatch({ _tag: "Status", message }),
     paused: (message: Extract<ZoneSurfaceMessage, { _tag: "Paused" }>["message"]) => dispatch({ _tag: "Paused", message }),
     onboarding: (message: Extract<ZoneSurfaceMessage, { _tag: "Onboarding" }>["message"]) => dispatch({ _tag: "Onboarding", message }),
+    store: (message: Extract<ZoneSurfaceMessage, { _tag: "Store" }>["message"]) => dispatch({ _tag: "Store", message }),
     tab: (id: string) => {
       const tab = asTab(id)
       if (tab !== undefined) dispatch({ _tag: "Games", message: { _tag: "ChoseTab", tab } })
@@ -85,6 +88,7 @@ type Senders = ReturnType<typeof senders>
  *     first boot  while Korri asks for it; OPTIONS' join keyboard over it
  *                 when a secured network needs its password
  *     RUN WITH    while Korri's runner choice is open
+ *     GET GAMES   while the person is getting a game from a provider
  *     the tab     GAMES (home), OPTIONS or SAVE DATA
  *
  * with the status layer over whichever it is. Each page receives plain
@@ -244,6 +248,23 @@ function zonePage(
           onAction={actionId => send.runWith({ _tag: "PressedAction", actionId })}
           onFocus={rowId => send.runWith({ _tag: "FocusedRow", rowId })}
           strips={layout.strips}
+        />
+      )
+    case "store":
+      return model.store === undefined ? null : (
+        <ZoneStore
+          band={layout.band}
+          build={model.buildLabel}
+          clock={model.clockLabel}
+          onAction={actionId => send.store({ _tag: "PressedAction", actionId })}
+          onDialogFocus={index => send.store({ _tag: "FocusedDialogButton", index })}
+          onKey={key => send.store({ _tag: "PressedKey", key })}
+          onKeyFocus={id => send.store({ _tag: "FocusedKey", id })}
+          onRowFocus={rowId => send.store({ _tag: "FocusedRow", rowId })}
+          onRowPress={rowId => send.store({ _tag: "PressedRow", rowId })}
+          store={model.store}
+          strips={layout.strips}
+          view={state.store}
         />
       )
     case "paused":

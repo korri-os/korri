@@ -1,0 +1,116 @@
+/* GET GAMES: the banner row over the scroll, as RUN WITH lays it out. The
+ * scroll gives way; the banner row wraps its title and tags under the
+ * banner before any of them is cut. */
+.zone-store {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  row-gap: var(--zone-options-head-space);
+  height: 100%;
+  min-height: 0;
+  padding: var(--zone-options-head-space) var(--zone-strip-margin-min) 0;
+}
+
+.zone-store-head {
+  --zone-shell-tab-type: clamp(var(--zone-type-row-min), 4cqb, var(--zone-type-tab-wide));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--zone-row-space) var(--zone-strip-gap);
+  min-width: 0;
+}
+
+/* The provider or the game: a readout, so it truncates before the banner does. */
+.zone-store-where {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: clamp(var(--zone-type-row-min), 3.2cqi, var(--zone-type-row));
+}
+
+.zone-store-tag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: calc(var(--zone-type-note) * var(--zone-tag-row-height));
+  --zone-tag-type: var(--zone-type-note);
+}
+
+.zone-store-scroll {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+  scroll-padding-block: var(--zone-row-height);
+}
+
+.zone-store-rows {
+  --zone-shell-button-type: clamp(var(--zone-type-row-min), 2.4cqi, var(--zone-type-button-short));
+  display: grid;
+  row-gap: var(--zone-options-group-gap);
+  width: min(100%, var(--zone-options-measure));
+  margin: 0 auto;
+  padding-bottom: var(--zone-options-group-gap);
+  font-size: clamp(var(--zone-type-row-min), 3.2cqi, var(--zone-type-row));
+}
+
+/* The keyboard takes the scroll's whole width, as FIND's does in the body. */
+.zone-store-keys {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding-bottom: var(--zone-options-group-gap);
+}
+
+/* Korri's words: the provider's description, a note, a reason. White caps
+ * on the ground, wrapped when longer than the column, never cut. */
+.zone-store-line {
+  margin: 0;
+  padding: 0 var(--zone-slant);
+  font-size: var(--zone-type-note);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.zone-store-word,
+.zone-store-actions,
+.zone-store-busy,
+.zone-store-dialog {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.zone-store-busy,
+.zone-store-dialog {
+  width: 100%;
+}
+
+/* An entry: the well beside Korri's words while the column has room for
+ * both, the words under it when it has not. The well is portrait, as a
+ * card's is, and takes its size from the body's height first, so the words
+ * and the buttons stay on screen on a short screen. */
+.zone-store-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--zone-options-group-gap);
+  min-width: 0;
+}
+
+.zone-store-well {
+  display: flex;
+  flex: 0 0 auto;
+  width: min(30cqi, 34cqb);
+  aspect-ratio: 3 / 4;
+}
+
+.zone-store-entry-text {
+  display: grid;
+  flex: 1 1 min(100%, 18em);
+  row-gap: var(--zone-options-group-gap);
+  align-content: start;
+  justify-items: stretch;
+  min-width: 0;
+}
