@@ -9,12 +9,14 @@
 import type {
   SurfaceHost,
   SurfaceInputAction,
+  SurfaceStore,
 } from "@contracts/surface/korri-surface"
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { createStarterPackOnboarding } from "./starter-pack-onboarding"
 import { createAcquisitionGate, type AcquisitionGameRef } from "./acquisition-gate"
 import { createGameDownloads, type DownloadGameRef } from "./game-downloads"
 import { createRunnerChooser } from "./runner-chooser"
+import { createStoreAcquisition } from "./store-acquisition"
 import { createControllers, type Controllers } from "../input/controllers"
 import { entryKey, type LaunchablesState, type PortalEntry } from "../launchables/state"
 import { createInputBus, type InputBus } from "../input/bus"
@@ -50,6 +52,31 @@ function localGameIdsBySurfaceId(state: LaunchablesState): ReadonlyMap<string, s
     if (entry.kind === "game" && entry.game.source.isLocal) ids.set(entryKey(entry), entry.game.id)
   }
   return ids
+}
+
+/**
+ * The store names an imported game by korrid's id; the surface launches by
+ * its own. Present once the catalog holds the game, as any of its copies.
+ */
+function surfaceIdForKorridGame(state: LaunchablesState, gameId: string): string | undefined {
+  if (state._tag === "Loading") return undefined
+  const entry = state.entries.find(entry =>
+    entry.kind !== "now-playing" &&
+    (entry.game.id === gameId || entry.alternatives?.some(copy => copy.game.id === gameId) === true),
+  )
+  return entry === undefined ? undefined : entryKey(entry)
+}
+
+/** The store as the surface sees it: an imported game by the surface's id. */
+function storeForSurface(store: SurfaceStore, state: LaunchablesState): SurfaceStore {
+  const details = store.details
+  if (details._tag !== "Ready" || details.get._tag !== "InLibrary" || details.get.gameId === undefined) return store
+  const { gameId, ...inLibrary } = details.get
+  const surfaceId = surfaceIdForKorridGame(state, gameId)
+  return {
+    ...store,
+    details: { ...details, get: surfaceId === undefined ? inLibrary : { ...inLibrary, gameId: surfaceId } },
+  }
 }
 
 function localRunnerEntry(entry: PortalEntry | undefined): Extract<PortalEntry, { kind: "game" }> | undefined {
@@ -114,6 +141,13 @@ export function SurfaceRoot({
     return gameId === undefined ? [] : [gameId]
   }
   useEffect(() => () => acquisition.dispose(), [acquisition])
+  // Getting games from providers: non-modal, so it never takes the status.
+  // An imported game joins the catalog by re-reading it in place.
+  const store = useMemo(() => createStoreAcquisition(korrid, {
+    onImported: () => launchablesRef.current.refresh(),
+  }), [korrid])
+  useEffect(() => () => store.dispose(), [store])
+  const storeSnapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
   /**
    * The shared startup behind the gate: once every artifact the game's runner
    * needs is Ready, the existing reserve/start lifecycle. Resolves undefined
@@ -255,8 +289,11 @@ export function SurfaceRoot({
         return download === undefined ? game : { ...game, download }
       }),
     }
-    return { ...baseModel, catalog, status: acquisitionStatus ?? downloadProblem ?? baseModel.status, runnerChoice }
-  }, [baseModel, runnerChoice, acquisitionStatus, downloadProblem, downloadFacts, surfaceToKorridId])
+    return {
+      ...baseModel, catalog, status: acquisitionStatus ?? downloadProblem ?? baseModel.status, runnerChoice,
+      store: storeForSurface(storeSnapshot, state),
+    }
+  }, [baseModel, runnerChoice, acquisitionStatus, downloadProblem, downloadFacts, surfaceToKorridId, storeSnapshot, state])
   const surfaceToKorridIdRef = useRef(surfaceToKorridId)
   surfaceToKorridIdRef.current = surfaceToKorridId
   /**
@@ -329,6 +366,7 @@ export function SurfaceRoot({
       },
       runAction: id => {
         if (starterPackOnboarding.act(id)) return
+        if (store.act(id)) return
         if (acquisition.act(id)) return
         if (id.startsWith("cancel-pending:")) {
           launchablesRef.current.cancelPendingLaunch(id.slice("cancel-pending:".length))
@@ -348,6 +386,9 @@ export function SurfaceRoot({
       connectWifi,
       connectHiddenWifi,
       finishOnboarding,
+      openStore: () => store.openStore(),
+      searchStore: (providerId, query) => store.search(providerId, query),
+      openStoreEntry: entryId => store.openEntry(entryId),
       changeSetting,
       dismissSettingsProblem,
       exportIdentityBackup,
@@ -408,6 +449,7 @@ export function SurfaceRoot({
       starterPackOnboarding,
       downloads,
       downloadSubject,
+      store,
       surfaceInput,
       runner,
       scanWifi,

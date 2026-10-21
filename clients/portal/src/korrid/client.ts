@@ -61,6 +61,13 @@ import type {
   RpcResponse,
 } from "@contracts/generated/korrid"
 import {
+  createInMemoryStoreAcquisition,
+  httpStoreAcquisition,
+  type InMemoryStoreAcquisition,
+  type InMemoryStoreConfig,
+  type StoreAcquisitionMethods,
+} from "./store-acquisition-client"
+import {
   FocusOwnership,
   InitialHandoff,
   PluginInstalledState,
@@ -89,7 +96,7 @@ export type SessionReserveResult = Extract<RpcResponse, { _tag: "app.session.res
 export type SessionStartResult = Extract<RpcResponse, { _tag: "app.session.start" }>["outcome"]
 export type SessionCancelResult = Extract<RpcResponse, { _tag: "app.session.cancel" }>["outcome"]
 
-export interface KorridClient {
+export interface KorridClient extends StoreAcquisitionMethods {
   networkStatus(): Promise<NetworkStatusOutcome>
   scanWifi(): Promise<NetworkStatusOutcome>
   connectWifi(networkId: string, password?: string): Promise<NetworkStatusOutcome>
@@ -336,6 +343,7 @@ export function createHttpKorridClient(
   capability: string,
 ): KorridClient {
   return {
+    ...httpStoreAcquisition(request => callKorrid(baseUrl, capability, request), routeUnavailable),
     async networkStatus() {
       try { return (await callKorrid(baseUrl, capability, { _tag: "system.network.status", payload: {} })).outcome }
       catch { return networkUnavailable() }
@@ -1040,6 +1048,9 @@ export interface InMemoryKorridClientConfig {
     | "status-fail"
     | "stop-fail"
   readonly games?: readonly Game[]
+  /** Game acquisition from providers. A seeded instance lets a test restart
+   * korrid under a job; a config builds one. Default: the sample providers. */
+  readonly store?: InMemoryStoreAcquisition | InMemoryStoreConfig
   readonly gameRoutes?: readonly GameRoutes[]
   /** Browser/test startup gates preserve the real reserve/start/cancel ordering. */
   readonly sessionReserveGate?: Promise<void>
@@ -1161,7 +1172,12 @@ export function createInMemoryKorridClient(
   const peerList: PeerListOutcome = structuredClone(
     config.peerList ?? { _tag: "Ok", payload: { peers: [] } },
   )
-  const games = config.games ?? sampleGames
+  // Mutable: a game acquired from a provider joins the catalog.
+  const games: Game[] = [...(config.games ?? sampleGames)]
+  const store = config.store !== undefined && "restart" in config.store
+    ? config.store
+    : createInMemoryStoreAcquisition(config.store)
+  store.bindCatalog(game => { games.push(game) })
   const localGames = config.localGames ?? []
   const localFailures = config.localFailures
   let activeSession = config.activeSession
@@ -1378,6 +1394,12 @@ export function createInMemoryKorridClient(
   })
   return {
     ...pluginHost,
+    acquisitionProviders: () => store.acquisitionProviders(),
+    acquisitionSearch: request => store.acquisitionSearch(request),
+    acquisitionDetails: request => store.acquisitionDetails(request),
+    acquisitionAcquire: request => store.acquisitionAcquire(request),
+    acquisitionAcquireStatus: jobId => store.acquisitionAcquireStatus(jobId),
+    acquisitionAcquireCancel: jobId => store.acquisitionAcquireCancel(jobId),
     async networkStatus() { return { _tag: "Ok", payload: structuredClone(network) } },
     async scanWifi() { return { _tag: "Ok", payload: structuredClone(network) } },
     async connectWifi(networkId) {
