@@ -40,7 +40,7 @@ export const STORE_GETS = {
     _tag: "Working", kicker: "Waiting to download", detail: "Waiting for the download before it",
     actions: [action("store:9:cancel", "Cancel")],
   },
-  placing: { _tag: "Working", kicker: "Adding to your library…", progress: { done: 0 }, actions: [] },
+  placing: { _tag: "Working", kicker: "Adding to your library…", actions: [] },
   inLibrary: { _tag: "InLibrary", detail: "In your library", gameId: "local-game:wl4" },
   failed: {
     _tag: "Problem", kicker: "Download failed", reason: "The download did not finish. Try again.",
