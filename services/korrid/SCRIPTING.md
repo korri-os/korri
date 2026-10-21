@@ -617,20 +617,30 @@ export const games = {
 }
 ```
 
-`file` has one of two forms, and the form says where the path starts. A string
-is relative to an account root, without traversal (ADR 0003). An object
-`{ artifact, path }` names a file inside one ready artifact directory. `path` is
-relative: no leading `/`, no empty or `..` segment and no control character.
-Rust decodes `file` as an enum, so every reader handles both forms. Discovery
-hashes only the string form under account roots; it never reads an artifact
-path as an account-root path.
+`file` has one of three forms, and the form says where the path starts:
+
+- A string is relative to an account root, without traversal (ADR 0003).
+- `{ artifact, path }` names a file inside one ready artifact directory
+  (ADR 0013).
+- `{ packageFile, path }` names a key in the declaring plugin's own installed
+  manifest `files`, joined with `path` (ADR 0014). It cannot name another
+  plugin's files. The registry refuses a key missing from that package's
+  `files`. It is ready whenever the plugin is enabled; no download or Confirm
+  is needed.
+
+For both object forms, `path` is relative: no leading `/`, no empty or `..`
+segment and no control character. Unknown fields are refused. Rust decodes
+`file` as an enum, so every reader handles all three forms. Discovery hashes
+only the string form under account roots; it never reads an artifact or package
+path as an account-root path. Package release hashes are content-file hashes,
+proved by the pack's build check, not computed by korrid at runtime.
 
 `artifacts` lists full artifact IDs, with the same rule as
 `RunnerRecord.artifacts`: every ID must be a loaded, enabled artifact, which
 may belong to another enabled plugin. Omission means none. `file.artifact` must
-be one of them. A release with `artifacts` must use the object form of `file`;
-a string `file` or a missing `file` with `artifacts` fails. `hashes` stay
-required and are hashes of the content file.
+be one of them. A release with non-empty `artifacts` must use the artifact form
+of `file`; an account-root string, package-file object or missing `file` fails.
+`hashes` stay required and are hashes of the content file.
 
 A plugin lists its preferred release first. Releases keep the module's
 property order through QuickJS, JSON and the Rust registry. ECMAScript puts
@@ -641,7 +651,7 @@ Every reconcile pass creates or keeps the game of each enabled release whose
 `file` is an object. It uses the existing declared-game records only: the
 library item, a release whose identity is the first hash, and the provider link.
 No location is saved: the route comes from the declaration and readiness from
-the cache. A new release goes before the first release that the game declares
+the artifact cache or enabled installed package. A new release goes before the first release that the game declares
 later, so declared releases keep declaration order. A release that is no longer
 declared stays in the game's history and is unavailable. A copy of the content
 file that discovery finds in a source joins the same game.

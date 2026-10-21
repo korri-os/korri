@@ -257,7 +257,7 @@ pub fn reconcile(report: &ScanReport, current: &ConfigSnapshot, now: &str) -> Ca
             }
         }
     }
-    reconcile_artifact_releases(report, &mut next, &mut change, &mut release_games);
+    reconcile_artifact_and_package_releases(report, &mut next, &mut change, &mut release_games);
     reconcile_providers(report, &mut next, &mut change, &mut release_games);
     change.added_games = next
         .library
@@ -291,7 +291,7 @@ pub fn reconcile(report: &ScanReport, current: &ConfigSnapshot, now: &str) -> Ca
 /// release keyed by its first hash, provider link) and saves no location: the
 /// route comes from the declaration and readiness from the cache. A release
 /// that is no longer declared is never removed here; it stays unavailable.
-fn reconcile_artifact_releases(
+fn reconcile_artifact_and_package_releases(
     report: &ScanReport,
     next: &mut ConfigSnapshot,
     change: &mut CatalogChange,
