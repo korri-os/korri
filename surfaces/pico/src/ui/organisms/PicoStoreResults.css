@@ -1,0 +1,62 @@
+/**
+ * One provider's results. The root is the size container. The SEARCH row
+ * keeps its own line at the top and the results scroll under it, so a new
+ * search is always on screen. A short body shrinks the carts first, the way
+ * Find does, so one result still fits.
+ */
+.pico-store-results {
+	container: pico-store-results / size;
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr);
+	gap: calc(var(--pico-u) * 2);
+	height: 100%;
+	min-height: 0;
+	padding: var(--pico-u) calc(var(--pico-u) * 2);
+	font-size: var(--pico-text-sm);
+}
+
+.pico-store-results-search {
+	display: grid;
+	width: min(100%, calc(var(--pico-px) * 280));
+	min-width: 0;
+}
+
+.pico-store-results-body {
+	min-width: 0;
+	min-height: 0;
+	overflow-y: auto;
+	scrollbar-width: none;
+}
+
+.pico-store-results-list {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(calc(var(--pico-px) * 48), 1fr));
+	gap: calc(var(--pico-u) * 2) calc(var(--pico-u) * 1.5);
+	align-content: start;
+	margin: 0;
+	padding: 0 var(--pico-drop) var(--pico-drop) 0;
+	list-style: none;
+}
+
+.pico-store-results-empty {
+	display: grid;
+	gap: var(--pico-u);
+	margin: 0;
+	font-size: var(--pico-text);
+	line-height: 1.5;
+	color: var(--pico-ink-dim);
+	overflow-wrap: anywhere;
+}
+
+.pico-store-results-empty-kicker {
+	font-size: var(--pico-text-lg);
+	color: var(--pico-accent);
+}
+
+@container pico-store-results (height < 50em) {
+	.pico-store-results-body {
+		--pico-result-art-h: calc(var(--pico-px) * 34);
+		--pico-shelf-art-w: calc(var(--pico-px) * 18);
+		--pico-shelf-art-h: calc(var(--pico-px) * 24);
+	}
+}

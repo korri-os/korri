@@ -13,6 +13,7 @@ import { PicoLibrary } from "./pages/PicoLibrary"
 import { PicoOnboarding, type PicoOnboardingActions } from "./pages/PicoOnboarding"
 import { PicoOverlay } from "./pages/PicoOverlay"
 import { PicoSettings, type PicoSettingsEditing } from "./pages/PicoSettings"
+import { PicoStore } from "./pages/PicoStore"
 import { PicoIdentityDialog } from "./ui/organisms/PicoIdentityDialog"
 import { picoDetailViewFromGame } from "./pico-detail-view"
 import { performPicoRequest, subscribePicoHostButtons } from "./pico-host"
@@ -337,6 +338,22 @@ function PicoCatalogSurface({
           />
         )
       }
+      case "Store":
+        return (
+          <PicoStore
+            clockLabel={model.clockLabel}
+            onAction={actionId => dispatch({ _tag: "PressedStoreAction", actionId })}
+            onChooseProvider={providerId => dispatch({ _tag: "ChoseStoreProvider", providerId })}
+            onCloseSearch={() => dispatch({ _tag: "ClosedStoreSearch" })}
+            onOpenEntry={entryId => dispatch({ _tag: "OpenedStoreEntry", entryId })}
+            onOpenSearch={() => dispatch({ _tag: "OpenedStoreSearch" })}
+            onPlay={gameId => dispatch({ _tag: "PressedStorePlay", gameId })}
+            onSubmitSearch={() => dispatch({ _tag: "SubmittedStoreSearch" })}
+            shown={shown.place}
+            store={shown.store}
+            typing={typing}
+          />
+        )
       case "Find":
         return (
           <PicoLibrary
@@ -378,6 +395,7 @@ function PicoCatalogSurface({
               returning: shown.home.focusOnReturn === "MenuKey",
               onToggle: () => dispatch({ _tag: "ToggledHomeMenu" }),
               onFind: () => dispatch({ _tag: "ChoseMenuFind" }),
+              ...(model.store === undefined ? {} : { onStore: () => dispatch({ _tag: "ChoseMenuStore" }) }),
               onSettings: () => dispatch({ _tag: "ChoseMenuSettings" }),
               onView: () => dispatch({ _tag: "ChoseMenuView" }),
               onReturned: () => dispatch({ _tag: "ReturnedFocus" }),

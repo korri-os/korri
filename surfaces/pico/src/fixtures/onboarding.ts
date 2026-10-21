@@ -261,6 +261,9 @@ export function answerRequest(request: PicoRequest): FixtureAnswer | undefined {
     case "RememberFont":
     case "RenderQr":
     case "Wait":
+    case "OpenStore":
+    case "SearchStore":
+    case "OpenStoreEntry":
       return undefined
   }
 }
