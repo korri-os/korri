@@ -251,15 +251,32 @@ is its own package declares no handler and proceeds; a runner that needs
 something else refuses in its own words, and korrid spawns nothing. The refusal
 reaches the person through the existing `LocalRouteUnavailable` failure.
 
-`launcher/linux_plugin.rs` builds a
-`korrid plugin-launch SOURCE INPUT_JSON COMPOSITION_JSON` command. The existing
-systemd game unit starts this command as the runtime user, with its existing
-sandbox. That process calls `launch.prepare`, then each enabled modifier's
-`launch.compose`, before writing files atomically or applying environment/cwd.
-In a private PID namespace it stays as PID 1 and supervises the composed command
-as its child; otherwise it replaces itself with that command. It refuses root.
-The daemon never writes callback-selected paths. Approval authorizes output;
-runners and modifiers add no path or argument policy.
+`launcher/linux_plugin.rs` builds a private preparation command. Before starting
+its game unit, korrid passes it through `prepare_command`, which evaluates
+`launch.prepare` and each enabled modifier's `launch.compose` in the effect-free
+sandbox. The unit receives `korrid plugin-launch SOURCE INPUT_JSON
+COMPOSITION_JSON PREPARED_JSON` and executes that prepared plan as the runtime
+user. It does not evaluate plugin source again. In a private PID namespace it
+stays as PID 1 and supervises the composed command as its child; otherwise it
+replaces itself with that command. It refuses root. Callback-selected files,
+environment and cwd are applied only during execution, never during preparation.
+Approval authorizes output; runners and modifiers add no path or argument policy.
+
+Plugin authors and sandbox fixtures can run both stages through the supported CLI:
+
+```sh
+korrid plugin-run SOURCE INPUT_JSON COMPOSITION_JSON RELEASE_ID
+korrid plugin-run --help
+```
+
+The arguments are the same source, `PluginLaunchInput`, `LaunchComposition` and
+selected release identifier used by the normal preparation command. A fixture
+supplies its test release identifier. This entry calls the real `prepare_command`
+then the real executor; fixtures must not construct private `PREPARED_JSON`.
+Preparation failures apply no declared effects. Run it as an unprivileged user
+inside the fixture's sandbox: this CLI does not create a systemd unit, establish
+permissions, or perform session save sync. The old three-argument `plugin-launch`
+form is not supported.
 
 Native instances use the approved `{ id, kind, program }` fields. A runtime
 uses `launcher` and its existing `path` field as a manifest file key. The

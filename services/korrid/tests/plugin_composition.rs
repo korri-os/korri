@@ -137,6 +137,82 @@ fn cli(command: &[String]) -> Command {
     process
 }
 #[test]
+fn plugin_run_prepares_and_executes_a_fixture_through_the_public_cli() {
+    let root = tempfile::tempdir().unwrap();
+    let (command, input, _) = setup(root.path(), "{enabled: true}");
+    let result = Command::new(env!("CARGO_BIN_EXE_korrid"))
+        .env_clear()
+        .env("REMOVED", "must disappear")
+        .arg("plugin-run")
+        .args(&command[2..])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let account = Path::new(&input.account_root);
+    assert_eq!(
+        fs::read_to_string(account.join("game-ran")).unwrap(),
+        "game"
+    );
+    assert_eq!(
+        fs::read_to_string(account.join("wrapped")).unwrap(),
+        "wrapped"
+    );
+    assert_eq!(
+        fs::read_to_string(account.join("provisioned")).unwrap(),
+        "runner file"
+    );
+}
+
+#[test]
+fn plugin_run_keeps_sandbox_refusals_and_requires_the_full_cli_shape() {
+    let help = Command::new(env!("CARGO_BIN_EXE_korrid"))
+        .env_clear()
+        .args(["plugin-run", "--help"])
+        .output()
+        .unwrap();
+    assert!(help.status.success());
+    assert!(String::from_utf8_lossy(&help.stdout)
+        .contains("SOURCE INPUT_JSON COMPOSITION_JSON RELEASE_ID"));
+    let root = tempfile::tempdir().unwrap();
+    let (command, input, _) = setup(root.path(), "{enabled: true}");
+    // No daemon-side test helper prepares this plan. The actual CLI must
+    // enter the empty sandbox and fail before applying any declared effects.
+    fs::write(
+        &command[2],
+        RUNNER.replace("command: input.program", "command: process.env.PROGRAM"),
+    )
+    .unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_korrid"))
+        .env_clear()
+        .arg("plugin-run")
+        .args(&command[2..])
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains("process"),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!Path::new(&input.account_root).exists());
+    for verb in ["plugin-run", "plugin-launch"] {
+        let missing = Command::new(env!("CARGO_BIN_EXE_korrid"))
+            .env_clear()
+            .arg(verb)
+            .args(&command[2..5])
+            .output()
+            .unwrap();
+        assert!(!missing.status.success());
+        assert!(String::from_utf8_lossy(&missing.stderr).contains("usage:"));
+    }
+    assert!(!Path::new(&input.account_root).exists());
+}
+
+#[test]
 fn plugin_launch_execs_the_composed_plan_and_preserves_runner_effects() {
     let root = tempfile::tempdir().unwrap();
     let (mut command, input, mut composition) = setup(

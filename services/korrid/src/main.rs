@@ -482,6 +482,51 @@ async fn main() {
     let arguments: Vec<OsString> = std::env::args_os().skip(1).collect();
     if arguments
         .first()
+        .is_some_and(|argument| argument == "plugin-run")
+    {
+        const USAGE: &str =
+            "usage: korrid plugin-run SOURCE INPUT_JSON COMPOSITION_JSON RELEASE_ID";
+        if arguments.len() == 2 && arguments[1] == "--help" {
+            println!("{USAGE}\nPrepare a plugin and its modifiers in the effect-free sandbox, then execute the plan.\nFor plugin fixtures: uses the caller's sandbox and runtime user; refuses root.");
+            return;
+        }
+        let result = (|| -> Result<(), String> {
+            if arguments.len() != 5 {
+                return Err(USAGE.into());
+            }
+            let mut command = vec![
+                std::env::current_exe()
+                    .map_err(|error| error.to_string())?
+                    .to_str()
+                    .ok_or("executable path must be UTF-8")?
+                    .to_owned(),
+                "plugin-prepare".into(),
+            ];
+            for argument in &arguments[1..] {
+                command.push(
+                    argument
+                        .to_str()
+                        .ok_or("plugin-run arguments must be UTF-8")?
+                        .to_owned(),
+                );
+            }
+            let command = korrid::launcher::plugin_launch::prepare_command(&command)?;
+            korrid::launcher::plugin_launch::execute(
+                std::path::Path::new(&command[2]),
+                &command[3],
+                &command[4],
+                &command[5],
+            )
+        })();
+        if let Err(error) = result {
+            korrid::launcher::plugin_launch::notify_failure(&error);
+            eprintln!("korrid plugin-run: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if arguments
+        .first()
         .is_some_and(|argument| argument == "plugin-launch")
     {
         let result = match arguments.as_slice() {
