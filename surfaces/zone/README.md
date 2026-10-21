@@ -2125,8 +2125,9 @@ the row ids and the rules the page and the model share are
   is the system as the provider says it; when the provider does not say,
   the value is UNKNOWN, a label for an absent fact, since an empty value
   panel read as broken.
-- **An entry is a well and Korri's words.** Korri carries no provider art
-  (the treaty forbids remote images), so a ZoneCoverWell stands in with the
+- **An entry is a well and Korri's words.** A store entry carries no art:
+  the treaty says a provider's images are on its own site, which the portal
+  never reaches, so a surface draws its own stand-in. A ZoneCoverWell stands in with the
   title's stripes and initials, portrait as a card's well is. Beside it, or
   under it when the column is narrow: the provider's description, then
   where getting it stands. Korri's Offer is a ZoneActionRow of its actions
