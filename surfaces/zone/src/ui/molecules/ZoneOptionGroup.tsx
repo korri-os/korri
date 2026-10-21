@@ -85,6 +85,8 @@ export function ZoneOptionGroup({
         {rows.map((row) => (
           <ZoneOptionRow
             description={row.description}
+            deviceOnly={row.scope === "device"}
+            source={row.source}
             descriptionCaps={row.descriptionCaps}
             disabled={row.disabled}
             focused={row.id === focusedId}

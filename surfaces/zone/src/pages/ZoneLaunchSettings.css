@@ -1,0 +1,185 @@
+/* The banner row over the band. The band gives way; the banner row wraps
+ * its title and tag under the banner before any of them is cut. */
+.zone-launch {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  row-gap: calc(var(--zone-options-band-room) * var(--zone-px));
+  height: 100%;
+  min-height: 0;
+  padding: calc(var(--zone-options-head-space) * var(--zone-px)) 0 calc(var(--zone-options-band-room) * var(--zone-px));
+}
+
+.zone-launch-head {
+  --zone-shell-tab-type: clamp(calc(var(--zone-type-row-min) * var(--zone-px)), 4cqb, calc(var(--zone-type-tab-wide) * var(--zone-px)));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--zone-option-group-space) * var(--zone-px)) calc(var(--zone-strip-gap) * var(--zone-px));
+  min-width: 0;
+  padding: 0 calc(var(--zone-strip-margin-min) * var(--zone-px));
+}
+
+/* The game's title: caps-2 on a black panel, caps-1 when caps-2 does not
+ * fit; a readout, so at caps-1 it truncates before the banner does. */
+.zone-launch-title {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: calc(var(--zone-caps-1) * var(--zone-px));
+}
+
+/* The title's words: Zone Caps in the white ink on black, the face over
+ * lavender lower rows (a hard stop; the line is the cap). */
+.zone-launch-title-words {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  font-size: calc(calc(var(--zone-caps-2) * var(--zone-px)) * var(--zone-fit, 1));
+  line-height: 1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow: none;
+  color: var(--zone-cap);
+  background: linear-gradient(to bottom, var(--zone-cap) 0% 70%, var(--zone-korri-lower) 70% 100%) 0 0 / 100% 1em repeat-y;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  /* The game's title is Korri's: the look's face and case (Retro's are
+   * Zone Caps in upper case, its lower rows the white ink's shade). */
+  font-family: var(--zone-korri-font);
+  text-transform: var(--zone-korri-case);
+}
+
+.zone-launch-state {
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: calc(calc(var(--zone-type-note) * var(--zone-px)) * var(--zone-tag-row-height));
+  --zone-tag-type: calc(var(--zone-type-note) * var(--zone-px));
+}
+
+/* The OPTIONS band: sky, the full width, a black lip over and under it,
+ * so a row it cannot hold is cut by a lip. */
+.zone-launch-band {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  border-block: calc(var(--zone-options-lip) * var(--zone-px)) solid var(--zone-options-lip-colour);
+  background: var(--zone-options-band);
+}
+
+/* OPTIONS' band's black wedge at its left, under the rows. */
+.zone-launch-band::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: -1;
+  width: calc(var(--zone-band-wedge-leg, 0) * var(--zone-px));
+  height: calc(var(--zone-band-wedge-leg, 0) * var(--zone-px));
+  background: var(--zone-options-lip-colour);
+  clip-path: var(--zone-band-wedge-shape, none);
+}
+
+/* The one scroll. No scrollbar: a row cut off by a lip says there is
+ * more. The sticky group title covers the top of the box, so the focused
+ * row is brought into view under it. */
+.zone-launch-scroll {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+  scroll-padding-top: calc(calc(var(--zone-caps-2) + var(--zone-option-group-pad) * 2 + var(--zone-option-group-space)) * var(--zone-px));
+  scroll-padding-bottom: calc(var(--zone-options-band-pad) * var(--zone-px));
+}
+
+/* The groups take the band's width, so each title is flush with its left
+ * edge; the rows stand in the measure, centred, inset from the band's
+ * sides. */
+.zone-launch-groups {
+  --zone-option-group-backing: var(--zone-options-band);
+  --zone-option-group-rows: min(calc(100% - calc(var(--zone-options-band-inset) * var(--zone-px)) * 2), calc(var(--zone-options-measure) * var(--zone-px)));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: calc(var(--zone-option-group-gap) * var(--zone-px));
+  padding-bottom: calc(var(--zone-options-band-pad) * var(--zone-px));
+}
+
+/* Every group but the last hands its title off before the next one
+ * arrives (ZoneOptionGroup `followed`). */
+.zone-launch-groups {
+  --zone-option-group-hold-gap: calc(var(--zone-option-group-gap) * var(--zone-px));
+}
+
+/* Korri's message: Jersey 10 as written, white on a black panel leaning
+ * at its one-line slant, wrapped when it is longer than the column. A word
+ * breaks only at a line's end, with a hyphen. */
+.zone-launch-message {
+  position: relative;
+  isolation: isolate;
+  justify-self: center;
+  width: var(--zone-option-group-rows);
+  max-width: 100%;
+  margin: 0;
+  padding: 0 calc(var(--zone-option-text-inset) * var(--zone-px));
+  color: var(--zone-cap);
+  font-family: var(--zone-font-fact);
+  font-size: calc(var(--zone-fact) / var(--zone-caps-1) * 1em);
+  line-height: 0.75;
+  text-transform: none;
+  text-shadow: none;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.zone-launch-message::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: var(
+    --zone-option-clip,
+    polygon(calc(var(--zone-option-slant) * var(--zone-px)) 0, 100% 0, calc(100% - calc(var(--zone-option-slant) * var(--zone-px))) 100%, 0 100%)
+  );
+}
+
+.zone-launch-actions {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+/* A layer covers the page body. The keyboard rises from the foot and may
+ * take all of the body's height; the dialog sits in the middle. */
+.zone-launch-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  min-height: 0;
+  padding: calc(var(--zone-options-head-space) * var(--zone-px)) calc(var(--zone-strip-margin-min) * var(--zone-px));
+}
+
+.zone-launch-layer[data-kind="keyboard"] {
+  grid-template-rows: minmax(0, 1fr);
+  align-items: end;
+}
+
+.zone-launch-layer[data-kind="dialog"] {
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+}
+
+/* The dialog's box: no wider than the dialog measure, no taller than the body. */
+.zone-launch-dialog {
+  display: grid;
+  width: min(100%, calc(var(--zone-options-dialog-width) * var(--zone-px)));
+  max-height: 100%;
+  min-height: 0;
+}

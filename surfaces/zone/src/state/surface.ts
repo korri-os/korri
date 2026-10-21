@@ -13,6 +13,9 @@
  *     look        the look this device shows Zone in, Zone's own (look.ts);
  *                 OPTIONS' LOOK row steps it
  *     store       GET GAMES, while the person is getting a game (store.ts)
+ *     launch      LAUNCH SETTINGS' cursor, keyboard and dialog, while Korri
+ *                 shows a game's launch settings: OPTIONS' model, run on the
+ *                 layers (plan/launch-settings.ts)
  *
  * The models stay pure and separate; this file only composes them. A page
  * reports in its own model's words (`Options`, `SaveData`, …) and the
@@ -29,7 +32,10 @@
  *     options  GAME OPTS. on GAMES; nothing anywhere else.
  *     system   OPTIONS with the cursor on its SYSTEM group.
  *
- * PAUSED, first boot, RUN WITH and GET GAMES take the whole screen and the
+ * On LAUNCH SETTINGS, back closes the keyboard or the dialog, then runs
+ * Korri's close action: the editor is Korri's to close.
+ *
+ * PAUSED, first boot, RUN WITH, LAUNCH SETTINGS and GET GAMES take the whole screen and the
  * tabs are not on it, so menu, options and system do nothing while one is
  * shown.
  */
@@ -53,6 +59,7 @@ import {
 } from "./onboarding"
 import {
   focusSystemGroup,
+  OPTIONS_START,
   optionsLayer,
   optionsStart,
   update as updateOptions,
@@ -61,6 +68,8 @@ import {
 } from "./options"
 import { updateOverlay, ZONE_OVERLAY_START, type ZoneOverlayMessage, type ZoneOverlayModel } from "./overlay"
 import type { ZoneRequest, ZoneStep } from "./requests"
+import { launchOpen, launchPlan, launchSlices } from "../plan/launch-settings"
+import { ask } from "./requests"
 import { RUN_WITH_START, update as updateRunWith, type ZoneRunWith, type ZoneRunWithMessage } from "./run-with"
 import { updateStatus, ZONE_STATUS_START, type ZoneStatusMessage, type ZoneStatusModel } from "./status"
 import { updateStore, ZONE_STORE_START, type ZoneStoreMessage, type ZoneStoreModel } from "./store"
@@ -75,6 +84,9 @@ export interface ZoneSurfaceState {
   readonly onboarding: ZoneOnboardingModel
   readonly look: ZoneLook
   readonly store: ZoneStoreModel
+  readonly launch: ZoneOptions
+  /** The editor action the cursor is on (RELOAD, CLOSE), when it is on one. */
+  readonly launchAction: string | undefined
 }
 
 /** What OPTIONS reads: Korri's slices and Zone's own look, for its LOOK row. */
@@ -92,6 +104,11 @@ export type ZoneSurfaceMessage =
   | { readonly _tag: "Paused"; readonly message: ZoneOverlayMessage }
   | { readonly _tag: "Onboarding"; readonly message: ZoneOnboardingMessage }
   | { readonly _tag: "Store"; readonly message: ZoneStoreMessage }
+  /** LAUNCH SETTINGS' rows, keyboard and dialog, in OPTIONS' words. */
+  | { readonly _tag: "Launch"; readonly message: ZoneOptionsMessage }
+  /** One of Korri's actions for the editor: Reload, Retry, Choose a runner, Close. */
+  | { readonly _tag: "LaunchAction"; readonly actionId: string }
+  | { readonly _tag: "FocusedLaunchAction"; readonly actionId: string }
 
 /**
  * What takes the screen, first match wins:
@@ -107,7 +124,7 @@ export type ZoneSurfaceMessage =
  *
  * The status layer is drawn over whichever it is.
  */
-export type ZoneShown = "paused" | "join" | "onboarding" | "runwith" | "store" | "games" | "options" | "savedata"
+export type ZoneShown = "paused" | "join" | "onboarding" | "runwith" | "launch" | "store" | "games" | "options" | "savedata"
 
 export const runnerOpen = (korri: SurfaceModel): boolean =>
   korri.runnerChoice !== undefined && korri.runnerChoice._tag !== "Closed"
@@ -116,6 +133,7 @@ export function zoneShown(state: ZoneSurfaceState, korri: SurfaceModel): ZoneSho
   if (korri.presentation.kind === "gameplay-overlay") return "paused"
   if (korri.onboarding !== undefined) return state.options.keyboard === undefined ? "onboarding" : "join"
   if (runnerOpen(korri)) return "runwith"
+  if (launchOpen(korri)) return "launch"
   if (state.store.open && korri.store !== undefined) return "store"
   return state.nav.tab
 }
@@ -136,6 +154,8 @@ export function zoneSurfaceStart(korri: SurfaceModel, look: ZoneLook): ZoneSurfa
     overlay: ZONE_OVERLAY_START,
     onboarding: ZONE_ONBOARDING_START,
     store: ZONE_STORE_START,
+    launch: OPTIONS_START,
+    launchAction: undefined,
   }
   return update(start, { _tag: "KorriPublished" }, korri).model
 }
@@ -204,6 +224,22 @@ function route(steps: Steps, message: ZoneSurfaceMessage, korri: SurfaceModel): 
         steps.put("overlay", updateOverlay(state.overlay, message.message, korri.presentation))
       }
       return
+    case "Launch": {
+      const slices = launchSlices(korri)
+      if (slices !== undefined) steps.put("launch", updateOptions(state.launch, message.message, slices))
+      if (message.message._tag === "FocusedRow") steps.put("launchAction", { model: undefined, requests: [] })
+      return
+    }
+    case "FocusedLaunchAction":
+      steps.put("launchAction", { model: launchOpen(korri) ? message.actionId : undefined, requests: [] })
+      return
+    case "LaunchAction": {
+      const launch = korri.launchSettings
+      const published = launch !== undefined && launch._tag !== "Closed"
+        && launch.actions.some(action => action.id === message.actionId && action.enabled)
+      if (published) steps.put("launch", ask(state.launch, { _tag: "RunAction", actionId: message.actionId }))
+      return
+    }
     case "Onboarding":
       return onboarding(steps, message.message, korri)
     case "Store":
@@ -243,6 +279,11 @@ function published(steps: Steps, korri: SurfaceModel): void {
     ? updateOnboarding(state.onboarding, message, korri)
     : { model: ZONE_ONBOARDING_START, requests: [] })
   steps.put("store", updateStore(state.store, message, korri))
+  // The editor's cursor and questions start afresh each time Korri opens it.
+  const slices = launchSlices(korri)
+  steps.put("launch", slices === undefined
+    ? { model: OPTIONS_START, requests: [] }
+    : updateOptions(state.launch, message, slices))
 }
 
 /** Back: Korri's problem, then the page's own rule, then the GAMES tab. */
@@ -271,6 +312,18 @@ function back(steps: Steps, korri: SurfaceModel): void {
     case "runwith":
       steps.put("runWith", updateRunWith(state.runWith, message, korri))
       return
+    case "launch": {
+      const launch = korri.launchSettings
+      const slices = launchSlices(korri)
+      if (launch === undefined || launch._tag === "Closed" || slices === undefined) return
+      if (optionsLayer(state.launch) !== "none") {
+        steps.put("launch", updateOptions(state.launch, message, slices))
+        return
+      }
+      const close = launchPlan(launch, korri.settingsStatus).closeActionId
+      if (close !== undefined) steps.put("launch", ask(state.launch, { _tag: "RunAction", actionId: close }))
+      return
+    }
     case "store":
       steps.put("store", updateStore(state.store, message, korri))
       return
@@ -322,6 +375,14 @@ function menu(steps: Steps, korri: SurfaceModel): void {
       // The join flow's keyboard: menu commits it, as on OPTIONS.
       steps.put("options", updateOptions(state.options, message, withLook(steps.state, korri)))
       return
+    case "launch": {
+      // A keyboard commits its draft, as on OPTIONS; nothing else answers menu here.
+      const slices = launchSlices(korri)
+      if (slices !== undefined && optionsLayer(state.launch) === "keyboard") {
+        steps.put("launch", updateOptions(state.launch, message, slices))
+      }
+      return
+    }
     case "paused":
     case "onboarding":
     case "runwith":
@@ -342,6 +403,7 @@ function system(steps: Steps, korri: SurfaceModel): void {
     case "join":
     case "onboarding":
     case "runwith":
+    case "launch":
     case "store":
       return
   }

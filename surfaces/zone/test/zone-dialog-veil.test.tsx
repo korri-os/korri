@@ -43,12 +43,13 @@ describe("every dialog over a page has the veil", () => {
     })
   }
 
-  test("the veil is placed once: only the dialog, Busy's page and OPTIONS' keyboard draw one", () => {
+  test("the veil is placed once: only the dialog, Busy's page and the OPTIONS and LAUNCH SETTINGS keyboards draw one", () => {
     const drawers = walk(SRC)
       .filter(file => file.endsWith(".tsx") && !file.endsWith(".part.tsx"))
       .filter(file => /<ZoneVeil\b/.test(readFileSync(file, "utf8")))
       .map(file => relative(SRC, file))
       .sort()
-    expect(drawers).toEqual(["pages/ZoneOptions.tsx", "ui/molecules/ZoneDialog.tsx", "ui/organisms/ZoneStatusLayer.tsx"])
+    // LAUNCH SETTINGS raises OPTIONS' keyboard over its own band, so it draws the same veil.
+    expect(drawers).toEqual(["pages/ZoneLaunchSettings.tsx", "pages/ZoneOptions.tsx", "ui/molecules/ZoneDialog.tsx", "ui/organisms/ZoneStatusLayer.tsx"])
   })
 })

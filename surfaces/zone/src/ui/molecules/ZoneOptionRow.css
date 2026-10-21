@@ -252,6 +252,7 @@
  * Korri's description, Korri's problem with a red bar at its start. */
 .zone-option-row-whole-line,
 .zone-option-row-description,
+.zone-option-row-source-words,
 .zone-option-row-problem {
   position: relative;
   isolation: isolate;
@@ -264,6 +265,7 @@
 
 .zone-option-row-whole-line::before,
 .zone-option-row-description::before,
+.zone-option-row-source-words::before,
 .zone-option-row-problem::before {
   content: "";
   position: absolute;
@@ -277,6 +279,7 @@
  * a word only at a line's end, with a hyphen. */
 .zone-option-row-whole-line,
 .zone-option-row-description[data-case="sentence"],
+.zone-option-row-source-words,
 .zone-option-row-problem {
   padding-block: 0;
   font-family: var(--zone-font-fact);
@@ -370,4 +373,28 @@
 
 [data-look="modern"] .zone-option-row-caret {
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+/* A layered value's source, always under the row, the DEVICE-ONLY tag
+ * before it on the same line; the words wrap after the tag before either
+ * is cut. */
+.zone-option-row-source {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-self: start;
+  gap: calc(var(--zone-option-stack-gap) * var(--zone-px)) calc(var(--zone-option-pad) * var(--zone-px) * 2);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.zone-option-row-source-words {
+  min-width: 0;
+}
+
+.zone-option-row-source-tag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: calc(calc(var(--zone-type-note) * var(--zone-px)) * var(--zone-tag-row-height));
+  --zone-tag-type: calc(var(--zone-type-note) * var(--zone-px));
 }

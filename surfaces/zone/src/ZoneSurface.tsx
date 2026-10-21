@@ -6,6 +6,7 @@ import { ZoneOnboarding } from "./pages/ZoneOnboarding"
 import { ZoneOptions } from "./pages/ZoneOptions"
 import { ZonePaused } from "./pages/ZonePaused"
 import { ZoneRunWith } from "./pages/ZoneRunWith"
+import { ZoneLaunchSettings } from "./pages/ZoneLaunchSettings"
 import { ZoneSaveData } from "./pages/ZoneSaveData"
 import { ZoneStore } from "./pages/ZoneStore"
 import { catalogGames } from "./state/games"
@@ -48,6 +49,7 @@ function groundOf(shown: ZoneShown): ZoneGroundName {
     case "options":
     case "join":
     case "runwith":
+    case "launch":
     case "store":
       return "options"
     case "savedata":
@@ -68,6 +70,9 @@ function senders(dispatch: (message: ZoneSurfaceMessage) => void) {
     paused: (message: Extract<ZoneSurfaceMessage, { _tag: "Paused" }>["message"]) => dispatch({ _tag: "Paused", message }),
     onboarding: (message: Extract<ZoneSurfaceMessage, { _tag: "Onboarding" }>["message"]) => dispatch({ _tag: "Onboarding", message }),
     store: (message: Extract<ZoneSurfaceMessage, { _tag: "Store" }>["message"]) => dispatch({ _tag: "Store", message }),
+    launch: (message: Extract<ZoneSurfaceMessage, { _tag: "Launch" }>["message"]) => dispatch({ _tag: "Launch", message }),
+    launchAction: (actionId: string) => dispatch({ _tag: "LaunchAction", actionId }),
+    launchActionFocus: (actionId: string) => dispatch({ _tag: "FocusedLaunchAction", actionId }),
     tab: (id: string) => {
       const tab = asTab(id)
       if (tab !== undefined) dispatch({ _tag: "Games", message: { _tag: "ChoseTab", tab } })
@@ -89,6 +94,7 @@ type Senders = ReturnType<typeof senders>
  *     first boot  while Korri asks for it; OPTIONS' join keyboard over it
  *                 when a secured network needs its password
  *     RUN WITH    while Korri's runner choice is open
+ *     LAUNCH SETTINGS  while Korri's launch settings editor is open
  *     GET GAMES   while the person is getting a game from a provider
  *     the tab     GAMES (home), OPTIONS or SAVE DATA
  *
@@ -251,6 +257,28 @@ function zonePage(
           onAction={actionId => send.runWith({ _tag: "PressedAction", actionId })}
           onFocus={rowId => send.runWith({ _tag: "FocusedRow", rowId })}
           strips={layout.strips}
+        />
+      )
+    case "launch":
+      return model.launchSettings === undefined || model.launchSettings._tag === "Closed" ? null : (
+        <ZoneLaunchSettings
+          band={layout.band}
+          build={model.buildLabel}
+          clock={model.clockLabel}
+          focusedAction={state.launchAction}
+          launch={model.launchSettings}
+          onAction={send.launchAction}
+          onActionFocus={send.launchActionFocus}
+          onDialogFocus={index => send.launch({ _tag: "FocusedDialogButton", index })}
+          onDialogPress={index => send.launch({ _tag: "PressedDialogButton", index })}
+          onKey={key => send.launch({ _tag: "PressedKey", key })}
+          onKeyFocus={keyId => send.launch({ _tag: "FocusedKey", keyId })}
+          onRowFocus={rowId => send.launch({ _tag: "FocusedRow", rowId })}
+          onRowPress={rowId => send.launch({ _tag: "PressedRow", rowId })}
+          onRowStep={(rowId, direction) => send.launch({ _tag: "SteppedRow", rowId, direction })}
+          status={model.settingsStatus}
+          strips={layout.strips}
+          view={state.launch}
         />
       )
     case "store":

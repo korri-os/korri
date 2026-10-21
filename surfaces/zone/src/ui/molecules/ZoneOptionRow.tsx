@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useRef } from "react"
 import { zoneCutMode, zoneWholeLine } from "../../plan/options-row"
 import { useZoneHorizontal } from "../../use-zone-horizontal"
 import { useZoneOptionRow } from "../../use-zone-option-row"
+import { ZoneTag } from "../atoms/ZoneTag"
 
 /**
  * One OPTIONS row, as Mania's VIDEO and SECRETS pages draw it: the label on
@@ -57,6 +58,12 @@ import { useZoneOptionRow } from "../../use-zone-option-row"
  * a long list stays one row per setting; `descriptionCaps` marks it as
  * Zone's own word instead (CONNECTING), set in caps.
  *
+ * `source` is a layered value's provenance, in Korri's words ("61 % from
+ * Runner mGBA"): it stands under the row whether or not it is focused, so
+ * every launch setting says where its value comes from. `deviceOnly` puts
+ * the yellow DEVICE-ONLY tag, HERE's colour, before it. Korri's note (when
+ * it applies) is the row's description, under the focused row as always.
+ *
  * Focus is a prop. The row brings itself into view when it gains it, so a
  * scrolling group never leaves the cursor off screen.
  */
@@ -74,6 +81,8 @@ export function ZoneOptionRow({
   verbatimLabel = false,
   verbatimValue = false,
   flanked = false,
+  source,
+  deviceOnly = false,
   onPress,
   onStep,
   onFocus,
@@ -97,6 +106,10 @@ export function ZoneOptionRow({
   readonly verbatimValue?: boolean
   /** The focused value wears the red triangles whatever its kind (GAME OPTS.' RUN); left and right still step only a choice. */
   readonly flanked?: boolean
+  /** Where a layered value in force comes from, in Korri's words. Always shown. */
+  readonly source?: string
+  /** Korri says the value stays on this device. */
+  readonly deviceOnly?: boolean
   /** A on the row: fire the action or raise the keyboard. */
   readonly onPress?: () => void
   /** Left or right on a choice row. */
@@ -120,7 +133,7 @@ export function ZoneOptionRow({
   const horizontal = useZoneHorizontal(control, steps && onStep !== undefined, kind, onStep)
   const shown = placeholder ?? value
   const cutValue = valueNode === undefined && shown !== undefined && shown !== ""
-  useZoneOptionRow(row, [label, shown, focused, saving, disabled, problem, description, valueNode === undefined].join("\u0000"))
+  useZoneOptionRow(row, [label, shown, focused, saving, disabled, problem, description, source, valueNode === undefined].join("\u0000"))
 
   return (
     <div
@@ -205,6 +218,12 @@ export function ZoneOptionRow({
           data-whole={verbatimValue ? zoneWholeLine(shown) : shown}
         />
       ) : null}
+      {source === undefined ? null : (
+        <span className="zone-option-row-source">
+          {deviceOnly ? <span className="zone-option-row-source-tag"><ZoneTag kind="here" label="Device-only" /></span> : null}
+          <span className="zone-option-row-source-words" data-option-clip="slash">{source}</span>
+        </span>
+      )}
       {(focused || disabled) && description !== undefined ? (
         <span className="zone-option-row-description" data-case={descriptionCaps ? undefined : "sentence"} data-option-clip="slash">
           {description}
