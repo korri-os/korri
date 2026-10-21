@@ -135,6 +135,10 @@ export type AcquireJobOutcome =
 export const ACQUISITION_CODE = {
   /** `acquire-status`/`acquire-cancel` after a korrid restart. */
   unknownJob: "AcquisitionUnknownJob",
+  /** `acquire` for a claim korrid does not hold: claims live in memory, so
+   * after a restart a claim is held again only once search or details
+   * returns it. */
+  unknownClaim: "AcquisitionUnknownClaim",
   /** The claim names no enabled system: it cannot be acquired. */
   systemUnknown: "AcquisitionSystemUnknown",
   /** Failed: the provider answered with a page, not the file (NonFinalDownload). */

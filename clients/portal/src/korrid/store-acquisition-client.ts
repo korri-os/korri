@@ -95,7 +95,9 @@ export interface InMemoryStoreConfig {
 }
 
 export interface InMemoryStoreAcquisition extends StoreAcquisitionMethods {
-  /** korrid restarted: every job is gone, and no partial file remains. */
+  /** korrid restarted: every job and every held claim is gone, and no
+   * partial file remains. A cart that finished stays in the library and the
+   * cache, so acquiring it again answers Imported at once (section 11). */
   restart(): void
   /** Bytes korrid fetched in total, across every job: proves no second download. */
   readonly downloadedBytes: () => number
@@ -157,6 +159,11 @@ export function createInMemoryStoreAcquisition(
   let byClaim = new Map<string, string>()
   const searchFailures = new Map<string, number>()
   const imported = new Set<string>()
+  /** Claims search or details returned since the last start: acquire needs one. */
+  let held = new Set<string>()
+  /** claim key -> game id, for carts in the library and the cache. Survives a restart. */
+  const inLibrary = new Map<string, string>()
+  const claimKey = (providerId: string, id: string) => JSON.stringify([providerId, id])
   /** Claims whose `failure` already happened once. */
   const failedOnce = new Set<string>()
   let jobSeq = 0
@@ -169,6 +176,7 @@ export function createInMemoryStoreAcquisition(
   const finish = (job: InMemoryJob) => {
     const claim = job.claim
     const gameId = `store-${claim.providerId.replace(/[^a-z0-9]/g, "")}-${claim.id}`
+    inLibrary.set(claimKey(claim.providerId, claim.id), gameId)
     if (!imported.has(gameId)) {
       imported.add(gameId)
       addGame({ id: gameId, title: claim.title, supportsRunnerSelection: false, source: { label: "browser", isLocal: true } })
@@ -223,6 +231,7 @@ export function createInMemoryStoreAcquisition(
       }
       const needle = query.trim().toLowerCase()
       const found = (claims[providerId] ?? []).filter(claim => needle === "" || claim.title.toLowerCase().includes(needle))
+      for (const claim of found) held.add(claimKey(claim.providerId, claim.id))
       return {
         _tag: "Ok",
         payload: {
@@ -233,7 +242,8 @@ export function createInMemoryStoreAcquisition(
     },
     async acquisitionDetails({ providerId, id }) {
       const claim = claimOf(providerId, id)
-      if (claim === undefined) return failure("AcquisitionUnknownClaim", "Search again: Korri no longer holds this game.")
+      if (claim === undefined) return failure(ACQUISITION_CODE.unknownClaim, "The provider no longer lists this game.")
+      held.add(claimKey(providerId, id))
       const { providerId: owner, id: claimId, title, url, description, artifact } = claim
       return {
         _tag: "Ok",
@@ -247,8 +257,8 @@ export function createInMemoryStoreAcquisition(
     async acquisitionAcquire({ providerId, id }) {
       await config.acquireGate?.()
       const claim = claimOf(providerId, id)
-      if (claim === undefined) return failure("AcquisitionUnknownClaim", "Search again: Korri no longer holds this game.")
-      const key = JSON.stringify([providerId, id])
+      const key = claimKey(providerId, id)
+      if (claim === undefined || !held.has(key)) return failure(ACQUISITION_CODE.unknownClaim, "Korri no longer holds this game. Search again.")
       const existing = byClaim.get(key)
       const running = existing === undefined ? undefined : jobs.get(existing)
       // A repeated acquire for a claim whose newest job is live or Imported
@@ -275,6 +285,12 @@ export function createInMemoryStoreAcquisition(
       }
       jobs.set(jobId, job)
       byClaim.set(key, jobId)
+      // Already in the library and the cache: Imported at once, nothing fetched.
+      const known = inLibrary.get(key)
+      if (known !== undefined) {
+        set(job, { _tag: "Imported", gameId: known })
+        return snapshot(job)
+      }
       // The provider will not hand out the file.
       if (claim.unavailable !== undefined) {
         set(job, { _tag: "Failed", reason: { code: ACQUISITION_CODE.resolutionFailed, message: claim.unavailable } })
@@ -298,6 +314,7 @@ export function createInMemoryStoreAcquisition(
     restart() {
       jobs = new Map()
       byClaim = new Map()
+      held = new Set()
     },
     downloadedBytes: () => downloaded,
     bindCatalog(next) {

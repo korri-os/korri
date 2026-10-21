@@ -59,6 +59,8 @@ test("an unreachable korrid is an Err the store can show, never a throw", async 
 
 test("a game the in-memory brain imports joins its catalog", async () => {
   const client = createInMemoryKorridClient({ games: [] })
+  // acquire needs a claim korrid holds: details returns it.
+  await client.acquisitionDetails({ providerId: "@korri:pico8", id: "celeste_classic_2-5" })
   const job = await client.acquisitionAcquire({ providerId: "@korri:pico8", id: "celeste_classic_2-5" })
   if (job._tag !== "Ok") throw new Error("expected a job")
   let state = job.payload.state
