@@ -240,6 +240,7 @@ async fn acquisition_status_resolves_the_same_explicit_runner_as_session_start()
         Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
     )
     .with_route_registry(root.path().into(), registry);
+    runtime.claim_save_owner();
     let app = secure_host_routers(
         runtime,
         &root.path().join("private"),
