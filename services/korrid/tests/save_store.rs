@@ -229,7 +229,7 @@ fn boundary_capture_preserves_files_and_materializes_only_the_chosen_snapshot() 
         kind: SaveKind::Save,
         path: folder.to_str().unwrap().into(),
     }];
-    let captured = store.capture(&locations, record()).unwrap();
+    let captured = store.capture(PERSON, &locations, record()).unwrap();
     let id = store.put_record(PERSON, &captured).unwrap();
     std::fs::write(folder.join("game.srm"), b"later").unwrap();
     store
@@ -287,4 +287,99 @@ fn retention_never_prunes_an_unconfirmed_snapshot_and_keeps_ancestry() {
         store.heads(PERSON).unwrap().games[0].heads,
         vec![parent.unwrap()]
     );
+}
+
+#[test]
+fn an_incomplete_newer_head_does_not_block_continuing_the_last_local_snapshot() {
+    let root = tempfile::tempdir().unwrap();
+    let store = NativeSaveStore::new(root.path());
+    let local = store.put_record(PERSON, &record()).unwrap();
+    let mut newer = record();
+    newer.device = "1".repeat(64);
+    newer.parents = vec![local.clone()];
+    newer.locations = vec![SnapshotLocation {
+        key: "saves".into(),
+        kind: SaveKind::Save,
+        files: vec![SaveFile {
+            path: "game.srm".into(),
+            sha256: korrid::saves::record::hash(b"elsewhere"),
+            bytes: 9,
+        }],
+    }];
+    store.put_record(PERSON, &newer).unwrap();
+    assert_eq!(
+        store.launch_base(PERSON, "gba/wario", PERSON).unwrap(),
+        Some(local)
+    );
+    assert_eq!(
+        store.in_use_warnings(PERSON, "gba/wario").unwrap()[0].device,
+        "1".repeat(64)
+    );
+}
+
+#[test]
+fn picking_progress_keeps_both_screenshots_when_names_collide() {
+    let root = tempfile::tempdir().unwrap();
+    let store = NativeSaveStore::new(root.path());
+    let mut ids = vec![];
+    for bytes in [b"a", b"b"] {
+        let hash = korrid::saves::record::hash(bytes);
+        let mut side = record();
+        side.locations = vec![
+            SnapshotLocation {
+                key: "saves".into(),
+                kind: SaveKind::Save,
+                files: vec![SaveFile {
+                    path: "game.srm".into(),
+                    sha256: hash.clone(),
+                    bytes: 1,
+                }],
+            },
+            SnapshotLocation {
+                key: "screenshots".into(),
+                kind: SaveKind::Screenshot,
+                files: vec![SaveFile {
+                    path: "frame.png".into(),
+                    sha256: hash.clone(),
+                    bytes: 1,
+                }],
+            },
+        ];
+        ids.push(store.put_record(PERSON, &side).unwrap());
+        store
+            .put_object(PERSON, &hash, &mut bytes.as_slice())
+            .unwrap();
+    }
+    let chosen = store
+        .choose(
+            PERSON,
+            "gba/wario",
+            &ids[0],
+            PERSON,
+            "2026-10-21T01:00:00.000Z",
+        )
+        .unwrap();
+    let record = store
+        .records(PERSON, "gba/wario")
+        .unwrap()
+        .into_iter()
+        .find(|r| korrid::saves::record::snapshot_id(r).unwrap() == chosen)
+        .unwrap();
+    let images = &record
+        .locations
+        .iter()
+        .find(|l| l.kind == SaveKind::Screenshot)
+        .unwrap()
+        .files;
+    assert_eq!(images.len(), 2);
+    assert!(images
+        .iter()
+        .any(|f| f.path == "frame.png" && f.sha256 == korrid::saves::record::hash(b"b")));
+    assert!(images.iter().any(|f| f.path
+        == format!(
+            "frame~{}.png",
+            korrid::saves::record::hash(b"a")
+                .strip_prefix("sha256:")
+                .unwrap()
+        )));
 }

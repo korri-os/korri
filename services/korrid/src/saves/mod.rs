@@ -71,7 +71,7 @@ pub(crate) fn capture_initial(
     {
         return Ok(());
     }
-    let record = store.capture(locations, template)?;
+    let record = store.capture(person, locations, template)?;
     if record.locations.iter().any(|l| !l.files.is_empty()) {
         store.put_record(person, &record)?;
     }

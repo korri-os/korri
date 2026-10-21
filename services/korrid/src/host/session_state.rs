@@ -866,6 +866,7 @@ impl HostSessionControl {
                         Some(
                             store
                                 .capture(
+                                    &person,
                                     &locations,
                                     SnapshotRecord {
                                         parents: save_base.into_iter().collect(),
@@ -1283,7 +1284,7 @@ impl HostSessionControl {
                 .map_err(|message| failure("SaveDeclarationInvalid", message))?
         {
             if !prepared.plan.save_locations.is_empty() {
-                use crate::saves::{store::NativeSaveStore, SaveRepository};
+                use crate::saves::store::NativeSaveStore;
                 let person = person_public_key.ok_or_else(|| {
                     failure(
                         "SaveIdentityUnavailable",
@@ -1343,21 +1344,15 @@ impl HostSessionControl {
                         "Saves split between two devices. Choose one before launch.",
                     ));
                 }
-                let heads = store
-                    .heads(person)
-                    .map_err(|e| failure("SavesUnavailable", e.to_string()))?
-                    .games
-                    .into_iter()
-                    .find(|g| g.game_id == game_id)
-                    .map(|g| g.heads)
-                    .unwrap_or_default();
-                if heads.len() > 1 {
-                    return Err(failure(
-                        "SavesUnavailable",
-                        "save content is still arriving",
-                    ));
-                }
-                let base = heads.into_iter().next();
+                let base = store
+                    .launch_base(
+                        person,
+                        game_id,
+                        identity
+                            .device_public_key()
+                            .expect("validated device identity"),
+                    )
+                    .map_err(|e| failure("SavesUnavailable", e.to_string()))?;
                 if let Some(id) = &base {
                     store
                         .materialize(

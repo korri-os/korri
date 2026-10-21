@@ -100,3 +100,26 @@ fn collision_name(path: &str, hash: &str) -> String {
     .to_string_lossy()
     .into_owned()
 }
+
+/// Screenshots are a union even when a person chooses one side's progress.
+pub(super) fn with_screenshot_union(
+    record: &SnapshotRecord,
+    others: &[SnapshotRecord],
+) -> Result<SnapshotRecord, SaveError> {
+    let progress: Vec<_> = record
+        .locations
+        .iter()
+        .filter(|l| l.kind != SaveKind::Screenshot)
+        .cloned()
+        .collect();
+    let mut sources = others.to_vec();
+    sources.push(record.clone());
+    for source in &mut sources {
+        source.locations.retain(|l| l.kind == SaveKind::Screenshot);
+        source.locations.extend(progress.clone());
+    }
+    let joined = automatic_join(&sources)?.expect("progress was made identical");
+    let mut result = record.clone();
+    result.locations = joined.locations;
+    Ok(result)
+}

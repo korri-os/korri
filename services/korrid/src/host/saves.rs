@@ -159,14 +159,11 @@ impl HostRuntime {
         let person = &self.launch_person()?;
         let store = self.save_store();
         store.reconcile(person, game).map_err(failure)?;
-        let heads = store
-            .heads(person)
-            .map_err(failure)?
-            .games
-            .into_iter()
-            .find(|g| g.game_id == game)
-            .map(|g| g.heads)
-            .unwrap_or_default();
+        let current = match store.launch_base(person, game, self.save_device()?) {
+            Ok(id) => id,
+            Err(SaveError::Split) => None,
+            Err(error) => return Err(failure(error)),
+        };
         let mut records: Vec<_> = store
             .records(person, game)
             .map_err(failure)?
@@ -184,14 +181,7 @@ impl HostRuntime {
                 .cmp(&a.record.ended_at)
                 .then_with(|| a.snapshot_id.cmp(&b.snapshot_id))
         });
-        Ok(SaveHistory {
-            records,
-            current: if heads.len() == 1 {
-                heads.into_iter().next()
-            } else {
-                None
-            },
-        })
+        Ok(SaveHistory { records, current })
     }
     pub(crate) async fn save_history(&self, game: String) -> Result<SaveHistory, RpcFailure> {
         let host = self.clone();

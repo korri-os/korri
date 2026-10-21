@@ -159,6 +159,84 @@ impl NativeSaveStore {
         }
     }
 
+    /// Offline launch may continue the last complete local snapshot when a
+    /// newer peer head is known but its content has not arrived. The resulting
+    /// session keeps that older base, so ancestry still detects a later split.
+    pub fn launch_base(
+        &self,
+        person: &str,
+        game: &str,
+        device: &str,
+    ) -> Result<Option<String>, SaveError> {
+        let _guard = lock()?;
+        let records = self.read_records(person, game)?;
+        let heads = head_ids(&records)?;
+        let current: Vec<_> = records
+            .iter()
+            .filter(|r| heads.contains(&snapshot_id(r).expect("validated record")))
+            .cloned()
+            .collect();
+        if current.len() > 1 && super::history::automatic_join(&current)?.is_none() {
+            return Err(SaveError::Split);
+        }
+        for id in &heads {
+            if let Some(record) = records
+                .iter()
+                .find(|r| snapshot_id(r).is_ok_and(|value| &value == id))
+            {
+                if self.progress_complete(record)? {
+                    return Ok(Some(id.clone()));
+                }
+            }
+        }
+        let by_id: BTreeMap<_, _> = records
+            .iter()
+            .map(|r| (snapshot_id(r).expect("validated record"), r))
+            .collect();
+        let mut local = Vec::new();
+        for (id, record) in &by_id {
+            if record.device == device && self.record_complete(record)? {
+                local.push(id.clone());
+            }
+        }
+        fn ancestor(
+            candidate: &str,
+            descendant: &str,
+            records: &BTreeMap<String, &SnapshotRecord>,
+        ) -> bool {
+            let mut pending = vec![descendant.to_owned()];
+            let mut seen = BTreeSet::new();
+            while let Some(id) = pending.pop() {
+                if !seen.insert(id.clone()) {
+                    continue;
+                }
+                if let Some(record) = records.get(&id) {
+                    for parent in &record.parents {
+                        if parent == candidate {
+                            return true;
+                        }
+                        pending.push(parent.clone());
+                    }
+                }
+            }
+            false
+        }
+        let newest: Vec<_> = local
+            .iter()
+            .filter(|id| {
+                !local
+                    .iter()
+                    .any(|other| other != *id && ancestor(id, other, &by_id))
+            })
+            .cloned()
+            .collect();
+        match newest.as_slice() {
+            [] => Ok(None),
+            [id] => Ok(Some(id.clone())),
+            _ => Err(SaveError::Split),
+        }
+    }
+
     /// A choice records both heads; the unpicked content remains in history.
     pub fn choose(
         &self,
@@ -207,6 +285,12 @@ impl NativeSaveStore {
         if !self.record_complete(&picked)? {
             return Err(SaveError::Missing);
         }
+        let sides: Vec<_> = records
+            .iter()
+            .filter(|record| parents.contains(&snapshot_id(record).expect("validated record")))
+            .cloned()
+            .collect();
+        picked = super::history::with_screenshot_union(&picked, &sides)?;
         picked.parents = parents;
         picked.device = device.into();
         picked.ended_at = ended_at.into();
@@ -219,6 +303,7 @@ impl NativeSaveStore {
     /// the caller journals this record before publishing it, for exact replay.
     pub fn capture(
         &self,
+        person: &str,
         locations: &[SaveLocation],
         mut record: SnapshotRecord,
     ) -> Result<SnapshotRecord, SaveError> {
@@ -300,6 +385,16 @@ impl NativeSaveStore {
                 files,
             });
         }
+        let inherited: Vec<_> = self
+            .read_records(person, &record.game_id)?
+            .into_iter()
+            .filter(|r| {
+                record
+                    .parents
+                    .contains(&snapshot_id(r).expect("validated record"))
+            })
+            .collect();
+        record = super::history::with_screenshot_union(&record, &inherited)?;
         canonical_record(&record)?;
         Ok(record)
     }
@@ -323,7 +418,7 @@ impl NativeSaveStore {
             .into_iter()
             .find(|r| snapshot_id(r).is_ok_and(|v| v == id))
             .ok_or(SaveError::Missing)?;
-        if !self.record_complete(&record)? {
+        if !self.progress_complete(&record)? {
             return Err(SaveError::Missing);
         }
         let uid = runtime_id("KORRID_RUNTIME_UID", unsafe { libc::geteuid() })?;
@@ -350,7 +445,13 @@ impl NativeSaveStore {
                     for expected in &content.files {
                         let path = stage.join(&expected.path);
                         runtime_directory(path.parent().unwrap(), uid, gid)?;
-                        let mut source = self.verified_object(&expected.sha256)?;
+                        let mut source = match self.verified_object(&expected.sha256) {
+                            Ok(file) => file,
+                            Err(SaveError::Missing) if location.kind == SaveKind::Screenshot => {
+                                continue
+                            }
+                            Err(error) => return Err(error),
+                        };
                         let mut output = OpenOptions::new()
                             .write(true)
                             .create_new(true)
@@ -542,7 +643,7 @@ impl NativeSaveStore {
         let records = self.read_records(person, game)?;
         let heads = head_ids(&records)?;
         for record in &records {
-            if heads.contains(&snapshot_id(record)?) && !self.record_complete(record)? {
+            if heads.contains(&snapshot_id(record)?) && !self.progress_complete(record)? {
                 let time = chrono::DateTime::parse_from_rfc3339(&record.ended_at)
                     .map_err(|_| invalid("end time"))?
                     .timestamp_millis();
@@ -573,6 +674,11 @@ impl NativeSaveStore {
                 Err(SaveError::Missing) => BTreeMap::new(),
                 Err(e) => return Err(e),
             };
+        for record in self.read_records(person, game)? {
+            if heads.contains(&snapshot_id(&record)?) && !self.record_complete(&record)? {
+                return Ok(false);
+            }
+        }
         Ok(!heads.is_empty()
             && heads.iter().all(|id| {
                 confirmations
@@ -705,6 +811,13 @@ impl NativeSaveStore {
         } else {
             Err(SaveError::Missing)
         }
+    }
+    fn progress_complete(&self, record: &SnapshotRecord) -> Result<bool, SaveError> {
+        let mut progress = record.clone();
+        progress
+            .locations
+            .retain(|l| l.kind != SaveKind::Screenshot);
+        self.record_complete(&progress)
     }
     fn record_complete(&self, record: &SnapshotRecord) -> Result<bool, SaveError> {
         for expected in record.locations.iter().flat_map(|l| &l.files) {
