@@ -181,6 +181,7 @@ pub fn selected_launch(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn default_launch(
     root: &Path,
     registry: &PluginRegistry,

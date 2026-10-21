@@ -49,27 +49,26 @@ impl HostRuntime {
         )>,
         RpcFailure,
     > {
+        // Declaration reads are not starts. Use the normal route/prepare
+        // producer without the session's require_ready gate; missing runtime
+        // inputs may still make the runner decline, and that game is deferred.
+        let root = self.route_root()?;
         let registry = self.route_registry()?;
-        let launch = match runner {
-            Some(runner) => crate::game_routes::selected_launch(
-                self.route_root()?,
-                &registry,
-                &crate::game_routes::SelectedGameLaunchRequest {
-                    game_id: game.into(),
-                    runner_id: runner.into(),
-                    overrides: None,
-                },
-                None,
-                &self.launch_person()?,
-            )?,
-            None => crate::game_routes::default_launch(
-                self.route_root()?,
-                &registry,
-                game,
-                None,
-                &self.launch_person()?,
-            )?,
-        };
+        let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
+            .map_err(crate::game_routes::settings_failure)?;
+        let route =
+            crate::config::resolver::resolve_linux_route(root, &snapshot, &registry, game, runner)
+                .map_err(|error| crate::route_diagnostic_failure(&error))?;
+        let launch = crate::launcher::linux_plugin::launch_route(
+            root,
+            &snapshot,
+            &registry,
+            &route,
+            None,
+            None,
+            &self.launch_person()?,
+        )
+        .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
         crate::launcher::plugin_launch::prepare_command(&launch.command)
             .and_then(|command| crate::launcher::plugin_launch::declared_saves(&command))
             .map_err(|_| failure(SaveError::Invalid("save declaration".into())))
@@ -542,43 +541,49 @@ impl HostRuntime {
                     Ok(false)
                 }
                 for game in snapshot.library.keys() {
-                    if store
-                        .records(&person, game)
-                        .map_err(failure)?
-                        .iter()
-                        .any(|r| r.device == device)
-                    {
-                        continue;
-                    }
-                    let root = account
-                        .join("saves")
-                        .join(super::play_log::encode_uri_component(game));
-                    if !has_files(&root)? {
-                        continue;
-                    }
-                    if let Some((input, prepared)) = host.save_declaration(game, None)? {
-                        if input.runner_id == "@korri:steam/steam"
-                            || prepared.plan.save_locations.is_empty()
+                    let captured = (|| -> Result<(), RpcFailure> {
+                        if store
+                            .records(&person, game)
+                            .map_err(failure)?
+                            .iter()
+                            .any(|r| r.device == device)
                         {
-                            continue;
+                            return Ok(());
                         }
-                        crate::saves::capture_initial(
-                            &store,
-                            &person,
-                            &prepared.plan.save_locations,
-                            SnapshotRecord {
-                                parents: vec![],
-                                game_id: game.clone(),
-                                release_id: prepared.release_id,
-                                runner_id: input.runner_id,
-                                device: device.into(),
-                                ended_at: now(),
-                                duration_seconds: 0,
-                                interrupted: false,
-                                locations: vec![],
-                            },
-                        )
-                        .map_err(failure)?;
+                        let root = account
+                            .join("saves")
+                            .join(super::play_log::encode_uri_component(game));
+                        if !has_files(&root)? {
+                            return Ok(());
+                        }
+                        if let Some((input, prepared)) = host.save_declaration(game, None)? {
+                            if input.runner_id == "@korri:steam/steam"
+                                || prepared.plan.save_locations.is_empty()
+                            {
+                                return Ok(());
+                            }
+                            crate::saves::capture_initial(
+                                &store,
+                                &person,
+                                &prepared.plan.save_locations,
+                                SnapshotRecord {
+                                    parents: vec![],
+                                    game_id: game.clone(),
+                                    release_id: prepared.release_id,
+                                    runner_id: input.runner_id,
+                                    device: device.into(),
+                                    ended_at: now(),
+                                    duration_seconds: 0,
+                                    interrupted: false,
+                                    locations: vec![],
+                                },
+                            )
+                            .map_err(failure)?;
+                        }
+                        Ok(())
+                    })();
+                    if let Err(error) = captured {
+                        eprintln!("korrid save baseline deferred for one game: {}", error.code);
                     }
                 }
                 Ok(())
@@ -1006,6 +1011,9 @@ mod tests {
     }
     impl MigratedDevice {
         async fn new(bytes: &[u8]) -> Self {
+            Self::with_missing_artifact(bytes, false).await
+        }
+        async fn with_missing_artifact(bytes: &[u8], missing: bool) -> Self {
             use crate::{plugin::PluginRegistry, plugin_installation::EnabledPackage};
             let root = tempfile::tempdir().unwrap();
             let package = root.path().join("plugin");
@@ -1016,6 +1024,14 @@ mod tests {
                 export const runners={mgba:{id:'@korri:mgba/mgba',program:'program',systems:['gba']}};
                 export const handlers={'launch.prepare':input=>({command:input.program,args:[],saveLocations:[{key:'saves',kind:'save',path:input.saveRoot+'/saves'}]})};
             "#).unwrap();
+            if missing {
+                use std::io::Write;
+                let mut source = std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(package.join("plugin.ts"))
+                    .unwrap();
+                writeln!(source,"export const artifacts={{runtime:{{id:'@korri:mgba/runtime',version:'v1',files:[{{url:'https://example.com/runtime',sha256:'{}'}}]}}}}; runners.mgba.artifacts=['@korri:mgba/runtime'];",crate::saves::record::hash(b"runtime")).unwrap();
+            }
             std::fs::write(
                 package.join("manifest.json"),
                 r#"{"entry":"plugin.ts","sources":["plugin.ts"]}"#,
@@ -1275,6 +1291,138 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn unavailable_baseline_game_does_not_block_other_game_sync() {
+        fn add_games(device: &MigratedDevice, side: &str) {
+            let library_path = device.root.path().join("catalog/library.yaml");
+            let device_path = device.root.path().join("device.yaml");
+            let mut library: serde_yaml::Value =
+                serde_yaml::from_slice(&std::fs::read(&library_path).unwrap()).unwrap();
+            let mut config: serde_yaml::Value =
+                serde_yaml::from_slice(&std::fs::read(&device_path).unwrap()).unwrap();
+            let template = library["library"]["wario-land-4"].clone();
+            for game in ["aaa-blocked", "second-game"] {
+                let content = format!("rom for {game}");
+                let hash = crate::saves::record::hash(content.as_bytes());
+                let mut entry = template.clone();
+                entry["title"] = game.into();
+                entry["releases"][0]["identity"]["value"] = hash.clone().into();
+                if game == "aaa-blocked" {
+                    entry["runner"] = "@missing:runner/run".into();
+                }
+                library["library"][game] = entry;
+                config["locations"][hash.as_str()] = serde_yaml::to_value(
+                    serde_json::json!([{"storage":"roms","path":format!("{game}.gba")}]),
+                )
+                .unwrap();
+                std::fs::write(
+                    device.root.path().join("roms").join(format!("{game}.gba")),
+                    content,
+                )
+                .unwrap();
+            }
+            std::fs::write(library_path, serde_yaml::to_string(&library).unwrap()).unwrap();
+            std::fs::write(device_path, serde_yaml::to_string(&config).unwrap()).unwrap();
+            for game in ["aaa-blocked", "second-game", "wario-land-4"] {
+                let folder = crate::saves::account_root(device.root.path(), PERSON)
+                    .unwrap()
+                    .join("saves")
+                    .join(game)
+                    .join("saves");
+                std::fs::create_dir_all(&folder).unwrap();
+                std::fs::write(folder.join("game.srm"), format!("{side} {game}")).unwrap();
+            }
+        }
+        let a = MigratedDevice::with_missing_artifact(b"left", true).await;
+        let b = MigratedDevice::with_missing_artifact(b"right", true).await;
+        add_games(&a, "left");
+        add_games(&b, "right");
+        a.remember(&b);
+        b.remember(&a);
+        for device in [&a, &b] {
+            let error = device
+                .host
+                .prepare("wario-land-4", Some(PERSON))
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.code, "ArtifactsNotReady",
+                "real starts still require artifacts; declaration reads do not"
+            );
+        }
+        a.host
+            .save_contact(&a.service, b.host.save_device().unwrap())
+            .await
+            .expect("one unresolved declaration must not fail the meet");
+        for (device, side) in [(&a, "left"), (&b, "right")] {
+            let store = device.host.save_store();
+            let heads = store.heads(PERSON).unwrap();
+            assert_eq!(heads.games.len(), 2);
+            for game in ["second-game", "wario-land-4"] {
+                assert_eq!(
+                    heads
+                        .games
+                        .iter()
+                        .find(|heads| heads.game_id == game)
+                        .unwrap()
+                        .heads
+                        .len(),
+                    2
+                );
+                let records = store.records(PERSON, game).unwrap();
+                assert_eq!(records.len(), 2);
+                for record in records {
+                    assert!(store
+                        .complete(PERSON, game, &snapshot_id(&record).unwrap())
+                        .unwrap());
+                }
+                assert_eq!(store.reconcile(PERSON, game).unwrap(), SaveMark::Split);
+            }
+            assert!(store.records(PERSON, "aaa-blocked").unwrap().is_empty());
+            for game in ["aaa-blocked", "second-game", "wario-land-4"] {
+                let file = crate::saves::account_root(device.root.path(), PERSON)
+                    .unwrap()
+                    .join("saves")
+                    .join(game)
+                    .join("saves/game.srm");
+                assert_eq!(
+                    std::fs::read(file).unwrap(),
+                    format!("{side} {game}").as_bytes()
+                );
+            }
+            assert_eq!(device.backend.launch_count(), 0);
+            let path = device.root.path().join("catalog/library.yaml");
+            let mut library: serde_yaml::Value =
+                serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            library["library"]["aaa-blocked"]["runner"] = "@korri:mgba/mgba".into();
+            std::fs::write(path, serde_yaml::to_string(&library).unwrap()).unwrap();
+        }
+        a.host
+            .save_contact(&a.service, b.host.save_device().unwrap())
+            .await
+            .unwrap();
+        for device in [&a, &b] {
+            assert_eq!(
+                device
+                    .host
+                    .save_store()
+                    .records(PERSON, "aaa-blocked")
+                    .unwrap()
+                    .len(),
+                2,
+                "next contact must retry the deferred game"
+            );
+            assert_eq!(
+                device
+                    .host
+                    .save_store()
+                    .reconcile(PERSON, "aaa-blocked")
+                    .unwrap(),
+                SaveMark::Split
+            );
+        }
     }
 
     #[tokio::test]
