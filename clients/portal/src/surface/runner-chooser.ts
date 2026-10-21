@@ -273,8 +273,22 @@ export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunch
     }
     await open(gameId, title, "inspect")
   }
+  /** Warnings from a launch that did not go through this panel (the legacy
+   * prepare path), shown in the same Warnings panel a selected launch uses. */
+  const showWarnings = (gameTitle: string, warnings: readonly LaunchWarning[]) => {
+    if (disposed || warnings.length === 0) return
+    generation++
+    title = gameTitle
+    publish({
+      _tag: "Warnings",
+      ...blank("Launched with settings warnings"),
+      warnings: warnings.map(warningText),
+      actions: [action("dismiss", "Done")],
+    })
+  }
   return {
     getSnapshot: () => state,
+    showWarnings,
     subscribe: (listener: () => void) => {
       listeners.add(listener)
       return () => {

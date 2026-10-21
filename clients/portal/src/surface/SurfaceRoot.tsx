@@ -16,6 +16,7 @@ import { createStarterPackOnboarding } from "./starter-pack-onboarding"
 import { createAcquisitionGate, type AcquisitionGameRef } from "./acquisition-gate"
 import { createGameDownloads, type DownloadGameRef } from "./game-downloads"
 import { createRunnerChooser } from "./runner-chooser"
+import { createLaunchSettings, LAUNCH_SETTINGS_ACTION_ID } from "./launch-settings"
 import { createStoreAcquisition } from "./store-acquisition"
 import {
   createSaveSync,
@@ -27,6 +28,7 @@ import { createControllers, type Controllers } from "../input/controllers"
 import { entryKey, type LaunchablesState, type PortalEntry } from "../launchables/state"
 import { createInputBus, type InputBus } from "../input/bus"
 import type { KorridClient, SessionStartResult } from "../korrid/client"
+import type { LaunchWarning } from "@contracts/generated/korrid"
 import { settingsFrom } from "./settings-model"
 import type { PortalSurface } from "./surface-registry"
 import {
@@ -168,7 +170,12 @@ export function SurfaceRoot({
 }: SurfaceRootProps) {
   const controllerSource = useMemo(() => controllers ?? createControllers(), [controllers])
   const controllerList = useSyncExternalStore(controllerSource.subscribe, controllerSource.snapshot)
-  const launchables = useLaunchables(korrid)
+  // Prepare-path launch warnings show in the runner chooser's Warnings panel,
+  // as a selected launch's do. The chooser is made below, from these launchables.
+  const runnerRef = useRef<{ showWarnings(title: string, warnings: readonly LaunchWarning[]): void }>(undefined)
+  const launchables = useLaunchables(korrid, {
+    onLaunchWarnings: (title, warnings) => runnerRef.current?.showWarnings(title, warnings),
+  })
   const clockLabel = useClockLabel()
   const launchablesRef = useRef(launchables)
   launchablesRef.current = launchables
@@ -256,7 +263,16 @@ export function SurfaceRoot({
     returnSession: session => launchablesRef.current.returnCatalogSession(session),
     reload: () => launchablesRef.current.reload(),
   }), [gatedStart, korrid])
+  runnerRef.current = runner
   const runnerChoice = useSyncExternalStore(runner.subscribe, runner.getSnapshot)
+  // Launch settings: Device settings' group and one game's editor. Back is
+  // not taken here: the surface closes its own questions, then the editor.
+  const launch = useMemo(() => createLaunchSettings(korrid), [korrid])
+  useEffect(() => {
+    void launch.refreshDevice()
+    return () => launch.dispose()
+  }, [launch])
+  const launchState = useSyncExternalStore(launch.subscribe, launch.getSnapshot)
   const acquisitionStatus = useSyncExternalStore(acquisition.subscribe, acquisition.getStatus)
   const saveStatus = useSyncExternalStore(saves.subscribe, saves.getStatus)
   const saveHistory = useSyncExternalStore(saves.subscribe, saves.getHistory)
@@ -326,9 +342,10 @@ export function SurfaceRoot({
     return () => starterPackOnboarding.setNeeded(false)
   }, [starterPackOnboarding, onboardingNeeded])
 
+  const launchGroup = launchState.deviceGroup
   const settings = useMemo(
-    () => settingsFrom({ ...facts, onboardingNeeded }),
-    [facts, onboardingNeeded],
+    () => settingsFrom({ ...facts, onboardingNeeded, ...(launchGroup === undefined ? {} : { launchSettings: launchGroup }) }),
+    [facts, onboardingNeeded, launchGroup],
   )
   // Setup run again: `heard` counts input since setup began, so pads heard
   // during the first run must not pass the second one unproven.
@@ -342,13 +359,13 @@ export function SurfaceRoot({
     () => surfaceModelFrom(state, {
       clockLabel,
       settings,
-      settingsStatus,
+      settingsStatus: launchState.status ?? settingsStatus,
       network,
       onboarding: onboardingNeeded === true ? { controllers: controllerList, ...(starterPack === undefined ? {} : { starterPack }) } : undefined,
       systemProblem: networkProblem,
       ...(identityManagement === undefined ? {} : { identityManagement }),
     }),
-    [state, clockLabel, settings, settingsStatus, identityManagement, network, onboardingNeeded, controllerList, networkProblem, starterPack],
+    [state, clockLabel, settings, settingsStatus, launchState.status, identityManagement, network, onboardingNeeded, controllerList, networkProblem, starterPack],
   )
   // Which local games still need a download is re-read when the set of local
   // games changes, and by the gate itself after a download it ran.
@@ -390,10 +407,11 @@ export function SurfaceRoot({
       catalog,
       status: saveStatus ?? acquisitionStatus ?? downloadProblem ?? baseModel.status,
       runnerChoice,
+      launchSettings: launchState.editor,
       store: storeForSurface(storeSnapshot, state),
       ...(saveHistory === undefined ? {} : { saveHistory }),
     }
-  }, [baseModel, runnerChoice, saveStatus, saveHistory, saveMarks, acquisitionStatus, downloadProblem, downloadFacts, surfaceToKorridId, storeSnapshot, state])
+  }, [baseModel, runnerChoice, launchState.editor, saveStatus, saveHistory, saveMarks, acquisitionStatus, downloadProblem, downloadFacts, surfaceToKorridId, storeSnapshot, state])
   const surfaceToKorridIdRef = useRef(surfaceToKorridId)
   surfaceToKorridIdRef.current = surfaceToKorridId
   /**
@@ -429,7 +447,7 @@ export function SurfaceRoot({
       },
       launchGame: (id, launchLocationId) => {
         const current = launchablesRef.current.getState()
-        if (runner.getSnapshot()._tag !== "Closed" || saves.getStatus() !== undefined || acquisition.getStatus() !== undefined || current._tag !== "Ready") return
+        if (runner.getSnapshot()._tag !== "Closed" || launch.isOpen() || saves.getStatus() !== undefined || acquisition.getStatus() !== undefined || current._tag !== "Ready") return
         const entry = entryForId(current, id)
         if (!entry) return
         const confirm = (chosen: PortalEntry) => {
@@ -465,6 +483,7 @@ export function SurfaceRoot({
         confirm(entry)
       },
       runAction: id => {
+        if (launch.act(id)) return
         if (saves.act(id)) return
         if (starterPackOnboarding.act(id)) return
         if (store.act(id)) return
@@ -490,8 +509,12 @@ export function SurfaceRoot({
       openStore: () => store.openStore(),
       searchStore: (providerId, query) => store.search(providerId, query),
       openStoreEntry: entryId => store.openEntry(entryId),
-      changeSetting,
-      dismissSettingsProblem,
+      changeSetting: (settingId, value) => {
+        if (!launch.change(settingId, value)) changeSetting(settingId, value)
+      },
+      dismissSettingsProblem: () => {
+        if (!launch.dismissProblem()) dismissSettingsProblem()
+      },
       exportIdentityBackup,
       switchIdentityFromBackup,
       switchIdentityToNip46,
@@ -504,12 +527,14 @@ export function SurfaceRoot({
         const history = korridId !== undefined && saves.hasHistory(korridId)
         return [...gameActionsForEntry(entry, downloadSubject(id)?.context), ...(localRunnerEntry(entry) ? [{
           id: "runners", label: "Runners on this device", enabled: current._tag === "Ready" && current.unavailableSessionStatus === undefined,
+        }] : []), ...(korridId !== undefined ? [{
+          id: LAUNCH_SETTINGS_ACTION_ID, label: "Launch settings", enabled: current._tag === "Ready",
         }] : []), ...(history ? [{ id: SAVE_HISTORY_ACTION_ID, label: "Save history", enabled: true }] : [])]
       },
       runGameAction: (gameId, actionId) => {
         const current = launchablesRef.current.getState()
         const entry = entryForId(current, gameId)
-        if (!entry || runner.getSnapshot()._tag !== "Closed" || saves.getStatus() !== undefined || acquisition.getStatus() !== undefined || current._tag !== "Ready") return
+        if (!entry || runner.getSnapshot()._tag !== "Closed" || launch.isOpen() || saves.getStatus() !== undefined || acquisition.getStatus() !== undefined || current._tag !== "Ready") return
         if (actionId === SAVE_HISTORY_ACTION_ID || actionId === SAVE_CHOOSE_ACTION_ID) {
           const korridId = surfaceToKorridIdRef.current.get(gameId)
           if (korridId === undefined || entry.kind !== "game") return
@@ -517,6 +542,11 @@ export function SurfaceRoot({
           const ref = { id: korridId, surfaceId: gameId, title: entry.game.title }
           if (actionId === SAVE_HISTORY_ACTION_ID && saves.hasHistory(korridId)) saves.openHistory(ref)
           else if (actionId === SAVE_CHOOSE_ACTION_ID && surfaceSavesFrom(fact)?._tag === "Split") saves.choose(ref)
+          return
+        }
+        if (actionId === LAUNCH_SETTINGS_ACTION_ID) {
+          const korridId = surfaceToKorridIdRef.current.get(gameId)
+          if (korridId !== undefined && entry.kind === "game") launch.open(korridId, entry.game.title)
           return
         }
         if (actionId === "runners") {
@@ -553,6 +583,7 @@ export function SurfaceRoot({
       },
       reload: () => {
         reload()
+        void launch.refreshDevice()
         void downloads.refresh()
         void saves.refresh()
       },
@@ -565,6 +596,7 @@ export function SurfaceRoot({
       store,
       surfaceInput,
       runner,
+      launch,
       saves,
       scanWifi,
       connectWifi,

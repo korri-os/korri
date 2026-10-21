@@ -30,6 +30,7 @@ export function PicoGameActions({
   const list = useRef<HTMLUListElement>(null)
   /** The row the cursor was last on, and whether the cursor was in the list. */
   const lastRow = useRef(0)
+  const lastAction = useRef<string | undefined>(undefined)
   const holding = useRef(false)
   useLayoutEffect(() => {
     const root = list.current
@@ -39,6 +40,12 @@ export function PicoGameActions({
       (root.contains(active) && active.matches(":disabled"))
     if (!lost) return
     const rows = [...root.children]
+    // The pressed row went inert while Korri does its work (Download before
+    // Cancel download arrives). Wait for the row that takes its place, rather
+    // than sending the cursor to a neighbour the person did not choose.
+    const slot = rows[lastRow.current]
+    const inert = slot?.querySelector<HTMLButtonElement>("button:disabled")
+    if (inert != null && inert.textContent === lastAction.current) return
     const enabled = (row: Element) => row.querySelector<HTMLButtonElement>("button:not([disabled])")
     const at = rows.slice(lastRow.current).map(enabled).find(button => button !== null)
     const above = rows.slice(0, lastRow.current).reverse().map(enabled).find(button => button !== null)
@@ -62,7 +69,10 @@ export function PicoGameActions({
         onFocus={event => {
           holding.current = true
           const row = event.target.closest("li")
-          if (row !== null) lastRow.current = [...event.currentTarget.children].indexOf(row)
+          if (row !== null) {
+            lastRow.current = [...event.currentTarget.children].indexOf(row)
+            lastAction.current = row.querySelector("button")?.textContent ?? undefined
+          }
         }}
         ref={list}
       >

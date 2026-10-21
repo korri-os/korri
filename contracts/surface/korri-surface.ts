@@ -173,6 +173,18 @@ export interface SurfaceSettingItem {
   readonly description?: string
   /** Absent means this row is genuinely read-only. */
   readonly interaction?: SurfaceSettingInteraction
+  /**
+   * Where the value in force comes from, as display text: "from Device
+   * (default)", "61 % from Runner mGBA". Absent when the row has no layered
+   * value. Surfaces show it beside the value; they never parse it.
+   */
+  readonly source?: string
+  /**
+   * Whether the value stays on this device (`device`, shown as
+   * "device-only") or may follow the person to other devices (`shared`).
+   * Absent when the row is not such a value.
+   */
+  readonly scope?: "device" | "shared"
 }
 
 /** A titled run of settings items. Korri omits groups it has nothing to say
@@ -379,6 +391,55 @@ export interface SurfaceRunnerChoiceContent {
 export type SurfaceRunnerChoice =
   | { readonly _tag: "Closed" }
   | ({ readonly _tag: "Loading" | "Ready" | "Stale" | "Conflict" | "Error" | "Busy" | "Warnings" } & SurfaceRunnerChoiceContent)
+
+/**
+ * One layer of a game's launch settings, most general first: Device, System,
+ * Runner, Game, Release, then each Profile. `id` is opaque and stable across
+ * models, so a surface may keep the layer it shows. Every row id goes
+ * unchanged to `SurfaceHost.changeSetting`, every action id to `runAction`.
+ * Profile controls (pick, new, rename, delete) are ordinary rows in these
+ * groups: the pick and New profile in the Game layer, Name and Delete in
+ * each Profile layer.
+ */
+export interface SurfaceLaunchSettingsLayer {
+  readonly id: string
+  readonly title: string
+  readonly groups: readonly SurfaceSettingGroup[]
+}
+
+/** A person's named variation of a game's launch settings. */
+export interface SurfaceLaunchProfile {
+  readonly id: string
+  readonly title: string
+}
+
+export interface SurfaceLaunchSettingsContent {
+  readonly gameTitle?: string
+  /** Empty while Loading, and when Korri could not read them. */
+  readonly layers: readonly SurfaceLaunchSettingsLayer[]
+  readonly profiles: readonly SurfaceLaunchProfile[]
+  /** The profile the next launch uses. Absent: none. */
+  readonly selectedProfileId?: string
+  /** Host actions such as Reload, Retry and Close. Ids go unchanged to
+   * runAction; the host's close action ends with ":cancel". */
+  readonly actions: readonly SurfaceAction[]
+}
+
+/**
+ * The launch settings editor for one game, opened from a game action and
+ * closed by the host's close action, as `runnerChoice` is. Unlike the runner
+ * chooser, Back reaches the surface while the editor is open, because the
+ * editor can hold questions of the surface's own (typing a profile name, a
+ * delete confirmation): the surface closes those first, then runs the close
+ * action. A write in
+ * progress is `settingsStatus` Saving with the row's id. `Conflict` means the
+ * values changed elsewhere and must be reloaded; `Error` carries Korri's
+ * message and a Retry action. Both carry user-facing `message` copy.
+ */
+export type SurfaceLaunchSettings =
+  | { readonly _tag: "Closed" }
+  | ({ readonly _tag: "Loading" | "Ready" } & SurfaceLaunchSettingsContent)
+  | ({ readonly _tag: "Conflict" | "Error"; readonly message: string } & SurfaceLaunchSettingsContent)
 
 /**
  * How this device reaches the network right now. Grounded in legacy
@@ -633,6 +694,8 @@ export interface SurfaceModel {
   readonly saveHistory?: SurfaceSaveHistory
   /** Absent in hosts that do not offer installed Linux runner selection. */
   readonly runnerChoice?: SurfaceRunnerChoice
+  /** Absent in hosts that cannot edit launch settings. */
+  readonly launchSettings?: SurfaceLaunchSettings
   /** Preformatted local time. Absent when the surface should show no clock. */
   readonly clockLabel?: string
   /** Device-level actions for permissions and session control. May be empty. */

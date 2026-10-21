@@ -66,7 +66,8 @@ async function mount(config: InMemoryKorridClientConfig = {}, opened = "game:mm"
   }} />))
   await waitFor(() => model.catalog._tag === "Ready")
   const game = (id: string) => model.catalog._tag === "Ready" ? model.catalog.games.find(candidate => candidate.id === id) : undefined
-  const actions = (id: string) => host.gameActions(id).map(action => action.id)
+  // Launch settings is offered on every local game; these tests are about downloads.
+  const actions = (id: string) => host.gameActions(id).map(action => action.id).filter(action => action !== "launch-settings")
   const action = (label: string) => {
     const status: SurfaceStatus = model.status
     if (status._tag !== "Confirm" && status._tag !== "Busy") throw new Error(`no actions on ${status._tag}`)
@@ -91,7 +92,10 @@ test("a game whose own files are not here is in the library before any download,
   // Its own files and its runner's runtime, before anything was asked.
   expect(view.game("game:mm")?.download).toEqual({ bytes: 500_000_000 })
   await waitFor(() => view.actions("game:mm").length > 0)
-  expect(view.host().gameActions("game:mm")).toEqual([{ id: "download", label: "Download", enabled: true }])
+  expect(view.host().gameActions("game:mm")).toEqual([
+    { id: "download", label: "Download", enabled: true },
+    { id: "launch-settings", label: "Launch settings", enabled: true },
+  ])
   expect(view.container.textContent).toContain("500 MB DOWNLOAD")
   expect(view.button("Download")).toBeDefined()
   // Nothing was fetched to show it.

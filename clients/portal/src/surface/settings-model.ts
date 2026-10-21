@@ -22,6 +22,9 @@ export interface DeviceFacts {
   /** Plugin repositories and the approval path. Absent before the portal
    * has them (and in tests that do not need them); then no plugin group shows. */
   readonly plugins?: PluginFacts
+  /** This device's launch settings, built by the launch settings controller.
+   * Absent until read, and when korrid cannot state them. */
+  readonly launchSettings?: SurfaceSettingGroup
 }
 
 /** Setting-local action that puts the device back into first-boot setup. */
@@ -120,6 +123,7 @@ export function settingsFrom(
             } : {}),
           },
     ]),
+    facts.launchSettings,
     group("Metadata", [
       facts.settings === undefined
         ? undefined

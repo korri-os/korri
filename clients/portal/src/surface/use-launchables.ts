@@ -21,6 +21,7 @@ import type {
   LocalGamesListOutcome,
   RpcFailure,
   ActiveSession,
+  LaunchWarning,
 } from "@contracts/generated/korrid"
 import { SessionStopPhase } from "@contracts/generated/korrid"
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
@@ -120,7 +121,15 @@ export type LocalGamesListOutcomeWithCoverUrls =
     }
   | { readonly _tag: "Err"; readonly payload: RpcFailure }
 
-export function useLaunchables(korrid: KorridClient): Launchables {
+export interface LaunchablesOptions {
+  /** A prepared launch korrid started with launch warnings, such as a launch
+   * limit it could not apply. Called once, for the current launch only. */
+  readonly onLaunchWarnings?: (gameTitle: string, warnings: readonly LaunchWarning[]) => void
+}
+
+export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions = {}): Launchables {
+  const optionsRef = useRef(options)
+  optionsRef.current = options
   const networkOnboarding = useMemo(() => createNetworkOnboarding(korrid), [korrid])
   const networkState = useSyncExternalStore(networkOnboarding.subscribe, networkOnboarding.snapshot)
   useEffect(() => networkOnboarding.start(), [networkOnboarding])
@@ -901,6 +910,9 @@ export function useLaunchables(korrid: KorridClient): Launchables {
             entry.game,
           ),
         )
+        if (outcome._tag === "Ok" && outcome.payload.warnings.length > 0) {
+          optionsRef.current.onLaunchWarnings?.(entry.game.title, outcome.payload.warnings)
+        }
         if (outcome._tag === "Err") {
           // An older prepare may have succeeded while this command was
           // locked. Recover its session without clearing this failure notice.

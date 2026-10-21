@@ -24,6 +24,9 @@ import type {
   IdentityRetiredDeleteOutcome,
   IdentityStatusOutcome,
   IdentitySwitchOutcome,
+  LaunchSettingsSnapshotOutcome,
+  LaunchSettingsWriteOutcome,
+  LaunchWarning,
   LocalGame,
   LocalGamesListOutcome,
   NetworkSnapshot,
@@ -65,6 +68,11 @@ import type {
 } from "@contracts/generated/korrid"
 import { createInMemorySaves, type InMemorySavesConfig } from "./in-memory-saves"
 import {
+  createInMemoryLaunchSettings,
+  type InMemoryLaunchSettingsConfig,
+  type LaunchSettingsMethods,
+} from "./in-memory-launch-settings"
+import {
   createInMemoryStoreAcquisition,
   httpStoreAcquisition,
   type InMemoryStoreAcquisition,
@@ -100,7 +108,7 @@ export type SessionReserveResult = Extract<RpcResponse, { _tag: "app.session.res
 export type SessionStartResult = Extract<RpcResponse, { _tag: "app.session.start" }>["outcome"]
 export type SessionCancelResult = Extract<RpcResponse, { _tag: "app.session.cancel" }>["outcome"]
 
-export interface KorridClient extends StoreAcquisitionMethods {
+export interface KorridClient extends StoreAcquisitionMethods, LaunchSettingsMethods {
   networkStatus(): Promise<NetworkStatusOutcome>
   scanWifi(): Promise<NetworkStatusOutcome>
   connectWifi(networkId: string, password?: string): Promise<NetworkStatusOutcome>
@@ -347,6 +355,28 @@ function isSessionControls(value: unknown): value is SessionControls {
       isRecord(group) && typeof group.id === "string" &&
       typeof group.label === "string" && Array.isArray(group.controls) &&
       group.controls.every(isSessionControl))
+}
+
+/**
+ * The four `app.launch-settings.*` RPCs. Their payload and outcome types are
+ * generated; their RpcRequest/RpcResponse dispatch variants land in a later
+ * korrid commit, so until then this call is typed by the payload alone. When
+ * the variants exist, these become ordinary callKorrid calls.
+ */
+async function callLaunchSettings<Outcome>(
+  baseUrl: string,
+  capability: string,
+  tag: string,
+  payload: unknown,
+): Promise<Outcome> {
+  const response = await fetch(`${baseUrl}/rpc`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${capability}` },
+    body: JSON.stringify({ _tag: tag, payload }),
+    signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+  })
+  if (!response.ok) throw new KorridHttpError(response.status)
+  return ((await response.json()) as { outcome: Outcome }).outcome
 }
 
 // Never propagate transport/dependency text on a password-carrying path.
@@ -846,6 +876,31 @@ export function createHttpKorridClient(
         return (await callKorrid(baseUrl, capability, { _tag: "app.saves.check", payload }, timeoutMs)).outcome
       } catch (error) { return routeUnavailable(error) }
     },
+    async launchSettingsSnapshot(gameId) {
+      try {
+        return await callLaunchSettings<LaunchSettingsSnapshotOutcome>(baseUrl, capability, "app.launch-settings.snapshot", gameId === undefined ? {} : { gameId })
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async setLaunchSetting(payload) {
+      try {
+        return await callLaunchSettings<LaunchSettingsWriteOutcome>(baseUrl, capability, "app.launch-settings.set", payload)
+      } catch (error) { return settingWriteUnavailable(error) }
+    },
+    async saveLaunchProfile(payload) {
+      try {
+        return await callLaunchSettings<LaunchSettingsWriteOutcome>(baseUrl, capability, "app.launch-settings.profile.save", payload)
+      } catch (error) { return settingWriteUnavailable(error) }
+    },
+    async removeLaunchProfile(payload) {
+      try {
+        return await callLaunchSettings<LaunchSettingsWriteOutcome>(baseUrl, capability, "app.launch-settings.profile.remove", payload)
+      } catch (error) { return settingWriteUnavailable(error) }
+    },
+    async selectLaunchProfile(payload) {
+      try {
+        return await callLaunchSettings<LaunchSettingsWriteOutcome>(baseUrl, capability, "app.launch-settings.profile.select", payload)
+      } catch (error) { return settingWriteUnavailable(error) }
+    },
   }
 }
 
@@ -1135,6 +1190,11 @@ export interface InMemoryKorridClientConfig {
   /** Save sync (ADR 0014). Absent: every save method answers SavesUnavailable,
    * as korrid does until its save lifecycle lands. */
   readonly saves?: InMemorySavesConfig
+  /** Launch warnings `app.session.prepare` returns, keyed by game id.
+   * Absent: none, as korrid returns when every launch limit applied. */
+  readonly prepareWarnings?: Readonly<Record<string, readonly LaunchWarning[]>>
+  /** Launch settings and profiles. Absent: Device layer only, no device facts. */
+  readonly launchSettings?: InMemoryLaunchSettingsConfig
 }
 
 const sampleGames: readonly Game[] = [
@@ -1763,7 +1823,11 @@ export function createInMemoryKorridClient(
       }
       return {
         _tag: "Ok",
-        payload: { gameId, launchId: `in-memory:${host ?? "local"}:${gameId}` },
+        payload: {
+          gameId,
+          launchId: `in-memory:${host ?? "local"}:${gameId}`,
+          warnings: structuredClone([...(config.prepareWarnings?.[gameId] ?? [])]),
+        },
       }
     },
     async sessionStatus(): Promise<SessionStatusOutcome> {
@@ -2003,6 +2067,7 @@ export function createInMemoryKorridClient(
       return gameList(gameId)
     },
     ...createInMemorySaves(config.saves),
+    ...createInMemoryLaunchSettings(config.launchSettings),
   }
 }
 
