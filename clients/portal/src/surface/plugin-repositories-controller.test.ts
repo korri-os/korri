@@ -14,10 +14,8 @@ import {
   type PluginFacts,
   type PluginRepositoryClient,
 } from "./plugin-repositories"
-import {
-  createPluginRepositoriesController,
-  supportsPluginRepositories,
-} from "./plugin-repositories-controller"
+import { PluginRepositoryAddResult, PluginRepositoryRemoveResult } from "@contracts/generated/korrid"
+import { createPluginRepositoriesController } from "./plugin-repositories-controller"
 import {
   OFFICIAL,
   RETRO,
@@ -62,11 +60,6 @@ const baseAnswers = {
 }
 
 describe("plugin repositories controller", () => {
-  it("knows a client without the plugin methods", () => {
-    expect(supportsPluginRepositories({})).toBe(false)
-    expect(supportsPluginRepositories(fakePluginClient({}).client)).toBe(true)
-  })
-
   it("reads repositories, then every configured catalog", async () => {
     const { client, calls } = fakePluginClient(baseAnswers)
     const h = harness(client)
@@ -76,7 +69,7 @@ describe("plugin repositories controller", () => {
   })
 
   it("adding: the row saves while korrid checks, then the new repository is read", async () => {
-    let answer: (value: ReturnType<typeof ok<"Added">>) => void = () => {}
+    let answer: (value: ReturnType<typeof ok<PluginRepositoryAddResult>>) => void = () => {}
     const { client, calls } = fakePluginClient({
       ...baseAnswers,
       addPluginRepository: () => new Promise(resolve => { answer = resolve }) as never,
@@ -86,7 +79,7 @@ describe("plugin repositories controller", () => {
     expect(h.last()).toEqual({ _tag: "Saving", settingId: ADD_REPOSITORY_SETTING })
     expect(h.busy()).toBe(true)
     expect(calls).toEqual([["addPluginRepository", "https://github.com/ada/retro-plugins"]])
-    answer(ok("Added"))
+    answer(ok(PluginRepositoryAddResult.Added))
     await settle()
     expect(h.last()).toEqual({ _tag: "Idle" })
     expect(h.busy()).toBe(false)
@@ -114,7 +107,7 @@ describe("plugin repositories controller", () => {
   })
 
   it("already added: says so", async () => {
-    const { client } = fakePluginClient({ addPluginRepository: () => ok({ _tag: "AlreadyPresent" } as const) })
+    const { client } = fakePluginClient({ addPluginRepository: () => ok(PluginRepositoryAddResult.AlreadyPresent) })
     const h = harness(client)
     h.controller.change(ADD_REPOSITORY_SETTING, RETRO)
     await settle()
@@ -122,7 +115,7 @@ describe("plugin repositories controller", () => {
   })
 
   it("remove: runs only the confirmed destructive action, then re-reads", async () => {
-    const { client, calls } = fakePluginClient({ ...baseAnswers, removePluginRepository: () => ok("Removed" as const) })
+    const { client, calls } = fakePluginClient({ ...baseAnswers, removePluginRepository: () => ok(PluginRepositoryRemoveResult.Removed) })
     const h = harness(client)
     expect(h.controller.run(removeRepositoryActionId(RETRO))).toBe(true)
     expect(h.last()).toEqual({ _tag: "Saving", settingId: removeRepositoryActionId(RETRO) })

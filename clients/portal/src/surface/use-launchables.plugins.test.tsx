@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
+import { PluginRepositoryAddResult } from "@contracts/generated/korrid"
 import { createInMemoryKorridClient } from "../korrid/client"
 import {
   ADD_REPOSITORY_SETTING,
@@ -51,10 +52,10 @@ function mount(korrid: Parameters<typeof useLaunchables>[0]) {
 const chiptune = { sourceUrl: RETRO, pluginId: "@ada:chiptune", releaseVersion: "1.0.0" }
 
 describe("useLaunchables plugin rows", () => {
-  test("a client without plugin methods publishes no plugin facts", async () => {
+  test("the in-memory brain's plugin repositories reach Settings", async () => {
     const launchables = mount(createInMemoryKorridClient())
-    await waitFor(() => launchables().facts.settings !== undefined)
-    expect(launchables().facts.plugins).toBeUndefined()
+    await waitFor(() => launchables().facts.plugins?.repositories._tag === "Ready")
+    expect(settingsFrom(launchables().facts).map(group => group.title)).toContain("Plugins")
   })
 
   test("reads repositories on load and routes plugin changes and actions to korrid", async () => {
@@ -64,7 +65,7 @@ describe("useLaunchables plugin rows", () => {
       inspectPlugin: () => ok(inspection),
       installPlugin: () => ok({}),
       setPluginEnabled: () => ok({}),
-      addPluginRepository: () => ok("AlreadyPresent" as const),
+      addPluginRepository: () => ok(PluginRepositoryAddResult.AlreadyPresent),
     })
     const launchables = mount({ ...createInMemoryKorridClient(), ...client })
     await waitFor(() => launchables().facts.plugins?.catalogs[RETRO]?._tag === "Ready")

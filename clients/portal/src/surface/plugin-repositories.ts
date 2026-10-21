@@ -5,92 +5,41 @@
  * Pure. The controller (`plugin-repositories-controller.ts`) calls korrid and
  * feeds the results in here; this file decides the rows and their words.
  *
- * Wire types: build adds these korrid methods to `korrid/client.ts`. Until it
- * lands, the shapes below are written locally from the agreed interface, with
- * the agreed names. The merge reconciles them with `contracts/generated/`.
+ * Wire types are the generated ones (`contracts/generated/korrid.ts`), and
+ * the korrid methods are `KorridClient`'s.
  */
 import type {
   SurfaceSettingGroup,
   SurfaceSettingItem,
 } from "@contracts/surface/korri-surface"
-import type { PluginSetting, RpcFailure } from "@contracts/generated/korrid"
+import {
+  PluginInstalledState,
+  type PluginCatalogEntry,
+  type PluginCatalogOutcome,
+  type PluginInspection,
+  type PluginRepositories,
+  type PluginRepositoriesOutcome,
+  type PluginRepositoryInstall,
+  type PluginSetting,
+} from "@contracts/generated/korrid"
+import type { KorridClient } from "../korrid/client"
 
-// ---------------------------------------------------------------- wire types
+/** The korrid methods this flow uses. */
+export type PluginRepositoryClient = Pick<
+  KorridClient,
+  | "pluginRepositories"
+  | "addPluginRepository"
+  | "removePluginRepository"
+  | "pluginCatalog"
+  | "inspectPlugin"
+  | "installPlugin"
+  | "setPluginEnabled"
+>
 
-export type PluginOutcome<T> =
-  | { readonly _tag: "Ok"; readonly payload: T }
-  | { readonly _tag: "Err"; readonly payload: RpcFailure }
-
-/** One install korrid made from a repository, whatever the repository's state. */
-export interface RepositoryInstall {
-  readonly id: string
-  readonly sourceUrl: string
-  readonly releaseVersion: string
-  readonly enabled: boolean
-}
-
-export interface PluginRepositories {
-  /** Korri's own repository. Null until an official catalog address exists. */
-  readonly official: string | null
-  readonly userAdded: readonly string[]
-  /** Every repository install. A `sourceUrl` that is neither `official` nor in
-   * `userAdded` belongs to a removed repository. */
-  readonly repositoryInstalls: readonly RepositoryInstall[]
-}
-
-/** Typeshare may send a unit variant as a string or as a tagged object. */
-export type UnitVariant<T extends string> = T | { readonly _tag: T }
-export const variantOf = <T extends string>(value: UnitVariant<T>): T =>
-  typeof value === "string" ? value : value._tag
-
-export type AddRepositoryResult = UnitVariant<"Added" | "AlreadyPresent">
-export type RemoveRepositoryResult = UnitVariant<"Removed" | "NotFound">
-
-/** One release of one plugin, for this platform, in catalog order. */
-export interface PluginCatalogEntry {
-  readonly pluginId: string
-  readonly title?: string
-  readonly description?: string
-  readonly releaseVersion: string
-  readonly installed?: "Disabled" | "Enabled"
-  readonly publisherTrusted: boolean
-}
-
-export interface PluginCatalog {
-  readonly entries: readonly PluginCatalogEntry[]
-}
-
-export interface PluginBring {
-  readonly id: string
-  readonly title?: string
-  readonly warning?: string | null
-  readonly alreadyApproved: boolean
-}
-
-/** What korrid found when it downloaded and checked one release. */
-export interface PluginInspection {
-  readonly id: string
-  readonly title?: string
-  /** The digest the person approves. Passed back unchanged to install. */
-  readonly approval: string
-  readonly warning?: string | null
-  readonly ports: {
-    readonly allowedTCPPorts: readonly number[]
-    readonly allowedUDPPorts: readonly number[]
-  }
-  readonly nativeUnits: readonly string[]
-  readonly brings: readonly PluginBring[]
-}
-
-/** The korrid methods this flow uses. `KorridClient` gains them from build. */
-export interface PluginRepositoryClient {
-  pluginRepositories(): Promise<PluginOutcome<PluginRepositories>>
-  addPluginRepository(url: string): Promise<PluginOutcome<AddRepositoryResult>>
-  removePluginRepository(url: string): Promise<PluginOutcome<RemoveRepositoryResult>>
-  pluginCatalog(url: string): Promise<PluginOutcome<PluginCatalog>>
-  inspectPlugin(url: string, pluginId: string, releaseVersion: string): Promise<PluginOutcome<PluginInspection>>
-  installPlugin(url: string, pluginId: string, releaseVersion: string, approval: string): Promise<PluginOutcome<unknown>>
-  setPluginEnabled(id: string, enabled: boolean): Promise<PluginOutcome<unknown>>
+/** A warning the host sent. The host sends "" for none. */
+const warningText = (warning: string | undefined): string | undefined => {
+  const text = warning?.trim()
+  return text ? text : undefined
 }
 
 /** The host refuses an "on" whose stored approval no longer matches. */
@@ -231,7 +180,7 @@ export const ALREADY_ADDED = "Already added"
 
 export const withRepositories = (
   facts: PluginFacts,
-  outcome: PluginOutcome<PluginRepositories>,
+  outcome: PluginRepositoriesOutcome,
 ): PluginFacts => outcome._tag === "Ok"
   ? { ...facts, repositories: { _tag: "Ready", value: outcome.payload } }
   // A failed re-read keeps what was last read; only a first read shows the failure.
@@ -239,10 +188,11 @@ export const withRepositories = (
     ? facts
     : { ...facts, repositories: { _tag: "Failed", message: outcome.payload.message } }
 
-export const configuredRepositories = (repositories: PluginRepositories): readonly string[] => [
-  ...(repositories.official === null ? [] : [repositories.official]),
-  ...repositories.userAdded,
-]
+export const configuredRepositories = (repositories: PluginRepositories): readonly string[] => {
+  // `official` is absent until the device names an official catalog.
+  const { official } = repositories
+  return [...(official === undefined ? [] : [official]), ...repositories.userAdded]
+}
 
 /** Mark catalogs being read. A catalog already read keeps its rows meanwhile. */
 export const checkingCatalogs = (facts: PluginFacts, urls: readonly string[]): PluginFacts => ({
@@ -253,7 +203,7 @@ export const checkingCatalogs = (facts: PluginFacts, urls: readonly string[]): P
 export const withCatalog = (
   facts: PluginFacts,
   url: string,
-  outcome: PluginOutcome<PluginCatalog>,
+  outcome: PluginCatalogOutcome,
 ): PluginFacts => ({
   ...facts,
   catalogs: {
@@ -293,7 +243,7 @@ export const withNeedsReview = (facts: PluginFacts, pluginId: string): PluginFac
   facts.needsReview.includes(pluginId) ? facts : { ...facts, needsReview: [...facts.needsReview, pluginId] }
 
 /** Where an installed plugin came from, so a stale one can be reviewed again. */
-export const installOf = (facts: PluginFacts, pluginId: string): RepositoryInstall | undefined =>
+export const installOf = (facts: PluginFacts, pluginId: string): PluginRepositoryInstall | undefined =>
   facts.repositories._tag === "Ready"
     ? facts.repositories.value.repositoryInstalls.find(install => install.id === pluginId)
     : undefined
@@ -328,7 +278,7 @@ const listOf = (items: readonly string[]) => items.join(", ")
  */
 export function reviewMessage(report: PluginInspection): string {
   const lines: string[] = []
-  const warning = report.warning?.trim()
+  const warning = warningText(report.warning)
   if (warning) lines.push(`Warning: ${warning}`)
   const ports = [
     ...(report.ports.allowedTCPPorts.length ? [`TCP ${listOf(report.ports.allowedTCPPorts.map(String))}`] : []),
@@ -341,7 +291,7 @@ export function reviewMessage(report: PluginInspection): string {
     if (bring.alreadyApproved) {
       lines.push(`Also uses ${name}. You approved it before.`)
     } else {
-      const bringWarning = bring.warning?.trim()
+      const bringWarning = warningText(bring.warning)
       lines.push(`Also installs ${name}.${bringWarning ? ` Warning: ${bringWarning}` : ""}`)
     }
   }
@@ -431,7 +381,7 @@ const releaseRow = (
 function catalogRows(
   url: string,
   catalog: CatalogView | undefined,
-  installs: readonly RepositoryInstall[],
+  installs: readonly PluginRepositoryInstall[],
   titles: ReadonlyMap<string, string>,
   facts: PluginFacts,
 ): SurfaceSettingItem[] {
@@ -476,7 +426,7 @@ function catalogRows(
       rows.push(toggleRow(
         pluginId,
         label,
-        install?.enabled ?? installedEntry?.installed === "Enabled",
+        install?.enabled ?? installedEntry?.installed === PluginInstalledState.Enabled,
         facts,
         first.description,
       ))
@@ -559,11 +509,12 @@ export function pluginSettingGroups(
       toggleRow(plugin.id, plugin.title, plugin.enabled, facts, undefined))
     return other.length ? [hub, { title: OTHER_GROUP, items: other }] : [hub]
   }
-  const { official, userAdded, repositoryInstalls } = repositories.value
+  const { userAdded, repositoryInstalls } = repositories.value
+  const { official } = repositories.value
   const hub: SurfaceSettingGroup = {
     title: PLUGINS_GROUP,
     items: [
-      official === null
+      official === undefined
         ? {
             id: OFFICIAL_REPOSITORY_ROW,
             label: "Official plugins",
@@ -590,7 +541,7 @@ export function pluginSettingGroups(
     ],
   }
   const groups: SurfaceSettingGroup[] = [hub]
-  if (official !== null) {
+  if (official !== undefined) {
     groups.push({
       title: OFFICIAL_GROUP,
       items: catalogRows(official, facts.catalogs[official], repositoryInstalls, titles, facts),

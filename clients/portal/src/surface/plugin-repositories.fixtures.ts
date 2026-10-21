@@ -1,13 +1,12 @@
-/** Fixtures for the plugin repository flow. Local until build's client lands. */
-import type { RpcFailure } from "@contracts/generated/korrid"
-import type {
-  PluginCatalogEntry,
-  PluginFacts,
-  PluginInspection,
-  PluginOutcome,
-  PluginRepositories,
-  PluginRepositoryClient,
-} from "./plugin-repositories"
+/** Fixtures for the plugin repository flow, in the generated wire types. */
+import {
+  PluginInstalledState,
+  type PluginCatalogEntry,
+  type PluginInspection,
+  type PluginRepositories,
+  type RpcFailure,
+} from "@contracts/generated/korrid"
+import type { PluginFacts, PluginRepositoryClient } from "./plugin-repositories"
 
 export const OFFICIAL = "https://plugins.korri.example/official"
 export const RETRO = "https://github.com/ada/retro-plugins"
@@ -18,7 +17,7 @@ export const retroCatalog: PluginCatalogEntry[] = [
   { pluginId: "@ada:chiptune", title: "Chiptune", description: "Music player for tracker songs", releaseVersion: "1.0.0", publisherTrusted: true },
   { pluginId: "@ada:crt", title: "CRT look", releaseVersion: "2.1.0", publisherTrusted: true },
   { pluginId: "@ada:crt", title: "CRT look", releaseVersion: "2.0.3", publisherTrusted: true },
-  { pluginId: "@ada:netplay", title: "Netplay", releaseVersion: "0.4.0", installed: "Enabled", publisherTrusted: true },
+  { pluginId: "@ada:netplay", title: "Netplay", releaseVersion: "0.4.0", installed: PluginInstalledState.Enabled, publisherTrusted: true },
   { pluginId: "@mallory:miner", title: "Free coins", releaseVersion: "9.9.9", publisherTrusted: false },
 ]
 
@@ -31,12 +30,12 @@ export const inspection: PluginInspection = {
   nativeUnits: ["chiptune-daemon.service"],
   brings: [
     { id: "@ada:audio-core", title: "Audio core", warning: "Can change the system volume.", alreadyApproved: false },
-    { id: "@korri:pipewire", title: "PipeWire bridge", warning: null, alreadyApproved: true },
+    { id: "@korri:pipewire", title: "PipeWire bridge", warning: "", alreadyApproved: true },
   ],
 }
 
+/** No official repository unless `over` names one, as the wire sends it. */
 export const repositories = (over: Partial<PluginRepositories> = {}): PluginRepositories => ({
-  official: null,
   userAdded: [],
   repositoryInstalls: [],
   ...over,
@@ -50,9 +49,9 @@ export const readyFacts = (over: Partial<PluginFacts> = {}): PluginFacts => ({
   ...over,
 })
 
-export const ok = <T>(payload: T): PluginOutcome<T> => ({ _tag: "Ok", payload })
-export const err = (code: string, message: string): PluginOutcome<never> =>
-  ({ _tag: "Err", payload: { code, message } satisfies RpcFailure })
+export const ok = <T,>(payload: T) => ({ _tag: "Ok" as const, payload })
+export const err = (code: string, message: string) =>
+  ({ _tag: "Err" as const, payload: { code, message } satisfies RpcFailure })
 
 type Call = readonly [keyof PluginRepositoryClient, ...unknown[]]
 

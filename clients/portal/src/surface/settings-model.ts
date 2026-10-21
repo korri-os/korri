@@ -19,8 +19,8 @@ export interface DeviceFacts {
   readonly discovery?: DiscoverySnapshot
   /** Absent until Korri has read setup progress. */
   readonly onboardingNeeded?: boolean
-  /** Plugin repositories and the approval path. Absent where this korrid
-   * cannot manage plugins; then no plugin group shows. */
+  /** Plugin repositories and the approval path. Absent before the portal
+   * has them (and in tests that do not need them); then no plugin group shows. */
   readonly plugins?: PluginFacts
 }
 

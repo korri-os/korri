@@ -161,7 +161,12 @@ describe("Linux catalog execution without a native bridge", () => {
     expect(harness.current().state).toEqual({
       _tag: "Ready", entries: [{ kind: "game", game }], notice: null,
     })
-    expect(harness.current().facts).toEqual({
+    // Plugin repositories are korrid facts too, read through their own
+    // methods (plugin-repositories.test.ts covers them); this test is about
+    // the rest.
+    const { plugins, ...facts } = harness.current().facts
+    expect(plugins?.repositories._tag).toBe("Ready")
+    expect(facts).toEqual({
       version: "korrid-test",
       settings: {
         revision: "r1", deviceName: "odin2portal", playerCount: 4, plugins: [],
@@ -177,7 +182,7 @@ describe("Linux catalog execution without a native bridge", () => {
         diagnostics: [],
       },
     })
-    expect(settingsFrom(harness.current().facts).flatMap(group => group.items)
+    expect(settingsFrom(facts).flatMap(group => group.items)
       .map(item => item.id)).toEqual([
       "device-name", "host.preferences.playerCount", "steamgriddb-credential", "local-games",
       "game-discovery-status", "game-folder-rescan", "korrid-version",

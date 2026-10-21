@@ -3,6 +3,7 @@ import type { SurfaceSettingGroup } from "@contracts/surface/korri-surface"
 import {
   ADD_REPOSITORY_SETTING,
   OFFICIAL_GROUP,
+  configuredRepositories,
   OFFICIAL_REPOSITORY_ROW,
   OTHER_GROUP,
   PLUGINS_GROUP,
@@ -178,7 +179,7 @@ describe("plugin settings groups", () => {
       "Also installs Audio core. Warning: Can change the system volume.",
       "Also uses PipeWire bridge. You approved it before.",
     ])
-    expect(reviewMessage({ ...inspection, warning: null, ports: { allowedTCPPorts: [], allowedUDPPorts: [] }, nativeUnits: [], brings: [] }))
+    expect(reviewMessage({ ...inspection, warning: "", ports: { allowedTCPPorts: [], allowedUDPPorts: [] }, nativeUnits: [], brings: [] }))
       .toBe("It asks for no network ports and runs nothing in the background.")
   })
 
@@ -243,6 +244,20 @@ describe("plugin settings groups", () => {
       value: "Review and turn on",
       interaction: { kind: "action", actionId: reviewActionId({ sourceUrl: RETRO, pluginId: "@ada:netplay", releaseVersion: "0.4.0" }) },
     })
+  })
+
+  it("treats a missing official repository as not set up", () => {
+    expect(pluginSettingGroups(readyFacts(), [])[0]?.items[0]?.value).toBe("Not set up yet")
+    expect(configuredRepositories(repositories({ userAdded: [RETRO] }))).toEqual([RETRO])
+  })
+
+  it("treats an empty warning as no warning", () => {
+    expect(reviewMessage({ ...inspection, warning: "  ", brings: [{ id: "@x:y", title: "Y", warning: "", alreadyApproved: false }] }).split("\n"))
+      .toEqual([
+        "Opens network ports: TCP 7000, 7001; UDP 5353.",
+        "Runs in the background: chiptune-daemon.service.",
+        "Also installs Y.",
+      ])
   })
 
   it("says so while repositories load, and shows the host's words when they cannot be read", () => {

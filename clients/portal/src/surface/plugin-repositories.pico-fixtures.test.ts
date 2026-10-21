@@ -3,8 +3,13 @@
  * (surfaces/pico/src/fixtures/plugin-settings.ts): a surface may not import
  * the portal. This test keeps the copy equal to what the portal publishes, so
  * the screenshots show the real rows.
+ *
+ * The import points from the portal into Pico's fixtures, not the other way,
+ * because a surface may import nothing from Korri but `contracts/surface/`;
+ * the portal is the only side that can hold both.
  */
 import { describe, expect, it } from "bun:test"
+import { PluginInstalledState } from "@contracts/generated/korrid"
 import { pluginModels } from "../../../../surfaces/pico/src/fixtures/plugin-settings"
 import {
   pluginSettingGroups,
@@ -49,7 +54,7 @@ const many: PluginFacts = readyFacts({
   catalogs: {
     [OFFICIAL]: { _tag: "Ready", entries: [
       { pluginId: "@korri:tailscale", title: "Tailscale", description: "Reach this device from your other devices", releaseVersion: "1.76.1", publisherTrusted: true },
-      { pluginId: "@korri:syncthing", title: "Syncthing", description: "Keep saves in step with your other devices", releaseVersion: "1.27.0", installed: "Enabled", publisherTrusted: true },
+      { pluginId: "@korri:syncthing", title: "Syncthing", description: "Keep saves in step with your other devices", releaseVersion: "1.27.0", installed: PluginInstalledState.Enabled, publisherTrusted: true },
     ] },
     ...Object.fromEntries(longRepos.map((url, index) => [url,
       index === 0 ? { _tag: "Ready" as const, entries: retroCatalog }

@@ -72,7 +72,7 @@ describe("settingsFrom", () => {
       settings: configuration,
       localGameCount: 0,
       plugins: {
-        repositories: { _tag: "Ready", value: { official: null, userAdded: [], repositoryInstalls: [] } },
+        repositories: { _tag: "Ready", value: { userAdded: [], repositoryInstalls: [] } },
         catalogs: {},
         reviews: {},
         needsReview: [],

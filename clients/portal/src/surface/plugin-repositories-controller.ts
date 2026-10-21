@@ -12,6 +12,7 @@
  * `busy` is the portal's shared settings lock.
  */
 import type { SurfaceSettingsStatus } from "@contracts/surface/korri-surface"
+import { PluginRepositoryAddResult, type RpcFailure } from "@contracts/generated/korrid"
 import {
   ALREADY_ADDED,
   INVALID_ADDRESS,
@@ -27,7 +28,6 @@ import {
   reviewFor,
   rowIdForRelease,
   toggleSettingId,
-  variantOf,
   withCatalog,
   withNeedsReview,
   withoutRepository,
@@ -62,14 +62,6 @@ export interface PluginRepositoriesController {
   change(settingId: string, value: string): boolean
 }
 
-/** Whether this korrid client offers the plugin repository methods. */
-export function supportsPluginRepositories<T extends object>(client: T): client is T & PluginRepositoryClient {
-  const candidate = client as Partial<Record<keyof PluginRepositoryClient, unknown>>
-  return (["pluginRepositories", "addPluginRepository", "removePluginRepository", "pluginCatalog",
-    "inspectPlugin", "installPlugin", "setPluginEnabled"] as const)
-    .every(method => typeof candidate[method] === "function")
-}
-
 export function createPluginRepositoriesController(
   client: PluginRepositoryClient,
   host: PluginRepositoriesHost,
@@ -89,6 +81,29 @@ export function createPluginRepositoriesController(
     return true
   }
   const end = () => host.busy.set(false)
+
+  /**
+   * One locked operation on `settingId`: the row saves while `call` runs.
+   * A failure shows the host's words on the row, unless `refused` handles
+   * it; a success goes to `done`, which sets the next status.
+   */
+  const locked = <T,>(
+    settingId: string,
+    call: () => Promise<{ readonly _tag: "Ok"; readonly payload: T } | { readonly _tag: "Err"; readonly payload: RpcFailure }>,
+    done: (payload: T) => void | Promise<void>,
+    refused?: (failure: RpcFailure) => boolean,
+  ) => {
+    if (!begin(settingId)) return
+    void call().then(async outcome => {
+      end()
+      if (!host.alive()) return
+      if (outcome._tag === "Err") {
+        if (refused?.(outcome.payload) !== true) problem(settingId, outcome.payload.message)
+        return
+      }
+      await done(outcome.payload)
+    })
+  }
 
   const readCatalog = async (url: string, seq: number) => {
     const outcome = await client.pluginCatalog(url)
@@ -113,26 +128,17 @@ export function createPluginRepositoriesController(
       if (!host.busy.get()) problem(ADD_REPOSITORY_SETTING, INVALID_ADDRESS)
       return
     }
-    if (!begin(ADD_REPOSITORY_SETTING)) return
     // korrid fetches and checks the catalog before it saves anything.
-    void client.addPluginRepository(url).then(async outcome => {
-      end()
-      if (!host.alive()) return
-      if (outcome._tag === "Err") return problem(ADD_REPOSITORY_SETTING, outcome.payload.message)
-      if (variantOf(outcome.payload) === "AlreadyPresent") return problem(ADD_REPOSITORY_SETTING, ALREADY_ADDED)
+    locked(ADD_REPOSITORY_SETTING, () => client.addPluginRepository(url), async result => {
+      if (result === PluginRepositoryAddResult.AlreadyPresent) return problem(ADD_REPOSITORY_SETTING, ALREADY_ADDED)
       host.status({ _tag: "Idle" })
       await refresh()
     })
   }
 
   const removeRepository = (url: string) => {
-    const settingId = removeRepositoryActionId(url)
-    if (!begin(settingId)) return
-    void client.removePluginRepository(url).then(async outcome => {
-      end()
-      if (!host.alive()) return
-      if (outcome._tag === "Err") return problem(settingId, outcome.payload.message)
-      // NotFound: it is already gone, which is what the person asked for.
+    // NotFound: it is already gone, which is what the person asked for.
+    locked(removeRepositoryActionId(url), () => client.removePluginRepository(url), async () => {
       host.status({ _tag: "Idle" })
       update(facts => withoutRepository(facts, url))
       await refresh()
@@ -140,16 +146,15 @@ export function createPluginRepositoriesController(
   }
 
   const inspect = (target: ReleaseTarget) => {
-    const settingId = rowIdForRelease(host.facts(), target)
-    if (!begin(settingId)) return
     // korrid downloads and verifies the release before it reports.
-    void client.inspectPlugin(target.sourceUrl, target.pluginId, target.releaseVersion).then(outcome => {
-      end()
-      if (!host.alive()) return
-      if (outcome._tag === "Err") return problem(settingId, outcome.payload.message)
-      update(facts => withReview(facts, target, outcome.payload))
-      host.status({ _tag: "Idle" })
-    })
+    locked(
+      rowIdForRelease(host.facts(), target),
+      () => client.inspectPlugin(target.sourceUrl, target.pluginId, target.releaseVersion),
+      report => {
+        update(facts => withReview(facts, target, report))
+        host.status({ _tag: "Idle" })
+      },
+    )
   }
 
   const approve = (target: ReleaseTarget) => {
@@ -181,24 +186,21 @@ export function createPluginRepositoriesController(
   }
 
   const toggle = (pluginId: string, enabled: boolean) => {
-    const settingId = toggleSettingId(pluginId)
-    if (!begin(settingId)) return
-    void client.setPluginEnabled(pluginId, enabled).then(async outcome => {
-      end()
-      if (!host.alive()) return
-      if (outcome._tag === "Err") {
-        const install = installOf(host.facts(), pluginId)
-        if (outcome.payload.code === NEEDS_REVIEW_CODE && install !== undefined) {
-          // The row turns into Needs review; its next press inspects again.
-          update(facts => withNeedsReview(facts, pluginId))
-          host.status({ _tag: "Idle" })
-          return
-        }
-        return problem(settingId, outcome.payload.message)
-      }
-      host.status({ _tag: "Idle" })
-      host.changed()
-    })
+    locked(
+      toggleSettingId(pluginId),
+      () => client.setPluginEnabled(pluginId, enabled),
+      () => {
+        host.status({ _tag: "Idle" })
+        host.changed()
+      },
+      failure => {
+        if (failure.code !== NEEDS_REVIEW_CODE || installOf(host.facts(), pluginId) === undefined) return false
+        // The row turns into Needs review; its next press inspects again.
+        update(facts => withNeedsReview(facts, pluginId))
+        host.status({ _tag: "Idle" })
+        return true
+      },
+    )
   }
 
   return {
