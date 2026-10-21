@@ -2090,72 +2090,113 @@ on screen in every cell, nothing clipped mid-move.
 
 ## GET GAMES: a game from a provider
 
-The treaty's `store` (ADR 0014): Korri's providers, one search, one open
+The treaty's `store` (ADR 0016): Korri's providers, one search, one open
 entry and where getting it stands, each with Korri's own actions. Zone
 asks with `openStore`, `searchStore` and `openStoreEntry` and runs every
 action through `runAction` by its id. The model is `src/state/store.ts`;
 the row ids and the rules the page and the model share are
-`src/plan/store.ts`; the page is `pages/ZoneStore`.
+`src/plan/store.ts`; the page is `pages/ZoneStore`. It was rebuilt on the
+pixel register and the three looks when it was rebased onto them; it
+follows every rule above (Zone Caps and Jersey 10, the art-pixel grid,
+stairs, no opacity, no cut letters, the one clock).
 
 ### Decided without asking: GET GAMES
 
 - **GET GAMES is a key in the body's top left, under the B hint**, the
-  mirror of FIND under the A hint. The top strip at 640 px has no room for
-  it, and the left side card starts below it at every size, as the right
-  one does below FIND. Korri's geometry focus reaches it up from the first
-  card or down and left from GAMES; `menu` reaches it after FIND. It shows
-  whenever Korri publishes `store`, an empty library too, and there it has
-  the cursor, since it is the one thing to do. A kept filter's FIND: <draft>
-  tag now stands under it in the same corner.
-- **GET GAMES is a page over GAMES, like RUN WITH**: its own banner, no
+  mirror of FIND under the A hint, at the same band margin. Korri's
+  geometry focus reaches it up from the first card or down and left from
+  GAMES; `menu` reaches it after FIND. It shows whenever Korri publishes
+  `store`, an empty library too, and there it has the cursor, since it is
+  the one thing to do. A kept filter's FIND: <draft> tag stands under it
+  in the same corner. Under the catalog's error both corner keys hide
+  (`visibility`), as FIND does.
+- **On a narrow band the cards start under the corner keys.** In Zone
+  Caps GET GAMES is 220 CSS px wide at 640x480 and its cursor's triangles
+  19 more each side; the focused card's left edge is 233 to 247 px in, so
+  key and cursor stood on the card's top-left corner. While GET GAMES shows
+  and the band is narrow (three cards), the band takes a top padding of
+  `--zone-games-get-row` (6 art px), which moves the focused card's top
+  below the triangles and its left edge clear of the key (measured in
+  Chromium at 640x480 in all three looks: key to 244, card from 250, card
+  top 110 under the triangles' 108). Cost: the cards there are about 6%
+  smaller. A wide band has room beside its focused card and keeps its
+  height. The GAMES part's `GetGames` state carries a Caliper check that
+  the key and both triangles stand on the screen and off the focused card.
+- **GET GAMES is a page over GAMES, as RUN WITH is**: the OPTIONS ground
+  and its sky band with the black wedge, the banner in the tabs' place, no
   tabs, the foot's timer and build. Menu, options and system do nothing on
-  it. The page names where the person is beside the banner: the provider
-  on its results, the game on its entry.
+  it. The head row under the banner names where the person is: the
+  provider on its results, the game on its entry, Korri's name at caps-2
+  (caps-1 when it must) in the look's face for Korri's words, then the
+  tags.
 - **B walks out, one step at a time**: the keyboard, the entry (the cursor
   back on its row), the results (back on the provider), the providers, then
   GAMES with the cursor on GET GAMES. B never cancels a download and never
   answers Korri's question; both are Korri's actions on screen.
-- **A provider not asked yet opens on the keyboard.** Typing is why the
-  person came. DONE asks the provider with the words trimmed; the keyboard
-  is FIND's, and the search holds 40 characters, as FIND's draft does. A
-  provider already asked opens on its results with the cursor on SEARCH
-  FOR, whose value is what was asked; A on it raises the keyboard with
-  those words.
-- **Rows are ZoneOptionRow.** A provider's value is OPEN. A result's value
-  is the system as the provider says it; when the provider does not say,
-  the value is absent and its panel stands empty, because absent data
-  stays absent (provisional coordinator decision, 2026-10-20, pending
-  the owner).
+- **The search keyboard is FIND's, planned as FIND plans it.** The page
+  runs `useZoneFindPlan` on its own body (the band and the keys under it),
+  so the band yields, then the keys' spacing, then the band hides while
+  typing, then the keys' height; no key is cut or scrolled. The
+  `Keyboard` and `KeyboardNarrow` states carry the GAMES part's
+  every-key-whole check. A provider not asked yet opens on the keyboard;
+  DONE asks it with the words trimmed. The search holds 40 characters, as
+  FIND's draft does. A provider already asked opens on its results with the
+  cursor on SEARCH FOR, whose value is what was asked, in its own case; A
+  on it raises the keyboard with those words.
+- **Rows are ZoneOptionRow in ZoneOptionGroup.** A provider's name and a
+  result's title are Korri's facts, kept in their own case; OPEN is Zone's
+  word. A result's value is the system as the provider says it; when the
+  provider does not say, the value is absent and its panel stands empty,
+  because absent data stays absent (provisional coordinator decision,
+  2026-10-20, pending the owner).
 - **An entry is a well and Korri's words.** A store entry carries no art:
   the treaty says a provider's images are on its own site, which the portal
-  never reaches, so a surface draws its own stand-in. A ZoneCoverWell stands in with the
-  title's stripes and initials, portrait as a card's well is. Beside it, or
-  under it when the column is narrow: the provider's description, then
-  where getting it stands. Korri's Offer is a ZoneActionRow of its actions
-  with its note above; Confirm and Problem are a ZoneDialog with Korri's
-  kicker as the headline, its detail or reason as the line and its actions
-  as the buttons, the first enabled one lit; Working is the busy strip with
-  Korri's kicker, detail, meter (C32's rules) and CANCEL. The game's title
-  is not repeated in the dialog's yellow line: the banner row names it.
-- **Tags in the banner row say where getting it stands**, in the colours
-  Zone already uses for that kind of news: the system in blue, DOWNLOAD in
-  orange while it moves, QUEUED in white while it waits its turn
-  (`queued`), NOT AVAILABLE in red beside Korri's reason, IN LIBRARY in
-  blue only when Korri gives no detail (its detail says it otherwise).
-- **PLAY closes the page.** It launches the game Korri names
-  (`InLibrary.gameId`) and GAMES comes back with the cursor on that game's
-  card (navigation's `ShowedGame`, which lets go of a kept filter that
-  would hide it), so that is where the person returns after playing.
+  never reaches, so a surface draws its own stand-in. A ZoneCoverWell
+  (`--zone-store-well`, 48 art px wide, a card's 3 by 4) stands in with the
+  title's stripes and initials. Beside it, or under it when the column is
+  narrower than `--zone-store-words-least`: the provider's description and
+  Korri's note or reason, each in Jersey 10 as written on a black panel at
+  its one-line slant (RUN WITH's message), then Korri's actions (GET, PLAY)
+  as a ZoneActionRow.
+- **Korri's question and trouble are the sky dialog over the band.**
+  Confirm, a download's Problem, an entry that could not be read, and a
+  provider list or search that failed each open ZoneDialog in a layer over
+  the page's body, which lays its veil over the band. Korri's kicker or an
+  entry's title is its headline (`korriHeadline`); PROVIDERS and SEARCH
+  are Zone's headlines for Korri's message. Its buttons are Korri's
+  actions in Korri's order, the first enabled one lit.
+- **Work under way stands at the body's foot.** Working is the busy strip
+  (`korri`: Korri's kicker in the look's face for Korri's words) with its
+  meter, one readout and CANCEL, under the band in a row of its own, as the
+  status layer's strip stands at the page's foot. In the band it was cut
+  off at 640x480 with its CANCEL out of sight.
+- **Tags in the head say where getting it stands**, in the colours Zone
+  already uses for that kind of news: the system in blue (Korri's word),
+  DOWNLOAD in orange while it moves, QUEUED in white while it waits its
+  turn (`queued`), NOT AVAILABLE in red beside Korri's reason, IN LIBRARY
+  in blue only when Korri gives no detail (its detail says it otherwise).
+- **PLAY closes the page and plays the GAMES way.** It launches the game
+  Korri names (`InLibrary.gameId`); GAMES comes back with the cursor on
+  that game's card (navigation's `ShowedGame`, which lets go of a kept
+  filter that would hide it) and the launch title card opens for it, as
+  for PLAY on its card.
 - **Only an action Korri publishes now, enabled, is run.** A press on an
   older answer's action does nothing (`zoneStoreActionLive`).
-- **DOM focus follows the view only when it has fallen to the document**
-  (the control it was on went away, or the page just opened), so the page
-  never takes focus from Korri's status layer or a control that still
-  stands. Unavailable has no control; B is the way out and its hint is on
-  screen.
+- **DOM focus follows the view only when it has nowhere real to be**: it
+  fell to the document, or the control it was on went away or went inert
+  under a dialog. Then it goes to the dialog's lit button, else the
+  control the view names, else the first live one. Unavailable has no
+  control; B is the way out and its hint is on screen.
 - **Parts.** `ZoneStore.page.part.tsx` runs the real model through
   `src/fixtures/fixture-store.ts`, whose small pretend Korri answers a
-  search, opens an entry on offer and moves GET, DOWNLOAD and CANCEL along.
-  The fixtures use the portal's words
+  search, opens an entry on offer and moves GET, DOWNLOAD and CANCEL along,
+  on the OPTIONS ground. The fixtures use the portal's words
   (`clients/portal/src/surface/store-acquisition.ts`). The GAMES part has
   `GetGames`, `GetGamesEmpty` and `GetGamesFiltered`.
+- **Known gaps.** At 640x480 the band under Working's strip is short and
+  cuts the well (the words and CANCEL stand whole). Caliper's axe check
+  reports `target-size` on the search keys in `KeyboardNarrow` on the
+  rg353m device, where the narrow-tall frame is 230 CSS px wide at one CSS
+  px an art px: the keys are FIND's at their least planned size (16 art
+  px), whole and wrapped, under axe's 24 px. FIND's own narrow state is a
+  wider frame and does not reach that size.
