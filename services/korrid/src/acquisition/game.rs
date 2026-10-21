@@ -301,7 +301,7 @@ impl GameAcquisition {
         })
     }
 
-    pub(super) fn acquire(
+    pub(super) async fn acquire(
         &self,
         coordinator: &AcquisitionCoordinator,
         context: &GameContext,
@@ -331,7 +331,24 @@ impl GameAcquisition {
         // Already in the library, also after a restart and with no claim in
         // memory: the provider link names the game and its download is still in
         // the cache. No network is needed to answer Play.
-        if let Some(game_id) = self.in_library(context, &request.provider_id, &request.id) {
+        // published() takes discovery's publication lock, which a scan holds
+        // for its whole run: read it off the async workers.
+        let in_library = {
+            let (context, provider, id) = (
+                context.clone(),
+                request.provider_id.clone(),
+                request.id.clone(),
+            );
+            tokio::task::spawn_blocking(move || in_library(&context, &provider, &id))
+                .await
+                .map_err(|_| {
+                    failure(
+                        "AcquisitionUnavailable",
+                        "Downloads are unavailable on this device.",
+                    )
+                })?
+        };
+        if let Some(game_id) = in_library {
             let (cancel, _) = watch::channel(false);
             let (done_tx, done) = watch::channel(true);
             drop(done_tx);
@@ -415,18 +432,6 @@ impl GameAcquisition {
         Ok(status)
     }
 
-    fn in_library(&self, context: &GameContext, provider: &str, claim_id: &str) -> Option<String> {
-        let snapshot = context.discovery.published().ok()?;
-        let game_id = snapshot
-            .provider_links
-            .get(&link_key(provider, claim_id))?
-            .playable
-            .0
-            .clone();
-        (!acquired_game_dirs(&context.root, &context.registry, &snapshot, &game_id).is_empty())
-            .then_some(game_id)
-    }
-
     fn insert(
         &self,
         key: &ClaimKey,
@@ -494,6 +499,19 @@ impl GameAcquisition {
         }
         Ok(unrecorded)
     }
+}
+
+/// The game a provider link names, when its download is still in the cache.
+fn in_library(context: &GameContext, provider: &str, claim_id: &str) -> Option<String> {
+    let snapshot = context.discovery.published().ok()?;
+    let game_id = snapshot
+        .provider_links
+        .get(&link_key(provider, claim_id))?
+        .playable
+        .0
+        .clone();
+    (!acquired_game_dirs(&context.root, &context.registry, &snapshot, &game_id).is_empty())
+        .then_some(game_id)
 }
 
 fn job_id() -> String {

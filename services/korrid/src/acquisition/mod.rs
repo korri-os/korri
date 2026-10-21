@@ -711,12 +711,12 @@ impl AcquisitionCoordinator {
     ) -> Result<claims::ProviderClaimDetails, RpcFailure> {
         self.games.details(registry, request).await
     }
-    pub fn acquire(
+    pub async fn acquire(
         &self,
         context: &GameContext,
         request: &AcquireArtifactRequest,
     ) -> Result<AcquireJobStatus, RpcFailure> {
-        self.games.acquire(self, context, request)
+        self.games.acquire(self, context, request).await
     }
     pub fn acquire_status(&self, job_id: &str) -> Result<AcquireJobStatus, RpcFailure> {
         self.games.status(job_id)

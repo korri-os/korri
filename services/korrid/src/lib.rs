@@ -2426,11 +2426,12 @@ async fn dispatch(
                 Err(error) => acquisition::DetailsOutcome::Err(error),
             })
         }
-        RpcRequest::AcquisitionAcquire(request) => RpcResponse::AcquisitionAcquire(job_outcome(
-            state
-                .game_context()
-                .and_then(|context| state.acquisition.acquire(&context, &request)),
-        )),
+        RpcRequest::AcquisitionAcquire(request) => {
+            RpcResponse::AcquisitionAcquire(job_outcome(match state.game_context() {
+                Ok(context) => state.acquisition.acquire(&context, &request).await,
+                Err(error) => Err(error),
+            }))
+        }
         RpcRequest::AcquisitionAcquireStatus(request) => {
             RpcResponse::AcquisitionAcquireStatus(job_outcome(
                 state
