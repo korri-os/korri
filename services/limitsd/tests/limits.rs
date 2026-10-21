@@ -340,6 +340,143 @@ fn fallback_without_cpu_step_list_clamps_to_hardware_range() {
 }
 
 #[test]
+fn rg353m_cpu_step_percent_choices_roundtrip() {
+    let (dir, _) = fixture();
+    for (name, value) in [
+        ("cpuinfo_min_freq", "408000"),
+        ("cpuinfo_max_freq", "1800000"),
+        ("scaling_min_freq", "408000"),
+        ("scaling_max_freq", "1800000"),
+        (
+            "scaling_available_frequencies",
+            "408000 600000 816000 1104000 1416000 1608000 1800000",
+        ),
+    ] {
+        put(
+            dir.path(),
+            &format!("sys/devices/system/cpu/cpufreq/policy0/{name}"),
+            value,
+        );
+    }
+    let mut service = Limitsd::start(
+        Roots {
+            sysfs: dir.path().join("sys"),
+            cgroup: dir.path().join("cgroup"),
+        },
+        defaults(),
+        &["gpu".into()],
+    )
+    .unwrap();
+    assert_eq!(cpu(&dir, "scaling_max_freq"), "1104000");
+    assert_eq!(
+        request(
+            &mut service,
+            json!({"_tag":"ApplyDevice","payload":{"cpu":{"min":61,"max":100},"gpu":{"min":0,"max":100},"governor":"schedutil"}})
+        )["_tag"],
+        "Ok"
+    );
+    assert_eq!(cpu(&dir, "scaling_min_freq"), "1104000");
+    assert_eq!(
+        request(
+            &mut service,
+            json!({"_tag":"ApplyDevice","payload":{"cpu":{"min":0,"max":60},"gpu":{"min":0,"max":100},"governor":"schedutil"}})
+        )["_tag"],
+        "Ok"
+    );
+    assert_eq!(cpu(&dir, "scaling_max_freq"), "816000");
+    for (percent, step) in [
+        (23, 408000),
+        (33, 600000),
+        (45, 816000),
+        (61, 1104000),
+        (79, 1416000),
+        (89, 1608000),
+        (100, 1800000),
+    ] {
+        assert_eq!(
+            request(
+                &mut service,
+                json!({"_tag":"ApplyDevice","payload":{"cpu":{"min":percent,"max":percent},"gpu":{"min":0,"max":100},"governor":"schedutil"}})
+            )["_tag"],
+            "Ok"
+        );
+        assert_eq!(cpu(&dir, "scaling_min_freq"), step.to_string());
+        assert_eq!(cpu(&dir, "scaling_max_freq"), step.to_string());
+    }
+}
+
+#[test]
+fn gpu_step_percent_labels_round_half_up() {
+    let (dir, _) = fixture();
+    put(
+        dir.path(),
+        "sys/class/devfreq/gpu/available_frequencies",
+        "500 1000 1010 2000",
+    );
+    put(dir.path(), "sys/class/devfreq/gpu/min_freq", "500");
+    put(dir.path(), "sys/class/devfreq/gpu/max_freq", "2000");
+    let mut service = Limitsd::start(
+        Roots {
+            sysfs: dir.path().join("sys"),
+            cgroup: dir.path().join("cgroup"),
+        },
+        defaults(),
+        &["gpu".into()],
+    )
+    .unwrap();
+    // 1010 / 2000 = 50.5%, so its label is 51, not 50.
+    assert_eq!(
+        request(
+            &mut service,
+            json!({"_tag":"ApplyDevice","payload":{"cpu":{"min":0,"max":61},"gpu":{"min":0,"max":50},"governor":"schedutil"}})
+        )["_tag"],
+        "Ok"
+    );
+    assert_eq!(read(&dir, "sys/class/devfreq/gpu/max_freq"), "1000");
+    assert_eq!(
+        request(
+            &mut service,
+            json!({"_tag":"ApplyDevice","payload":{"cpu":{"min":0,"max":61},"gpu":{"min":51,"max":100},"governor":"schedutil"}})
+        )["_tag"],
+        "Ok"
+    );
+    assert_eq!(read(&dir, "sys/class/devfreq/gpu/min_freq"), "1010");
+}
+
+#[test]
+fn configured_rg353m_gpu_node_is_described_and_managed() {
+    let (dir, _) = fixture();
+    fs::rename(
+        dir.path().join("sys/class/devfreq/gpu"),
+        dir.path().join("sys/class/devfreq/fde60000.gpu"),
+    )
+    .unwrap();
+    let mut service = Limitsd::start(
+        Roots {
+            sysfs: dir.path().join("sys"),
+            cgroup: dir.path().join("cgroup"),
+        },
+        defaults(),
+        &["fde60000.gpu".into()],
+    )
+    .unwrap();
+    let description = request(&mut service, json!({"_tag":"Describe","payload":{}}));
+    assert_eq!(
+        description["payload"]["gpuDevfreq"][0]["name"],
+        "fde60000.gpu"
+    );
+    assert_eq!(
+        request(
+            &mut service,
+            json!({"_tag":"ApplyDevice","payload":{"cpu":{"min":0,"max":61},"gpu":{"min":50,"max":50},"governor":"schedutil"}})
+        )["_tag"],
+        "Ok"
+    );
+    assert_eq!(read(&dir, "sys/class/devfreq/fde60000.gpu/min_freq"), "400");
+    assert_eq!(read(&dir, "sys/class/devfreq/fde60000.gpu/max_freq"), "400");
+}
+
+#[test]
 fn rounded_max_wins_when_no_frequency_step_fits_interval() {
     let (dir, mut service) = fixture();
     assert_eq!(

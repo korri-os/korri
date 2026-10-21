@@ -62,9 +62,14 @@ in
 
   # Native device testing crossed 68 C at the previous 1.8 GHz ceiling. The
   # 1.104 GHz ceiling sustained GBA below 60 C with schedutil. The product's
-  # limits helper selects schedutil. The approved 61% device default replaces
-  # the absolute ceiling and rounds down to an available frequency step.
+  # limits helper selects schedutil. The 1.104 GHz step's rounded percent is
+  # 61, so the device default preserves that tested ceiling.
   services.korri.limits.defaults.cpu.max = 61;
+
+  # Verified on the RG353M: /sys/class/devfreq/fde60000.gpu exposes the GPU
+  # clocks, and already uses simple_ondemand. Share this hardware fact between
+  # the governor loop and the limits helper.
+  services.korri.clockGovernor.gpuDevfreqNodes = [ "fde60000.gpu" ];
   # RTL8821CS deep power saving caused pairing failures and dropped links.
   # Keep this as NetworkManager hardware configuration, not executable profile
   # hook source owned by the product gate.

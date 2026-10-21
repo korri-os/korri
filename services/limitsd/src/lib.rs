@@ -155,20 +155,22 @@ fn frequencies(path: &Path) -> Result<Vec<u64>> {
     Ok(values)
 }
 
-// Integer arithmetic preserves the direction of rounding even without a step list.
+// Select by the same rounded percent labels the portal offers. Raw frequency
+// rounding is only the fallback for policies without an available step list.
 fn mapped(limits: Limits, top: u64, bottom: u64, steps: &[u64]) -> (u64, u64) {
     let raw_min = (u128::from(top) * u128::from(limits.min)).div_ceil(100) as u64;
     let raw_max = (u128::from(top) * u128::from(limits.max) / 100) as u64;
+    let step_percent = |step: u64| (u128::from(step) * 100 + u128::from(top) / 2) / u128::from(top);
     let max = steps
         .iter()
         .copied()
         .rev()
-        .find(|v| *v <= raw_max)
+        .find(|v| step_percent(*v) <= u128::from(limits.max))
         .unwrap_or_else(|| steps.first().copied().unwrap_or(raw_max.clamp(bottom, top)));
     let min = steps
         .iter()
         .copied()
-        .find(|v| *v >= raw_min)
+        .find(|v| step_percent(*v) >= u128::from(limits.min))
         .unwrap_or_else(|| steps.last().copied().unwrap_or(raw_min.clamp(bottom, top)));
     if min > max {
         log::debug!("rounded interval {min}..{max} is empty; the max cap wins");

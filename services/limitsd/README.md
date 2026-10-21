@@ -50,15 +50,22 @@ Every error returns a plain diagnostic message, without a second error schema:
 
 - Percent `min` is an integer from 0 to 100. `max` is an integer from 1 to
   100. `min <= max`. A device governor must be offered by every CPU policy.
-- CPU percentages use each policy's own `cpuinfo_max_freq`. Maximum rounds
-  down to an available step, at least the lowest step. Minimum rounds up,
-  at most the highest step. Without a CPU step list, integer frequencies
-  round in the same direction and clamp to `cpuinfo_min_freq`/`cpuinfo_max_freq`.
-  GPU percentages use the highest advertised frequency and the same step rules.
-  Configured GPU nodes must advertise a nonempty frequency list.
+- CPU percentages use each policy's own `cpuinfo_max_freq` as `top`. GPU
+  percentages use the highest advertised frequency as `top`. Each available
+  step has the label `round(step * 100 / top)`, **round half up**. This is the
+  same label the portal offers. Max selects the highest step whose label is
+  `<= max`, or the lowest step if none qualify. Min selects the lowest step
+  whose label is `>= min`, or the highest step if none qualify. Selection
+  compares these integer labels, not a raw percent-to-frequency threshold.
+  On the RG353M, max 61 and min 61 both select 1104000 kHz; max 60 selects
+  816000 kHz. Configured GPU nodes must advertise a nonempty frequency list.
+- Without a CPU step list, the fallback is unchanged: compute `min * top / 100`
+  rounded up and `max * top / 100` rounded down, then clamp both integer
+  frequencies to `cpuinfo_min_freq`/`cpuinfo_max_freq`.
 - If rounding alone leaves no step inside the interval, the **rounded max
   wins** and min becomes equal to max. This owner-approved rule preserves
-  the heat cap. limitsd logs this at debug level.
+  the heat cap. For steps 600/1200 with top 1800, min=max=50 selects 600
+  for both bounds. limitsd logs this at debug level.
 - `ApplyDevice` writes cpufreq limits/governor and GPU limits immediately when
   idle. During a session it only stores the next revert target. The running
   session retains its launch-time device baseline.

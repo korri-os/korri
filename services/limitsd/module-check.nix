@@ -50,6 +50,18 @@ assert c.systemd.services.korri-limits.environment.LIMITSD_GPU_NODES == "gpu";
 assert c.systemd.slices.korri-games.sliceConfig.CPUWeight == 100;
 assert c.systemd.slices.korri.sliceConfig.CPUWeight == 100;
 assert c.systemd.slices.korri.sliceConfig.CPUAccounting;
+assert
+  korri.nixosConfigurations.rg353m.config.services.korri.clockGovernor.gpuDevfreqNodes
+  == [ "fde60000.gpu" ];
+assert
+  korri.nixosConfigurations.rg353m.config.services.korri.limits.gpuDevfreqNodes == [ "fde60000.gpu" ];
+assert korri.nixosConfigurations.rg353m.config.services.korri.limits.defaults.cpu.max == 61;
+assert
+  korri.nixosConfigurations.rg353m.config.systemd.services.korri-limits.environment.LIMITSD_GPU_NODES
+  == "fde60000.gpu";
+assert
+  korri.nixosConfigurations.rg353m.config.systemd.services.korri-clock-governor.environment.KORRI_CLOCK_GPU_NODES
+  == "fde60000.gpu";
 pkgs.runCommand "korri-limits-module-check" { } ''
   root="$TMPDIR/sys"
   cpu="$root/devices/system/cpu/cpufreq/policy0"
