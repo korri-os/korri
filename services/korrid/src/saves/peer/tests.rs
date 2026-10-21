@@ -649,11 +649,14 @@ async fn meet_keeps_ancestor_metadata_when_historical_payloads_are_pruned() {
                 .unwrap());
         }
     }
+    // This checks retention correctness, not the shipping launch budget.
+    // prelaunch_retains_peer_whose_signed_heads_arrive_but_records_time_out
+    // separately checks the three-second deadline with a delayed records reply.
     let checks = b
         .service
         .pull_before_launch(
             &base.game_id,
-            tokio::time::Instant::now() + Duration::from_secs(3),
+            tokio::time::Instant::now() + Duration::from_secs(30),
         )
         .await
         .unwrap();
