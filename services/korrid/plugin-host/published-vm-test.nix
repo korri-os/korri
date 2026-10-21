@@ -182,6 +182,8 @@ pkgs.testers.runNixOSTest {
         system.activationScripts.publishedPluginStorage.text = ''
           install -d -m 0755 /var/lib/published-plugin-storage
           cp -R --no-preserve=mode,ownership ${storage}/. /var/lib/published-plugin-storage/
+          # The real unprivileged brain publishes discovery's catalog changes.
+          chown -R 976:976 /var/lib/published-plugin-storage
         '';
         environment.systemPackages = [
           pkgs.curl
@@ -202,6 +204,7 @@ pkgs.testers.runNixOSTest {
   testScript = ''
     import json
     import shlex
+    import time
 
     start_all()
     machine.wait_for_unit("korri-plugin-host.service")
@@ -214,6 +217,26 @@ pkgs.testers.runNixOSTest {
     package_args = " ".join(shlex.quote(path) for path in paths)
     generation = machine.succeed("readlink -f /run/current-system").strip()
     nix = 'nix --extra-experimental-features nix-command --option substituters "" '
+
+    def rpc(tag):
+        request = json.dumps({"_tag": tag, "payload": {}})
+        response = json.loads(machine.succeed("curl --fail --silent --max-time 10 http://127.0.0.1:49117/rpc -H 'content-type: application/json' -H 'authorization: Bearer published-plugin-vm-capability' -d " + shlex.quote(request)))
+        assert response["outcome"]["_tag"] == "Ok", response
+        return response["outcome"]["payload"]
+
+    def games():
+        return rpc("app.local-games.list")["games"]
+
+    def rescan():
+        rpc("app.discovery.rescan")
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            snapshot = rpc("app.discovery.snapshot")
+            if snapshot["state"]["_tag"] not in ["Scanning", "Enriching"]:
+                assert snapshot["state"]["_tag"] == "Idle", snapshot
+                return
+            time.sleep(0.1)
+        raise AssertionError("published pack discovery did not finish within 60 seconds")
 
     def offline():
         # Block external traffic, including the bound publisher URL. Preserve
@@ -326,10 +349,30 @@ pkgs.testers.runNixOSTest {
     original = "/run/published-image-stage/files" + ssh_receipt_path
     machine.succeed("cp -a " + original + " " + ssh_receipt_path + "; korri-plugin restore-all", timeout=300)
     machine.succeed("cmp " + original + " " + ssh_receipt_path)
+    machine.succeed("systemctl start korri-plugin-host.service korrid.service")
+    machine.wait_for_open_port(49117)
+    assert [game["id"] for game in games()] == ["wario-land-4"]
+    # Exclude the unrelated GBA route so this real RPC list proves exactly the
+    # pack's 27 games, not 27 plus a route marker. Keep korrid running throughout.
+    machine.succeed("korri-plugin disable @korri:mgba")
+    assert games() == []
+    offline()
+    brain_pid = machine.succeed("systemctl show korrid.service -p MainPID --value").strip()
     # Enabling uses only approved store bytes and offline proofs.
     machine.succeed("korri-plugin enable @korri:starter-pack", timeout=300)
     pack_receipt = json.loads(machine.succeed("cat " + pack_receipt_path))
-    machine.succeed("systemctl start korri-plugin-host.service korrid.service")
+    pack_report = next(report for report in json.loads(machine.succeed("korri-plugin enabled-packages")) if report["id"] == "@korri:starter-pack")
+    declarations = pack_report["declaration"]["games"]
+    assert len(declarations) == 27, declarations
+    pack_titles = {game["title"] for game in declarations.values()}
+    assert len(pack_titles) == 27, pack_titles
+    rescan()
+    installed_games = games()
+    assert len(installed_games) == 27, installed_games
+    assert {game["title"] for game in installed_games} == pack_titles, installed_games
+    print("Offline published Starter pack: " + str(len(installed_games)) + " declared games in app.local-games.list")
+    assert machine.succeed("systemctl show korrid.service -p MainPID --value").strip() == brain_pid
+    machine.succeed("korri-plugin enable @korri:mgba")
     reports = {report["id"]: report for report in json.loads(machine.succeed("korri-plugin enabled-packages"))}
     assert set(reports) == set(expected_packages), reports
     ssh = reports["@korri:ssh"]
@@ -405,13 +448,9 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin restore-all")
     enabled = json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json"))
     assert {p["id"]: p["package"] for p in enabled} == expected_packages, enabled
-    def games():
-        request = json.dumps({"_tag": "app.local-games.list", "payload": {}})
-        result = json.loads(machine.succeed("curl --fail --silent http://127.0.0.1:49117/rpc -H 'content-type: application/json' -H 'authorization: Bearer published-plugin-vm-capability' -d " + shlex.quote(request)))
-        assert result["outcome"]["_tag"] == "Ok", result
-        return result["outcome"]["payload"]["games"]
     machine.wait_for_open_port(49117)
-    assert [game["id"] for game in games()] == ["wario-land-4"]
+    assert len(games()) == 28
+    assert {game["title"] for game in games()} == pack_titles | {"Wario Land 4"}
     machine.shutdown()
     machine.start()
     machine.wait_for_unit("korri-plugin-host.service")
@@ -423,7 +462,9 @@ pkgs.testers.runNixOSTest {
     assert login() == "0"
     machine.succeed("korri-plugin restore-all")
     assert json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json")) == enabled
-    assert [game["id"] for game in games()] == ["wario-land-4"]
+    rescan()
+    assert len(games()) == 28
+    assert {game["title"] for game in games()} == pack_titles | {"Wario Land 4"}
     machine.succeed("korri-plugin disable @korri:starter-pack; korri-plugin disable @korri:fake08; korri-plugin disable @korri:solarus; korri-plugin disable @korri:zquest-classic; korri-plugin disable @korri:ssh; korri-plugin disable @korri:mgba; korri-plugin restore-all")
     ports(False)
     login(success=False)

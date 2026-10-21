@@ -17,6 +17,7 @@ let
       "sha256-EvpsYRfVRRSZediT9bmrf1jriFaffjKWq4Oqz6Ufci4="
       "sha256-CqlfqYmjldZ4qykBUfQdklmEShCyCyxb/w3MHo/fNVo="
       "sha256-HK9NUfO2QdAVH0ML/25w1jVv0/iRHoboqzRlOiZNQKI="
+      "sha256-MjY/ot46w90e0yYuuCLFUqCSFm/mfaosoS2iNr1euSs="
     ];
     x86_64-linux = [
       "sha256-nJZ+40Y/QRYy2ke3Th22b8g872uYFjH/c4ps2/IBrAE="
@@ -27,6 +28,7 @@ let
       "sha256-N+2ChwaiLizXWclz4f5TyBzKvWRfW4I0EaNmEOXxPdg="
       "sha256-95ooTxBez/rGmWeo4XucnIpE1yC/28bJnj6jWu6ZKHo="
       "sha256-nxXI2PNF3mRQrpNTPPZdTwWDwpw9DWVCwqI009ZzXjM="
+      "sha256-xaDcRqu8GYh949bu0ucbCiuuH5bH5M6g2YzpLHT0Fow="
     ];
   };
   batches = [
@@ -38,6 +40,7 @@ let
     "build-e479fd55b3aa"
     "build-96a06b0a82ef"
     "build-617e858e4daa"
+    "build-75eb41b75907"
   ];
   archives = pkgs.lib.imap0 (
     index: batch:

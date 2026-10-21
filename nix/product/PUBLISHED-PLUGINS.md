@@ -21,15 +21,15 @@ The pins come from the immutable publisher batches `build-9514b1b382d3` and
 declaration IDs of the selected packages. Path names and lists alone establish
 no identity or trust.
 
-Both architecture maps contain 29 outputs. 24 come from source
+Both architecture maps contain 29 outputs. The initial 24 outputs came from source
 `9514b1b382d3b963674628308d6a5770987a4bc0`: the first batch republished 23
 selected plugins for the discovery v2 plugin contract (system content rules,
 groups and `controls`; no `discovery` export), which the current host requires.
 The second batch adds `@korri:solarus`, which the Starter pack requires next to
 `@korri:fake08`; `plugin-selection.nix` selects it on every product device.
-Two come from source `ac8fae593e42dda3cf4beda0b26f190a28d6b942`: batch
-`build-ac8fae593e42-zquest` replaces the Starter pack (adding Lantern Hollow)
-and adds `@korri:zquest-classic`, which the pack now also requires; batch
+Source `ac8fae593e42dda3cf4beda0b26f190a28d6b942` supplied batch
+`build-ac8fae593e42-zquest`, which replaced the Starter pack (adding Lantern Hollow)
+and added `@korri:zquest-classic`, which the pack now also requires; batch
 `build-ac8fae593e42` added `@korri:gamescope`, selected on every product device.
 Batch `build-dea5fd453fc6` (source `dea5fd453fc64d65edcdad1171cec85fb68be1f7`)
 replaces it with the build that skips fully clipped planes and waits for the
@@ -41,9 +41,17 @@ Steam adds three outputs, selected on the RP Mini V2 only. `@korri:fex` and
 same paths. `@korri:steam` comes from batch `build-96a06b0a82ef` (source
 `96a06b0a82ef7fcb1a5d06d62b0b35f74f116983`), whose exact requirements are those
 FEX and Proton outputs.
-Each pinned path was checked against the batch's `paths-SYSTEM.txt` by
-evaluating the publisher at that commit. Earlier batches remain published but
-are no longer pinned. `published-plugin-metadata.nix` pins the
+Batch `build-75eb41b75907` (source
+`75eb41b759074b92a4dac54e8ef6d302463d1ba0`) replaces only the Starter pack.
+Its 27 declared games use `packageFile` releases from its own installed files
+(ADR 0016). The public release's `revision.txt` matches that source, and its
+`paths-SYSTEM.txt` assets name the pinned ARM and x86 outputs. FAKE-08,
+Solarus and ZQuest Classic retain their existing exact pins. The matching
+`offline-metadata-SYSTEM.tar.gz` archives are pinned with their SHA-256 hashes.
+Each pinned path is grounded in its batch's `paths-SYSTEM.txt` and
+`revision.txt`. The new Starter pack pins were checked against those public
+release assets directly. Earlier batches remain published even when their
+plugin outputs are no longer selected. `published-plugin-metadata.nix` pins the
 matching ARM and x86 archive hashes. It checks every path in the actual
 closure, not only top-level packages. It rejects conflicting proof metadata.
 Equivalent records can differ in optional `Deriver` provenance and signature
@@ -64,8 +72,8 @@ The pack retains its games, original cartridges, credits, notices and
 noncommercial CC BY-NC-SA 4.0. First-boot setup offers to install the pack;
 installation means enabling its approved local package, with no network.
 Declared `packageFile` releases then enter the library without saved locations
-(ADR 0016). The current published pack pins predate those declarations; the
-27-game pack is pinned after publication. Into Ruins remains a known FAKE-08 failure.
+(ADR 0016). The current pins contain all 27 package-file game declarations.
+Into Ruins remains a known FAKE-08 failure.
 This change does not install software or write firmware on existing devices.
 Recovery images keep their existing no-default-plugin behavior. R36T Max
 retains its hardware-owned root-population command and now uses the same
@@ -100,8 +108,10 @@ On x86, the disposable VM tests offline image receipts, invalid approval
 refusal, incomplete proof refusal, actual key-only SSH login, disable,
 re-enable, reboot recovery, and the published mGBA registry consumed by
 korrid. It also seeds the pack's exact required FAKE-08, Solarus and ZQuest
-Classic runtimes, and checks tampered graph approval refusal, required-runtime
-disable refusal and dependency-aware re-enable.
+Classic runtimes. With networking blocked and mGBA disabled, enabling the
+image-seeded Disabled pack and rescanning must list exactly its 27 declared
+games through korrid. The VM also checks tampered graph approval refusal,
+required-runtime disable refusal and dependency-aware re-enable.
 It uses the production publisher key and the exact published packages. It
 creates no test-signed replacement packages. ARM image proofs run on the
 build host; native ARM lifecycle and handheld behavior remain separate tests.

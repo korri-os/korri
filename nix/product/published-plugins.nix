@@ -1,6 +1,6 @@
 # Exact immutable publisher outputs, not recipes evaluated with Core.
 # Grounding: build-9514b1b382d3, build-9514b1b382d3-solarus, build-ac8fae593e42-zquest, build-ac8fae593e42
-# and build-617e858e4daa (Starter pack with declared games)
+# and build-75eb41b75907 (Starter pack with package-file releases)
 # paths-SYSTEM.txt and revision.txt from their immutable releases;
 # IDs below come from the current host seed report over each published package.
 # Plugin updates change these pins and matching offline proof assets explicitly.
@@ -32,7 +32,7 @@ let
       korri-plugin-snes9x = "/nix/store/siyksarqi9j4bnh2wxhk6zxyhyp2awci-korri-plugin";
       korri-plugin-solarus = "/nix/store/2yp6hpj8bk6h78h3p46cq51af6p36kq3-korri-plugin";
       korri-plugin-ssh = "/nix/store/7frsp72c18bp69vjr7avs0l4lmjankb5-korri-plugin";
-      korri-plugin-starter-pack = "/nix/store/c0j4s87fx0j81n7s1szhszpimjlp9f48-korri-plugin";
+      korri-plugin-starter-pack = "/nix/store/v9mh7z49mc32c04406yza1nlhn1hr2ka-korri-plugin";
       korri-plugin-steam = "/nix/store/qx78b3rg5mpgf2q92146w4mzy30zchh8-korri-plugin";
       korri-plugin-stella = "/nix/store/hmyzqn91nvaq3vjnxn7m1ycvwizj2k36-korri-plugin";
       korri-plugin-sunshine = "/nix/store/7q3fv7767vdzrbax2v2dz2chcvp2yf7r-korri-plugin";
@@ -63,7 +63,7 @@ let
       korri-plugin-snes9x = "/nix/store/x50lsky8acip2kv41x7kr7677gnkm01l-korri-plugin";
       korri-plugin-solarus = "/nix/store/8n2ar4s593bz07ych8ld4w6ln04mnv1h-korri-plugin";
       korri-plugin-ssh = "/nix/store/l81yra5g4122wm8cpv2pdpgqjw5ws5p1-korri-plugin";
-      korri-plugin-starter-pack = "/nix/store/a5xz5z1d2z9cpq3hl2fr21ahi0h2mwwr-korri-plugin";
+      korri-plugin-starter-pack = "/nix/store/zkbhsj6l1zjym3cic041li0c63m254mm-korri-plugin";
       korri-plugin-steam = "/nix/store/7222i3pn7cwwxy4gsm5gcwmd3fy38k4v-korri-plugin";
       korri-plugin-stella = "/nix/store/67g1hi8pcwpiiba2z7i6mck0x50zvx5v-korri-plugin";
       korri-plugin-sunshine = "/nix/store/l6fi46y2m5cwgww7y7mpyriyj0z09d33-korri-plugin";
