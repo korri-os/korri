@@ -285,7 +285,8 @@ the provider's words, and where getting it stands is a card in Korri's words
 and with Korri's actions (yellow: download; red: failed,
 stopped; blue: not available, in your library
 with PLAY). A download takes the launch stage, with the bar from Korri's
-bytes. Back walks keyboard, entry, results, providers, home, and never
+bytes; waiting in korrid's download queue, or for the provider, walks the
+band instead, with Cancel. Back walks keyboard, entry, results, providers, home, and never
 cancels: the download keeps going and shows again on its entry. No provider
 art reaches Pico (it is on the provider's site), so each cart wears its
 initials. The place in the store is Pico's (`StorePlace`); every fact is
