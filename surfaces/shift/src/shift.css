@@ -3801,6 +3801,16 @@ button.shift-sheet-control:is(:hover, :focus, [data-korri-active-focus]) {
 	font-size: var(--shift-text-fine);
 }
 
+/* On a short container the notice would take the hero's rows. It gives way
+ * there (a readout relocates, rule 6): every split game's tile keeps its
+ * Split badge, the focused one's hero leads with the split, and the Saves
+ * destination says how many games are split. */
+@container (max-height: 420px) {
+	[data-shift-home] .shift-save-notice {
+		display: none;
+	}
+}
+
 [data-shift-home] .shift-save-notice-dot {
 	flex: 0 0 auto;
 	width: 0.6em;
