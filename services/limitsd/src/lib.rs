@@ -289,7 +289,10 @@ impl Limitsd {
         if let Err(first) = write() {
             // Match clock-governor's read-only sysfs recovery. Never remount the
             // fixture root, or cgroups; these failures are returned to the caller.
-            if self.roots.sysfs == Path::new("/sys") && path.starts_with(&self.roots.sysfs) {
+            if self.roots.sysfs == Path::new("/sys")
+                && path.starts_with(&self.roots.sysfs)
+                && !path.starts_with(&self.roots.cgroup)
+            {
                 let _ = Command::new("mount")
                     .args(["-o", "remount,rw", "/sys"])
                     .status();
