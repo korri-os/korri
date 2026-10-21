@@ -2,6 +2,7 @@
 # Grounding: build-9514b1b382d3, build-9514b1b382d3-solarus, build-ac8fae593e42-zquest, build-ac8fae593e42
 # and build-75eb41b75907 (Starter pack with package-file releases)
 # and build-824050bfa4c3 (PICO-8, Homebrew Hub and RetroBrews acquisition plugins)
+# and build-365ce4e054d5 (ADR 0012 FEX, Proton and Steam)
 # paths-SYSTEM.txt and revision.txt from their immutable releases;
 # IDs below come from the current host seed report over each published package.
 # Plugin updates change these pins and matching offline proof assets explicitly.
@@ -14,7 +15,7 @@ let
       korri-plugin-beetle-wswan = "/nix/store/q4a5p64ldk7i2wm8j5agdrk61lkdfdz1-korri-plugin";
       korri-plugin-fake08 = "/nix/store/66c4hds7g34kra7jkl53wmrm42p60v2w-korri-plugin";
       korri-plugin-fbneo = "/nix/store/060wwk3q1n6h9ixjqdkrm4vdrwz2fx34-korri-plugin";
-      korri-plugin-fex = "/nix/store/9wd09blndwjqpzyzk9girzw7pr75p8px-korri-plugin";
+      korri-plugin-fex = "/nix/store/gishs8dfwq5f16zs0qck459vmvpjx421-korri-plugin";
       korri-plugin-flycast = "/nix/store/1hyibappvdbx4jmqdsrp5blyyba46wkv-korri-plugin";
       korri-plugin-gambatte = "/nix/store/wqaq8k7vgb7snzl9i8q448d3n913b5h4-korri-plugin";
       korri-plugin-gamescope = "/nix/store/6y3g0yv13pmsq30a0fbigk40570h94lh-korri-plugin";
@@ -30,14 +31,14 @@ let
       korri-plugin-pico8 = "/nix/store/7yqqd99p7636bi39bgzgr5zlkgblxzvx-korri-plugin";
       korri-plugin-picodrive = "/nix/store/3bmsv149dbr0i5r9frim9ivilc7vsa9n-korri-plugin";
       korri-plugin-prosystem = "/nix/store/plh3rwpkiy6y7ir6kmj4mhqn464p1da4-korri-plugin";
-      korri-plugin-proton = "/nix/store/21n73nxnp47nf1kaaw21hglv34bgzam1-korri-plugin";
+      korri-plugin-proton = "/nix/store/2qspr627wbdprz9cg81143gn2kqyrh14-korri-plugin";
       korri-plugin-retroarch = "/nix/store/1s65pcy9clbhh7jiav9nv692drh4y6dp-korri-plugin";
       korri-plugin-retrobrews = "/nix/store/zg4s6g5ad115lfzpq3g3pfil6v4ml1zn-korri-plugin";
       korri-plugin-snes9x = "/nix/store/siyksarqi9j4bnh2wxhk6zxyhyp2awci-korri-plugin";
       korri-plugin-solarus = "/nix/store/2yp6hpj8bk6h78h3p46cq51af6p36kq3-korri-plugin";
       korri-plugin-ssh = "/nix/store/7frsp72c18bp69vjr7avs0l4lmjankb5-korri-plugin";
       korri-plugin-starter-pack = "/nix/store/v9mh7z49mc32c04406yza1nlhn1hr2ka-korri-plugin";
-      korri-plugin-steam = "/nix/store/qx78b3rg5mpgf2q92146w4mzy30zchh8-korri-plugin";
+      korri-plugin-steam = "/nix/store/7ks62xvwfl172rl7i4z8fmn8iiyngaaq-korri-plugin";
       korri-plugin-stella = "/nix/store/hmyzqn91nvaq3vjnxn7m1ycvwizj2k36-korri-plugin";
       korri-plugin-sunshine = "/nix/store/7q3fv7767vdzrbax2v2dz2chcvp2yf7r-korri-plugin";
       korri-plugin-zquest-classic = "/nix/store/1wkq4gsf2fkak9w3r3dbzg3nbsrpf5gs-korri-plugin";
@@ -48,7 +49,7 @@ let
       korri-plugin-beetle-wswan = "/nix/store/0n67mh4v9liypc2xa9gjsn7avpdl14nv-korri-plugin";
       korri-plugin-fake08 = "/nix/store/943x8pcmik2qbn04ckxq8c5qnykxjznn-korri-plugin";
       korri-plugin-fbneo = "/nix/store/xmar9arskgwsk7bfldi1x111s7mjlnch-korri-plugin";
-      korri-plugin-fex = "/nix/store/jbbswdh10xkq8i52jn7akakkyzhj731b-korri-plugin";
+      korri-plugin-fex = "/nix/store/w0nzpwryn6ckkfrrwka0lbm5iksm3y15-korri-plugin";
       korri-plugin-flycast = "/nix/store/ysp64r0bv0pyvnnk6cj03j7d65xfl32q-korri-plugin";
       korri-plugin-gambatte = "/nix/store/989m522gm214hcjq8b6rgx4z677lvx5c-korri-plugin";
       korri-plugin-gamescope = "/nix/store/b6c5bsvk0divymqlgfjbvpqkkim8hacr-korri-plugin";
@@ -64,14 +65,14 @@ let
       korri-plugin-pico8 = "/nix/store/ymsxs9wj428qldpchpmrz3wixjgkfkk4-korri-plugin";
       korri-plugin-picodrive = "/nix/store/sp14qmpyzd1q1i0sqklaysijl942df96-korri-plugin";
       korri-plugin-prosystem = "/nix/store/gz19rphfd55k6jk2q7d1whn1l41g200b-korri-plugin";
-      korri-plugin-proton = "/nix/store/q0fapz37cpw4jwlvdaxzjnjkhdhgg89c-korri-plugin";
+      korri-plugin-proton = "/nix/store/rjan002x2hvpk9n0ncwzxvzfvr25ri6v-korri-plugin";
       korri-plugin-retroarch = "/nix/store/dd28fs7hb6jkjjyspc69z6s4gif8wfjg-korri-plugin";
       korri-plugin-retrobrews = "/nix/store/mkfap2znlvqg5ralffl3admjkv1mp38k-korri-plugin";
       korri-plugin-snes9x = "/nix/store/x50lsky8acip2kv41x7kr7677gnkm01l-korri-plugin";
       korri-plugin-solarus = "/nix/store/8n2ar4s593bz07ych8ld4w6ln04mnv1h-korri-plugin";
       korri-plugin-ssh = "/nix/store/l81yra5g4122wm8cpv2pdpgqjw5ws5p1-korri-plugin";
       korri-plugin-starter-pack = "/nix/store/zkbhsj6l1zjym3cic041li0c63m254mm-korri-plugin";
-      korri-plugin-steam = "/nix/store/7222i3pn7cwwxy4gsm5gcwmd3fy38k4v-korri-plugin";
+      korri-plugin-steam = "/nix/store/3k5pfp2c1di8rkav0dr6r7j79fqfp98d-korri-plugin";
       korri-plugin-stella = "/nix/store/67g1hi8pcwpiiba2z7i6mck0x50zvx5v-korri-plugin";
       korri-plugin-sunshine = "/nix/store/l6fi46y2m5cwgww7y7mpyriyj0z09d33-korri-plugin";
       korri-plugin-zquest-classic = "/nix/store/q3p9qz33lccf1diwpv8z17fgpgbq2f0x-korri-plugin";

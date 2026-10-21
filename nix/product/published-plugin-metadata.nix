@@ -14,11 +14,10 @@ let
       "sha256-Jil4OmZoHllMkBjT2bnYZpvVXudlbCBisgTdKyo7w5Y="
       "sha256-7CrkIcu1L41VepSHbIoMyC9X0N/n3ScYr/2s522gJUw="
       "sha256-9G4kQ1/yT262GDM6Nh76hsfxusqHO/kpkbr1HjzqtBo="
-      "sha256-EvpsYRfVRRSZediT9bmrf1jriFaffjKWq4Oqz6Ufci4="
-      "sha256-CqlfqYmjldZ4qykBUfQdklmEShCyCyxb/w3MHo/fNVo="
       "sha256-HK9NUfO2QdAVH0ML/25w1jVv0/iRHoboqzRlOiZNQKI="
       "sha256-MjY/ot46w90e0yYuuCLFUqCSFm/mfaosoS2iNr1euSs="
       "sha256-11aKuvntwJ/32O0KphGciaRs5vQAwm+N5/LdMcLpuVU="
+      "sha256-c/xUGPEJ8oe1DNy3QoWGzOjQQX8vXO1lScLon9HK5oU="
     ];
     x86_64-linux = [
       "sha256-nJZ+40Y/QRYy2ke3Th22b8g872uYFjH/c4ps2/IBrAE="
@@ -26,11 +25,10 @@ let
       "sha256-O6/jNWL9SfZHqfnl0hSedYj/IV4JAdFKmQbtiPIyleI="
       "sha256-6mhzwXHpjZlL/bMXGrXXym3/pPH2S2BOuh5q63SYmdw="
       "sha256-10pYQrNFZ2UWKaJ9mqGYRKiYmFfiQFGuZgrz3T63l4g="
-      "sha256-N+2ChwaiLizXWclz4f5TyBzKvWRfW4I0EaNmEOXxPdg="
-      "sha256-95ooTxBez/rGmWeo4XucnIpE1yC/28bJnj6jWu6ZKHo="
       "sha256-nxXI2PNF3mRQrpNTPPZdTwWDwpw9DWVCwqI009ZzXjM="
       "sha256-xaDcRqu8GYh949bu0ucbCiuuH5bH5M6g2YzpLHT0Fow="
       "sha256-+UJDoH/DEvxb6wEU1rrykmHp7TJ22yQx1+UFmKZ+Hkg="
+      "sha256-2+W2lN3ULacUqn5ea2OoyKqg3URm1K8VQy+goBLTJ9o="
     ];
   };
   batches = [
@@ -39,11 +37,10 @@ let
     "build-ac8fae593e42-zquest"
     "build-ac8fae593e42"
     "build-dea5fd453fc6"
-    "build-e479fd55b3aa"
-    "build-96a06b0a82ef"
     "build-617e858e4daa"
     "build-75eb41b75907"
     "build-824050bfa4c3"
+    "build-365ce4e054d5"
   ];
   archives = pkgs.lib.imap0 (
     index: batch:

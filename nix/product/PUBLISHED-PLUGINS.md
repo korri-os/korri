@@ -35,12 +35,15 @@ Batch `build-dea5fd453fc6` (source `dea5fd453fc64d65edcdad1171cec85fb68be1f7`)
 replaces it with the build that skips fully clipped planes and waits for the
 host's configure after an unmap, so nested Gamescope no longer aborts when a
 window moves off screen or is hidden and shown again.
-Steam adds three outputs, selected on the RP Mini V2 only. `@korri:fex` and
-`@korri:proton` come from batch `build-e479fd55b3aa` (source
-`e479fd55b3aac624fb67c6f774d493b857f90c1c`); later sources rebuild them to the
-same paths. `@korri:steam` comes from batch `build-96a06b0a82ef` (source
-`96a06b0a82ef7fcb1a5d06d62b0b35f74f116983`), whose exact requirements are those
-FEX and Proton outputs.
+Steam adds three outputs, selected on the RP Mini V2 only. `@korri:fex`,
+`@korri:proton` and `@korri:steam` come from batch `build-365ce4e054d5` (source
+`365ce4e054d56b0607a8d67a2bc42a0fc262e9e1`): the ADR 0012 builds, in which FEX
+and Proton declare their pinned payloads as artifacts with unpack programs and
+Steam lists both artifacts. Steam's manifest `requires` exactly those FEX and
+Proton outputs of the same architecture. They replace the prepare-program
+builds of batches `build-e479fd55b3aa` and `build-96a06b0a82ef`; with no pinned
+output left in those batches, their offline archives are no longer pinned (the
+metadata check builds and verifies both architectures without them).
 Batch `build-75eb41b75907` (source
 `75eb41b759074b92a4dac54e8ef6d302463d1ba0`) replaces only the Starter pack.
 Its 27 declared games use `packageFile` releases from its own installed files
