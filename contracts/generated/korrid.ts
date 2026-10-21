@@ -1079,7 +1079,7 @@ export interface SaveInUseWarning {
 }
 
 export interface SaveCheck {
-	/** Plain warnings only for actual release or savestate-runner mismatches. */
+	/** Plain pre-launch warnings, never raw identifiers or diagnostics. */
 	warnings: string[];
 	status: SaveMark;
 	inUse: SaveInUseWarning[];

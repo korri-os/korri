@@ -524,10 +524,32 @@ impl NativeSaveStore {
                 Err(e) => return Err(e),
             };
         let mut protected: BTreeSet<String> = head_ids(&records)?.into_iter().collect();
-        records.sort_by(|a, b| {
-            b.ended_at
-                .cmp(&a.ended_at)
-                .then_with(|| snapshot_id(a).unwrap().cmp(&snapshot_id(b).unwrap()))
+        let parents: BTreeMap<_, _> = records
+            .iter()
+            .map(|record| {
+                (
+                    snapshot_id(record).expect("validated record"),
+                    record.parents.clone(),
+                )
+            })
+            .collect();
+        let mut distance = BTreeMap::new();
+        let mut pending: std::collections::VecDeque<_> =
+            protected.iter().map(|id| (id.clone(), 0usize)).collect();
+        while let Some((id, depth)) = pending.pop_front() {
+            if distance.get(&id).is_some_and(|known| *known <= depth) {
+                continue;
+            }
+            distance.insert(id.clone(), depth);
+            if let Some(parents) = parents.get(&id) {
+                pending.extend(parents.iter().map(|parent| (parent.clone(), depth + 1)));
+            }
+        }
+        // Clocks are display data, including during retention. The nearest
+        // ancestry stays; equal-distance records have a stable content-id order.
+        records.sort_by_key(|record| {
+            let id = snapshot_id(record).expect("validated record");
+            (distance.get(&id).copied().unwrap_or(usize::MAX), id)
         });
         for record in records.iter().take(10) {
             protected.insert(snapshot_id(record)?);

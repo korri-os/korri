@@ -383,3 +383,46 @@ fn picking_progress_keeps_both_screenshots_when_names_collide() {
                 .unwrap()
         )));
 }
+
+#[test]
+fn retention_ranks_ancestry_not_device_clocks() {
+    let root = tempfile::tempdir().unwrap();
+    let store = NativeSaveStore::new(root.path());
+    let mut parent = None;
+    let mut hashes = Vec::new();
+    for n in 0..12 {
+        let content = format!("progress {n}");
+        let hash = korrid::saves::record::hash(content.as_bytes());
+        let mut snapshot = record();
+        snapshot.parents = parent.into_iter().collect();
+        // Every newer session claims an earlier clock time.
+        snapshot.ended_at = format!("2026-10-21T00:00:{:02}.000Z", 11 - n);
+        snapshot.locations = vec![SnapshotLocation {
+            key: "saves".into(),
+            kind: SaveKind::Save,
+            files: vec![SaveFile {
+                path: "game.srm".into(),
+                sha256: hash.clone(),
+                bytes: content.len() as u64,
+            }],
+        }];
+        let id = store.put_record(PERSON, &snapshot).unwrap();
+        store
+            .put_object(PERSON, &hash, &mut content.as_bytes())
+            .unwrap();
+        store
+            .confirm(PERSON, "gba/wario", &id, &"1".repeat(64))
+            .unwrap();
+        hashes.push(hash);
+        parent = Some(id);
+    }
+    store.prune(PERSON, "gba/wario", PERSON).unwrap();
+    assert!(
+        store.object(PERSON, &hashes[0]).is_err(),
+        "the oldest ancestor is pruned despite its later clock"
+    );
+    assert!(
+        store.object(PERSON, &hashes[10]).is_ok(),
+        "the recent ancestor stays despite its earlier clock"
+    );
+}

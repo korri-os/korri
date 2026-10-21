@@ -216,7 +216,7 @@ pub struct SaveInUseWarning {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveCheck {
-    /// Plain warnings only for actual release or savestate-runner mismatches.
+    /// Plain pre-launch warnings, never raw identifiers or diagnostics.
     pub warnings: Vec<String>,
     pub status: SaveMark,
     pub in_use: Vec<SaveInUseWarning>,

@@ -2472,7 +2472,10 @@ async fn dispatch(
         }
         RpcRequest::SavesCheck(request) => {
             let result = match &state.mode {
-                ServerMode::Host(host) => host.save_check(request, state.saves.clone()).await,
+                ServerMode::Host(host) => {
+                    host.save_check(request, state.saves.clone(), state.federation.clone())
+                        .await
+                }
                 _ => Err(installed_routes_unsupported()),
             };
             RpcResponse::SavesCheck(match result {

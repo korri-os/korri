@@ -257,6 +257,7 @@ impl HostRuntime {
         &self,
         request: SaveCheckRequest,
         peer: Option<Arc<SavePeerService>>,
+        directory: Option<crate::federation::FederationDirectory>,
     ) -> Result<SaveCheck, RpcFailure> {
         let preparing = self.clone();
         let preparing_game = request.game_id.clone();
@@ -295,11 +296,13 @@ impl HostRuntime {
         let mut answered = false;
         let mut failed = false;
         let mut observations = Vec::new();
+        let mut heads_without_records = std::collections::BTreeSet::new();
         if let Some(peer) = peer {
             let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
             match peer.pull_before_launch(&request.game_id, deadline).await {
                 Ok(checks) => {
                     for check in checks {
+                        heads_without_records.extend(check.heads_without_records);
                         if let Some(in_use) = check.in_use {
                             answered = true;
                             let since = match in_use {
@@ -340,7 +343,14 @@ impl HostRuntime {
                 .current
                 .as_ref()
                 .and_then(|id| history.records.iter().find(|r| &r.snapshot_id == id));
+            let peers=directory.and_then(|directory|directory.snapshot().ok()).unwrap_or_default();
             let mut warnings = Vec::new();
+            for device in heads_without_records {
+                let label=peers.iter().find(|peer|peer.device_public_key==device)
+                    .and_then(|peer|peer.current_endpoint.as_ref().or(peer.remembered_endpoint.as_ref()))
+                    .and_then(|endpoint|endpoint.label.as_deref()).unwrap_or("another device");
+                warnings.push(format!("Saves were reported by {label}, but their records have not arrived. You can launch anyway."));
+            }
             if let Some(latest) = latest {
                 if let Ok(Some((input, prepared))) =
                     host.save_declaration(&request.game_id, request.runner_id.as_deref())
