@@ -128,6 +128,13 @@ pub fn launch_route(
         content_path,
         provider_ref,
         account_root: root.join("users/default").display().to_string(),
+        save_root: root
+            .join("users/default/saves")
+            .join(crate::host::play_log::encode_uri_component(
+                &route.playable_id,
+            ))
+            .display()
+            .to_string(),
         cache_root: root.join("cache").display().to_string(),
         files: files
             .into_iter()

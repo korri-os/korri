@@ -109,6 +109,7 @@ fn input(settings: serde_json::Value) -> PluginLaunchInput {
         "corePath": "/core",
         "contentPath": "/rom",
         "accountRoot": "/account",
+        "saveRoot": "/account/saves/game",
         "artifacts": {},
         "cacheRoot": "/cache",
         "files": {"autoconfig":"/autoconfig"},

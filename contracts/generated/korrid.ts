@@ -419,6 +419,25 @@ export interface GameRunnerSetRequest {
 	expectedRevision: string;
 }
 
+export interface GameSaveHeads {
+	gameId: string;
+	heads: string[];
+}
+
+export enum SaveMark {
+	Synced = "Synced",
+	Split = "Split",
+	NotChecked = "NotChecked",
+	NotSynced = "NotSynced",
+	SyncedBySteam = "SyncedBySteam",
+}
+
+export interface GameSaveStatus {
+	gameId: string;
+	status: SaveMark;
+	heads: string[];
+}
+
 export interface Health {
 	version: string;
 }
@@ -764,6 +783,18 @@ export interface ProvisionedFile {
 	content: string;
 }
 
+export enum SaveKind {
+	Save = "save",
+	Savestate = "savestate",
+	Screenshot = "screenshot",
+}
+
+export interface SaveLocation {
+	key: string;
+	kind: SaveKind;
+	path: string;
+}
+
 /**
  * Legacy launch plan plus the existing provisioned files/directories.
  * Approval authorizes output; this treaty adds no path or argument policy.
@@ -776,6 +807,8 @@ export interface PluginLaunchOutput {
 	cwd?: string;
 	directories?: string[];
 	files?: ProvisionedFile[];
+	/** Whole folders under saveRoot, identified by stable runner-declared keys. */
+	saveLocations?: SaveLocation[];
 }
 
 /** The compositor's logical output size, after transform and scaling. */
@@ -883,6 +916,8 @@ export interface PluginLaunchInput {
 	contentPath?: string;
 	ref?: string;
 	accountRoot: string;
+	/** This person's save root for the selected game, independent of its ROM path. */
+	saveRoot: string;
 	/** Reconstructible downloads: the storage root's `cache` directory. */
 	cacheRoot: string;
 	/**
@@ -1036,6 +1071,110 @@ export interface RetroarchSessionTelemetry {
 export interface RunnerConfig {
 	settings?: Record<string, LaunchSettingValue>;
 	config?: LaunchConfigOverrides;
+}
+
+export interface SaveInUseWarning {
+	device: string;
+	since: number;
+}
+
+export interface SaveCheck {
+	status: SaveMark;
+	inUse: SaveInUseWarning[];
+	releaseId?: string;
+	runnerId?: string;
+}
+
+export interface SaveCheckRequest {
+	gameId: string;
+	runnerId?: string;
+}
+
+export interface SaveFile {
+	/** Relative to this location, never an absolute filesystem path. */
+	path: string;
+	sha256: string;
+	bytes: number;
+}
+
+export interface SaveGameRequest {
+	gameId: string;
+}
+
+export interface SaveHeads {
+	games: GameSaveHeads[];
+}
+
+export interface SaveHeadsRequest {
+}
+
+export interface SnapshotLocation {
+	key: string;
+	kind: SaveKind;
+	files: SaveFile[];
+}
+
+export interface SnapshotRecord {
+	parents: string[];
+	gameId: string;
+	releaseId?: string;
+	runnerId: string;
+	/** Public key of the device that made this snapshot. */
+	device: string;
+	/** UTC RFC 3339 with milliseconds. Never used to decide a split. */
+	endedAt: string;
+	durationSeconds: number;
+	interrupted: boolean;
+	locations: SnapshotLocation[];
+}
+
+export interface SaveHistoryEntry {
+	snapshotId: string;
+	record: SnapshotRecord;
+}
+
+export interface SaveHistory {
+	records: SaveHistoryEntry[];
+	current?: string;
+}
+
+export interface SaveInUseActive {
+	device: string;
+	inUse: boolean;
+	since: number;
+}
+
+export interface SaveInUseIdle {
+	device: string;
+	inUse: boolean;
+}
+
+export interface SaveObjectRequest {
+	sha256: string;
+}
+
+export interface SavePickRequest {
+	gameId: string;
+	snapshotId: string;
+}
+
+export interface SaveRecords {
+	records: SnapshotRecord[];
+	/** Only snapshots whose objects have been verified locally. */
+	confirmed: string[];
+}
+
+export interface SaveRecordsRequest {
+	gameId: string;
+	ids: string[];
+	records?: SnapshotRecord[];
+}
+
+export interface SaveStatus {
+	games: GameSaveStatus[];
+}
+
+export interface SaveStatusRequest {
 }
 
 /** Legacy `SearchRequest` without `platforms`. Exactly one provider id. */

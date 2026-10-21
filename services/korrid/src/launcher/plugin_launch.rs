@@ -48,6 +48,8 @@ pub struct PluginLaunchInput {
     #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
     pub provider_ref: Option<String>,
     pub account_root: String,
+    /// This person's save root for the selected game, independent of its ROM path.
+    pub save_root: String,
     /// Reconstructible downloads: the storage root's `cache` directory.
     pub cache_root: String,
     /// The runner's own files under their bare keys, plus each exactly
@@ -78,6 +80,9 @@ pub struct PluginLaunchOutput {
     pub directories: Vec<String>,
     #[serde(default)]
     pub files: Vec<ProvisionedFile>,
+    /// Whole folders under saveRoot, identified by stable runner-declared keys.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub save_locations: Vec<crate::saves::types::SaveLocation>,
 }
 
 /// The compositor's logical output size, after transform and scaling.
@@ -136,14 +141,17 @@ pub fn evaluate_snapshot(
     source: &crate::script::source::SourceSnapshot,
     input: &PluginLaunchInput,
 ) -> Result<PluginLaunchOutput, String> {
-    let input = serde_json::to_string(input).map_err(|e| e.to_string())?;
+    let encoded = serde_json::to_string(input).map_err(|e| e.to_string())?;
     let result = crate::script::call_plugin_operation_snapshot(
         source,
         crate::script::LAUNCH_PREPARE,
-        &input,
+        &encoded,
     )
     .map_err(|failure| failure.to_string())?;
-    serde_json::from_str(&result).map_err(|e| format!("invalid launch result: {e}"))
+    let plan: PluginLaunchOutput =
+        serde_json::from_str(&result).map_err(|e| format!("invalid launch result: {e}"))?;
+    validate_save_locations(&input.save_root, &plan.save_locations)?;
+    Ok(plan)
 }
 
 #[derive(Deserialize)]
@@ -250,6 +258,7 @@ fn prepare_with_diagnostics(
                 )
             })?;
             validate_plan(&output)?;
+            validate_save_locations(&input.save_root, &output.save_locations)?;
             Ok(output)
         };
         plan = compose().map_err(|reason| {
@@ -266,6 +275,55 @@ fn prepare_with_diagnostics(
         runner_argv,
         redaction,
     })
+}
+
+/// Resolve existing ancestors too, because launch declarations precede mkdir.
+/// Canonicalization follows symlinks before checking the save-root boundary.
+pub fn validate_save_locations(
+    root: &str,
+    locations: &[crate::saves::types::SaveLocation],
+) -> Result<(), String> {
+    use std::path::{Component, PathBuf};
+    fn resolve(path: &Path) -> Result<PathBuf, String> {
+        if !path.is_absolute() {
+            return Err("save paths must be absolute".into());
+        }
+        let mut result = PathBuf::new();
+        for component in path.components() {
+            match component {
+                Component::ParentDir => {
+                    result.pop();
+                }
+                Component::CurDir => {}
+                other => {
+                    result.push(other.as_os_str());
+                    match fs::symlink_metadata(&result) {
+                        Ok(_) => {
+                            result = result.canonicalize().map_err(|e| e.to_string())?;
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => return Err(error.to_string()),
+                    }
+                }
+            }
+        }
+        Ok(result)
+    }
+    let root = resolve(Path::new(root))?;
+    let mut keys = std::collections::BTreeSet::new();
+    for location in locations {
+        if location.key.is_empty() || location.key.contains('\0') || !keys.insert(&location.key) {
+            return Err("save location keys must be non-empty and unique".into());
+        }
+        let path = resolve(Path::new(&location.path))?;
+        if path == root || !path.starts_with(&root) {
+            return Err("save location must resolve inside saveRoot".into());
+        }
+        if path.exists() && !path.is_dir() {
+            return Err("save location must be a whole folder".into());
+        }
+    }
+    Ok(())
 }
 
 fn validate_plan(plan: &PluginLaunchOutput) -> Result<(), String> {
