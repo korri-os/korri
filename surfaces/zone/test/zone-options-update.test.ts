@@ -131,6 +131,8 @@ describe("PressedRow", () => {
       actionId: "game-folder-remove:roms",
       confirm: {
         headline: "Remove game folder?",
+        // Korri's confirmation title is Korri's words: the look draws it as Korri's name.
+        korriHeadline: true,
         lines: ["Korri will remove games it added from this folder. Edited or hand-authored games stay."],
         confirmLabel: "Remove folder",
       },
@@ -140,6 +142,7 @@ describe("PressedRow", () => {
   test("a destructive device action asks NO / YES under its label", () => {
     const step = press(powerOff)
     expect(step.requests).toEqual([])
+    // The headline is the row's label, Zone's word in every look: no korriHeadline.
     expect(step.model.dialog?.confirm).toEqual({ headline: "Power off", lines: [], confirmLabel: "Yes" })
   })
   test("a device action fires; an inert one does nothing", () => {
