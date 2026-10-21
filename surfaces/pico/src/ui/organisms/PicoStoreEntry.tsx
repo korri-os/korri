@@ -9,8 +9,8 @@ import { PicoGameStage } from "./PicoGameStage"
  * One entry a provider offers, on the same stage as a game's own screen: its
  * cartridge (or initials), its name and where it comes from, the provider's
  * description, and where getting it stands. The words and actions under it
- * are Korri's. Cards say what they are by colour: yellow asks (download,
- * which folder), red warns (failed, stopped), blue tells (not available,
+ * are Korri's. Cards say what they are by colour: yellow asks (download),
+ * red warns (failed, stopped), blue tells (not available,
  * downloaded but not recognised, in your library). Work under way takes the
  * whole screen on the launch stage, so it is not drawn here.
  */

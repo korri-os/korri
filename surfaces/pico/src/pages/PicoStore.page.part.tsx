@@ -8,7 +8,7 @@ export const note = "Providers, one provider's search and results, and one entry
 
 const none = () => undefined
 const typing = { onType: none, onBackspace: none, onClear: none, onToggleCapitals: none, onToggleSymbols: none }
-const HUB = "@korri:homebrewhub"
+const BBS = "@korri:pico8"
 
 function store(shown: PicoStoreShown, overrides: Parameters<typeof storeFixture>[0] = {}) {
   return (
@@ -27,12 +27,12 @@ export default function PicoStorePagePart() {
   return store({ view: "Providers", providerId: undefined, typing: undefined })
 }
 
-export function Results() { return store({ view: "Results", providerId: HUB, typing: undefined }) }
-export function Typing() { return store({ view: "Results", providerId: HUB, typing: picoTextDraft("2048") }) }
-export function Entry() { return store({ view: "Entry", providerId: HUB, typing: undefined }) }
-export function Confirm() { return store({ view: "Entry", providerId: HUB, typing: undefined }, { details: storeDetails(STORE_GETS.confirm) }) }
-export function Downloading() { return store({ view: "Entry", providerId: HUB, typing: undefined }, { details: storeDetails(STORE_GETS.downloading) }) }
-export function DownloadingSizeUnknown() { return store({ view: "Entry", providerId: HUB, typing: undefined }, { details: storeDetails(STORE_GETS.unsized) }) }
-export function Placing() { return store({ view: "Entry", providerId: HUB, typing: undefined }, { details: storeDetails(STORE_GETS.placing) }) }
-export function InLibrary() { return store({ view: "Entry", providerId: HUB, typing: undefined }, { details: storeDetails(STORE_GETS.inLibrary) }) }
-export function Stopped() { return store({ view: "Entry", providerId: HUB, typing: undefined }, { details: storeDetails(STORE_GETS.stopped) }) }
+export function Results() { return store({ view: "Results", providerId: BBS, typing: undefined }) }
+export function Typing() { return store({ view: "Results", providerId: BBS, typing: picoTextDraft("celeste") }) }
+export function Entry() { return store({ view: "Entry", providerId: BBS, typing: undefined }) }
+export function Confirm() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.confirm) }) }
+export function Downloading() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.downloading) }) }
+export function DownloadingSizeUnknown() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.unsized) }) }
+export function Placing() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.placing) }) }
+export function InLibrary() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.inLibrary) }) }
+export function Stopped() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.stopped) }) }

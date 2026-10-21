@@ -12,7 +12,7 @@ import type { PicoRequest } from "../src/state/requests"
 import { shownScreen } from "../src/state/shown"
 import { update } from "../src/state/update"
 
-const HUB = "@korri:homebrewhub"
+const BBS = "@korri:pico8"
 const withStore = (store: SurfaceStore | undefined, extra: Partial<SurfaceModel> = {}): SurfaceModel =>
   ({ ...fixtureModel, ...(store === undefined ? {} : { store }), ...extra })
 
@@ -58,10 +58,10 @@ describe("opening the store", () => {
 describe("searching", () => {
   test("a provider not searched yet opens on the keyboard; SEARCH sends the trimmed text", () => {
     const korri = withStore(idleSearch)
-    const { nav, requests } = story(korri, open, { _tag: "ChoseStoreProvider", providerId: HUB },
-      type(" "), type("2"), type("0"), type("4"), type("8"), type(" "), { _tag: "SubmittedStoreSearch" })
-    expect(requests).toEqual([{ _tag: "OpenStore" }, { _tag: "SearchStore", providerId: HUB, query: "2048" }])
-    expect(nav.storePlace).toEqual({ view: "Results", providerId: HUB, typing: undefined })
+    const { nav, requests } = story(korri, open, { _tag: "ChoseStoreProvider", providerId: BBS },
+      type(" "), type("c"), type("e"), type("l"), type(" "), { _tag: "SubmittedStoreSearch" })
+    expect(requests).toEqual([{ _tag: "OpenStore" }, { _tag: "SearchStore", providerId: BBS, query: "cel" }])
+    expect(nav.storePlace).toEqual({ view: "Results", providerId: BBS, typing: undefined })
   })
 
   test("a provider Korri does not list is not a page", () => {
@@ -70,33 +70,33 @@ describe("searching", () => {
   })
 
   test("a provider already searched shows its results, and SEARCH reopens the keys with that query", () => {
-    const korri = withStore(storeFixture({ search: { _tag: "Ready", providerId: HUB, query: "2048", entries: [] } }))
-    const { nav } = story(korri, open, { _tag: "ChoseStoreProvider", providerId: HUB })
+    const korri = withStore(storeFixture({ search: { _tag: "Ready", providerId: BBS, query: "celeste", entries: [] } }))
+    const { nav } = story(korri, open, { _tag: "ChoseStoreProvider", providerId: BBS })
     expect(nav.storePlace.typing).toBeUndefined()
     const reopened = storyFrom(nav, korri, { _tag: "OpenedStoreSearch" })
-    expect(reopened.nav.storePlace.typing?.text).toBe("2048")
+    expect(reopened.nav.storePlace.typing?.text).toBe("celeste")
   })
 
   test("the keys stop at 64 characters", () => {
     const korri = withStore(idleSearch)
-    const typed = story(korri, open, { _tag: "ChoseStoreProvider", providerId: HUB }, ...Array.from({ length: 70 }, () => type("a")))
+    const typed = story(korri, open, { _tag: "ChoseStoreProvider", providerId: BBS }, ...Array.from({ length: 70 }, () => type("a")))
     expect(typed.nav.storePlace.typing?.text).toHaveLength(64)
   })
 
   test("Back closes the keyboard before anything else, and sends nothing", () => {
     const korri = withStore(idleSearch)
-    const { nav, requests } = story(korri, open, { _tag: "ChoseStoreProvider", providerId: HUB }, type("x"), back)
-    expect(nav.storePlace).toEqual({ view: "Results", providerId: HUB, typing: undefined })
+    const { nav, requests } = story(korri, open, { _tag: "ChoseStoreProvider", providerId: BBS }, type("x"), back)
+    expect(nav.storePlace).toEqual({ view: "Results", providerId: BBS, typing: undefined })
     expect(requests).toEqual([{ _tag: "OpenStore" }])
   })
 })
 
 describe("an entry", () => {
   const korri = withStore(storeFixture())
-  const atEntry = () => story(korri, open, { _tag: "ChoseStoreProvider", providerId: HUB }, { _tag: "OpenedStoreEntry", entryId: "e:2048" })
+  const atEntry = () => story(korri, open, { _tag: "ChoseStoreProvider", providerId: BBS }, { _tag: "OpenedStoreEntry", entryId: "e:celeste" })
 
   test("opening one of Korri's results asks for it; one Korri did not list asks nothing", () => {
-    expect(atEntry().requests).toEqual([{ _tag: "OpenStore" }, { _tag: "OpenStoreEntry", entryId: "e:2048" }])
+    expect(atEntry().requests).toEqual([{ _tag: "OpenStore" }, { _tag: "OpenStoreEntry", entryId: "e:celeste" }])
     const stray = storyFrom(atEntry().nav, korri, back, { _tag: "OpenedStoreEntry", entryId: "e:nowhere" })
     expect(stray.requests).toEqual([])
     expect(stray.nav.storePlace.view).toBe("Results")
@@ -142,7 +142,7 @@ describe("an entry", () => {
 
   test("the store keeps its place when it closes and opens again", () => {
     const left = storyFrom(atEntry().nav, korri, back, back, back)
-    const reopened = storyFrom(left.nav, korri, open, { _tag: "ChoseStoreProvider", providerId: HUB })
-    expect(reopened.nav.storePlace.providerId).toBe(HUB)
+    const reopened = storyFrom(left.nav, korri, open, { _tag: "ChoseStoreProvider", providerId: BBS })
+    expect(reopened.nav.storePlace.providerId).toBe(BBS)
   })
 })
