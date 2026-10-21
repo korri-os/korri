@@ -6,19 +6,18 @@
  * catalogues (Korri's providers); the order form, typed on the desk's keys;
  * what the catalogue lists; and one entry with where getting it stands. Every
  * word and action on a page is Korri's, passed through untouched. A download
- * shows as a VCR-style counter of sixteen cells from Korri's bytes. When the
+ * shows as a VCR-style counter of sixteen cells from Korri's bytes; an order
+ * waiting behind another download is stamped ON HOLD instead. When the
  * game is in the library, the desk hands you the tape and sends you to the
  * TV, because that is where games are played here.
  */
 import "./BoxbusterOrderDesk.css"
+import type { SurfaceAction, SurfaceStore, SurfaceStoreGet } from "@contracts/surface/korri-surface"
 import { useLayoutEffect, useRef } from "react"
 import {
   DESK_KEYS,
   DESK_TEXT_MAX,
-  type DeskAction,
-  type DeskGet,
   type DeskPlace,
-  type DeskStore,
   deskCells,
   deskDelete,
   deskSearchFor,
@@ -38,7 +37,7 @@ export function BoxbusterOrderDesk({
   onLeave,
   canFetch,
 }: {
-  store: DeskStore
+  store: SurfaceStore
   place: DeskPlace
   onPlace: (place: DeskPlace) => void
   onSearch: (providerId: string, query: string) => void
@@ -78,7 +77,7 @@ export function BoxbusterOrderDesk({
     target.focus()
   })
 
-  const actionButtons = (actions: readonly DeskAction[]) => actions.length === 0 ? null : (
+  const actionButtons = (actions: readonly SurfaceAction[]) => actions.length === 0 ? null : (
     <div className="boxbuster-desk-actions" data-desk-landing="">
       {actions.map(action => (
         <button
@@ -94,7 +93,7 @@ export function BoxbusterOrderDesk({
     </div>
   )
 
-  const getPanel = (get: DeskGet) => {
+  const getPanel = (get: SurfaceStoreGet) => {
     switch (get._tag) {
       case "Offer":
         return (
@@ -114,6 +113,18 @@ export function BoxbusterOrderDesk({
           </>
         )
       case "Working": {
+        // Waiting its turn behind another download: nothing moves yet, so
+        // the counter stays off and the order is stamped.
+        if (get.queued === true) {
+          return (
+            <>
+              <p className="boxbuster-desk-kicker">{get.kicker}</p>
+              <p className="boxbuster-desk-hold">On hold</p>
+              {get.detail === undefined ? null : <p className="boxbuster-desk-note">{get.detail}</p>}
+              {actionButtons(get.actions)}
+            </>
+          )
+        }
         const lit = get.progress === undefined ? undefined : deskCells(get.progress, CELLS.length)
         const percent = get.progress?.total === undefined || get.progress.total <= 0
           ? undefined

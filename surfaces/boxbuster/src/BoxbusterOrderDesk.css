@@ -162,6 +162,18 @@
 	line-height: 1.15;
 }
 
+/* A queued order: a rubber stamp on the order, in the store's trim. */
+.boxbuster-desk-hold {
+	justify-self: start;
+	margin: 0;
+	padding: 0.15em 0.5em;
+	border: var(--bb-rule) solid var(--bb-trim);
+	color: var(--bb-trim);
+	font-size: var(--bb-text-title);
+	line-height: 1.15;
+	text-transform: uppercase;
+}
+
 .boxbuster-desk-kicker[data-tone="alarm"] {
 	color: var(--bb-alarm);
 }
