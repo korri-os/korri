@@ -21,6 +21,8 @@ export type FailedDownloadTag = "FailedDownload";
 
 export type FinalDownloadTag = "FinalDownload";
 
+export type LaunchSettingValue = number | string;
+
 export type LaunchSettingValue = boolean | number | string;
 
 /**
@@ -495,9 +497,83 @@ export interface LaunchConfigOverrides {
 	replace?: string;
 }
 
+export interface LaunchCpuPolicy {
+	name: string;
+	cpus: number[];
+	cpuinfoMaxFreq: number;
+	availableFrequencies: number[];
+	availableGovernors: string[];
+}
+
+export interface LaunchPercentRange {
+	min: number;
+	max: number;
+}
+
+export interface LaunchDeviceDefaults {
+	cpu: LaunchPercentRange;
+	gpu: LaunchPercentRange;
+	governor: string;
+}
+
+export interface LaunchGpuDevfreq {
+	name: string;
+	availableFrequencies: number[];
+}
+
+export interface LaunchDeviceFacts {
+	defaults: LaunchDeviceDefaults;
+	cpuPolicies: LaunchCpuPolicy[];
+	gpuDevfreq: LaunchGpuDevfreq[];
+}
+
 export interface LaunchExecutor {
 	id: string;
 	available: boolean;
+}
+
+export interface LaunchProfileRemoveRequest {
+	gameId: string;
+	profileId: string;
+	expectedRevision: string;
+}
+
+export interface LaunchProfileSaveRequest {
+	gameId: string;
+	profileId?: string;
+	title: string;
+	expectedRevision: string;
+}
+
+export interface LaunchProfileSelectRequest {
+	gameId: string;
+	profileId?: string;
+	expectedRevision: string;
+}
+
+export type LaunchSettingsScope =
+	| { _tag: "Device", id?: undefined }
+	| { _tag: "System", id: string }
+	| { _tag: "Runner", id: string }
+	| { _tag: "Game", id: string }
+	| { _tag: "Release", id: {
+	gameId: string;
+	releaseId: string;
+}}
+	| { _tag: "Profile", id: {
+	gameId: string;
+	profileId: string;
+}};
+
+export interface LaunchResolvedValue {
+	value: number;
+	source: LaunchSettingsScope;
+	adjusted: boolean;
+}
+
+export interface LaunchResolvedRange {
+	min: LaunchResolvedValue;
+	max: LaunchResolvedValue;
 }
 
 export enum LaunchContributorKind {
@@ -508,6 +584,60 @@ export enum LaunchContributorKind {
 export interface LaunchRouteContributor {
 	kind: LaunchContributorKind;
 	id: string;
+}
+
+export interface LaunchSettingsValues {
+	min?: number;
+	max?: number;
+}
+
+export interface LaunchSettingsLayer {
+	scope: LaunchSettingsScope;
+	title: string;
+	cpu: LaunchSettingsValues;
+	gpu: LaunchSettingsValues;
+	governor?: string;
+}
+
+export interface LaunchSettingsProfile {
+	id: string;
+	title: string;
+	cpu: LaunchSettingsValues;
+	gpu: LaunchSettingsValues;
+}
+
+export interface LaunchSettingsResolved {
+	cpu: LaunchResolvedRange;
+	gpu: LaunchResolvedRange;
+	governor?: string;
+}
+
+export enum LaunchSetting {
+	CpuMin = "cpu.min",
+	CpuMax = "cpu.max",
+	GpuMin = "gpu.min",
+	GpuMax = "gpu.max",
+	CpuGovernor = "cpu.governor",
+}
+
+export interface LaunchSettingsSetRequest {
+	scope: LaunchSettingsScope;
+	setting: LaunchSetting;
+	value?: LaunchSettingValue;
+	expectedRevision: string;
+}
+
+export interface LaunchSettingsSnapshot {
+	layers: LaunchSettingsLayer[];
+	resolved: LaunchSettingsResolved;
+	profiles: LaunchSettingsProfile[];
+	selectedProfile?: string;
+	deviceFacts?: LaunchDeviceFacts;
+	revisions: RunnerChoiceRevisions;
+}
+
+export interface LaunchSettingsSnapshotRequest {
+	gameId?: string;
 }
 
 export interface LocalGame {
@@ -1447,6 +1577,14 @@ export type IdentityStatusOutcome =
 
 export type IdentitySwitchOutcome =
 	| { _tag: "Ok", payload: IdentitySwitchCompleted }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type LaunchSettingsSnapshotOutcome =
+	| { _tag: "Ok", payload: LaunchSettingsSnapshot }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type LaunchSettingsWriteOutcome =
+	| { _tag: "Ok", payload: RunnerChoiceRevisions }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type LocalGamesListOutcome =

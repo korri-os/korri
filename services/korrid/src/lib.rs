@@ -3,6 +3,7 @@
 pub mod acquisition;
 #[cfg(test)]
 mod launch_handoff_tests;
+pub mod launch_settings;
 
 use axum::{
     extract::State,
