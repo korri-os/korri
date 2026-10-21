@@ -12,7 +12,8 @@ use crate::{
     unit::Units,
 };
 use std::{
-    collections::BTreeMap,
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -42,6 +43,11 @@ pub struct Host {
     paths: HostPaths,
     lifecycle: LifecyclePolicy,
     owner_uid: u32,
+    /// Packages whose contents this host instance has already rehashed. A
+    /// host lives for one command under the exclusive lock, so this removes
+    /// repeat rehashes inside one install or enable without trusting
+    /// anything an earlier command checked.
+    rehashed: RefCell<BTreeSet<PathBuf>>,
     #[cfg(test)]
     test_runtime: Option<TestRuntime>,
 }
@@ -127,6 +133,7 @@ impl Host {
             paths,
             lifecycle,
             owner_uid: 0,
+            rehashed: RefCell::default(),
             #[cfg(test)]
             test_runtime: None,
         })
@@ -163,6 +170,7 @@ impl Host {
             paths,
             lifecycle,
             owner_uid: unsafe { libc::geteuid() },
+            rehashed: RefCell::default(),
             test_runtime: Some(runtime),
         })
     }
@@ -413,6 +421,15 @@ impl Host {
             Provenance::RawCache { cache_url } => Some(cache_url.as_str()),
             Provenance::Repository { .. } => None,
         };
+        // Rehash a package's contents at most once per command. The signature
+        // over its registered hash is still checked on every call.
+        let contents = if contents == package::StoreContents::Rehash
+            && self.rehashed.borrow().contains(selected)
+        {
+            package::StoreContents::TrustRegistered
+        } else {
+            contents
+        };
         package::verify_publisher_in(
             &self.nix,
             snapshot,
@@ -421,6 +438,9 @@ impl Host {
             &self.publishers,
             contents,
         )?;
+        if contents == package::StoreContents::Rehash {
+            self.rehashed.borrow_mut().insert(selected.to_path_buf());
+        }
         Ok(())
     }
 
