@@ -627,7 +627,14 @@ export interface LaunchSettingsSetRequest {
 	expectedRevision: string;
 }
 
+/** Resolved values use only the layers present when a route is not selected. */
+export type LaunchSettingsRouteLayers =
+	| { _tag: "Present", message?: undefined }
+	| { _tag: "NeedsRunnerChoice", message?: undefined }
+	| { _tag: "Unavailable", message: string };
+
 export interface LaunchSettingsSnapshot {
+	routeLayers: LaunchSettingsRouteLayers;
 	layers: LaunchSettingsLayer[];
 	resolved: LaunchSettingsResolved;
 	profiles: LaunchSettingsProfile[];

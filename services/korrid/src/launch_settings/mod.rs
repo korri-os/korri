@@ -133,6 +133,7 @@ pub struct LaunchDeviceFacts {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchSettingsSnapshot {
+    pub route_layers: LaunchSettingsRouteLayers,
     pub layers: Vec<LaunchSettingsLayer>,
     pub resolved: LaunchSettingsResolved,
     pub profiles: Vec<LaunchSettingsProfile>,
@@ -230,4 +231,14 @@ pub enum LaunchSettingsSnapshotOutcome {
 pub enum LaunchSettingsWriteOutcome {
     Ok(RunnerChoiceRevisions),
     Err(RpcFailure),
+}
+
+/// Resolved values use only the layers present when a route is not selected.
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "_tag", content = "message")]
+pub enum LaunchSettingsRouteLayers {
+    Present,
+    NeedsRunnerChoice,
+    Unavailable(String),
 }
