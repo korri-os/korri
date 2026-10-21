@@ -21,6 +21,12 @@ async fn local_rpc_download_retry_and_launch_gate_share_cache_truth() {
         export const runners = {{run:{{id:'@test:runtime/run', program:'run', systems:['gba'], artifacts:['@test:runtime/payload']}}}};
         export const handlers = {{'launch.prepare': input => ({{command:input.program, args:[input.artifacts.payload]}})}};
     "#)).unwrap();
+    fs::write(
+        package.join("manifest.json"),
+        json!({"entry":"plugin.ts","sources":["plugin.ts"],"files":{"run":package.join("run")}})
+            .to_string(),
+    )
+    .unwrap();
     let registry =
         plugin::PluginRegistry::from_installed(vec![plugin_installation::EnabledPackage {
             id: "@test:runtime".into(),
@@ -41,6 +47,7 @@ async fn local_rpc_download_retry_and_launch_gate_share_cache_truth() {
         Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
     )
     .with_route_registry(root.path().into(), registry);
+    runtime.claim_save_owner();
     let app = secure_host_routers(
         runtime,
         &root.path().join("private"),

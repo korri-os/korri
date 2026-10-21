@@ -485,7 +485,7 @@ impl HostRuntime {
     }
 
     #[cfg(test)]
-    fn claim_save_owner(&self) {
+    pub(crate) fn claim_save_owner(&self) {
         use nostr::prelude::{EventBuilder, FinalizeEvent, Keys, Kind, SecretKey, Tag, Timestamp};
         let mut secret = [0u8; 32];
         secret[31] = 3;

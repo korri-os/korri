@@ -60,6 +60,10 @@ impl Fixture {
             ),
         )
         .unwrap();
+        fs::write(
+            package.join("manifest.json"),
+            json!({"entry":"plugin.ts","sources":["plugin.ts"],"files":{"run":package.join("run")}}).to_string(),
+        ).unwrap();
         let registry =
             plugin::PluginRegistry::from_installed(vec![plugin_installation::EnabledPackage {
                 id: "@test:rock".into(),
@@ -98,6 +102,7 @@ impl Fixture {
             backend.clone(),
         )
         .with_route_registry(root.path().into(), registry.clone());
+        runtime.claim_save_owner();
         let app = secure_host_routers(
             runtime,
             &root.path().join("private"),
@@ -266,6 +271,7 @@ async fn an_artifact_game_shows_before_download_downloads_launches_and_removes()
         &route,
         None,
         None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .expect("listing preflight must not require downloaded artifacts");
     let planned: launcher::plugin_launch::PluginLaunchInput =
