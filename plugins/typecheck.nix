@@ -29,7 +29,7 @@ pkgs.runCommand "korri-plugins-typecheck" { nativeBuildInputs = [ pkgs.typescrip
   # Preserve producer bytes and restore their original import layout. These
   # are pinned test declarations, never packaged as Core production plugins.
   (cd work/services/korrid/tests/fixtures/first-party && sha256sum -c SHA256SUMS)
-  for name in steam fex proton; do
+  for name in steam fex proton pico8 homebrewhub retrobrews; do
     mkdir -p "work/plugins/$name"
     cp "work/services/korrid/tests/fixtures/first-party/$name/plugin.ts" "work/plugins/$name/plugin.ts"
   done
