@@ -44,6 +44,27 @@ export interface SurfaceLaunchLocation {
   readonly label: string
 }
 
+/**
+ * Measured progress, in bytes. A surface draws a real bar from it. `total` is
+ * absent when Korri knows how far it has got but not how far it goes.
+ */
+export interface SurfaceProgress {
+  readonly done: number
+  readonly total?: number
+}
+
+/**
+ * Where one download stands, wherever it shows: a game's own download and a
+ * store entry being got. Korri fetches one thing at a time, so a download can
+ * wait its turn. Surfaces word both facts themselves.
+ */
+export interface SurfaceDownloadState {
+  /** Waiting behind another download. */
+  readonly queued?: true
+  /** While it downloads. No `total` means no known end. */
+  readonly progress?: SurfaceProgress
+}
+
 export interface SurfaceGame {
   readonly id: string
   readonly title: string
@@ -79,16 +100,11 @@ export interface SurfaceGame {
   /**
    * Present when this game needs anything downloaded to this device: its own
    * files, or a runtime it depends on. `bytes` is the total still to fetch;
-   * absent when Korri does not know the size. `queued` while the download
-   * waits behind another one. `progress` while it downloads, in the shape of
-   * `Busy.progress`: no `total` means no known end. Surfaces format all of it;
-   * Korri never ships a label. Absent when nothing is needed.
+   * absent when Korri does not know the size. `queued` and `progress` say
+   * where the download stands (`SurfaceDownloadState`). Surfaces format all
+   * of it; Korri never ships a label. Absent when nothing is needed.
    */
-  readonly download?: {
-    readonly bytes?: number
-    readonly queued?: true
-    readonly progress?: { readonly done: number; readonly total?: number }
-  }
+  readonly download?: SurfaceDownloadState & { readonly bytes?: number }
 }
 
 /**
@@ -207,12 +223,10 @@ export type SurfaceStatus =
       /** Optional progress detail. Never an error code or raw output. */
       readonly detail?: string
       /**
-       * Measured progress, in bytes, when the work has a known position. A
-       * surface draws a real bar from it; without it the work has no known
-       * end and the surface shows only that it is under way. `total` is
-       * absent when Korri knows how far it has got but not how far it goes.
+       * Measured progress when the work has a known position; without it the
+       * work has no known end and the surface shows only that it is under way.
        */
-      readonly progress?: { readonly done: number; readonly total?: number }
+      readonly progress?: SurfaceProgress
       /** Actions supplied by the host for this work, such as real cancellation.
        * The surface renders them; it never infers cancellation from a label. */
       readonly actions?: readonly SurfaceAction[]
@@ -520,16 +534,17 @@ export type SurfaceStoreGet =
       readonly detail?: string
       readonly actions: readonly SurfaceAction[]
     }
-  /** Under way. `progress` is measured bytes, as in `SurfaceStatus.Busy`:
-   * absent while there is no position to show, `total` absent when the size
-   * is unknown. `actions` holds Cancel while cancelling is real. */
-  | {
+  /** Under way, in Korri's words. Where the download stands is the same
+   * `SurfaceDownloadState` a game's own download uses: `queued` while it waits
+   * its turn, `progress` while it moves, neither while there is no position
+   * (finding the file, placing it). `actions` holds Cancel while cancelling is
+   * real. */
+  | ({
       readonly _tag: "Working"
       readonly kicker: string
       readonly detail?: string
-      readonly progress?: { readonly done: number; readonly total?: number }
       readonly actions: readonly SurfaceAction[]
-    }
+    } & SurfaceDownloadState)
   /** The game is in the library. `gameId` is its `SurfaceGame.id` for
    * `launchGame`, present once the catalog holds it. */
   | { readonly _tag: "InLibrary"; readonly detail?: string; readonly gameId?: string }

@@ -301,7 +301,7 @@ export function createStoreAcquisition(
         }
         // korrid downloads one thing at a time: this one waits its turn.
         if (state._tag === "Queued") {
-          return { _tag: "Working", kicker: "Waiting to download", detail: QUEUED_DETAIL, actions: [cancel()] }
+          return { _tag: "Working", kicker: "Waiting to download", detail: QUEUED_DETAIL, queued: true, actions: [cancel()] }
         }
         // Placing has no position and no Cancel: the file is being moved in.
         if (state._tag === "Placing") return { _tag: "Working", kicker: "Adding to your library…", actions: [] }
