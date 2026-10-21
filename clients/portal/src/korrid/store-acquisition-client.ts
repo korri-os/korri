@@ -5,7 +5,7 @@
  * mirror in store-acquisition-types.ts (a GAP to delete at integration): the
  * HTTP half posts the mirror's tagged request through the same `/rpc` call
  * every other method uses. The in-memory half is the browser preview's and
- * the tests' korrid: providers, claims, folders and a job that moves one step
+ * the tests' korrid: providers, claims and a job that moves one step
  * per status read, so a polled observation is what moves it.
  */
 import type { Game, RpcFailure, RpcRequest } from "@contracts/generated/korrid"
@@ -75,16 +75,12 @@ export interface InMemoryClaim extends Omit<ProviderClaim, "_tag"> {
   /** The size the server states once the download starts (Content-Length),
    * when the provider's claim stated none. */
   readonly contentLength?: number
-  /** The bytes are already in the folder: acquire answers Imported at once. */
-  readonly inLibrary?: boolean
 }
 
 export interface InMemoryStoreConfig {
   readonly providers?: readonly AcquisitionProvider[]
   /** Keyed by provider id. */
   readonly claims?: Readonly<Record<string, readonly InMemoryClaim[]>>
-  /** Folders on this device, keyed by system id. Absent: none. */
-  readonly sources?: Readonly<Record<string, readonly { readonly id: string; readonly label: string }[]>>
   /** Systems the registry does not know: their claims cannot be acquired. */
   readonly unknownSystems?: readonly string[]
   /** Provider ids whose searches fail, with korrid's message. */
@@ -110,41 +106,16 @@ export interface InMemoryStoreAcquisition extends StoreAcquisitionMethods {
 }
 
 /**
- * The browser preview's korrid: the three providers in scope (workflow
- * contract section 1) with the entries the providers worker found. Curated
- * entries state no size, so Confirm says the size is unknown and the size
- * arrives with the download (`contentLength`). No art: the portal never loads
- * a provider's image. Folders: one each for Game Boy, NES and PICO-8, two for
- * GBA (a choice). Ambushed fails once partway, so Retry shows.
+ * The browser preview's korrid: the one provider in scope that searches
+ * (workflow contract section 10), the PICO-8 BBS. Homebrew Hub and RetroBrews
+ * are declared games under ADR 0013, not providers. The BBS states no size,
+ * so Confirm says the size is unknown and the size arrives with the download
+ * (`contentLength`). No art: the portal never loads a provider's image. The
+ * first search does not answer, so Retry shows; one cart names no system.
  */
 export const SAMPLE_STORE: InMemoryStoreConfig = {
-  providers: [
-    { id: "@korri:pico8", title: "PICO-8 BBS", pluginId: "@korri:pico8" },
-    { id: "@korri:homebrewhub", title: "Homebrew Hub", pluginId: "@korri:homebrewhub" },
-    { id: "@korri:retrobrews", title: "RetroBrews", pluginId: "@korri:retrobrews" },
-  ],
+  providers: [{ id: "@korri:pico8", title: "PICO-8 BBS", pluginId: "@korri:pico8" }],
   claims: {
-    "@korri:homebrewhub": [
-      {
-        providerId: "@korri:homebrewhub", id: "2048gb", title: "2048", url: "https://hh3.gbdev.io/game/2048gb",
-        platform: "Game Boy", description: "Slide the tiles and join equal numbers to reach 2048.",
-        artifact: { kind: "content", format: { id: "gb-rom" }, system: "gb", file: { name: "2048.gb" } },
-        contentLength: 32_768,
-      },
-    ],
-    "@korri:retrobrews": [
-      {
-        providerId: "@korri:retrobrews", id: "anguna", title: "Anguna", url: "https://retrobrews.github.io/gba-games/anguna",
-        platform: "Game Boy Advance", description: "A top-down action adventure through a dungeon, made for the GBA.",
-        artifact: { kind: "content", format: { id: "gba-rom" }, system: "gba", file: { name: "anguna.gba" } },
-        contentLength: 1_700_000,
-      },
-      {
-        providerId: "@korri:retrobrews", id: "ambushed", title: "Ambushed", url: "https://retrobrews.github.io/nes-games/ambushed",
-        platform: "NES", artifact: { kind: "content", format: { id: "nes-rom" }, system: "nes", file: { name: "ambushed.nes" } },
-        failure: { message: "The download did not finish. Try again." },
-      },
-    ],
     "@korri:pico8": [
       {
         providerId: "@korri:pico8", id: "celeste_classic_2-5", title: "Celeste Classic 2", url: "https://www.lexaloffle.com/bbs/?tid=41282",
@@ -158,15 +129,6 @@ export const SAMPLE_STORE: InMemoryStoreConfig = {
       },
     ],
   },
-  sources: {
-    gb: [{ id: "games-gb", label: "Game Boy" }],
-    nes: [{ id: "games-nes", label: "NES" }],
-    gba: [
-      { id: "games-gba", label: "Game Boy Advance" },
-      { id: "sd-gba", label: "SD card · GBA" },
-    ],
-    pico8: [{ id: "games-pico8", label: "PICO-8" }],
-  },
   failingSearches: { "@korri:pico8": "The provider did not answer. Check the connection and try again." },
   searchFailuresBeforeRecovery: 1,
 }
@@ -174,7 +136,6 @@ export const SAMPLE_STORE: InMemoryStoreConfig = {
 interface InMemoryJob {
   status: AcquireJobStatus
   readonly claim: InMemoryClaim
-  readonly sourceId: string
   partial: number
   resolveLeft: number
   placeLeft: number
@@ -192,7 +153,6 @@ export function createInMemoryStoreAcquisition(
   let addGame: (game: Game) => void = () => {}
   const providers = config.providers ?? []
   const claims = config.claims ?? {}
-  const sources = config.sources ?? {}
   const bytesPerStep = config.bytesPerStep ?? 64_000
   let jobs = new Map<string, InMemoryJob>()
   /** legacy activeByClaim: one job per claim. */
@@ -272,7 +232,7 @@ export function createInMemoryStoreAcquisition(
       return {
         _tag: "Ok",
         payload: {
-          claims: found.map(({ description: _description, failure: _failure, unrecognised: _u, unavailable: _a, inLibrary: _l, ...claim }) =>
+          claims: found.map(({ description: _description, failure: _failure, unrecognised: _u, unavailable: _a, contentLength: _c, ...claim }) =>
             ({ _tag: "ProviderClaim" as const, ...structuredClone(claim) })),
         },
       }
@@ -290,7 +250,7 @@ export function createInMemoryStoreAcquisition(
         }),
       }
     },
-    async acquisitionAcquire({ providerId, id, sourceId }) {
+    async acquisitionAcquire({ providerId, id }) {
       await config.acquireGate?.()
       const claim = claimOf(providerId, id)
       if (claim === undefined) return failure("AcquisitionUnknownClaim", "Search again: Korri no longer holds this game.")
@@ -307,17 +267,9 @@ export function createInMemoryStoreAcquisition(
       if (system === undefined || config.unknownSystems?.includes(system) === true) {
         return failure(ACQUISITION_CODE.systemUnknown, "This game is for a system this device cannot play, so it can't be downloaded here.")
       }
-      const folders = sources[system] ?? []
-      if (folders.length === 0) {
-        return failure(ACQUISITION_CODE.noSource, `No folder on this device holds ${claim.platform ?? system} games. Add one in Settings, then get this game again.`)
-      }
-      if (sourceId !== undefined && !folders.some(folder => folder.id === sourceId)) {
-        return failure("AcquisitionCaller", "That folder cannot take this game.")
-      }
       const jobId = `job-${++jobSeq}`
       const job: InMemoryJob = {
         claim,
-        sourceId: sourceId ?? folders[0]?.id ?? "",
         partial: 0,
         resolveLeft: config.resolveSteps ?? 1,
         placeLeft: config.placeSteps ?? 1,
@@ -329,18 +281,11 @@ export function createInMemoryStoreAcquisition(
       }
       jobs.set(jobId, job)
       byClaim.set(key, jobId)
-      // Several folders and none chosen: a terminal job that downloads nothing.
-      if (folders.length > 1 && sourceId === undefined) {
-        set(job, { _tag: "ChooseSource", sources: structuredClone([...folders]) })
-        return snapshot(job)
-      }
       // The provider will not hand out the file.
       if (claim.unavailable !== undefined) {
         set(job, { _tag: "Failed", reason: { code: ACQUISITION_CODE.resolutionFailed, message: claim.unavailable } })
         return snapshot(job)
       }
-      // The same bytes already sit in the folder: korrid reuses them.
-      if (claim.inLibrary) finish(job)
       return snapshot(job)
     },
     async acquisitionAcquireStatus(jobId) {
