@@ -261,10 +261,13 @@ describe("plugin settings groups", () => {
   })
 
   it("says so while repositories load, and shows the host's words when they cannot be read", () => {
-    expect(pluginSettingGroups(initialPluginFacts, [])[0]?.items[0]).toMatchObject({ value: "Checking…" })
+    expect(pluginSettingGroups(initialPluginFacts, [])[0]?.items.map(item => [item.id, item.label, item.value])).toEqual([
+      [OFFICIAL_REPOSITORY_ROW, "Official plugins", "Checking…"],
+      [ADD_REPOSITORY_SETTING, "Add a repository", undefined],
+    ])
     const failed = withRepositories(initialPluginFacts, err("BrainUnreachable", "korrid is not answering"))
     const groups = pluginSettingGroups(failed, [{ id: "@korri:mgba", title: "mGBA", enabled: false }])
-    expect(groups[0]?.items[0]).toMatchObject({ value: "Can't read them", description: "korrid is not answering" })
+    expect(groups[0]?.items[0]).toMatchObject({ label: "Official plugins", value: "Can't read the list", description: "korrid is not answering" })
     expect(groups[1]).toMatchObject({ title: OTHER_GROUP, items: [{ id: toggleSettingId("@korri:mgba"), value: "Off" }] })
   })
 

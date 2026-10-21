@@ -57,7 +57,7 @@ type Call = readonly [keyof PluginRepositoryClient, ...unknown[]]
 
 /** A scripted client: each method answers from `answers`, and every call is kept. */
 export function fakePluginClient(answers: Partial<{
-  [K in keyof PluginRepositoryClient]: (...args: Parameters<PluginRepositoryClient[K]>) => Awaited<ReturnType<PluginRepositoryClient[K]>>
+  [K in keyof PluginRepositoryClient]: (...args: Parameters<PluginRepositoryClient[K]>) => ReturnType<PluginRepositoryClient[K]> | Awaited<ReturnType<PluginRepositoryClient[K]>>
 }>) {
   const calls: Call[] = []
   const method = <K extends keyof PluginRepositoryClient>(name: K) =>

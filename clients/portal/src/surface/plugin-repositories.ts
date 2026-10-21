@@ -494,15 +494,25 @@ export function pluginSettingGroups(
 ): SurfaceSettingGroup[] {
   const titles = new Map((installed ?? []).map(plugin => [plugin.id, plugin.title]))
   const repositories = facts.repositories
+  const addRow: SurfaceSettingItem = {
+    id: ADD_REPOSITORY_SETTING,
+    label: "Add a repository",
+    description: "Type the https:// address the plugin maker gave you.",
+    interaction: { kind: "text", placeholder: "https://…", maxLength: 512 },
+  }
   if (repositories._tag !== "Ready") {
+    // The official row keeps its place and says where the list stands.
     const hub: SurfaceSettingGroup = {
       title: PLUGINS_GROUP,
-      items: [{
-        id: OFFICIAL_REPOSITORY_ROW,
-        label: "Plugin repositories",
-        value: repositories._tag === "Loading" ? "Checking…" : "Can't read them",
-        ...(repositories._tag === "Failed" ? { description: repositories.message } : {}),
-      }],
+      items: [
+        {
+          id: OFFICIAL_REPOSITORY_ROW,
+          label: "Official plugins",
+          value: repositories._tag === "Loading" ? "Checking…" : "Can't read the list",
+          ...(repositories._tag === "Failed" ? { description: repositories.message } : {}),
+        },
+        addRow,
+      ],
     }
     // Without the install list, every installed plugin is shown as other.
     const other = (installed ?? []).map(plugin =>
@@ -532,12 +542,7 @@ export function pluginSettingGroups(
         label: repositoryName(url),
         value: catalogStatus(facts.catalogs[url]),
       })),
-      {
-        id: ADD_REPOSITORY_SETTING,
-        label: "Add a repository",
-        description: "Type the https:// address the plugin maker gave you.",
-        interaction: { kind: "text", placeholder: "https://…", maxLength: 512 },
-      },
+      addRow,
     ],
   }
   const groups: SurfaceSettingGroup[] = [hub]

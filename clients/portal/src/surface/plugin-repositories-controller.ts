@@ -119,7 +119,12 @@ export function createPluginRepositoriesController(
     if (outcome._tag !== "Ok") return
     const urls = configuredRepositories(outcome.payload)
     update(facts => checkingCatalogs(facts, urls))
-    await Promise.all(urls.map(url => readCatalog(url, seq)))
+    // One at a time: korrid serves plugin requests in turn, so parallel
+    // catalog reads would queue ahead of a toggle the person presses next.
+    for (const url of urls) {
+      if (seq !== readSeq) return
+      await readCatalog(url, seq)
+    }
   }
 
   const addRepository = (typed: string) => {

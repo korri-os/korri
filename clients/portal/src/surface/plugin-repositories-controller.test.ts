@@ -68,6 +68,22 @@ describe("plugin repositories controller", () => {
     expect(h.facts().catalogs[RETRO]).toEqual({ _tag: "Ready", entries: retroCatalog })
   })
 
+  it("reads catalogs one after another, never two at once", async () => {
+    let open = 0
+    let most = 0
+    const { client } = fakePluginClient({
+      pluginRepositories: () => ok(repositories({ official: OFFICIAL, userAdded: [RETRO] })),
+      pluginCatalog: async () => {
+        most = Math.max(most, ++open)
+        await Promise.resolve()
+        open--
+        return ok({ entries: [] })
+      },
+    })
+    await harness(client).controller.refresh()
+    expect(most).toBe(1)
+  })
+
   it("adding: the row saves while korrid checks, then the new repository is read", async () => {
     let answer: (value: ReturnType<typeof ok<PluginRepositoryAddResult>>) => void = () => {}
     const { client, calls } = fakePluginClient({
