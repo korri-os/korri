@@ -553,6 +553,17 @@
   --zone-options-dialog-width: 380;
 }
 
+/* ---- store ---- */
+/* GET GAMES: the page over GAMES that gets a game from a provider. */
+.zone-theme {
+  /** The stand-in well beside an entry's words: its width (its height is a card's 4 by 3). Art px. @label Store well width @min 32 @max 160 @step 1 */
+  --zone-store-well: 48;
+  /** The least the entry's words take beside the well before they go under it. Art px. @label Store words least @min 120 @max 400 @step 10 */
+  --zone-store-words-least: 180;
+  /** On a narrow band with GET GAMES, the room the cards leave over them so the focused card starts under the corner keys and their drop (measured at 640x480). Art px. @label GET GAMES row @min 0 @max 60 @step 1 */
+  --zone-games-get-row: 6;
+}
+
 /* ---- savedata ---- */
 /* The SAVE DATA page: the shares of the band and the backup's slab, and the
  * slab's lettering. Appended by the save-data worker; the lines above are

@@ -151,6 +151,27 @@ function focusedTitleSpill(): string {
     : ""
 }
 
+/**
+ * GET GAMES' key and its cursor's triangles stand clear of the focused
+ * card, and both triangles stand on the screen.
+ */
+function getGamesClear(): string {
+  const face = document.querySelector(".zone-games-get .zone-button-face")
+  const card = document.querySelector(".zone-card[data-focused=\"true\"]")
+  if (face === null) return "no GET GAMES"
+  const parts = [face, ...Array.from(document.querySelectorAll(".zone-games-get [class^='zone-button-cursor']"))]
+  const problems: string[] = []
+  for (const part of parts) {
+    const box = part.getBoundingClientRect()
+    if (box.left < -0.5 || box.right > window.innerWidth + 0.5) problems.push(`${part.className} off the screen`)
+    if (card === null) continue
+    const at = card.getBoundingClientRect()
+    const meets = box.left < at.right && box.right > at.left && box.top < at.bottom && box.bottom > at.top
+    if (meets) problems.push(`${part.className} stands on the focused card`)
+  }
+  return problems.join("; ")
+}
+
 /** The keys' check: every label whole, the panel unscrolled. */
 async function keysWhole({ canvas, expect, waitFor }: CheckTools): Promise<void> {
   await waitFor(() => {
@@ -170,6 +191,13 @@ async function titleInCard({ expect, waitFor }: CheckTools): Promise<void> {
  * The focused card's title never spills out of its card, at rest or with
  * the band shrunk under the keys. */
 export const checks = {
+  GetGames: {
+    "GET GAMES and its cursor stand clear of the focused card, on the screen": async ({ expect, waitFor }: CheckTools) => {
+      await waitFor(() => {
+        expect(getGamesClear()).toBe("")
+      })
+    },
+  },
   default: {
     "the focused card's title stands inside its card": (tools: CheckTools) => titleInCard(tools),
   },

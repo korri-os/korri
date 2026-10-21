@@ -400,7 +400,14 @@ export function ZoneGames(props: ZoneGamesProps) {
         tabs={tabsSlot}
       >
         {games ? (
-          <div className="zone-games-body" data-facts={factsAt} ref={body}>
+          <div
+            className="zone-games-body"
+            // GET GAMES' key is as wide as the room beside a narrow band's
+            // focused card: there the band starts under the corner keys.
+            data-corner={getGames && band === "narrow" && !finding ? "row" : undefined}
+            data-facts={factsAt}
+            ref={body}
+          >
             <div className="zone-games-band" data-games-region="band" inert={layer !== "none"}>
               {catalog._tag === "Loading" ? (
                 <div className="zone-games-loading" inert>

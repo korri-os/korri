@@ -91,6 +91,13 @@
   min-height: 0;
 }
 
+/* A narrow band (three cards) with GET GAMES: the cards start under the
+ * corner keys, so neither key nor its cursor ever stands on the focused
+ * card. A wide band has room beside it and keeps the whole height. */
+.zone-games-body[data-corner="row"] .zone-games-band {
+  padding-top: calc(var(--zone-games-get-row) * var(--zone-px));
+}
+
 /* Under the error dialog there is nothing to show: no band, no FIND, no
  * GET GAMES; the dialog's own veil lies over the ground. GAME OPTS. covers
  * the page with its own sheet, and its NO / YES question veils the sheet. */
@@ -125,7 +132,8 @@
 /* The body's top left, under the B hint: GET GAMES, then the kept filter's
  * tag under it, over the first card's corner. Korri moves focus by
  * geometry; moving up off the first card, or left and down off GAMES,
- * lands on GET GAMES. */
+ * lands on GET GAMES. It stands at the band's margin, as FIND does, so its
+ * cursor's left triangle is on screen. */
 .zone-games-corner {
   position: absolute;
   top: calc(var(--zone-strip-inset) * var(--zone-px));

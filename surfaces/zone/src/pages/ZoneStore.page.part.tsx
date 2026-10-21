@@ -13,6 +13,7 @@ import {
 } from "../fixtures/fixture-store"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import { plan } from "../plan/zone-select"
+import { ZoneGround } from "../ui/organisms/ZoneGround"
 import { ZoneStore } from "./ZoneStore"
 
 export const name = "Get games"
@@ -21,6 +22,7 @@ export const note = "A game from a provider: the providers, a search and its res
 export const composition = {
   default: [
     { part: "src/ui/templates/ZoneShell.template.part.tsx", state: "default" },
+    { part: "src/ui/organisms/ZoneGround.organism.part.tsx", state: "Options" },
     { part: "src/ui/molecules/ZoneOptionGroup.molecule.part.tsx", state: "default" },
   ],
   Keyboard: [{ part: "src/ui/molecules/ZoneKeyboard.molecule.part.tsx", state: "default" }],
@@ -29,6 +31,99 @@ export const composition = {
   Downloading: [{ part: "src/ui/molecules/ZoneBusyStrip.molecule.part.tsx", state: "default" }],
   Queued: [{ part: "src/ui/atoms/ZoneTag.atom.part.tsx", state: "default" }],
 } as const
+
+/* The helpers Caliper hands an authored check, typed locally: Zone imports
+ * nothing from Caliper (test/authoring-gate.test.ts). */
+interface CheckTools {
+  readonly canvas: { getByRole(role: string, options: { name: RegExp }): HTMLElement }
+  readonly expect: (value: unknown) => { toBe(expected: unknown): void }
+  readonly waitFor: (assertion: () => void) => Promise<void>
+}
+
+/** The art pixel an element stands on, in CSS px. */
+const artPxOf = (element: Element): number =>
+  Number.parseFloat(getComputedStyle(element).getPropertyValue("--zone-px")) || 1
+
+/** The boxes of an element's own words (its text nodes' line boxes). */
+function wordBoxes(element: Element): DOMRect[] {
+  const boxes: DOMRect[] = []
+  const walk = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+  for (let node = walk.nextNode(); node !== null; node = walk.nextNode()) {
+    if ((node.textContent ?? "").trim() === "") continue
+    const range = document.createRange()
+    range.selectNodeContents(node)
+    boxes.push(...Array.from(range.getClientRects()).filter(box => box.width > 0))
+  }
+  return boxes
+}
+
+/** Where a key's baseline stands: a zero-size probe on it, put back at once. */
+function baselineOf(key: HTMLElement): number {
+  const probe = document.createElement("i")
+  probe.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline"
+  key.append(probe)
+  const at = probe.getBoundingClientRect().bottom
+  probe.remove()
+  return at
+}
+
+/**
+ * Every key whose label is not whole, read off the real keyboard in
+ * Chromium, and why. A label is whole when its letters (the cap above the
+ * baseline, a descender under it, and the 1-art-px drop) stand inside its
+ * own key and the key stands inside the panel, unscrolled, on the screen.
+ */
+function keysNotWhole(keyboard: HTMLElement): string {
+  const px = artPxOf(keyboard)
+  const panel = keyboard.getBoundingClientRect()
+  const screen = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight }
+  const problems: string[] = []
+  if (keyboard.scrollHeight > keyboard.clientHeight + 1) problems.push(`panel scrolls ${keyboard.scrollHeight}/${keyboard.clientHeight}`)
+  const keys = Array.from(keyboard.querySelectorAll<HTMLElement>(".zone-keyboard-key"))
+  for (const key of keys) {
+    const name = key.textContent ?? ""
+    const box = key.getBoundingClientRect()
+    const words = wordBoxes(key)
+    if (words.length === 0) {
+      problems.push(`${name}: no label`)
+      continue
+    }
+    const fact = key.dataset["face"] === "fact"
+    const descends = fact ? /[gjpqy]/.test(name) : /[,;Q]/.test(name)
+    const baseline = baselineOf(key)
+    const ink = {
+      left: Math.min(...words.map(word => word.left)),
+      right: Math.max(...words.map(word => word.right)),
+      top: baseline - 10 * px,
+      bottom: baseline + (descends ? 3 * px : 0) + px,
+    }
+    const inside = (outer: { left: number; top: number; right: number; bottom: number }) =>
+      ink.left >= outer.left - 0.5 && ink.right <= outer.right + 0.5 && ink.top >= outer.top - 0.5 && ink.bottom <= outer.bottom + 0.5
+    if (!inside(box)) problems.push(`${name}: past its key (${Math.round(ink.left - box.left)},${Math.round(ink.top - box.top)} to ${Math.round(box.right - ink.right)},${Math.round(box.bottom - ink.bottom)})`)
+    else if (!inside(panel)) problems.push(`${name}: past the panel`)
+    else if (!inside(screen)) problems.push(`${name}: off the screen`)
+  }
+  return problems.join("; ")
+}
+
+/** The keys' check: every label whole, the panel unscrolled. */
+async function keysWhole({ canvas, expect, waitFor }: CheckTools): Promise<void> {
+  await waitFor(() => {
+    expect(keysNotWhole(canvas.getByRole("group", { name: /Keyboard/ }))).toBe("")
+  })
+}
+
+/* The search keyboard is FIND's, planned from the body as FIND plans it: at
+ * every size its keys stand whole and unscrolled. Copied from the GAMES
+ * part's check, which proves the same plan there. */
+export const checks = {
+  Keyboard: {
+    "every key's label is whole: no key cut, none scrolled away": (tools: CheckTools) => keysWhole(tools),
+  },
+  KeyboardNarrow: {
+    "every key's label is whole: no key cut, none scrolled away": (tools: CheckTools) => keysWhole(tools),
+  },
+}
 
 type Opening = keyof typeof fixtureStoreOpenings
 
@@ -44,16 +139,20 @@ function Live({ store, opening = "providers", share = 1 }: {
   const snapshot = useSyncExternalStore(live.subscribe, live.get)
   // The binding measures its root; a preview reads the frame once.
   const layout = plan(innerWidth * share, innerHeight)
+  // GET GAMES stands on the OPTIONS ground, as the root draws it.
   return (
-    <ZoneStore
-      band={layout.band}
-      build="korri 0.4.1 · 9a1fb22"
-      clock="21:47"
-      store={snapshot.store}
-      strips={layout.strips}
-      view={snapshot.state}
-      {...storeCallbacks(live.dispatch)}
-    />
+    <div className="zone-theme zone-screen" data-ground="options">
+      <ZoneGround />
+      <ZoneStore
+        band={layout.band}
+        build="korri 0.4.1 · 9a1fb22"
+        clock="21:47"
+        store={snapshot.store}
+        strips={layout.strips}
+        view={snapshot.state}
+        {...storeCallbacks(live.dispatch)}
+      />
+    </div>
   )
 }
 
@@ -116,6 +215,15 @@ export function SearchProblem() {
         },
       })}
     />
+  )
+}
+
+/** The search keyboard on a narrow column (480 wide). */
+export function KeyboardNarrow() {
+  return (
+    <ZonePartFrame shape="narrow-tall">
+      <Live opening="results" share={0.36} store={fixtureStoreFresh} />
+    </ZonePartFrame>
   )
 }
 
