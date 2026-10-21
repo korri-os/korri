@@ -73,7 +73,11 @@ can record what each session started from.
   one can fail with `EBUSY` on a mount point (rename(2)).
 - korrid builds the mount namespace by running the launch through bubblewrap
   inside the existing systemd scope. A scope cannot take systemd's
-  `BindPaths=` (systemd.scope(5)).
+  `BindPaths=` (systemd.scope(5)). Which launches run under it is ADR 0015.
+- Snapshots live in a korrid-native store: files by SHA-256 under korrid's
+  storage root, and snapshot records that name the snapshots they started
+  from. Not Git objects: history is short, dropping old snapshots must be a
+  plain delete, and `gix` was not tested with 0.5 to 2 GB savestates.
 - When sync first starts, games whose saves are byte-identical on two devices
   join without a question. Every other game with saves on more than one device
   is listed once in a one-time review, and the person picks per game.
@@ -171,9 +175,9 @@ Savestates of 0.5 to 2 GB make storage and transfer cost real.
 
 Not decided yet, and not to be assumed by an implementation:
 
-- Whether every launch runs under bubblewrap with a person's opt-out, or only
-  launches that declare a bind or overlay.
-- The shape of the save-location and bind declarations in the plugin contract,
-  and how a bind is set up inside korrid's launch (systemd scope, launch
-  modifiers such as Gamescope, runners that already sandbox themselves).
-- The data model, storage format and wire messages.
+- The shape of the save-location, bind and overlay declarations in the plugin
+  contract.
+- The data model, storage layout and wire messages. Per AGENTS.md these are
+  unresolved: an implementation proposes them from a real producer (RetroArch's
+  per-game folders, the play log's person key, ADR 0012's hash grammar) and the
+  owner approves them before they are built.
