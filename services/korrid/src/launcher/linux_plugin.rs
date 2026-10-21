@@ -21,6 +21,26 @@ pub struct LinuxLaunchSpec {
     pub warnings: Vec<super::typed_settings::LaunchWarning>,
 }
 
+enum RouteInspection {
+    Unowned(Vec<super::typed_settings::LaunchWarning>),
+    Owned(LinuxLaunchSpec),
+}
+
+/// Read owner-independent route facts without inventing an account or save root.
+/// When an owner exists, also ask the runner about its person-specific runtime.
+pub fn preflight_route(
+    root: &Path,
+    snapshot: &ConfigSnapshot,
+    registry: &PluginRegistry,
+    route: &ResolvedRoute,
+    person: Option<&str>,
+) -> Result<Vec<super::typed_settings::LaunchWarning>, LaunchError> {
+    match inspect_route(root, snapshot, registry, route, None, None, person)? {
+        RouteInspection::Unowned(warnings) => Ok(warnings),
+        RouteInspection::Owned(launch) => Ok(launch.warnings),
+    }
+}
+
 /// Build argv only. The runner callback returns the native launch plan; Korri
 /// owns materialization and process/session lifecycle.
 pub fn launch_route(
@@ -32,8 +52,30 @@ pub fn launch_route(
     display: Option<PluginDisplay>,
     person: &str,
 ) -> Result<LinuxLaunchSpec, LaunchError> {
+    match inspect_route(
+        root,
+        snapshot,
+        registry,
+        route,
+        overrides,
+        display,
+        Some(person),
+    )? {
+        RouteInspection::Owned(launch) => Ok(launch),
+        RouteInspection::Unowned(_) => unreachable!("launch_route supplied an owner"),
+    }
+}
+
+fn inspect_route(
+    root: &Path,
+    snapshot: &ConfigSnapshot,
+    registry: &PluginRegistry,
+    route: &ResolvedRoute,
+    overrides: Option<PluginLaunchOverrides>,
+    display: Option<PluginDisplay>,
+    person: Option<&str>,
+) -> Result<RouteInspection, LaunchError> {
     let error = |message| LaunchError::RouteUnavailable(message);
-    let account_root = crate::saves::account_root(root, person).map_err(error)?;
     // The route must still name a native runner this registry admits.
     registry
         .native_runner(&route.runner_id)
@@ -121,6 +163,32 @@ pub fn launch_route(
     let warnings =
         super::typed_settings::validate(&source, &folded.settings, &route.runner_id, &build)
             .map_err(error)?;
+    let mut composition = LaunchComposition {
+        display,
+        ..Default::default()
+    };
+    for (id, record) in crate::config::modifiers::resolve(snapshot, route).iter() {
+        if record.enabled != Some(true) {
+            continue;
+        }
+        registry
+            .enabled_modifier(id)
+            .map_err(|cause| error(cause.to_string()))?;
+        let modifier_package = registry
+            .installed_package(id)
+            .map_err(|cause| error(cause.to_string()))?;
+        composition.modifiers.push(ResolvedLaunchModifier {
+            modifier_id: id.clone(),
+            manifest: modifier_package.package.join("manifest.json"),
+            entry: modifier_package.entry.clone(),
+            settings: record.settings.clone(),
+            config: record.config.clone().unwrap_or_default(),
+        });
+    }
+    let Some(person) = person else {
+        return Ok(RouteInspection::Unowned(warnings));
+    };
+    let account_root = crate::saves::account_root(root, person).map_err(error)?;
     let settings = folded.settings;
     let input = PluginLaunchInput {
         runner_id: route.runner_id.clone(),
@@ -158,29 +226,7 @@ pub fn launch_route(
     {
         return Err(error(refusal));
     }
-    let mut composition = LaunchComposition {
-        display,
-        ..Default::default()
-    };
-    for (id, record) in crate::config::modifiers::resolve(snapshot, route).iter() {
-        if record.enabled != Some(true) {
-            continue;
-        }
-        registry
-            .enabled_modifier(id)
-            .map_err(|cause| error(cause.to_string()))?;
-        let modifier_package = registry
-            .installed_package(id)
-            .map_err(|cause| error(cause.to_string()))?;
-        composition.modifiers.push(ResolvedLaunchModifier {
-            modifier_id: id.clone(),
-            manifest: modifier_package.package.join("manifest.json"),
-            entry: modifier_package.entry.clone(),
-            settings: record.settings.clone(),
-            config: record.config.clone().unwrap_or_default(),
-        });
-    }
-    Ok(LinuxLaunchSpec {
+    Ok(RouteInspection::Owned(LinuxLaunchSpec {
         warnings,
         command: vec![
             std::env::current_exe()
@@ -194,5 +240,5 @@ pub fn launch_route(
                 .map_err(|error_value| error(error_value.to_string()))?,
             route.release_id.clone(),
         ],
-    })
+    }))
 }

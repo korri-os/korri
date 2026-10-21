@@ -80,7 +80,7 @@ impl DynamicHostRuntime {
     fn from_root_with_registry(
         root: &Path,
         registry: &crate::plugin::PluginRegistry,
-        person: &str,
+        person: Option<&str>,
     ) -> Result<Self, RpcFailure> {
         let coordinator = ConfigSnapshotCoordinator::new(root);
         let state = coordinator.reload();
@@ -133,17 +133,10 @@ impl DynamicHostRuntime {
                 Ok(_) => {}
             }
             for route in &candidates {
-                match linux_plugin::launch_route(
-                    root,
-                    &state.snapshot,
-                    registry,
-                    route,
-                    None,
-                    None,
-                    person,
-                ) {
-                    Ok(launch) => {
-                        failures.extend(launch.warnings.into_iter().map(|warning| RpcFailure {
+                match linux_plugin::preflight_route(root, &state.snapshot, registry, route, person)
+                {
+                    Ok(warnings) => {
+                        failures.extend(warnings.into_iter().map(|warning| RpcFailure {
                             code: "LaunchSettingUnsupported".into(),
                             message: warning.message,
                         }))
@@ -178,7 +171,7 @@ enum DynamicHostSource {
 }
 
 impl DynamicHostSource {
-    fn load(&self, person: &str) -> Result<DynamicHostRuntime, RpcFailure> {
+    fn load(&self, person: Option<&str>) -> Result<DynamicHostRuntime, RpcFailure> {
         match self {
             Self::Installed(root) => {
                 let registry = plugin_policy::installed_registry()
@@ -439,7 +432,7 @@ impl HostRuntime {
         }
         let mut failures = Vec::new();
         if let Some(dynamic) = &self.dynamic {
-            let dynamic = dynamic.load(&self.launch_person()?)?;
+            let dynamic = dynamic.load(self.owner_public_key().as_deref())?;
             dynamic.validate_static_games(config)?;
             failures.extend(
                 dynamic
@@ -470,8 +463,10 @@ impl HostRuntime {
     }
 
     fn launch_person(&self) -> Result<String, RpcFailure> {
-        self.owner_public_key()
-            .ok_or_else(|| dynamic_failure("device has no owner for per-person saves"))
+        self.owner_public_key().ok_or_else(|| RpcFailure {
+            code: "DeviceNeedsOwner".into(),
+            message: "This device needs an owner before starting a game.".into(),
+        })
     }
 
     pub fn owner_public_key(&self) -> Option<String> {
@@ -617,7 +612,7 @@ impl HostRuntime {
             config_failure(self.config.as_ref().expect_err("invalid host config"))
         })?;
         if let Some(dynamic) = &self.dynamic {
-            let dynamic = dynamic.load(&self.launch_person()?)?;
+            let dynamic = dynamic.load(self.owner_public_key().as_deref())?;
             dynamic.validate_static_games(self.config.as_ref().map_err(config_failure)?)?;
             if dynamic.declared_ids.contains(game_id) {
                 let command = self.route_root().and_then(|root| {
@@ -686,7 +681,7 @@ impl HostRuntime {
                 runtime.route_root()?,
                 &registry,
                 &game_id,
-                &runtime.launch_person()?,
+                runtime.owner_public_key().as_deref(),
             )
         })
         .await
@@ -929,7 +924,7 @@ impl HostRuntime {
                 // Preserve the command producer's existing collision check.
                 if let Some(dynamic) = &self.dynamic {
                     dynamic
-                        .load(&self.launch_person()?)?
+                        .load(self.owner_public_key().as_deref())?
                         .validate_static_games(config)?;
                 }
                 if request.runner_id.is_some() || request.overrides.is_some() {
@@ -1455,7 +1450,7 @@ impl HostRuntime {
         let title = game_id.and_then(|game_id| {
             self.dynamic
                 .as_ref()
-                .and_then(|dynamic| dynamic.load(&self.launch_person().ok()?).ok())
+                .and_then(|dynamic| dynamic.load(self.owner_public_key().as_deref()).ok())
                 .and_then(|dynamic| {
                     dynamic
                         .games
@@ -2504,7 +2499,7 @@ esac
         let runtime = DynamicHostRuntime::from_root_with_registry(
             root.path(),
             &registry,
-            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+            Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),
         )
         .unwrap();
 
@@ -2571,7 +2566,7 @@ esac
         let runtime = DynamicHostRuntime::from_root_with_registry(
             root.path(),
             &registry,
-            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+            Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),
         )
         .unwrap();
 
@@ -2611,7 +2606,7 @@ esac
         let runtime = DynamicHostRuntime::from_root_with_registry(
             root.path(),
             &registry,
-            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+            Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),
         )
         .unwrap();
         assert_eq!(
@@ -2674,7 +2669,7 @@ esac
         let missing_media = DynamicHostRuntime::from_root_with_registry(
             root.path(),
             &registry,
-            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+            Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),
         );
         assert!(
             missing_media.is_ok(),

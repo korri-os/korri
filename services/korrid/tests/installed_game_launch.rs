@@ -67,7 +67,7 @@ fn selected_runner_owns_frontend_core_callback_and_named_files() {
         root.path(),
         &registry,
         readable::GBA_ID,
-        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),
     )
     .unwrap();
     assert_eq!(routes.routes.len(), 1);

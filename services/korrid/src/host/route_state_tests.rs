@@ -390,3 +390,73 @@ async fn ordinary_prepare_returns_to_the_exact_live_session_after_content_disapp
         started["payload"]["launchId"]
     );
 }
+
+#[tokio::test]
+async fn unowned_device_can_browse_and_reserve_but_native_start_needs_an_owner() {
+    async fn rpc(app: &Router, method: &str, payload: Value) -> Value {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/rpc")
+                    .header("content-type", "application/json")
+                    .header("authorization", "Bearer unowned-test")
+                    .header("origin", "http://127.0.0.1:8099")
+                    .body(Body::from(
+                        json!({"_tag":method,"payload":payload}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice::<Value>(&bytes).unwrap()["outcome"].clone()
+    }
+    let root = tempfile::tempdir().unwrap();
+    crate::plugin_test_fixtures::write_gba_library(root.path());
+    fs::create_dir(root.path().join("roms")).unwrap();
+    fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
+    let registry = crate::plugin_test_fixtures::installed(root.path());
+    let config = root.path().join("host.toml");
+    fs::write(&config, "label = \"unowned\"\n").unwrap();
+    let backend = Arc::new(InMemoryLaunchUnitBackend::default());
+    let runtime = HostRuntime::from_paths_with_backend(
+        &config,
+        None,
+        root.path().join("private"),
+        backend.clone(),
+    )
+    .with_route_registry(root.path().into(), registry);
+    assert_eq!(runtime.owner_public_key(), None);
+    let app = crate::secure_host_routers(
+        runtime,
+        &root.path().join("private"),
+        Some(crate::PortalAccess::new(
+            "unowned-test",
+            "http://127.0.0.1:8099",
+            crate::PortalPermission::LocalSessions,
+        )),
+    )
+    .0;
+    let catalog = rpc(&app, "app.catalog.snapshot", json!({})).await;
+    assert_eq!(catalog["_tag"], "Ok", "{catalog}");
+    let routes = rpc(&app, "app.local-games.routes", json!({"gameId":GAME})).await;
+    assert_eq!(routes["_tag"], "Ok", "{routes}");
+    let reserved = rpc(&app, "app.session.reserve", json!({"gameId":GAME})).await;
+    assert_eq!(reserved["_tag"], "Ok", "{reserved}");
+    let started = rpc(
+        &app,
+        "app.session.start",
+        json!({"gameId":GAME,"expectedLaunchId":reserved["payload"]["launchId"]}),
+    )
+    .await;
+    assert_eq!(started["payload"]["code"], "DeviceNeedsOwner", "{started}");
+    assert_eq!(
+        started["payload"]["message"],
+        "This device needs an owner before starting a game."
+    );
+    assert_eq!(backend.launch_count(), 0);
+    assert!(!root.path().join("users").exists());
+}

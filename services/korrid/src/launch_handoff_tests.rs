@@ -118,6 +118,7 @@ async fn reserved_selected_and_stored_routes_keep_exact_identity_overrides_and_w
         backend.clone(),
     )
     .with_route_registry(root.path().into(), registry);
+    runtime.claim_save_owner();
     let app = router(runtime, root.path(), TOKEN, PortalPermission::LocalSessions);
     let game_id = crate::config::test_fixtures::GBA_ID;
     for runner in [Some("@korri:mgba/mgba"), None] {

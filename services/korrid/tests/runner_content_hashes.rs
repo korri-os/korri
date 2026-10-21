@@ -200,7 +200,7 @@ fn each_accepted_dump_offers_the_launcher_beside_the_system_runner() {
             root.path(),
             &registry,
             &id,
-            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+            Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),
         )
         .unwrap();
         assert!(matches!(routes.selection, GameRouteSelection::Choose));
@@ -250,7 +250,7 @@ fn one_accepted_dump_is_enough_when_the_other_dump_is_absent() {
         root.path(),
         &registry,
         &game_id(&snapshot, b"first"),
-        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),
     )
     .unwrap();
     assert!(routes
@@ -268,7 +268,7 @@ fn an_unlisted_hash_keeps_only_the_system_runner_and_refuses_the_content_launche
         root.path(),
         &registry,
         &id,
-        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),
     )
     .unwrap();
     assert_eq!(routes.routes.len(), 1);
@@ -315,7 +315,7 @@ fn a_missing_accepted_dump_keeps_its_diagnostic_when_another_release_can_play() 
         root.path(),
         &registry,
         &id,
-        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),
     )
     .unwrap();
     assert_eq!(routes.routes.len(), 1);

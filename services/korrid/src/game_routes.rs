@@ -110,7 +110,7 @@ pub fn list(
     root: &Path,
     registry: &PluginRegistry,
     game_id: &str,
-    person: &str,
+    person: Option<&str>,
 ) -> Result<GameRoutes, RpcFailure> {
     let (snapshot, revisions) = settings::runner_choice_snapshot(root).map_err(settings_failure)?;
     let candidates = resolver::linux_route_candidates(root, &snapshot, registry, game_id)
@@ -135,9 +135,8 @@ pub fn list(
         {
             system_runners.insert(route.system_id.clone(), id.0.clone());
         }
-        let launch =
-            linux_plugin::launch_route(root, &snapshot, registry, &route, None, None, person)
-                .map_err(|error| unavailable(error.to_string()))?;
+        let warnings = linux_plugin::preflight_route(root, &snapshot, registry, &route, person)
+            .map_err(|error| unavailable(error.to_string()))?;
         let package = registry
             .installed_package(&route.runner_id)
             .map_err(|error| unavailable(error.to_string()))?;
@@ -147,7 +146,7 @@ pub fn list(
             runner_build: package.package.display().to_string(),
             system_id: route.system_id,
             program: route.linux_runner.expect("Linux runner").program,
-            warnings: launch.warnings,
+            warnings,
         });
     }
     Ok(GameRoutes {

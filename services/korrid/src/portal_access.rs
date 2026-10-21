@@ -556,6 +556,7 @@ mod tests {
         .with_route_registry(root.path().into(), registry.clone())
         .with_retroarch_control_port(control_port)
         .with_compositor(compositor.clone(), vec!["chromium-browser".into()]);
+        runtime.claim_save_owner();
         let (app, _) = crate::secure_host_routers(
             runtime,
             &private,
@@ -794,6 +795,7 @@ mod tests {
             Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
         )
         .with_route_registry(root.path().into(), registry);
+        runtime.claim_save_owner();
         let (app, _) = crate::secure_host_routers(
             runtime,
             &private,
