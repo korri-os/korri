@@ -3,6 +3,7 @@ mod history;
 pub mod record;
 pub mod store;
 pub mod types;
+pub mod peer;
 
 use std::{fs::File, io::Read};
 use types::{SaveHeads, SnapshotRecord};

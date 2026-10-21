@@ -14,6 +14,10 @@ pub enum PortalPermission {
 impl PortalPermission {
     fn permits(self, request: &RpcRequest) -> bool {
         let initial_read = match request {
+            RpcRequest::SaveHeads(_)
+            | RpcRequest::SaveRecords(_)
+            | RpcRequest::SaveInUse(_)
+            | RpcRequest::SaveObject(_) => false,
             RpcRequest::SavesStatus(_)
             | RpcRequest::SavesHistory(_)
             | RpcRequest::NetworkStatus(_)

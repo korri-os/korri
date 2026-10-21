@@ -1242,6 +1242,14 @@ pub enum PluginChangeOutcome {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum RpcRequest {
+    #[serde(rename = "app.saves.heads")]
+    SaveHeads(saves::types::SaveHeadsRequest),
+    #[serde(rename = "app.saves.records")]
+    SaveRecords(saves::types::SaveRecordsRequest),
+    #[serde(rename = "app.saves.inUse")]
+    SaveInUse(saves::types::SaveGameRequest),
+    #[serde(rename = "app.saves.object")]
+    SaveObject(saves::types::SaveObjectRequest),
     #[serde(rename = "app.saves.status")]
     SavesStatus(saves::types::SaveStatusRequest),
     #[serde(rename = "app.saves.history")]
@@ -1387,6 +1395,12 @@ pub enum RpcRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "outcome")]
 pub enum RpcResponse {
+    #[serde(rename = "app.saves.heads")]
+    SaveHeads(saves::peer::SaveHeadsOutcome),
+    #[serde(rename = "app.saves.records")]
+    SaveRecords(saves::peer::SaveRecordsOutcome),
+    #[serde(rename = "app.saves.inUse")]
+    SaveInUse(saves::peer::SaveInUseOutcome),
     #[serde(rename = "app.saves.status")]
     SavesStatus(saves::types::SaveStatusOutcome),
     #[serde(rename = "app.saves.history")]
@@ -1577,6 +1591,7 @@ enum RpcSurface {
 
 #[derive(Clone)]
 struct AppState {
+    saves: Option<Arc<saves::peer::SavePeerService>>,
     acquisition: acquisition::AcquisitionCoordinator,
     network: network::NetworkService,
     // Retain the actual shared directory for snapshot-only B5 consumers.
@@ -2384,6 +2399,28 @@ async fn dispatch(
 ) -> Result<RpcResponse, authorization::AuthorizationDenied> {
     authorization::authorize(authorization, &request)?;
     let mut response = match request {
+        RpcRequest::SaveObject(_) => return Err(authorization::AuthorizationDenied),
+        RpcRequest::SaveHeads(_) => {
+            let service = state.saves.as_ref().ok_or(authorization::AuthorizationDenied)?;
+            RpcResponse::SaveHeads(match service.heads(authorization).await {
+                Ok(value) => saves::peer::SaveHeadsOutcome::Ok(value),
+                Err(error) => saves::peer::SaveHeadsOutcome::Err(error.failure()),
+            })
+        }
+        RpcRequest::SaveRecords(request) => {
+            let service = state.saves.as_ref().ok_or(authorization::AuthorizationDenied)?;
+            RpcResponse::SaveRecords(match service.records(authorization, request).await {
+                Ok(value) => saves::peer::SaveRecordsOutcome::Ok(value),
+                Err(error) => saves::peer::SaveRecordsOutcome::Err(error.failure()),
+            })
+        }
+        RpcRequest::SaveInUse(request) => {
+            let service = state.saves.as_ref().ok_or(authorization::AuthorizationDenied)?;
+            RpcResponse::SaveInUse(match service.in_use(authorization, &request.game_id) {
+                Ok(value) => saves::peer::SaveInUseOutcome::Ok(value),
+                Err(error) => saves::peer::SaveInUseOutcome::Err(error.failure()),
+            })
+        }
         RpcRequest::SavesStatus(_) => {
             RpcResponse::SavesStatus(saves::types::SaveStatusOutcome::Err(RpcFailure {
                 code: "SavesUnavailable".into(),
@@ -4075,6 +4112,7 @@ fn brain_app_state(
     let local_owner_public_key = brain_owner_public_key(&private_state_root);
     let portal_access = PortalAccess::new(rpc_capability, allowed_origin, PortalPermission::Full);
     let state = AppState {
+        saves: None,
         acquisition: acquisition::AcquisitionCoordinator::default(),
         network: network::NetworkService::default(),
         federation: resources.map(|resources| resources.directory),
@@ -4286,6 +4324,7 @@ fn app_states_with(
     let overlay_intent = Arc::new(Mutex::new(None));
     let network = network::NetworkService::default();
     let lan = AppState {
+        saves: None,
         acquisition: acquisition.clone(),
         network: network.clone(),
         federation: None,
@@ -4298,6 +4337,7 @@ fn app_states_with(
         overlay_intent: overlay_intent.clone(),
     };
     let local = AppState {
+        saves: None,
         acquisition,
         network,
         federation: None,

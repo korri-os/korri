@@ -173,6 +173,10 @@ pub enum AuthorizationError {
 /// until this mapping receives an explicit policy.
 pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
     match request {
+        RpcRequest::SaveHeads(_)
+        | RpcRequest::SaveRecords(_)
+        | RpcRequest::SaveInUse(_)
+        | RpcRequest::SaveObject(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::NetworkStatus(_)
         | RpcRequest::WifiScan(_)
         | RpcRequest::WifiConnect(_)

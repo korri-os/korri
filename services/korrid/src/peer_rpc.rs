@@ -1,3 +1,6 @@
+#[path = "saves/peer/object_route.rs"]
+mod saves_object;
+
 use crate::{
     authorization::{self, Authorization, AuthorizationContext},
     dispatch,
@@ -283,6 +286,13 @@ pub struct EncodedPeerRequest {
     pub recipient: String,
 }
 
+struct AuthenticatedPeerRequest {
+    envelope: PeerRequestEnvelope,
+    author: String,
+    event_id: String,
+    context: AuthorizationContext,
+}
+
 type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
 
 #[derive(Clone)]
@@ -345,6 +355,7 @@ impl PeerRpcServer {
     pub fn router(self, portal: Option<Router>) -> Router {
         let peer = Router::new()
             .route("/peer-rpc", post(peer_rpc))
+            .route("/peer-saves-object", post(saves_object::object_route))
             .layer(DefaultBodyLimit::max(MAX_PEER_EVENT_BYTES))
             .with_state(self);
         match portal {
@@ -353,7 +364,12 @@ impl PeerRpcServer {
         }
     }
 
-    async fn handle(&self, event_json: &str, now: u64) -> Result<String, PeerRpcError> {
+    async fn authenticate(
+        &self,
+        event_json: &str,
+        now: u64,
+        object_route: bool,
+    ) -> Result<AuthenticatedPeerRequest, PeerRpcError> {
         let verified = DeviceIdentity::verify_encrypted_event(event_json)
             .map_err(|_| PeerRpcError::Invalid)?;
         if verified.kind != PEER_REQUEST_KIND {
@@ -394,6 +410,9 @@ impl PeerRpcServer {
                 now,
             )
             .map_err(|_| PeerRpcError::Invalid)?;
+        if matches!(&envelope.request, RpcRequest::SaveObject(_)) != object_route {
+            return Err(PeerRpcError::WrongKind);
+        }
         authorization::authorize(attempt.context(), &envelope.request)
             .map_err(|_| PeerRpcError::Unauthorized)?;
         self.replay.consume(
@@ -407,9 +426,24 @@ impl PeerRpcServer {
             .map_err(|_| PeerRpcError::Storage)?;
         self.reconcile_certificate_trust(&local_state, now).await?;
 
+        Ok(AuthenticatedPeerRequest {
+            envelope,
+            author: verified.author,
+            event_id: verified.id,
+            context: attempt.context().clone(),
+        })
+    }
+
+    async fn handle(&self, event_json: &str, now: u64) -> Result<String, PeerRpcError> {
+        let authenticated = self.authenticate(event_json, now, false).await?;
+        let AuthenticatedPeerRequest {
+            envelope,
+            author,
+            event_id,
+            context,
+        } = authenticated;
         let provision = provisioned_certificate(&envelope.request);
         let revocation = revoked_certificate(&envelope.request);
-        let context = attempt.context().clone();
         let response = dispatch(&self.app, &context, envelope.request)
             .await
             .map_err(|_| PeerRpcError::Unauthorized)?;
@@ -439,14 +473,14 @@ impl PeerRpcServer {
             )
         {
             self.authorization
-                .remove_certificate_grant(&verified.author)
+                .remove_certificate_grant(&author)
                 .map_err(|_| PeerRpcError::Storage)?;
         }
         let response_envelope = PeerResponseEnvelope {
             version: PEER_RPC_VERSION,
-            recipient: verified.author.clone(),
+            recipient: author.clone(),
             request_id: envelope.request_id,
-            request_event_id: verified.id,
+            request_event_id: event_id,
             request_nonce: envelope.nonce,
             response,
         };
@@ -455,7 +489,7 @@ impl PeerRpcServer {
         self.identity
             .lock()
             .map_err(|_| PeerRpcError::Identity)?
-            .encrypt_event(&verified.author, PEER_RESPONSE_KIND, &plaintext, now)
+            .encrypt_event(&author, PEER_RESPONSE_KIND, &plaintext, (self.clock)())
             .map(|event| event.json)
             .map_err(|_| PeerRpcError::Identity)
     }
