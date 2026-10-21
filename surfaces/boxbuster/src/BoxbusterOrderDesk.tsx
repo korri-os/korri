@@ -155,8 +155,6 @@ export function BoxbusterOrderDesk({
             )}
           </>
         )
-      case "Staged":
-        return <p className="boxbuster-desk-slip">{get.message}</p>
       case "Problem":
         return (
           <>

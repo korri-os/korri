@@ -115,7 +115,6 @@ describe("an entry", () => {
   test.each([
     ["confirm", "Download to this device", "ask", ["Download", "Cancel"]],
     ["unavailable", "NOT AVAILABLE", "tell", []],
-    ["staged", "DOWNLOADED", "tell", []],
     ["failed", "Download failed", "warn", ["Retry"]],
     ["stopped", "Download stopped", "warn", ["Retry"]],
   ] as const)("%s is a card in Korri's words with exactly Korri's actions", (state, kicker, tone, labels) => {

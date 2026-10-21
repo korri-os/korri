@@ -169,7 +169,7 @@ describe("Shift store", () => {
     expect(band.hasAttribute("data-indeterminate")).toBe(true)
   })
 
-  test("not available, downloaded-not-recognised, and in the library with Play", () => {
+  test("not available, and in the library with Play", () => {
     const host = createFixtureHost()
     const { rerender } = render(<ShiftSurface host={host} model={model(storeFixture({ details: storeDetails(STORE_GETS.unavailable) }))} />)
     openStore(host)
@@ -177,8 +177,6 @@ describe("Shift store", () => {
     choose("Celeste Classic 2, PICO-8")
     expect(screen.getByText(STORE_GETS.unavailable.reason)).toBeTruthy()
     expect(document.querySelectorAll("[data-shift-store-get] button")).toHaveLength(0)
-    rerender(<ShiftSurface host={host} model={model(storeFixture({ details: storeDetails(STORE_GETS.staged) }))} />)
-    expect(screen.getByText(STORE_GETS.staged.message)).toBeTruthy()
     rerender(<ShiftSurface host={host} model={model(storeFixture({ details: storeDetails(STORE_GETS.inLibrary) }))} />)
     expect(screen.getByText("In your library")).toBeTruthy()
     choose("▶ Play")

@@ -104,7 +104,6 @@ export type AcquireJobState =
   | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number }
   | { _tag: "Placing" }
   | { _tag: "Imported"; gameId: string }
-  | { _tag: "Staged"; message: string }
   | { _tag: "Failed"; reason: RpcFailure }
   | { _tag: "Cancelled" }
 

@@ -38,7 +38,6 @@ export const STORE_GETS = {
   },
   placing: { _tag: "Working", kicker: "Adding to your library…", progress: { done: 0 }, actions: [] },
   inLibrary: { _tag: "InLibrary", detail: "In your library", gameId: "local-game:wl4" },
-  staged: { _tag: "Staged", message: "Downloaded to this device, but your library did not recognise it as a game." },
   failed: {
     _tag: "Problem", kicker: "Download failed", reason: "The download did not finish. Try again.",
     actions: [action("store:7:retry", "Retry")],

@@ -17,7 +17,6 @@ export function Cancelled() { return entry(STORE_GETS.cancelled) }
 export function SizeUnknown() { return entry(STORE_GETS.confirm) }
 export function SystemNotPlayable() { return entry(STORE_GETS.unavailable) }
 export function InLibrary() { return entry(STORE_GETS.inLibrary) }
-export function NotRecognised() { return entry(STORE_GETS.staged) }
 export function Failed() { return entry(STORE_GETS.failed) }
 export function Stopped() { return entry(STORE_GETS.stopped) }
 export function LongTitle() { return entry(STORE_GETS.offer, 1) }
