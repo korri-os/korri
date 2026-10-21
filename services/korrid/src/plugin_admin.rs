@@ -38,8 +38,8 @@ pub struct PluginRepositories {
     pub official: Option<String>,
     pub user_added: Vec<String>,
     pub repository_installs: Vec<PluginRepositoryInstall>,
-    /// Every other installed plugin, on or off: image-seeded, raw-cache and
-    /// signed-cache catalog installs.
+    /// Every other installed plugin, on or off: image-seeded and raw-cache
+    /// installs.
     pub other_installs: Vec<PluginOtherInstall>,
 }
 

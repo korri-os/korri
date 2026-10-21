@@ -205,8 +205,8 @@ fn repositories(host: &Host, config: &Configuration) -> Result<PluginAdminRespon
                 release_version,
                 enabled,
             }),
-            // Image-seeded, raw-cache and signed-cache catalog installs. The
-            // title is the installed declaration's; a failed read omits it.
+            // Image-seeded and raw-cache installs. The title is the
+            // installed declaration's; a failed read omits it.
             Provenance::RawCache { .. } => other_installs.push(PluginOtherInstall {
                 title: package::load_declaration(&receipt.package)
                     .ok()

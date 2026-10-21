@@ -815,8 +815,8 @@ export interface InMemoryPluginHostConfig {
   readonly repositories: readonly InMemoryPluginRepository[]
   /** Installed receipts: repository installs and their on/off state. */
   readonly installs: readonly { id: string, sourceUrl: string, releaseVersion: string, enabled: boolean }[]
-  /** Installed receipts that are not from a repository: image-seeded,
-   * raw-cache and signed-cache catalog installs, on or off. */
+  /** Installed receipts that are not from a repository: image-seeded and
+   * raw-cache installs, on or off. */
   readonly otherInstalls?: readonly { id: string, title?: string, enabled: boolean }[]
   /** Installed plugins whose stored approval the host now finds stale. */
   readonly staleApprovals?: readonly string[]

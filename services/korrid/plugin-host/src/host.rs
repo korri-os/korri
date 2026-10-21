@@ -821,23 +821,7 @@ impl Host {
             &report.provenance,
         )?;
         self.prepare(&report.id)?;
-        // A denied start of a stale approval leaves the installed package
-        // pinned as pending until checked cleanup, and that cleanup needs a
-        // valid approval. A new review of exactly that package takes over the
-        // journal: apply() below stops and restages it under the new approval.
-        let reviews_pending = match &old {
-            Some(old) if same_selection(old, &report) => {
-                match fs::read_link(self.root(&report.id, "pending")) {
-                    Ok(pending) => pending == report.package,
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-                    Err(error) => return Err(error.to_string()),
-                }
-            }
-            _ => false,
-        };
-        if !reviews_pending {
-            self.recover_one(&report.id)?;
-        }
+        self.recover_one(&report.id)?;
         let old = self.receipt(&report.id)?;
         intent.validate(
             &report.id,
@@ -3922,14 +3906,21 @@ mod tests {
         selected
     }
 
-    #[test]
-    fn a_new_review_of_the_installed_selection_replaces_a_stale_approval_and_keeps_its_state() {
-        let root = tempfile::tempdir().unwrap();
-        let source = "https://plugins.example/catalog.json";
-        let selected = repository_report("@test:clock", "clock-v1", source, "v1");
-        let runtime = runtime(std::slice::from_ref(&selected));
+    /// The host policy changes, so the plugin's stored approval is stale.
+    fn change_policy(runtime: &TestRuntime, selected: &Report, approval: &str) -> Report {
+        let mut reviewed = selected.clone();
+        reviewed.approval = approval.into();
+        runtime
+            .reports
+            .borrow_mut()
+            .insert(reviewed.package.clone(), reviewed.clone());
+        reviewed
+    }
+
+    fn reviewed_host(root: &Path, selected: &Report) -> (Host, TestRuntime) {
+        let runtime = runtime(std::slice::from_ref(selected));
         let host = Host::for_test(
-            root.path(),
+            root,
             PathBuf::from("/unavailable-nix"),
             permitted_policy(),
             runtime.clone(),
@@ -3937,29 +3928,27 @@ mod tests {
         .unwrap();
         host.install_reviewed(selected.clone(), &selected.approval)
             .unwrap();
-        host.set_enabled(&selected.id, true).unwrap();
-        // The host policy changes: the stored approval is now stale.
-        let mut reviewed = selected.clone();
-        reviewed.approval = "clock-v1-new-policy-approval".into();
-        runtime
-            .reports
-            .borrow_mut()
-            .insert(reviewed.package.clone(), reviewed.clone());
+        (host, runtime)
+    }
+
+    #[test]
+    fn a_new_review_of_the_installed_selection_replaces_a_stale_approval_and_keeps_its_state() {
+        let root = tempfile::tempdir().unwrap();
+        let source = "https://plugins.example/catalog.json";
+        let selected = repository_report("@test:clock", "clock-v1", source, "v1");
+        let (host, runtime) = reviewed_host(root.path(), &selected);
+        // An installed, disabled plugin: enabling it finds the stale approval.
+        let reviewed = change_policy(&runtime, &selected, "clock-v1-new-policy-approval");
         assert_eq!(
             host.set_enabled(&selected.id, true).unwrap_err(),
             APPROVAL_STALE
         );
+        assert!(!fs::symlink_metadata(host.root(&selected.id, "pending")).is_ok());
         // Only the freshly derived digest is accepted.
         assert!(host
             .install_reviewed(reviewed.clone(), &selected.approval)
             .unwrap_err()
             .contains("approval does not match"));
-        // The refused start turned the plugin off and left its cleanup
-        // journal pending. The review takes it over and keeps it off.
-        assert_eq!(
-            host.status(&selected.id).unwrap().unwrap().desired,
-            Desired::Disabled
-        );
         host.install_reviewed(reviewed.clone(), &reviewed.approval)
             .unwrap();
         let receipt = host.status(&selected.id).unwrap().unwrap();
@@ -3968,23 +3957,63 @@ mod tests {
         assert_eq!(receipt.provenance, selected.provenance);
         assert_eq!(receipt.desired, Desired::Disabled);
         assert_eq!(receipt.previous, None);
-        assert!(!host.root(&selected.id, "pending").exists());
         host.set_enabled(&selected.id, true).unwrap();
         assert!(runtime.running.borrow().contains(&selected.id));
 
         // A review of an enabled plugin keeps it on and running.
-        let mut again = reviewed.clone();
-        again.approval = "clock-v1-third-policy-approval".into();
-        runtime
-            .reports
-            .borrow_mut()
-            .insert(again.package.clone(), again.clone());
+        let again = change_policy(&runtime, &selected, "clock-v1-third-policy-approval");
         host.install_reviewed(again.clone(), &again.approval)
             .unwrap();
         let receipt = host.status(&selected.id).unwrap().unwrap();
         assert_eq!(receipt.approval, again.approval);
         assert_eq!(receipt.desired, Desired::Enabled);
         assert!(runtime.running.borrow().contains(&selected.id));
+    }
+
+    /// A pending root left by unfinished cleanup is never adopted by a review:
+    /// on disk, a failed native cleanup and a refused start look the same.
+    #[test]
+    fn a_review_never_adopts_a_pending_cleanup_journal() {
+        let source = "https://plugins.example/catalog.json";
+        let selected = repository_report("@test:clock", "clock-v1", source, "v1");
+
+        // A failed native cleanup: disable cannot stop the unit.
+        let root = tempfile::tempdir().unwrap();
+        let (host, runtime) = reviewed_host(root.path(), &selected);
+        host.set_enabled(&selected.id, true).unwrap();
+        runtime.fail_stop.replace(Some(selected.id.clone()));
+        assert!(host.set_enabled(&selected.id, false).is_err());
+        runtime.fail_stop.replace(None);
+        assert!(fs::symlink_metadata(host.root(&selected.id, "pending")).is_ok());
+        let reviewed = change_policy(&runtime, &selected, "clock-v1-new-policy-approval");
+        assert_eq!(
+            host.install_reviewed(reviewed.clone(), &reviewed.approval)
+                .unwrap_err(),
+            APPROVAL_STALE
+        );
+        let receipt = host.status(&selected.id).unwrap().unwrap();
+        assert_eq!(receipt.approval, selected.approval);
+        assert!(fs::symlink_metadata(host.root(&selected.id, "pending")).is_ok());
+
+        // A start refused for a stale approval leaves the same journal.
+        let root = tempfile::tempdir().unwrap();
+        let (host, runtime) = reviewed_host(root.path(), &selected);
+        host.set_enabled(&selected.id, true).unwrap();
+        let reviewed = change_policy(&runtime, &selected, "clock-v1-new-policy-approval");
+        assert_eq!(
+            host.set_enabled(&selected.id, true).unwrap_err(),
+            APPROVAL_STALE
+        );
+        assert!(fs::symlink_metadata(host.root(&selected.id, "pending")).is_ok());
+        assert_eq!(
+            host.install_reviewed(reviewed.clone(), &reviewed.approval)
+                .unwrap_err(),
+            APPROVAL_STALE
+        );
+        assert_eq!(
+            host.status(&selected.id).unwrap().unwrap().approval,
+            selected.approval
+        );
     }
 
     #[test]

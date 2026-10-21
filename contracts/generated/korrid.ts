@@ -738,8 +738,8 @@ export interface PluginRepositories {
 	userAdded: string[];
 	repositoryInstalls: PluginRepositoryInstall[];
 	/**
-	 * Every other installed plugin, on or off: image-seeded, raw-cache and
-	 * signed-cache catalog installs.
+	 * Every other installed plugin, on or off: image-seeded and raw-cache
+	 * installs.
 	 */
 	otherInstalls: PluginOtherInstall[];
 }
