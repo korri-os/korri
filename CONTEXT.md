@@ -155,8 +155,12 @@ _Avoid_: fork, remake
 Content with its own identity that is applied to a release of another game when it starts, such as a mod, a patch or a texture pack. A plugin declares it or a person adds it, and a person ties it to its base game; discovery never finds one.
 _Avoid_: DLC, extension, mod (alone)
 
+**Launch settings**:
+The values that shape how a game runs, such as CPU limits. Any value can be set on the device, a system, a runner, a game, a release or a profile. For each value, the most specific of these that sets it wins. They hold for one session and end with it.
+_Avoid_: config, policy, cascade
+
 **Profile**:
-A named set of launch settings a person chooses when a game starts. It is not content.
+A person's named variation of launch settings for one game, chosen when the game starts and remembered for its next launch. It changes only the values it names and keeps every other value from the device, system, runner, game and release. It is not content.
 _Avoid_: preset, mode, config
 
 **Attention list**:
