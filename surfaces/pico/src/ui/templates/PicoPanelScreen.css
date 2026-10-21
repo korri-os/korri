@@ -26,18 +26,6 @@
 	padding: var(--pico-u) calc(var(--pico-u) * 2);
 }
 
-/* More spines than the column holds: the column scrolls, and a cut-off spine
- * at its foot shows there are more. Moving to a spine brings it into view.
- * The end padding keeps the chosen spine's pull and shadow inside it. */
-.pico-panel-screen-layout > [role="tablist"] {
-	max-height: 100%;
-	min-height: 0;
-	overflow-y: auto;
-	scrollbar-width: none;
-	padding-inline-end: calc(var(--pico-drop) + var(--pico-px) * 3);
-	padding-block-end: var(--pico-drop);
-}
-
 /* A column: the card shrinks to the room and scrolls inside itself. */
 .pico-panel-screen-detail {
 	display: flex;
@@ -48,23 +36,23 @@
 }
 
 @container pico-panel (width < 105ch) {
+	/* Set here and inherited by the spines (PicoTabs reads them): in a row a
+	 * name takes one line, up to the row's width, and past two and a half
+	 * rows, or two fifths of a tall panel, the spines scroll. */
 	.pico-panel-screen-layout {
+		--pico-tab-lines: 1;
+		--pico-tab-max: 100%;
+		--pico-tabs-max-height: max(calc(2.5 * (var(--pico-text) * 1.1 + var(--pico-px) * 9) + var(--pico-px) * 3), 40cqh);
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: auto minmax(0, 1fr);
 	}
 
-	/* The spines wrap onto more rows rather than scroll sideways. Past two
-	 * and a half rows, or two fifths of a tall panel, the spines scroll: the
-	 * cut row shows there are more, and the chosen spine is kept in view, so
-	 * a half-visible spine is never the one shown. A name takes one line
-	 * here, up to the row's width. */
+	/* The spines wrap onto more rows rather than scroll sideways, so a
+	 * half-visible spine is never the one focused. */
 	.pico-panel-screen-layout > [role="tablist"] {
-		--pico-tab-lines: 1;
-		--pico-tab-max: 100%;
 		display: flex;
 		flex-wrap: wrap;
 		min-width: 0;
-		max-height: max(calc(2.5 * (var(--pico-text) * 1.1 + var(--pico-px) * 9) + var(--pico-px) * 3), 40cqh);
 		padding: calc(var(--pico-px) * 3) 0 0;
 	}
 

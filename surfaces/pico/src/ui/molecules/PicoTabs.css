@@ -1,10 +1,18 @@
 /* Spines. Unchosen spines sit pushed in; the chosen one slides out and casts
  * a light shadow, the way a cartridge pulled from a shelf would. */
+/* More spines than the room holds: the list scrolls, a cut-off spine at its
+ * foot shows there are more, and PicoTabs keeps the chosen spine in view. A
+ * parent may set --pico-tabs-max-height on its own element. The end padding
+ * keeps the chosen spine's pull and shadow inside the scroll box. */
 .pico-tabs {
 	display: grid;
 	align-content: start;
 	gap: calc(var(--pico-px) * 3);
-	padding: 0 calc(var(--pico-px) * 3);
+	max-height: var(--pico-tabs-max-height, 100%);
+	min-height: 0;
+	overflow-y: auto;
+	scrollbar-width: none;
+	padding: 0 calc(var(--pico-drop) + var(--pico-px) * 3) var(--pico-drop) calc(var(--pico-px) * 3);
 }
 
 /* A long section name (a repository's address) wraps onto up to three lines and
