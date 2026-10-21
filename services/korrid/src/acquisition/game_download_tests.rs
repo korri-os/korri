@@ -141,6 +141,46 @@ async fn provider_text_is_capped_and_error_statuses_are_responses() {
     assert_eq!((missing.status, missing.text.as_str()), (404, "missing"));
 }
 
+/// The cap also holds for a body with no Content-Length, counted as it arrives.
+#[tokio::test]
+async fn the_game_cap_holds_for_a_body_without_a_length() {
+    let server = HttpFixture::start([
+        (
+            "/big.gb",
+            Route::ok("application/octet-stream", vec![1u8; 4096]).unsized_body(),
+        ),
+        (
+            "/fits.gb",
+            Route::ok("application/octet-stream", vec![1u8; 1024]).unsized_body(),
+        ),
+    ]);
+    let engine = engine().with_game_cap(1024);
+    let directory = tempfile::tempdir().unwrap();
+    assert_eq!(
+        engine
+            .fetch_game(
+                &server.url(HOST, "/big.gb"),
+                &hosts(),
+                directory.path(),
+                |_| {}
+            )
+            .await
+            .err(),
+        Some(Failure::TooLarge)
+    );
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+    let fits = engine
+        .fetch_game(
+            &server.url(HOST, "/fits.gb"),
+            &hosts(),
+            directory.path(),
+            |_| {},
+        )
+        .await
+        .unwrap();
+    assert_eq!(fits.bytes, 1024);
+}
+
 #[tokio::test]
 async fn game_payloads_refuse_web_pages_empty_bodies_and_the_cap_and_leave_nothing() {
     let rom = b"\x00\x01game bytes".repeat(100);
