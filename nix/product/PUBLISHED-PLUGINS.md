@@ -21,7 +21,7 @@ The pins come from the immutable publisher batches `build-9514b1b382d3` and
 declaration IDs of the selected packages. Path names and lists alone establish
 no identity or trust.
 
-Both architecture maps contain 29 outputs. The initial 24 outputs came from source
+Both architecture maps contain 32 outputs. The initial 24 outputs came from source
 `9514b1b382d3b963674628308d6a5770987a4bc0`: the first batch republished 23
 selected plugins for the discovery v2 plugin contract (system content rules,
 groups and `controls`; no `discovery` export), which the current host requires.
@@ -48,6 +48,15 @@ Its 27 declared games use `packageFile` releases from its own installed files
 `paths-SYSTEM.txt` assets name the pinned ARM and x86 outputs. FAKE-08,
 Solarus and ZQuest Classic retain their existing exact pins. The matching
 `offline-metadata-SYSTEM.tar.gz` archives are pinned with their SHA-256 hashes.
+Batch `build-824050bfa4c3` (source `824050bfa4c3139ce3df9ee034a81e4f779e7fd9`,
+publisher `main` `d6d0cf4` plus the three plugins and a Core input lock at
+`bf1e59f3f`) adds `@korri:pico8`, `@korri:homebrewhub` and `@korri:retrobrews`,
+selected Enabled on all seven product devices (owner decision 2026-10-21).
+They are source-only packages (`plugin.ts` and the generated manifest, no
+references); pico8's manifest declares the host `www.lexaloffle.com`. The
+batch lists three paths per architecture. They were fetched into an empty store
+from the publisher cache with only the `korri-plugins-1` key trusted and
+verified, and its offline archives hold one signed record per output.
 Each pinned path is grounded in its batch's `paths-SYSTEM.txt` and
 `revision.txt`. The new Starter pack pins were checked against those public
 release assets directly. Earlier batches remain published even when their

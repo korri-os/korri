@@ -35,6 +35,14 @@ let
     "gw"
     "fbneo"
     "pcsx-rearmed"
+    # Owner decision 2026-10-21: the acquisition plugins ship on every product
+    # device. PICO-8 BBS searches the Lexaloffle BBS (declared host); Homebrew
+    # Hub and RetroBrews declare games with pinned artifacts (ADR 0013/0014).
+    # Their runners (FAKE-08, Gambatte, mGBA, Nestopia) are selected above.
+    # Inclusion does not make them required plugins.
+    "pico8"
+    "homebrewhub"
+    "retrobrews"
   ];
   n64AndDreamcast = select [
     "mupen64plus"
