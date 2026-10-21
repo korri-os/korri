@@ -30,6 +30,7 @@ import { shiftDownloadLabel } from "./shift-download-label"
 import type { ShiftLibraryGame } from "./pages/shift-library-game"
 import type { ShiftGameDetailView } from "./pages/shift-game-detail-view"
 import { ShiftSettings } from "./pages/ShiftSettings"
+import { SHIFT_STORE_START, ShiftStore, type ShiftStorePlace } from "./pages/ShiftStore"
 import { ShiftGameActionConfirmSheet } from "./ui/organisms/ShiftGameActionConfirmSheet"
 import { ShiftGameActionsSheet } from "./ui/organisms/ShiftGameActionsSheet"
 import { ShiftGameplayOverlaySheet } from "./ui/organisms/ShiftGameplayOverlaySheet"
@@ -181,6 +182,17 @@ export function shiftHomeGamesFromCatalog(
  */
 export const SHIFT_SETTINGS_ACTION_ID = "shift:settings"
 
+/** The rail's store destination: getting games from a provider. Present only
+ * where Korri publishes `store`. */
+export const SHIFT_STORE_ACTION_ID = "shift:store"
+
+const STORE_AFFORDANCE: SurfaceAction = {
+  id: SHIFT_STORE_ACTION_ID,
+  label: "Get games",
+  description: "Find a game from a provider, download it, and play it here.",
+  enabled: true,
+}
+
 const SETTINGS_AFFORDANCE: SurfaceAction = {
   id: SHIFT_SETTINGS_ACTION_ID,
   label: "Settings",
@@ -202,8 +214,10 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
     readonly action: SurfaceAction
   } | null>(null)
   const [screen, setScreen] = useState<
-    "home" | "library" | "detail" | "settings"
+    "home" | "library" | "detail" | "settings" | "store"
   >("home")
+  // Where the person was in the store: it opens there again.
+  const [storePlace, setStorePlace] = useState<ShiftStorePlace>(SHIFT_STORE_START)
 
   const surfaceGames = model.catalog._tag === "Ready" ? model.catalog.games : []
   const allGames = useMemo(
@@ -285,13 +299,21 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
     [identityGroup, model.settings],
   )
 
+  const hasStore = model.store !== undefined
   const railActions = useMemo<readonly SurfaceAction[]>(
-    () => (settingsGroups.length > 0 ? [SETTINGS_AFFORDANCE] : []),
-    [settingsGroups],
+    () => [
+      ...(hasStore ? [STORE_AFFORDANCE] : []),
+      ...(settingsGroups.length > 0 ? [SETTINGS_AFFORDANCE] : []),
+    ],
+    [hasStore, settingsGroups],
   )
 
   const runRailAction = useCallback((actionId: string) => {
     if (actionId === SHIFT_SETTINGS_ACTION_ID) setScreen("settings")
+    else if (actionId === SHIFT_STORE_ACTION_ID) {
+      setScreen("store")
+      host.openStore()
+    }
     else host.runAction(actionId)
   }, [host])
 
@@ -315,11 +337,23 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
     model.catalog._tag === "Ready" &&
     model.catalog.games.some(game => host.gameActions(game.id).length > 0)
 
-  // Startup owns the screen even when it began from Library or Detail.
-  const shownScreen = model.status._tag === "Busy" ? "home" : screen
+  // Startup owns the screen even when it began from Library or Detail, and
+  // so does a question Korri asks before it starts (#115).
+  const shownScreen = model.status._tag === "Busy" || model.status._tag === "Confirm" ? "home" : screen
   const body =
     model.presentation.kind === "gameplay-overlay" ? null
-    : shownScreen === "settings" ? (
+    : shownScreen === "store" && model.store !== undefined ? (
+      <ShiftStore
+        store={model.store}
+        place={storePlace}
+        onPlace={setStorePlace}
+        onSearch={(providerId, query) => host.searchStore(providerId, query)}
+        onOpenEntry={entryId => host.openStoreEntry(entryId)}
+        onAction={actionId => host.runAction(actionId)}
+        onPlay={requestLaunch}
+        onClose={() => setScreen("home")}
+      />
+    ) : shownScreen === "settings" ? (
       <ShiftSettings
         groups={settingsGroups}
         status={model.settingsStatus}

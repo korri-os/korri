@@ -412,6 +412,19 @@ export const SHIFT_DESIGN_PARTS = {
     layer: "molecule",
     name: "Store Index Row",
   },
+  // Store — the journey Korri can serve: providers, one search, one entry.
+  store: { id: "shift.store", layer: "page", name: "Store" },
+  storeDetail: {
+    id: "shift.store-detail",
+    layer: "template",
+    name: "Store Detail",
+  },
+  storeGet: { id: "shift.store-get", layer: "organism", name: "Store Get" },
+  storeProgress: {
+    id: "shift.store-progress",
+    layer: "atom",
+    name: "Store Progress",
+  },
   // Home body states (the Home page's non-Ready Data states; tagged so
   // pick-mode can select the body inside the Home page).
   homeLoading: {
