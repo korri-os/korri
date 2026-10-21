@@ -609,6 +609,43 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
+    /// Game identity is a read-only boundary check, not a launch effect. Reject
+    /// unknown ids before owner lookup or the executor can touch input seats.
+    fn require_known_game(&self, game_id: &str) -> Result<(), RpcFailure> {
+        let config = self.config.as_ref().map_err(config_failure)?;
+        if config.games.iter().any(|game| game.id == game_id) {
+            return Ok(());
+        }
+        let declared = match &self.dynamic {
+            Some(DynamicHostSource::Installed(root)) => {
+                crate::config::settings::runner_choice_snapshot(root)
+                    .map_err(crate::game_routes::settings_failure)?
+                    .0
+                    .library
+                    .contains_key(game_id)
+            }
+            #[cfg(test)]
+            Some(DynamicHostSource::Selected(root, _)) => {
+                crate::config::settings::runner_choice_snapshot(root)
+                    .map_err(crate::game_routes::settings_failure)?
+                    .0
+                    .library
+                    .contains_key(game_id)
+            }
+            #[cfg(test)]
+            Some(DynamicHostSource::Fixed(runtime)) => runtime.declared_ids.contains(game_id),
+            None => false,
+        };
+        if declared {
+            Ok(())
+        } else {
+            Err(RpcFailure {
+                code: "HostGameNotFound".into(),
+                message: format!("host game {game_id:?} is not configured"),
+            })
+        }
+    }
+
     /// Every fresh launch obtains its command through this owner gate. The
     /// executor receives the Result and ignores a refusal only when resuming
     /// the exact existing session. Route work stays outside its transition lock.
@@ -674,6 +711,7 @@ impl HostRuntime {
         game_id: &str,
         person_public_key: Option<&str>,
     ) -> Result<SessionPrepared, RpcFailure> {
+        self.require_known_game(game_id)?;
         let launcher = self.launcher.as_ref().ok_or_else(|| {
             config_failure(self.config.as_ref().expect_err("invalid host config"))
         })?;
@@ -968,6 +1006,7 @@ impl HostRuntime {
         if let Some(probe) = &self.before_reserved_route {
             probe();
         }
+        self.require_known_game(&request.game_id)?;
         let launcher = self.launcher.as_ref().ok_or_else(|| {
             config_failure(self.config.as_ref().expect_err("invalid host config"))
         })?;
@@ -1020,6 +1059,7 @@ impl HostRuntime {
         let runtime = self.clone();
         let person_public_key = person_public_key.map(str::to_owned);
         tokio::task::spawn_blocking(move || {
+            runtime.require_known_game(&request.game_id)?;
             let launch = runtime.prepare_launch_command(
                 &request.game_id,
                 Some(&request.runner_id),

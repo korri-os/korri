@@ -223,6 +223,48 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
 }
 
 #[tokio::test]
+async fn unknown_games_fail_before_owner_or_input_setup_on_every_launch_path() {
+    // The production constructor has neither an owner nor usable input seats.
+    // Missing game identity must not be hidden by either unrelated refusal.
+    let portal = RunningPortal::with_host_access(true, Some(PortalPermission::Full)).await;
+    for body in [
+        json!({"_tag":"app.session.prepare","payload":{"gameId":"missing"}}),
+        json!({"_tag":"app.local-games.launch.selected","payload":{"gameId":"missing","runnerId":"@missing:runner/run"}}),
+    ] {
+        let response = portal.request(Some(TOKEN), Some(ORIGIN), body).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = response.json::<Value>().await.unwrap();
+        assert_eq!(
+            response["outcome"]["payload"]["code"], "HostGameNotFound",
+            "{response}"
+        );
+    }
+    let reserved = portal
+        .request(
+            Some(TOKEN),
+            Some(ORIGIN),
+            json!({"_tag":"app.session.reserve","payload":{"gameId":"missing"}}),
+        )
+        .await
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(reserved["outcome"]["_tag"], "Ok", "{reserved}");
+    let response=portal.request(Some(TOKEN),Some(ORIGIN),json!({"_tag":"app.session.start","payload":{"gameId":"missing","expectedLaunchId":reserved["outcome"]["payload"]["launchId"]}})).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = response.json::<Value>().await.unwrap();
+    assert_eq!(
+        response["outcome"]["payload"]["code"], "HostGameNotFound",
+        "{response}"
+    );
+    assert!(!portal
+        ._root
+        .path()
+        .join("private/host-session/active.json")
+        .exists());
+}
+
+#[tokio::test]
 async fn shared_portal_rpc_local_sessions_still_require_credentials_and_the_exact_origin() {
     let portal = RunningPortal::start(true).await;
     for body in [
