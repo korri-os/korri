@@ -209,6 +209,9 @@ function fakeHost(actions: readonly SurfaceAction[] = GAME_ACTIONS): FakeHost {
     connectWifi: record("connectWifi"),
     connectHiddenWifi: record("connectHiddenWifi"),
     finishOnboarding: record("finishOnboarding"),
+    openStore: record("openStore"),
+    searchStore: record("searchStore"),
+    openStoreEntry: record("openStoreEntry"),
   }
 }
 
