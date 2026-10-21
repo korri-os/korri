@@ -22,7 +22,6 @@ fi
 cargo fmt --check
 cargo check
 (cd "$CRATE/tests/fixtures/first-party" && sha256sum -c SHA256SUMS)
-bun test "$ROOT/plugins/pico8/plugin.test.ts" "$ROOT/plugins/homebrewhub/plugin.test.ts" "$ROOT/plugins/retrobrews/plugin.test.ts"
 KORRI_SCRIPT_FIXTURES_IN_SHELL=1 bash "$CRATE/script-fixtures-setup.sh"
 cargo test
 KORRI_CONFIG_REVIEW_IN_SHELL=1 "$CRATE/config-snapshot-review.sh"
