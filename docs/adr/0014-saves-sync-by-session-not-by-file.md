@@ -64,8 +64,16 @@ can record what each session started from.
   every game (RetroArch saves and screenshots, PPSSPP's memory stick, ZQuest)
   points the program at a folder for that game on each launch, as legacy
   RetroArch did. A save location is always a whole folder.
-- A plugin may bind folders only. Single-file binds and overlays are not part
-  of this decision.
+- A save location is always inside the person's own folder. A program that
+  expects its saves elsewhere gets a folder bind or an overlay from there.
+- A plugin may declare folder binds and overlays. An overlay keeps a game
+  folder read-only and sends everything the game writes to the person's save
+  location; it serves games that save beside their own files. Single-file binds
+  are not allowed: a save written as a temporary file and renamed over the old
+  one can fail with `EBUSY` on a mount point (rename(2)).
+- korrid builds the mount namespace by running the launch through bubblewrap
+  inside the existing systemd scope. A scope cannot take systemd's
+  `BindPaths=` (systemd.scope(5)).
 - When sync first starts, games whose saves are byte-identical on two devices
   join without a question. Every other game with saves on more than one device
   is listed once in a one-time review, and the person picks per game.
@@ -142,6 +150,10 @@ was checked: about 40 runners. On Linux, none of them is impossible to direct.
   Kept only as the advisory in-use warning.
 - **Last write wins by timestamp (iroh-docs, a CRDT register).** Drops one run
   without a warning.
+- **Path rewriting instead of mounts (LD_PRELOAD, PRoot, seccomp user
+  notification, FUSE).** LD_PRELOAD misses static, Go and FEX-run programs;
+  PRoot and FUSE slow every file operation; seccomp makes korrid carry out each
+  file operation. Research: `~/.cache/research/force-app-folder-context-20261021T000404/`.
 - **A hosted store with compare-and-swap writes (S3, R2).** Deferred to a spike:
   it needs an outside service, and some S3-compatible stores do not document the
   write condition.
@@ -159,9 +171,8 @@ Savestates of 0.5 to 2 GB make storage and transfer cost real.
 
 Not decided yet, and not to be assumed by an implementation:
 
-- Where a save location may be on disk, and how a program that saves beside
-  its own files is handled (a single save file beside a Wine `.exe`): waiting on
-  research into Linux ways to force a program into a chosen folder.
+- Whether every launch runs under bubblewrap with a person's opt-out, or only
+  launches that declare a bind or overlay.
 - The shape of the save-location and bind declarations in the plugin contract,
   and how a bind is set up inside korrid's launch (systemd scope, launch
   modifiers such as Gamescope, runners that already sandbox themselves).
