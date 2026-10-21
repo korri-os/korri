@@ -11,6 +11,7 @@ import {
   createStoreAcquisition,
   NO_SYSTEM_REASON,
   NOT_AVAILABLE_KICKER,
+  QUEUED_DETAIL,
   STOPPED_KICKER,
   STOPPED_REASON,
   storeEntryId,
@@ -396,9 +397,12 @@ test("korrid restarting under a download: Download stopped, Retry starts from ze
     _tag: "Problem", kicker: STOPPED_KICKER, reason: STOPPED_REASON,
     actions: [expect.objectContaining({ label: "Retry" })],
   })
+  const before = h.calls.length
   h.press("Retry")
   await h.until("restarted", () => (h.get() as { progress?: { done: number } }).progress !== undefined)
   expect((h.get() as { progress: { done: number } }).progress.done).toBeLessThanOrEqual(16_000)
+  // korrid lost the claim with the restart: the store read it again, then asked again.
+  expect(h.calls.slice(before, before + 3).map(call => call.split(" ")[0])).toEqual(["acquire", "details", "acquire"])
 })
 
 test("a cart already in the library: after a korrid restart, Get answers Play with nothing downloaded", async () => {
@@ -431,9 +435,39 @@ test("a cart already in the library: after a korrid restart, Get answers Play wi
   again.act(confirm.get.actions[0]!.id)
   for (let i = 0; i < 20; i++) await flush()
   expect(again.getSnapshot().details).toMatchObject({ get: { _tag: "InLibrary", gameId: "store-korripico8-celeste" } })
-  // korrid no longer held the claim: the store read it again, then asked again.
-  expect(calls.slice(-3)).toEqual(["acquire", "details", "acquire"])
+  // korrid answers an owned cart before it needs the claim: the details read
+  // is the entry opening; Get asked once, with no second read.
+  expect(calls).toEqual(["details", "acquire"])
   expect(h.korrid.downloadedBytes()).toBe(bytes)
+})
+
+test("a second Get waits in korrid's queue with Cancel, and moves when the first ends", async () => {
+  const big = art("pico8", { name: "celeste.p8.png", sizeBytes: 64_000 })
+  const h = harness(base([claim("celeste", { artifact: big }), claim("dusk"), claim("tide")]))
+  await h.open("celeste")
+  h.press("Get")
+  h.press("Download")
+  await h.until("downloading", () => (h.get() as { progress?: unknown }).progress !== undefined)
+  // Second entry: korrid has one download moving, so this one waits.
+  h.store.openEntry(storeEntryId({ providerId: BBS, id: "dusk" }))
+  await h.until("dusk", () => h.now().details._tag === "Ready" && (h.now().details as { entry: { title: string } }).entry.title === "DUSK")
+  h.press("Get")
+  h.press("Download")
+  await h.until("queued", () => h.get()._tag === "Working" && (h.get() as { kicker: string }).kicker === "Waiting to download")
+  expect(h.get()).toMatchObject({ _tag: "Working", kicker: "Waiting to download", detail: QUEUED_DETAIL, actions: [{ label: "Cancel" }] })
+  expect("progress" in h.get()).toBe(false)
+  // A third waits too, and Cancel works while it waits.
+  h.store.openEntry(storeEntryId({ providerId: BBS, id: "tide" }))
+  await h.until("tide", () => h.now().details._tag === "Ready" && (h.now().details as { entry: { title: string } }).entry.title === "TIDE")
+  h.press("Get")
+  h.press("Download")
+  await h.until("tide queued", () => (h.get() as { kicker?: string }).kicker === "Waiting to download")
+  h.press("Cancel")
+  await h.until("tide cancelled", () => h.get()._tag === "Offer")
+  expect(h.get()).toMatchObject({ note: CANCELLED_NOTE })
+  // The first finishes; the second then moves on its own.
+  h.store.openEntry(storeEntryId({ providerId: BBS, id: "dusk" }))
+  await h.until("dusk moves", () => h.now().details._tag === "Ready" && h.get()._tag === "InLibrary")
 })
 
 test("korrid not answering for a moment does not end the watch", async () => {

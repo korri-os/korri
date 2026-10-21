@@ -130,6 +130,7 @@ export const STOPPED_REASON =
   "Korri restarted before the download finished. Nothing was kept, and your library is unchanged."
 export const CANCELLED_NOTE = "Download cancelled. Nothing was kept."
 export const NOT_AVAILABLE_KICKER = "Not available"
+export const QUEUED_DETAIL = "Waiting for the download before it"
 
 /** Nothing a Retry here could change: no known system, or a provider that
  * hands out a page instead of the file. */
@@ -182,6 +183,7 @@ function jobFrom(status: AcquireJobStatus, cancelling = false): Job {
         reason: state.reason.message,
         retry: true,
       }
+    case "Queued":
     case "Resolving":
     case "Downloading":
     case "Placing":
@@ -276,6 +278,10 @@ export function createStoreAcquisition(
             progress: { done: state.bytesDone, ...(state.bytesTotal === undefined ? {} : { total: state.bytesTotal }) },
             actions: [cancel()],
           }
+        }
+        // korrid downloads one thing at a time: this one waits its turn.
+        if (state._tag === "Queued") {
+          return { _tag: "Working", kicker: "Waiting to download", detail: QUEUED_DETAIL, actions: [cancel()] }
         }
         // Placing has no position and no Cancel: the file is being moved in.
         if (state._tag === "Placing") return { _tag: "Working", kicker: "Adding to your library…", progress: { done: 0 }, actions: [] }

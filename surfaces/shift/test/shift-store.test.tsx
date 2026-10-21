@@ -135,6 +135,7 @@ describe("Shift store", () => {
     ["cancelled", ["Get"], "Download cancelled. Nothing was kept."],
     ["confirm", ["Download", "Cancel"], "Celeste Classic 2, size unknown"],
     ["downloading", ["Cancel"], "8 KB of 15.9 KB · 8 KB/s · 0:01 left"],
+    ["queued", ["Cancel"], "Waiting for the download before it"],
     ["placing", [], undefined],
     ["stopped", ["Retry"], "Korri restarted before the download finished. Nothing was kept, and your library is unchanged."],
   ] as const)("the %s state shows Korri's words and runs exactly its actions", (state, labels, words) => {
