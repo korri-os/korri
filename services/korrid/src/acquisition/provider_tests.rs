@@ -837,3 +837,41 @@ async fn remove_download_refuses_while_the_game_runs() {
     );
     assert!(world.cache().join(sha_hex(ROM)).join("2048.gba").is_file());
 }
+
+/// A link that names game Y never reports Imported{Y} for bytes game X
+/// already holds: the link moves to X, the game that has the release.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_link_moves_to_the_game_that_already_holds_the_bytes() {
+    let world = world();
+    let other = b"\x00\x02 another homebrew rom".to_vec();
+    world.server.route(
+        "/files/tetris.gb",
+        Route::ok("application/octet-stream", other),
+    );
+    world.search().await;
+    let holder = imported(&world.finish(world.acquire("2048").unwrap()).await);
+    let linked = imported(&world.finish(world.acquire("tetris").unwrap()).await);
+    assert_ne!(holder, linked);
+    // The provider now serves the 2048 bytes for tetris; its old download goes.
+    world.server.route(
+        "/files/tetris.gb",
+        Route::ok("application/octet-stream", ROM),
+    );
+    let removal =
+        super::game_artifacts_for_removal(&world.root, &world.context.registry, &linked).unwrap();
+    world
+        .coordinator
+        .remove(&world.root, &world.context.registry, &linked, &removal)
+        .await
+        .unwrap();
+    let again = world.finish(world.acquire("tetris").unwrap()).await;
+    assert_eq!(imported(&again), holder);
+    let snapshot = world.snapshot();
+    assert_eq!(
+        snapshot.provider_links["@test:shop/tetris"].playable.0,
+        holder
+    );
+    assert_eq!(snapshot.library[&holder].releases.len(), 1);
+    // The other game keeps its own release as history.
+    assert_eq!(snapshot.library[&linked].releases.len(), 1);
+}
