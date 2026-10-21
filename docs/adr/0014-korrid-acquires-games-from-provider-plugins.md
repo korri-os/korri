@@ -10,10 +10,42 @@
 2. Provider scope: **PICO-8 BBS, Homebrew Hub (Game Boy), RetroBrews (GBA, NES)**.
    itch.io is out (owner: "skip itchio").
 
-ADR 0012 left source acquisition out. This decision adds it: a provider plugin
-finds games on one site and says where their files are; korrid makes every
-HTTP request, downloads the game, places it in a paired source, and lets
-discovery import it. Plugins stay effect-free (AGENTS.md, plugin boundaries).
+**Owner decision A, 2026-10-20.** This ADR builds on
+[ADR 0013](0013-declared-games-can-come-from-artifacts.md) (declared games can
+come from artifacts). Homebrew Hub and RetroBrews become ADR 0013 declared
+games with pinned artifacts; they export no `providers`. PICO-8 BBS keeps
+search, and its downloaded cart stays in korrid's cache: korrid never writes
+into a person's source. Placement into sources, `sourceId`, `ChooseSource`,
+`Staged`, `AcquisitionNoSource`, hash-cache seeding and rescan-to-import are
+withdrawn.
+
+**Owner answers, 2026-10-20 (all option a).**
+
+- Q1: the cart's ready folder is
+  `cache/<plugin short>/<provider name>/<sha256 hex>/<URL basename>`.
+- Q2: the acquire job writes the game (claim title), release (`sha256:`
+  identity, system from the claim) and provider link `{ provider, ref: claim
+  id }` once, after publishing the ready folder, under discovery's
+  publication lock.
+- Q3: the resolver finds a release with no saved location and no declared
+  artifact by its hash in the owning provider's cache; the runner gets
+  `contentPath`. No saved location.
+- Q4: ADR 0013's Remove download also removes a cart's ready folder; the game
+  stays in history; saves stay.
+- Q5: cart jobs join ADR 0013's one-at-a-time queue and deep-sleep block;
+  they do not continue after a korrid restart.
+- Q6: a removed cart is downloaded again only through Get in the store (same
+  game through the provider link).
+- Coordinator rulings: a waiting store job reports `Queued` (no payload,
+  mirroring ADR 0013's `ArtifactState::Queued`); `acquire` checks the
+  provider link and its ready folder before it requires a held claim, so Get
+  on an owned cart answers `Imported` with no network.
+
+ADR 0012 left source acquisition out. This decision adds it for search
+providers: a provider plugin finds games on one site and says where their
+files are; korrid makes every HTTP request, downloads the cart into its cache,
+and writes the library record. Plugins stay effect-free (AGENTS.md, plugin
+boundaries).
 `services/korrid/SCRIPTING.md`, "Acquisition providers", is the exact wire;
 `contracts/generated/korrid.ts` is its Typeshare output.
 
@@ -21,9 +53,9 @@ discovery import it. Plugins stay effect-free (AGENTS.md, plugin boundaries).
 
 | Legacy provider | Disposition | Runner on main | Evidence |
 |---|---|---|---|
-| `@korri:pico8` (live BBS search) | Build | `@korri:fake08` (`pico8`) | legacy `product/plugins/pico8/src/plugin.ts`; BBS markup and cart path changed, parser fix needed |
-| `@korri:homebrewhub` (curated entries) | Build | `@korri:gambatte` (`gb`) | legacy `product/plugins/acquisition-fixtures/index.ts`; `2048gb` live, dead entries dropped |
-| `@korri:retrobrews` (curated entries) | Build | `@korri:mgba` (`gba`), `@korri:fceumm` (`nes`) | same file; `anguna.gba`, `ambushed.nes` live |
+| `@korri:pico8` (live BBS search) | Build as a search provider (this ADR) | `@korri:fake08` (`pico8`) | legacy `product/plugins/pico8/src/plugin.ts`; BBS markup and cart path changed, parser fix needed |
+| `@korri:homebrewhub` (curated entries) | Build as ADR 0013 declared games (decision A) | `@korri:gambatte` (`gb`) | legacy `product/plugins/acquisition-fixtures/index.ts`; `2048gb` live, dead entries dropped |
+| `@korri:retrobrews` (curated entries) | Build as ADR 0013 declared games (decision A) | `@korri:mgba` (`gba`), `@korri:fceumm` (`nes`) | same file; `anguna.gba`, `ambushed.nes` live |
 | `@korri:itchio`, `@korri:community-catalog`, itch.io wrappers | Excluded: owner decision | — | owner, 2026-10-19 |
 | `@korri:portmaster` | Excluded: no PortMaster runner or installer on main | — | owner |
 | `@korri:chip8archive`, `tic80gallery`, `wasm4gallery`, `puzzlescript` | Excluded: no runner on main | — | owner |
@@ -46,9 +78,10 @@ discovery import it. Plugins stay effect-free (AGENTS.md, plugin boundaries).
 - Local `/rpc` gains `app.acquisition.providers`, `.search`, `.details`,
   `.acquire`, `.acquire-status` and `.acquire-cancel`, portal capability only,
   on the local brain (it alone runs discovery).
-- korrid downloads a resolved game once, places it in a paired source without
-  clobbering, seeds discovery's hash cache, rescans, and reports
-  `Imported { gameId }` only if the library then holds the placed release.
+- korrid downloads a resolved cart once, in ADR 0013's queue, publishes it in
+  its cache, writes the game, release and provider link once, and reports
+  `Imported { gameId }`. The route reaches the cart by hash and passes it as
+  `contentPath`; Remove download removes the ready folder.
 
 ## Grounding and deltas
 
@@ -64,17 +97,20 @@ discovery import it. Plugins stay effect-free (AGENTS.md, plugin boundaries).
 | Unacquirable claim | legacy Shift "ungetable" guard | `artifact.system` absent or not an enabled system: shown, not acquired (`AcquisitionSystemUnknown`). |
 | `hosts` | owner decision 1; `ports` in `plugin.nix`, `firewall.rs` `Ports` bounds | Builder omits it when empty, like `requires`, so existing approvals do not change. Exact lowercase DNS names, no wildcard, port, scheme, trailing dot or IP literal, at most 128, and only with a `providers` export. Report field `hosts`; `EnabledPackage.hosts`. |
 | RPC methods | legacy `product/apps/portal/api/acquisition/*.rpc.ts` | `acquire-cancel` is new (legacy had no cancel). `search` needs exactly one provider id. `providers` answers `AcquisitionProvider { id, title, pluginId }`, replacing legacy `PluginMetadata` (`legalRisk`, `credentialRequired`, `module` have no main producer). |
-| `AcquireArtifactRequest { providerId, id, fileName?, sourceId? }` | legacy `AcquireArtifactRequest` | `url`, `size`, `artifactFormat`, `system`, `title`, `artUrl` dropped: korrid takes them from the claim it holds, so the portal cannot substitute a URL. `sourceId` is new. |
+| `AcquireArtifactRequest { providerId, id, fileName? }` | legacy `AcquireArtifactRequest` | `url`, `size`, `artifactFormat`, `system`, `title`, `artUrl` dropped: korrid takes them from the claim it holds, so the portal cannot substitute a URL. |
 | `AcquireJobStatus` | legacy `AcquireJobStatus` | `stagedPath`, `placedPath` dropped: paths never leave korrid; the game id is the handle. `state` becomes a tagged union. |
-| `AcquireJobState` | legacy `acquiring/staged/imported/failed`; ADR 0012 progress fields | `ChooseSource { sources: { id, label }[] }` (coordinator decision; `DiscoverySource` field names), `Resolving`, `Downloading`, `Placing`, `Imported { gameId }`, `Staged { message }`, `Failed { reason }`, `Cancelled`. `NonFinalDownload` and `FailedDownload` become `Failed` with codes `DownloadNotFinal` and `DownloadResolutionFailed`. |
-| Repeated `acquire` | legacy `activeByClaim` | Also returns an `Imported` job, so a placed game is not downloaded twice in one process. |
+| `AcquireJobState` | legacy `acquiring/staged/imported/failed`; ADR 0012 progress fields; ADR 0013 `Queued` | `Queued`, `Resolving`, `Downloading`, `Placing`, `Imported { gameId }`, `Failed { reason }`, `Cancelled`. `staged` has no meaning: nothing is left unrecognized. `NonFinalDownload` and `FailedDownload` become `Failed` with codes `DownloadNotFinal` and `DownloadResolutionFailed`. |
+| Repeated `acquire` | legacy `activeByClaim`; ADR 0002 provider identity | A live job answers again. A provider link `<provider>/<claim id>` whose game's cart is ready answers `Imported` before any claim is required, also after a restart. |
 | Claim and job stores | legacy `claim-store-live.ts`, `acquire-jobs.ts` (in memory) | None persisted. |
 | Staging | ADR 0012 cache grammar | `<storage-root>/cache/<plugin short name>/<provider name>/.downloads/`, 0700, random `.acquire-*` names, removed on failure, cancel and startup. |
 | 2 GiB cap | legacy `MAX_FALLBACK_DOWNLOAD_BYTES` | ADR 0010 dropped caps only for pinned, hash-verified payloads. |
 | Web page and empty refusal | legacy `rejectNonArtifactPayload` | HTML content type or HTML lead tag, and empty bodies. The legacy magic-byte table is not carried. |
 | Content rules | `SystemRecord.content` | The file name must end in a system extension (longest suffix); a matching header rule must leave content. |
-| Placement | legacy `artifact-placement.ts` | Target: eligible paired file sources (system or system group) instead of a preferred storage id; the first layout's literal directory instead of `<system>/`. Identical SHA-256 reused; otherwise `name (n).ext`, 20 attempts. `ext` is the matched system extension, not the last dot, so `cart (1).p8.png` stays a PICO-8 cart. Temp, fsync, `link(2)` (never replaces a name); containment against the canonical root. Content already located in that source is reused instead of copied under another name. |
-| Hash-cache seed | legacy identityPolicy "skip" reused the staging digest; `discovery/identify/hash.rs` `HashCache` | Seeded only when no header rule strips bytes; then the rescan reads no file bytes for it. |
+| Ready folder `cache/<plugin>/<provider>/<sha256 hex>/<URL basename>` | ADR 0012 cache grammar, ready-directory rule and URL-basename rule; owner Q1 | Departs from legacy `artifact-placement.ts` (copy into a storage), as ADR 0013 does. The version segment is the content hash, so identical bytes share one folder. |
+| Game, release and provider link | ADR 0013 records (`reconcile_artifact_releases`, `declared_link`); ADR 0002 provider identity; legacy `applyImportMetadata` (claim title, staged sha256); owner Q2 | Written by the acquire job once, under the discovery publication lock, not by a scan. No location. Reconcile keeps them: a release with no location and no origins is never removed. |
+| Route `cache_target` | ADR 0013 `contentPath` and its `artifact_target` case; owner Q3 | A third no-location case: the linked acquisition provider's cache, found by the release hash. |
+| Remove download | ADR 0013 fifth and sixth rounds; owner Q4 | Also removes the cart folder, unless another game names the same hash; refuses while the game runs or a store job for it works. |
+| Queue and sleep | ADR 0013 fifth round; owner Q5 | A store job takes one turn in the same line and is never paused for a launch. It does not continue after a restart. |
 | Expected digest | legacy `expectedDigests` on `PluginAcquireOutput` | No in-scope provider supplies a digest and no result type carries one, so nothing is verified against one. SHA-256 is byte identity, not authentication. |
 | Failure copy | `launcher/redaction.rs` posture, ADR 0012 closed vocabulary | Fixed plain copy; no URL, path, query, header value, HTTP status or plugin text. Diagnostics go to `log::debug!`, which the build compiles out. |
 
@@ -97,19 +133,19 @@ bound, and the heap must hold the input. A 3.5 MiB page fits, as tested.
 ## Consequences and stated limits
 
 - A korrid restart forgets claims and jobs. `acquire-status` answers
-  `AcquisitionUnknownJob`; startup removes staging files; Retry downloads from
-  zero. A game download never resumes: with no expected hash, a resumed range
-  cannot be proven to be the same bytes.
-- After a restart, "already in library" is decided by bytes: a repeated Get
-  downloads again, then reuses the identical file.
+  `AcquisitionUnknownJob`; startup removes staging files and `.tmp-*`
+  folders; Retry downloads from zero. A store download never resumes: with no
+  expected hash and no saved URL, a resumed range cannot be proven to be the
+  same bytes.
+- Game content is reconstructible, as in ADR 0013: deleting the cache, or the
+  provider removing the cart, loses it on that device. Saves stay.
+- A store job is not paused for a launch; a launch's own download waits for
+  it. Carts are small.
 - `NonFinalDownload.choices` cannot reach the person: the job becomes
   `Failed { DownloadNotFinal }`. `fileName` on `acquire` is passed to
   `artifact.resolve-download` as legacy did.
-- Import waits at most 120 s for the library rescan; a slower scan reports
-  `Staged` although the game may appear later.
-- A system whose header rule strips bytes costs one file hash on the next scan.
 - Ports in provider URLs are not restricted; only the host name is declared.
 - Declaration evaluation refuses a plugin whose artifact key equals one of
   its provider names, so ADR 0012 artifact caches and ADR 0014 provider
-  staging never share `cache/<plugin>/<key>/`.
+  caches never share `cache/<plugin>/<key>/`.
 - Device evidence is still owed; the Mini V2 was unreachable during this work.
