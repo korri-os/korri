@@ -264,3 +264,20 @@ UFS stays built in with `SCSI_UFS_BSG` off. The rebuilt Images are pinned in
 
 The recovery Image matches the 2026-09-30 approved build byte for byte.
 Physical acceptance of the product Image is separate.
+
+## Launch-limits kernel pin (2026-10-22)
+
+Commit `3f3b7c6e7ddc43a76eb2016b05e3bd68612ca488` enabled
+`CONFIG_UCLAMP_TASK=y`, `CONFIG_UCLAMP_BUCKETS_COUNT=5` and
+`CONFIG_UCLAMP_TASK_GROUP=y` for the launch-limits helper, but left the
+product Image pin above unchanged. The image and the acceptance fixture both
+select the intended product kernel; the verifier's product pin was stale.
+
+`verify-image.py` now pins the resulting 57,307,648-byte product Image at
+`3692c7ea66cda7228d7755737318365252881e4d76ec9a7d5e0ae9508020aa3e`.
+The recovery Image and both DTB pins remain unchanged. The resolved product
+configuration must still match the full ROCKNIX baseline plus
+`config-korri.delta` exactly, including built-in internal UFS and disabled
+`SCSI_UFS_BSG`. Keep the exact Image hash check; a kernel configuration or
+toolchain change needs a new measured pin, not a bypass. Physical acceptance
+of this product Image is separate; no device was changed for this pin update.
