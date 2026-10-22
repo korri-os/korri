@@ -846,7 +846,7 @@ diff --git a/drivers/staging/media/sunxi/cedrus/cedrus_enc_video.c b/drivers/sta
 new file mode 100644
 --- /dev/null
 +++ b/drivers/staging/media/sunxi/cedrus/cedrus_enc_video.c
-@@ -0,0 +1,627 @@
+@@ -0,0 +1,634 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Allwinner H616 H264 encoder V4L2 ops.
@@ -1229,7 +1229,8 @@ new file mode 100644
 +	struct cedrus_ctx *ctx = cedrus_enc_file2ctx(file);
 +	struct v4l2_m2m_ctx *m2m = ctx->fh.m2m_ctx;
 +	struct vb2_v4l2_buffer *dst;
-+	bool stopped = v4l2_m2m_has_stopped(m2m);
++	bool stopped;
++	unsigned long flags;
 +	int ret;
 +
 +	ret = v4l2_m2m_ioctl_try_encoder_cmd(file, priv, cmd);
@@ -1240,6 +1241,9 @@ new file mode 100644
 +	    (!vb2_is_streaming(v4l2_m2m_get_src_vq(m2m)) ||
 +	     !vb2_is_streaming(v4l2_m2m_get_dst_vq(m2m))))
 +		return 0;
++	/* Drain completion can race START: snapshot and resume atomically. */
++	spin_lock_irqsave(&ctx->dev->job_lock, flags);
++	stopped = v4l2_m2m_has_stopped(m2m);
 +	if (cmd->cmd == V4L2_ENC_CMD_STOP &&
 +	    !v4l2_m2m_num_src_bufs_ready(m2m)) {
 +		dst = v4l2_m2m_next_dst_buf(m2m);
@@ -1250,13 +1254,16 @@ new file mode 100644
 +	if (!ret && cmd->cmd == V4L2_ENC_CMD_START && stopped) {
 +		vb2_clear_last_buffer_dequeued(v4l2_m2m_get_dst_vq(m2m));
 +		ctx->enc->headers = true;
-+		v4l2_m2m_try_schedule(m2m);
 +	}
 +	if (!ret && cmd->cmd == V4L2_ENC_CMD_STOP && v4l2_m2m_has_stopped(m2m)) {
 +		const struct v4l2_event ev = { .type = V4L2_EVENT_EOS };
 +
 +		v4l2_event_queue_fh(&ctx->fh, &ev);
 +	}
++	spin_unlock_irqrestore(&ctx->dev->job_lock, flags);
++	/* Scheduling may sleep in device_run, so never do it under job_lock. */
++	if (!ret && cmd->cmd == V4L2_ENC_CMD_START && stopped)
++		v4l2_m2m_try_schedule(m2m);
 +	return ret;
 +}
 +
