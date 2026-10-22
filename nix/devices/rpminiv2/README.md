@@ -162,6 +162,9 @@ and profile on the device for exact rollback. They write only files on the
 existing ESP/root. No block writes, GPT changes, firmware changes or image
 flashing exist in this path. See [internal updates and recovery](INTERNAL.md#system-updates-from-zao)
 for checks, explicit reboot/acceptance steps, free-space limits and recovery.
+After boot, separately select that generation's Mini V2 service bundle with the
+existing native selector, as documented there. System updates deliberately
+preserve persistent bundle selections; without this step korrid can remain old.
 `switch-to-configuration boot` alone does not update this GRUB config.
 
 ## Verified before arrival

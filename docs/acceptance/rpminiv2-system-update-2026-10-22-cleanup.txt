@@ -1,0 +1,826 @@
+BEFORE CLEANUP:
+Filesystem        1B-blocks         Used  Available Use% Mounted on
+/dev/sda22     122244853760 112586846208 3401052160  98% /
+/dev/sda21        535560192    379826176  155734016  71% /boot
+GC WITHOUT DELETING GENERATIONS:
+finding garbage collector roots...
+deleting garbage...
+deleting '/nix/store/kz8mv5hy2lamq4z9sdfkkha2g3n6mall-korri-cemu-bench-0.1.0'
+deleting '/nix/store/rdshd28s9ics8wja5hp1ppg4yqz64qc3-vulkan-tools-1.4.328.0'
+deleting unused links...
+note: hard linking is currently saving -4.0 KiB
+2 store paths deleted, 2.0 MiB freed
+DELETE OLD SYSTEM GENERATIONS (keep original fallback 24 and current 29):
+removing profile version 1
+removing profile version 2
+removing profile version 3
+removing profile version 4
+removing profile version 5
+removing profile version 6
+removing profile version 7
+removing profile version 8
+removing profile version 9
+removing profile version 10
+removing profile version 11
+removing profile version 12
+removing profile version 13
+removing profile version 14
+removing profile version 15
+removing profile version 16
+removing profile version 17
+removing profile version 18
+removing profile version 19
+removing profile version 20
+removing profile version 21
+removing profile version 22
+removing profile version 23
+removing profile version 25
+removing profile version 26
+removing profile version 27
+removing profile version 28
+GC AFTER OLD GENERATION DELETION:
+finding garbage collector roots...
+removing stale link from "/nix/var/nix/gcroots/auto/3wd19hvycf9y4rgbcajg47b4nzx1z8s2" to "/nix/var/nix/profiles/system-25-link"
+removing stale link from "/nix/var/nix/gcroots/auto/lq2bnyiilzbl66nkc6c03m8aj5wy5p24" to "/nix/var/nix/profiles/system-5-link"
+removing stale link from "/nix/var/nix/gcroots/auto/94hm6imj3sj0rp74bf849pvvlyzs9cl9" to "/nix/var/nix/profiles/system-1-link"
+removing stale link from "/nix/var/nix/gcroots/auto/b9d58mrda7bc64ym8vdz7mhabv1a5n3q" to "/nix/var/nix/profiles/system-20-link"
+removing stale link from "/nix/var/nix/gcroots/auto/nfbzzxxncvxpj8p2i4qb8idypiv8p3dp" to "/nix/var/nix/profiles/system-13-link"
+removing stale link from "/nix/var/nix/gcroots/auto/3pgjxk288s510l8xhmivfqyz40hymfz8" to "/nix/var/nix/profiles/system-2-link"
+removing stale link from "/nix/var/nix/gcroots/auto/5bl41j2c0hlzrjilrmzm644wmjcbc5kg" to "/nix/var/nix/profiles/system-16-link"
+removing stale link from "/nix/var/nix/gcroots/auto/78h8hkphlwfl4cl72kzj09i4phb07z9x" to "/nix/var/nix/profiles/system-22-link"
+removing stale link from "/nix/var/nix/gcroots/auto/ax258dvhz87jp8l7bmlchxp4sgq7yiay" to "/nix/var/nix/profiles/system-27-link"
+removing stale link from "/nix/var/nix/gcroots/auto/5jz0q0fkv073fl6jj80mh545f0jdinhq" to "/nix/var/nix/profiles/system-18-link"
+removing stale link from "/nix/var/nix/gcroots/auto/jdmlf1m6xipaa22mvxib4gnra2fcqx4s" to "/nix/var/nix/profiles/system-11-link"
+removing stale link from "/nix/var/nix/gcroots/auto/0lh58j2f659mw5bx4lm2y5bl0p14xkkp" to "/nix/var/nix/profiles/system-28-link"
+removing stale link from "/nix/var/nix/gcroots/auto/n5pkkd2biq09zzda6m5prh7m2mrijlql" to "/nix/var/nix/profiles/system-12-link"
+removing stale link from "/nix/var/nix/gcroots/auto/y0k9s8bzq1g0ka1az13ny5y9f67if3dq" to "/nix/var/nix/profiles/system-10-link"
+removing stale link from "/nix/var/nix/gcroots/auto/fkkdj931wm56anb2rkrgiihi86ghc48v" to "/nix/var/nix/profiles/system-26-link"
+removing stale link from "/nix/var/nix/gcroots/auto/3dvp2pbsa3nqkwdphliqxml8njsywckd" to "/nix/var/nix/profiles/system-21-link"
+removing stale link from "/nix/var/nix/gcroots/auto/hbfdgyixkzyiwyyq5snag0kzypvgfghm" to "/nix/var/nix/profiles/system-6-link"
+removing stale link from "/nix/var/nix/gcroots/auto/hlyn56117zhxlswgcrkc7c1rjczdwkh4" to "/nix/var/nix/profiles/system-15-link"
+removing stale link from "/nix/var/nix/gcroots/auto/5dnfka4gkd0913hhg5iyd1iimmb78knq" to "/nix/var/nix/profiles/system-7-link"
+removing stale link from "/nix/var/nix/gcroots/auto/cslvapdw8369vjm91kmsqhphgq3mhwhv" to "/nix/var/nix/profiles/system-17-link"
+removing stale link from "/nix/var/nix/gcroots/auto/8x2jr7p2z3s1yazbyn8lyb4sh97lm19c" to "/nix/var/nix/profiles/system-9-link"
+removing stale link from "/nix/var/nix/gcroots/auto/llv4gzmp9cqr7ssdhw2b0ybxj6cq43ac" to "/nix/var/nix/profiles/system-23-link"
+removing stale link from "/nix/var/nix/gcroots/auto/5yznv50i3dpim5468b68jvzaq71jdkcd" to "/nix/var/nix/profiles/system-8-link"
+removing stale link from "/nix/var/nix/gcroots/auto/hmkrjrvfxkjq2ipfllgi3x82kx86g5i3" to "/nix/var/nix/profiles/system-19-link"
+removing stale link from "/nix/var/nix/gcroots/auto/x35aapc1f07nsimh4l9v3hzajsgs6665" to "/nix/var/nix/profiles/system-14-link"
+removing stale link from "/nix/var/nix/gcroots/auto/q5rbiqi12j6xbpics1nv80avc0dk1lzk" to "/nix/var/nix/profiles/system-4-link"
+removing stale link from "/nix/var/nix/gcroots/auto/j3wbyr55nq19j2lk7p6ybj4c6xynh7jw" to "/nix/var/nix/profiles/system-3-link"
+deleting garbage...
+deleting '/nix/store/lwjd2wcd8awsi7p2aw97g2hryalyid1b-nixos-system-rpminiv2-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/mxi5331km2gcb9fa1d07zbhas3y95vgi-etc'
+deleting '/nix/store/xpf3y0rga9n1g60n8s4pmqgjk6f5q0xy-system-units'
+deleting '/nix/store/l9qlhh81nxf0vzfa3y934z5y8yg9b2nk-nixos-system-rpminiv2-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/hpkc81fjpv1bl1ywd2q826mbqh4fhvr9-nixos-system-rpminiv2-development-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/zlfz1kkddw02kb4ym8yvkw36mh3zhcml-etc'
+deleting '/nix/store/rqgdcpzd2ywjdwz04wh21pc065n8akcr-system-units'
+deleting '/nix/store/h628xd9m3maddz58kd9pvi04fz0vpnyi-etc'
+deleting '/nix/store/fhc3lbkfxx73nv9gzp3lpm1a35bhcnzw-system-units'
+deleting '/nix/store/f6pqmqzgcba6hr1fpb1awk6ald9z1jqw-nixos-system-rpminiv2-development-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/izrb2n0gr1yxg8cyy1q62l3j4z2zdd1b-etc'
+deleting '/nix/store/qhkiwj5apc2461rqn4l7knzwzl5kpfkh-system-units'
+deleting '/nix/store/9nfhi4vhpdlivziyr2r0rfw3pv03r2xg-nixos-system-rpminiv2-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/wx9ak4dwxkbb3g6xdhgyxvqrv62dw53p-nixos-system-rpminiv2-development-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/ry425fwlsps733mg4jpvgfiswg4fw4hl-etc'
+deleting '/nix/store/hdpg6dp82hxjhab4xpwa3h4x4rggzblb-system-units'
+deleting '/nix/store/a0i8ach0k6r3phflrx1qz7ayrm1pnsjv-etc'
+deleting '/nix/store/j6w771fy2cj803npfp2j8ixpjimsp05d-system-units'
+deleting '/nix/store/8sg741qxwsxk7zrgs8ibsvjdj3amk3zp-nixos-system-rpminiv2-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/n4xfd68x48vf3m3fy21m2iyn70jj2ggy-nixos-system-rpminiv2-development-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/jdf07sl74dh1bjbhk7nf43yzlb9pma4z-etc'
+deleting '/nix/store/gv23czaq2a2brg05ij3bgqiwm38pap14-system-units'
+deleting '/nix/store/5wwblv87g79dz5p3q2cay0jyv0xzj0cl-nixos-system-rpminiv2-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/gh12l31riksg30mg8awca9hhhrzaq3bs-nixos-system-rpminiv2-development-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/846p0lrfnrpynh1j7378xn9ib6cy3bid-etc'
+deleting '/nix/store/lbdyplbm7zbclqpqhhslx61yb7knzgmi-system-units'
+deleting '/nix/store/cricd4sxbisd3lhf97wzdrwbbgsq5qga-etc'
+deleting '/nix/store/xzwzhmq8d1xlgs4pzz8fr4ng8nmly8jl-system-units'
+deleting '/nix/store/0qnsc0q84rzvf35dw8zb802qw50iwj2d-etc'
+deleting '/nix/store/772ib3a2ql0qj6vk8n67b4xjvc75mp23-system-units'
+deleting '/nix/store/bcas85ra14vaa2m939znrrnl5348zng1-unit-korri-plugin-offline-proofs.service'
+deleting '/nix/store/iiwqz27k1j7l35cnnfivsjnm3gs9d0m1-unit-script-korri-plugin-offline-proofs-start'
+deleting '/nix/store/v4n0dd1iqxr1xc848za6bzs6csm9xdhp-korri-image-plugin-offline-metadata'
+deleting '/nix/store/13l3dvcd6k96p1n4rj1z49xvabzvjk67-korri-plugin'
+deleting '/nix/store/4sd63f7xaiwjxc7b3bvy9a8p2s3y3y5q-korri-starter-pack-cartridges'
+deleting '/nix/store/k14ipqkkfvf4c25p1a4aa0ncb6zv7fqd-nixos-system-rpminiv2-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/f96k51awq7yqkjy28r0dff90s92y3f7s-etc'
+deleting '/nix/store/b9535kf4n5rlgxgw8zyslwa16w79qc86-nixos-system-rpminiv2-development-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/vihah6q3x9jdm2paqhvhnr44lwv4hr58-etc'
+deleting '/nix/store/gkj69d6ggjwlnjiz5bs3m5d90g0kf1gg-system-units'
+deleting '/nix/store/3lymgk9kddk5f0cp74qv950fg5q2bryg-system-units'
+deleting '/nix/store/g9m0kyhlra2rmms1wx3jqkg1pjm8nl5m-unit-nix-daemon.service'
+deleting '/nix/store/j3vkxbf3sdrkygdp7zsbpir1avcp3hza-X-Restart-Triggers-nix-daemon'
+deleting '/nix/store/b5bsg6lf9qndly98vwrxa7iwjg23j3ap-nixos-system-rpminiv2-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/7b1dngdbyclwdsl84zbi9204vykz52rc-nixos-system-rpminiv2-development-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/vp0sd94c3d8sdrx2kig2v7kq6driq7hr-etc'
+deleting '/nix/store/kgwjcxzcdnww34m3wdhnm1lklpkfch2v-user-units'
+deleting '/nix/store/rpqv25pcn4kql02l7hg3y0pzxb7jg9d1-unit-dbus-broker.service'
+deleting '/nix/store/9a58dwiqpjagznzr1jzqif97wc9yqvnm-system-units'
+deleting '/nix/store/diaackys9qnxgw5pm109b8siql9ld9va-unit-dbus-broker.service'
+deleting '/nix/store/c6lcp99kv0zmmh193bafllqv6f55wqan-X-Restart-Triggers-dbus-broker'
+deleting '/nix/store/qrk4p1zn8qx9ykynisz0ni99qbdzy0a3-nixos-system-rpminiv2-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/xrayibi4haakms77lsczgly3lvxhcv13-nixos-system-rpminiv2-development-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/amfc9v98ldgy0y6hsap7dlsblw1chqqw-etc'
+deleting '/nix/store/xy7sn1acj0883j9swwda1333slbx3jb3-user-units'
+deleting '/nix/store/zdd3icv0mcy3zpcdzia252w2cf4znsfs-unit-dbus.service'
+deleting '/nix/store/a1s52kkm9rwjnzgwl4aw0acl4rkr4n8v-system-units'
+deleting '/nix/store/m9ihp7w0hvpydyq6pgm2zzyvi207pala-unit-dbus.service'
+deleting '/nix/store/k9mr6svinqm2ma46jwz0q517xw0xd3id-X-Restart-Triggers-dbus'
+deleting '/nix/store/15gxbpkr1cmr4pqd5sqhmbrmnx5i0ckn-nixos-system-rpminiv2-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/jjdihrx42a6v25z91cnsi2c3gw42rmc2-etc'
+deleting '/nix/store/7h8gkahbl3z4zr9cvdagxqlarqqld74n-system-units'
+deleting '/nix/store/6qs96dnwdxggv9mdryn94wiw53zivwdz-unit-polkit.service'
+deleting '/nix/store/bkg2v1ggyf6cyxgxdrai6q68vq8di0ld-X-Restart-Triggers-polkit'
+deleting '/nix/store/krvfjq25jjvyq9ybycnshvx3sia25jr7-nixos-system-rpminiv2-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/k0zn76slq0s0sflhzzr0nabamsx060x3-etc'
+deleting '/nix/store/5iy8xidx9as4brdvazyzqyy09669q25c-user-units'
+deleting '/nix/store/pp9yj2p1gylyrc9157pdnc0l6nh07bcm-unit-dbus.service'
+deleting '/nix/store/1aqmz0kh6aqxzx632sxnz3h3jkz08r02-nixos-system-rpminiv2-development-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/0k286yj28lkry3yz4bn9hpj78xxwwvnq-etc'
+deleting '/nix/store/clhf2f2dc6lqx6m34kxh3rc7ap6siv9v-system-units'
+deleting '/nix/store/6s38d9s74qy59p4vapx2mj39lci57dd9-unit-korri-plugin-host.service'
+deleting '/nix/store/asfxz9rbcfkg83c3587jd9b13l665d43-nixos-system-rpminiv2-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/kn22dlsqv25nw6p8ccdkncqdl2vql8v2-nixos-system-rpminiv2-development-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/kmg09q0jxyvwhpcsnr3cy7qg970x1aml-linux-aarch64-unknown-linux-gnu-7.2-modules'
+deleting '/nix/store/nwzdp25qsz01cpxryx06qbrn2y9p6m2m-unit-polkit.service'
+deleting '/nix/store/4p4iz7cpz0izbsv0m8wwz02a2jxl6i53-nixos-system-rpminiv2-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/fi8xqvx2svzh05bc5h0av9c5ndkv2bjh-etc'
+deleting '/nix/store/lkc0m3hsmkb4p48jhxsasl2x6vrkv8gd-user-units'
+deleting '/nix/store/qkzdwjcncb1rxricvzjisqzgka856ghs-nixos-system-rpminiv2-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/xl1nzcnmgzb5dkkky99x88zkhjbfnag2-nixos-system-rpminiv2-development-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/ja1d8a1qpyi0yxnavwdhhrh3q29q2iv6-nixos-system-rpminiv2-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/72i4h92qi17l80fnkhhcpv3y9lw2b9ym-etc'
+deleting '/nix/store/p0ym775cj8df0a1zpjjf02bxy8l7c09m-system-units'
+deleting '/nix/store/0r9903iv908iq7z72wigllfqwmni4qak-nixos-system-rpminiv2-development-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/r5s2z737ikvh7144385y1nz8vxyjmlcy-etc'
+deleting '/nix/store/g5pf4p4p5pmai533d3g2z861npspy6g1-system-units'
+deleting '/nix/store/bg2ki15xyqzs6gwnnbqfh2ii74k1d9yr-unit-dbus.service'
+deleting '/nix/store/1n8ds82jph6g2i7qnzvk0iw440y0n0n5-system-units'
+deleting '/nix/store/drxwyckp8iq332rdk6hkl2rjhjbzk1md-user-units'
+deleting '/nix/store/k7iqsb94nnfih2jpl4xpna9b3a923wcd-initrd-linux-aarch64-unknown-linux-gnu-7.2'
+deleting '/nix/store/ka3gq1r06a8zj7bi04y3kf7smlf8q98h-user-units'
+deleting '/nix/store/i0573jchrsp3g5nqf013306ndx9vswdv-unit-dbus.service'
+deleting '/nix/store/zpp5l8va3bns756wzk9pfl15psigaq4d-nixos-system-rpminiv2-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/zk0csasabqwcdy8wfs31nq2vw01c276j-X-Restart-Triggers-polkit'
+deleting '/nix/store/w2lldcxczjbb2r06ad1h0lspyaz9rcmr-user-units'
+deleting '/nix/store/n43xyqjkw9ns3ammcgk1r06jc7ljkc4r-nixos-system-rpminiv2-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/n2wr12j3yj9r07z3r3hzgw0hmn1ixsm9-unit-dbus.service'
+deleting '/nix/store/lss5jr6dvcamk8xwv2v3j4wlx788kbg2-unit-dbus.service'
+deleting '/nix/store/gz6d9pnm8y3mspk60aki49a4b845d0jv-nixos-system-rpminiv2-development-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/fsz1zqah2q8xw5ri8rakwbxgjbd8s22a-unit-korri-bundle-selector.service'
+deleting '/nix/store/q1dzyvw405ypr0czgh6ppv63j3vz3l2l-korri-bundle-0.0.0'
+deleting '/nix/store/fa2bqby4gn9vzw8vg5r116gvj7ybpwbz-nixos-system-rpminiv2-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/r25zinsvqlx4f1lhf33siv58w30mqczk-nixos-system-rpminiv2-development-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/yc475y1m1jm26465mvdq24b63y89k12n-etc'
+deleting '/nix/store/kfbfr2yxxx0j4xmly2p8ssh0y1bqrxmi-etc'
+deleting '/nix/store/cc8wkfn6y8n8iivlnxkmdzqmklssqh67-unit-dbus.service'
+deleting '/nix/store/bv6n8blw4x189gaf1r7x13v2m82hvvaj-user-units'
+deleting '/nix/store/y5b1lsyz7vsiagv31v7jkwlfik5pnjcl-unit-dbus.service'
+deleting '/nix/store/8q39a65lzx4qpm4j7pxwvb8hk2nwlpja-etc'
+deleting '/nix/store/8wc881hn0mcii01r3zpy7bcvv7z1d458-system-units'
+deleting '/nix/store/87rqpxmsv5zbl8gaz415drclsg4ha2b7-etc'
+deleting '/nix/store/mslm3lp5ssnqh7ax8ms7qwgs5pfbh7rn-user-units'
+deleting '/nix/store/9nyr8lwb38pbbnkqwskn65mkczdrcl3g-system-units'
+deleting '/nix/store/rpdqmqvijgjy6lrngp012xkgsrj8cv8q-unit-polkit.service'
+deleting '/nix/store/kdic68vgjgg0b30ynrcax5qpi09bflgd-X-Restart-Triggers-polkit'
+deleting '/nix/store/83gb9aih9gy5992g0slxpv2prhfs26w8-unit-dbus.service'
+deleting '/nix/store/7368rbhgxgmgs7lc7m35hysl3kk30iy4-etc'
+deleting '/nix/store/ndn2iisncwgfl07b1qwvmpqf5f2ia6hh-user-units'
+deleting '/nix/store/zp30xnll2xzh630fbp4kqb3vsqj42d0m-unit-dbus.service'
+deleting '/nix/store/7sadiffv1h9n6vrjlapxcbr0c9lvyahb-system-units'
+deleting '/nix/store/nvf9v8mh18ps2fdc20p5ijxwimf7kkym-unit-korri-bundle-selector.service'
+deleting '/nix/store/yfi8k3xh51vdbizyb8x7i45f4pxlf6c5-korri-bundle-0.0.0'
+deleting '/nix/store/cb5gb5ygb424yk0j6l5d6mvk7zz9xfws-unit-dbus.service'
+deleting '/nix/store/dw15qzqlz48a1afhk2pbymqigpvirszb-X-Restart-Triggers-dbus'
+deleting '/nix/store/7hwg74s2c8p1xz2cprfd3rj7ysp9wiwb-unit-polkit.service'
+deleting '/nix/store/nk0dy2hvpny8q8fq9kmn225xn6hv7ab0-X-Restart-Triggers-polkit'
+deleting '/nix/store/5f7p8aqhj3m0ybycqwdiq55f0ilq2pd8-system-units'
+deleting '/nix/store/3p3ps4ddld6693cpb6g4263fjrv73018-unit-dbus.service'
+deleting '/nix/store/zpv2gd5zdz8zdm7xcnbg0j7310gk5zyr-X-Restart-Triggers-dbus'
+deleting '/nix/store/r9pbhl5xkaij1f61qz80iyq4cw97nmyl-dbus-1'
+deleting '/nix/store/nvaxig0b65lqr5spp306rxl8lx2m0x1b-system-path'
+deleting '/nix/store/3ivp33prp9mah12xfxqi35yhw2cw0853-unit-dbus.service'
+deleting '/nix/store/2mpar9hg1rpl9g2wlww1gdibck23jchq-system-units'
+deleting '/nix/store/y5lwa18n5zpprzh76rsa3ys46qn42imm-unit-polkit.service'
+deleting '/nix/store/xs0c4cd7qxksrqayysylj3x704rmg77n-X-Restart-Triggers-polkit'
+deleting '/nix/store/i17sr69z4dh1rbj4974d605y83vb5g3r-unit-dbus.service'
+deleting '/nix/store/2bhn5wwq97y9sfl5izzx0a2ya282h4za-nixos-system-rpminiv2-development-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/riv7fw6wh581zwjgqgywsb87v3xdmx5w-etc'
+deleting '/nix/store/kcmall6kb5b7qac24af0hqzlfhzxxaxb-system-units'
+deleting '/nix/store/zxifgjkjxhanigzngi8dhi34aw9agx9k-unit-dbus.service'
+deleting '/nix/store/prp9qnrpj3p0a26k9dbblw6vvdd9gips-unit-polkit.service'
+deleting '/nix/store/641knww8paqhc87m0l3xpxpqlycw6rvc-X-Restart-Triggers-polkit'
+deleting '/nix/store/pdvaj535dln2nq0cx39795763f7z3149-unit-korri-bundle-selector.service'
+deleting '/nix/store/p8ps39kvm5i0h0m30qcxfzl7si9l8i6h-korri-bundle-0.0.0'
+deleting '/nix/store/ayq58g773yy8qrqpqgpnhjfr7f4b8456-user-units'
+deleting '/nix/store/y3599v3nx6qdn4q0n9bwl0m9d4kn7jwj-unit-dbus.service'
+deleting '/nix/store/v9kab60aj7hp8ivra82whalgnywkkknx-X-Restart-Triggers-dbus'
+deleting '/nix/store/gwskmq4kghslwmc775p33fy32dv91ip7-dbus-1'
+deleting '/nix/store/p97fdh1bjbgcbnk1j3azf82afcrqll3c-system-path'
+deleting '/nix/store/1qyyynxmhj7y10s0ilaywwiignn2yih1-nixos-system-rpminiv2-development-sd-card-26.05.20251221.a653104'
+deleting '/nix/store/lqh3ka925qxwsiw7m4gx3s3v581z0mvi-etc'
+deleting '/nix/store/yswzi77hwa9cp25k4dyjavgxjb8cay31-user-units'
+deleting '/nix/store/y9w4bkvrhidxs5r3yb06l8zrrp2lx6f4-unit-dbus.service'
+deleting '/nix/store/kpf5qp1ap96c5a74f9s13mhkjfdb699v-system-units'
+deleting '/nix/store/qfjlf774g48gq8wck65785zwh59nw26i-unit-korri-input-seat-receiver.service'
+deleting '/nix/store/nrz47pyk3m65b3xs9zq2a4mkx9j3zvsn-unit-korri-bundle-selector.service'
+deleting '/nix/store/q1g43q15wi7v08p1i7qcy9yhbid250xl-korri-bundle-0.0.0'
+deleting '/nix/store/n7gwq66k4i4ns77dn1l3b9xzn1q81w7m-unit-dbus.service'
+deleting '/nix/store/b2k49gd20lzmh2im0wlzknmm041v85fp-X-Restart-Triggers-dbus'
+deleting '/nix/store/mnv4j5ykwq09i5n4yz3i4sls3dhyh81d-unit-korrid-identity.service'
+deleting '/nix/store/mawy41hygh3wqxdlxcnnqjf4h00ffpfl-unit-korrid.service'
+deleting '/nix/store/i7dkvxddw6939m074y73phpl7wzmd0sq-unit-korri-inputd.service'
+deleting '/nix/store/h6zac550jgiamdka1wgwc5pm02sx3vng-unit-korri-local-signer-device-credential.service'
+deleting '/nix/store/ibnmfqgjjm2mlh44msqdc0i249sw55ab-korri-local-signer-device-credential'
+deleting '/nix/store/fd9s3afikzm3w55dp339x20hznrd9zf3-unit-inputplumber.service'
+deleting '/nix/store/dvxi7zmaf0dln6n3vj642bli991jlzq0-unit-polkit.service'
+deleting '/nix/store/piansry7q54phfsgnh8yiv1xpfn56vxs-X-Restart-Triggers-polkit'
+deleting '/nix/store/alsdvr794ml4y18mk3xzdnp03fwx1v7k-unit-korri-local-signer.service'
+deleting '/nix/store/g3yc6fgig7mrgl4wgagqi1hgp0b07ydy-dbus-1'
+deleting '/nix/store/9bfnj2pbb2pq5izzz85gn9qsywkcbsfp-system-path'
+deleting '/nix/store/1jnz6hhyzc6zjcj1r9bncrw74aw7mc68-X-Restart-Triggers-dbus'
+deleting '/nix/store/7dmc664iicd9i2w3yp8a0019lyidcyiq-dbus-1'
+deleting '/nix/store/mpkswjc5ckbljp1mxqzn53gg4ivq4f1w-system-path'
+deleting '/nix/store/1j9xcp5g6r7hag0wmdjmzn5cddmzbfiq-dbus-1'
+deleting '/nix/store/xsnfv9psag8rm3s2553dm2j978wp41x2-system-path'
+deleting '/nix/store/19a93jzgzfr90rjgwhbdww7qqryv51fv-unit-polkit.service'
+deleting '/nix/store/n9rsyxa27qjwvrfj9bb5xy6rqhlhi7hj-X-Restart-Triggers-polkit'
+deleting '/nix/store/12x0j1wib9851aaxwf8y9cjr052gjyxd-unit-korrid.service'
+deleting '/nix/store/0l4lzjc0r76d7z35basr925r0w2k07id-unit-systemd-udevd.service'
+deleting '/nix/store/jz2y241biysqhia2fh6pfi2ikpbwfr1y-X-Restart-Triggers-systemd-udevd'
+deleting '/nix/store/6llcns6rdz1rnn5sk1a5k33jgpap9wn1-udev-rules'
+deleting '/nix/store/ss3k1fc7m4q3l726dxi4scxm2kcyb1gx-korri-virtual-target-acl'
+deleting '/nix/store/08q47lq9y0d39v74avl1ngn4kz9ji21p-unit-dbus.service'
+deleting '/nix/store/ram132wmywipiccfs0w8i1dks7ax1w2y-X-Restart-Triggers-dbus'
+deleting '/nix/store/ag9m6bvd261s4svch84zlw1hhghir34q-dbus-1'
+deleting '/nix/store/l1rpqwi2972v0zins65vqj0m12aryrkr-system-path'
+deleting '/nix/store/07ync0b4qd6qq9qpj75vi5chkgvrynlr-user-units'
+deleting '/nix/store/j0qsiriggn6816x6c9c34848lms6g40i-unit-dbus.service'
+deleting '/nix/store/zxwm7j4vqb95ql9rxk7vk391cgs0d32f-X-Restart-Triggers-dbus'
+deleting '/nix/store/14ybfdifh5a62kjscznjvdipy2ms2a6a-dbus-1'
+deleting '/nix/store/986ckikl6l2niggbvs831wvibwn38pi7-system-path'
+deleting '/nix/store/01g49z1qmch9vf709dg11z3jwk7sh61z-X-Restart-Triggers-dbus'
+deleting '/nix/store/x58l6rp796d7ii93lxa54sjja3k26cnk-dbus-1'
+deleting '/nix/store/lga4nzvzpwb81dx5g0l9r48x1kmqyp4k-system-path'
+deleting '/nix/store/067fjcxi39dwq4r3vn9773m24rfgzaih-korri-inputd-0.0.0'
+deleting '/nix/store/6lmkcab94747a9bdq3cj5m1ppckw6777-unit-polkit.service'
+deleting '/nix/store/08cfjdlnsvpkndkgw7ixqk37k503sl2c-X-Restart-Triggers-polkit'
+deleting '/nix/store/c1iagbfqq7mbbvxmnk5wqjbnmvq22wv5-nixos-system-rpminiv2-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/cayqraiv1j0hlyh525qxgbhjr0y5jiyr-nixos-system-rpminiv2-development-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/iy33kg0xmmpg117x4285ni4kjzqzasvs-etc'
+deleting '/nix/store/wzxxqhdnlxs9vs6gkwgy5irf80k1zky7-system-units'
+deleting '/nix/store/ki54wvcrkq5p6wdn3g5xb7xh60sn0pnp-unit-dbus.service'
+deleting '/nix/store/bvz34pph92gcx5glbgx7bq5kcx0qfrbz-user-units'
+deleting '/nix/store/sm45m4kcjp5fhllhks8bnnj1xy2imp9s-unit-dbus.service'
+deleting '/nix/store/ngdxvmv2vf2frd0hjx8nwbqqpwz220xc-korrid-0.0.0'
+deleting '/nix/store/sqjq8xcvc8bfqyzr6fj9852c062yxsv2-nixos-system-rpminiv2-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/yh8mrxrn8y1nh9xnwrf58j91qn3jai54-etc'
+deleting '/nix/store/wpa41mv32wdz4qxzvf64hga4kr9z8cv4-system-units'
+deleting '/nix/store/rplzx4svdj0hmyy09pa27pld0d1wzv7v-system-units'
+deleting '/nix/store/hwqc306jjzb33nvszwb86wnagj0gi7vz-nixos-system-rpminiv2-development-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/fs9r0zbh9iw166sg5m5ipi7k0zzfwwyw-nixos-system-rpminiv2-development-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/jgacvvfcn1qyqi5qyqqc94xvn585dfn3-etc'
+deleting '/nix/store/phkdf17hyw56cx625pbhbw7h5v2vckza-system-units'
+deleting '/nix/store/flz828l35wpplwhxqfgfr7dg4yiaxjmp-etc'
+deleting '/nix/store/9q2zx47pqqfn4ycpahjz50siiv1rvpf6-etc'
+deleting '/nix/store/b7a6y8fgi16cd8pq0f4jhb672d1h76aj-system-units'
+deleting '/nix/store/3qa7ffy5hfbmwd5f7wv7ksnsr0qzqdmd-system-units'
+deleting '/nix/store/z1p8m8pznnsblw4d3h44njpdp5h7kyph-unit-korri-chromium-kiosk.service'
+deleting '/nix/store/l76y4dhpjxks5xfndhh8ivdn4v14g1vk-etc'
+deleting '/nix/store/58lglr3021xfca0v7f3pmq53bl9532vh-system-units'
+deleting '/nix/store/46vg300y15nc4s2y23nvg4hk67c1yk5q-etc'
+deleting '/nix/store/5qjaymbcdr6k1c19f9lklrf2plpzcqg8-system-units'
+deleting '/nix/store/3z7dkq3sd5whg4w5iy19a9rzpkzk3db3-unit-korri-compositor.service'
+deleting '/nix/store/0ryb2wlbjc0l7kn0j5zg3hvc8vqawxx1-etc'
+deleting '/nix/store/2f3szyb15w23cmk1s23wwfrqmd8yy3n3-system-units'
+deleting '/nix/store/crpr5bhghw1q59wnw5r5z1bxw55k6nys-unit-korri-compositor.service'
+deleting '/nix/store/zvfafwyxjqyabnpjm933vpgsdjma20w2-korri-resolve-drm-device'
+deleting '/nix/store/v5xmc22202iwhqmwxfsxnvl60x05rp03-user-units'
+deleting '/nix/store/fpx6xk128a58pxa7klpp7isvnxxzl0kg-unit-korrid.service'
+deleting '/nix/store/r06kn4mx0h31l88bbvrg3nhgh1xm4455-etc'
+deleting '/nix/store/vl2ppq3i0k6k5b45qpq6pfgx04pv0d5w-system-units'
+deleting '/nix/store/7kpvcgd7rybpsvi4and6kc6d2slafans-etc'
+deleting '/nix/store/pa48xq04ln99nmd1b0pgz48gy70s276l-system-units'
+deleting '/nix/store/4x9ggiz9y4czaxkwkmscnjf5vix5r3dz-unit-systemd-udevd.service'
+deleting '/nix/store/54hchpcxx19sjv7y4ksiqjz75qk97j1j-X-Restart-Triggers-systemd-udevd'
+deleting '/nix/store/css44xbbx0mdfx8ij8p71n5lrw0vy34g-udev-rules'
+deleting '/nix/store/673mjj50b4vcz01x81cyq89jnpqyww50-user-units'
+deleting '/nix/store/07zkb35py9cxv349zh8akrb1m33ln3gs-unit-dbus.service'
+deleting '/nix/store/f8ih9f4y1vq3dpmsaqpwrx5iash74ix2-dbus-1'
+deleting '/nix/store/ph6pg4f97f5ckbqqwrqk61njj5pdya1i-nixos-system-rpminiv2-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/ws0sv7n14i7mhgyjf46pvi7cqrsfsn3y-user-units'
+deleting '/nix/store/jkc82yfpslapxgql6l8v1rwxwf5fi8pg-unit-dbus.service'
+deleting '/nix/store/qpbv6hsyny8pv0b3zy7ql0cnv84ks3dc-etc'
+deleting '/nix/store/qpwdipvd5brk85ajvm9g03h5776b21va-system-units'
+deleting '/nix/store/a16457l3p00b31i9l12iyalbhxbq8xs6-unit-polkit.service'
+deleting '/nix/store/nl2j3488ykdpqlwqm2mha1fhbjmz1x1s-unit-dbus.service'
+deleting '/nix/store/m944p09jbdpj8lwqdyjn4g21ihlggiy9-X-Restart-Triggers-dbus'
+deleting '/nix/store/w460dgx02j320gaz3q7fn2p3r4ljqmca-unit-systemd-udev-trigger.service'
+deleting '/nix/store/bwssjc4h8zclryir08apgsi68wk43gag-korri-udev-coldplug-modules'
+deleting '/nix/store/i43fqh3sxkk6ccmm0rffmlkz73102iy5-unit-polkit.service'
+deleting '/nix/store/hzr5lp7v8ds82irfynqs3yp8xiq1g95j-unit-polkit.service'
+deleting '/nix/store/icb4r6iaihlzniad1q4kgn01hql42n2y-unit-korri-bundle-selector.service'
+deleting '/nix/store/8zznxrbwyisvdycsws1aaly7l7cd93wc-etc'
+deleting '/nix/store/ff144pjwbv2ii187183rwrvahzhajm28-system-units'
+deleting '/nix/store/4c69qx4lrr1caifh3y3l28ns4al253kx-nixos-system-rpminiv2-development-sd-card-26.11.20260923.4975466'
+deleting '/nix/store/9faw3a73h1n04pr3vq2350928p38g17r-etc'
+deleting '/nix/store/yq6wx1c6qzss41pdf5jfnaw0jch7i4h7-system-units'
+deleting '/nix/store/6m16rcyg4mmnrai5yz7cbkvfcz0z6yq5-unit-korri-bundle-selector.service'
+deleting '/nix/store/cnhcm8zrl2dl832axiad2f2xxq0pia4w-unit-polkit.service'
+deleting '/nix/store/g876279lc115rl4g6v9phf0q872f6lj1-X-Restart-Triggers-polkit'
+deleting '/nix/store/nf5a0h7alf40p5fgckrajj4prsc90szs-unit-korri-plugin-host.service'
+deleting '/nix/store/lxwflr7gzvb9p6div6vhfa5qis2nhabp-dbus-1'
+deleting '/nix/store/6rsqz5fjfgss6knh9h617a27jc141d2d-user-units'
+deleting '/nix/store/mibihnb3k900dgrr520dn8jibry2yxlq-unit-dbus.service'
+deleting '/nix/store/53bq2lfwk6ag9ywn0ffjh6fsis0immck-X-Restart-Triggers-polkit'
+deleting '/nix/store/3n0fzk4r8vk0bn23xpsig685sh2lycph-unit-dbus.service'
+deleting '/nix/store/1izmra033g0z2jqf7qp1ln56fz4l2277-unit-polkit.service'
+deleting '/nix/store/5vl8a9j5drhay89zq4kkswff5ybwwqlf-X-Restart-Triggers-polkit'
+deleting '/nix/store/wwg9vl1ipdryxpm4r6jfp81497fb9wcs-system-path'
+deleting '/nix/store/19zm6slrvpsrlq6dylw9sqvrx6k6yavn-X-Restart-Triggers-dbus'
+deleting '/nix/store/29bhw5fsm1rdvxn5h3j748ihq5hxzn8n-dbus-1'
+deleting '/nix/store/m6q2hyb0kly32lz4x5aa9vmlf06sam9d-system-path'
+deleting '/nix/store/vap84ibppf0vdcip6hqjf3pa3m75j1jx-korri-plugin-host-0.0.0'
+deleting '/nix/store/ajlax1dy4zj9k8j7fjlz0v6ry1453zrr-unit-suid-sgid-wrappers.service'
+deleting '/nix/store/5d24b8d9yiv94rhavy84mmy9hy0ds5zl-unit-script-suid-sgid-wrappers-start'
+deleting '/nix/store/yhcfl09w4jkg3hrzmz1rga6g5cmqj30i-unit-korri-plugin-host.service'
+deleting '/nix/store/ldgygm1h56rp8c5lzg7ha6i9hlzjarh1-unit-korri-plugin-host.service'
+deleting '/nix/store/gr80sjd40y23dlskf6n6s98f48193pws-korri-plugin-host-0.0.0'
+deleting '/nix/store/38j9r67p31cmjxcnhcr67agn9xmd1ajr-unit-korri-plugin-admin.service'
+deleting '/nix/store/h3wjnfzkxqplsl7s1wdzvg6mn5h636g4-X-Restart-Triggers-korri-plugin-admin'
+deleting '/nix/store/zhva9bysjyhpm58k1p3ivn9n73qzba03-unit-korri-portal-initialize.service'
+deleting '/nix/store/814d0lj8a06n2pvys8q1hm9awp7p5jb5-korri-portal-0.0.0'
+deleting '/nix/store/vayvmjrlrghqr0qsv6yanx1b2zas5b4v-user-units'
+deleting '/nix/store/sbc6yq09wq3qxp214hi96qij70chai4k-unit-korri-plugin-host.service'
+deleting '/nix/store/sa8cfl800n65phv130ia4mh26f6r37ka-unit-dbus.service'
+deleting '/nix/store/rahjcf4pkph6k9lz9rcm5vgd43d71hnd-unit-dbus.service'
+deleting '/nix/store/pwy327anv8qpyixq8p6z442szwv2pimb-unit-polkit.service'
+deleting '/nix/store/mvkfqmaqihkmpp26sgmzd017fkdg9snk-unit-dbus.service'
+deleting '/nix/store/jgri88d6v2cfjasmkiq44b1269adbqjq-unit-polkit.service'
+deleting '/nix/store/h20rr8dydbkhqm65gp6k1wnv7k0rg7k2-X-Restart-Triggers-dbus'
+deleting '/nix/store/g0fkwwqsn0g1xzlhk2i6ny49vmss6756-unit-korri-plugin-host.service'
+deleting '/nix/store/d2bixqxqsknx4n3vqlkr12gi8sq3pdny-unit-dbus.service'
+deleting '/nix/store/cbqzmpq4gyfmcv33yzp97gzv5kqsm13c-X-Restart-Triggers-polkit'
+deleting '/nix/store/a6500lqmc6vw7fkzg9khjkyair4fclwv-X-Restart-Triggers-dbus'
+deleting '/nix/store/h5sb4l0lpj0bqz3pqs5h6114rqkzs4f9-dbus-1'
+deleting '/nix/store/865q1x8srqcy3qnyvh90lvi4m5sxhp2y-unit-korri-plugin-admin.service'
+deleting '/nix/store/79qica4a906jyyfn5z4kpphp7y4kl3a8-X-Restart-Triggers-polkit'
+deleting '/nix/store/5bapqzw0zf81ybw43vwbby0gnlpng10q-user-units'
+deleting '/nix/store/5bawq8mpv2d0gn3jh4gwx34s3y0b11ax-unit-dbus.service'
+deleting '/nix/store/fc35f4f4h602azcl4mjhq55r59jws0d0-X-Restart-Triggers-dbus'
+deleting '/nix/store/gk0qawh18rxy2f9qd7dhyqwfcxcfvly7-dbus-1'
+deleting '/nix/store/z0l352s5w38jrvavxwpw81rb6l1a3r2i-system-path'
+deleting '/nix/store/5688hz1fv9iyjazpvwg2kq07v04jwxql-dbus-1'
+deleting '/nix/store/v8srxsgqzz15a5swaml6absqxjgb2kw1-system-path'
+deleting '/nix/store/2vbxb2dpjj4ffzidrlapi07xxpkrpk0w-user-units'
+deleting '/nix/store/fz1rbvdj6bi79v7bwspxdjnbz7w7sjxy-unit-dbus.service'
+deleting '/nix/store/44yk6glgis1nxmi6mlp5gzmmyk5q6aix-X-Restart-Triggers-dbus'
+deleting '/nix/store/zp9c73wh2ff975sbmq986rsf6yb1qnhd-dbus-1'
+deleting '/nix/store/b81lkylpbz38xi0zyi4rpx2q6l4z2150-system-path'
+deleting '/nix/store/0wq6xr2zy7dfa6xygk58h9hli6i18dn4-X-Restart-Triggers-polkit'
+deleting '/nix/store/sav3jd769f6pc93idvqxiyqlc0nmh83p-system-path'
+deleting '/nix/store/xv30jz83w3ncbk4xm45jmyzwn878q9b2-korri-plugin-host-0.0.0'
+deleting '/nix/store/fv88fmmrvms6h6wb96im7cp5vzaiv4ma-unit-polkit.service'
+deleting '/nix/store/4369mp1prz910zmvzzz3336i5m8msnk9-unit-polkit.service'
+deleting '/nix/store/sad8vmxlzzh3m25v9c672sis5xl5zc2s-system-shutdown'
+deleting '/nix/store/vf1pbvkx0dz81pbg4ih1sjds3jrf2akf-unit-systemd-tmpfiles-resetup.service'
+deleting '/nix/store/r9z27810wprmgzf6dlhncpfz72l9f927-unit-korri-plugin-offline-proofs.service'
+deleting '/nix/store/qkfrgwxvy0b1zwi7bb8irxhmcmjnfkj3-user-units'
+deleting '/nix/store/ngndj80kfpayq7da8d6fwvnfi1qgcg8s-unit-dbus.service'
+deleting '/nix/store/yyk77gi1r01z822nxqh87yz69889mg8g-unit-script-korri-plugin-offline-proofs-start'
+deleting '/nix/store/n6nfbb679lvqvkzsnnf23b2iz5q3xkr0-korri-image-plugin-offline-metadata'
+deleting '/nix/store/45gjxj2hqsxzaxgclhylkxxcph3ix1c5-unit-korri-plugin-offline-proofs.service'
+deleting '/nix/store/l6ndb3fcjk8713akbx0qca6l6ayzi86r-unit-script-korri-plugin-offline-proofs-start'
+deleting '/nix/store/ngwjqz5cqzha45s21k5h2za7yf82h1m1-korri-image-plugin-offline-metadata'
+deleting '/nix/store/k9nps5ihl57n39qfbagkxqrk01mjr0ij-korri-plugin'
+deleting '/nix/store/phn1raivkackkbx7f84knankjfyyq5wr-gamescope-3.16.18'
+deleting '/nix/store/xv9hkdf4zfn6i5ssla3laashx5dybw6s-unit-korri-portal-initialize.service'
+deleting '/nix/store/09mwxc3pgawhgkc6xyzpn876099hasv9-korri-portal-0.0.0'
+deleting '/nix/store/yrr3nsssn1g8fm4wkqmmh03d3374k5lw-unit-korri-bundle-selector.service'
+deleting '/nix/store/an5pyv716lmhfmlai515bzm4zsff4m60-unit-dbus.service'
+deleting '/nix/store/33z4sa1gryykdj2vwaajj0lcb5ccg4kv-user-units'
+deleting '/nix/store/6h276il30zkqrmg8d4snq60y5a5p0qjk-unit-dbus.service'
+deleting '/nix/store/kgsx5k7m3xl5j6sr4096nw7w7zvam43r-X-Restart-Triggers-dbus'
+deleting '/nix/store/kjb9w7c1pchgk48zalpw7f6fm4l1scv5-dbus-1'
+deleting '/nix/store/y3v5ywnx9qhcj3jx5wd52abwpcahbaj2-unit-dbus.service'
+deleting '/nix/store/fi5ja7fr4pkjqb8h3g0p4kh4qi3vbx57-unit-dbus.service'
+deleting '/nix/store/7japmfgc2fac9s80cispbggz6y66m2b4-unit-polkit.service'
+deleting '/nix/store/cci7xlm6qk2fbdh0372qlwafwvy7ps08-X-Restart-Triggers-polkit'
+deleting '/nix/store/44qzi1c3rhif9mfds85icyf41cp1qyxk-X-Restart-Triggers-dbus'
+deleting '/nix/store/iq8ha5lavwzvmj5gw65sbbmirr6187bv-dbus-1'
+deleting '/nix/store/f4v6j7gdr571gwpjn904b9bjk96phnnf-system-path'
+deleting '/nix/store/p8gzcgy80wkwzlwvvxy5qknp1gxndgvm-unit-systemd-udevd.service'
+deleting '/nix/store/h2hl56zibvw9my8mczk8nw8a0s2azs1d-X-Restart-Triggers-systemd-udevd'
+deleting '/nix/store/b76wwwncf543bdsd2b25zravp9mgnbqp-udev-rules'
+deleting '/nix/store/8p1r84ji4yvvmfnbcnq4bfj1prr0nw1v-unit-inputplumber.service'
+deleting '/nix/store/ix2qdqjy9fk7gpv0l5znq6ip67q9332z-nix.conf'
+deleting '/nix/store/gix3c0mqw8s1d3y5qspc42pxlfcrzcx3-unit-dbus-broker.service'
+deleting '/nix/store/fs5vihck2hznk3wahna3pmnjzk69k06r-unit-dbus-broker.service'
+deleting '/nix/store/by3w9s74f57vxkg4q9kwyan0lh6ad3ym-unit-polkit.service'
+deleting '/nix/store/yc7jzs1qvdi2855pkpfd8h5g7ilzi8j0-X-Restart-Triggers-polkit'
+deleting '/nix/store/9kiyzknnzbvnrxr8rcbay6141vbc0grc-X-Restart-Triggers-dbus-broker'
+deleting '/nix/store/1xb3gz462g0hf1gxvgkkfjgk25q9f7sr-dbus-1'
+deleting '/nix/store/f08hxizy6xzc2k5a8wvws66zxdifvsrp-system-path'
+deleting '/nix/store/0w5jm3hkj3jf95aq95b9h8rk54xsq1lj-unit-reload-systemd-vconsole-setup.service'
+deleting '/nix/store/7rhzv0vizxy3rnz07kq9212jl53l1bz0-unit-polkit.service'
+deleting '/nix/store/i8d88w17m89arzavnm52hb1zr03pgnfp-X-Restart-Triggers-polkit'
+deleting '/nix/store/fwsvjypgqsc2lljr8fh58idnvbfnicbi-system-path'
+deleting '/nix/store/p5y034dw61mihhxd2b84lv2chm0liak8-dbus-broker-37'
+deleting '/nix/store/kxkvk086m4s671kcd6csxmbay1lgalc8-c-ini-1.1.0'
+deleting '/nix/store/4srfa1hy54axzbl4p7riskn6xma15kd7-c-rbtree-3.2.0'
+deleting '/nix/store/wx086r5fk5afr0arvr9b3ij3q2c6vg8s-unit-korri-portal-initialize.service'
+deleting '/nix/store/y48fgb5fc27lzpxzfq9l41v9abq1pw70-linux-aarch64-unknown-linux-gnu-7.2'
+deleting '/nix/store/7h8nvqj9wk1myy72lwj02wn0mlpvkx0b-c-dvar-1.2.0'
+deleting '/nix/store/xbmaqsq6k3iswlswndn6f2ycd4qbqnm7-user-units'
+deleting '/nix/store/wg8zdw8hh5b2pv88ixv9ryrjq5cywynr-unit-dbus.service'
+deleting '/nix/store/d964vpgldmahlj87vfnn6gdnskssi6j9-unit-dbus.service'
+deleting '/nix/store/3sj4dxqgvjkrkwfy924bbi71wkc2yq5z-X-Restart-Triggers-dbus'
+deleting '/nix/store/iwfhs64d17xh1mmkmghz8as0k3jlsly5-unit-korri-portal-initialize.service'
+deleting '/nix/store/4sdmzpx7k0kd9sslfqailp0fn0g5wqd3-korri-portal-0.0.0'
+deleting '/nix/store/08g4w14hq9w3xn16y2bk8b664mlx05fg-unit-korri-plugin-host.service'
+deleting '/nix/store/dvgvclg3n8aic3194yw6hsqkrg9qfxk1-unit-dbus.service'
+deleting '/nix/store/az4fr5ghv5qw4ldsyhw5babhd9g6acij-unit-dbus.service'
+deleting '/nix/store/0kvm29w3dzc6aw209yw2jsniq69d3xjn-user-units'
+deleting '/nix/store/cs298vlslv7i59fwkrj1d94cq67mjwvr-unit-dbus.service'
+deleting '/nix/store/l368p2nqgi8vsc74jg57qvxsyaiv7jbg-X-Restart-Triggers-dbus'
+deleting '/nix/store/girkmmmklbrg7g8bjvwizxi4bl12dwin-korrid-0.0.0'
+deleting '/nix/store/rr1raskrmls0cfi9yf9ay9d0gqj6d76g-unit-korri-backlight-up.service'
+deleting '/nix/store/z6rvlwnpl241vh28cgqzglf8ngvq723s-user-units'
+deleting '/nix/store/gs9zg6z5gzjd96pnc5hprkikf4m3snhm-unit-dbus.service'
+deleting '/nix/store/1q4pd2qdgbskxjzfrh68nk4xx79x18vy-X-Restart-Triggers-dbus'
+deleting '/nix/store/3agjd28fj5q0kg0kzkvsrj0x0w4x60g2-dbus-1'
+deleting '/nix/store/y9r7fgrrl907vx7xggi0nnvmdgzfynv3-c-shquote-1.1.0'
+deleting '/nix/store/32fi9nfsd01rwk361wv8iniyg4fvnv1j-unit-korri-bundle-selector.service'
+deleting '/nix/store/5pgmj7gjkkarwwyn9zb22kh77i5hghlq-korri-bundle-0.0.0'
+deleting '/nix/store/av0fwfar0dxlqn2arqs91kclfg6ssll0-system-shutdown'
+deleting '/nix/store/nli8izwbymv6bnl51xj5nnaz3j5g332q-unit-dbus.service'
+deleting '/nix/store/h8mz0hdsmsyz4ilaw8c5asz9nqsp6jdw-unit-polkit.service'
+deleting '/nix/store/l7zl1a66nzrr8wmkqm0fhwmi05k11826-X-Restart-Triggers-polkit'
+deleting '/nix/store/8q0k58vqr53sq2x3pxjsc5ip70k7qih8-X-Restart-Triggers-dbus'
+deleting '/nix/store/nwfh1ix2vafxrdi56ppa9m9d6cx80x8g-dbus-1'
+deleting '/nix/store/hgj0bnrc5837xl8ds86llpnb2d883j5j-system-path'
+deleting '/nix/store/ql1gz6b45y3q2sz29i5ddcnzzss84iaw-unit-korrid-identity.service'
+deleting '/nix/store/nb20wqc3h8bpmss07hc9fwiqxrsg48a9-linux-aarch64-unknown-linux-gnu-7.2-modules'
+deleting '/nix/store/4h5c8r3cmn23vcs80ci53zhh5hvqwrjv-linux-aarch64-unknown-linux-gnu-7.2-modules'
+deleting '/nix/store/s70kcrpxy1m14g3z2gfv7m6r2ccbrl43-user-units'
+deleting '/nix/store/p8pml2pk3lx4y3hr77kj38xfb23pyvn1-unit-dbus.service'
+deleting '/nix/store/fp2qqyrlvz1b0m4kvm1dkb0c1fm20907-unit-dbus.service'
+deleting '/nix/store/6z111s7gj3wsac9k7bq68fl5pd2i0lsk-X-Restart-Triggers-dbus'
+deleting '/nix/store/5n8vhglnycva5rwxx0dbgn6z70k1jkqi-dbus-1'
+deleting '/nix/store/1537j03iy14b4mw5pj1hk6aar0y3db9q-unit-korri-inputd.service'
+deleting '/nix/store/m5fhk3s8vsz599vmzlvwj5cx26jf0q3n-korri-virtual-target-acl'
+deleting '/nix/store/s2xvdvb1nqqv26b3d2a3iz80lbimv97f-unit-dbus.service'
+deleting '/nix/store/pfivnxv53xy6vcz6rhjn9sjfsfp0inyi-unit-korri-bundle-selector.service'
+deleting '/nix/store/y91v3qwvhdwi32q1lppk5sapn3bv5i6i-korri-bundle-0.0.0'
+deleting '/nix/store/n9jqjq8zgj62d2jrwcjz76ym4gdmf7xp-X-Restart-Triggers-polkit'
+deleting '/nix/store/9w8f8c775pjhjw6c6a3ajm7d9fywl7nq-system-path'
+deleting '/nix/store/7kh3kdz9fnxbmidxfw1jja2gxizq047q-X-Restart-Triggers-dbus'
+deleting '/nix/store/lrq27hkij9fs7zxddcd28k257bldc5dq-dbus-1'
+deleting '/nix/store/sbskcnzm80k06m6mpxd7kspl9hwqvl2c-system-path'
+deleting '/nix/store/rbxn35bn61yyvy9j2nxh2kcgci9ijp7p-korrid-0.0.0'
+deleting '/nix/store/vcbp3yzw388mqj3kdyk8j1vwnwpv0rns-dbus-1'
+deleting '/nix/store/hc8f4m2rfmjnxnpyxxy6ll7cvzzjqwjy-unit-polkit.service'
+deleting '/nix/store/ml2rpf2fv5wkph11ilmfyabkpcm606mv-X-Restart-Triggers-polkit'
+deleting '/nix/store/05bh3xs6afm8dyfw48c8rr3a003mqjdv-system-path'
+deleting '/nix/store/0wpffx23g9qr2rp70mk3n4gc77ylanqv-user-units'
+deleting '/nix/store/x4lqlk07568r02d39p3767d67q21fc46-unit-dbus.service'
+deleting '/nix/store/lyx7mn34wm2c9r3x03bhnmw534d40v9k-user-units'
+deleting '/nix/store/s5ydr3bzi22mv5jnyl6vwi77378qns5f-unit-dbus.service'
+deleting '/nix/store/xkrwrcs4lcai8646skapk98i4zrqbxgy-X-Restart-Triggers-dbus'
+deleting '/nix/store/wxl1chbnhvjscnj1mlvb1q6ik3b6svdg-dbus-1'
+deleting '/nix/store/0krb6b0k10m5gl6m62qf305jrmad9x0h-X-Restart-Triggers-polkit'
+deleting '/nix/store/6a2h4iflzbsnhwaihbfrn1ra4y716kbm-system-path'
+deleting '/nix/store/ysfvxchglfm4qfn639x3zrix1mcvmdj9-unit-dbus.service'
+deleting '/nix/store/s37ff9bwb3cnfld25sffsm5gjk6rkdqm-unit-polkit.service'
+deleting '/nix/store/n3df6nzbpb83ibi61ca7d2c49zqdcxvy-unit-dbus.service'
+deleting '/nix/store/2jpxb19hjf7ba0dkvwp1p7f0l5szyzzd-X-Restart-Triggers-polkit'
+deleting '/nix/store/24mcr25iv6w3cdf26ayc2c0wv7wpy24z-X-Restart-Triggers-dbus'
+deleting '/nix/store/7nzrykyx0lmz9r6z6wfgjgpmc6pz3gpj-dbus-1'
+deleting '/nix/store/36xi231j64ac0p3ri7m6qbg0iy6ar8kj-system-path'
+deleting '/nix/store/vw3azpf1gacs9cywanvwrrkd77rdbx6g-switch-inhibitors'
+deleting '/nix/store/arxj3mx3cvigdrmmd3q4y5haj7zi1vam-unit-systemd-tmpfiles-resetup.service'
+deleting '/nix/store/w9jdvc8prfwxr78m48n5l7i3m1ra81cl-X-Restart-Triggers-systemd-tmpfiles-resetup'
+deleting '/nix/store/z6l6w2dm02c8bh7n200zp1qrwvzq1f1n-user-units'
+deleting '/nix/store/xvka28fz9p99553yvcxshkjxhyriwa29-unit-korri-plugin-host.service'
+deleting '/nix/store/vj5rzmwhi5pb0fc85ay9jcpgnz8gqmbk-unit-polkit.service'
+deleting '/nix/store/l6h98k36ha4rxlg92ci90yc1qrp8vyn8-unit-polkit.service'
+deleting '/nix/store/jzaff9qxgilab86l8xmy7nksnr1cng41-user-units'
+deleting '/nix/store/jkcajji7yz4svpv3jxws7wlny7qd1xks-unit-dbus.service'
+deleting '/nix/store/f72hqwppjgwjbi779zn24rc104wscg9y-unit-polkit.service'
+deleting '/nix/store/d8x57m8m1q1k4cl1w5ny6axljzy42bvi-X-Restart-Triggers-polkit'
+deleting '/nix/store/d6dwsi8l6ajypciapmcbryp026sci6y4-unit-dbus.service'
+deleting '/nix/store/ca6zx50kb25875hgm05ywcdyvpmhjm10-unit-dbus.service'
+deleting '/nix/store/bp4vr0wrdahnk3lrjwlkys0kzy6849cl-unit-dbus.service'
+deleting '/nix/store/7mvsqb4is9d6knpbprnq3bq1i2q7fs90-X-Restart-Triggers-polkit'
+deleting '/nix/store/svg0fxjhifm8w94g9wxi33s8k89jr528-system-path'
+deleting '/nix/store/5vf2cmk0mlc68saf8zd2kkg4rwx6m1g1-X-Restart-Triggers-polkit'
+deleting '/nix/store/5q782wcd1cj1wim1chnd1wklbcq8y0cl-unit-korri-plugin-host.service'
+deleting '/nix/store/588ici3nhxz30y18ripbda5kjzdfqbic-unit-dbus.service'
+deleting '/nix/store/a7xdphnsl2cqdj1hrxxzl9rjafjs0mk0-X-Restart-Triggers-dbus'
+deleting '/nix/store/78whrvfvp8h3ljbvikf3qxdih0sky7c9-dbus-1'
+deleting '/nix/store/fp36ly36lbr965b0qiibz45s954b6rz1-system-path'
+deleting '/nix/store/3baxnxbx3ja12lvr8y7yky116vs5sa2q-X-Restart-Triggers-dbus'
+deleting '/nix/store/5ksw93l0dlw4yq32hpmykmfsi6r0gaqn-dbus-1'
+deleting '/nix/store/yvrmkza1c5dxlkl49kbvac8g3m9gjfrw-system-path'
+deleting '/nix/store/25y8i5qglzr1iv72hrs5mhn5ksh9d4qa-unit-polkit.service'
+deleting '/nix/store/1scxqk1x9d5pjzv643qmw4rm6lqwxaly-X-Restart-Triggers-dbus'
+deleting '/nix/store/k1gvjgr6b6i9ic315lpn4phq75l7l355-dbus-1'
+deleting '/nix/store/0lji6ivy6nqsmyk0sqhzwybhl0jhw843-X-Restart-Triggers-polkit'
+deleting '/nix/store/bwqac7sf9kjh06sjncpn1jgq2nnz9l35-system-path'
+deleting '/nix/store/mpa6afp0dqrxbrgcn33j7nnqkpci873v-korri-plugin-host-0.0.0'
+deleting '/nix/store/qfyqd032vhk2d4bk1dgp67gd1abdn7a2-tmpfiles.d'
+deleting '/nix/store/qfcsp2cndl68vkz3z26kxpv76vdgjrzd-nixos-tmpfiles.d'
+deleting '/nix/store/qv9lxs4ymgjj0kv1hzw15f2s8v6dk0cc-dbus-1'
+deleting '/nix/store/fyzz0fy4wmwa1acqkk90xn7zb3qkvnb9-unit-polkit.service'
+deleting '/nix/store/35vd0y31rv2gj72ia24ls5vw0hw0z4n8-unit-korri-bundle-selector.service'
+deleting '/nix/store/z0gk245wwqcw4nzqzn8vxi3qhh66x1rg-korri-bundle-0.0.0'
+deleting '/nix/store/1rrsfl6jnq2gpbrh4206zx5jfifrq8d4-X-Restart-Triggers-polkit'
+deleting '/nix/store/1lgvq17zmrvsgcah7rs72w1i3wbc2as8-system-path'
+deleting '/nix/store/kcifbvcscry45369qzaxcb6h9yb1dqiw-korrid-0.0.0'
+deleting '/nix/store/phk7pk8a378abrswfh9vkrxym7q0ih0p-X-Reload-Triggers-polkit'
+deleting '/nix/store/x9l8l3ygnishzl5iy03xd272xz8i18x8-X-Restart-Triggers-systemd-tmpfiles-resetup'
+deleting '/nix/store/d37a074n17ibhjp38f7x0l9zn9h08sqx-tmpfiles.d'
+deleting '/nix/store/hfpai4zrkrk745qh0b13bcj2p7zj9piz-unit-polkit.service'
+deleting '/nix/store/myzah6z31gwx2x6dyvca3qc6ji1dnpm9-X-Restart-Triggers-polkit'
+deleting '/nix/store/ga2yibfl34wnapfnk8h3fcrmpqfhsncj-hwdb.bin'
+deleting '/nix/store/333plgd17zx8054rwar99hp7dxl6q5nj-unit-systemd-tmpfiles-resetup.service'
+deleting '/nix/store/rx0v2cfqaqzizmq2bs3x8x1mhmbz23wd-X-Restart-Triggers-systemd-tmpfiles-resetup'
+deleting '/nix/store/ppfym2y50nyymwhq96p6gs740kb0h0xb-tmpfiles.d'
+deleting '/nix/store/0nh3ixlzjmm2560l4wi785z476mvdq68-X-Restart-Triggers-korri-plugin-host'
+deleting '/nix/store/9pg119z3927vcn9v3nyz19j6898ynm3z-etc-korri-plugin-host-publishers.json'
+deleting '/nix/store/qkxgbp7x9qdq35p0dc9nsxqdbmm6dxz0-unit-korri-local-signer-device-credential.service'
+deleting '/nix/store/asx8i6sf0vb7czsc5ny170xranlqmgnh-korri-local-signer-device-credential'
+deleting '/nix/store/w1zyhqy3xz2f5sm56lfscfkjajvc7p26-hwdb.bin'
+deleting '/nix/store/imxdizc32mz3rnn1cbgi514xq9v4ica7-unit-korri-bundle-selector.service'
+deleting '/nix/store/r1i7iik6fygsv2z4883v7gx6izgrm695-initrd-linux-aarch64-unknown-linux-gnu-7.2'
+deleting '/nix/store/npylwalh9cs4z904r8fd9c11l6ss7nda-unit-korri-portal-initialize.service'
+deleting '/nix/store/8apa8v9q3linsdnrvl3bzgjfbdgz2ww7-korri-plugin'
+deleting '/nix/store/kz4xih6g3gi942kid77vqk3bbag49azm-X-Reload-Triggers-polkit'
+deleting '/nix/store/dyn45xw14s9d9xnflvgvb2df2cnga7zv-55-nixos-aslr-entropy.conf'
+deleting '/nix/store/js42iywb9m9sbwlc996nlykiw6nxysjz-initrd-linux-aarch64-unknown-linux-gnu-7.2'
+deleting '/nix/store/qpl4qy7x59rxr72sp0188gpp70kzb06g-unit-korri-plugin-offline-proofs.service'
+deleting '/nix/store/1w8gicsm2cyfs8xz5z6h8rfmvi372q8r-unit-script-korri-plugin-offline-proofs-start'
+deleting '/nix/store/g74aaw7dmbksgn7yn1vvx721l5r0a22n-korri-image-plugin-offline-metadata'
+deleting '/nix/store/xnmia2lnk2bvphvv08mnsy20ggsv4f17-unit-polkit.service'
+deleting '/nix/store/1q9bsci8mix14vr685xyazv3da57qvw2-X-Restart-Triggers-polkit'
+deleting '/nix/store/mv36w5iciqbr35hgagsia33inffzylm6-unit-korri-portal-initialize.service'
+deleting '/nix/store/g0w52k7vk7d7ipfd3s773ss1889ig2n8-korri-portal-0.0.0'
+deleting '/nix/store/baxjlc6dvzzbhjda7l72anspzaim038w-korri-bundle-0.0.0'
+deleting '/nix/store/zzs0xq9cpcb08s3p9xf5b8crkphr8p0a-korrid-0.0.0'
+deleting '/nix/store/98w2biimgnn3gjw7q46kzss3avbk28iz-unit-nix-daemon.service'
+deleting '/nix/store/qy13x5vyllqrc90f02smjsv9bl0wjlkd-X-Restart-Triggers-nix-daemon'
+deleting '/nix/store/p1kc0vzqsqh440jc0vig6anpbxx74rwm-unit-systemd-tmpfiles-resetup.service'
+deleting '/nix/store/2yy90sl0fkfh729qk66haisg8vaw0ihl-X-Restart-Triggers-systemd-tmpfiles-resetup'
+deleting '/nix/store/mxgmcx5rv4vaxpq3n65h0m702bpld7z8-tmpfiles.d'
+deleting '/nix/store/xkgx6qnn458l8bwa9gcrdn5bvb26mvsa-nixos-tmpfiles.d'
+deleting '/nix/store/5fz7ipb1370jb3gx6z5rr40g54rm71fm-dbus-1'
+deleting '/nix/store/z54vwb2ccr5wr7qawzk4ciavv7asqv70-nix.conf'
+deleting '/nix/store/srdp7sx8nfs87la1z4b64kd5dff5zxmk-unit-dbus.service'
+deleting '/nix/store/g72rgj35vqz7slamgy4g756cybq541k2-system-path'
+deleting '/nix/store/f2wyf0izchb610v5p93v5q22863j4s6s-unit-polkit.service'
+deleting '/nix/store/mp3plqq1ql60mcn0kncz8mmv9is5wlfy-X-Restart-Triggers-polkit'
+deleting '/nix/store/63dd8bc269pzz22g7yvmyl8ry8crcfyr-X-Restart-Triggers-dbus'
+deleting '/nix/store/kgvanhk26pkcvk3pkwz1z5i1vd58y7kn-dbus-1'
+deleting '/nix/store/92aschm5qa9kmjbalpw7q7i279s563b8-system-path'
+deleting '/nix/store/f3arlm137qw8vpx2f48gb3z8dyc3h56z-korrid-0.0.0'
+deleting '/nix/store/kzhndlkmmp8jxmyg1zsvcn8fgl23vi1r-korrid-0.0.0'
+deleting '/nix/store/q971gdaa97zlqcl1n5s42flxm2jm7ma5-unit-systemd-udevd.service'
+deleting '/nix/store/4whd1wdalz1p46dnj2pz51gdbz65l055-X-Restart-Triggers-systemd-udevd'
+deleting '/nix/store/3kbrs7qw2r2gk7ypi09al5h4dggzkmyc-udev-rules'
+deleting '/nix/store/nm9frk4v0j738sahhqvdm4wv5jgr1w46-unit-systemd-udev-trigger.service'
+deleting '/nix/store/xl2c71gign5qhrsliavvisjvln56ns9x-sway-1.12'
+deleting '/nix/store/6amz2v54cc3jpgp71yp5kjq6pzx0n4dh-unit-korri-plugin-host.service'
+deleting '/nix/store/xgavqn3g856vfpmp05xvfxdzpwx191ch-korri-plugin-host-0.0.0'
+deleting '/nix/store/k75yminzznhy5mlqrlv6an96iq9832iz-X-Restart-Triggers-polkit'
+deleting '/nix/store/s3vran2j11dawkgdili5wsk1kl2dmd60-unit-korrid.service'
+deleting '/nix/store/mfibm7dwqr54vl4h7j42z31pc56gm897-unit-korri-portal-initialize.service'
+deleting '/nix/store/768259lccwqlgiqxxxq92z6hjwsd5kcf-etc-polkit-1-rules.d-10-nixos.rules'
+deleting '/nix/store/zijxr9xkb77f99380a7qn7na134c0sbs-korrid-0.0.0'
+deleting '/nix/store/6wf1jvafqsrnljgqdndxjj8rd5l9zd35-etc-polkit-1-rules.d-10-nixos.rules'
+deleting '/nix/store/7ng4rjzp4jjicnbyssds8q5wzn6js745-unit-systemd-udev-trigger.service'
+deleting '/nix/store/90gibxn51b4r40y3fbgibd8miyx7r7sa-korri-udev-coldplug-modules'
+deleting '/nix/store/f31fms6lrc0iv18abryk9s3a2jvqya6k-unit-firewall.service'
+deleting '/nix/store/ial25lxbxjwd045a2l1rafhf9x3vj9nl-firewall-reload'
+deleting '/nix/store/mb847bczmq7mc7fb6sa5f5ym88rp0qir-unit-korri-plugin-offline-proofs.service'
+deleting '/nix/store/b76yb4lnc1svc7km5yngimk8h5285di6-linux-aarch64-unknown-linux-gnu-7.2-modules'
+deleting '/nix/store/9078f16v85480d84caall3yv0r9qjpz8-unit-korri-plugin-host.service'
+deleting '/nix/store/4mf8g7s8gfj799bjwawklw3hwp0hlzwk-korri-portal-0.0.0'
+deleting '/nix/store/8jacqn3cnniq9mp1qpqc7gijbndfy0d4-unit-korri-clock-governor.service'
+deleting '/nix/store/wh6332rc3pdfnkhl0mrbcp31n8lpfsca-unit-systemd-tmpfiles-resetup.service'
+deleting '/nix/store/xbn4sl8kpr64kzz4w6xcp7x5xx731wp2-X-Restart-Triggers-systemd-tmpfiles-resetup'
+deleting '/nix/store/rwdwyjjky940y1mjnnzywld4i68gj4ab-tmpfiles.d'
+deleting '/nix/store/4lllsfhslww6jx8xxx8309nd8ad0bx49-linux-aarch64-unknown-linux-gnu-7.2'
+deleting '/nix/store/b8fv8nlq4s2ndnds65y58mdnzmp4jvqc-unit-script-korri-plugin-offline-proofs-start'
+deleting '/nix/store/v693whgbw745jxk2g5l3nfqkkl79m9np-unit-korri-plugin-host.service'
+deleting '/nix/store/0pxyxxqhv2q1izfh3if47xlpmm5c4m8m-korri-bundle-0.0.0'
+deleting '/nix/store/wa6ydx1kmwg5fk6z3x7xm8yvp3h8ya24-unit-korri-bundle-selector.service'
+deleting '/nix/store/cy315fs18n4wyn14hz14mxmjv8z4ldkz-korri-bundle-0.0.0'
+deleting '/nix/store/14yf2pmnvnj40kcc5v50hdkngmgnvr8i-korrid-0.0.0'
+deleting '/nix/store/w1wdp15madff029riv0hxsn2pf6x55dx-korri-clock-governor-loop'
+deleting '/nix/store/8byfyc74c80amn3si39j745mnxvm9sp2-sway'
+deleting '/nix/store/g126r803vqpxv62091qwjamlz2a7dd2j-korri-portal-0.0.0'
+deleting '/nix/store/v9lzalnb61p6p2nnkllkq9xkkf4czn45-unit-korri-bundle-selector.service'
+deleting '/nix/store/5z4nz4rkr9648iphymmy8jhbjr27ix0y-korri-bundle-0.0.0'
+deleting '/nix/store/bn14cpws42s07bykvh1f133iksv0x4j6-korri-plugin-host-0.0.0'
+deleting '/nix/store/px3hvm69krwviy8qy7sg66mv25vws0nk-system-generators'
+deleting '/nix/store/d8n4ri57p9d8nyxypzxmrlbdxhckrwx1-unit-korri-bundle-selector.service'
+deleting '/nix/store/xxngzaykg9rjxfcflmj3pa86wmxl16in-korrid-0.0.0'
+deleting '/nix/store/c3182clwfqvizrdhschi8hy5cb96x38x-korri-image-plugin-offline-metadata'
+deleting '/nix/store/jdzyq4is5irs2ny28lfgyfi4sd37lhj2-korri-plugin-host-0.0.0'
+deleting '/nix/store/s9q6ghdvzb0rdl30padsaa4wm365zrkk-user-units'
+deleting '/nix/store/9jvp1xpj1rwly8nlkfpn3aihvjc64vfb-unit-korri-input-seat-receiver.service'
+deleting '/nix/store/dr1rm70qi5ns4pm4givdc5r9zq5fb04x-unit-korri-bundle-selector.service'
+deleting '/nix/store/73scppyp1ckbmmzg0l1b81dfxvl19fyk-unit-dbus.service'
+deleting '/nix/store/lvsfb6kqccz128hng9zjm0sshd3mgn65-nixos-tmpfiles.d'
+deleting '/nix/store/s3cvav96lm0pfa1rrhjk7sj0mw9k16x2-initrd-linux-aarch64-unknown-linux-gnu-7.2'
+deleting '/nix/store/nyz2blfnjqmpwzih7rgpv8p9lcxs877m-unit-systemd-tmpfiles-resetup.service'
+deleting '/nix/store/mqflhzhz39gr738apszdsvylgnq7508k-X-Restart-Triggers-systemd-tmpfiles-resetup'
+deleting '/nix/store/hws7bk10vfxq4xkdriw0rn0la5ad6fw3-korri-bundle-0.0.0'
+deleting '/nix/store/fc6rwlz96d5bdrigfqzbi1sbqlamzdd6-unit-korri-backlight-down.service'
+deleting '/nix/store/1jgn64x2fr591qfipns1j208yj1kpq38-korri-backlight-step'
+deleting '/nix/store/sfgj1fbf2n13h3v7w3i4w9acqhp81y0i-unit-korrid.service'
+deleting '/nix/store/yj2j53q8gaqjg3rrvm94r6lgd2ilphcy-korri-bundle-0.0.0'
+deleting '/nix/store/wdnangg9d3a1bsmpwi96flxr236l3vfj-korrid-0.0.0'
+deleting '/nix/store/1cmprhlchq1xc76srsjyirgyyfaqwvi6-unit-korri-local-signer.service'
+deleting '/nix/store/zp7119myryqkdqpsv5dpvj022z81yk5s-unit-korrid.service'
+deleting '/nix/store/57z5hh5gb4h0yjl2lbd8my34j0awhbs7-unit-korri-portal-initialize.service'
+deleting '/nix/store/j6w6jhfyyxlmd3xlmsl938b53zqj4cc6-korri-portal-0.0.0'
+deleting '/nix/store/wzjgv9c89wdjj81w217b23p8iy4i5nf4-system-path'
+deleting '/nix/store/nh0a6sp1n6cw2wk8rhm7bsk1qjc20br4-korrid-0.0.0'
+deleting '/nix/store/49ds3n7jqgic0w6f8kchw1h4pfx2xd27-X-Restart-Triggers-reload-systemd-vconsole-setup'
+deleting '/nix/store/6z132v8y2wwyikx5fd8yd7dj6n7qa5b5-korri-udev-coldplug-modules'
+deleting '/nix/store/05mmykcba6d9p8pgngp03x0ar9rng6i5-korri-inputd-0.0.0'
+deleting '/nix/store/9i7x0r33mkb06n6c5xgmf00sk544gp2b-korri-plugin-host-0.0.0'
+deleting '/nix/store/f32swpfpmcabx6q9qz80hfwagl0f4jzw-nixos-tmpfiles.d'
+deleting '/nix/store/07rb0fh4gf6pjkj0v4qcsqqndp15k58h-c-utf8-1.1.0'
+deleting '/nix/store/nj6n1zb6pzwi8h9j0w5k7pxv3h1n9m81-hwdb.bin'
+deleting '/nix/store/sh2aw8ww5cdmpxnqj03bf056ndlc26cp-unit-korri-chromium-kiosk.service'
+deleting '/nix/store/7vyj5674zki9shgcsdmzchxvbxnyhk5n-korri-bundle-0.0.0'
+deleting '/nix/store/3z4b1clqqnyr6ps2561x8k9s3d2qcxa2-korri-bundle-0.0.0'
+deleting '/nix/store/kfdz18j1ghw2f2wjkjrrlrb4kiwpymkl-unit-korri-portal-initialize.service'
+deleting '/nix/store/0k0454sc5rihxvc6hv9mr3nh86f5khfd-user-generators'
+deleting '/nix/store/s1ry5qm3z5jpl4rjvh6k4khy1vi3ys6m-X-Reload-Triggers-polkit'
+deleting '/nix/store/q356z8r3mw56jagifv352mmka87h0iny-etc-polkit-1-rules.d-10-nixos.rules'
+deleting '/nix/store/9rw36lqk0p4gcwnw7i59dpnbv23c9kbl-sway-unwrapped-1.12'
+deleting '/nix/store/f8wvd8fjxkfd8x00ljqibx6z2lky5hdk-X-Restart-Triggers-dbus'
+deleting '/nix/store/b970q14ni7pxnz92xlhlygd4f06048dz-dbus-1'
+deleting '/nix/store/2n50h0qh0z05i7bgrz8fgkwd592mmaw1-system-path'
+deleting '/nix/store/28qcl0265il0fprsr6g51rdkw3vcbjmd-nixos-tmpfiles.d'
+deleting '/nix/store/f6qax3b33nidck2lqq85wl0f7bljnlic-tmpfiles.d'
+deleting '/nix/store/lj74ls1xf224f7bhl4da7dsw2a9cs17d-nixos-tmpfiles.d'
+deleting '/nix/store/piq7gi2x39favn2zcqxgvhi615182qcc-korri-chromium-args.json'
+deleting '/nix/store/d4cy3k8q9x4bx5a276hb95p9vcc8d3sj-user-generators'
+deleting '/nix/store/i4zwqyvak5szz3pg7hi2y0g2phjnd452-unit-korri-plugin-admin.service'
+deleting '/nix/store/l49garm00v3vb9xvh5shajrwzmlsydgm-unit-dbus.service'
+deleting '/nix/store/2207mvfi74hkc6akswvigrp9lziwagg6-unit-korri-chromium-kiosk.service'
+deleting '/nix/store/1f9nmk260m4lv68anx3szj491mbam9if-korri-chromium-args.json'
+deleting '/nix/store/mpzdkcc56w6sd4drv5mjbwccnv9j4kwh-korrid-0.0.0'
+deleting '/nix/store/l7kbhbic5cwckdan77c8fsz6lsx837q0-firewall-start'
+deleting '/nix/store/c8kqh1spifwfmc1ipcf6f0a90mw7bgh1-korri-plugin-host-0.0.0'
+deleting '/nix/store/3n63r2k0bv3i6f6ngkdqp4zk29049680-system-generators'
+deleting '/nix/store/r7l2hsacd3maax06fz6dagj1r63x6z6m-hwdb.bin'
+deleting '/nix/store/5fwrn2gvmgiacv4kq1vng1g9xb501x38-korrid-0.0.0'
+deleting unused links...
+note: hard linking is currently saving -4.0 KiB
+613 store paths deleted, 1.2 GiB freed
+RECONSTRUCTIBLE CACHES (delete contents, preserve root directory/mode):
+CACHE CONTENTS REMOVED: /var/lib/korri-private-cache.h6odJOu2/cache/nar
+1574727680	/var/lib/korri-private-cache.h6odJOu2/cache/nar
+CACHE CONTENTS REMOVED: /var/lib/korri/cache
+2365812736	/var/lib/korri/cache
+CACHE CONTENTS REMOVED: /root/.cache
+3801088	/root/.cache
+CACHE CONTENTS REMOVED: /home/korri/.cache
+16224256	/home/korri/.cache
+CACHE CONTENTS REMOVED: /var/lib/korri/users/<account>/.cache
+5459968	/var/lib/korri/users/<account>/.cache
+CACHE CONTENTS REMOVED: /var/lib/korri/users/<account>/steam/appcache/librarycache
+1252872192	/var/lib/korri/users/<account>/steam/appcache/librarycache
+CACHE CONTENTS REMOVED: /var/lib/korri/users/<account>/steam/package/tmp
+605372416	/var/lib/korri/users/<account>/steam/package/tmp
+OLD CORE DUMPS (files only):
+627998720	/var/lib/systemd/coredump
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.27526.1792366719000000.zst
+/var/lib/systemd/coredump/core.solarus-run.1000.dbe0038ebc7b4435b6b9503cf67fffd2.38743.1792284908000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.dbe0038ebc7b4435b6b9503cf67fffd2.29605.1792280908000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.dbe0038ebc7b4435b6b9503cf67fffd2.28808.1792279507000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.b3cb5ce5388244a3a984103bb1381821.38858.1792343407000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.dbe0038ebc7b4435b6b9503cf67fffd2.35031.1792282405000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.2487daf08b6c452a9ef2316c63f45693.3648.1792710932000000.zst
+/var/lib/systemd/coredump/core.sway.1000.b3cb5ce5388244a3a984103bb1381821.1596.1792343857000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.60481.1792368020000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.50814.1792367780000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.508322.1792447086000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.dbe0038ebc7b4435b6b9503cf67fffd2.28967.1792279541000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.492721.1792445737000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.2578823f6a2d4a7e89ecdd91024afcb2.3979.1792696962000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.b3cb5ce5388244a3a984103bb1381821.74919.1792343858000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.21915.1792366682000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.813f6bef095641a6bc02038995c88c1d.11317.1792676669000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.dbe0038ebc7b4435b6b9503cf67fffd2.33214.1792281712000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.2578823f6a2d4a7e89ecdd91024afcb2.7020.1792697160000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.b829b61b20e2407f88e7ff86669afbcb.2843.1792713065000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.502183.1792445882000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.b3cb5ce5388244a3a984103bb1381821.36956.1792343407000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.319891.1792391635000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.59796.1792368019000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.2578823f6a2d4a7e89ecdd91024afcb2.6224.1792697087000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.170943.1792376533000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.489593.1792445708000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.2578823f6a2d4a7e89ecdd91024afcb2.6394.1792697102000000.zst
+/var/lib/systemd/coredump/core.\x2egamescope-wrap.1000.dbe0038ebc7b4435b6b9503cf67fffd2.22605.1792273037000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.2578823f6a2d4a7e89ecdd91024afcb2.5735.1792697042000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.dbe0038ebc7b4435b6b9503cf67fffd2.72295.1792289817000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.57977.1792367978000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.490259.1792445708000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.65007.1792368388000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.26875.1792366719000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.2578823f6a2d4a7e89ecdd91024afcb2.6700.1792697131000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.56687.1792367937000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.813f6bef095641a6bc02038995c88c1d.12591.1792676994000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.62434.1792368199000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.b3cb5ce5388244a3a984103bb1381821.10242.1792337440000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.493170.1792445738000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.634256.1792457203000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.508020.1792446905000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.b3cb5ce5388244a3a984103bb1381821.28936.1792342649000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.61753.1792368198000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.813f6bef095641a6bc02038995c88c1d.13224.1792677247000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.b3cb5ce5388244a3a984103bb1381821.96382.1792344081000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.b3cb5ce5388244a3a984103bb1381821.58186.1792343825000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.dbe0038ebc7b4435b6b9503cf67fffd2.39283.1792284959000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.dbe0038ebc7b4435b6b9503cf67fffd2.28663.1792279477000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.502854.1792445883000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.164774.1792376413000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.405339.1792435293000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.dbe0038ebc7b4435b6b9503cf67fffd2.36460.1792282531000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.2578823f6a2d4a7e89ecdd91024afcb2.5906.1792697058000000.zst
+/var/lib/systemd/coredump/core.steam.1000.69db34edf8a54ba6aa48a18d5c7da2e8.225464.1792379077000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.dbe0038ebc7b4435b6b9503cf67fffd2.28483.1792279433000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.813f6bef095641a6bc02038995c88c1d.12066.1792676878000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.dbe0038ebc7b4435b6b9503cf67fffd2.33359.1792281717000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.69db34edf8a54ba6aa48a18d5c7da2e8.468905.1792444056000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.dbe0038ebc7b4435b6b9503cf67fffd2.33070.1792281688000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.63783.1792368386000000.zst
+/var/lib/systemd/coredump/core.\x2egamescope-wrap.1000.dbe0038ebc7b4435b6b9503cf67fffd2.22869.1792273141000000.zst
+/var/lib/systemd/coredump/core.\x2eskate3-wrapped.1000.c5a0968a67c4409e9d94bf8b20a2bccd.4006.1792210430000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.51026.1792367781000000.zst
+/var/lib/systemd/coredump/core.\x2egamescope-wrap.1000.dbe0038ebc7b4435b6b9503cf67fffd2.22781.1792273122000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.dbe0038ebc7b4435b6b9503cf67fffd2.33858.1792281771000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.dbe0038ebc7b4435b6b9503cf67fffd2.37181.1792282600000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.69db34edf8a54ba6aa48a18d5c7da2e8.47736.1792367714000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.508154.1792446989000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.dbe0038ebc7b4435b6b9503cf67fffd2.33499.1792281741000000.zst
+/var/lib/systemd/coredump/core.nocturnerecomp.1000.dbe0038ebc7b4435b6b9503cf67fffd2.40491.1792285112000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.2578823f6a2d4a7e89ecdd91024afcb2.5568.1792697027000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.dbe0038ebc7b4435b6b9503cf67fffd2.35566.1792282447000000.zst
+/var/lib/systemd/coredump/core.gamescope-wl.1000.69db34edf8a54ba6aa48a18d5c7da2e8.505505.1792445911000000.zst
+/var/lib/systemd/coredump/core.steamwebhelper.1000.b3cb5ce5388244a3a984103bb1381821.98122.1792344081000000.zst
+/var/lib/systemd/coredump/core.\x2e\x2e\x2eretroarch-wr.1000.2487daf08b6c452a9ef2316c63f45693.2442.1792701161000000.zst
+/var/lib/systemd/coredump/core.\x2egamescope-wrap.1000.dbe0038ebc7b4435b6b9503cf67fffd2.27266.1792278713000000.zst
+OLD JOURNAL VACUUM:
+Vacuuming done, freed 0B of archived journals from /var/log/journal.
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065ccc58ef2210-4e9d7b8e2c7e2406.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@ae349a73d4364857b603f81208a6a179-00000000000003b2-000b41f001e41b0e.journal (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@ae349a73d4364857b603f81208a6a179-000000000002dde2-00065dc4e2d3027a.journal (4M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@00065ccc5f9df430-c455f6a9724eaf89.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@ae349a73d4364857b603f81208a6a179-0000000000000626-000b41f00213c395.journal (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065ccda09ad82c-ed19120a00c9e9b2.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@00065ccdebf9cfdc-47fcbac645d13d5e.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065ccdff589e16-17a04a286f52ebea.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@00065cce038bfefb-c2c70d4034c6bad2.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065cd621a284ab-15f79926c8d795bc.journal~ (16M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@00065cd62a7d104d-367355d636d34e40.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065cf1d40581a4-cfad6aefe1437139.journal~ (24M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@00065cf1d640e12e-7944553769aa2280.journal~ (32M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065d3432d2e0a8-3565db6f56cd1907.journal~ (24M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@00065d343581c4ef-b76a17acc4793e0c.journal~ (16M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@ae349a73d4364857b603f81208a6a179-0000000000028e5b-00065d3432d1db03.journal (4.7M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@ae349a73d4364857b603f81208a6a179-0000000000029680-00065d343581bb81.journal (3.6M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065d37cf0d6ac9-67ab5d6d5fe766aa.journal~ (16M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@00065dc3e0e9cfa0-683ec75b49c9bf05.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065dc4e2d3f629-691bf1a652bfd4e5.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065e1da7419205-c92d52d9935d3b4a.journal~ (16M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@ae349a73d4364857b603f81208a6a179-000000000003f160-00065dff645664e2.journal (9.5M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@ae349a73d4364857b603f81208a6a179-0000000000046cbb-00065e0c02a3234a.journal (4M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@00065e1edfa7f5d0-931b2a78df2c437c.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065e0c02a40dab-3a8ff8e8ee40f249.journal~ (16M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065e3d44e3a14b-91fd3dc95753690b.journal~ (32M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@00065e3d4a1fa1ba-0a7824e0104d4f7c.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@ae349a73d4364857b603f81208a6a179-0000000000056d06-00065e3d44e2d6d6.journal (4.7M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@ae349a73d4364857b603f81208a6a179-000000000005735f-00065e3d4a1f9e32.journal (3.6M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065e3d51f0275f-c0987b59aacd35ed.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@00065e3d56aeb67e-b803d3cd2898f741.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@00065e6411e0f761-336570cba9906c24.journal~ (16M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/user-1000@00065e64c3e68536-510ca92672e1b838.journal~ (8M).
+Deleted archived journal /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f/system@ae349a73d4364857b603f81208a6a179-000000000005aaff-00065e6411e02f83.journal (44.7M).
+Vacuuming done, freed 415.4M of archived journals from /var/log/journal/7c5b03a6097d4cb2a3fad2182a4cee9f.
+Vacuuming done, freed 0B of archived journals from /run/log/journal.
+AFTER CLEANUP:
+Filesystem        1B-blocks         Used   Available Use% Mounted on
+/dev/sda22     122244853760 103942307840 12045590528  90% /
+/dev/sda21        535560192    379826176   155734016  71% /boot
+  24   2026-10-22 20:11:12
+  29   2026-10-22 23:49:35   (current)
+Archived and active journals take up 31M in the file system.

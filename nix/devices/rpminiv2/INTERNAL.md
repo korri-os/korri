@@ -79,14 +79,61 @@ ssh -o BatchMode=yes -p 2222 root@10.42.3.1 reboot
 nix run .#rpminiv2-update -- --status
 ```
 
+#### Select this generation's service bundle explicitly
+
+System boot does **not** replace the persistent Korri service-bundle selection.
+This is deliberate: [bundle deployment](../../../services/inputd/deploy/README.md)
+and [portal deployment](../../../clients/portal/DEPLOYMENT.md) both preserve valid
+selections across system changes. Keep this as a separate reviewed operation,
+not an implicit updater side effect. A booted new system can still run an old
+korrid until this step completes.
+
+Before the update, record the old selector for runtime rollback:
+
+```sh
+ssh -o BatchMode=yes -p 2222 root@10.42.3.1 \
+  readlink -f /nix/var/nix/gcroots/korri-bundle/active
+```
+
+After booting the new system, select its **Mini V2-specific** bundle, already
+present in the copied system closure. Never select the generic `korri-bundle`:
+
+```sh
+bundle=$(nix eval --raw .#nixosConfigurations.rpminiv2.config.services.korriBundle.initialPackage.outPath)
+ssh -o BatchMode=yes -p 2222 root@10.42.3.1 \
+  "/run/current-system/sw/bin/korri-bundle-select switch '$bundle' /run/current-system/sw/bin/systemctl"
+```
+
+The existing selector checks the immutable bundle, keeps the previous bundle
+GC root, restarts its consumers and verifies health. It performs no build.
+Also check `/proc/$(systemctl show korrid -p MainPID --value)/exe` on the device
+against the bundle's `bin/korrid` target. Preserve both old and new bundle roots
+until full acceptance passes. The portal has its own explicit web selection;
+a service-bundle switch does not replace it.
+
 Require `current=` and `profile=` to equal the built system. Check failed units,
 korrid, compositor and portal, unchanged plugin-host trust, uclamp/launch limits,
-and a real korrid launch inside bubblewrap (ADR 0015). Do not treat staged files
+and a real korrid launch through the selected runner. Do not treat staged files
 or a successful SSH copy as boot acceptance.
+
+**Current limit:** core at `4e34b8a9e` does not implement general bubblewrap
+wrapping. ADR 0015 records a decision, not shipped behavior. The 2026-10-22
+acceptance therefore records the actual korrid → Gamescope → gamescopereaper →
+runner chain, not a bubblewrap claim. A future wrapper implementation needs its
+own acceptance.
 
 ### Rollback and update limits
 
-If acceptance fails and SSH works:
+If acceptance fails and SSH works, first restore the exact old service bundle
+recorded above **if you changed it**. Do not blindly toggle an unrelated previous
+selection:
+
+```sh
+ssh -o BatchMode=yes -p 2222 root@10.42.3.1 \
+  '/run/current-system/sw/bin/korri-bundle-select switch /nix/store/EXACT-RECORDED-OLD-BUNDLE /run/current-system/sw/bin/systemctl'
+```
+
+Then restore the system boot selection:
 
 ```sh
 nix run .#rpminiv2-update -- --rollback --expected-system /nix/store/EXACT-BOOTED-SYSTEM
