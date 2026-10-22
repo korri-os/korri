@@ -20,6 +20,10 @@ holders show a join request.
 - **Copy the person key on approval.** Rejected: every approved device could act
   as the person until an identity switch on every device.
 
+A linked phone signer is a key holder too. A join it approves shows up as its
+signing prompt for the new device's owner statement, and korrid takes the owner
+from that signed statement rather than asking the signer for its public key.
+
 The Odin 2 Portal and the RP Mini V2 already joined this way on 2026-10-22, by
 hand: each device's owner-binding template was signed by the person's phone
 signer (Amber, over NIP-46), and the person key stayed in the phone.

@@ -52,7 +52,7 @@ Binding a device that has no owner to an existing person key. A key holder signs
 _Avoid_: pair, link, sign in, adopt
 
 **Key holder**:
-A device whose local signer holds the person key. The device that created the automatic identity is one; the person can make another device one on purpose. Only a key holder can approve a join.
+A Korri device whose local signer holds the person key, or a phone signer linked to that person key. The device that created the automatic identity is one; the person can make another device one on purpose. Only a key holder can approve a join; on a phone signer the approval is its signing prompt.
 _Avoid_: primary device, main device, master
 
 **Protection**:
