@@ -3,13 +3,31 @@
 //!
 //! A stand-in `nix` records each invocation and prints canned metadata.
 use korri_plugin_host::package::{nix32_sha256, StoreSnapshot};
-use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path, path::PathBuf};
+use std::{
+    collections::BTreeSet,
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::Path,
+    path::PathBuf,
+    sync::{Mutex, MutexGuard, PoisonError},
+};
 
 const A: &str = "/nix/store/0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-plugin-a";
 const B: &str = "/nix/store/0bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-plugin-b";
 const LIB: &str = "/nix/store/0ccccccccccccccccccccccccccccccc-lib";
 const LIBC: &str = "/nix/store/0ddddddddddddddddddddddddddddddd-libc";
 const EMPTY: &str = "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=";
+
+/// Tests run on parallel threads. If one test forks to run its stand-in while
+/// another still holds its own stand-in open for writing, the forked child
+/// inherits that descriptor until it execs, and the second exec fails with
+/// ETXTBSY ("Text file busy"). An aarch64 CI build hit exactly that. Each test
+/// that writes and runs a stand-in holds this lock for the whole time.
+static STAND_IN: Mutex<()> = Mutex::new(());
+
+fn serial() -> MutexGuard<'static, ()> {
+    STAND_IN.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 fn stand_in(directory: &Path, metadata: &str) -> (PathBuf, PathBuf) {
     let log = directory.join("calls");
@@ -50,6 +68,7 @@ fn nix32_matches_nix_for_a_known_hash() {
 
 #[test]
 fn one_query_answers_closure_and_metadata_for_every_package() {
+    let _serial = serial();
     let directory = tempfile::tempdir().unwrap();
     let metadata = serde_json::json!({
         A: info(&[A, LIB]),
@@ -82,6 +101,7 @@ fn one_query_answers_closure_and_metadata_for_every_package() {
 
 #[test]
 fn a_reference_missing_from_the_metadata_is_refused() {
+    let _serial = serial();
     let directory = tempfile::tempdir().unwrap();
     let metadata = serde_json::json!({ A: info(&[A, LIB]) });
     let (nix, _) = stand_in(directory.path(), &metadata.to_string());
@@ -110,6 +130,7 @@ fn dependency(index: usize) -> String {
 
 #[test]
 fn closure_metadata_larger_than_one_mebibyte_is_accepted() {
+    let _serial = serial();
     // About 700 bytes per path made the former 1 MiB helper cap a hidden
     // limit near 1,500 paths. Plugins have no size limit.
     let directory = tempfile::tempdir().unwrap();
