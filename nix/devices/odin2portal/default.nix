@@ -50,6 +50,7 @@ let
       })
       ./sd-image.nix
       ./web-session.nix
+      ./owner-publisher.nix
     ];
   };
 in
