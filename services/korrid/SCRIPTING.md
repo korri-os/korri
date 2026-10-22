@@ -196,7 +196,7 @@ launcher/runtime fields follow the instance/kind model described below.
 `sessionControls` is an unknown export and fails admission. `services` names
 native units packaged by `plugin.nix`. The Linux host selects those units; the data registry validates the names but does not
 activate them or change its existing records. `daemons` and the old `contributes`
-wrapper are rejected. No TypeScript export encodes systemd directives.
+wrapper are rejected. No TypeScript export encodes systemd directives. Native `LimitRTPRIO=1..20` is a bounded, explicit privileged approval request; the plugin-host [native-unit reference](plugin-host/README.md) defines its strict scalar grammar and limits. It does not promote a service or grant `CAP_SYS_NICE`.
 
 `plugin::load_plugin_source(namespace, source)` and
 `decode_plugin_declaration(namespace, json)` receive publisher identity from

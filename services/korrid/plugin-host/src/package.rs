@@ -1153,6 +1153,40 @@ mod approval_tests {
 
     /// A temporary directory is not installation authority, so the test
     /// supplies the evaluated package the store-path check would admit.
+    #[test]
+    fn rtprio_is_visible_and_changes_approval_without_changing_other_units() {
+        let directory = tempfile::tempdir().unwrap();
+        let package = provider_package(directory.path(), None, false);
+        fs::write(
+            package.join("plugin.ts"),
+            "export const name = 'shop'; export const services = ['capture'];",
+        )
+        .unwrap();
+        let unit_path = package.join("capture.service");
+        fs::write(
+            package.join("manifest.json"),
+            serde_json::json!({
+                "publisher": {"namespace": "@test"}, "entry": "plugin.ts", "sources": ["plugin.ts"],
+                "services": {"capture": unit_path}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let original = "[Service]\nType=simple\nExecStart=/nix/store/00000000000000000000000000000000-daemon/bin/run\n";
+        fs::write(&unit_path, original).unwrap();
+        let before = provider_report(&package).unwrap();
+        fs::write(&unit_path, format!("{original}LimitRTPRIO=15\n")).unwrap();
+        let after = provider_report(&package).unwrap();
+        assert_ne!(before.approval, after.approval);
+        assert!(after.warning.contains("LimitRTPRIO=15"));
+        assert!(after.unit_configuration.contains("LimitRTPRIO=15"));
+        assert!(!before.warning.contains("LimitRTPRIO="));
+        fs::write(&unit_path, original).unwrap();
+        let restored = provider_report(&package).unwrap();
+        assert_eq!(before.approval, restored.approval);
+        assert_eq!(before.unit_configuration, restored.unit_configuration);
+    }
+
     fn provider_report(package: &Path) -> Result<Report, String> {
         report_from(
             package,

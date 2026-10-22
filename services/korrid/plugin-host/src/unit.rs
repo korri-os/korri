@@ -550,6 +550,17 @@ fn hardening_for(id: &str, native: &crate::native_unit::NativeUnit) -> String {
     } else {
         "yes"
     };
+    // The native limit is the explicit permission; leaving the seccomp RT
+    // filter enabled would silently nullify that approved request.
+    let restrict_realtime = if native
+        .privileged_directives
+        .iter()
+        .any(|directive| directive.starts_with("LimitRTPRIO="))
+    {
+        "no"
+    } else {
+        "yes"
+    };
     let private_tmp = if native
         .privileged_directives
         .iter()
@@ -569,7 +580,7 @@ fn hardening_for(id: &str, native: &crate::native_unit::NativeUnit) -> String {
     // installing the approved request. The native unit owns commands; the
     // host owns execution policy and never translates service templates.
     let mut policy = format!(
-        "{owner}# {}\n[Unit]\nAfter=network.target\n\n[Service]\n{user_policy}DynamicUser={dynamic_user}\nStateDirectory=\nStateDirectory={name}\nStateDirectoryMode=0700\nRuntimeDirectory=\nRuntimeDirectory={runtime_directory}\nRuntimeDirectoryMode={runtime_directory_mode}\nUMask=0077\nRestart=on-failure\nRestartSec=1\nTimeoutStartSec=30\nTimeoutStopSec=30\nKillMode=control-group\nNoNewPrivileges={no_new_privileges}\nProtectSystem=strict\nProtectHome={protect_home}\nPrivateTmp={private_tmp}\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectKernelLogs=yes\nProtectControlGroups=yes\nProtectProc=invisible\nRestrictSUIDSGID=yes\nRestrictRealtime=yes\nRestrictNamespaces=yes\nLockPersonality=yes\nRestrictAddressFamilies=\nRestrictAddressFamilies={address_families}\nDevicePolicy={device_policy}\nDeviceAllow=\nCapabilityBoundingSet=\nCapabilityBoundingSet={capabilities}\nAmbientCapabilities=\nAmbientCapabilities={capabilities}\nLoadCredential=\n",
+        "{owner}# {}\n[Unit]\nAfter=network.target\n\n[Service]\n{user_policy}DynamicUser={dynamic_user}\nStateDirectory=\nStateDirectory={name}\nStateDirectoryMode=0700\nRuntimeDirectory=\nRuntimeDirectory={runtime_directory}\nRuntimeDirectoryMode={runtime_directory_mode}\nUMask=0077\nRestart=on-failure\nRestartSec=1\nTimeoutStartSec=30\nTimeoutStopSec=30\nKillMode=control-group\nNoNewPrivileges={no_new_privileges}\nProtectSystem=strict\nProtectHome={protect_home}\nPrivateTmp={private_tmp}\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectKernelLogs=yes\nProtectControlGroups=yes\nProtectProc=invisible\nRestrictSUIDSGID=yes\nRestrictRealtime={restrict_realtime}\nRestrictNamespaces=yes\nLockPersonality=yes\nRestrictAddressFamilies=\nRestrictAddressFamilies={address_families}\nDevicePolicy={device_policy}\nDeviceAllow=\nCapabilityBoundingSet=\nCapabilityBoundingSet={capabilities}\nAmbientCapabilities=\nAmbientCapabilities={capabilities}\nLoadCredential=\n",
         package::BASE_POLICY
     );
     for device in &native.devices {

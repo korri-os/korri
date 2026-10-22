@@ -333,3 +333,16 @@ fn effective_configuration_names_every_unit_and_its_widened_authority() {
         assert!(effective.contains(named), "{named}");
     }
 }
+
+#[test]
+fn bounded_rtprio_withdraws_realtime_filter_only_for_the_requesting_unit() {
+    let base = "[Service]\nType=exec\nExecStart=/nix/store/00000000000000000000000000000000-service/bin/run\n";
+    let ordinary = unit::hardening(&report(base));
+    assert!(ordinary.contains("RestrictRealtime=yes\n"));
+    let requested = report(&format!("{base}LimitRTPRIO=15\n"));
+    let configuration = unit::render(&requested).unwrap();
+    assert!(configuration.contains("LimitRTPRIO=15\n"));
+    assert!(configuration.contains("RestrictRealtime=no\n"));
+    assert!(!configuration.contains("RestrictRealtime=yes\n"));
+    assert_eq!(unit::hardening(&report(base)), ordinary);
+}

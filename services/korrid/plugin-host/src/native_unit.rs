@@ -265,6 +265,19 @@ impl NativeUnit {
                     }
                     ("[Service]", "Restart") if value == "on-failure" => {}
                     ("[Service]", "RestartSec") if valid_unsigned(value) => {}
+                    ("[Service]", "LimitRTPRIO")
+                        if !value.is_empty()
+                            && value.bytes().all(|byte| byte.is_ascii_digit())
+                            && value
+                                .parse::<u8>()
+                                .is_ok_and(|priority| (1..=20).contains(&priority)) =>
+                    {
+                        // Native scalar assignment is last-wins. Do not admit
+                        // systemd ranges, infinity, or a scheduling policy.
+                        unit.privileged_directives
+                            .retain(|directive| !directive.starts_with("LimitRTPRIO="));
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
                     ("[Service]", "RestrictAddressFamilies") if valid_address_families(value) => {
                         let families = unit.address_families.get_or_insert_with(Vec::new);
                         for family in value.split_ascii_whitespace() {

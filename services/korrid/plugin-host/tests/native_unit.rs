@@ -314,3 +314,58 @@ fn native_root_request_and_pre_start_commands_are_explicit_and_resettable() {
         assert!(NativeUnit::parse(&format!("{UNIT}ExecStartPre={value}/nix/store/00000000000000000000000000000000-daemon/bin/run\n")).is_err());
     }
 }
+
+#[test]
+fn capture_fifo_limit_is_a_bounded_explicit_approval_request() {
+    let unchanged = NativeUnit::parse(UNIT).unwrap();
+    assert!(!unchanged
+        .privileged_directives
+        .iter()
+        .any(|s| s.starts_with("LimitRTPRIO=")));
+    for priority in [1, 15, 20] {
+        let request = format!("LimitRTPRIO={priority}");
+        let source = format!("{UNIT}{request}\n");
+        let unit = NativeUnit::parse(&source).unwrap();
+        assert_eq!(unit.source, source);
+        assert!(unit.privileged_directives.contains(&request));
+    }
+    let replaced = NativeUnit::parse(&format!("{UNIT}LimitRTPRIO=20\nLimitRTPRIO=15\n")).unwrap();
+    assert_eq!(
+        replaced
+            .privileged_directives
+            .iter()
+            .filter(|s| s.starts_with("LimitRTPRIO="))
+            .collect::<Vec<_>>(),
+        [&"LimitRTPRIO=15".to_owned()]
+    );
+}
+
+#[test]
+fn unsupported_realtime_authority_is_refused() {
+    for request in [
+        "LimitRTPRIO=",
+        "LimitRTPRIO=0",
+        "LimitRTPRIO=21",
+        "LimitRTPRIO=99",
+        "LimitRTPRIO=-1",
+        "LimitRTPRIO=+15",
+        "LimitRTPRIO=15:15",
+        "LimitRTPRIO=1-20",
+        "LimitRTPRIO=infinity",
+        "LimitRTPRIO=15 16",
+        "LimitRTPRIO=15ms",
+        "LimitRTPRIO=999999999999999999999",
+        "CPUSchedulingPolicy=fifo",
+        "CPUSchedulingPriority=15",
+        "CPUSchedulingResetOnFork=true",
+        "CapabilityBoundingSet=CAP_SYS_NICE",
+        "Nice=-1",
+        "IOSchedulingClass=realtime",
+        "IOSchedulingPriority=0",
+    ] {
+        assert!(
+            NativeUnit::parse(&format!("{UNIT}{request}\n")).is_err(),
+            "{request}"
+        );
+    }
+}
