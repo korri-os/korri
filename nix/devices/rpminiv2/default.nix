@@ -63,6 +63,7 @@ let
         device = "rpminiv2";
       })
       ./portal.nix
+      ./owner-publisher.nix
       (
         { lib, ... }:
         {
