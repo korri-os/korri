@@ -18,7 +18,9 @@ buildUBoot {
     description = "U-Boot bootloader for the Anbernic H700 handhelds";
     platforms = [ "aarch64-linux" ];
   };
-  BL31 = "${armTrustedFirmwareAllwinnerH616}/bl31.bin";
+  # buildUBoot exports only `env` to the builder; a top-level BL31 never
+  # reaches binman, which then fakes the blob and fails.
+  env.BL31 = "${armTrustedFirmwareAllwinnerH616}/bl31.bin";
   extraConfig = ''
     CONFIG_BOOTDELAY=0
     # CONFIG_EFI_LOADER is not set
