@@ -16,6 +16,7 @@ set -euo pipefail
 
 usage() {
   echo "usage: publish.sh [--dry-run] [--package ATTR]... [<device>...]" >&2
+  echo "       KORRI_CACHE_BATCH_TAG   another dated batch when today's release is full" >&2
   echo "       KORRI_CACHE_SECRET_KEY  this builder's signing key" >&2
   echo "       KORRI_CACHE_STORE       keep the local NAR cache here to reuse it" >&2
 }
@@ -144,8 +145,15 @@ fi
 trap 'rm -rf "$work"' EXIT
 
 # One release per day. GitHub caps a release at 1,000 assets, and a dated tag
-# keeps a bad batch deletable without touching the ones before it.
-batch_tag="batch-$(date -u +%Y-%m-%d)"
+# keeps a bad batch deletable without touching the ones before it. When a day's
+# release is full, KORRI_CACHE_BATCH_TAG names another dated batch
+# (batch-YYYY-MM-DD-2, ...); the NAR URLs are fixed at prepare time, so the tag
+# must be chosen before prepare, never changed after.
+batch_tag="${KORRI_CACHE_BATCH_TAG:-batch-$(date -u +%Y-%m-%d)}"
+if ! [[ "$batch_tag" =~ ^batch-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$ ]]; then
+  echo "korri-cache: batch tag must look like batch-YYYY-MM-DD or batch-YYYY-MM-DD-N: $batch_tag" >&2
+  exit 2
+fi
 
 if [ "$dry_run" -eq 1 ]; then
   echo "korri-cache: would publish ${devices[*]-} ${packages[*]-}"
