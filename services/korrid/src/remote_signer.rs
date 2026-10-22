@@ -206,6 +206,10 @@ pub enum RemoteSignerError {
 
 const MAX_SIGNER_ERROR_CHARS: usize = 200;
 
+fn already_connected(reason: &str) -> bool {
+    reason.trim().eq_ignore_ascii_case("already connected")
+}
+
 fn signer_error_text(error: &str) -> String {
     let text: String = error
         .chars()
@@ -332,10 +336,18 @@ where
                 serde_json::json!({"name": "Korri"}).to_string(),
             ],
         };
-        let result = self.send_request(connect, now).await?;
-        let expected = connection.secret.as_deref().unwrap_or("ack");
-        if result != expected && !(connection.secret.is_some() && result == "ack") {
-            return Err(RemoteSignerError::InvalidResponse);
+        match self.send_request(connect, now).await {
+            Ok(result) => {
+                let expected = connection.secret.as_deref().unwrap_or("ack");
+                if result != expected && !(connection.secret.is_some() && result == "ack") {
+                    return Err(RemoteSignerError::InvalidResponse);
+                }
+            }
+            // The signer already holds a session for this client key, for
+            // example after an earlier attempt failed past connect. Its own
+            // authorization still governs every following request.
+            Err(RemoteSignerError::Denied { reason, .. }) if already_connected(&reason) => {}
+            Err(error) => return Err(error),
         }
         let user = self
             .send_request(
@@ -794,6 +806,8 @@ mod tests {
             "remote signer denied connect: invalid secret[31m"
         );
         assert_eq!(signer_error_text(" \n"), "no reason given");
+        assert!(already_connected("Already connected"));
+        assert!(!already_connected("invalid secret"));
         assert_eq!(signer_error_text(&"x".repeat(500)).len(), 200);
     }
 
