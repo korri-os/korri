@@ -32,7 +32,9 @@ use std::{
 pub const PEER_RPC_VERSION: u8 = 1;
 pub const PEER_REQUEST_KIND: u16 = 21_100;
 pub const PEER_RESPONSE_KIND: u16 = 21_101;
-pub const MAX_PEER_EVENT_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_PEER_EVENT_BYTES: usize = crate::identity::MAX_ENCRYPTED_PAYLOAD_BYTES;
+const MAX_IN_FLIGHT_PEER_REQUESTS: usize = 4;
+const BODY_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 const CLOCK_WINDOW_SECONDS: u64 = 120;
 const TOKEN_BYTES: usize = 32;
 
@@ -357,7 +359,14 @@ impl PeerRpcServer {
             .route("/peer-rpc", post(peer_rpc))
             .route("/peer-saves-object", post(saves_object::object_route))
             .layer(DefaultBodyLimit::max(MAX_PEER_EVENT_BYTES))
-            .with_state(self);
+            .with_state(self)
+            .layer(axum::middleware::from_fn_with_state(
+                PeerRequestLimits {
+                    permits: Arc::new(tokio::sync::Semaphore::new(MAX_IN_FLIGHT_PEER_REQUESTS)),
+                    body_timeout: BODY_READ_TIMEOUT,
+                },
+                limit_peer_request,
+            ));
         match portal {
             Some(portal) => peer.merge(portal),
             None => peer.route("/rpc", post(reject_plaintext)),
@@ -419,6 +428,7 @@ impl PeerRpcServer {
             &verified.author,
             &envelope.nonce,
             verified.created_at,
+            now,
             authorization::is_security_mutation(&envelope.request),
         )?;
         self.authorization
@@ -551,6 +561,40 @@ async fn peer_rpc(State(state): State<PeerRpcServer>, body: Bytes) -> Response {
     }
 }
 
+// Admission precedes body extraction and signature verification. Four permits
+// bound buffered unauthenticated bodies to 24 MiB and verify/decrypt concurrency
+// to four. Streaming authenticated responses do not have a body-read deadline.
+#[derive(Clone)]
+struct PeerRequestLimits {
+    permits: Arc<tokio::sync::Semaphore>,
+    body_timeout: std::time::Duration,
+}
+async fn limit_peer_request(
+    State(limits): State<PeerRequestLimits>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let Ok(_permit) = limits.permits.try_acquire_owned() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let (parts, body) = request.into_parts();
+    let bytes = match tokio::time::timeout(
+        limits.body_timeout,
+        axum::body::to_bytes(body, MAX_PEER_EVENT_BYTES),
+    )
+    .await
+    {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(_)) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
+        Err(_) => return StatusCode::REQUEST_TIMEOUT.into_response(),
+    };
+    next.run(axum::extract::Request::from_parts(
+        parts,
+        axum::body::Body::from(bytes),
+    ))
+    .await
+}
+
 async fn reject_plaintext() -> StatusCode {
     StatusCode::UPGRADE_REQUIRED
 }
@@ -575,6 +619,7 @@ impl ReplayGuard {
         sender: &str,
         nonce: &str,
         created_at: u64,
+        now: u64,
         persist: bool,
     ) -> Result<(), PeerRpcError> {
         if persist {
@@ -594,7 +639,7 @@ impl ReplayGuard {
                 })?;
         }
         let mut seen = self.seen.lock().map_err(|_| PeerRpcError::Storage)?;
-        seen.retain(|_, time| created_at.saturating_sub(*time) <= CLOCK_WINDOW_SECONDS);
+        seen.retain(|_, time| now.saturating_sub(*time) <= CLOCK_WINDOW_SECONDS);
         if seen
             .insert((sender.into(), nonce.into()), created_at)
             .is_some()
@@ -728,6 +773,87 @@ mod tests {
         nips::nip44::{self, Version as Nip44Version},
         types::Timestamp,
     };
+
+    #[test]
+    fn replay_retention_uses_server_time_not_the_newest_request_timestamp() {
+        let root = tempfile::tempdir().unwrap();
+        let guard = ReplayGuard::new(root.path()).unwrap();
+        guard.consume("sender", "old", 880, 1000, false).unwrap();
+        guard.consume("sender", "new", 1001, 1000, false).unwrap();
+        assert!(matches!(
+            guard.consume("sender", "old", 880, 1000, false),
+            Err(PeerRpcError::Replay)
+        ));
+        guard
+            .consume("sender", "future", 1120, 1000, false)
+            .unwrap();
+        assert!(matches!(
+            guard.consume("sender", "old", 880, 1000, false),
+            Err(PeerRpcError::Replay)
+        ));
+    }
+
+    #[tokio::test]
+    async fn peer_admission_bounds_concurrency_body_time_and_size_before_authentication() {
+        use axum::{body::Body, http::Request};
+        use std::time::Duration;
+        use tower::ServiceExt;
+        let permits = Arc::new(tokio::sync::Semaphore::new(1));
+        let limits = PeerRequestLimits {
+            permits: permits.clone(),
+            body_timeout: Duration::from_millis(20),
+        };
+        let app = Router::new()
+            .route(
+                "/peer-rpc",
+                axum::routing::post(|| async { StatusCode::OK }),
+            )
+            .route(
+                "/peer-saves-object",
+                axum::routing::post(|| async { StatusCode::OK }),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                limits,
+                limit_peer_request,
+            ));
+        for path in ["/peer-rpc", "/peer-saves-object"] {
+            let occupied = permits.acquire().await.unwrap();
+            let request = Request::builder()
+                .method("POST")
+                .uri(path)
+                .body(Body::empty())
+                .unwrap();
+            assert_eq!(
+                app.clone().oneshot(request).await.unwrap().status(),
+                StatusCode::SERVICE_UNAVAILABLE
+            );
+            drop(occupied);
+            let stalled = futures::stream::pending::<Result<Bytes, std::io::Error>>();
+            let request = Request::builder()
+                .method("POST")
+                .uri(path)
+                .body(Body::from_stream(stalled))
+                .unwrap();
+            assert_eq!(
+                app.clone().oneshot(request).await.unwrap().status(),
+                StatusCode::REQUEST_TIMEOUT
+            );
+            let request = Request::builder()
+                .method("POST")
+                .uri(path)
+                .body(Body::from(vec![0; MAX_PEER_EVENT_BYTES + 1]))
+                .unwrap();
+            assert_eq!(
+                app.clone().oneshot(request).await.unwrap().status(),
+                StatusCode::PAYLOAD_TOO_LARGE
+            );
+            assert_eq!(permits.available_permits(), 1);
+        }
+        assert_eq!(
+            MAX_PEER_EVENT_BYTES,
+            crate::identity::MAX_ENCRYPTED_PAYLOAD_BYTES
+        );
+    }
 
     const NOW: u64 = 1_700_000_000;
 

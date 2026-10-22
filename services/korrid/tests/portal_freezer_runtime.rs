@@ -19,5 +19,10 @@ async fn serve_native_portal_freezer_runtime() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:43117")
         .await
         .unwrap();
-    axum::serve(listener, router).await.unwrap();
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }

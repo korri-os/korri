@@ -60,7 +60,14 @@ async fn local_rpc_download_retry_and_launch_gate_share_cache_truth() {
     .0;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}/rpc", listener.local_addr().unwrap());
-    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap()
+    });
     let client = reqwest::Client::new();
     let call = |method: &'static str, payload: Value, token: &'static str| {
         let client = client.clone();
@@ -189,6 +196,9 @@ async fn acquisition_status_resolves_the_same_explicit_runner_as_session_start()
                 Request::builder()
                     .method("POST")
                     .uri("/rpc")
+                    .extension(axum::extract::ConnectInfo(
+                        "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                    ))
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer acquisition-test")
                     .header("Origin", "http://127.0.0.1:8099")
@@ -344,6 +354,9 @@ async fn game_acquisition_methods_decode_and_need_a_device_library() {
                 Request::builder()
                     .method("POST")
                     .uri("/rpc")
+                    .extension(axum::extract::ConnectInfo(
+                        "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                    ))
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer acquisition-test")
                     .header("Origin", "http://127.0.0.1:8099")

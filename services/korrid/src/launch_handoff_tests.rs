@@ -25,6 +25,9 @@ async fn call(app: &Router, token: &str, method: &str, payload: Value) -> (Statu
             Request::builder()
                 .method("POST")
                 .uri("/rpc")
+                .extension(axum::extract::ConnectInfo(
+                    "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                ))
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::AUTHORIZATION, format!("Bearer {token}"))
                 .header(header::ORIGIN, ORIGIN)

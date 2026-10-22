@@ -68,6 +68,9 @@ async fn request(
     let mut builder = Request::builder()
         .method("POST")
         .uri("/rpc")
+        .extension(axum::extract::ConnectInfo(
+            "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+        ))
         .header(header::CONTENT_TYPE, "application/json");
     if let Some(bearer) = bearer {
         builder = builder.header(header::AUTHORIZATION, bearer);
@@ -323,6 +326,9 @@ async fn host_count_capability_is_exact_and_keeps_bearer_origin_checks() {
         let mut builder = Request::builder()
             .method("POST")
             .uri("/rpc")
+            .extension(axum::extract::ConnectInfo(
+                "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+            ))
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::AUTHORIZATION, &bearer)
             .header(header::ORIGIN, ORIGIN);

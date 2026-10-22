@@ -57,6 +57,8 @@ impl NativeClient {
     ) -> Self {
         let http = reqwest::Client::builder()
             .timeout(NATIVE_RPC_TIMEOUT)
+            .connect_timeout(crate::federation::PEER_CONNECT_TIMEOUT)
+            .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("construct native upstream client");
@@ -94,6 +96,8 @@ impl NativeClient {
     pub fn new(base_url: String) -> Self {
         let http = reqwest::Client::builder()
             .timeout(NATIVE_RPC_TIMEOUT)
+            .connect_timeout(crate::federation::PEER_CONNECT_TIMEOUT)
+            .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("construct native upstream client");

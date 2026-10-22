@@ -1948,6 +1948,9 @@ esac
                 .clone()
                 .oneshot(
                     Request::post("/rpc")
+                        .extension(axum::extract::ConnectInfo(
+                            "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                        ))
                         .header("content-type", "application/json")
                         .header("authorization", "Bearer startup-test-capability")
                         .header("origin", "http://korrid.test")

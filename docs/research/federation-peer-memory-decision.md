@@ -334,14 +334,43 @@ remain pending and retry on the next poll; total write failure uses backoff.
 A crash burns a reservation and restart makes a newer one. No publication state
 or recipient-delivery schema was added to the private document.
 
-Linux keeps `KORRID_RELAYS`. `KORRID_ADVERTISED_ENDPOINTS` is a JSON array of
-strict HTTP(S) origins; its default is empty and valid query-only operation.
-`KORRID_MOONLIGHT_ADDRESS` is optional. The reloaded readable `host.title` supplies
-the authenticated label; the NixOS service supplies standard `HOSTNAME` from
-`networking.hostName` as the fallback. Both existing Nix module interfaces expose
-`advertisedEndpoints` (default `[]`) and nullable `moonlightAddress`. There is no
-new readable config field or label option. WebSocket rules apply only to relays,
-not peer endpoints.
+Linux keeps `KORRID_RELAYS`. korrid derives up to eight strict HTTP origins
+from its current up, non-loopback interface addresses and its actual listener
+port. Unspecified, multicast, broadcast and IPv6 link-local addresses are not
+advertised. IPv4-mapped addresses are normalized and duplicates removed. Sort
+order is Tailscale IPv4 (100.64/10), Tailscale IPv6 (fd7a:115c:a1e0::/48),
+private IPv4, other IPv4, other ULA, global IPv6, then IPv4 link-local; numeric
+address order breaks ties. The first eight fit the existing EndpointRecord
+candidate bound. An IPv4-only or specifically bound listener advertises only
+addresses it can accept. A loopback-only embedded server remains query-only.
+
+A one-second getifaddrs poll wakes discovery when that set changes, including
+when it becomes empty. It adds no dependency and does not poll relays on each
+tick. Every publication cycle collects addresses again; failed collection
+prevents publication rather than advertising stale addresses. Product listeners
+use a dual-stack IPv6 wildcard socket and open their TCP port on all interfaces.
+The local portal router (including CORS preflight and native input) admits only
+loopback socket peers. The public surface is the signed `/peer-rpc` and
+`/peer-saves-object` routes. No announcement or persisted field changes.
+
+`KORRID_MOONLIGHT_ADDRESS` remains optional. The reloaded readable `host.title`
+supplies the authenticated label, with blank titles ignored; the NixOS service
+supplies standard `HOSTNAME` from `networking.hostName` as the fallback. These
+are validated when endpoints exist. The NixOS Moonlight option is always
+validated, independent of the current network. There is no new readable config
+field or label option. WebSocket rules apply only to relays, not peer endpoints.
+
+Public HTTP/1 transport bounds remote connections to 32, request headers to
+10 seconds and 16 KiB, and simultaneous peer requests (including pre-auth body
+buffering and signature/decryption work) to four. Peer request bodies have a
+15-second read deadline and the identity verifier's existing 6 MiB limit.
+Save-object response streaming has no new deadline or size limit. These limits
+bound unauthenticated exposure without cutting off legitimate long transfers.
+TCP establishment for peer RPC and save traffic has a 200 ms timeout per
+candidate, leaving room for eight candidates in the three-second pre-launch
+budget. Peer origins bypass HTTP proxies so route failure is a direct TCP
+failure, not an ambiguous proxy response.
+
 
 Android explicitly reloads the existing config coordinator and checks its
 SnapshotAuthorization before reading `host.relays`. Android publishes its owner

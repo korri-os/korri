@@ -180,8 +180,7 @@ mod tests {
         );
         let native_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("ws://{}/", native_listener.local_addr().unwrap());
-        let native_app =
-            native_app.layer(axum::middleware::from_fn(crate::require_loopback_native));
+        let native_app = native_app.layer(axum::middleware::from_fn(crate::require_loopback));
         let native_server = tokio::spawn(async move {
             axum::serve(
                 native_listener,

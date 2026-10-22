@@ -3,6 +3,7 @@
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 
 use crate::RpcRequest;
+use subtle::ConstantTimeEq;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PortalPermission {
@@ -204,7 +205,8 @@ impl PortalAccess {
     /// Same representation as Authorization, supplied in the first WS text frame.
     /// Never include the submitted value in an error or diagnostic.
     pub(crate) fn authorize_bearer(&self, bearer: &str) -> Result<(), StatusCode> {
-        if bearer.strip_prefix("Bearer ") == Some(self.capability.as_str()) {
+        let supplied = bearer.strip_prefix("Bearer ").unwrap_or("");
+        if bool::from(supplied.as_bytes().ct_eq(self.capability.as_bytes())) {
             Ok(())
         } else {
             Err(StatusCode::UNAUTHORIZED)
@@ -259,6 +261,26 @@ mod tests {
 
     const TOKEN: &str = "portal-test-token";
     const ORIGIN: &str = "http://127.0.0.1:8099";
+
+    #[test]
+    fn bearer_requires_an_exact_token() {
+        let access = PortalAccess::new(TOKEN, ORIGIN, PortalPermission::Full);
+        assert_eq!(access.authorize_bearer(&format!("Bearer {TOKEN}")), Ok(()));
+        for value in [
+            "".to_owned(),
+            TOKEN.into(),
+            format!("bearer {TOKEN}"),
+            format!("Bearer x{TOKEN}"),
+            format!("Bearer {}", &TOKEN[..TOKEN.len() - 1]),
+            format!("Bearer {}x", &TOKEN[..TOKEN.len() - 1]),
+            format!("Bearer é{TOKEN}"),
+        ] {
+            assert_eq!(
+                access.authorize_bearer(&value),
+                Err(StatusCode::UNAUTHORIZED)
+            );
+        }
+    }
 
     #[test]
     fn rpc_native_origin_remains_optional_but_socket_origin_is_required() {
@@ -465,6 +487,9 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri("/rpc")
+                    .extension(axum::extract::ConnectInfo(
+                        "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                    ))
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
                     .header(header::ORIGIN, ORIGIN)

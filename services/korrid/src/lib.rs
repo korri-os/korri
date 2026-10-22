@@ -41,6 +41,7 @@ pub mod local_signer;
 pub mod native_input;
 pub mod network;
 pub mod onboarding;
+pub mod peer_listener;
 mod peer_rpc;
 pub mod play_log;
 pub mod plugin_admin;
@@ -4365,7 +4366,7 @@ pub fn host_routers_with_storage_and_private(
     (lan, local)
 }
 
-async fn require_loopback_native(
+pub async fn require_loopback(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
@@ -4373,7 +4374,7 @@ async fn require_loopback_native(
     let local = request
         .extensions()
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
-        .is_some_and(|peer| peer.0.ip().is_loopback());
+        .is_some_and(|peer| peer.0.ip().to_canonical().is_loopback());
     if !local {
         return axum::http::StatusCode::FORBIDDEN.into_response();
     }
@@ -4403,7 +4404,7 @@ pub fn host_routers_with_federation(
     });
     let (native_router, native_source) = match native {
         Some((router, source)) => (
-            Some(router.layer(axum::middleware::from_fn(require_loopback_native))),
+            Some(router.layer(axum::middleware::from_fn(require_loopback))),
             Some(Arc::new(source)),
         ),
         None => (None, None),
@@ -4525,7 +4526,7 @@ fn portal_router_for(lan: &AppState, portal_access: Option<PortalAccess>) -> Opt
     portal_access.map(|access| {
         let mut browser = lan.clone();
         browser.portal_access = Some(access);
-        portal_router_from_state(browser)
+        portal_router_from_state(browser).layer(axum::middleware::from_fn(require_loopback))
     })
 }
 
@@ -4978,10 +4979,12 @@ mod tests {
             (Some("192.0.2.1:1234"), StatusCode::FORBIDDEN),
             (Some("127.0.0.1:1234"), StatusCode::OK),
             (Some("[::1]:1234"), StatusCode::OK),
+            (Some("[::ffff:127.0.0.1]:1234"), StatusCode::OK),
+            (Some("[::ffff:192.0.2.1]:1234"), StatusCode::FORBIDDEN),
         ] {
             let app = Router::new()
                 .route("/", axum::routing::get(|| async { StatusCode::OK }))
-                .layer(axum::middleware::from_fn(require_loopback_native));
+                .layer(axum::middleware::from_fn(require_loopback));
             let mut request = Request::builder().uri("/").body(Body::empty()).unwrap();
             if let Some(peer) = peer {
                 request.extensions_mut().insert(axum::extract::ConnectInfo(
@@ -4989,6 +4992,64 @@ mod tests {
                 ));
             }
             assert_eq!(app.oneshot(request).await.unwrap().status(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn portal_rpc_is_unreachable_from_non_loopback_even_with_the_capability() {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(&config, "label = \"test\"\ngames = []\n").unwrap();
+        let runtime = host::HostRuntime::from_paths_with_backend(
+            &config,
+            None,
+            root.path().join("private"),
+            Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+        );
+        let (app, _) = secure_host_routers(
+            runtime,
+            &root.path().join("private"),
+            Some(PortalAccess::new(
+                "right-token",
+                "http://portal.test",
+                PortalPermission::Full,
+            )),
+        );
+        for (peer, expected) in [
+            ("192.0.2.1:1234", StatusCode::FORBIDDEN),
+            ("[2001:db8::1]:1234", StatusCode::FORBIDDEN),
+            ("127.0.0.1:1234", StatusCode::OK),
+        ] {
+            let request = Request::builder()
+                .method("POST")
+                .uri("/rpc")
+                .extension(axum::extract::ConnectInfo(
+                    peer.parse::<std::net::SocketAddr>().unwrap(),
+                ))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::AUTHORIZATION, "Bearer right-token")
+                .body(Body::from(r#"{"_tag":"system.health","payload":{}}"#))
+                .unwrap();
+            assert_eq!(
+                app.clone().oneshot(request).await.unwrap().status(),
+                expected,
+                "{peer}"
+            );
+            let preflight = Request::builder()
+                .method("OPTIONS")
+                .uri("/rpc")
+                .extension(axum::extract::ConnectInfo(
+                    peer.parse::<std::net::SocketAddr>().unwrap(),
+                ))
+                .header(header::ORIGIN, "http://portal.test")
+                .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .body(Body::empty())
+                .unwrap();
+            assert_eq!(
+                app.clone().oneshot(preflight).await.unwrap().status(),
+                expected,
+                "preflight {peer}"
+            );
         }
     }
 

@@ -999,6 +999,7 @@ assert requirements.constants.surfaceId == "pico";
 assert rg353m.services.korri.webSurfaceHost.surfaceId == "pico";
 assert rg353m.systemd.services.korri-chromium-kiosk.environment.KORRI_WEB_SURFACE_URL == "http://127.0.0.1:8099/?surface=pico";
 assert rg353m.services.korridLinuxDevice.address == requirements.constants.korridAddress;
+assert builtins.elem 39217 rg353m.networking.firewall.allowedTCPPorts;
 assert
   rg353m.services.korri.compositor.kiosk.extraChromiumArgs == [
     "--disable-gpu"

@@ -65,12 +65,14 @@ impl DiscoveryInputs {
     pub fn linux(
         config: &ConfigSnapshotCoordinator,
         initial: &Self,
+        advertised_endpoints: Vec<String>,
     ) -> Result<Self, FederationError> {
         let state = config.reload();
         if state.authorization != SnapshotAuthorization::Authorized {
             return Err(FederationError::Identity);
         }
         let mut inputs = initial.clone();
+        inputs.advertised_endpoints = advertised_endpoints;
         if inputs.advertised_endpoints.is_empty() {
             inputs.label = None;
             inputs.moonlight_address = None;
@@ -80,6 +82,7 @@ impl DiscoveryInputs {
                 .host
                 .as_ref()
                 .and_then(|host| host.title.clone())
+                .filter(|title| !title.trim().is_empty())
                 .or(inputs.label);
         }
         Ok(inputs)

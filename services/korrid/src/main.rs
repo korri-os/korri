@@ -183,13 +183,7 @@ async fn serve_host_surfaces(
     local_failure: oneshot::Receiver<io::Error>,
     local_router: Router,
 ) -> (&'static str, io::Result<()>) {
-    let lan_server = async move {
-        axum::serve(
-            lan_listener,
-            lan_router.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .await
-    };
+    let lan_server = async move { korrid::peer_listener::serve(lan_listener, lan_router).await };
     let local_server = serve_local_control(local_listener, local_failure, local_router);
     first_server_exit(lan_server, local_server).await
 }
@@ -623,6 +617,11 @@ async fn main() {
             .map(PathBuf::from)
             .unwrap_or_else(|| std::env::temp_dir().join("korri")),
     };
+    let configured_address = std::env::var("KORRID_ADDRESS").ok();
+    let address =
+        resolve_address(mode, configured_address.as_deref()).expect("valid KORRID_ADDRESS");
+    let lan_listener = korrid::peer_listener::bind(address).expect("bind korrid server");
+    let address = lan_listener.local_addr().expect("bound korrid address");
     let discovery = if local_only_owner {
         None
     } else {
@@ -630,16 +629,9 @@ async fn main() {
             std::env::var("KORRID_RELAYS").ok().as_deref(),
         )
         .unwrap_or_else(|error| panic!("invalid relay configuration: {error}"));
-        let advertised_endpoints = std::env::var("KORRID_ADVERTISED_ENDPOINTS")
-            .ok()
-            .map(|json| {
-                serde_json::from_str::<Vec<String>>(&json)
-                    .expect("KORRID_ADVERTISED_ENDPOINTS must be a JSON array")
-            })
-            .unwrap_or_default();
         let initial_inputs = DiscoveryInputs {
             relays,
-            advertised_endpoints,
+            advertised_endpoints: Vec::new(),
             label: std::env::var("HOSTNAME").ok(),
             moonlight_address: std::env::var("KORRID_MOONLIGHT_ADDRESS").ok(),
         };
@@ -651,7 +643,14 @@ async fn main() {
             Discovery::new(
                 resources.directory.clone(),
                 resources.credentials.clone(),
-                Arc::new(move || DiscoveryInputs::linux(&config, &initial_inputs)),
+                Arc::new(move || {
+                    DiscoveryInputs::linux(
+                        &config,
+                        &initial_inputs,
+                        korrid::federation::interfaces::endpoints(address)
+                            .map_err(|_| korrid::federation::FederationError::Endpoint)?,
+                    )
+                }),
                 Arc::new(korrid::relay::WebSocketRelayTransport::new()),
                 DiscoveryTiming::default(),
                 Arc::new(|| {
@@ -666,7 +665,12 @@ async fn main() {
     };
     let wake = discovery.as_ref().map(|(control, _)| control.clone());
     let (lan_router, local_control_router, host_runtime) = match mode {
-        Mode::Brain => (brain_router(resources, wake), None, None),
+        Mode::Brain => (
+            brain_router(resources, wake)
+                .layer(axum::middleware::from_fn(korrid::require_loopback)),
+            None,
+            None,
+        ),
         Mode::Host => {
             let origin = std::env::var("KORRID_PORTAL_ORIGIN").ok();
             let credentials = std::env::var_os("CREDENTIALS_DIRECTORY").map(PathBuf::from);
@@ -682,13 +686,6 @@ async fn main() {
             (lan, Some(local), Some(runtime))
         }
     };
-    let configured_address = std::env::var("KORRID_ADDRESS").ok();
-    let address =
-        resolve_address(mode, configured_address.as_deref()).expect("valid KORRID_ADDRESS");
-    let lan_listener = tokio::net::TcpListener::bind(address)
-        .await
-        .expect("bind korrid server");
-
     // Install both signal handlers before spawning discovery. Either serving
     // failure and either shutdown signal cancel and join the same task.
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
@@ -713,11 +710,7 @@ async fn main() {
         } else {
             (
                 "LAN",
-                axum::serve(
-                    lan_listener,
-                    lan_router.into_make_service_with_connect_info::<SocketAddr>(),
-                )
-                .await,
+                korrid::peer_listener::serve(lan_listener, lan_router).await,
             )
         }
     };
@@ -728,6 +721,18 @@ async fn main() {
         }
     };
     let result = if let Some((wake, discovery)) = discovery {
+        let monitor = korrid::federation::interfaces::watch_endpoints(
+            wake.clone(),
+            move || korrid::federation::interfaces::endpoints(address),
+            korrid::federation::interfaces::ADDRESS_POLL,
+        );
+        let discovery = async move {
+            tokio::pin!(discovery);
+            tokio::pin!(monitor);
+            // Observe addresses before the first publication can read them.
+            // Otherwise a change between those reads could miss its wake.
+            tokio::select! { biased; _ = &mut monitor => {}, _ = &mut discovery => {} }
+        };
         serve_with_discovery(serving, shutdown, wake, discovery).await
     } else {
         tokio::select! {
@@ -1092,6 +1097,9 @@ mod tests {
                     Request::builder()
                         .method("POST")
                         .uri("/rpc")
+                        .extension(axum::extract::ConnectInfo(
+                            "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                        ))
                         .header("Content-Type", "application/json")
                         .header("Authorization", "Bearer private-token")
                         .header("Origin", origin)

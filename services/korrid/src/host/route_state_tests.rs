@@ -39,6 +39,9 @@ async fn rpc(app: &Router, method: &str, payload: Value) -> Value {
         .clone()
         .oneshot(
             Request::post("/rpc")
+                .extension(axum::extract::ConnectInfo(
+                    "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                ))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({"_tag": method, "payload": payload}).to_string(),
@@ -398,6 +401,9 @@ async fn unowned_device_can_browse_and_reserve_but_native_start_needs_an_owner()
             .clone()
             .oneshot(
                 Request::post("/rpc")
+                    .extension(axum::extract::ConnectInfo(
+                        "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                    ))
                     .header("content-type", "application/json")
                     .header("authorization", "Bearer unowned-test")
                     .header("origin", "http://127.0.0.1:8099")

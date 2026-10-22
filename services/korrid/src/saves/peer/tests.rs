@@ -194,6 +194,9 @@ impl Node {
         self.service.owner().unwrap()
     }
     fn remember(&self, peer: &Node) {
+        self.remember_candidates(peer, vec![peer.base.clone()]);
+    }
+    fn remember_candidates(&self, peer: &Node, candidates: Vec<String>) {
         let identity = peer.service.credentials.identity_snapshot().unwrap();
         let token = self.service.directory.begin_work().unwrap();
         self.service
@@ -205,7 +208,7 @@ impl Node {
             device_public_key: peer.device(),
             owner_public_key: peer.owner(),
             generation: 1,
-            candidates: vec![peer.base.clone()],
+            candidates,
             issued_at: now,
             expires_at: now + 3600,
             label: None,
@@ -898,4 +901,26 @@ async fn prelaunch_retains_peer_whose_signed_heads_arrive_but_records_time_out()
         .unwrap();
     assert!(other_game[0].transfer.is_ok());
     assert!(other_game[0].heads_without_records.is_empty());
+}
+
+#[tokio::test]
+async fn stalled_connect_candidate_does_not_consume_the_prelaunch_budget() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let blocked = socket.listen(0).unwrap();
+    let address = blocked.local_addr().unwrap();
+    let _queued = tokio::net::TcpStream::connect(address).await.unwrap();
+    a.remember_candidates(&b, vec![format!("http://{address}"), b.base.clone()]);
+    b.remember(&a);
+    b.seed(b"progress", vec![]);
+    let heads = tokio::time::timeout(
+        Duration::from_secs(2),
+        a.service.remote_heads(&a.owner(), &b.device()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(heads.games.len(), 1);
 }

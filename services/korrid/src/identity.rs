@@ -37,7 +37,7 @@ pub(crate) const OWNER_EVENT_KIND: u16 = 30_078;
 const OWNER_EVENT_PREFIX: &str = "org.korri.device-owner:";
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_ENCRYPTED_PLAINTEXT_BYTES: usize = 4 * 1024 * 1024;
-const MAX_ENCRYPTED_PAYLOAD_BYTES: usize = 6 * 1024 * 1024;
+pub(crate) const MAX_ENCRYPTED_PAYLOAD_BYTES: usize = 6 * 1024 * 1024;
 static IDENTITY_STORAGE: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

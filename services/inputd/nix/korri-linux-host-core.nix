@@ -301,10 +301,6 @@ in
       default = "/var/lib/korrid";
     };
     relays = lib.mkOption { type = lib.types.listOf lib.types.str; };
-    advertisedEndpoints = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
-    };
     ownerBindingFile = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
       default = null;
@@ -483,13 +479,12 @@ in
       localSignerUid = cfg.serviceIdentities.localSignerUid;
       localSignerGid = cfg.serviceIdentities.localSignerGid;
       inherit deviceConfig;
-      address = "0.0.0.0:${toString cfg.apiPort}";
+      address = "[::]:${toString cfg.apiPort}";
       storageRoot = cfg.storageRoot;
       privateStateRoot = cfg.privateStateRoot;
       inherit (cfg)
         relays
         ownerBindingFile
-        advertisedEndpoints
         ;
       inherit compositorControlDirectory compositorControlSocket;
       neverFocusAppIds = cfg.compositor.neverFocusAppIds;

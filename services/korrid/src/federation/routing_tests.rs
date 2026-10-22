@@ -1131,3 +1131,33 @@ async fn newer_failure_dominates_a_late_success_from_the_registry() {
     assert!(task.await.unwrap().is_ok());
     assert_eq!(d.snapshot().unwrap()[0].state, failed);
 }
+
+#[tokio::test]
+async fn stalled_connect_candidate_leaves_time_for_reads_and_mutations() {
+    let f = Fixture::new();
+    let live = host(&f).await;
+    // Linux's completed-handshake queue has backlog + 1 slots. Fill it without
+    // accepting, so the next TCP connect stalls rather than being refused.
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let blocked = socket.listen(0).unwrap();
+    let address = blocked.local_addr().unwrap();
+    let _queued = tokio::net::TcpStream::connect(address).await.unwrap();
+    let client = NativeClient::new_secure_candidates(
+        vec![format!("http://{address}"), live],
+        f.key(),
+        f.credentials.clone(),
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(2), client.catalog_snapshot())
+        .await
+        .unwrap()
+        .unwrap();
+    // Connect failure is known to precede sending, so mutation retry is safe.
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        client.prepare_stream("game"),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+}

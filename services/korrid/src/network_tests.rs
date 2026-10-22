@@ -112,7 +112,14 @@ async fn network_and_onboarding_rpc_round_trip_uses_portal_authority_and_real_ma
     let app = crate::portal_router_from_state(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/rpc", listener.local_addr().unwrap());
-    let task = tokio::spawn(async { axum::serve(listener, app).await.unwrap() });
+    let task = tokio::spawn(async {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap()
+    });
     let client = reqwest::Client::new();
     let denied = client
         .post(&url)
@@ -209,7 +216,14 @@ async fn local_sessions_wifi_scan_reaches_network_manager_through_host_http_rout
         .router(portal);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/rpc", listener.local_addr().unwrap());
-    let task = tokio::spawn(async { axum::serve(listener, app).await.unwrap() });
+    let task = tokio::spawn(async {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap()
+    });
     let response = reqwest::Client::new()
         .post(url)
         .bearer_auth("wifi-test-capability")

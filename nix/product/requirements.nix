@@ -23,7 +23,7 @@ let
     browserNeverFocusAppIds = [ "chromium-browser" ];
     # Every product device opens Pico.
     surfaceId = "pico";
-    korridAddress = "127.0.0.1:39217";
+    korridAddress = "[::]:39217";
     publishers = {
       "@korri" = {
         publicKey = "korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=";
@@ -254,7 +254,7 @@ in
       "kiosk"
       "enable"
     ] true)
-    (lockedSettingWithTestValue "loopback korrid bind address" [
+    (lockedSettingWithTestValue "all-interface korrid peer bind address" [
       "services"
       "korridLinuxDevice"
       "address"

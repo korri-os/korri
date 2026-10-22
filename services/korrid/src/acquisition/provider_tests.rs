@@ -275,6 +275,9 @@ impl World {
                 Request::builder()
                     .method("POST")
                     .uri("/rpc")
+                    .extension(axum::extract::ConnectInfo(
+                        "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                    ))
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer device")
                     .header("Origin", "http://127.0.0.1:8099")
