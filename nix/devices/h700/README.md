@@ -75,6 +75,20 @@ engine. The H6-class engine takes physical addresses (`h700` module check
 enforces the device tree shape). Evidence:
 `docs/research/h700-video-engine-worksheet.md`, section 6.
 
+## Hardware H.264 encode
+
+Patch 0237 adds a stateful V4L2 M2M encoder as Cedrus' second video node
+(`/dev/video1`). It accepts single-planar NV12 and returns Annex-B H.264,
+with joined/repeated SPS/PPS, Main/High profiles, fixed QP or bitrate-driven
+QP feedback, and STOP/LAST/EOS drain. Decode and encode share one engine
+scheduler and the existing physical-address `ve-pool`; no IOMMU link is added.
+
+This first milestone is intra-only: every frame is an IDR and the reported
+GOP size is 1. The adapted T527 P path produced corrupt pictures on H700 and
+is not shipped. The Sunshine FFmpeg consumer and the device acceptance tools
+are documented in [`venc-test/README.md`](venc-test/README.md). The streaming
+host itself is not installed by this kernel change.
+
 ## Boot sector layout
 
 The Allwinner BROM loads the SPL from sector 16 (8 KiB) on the SD card:
@@ -98,5 +112,6 @@ is `ttyS0` at 115200 baud.
   until NTP corrects it.
 - HDMI audio needs the ROCKNIX `sunxi_v2` ahub driver, which ROCKNIX also
   leaves disabled. Only the codec (speaker and headphone) is expected to play.
-- No hardware video encoder is selected; the streaming host is not installed.
-  Hardware decode works; encoding has no driver.
+- The H.264 encoder is intra-only. Tight CBR, P frames, separate header
+  packets, Baseline/CAVLC and a zero-copy GPU input path are not established.
+  The streaming host is not installed.

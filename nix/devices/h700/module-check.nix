@@ -79,18 +79,33 @@ assert lib.allUnique (map (gadget: gadget.hostMac) gadgets);
 # Any `iommus` property makes Linux turn on translation for every master,
 # and the display engine then faults on wake (patch 0236; see
 # docs/research/h700-video-engine-worksheet.md).
-pkgs.runCommand "h700-module-check" { nativeBuildInputs = [ pkgs.dtc ]; } ''
-  for name in ${lib.concatMapStringsSep " " (facts: facts.dtb) (builtins.attrValues expected)}; do
-    dtc -q -I dtb -O dts "${crossKernel}/dtbs/allwinner/$name.dtb" > tree.dts
-    if grep -q 'iommus' tree.dts; then
-      echo "$name: a node links the IOMMU" >&2; exit 1
-    fi
-    sed -n '/video-codec@1c0e000 {/,/};/p' tree.dts > ve.dts
-    grep -q 'sun50i-h616-video-engine' ve.dts || { echo "$name: no H616 video engine" >&2; exit 1; }
-    grep -q 'memory-region' ve.dts || { echo "$name: video engine has no memory pool" >&2; exit 1; }
-    sed -n '/ve-pool {/,/};/p' tree.dts > pool.dts
-    grep -q 'shared-dma-pool' pool.dts && grep -q 'reusable' pool.dts \
-      || { echo "$name: video engine pool is not a reusable CMA pool" >&2; exit 1; }
-  done
-  touch $out
-''
+pkgs.runCommand "h700-module-check"
+  {
+    nativeBuildInputs = [
+      pkgs.dtc
+      pkgs.binutils
+    ];
+  }
+  ''
+    # Both nodes must ship in the same module, with one engine owner.
+    module="${crossKernel.modules}/lib/modules/7.2.0/kernel/drivers/staging/media/sunxi/cedrus/sunxi-cedrus.ko"
+    nm "$module" > symbols
+    grep -q ' T cedrus_enc_register$' symbols
+    grep -q ' T cedrus_enc_irq$' symbols
+    grep -q ' T cedrus_device_run$' symbols
+    grep -aq 'cedrus-encoder' "$module"
+
+    for name in ${lib.concatMapStringsSep " " (facts: facts.dtb) (builtins.attrValues expected)}; do
+      dtc -q -I dtb -O dts "${crossKernel}/dtbs/allwinner/$name.dtb" > tree.dts
+      if grep -q 'iommus' tree.dts; then
+        echo "$name: a node links the IOMMU" >&2; exit 1
+      fi
+      sed -n '/video-codec@1c0e000 {/,/};/p' tree.dts > ve.dts
+      grep -q 'sun50i-h616-video-engine' ve.dts || { echo "$name: no H616 video engine" >&2; exit 1; }
+      grep -q 'memory-region' ve.dts || { echo "$name: video engine has no memory pool" >&2; exit 1; }
+      sed -n '/ve-pool {/,/};/p' tree.dts > pool.dts
+      grep -q 'shared-dma-pool' pool.dts && grep -q 'reusable' pool.dts \
+        || { echo "$name: video engine pool is not a reusable CMA pool" >&2; exit 1; }
+    done
+    touch $out
+  ''
