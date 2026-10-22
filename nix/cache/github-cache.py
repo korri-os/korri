@@ -369,11 +369,12 @@ def release(repo, tag):
 
 
 def assets(repo, release_id):
-    # Pages are not a snapshot. Uploads can repeat a boundary asset; deletions
-    # can skip one without any duplicate. Require two agreeing full scans, not
-    # a union that could keep deleted assets. Download counters are irrelevant.
+    # Name-ordered pages can repeat an ID after insertion or skip one after
+    # deletion. Accept growth, but rescan after a prior ID disappears. Never
+    # retain deleted assets in a union; callers verify the newer asset fields.
     previous = None
-    for _ in range(20):
+    delay = 2
+    for scan in range(20):
         result = {}
         page = 1
         while True:
@@ -395,14 +396,15 @@ def assets(repo, release_id):
             if len(batch) < 100:
                 break
             page += 1
-        snapshot = {
-            name: tuple(asset.get(key) for key in ("id", "state", "size", "digest"))
-            for name, asset in result.items()
-        }
-        if snapshot == previous:
-            return result
-        previous = snapshot
-    raise ValueError("GitHub asset listing did not stabilize after 20 scans")
+        ids = {asset["id"] for asset in result.values()}
+        if previous is not None:
+            if previous <= ids:
+                return result
+            if scan < 19:
+                time.sleep(delay)
+                delay = min(delay + 2, 10)
+        previous = ids
+    raise ValueError("GitHub asset listing kept losing IDs after 20 scans")
 
 
 def matches(asset, path):

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from urllib.parse import parse_qs, urlsplit
 
@@ -304,14 +305,14 @@ class AssetListingTest(unittest.TestCase):
             "digest": "sha256:" + hashlib.sha256(b"x").hexdigest(),
         }
 
-    def invoke(self, command="--assets", *args):
+    def invoke(self, command="--assets", *args, timeout=30):
         return subprocess.run(
             [sys.executable, str(Path(__file__).resolve()), command, *map(str, args)],
             env=os.environ | {"PATH": str(self.root) + os.pathsep + os.environ["PATH"]},
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=30,
+            timeout=timeout,
         )
 
     def listing(self):
@@ -336,7 +337,7 @@ class AssetListingTest(unittest.TestCase):
 
         self.change = insert
         self.assert_complete(self.listing())
-        self.assertEqual(self.scans, 3)
+        self.assertEqual(self.scans, 2)
 
     def test_deleted_starter_skips_an_asset_until_the_next_scan(self):
         self.records[0]["state"] = "starter"
@@ -346,7 +347,9 @@ class AssetListingTest(unittest.TestCase):
                 self.records.pop(0)
 
         self.change = remove
+        started = time.monotonic()
         result = self.listing()
+        self.assertGreaterEqual(time.monotonic() - started, 2)
         self.assert_complete(result)
         self.assertNotIn("asset-0000", result)
         self.assertIn("asset-0100", result)
@@ -379,7 +382,7 @@ class AssetListingTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("duplicate remote asset name", result.stderr)
 
-    def test_integrity_field_changes_require_another_scan(self):
+    def test_only_changed_ids_require_another_scan_not_upload_progress(self):
         for key, value in (
             ("id", 999),
             ("state", "starter"),
@@ -397,16 +400,25 @@ class AssetListingTest(unittest.TestCase):
                 self.change = change
                 result = self.listing()
                 self.assertEqual(result["asset-0000"][key], value)
-                self.assertEqual(self.scans, 3)
+                self.assertEqual(self.scans, 3 if key == "id" else 2)
 
-    def test_continuous_changes_fail_with_a_bounded_read_only_error(self):
+    def test_continuous_insertions_return_every_asset_without_waiting_for_quiet(self):
         def insert():
             self.records.append(self.asset(1000 + self.scans))
 
         self.change = insert
-        result = self.invoke()
+        self.assert_complete(self.listing())
+        self.assertEqual(self.scans, 2)
+
+    def test_continuous_deletions_fail_with_a_bounded_read_only_error(self):
+        def remove():
+            self.records.pop(0)
+
+        self.change = remove
+        # Exercise the real 2..10-second deletion backoff, not a swapped clock.
+        result = self.invoke(timeout=240)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("asset listing did not stabilize", result.stderr)
+        self.assertIn("asset listing kept losing IDs after 20 scans", result.stderr)
         self.assertEqual(self.scans, 20)
 
     def test_missing_or_invalid_ids_cannot_be_treated_as_repeated_assets(self):

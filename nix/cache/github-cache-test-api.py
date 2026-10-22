@@ -2,7 +2,7 @@
 """File-backed `gh api` release-assets contract for offline concurrency tests.
 
 Writes use a process lock, asset bytes live in files, and duplicate POSTs fail
-without replacement. A barrier gives both clients two agreeing initial scans.
+without replacement. A barrier gives both clients the same two initial scans.
 """
 
 import argparse
@@ -47,7 +47,7 @@ def main() -> None:
             size = int(query.get("per_page", ["100"])[0])
             data = data[(page - 1) * size : page * size]
             if config.get("barrier"):
-                # assets() needs two agreeing scans before a write. Keep both
+                # assets() compares two scans before a write. Keep both
                 # readers at the same initial snapshot for both scans.
                 for scan in range(2):
                     marker = root / f"snapshot-{worker}-{scan}"

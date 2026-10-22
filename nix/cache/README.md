@@ -111,16 +111,21 @@ using the existing size, SHA-256 digest, and uploaded-state checks. Narinfos may
 instead pass the existing equivalence check, which preserves the first URL and
 requires all other fields, including signatures, to match. If refresh or
 verification fails, preserve the original POST failure. Never retry a write,
-clobber, or delete an asset. Release-asset listings also require two consecutive
-full scans that agree on names, IDs, states, sizes and SHA-256 digests. A repeated
-name within a scan is accepted only for the same integer asset ID; different IDs
-fail with the name and both IDs. Download counters do not affect agreement.
-After 20 changing scans, the listing fails without writing. Each scan starts
-fresh, so deleted assets are not retained in a union. This costs at least twice
-the listing requests and can still fail during sustained changes. It is not an
-atomic GitHub snapshot; the existing collision and post-upload verification
-checks remain necessary. Both repositories still publish the same format;
-this patch changes only concurrent-upload reconciliation, not the cache protocol.
+clobber, or delete an asset. Release-asset listings accept the newer of two
+consecutive full scans when it contains every asset ID from the earlier scan.
+New assets and changes to upload state, size, digest or download counters do not
+require another scan; callers still verify content with the existing checks.
+A repeated name within a scan is accepted only for the same integer asset ID;
+different IDs fail with the name and both IDs. If an earlier ID disappears, a
+deletion may have shifted page boundaries and skipped another asset. Rescan
+after a delay of 2 seconds, rising by 2 seconds per retry to 10 seconds. After
+20 scans that keep losing IDs, the listing fails without writing. Each scan
+starts fresh, so deleted assets are not retained in a union. This costs at least
+twice the listing requests, but ongoing uploads do not require a quiet release.
+It is not an atomic GitHub snapshot; the existing collision and post-upload
+verification checks remain necessary. Both repositories still publish the same
+format; this patch changes only concurrent-upload reconciliation, not the cache
+protocol.
 
 The second moves metadata publication to the `cache-index` Git branch and Pages.
 The publisher commits additions together and pushes without force. On a rejected
@@ -354,8 +359,9 @@ transport metadata and NAR differences at other upstreams still fail.
 Release-listing checks use a local HTTP server with name-ordered assets changed
 between page requests. They cover repeated IDs after uploads, skipped assets
 after starter deletion, conflicting IDs, changed integrity fields, changing
-download counters, invalid IDs/lists, and bounded failure during continuous
-changes. An uploader also verifies a skipped existing asset without a POST.
+download counters, invalid IDs/lists, successful continuous uploads, and bounded
+failure with real backoff during continuous deletions. An uploader also verifies
+a skipped existing asset without a POST.
 Two concurrent uploader processes also exercise a file-backed `gh api`
 release-assets contract. A barrier makes both clients read the initial asset
 snapshot before either POSTs. The checks cover duplicate NARs, equivalent
