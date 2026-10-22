@@ -184,9 +184,14 @@ jobs:
       # them so builders can substitute them again after garbage collection.
       # Only one job publishes them. The dependency build is not bit for bit
       # reproducible, and every device job builds it at the same time when
-      # Cargo.lock changes. The publisher refuses a path whose upstream NAR
-      # differs, so the job that finished second failed: run 39721502192
-      # rejected korrid-deps after odin2portal had published its own copy.
+      # Cargo.lock changes; run 39721502192 failed on the second copy.
+      #
+      # Build everything first, and retry the build. GitHub release downloads
+      # sometimes answer 404 for a NAR that exists. Nix does not retry a 404:
+      # it builds the path instead, and a cross-built kernel cannot be built
+      # here. Run 39761993867 failed that way on odin2portal. A retry
+      # downloads the NAR again; the publish step below then has nothing
+      # left to build.
       - name: Publish the device closure
         env:
           KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
@@ -196,8 +201,24 @@ jobs:
           GH_TOKEN: ${{ secrets.KORRI_CACHE_GITHUB_TOKEN }}
           DEVICE: ${{ matrix.device }}
         run: |
-          packages=(--package "nixosConfigurations.$DEVICE.config.boot.kernelPackages.kernel")
+          attributes=("nixosConfigurations.$DEVICE.config.boot.kernelPackages.kernel")
           if [ "$DEVICE" = odin2portal ]; then
-            packages+=(--package packages.aarch64-linux.korrid.cargoArtifacts)
+            attributes+=(packages.aarch64-linux.korrid.cargoArtifacts)
           fi
+          targets=(".#nixosConfigurations.$DEVICE.config.system.build.toplevel")
+          packages=()
+          for attribute in "${attributes[@]}"; do
+            targets+=(".#$attribute^*")
+            packages+=(--package "$attribute")
+          done
+          for attempt in 1 2 3; do
+            if nix build --no-link "${targets[@]}"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            echo "device closure build failed; retry $((attempt + 1))/3 in $((attempt * 60))s" >&2
+            sleep "$((attempt * 60))"
+          done
           nix run .#korri-nix-cache-publish -- "$DEVICE" "${packages[@]}"
