@@ -316,3 +316,43 @@ Every decode round produced 55,296,000 bytes with the reference SHA-256 and rais
 On every boot, the compositor's first `output DSI-1 power on` after the panel turned off failed with `[sway/config/output.c:1068] Backend commit failed`, and a second request succeeded. The same happened on the deployed kernel, which has no video engine. Boot `9a3776f3-184d-4dfe-95c5-e588d34aca95` on Image `lgmd22sczwdj0wqcz7g6x343a24ijsfz` failed 5 of 5 first attempts (4 explicit cycles and 1 idle wake), with zero kernel fault lines. The previous deployed boot, `c1cd8297…`, logged 6 such failures during ordinary use. With DRM debug enabled, the failing attempt shows two atomic checks that end without a commit and no kernel error message. The cause is not identified. Option 1 neither causes nor fixes it.
 
 Not established: sustained 60 fps decode, other H.264 profiles, HEVC, MPEG-2 and VP8, decode under memory pressure (the pool is reusable, so allocation may need page migration), and the SP boards, which share the DTB change but were not booted.
+
+Update: the panel wake failure above is fixed in Korri's sway build (`09cdeb527`, #149). wlroots 0.20.2 failed a gamma reset on this CRTC, which has no gamma table. It was unrelated to the video engine.
+
+## 7. Encoder evidence, 2026-10-21
+
+Two research passes looked for H616/H700 encoder register programming. The claims below were checked against the named sources. Claims marked unverified come from the research passes only.
+
+### Hardware encoding already works on H700 hardware, through vendor binaries
+
+- [codebutler/rgsp-cast](https://github.com/codebutler/rgsp-cast) streams an Anbernic RG SP (H700, `sun50iw9`, BaseOS + NextUI, kernel 4.9.170) to Moonlight with H.264 Main from `/dev/fb0` at the 720x480 panel resolution. The engine's ISP does RGB-to-YUV and scaling. The README reports "1.8 ms copy + 1.6 ms encode" per frame and about one seventh of one CPU core. It runs Allwinner's closed `libVE.so`, `libMemAdapter.so` and `libvencoder.so`, taken from TrimUI Smart Pro (H618) firmware v1.1.1, over the stock kernel's `/dev/cedar_dev`. Its README describes the encoder input as an ION buffer behind the IOMMU.
+- [carroarmato0/allwinner-cedar-tools](https://github.com/carroarmato0/allwinner-cedar-tools) has `cedar-probe`, a one-frame H.264 probe for the same vendor libraries on H618 TrimUI devices.
+- Unverified: the stock RG35XX root filesystem ships `/dev/cedar_dev` but not the CedarC libraries.
+
+### The vendor kernel driver programs nothing
+
+The BSP `cedar_ve` driver maps the engine registers into user space, handles clocks, resets and the interrupt wait, and does nothing else (`uboborov/sunxi-cedar-mainline/cedar_ve.c`). All encoder programming lives in the closed user-space libraries. Allwinner's public CedarC trees ship the H.264 decoder as source and the encoder only as binaries.
+
+### An open encoder driver exists for a newer engine
+
+[matheusants/sunxi-venc-t527](https://github.com/matheusants/sunxi-venc-t527) (commit `cfa26fd`, 2026-05-21) is a V4L2 M2M stateful H.264 encoder for the Allwinner T527 (`sun55iw3`, BSP 5.15), written from vendor traces. It shares the engine with Cedrus. Read in its source:
+
+- `VE_CTRL` 0x000 and `VE_MODE` 0x004 are set for AVC encode; the header notes `VE_MODE` = 0x100 "vendor trace".
+- AVC-bank buffer registers take `address >> 8`: bitstream window `0xb80`/`0xb84`, reconstruction `0xbb0`-`0xbb8`, reference `0xba0`-`0xbb8`, MB info, line buffer `0xbc4`, scratch.
+- Reconstruction planes are 128-line aligned; the source says shorter planes overrun.
+- QP register constant `0x08000900 | qp`, corrected from an earlier trace.
+- Buffers come from `videobuf2-dma-contig`.
+- Reported speed at a 792 MHz engine clock: 720p about 183 fps, 1080p about 81 fps.
+
+Bootlin's V3 encoder writes full addresses to these registers and uses a different `VE_CTRL` value. So the T527 driver, not Bootlin's, is the closer template, if the H616 engine matches the T527's.
+
+### Not established
+
+- Whether the H616/H700 encoder matches the T527 encoder. The research pass calls both "Gen 5"; no primary source checked here says so.
+- The H616 `VE_VERSION` value at offset 0xF0. The research pass gives `0x18230040` as inferred only.
+- The meaning of the T527 global setup writes (0x01c, 0x030, 0x040, 0x080, 0x084, 0x088), known only from traces.
+- Whether the encoder can read physically contiguous buffers without the IOMMU. The T527 driver uses contiguous DMA buffers, but its device tree binds an IOMMU master.
+
+### Next step
+
+Record the vendor stack's register writes on H700 hardware, then compare them with the T527 driver. The method: an `LD_PRELOAD` library that maps the `/dev/cedar_dev` register page as `PROT_NONE`, catches each access in a `SIGSEGV` handler, performs it on the real mapping, logs offset, direction and value, and steps past the instruction. It must cover only the register page, not DMA buffers. It needs a vendor-kernel system: the RG35XX Pro's stock Anbernic firmware on a separate SD card, plus the TrimUI CedarC libraries and `cedar-probe`. Nothing is written to the Korri card or any firmware partition. The closed libraries are used for this trace only and are not shipped.
