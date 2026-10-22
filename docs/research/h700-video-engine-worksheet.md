@@ -356,3 +356,54 @@ Bootlin's V3 encoder writes full addresses to these registers and uses a differe
 ### Next step
 
 Record the vendor stack's register writes on H700 hardware, then compare them with the T527 driver. The method: an `LD_PRELOAD` library that maps the `/dev/cedar_dev` register page as `PROT_NONE`, catches each access in a `SIGSEGV` handler, performs it on the real mapping, logs offset, direction and value, and steps past the instruction. It must cover only the register page, not DMA buffers. It needs a vendor-kernel system: the RG35XX Pro's stock Anbernic firmware on a separate SD card, plus the TrimUI CedarC libraries and `cedar-probe`. Nothing is written to the Korri card or any firmware partition. The closed libraries are used for this trace only and are not shipped.
+
+## 8. Vendor encoder register trace on the RG35XX Pro, 2026-10-21
+
+### Setup
+
+The RG35XX Pro booted a separate card with BaseOS 1.4.0 (vendor Linux 4.9.170, `/dev/cedar_dev`, `/dev/ion`). The Korri card was not touched. Allwinner's closed CedarC encoder libraries came from TrimUI Smart Pro firmware v1.1.1 (zip SHA-256 `43950ed504b83cca2f553168bf8dfcc17e6d689c02dc621f0f0f26954d182d18`) and ran from `/tmp` for this test only. They are not shipped. `cedar-probe` (carroarmato0/allwinner-cedar-tools `1df0d3b`, plus a `-w/-h` option) encoded one synthetic NV12 frame. An `LD_PRELOAD` logger mapped the `/dev/cedar_dev` register page as `PROT_NONE`, performed each faulting load or store on the real mapping, and logged it. The raw log is `docs/research/h700-encoder-trace-640x480.log`.
+
+| Run | Result |
+|---|---|
+| 480x272, untraced | exit 0; 12,606-byte stream; FFmpeg decodes it (H.264 Constrained Baseline 480x272) |
+| 640x480, traced | exit 0; 275 register accesses, 38 ioctls; `VE_AVC_VLE_LENGTH` reports 0x17e38 bits (12,231 bytes) |
+
+The traced file does not decode, because `cedar-probe` prepends a fixed 480x272 SPS/PPS. The register trace is unaffected. The library reports `ic_version = 0x3301000012011`. Registers 0xe0/0xe4 read `0x33010` and `0x12011`. Register 0xf0 reads 0.
+
+### Encode sequence for one IDR frame (640x480, from the log)
+
+1. Identify: read 0xf0, 0xe0, 0xe4.
+2. Select the AVC encoder: `VE_CTRL` 0x000 goes `0xc0000007` → `0x…47` → `0x…c7`; later `0xc00200c7`.
+3. SPS and PPS through the hardware bit writer: data in 0xb20, command `0x1 | (n << 8)` in 0xb18 (n = bit count), status polled at 0xb1c (`0x260`). The SPS bytes include `0x67 0x4d … 0x29`: profile 77 (Main), level 4.1. Bitstream window `0xb80 = 0xfe8000`, `0xb84 = 0xfeffff` (addresses >> 8). `0xb04 = 0x80000500` while writing headers (bit 31 = no emulation prevention).
+4. ISP input: `0xa00 = 0x0050003c` (80x60 in 8-pixel units), `0xa04 = 0x00280000` (stride 40 macroblocks), `0xa14 = 0x28`, `0xa2c = 0x003c0050`, `0xa08 = 0` (NV12), luma `0xa78 = 0xfe680000`, chroma `0xa7c = 0xfe640000`, `0xa80 = 0xfe652c00` (full addresses, not shifted).
+5. AVC setup: `0xb14 = 0xf`, clear status `0xb1c`, `0xb9c` scratch, QP/RC tables `0xb30 = 0`, `0xb34 = 0x261e1814`, `0xb38 = 0xffff3630`, `0xb48 = 0x180004`, `0xb4c = 0x800068`, `0xb40 = 0x74000000`, `0xb2c = 0x80001900`, reference/reconstruction `0xba0/0xba4/0xbb0/0xbb4/0xbb8/0xbbc`, MB info `0xbc0`, line buffer `0xbc4 = 0`, `0xb60` (all >> 8).
+6. Slice header through the bit writer, then `0xb04 = 0x100` (CABAC), `0xb08 = 0x0800051b` (QP 27), `0xb0c = 0`, `0xb24 = 0`, `0xb10 = 0x08001200`.
+7. Trigger: `0xb18 = 0x8`. The library waits through the `cedar_dev` IRQ ioctl, reads `0xb90` (coded length in bits), reads `0xb1c = 0x261` (bit 0 = success) and clears it, reads statistics `0xb50`-`0xb58`, then releases `VE_CTRL`.
+
+### Compared with the T527 open driver (`sunxi-venc-t527` `cfa26fd`)
+
+| Item | H700 vendor trace | T527 driver | Same? |
+|---|---|---|---|
+| AVC bank layout 0xb00-0xbc4, ISP bank 0xa00-0xa88 | as listed above | same offsets | yes |
+| AVC buffer addresses | `>> 8` | `>> 8` | yes |
+| ISP input addresses | full | full | yes |
+| Bit writer (0xb20 data, 0xb18 `0x1 | n << 8`) | yes | yes | yes |
+| Trigger `0xb18 = 0x8`, status `0xb1c` bit 0, length `0xb90` | yes | yes | yes |
+| `0xb2c` for IDR | `0x80001900` | `0x80001900` | yes |
+| `VE_CTRL` 0x000 | `0xc00200c7` | `0xc01300c7` | **differs** (bits 16-20) |
+| `VE_MODE` 0x004 | never written; reads `0x300` | written `0x100` | **differs** |
+| Global setup 0x01c, 0x030, 0x040, 0x080-0x088 | never written | written | **differs** |
+| QP register 0xb08 | `0x0800051b` | `0x08000900 | qp` | **differs** (0x500 vs 0x900) |
+| `0xb14` before trigger | `0xf` | `0x13050007` (IDR) | **differs** |
+
+The T527 driver is the right template for the AVC and ISP banks. The top-level engine control and global setup differ and must follow this trace.
+
+### Memory addresses
+
+Every buffer address the vendor programmed (`0xfe5…`-`0xfef…`) lies above the Pro's 1 GiB of RAM (`0x40000000`-`0x7fffffff`). They are IOMMU addresses: the vendor kernel runs the encoder behind the IOMMU. This trace does not show whether the encoder accepts physical addresses, which option 1 (section 6) requires. That is the next question to test.
+
+### Not established
+
+- P-frames: `cedar-probe` encodes one frame, so the trace covers only an IDR frame.
+- The meaning of most constants in steps 5-6. They are recorded, not understood.
+- Sustained frame rate. rgsp-cast reports 1.6 ms per 720x480 frame on an H700, which is well inside 16.7 ms.
