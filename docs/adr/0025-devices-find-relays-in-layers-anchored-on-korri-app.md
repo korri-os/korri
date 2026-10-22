@@ -19,6 +19,12 @@ So devices look for each other in this order:
 4. A few long-lived public relays in the image, and relays learned from the
    person's other devices.
 
+The relay list follows NIP-05: `https://korri.app/.well-known/nostr.json` with
+its `relays` field, served by Cloudflare Pages. The list is not signed. Every
+message on the relays is already signed and encrypted, so a wrong list, for
+example after someone takes over a lapsed domain, causes an outage but cannot
+forge a join or read data.
+
 The cost is a domain renewal each year and a free Cloudflare account. If the
 domain lapses, devices fall back to the relays in their image. If Cloudflare
 ends the free plan, the relay costs about $5 a month or moves.
