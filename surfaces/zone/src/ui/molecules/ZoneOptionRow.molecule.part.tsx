@@ -148,7 +148,7 @@ export function Source() {
     <ZoneOptionRow
       description="Applies at next launch."
       deviceOnly
-      interaction={{ kind: "choice", choices: [{ value: "inherit", label: "Inherit" }, { value: "61", label: "61 % (1.10 GHz)" }] }}
+      interaction={{ kind: "choice", choices: [{ value: "inherit", label: "Inherit" }, { value: "61", label: "61 % (1.10 GHz)" }], selected: "inherit" }}
       label="CPU max"
       source="61 % (1.10 GHz) from Runner mGBA"
       value="Inherit"

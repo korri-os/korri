@@ -42,12 +42,10 @@ export function ShiftSettingSheet({
   }, [item?.id, status, onClose])
 
   if (!item?.interaction || item.interaction.kind === "action") return null
-  // Korri marks the choice in force by value when labels may repeat.
+  // Korri marks the choice in force by value: labels may repeat.
   const interaction = item.interaction
-  const current = (choice: { readonly value: string; readonly label: string }) =>
-    interaction.kind === "choice" && interaction.selected !== undefined
-      ? choice.value === interaction.selected
-      : choice.label === item.value
+  const current = (choice: { readonly value: string }) =>
+    interaction.kind === "choice" && choice.value === interaction.selected
   const saving = status._tag === "Saving"
   const problem = status._tag === "Problem" && status.settingId === item.id
 

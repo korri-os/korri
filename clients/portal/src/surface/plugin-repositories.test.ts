@@ -214,8 +214,8 @@ describe("plugin settings groups", () => {
     })
     const removed = groupNamed(pluginSettingGroups(facts, [{ id: "@old:shader", title: "Shader pack", enabled: false }]), REMOVED_GROUP)
     expect(removed?.items).toEqual([
-      { id: toggleSettingId("@old:shader"), label: "Shader pack", value: "Off", description: "From old.example/plugins", interaction: { kind: "choice", choices: [{ value: "true", label: "On" }, { value: "false", label: "Off" }] } },
-      { id: toggleSettingId("@old:untitled"), label: "@old:untitled", value: "On", description: "From old.example/plugins", interaction: { kind: "choice", choices: [{ value: "true", label: "On" }, { value: "false", label: "Off" }] } },
+      { id: toggleSettingId("@old:shader"), label: "Shader pack", value: "Off", description: "From old.example/plugins", interaction: { kind: "choice", choices: [{ value: "true", label: "On" }, { value: "false", label: "Off" }], selected: "false" } },
+      { id: toggleSettingId("@old:untitled"), label: "@old:untitled", value: "On", description: "From old.example/plugins", interaction: { kind: "choice", choices: [{ value: "true", label: "On" }, { value: "false", label: "Off" }], selected: "true" } },
     ])
   })
 
@@ -229,8 +229,8 @@ describe("plugin settings groups", () => {
     // settings.plugins lists only enabled plugins; it must not add or drop rows.
     const groups = pluginSettingGroups(facts, [{ id: "@korri:retroarch", title: "RetroArch", enabled: true }])
     expect(groupNamed(groups, OTHER_GROUP)?.items).toEqual([
-      { id: toggleSettingId("@korri:mgba"), label: "mGBA", value: "On", interaction: { kind: "choice", choices: [{ value: "true", label: "On" }, { value: "false", label: "Off" }] } },
-      { id: toggleSettingId("@korri:ssh"), label: "@korri:ssh", value: "Off", interaction: { kind: "choice", choices: [{ value: "true", label: "On" }, { value: "false", label: "Off" }] } },
+      { id: toggleSettingId("@korri:mgba"), label: "mGBA", value: "On", interaction: { kind: "choice", choices: [{ value: "true", label: "On" }, { value: "false", label: "Off" }], selected: "true" } },
+      { id: toggleSettingId("@korri:ssh"), label: "@korri:ssh", value: "Off", interaction: { kind: "choice", choices: [{ value: "true", label: "On" }, { value: "false", label: "Off" }], selected: "false" } },
     ])
     expect(groupNamed(pluginSettingGroups(readyFacts(), [{ id: "@korri:retroarch", title: "RetroArch", enabled: true }]), OTHER_GROUP)).toBeUndefined()
   })

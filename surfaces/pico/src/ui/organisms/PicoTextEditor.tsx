@@ -6,6 +6,8 @@ import { PicoSegments } from "../atoms/PicoSegments"
 import { PicoKeyboard, type PicoTyping } from "../molecules/PicoKeyboard"
 import { PicoTextField } from "../molecules/PicoTextField"
 
+
+const TOGGLE = [{ value: "off", label: "OFF" }, { value: "on", label: "ON" }]
 /** One action beside the keys: what it says, what it shows now, what it does. */
 export interface PicoTextEditorAction {
   readonly label: string
@@ -86,7 +88,7 @@ export function PicoTextEditor({
   const all: readonly PicoTextEditorAction[] = secret && reveal !== undefined
     ? [...actions, {
         label: "SHOW",
-        detail: <PicoSegments current={reveal.shown ? 1 : 0} options={["OFF", "ON"]} />,
+        detail: <PicoSegments current={reveal.shown ? 1 : 0} options={TOGGLE} />,
         onPress: reveal.onToggle,
       }]
     : actions

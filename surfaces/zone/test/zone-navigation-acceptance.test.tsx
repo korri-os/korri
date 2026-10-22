@@ -129,7 +129,7 @@ const HOME: SurfaceModel = {
           id: SEATS,
           label: "Player seats",
           value: "2",
-          interaction: { kind: "choice", choices: ["1", "2", "3", "4"].map(value => ({ value, label: value })) },
+          interaction: { kind: "choice", choices: ["1", "2", "3", "4"].map(value => ({ value, label: value })), selected: "2" },
         },
         {
           id: "steamgriddb",

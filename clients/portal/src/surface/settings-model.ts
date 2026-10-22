@@ -119,7 +119,7 @@ export function settingsFrom(
             value: String(facts.settings.playerCount),
             description: "Shared by physical and remote controllers. Stop the game before changing.",
             ...(canEdit("host.preferences.playerCount") ? {
-              interaction: { kind: "choice" as const, choices: playerCounts },
+              interaction: { kind: "choice" as const, choices: playerCounts, selected: String(facts.settings.playerCount) },
             } : {}),
           },
     ]),

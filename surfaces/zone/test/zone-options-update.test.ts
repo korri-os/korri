@@ -184,7 +184,9 @@ describe("SteppedRow", () => {
       ...korri,
       settings: korri.settings.map(group => ({
         ...group,
-        items: group.items.map(item => (item.id === fixtureSeatsId ? { ...item, value: "4" } : item)),
+        items: group.items.map(item => (item.id === fixtureSeatsId && item.interaction?.kind === "choice"
+          ? { ...item, value: "4", interaction: { ...item.interaction, selected: "4" } }
+          : item)),
       })),
     }
     const right = after(OPTIONS_START, { _tag: "SteppedRow", rowId: fixtureSeatsId, direction: 1 }, four)

@@ -59,7 +59,7 @@ export const fixtureControllersGroup: SurfaceSettingGroup = {
     label: "Player seats",
     value: "2",
     description: "Shared by physical and remote controllers. Stop the game before changing.",
-    interaction: { kind: "choice", choices: seats },
+    interaction: { kind: "choice", choices: seats, selected: "2" },
   }],
 }
 
@@ -125,7 +125,7 @@ export const fixturePluginsGroup: SurfaceSettingGroup = {
     id: `plugin:${title.toLowerCase()}`,
     label: title,
     value: index % 3 === 2 ? "Off" : "On",
-    interaction: { kind: "choice", choices: onOff },
+    interaction: { kind: "choice", choices: onOff, selected: index % 3 === 2 ? "false" : "true" },
   })),
 }
 
@@ -154,7 +154,7 @@ export const fixtureLongFactsGroup: SurfaceSettingGroup = {
       id: "layout-memory",
       label: "Remember the controller layout for every game",
       value: "On",
-      interaction: { kind: "choice", choices: onOff },
+      interaction: { kind: "choice", choices: onOff, selected: "true" },
     },
     { id: "long-word", label: "Supercalifragilisticexpialidocious", value: "0" },
     { id: "empty-value", label: "Last backup", value: "" },
@@ -399,7 +399,11 @@ function fixtureKorri(korri: ZoneOptionsSlices, request: ZoneRequest): ZoneOptio
             if (item.id !== request.settingId) return item
             const interaction = item.interaction
             if (interaction?.kind === "choice") {
-              return { ...item, value: interaction.choices.find(choice => choice.value === request.value)?.label ?? request.value }
+              return {
+                ...item,
+                value: interaction.choices.find(choice => choice.value === request.value)?.label ?? request.value,
+                interaction: { ...interaction, selected: request.value },
+              }
             }
             if (interaction?.kind === "sensitiveText") return { ...item, value: request.value === "" ? "Not set" : "Configured" }
             return { ...item, value: request.value }

@@ -180,15 +180,13 @@ export function zoneNetworkValue(network: SurfaceWifiNetwork): string {
 export const isPathLabel = (label: string): boolean => /^[/~]/.test(label)
 
 /**
- * Where a choice row stands among its choices; -1 when Korri's value names
- * none. Korri's `selected` value decides when it publishes one, because two
- * choices may share a label (two profiles named "Quiet").
+ * Where a choice row stands among its choices, by Korri's `selected` value
+ * (two choices may share a label); -1 when it names none.
  */
 export function choiceIndex(item: SurfaceSettingItem): number {
   if (item.interaction?.kind !== "choice") return -1
   const selected = item.interaction.selected
-  if (selected !== undefined) return item.interaction.choices.findIndex(choice => choice.value === selected)
-  return item.interaction.choices.findIndex(choice => choice.label === item.value || choice.value === item.value)
+  return item.interaction.choices.findIndex(choice => choice.value === selected)
 }
 
 function settingPress(item: SurfaceSettingItem): ZoneOptionsPress {
@@ -335,7 +333,7 @@ function lookRow(look: ZoneLook): ZoneOptionsRow {
       id: ZONE_SYSTEM_LOOK,
       label: "Look",
       value: ZONE_LOOK_WORDS[look],
-      interaction: { kind: "choice", choices: ZONE_LOOKS.map(id => ({ value: id, label: ZONE_LOOK_WORDS[id] })) },
+      interaction: { kind: "choice", choices: ZONE_LOOKS.map(id => ({ value: id, label: ZONE_LOOK_WORDS[id] })), selected: look },
     },
     press: { _tag: "Look" },
   }

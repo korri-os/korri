@@ -366,7 +366,7 @@ const toggleRow = (
     label,
     value: enabled ? "On" : "Off",
     ...(description === undefined ? {} : { description }),
-    interaction: { kind: "choice", choices: onOff },
+    interaction: { kind: "choice", choices: onOff, selected: enabled ? "true" : "false" },
   }
 }
 

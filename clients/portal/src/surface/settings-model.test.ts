@@ -113,6 +113,7 @@ describe("settingsFrom", () => {
     const count = items.find(item => item.id === "host.preferences.playerCount")
     expect(count?.interaction).toEqual({
       kind: "choice",
+      selected: "4",
       choices: Array.from({ length: 255 }, (_, index) => ({
         value: String(index + 1), label: String(index + 1),
       })),

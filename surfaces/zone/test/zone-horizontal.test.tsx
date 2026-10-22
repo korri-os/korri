@@ -13,7 +13,7 @@ import { ZonePausedControl } from "../src/ui/organisms/ZonePausedControl"
 
 afterEach(cleanup)
 
-const choice = { kind: "choice", choices: [{ value: "a", label: "A" }, { value: "b", label: "B" }] } as const
+const choice = { kind: "choice", choices: [{ value: "a", label: "A" }, { value: "b", label: "B" }], selected: "a" } as const
 
 const press = (node: Element, direction: "left" | "right") =>
   node.dispatchEvent(new CustomEvent("korri-semantic-direction", { detail: { direction } }))

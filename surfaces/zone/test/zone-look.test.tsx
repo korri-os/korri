@@ -217,6 +217,7 @@ describe("OPTIONS › SYSTEM › LOOK", () => {
     expect(look.item.interaction).toEqual({
       kind: "choice",
       choices: [{ value: "modern", label: "MODERN" }, { value: "blend", label: "BLEND" }, { value: "retro", label: "RETRO" }],
+      selected: "retro",
     })
     // No look given (a part with no Zone behind it): no row.
     expect(optionsPlan(MODEL).rows.some(row => row.id === ZONE_SYSTEM_LOOK)).toBe(false)

@@ -49,12 +49,14 @@ function heading(view: PicoIdentityView): { readonly title: string; readonly mes
   }
 }
 
+
+const TOGGLE = [{ value: "off", label: "OFF" }, { value: "on", label: "ON" }]
 /** Settings' trust-loss checkbox, as a row the d-pad can turn on and off. */
 function trustLoss(confirmed: boolean, onConfirm: () => void) {
   return (
     <li className="pico-identity-setup-confirm">
       <PicoRow
-        detail={<PicoSegments current={confirmed ? 1 : 0} options={["OFF", "ON"]} />}
+        detail={<PicoSegments current={confirmed ? 1 : 0} options={TOGGLE} />}
         label="I understand that peer pairings and stream-client trust will be cleared."
         onPress={onConfirm}
       />

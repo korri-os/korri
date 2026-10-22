@@ -25,7 +25,12 @@ import { picoConnectionLabel, picoNetworksFrom, type PicoNetworkView } from "./p
 export type PicoSettingControl =
   | { readonly kind: "fact" }
   | { readonly kind: "action"; readonly actionId: string; readonly destructive: boolean; readonly confirmation?: PicoConfirmation }
-  | { readonly kind: "cycle"; readonly next: string; readonly options: readonly string[]; readonly current: number }
+  | {
+      readonly kind: "cycle"
+      readonly next: string
+      readonly options: readonly { readonly value: string; readonly label: string }[]
+      readonly current: number
+    }
   | { readonly kind: "step"; readonly next: string; readonly current: string }
   | {
       readonly kind: "text"
@@ -288,19 +293,17 @@ function controlFor(item: SurfaceSettingItem): PicoSettingControl {
         }),
       }
     case "choice": {
-      const labels = interaction.choices.map((choice) => choice.label)
-      // Korri marks the choice in force by value when labels may repeat.
-      const current = Math.max(0, interaction.selected === undefined
-        ? interaction.choices.findIndex((choice) => choice.label === item.value)
-        : interaction.choices.findIndex((choice) => choice.value === interaction.selected))
-      const nextChoice = interaction.choices[(current + 1) % interaction.choices.length]
-      if (labels.length > PICO_SEGMENTS_MAX) {
-        return { kind: "step", next: nextChoice?.value ?? "", current: labels[current] ?? "" }
+      const choices = interaction.choices
+      // Korri marks the choice in force by value: labels may repeat.
+      const current = Math.max(0, choices.findIndex((choice) => choice.value === interaction.selected))
+      const nextChoice = choices[(current + 1) % choices.length]
+      if (choices.length > PICO_SEGMENTS_MAX) {
+        return { kind: "step", next: nextChoice?.value ?? "", current: choices[current]?.label ?? "" }
       }
       return {
         kind: "cycle",
         next: nextChoice?.value ?? "",
-        options: labels,
+        options: choices.map(({ value, label }) => ({ value, label })),
         current,
       }
     }

@@ -94,7 +94,7 @@ for (const look of ZONE_LOOKS) {
       inLook(look, (
         <ZoneOptionRow
           focused
-          interaction={{ kind: "choice", choices: [{ value: "modern", label: "MODERN" }, { value: "blend", label: "BLEND" }] }}
+          interaction={{ kind: "choice", choices: [{ value: "modern", label: "MODERN" }, { value: "blend", label: "BLEND" }], selected: "blend" }}
           label="Look"
           value="BLEND"
         />

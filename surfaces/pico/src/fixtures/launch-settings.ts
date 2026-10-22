@@ -43,7 +43,8 @@ function row(id: string, label: string, value: string | undefined, source: strin
     interaction: {
       kind: "choice",
       choices: offered,
-      selected: offered.find(choice => choice.label === (value ?? "Inherit"))?.value ?? "inherit",
+      // A step's value is its percent, the label's first word.
+      selected: value === undefined ? "inherit" : value.split(" ")[0] ?? value,
     },
   }
 }

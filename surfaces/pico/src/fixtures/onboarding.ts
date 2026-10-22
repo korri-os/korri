@@ -108,6 +108,7 @@ const freshSettings: readonly SurfaceSettingGroup[] = [
       interaction: {
         kind: "choice",
         choices: Array.from({ length: 255 }, (_, index) => ({ value: String(index + 1), label: String(index + 1) })),
+        selected: "4",
       },
     }],
   },

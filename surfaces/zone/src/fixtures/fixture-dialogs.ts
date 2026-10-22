@@ -23,6 +23,7 @@ export const fixtureChoiceRow: SurfaceSettingItem = {
       { value: "sharp", label: "Sharp" },
       { value: "smooth", label: "Smooth" },
     ],
+    selected: "none",
   },
 }
 
@@ -79,23 +80,23 @@ export const fixtureLongRow: SurfaceSettingItem = {
   id: "controller-mapping-profile",
   label: "Controller mapping profile for the second player",
   value: "Supercalifragilisticexpialidocious-controller-profile",
-  interaction: { kind: "choice", choices: [{ value: "a", label: "A" }] },
+  interaction: { kind: "choice", choices: [{ value: "a", label: "A" }], selected: "a" },
 }
 
 /** Twelve rows, as the VIDEO and WI-FI groups would list together. */
 export const fixtureManyRows: readonly SurfaceSettingItem[] = [
   fixtureChoiceRow,
-  { id: "window-size", label: "Window size", value: "3x", interaction: { kind: "choice", choices: [] } },
-  { id: "window-border", label: "Window border", value: "On", interaction: { kind: "choice", choices: [] } },
-  { id: "full-screen", label: "Full screen", value: "Off", interaction: { kind: "choice", choices: [] } },
-  { id: "vsync", label: "Vsync", value: "On", interaction: { kind: "choice", choices: [] } },
-  { id: "triple-buffering", label: "Triple buffering", value: "Off", interaction: { kind: "choice", choices: [] } },
+  { id: "window-size", label: "Window size", value: "3x", interaction: { kind: "choice", choices: [], selected: "3x" } },
+  { id: "window-border", label: "Window border", value: "On", interaction: { kind: "choice", choices: [], selected: "on" } },
+  { id: "full-screen", label: "Full screen", value: "Off", interaction: { kind: "choice", choices: [], selected: "off" } },
+  { id: "vsync", label: "Vsync", value: "On", interaction: { kind: "choice", choices: [], selected: "on" } },
+  { id: "triple-buffering", label: "Triple buffering", value: "Off", interaction: { kind: "choice", choices: [], selected: "off" } },
   fixtureTextRow,
   fixtureSecretRow,
   fixtureActionRow,
   fixtureDestructiveRow,
   fixtureReadOnlyRow,
-  { id: "sound", label: "Sound", value: "On", interaction: { kind: "choice", choices: [] } },
+  { id: "sound", label: "Sound", value: "On", interaction: { kind: "choice", choices: [], selected: "on" } },
 ]
 
 export const fixtureVideoGroup: SurfaceSettingGroup = {

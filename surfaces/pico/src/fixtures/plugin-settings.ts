@@ -60,7 +60,8 @@ const officialOnlyGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "true"
         }
       }
     ]
@@ -147,7 +148,8 @@ const repositoriesGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "true"
         }
       },
       {
@@ -215,7 +217,8 @@ const repositoriesGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "false"
         }
       },
       {
@@ -234,7 +237,8 @@ const repositoriesGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "true"
         }
       }
     ]
@@ -257,7 +261,8 @@ const repositoriesGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "true"
         }
       },
       {
@@ -275,7 +280,8 @@ const repositoriesGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "false"
         }
       }
     ]
@@ -366,7 +372,8 @@ const reviewingGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "true"
         }
       },
       {
@@ -434,7 +441,8 @@ const reviewingGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "false"
         }
       },
       {
@@ -453,7 +461,8 @@ const reviewingGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "true"
         }
       }
     ]
@@ -476,7 +485,8 @@ const reviewingGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "true"
         }
       },
       {
@@ -494,7 +504,8 @@ const reviewingGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "false"
         }
       }
     ]
@@ -641,7 +652,8 @@ const needsReviewGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "false"
         }
       },
       {
@@ -660,7 +672,8 @@ const needsReviewGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "true"
         }
       }
     ]
@@ -683,7 +696,8 @@ const needsReviewGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "true"
         }
       },
       {
@@ -701,7 +715,8 @@ const needsReviewGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "false"
         }
       }
     ]
@@ -795,7 +810,8 @@ const manyGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "true"
         }
       }
     ]
@@ -847,7 +863,8 @@ const manyGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "true"
         }
       },
       {
@@ -1081,7 +1098,8 @@ const manyGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "true"
         }
       },
       {
@@ -1099,7 +1117,8 @@ const manyGroups: readonly SurfaceSettingGroup[] = [
               "value": "false",
               "label": "Off"
             }
-          ]
+          ],
+          "selected": "false"
         }
       }
     ]

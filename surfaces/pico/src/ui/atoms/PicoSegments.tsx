@@ -6,12 +6,15 @@ import "./PicoSegments.css"
  * always two, and a control that could only draw two would be wrong the first
  * time a plugin offered three. Purely presentational — the row it sits in
  * decides what pressing does.
+ *
+ * Each segment is keyed by its value, not its label: two choices may share a
+ * label (two profiles named "Quiet").
  */
 export function PicoSegments({
   options,
   current,
 }: {
-  readonly options: readonly string[]
+  readonly options: readonly { readonly value: string; readonly label: string }[]
   readonly current: number
 }) {
   return (
@@ -20,9 +23,9 @@ export function PicoSegments({
         <span
           className="pico-segments-item"
           data-lit={index === current ? "true" : undefined}
-          key={option}
+          key={option.value}
         >
-          {option.toUpperCase()}
+          {option.label.toUpperCase()}
         </span>
       ))}
     </span>

@@ -158,6 +158,7 @@ export const fixtureModel: SurfaceModel = {
               { value: "true", label: "On" },
               { value: "false", label: "Off" },
             ],
+            selected: "true",
           },
         },
       ],
