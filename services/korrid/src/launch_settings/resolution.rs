@@ -33,23 +33,16 @@ pub fn layers(
     snapshot: &ConfigSnapshot,
     game_id: Option<&str>,
     route: Option<&ResolvedRoute>,
-    facts: Option<&LaunchDeviceFacts>,
 ) -> Result<Vec<LaunchSettingsLayer>, SettingsError> {
     let host = snapshot.host.as_ref();
     let cpu = host.and_then(|h| h.cpu.as_ref());
     let gpu = host.and_then(|h| h.gpu.as_ref());
-    let defaults = facts.map(|f| &f.defaults);
     let mut device = layer(LaunchSettingsScope::Device, "Device".into(), None, gpu);
     device.cpu = LaunchSettingsValues {
-        min: cpu.and_then(|c| c.min).or(defaults.map(|d| d.cpu.min)),
-        max: cpu.and_then(|c| c.max).or(defaults.map(|d| d.cpu.max)),
+        min: cpu.and_then(|c| c.min),
+        max: cpu.and_then(|c| c.max),
     };
-    device.gpu.min = device.gpu.min.or(defaults.map(|d| d.gpu.min));
-    device.gpu.max = device.gpu.max.or(defaults.map(|d| d.gpu.max));
-    device.governor = cpu
-        .and_then(|c| c.governor.as_ref())
-        .map(|g| g.0.clone())
-        .or_else(|| defaults.map(|d| d.governor.clone()));
+    device.governor = cpu.and_then(|c| c.governor.as_ref()).map(|g| g.0.clone());
     let mut result = vec![device];
     if let Some(id) = game_id {
         let game = snapshot
@@ -130,7 +123,7 @@ pub fn resolve(layers: &[LaunchSettingsLayer]) -> LaunchSettingsResolved {
             LaunchResolvedValue {
                 value: 0,
                 source: LaunchSettingsScope::Device,
-                device_default: false,
+                device_default: true,
                 adjusted: false,
             },
         );
@@ -139,7 +132,7 @@ pub fn resolve(layers: &[LaunchSettingsLayer]) -> LaunchSettingsResolved {
             LaunchResolvedValue {
                 value: 100,
                 source: LaunchSettingsScope::Device,
-                device_default: false,
+                device_default: true,
                 adjusted: false,
             },
         );
@@ -190,6 +183,43 @@ pub fn resolve(layers: &[LaunchSettingsLayer]) -> LaunchSettingsResolved {
     }
 }
 
+/// Defaults seed resolution, but are never opinions authored on a layer.
+/// Merge them on the device layer to retain its existing conflict precedence.
+pub(super) fn resolve_with_defaults(
+    layers: &[LaunchSettingsLayer],
+    facts: Option<&LaunchDeviceFacts>,
+) -> LaunchSettingsResolved {
+    let mut effective = layers.to_vec();
+    let Some(device) = effective
+        .first_mut()
+        .filter(|layer| matches!(layer.scope, LaunchSettingsScope::Device))
+    else {
+        return resolve(layers);
+    };
+    if let Some(defaults) = facts.map(|facts| &facts.defaults) {
+        device.cpu.min = device.cpu.min.or(Some(defaults.cpu.min));
+        device.cpu.max = device.cpu.max.or(Some(defaults.cpu.max));
+        device.gpu.min = device.gpu.min.or(Some(defaults.gpu.min));
+        device.gpu.max = device.gpu.max.or(Some(defaults.gpu.max));
+        device.governor = device
+            .governor
+            .clone()
+            .or_else(|| Some(defaults.governor.clone()));
+    }
+    let mut resolved = resolve(&effective);
+    let authored = &layers[0];
+    for (value, authored) in [
+        (&mut resolved.cpu.min, authored.cpu.min),
+        (&mut resolved.cpu.max, authored.cpu.max),
+        (&mut resolved.gpu.min, authored.gpu.min),
+        (&mut resolved.gpu.max, authored.gpu.max),
+    ] {
+        value.device_default =
+            matches!(value.source, LaunchSettingsScope::Device) && authored.is_none();
+    }
+    resolved
+}
+
 pub fn snapshot(
     root: &Path,
     registry: Option<&PluginRegistry>,
@@ -221,11 +251,11 @@ pub fn snapshot(
             ),
         ),
     };
-    let layers = layers(&config, game_id, route.as_ref(), device_facts.as_ref())?;
+    let layers = layers(&config, game_id, route.as_ref())?;
     let game = game_id.and_then(|id| config.library.get(id));
     Ok(LaunchSettingsSnapshot {
         route_layers,
-        resolved: resolve(&layers),
+        resolved: resolve_with_defaults(&layers, device_facts.as_ref()),
         layers,
         profiles: game
             .map(|g| {
@@ -249,8 +279,8 @@ pub fn snapshot(
 pub fn apply_device(root: &Path, client: &helper::Client) -> Result<(), String> {
     let (snapshot, _) = settings::runner_choice_snapshot(root).map_err(|e| e.to_string())?;
     let facts = client.describe()?;
-    let layers = layers(&snapshot, None, None, Some(&facts)).map_err(|e| e.to_string())?;
-    let resolved = resolve(&layers);
+    let layers = layers(&snapshot, None, None).map_err(|e| e.to_string())?;
+    let resolved = resolve_with_defaults(&layers, Some(&facts));
     client.apply_device(&LaunchDeviceDefaults {
         cpu: LaunchPercentRange {
             min: resolved.cpu.min.value,

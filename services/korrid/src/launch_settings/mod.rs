@@ -255,3 +255,6 @@ pub enum LaunchSettingsRouteLayers {
     NeedsRunnerChoice,
     Unavailable(String),
 }
+
+#[cfg(test)]
+mod snapshot_defaults_tests;

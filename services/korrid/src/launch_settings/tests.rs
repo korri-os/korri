@@ -55,7 +55,7 @@ fn facts() -> LaunchDeviceFacts {
 #[test]
 fn launch_settings_each_layer_contributes_and_independent_values_record_sources() {
     let config = decode_config_documents(DEVICE, LIBRARY).unwrap();
-    let layers = resolution::layers(&config, Some("game"), Some(&route()), Some(&facts())).unwrap();
+    let layers = resolution::layers(&config, Some("game"), Some(&route())).unwrap();
     assert_eq!(layers.len(), 6);
     let expected = [
         (10, 95, 0, 99),
@@ -137,7 +137,7 @@ fn launch_settings_more_specific_min_or_max_moves_the_other_side_and_records_adj
                 .replace("max: 60", &format!("min: {profile}"))
         };
         let config = decode_config_documents(&device, &library).unwrap();
-        let layers = resolution::layers(&config, Some("game"), Some(&route()), None).unwrap();
+        let layers = resolution::layers(&config, Some("game"), Some(&route())).unwrap();
         let r = resolve(&layers);
         assert_eq!(
             (
@@ -293,7 +293,7 @@ fn launch_settings_set_writes_every_scope_to_its_existing_document() {
         }
     }
     let snap = settings::runner_choice_snapshot(root.path()).unwrap().0;
-    let layers = resolution::layers(&snap, Some("game"), Some(&route()), None).unwrap();
+    let layers = resolution::layers(&snap, Some("game"), Some(&route())).unwrap();
     assert!(layers.iter().all(|l| l.gpu.min == Some(22)));
 }
 #[test]
