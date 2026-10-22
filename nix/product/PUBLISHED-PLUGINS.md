@@ -60,6 +60,12 @@ references); pico8's manifest declares the host `www.lexaloffle.com`. The
 batch lists three paths per architecture. They were fetched into an empty store
 from the publisher cache with only the `korri-plugins-1` key trusted and
 verified, and its offline archives hold one signed record per output.
+Batch `build-30594ae66c81` (source `30594ae66c81222f5d56a5e6d1b8c282c2b7fdf3`,
+Core input `7f37bd48f`) republishes 23 outputs per architecture: the RetroArch
+runner declaring per-game save locations under `saveRoot` (#126), its libretro
+cores, FAKE-08, Solarus, ZQuest Classic and the Starter pack, whose fixtures now
+run through `korrid plugin-run`. Each pin was evaluated at that source and found
+in the batch's `paths-SYSTEM.txt`. Gamescope keeps its earlier pin.
 Each pinned path is grounded in its batch's `paths-SYSTEM.txt` and
 `revision.txt`. The new Starter pack pins were checked against those public
 release assets directly. Earlier batches remain published even when their
