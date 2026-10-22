@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Exercise prepare -> own-cache filtering with real signed Nix file caches."""
+"""Verify prepare filters a Pages-style HTTPS upstream with real signed caches."""
 
 import importlib.util
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import ssl
+import threading
 import tempfile
 import unittest
 
@@ -21,12 +24,32 @@ def run(*args):
     return subprocess.check_output(args, text=True, stderr=subprocess.PIPE).strip()
 
 
-class PublishedCacheFilterTest(unittest.TestCase):
+class PrepareUpstreamTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.fixture = tempfile.TemporaryDirectory(prefix="korri-cache-fixture-")
         cls.addClassCleanup(cls.fixture.cleanup)
         cls.root = Path(cls.fixture.name)
+        cls.certificate = cls.root / "https.pem"
+        cls.https_key = cls.root / "https.key"
+        run(
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(cls.https_key),
+            "-out",
+            str(cls.certificate),
+            "-days",
+            "1",
+            "-subj",
+            "/CN=localhost",
+            "-addext",
+            "subjectAltName=DNS:localhost",
+        )
         cls.key = cls.root / "cache.secret"
         public = cls.root / "cache.pub"
         run(
@@ -73,6 +96,24 @@ class PublishedCacheFilterTest(unittest.TestCase):
         self.root = Path(temporary.name)
         self.remote = self.root / "remote"
         self.remote.mkdir()
+        shutil.copyfile(self.cache / "nix-cache-info", self.remote / "nix-cache-info")
+        remote = self.remote
+
+        class Handler(SimpleHTTPRequestHandler):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, directory=remote, **kwargs)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(self.certificate, self.https_key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.base = f"https://localhost:{server.server_port}/"
         self.prepared = self.root / "prepared"
         publisher.prepare(self.cache, self.prepared, BASE, [])
         self.notes = self.prepared / "metadata"
@@ -86,20 +127,24 @@ class PublishedCacheFilterTest(unittest.TestCase):
             shutil.copyfile(self.notes / name, self.remote / name)
 
     def filter(self):
-        result = subprocess.run(
-            [
-                "bash",
-                str(HERE / "filter-published.sh"),
-                str(self.prepared),
-                self.remote.as_uri() + "/",
-            ],
-            text=True,
-            capture_output=True,
-            timeout=15,
-            env=os.environ | {"CURL_HOME": str(self.root)},
+        shutil.rmtree(self.prepared)
+        previous = {
+            key: os.environ.get(key) for key in ("NIX_CONFIG", "NIX_SSL_CERT_FILE")
+        }
+        os.environ["NIX_SSL_CERT_FILE"] = str(self.certificate)
+        os.environ["NIX_CONFIG"] = (
+            (previous["NIX_CONFIG"] or "")
+            + "\nextra-trusted-public-keys = "
+            + self.public
         )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        return result.stdout
+        try:
+            publisher.prepare(self.cache, self.prepared, BASE, [self.base])
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
     def assert_payloads(self):
         # These are the exact validations upload performs before calling GitHub.
@@ -114,7 +159,7 @@ class PublishedCacheFilterTest(unittest.TestCase):
 
     def check_shared_payload(self, published):
         self.publish(published)
-        self.assertIn("1 paths are already published", self.filter())
+        self.filter()
         self.assertFalse((self.notes / published).exists())
         self.assert_payloads()
 
@@ -139,14 +184,14 @@ class PublishedCacheFilterTest(unittest.TestCase):
         self.assert_payloads()
         self.assertTrue((self.notes / "nix-cache-info").is_file())
 
-    def test_unavailable_metadata_keeps_every_path(self):
+    def test_missing_narinfos_keep_every_path(self):
         self.filter()
         self.assertEqual(
             {p.name for p in self.notes.glob("*.narinfo")}, set(self.original)
         )
         self.assert_payloads()
 
-    def test_mismatched_store_path_is_not_filtered(self):
+    def test_mismatched_store_path_fails_preparation(self):
         name = self.shared[0]
         remote = (
             self.original[name]
@@ -157,9 +202,29 @@ class PublishedCacheFilterTest(unittest.TestCase):
             )
         )
         (self.remote / name).write_text(remote)
-        self.filter()
-        self.assertTrue((self.notes / name).exists())
-        self.assert_payloads()
+        with self.assertRaisesRegex(ValueError, "identity differs"):
+            self.filter()
+        self.assertFalse(self.prepared.exists())
+
+    def test_untrusted_signature_fails_even_for_content_addressed_metadata(self):
+        name = self.shared[0]
+        text = (
+            self.original[name]
+            .decode()
+            .replace("Sig: korri-cache-test:", "Sig: untrusted:")
+        )
+        (self.remote / name).write_text(text)
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.filter()
+        self.assertFalse(self.prepared.exists())
+
+    def test_missing_cache_info_fails_instead_of_treating_it_as_an_empty_cache(self):
+        (self.remote / "nix-cache-info").unlink()
+        with self.assertRaises(publisher.HTTPError) as caught:
+            self.filter()
+        self.assertEqual(caught.exception.code, 404)
+        caught.exception.close()
+        self.assertFalse(self.prepared.exists())
 
     def test_retained_paths_are_signed_and_download_into_an_empty_store(self):
         self.publish(self.shared[0])

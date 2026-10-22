@@ -178,11 +178,12 @@ let
         pkgs.python3
         pkgs.curl
         pkgs.shellcheck
+        pkgs.openssl
         pkgs.git
       ];
       script = ''
-        shellcheck -s bash "$KORRI_ROOT/nix/cache/publish.sh" "$KORRI_ROOT/nix/cache/filter-published.sh"
-        python3 "$KORRI_ROOT/nix/cache/filter-published.test.py"
+        shellcheck -s bash "$KORRI_ROOT/nix/cache/publish.sh"
+        python3 "$KORRI_ROOT/nix/cache/prepare.test.py"
         python3 "$KORRI_ROOT/nix/cache/github-cache.test.py"
         exec python3 "$KORRI_ROOT/nix/cache/pages-cache.test.py"
       '';

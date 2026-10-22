@@ -166,6 +166,7 @@ def upstream_paths(records, upstreams, temporary):
                 data = upstream_metadata(opener, base + name)
             except HTTPError as error:
                 if error.code == 404:
+                    error.close()
                     continue
                 raise
             note = downloaded / name

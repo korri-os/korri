@@ -40,8 +40,7 @@ source for — at install time, not at publish time. Adding a cache to
 `nix/base/default.nix` widens the filter in the same change.
 
 Pages serves narinfos directly, so `prepare` checks Korri's own cache as a
-normal trusted upstream. The old post-prepare self-filter is no longer used by
-the publisher: upstream verification also checks signed identity and trusted
+normal trusted upstream. The old post-prepare self-filter has been removed: upstream verification also checks signed identity and trusted
 signatures, not only `StorePath`. Missing narinfos retain their payloads;
 shared compressed NARs stay if any retained narinfo needs them.
 
@@ -296,8 +295,10 @@ signed-field changes, cache-info replacement, symlinks, unrelated push failures,
 and exact-byte visibility with a local HTTP server,
 including stale responses, HTTP errors, and timeout failures.
 
-The checks use real signed file caches and shared compressed NARs. They cover
-partial and complete filtering, unavailable and mismatched metadata, preserved
+The prepare checks use a local HTTPS server, real signed file caches, and
+shared compressed NARs. They cover
+partial and complete filtering, missing metadata, refusal of mismatched signed
+identity or untrusted signatures (including content-addressed records), preserved
 signatures, and downloads into an empty local store with builds disabled.
 Two concurrent uploader processes also exercise a file-backed `gh api`
 release-assets contract. A barrier makes both clients read the initial asset
