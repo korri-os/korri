@@ -23,8 +23,42 @@ Separate sequence-header packets and Baseline/CAVLC are **not** advertised.
 The Sunshine profile requests joined headers. FFmpeg's default separate-header
 request is optional and it can still use the driver's joined output. This
 is not a claim of support for every stateful encoder control or every FFmpeg
-application. Timeout reset code is implemented but not fault-injected on the
-handheld. DMABUF import is not a tested zero-copy GPU capture path.
+application. Timeout/reset and a late completion IRQ were tested with a separate,
+uncommitted fault-injection build. The shipped driver has no fault-injection
+parameter or debugfs interface. DMABUF import is not a tested zero-copy GPU
+capture path.
+
+## Job ownership and restart safety
+
+The IRQ and watchdog never fetch an unreferenced context from the scheduler.
+`device_run` records a sequence, hardware-bank kind and context while the m2m
+transaction owns that context. One spinlock serializes publication, source
+mask/ack, completion claims and retirement. Only ACTIVE can transition to IRQ
+or WATCHDOG ownership. Only that owner can access the context and finish the
+transaction. A new job synchronously drains the previous watchdog callback
+before publishing its sequence, so a delayed old callback cannot claim it.
+
+The IRQ reads supported hardware status banks without a context, masks and
+acknowledges every pending source even if the watchdog already owns the job,
+and claims completion only for the recorded active kind. Trigger/IRQ-enable
+and retirement use the same lock. The watchdog masks/acks before dropping the
+lock, synchronizes the IRQ, resets the VE, and retires only its own sequence.
+Neither completion path accesses the context after m2m wakes close/STREAMOFF.
+The transaction's TRANS_RUNNING lifetime, not delayed-work cancellation's
+return value, keeps the context alive until retirement.
+
+START clears CAPTURE's vb2 LAST-dequeued state and schedules already queued
+work. OUTPUT STREAMOFF/STREAMON clears the m2m stopped/draining state and the
+CAPTURE LAST-dequeued state; the normal streamon helper schedules queued work.
+STOP is a successful no-op unless both queues stream.
+
+The direct probe tests STOP with both queues off and CAPTURE only, then encodes
+normally. After each completed drain, it queues work before START or OUTPUT
+STREAMON, then encodes and dequeues a valid frame. The default run therefore
+writes two more frames than its `frames` argument. `PROBE_CASE=start` and
+`PROBE_CASE=streamon` isolate those restart routes. `EXPECT_TIMEOUT=1` and
+`CLOSE_PENDING_TIMEOUT=1` are test-program expectations for the separate fault
+build, not production-driver controls.
 
 ## P-frame result
 
@@ -79,7 +113,8 @@ The extended source defaults to 600 frames. `FRAMES`, `SECONDS` (minimum run
 duration) and `BITRATE` can change the workload. It reports wall time, fps and
 process user+system CPU time. `controls-probe.nix` takes an off-device aarch64
 `stdenv`; it tests fixed QP, profile/level readback, alignment/cropping, forced
-IDR requests, LAST/EOS and restart.
+IDR requests, LAST/EOS, STOP before STREAMON and an actual encoded/dequeued
+frame after each restart route.
 
 Sign and copy prebuilt closures with the existing pinned Pro transport. Compare
 the candidate `kernel` byte-for-byte with the booted system before loading any

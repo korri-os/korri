@@ -91,7 +91,7 @@ pkgs.runCommand "h700-module-check"
     module="${crossKernel.modules}/lib/modules/7.2.0/kernel/drivers/staging/media/sunxi/cedrus/sunxi-cedrus.ko"
     nm "$module" > symbols
     grep -q ' T cedrus_enc_register$' symbols
-    grep -q ' T cedrus_enc_irq$' symbols
+    grep -q ' T cedrus_job_complete$' symbols
     grep -q ' T cedrus_device_run$' symbols
     grep -aq 'cedrus-encoder' "$module"
 
