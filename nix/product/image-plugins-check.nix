@@ -91,6 +91,7 @@ assert lib.all
     "rgds"
     "rpminiv2"
     "odin2portal"
+    "rg35xxsp"
     "rg35xxpro"
   ];
 pkgs.runCommand "korri-product-image-plugins-check" { } ''
