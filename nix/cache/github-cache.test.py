@@ -107,6 +107,7 @@ class ConcurrentUploadTest(unittest.TestCase):
                 "KORRI_CACHE_TEST_API": str(root),
                 "KORRI_CACHE_TEST_WORKER": str(worker),
                 "KORRI_CACHE_API_RETRY_DELAYS": "0 0 0 0",
+                "KORRI_CACHE_RELEASE_VISIBILITY_DELAYS": "0 0 0 0 0",
             }
             process = subprocess.Popen(
                 [sys.executable, str(Path(__file__).resolve()), "--upload", str(path)],
@@ -500,6 +501,59 @@ class ApiRetryTest(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             self.quietly("repos/korri-os/nix-cache/releases/tags/missing")
         self.assertEqual(calls(), 1)
+
+
+class ReleaseVisibilityTest(unittest.TestCase):
+    """A new release can be missing from the list for a while; wait for it."""
+
+    def gh(self, hidden):
+        temporary = tempfile.TemporaryDirectory(prefix="korri-release-lag-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        (root / "calls").write_text("0")
+        gh = root / "gh"
+        gh.write_text(
+            f"#!{sys.executable}\n"
+            "import json, pathlib\n"
+            f"calls = pathlib.Path({str(root / 'calls')!r})\n"
+            "count = int(calls.read_text()) + 1\n"
+            "calls.write_text(str(count))\n"
+            f"listed = count > {hidden}\n"
+            f"print(json.dumps([{{'tag_name': {TAG!r}, 'id': 7, 'draft': False}}] if listed else []))\n"
+        )
+        gh.chmod(0o755)
+        path = os.environ["PATH"]
+        os.environ["PATH"] = str(root) + os.pathsep + path
+        self.addCleanup(os.environ.__setitem__, "PATH", path)
+        delays = publisher.RELEASE_VISIBILITY_DELAYS
+        publisher.RELEASE_VISIBILITY_DELAYS = (0, 0, 0, 0, 0)
+        self.addCleanup(setattr, publisher, "RELEASE_VISIBILITY_DELAYS", delays)
+        return lambda: int((root / "calls").read_text())
+
+    def quietly(self):
+        stderr = sys.stderr
+        sys.stderr = open(os.devnull, "w")
+        try:
+            return publisher.release(REPO, TAG)
+        finally:
+            sys.stderr.close()
+            sys.stderr = stderr
+
+    def test_a_release_listed_late_is_found(self):
+        calls = self.gh(hidden=2)
+        self.assertEqual(self.quietly()["id"], 7)
+        self.assertEqual(calls(), 3)
+
+    def test_a_listed_release_needs_one_call(self):
+        calls = self.gh(hidden=0)
+        self.assertEqual(self.quietly()["id"], 7)
+        self.assertEqual(calls(), 1)
+
+    def test_a_release_that_never_appears_fails_after_six_lists(self):
+        calls = self.gh(hidden=99)
+        with self.assertRaisesRegex(ValueError, "expected exactly one release"):
+            self.quietly()
+        self.assertEqual(calls(), 6)
 
 
 if __name__ == "__main__":

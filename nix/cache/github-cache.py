@@ -416,8 +416,28 @@ def release_records(repo, tag):
     return found
 
 
+# A release that publish.sh has just created can be missing from the release
+# list for a few seconds. In nix-cache run 39784357035 rgds created
+# batch-2026-10-22-1103 and failed 3 s later on this lookup. Wait for it; a
+# release that is still missing after about a minute is an error.
+RELEASE_VISIBILITY_DELAYS = tuple(
+    int(delay)
+    for delay in os.environ.get(
+        "KORRI_CACHE_RELEASE_VISIBILITY_DELAYS", "2 4 8 16 30"
+    ).split()
+)
+
+
 def release(repo, tag):
-    found = release_records(repo, tag)
+    for delay in (*RELEASE_VISIBILITY_DELAYS, None):
+        found = release_records(repo, tag)
+        if found or delay is None:
+            break
+        print(
+            f"korri-cache: release {tag} is not listed yet; retrying in {delay} s",
+            file=sys.stderr,
+        )
+        time.sleep(delay)
     if not found or type(found[0].get("id")) is not int:
         raise ValueError("expected exactly one release with this tag")
     return found[0]
