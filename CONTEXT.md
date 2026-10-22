@@ -44,8 +44,20 @@ A separate service on a device that holds a person key and signs for korrid on r
 _Avoid_: keystore, wallet
 
 **Automatic identity**:
-The person key a local signer creates on first boot without sign-in. It is a real person key, not a temporary account.
+The person key a local signer creates when setup ends without a join. It is a real person key, not a temporary account.
 _Avoid_: guest account, default user
+
+**Join**:
+Binding a device that has no owner to an existing person key. A key holder signs the device's first owner statement; the device receives no copy of the person key.
+_Avoid_: pair, link, sign in, adopt
+
+**Key holder**:
+A device whose local signer holds the person key. The device that created the automatic identity is one; the person can make another device one on purpose. Only a key holder can approve a join.
+_Avoid_: primary device, main device, master
+
+**Join code**:
+The eight-digit code a device that wants to join shows, and the person enters on a key holder when the devices cannot find each other. It works once and expires.
+_Avoid_: PIN, pairing code, password
 
 **Identity switch**:
 The explicit, consented replacement of a device owner by a different person key. It is the only way device authority moves.
