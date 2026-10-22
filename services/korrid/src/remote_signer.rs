@@ -345,10 +345,16 @@ where
                     return Err(RemoteSignerError::InvalidResponse);
                 }
             }
-            // The signer already holds a session for this client key, for
-            // example after an earlier attempt failed past connect. Its own
-            // authorization still governs every following request.
-            Err(RemoteSignerError::Denied { reason, .. }) if already_connected(&reason) => {}
+            // Every attempt connects with a new client key, so this means the
+            // URI's one-time secret was already used by an earlier attempt.
+            Err(RemoteSignerError::Denied { reason, .. }) if already_connected(&reason) => {
+                return Err(RemoteSignerError::Denied {
+                    method: "connect".into(),
+                    reason:
+                        "this signer address was already used; create a new one in the signer app"
+                            .into(),
+                });
+            }
             Err(error) => return Err(error),
         }
         self.persist()
