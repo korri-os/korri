@@ -304,6 +304,14 @@ signature verification. Check `korrid identity status` with the old installation
 before stopping if the binding's validity is uncertain. The destination uses
 exactly the play log's `encodeURIComponent` path codec.
 
+The second script also applies the shared save ACL from
+`services/korrid/src/saves/access.rs::prepare_account` after the moves, including
+on reruns with no moves. Only `users/<person>/saves/` and its descendants gain
+named `korrid` and `korri` read/write access, with directory traversal and default
+ACLs for inheritance; group and other access is denied. The person root and
+runner siblings stay unchanged. Both product users must exist. Dry runs list
+the ACL step without changing it.
+
 The second script joins `catalog/library.yaml` release `identity.value` to
 `device.yaml` file `locations` and matches each content filename's stem. These
 are the existing `config/library.rs` and `config/mod.rs` shapes, not a new

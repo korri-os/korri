@@ -2,7 +2,11 @@
 #! nix-shell -i python3 -p "python3.withPackages (p: [ p.pyyaml ])"
 """Exercise the actual operator commands, only on temporary fixture trees."""
 
+import errno
 import json
+import os
+import pwd
+import struct
 import subprocess
 import sys
 import tempfile
@@ -14,6 +18,10 @@ HERE = Path(__file__).parent
 OWNER = "ab" * 32
 DEVICE = "cd" * 32
 RUNNER = "@korri:mgba/mgba"
+DAEMON_UID = os.getuid()
+RUNTIME_UID = pwd.getpwnam(
+    "nobody" if DAEMON_UID != pwd.getpwnam("nobody").pw_uid else "root"
+).pw_uid
 
 
 class MigrationTest(unittest.TestCase):
@@ -73,11 +81,50 @@ class MigrationTest(unittest.TestCase):
         path.chmod(0o640)
         return path
 
+    def require_acl(self):
+        probe = self.root / "acl-probe"
+        probe.mkdir()
+        try:
+            os.setxattr(
+                probe,
+                "system.posix_acl_access",
+                struct.pack("<I", 2)
+                + b"".join(
+                    struct.pack("<HHI", *entry)
+                    for entry in [
+                        (1, 7, 0xFFFFFFFF),
+                        (2, 7, RUNTIME_UID),
+                        (4, 0, 0xFFFFFFFF),
+                        (16, 7, 0xFFFFFFFF),
+                        (32, 0, 0xFFFFFFFF),
+                    ]
+                ),
+            )
+        except OSError as error:
+            if error.errno in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS):
+                self.skipTest(f"Test filesystem lacks POSIX ACL support: {error}")
+            raise
+        finally:
+            probe.rmdir()
+
     def command(self, script, *args, ok=True):
+        entry = [str(HERE / script)]
+        if script == "migrate-retroarch.py":
+            if ok and "--dry-run" not in args:
+                self.require_acl()
+            # Exercise the real CLI parser and orchestration in a subprocess,
+            # with numeric identities; developer hosts need no product users.
+            entry = [
+                "-c",
+                "import sys; sys.dont_write_bytecode = True; "
+                f"sys.path.insert(0, {str(HERE)!r}); "
+                "from migration import run; "
+                f"sys.exit(run('retroarch', ({DAEMON_UID}, {RUNTIME_UID})))",
+            ]
         result = subprocess.run(
             [
                 sys.executable,
-                str(HERE / script),
+                *entry,
                 "--storage-root",
                 str(self.storage),
                 "--private-state-root",
@@ -97,6 +144,10 @@ class MigrationTest(unittest.TestCase):
                 str(p.relative_to(self.root)),
                 p.lstat().st_mode,
                 p.read_bytes() if p.is_file() and not p.is_symlink() else None,
+                tuple(
+                    (name, os.getxattr(p, name, follow_symlinks=False))
+                    for name in sorted(os.listxattr(p, follow_symlinks=False))
+                ),
             )
             for p in self.root.rglob("*")
         )
@@ -139,7 +190,9 @@ class MigrationTest(unittest.TestCase):
         for path in paths:
             destination = self.account / "saves/wario-land-4" / path
             self.assertEqual(destination.read_bytes(), b"saved progress")
-            self.assertEqual(destination.stat().st_mode & 0o777, 0o640)
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o660)
+            self.assert_shared_acl(destination, 6)
+            self.assert_shared_acl(destination.parent, 7, default=True)
             self.assertFalse((self.account / path).exists())
         self.assertTrue((self.account / "saves/Unknown.srm").exists())
         self.assertTrue(
@@ -147,6 +200,150 @@ class MigrationTest(unittest.TestCase):
         )
         before = self.tree()
         self.command("migrate-retroarch.py")
+        self.assertEqual(before, self.tree())
+
+    def assert_shared_acl(
+        self, path, permissions, *, default=False, named_permissions=None
+    ):
+        if named_permissions is None:
+            named_permissions = permissions
+        name = "system.posix_acl_default" if default else "system.posix_acl_access"
+        acl = os.getxattr(path, name)
+        self.assertEqual(struct.unpack_from("<I", acl)[0], 2)
+        entries = {
+            (tag, uid): access
+            for tag, access, uid in struct.iter_unpack("<HHI", acl[4:])
+        }
+        self.assertEqual(
+            entries,
+            {
+                (1, 0xFFFFFFFF): permissions,
+                (2, DAEMON_UID): named_permissions,
+                (2, RUNTIME_UID): named_permissions,
+                (4, 0xFFFFFFFF): 0,
+                (16, 0xFFFFFFFF): permissions,
+                (32, 0xFFFFFFFF): 0,
+            },
+        )
+
+    def test_existing_save_tree_is_repaired_without_moves_and_defaults_inherit(self):
+        self.require_acl()
+        self.file("saves/wario-land-4/saves/mGBA/Wario.srm")
+        self.file("saves/wario-land-4/states/runner/Wario.state")
+        executable = self.file("saves/wario-land-4/executable")
+        executable.chmod(0o750)
+        self.file("steam/credentials", b"private")
+        self.move_account()
+        saves = self.account / "saves"
+        before = self.tree()
+        dry_run = self.command("migrate-retroarch.py", "--dry-run")
+        self.assertIn("ACL", dry_run.stdout)
+        self.assertEqual(before, self.tree())
+        self.assertNotIn("MOVE", dry_run.stdout)
+        outside = [item for item in before if "/saves" not in item[0]]
+        metadata = {
+            path: (path.stat().st_ino, path.stat().st_uid, path.stat().st_gid)
+            for path in saves.rglob("*")
+        }
+        self.command("migrate-retroarch.py")
+        self.assertEqual(
+            outside, [item for item in self.tree() if "/saves" not in item[0]]
+        )
+        for path in [saves, *saves.rglob("*")]:
+            permissions = 7 if path.is_dir() or path.name == "executable" else 6
+            self.assert_shared_acl(path, permissions)
+            if path.is_dir():
+                self.assert_shared_acl(path, 7, default=True)
+            else:
+                self.assertNotIn("system.posix_acl_default", os.listxattr(path))
+        for path, expected in metadata.items():
+            self.assertEqual(
+                (path.stat().st_ino, path.stat().st_uid, path.stat().st_gid), expected
+            )
+        before = self.tree()
+        self.command("migrate-retroarch.py")
+        self.assertEqual(before, self.tree())
+        inherited = saves / "wario-land-4/new-location"
+        inherited.mkdir()
+        self.assert_shared_acl(inherited, 7)
+        self.assert_shared_acl(inherited, 7, default=True)
+        new_save = inherited / "new.srm"
+        new_save.write_bytes(b"new progress")
+        self.assert_shared_acl(new_save, 6, named_permissions=7)
+
+    def test_states_only_migration_grants_access_to_new_save_tree(self):
+        self.file(f"states/{RUNNER}/Wario.state")
+        self.move_account()
+        self.assertFalse((self.account / "saves").exists())
+        before = self.tree()
+        result = self.command("migrate-retroarch.py", "--dry-run")
+        self.assertIn("ACL", result.stdout)
+        self.assertEqual(before, self.tree())
+        self.command("migrate-retroarch.py")
+        self.assert_shared_acl(self.account / "saves", 7, default=True)
+        self.assert_shared_acl(
+            self.account / f"saves/wario-land-4/states/{RUNNER}/Wario.state", 6
+        )
+
+    def test_acl_function_accepts_numeric_identities_and_dry_run_is_read_only(self):
+        from migration import grant_save_access
+
+        self.require_acl()
+        self.file("saves/game/saves/progress.srm")
+        root = self.old / "saves"
+        before = self.tree()
+        grant_save_access(root, DAEMON_UID, RUNTIME_UID, dry_run=True)
+        self.assertEqual(before, self.tree())
+        grant_save_access(root, DAEMON_UID, RUNTIME_UID)
+        self.assert_shared_acl(root, 7, default=True)
+        self.assert_shared_acl(root / "game/saves/progress.srm", 6)
+
+    def test_nested_save_symlink_or_hardlink_refuses_before_any_move(self):
+        self.file("saves/Wario.srm")
+        secret = self.file("steam/credentials", b"private")
+        self.move_account()
+        nested = self.account / "saves/wario-land-4/nested"
+        nested.mkdir(parents=True)
+        link = nested / "credentials"
+        for hardlink in (False, True):
+            if hardlink:
+                os.link(self.account / secret.relative_to(self.old), link)
+            else:
+                link.symlink_to(self.account / "steam", target_is_directory=True)
+            before = self.tree()
+            self.command("migrate-retroarch.py", "--dry-run", ok=False)
+            self.command("migrate-retroarch.py", ok=False)
+            self.assertEqual(before, self.tree())
+            link.unlink()
+
+    def test_real_entrypoint_reports_missing_product_user_without_moving_files(self):
+        missing = []
+        for name in ("korrid", "korri"):
+            try:
+                pwd.getpwnam(name)
+            except KeyError:
+                missing.append(name)
+        if not missing:
+            self.skipTest("Both product users exist on this host")
+        self.file("saves/Wario.srm")
+        self.move_account()
+        before = self.tree()
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(HERE / "migrate-retroarch.py"),
+                "--storage-root",
+                str(self.storage),
+                "--private-state-root",
+                str(self.private),
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(missing[0], result.stderr)
+        self.assertIn("Migration refused", result.stderr)
         self.assertEqual(before, self.tree())
 
     def test_both_commands_refuse_any_active_or_unreconciled_session(self):

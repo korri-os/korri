@@ -4,8 +4,10 @@ import argparse
 import ctypes
 import json
 import os
+import pwd
 import re
 import stat
+import struct
 import sys
 from pathlib import Path
 from urllib.parse import quote
@@ -193,7 +195,9 @@ def retroarch_moves(storage: Path, account: Path) -> list[tuple[Path, Path]]:
     require_directory(account)
     stems = catalog_stems(storage)
     moves = []
-    games_encoded = {encode_component(game) for games in stems.values() for game in games}
+    games_encoded = {
+        encode_component(game) for games in stems.values() for game in games
+    }
     for location in ("saves", "states", "screenshots"):
         root = account / location
         for path in retroarch_files(root, location, games_encoded):
@@ -280,14 +284,68 @@ def rename_without_replace(source: Path, target: Path) -> None:
             os.close(descriptor)
 
 
-def run(kind: str) -> int:
+def save_access_paths(root: Path) -> list[Path]:
+    checked_path(root)
+    if not root.exists():
+        return []
+    require_directory(root)
+    paths = [root]
+    for path in sorted(root.iterdir()):
+        checked_path(path)
+        if path.is_dir():
+            paths.extend(save_access_paths(path))
+        elif path.is_file():
+            # An ACL changes the inode, including links outside saves/.
+            if path.stat().st_nlink != 1:
+                raise ValueError(f"Refusing hard-linked save file: {path}")
+            paths.append(path)
+        else:
+            raise ValueError(f"Refusing special file: {path}")
+    return paths
+
+
+def grant_save_access(
+    root: Path, daemon_uid: int, runtime_uid: int, *, dry_run: bool = False
+) -> None:
+    paths = save_access_paths(root)
+    print(f"ACL (recursive access, directory defaults): {str(root)!r}")
+    if dry_run:
+        return
+    for path in paths:
+        checked_path(path)
+        directory = path.is_dir()
+        permissions = 7 if directory or path.stat().st_mode & 0o111 else 6
+        # services/korrid/src/saves/access.rs::prepare_account: shared ACL on
+        # saves/ only. Named daemon/runtime users and mask get rwx; group and
+        # other get no access. Files use rwX, not unconditional execute. Keep
+        # the person root and all runner siblings unchanged (ADR 0014 / #139).
+        # Like the other migration effects, use native filesystem calls. The
+        # product references pkgs.acl in helpers, not as a system package.
+        entries = [(1, permissions, 0xFFFFFFFF)]
+        entries.extend(
+            (2, permissions, uid) for uid in sorted({daemon_uid, runtime_uid})
+        )
+        entries.extend(
+            [(4, 0, 0xFFFFFFFF), (16, permissions, 0xFFFFFFFF), (32, 0, 0xFFFFFFFF)]
+        )
+        acl = struct.pack("<I", 2) + b"".join(
+            struct.pack("<HHI", *entry) for entry in entries
+        )
+        os.setxattr(path, "system.posix_acl_access", acl, follow_symlinks=False)
+        if directory:
+            os.setxattr(path, "system.posix_acl_default", acl, follow_symlinks=False)
+
+
+def run(kind: str, save_users: tuple[int, int] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Offline save migration. End sessions and stop korrid first."
     )
     parser.add_argument("--storage-root", required=True, type=Path)
     parser.add_argument("--private-state-root", required=True, type=Path)
     parser.add_argument(
-        "--dry-run", action="store_true", help="list moves without writing anything"
+        "--dry-run",
+        action="store_true",
+        help="list moves and ACL changes without writing anything",
     )
     args = parser.parse_args()
     try:
@@ -300,6 +358,21 @@ def run(kind: str) -> int:
             else retroarch_moves(storage, account)
         )
         preflight(plan)
+        if kind == "retroarch":
+            if save_users is None:
+                try:
+                    save_users = (
+                        pwd.getpwnam("korrid").pw_uid,
+                        pwd.getpwnam("korri").pw_uid,
+                    )
+                except KeyError as error:
+                    raise ValueError(
+                        f"Required product account is missing: {error}"
+                    ) from error
+            save_access_paths(account / "saves")  # fail before any moves
+            for source, _ in plan:
+                if source.stat().st_nlink != 1:
+                    raise ValueError(f"Refusing hard-linked save file: {source}")
         for source, target in plan:
             print(f"MOVE {str(source)!r} -> {str(target)!r}")
         if not args.dry_run:
@@ -309,6 +382,10 @@ def run(kind: str) -> int:
                 checked_path(target)
                 make_parents(target.parent, source.parent.stat())
                 rename_without_replace(source, target)
+        if kind == "retroarch":
+            require_idle(args.private_state_root)
+            assert save_users is not None
+            grant_save_access(account / "saves", *save_users, dry_run=args.dry_run)
         return 0
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         print(f"Migration refused: {error}", file=sys.stderr)
