@@ -50,15 +50,28 @@ struct buffer {
 static struct buffer allocate(int fd, enum v4l2_buf_type type)
 {
 	struct v4l2_requestbuffers req = {
-		.count = 1, .type = type, .memory = V4L2_MEMORY_MMAP,
+		.count = type == V4L2_BUF_TYPE_VIDEO_OUTPUT ? 16 : 4,
+		.type = type, .memory = V4L2_MEMORY_MMAP,
 	};
 	struct v4l2_buffer b = {
 		.type = type, .memory = V4L2_MEMORY_MMAP, .index = 0,
 	};
 	struct buffer result;
+	struct v4l2_create_buffers extra = {
+		.count = 1, .memory = V4L2_MEMORY_MMAP,
+		.format = { .type = type },
+	};
 
 	call(fd, VIDIOC_REQBUFS, &req, "REQBUFS");
 	check(req.count >= 1, "buffer count");
+	printf("queue type=%u allocated=%u\n", type, req.count);
+	/* Exercise FFmpeg's 16 OUTPUT / 4 CAPTURE request and the pool cap. */
+	check(req.count <= (type == V4L2_BUF_TYPE_VIDEO_OUTPUT ? 8u : 4u),
+	      "bounded buffer count");
+	call(fd, VIDIOC_G_FMT, &extra.format, "G_FMT for CREATE_BUFS");
+	errno = 0;
+	check(ioctl(fd, VIDIOC_CREATE_BUFS, &extra) == -1 && errno == ENOBUFS,
+	      "CREATE_BUFS at queue cap");
 	call(fd, VIDIOC_QUERYBUF, &b, "QUERYBUF");
 	result.size = b.length;
 	result.data = mmap(NULL, b.length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, b.m.offset);

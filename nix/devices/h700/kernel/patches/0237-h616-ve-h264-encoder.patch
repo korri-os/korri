@@ -846,7 +846,7 @@ diff --git a/drivers/staging/media/sunxi/cedrus/cedrus_enc_video.c b/drivers/sta
 new file mode 100644
 --- /dev/null
 +++ b/drivers/staging/media/sunxi/cedrus/cedrus_enc_video.c
-@@ -0,0 +1,634 @@
+@@ -0,0 +1,648 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Allwinner H616 H264 encoder V4L2 ops.
@@ -1311,6 +1311,9 @@ new file mode 100644
 +{
 +	struct cedrus_ctx *ctx = vb2_get_drv_priv(vq);
 +	struct v4l2_pix_format *pix_fmt;
++	unsigned int limit = V4L2_TYPE_IS_OUTPUT(vq->type) ? 8 : 4;
++	/* Nonzero nplanes denotes CREATE_BUFS; REQBUFS replaces the queue. */
++	unsigned int allocated = *nplanes ? vb2_get_num_buffers(vq) : 0;
 +
 +	if (V4L2_TYPE_IS_OUTPUT(vq->type))
 +		pix_fmt = &ctx->src_fmt;
@@ -1324,6 +1327,17 @@ new file mode 100644
 +		sizes[0] = pix_fmt->sizeimage;
 +		*nplanes = 1;
 +	}
++
++	/*
++	 * At 1920x1088: 12 page-aligned NV12-sized queue buffers plus
++	 * reconstruction, small-luma and the three conservative work buffers
++	 * use 51,916,800 bytes, leaving 14.49 MiB of the 64 MiB ve-pool free.
++	 * FFmpeg's 16 OUTPUT buffers alone would leave too little for STREAMON.
++	 * Include existing buffers so repeated CREATE_BUFS cannot evade the cap.
++	 */
++	if (allocated >= limit)
++		return -ENOBUFS;
++	*nbufs = min(*nbufs, limit - allocated);
 +
 +	return 0;
 +}

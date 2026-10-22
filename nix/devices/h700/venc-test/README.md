@@ -19,6 +19,18 @@ There is no second platform device and no IOMMU attachment.
 | Drain | ENC_CMD_STOP, LAST, EOS subscription/event, empty drain with a subsequently queued capture buffer, ENC_CMD_START |
 | Completion/recovery | Frame completion uses the AVC interrupt; shared 500 ms watchdog resets the VE and returns failed buffers; no frame-completion polling |
 
+The encoder caps each context at eight OUTPUT and four CAPTURE buffers.
+`queue_setup` returns the smaller count to FFmpeg and includes existing buffers
+when handling `CREATE_BUFS`. At the maximum 1920×1088 storage size, the queues
+and all five internal buffers use 51,916,800 bytes. This leaves 14.49 MiB in
+the 64 MiB `ve-pool`. FFmpeg's default sixteen OUTPUT plus four CAPTURE buffers
+otherwise leave too little memory for reconstruction at STREAMON, which blocks
+Sunshine's fixed 1920×1080 startup probe even for a later 640×480 session.
+The CAPTURE size remains resolution-derived; undocumented scratch sizes are not
+reduced. This is a per-context cap, not a global reservation across consumers.
+The controls probe requests FFmpeg's default counts, checks the returned caps,
+and checks that `CREATE_BUFS` cannot append beyond them.
+
 Separate sequence-header packets and Baseline/CAVLC are **not** advertised.
 The Sunshine profile requests joined headers. FFmpeg's default separate-header
 request is optional and it can still use the driver's joined output. This
