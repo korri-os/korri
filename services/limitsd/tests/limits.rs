@@ -2,7 +2,7 @@ use korri_limitsd::{serve_connection, Defaults, Limits, Limitsd, Request, Respon
 use serde_json::{json, Value};
 use std::{
     fs,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     os::unix::{fs::symlink, net::UnixStream},
     path::Path,
 };
@@ -316,6 +316,39 @@ fn socket_checks_real_peer_credentials_and_replies_once() {
         assert_eq!(matches!(response, Response::Ok(_)), authorized);
         worker.join().unwrap().unwrap();
     }
+}
+
+#[test]
+fn unauthorized_peer_waits_for_a_request_line_without_parsing_it() {
+    let (_dir, mut service) = fixture();
+    let (server, mut client) = UnixStream::pair().unwrap();
+    let denied_uid = unsafe { libc::getuid() } + 1;
+    // Start with a partial frame that is deliberately not JSON. Authentication
+    // must not close the socket before the caller finishes its one line.
+    client.write_all(b"not JSON").unwrap();
+    let worker = std::thread::spawn(move || serve_connection(server, denied_uid, &mut service));
+    client
+        .set_read_timeout(Some(std::time::Duration::from_millis(50)))
+        .unwrap();
+    let error = client.read(&mut [0; 1]).unwrap_err();
+    assert!(matches!(
+        error.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+    ));
+    client.write_all(b"\n").unwrap();
+    client
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .unwrap();
+    let mut response = String::new();
+    let mut reader = BufReader::new(client);
+    reader.read_line(&mut response).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&response).unwrap(),
+        json!({"_tag":"Err","payload":{"message":"peer uid is not korrid"}})
+    );
+    response.clear();
+    assert_eq!(reader.read_line(&mut response).unwrap(), 0);
+    worker.join().unwrap().unwrap();
 }
 
 #[test]

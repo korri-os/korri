@@ -4,7 +4,10 @@ Root-only launch-limit effects for ADRs 0019 and 0020. korrid stays unprivileged
 The NixOS product starts `korri-limits.service` at boot, with one systemd-owned
 socket at `/run/korri-limits/limits.sock` (`root:korrid`, `0660`). The server
 checks Linux `SO_PEERCRED`: only the configured **korrid UID** can request an
-effect. Group membership alone does not authorize a peer.
+effect. Group membership alone does not authorize a peer. The server checks
+credentials first, then reads one bounded request line even from a denied peer
+before replying. A denied peer's bytes are never parsed as JSON. This avoids
+closing the socket while the caller is still sending its single request.
 
 ## Wire contract
 

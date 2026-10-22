@@ -570,9 +570,9 @@ pub fn peer_uid(stream: &UnixStream) -> Result<u32> {
 }
 
 pub fn receive(stream: &UnixStream, allowed_uid: u32) -> Result<Request> {
-    if peer_uid(stream)? != allowed_uid {
-        return Err("peer uid is not korrid".into());
-    }
+    let authorized = peer_uid(stream)? == allowed_uid;
+    // Check credentials before reading, but drain the bounded frame before
+    // replying even when denied. Otherwise closing can race the caller's send.
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .map_err(|e| e.to_string())?;
@@ -581,6 +581,9 @@ pub fn receive(stream: &UnixStream, allowed_uid: u32) -> Result<Request> {
         .take(4097)
         .read_until(b'\n', &mut bytes)
         .map_err(|e| format!("read request: {e}"))?;
+    if !authorized {
+        return Err("peer uid is not korrid".into());
+    }
     if bytes.len() > 4096 || bytes.last() != Some(&b'\n') {
         return Err("request must be one JSON line of at most 4096 bytes".into());
     }
