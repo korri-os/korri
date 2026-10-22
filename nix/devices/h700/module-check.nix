@@ -55,6 +55,8 @@ let
     assert kernel.drvPath == crossKernel.drvPath;
     assert lib.versions.major kernel.stdenv.cc.cc.version == "15";
     assert kernel.config.isModule "JOYSTICK_ROCKNIX_SINGLEADC";
+    assert kernel.config.isYes "VIDEO_SUNXI";
+    assert kernel.config.isModule "VIDEO_SUNXI_CEDRUS";
     assert kernel.config.isYes "USB_CONFIGFS_ACM";
     assert kernel.config.isYes "NF_TABLES";
     assert kernel.config.isYes "NFT_COMPAT";
@@ -73,4 +75,22 @@ assert lib.all (name: check name expected.${name}) (builtins.attrNames expected)
 assert lib.allUnique (map (gadget: gadget.name) gadgets);
 assert lib.allUnique (map (gadget: gadget.address) gadgets);
 assert lib.allUnique (map (gadget: gadget.hostMac) gadgets);
-pkgs.runCommand "h700-module-check" { } "touch $out"
+# The video engine decodes from its own reusable CMA pool with no IOMMU link.
+# Any `iommus` property makes Linux turn on translation for every master,
+# and the display engine then faults on wake (patch 0236; see
+# docs/research/h700-video-engine-worksheet.md).
+pkgs.runCommand "h700-module-check" { nativeBuildInputs = [ pkgs.dtc ]; } ''
+  for name in ${lib.concatMapStringsSep " " (facts: facts.dtb) (builtins.attrValues expected)}; do
+    dtc -q -I dtb -O dts "${crossKernel}/dtbs/allwinner/$name.dtb" > tree.dts
+    if grep -q 'iommus' tree.dts; then
+      echo "$name: a node links the IOMMU" >&2; exit 1
+    fi
+    sed -n '/video-codec@1c0e000 {/,/};/p' tree.dts > ve.dts
+    grep -q 'sun50i-h616-video-engine' ve.dts || { echo "$name: no H616 video engine" >&2; exit 1; }
+    grep -q 'memory-region' ve.dts || { echo "$name: video engine has no memory pool" >&2; exit 1; }
+    sed -n '/ve-pool {/,/};/p' tree.dts > pool.dts
+    grep -q 'shared-dma-pool' pool.dts && grep -q 'reusable' pool.dts \
+      || { echo "$name: video engine pool is not a reusable CMA pool" >&2; exit 1; }
+  done
+  touch $out
+''

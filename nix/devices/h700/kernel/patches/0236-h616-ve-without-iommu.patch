@@ -1,0 +1,46 @@
+From: Korri <korri@localhost>
+Subject: [PATCH] arm64: dts: allwinner: sun50i-h616: decode without the IOMMU
+
+Korri experiment, not upstream. With the VE on the IOMMU, Linux turns on
+translation for every master and the display engine faults on wake
+(docs/research/h700-video-engine-worksheet.md). The H6-class VE accepts
+physical addresses: before the H6 IOMMU driver existed, its Cedrus variant
+set CEDRUS_QUIRK_NO_DMA_OFFSET and decoded from CMA (Linux v5.4). Give the
+VE its own reusable CMA pool and no IOMMU link, so nothing attaches to the
+IOMMU and the display path stays as it is without the VE.
+
+---
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h616.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h616.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h616.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h616.dtsi
+@@ -117,6 +117,20 @@
+ 			reg = <0x0 0x40000000 0x0 0x40000>;
+ 			no-map;
+ 		};
++
++		/*
++		 * Korri: the video engine allocates from this pool and uses
++		 * physical addresses, so the IOMMU stays off and the display
++		 * engine's DMA is unchanged. Reusable: the kernel lends the
++		 * pages to movable allocations while the decoder is idle.
++		 */
++		ve_pool: ve-pool {
++			compatible = "shared-dma-pool";
++			reusable;
++			size = <0x0 0x4000000>;
++			alignment = <0x0 0x2000>;
++			alloc-ranges = <0x0 0x40000000 0x0 0x40000000>;
++		};
+ 	};
+ 
+ 	osc24M: osc24M-clk {
+@@ -266,8 +280,8 @@
+ 			clock-names = "ahb", "mod", "ram";
+ 			resets = <&ccu RST_BUS_VE>;
+ 			interrupts = <GIC_SPI 93 IRQ_TYPE_LEVEL_HIGH>;
+-			iommus = <&iommu 3>, <&iommu 2>;
+ 			allwinner,sram = <&ve_sram 1>, <&sram_c 1>;
++			memory-region = <&ve_pool>;
+ 		};
+ 
+ 		syscon: syscon@3000000 {

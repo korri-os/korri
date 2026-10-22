@@ -1,5 +1,7 @@
 # H700 video-engine worksheet
 
+Update 2026-10-21: hardware decode is restored without the IOMMU (section 6). The video engine uses its own reusable CMA pool and has no `iommus` link, so the IOMMU never turns on and the display path is unchanged. Three independent boots passed with byte-identical decodes and zero faults. The sections below record the earlier IOMMU route and its withdrawal.
+
 Correction: the clean display fix is insufficient. The exact landed kernel added a master-0 DMA fault during a later raw-display probe. The bounded clean acceptance below does not establish display safety.
 
 The user approved sustained 640x480 at 60 fps hardware-only Sunshine hosting on the RG35XX Pro. This revision restores the pre-VE kernel source for safety. It does not abandon that target or select C. Earlier sections record historical tests, not current deployment approval.
@@ -281,3 +283,36 @@ The existing USB root console was subsequently proved on baseline boot `e4d08765
 Evidence lives under `/tmp/h700-display/`: `recovery-after-physical-restart-1790966265996928029/{safe-health.log,evidence.tar.gz,unpacked/}`, `terminal-history/unpacked/`, `serial-proof.log`, `closure-signatures.log`, and `read-only-recovery.log`. The two exposure attempts are `control-wake-only-1790963569148251596/` and `control-wake-only-1790963934389502664/`.
 
 Keep the baseline in place. No new experimental-kernel reboot is justified until command-access failure is understood or a verified recovery path removes the unattended-control risk. The reviewed UI write-order comparison remains source-only. Hardware encoding remains unimplemented, and the required sustained 640x480 at 60 fps hardware-only stream remains unfinished.
+
+## 6. Decode without the IOMMU
+
+### Change
+
+Patches 0224 to 0230 stay. The three display workarounds, `0231` (mixers on IOMMU port 0), `0232` (DE33 commit order) and `0235` (plane shutdown), are removed. New patch `0236-h616-ve-without-iommu.patch` changes only `sun50i-h616.dtsi`:
+
+- The video-engine node loses `iommus = <&iommu 3>, <&iommu 2>` and gains `memory-region = <&ve_pool>`.
+- `reserved-memory` gains `ve_pool`: a 64 MiB `shared-dma-pool`, `reusable`, allocated below 2 GiB.
+
+With no `iommus` property anywhere in the tree, no device attaches to `sun50i-iommu`, and `sun50i_iommu_enable()` never runs. The display engine keeps physical DMA exactly as on the kernel without the video engine. Cedrus already calls `of_reserved_mem_device_init()`, so it allocates from the pool with no driver change.
+
+Grounding for physical addressing: Linux v5.4's `sun50i_h6_cedrus_variant` set `CEDRUS_QUIRK_NO_DMA_OFFSET`. H6 decode then ran from CMA, before Maxime Ripard's 2020 commit `62a8ccf3a248` added `iommus` when the H6 IOMMU driver arrived. The H616 compatible reuses the H6 variant, and the H616 video-engine node declares no interconnect offset. The reusable pool exists because the default 32 MiB CMA area had 2.2 MiB free on the deployed Pro; the display allocates from it.
+
+The `h700` module check now decompiles the Pro, SP and SP v2-panel DTBs and fails if any node has `iommus`, if the video engine lacks `memory-region`, or if `ve-pool` is not a reusable `shared-dma-pool`.
+
+### Runtime acceptance on the RG35XX Pro
+
+Candidate system `/nix/store/9j00pcl3rjl60bfycaw7y5nmx5caxc9j-nixos-system-rg35xxpro-sd-card-26.11.20260923.4975466`, built off-device from `8c2f8129a` (the deployed `main`) plus the decode commits. Its closure differs from the deployed system only in the kernel, modules, initrd, DTBs and the files generated from them. The test kit `/nix/store/9wlfxk2cxahy0m5n6lyvvnlwhbyxlp32-ve-decode-test` pins GStreamer to the core, base, good and bad plugin directories and names `v4l2slh264dec` explicitly, so no software decoder can be selected. The fixture is 120 frames of 640x480 at 60 fps H.264 (`fixture.h264` SHA-256 `554a6f77…3044b`). Its reference NV12 decode, made with FFmpeg on zao, has SHA-256 `0c891fbb2e0740e006286f92c89aae79c19785f9e43439893ff5338c9ede6b53`, the same as the October reference.
+
+| Boot ID | Decode rounds | Panel off/on cycles | Idle timeout and wake | IOMMU devices | Fault lines |
+|---|---|---|---|---:|---:|
+| `9fc19507-389e-4193-a6d5-923912094ed8` | 8 of 8 identical | 6 | 1 | 0 | 0 |
+| `3451c906-606f-4324-b723-3a1d97986063` | 5 of 5 identical | 3 | 1 | 0 | 0 |
+| `16f4a796-0c9b-4eb9-bf4e-f3b024ab82e8` | 5 of 5 identical | 3 | 1 | 0 | 0 |
+
+Every decode round produced 55,296,000 bytes with the reference SHA-256 and raised the cedrus interrupt count by exactly 120. After each panel cycle and each idle wake, the decoder also played the fixture to the screen through the compositor (`waylandsink`). The fault filter covered IOMMU page faults, `Unable to handle`, `Oops`, `BUG:`, call traces and cedrus errors. Pico, korrid, the compositor, InputPlumber and inputd stayed active with no restarts and no failed units. The kernel log shows `cedrus 1c0e000.video-codec: assigned reserved memory node ve-pool` and `Reserved memory: created CMA memory pool at 0x000000007c000000, size 64 MiB`.
+
+### Panel wake failure, present without the video engine
+
+On every boot, the compositor's first `output DSI-1 power on` after the panel turned off failed with `[sway/config/output.c:1068] Backend commit failed`, and a second request succeeded. The same happened on the deployed kernel, which has no video engine. Boot `9a3776f3-184d-4dfe-95c5-e588d34aca95` on Image `lgmd22sczwdj0wqcz7g6x343a24ijsfz` failed 5 of 5 first attempts (4 explicit cycles and 1 idle wake), with zero kernel fault lines. The previous deployed boot, `c1cd8297…`, logged 6 such failures during ordinary use. With DRM debug enabled, the failing attempt shows two atomic checks that end without a commit and no kernel error message. The cause is not identified. Option 1 neither causes nor fixes it.
+
+Not established: sustained 60 fps decode, other H.264 profiles, HEVC, MPEG-2 and VP8, decode under memory pressure (the pool is reusable, so allocation may need page migration), and the SP boards, which share the DTB change but were not booted.

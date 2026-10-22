@@ -60,6 +60,21 @@ control tree, as ROCKNIX builds it for every H700 board, plus ROCKNIX's two
 boot settings: no autoboot delay and no EFI loader. BL31 is ARM Trusted
 Firmware 2.13 (`armTrustedFirmwareAllwinnerH616`).
 
+## Hardware video decode
+
+Patches 0224 to 0230 are Chen-Yu Tsai's v3 H616 video-engine series. Cedrus
+(`sunxi-cedrus`, `/dev/video0`) decodes H.264 in hardware through the V4L2
+stateless API, for example GStreamer's `v4l2slh264dec`.
+
+Patch 0236 is Korri's: the video engine gets a 64 MiB reusable CMA pool
+(`ve-pool`) and no `iommus` link. With an IOMMU link, Linux turns on
+translation for every master and the display engine faults when the panel
+wakes; that route was withdrawn on 2026-10-02. Without the link nothing
+attaches to the IOMMU, and the display path is the same as without the video
+engine. The H6-class engine takes physical addresses (`h700` module check
+enforces the device tree shape). Evidence:
+`docs/research/h700-video-engine-worksheet.md`, section 6.
+
 ## Boot sector layout
 
 The Allwinner BROM loads the SPL from sector 16 (8 KiB) on the SD card:
@@ -84,3 +99,7 @@ is `ttyS0` at 115200 baud.
 - HDMI audio needs the ROCKNIX `sunxi_v2` ahub driver, which ROCKNIX also
   leaves disabled. Only the codec (speaker and headphone) is expected to play.
 - No hardware video encoder is selected; the streaming host is not installed.
+  Hardware decode works; encoding has no driver.
+- Panel wake: the compositor's first power-on after the panel turns off
+  often fails (`Backend commit failed`); a second request succeeds. This
+  happens with and without the video engine (#149).
