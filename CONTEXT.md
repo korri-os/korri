@@ -73,6 +73,22 @@ _Avoid_: quit, kill, close
 The screen Korri shows over a live session. It offers return, end, the full Korri screen, and the actions the active plugin supports.
 _Avoid_: pause menu, system panel
 
+**Shared play**:
+More than one device playing one game together. Stream play and netplay are its two kinds.
+_Avoid_: co-op, multiplayer, join
+
+**Stream play**:
+Shared play in which one device runs the game and holds the live session, and other devices play on its stream. Their controllers take free controller seats in that session. They can play and watch, but only the device that holds the session can end it or change it.
+_Avoid_: remote play, guest stream, player two
+
+**Netplay**:
+Shared play in which each device runs its own copy of the game, and the copies are kept in step.
+_Avoid_: online play, linked play
+
+**Invite**:
+What an idle device shows when another device holds a live session that it can take part in through shared play. It names the person who is playing and the game, not the kind of shared play; the receiving device chooses its route. It lasts until the session ends, the device is no longer idle, or the person dismisses it.
+_Avoid_: notification, broadcast, request
+
 **Product module**:
 The one shared composition of every required Korri part. Every device installs it whole.
 _Avoid_: base, shared config, host module
