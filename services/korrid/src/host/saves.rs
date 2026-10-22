@@ -551,7 +551,10 @@ impl HostRuntime {
         let mut missing_records = std::collections::BTreeSet::new();
         for check in checks {
             missing_records.extend(check.heads_without_records);
-            failed |= check.transfer.is_err();
+            // An unreachable peer cannot veto another peer's completed check.
+            // Its remembered risks remain below. A peer that did answer but
+            // could not finish its transfer still keeps the result NotChecked.
+            failed |= check.in_use.is_some() && check.transfer.is_err();
             if let Some(in_use) = check.in_use {
                 answered = true;
                 let since = match in_use {
@@ -1468,6 +1471,113 @@ mod tests {
             "time already spent by this request must reduce the peer budget"
         );
         assert_eq!(result.in_use[0].since, 123);
+    }
+
+    #[test]
+    fn reachable_peer_confirms_long_history_despite_endpointless_peer() {
+        // Large history setup must not hold the process-wide storage lock
+        // inside another parallel test's prelaunch deadline.
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "host::saves::tests::reachable_peer_confirms_long_history_despite_endpointless_peer_child", "--ignored", "--nocapture"])
+            .output().unwrap();
+        eprintln!(
+            "{}{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(result.status.success());
+    }
+
+    #[tokio::test]
+    #[ignore = "subprocess helper; isolates large history setup from other save-check deadlines"]
+    async fn reachable_peer_confirms_long_history_despite_endpointless_peer_child() {
+        let device = MigratedDevice::new(b"local").await;
+        let peer =
+            MigratedDevice::with_peer_delay(b"local", false, std::time::Duration::from_millis(130))
+                .await;
+        let offline = MigratedDevice::new(b"offline").await;
+        device.remember(&peer);
+        peer.remember(&device);
+        let identity = offline.federation.credentials.identity_snapshot().unwrap();
+        device
+            .federation
+            .directory
+            .apply_membership(
+                &device.federation.directory.begin_work().unwrap(),
+                &[identity.owner_statement_json().unwrap()],
+            )
+            .unwrap();
+        let local = device.host.save_store();
+        let remote = peer.host.save_store();
+        device.host.baseline_saves().await.unwrap();
+        let mut record = local.records(PERSON, "wario-land-4").unwrap().remove(0);
+        for n in 0..42 {
+            if n > 0 {
+                record.parents = vec![snapshot_id(&record).unwrap()];
+                record.ended_at = format!("2026-10-22T00:00:{n:02}.000Z");
+            }
+            let id = local.put_record(PERSON, &record).unwrap();
+            remote.put_record(PERSON, &record).unwrap();
+            local
+                .confirm(
+                    PERSON,
+                    "wario-land-4",
+                    &id,
+                    peer.host.save_device().unwrap(),
+                )
+                .unwrap();
+            remote
+                .confirm(
+                    PERSON,
+                    "wario-land-4",
+                    &id,
+                    device.host.save_device().unwrap(),
+                )
+                .unwrap();
+        }
+        remote
+            .put_object(
+                PERSON,
+                &record.locations[0].files[0].sha256,
+                &mut b"local".as_slice(),
+            )
+            .unwrap();
+        local
+            .remember_in_use(
+                PERSON,
+                "wario-land-4",
+                offline.host.save_device().unwrap(),
+                Some(42),
+            )
+            .unwrap();
+        let (mut state, _) = crate::app_states(device.host.clone());
+        state.saves = Some(device.service.clone());
+        state.federation = Some(device.federation.directory.clone());
+        let router = axum::Router::new()
+            .route("/rpc", axum::routing::post(crate::rpc))
+            .with_state(state);
+        let started = tokio::time::Instant::now();
+        let response = rpc(
+            &router,
+            "app.saves.check",
+            serde_json::json!({"gameId":"wario-land-4"}),
+        )
+        .await;
+        eprintln!(
+            "42-record app check, 130 ms per peer request and endpointless peer: {:?}",
+            started.elapsed()
+        );
+        assert_eq!(response["outcome"]["_tag"], "Ok", "{response}");
+        let result: SaveCheck =
+            serde_json::from_value(response["outcome"]["payload"].clone()).unwrap();
+        assert_eq!(result.status, SaveMark::Synced);
+        assert!(started.elapsed() < std::time::Duration::from_millis(2500));
+        assert!(
+            result.in_use.iter().any(|warning| warning.device
+                == offline.host.save_device().unwrap()
+                && warning.since == 42),
+            "an endpointless peer must not lose its remembered risk"
+        );
     }
 
     #[tokio::test]

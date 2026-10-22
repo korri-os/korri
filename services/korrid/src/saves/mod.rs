@@ -39,6 +39,13 @@ pub trait SaveRepository: Send + Sync {
     /// The hash must already be named by one of this person's stored records.
     fn put_object(&self, person: &str, hash: &str, input: &mut dyn Read) -> Result<(), SaveError>;
     fn complete(&self, person: &str, game: &str, id: &str) -> Result<bool, SaveError>;
+    /// Immutable snapshots this peer has already acknowledged holding.
+    fn confirmed_snapshots(
+        &self,
+        person: &str,
+        game: &str,
+        device: &str,
+    ) -> Result<std::collections::BTreeSet<String>, SaveError>;
     /// Persists an authenticated peer's acknowledgement, never inferred by time.
     fn confirm(&self, person: &str, game: &str, id: &str, device: &str) -> Result<(), SaveError>;
 }
