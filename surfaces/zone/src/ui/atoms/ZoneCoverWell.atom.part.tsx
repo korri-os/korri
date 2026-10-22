@@ -33,7 +33,7 @@ export function TallArt() {
   )
 }
 
-/** Wide art (2.14:1): a letterbox band in a tall well. */
+/** A wide cover (2.14:1): a letterbox band in a tall well. */
 export function WideArt() {
   return (
     <ZonePartFrame shape="card">

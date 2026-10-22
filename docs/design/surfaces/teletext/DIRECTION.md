@@ -68,3 +68,11 @@ C30 Focus is reverse video: the yellow row, the yellow cell or the grown Fastext
 C31 Confirm: the band turns magenta with the kicker double height, the game named on row 19 when it has one, the detail on rows 20 and 21; Fastext takes the host's actions in the host's order and words, red, green, yellow, blue.
 C32 Progress: row 21 of the red band is a mosaic bar filled to done over total, "1.2 of 3.4 GB" after it; with no total only "1.2 GB so far", no bar; with no progress the header counter rolls alone.
 C33 Band row 21 after the play facts, in cyan: "Needs a 3.4 GB download first."; with no size, "Needs a download first."
+C34 No answer yet
+C35 No answer yet
+C36 No answer yet
+C37 No answer yet
+C38 No answer yet
+C39 No answer yet
+C40 No answer yet
+C41 No answer yet

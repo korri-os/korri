@@ -67,8 +67,8 @@ export function zoneBandCards(games: readonly SurfaceGame[]): readonly ZoneBandC
     system: game.subtitle,
     places: placesOf(game),
     resumable: game.resumable === true,
-    // A game with only wide art wears it, letterboxed in the cover well like any art.
-    art: game.coverArtUrl ?? game.wideArtUrl,
+    // Any cover wears the well, letterboxed when it is wider than the well.
+    art: game.coverArtUrl,
     ...(game.download === undefined ? {} : { download: game.download }),
     section: sections[index],
   }))
@@ -126,7 +126,7 @@ export function zoneGamesProps(
       title: idleGame.title,
       system: idleGame.subtitle,
       act: zoneActOf(idleGame),
-      art: idleGame.wideArtUrl ?? idleGame.coverArtUrl,
+      art: idleGame.coverArtUrl,
       plays: idleGame.playCount,
     },
     launchHeld: nav.launch !== undefined && nav.launch.seen && !nav.launch.leaving,

@@ -8,7 +8,7 @@ import { ZoneTitleCard } from "../molecules/ZoneTitleCard"
 /**
  * The idle attract (REFINEMENT.md 3, M6), one game's turn of 6000 ms: the
  * game's title card sweeps in (M3), holds, sweeps out, and the game's own
- * wide art (its cover when it has none) stands as the "stage", letterboxed
+ * cover stands as the "stage", letterboxed
  * on black and panning 32 art px, with the HUD at the top left (TIME is
  * Korri's clock, PLAYS its count) and PRESS ANY BUTTON blinking at the
  * foot. The binding moves to the next game every turn; `turn` names it, so
@@ -34,7 +34,7 @@ export function ZoneAttract({
   readonly title: string
   readonly act: number
   readonly system?: string
-  /** The stage: Korri's wide art, else its cover. */
+  /** The stage: Korri's cover art. */
   readonly art?: string
   /** Korri's clock, verbatim. Absent: no TIME. */
   readonly clock?: string

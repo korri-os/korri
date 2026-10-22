@@ -71,3 +71,11 @@ C30 The focused cell is marquee yellow with a white rule, always one on screen; 
 C31 A slate in the preview window: the kicker in big yellow, the detail under it, the listing named when it has one; the host's actions as tags under the promo title, in the host's order and words; the crawl repeats the kicker
 C32 The Busy slate gains a bar of yellow blocks filled to done over total with "1.2 of 3.4 GB" under it; with no total "1.2 GB so far" and no bar; with no progress the slate alone
 C33 The sidebar facts line adds Download 3.4 GB (Download alone with no size); the listing's cell carries a DL flag beside the pips
+C34 No answer yet
+C35 No answer yet
+C36 No answer yet
+C37 No answer yet
+C38 No answer yet
+C39 No answer yet
+C40 No answer yet
+C41 No answer yet

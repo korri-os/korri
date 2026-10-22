@@ -71,3 +71,11 @@ C30 Focus is the Finder's selection: the darkened icon with the inverted label, 
 C31 Confirm: a Caution alert, the kicker as title, the detail as body, the game named first; buttons in the host's order and words, focus on the first
 C32 The Busy alert gains the Finder's copy bar, filled black to done over total, "1.2 MB of 3.4 MB" under it; no total "1.2 MB read", no bar; no progress the body alone
 C33 The header's second line adds "Needs a 3.4 MB download first" ("Needs a download first" with no size); Get Info adds a bold Download label with the size
+C34 No answer yet
+C35 No answer yet
+C36 No answer yet
+C37 No answer yet
+C38 No answer yet
+C39 No answer yet
+C40 No answer yet
+C41 No answer yet

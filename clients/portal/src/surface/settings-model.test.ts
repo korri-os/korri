@@ -197,6 +197,28 @@ describe("settingsFrom", () => {
     })
   })
 
+  it("states each folder's own status instead of a fixed word", () => {
+    const games = group(
+      {
+        discovery: {
+          generation: "discovery-1",
+          state: { _tag: "Idle", payload: {} },
+          attention: 0,
+          sources: [
+            { id: "loc-a", label: "GBA", system: "gba", status: { _tag: "Overlap", payload: {} } },
+            { id: "loc-b", label: "SNES", system: "snes", status: { _tag: "SystemUnavailable", payload: {} } },
+          ],
+          diagnostics: [],
+        },
+      },
+      "Games",
+    )
+    expect(games?.items.filter(item => item.id.startsWith("game-folder:")).map(item => [item.label, item.value])).toEqual([
+      ["GBA", "Overlaps another folder"],
+      ["SNES", "System unavailable"],
+    ])
+  })
+
   it("shows calm discovery progress and bounded problems", () => {
     expect(
       group(

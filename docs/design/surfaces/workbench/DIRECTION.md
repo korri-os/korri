@@ -72,3 +72,11 @@ C30 Focus is selection: the complemented icon in a sunk frame, label inverted, a
 C31 Confirm: a requester titled with the kicker, the detail as its body, the game named first when it has one; a button per host action, left to right in the host's order and words, focus on the first; the Games window behind goes inactive.
 C32 Progress: the Busy requester gains a fuel gauge, the sunk bar of the volume windows, filled in pen 3 to done over total, "1.2 MB of 3.4 MB" under it; with no total "1.2 MB read" and no gauge; with no progress the body alone.
 C33 The Info line adds "Needs a 3.4 MB download first" after the play facts, "Needs a download first" with no size; the game's own window lists it with the facts.
+C34 No answer yet
+C35 No answer yet
+C36 No answer yet
+C37 No answer yet
+C38 No answer yet
+C39 No answer yet
+C40 No answer yet
+C41 No answer yet

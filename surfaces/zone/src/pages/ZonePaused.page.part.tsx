@@ -186,7 +186,7 @@ export default function Default() {
   return <Scenario overlay={overlayDefault} />
 }
 
-/** Korri names the running game and its catalog has wide art: the game stands behind PAUSED in grey. */
+/** Korri names the running game and its catalog has its cover: the game stands behind PAUSED in grey. */
 export function OnTheGame() {
   return <Scenario art={ZONE_ART_BRAMBLE} overlay={overlayDefault} />
 }

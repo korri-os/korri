@@ -27,7 +27,7 @@
 ## Capability map
 
 C1  Loading: edges without values; Error: a Korri issuer card under Identity carries the message as its field and a Reload chip; Empty: the three issuer cards and a lining line "No passes yet"; Ready: the stack
-C2  Passes in catalog order; a section is a lining-ink label between edges (a pocket tab); subtitle takes the edge row's system slot; wide art fills the strip, else the cover; no cover = title strip
+C2  Passes in catalog order; a section is a lining-ink label between edges (a pocket tab); subtitle takes the edge row's system slot; the cover fills the strip; no cover = title strip
 C3  Fields row on the pulled pass: Last played, Plays, Play time and Gate; the barcode foot is the play tally, one bar per play; the Resume chip on the edge row marks resumable
 C4  A plays the pulled pass through the lit gate; on a two-gate pass no gate is lit until left/right picks one, A with none lit shakes the gates
 C5  options flips the pulled pass to its back: gameActions as rows with their description, dimmed when disabled; a destructive row is red-ruled and needs a second confirm chip
@@ -59,3 +59,11 @@ C30 Focus is the pulled pass (forward, wider, hard shadow) plus the lit gate chi
 C31 The notification strip under the status row in the pass's own colour (lining when no game): pass name, kicker and detail; the host's actions as chips at its right, in the host's order and words; the pass stays pulled
 C32 The Busy strip draws a hairline bar across its foot, filled to done over total, "1.2 of 3.4 GB" beside it; with no total "1.2 GB so far" and no bar; with no progress the strip alone
 C33 A Download field joins the fields row with the size (3.4 GB), or Needed with none
+C34 No answer yet
+C35 No answer yet
+C36 No answer yet
+C37 No answer yet
+C38 No answer yet
+C39 No answer yet
+C40 No answer yet
+C41 No answer yet

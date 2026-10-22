@@ -114,7 +114,6 @@ describe("surfaceModelFrom", () => {
     if (model.catalog._tag !== "Ready") throw new Error("expected Ready")
     const game = model.catalog.games[0]!
     expect(game.coverArtUrl).toBeUndefined()
-    expect(game.wideArtUrl).toBeUndefined()
     expect(game.subtitle).toBe("GBA")
     expect(game.lastPlayedAt).toBeUndefined()
     expect(game.playCount).toBeUndefined()

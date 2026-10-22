@@ -109,7 +109,7 @@ export interface ZoneGamesIdle {
   readonly system?: string
   /** The session that would start next: Korri's playCount + 1. */
   readonly act: number
-  /** Korri's wide art, else its cover. */
+  /** Korri's cover art. */
   readonly art?: string
   readonly plays?: number
 }
