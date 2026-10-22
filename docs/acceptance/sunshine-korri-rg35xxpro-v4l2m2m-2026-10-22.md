@@ -1,5 +1,7 @@
 # RG35XX Pro Sunshine / Cedrus H.264 — acceptance, 2026-10-22
 
+> **Correction (frame profile, 2026-10-22).** The received rates below count encoded packets, not new pictures. A later profile of the same build found Sunshine acquires only about **13.5 new KMS frames per second**; the encoder repeats the last frame to fill the stream. The limit is Sunshine's EGL/GL readback of the scanout buffer (p50 about 72 ms per frame), then RGB-to-NV12 conversion (about 15 ms). The encoder needs about 1.3 ms per frame. See `sunshine-korri-rg35xxpro-frame-profile-2026-10-22.md`.
+
 **640×480 at sustained 60 fps was not achieved.** Hardware H.264 streaming works end-to-end, including correct decoded Pico pictures. Sustained received rates were **50.567 fps over Wi-Fi** and **50.410 fps over USB Ethernet**. USB eliminated the observed Wi-Fi frame losses but did not improve throughput. The evidence points to CPU capture/readback/conversion, not the VE encoder, as the throughput limit.
 
 ## Scope and safety
