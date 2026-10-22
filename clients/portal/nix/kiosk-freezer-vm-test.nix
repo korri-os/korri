@@ -8,6 +8,8 @@
 let
   runtime = korrid.overrideAttrs (old: {
     pname = "korrid-portal-freezer-runtime";
+    # This override installs only the harness, not reusable Cargo artifacts.
+    outputs = [ "out" ];
     preConfigure = (old.preConfigure or "") + ''
       # Cargo integration tests build every auto-discovered binary. Unrelated
       # review probes require fixtures outside the packaged crate.
