@@ -21,6 +21,14 @@ jobs:
     name: Host, portal, and surface
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # A cold korrid build is most of this job. Line tables keep file and line
+    # numbers in panics and backtraces but drop the rest of the debug info:
+    # measured locally, the target directory falls from 21 GB to 7.8 GB and
+    # the test build is about 13% faster. Incremental artifacts only help a
+    # repeat build of the same tree, which a fresh runner never does.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_INCREMENTAL: "0"
 
     steps:
       - name: Check out Korri
