@@ -9,10 +9,13 @@ devices with the Allwinner H700:
 | RG35XX SP, v2 panel | `../rg35xxsp` | `sun50i-h700-anbernic-rg35xx-sp-v2-panel` | `rg35xxsp-v2-panel-sd-image` |
 | RG35XX Pro | `../rg35xxpro` | `sun50i-h700-anbernic-rg35xx-pro` | `rg35xxpro-sd-image` |
 
-Status: development images. No H700 board has booted this kernel yet. Every
-display, input, audio and Wi-Fi value comes from the device trees, the ROCKNIX
-sources and the driver sources, and each file names its source. Physical
-acceptance still decides support.
+Status: the RG35XX Pro and the RG35XX SP (V1 panel) boot this kernel. The
+hardware encoder and Sunshine are accepted on both
+(`docs/acceptance/sunshine-korri-rg35xxpro-v4l2m2m-2026-10-22.md`,
+`docs/acceptance/sunshine-korri-rg35xxsp-v4l2m2m-2026-10-22.md`). The SP
+v2-panel tree has not booted. Board values not covered by those records come
+from the device trees, the ROCKNIX sources and the driver sources, and each
+file names its source.
 
 ## Hardware summary
 
@@ -114,8 +117,8 @@ is `ttyS0` at 115200 baud.
   leaves disabled. Only the codec (speaker and headphone) is expected to play.
 - The H.264 encoder is intra-only. Tight CBR, P frames, separate header
   packets, Baseline/CAVLC and a zero-copy GPU input path are not established.
-- The Pro ships the Sunshine streaming host (`h264_v4l2m2m` on `/dev/video1`).
-  Its KMS capture reads the screen back through the GPU, which limits it to
+- The Pro and the SP ship the Sunshine streaming host (`h264_v4l2m2m` on
+  `/dev/video1`). Its KMS capture reads the screen back through the GPU, which limits it to
   about 13.5 new frames per second at 640x480; the stream repeats frames to
   fill 60. Sunshine finds no display, and so no encoder, while the panel is
-  off. The SP does not ship it.
+  off.

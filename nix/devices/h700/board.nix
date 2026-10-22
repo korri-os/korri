@@ -1,8 +1,8 @@
 # Hardware facts shared by the Anbernic H700 handhelds (RG35XX SP and Pro).
 # Each device module adds its device tree, identity and SD labels.
 #
-# Nothing here has been observed on a booted board yet. Each value names the
-# source it is read from. Physical acceptance must confirm or replace it.
+# Each value names the source it is read from. The Pro and the SP (V1 panel)
+# boot with these values; ../h700/README.md names the acceptance records.
 {
   config,
   korri,

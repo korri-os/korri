@@ -72,7 +72,8 @@ in
   odin2portal = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
   # The two H700 boards use ROCKNIX's H700 table. Both stream through the
   # H700 hardware H.264 encoder (docs/acceptance/
-  # sunshine-korri-rg35xxpro-v4l2m2m-2026-10-22.md).
+  # sunshine-korri-rg35xxpro-v4l2m2m-2026-10-22.md and
+  # sunshine-korri-rg35xxsp-v4l2m2m-2026-10-22.md).
   rg35xxsp = shared ++ streamingHost ++ ssh;
   rg35xxpro = shared ++ streamingHost ++ ssh;
 }
