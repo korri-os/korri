@@ -126,7 +126,33 @@ def signed_identity(fields):
     return fields["StorePath"], nar_hash, size, sorted(references)
 
 
+# GitHub Pages answers 429 and 503 while seven device jobs read it at once
+# (nix-cache runs 39744047580 and 39761993867). Retry those and dropped
+# connections. A 404 is an answer, not a failure: it means the path is absent.
+UPSTREAM_RETRY_DELAYS = (2, 4, 8, 16)
+
+
 def upstream_metadata(opener, url):
+    for delay in (*UPSTREAM_RETRY_DELAYS, None):
+        try:
+            return upstream_metadata_once(opener, url)
+        except HTTPError as error:
+            if delay is None or not (error.code == 429 or error.code >= 500):
+                raise
+            error.close()
+            reason = f"HTTP {error.code}"
+        except (URLError, HTTPException, TimeoutError, ConnectionError) as error:
+            if delay is None:
+                raise
+            reason = type(error).__name__
+        print(
+            f"korri-cache: {reason} from {url}; retrying in {delay} s",
+            file=sys.stderr,
+        )
+        time.sleep(delay)
+
+
+def upstream_metadata_once(opener, url):
     with opener.open(url, timeout=30) as response:
         if response.status != 200:
             raise ValueError(f"unexpected upstream HTTP {response.status}")

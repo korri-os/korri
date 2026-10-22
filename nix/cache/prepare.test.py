@@ -102,10 +102,21 @@ class PrepareUpstreamTest(unittest.TestCase):
         self.remote.mkdir()
         shutil.copyfile(self.cache / "nix-cache-info", self.remote / "nix-cache-info")
         remote = self.remote
+        # Configurable outages: name -> how many more requests answer 503.
+        self.unavailable = {}
+        unavailable = self.unavailable
 
         class Handler(SimpleHTTPRequestHandler):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, directory=remote, **kwargs)
+
+            def do_GET(self):
+                name = self.path.lstrip("/")
+                if unavailable.get(name, 0) > 0:
+                    unavailable[name] -= 1
+                    self.send_error(503, "Service Unavailable")
+                    return
+                super().do_GET()
 
             def log_message(self, *args):
                 pass
@@ -228,6 +239,34 @@ class PrepareUpstreamTest(unittest.TestCase):
         self.assertEqual(len(output.getvalue().splitlines()), 1)
         self.assert_uploads_only_retained_payloads()
         self.assert_substitutes(published=[self.remote / name])
+
+    def test_temporary_upstream_outage_is_retried(self):
+        published = self.shared[0]
+        self.publish(published)
+        self.unavailable["nix-cache-info"] = 1
+        self.unavailable[published] = 2
+        delays = publisher.UPSTREAM_RETRY_DELAYS
+        publisher.UPSTREAM_RETRY_DELAYS = (0, 0, 0, 0)
+        self.addCleanup(setattr, publisher, "UPSTREAM_RETRY_DELAYS", delays)
+        output = io.StringIO()
+        with redirect_stderr(output):
+            self.filter()
+        self.assertEqual(self.unavailable, {"nix-cache-info": 0, published: 0})
+        self.assertEqual(output.getvalue().count("HTTP 503"), 3)
+        self.assertFalse((self.notes / published).exists())
+        self.assert_payloads()
+
+    def test_lasting_upstream_outage_still_fails(self):
+        published = self.shared[0]
+        self.publish(published)
+        self.unavailable[published] = 99
+        delays = publisher.UPSTREAM_RETRY_DELAYS
+        publisher.UPSTREAM_RETRY_DELAYS = (0, 0, 0, 0)
+        self.addCleanup(setattr, publisher, "UPSTREAM_RETRY_DELAYS", delays)
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaisesRegex(Exception, "503"):
+                self.filter()
+        self.assertEqual(self.unavailable[published], 94)
 
     def test_public_upstream_still_requires_identical_nar(self):
         self.publish_variant()
