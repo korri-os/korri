@@ -18,7 +18,10 @@ holders show a join request.
 ## Considered options
 
 - **Copy the person key on approval.** Rejected: every approved device could act
-  as the person until an identity switch on every device. This is how the Odin 2
-  Portal received its key on 2026-10-22, through a backup restore.
+  as the person until an identity switch on every device.
+
+The Odin 2 Portal and the RP Mini V2 already joined this way on 2026-10-22, by
+hand: each device's owner-binding template was signed by the person's phone
+signer (Amber, over NIP-46), and the person key stayed in the phone.
 - **Ask at each approval.** Rejected: it puts a security choice in front of
   every person at every join.
