@@ -18,8 +18,9 @@ const GUESSED = ["10 %", "20 %", "30 %", "40 %", "50 %", "60 %", "70 %", "80 %",
 const GOVERNORS = ["conservative", "ondemand", "userspace", "powersave", "performance", "schedutil"]
 const NEXT = "Applies at next launch."
 
-const choices = (labels: readonly string[]) => [
+const choices = (labels: readonly string[], floor: boolean) => [
   { value: "inherit", label: "Inherit" },
+  ...(floor ? [{ value: "0", label: "0 % (no floor)" }] : []),
   ...labels.map(label => ({ value: label.split(" ")[0] ?? label, label })),
 ]
 
@@ -30,6 +31,8 @@ const UNKNOWN: Steps = { cpu: GUESSED, gpu: GUESSED, guessed: true }
 const NO_GPU: Steps = { cpu: CPU, gpu: [], guessed: false, noGpu: true }
 
 function row(id: string, label: string, value: string | undefined, source: string, labels: readonly string[], guessed: boolean): SurfaceSettingItem {
+  // Minimums may be no floor at all; Korri marks the choice in force by value.
+  const offered = choices(labels, label.endsWith("min"))
   return {
     id,
     label,
@@ -37,7 +40,11 @@ function row(id: string, label: string, value: string | undefined, source: strin
     description: guessed ? `${NEXT} Clock steps unknown.` : NEXT,
     source,
     scope: "device",
-    interaction: { kind: "choice", choices: choices(labels) },
+    interaction: {
+      kind: "choice",
+      choices: offered,
+      selected: offered.find(choice => choice.label === (value ?? "Inherit"))?.value ?? "inherit",
+    },
   }
 }
 
@@ -59,7 +66,11 @@ function valueGroups(layerId: string, values: Values, sources: Sources, steps: S
           description: steps.guessed ? `${NEXT} Governors unknown.` : NEXT,
           source: governor.source,
           scope: "device" as const,
-          interaction: { kind: "choice" as const, choices: [{ value: "inherit", label: "Inherit" }, ...(steps.guessed ? [] : GOVERNORS).map(name => ({ value: name, label: name }))] },
+          interaction: {
+            kind: "choice" as const,
+            choices: [{ value: "inherit", label: "Inherit" }, ...(steps.guessed ? [] : GOVERNORS).map(name => ({ value: name, label: name }))],
+            selected: governor.value ?? "inherit",
+          },
         }]),
       ],
     },
@@ -88,7 +99,8 @@ function profileGroup(profiles: readonly FixtureProfile[], selected?: string): S
         description: "Remembered for this game. Applies at next launch.",
         interaction: {
           kind: "choice",
-          choices: [{ value: "none", label: "No profile" }, ...profiles.map(profile => ({ value: `profile:${profile.id}`, label: profile.title }))],
+          choices: [{ value: "", label: "No profile" }, ...profiles.map(profile => ({ value: profile.id, label: profile.title }))],
+          selected: profiles.some(profile => profile.id === selected) ? selected ?? "" : "",
         },
       },
       {

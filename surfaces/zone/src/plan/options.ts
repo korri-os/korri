@@ -179,9 +179,15 @@ export function zoneNetworkValue(network: SurfaceWifiNetwork): string {
  */
 export const isPathLabel = (label: string): boolean => /^[/~]/.test(label)
 
-/** Where a choice row stands among its choices; -1 when Korri's value names none. */
+/**
+ * Where a choice row stands among its choices; -1 when Korri's value names
+ * none. Korri's `selected` value decides when it publishes one, because two
+ * choices may share a label (two profiles named "Quiet").
+ */
 export function choiceIndex(item: SurfaceSettingItem): number {
   if (item.interaction?.kind !== "choice") return -1
+  const selected = item.interaction.selected
+  if (selected !== undefined) return item.interaction.choices.findIndex(choice => choice.value === selected)
   return item.interaction.choices.findIndex(choice => choice.label === item.value || choice.value === item.value)
 }
 

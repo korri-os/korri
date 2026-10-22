@@ -113,3 +113,41 @@ describe("launch settings: the page", () => {
     expect(screen.getAllByText(byWords("GPU limits aren't available on this device")).length).toBeGreaterThan(0)
   })
 })
+
+describe("launch settings: inert actions and choices by value", () => {
+  test("a disabled editor action is drawn, marked disabled, and does nothing", () => {
+    const host = createFixtureHost()
+    const editor = { ...launch.ready, actions: launch.ready.actions.map(action => action.id === "launch:reload" ? { ...action, enabled: false } : action) }
+    render(<ZoneSurface host={host} model={withLaunchSettings(fixtureModel, editor)} />)
+    const reload = screen.getByRole("button", { name: /Reload/i })
+    expect(reload.getAttribute("aria-disabled") === "true" || (reload as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(reload)
+    expect(host.calls).toEqual([])
+  })
+
+  test("a step starts from the selected value, not from the first matching label", () => {
+    const editor = {
+      ...launch.ready,
+      layers: launch.ready.layers.map(layer => layer.id !== "game" ? layer : {
+        ...layer,
+        groups: [{
+          title: "Profile",
+          items: [{
+            id: "launch:profile:pick",
+            label: "Profile at next launch",
+            value: "Quiet",
+            interaction: {
+              kind: "choice" as const,
+              selected: "p2",
+              choices: [{ value: "", label: "No profile" }, { value: "p1", label: "Quiet" }, { value: "p2", label: "Quiet" }],
+            },
+          }],
+        }],
+      }),
+    }
+    const model = withLaunchSettings(fixtureModel, editor)
+    const state = zoneSurfaceStart(model, "blend")
+    expect(update(state, { _tag: "Launch", message: { _tag: "SteppedRow", rowId: "launch:profile:pick", direction: 1 } }, model).requests)
+      .toEqual([{ _tag: "ChangeSetting", settingId: "launch:profile:pick", value: "" }])
+  })
+})

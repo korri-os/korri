@@ -289,7 +289,10 @@ function controlFor(item: SurfaceSettingItem): PicoSettingControl {
       }
     case "choice": {
       const labels = interaction.choices.map((choice) => choice.label)
-      const current = Math.max(0, interaction.choices.findIndex((choice) => choice.label === item.value))
+      // Korri marks the choice in force by value when labels may repeat.
+      const current = Math.max(0, interaction.selected === undefined
+        ? interaction.choices.findIndex((choice) => choice.label === item.value)
+        : interaction.choices.findIndex((choice) => choice.value === interaction.selected))
       const nextChoice = interaction.choices[(current + 1) % interaction.choices.length]
       if (labels.length > PICO_SEGMENTS_MAX) {
         return { kind: "step", next: nextChoice?.value ?? "", current: labels[current] ?? "" }
