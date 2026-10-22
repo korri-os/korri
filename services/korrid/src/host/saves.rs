@@ -101,6 +101,18 @@ fn baseline_deferral(game: &str, error: &SaveDiagnostic) -> String {
     )
 }
 
+// Request-local route facts. Peer transfer changes history, not the launch
+// declaration. Reuse these facts for the post-pull projection, but never across
+// requests: plugin selection, routes and settings can change between checks.
+struct SaveCheckPreparation {
+    support: Option<SaveMark>,
+    declaration: Option<(
+        crate::launcher::plugin_launch::PluginLaunchInput,
+        crate::launcher::plugin_launch::PreparedLaunch,
+    )>,
+    title: String,
+}
+
 fn now() -> String {
     chrono::DateTime::from_timestamp(crate::peer_rpc::unix_time() as i64, 0)
         .expect("current UTC time")
@@ -158,32 +170,8 @@ impl HostRuntime {
         if store.reconcile(person, game).map_err(failure)? == SaveMark::Split {
             return Ok(SaveMark::Split);
         }
-        if let (Ok(root), Ok(registry)) = (self.route_root(), self.route_registry()) {
-            if let Ok((snapshot, _)) = crate::config::settings::runner_choice_snapshot(root) {
-                if crate::config::resolver::resolve_linux_route(
-                    root, &snapshot, &registry, game, None,
-                )
-                .is_ok_and(|route| route.runner_id == "@korri:steam/steam")
-                {
-                    return Ok(SaveMark::SyncedBySteam);
-                }
-            }
-        }
-        if self
-            .config
-            .as_ref()
-            .is_ok_and(|config| config.games.iter().any(|g| g.id == game))
-        {
-            return Ok(SaveMark::NotSynced);
-        }
-        match self.save_declaration(game, None) {
-            Ok(Some((input, _))) if input.runner_id == "@korri:steam/steam" => {
-                return Ok(SaveMark::SyncedBySteam)
-            }
-            Ok(Some((_, prepared))) if prepared.plan.save_locations.is_empty() => {
-                return Ok(SaveMark::NotSynced)
-            }
-            _ => {}
+        if let Some(status) = self.save_support(game) {
+            return Ok(status);
         }
         Ok(
             if store
@@ -195,6 +183,36 @@ impl HostRuntime {
                 SaveMark::NotChecked
             },
         )
+    }
+    fn save_support(&self, game: &str) -> Option<SaveMark> {
+        if let (Ok(root), Ok(registry)) = (self.route_root(), self.route_registry()) {
+            if let Ok((snapshot, _)) = crate::config::settings::runner_choice_snapshot(root) {
+                if crate::config::resolver::resolve_linux_route(
+                    root, &snapshot, &registry, game, None,
+                )
+                .is_ok_and(|route| route.runner_id == "@korri:steam/steam")
+                {
+                    return Some(SaveMark::SyncedBySteam);
+                }
+            }
+        }
+        if self
+            .config
+            .as_ref()
+            .is_ok_and(|config| config.games.iter().any(|g| g.id == game))
+        {
+            return Some(SaveMark::NotSynced);
+        }
+        match self.save_declaration(game, None) {
+            Ok(Some((input, _))) if input.runner_id == "@korri:steam/steam" => {
+                return Some(SaveMark::SyncedBySteam)
+            }
+            Ok(Some((_, prepared))) if prepared.plan.save_locations.is_empty() => {
+                return Some(SaveMark::NotSynced)
+            }
+            _ => {}
+        }
+        None
     }
     pub(crate) async fn save_status(&self) -> Result<SaveStatus, RpcFailure> {
         let host = self.clone();
@@ -351,11 +369,36 @@ impl HostRuntime {
             .unwrap_or_else(|| "another device".into())
     }
 
+    fn save_check_preparation(&self, request: &SaveCheckRequest) -> SaveCheckPreparation {
+        let support = self.save_support(&request.game_id);
+        let declaration = self
+            .save_declaration(&request.game_id, request.runner_id.as_deref())
+            .ok()
+            .flatten();
+        let title = self
+            .route_root()
+            .ok()
+            .and_then(|root| crate::config::settings::runner_choice_snapshot(root).ok())
+            .and_then(|(snapshot, _)| {
+                snapshot
+                    .library
+                    .get(&request.game_id)
+                    .and_then(|game| game.title.clone())
+            })
+            .unwrap_or_else(|| "this game".into());
+        SaveCheckPreparation {
+            support,
+            declaration,
+            title,
+        }
+    }
+
     fn save_check_details(
         &self,
         request: &SaveCheckRequest,
         person: &str,
         peers: &[crate::federation::PeerSnapshot],
+        preparation: &SaveCheckPreparation,
     ) -> Result<SaveCheck, RpcFailure> {
         if self.launch_person()? != person {
             return Err(RpcFailure {
@@ -363,7 +406,20 @@ impl HostRuntime {
                 message: "The device owner changed. Check saves again.".into(),
             });
         }
-        let status = self.save_mark(&request.game_id)?;
+        let store = self.save_store();
+        let status =
+            if store.reconcile(person, &request.game_id).map_err(failure)? == SaveMark::Split {
+                SaveMark::Split
+            } else if let Some(status) = &preparation.support {
+                status.clone()
+            } else if store
+                .confirmed_elsewhere(person, &request.game_id, self.save_device()?)
+                .map_err(failure)?
+            {
+                SaveMark::Synced
+            } else {
+                SaveMark::NotChecked
+            };
         let history = self.save_history_blocking(&request.game_id)?;
         let latest = history.current.as_ref().and_then(|id| {
             history
@@ -373,23 +429,11 @@ impl HostRuntime {
         });
         let mut warnings = Vec::new();
         if let Some(latest) = latest {
-            if let Ok(Some((input, prepared))) =
-                self.save_declaration(&request.game_id, request.runner_id.as_deref())
-            {
+            if let Some((input, prepared)) = &preparation.declaration {
                 if latest.record.release_id.is_some()
                     && latest.record.release_id != prepared.release_id
                 {
-                    let title = self
-                        .route_root()
-                        .ok()
-                        .and_then(|root| crate::config::settings::runner_choice_snapshot(root).ok())
-                        .and_then(|(snapshot, _)| {
-                            snapshot
-                                .library
-                                .get(&request.game_id)
-                                .and_then(|game| game.title.clone())
-                        })
-                        .unwrap_or_else(|| "this game".into());
+                    let title = &preparation.title;
                     let device = self.save_device_label(&latest.record.device, peers);
                     warnings.push(format!(
                         "These saves came from a different release of {title}, played on {device}."
@@ -455,29 +499,44 @@ impl HostRuntime {
         let owner = person.clone();
         let known_peers = peers.clone();
         let details = tokio::task::spawn_blocking(move || {
-            host.save_check_details(&selected, &owner, &known_peers)
+            let preparation = host.save_check_preparation(&selected);
+            let details = host.save_check_details(&selected, &owner, &known_peers, &preparation)?;
+            Ok::<_, RpcFailure>((preparation, details))
         });
-        match tokio::time::timeout_at(peer_deadline, details).await {
-            Ok(Ok(Ok(details))) => {
+        // Pulls need only the owner and game, never a route or declaration.
+        // They write private history/objects, not live save locations, so they
+        // can run while the blocking worker prepares the local route facts.
+        // Keep this future scoped to the request so a timeout cancels network IO.
+        let pull = async {
+            match peer {
+                Some(peer) => Some(
+                    tokio::time::timeout_at(
+                        deadline,
+                        peer.pull_before_launch(&request.game_id, peer_deadline),
+                    )
+                    .await,
+                ),
+                None => None,
+            }
+        };
+        let (details, checks) = tokio::join!(tokio::time::timeout_at(peer_deadline, details), pull);
+        let preparation = match details {
+            Ok(Ok(Ok((preparation, details)))) => {
                 answer.status = details.status;
                 answer.warnings = details.warnings;
+                preparation
             }
             Ok(Ok(Err(error))) => return Err(error),
             Ok(Err(error)) => return Err(host_worker_failure(error)),
             Err(_) => return Ok(answer),
-        }
-        let Some(peer) = peer else {
+        };
+        let Some(checks) = checks else {
             if answer.status == SaveMark::Synced {
                 answer.status = SaveMark::NotChecked;
             }
             return Ok(answer);
         };
-        let checks = match tokio::time::timeout_at(
-            deadline,
-            peer.pull_before_launch(&request.game_id, peer_deadline),
-        )
-        .await
-        {
+        let checks = match checks {
             Ok(Ok(checks)) => checks,
             _ => {
                 if answer.status == SaveMark::Synced {
@@ -537,7 +596,7 @@ impl HostRuntime {
                     .remember_in_use(&owner, &game, &device, since)
                     .map_err(failure)?;
             }
-            let mut result = host.save_check_details(&request, &owner, &peers)?;
+            let mut result = host.save_check_details(&request, &owner, &peers, &preparation)?;
             result.in_use = store.in_use_warnings(&owner, &game).map_err(failure)?;
             if result.status == SaveMark::NotChecked && answered && !failed {
                 result.status = SaveMark::Synced;
@@ -1112,6 +1171,9 @@ mod tests {
             Self::with_missing_artifact(bytes, false).await
         }
         async fn with_missing_artifact(bytes: &[u8], missing: bool) -> Self {
+            Self::with_peer_delay(bytes, missing, std::time::Duration::ZERO).await
+        }
+        async fn with_peer_delay(bytes: &[u8], missing: bool, delay: std::time::Duration) -> Self {
             use crate::{plugin::PluginRegistry, plugin_installation::EnabledPackage};
             let root = tempfile::tempdir().unwrap();
             let package = root.path().join("plugin");
@@ -1191,7 +1253,13 @@ mod tests {
                 federation.authorization.clone(),
             )
             .unwrap()
-            .router(None);
+            .router(None)
+            .layer(axum::middleware::from_fn(
+                move |request: Request<Body>, next: axum::middleware::Next| async move {
+                    tokio::time::sleep(delay).await;
+                    next.run(request).await
+                },
+            ));
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let base = format!("http://{}", listener.local_addr().unwrap());
             let server = tokio::spawn(async move {
@@ -1250,6 +1318,83 @@ mod tests {
                 )
                 .unwrap();
         }
+    }
+
+    async fn check_with_slow_declaration(peer_bytes: &[u8], expected: SaveMark) {
+        let device = MigratedDevice::new(b"local").await;
+        let peer = MigratedDevice::new(peer_bytes).await;
+        device.host.baseline_saves().await.unwrap();
+        peer.host.baseline_saves().await.unwrap();
+        device.remember(&peer);
+        peer.remember(&device);
+        let source = device.root.path().join("plugin/plugin.ts");
+        let mut plugin = std::fs::read_to_string(&source).unwrap();
+        // Two real declaration evaluations take at least 1.5 seconds, like
+        // the measured device cost, but each stays below the VM's 1 s limit.
+        plugin.push_str("\nhandlers['launch.prepare']=(prepare=>input=>{const end=Date.now()+750;while(Date.now()<end){};return prepare(input)})(handlers['launch.prepare']);");
+        std::fs::write(source, plugin).unwrap();
+        let (mut state, _) = crate::app_states(device.host.clone());
+        state.saves = Some(device.service.clone());
+        state.federation = Some(device.federation.directory.clone());
+        let router = axum::Router::new()
+            .route("/rpc", axum::routing::post(crate::rpc))
+            .with_state(state);
+        let started = tokio::time::Instant::now();
+        let check = rpc(
+            &router,
+            "app.saves.check",
+            serde_json::json!({"gameId":"wario-land-4"}),
+        );
+        let imported = async {
+            tokio::time::timeout(std::time::Duration::from_millis(700), async {
+                while device
+                    .host
+                    .save_store()
+                    .records(PERSON, "wario-land-4")
+                    .unwrap()
+                    .len()
+                    < 2
+                {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                started.elapsed()
+            })
+            .await
+        };
+        let (result, imported) = tokio::join!(check, imported);
+        let elapsed = started.elapsed();
+        assert!(
+            imported.is_ok(),
+            "peer records must arrive during local preparation"
+        );
+        assert!(
+            elapsed >= std::time::Duration::from_millis(1400),
+            "declaration must exercise the slow path: {elapsed:?}"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_millis(2500),
+            "check exceeded its budget: {elapsed:?}"
+        );
+        assert_eq!(result["outcome"]["_tag"], "Ok", "{result}");
+        let result: SaveCheck =
+            serde_json::from_value(result["outcome"]["payload"].clone()).unwrap();
+        eprintln!(
+            "slow declaration check: {:?}, peer records at {:?}, response at {elapsed:?}",
+            result.status,
+            imported.unwrap()
+        );
+        assert_eq!(result.status, expected);
+        assert_eq!(device.backend.launch_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn prelaunch_check_confirms_peer_during_slow_local_declaration() {
+        check_with_slow_declaration(b"local", SaveMark::Synced).await;
+    }
+
+    #[tokio::test]
+    async fn prelaunch_check_finds_split_during_slow_local_declaration() {
+        check_with_slow_declaration(b"peer", SaveMark::Split).await;
     }
 
     #[tokio::test]
@@ -1323,6 +1468,72 @@ mod tests {
             "time already spent by this request must reduce the peer budget"
         );
         assert_eq!(result.in_use[0].since, 123);
+    }
+
+    #[tokio::test]
+    async fn prelaunch_check_projects_release_and_runner_warnings_from_pulled_history() {
+        let device = MigratedDevice::new(b"local").await;
+        let peer =
+            MigratedDevice::with_peer_delay(b"peer", false, std::time::Duration::from_millis(40))
+                .await;
+        device.host.baseline_saves().await.unwrap();
+        let base = device
+            .host
+            .save_store()
+            .records(PERSON, "wario-land-4")
+            .unwrap()
+            .remove(0);
+        let store = peer.host.save_store();
+        store.put_record(PERSON, &base).unwrap();
+        let mut newer = base.clone();
+        newer.parents = vec![snapshot_id(&base).unwrap()];
+        newer.device = peer.host.save_device().unwrap().into();
+        newer.release_id = Some("older-release".into());
+        newer.runner_id = "older-runner".into();
+        newer.locations[0].kind = SaveKind::Savestate;
+        newer.locations[0].files[0].sha256 = crate::saves::record::hash(b"peer");
+        newer.locations[0].files[0].bytes = 4;
+        store.put_record(PERSON, &newer).unwrap();
+        store
+            .put_object(
+                PERSON,
+                &newer.locations[0].files[0].sha256,
+                &mut b"peer".as_slice(),
+            )
+            .unwrap();
+        device.remember(&peer);
+        peer.remember(&device);
+        let result = device
+            .host
+            .save_check(
+                SaveCheckRequest {
+                    game_id: "wario-land-4".into(),
+                    runner_id: None,
+                },
+                Some(device.service.clone()),
+                Some(device.federation.directory.clone()),
+                tokio::time::Instant::now(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.status, SaveMark::Synced);
+        assert!(result.warnings.iter().any(|warning|warning == "These saves came from a different release of Wario Land 4, played on Other handheld."), "{:?}", result.warnings);
+        assert!(
+            result.warnings.iter().any(|warning| warning
+                == "These savestates came from a different runner and may not load."),
+            "{:?}",
+            result.warnings
+        );
+        assert_eq!(
+            std::fs::read(
+                crate::saves::account_root(device.root.path(), PERSON)
+                    .unwrap()
+                    .join("saves/wario-land-4/saves/game.srm")
+            )
+            .unwrap(),
+            b"local",
+            "pull must not write live save locations"
+        );
     }
 
     #[tokio::test]
