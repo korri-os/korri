@@ -196,10 +196,27 @@ pub enum RemoteSignerError {
     Request,
     #[error("remote signer request timed out")]
     Timeout,
-    #[error("remote signer denied the request")]
-    Denied,
+    /// The signer's own error text, bounded and stripped of control
+    /// characters, says which step it refused and why.
+    #[error("remote signer denied {method}: {reason}")]
+    Denied { method: String, reason: String },
     #[error("remote signer response is invalid")]
     InvalidResponse,
+}
+
+const MAX_SIGNER_ERROR_CHARS: usize = 200;
+
+fn signer_error_text(error: &str) -> String {
+    let text: String = error
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(MAX_SIGNER_ERROR_CHARS)
+        .collect();
+    if text.trim().is_empty() {
+        "no reason given".into()
+    } else {
+        text
+    }
 }
 
 trait RequestIdSource: Send + Sync {
@@ -425,8 +442,11 @@ where
                     if response.result == "auth_url" {
                         continue;
                     }
-                    if response.error.is_some() {
-                        return Err(RemoteSignerError::Denied);
+                    if let Some(error) = response.error {
+                        return Err(RemoteSignerError::Denied {
+                            method: request.method.clone(),
+                            reason: signer_error_text(&error),
+                        });
                     }
                     return Ok(response.result);
                 }
@@ -491,8 +511,8 @@ where
                     unsigned_event_template: request.unsigned_event_template,
                     signed_event_json,
                 },
-                Err(RemoteSignerError::Denied) => PersonSignerState::Denied {
-                    message: "The remote signer denied the request".into(),
+                Err(error @ RemoteSignerError::Denied { .. }) => PersonSignerState::Denied {
+                    message: error.to_string(),
                 },
                 Err(RemoteSignerError::InvalidResponse) => PersonSignerState::InvalidResponse {
                     message: "The remote signer returned a different or invalid event".into(),
@@ -761,6 +781,20 @@ mod tests {
             RemoteSignerConnection::from_bunker_uri("https://example.com", "11".repeat(32))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn a_denial_names_the_step_and_the_signers_bounded_reason() {
+        let error = RemoteSignerError::Denied {
+            method: "connect".into(),
+            reason: signer_error_text("invalid secret\n\u{1b}[31m"),
+        };
+        assert_eq!(
+            error.to_string(),
+            "remote signer denied connect: invalid secret[31m"
+        );
+        assert_eq!(signer_error_text(" \n"), "no reason given");
+        assert_eq!(signer_error_text(&"x".repeat(500)).len(), 200);
     }
 
     #[test]
