@@ -24,8 +24,6 @@ import type {
   IdentityRetiredDeleteOutcome,
   IdentityStatusOutcome,
   IdentitySwitchOutcome,
-  LaunchSettingsSnapshotOutcome,
-  LaunchSettingsWriteOutcome,
   LaunchWarning,
   LocalGame,
   LocalGamesListOutcome,
@@ -354,28 +352,6 @@ function isSessionControls(value: unknown): value is SessionControls {
       isRecord(group) && typeof group.id === "string" &&
       typeof group.label === "string" && Array.isArray(group.controls) &&
       group.controls.every(isSessionControl))
-}
-
-/**
- * The four `app.launch-settings.*` RPCs. Their payload and outcome types are
- * generated; their RpcRequest/RpcResponse dispatch variants land in a later
- * korrid commit, so until then this call is typed by the payload alone. When
- * the variants exist, these become ordinary callKorrid calls.
- */
-async function callLaunchSettings<Outcome>(
-  baseUrl: string,
-  capability: string,
-  tag: string,
-  payload: unknown,
-): Promise<Outcome> {
-  const response = await fetch(`${baseUrl}/rpc`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${capability}` },
-    body: JSON.stringify({ _tag: tag, payload }),
-    signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
-  })
-  if (!response.ok) throw new KorridHttpError(response.status)
-  return ((await response.json()) as { outcome: Outcome }).outcome
 }
 
 // Never propagate transport/dependency text on a password-carrying path.
@@ -877,27 +853,27 @@ export function createHttpKorridClient(
     },
     async launchSettingsSnapshot(gameId) {
       try {
-        return await callLaunchSettings<LaunchSettingsSnapshotOutcome>(baseUrl, capability, "app.launch-settings.snapshot", gameId === undefined ? {} : { gameId })
+        return (await callKorrid(baseUrl, capability, { _tag: "app.launch-settings.snapshot", payload: gameId === undefined ? {} : { gameId } })).outcome
       } catch (error) { return routeUnavailable(error) }
     },
     async setLaunchSetting(payload) {
       try {
-        return await callLaunchSettings<LaunchSettingsWriteOutcome>(baseUrl, capability, "app.launch-settings.set", payload)
+        return (await callKorrid(baseUrl, capability, { _tag: "app.launch-settings.set", payload })).outcome
       } catch (error) { return settingWriteUnavailable(error) }
     },
     async saveLaunchProfile(payload) {
       try {
-        return await callLaunchSettings<LaunchSettingsWriteOutcome>(baseUrl, capability, "app.launch-settings.profile.save", payload)
+        return (await callKorrid(baseUrl, capability, { _tag: "app.launch-settings.profile.save", payload })).outcome
       } catch (error) { return settingWriteUnavailable(error) }
     },
     async removeLaunchProfile(payload) {
       try {
-        return await callLaunchSettings<LaunchSettingsWriteOutcome>(baseUrl, capability, "app.launch-settings.profile.remove", payload)
+        return (await callKorrid(baseUrl, capability, { _tag: "app.launch-settings.profile.remove", payload })).outcome
       } catch (error) { return settingWriteUnavailable(error) }
     },
     async selectLaunchProfile(payload) {
       try {
-        return await callLaunchSettings<LaunchSettingsWriteOutcome>(baseUrl, capability, "app.launch-settings.profile.select", payload)
+        return (await callKorrid(baseUrl, capability, { _tag: "app.launch-settings.profile.select", payload })).outcome
       } catch (error) { return settingWriteUnavailable(error) }
     },
   }

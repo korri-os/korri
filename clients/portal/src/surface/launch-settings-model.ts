@@ -28,8 +28,8 @@ type Bound = "min" | "max"
 
 /** Choice value for "no value on this layer". Never a percent or governor. */
 export const INHERIT = "inherit"
-export const NO_PROFILE = "none"
-const PROFILE_CHOICE = "profile:"
+/** The pick's value for "No profile". A profile id is never empty. */
+export const NO_PROFILE = ""
 
 /** Opaque ids the host publishes and routes. Surfaces never parse them. */
 export const LAUNCH_ID = {
@@ -42,6 +42,8 @@ export const LAUNCH_ID = {
   rename: (profileId: string) => `launch:profile:rename:${profileId}`,
   remove: (profileId: string) => `launch:profile:remove:${profileId}`,
   reload: "launch:reload",
+  /** Reads the device's launch settings again after a failed read. */
+  deviceRetry: "launch-device:retry",
   /** Opens the runner chooser for this game, when its page offers one. */
   runner: "launch:runner",
   retry: "launch:retry",
@@ -123,10 +125,22 @@ export function launchValueFrom(setting: LaunchSettingKey, choice: string): numb
   return Number.isInteger(percent) && percent >= 0 && percent <= 100 ? percent : Number.NaN
 }
 
-/** The profile a pick chooses. `null` is "No profile"; undefined is not a pick. */
-export function profileFromPick(choice: string): string | null | undefined {
-  if (choice === NO_PROFILE) return null
-  return choice.startsWith(PROFILE_CHOICE) ? choice.slice(PROFILE_CHOICE.length) : undefined
+/** The profile a pick chooses: its id, or `null` for "No profile". */
+export function profileFromPick(choice: string): string | null {
+  return choice === NO_PROFILE ? null : choice
+}
+
+/**
+ * Each profile's title as the editor shows it. Titles may repeat; a repeat
+ * is told apart by its place among its namesakes ("Quiet", "Quiet (2)").
+ */
+export function profileTitles(profiles: readonly { readonly id: string; readonly title: string }[]): ReadonlyMap<string, string> {
+  const seen = new Map<string, number>()
+  return new Map(profiles.map(profile => {
+    const count = (seen.get(profile.title) ?? 0) + 1
+    seen.set(profile.title, count)
+    return [profile.id, count === 1 ? profile.title : `${profile.title} (${count})`]
+  }))
 }
 
 // --- clock steps -----------------------------------------------------------
@@ -204,6 +218,7 @@ export function governors(facts: LaunchDeviceFacts | undefined): readonly string
 // --- rows ------------------------------------------------------------------
 
 const INHERIT_CHOICE: SurfaceSettingChoice = { value: INHERIT, label: "Inherit" }
+const NO_FLOOR: SurfaceSettingChoice = { value: "0", label: "0 % (no floor)" }
 const NEXT_LAUNCH = "Applies at next launch."
 
 interface Context {
@@ -212,6 +227,7 @@ interface Context {
   readonly gpu: Steps
   readonly governors: readonly string[]
   readonly titleOf: (scope: LaunchSettingsScope) => string
+  /** The Device layer's authored values. Korri omits shipped defaults. */
   readonly deviceValues: { readonly cpu: LaunchSettingsValues; readonly gpu: LaunchSettingsValues; readonly governor?: string }
 }
 
@@ -225,8 +241,8 @@ function contextOf(snapshot: LaunchSettingsSnapshot): Context {
     deviceValues: { cpu: device?.cpu ?? {}, gpu: device?.gpu ?? {}, ...(device?.governor === undefined ? {} : { governor: device.governor }) },
     titleOf: scope => {
       if (scope._tag === "Profile") {
-        const profile = snapshot.profiles.find(candidate => candidate.id === scope.id.profileId)
-        return profile === undefined ? "a profile" : `Profile ${profile.title}`
+        const title = profileTitles(snapshot.profiles).get(scope.id.profileId)
+        return title === undefined ? "a profile" : `Profile ${title}`
       }
       return snapshot.layers.find(layer => layerIdOf(layer.scope) === layerIdOf(scope))?.title ?? scope._tag
     },
@@ -237,7 +253,7 @@ function contextOf(snapshot: LaunchSettingsSnapshot): Context {
 function sourceText(context: Context, layerId: string, kind: Kind, bound: Bound, resolved: LaunchResolvedValue): string {
   const steps = context[kind]
   const fromId = layerIdOf(resolved.source)
-  const defaulted = resolved.source._tag === "Device" && context.deviceValues[kind][bound] === undefined
+  const defaulted = resolved.deviceDefault
   const title = defaulted ? "Device (default)" : context.titleOf(resolved.source)
   const value = steps.labelOf(resolved.value)
   if (resolved.adjusted) return `${value} from ${title}, adjusted`
@@ -253,17 +269,21 @@ function percentRow(
 ): SurfaceSettingItem {
   const [kind, bound] = setting.split(".") as [Kind, Bound]
   const steps = context[kind]
-  const choices = own === undefined || steps.choices.some(choice => choice.value === String(own))
-    ? steps.choices
-    : [...steps.choices, { value: String(own), label: steps.labelOf(own) }].sort((a, b) => Number(a.value) - Number(b.value))
+  // A minimum may be no floor at all; a maximum is always above 0 (korrid
+  // takes min 0 to 100, max 1 to 100).
+  const floor = bound === "min" ? [NO_FLOOR] : []
+  const offered = [...floor, ...steps.choices]
+  const choices = own === undefined || offered.some(choice => choice.value === String(own))
+    ? offered
+    : [...offered, { value: String(own), label: steps.labelOf(own) }].sort((a, b) => Number(a.value) - Number(b.value))
   return {
     id,
     label: LABELS[setting],
-    value: own === undefined ? "Inherit" : steps.labelOf(own),
+    value: own === undefined ? "Inherit" : choices.find(choice => choice.value === String(own))?.label ?? steps.labelOf(own),
     description: steps.guessed ? `${NEXT_LAUNCH} Clock steps unknown.` : NEXT_LAUNCH,
     source: sourceText(context, layerId, kind, bound, context.snapshot.resolved[kind][bound]),
     scope: "device",
-    interaction: { kind: "choice", choices: [INHERIT_CHOICE, ...choices] },
+    interaction: { kind: "choice", choices: [INHERIT_CHOICE, ...choices], selected: own === undefined ? INHERIT : String(own) },
   }
 }
 
@@ -279,7 +299,11 @@ function governorRow(context: Context, id: string): SurfaceSettingItem {
     description: known.length === 0 ? `${NEXT_LAUNCH} Governors unknown.` : NEXT_LAUNCH,
     source: own !== undefined ? "from Device" : inForce === undefined ? "from Device (default)" : `${inForce} from Device (default)`,
     scope: "device",
-    interaction: { kind: "choice", choices: [INHERIT_CHOICE, ...offered.map(governor => ({ value: governor, label: governor }))] },
+    interaction: {
+      kind: "choice",
+      choices: [INHERIT_CHOICE, ...offered.map(governor => ({ value: governor, label: governor }))],
+      selected: own ?? INHERIT,
+    },
   }
 }
 
@@ -337,6 +361,7 @@ export function launchNoteFrom(snapshot: LaunchSettingsSnapshot): string | undef
 /** One game's editor: a layer per scope, most general first, then each profile. */
 export function launchLayersFrom(snapshot: LaunchSettingsSnapshot): readonly SurfaceLaunchSettingsLayer[] {
   const context = contextOf(snapshot)
+  const titles = profileTitles(snapshot.profiles)
   const selected = snapshot.profiles.find(profile => profile.id === snapshot.selectedProfile)
   const profileRows = (): SurfaceSettingGroup => ({
     title: "Profile",
@@ -344,14 +369,15 @@ export function launchLayersFrom(snapshot: LaunchSettingsSnapshot): readonly Sur
       {
         id: LAUNCH_ID.pick,
         label: "Profile at next launch",
-        value: selected?.title ?? "No profile",
+        value: selected === undefined ? "No profile" : titles.get(selected.id) ?? selected.title,
         description: "Remembered for this game. Applies at next launch.",
         interaction: {
           kind: "choice",
           choices: [
             { value: NO_PROFILE, label: "No profile" },
-            ...snapshot.profiles.map(profile => ({ value: `${PROFILE_CHOICE}${profile.id}`, label: profile.title })),
+            ...snapshot.profiles.map(profile => ({ value: profile.id, label: titles.get(profile.id) ?? profile.title })),
           ],
+          selected: selected?.id ?? NO_PROFILE,
         },
       },
       {
@@ -382,7 +408,7 @@ export function launchLayersFrom(snapshot: LaunchSettingsSnapshot): readonly Sur
     const rows = valueRows(context, layerId, profile, false, setting => LAUNCH_ID.set(layerId, setting))
     return {
       id: layerId,
-      title: `Profile ${profile.title}`,
+      title: `Profile ${titles.get(profile.id) ?? profile.title}`,
       groups: [
         { title: "CPU", items: rows.cpu },
         { title: "GPU", items: rows.gpu },
@@ -404,7 +430,7 @@ export function launchLayersFrom(snapshot: LaunchSettingsSnapshot): readonly Sur
                 actionId: LAUNCH_ID.remove(profile.id),
                 destructive: true,
                 confirmation: {
-                  title: `Delete ${profile.title}?`,
+                  title: `Delete ${titles.get(profile.id) ?? profile.title}?`,
                   message: "Its values go. The game's other launch settings stay.",
                   confirmLabel: "Delete profile",
                 },

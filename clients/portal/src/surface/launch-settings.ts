@@ -36,6 +36,17 @@ import {
 
 export const LAUNCH_SETTINGS_ACTION_ID = "launch-settings"
 
+/** Device settings' group when its read failed: Korri's message and Retry. */
+const deviceErrorGroup = (message: string): SurfaceSettingGroup => ({
+  title: "Launch settings",
+  items: [{
+    id: LAUNCH_ID.deviceRetry,
+    label: "Launch settings could not be read",
+    description: message,
+    interaction: { kind: "action", actionId: LAUNCH_ID.deviceRetry },
+  }],
+})
+
 const close: SurfaceAction = { id: LAUNCH_ID.cancel, label: "Close", enabled: true }
 const reload: SurfaceAction = { id: LAUNCH_ID.reload, label: "Reload", enabled: true }
 const retry: SurfaceAction = { id: LAUNCH_ID.retry, label: "Retry", enabled: true }
@@ -106,9 +117,9 @@ export function createLaunchSettings(korrid: KorridClient) {
     const result = await korrid.launchSettingsSnapshot()
     if (disposed || operation !== deviceGeneration) return
     if (result._tag === "Err") {
-      // A device that cannot state its launch settings shows no group.
+      // The group stays, saying what went wrong, with Retry (the contract's Error).
       deviceSnapshot = undefined
-      publish({ deviceGroup: undefined })
+      publish({ deviceGroup: deviceErrorGroup(result.payload.message) })
       return
     }
     deviceSnapshot = result.payload
@@ -220,7 +231,8 @@ export function createLaunchSettings(korrid: KorridClient) {
       case "Pick":
         write(settingId, record => {
           const profileId = profileFromPick(value)
-          if (game === undefined || profileId === undefined) return undefined
+          // Only a profile this read published: an id is never matched by title.
+          if (game === undefined || (profileId !== null && !record.profiles.some(profile => profile.id === profileId))) return undefined
           return korrid.selectLaunchProfile({
             gameId: game,
             ...(profileId === null ? {} : { profileId }),
@@ -251,6 +263,10 @@ export function createLaunchSettings(korrid: KorridClient) {
 
   /** Editor actions and profile deletion. False: not a launch action. */
   const act = (actionId: string): boolean => {
+    if (actionId === LAUNCH_ID.deviceRetry) {
+      void refreshDevice()
+      return true
+    }
     if (actionId === LAUNCH_ID.cancel) {
       cancel()
       return true

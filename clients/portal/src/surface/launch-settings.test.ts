@@ -143,7 +143,7 @@ describe("game launch settings editor", () => {
     expect(profile?.title).toBe("Speedrun")
     expect(editor.layers.at(-1)?.title).toBe("Profile Speedrun")
 
-    launch.change(LAUNCH_ID.pick, `profile:${profile?.id}`)
+    launch.change(LAUNCH_ID.pick, profile?.id ?? "")
     await settle(); await settle()
     editor = launch.getSnapshot().editor
     expect(editor._tag !== "Closed" && editor.selectedProfileId).toBe(profile?.id)
@@ -247,5 +247,92 @@ describe("game launch settings editor", () => {
     launch.open("wario", "Wario Land 4")
     await settle()
     expect(launch.getSnapshot().editor).not.toHaveProperty("note")
+  })
+})
+
+describe("review round 1", () => {
+  const twoQuiet = {
+    games,
+    profiles: { wario: [
+      { id: "p1", title: "Quiet", cpu: {}, gpu: {} },
+      { id: "p2", title: "Quiet", cpu: { max: 50 }, gpu: {} },
+    ] },
+    selected: { wario: "p2" },
+  }
+
+  it("names a profile pick by id, marks it by value, and tells duplicate titles apart", async () => {
+    const launch = createLaunchSettings(createInMemoryKorridClient({ launchSettings: twoQuiet }))
+    launch.open("wario", "Wario Land 4")
+    await settle()
+    const editor = launch.getSnapshot().editor
+    const pick = row(editor, "game", "Profile at next launch")
+    expect(pick?.interaction).toEqual({
+      kind: "choice",
+      selected: "p2",
+      choices: [{ value: "", label: "No profile" }, { value: "p1", label: "Quiet" }, { value: "p2", label: "Quiet (2)" }],
+    })
+    expect(pick?.value).toBe("Quiet (2)")
+    expect(editor._tag !== "Closed" && editor.layers.slice(-2).map(layer => layer.title)).toEqual(["Profile Quiet", "Profile Quiet (2)"])
+    expect(row(editor, "game", "CPU max")?.source).toBe("50 % from Profile Quiet (2)")
+    launch.change(LAUNCH_ID.pick, "p1")
+    await settle(); await settle()
+    expect(row(launch.getSnapshot().editor, "game", "Profile at next launch")?.interaction).toMatchObject({ selected: "p1" })
+    launch.change(LAUNCH_ID.pick, "")
+    await settle(); await settle()
+    expect(row(launch.getSnapshot().editor, "game", "Profile at next launch")?.interaction).toMatchObject({ selected: "" })
+  })
+
+  it("marks every launch choice row by value", async () => {
+    const launch = createLaunchSettings(createInMemoryKorridClient({ launchSettings: { games, deviceFacts: RG353M_LAUNCH_FACTS, layers: { device: { cpu: { max: 61 }, gpu: {}, governor: "schedutil" } } } }))
+    launch.open("wario", "Wario Land 4")
+    await settle()
+    const editor = launch.getSnapshot().editor
+    expect(row(editor, "device", "CPU max")?.interaction).toMatchObject({ selected: "61" })
+    expect(row(editor, "device", "CPU min")?.interaction).toMatchObject({ selected: "inherit" })
+    expect(row(editor, "device", "CPU governor")?.interaction).toMatchObject({ selected: "schedutil" })
+  })
+
+  it("offers a 0 % floor on minimums only", async () => {
+    for (const facts of [RG353M_LAUNCH_FACTS, undefined]) {
+      const launch = createLaunchSettings(createInMemoryKorridClient({ launchSettings: { games, ...(facts === undefined ? {} : { deviceFacts: facts }) } }))
+      launch.open("wario", "Wario Land 4")
+      await settle()
+      const editor = launch.getSnapshot().editor
+      for (const label of ["CPU min", "GPU min"]) {
+        const interaction = row(editor, "game", label)?.interaction
+        expect(interaction?.kind === "choice" && interaction.choices[1]).toEqual({ value: "0", label: "0 % (no floor)" })
+      }
+      for (const label of ["CPU max", "GPU max"]) {
+        const interaction = row(editor, "game", label)?.interaction
+        expect(interaction?.kind === "choice" && interaction.choices.some(choice => choice.value === "0")).toBe(false)
+      }
+    }
+  })
+
+  it("keeps the Device group after a failed read, with Korri's message and Retry", async () => {
+    let fail = true
+    const base = createInMemoryKorridClient({ launchSettings: { deviceFacts: RG353M_LAUNCH_FACTS } })
+    const korrid = {
+      ...base,
+      async launchSettingsSnapshot(gameId?: string) {
+        return fail
+          ? { _tag: "Err" as const, payload: { code: "Unavailable", message: "Korri could not read launch settings." } }
+          : base.launchSettingsSnapshot(gameId)
+      },
+    }
+    const launch = createLaunchSettings(korrid)
+    await launch.refreshDevice()
+    const group = launch.getSnapshot().deviceGroup
+    expect(group?.title).toBe("Launch settings")
+    expect(group?.items).toEqual([{
+      id: LAUNCH_ID.deviceRetry,
+      label: "Launch settings could not be read",
+      description: "Korri could not read launch settings.",
+      interaction: { kind: "action", actionId: LAUNCH_ID.deviceRetry },
+    }])
+    fail = false
+    expect(launch.act(LAUNCH_ID.deviceRetry)).toBe(true)
+    await settle(); await settle()
+    expect(launch.getSnapshot().deviceGroup?.items.map(item => item.label)).toEqual(["CPU min", "CPU max", "GPU min", "GPU max", "CPU governor"])
   })
 })

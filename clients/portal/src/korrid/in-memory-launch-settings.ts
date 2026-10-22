@@ -108,6 +108,24 @@ export function createInMemoryLaunchSettings(config: InMemoryLaunchSettingsConfi
     return scopes
   }
 
+  /** A layer's title as korrid names it in messages. */
+  const scopeTitle = (scope: LaunchSettingsScope): string => {
+    switch (scope._tag) {
+      case "Device": return "Device"
+      case "System": return `System ${scope.id}`
+      case "Runner": {
+        const runner = Object.values(config.games ?? {}).find(game => game.runner?.id === scope.id)?.runner
+        return `Runner ${runner?.title ?? scope.id}`
+      }
+      case "Game": return "Game"
+      case "Release": return `Release ${scope.id.releaseId}`
+      case "Profile": {
+        const profile = profiles.get(scope.id.gameId)?.find(candidate => candidate.id === scope.id.profileId)
+        return `Profile ${profile?.title ?? scope.id.profileId}`
+      }
+    }
+  }
+
   return {
     async launchSettingsSnapshot(gameId) {
       await wait()
@@ -127,21 +145,30 @@ export function createInMemoryLaunchSettings(config: InMemoryLaunchSettingsConfi
       const pick = gameId === undefined ? undefined : selected.get(gameId)
       const chosen = gameProfiles.find(profile => profile.id === pick)
       const defaults = config.deviceFacts?.defaults ?? BROWSER_DEFAULTS
-      const resolve = (kind: "cpu" | "gpu", bound: "min" | "max"): LaunchResolvedValue => {
+      // Most specific last: the layers in order, then the chosen profile.
+      // A shipped default ranks below every layer.
+      const resolve = (kind: "cpu" | "gpu", bound: "min" | "max"): { readonly rank: number; readonly resolved: LaunchResolvedValue } => {
         if (gameId !== undefined && chosen?.[kind][bound] !== undefined) {
-          return { value: chosen[kind][bound], source: { _tag: "Profile", id: { gameId, profileId: chosen.id } }, adjusted: false }
+          return {
+            rank: layerList.length,
+            resolved: { value: chosen[kind][bound], source: { _tag: "Profile", id: { gameId, profileId: chosen.id } }, deviceDefault: false, adjusted: false },
+          }
         }
-        for (const layer of [...layerList].reverse()) {
-          const value = layer[kind][bound]
-          if (value !== undefined) return { value, source: layer.scope, adjusted: false }
+        for (let rank = layerList.length - 1; rank >= 0; rank--) {
+          const layer = layerList[rank]
+          const value = layer?.[kind][bound]
+          if (layer !== undefined && value !== undefined) return { rank, resolved: { value, source: layer.scope, deviceDefault: false, adjusted: false } }
         }
-        return { value: defaults[kind][bound], source: { _tag: "Device" }, adjusted: false }
+        return { rank: -1, resolved: { value: defaults[kind][bound], source: { _tag: "Device" }, deviceDefault: true, adjusted: false } }
       }
       const range = (kind: "cpu" | "gpu") => {
         const min = resolve(kind, "min")
         const max = resolve(kind, "max")
-        // A floor above the ceiling is lowered to it, and says so.
-        return min.value > max.value ? { min: { ...min, value: max.value, adjusted: true }, max } : { min, max }
+        if (min.resolved.value <= max.resolved.value) return { min: min.resolved, max: max.resolved }
+        // Across layers the more specific value wins; the other moves to meet it.
+        return min.rank > max.rank
+          ? { min: min.resolved, max: { ...max.resolved, value: min.resolved.value, adjusted: true } }
+          : { min: { ...min.resolved, value: max.resolved.value, adjusted: true }, max: max.resolved }
       }
       const governor = layerList[0]?.governor ?? config.deviceFacts?.defaults.governor
       return {
@@ -162,10 +189,23 @@ export function createInMemoryLaunchSettings(config: InMemoryLaunchSettingsConfi
       if (config.failures?.set) return { _tag: "Err", payload: config.failures.set }
       if (stale(scope, expectedRevision)) return failure("SettingsConflict", "Launch settings changed. Reload before saving.")
       if (setting === "cpu.governor" && scope._tag !== "Device") return failure("InvalidSetting", "The CPU governor is set on the device only.")
-      if (setting !== "cpu.governor" && value !== undefined && (typeof value !== "number" || value < 0 || value > 100)) {
-        return failure("InvalidSetting", "A limit is a percent from 0 to 100.")
-      }
       const [kind, bound] = setting.split(".") as ["cpu" | "gpu", "min" | "max" | "governor"]
+      if (bound !== "governor" && value !== undefined) {
+        const low = bound === "min" ? 0 : 1
+        if (typeof value !== "number" || !Number.isInteger(value) || value < low || value > 100) {
+          return failure("InvalidSetting", `A ${kind.toUpperCase()} ${bound} is a whole percent from ${low} to 100.`)
+        }
+        // The same layer may not set its floor above its ceiling.
+        const own = scope._tag === "Profile"
+          ? profiles.get(scope.id.gameId)?.find(candidate => candidate.id === scope.id.profileId)?.[kind]
+          : layers.get(scopeKey(scope))?.[kind]
+        const min = bound === "min" ? value : own?.min
+        const max = bound === "max" ? value : own?.max
+        if (min !== undefined && max !== undefined && min > max) {
+          const name = kind.toUpperCase()
+          return failure("InvalidSetting", `${scopeTitle(scope)} sets ${name} min ${min} % above its ${name} max ${max} %.`)
+        }
+      }
       if (scope._tag === "Profile") {
         const profile = profiles.get(scope.id.gameId)?.find(candidate => candidate.id === scope.id.profileId)
         if (!profile || bound === "governor") return failure("ProfileNotFound", "That profile no longer exists.")

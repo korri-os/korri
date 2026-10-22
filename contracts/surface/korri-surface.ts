@@ -150,6 +150,13 @@ export type SurfaceSettingInteraction =
   | {
       readonly kind: "choice"
       readonly choices: readonly SurfaceSettingChoice[]
+      /**
+       * The `value` of the choice in force. Two choices may share a label
+       * (two profiles named "Quiet"), so a surface marks and steps from this
+       * value, never by matching `SurfaceSettingItem.value` to a label.
+       * Absent on rows that predate it: the item's value is then the label.
+       */
+      readonly selected?: string
     }
   | {
       readonly kind: "text"
