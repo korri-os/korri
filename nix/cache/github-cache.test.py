@@ -106,6 +106,7 @@ class ConcurrentUploadTest(unittest.TestCase):
                 "PATH": str(binary) + os.pathsep + os.environ["PATH"],
                 "KORRI_CACHE_TEST_API": str(root),
                 "KORRI_CACHE_TEST_WORKER": str(worker),
+                "KORRI_CACHE_API_RETRY_DELAYS": "0 0 0 0",
             }
             process = subprocess.Popen(
                 [sys.executable, str(Path(__file__).resolve()), "--upload", str(path)],
@@ -434,6 +435,71 @@ class AssetListingTest(unittest.TestCase):
         result = self.invoke()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("invalid GitHub asset list", result.stderr)
+
+
+class ApiRetryTest(unittest.TestCase):
+    """Run api() against a gh stand-in that fails a configured number of times."""
+
+    def gh(self, failures, message):
+        temporary = tempfile.TemporaryDirectory(prefix="korri-api-retry-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        (root / "remaining").write_text(str(failures))
+        (root / "calls").write_text("0")
+        gh = root / "gh"
+        gh.write_text(
+            f"#!{sys.executable}\n"
+            "import pathlib, sys\n"
+            f"root = pathlib.Path({str(root)!r})\n"
+            "calls = root / 'calls'\n"
+            "calls.write_text(str(int(calls.read_text()) + 1))\n"
+            "remaining = root / 'remaining'\n"
+            "left = int(remaining.read_text())\n"
+            "if left > 0:\n"
+            "    remaining.write_text(str(left - 1))\n"
+            f"    sys.stderr.write({message!r} + '\\n')\n"
+            "    sys.exit(1)\n"
+            "print('[]')\n"
+        )
+        gh.chmod(0o755)
+        path = os.environ["PATH"]
+        os.environ["PATH"] = str(root) + os.pathsep + path
+        self.addCleanup(os.environ.__setitem__, "PATH", path)
+        delays = publisher.API_RETRY_DELAYS
+        publisher.API_RETRY_DELAYS = (0, 0, 0, 0)
+        self.addCleanup(setattr, publisher, "API_RETRY_DELAYS", delays)
+        return lambda: int((root / "calls").read_text())
+
+    def quietly(self, endpoint):
+        stderr = sys.stderr
+        sys.stderr = open(os.devnull, "w")
+        try:
+            return publisher.api(endpoint)
+        finally:
+            sys.stderr.close()
+            sys.stderr = stderr
+
+    def test_gateway_timeouts_are_retried(self):
+        calls = self.gh(2, "gh: try again (HTTP 504)")
+        self.assertEqual(self.quietly("repos/korri-os/nix-cache/releases"), [])
+        self.assertEqual(calls(), 3)
+
+    def test_rate_limit_is_retried(self):
+        calls = self.gh(1, "gh: slow down (HTTP 429)")
+        self.assertEqual(self.quietly("repos/korri-os/nix-cache/releases"), [])
+        self.assertEqual(calls(), 2)
+
+    def test_lasting_outage_fails_after_five_calls(self):
+        calls = self.gh(99, "gh: unavailable (HTTP 503)")
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.quietly("repos/korri-os/nix-cache/releases")
+        self.assertEqual(calls(), 5)
+
+    def test_not_found_is_not_retried(self):
+        calls = self.gh(99, "gh: Not Found (HTTP 404)")
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.quietly("repos/korri-os/nix-cache/releases/tags/missing")
+        self.assertEqual(calls(), 1)
 
 
 if __name__ == "__main__":

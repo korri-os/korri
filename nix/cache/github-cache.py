@@ -366,8 +366,37 @@ def export(cache, key, paths):
     )
 
 
+# GET only. GitHub's API sometimes answers 5xx or 429 under load: nix-cache run
+# 39784357035 lost r36tmax to one HTTP 504 on the release list. gh reports the
+# status on stderr as "(HTTP 504)". Retry those; anything else fails at once.
+# KORRI_CACHE_API_RETRY_DELAYS overrides the waits, in seconds; tests use zeros.
+API_RETRY_DELAYS = tuple(
+    int(delay)
+    for delay in os.environ.get("KORRI_CACHE_API_RETRY_DELAYS", "5 10 20 40").split()
+)
+API_TRANSIENT = re.compile(r"\(HTTP (?:429|5[0-9][0-9])\)")
+
+
 def api(endpoint):
-    return json.loads(run("gh", "api", "--hostname", "github.com", endpoint))
+    for delay in (*API_RETRY_DELAYS, None):
+        result = subprocess.run(
+            ("gh", "api", "--hostname", "github.com", endpoint),
+            text=True,
+            capture_output=True,
+            timeout=1800,
+        )
+        if result.returncode == 0:
+            return json.loads(result.stdout)
+        sys.stderr.write(result.stderr)
+        if delay is None or not API_TRANSIENT.search(result.stderr):
+            raise subprocess.CalledProcessError(
+                result.returncode, result.args, result.stdout, result.stderr
+            )
+        print(
+            f"korri-cache: GitHub API error for {endpoint}; retrying in {delay} s",
+            file=sys.stderr,
+        )
+        time.sleep(delay)
 
 
 def release_records(repo, tag):
