@@ -407,3 +407,43 @@ Every buffer address the vendor programmed (`0xfe5…`-`0xfef…`) lies above th
 - P-frames: `cedar-probe` encodes one frame, so the trace covers only an IDR frame.
 - The meaning of most constants in steps 5-6. They are recorded, not understood.
 - Sustained frame rate. rgsp-cast reports 1.6 ms per 720x480 frame on an H700, which is well inside 16.7 ms.
+
+## 9. Physical-address encode on the Korri kernel, 2026-10-22
+
+Question: does the H616/H700 H.264 encoder accept physical DMA addresses? Option 1 (section 6) keeps the IOMMU off, so an open encoder driver depends on this.
+
+### Method
+
+A temporary diagnostic patch, `0237-diag-h616-enc-physical.patch` (branch `diag/h700-enc-physical`, commit `8dce7bb9b`, not landed), added a debugfs trigger to the staging Cedrus driver. One trigger allocates every buffer with `dma_alloc_coherent` from the decoder's `ve-pool` CMA region, fills a deterministic 640x480 NV12 pattern, and replays the vendor trace of section 8: all 275 accesses in order, 182 writes and 93 reads. Only buffer addresses are substituted, shifted the same way the trace shifts each register. It holds the Cedrus mutex, refuses while a decode runs, masks the engine interrupt and polls `0xb1c`, and resets the engine after 500 ms without completion. The SPS/PPS phase writes into the output window, and the frame phase reuses that window, so the patch copies the 22 header bytes out between the phases and concatenates them on the CPU afterwards.
+
+The Pro booted system `nyax2w18ssq681j5fmk0k83j8hf8bwgs` (boot `50a24dd6-6a24-4109-82f1-b057028e0d56`). Its kernel image and DTBs are byte-identical to the running decode system; only `sunxi-cedrus.ko` differs. The IOMMU had no attached device.
+
+### Result
+
+| Measure | Value |
+|---|---|
+| Trigger | returned 0, first attempt |
+| Final status `0xb1c` | `0x261` (bit 0 success), no reset |
+| Coded bits (`0xb90`) | 11,240 frame + 176 header; 1,427 bytes combined |
+| Encode time (trigger to done) | 1,055,628 ns at a 600 MHz engine clock |
+| Buffer addresses | physical `0x7c000000`-`0x7cd00000` (inside `ve-pool`) |
+| Header bytes | identical to the trace-implied `00000001674d002996540501e8800000000168ee3c80` |
+| Input | byte-identical to the host-generated pattern |
+| FFmpeg decode | `h264`, 640x480, exactly 1 frame |
+| Y PSNR against the input | 52.67 dB (MSE 0.351; threshold 30 dB) |
+| Kernel fault lines | 0 before, 0 after |
+
+Pico, korrid and the compositor stayed active. The Pro then returned to system `rsn5qhm3jhyvzs17ysn2hvj42ir0j9q3` as boot default (boot `5174ad12-b003-4a39-8c75-ff4431e81df0`).
+
+### Conclusion
+
+The H700 video engine encodes H.264 in hardware from physical addresses, with the IOMMU off, on Korri's mainline-based kernel, using the register sequence recorded from the vendor library. An open encoder driver can share option 1's no-IOMMU setup with Cedrus. Route 2 is not needed for encoding.
+
+One 640x480 frame took 1.06 ms of engine time. That is a single-frame measurement, not a sustained rate.
+
+### Not established
+
+- P-frames and continuous encoding: only one IDR frame was encoded, with fixed QP 27.
+- The meaning of most traced constants.
+- Input from GPU-rendered buffers: this test used an NV12 buffer in `ve-pool`. Screen capture will need a copy or conversion into contiguous memory.
+- Concurrent decode and encode.
