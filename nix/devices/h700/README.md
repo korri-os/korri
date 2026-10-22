@@ -100,6 +100,3 @@ is `ttyS0` at 115200 baud.
   leaves disabled. Only the codec (speaker and headphone) is expected to play.
 - No hardware video encoder is selected; the streaming host is not installed.
   Hardware decode works; encoding has no driver.
-- Panel wake: the compositor's first power-on after the panel turns off
-  often fails (`Backend commit failed`); a second request succeeds. This
-  happens with and without the video engine (#149).

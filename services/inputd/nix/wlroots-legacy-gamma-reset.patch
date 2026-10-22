@@ -1,0 +1,27 @@
+From: Korri <korri@localhost>
+Subject: [PATCH] backend/drm: resetting gamma on a CRTC without gamma succeeds
+
+When a CRTC has neither a GAMMA_LUT property nor a legacy gamma table
+(gamma_size 0), drm_legacy_crtc_set_gamma() returned false for a reset
+request (size 0). drm_atomic_connector_prepare() then failed the whole
+commit without logging and without an ioctl. wlr_scene re-arms a gamma
+reset whenever an output is re-enabled, so on such hardware (Allwinner
+sun4i-drm, RG35XX Pro) the first enable after a power-off always failed
+with "Backend commit failed", and only a second request succeeded.
+
+A CRTC without gamma already has identity gamma; a reset is a no-op.
+Setting a real LUT on such a CRTC still fails.
+
+---
+--- a/backend/drm/legacy.c
++++ b/backend/drm/legacy.c
+@@ -255,7 +255,8 @@
+ 		// The legacy interface doesn't offer a way to reset the gamma LUT
+ 		size = drm_crtc_get_gamma_lut_size(drm, crtc);
+ 		if (size == 0) {
+-			return false;
++			// The CRTC has no gamma LUT, so there is nothing to reset
++			return true;
+ 		}
+ 
+ 		linear_lut = malloc(3 * size * sizeof(uint16_t));
