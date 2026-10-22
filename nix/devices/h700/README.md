@@ -114,4 +114,8 @@ is `ttyS0` at 115200 baud.
   leaves disabled. Only the codec (speaker and headphone) is expected to play.
 - The H.264 encoder is intra-only. Tight CBR, P frames, separate header
   packets, Baseline/CAVLC and a zero-copy GPU input path are not established.
-  The streaming host is not installed.
+- The Pro ships the Sunshine streaming host (`h264_v4l2m2m` on `/dev/video1`).
+  Its KMS capture reads the screen back through the GPU, which limits it to
+  about 13.5 new frames per second at 640x480; the stream repeats frames to
+  fill 60. Sunshine finds no display, and so no encoder, while the panel is
+  off. The SP does not ship it.

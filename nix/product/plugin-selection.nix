@@ -70,8 +70,9 @@ in
   r36tmax = shared ++ ssh;
   rpminiv2 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh ++ steam;
   odin2portal = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
-  # The two H700 boards use ROCKNIX's H700 table.
-  # No streaming host until an encoder result exists.
+  # The two H700 boards use ROCKNIX's H700 table. The Pro streams through the
+  # H700 hardware H.264 encoder (docs/acceptance/
+  # sunshine-korri-rg35xxpro-v4l2m2m-2026-10-22.md); the SP is untested.
   rg35xxsp = shared ++ ssh;
-  rg35xxpro = shared ++ ssh;
+  rg35xxpro = shared ++ streamingHost ++ ssh;
 }
