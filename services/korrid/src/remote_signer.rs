@@ -2,7 +2,7 @@
 
 use crate::{
     identity::{DeviceIdentity, Nip46ConnectionIdentity},
-    relay::{CoordinatedRelays, PublishState, RelayError, RelayTransport},
+    relay::{CoordinatedRelays, PublishState, RelayError, RelayList, RelayTransport},
 };
 use futures::future::BoxFuture;
 use rand::RngCore;
@@ -109,34 +109,8 @@ impl RemoteSignerConnection {
         uri: &str,
         client_public_key: String,
     ) -> Result<Self, RemoteSignerError> {
-        let url = Url::parse(uri).map_err(|_| RemoteSignerError::InvalidConnection)?;
-        if url.scheme() != "bunker" {
-            return Err(RemoteSignerError::InvalidConnection);
-        }
-        let remote_signer_public_key = url
-            .host_str()
-            .ok_or(RemoteSignerError::InvalidConnection)?
-            .to_owned();
         validate_public_key(&client_public_key)?;
-        validate_public_key(&remote_signer_public_key)?;
-        let mut relays = Vec::new();
-        let mut secret = None;
-        for (name, value) in url.query_pairs() {
-            match name.as_ref() {
-                "relay" => relays.push(value.into_owned()),
-                "secret" if secret.is_none() => secret = Some(value.into_owned()),
-                _ => {}
-            }
-        }
-        if relays.is_empty() || relays.len() > 8 || relays.iter().any(|relay| relay.len() > 2_048) {
-            return Err(RemoteSignerError::InvalidConnection);
-        }
-        if secret
-            .as_ref()
-            .is_some_and(|value| value.is_empty() || value.len() > 4_096)
-        {
-            return Err(RemoteSignerError::InvalidConnection);
-        }
+        let (remote_signer_public_key, relays, secret) = parse_bunker_uri(uri)?;
         Ok(Self {
             client_public_key,
             remote_signer_public_key,
@@ -145,6 +119,71 @@ impl RemoteSignerConnection {
             secret,
         })
     }
+
+    /// NIP-46: the client reaches the signer on the relays the signer named,
+    /// not on the device's own relay configuration.
+    pub fn relay_list(&self) -> Result<RelayList, RemoteSignerError> {
+        RelayList::configured(self.relays.clone()).map_err(|_| RemoteSignerError::InvalidConnection)
+    }
+}
+
+/// The relays named by a `bunker://` URI, validated as a relay list.
+pub fn bunker_relay_list(uri: &str) -> Result<RelayList, RemoteSignerError> {
+    let (_, relays, _) = parse_bunker_uri(uri)?;
+    RelayList::configured(relays).map_err(|_| RemoteSignerError::InvalidConnection)
+}
+
+/// The relays of the persisted signer connection, if one exists.
+pub fn persisted_relay_list(
+    private_state_root: &std::path::Path,
+) -> Result<Option<RelayList>, RemoteSignerError> {
+    let identity = Nip46ConnectionIdentity::load_or_create(private_state_root)
+        .map_err(|_| RemoteSignerError::Storage)?;
+    let Some(json) = identity
+        .load_connection_data()
+        .map_err(|_| RemoteSignerError::Storage)?
+    else {
+        return Ok(None);
+    };
+    if json.len() > MAX_CONNECTION_BYTES {
+        return Err(RemoteSignerError::Storage);
+    }
+    let connection: RemoteSignerConnection =
+        serde_json::from_str(&json).map_err(|_| RemoteSignerError::Storage)?;
+    connection.relay_list().map(Some)
+}
+
+type BunkerParts = (String, Vec<String>, Option<String>);
+
+fn parse_bunker_uri(uri: &str) -> Result<BunkerParts, RemoteSignerError> {
+    let url = Url::parse(uri).map_err(|_| RemoteSignerError::InvalidConnection)?;
+    if url.scheme() != "bunker" {
+        return Err(RemoteSignerError::InvalidConnection);
+    }
+    let remote_signer_public_key = url
+        .host_str()
+        .ok_or(RemoteSignerError::InvalidConnection)?
+        .to_owned();
+    validate_public_key(&remote_signer_public_key)?;
+    let mut relays = Vec::new();
+    let mut secret = None;
+    for (name, value) in url.query_pairs() {
+        match name.as_ref() {
+            "relay" => relays.push(value.into_owned()),
+            "secret" if secret.is_none() => secret = Some(value.into_owned()),
+            _ => {}
+        }
+    }
+    if relays.is_empty() || relays.len() > 8 || relays.iter().any(|relay| relay.len() > 2_048) {
+        return Err(RemoteSignerError::InvalidConnection);
+    }
+    if secret
+        .as_ref()
+        .is_some_and(|value| value.is_empty() || value.len() > 4_096)
+    {
+        return Err(RemoteSignerError::InvalidConnection);
+    }
+    Ok((remote_signer_public_key, relays, secret))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -722,5 +761,25 @@ mod tests {
             RemoteSignerConnection::from_bunker_uri("https://example.com", "11".repeat(32))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn signer_relays_come_from_the_bunker_uri() {
+        let uri = format!(
+            "bunker://{}?relay=wss://relay.nip46.com/&relay=wss://nrs.primal.net/&secret=s",
+            "22".repeat(32)
+        );
+        let expected = vec![
+            "wss://relay.nip46.com/".to_owned(),
+            "wss://nrs.primal.net/".to_owned(),
+        ];
+        assert_eq!(bunker_relay_list(&uri).unwrap().as_slice(), expected);
+        let connection = RemoteSignerConnection::from_bunker_uri(&uri, "11".repeat(32)).unwrap();
+        assert_eq!(connection.relay_list().unwrap().as_slice(), expected);
+        let plaintext = format!(
+            "bunker://{}?relay=http://relay.test&secret=s",
+            "22".repeat(32)
+        );
+        assert!(bunker_relay_list(&plaintext).is_err());
     }
 }

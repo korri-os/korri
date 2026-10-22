@@ -9,7 +9,10 @@ use crate::{
     local_signer::{UnixLocalSignerAdmin, UnixPersonSigner},
     peer_rpc::unix_time,
     relay::{CoordinatedRelays, RelayCoordinator, RelayList, WebSocketRelayTransport},
-    remote_signer::{Nip46PersonSigner, PersonSigner, PersonSignerRequest, PersonSignerState},
+    remote_signer::{
+        bunker_relay_list, persisted_relay_list, Nip46PersonSigner, PersonSigner,
+        PersonSignerRequest, PersonSignerState,
+    },
     FederationResources,
 };
 use std::{
@@ -146,8 +149,11 @@ impl IdentitySwitchCoordinator {
                 }
             }
             ReplacementIdentity::Nip46 { bunker_uri } => {
-                let relays = relays_for(&old_identity)?
-                    .ok_or_else(|| "NIP-46 requires at least one configured relay".to_owned())?;
+                // NIP-46 talks to the signer on the relays its URI names.
+                let relays = coordinated(
+                    &old_identity,
+                    bunker_relay_list(&bunker_uri).map_err(|error| error.to_string())?,
+                )?;
                 let signer =
                     Nip46PersonSigner::connect_from_bunker(&staged_root, relays, &bunker_uri)
                         .map_err(|error| error.to_string())?;
@@ -244,8 +250,12 @@ impl IdentitySwitchCoordinator {
                 &statement.owner_public_key,
             );
         }
-        let relays = relays_for(identity)?
-            .ok_or_else(|| "The current NIP-46 owner requires configured relays".to_owned())?;
+        let relays = coordinated(
+            identity,
+            persisted_relay_list(&self.private_state_root)
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "The current owner signer is unavailable".to_owned())?,
+        )?;
         let signer = Nip46PersonSigner::load(&self.private_state_root, relays)
             .map_err(|error| error.to_string())?
             .ok_or_else(|| "The current owner signer is unavailable".to_owned())?;
@@ -493,16 +503,21 @@ fn relays_for(
     let relays = RelayList::from_linux_environment(std::env::var("KORRID_RELAYS").ok().as_deref())
         .map_err(|error| error.to_string())?;
     relays
-        .map(|relays| {
-            CoordinatedRelays::new(
-                relays,
-                identity.clone(),
-                Arc::new(WebSocketRelayTransport::default()),
-            )
-            .map(Arc::new)
-            .map_err(|error| error.to_string())
-        })
+        .map(|relays| coordinated(identity, relays))
         .transpose()
+}
+
+fn coordinated(
+    identity: &DeviceIdentity,
+    relays: RelayList,
+) -> Result<Arc<CoordinatedRelays<WebSocketRelayTransport>>, String> {
+    CoordinatedRelays::new(
+        relays,
+        identity.clone(),
+        Arc::new(WebSocketRelayTransport::default()),
+    )
+    .map(Arc::new)
+    .map_err(|error| error.to_string())
 }
 
 fn signer_socket_from_environment() -> Result<PathBuf, String> {
