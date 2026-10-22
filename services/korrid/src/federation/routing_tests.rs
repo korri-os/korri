@@ -621,7 +621,9 @@ async fn candidates_share_one_timeout_and_all_failures_mark_failed_after_complet
     let start = std::time::Instant::now();
     assert!(client.catalog_snapshot().await.is_err());
     assert!(start.elapsed() < std::time::Duration::from_millis(600));
-    assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    // TCP connectivity is not application responsiveness. Do not divide the
+    // deadline into tiny response budgets merely because more origins exist.
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert!(matches!(
         d.snapshot().unwrap()[0].state,
         PeerState::Failed { .. }
@@ -1160,4 +1162,33 @@ async fn stalled_connect_candidate_leaves_time_for_reads_and_mutations() {
     .await
     .unwrap()
     .unwrap();
+}
+
+#[tokio::test]
+async fn connect_racing_sends_a_mutation_to_only_one_candidate() {
+    let f = Fixture::new();
+    let received = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut candidates = Vec::new();
+    for _ in 0..2 {
+        let received = received.clone();
+        candidates.push(
+            serve(axum::Router::new().route(
+                "/peer-rpc",
+                axum::routing::post(move |body: String| {
+                    let received = received.clone();
+                    async move {
+                        assert!(!body.contains("gameId"));
+                        received.fetch_add(1, Ordering::SeqCst);
+                        // An ambiguous response must not send the mutation elsewhere.
+                        axum::http::StatusCode::SERVICE_UNAVAILABLE
+                    }
+                }),
+            ))
+            .await,
+        );
+    }
+    let client = NativeClient::new_secure_candidates(candidates, f.key(), f.credentials.clone());
+    assert!(client.prepare_stream("game").await.is_err());
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(received.load(Ordering::SeqCst), 1);
 }

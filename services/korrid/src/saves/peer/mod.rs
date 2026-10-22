@@ -103,7 +103,7 @@ impl SavePeerService {
         in_use: InUse,
     ) -> Result<Self, PeerSaveError> {
         let http = reqwest::Client::builder()
-            .connect_timeout(crate::federation::PEER_CONNECT_TIMEOUT)
+            .connect_timeout(crate::federation::connect::CONNECT_TIMEOUT)
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .build()

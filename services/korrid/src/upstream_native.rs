@@ -57,7 +57,7 @@ impl NativeClient {
     ) -> Self {
         let http = reqwest::Client::builder()
             .timeout(NATIVE_RPC_TIMEOUT)
-            .connect_timeout(crate::federation::PEER_CONNECT_TIMEOUT)
+            .connect_timeout(crate::federation::connect::CONNECT_TIMEOUT)
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -96,7 +96,7 @@ impl NativeClient {
     pub fn new(base_url: String) -> Self {
         let http = reqwest::Client::builder()
             .timeout(NATIVE_RPC_TIMEOUT)
-            .connect_timeout(crate::federation::PEER_CONNECT_TIMEOUT)
+            .connect_timeout(crate::federation::connect::CONNECT_TIMEOUT)
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -510,16 +510,34 @@ impl NativeClient {
         candidates.retain(|url| seen.insert(url.clone()));
         let deadline = tokio::time::Instant::now() + self.operation_timeout;
         let mut last_error = UpstreamError::Unreachable("no eligible peer endpoint".into());
-        for (index, url) in candidates.iter().enumerate() {
+        while !candidates.is_empty() {
+            // Only TCP probes race. HTTP effects go to one winning origin.
+            let selected = match tokio::time::timeout_at(
+                deadline,
+                crate::federation::connect::select_origin(&candidates),
+            )
+            .await
+            {
+                Ok(Ok(index)) => index,
+                Ok(Err(_)) => {
+                    last_error = UpstreamError::Unreachable("peer connect failed".into());
+                    break;
+                }
+                Err(_) => {
+                    last_error = UpstreamError::Unreachable("peer operation timed out".into());
+                    break;
+                }
+            };
+            let url = candidates.remove(selected);
             self.ensure_not_revoked()?;
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
                 break;
             }
-            // Share one aggregate deadline; a dead first route must leave time
-            // for later routes. A timeout after send is ambiguous for mutations.
-            let budget = remaining / (candidates.len() - index) as u32;
-            let attempt = tokio::time::timeout(budget, self.attempt(url, request.clone())).await;
+            // A connected slow link gets the remaining aggregate budget, not a
+            // fraction based on how many unrelated routes were advertised.
+            let attempt =
+                tokio::time::timeout(remaining, self.attempt(&url, request.clone())).await;
             match attempt {
                 Ok(Ok(response)) => return checked_response(request, response),
                 Ok(Err(failure)) => {

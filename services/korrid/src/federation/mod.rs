@@ -1,5 +1,6 @@
 //! Verified peer memory and live state. Clone this aggregate, never open a
 //! second writer. Callers do network work between begin_work and commit methods.
+pub(crate) mod connect;
 pub mod coordinator;
 pub mod interfaces;
 mod store;
@@ -18,10 +19,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 use store::Store;
-
-// Eight unreachable origins must leave time in the three-second pre-launch
-// budget. This is TCP establishment only, not an authenticated transfer limit.
-pub(crate) const PEER_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(200);
 
 const MAX_MEMORY_BYTES: usize = 8 * 1024 * 1024;
 const MAX_PEERS: usize = 1024;

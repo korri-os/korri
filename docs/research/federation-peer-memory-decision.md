@@ -338,11 +338,15 @@ Linux keeps `KORRID_RELAYS`. korrid derives up to eight strict HTTP origins
 from its current up, non-loopback interface addresses and its actual listener
 port. Unspecified, multicast, broadcast and IPv6 link-local addresses are not
 advertised. IPv4-mapped addresses are normalized and duplicates removed. Sort
-order is Tailscale IPv4 (100.64/10), Tailscale IPv6 (fd7a:115c:a1e0::/48),
-private IPv4, other IPv4, other ULA, global IPv6, then IPv4 link-local; numeric
-address order breaks ties. The first eight fit the existing EndpointRecord
-candidate bound. An IPv4-only or specifically bound listener advertises only
-addresses it can accept. A loopback-only embedded server remains query-only.
+order first favors Tailscale and then interfaces carrying an up, non-reject
+IPv4 or IPv6 default route, using Linux's native `/proc/net/route` and
+`/proc/net/ipv6_route` tables. Other interfaces (including virtual bridges and
+veth networks without a default route) follow. Within each group the order is
+Tailscale IPv4 (100.64/10), Tailscale IPv6 (fd7a:115c:a1e0::/48), private IPv4,
+other IPv4, other ULA, global IPv6, then IPv4 link-local; numeric address and
+interface name break ties. Addresses are deduplicated after this ranking. The
+first eight fit the existing EndpointRecord candidate bound. An IPv4-only or
+specifically bound listener advertises only addresses it can accept. A loopback-only embedded server remains query-only.
 
 A one-second getifaddrs poll wakes discovery when that set changes, including
 when it becomes empty. It adds no dependency and does not poll relays on each
@@ -366,10 +370,17 @@ buffering and signature/decryption work) to four. Peer request bodies have a
 15-second read deadline and the identity verifier's existing 6 MiB limit.
 Save-object response streaming has no new deadline or size limit. These limits
 bound unauthenticated exposure without cutting off legitimate long transfers.
-TCP establishment for peer RPC and save traffic has a 200 ms timeout per
-candidate, leaving room for eight candidates in the three-second pre-launch
-budget. Peer origins bypass HTTP proxies so route failure is a direct TCP
-failure, not an ambiguous proxy response.
+TCP establishment has a one-second per-connect timeout. Native peer RPC and
+save metadata race raw TCP probes with a 250 ms stagger under the existing
+aggregate deadline; a refused first connection advances without waiting. The
+probes send no HTTP bytes. Reqwest reconnects to the first established origin;
+only the selected origin receives a request from that race. Mutations never retry ambiguous delivery;
+existing read-only failover remains available on explicit failures. This costs
+an extra TCP handshake, but tolerates slower usable links without allowing a
+bad first address to consume the three-second pre-launch budget. Peer origins
+bypass HTTP proxies so route failure is a direct TCP failure. Save-object retry
+allowance covers at least every advertised candidate, with six attempts as the
+existing minimum.
 
 
 Android explicitly reloads the existing config coordinator and checks its

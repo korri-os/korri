@@ -924,3 +924,81 @@ async fn stalled_connect_candidate_does_not_consume_the_prelaunch_budget() {
     .unwrap();
     assert_eq!(heads.games.len(), 1);
 }
+
+#[tokio::test]
+async fn object_download_reaches_the_eighth_candidate() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    let record = a.seed(b"progress from the eighth route", vec![]);
+    let mut origins = Vec::new();
+    // Closed local ports fail deterministically without an external network.
+    let mut closed = Vec::new();
+    for _ in 0..7 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        origins.push(format!("http://{}", listener.local_addr().unwrap()));
+        closed.push(listener);
+    }
+    drop(closed);
+    origins.push(a.base.clone());
+    b.remember_candidates(&a, origins);
+    a.remember(&b);
+    b.service
+        .import_record(&b.owner(), &a.device(), record.clone(), Some(&id(&record)))
+        .await
+        .unwrap();
+    b.service
+        .fetch_record_payload(&b.owner(), &a.device(), &record)
+        .await
+        .unwrap();
+    assert!(b
+        .repository
+        .object(&b.owner(), &record.locations[0].files[0].sha256)
+        .is_ok());
+}
+
+#[tokio::test]
+async fn metadata_mutation_is_not_sent_again_after_ambiguous_delivery() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    let received = Arc::new(AtomicUsize::new(0));
+    let mut origins = Vec::new();
+    let mut servers = Vec::new();
+    for _ in 0..2 {
+        let received = received.clone();
+        let app = axum::Router::new().route(
+            "/peer-rpc",
+            axum::routing::post(move |_: String| {
+                let received = received.clone();
+                async move {
+                    received.fetch_add(1, Ordering::SeqCst);
+                    StatusCode::SERVICE_UNAVAILABLE
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        origins.push(format!("http://{}", listener.local_addr().unwrap()));
+        servers.push(tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        }));
+    }
+    b.remember_candidates(&a, origins);
+    let record = b.seed(b"metadata push", vec![]);
+    let result = b
+        .service
+        .remote_records(
+            &b.owner(),
+            &a.device(),
+            SaveRecordsRequest {
+                game_id: record.game_id.clone(),
+                ids: vec![],
+                records: Some(vec![record]),
+            },
+        )
+        .await;
+    for server in servers {
+        server.abort();
+    }
+    assert!(matches!(result, Err(PeerSaveError::Network)));
+    assert_eq!(received.load(Ordering::SeqCst), 1);
+}

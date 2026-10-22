@@ -48,12 +48,28 @@ impl SavePeerService {
         peer: &str,
         request: RpcRequest,
     ) -> Result<RpcResponse, PeerSaveError> {
-        for origin in self.origins(person, peer)? {
+        let read_only = match &request {
+            RpcRequest::SaveHeads(_) | RpcRequest::SaveInUse(_) => true,
+            RpcRequest::SaveRecords(request) => request.records.is_none(),
+            _ => false,
+        };
+        let deadline = tokio::time::Instant::now() + TRANSFER_TIMEOUT;
+        let mut origins = self.origins(person, peer)?;
+        while !origins.is_empty() {
+            let selected = tokio::time::timeout_at(
+                deadline,
+                crate::federation::connect::select_origin(&origins),
+            )
+            .await
+            .map_err(|_| PeerSaveError::Deadline)?
+            .map_err(|_| PeerSaveError::Network)?;
+            let origin = origins.remove(selected);
+            self.origins(person, peer)?;
             let encoded = self
                 .credentials
                 .encode_request(peer, request.clone(), unix_time())
                 .map_err(|_| PeerSaveError::Unauthorized)?;
-            let result = tokio::time::timeout(TRANSFER_TIMEOUT, async {
+            let result = tokio::time::timeout_at(deadline, async {
                 let mut response = self
                     .http
                     .post(format!("{origin}/peer-rpc"))
@@ -88,7 +104,9 @@ impl SavePeerService {
             .await
             .map_err(|_| PeerSaveError::Deadline)?;
             match result {
-                Err(PeerSaveError::Network) => continue,
+                // A failed response does not prove a metadata push had no
+                // effects. Only reads may try another origin after HTTP send.
+                Err(PeerSaveError::Network) if read_only => continue,
                 result => return result,
             }
         }
@@ -232,15 +250,22 @@ impl SavePeerService {
             .map_err(|e| SaveError::Storage(e.to_string()))?;
         let mut done = 0;
         let mut hash = Sha256::new();
-        for attempt in 0..=5 {
-            if attempt > 0 {
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
+        let mut attempt = 0;
+        loop {
             let origins = self.origins(person, peer)?;
             if origins.is_empty() {
                 return Err(PeerSaveError::Network);
             }
+            // Preserve the six-attempt retry floor, but never omit candidates
+            // seven/eight. Re-read the bound when live endpoint evidence changes.
+            if attempt >= origins.len().max(6) {
+                break;
+            }
+            if attempt > 0 {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
             let origin = &origins[attempt % origins.len()];
+            attempt += 1;
             let encoded = self
                 .credentials
                 .encode_request(
