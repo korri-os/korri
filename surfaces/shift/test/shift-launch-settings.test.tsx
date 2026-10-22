@@ -74,3 +74,40 @@ test("Delete profile asks first, in Korri's words", () => {
   fireEvent.click(question.getByRole("button", { name: "Delete profile" }))
   expect(host.calls).toContain("action:launch:profile:remove:battery")
 })
+
+test("a disabled editor action is drawn, marked disabled, and does nothing", () => {
+  const host = createFixtureHost()
+  const editor = { ...launch.ready, actions: launch.ready.actions.map(action => action.id === "launch:reload" ? { ...action, enabled: false } : action) }
+  render(<ShiftSurface host={host} model={withLaunchSettings(fixtureModel, editor)} />)
+  const reload = screen.getByRole("button", { name: "Reload" })
+  expect(reload.getAttribute("aria-disabled")).toBe("true")
+  fireEvent.click(reload)
+  expect(host.calls.filter(call => call.startsWith("action:"))).toEqual([])
+})
+
+test("the chooser marks the choice in force by value, not by a repeated label", () => {
+  const host = createFixtureHost()
+  const editor = {
+    ...launch.ready,
+    layers: launch.ready.layers.map(layer => layer.id !== "device" ? layer : {
+      ...layer,
+      groups: [{
+        title: "Profile",
+        items: [{
+          id: "launch:profile:pick",
+          label: "Profile at next launch",
+          value: "Quiet",
+          interaction: {
+            kind: "choice" as const,
+            selected: "p2",
+            choices: [{ value: "", label: "No profile" }, { value: "p1", label: "Quiet" }, { value: "p2", label: "Quiet" }],
+          },
+        }],
+      }],
+    }),
+  }
+  render(<ShiftSurface host={host} model={withLaunchSettings(fixtureModel, editor)} />)
+  fireEvent.click(screen.getAllByRole("button", { name: /^Profile at next launch/ })[0]!)
+  const sheet = within(screen.getByRole("dialog", { name: "Change Profile at next launch" }))
+  expect(sheet.getAllByRole("button").map(button => button.textContent).filter(text => text !== "")).toEqual(["No profile", "Quiet", "Quiet · Current"])
+})

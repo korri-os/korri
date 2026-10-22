@@ -3184,6 +3184,15 @@ button.shift-sheet-control:is(:hover, :focus, [data-korri-active-focus]) {
 	overflow: visible;
 }
 
+/* Present but inert: the row stays focusable and readable, its words faint. */
+[data-shift-settings] .shift-setting-row[data-disabled] :is(.shift-setting-row-label, .shift-setting-row-value) {
+	color: var(--shift-ink-faint);
+}
+
+[data-shift-settings] button.shift-setting-row[data-disabled] {
+	cursor: default;
+}
+
 /* One line about the whole page: layers Korri cannot show yet, a change
  * made elsewhere, a failure. Korri's words, at reading size. */
 [data-shift-settings] .shift-settings-notice {

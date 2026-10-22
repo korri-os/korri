@@ -15,6 +15,8 @@ export interface ShiftSettingRowProps {
   readonly source?: string
   /** Korri says the value stays on this device. */
   readonly deviceOnly?: boolean
+  /** Present but inert: a dimmed button that a press does nothing to. */
+  readonly disabled?: boolean
   readonly focused?: boolean
   readonly saving?: boolean
   readonly onFocus?: () => void
@@ -66,6 +68,7 @@ export function ShiftSettingRow({
   description,
   source,
   deviceOnly = false,
+  disabled = false,
   focused = false,
   saving = false,
   onFocus,
@@ -77,12 +80,20 @@ export function ShiftSettingRow({
     "data-focused": focused || undefined,
     "data-actionable": Boolean(onSelect) || undefined,
     "data-saving": saving || undefined,
+    "data-disabled": disabled || undefined,
     "aria-label": value === undefined ? label : `${label}: ${value}`,
     onFocus,
     ...shiftDesignPartAttrs(SHIFT_DESIGN_PARTS.settingRow, label),
   }
   const body = content(label, value, description, Boolean(onSelect), saving, source, deviceOnly)
 
+  if (disabled) {
+    return (
+      <button type="button" aria-disabled="true" {...common}>
+        {body}
+      </button>
+    )
+  }
   return onSelect ? (
     <button type="button" onClick={onSelect} {...common}>
       {body}

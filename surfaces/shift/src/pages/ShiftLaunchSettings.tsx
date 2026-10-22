@@ -20,12 +20,14 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { ShiftSettings } from "./ShiftSettings"
 
-/** Korri's editor actions as one group of action rows. */
+/**
+ * Korri's editor actions as one group of action rows. An inert action stays,
+ * drawn and dimmed; ShiftSettings makes its press do nothing (`disabledIds`).
+ */
 function actionGroup(actions: readonly SurfaceAction[]): SurfaceSettingGroup[] {
-  const enabled = actions.filter(action => action.enabled)
-  return enabled.length === 0 ? [] : [{
+  return actions.length === 0 ? [] : [{
     title: "Actions",
-    items: enabled.map(action => ({
+    items: actions.map(action => ({
       id: `shift:launch-action:${action.id}`,
       label: action.label,
       ...(action.description === undefined ? {} : { description: action.description }),
@@ -63,6 +65,7 @@ export function ShiftLaunchSettings({
       // A new game, or Korri's state changing, starts the cursor on the first row.
       key={`${launch.gameTitle ?? ""}:${launch._tag}`}
       groups={[...layers, ...actionGroup(launch.actions)]}
+      disabledIds={new Set(launch.actions.filter(action => !action.enabled).map(action => `shift:launch-action:${action.id}`))}
       kicker="Launch settings"
       title={launch.gameTitle ?? "This game"}
       status={status}

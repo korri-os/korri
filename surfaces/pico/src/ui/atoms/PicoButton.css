@@ -42,3 +42,12 @@
 	translate: var(--pico-drop) var(--pico-drop);
 	box-shadow: none;
 }
+
+/* Present but inert: the row's quiet ink on the plate, no shadow to press
+ * into, as a disabled row reads. */
+.pico-button:disabled {
+	--pico-button-body: var(--pico-plate);
+	--pico-button-ink: var(--pico-ink-quiet);
+	box-shadow: none;
+	cursor: default;
+}

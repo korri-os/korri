@@ -62,6 +62,8 @@ export interface ShiftSettingsProps {
   readonly kicker?: string
   /** One line about the whole page, under its title, in Korri's words. */
   readonly notice?: string
+  /** Rows Korri publishes but that cannot act now: drawn dimmed, inert to a press. */
+  readonly disabledIds?: ReadonlySet<string>
 }
 
 /** Flatten groups into the focus order, keeping each row's absolute index so
@@ -88,6 +90,7 @@ export function ShiftSettings({
   onClose,
   kicker = "Settings",
   notice,
+  disabledIds,
 }: ShiftSettingsProps) {
   const [index, setIndex] = useState(0)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -200,6 +203,7 @@ export function ShiftSettings({
                     const slot = position
                     const saving =
                       status._tag === "Saving" && status.settingId === item.id
+                    const inert = disabledIds?.has(item.id) === true
                     return (
                       <ShiftSettingRow
                         key={item.id}
@@ -215,7 +219,8 @@ export function ShiftSettings({
                           : { description: item.description })}
                         {...(item.source === undefined ? {} : { source: item.source })}
                         deviceOnly={item.scope === "device"}
-                        {...(item.interaction === undefined || saving
+                        disabled={inert}
+                        {...(item.interaction === undefined || saving || inert
                           ? {}
                           : {
                               onSelect: () => {

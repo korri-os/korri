@@ -154,3 +154,49 @@ describe("launch settings screen", () => {
     expect(screen.queryByRole("button", { name: /GPU min/ })).toBeNull()
   })
 })
+
+describe("a choice marked by value", () => {
+  const quiet = (selected: string) => withLaunchSettings(fixtureModel, {
+    ...launch.ready,
+    layers: launch.ready.layers.map(layer => layer.id !== "game" ? layer : {
+      ...layer,
+      groups: [{
+        title: "Profile",
+        items: [{
+          id: "launch:profile:pick",
+          label: "Profile at next launch",
+          value: "Quiet",
+          interaction: {
+            kind: "choice" as const,
+            selected,
+            choices: [{ value: "", label: "No profile" }, { value: "p1", label: "Quiet" }, { value: "p2", label: "Quiet" }],
+          },
+        }],
+      }],
+    }),
+  })
+
+  test("steps from the selected value, not from the first matching label", () => {
+    const host = createFixtureHost()
+    const model = quiet("p2")
+    const game = launchLayerIndex(model.launchSettings ?? launch.ready, "game")
+    render(<PicoSurface host={host} model={model} />)
+    fireEvent.click(screen.getAllByRole("tab")[game]!)
+    fireEvent.click(screen.getByRole("button", { name: /Profile at next launch/ }))
+    expect(host.calls).toEqual(["setting:launch:profile:pick:"])
+  })
+})
+
+describe("inert actions", () => {
+  test("a disabled Reload and Choose a runner are drawn dimmed, marked disabled, and do nothing", () => {
+    const host = createFixtureHost()
+    const editor = { ...launch.needsRunner, actions: launch.needsRunner.actions.map(action => action.id === "launch:cancel" ? action : { ...action, enabled: false }) }
+    render(<PicoSurface host={host} model={withLaunchSettings(fixtureModel, editor)} />)
+    for (const name of ["RELOAD", "CHOOSE A RUNNER"]) {
+      const button = screen.getByRole("button", { name }) as HTMLButtonElement
+      expect(button.disabled).toBe(true)
+      fireEvent.click(button)
+    }
+    expect(host.calls).toEqual([])
+  })
+})

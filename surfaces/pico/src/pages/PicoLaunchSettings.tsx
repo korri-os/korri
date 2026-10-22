@@ -65,16 +65,23 @@ export function PicoLaunchSettings({
   ) : launch.phase === "Error" ? (
     <PicoNotice actions={actions} kicker="LAUNCH SETTINGS FAILED" message={launch.message} title={title} tone="warn" />
   ) : undefined
+  // An inert action stays on screen, dimmed (the treaty's "present but inert").
   const reload = launch.phase === "Ready"
-    ? launch.actions.find(action => action.id.endsWith(":reload") && action.enabled)
+    ? launch.actions.find(action => action.id.endsWith(":reload"))
     : undefined
   // Korri's other actions (Choose a runner) belong to the note that explains them.
-  const extra = launch.actions.filter(action => action.id !== launch.closeActionId && action !== reload && action.enabled)
+  const extra = launch.actions.filter(action => action.id !== launch.closeActionId && action !== reload)
   const banner = launch.note === undefined ? undefined : (
     <div className="pico-launch-settings-note">
       <p>{launch.note}</p>
       {extra.map(action => (
-        <PicoButton key={action.id} label={action.label.toUpperCase()} onPress={() => onAction(action.id)} tone="quiet" />
+        <PicoButton
+          disabled={!action.enabled}
+          key={action.id}
+          label={action.label.toUpperCase()}
+          onPress={() => onAction(action.id)}
+          tone="quiet"
+        />
       ))}
     </div>
   )
@@ -83,7 +90,14 @@ export function PicoLaunchSettings({
       <PicoSettings
         {...settings}
         banner={banner}
-        lead={reload === undefined ? undefined : <PicoButton label={reload.label.toUpperCase()} onPress={() => onAction(reload.id)} tone="quiet" />}
+        lead={reload === undefined ? undefined : (
+          <PicoButton
+            disabled={!reload.enabled}
+            label={reload.label.toUpperCase()}
+            onPress={() => onAction(reload.id)}
+            tone="quiet"
+          />
+        )}
         notice={notice}
         onSubmitWifi={() => undefined}
         onToggleShown={() => undefined}

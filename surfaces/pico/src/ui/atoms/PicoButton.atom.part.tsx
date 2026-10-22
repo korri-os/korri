@@ -14,3 +14,7 @@ export function Quiet() {
 export function Destructive() {
   return <PicoButton label="FORGET" onPress={() => undefined} tone="danger" />
 }
+
+export function Disabled() {
+  return <PicoButton disabled label="RELOAD" onPress={() => undefined} tone="quiet" />
+}
