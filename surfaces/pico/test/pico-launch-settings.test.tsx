@@ -4,6 +4,7 @@ import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { createFixtureHost, fixtureModel } from "../src/fixtures/fixture-host"
 import { launchLayerIndex, launchSettingsFixtures as launch, withLaunchSettings } from "../src/fixtures/launch-settings"
 import { PicoSurface } from "../src/PicoSurface"
+import { PicoSegments } from "../src/ui/atoms/PicoSegments"
 import { initialNavigation } from "../src/state/navigation"
 import { update } from "../src/state/update"
 import type { PicoMessage } from "../src/state/messages"
@@ -199,4 +200,20 @@ describe("inert actions", () => {
     }
     expect(host.calls).toEqual([])
   })
+})
+
+test("segments with a repeated label are keyed by value: no duplicate-key warning, one segment each", () => {
+  const errors: unknown[] = []
+  const original = console.error
+  console.error = (...args: unknown[]) => { errors.push(args.join(" ")) }
+  try {
+    const { container } = render(
+      <PicoSegments current={2} options={[{ value: "", label: "No profile" }, { value: "p1", label: "Quiet" }, { value: "p2", label: "Quiet" }]} />,
+    )
+    expect(container.querySelectorAll(".pico-segments-item")).toHaveLength(3)
+    expect(container.querySelectorAll("[data-lit]")[0]?.textContent).toBe("QUIET")
+    expect(errors.filter(error => String(error).includes("same key"))).toEqual([])
+  } finally {
+    console.error = original
+  }
 })
