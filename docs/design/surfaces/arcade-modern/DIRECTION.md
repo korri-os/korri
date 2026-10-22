@@ -61,3 +61,11 @@ C30 Focus is always the yellow block, the yellow card frame or the cabinet outli
 C31 A headline in the showcase: the kicker, the detail in cyan, the gameTitle in yellow when there is one; the host's actions as yellow-block items under it, in the host's order and words
 C32 NOW LOADING gains a hard-banded gauge on the plinth, filled to done over total, 1.2 / 3.4 GB in tabular figures; with no total 1.2 GB and no gauge; with no progress NOW LOADING alone
 C33 The RANKING panel adds a DOWNLOAD line with the size (3.4 GB), or REQUIRED with none
+C34 No answer yet
+C35 No answer yet
+C36 No answer yet
+C37 No answer yet
+C38 No answer yet
+C39 No answer yet
+C40 No answer yet
+C41 No answer yet

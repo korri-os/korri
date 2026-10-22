@@ -74,3 +74,11 @@ C30 The focus is a solid cyan row, always drawn; the list scrolls so it stays in
 C31 The transceiver asks: the kicker, then the detail, cursor blinking, with the file number when it has one; the host's actions print as lines under it, in the host's order and words, that down reaches
 C32 Under the Busy lines the transceiver draws a meter like the signal meter, cells lit to done over total, "1.2/3.4 GB" beside it; with no total "1.2 GB in" and no meter; with no progress only the spoken kicker
 C33 The dossier adds a "Download 3.4 GB" line ("Download needed" with no size), and the file's row carries a DL tag
+C34 No answer yet
+C35 No answer yet
+C36 No answer yet
+C37 No answer yet
+C38 No answer yet
+C39 No answer yet
+C40 No answer yet
+C41 No answer yet

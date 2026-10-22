@@ -77,3 +77,11 @@ C30 The graphite pencil loop is always round one item or tab and redraws itself 
 C31 Confirm: an advice note laid across the spread with the kicker as its heading, the game's title on the "Item" line when it has one, the detail under it; a tick box per host action, in the host's order and words, none ticked in advance.
 C32 Progress: the despatch slip prints a scale under its heading, inked to done over total, "1.2 of 3.4 GB" beside it; with no total "1.2 GB so far" and no scale; with no progress the slip alone.
 C33 The item's small print after the system: "Needs a 3.4 GB download first"; with no size, "Needs a download first".
+C34 No answer yet
+C35 No answer yet
+C36 No answer yet
+C37 No answer yet
+C38 No answer yet
+C39 No answer yet
+C40 No answer yet
+C41 No answer yet

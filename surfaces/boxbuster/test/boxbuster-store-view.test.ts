@@ -153,7 +153,6 @@ describe("the store view", () => {
           title: "Wario Land 4",
           subtitle: "GBA · This device",
           coverArtUrl: "http://127.0.0.1/art/wario.png",
-          wideArtUrl: "http://127.0.0.1/art/wario-wide.png",
           section: "This device",
           lastPlayedAt: NOW - DAY,
           playCount: 3,

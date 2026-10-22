@@ -68,6 +68,20 @@ const discoveryStateLabel = (snapshot: DiscoverySnapshot | undefined): string =>
   return exhaustive
 }
 
+/** One folder's state as korrid reports it, never a fixed word. */
+const folderStatusLabel = (status: DiscoverySnapshot["sources"][number]["status"]): string => {
+  switch (status._tag) {
+    case "Ready":
+      return "Registered"
+    case "Overlap":
+      return "Overlaps another folder"
+    case "SystemUnavailable":
+      return "System unavailable"
+  }
+  const exhaustive: never = status
+  return exhaustive
+}
+
 export function settingsFrom(
   facts: DeviceFacts,
 ): readonly SurfaceSettingGroup[] {
@@ -180,7 +194,7 @@ export function settingsFrom(
       ...(facts.discovery?.sources.map(location => ({
         id: `game-folder:${location.id}`,
         label: location.label,
-        value: "Registered",
+        value: folderStatusLabel(location.status),
         interaction: {
           kind: "action" as const,
           actionId: `game-folder-remove:${location.id}`,

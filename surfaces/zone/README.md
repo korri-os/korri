@@ -839,10 +839,10 @@ options and system do nothing there.
   tag is empty.
 - **Ground.** The root draws ZoneGround under GAMES, OPTIONS, SAVE DATA and
   RUN WITH; PAUSED and first boot draw their own.
-- **Wide art.** A game with no cover but wide art wears the wide art,
-  letterboxed in the cover well like any other art (`zoneBandCards` reads
-  `coverArtUrl ?? wideArtUrl`). A cover wins when both exist, since Zone's
-  cards are portrait. The GAMES part's `WideArtOnly` state shows it (C2).
+- **Wide covers.** A cover wider than the card is letterboxed in the cover
+  well like any other art (`zoneBandCards` reads `coverArtUrl`). The
+  treaty has no separate wide art: korrid produces none. The GAMES part's
+  `WideArtOnly` state shows a wide cover (C2).
 - **Portal.** Zone is registered as `catalog` and `gameplay-overlay`, aliased
   like Pico in `tsconfig.json`, `vite.config.ts` and `test/happydom.ts`. The
   device bundle (`clients/portal/nix/package.nix`) carries Zone's source,
@@ -858,11 +858,12 @@ options and system do nothing there.
 Every line names Zone's own answer and the test in
 `test/zone-navigation-acceptance.test.tsx` that reaches it from home with
 d-pad, confirm and back, through `ZoneSurface` and a host that records calls.
-Every line runs once per look (Modern, Blend, Retro): 111 tests.
+Every line runs once per look (Modern, Blend, Retro): 111 tests. C35, C37
+and C38 cite unit tests instead: no acceptance walk reaches them yet.
 
 ```
 C1  GAMES band: three stripe wells and LOADING, Korri's message under GAMES with RELOAD, NO GAMES, the cards — test: zone-navigation-acceptance "C1 catalog states"
-C2  ZoneCardBand cards: title, subtitle tag, a section spine per section, cover art, else wide art letterboxed, else the stripe well with initials — test: zone-navigation-acceptance "C2 browse"
+C2  ZoneCardBand cards: title, subtitle tag, a section spine per section, cover art (letterboxed when wide), else the stripe well with initials — test: zone-navigation-acceptance "C2 browse"
 C3  facts line LAST PLAYED, PLAYS, TIME under the band; CONTINUE for a resumable game — test: zone-navigation-acceptance "C3 game facts"
 C4  action row: A on a one-place card launches; a choice drops into PLAY HERE / PLAY ON <device> — test: zone-navigation-acceptance "C4 launch"
 C5  GAME OPTS. (OPTS. at the end of the action row; options is its shortcut): Korri's actions as rows, a disabled one with its reason, NO / YES before a destructive one — test: zone-navigation-acceptance "C5 per-game actions"
@@ -894,7 +895,12 @@ C30 the pink edge and underline on whatever holds DOM focus, on every page and l
 C31 ZoneStatusLayer question: the blue ZoneDialog with Korri's kicker, detail and the game in yellow, one button per host action in its order, the first lit, Back answering nothing; the page inert and dimmed — test: zone-navigation-acceptance "C31 confirm"
 C32 ZoneBusyStrip meter: SPECIAL STAGE's red slanted bar, its share and DONE / TOTAL; with no total the size so far and sweeping stripes; without progress, the strip as before — test: zone-navigation-acceptance "C32 progress"
 C33 ZoneCard's orange DOWNLOAD tag with the size, and DOWNLOAD <size> at the end of the GAMES facts line — test: zone-navigation-acceptance "C33 download"
-GET GAMES (no C number yet; the treaty's `store`): the key on GAMES, Korri's providers, the search keyboard, results with their system, an entry's GET, Korri's question, the meter and CANCEL, QUEUED, NOT AVAILABLE, Korri's trouble with RETRY, PLAY; B walks out and never cancels — test: zone-navigation-acceptance "get games"
+C34 No answer yet: Zone does not read a game's `saves`
+C35 ZoneStatusLayer question: Korri's Confirm dialog, one answer per side, then Not now; each side runs its own action id — test: zone-choose-save "a save split on Zone (ChooseSave)" (not yet in the acceptance walk)
+C36 No answer yet: Zone does not read `saveHistory`
+C37 LAUNCH SETTINGS from GAME OPTS.: the game on a black panel with Korri's state tag, Korri's note or message, one wedge per layer, OPTIONS' rows with source and DEVICE-ONLY, Korri's actions as buttons, a conflict's message instead of the rows — test: zone-launch-settings "launch settings: the page" (not yet in the acceptance walk)
+C38 LAUNCH SETTINGS profile rows: a name on the keyboard, DELETE PROFILE behind NO / YES; B closes the keyboard first, then runs Korri's close action — test: zone-launch-settings "launch settings: the surface's rules" (not yet in the acceptance walk)
+C39 to C41 GET GAMES: the key on GAMES, Korri's providers, the search keyboard, results with their system, an entry's GET, Korri's question, the meter and CANCEL, QUEUED, NOT AVAILABLE, Korri's trouble with RETRY, PLAY; B walks out and never cancels — test: zone-navigation-acceptance "get games"
 ```
 
 ### Polish (decided without asking)
@@ -1469,7 +1475,7 @@ states), `ZonePaused` (`OnTheGame`, `OnTheCover`), and the new atoms
   (`runningHud`): the band already names the game.
 - **PAUSED's stand-in is the running game, in grey.** `ZoneSurface`
   passes `art`: when Korri's status is Running with a `gameId` its catalog
-  lists, that game's `wideArtUrl ?? coverArtUrl`, else nothing. The art
+  lists, that game's `coverArtUrl`, else nothing. The art
   covers the page (cropped, never stretched), `grayscale(1)`, drawn
   `pixelated` because Korri's games are pixel art; under it, always, the
   checker of 16 art px squares in `#5A5A5A` / `#8C8C8C`, which is all

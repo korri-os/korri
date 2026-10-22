@@ -57,7 +57,7 @@ afterEach(() => {
 /** 19 Oct 2026, 12:00 UTC: the same day in every time zone from -11 to +11. */
 const LAST_PLAYED = 1_792_411_200_000
 const PIXEL = "data:image/gif;base64,R0lGODlhAQABAAAAACw="
-/** Wide art only: a different image, so the test sees which one the card drew. */
+/** A wide cover: a different image, so the test sees which one the card drew. */
 const WIDE = "data:image/gif;base64,R0lGODlhAgABAAAAACw="
 
 const HERE = { id: "here", label: "This device" }
@@ -78,7 +78,7 @@ const GAMES: readonly SurfaceGame[] = [
   { id: "hollow", title: "Hollow Knight", subtitle: "Switch", section: "This device", coverArtUrl: PIXEL },
   { id: "spelunky", title: "Spelunky", subtitle: "PC", section: "This device", launchLocations: [HERE, ZAO] },
   { id: "tetris", title: "Tetris", subtitle: "GB", section: "zao", launchLocations: [ZAO] },
-  { id: "wario", title: "Wario Land 4", subtitle: "GBA", section: "zao", wideArtUrl: WIDE },
+  { id: "wario", title: "Wario Land 4", subtitle: "GBA", section: "zao", coverArtUrl: WIDE },
 ]
 
 const GAME_ACTIONS: readonly SurfaceAction[] = [
@@ -333,7 +333,7 @@ for (const each of ZONE_LOOKS) {
         expect([...document.querySelectorAll(".zone-section-card")].map(spine => spine.textContent))
           .toEqual(["Continue", "This device", "zao"])
         expect(onScreen("PICO-8")).toBe(true)
-        // Cover art fills the well; a game with only wide art wears that, letterboxed; none wears the stripe well with initials.
+        // Cover art fills the well, letterboxed when wide; no cover wears the stripe well with initials.
         const well = (title: string) => button(title).querySelector(".zone-cover-well")?.getAttribute("data-filled")
         expect(well("Hollow Knight")).toBe("art")
         expect(well("Spelunky")).toBe("initials")
@@ -1668,7 +1668,7 @@ for (const each of ZONE_LOOKS) {
         expect(attract()?.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("Act 1")
         expect(attract()?.textContent).toContain("Press any button")
         expect(attract()?.textContent).toContain("21:47")
-        // Two turns on: Wario Land 4's stage is its wide art.
+        // Two turns on: Wario Land 4's stage is its cover.
         act(() => jest.advanceTimersByTime(12_000))
         expect(titleCard()).toBe("Wario Land 4")
         expect(attract()?.querySelector(".zone-attract-art")?.getAttribute("src")).toBe(WIDE)

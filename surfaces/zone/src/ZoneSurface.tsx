@@ -166,12 +166,12 @@ function launchStage(shown: ZoneShown, program: ZoneSurfaceProgram): ReactNode {
   return <ZoneLaunchCard act={launch.act} leaving={launch.leaving} system={launch.system} title={launch.title} />
 }
 
-/** The running game's art for PAUSED's stand-in: wide, else cover, when Korri names a game its catalog lists. */
+/** The running game's cover for PAUSED's stand-in, when Korri names a game its catalog lists. */
 function runningArt(model: SurfaceModel): string | undefined {
   const status = model.status
   if (status._tag !== "Running" || status.gameId === undefined) return undefined
   const game = catalogGames(model.catalog).find(entry => entry.id === status.gameId)
-  return game?.wideArtUrl ?? game?.coverArtUrl
+  return game?.coverArtUrl
 }
 
 /** The page for what is shown, with plain props and its model's callbacks. */

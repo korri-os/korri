@@ -276,7 +276,7 @@ export function OneGame() {
   return <Games model={fixtureOneGameModel} />
 }
 
-/** Wario Land 4 has wide art and no cover: the wide art, letterboxed in the cover well, not the stripes. */
+/** Wario Land 4 has a wide cover: letterboxed in the cover well, not the stripes. */
 export function WideArtOnly() {
   return <Games model={fixtureWideArtModel} opening={[{ _tag: "FocusedCard", index: fixtureWideArtIndex }]} />
 }

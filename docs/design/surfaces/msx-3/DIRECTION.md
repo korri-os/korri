@@ -51,3 +51,11 @@ C30 The magenta ▶ marks focus, always drawn, a grey ▷ the list's place; the 
 C31 On its game's line, the message box asks the kicker, then the detail; the host's actions are places table rows in the host's order and words, ▶ on the first
 C32 Under the kicker, a green stat bar lit to done over total, "1.2/3.4 GB" beside it; with no total "1.2 GB in", no bar; with no progress the blinking ■ alone
 C33 The message box adds "It needs a 3.4 GB download first." ("It needs a download first." with no size), and the game's line carries a DL tag
+C34 No answer yet
+C35 No answer yet
+C36 No answer yet
+C37 No answer yet
+C38 No answer yet
+C39 No answer yet
+C40 No answer yet
+C41 No answer yet

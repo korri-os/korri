@@ -69,3 +69,11 @@ C30 Focus is a white pill label and orange gem, the viewport's white border, or 
 C31 Over its game's frame, the message line asks the kicker, then the detail; the host's actions take the pills' places in the host's order and words
 C32 The FILE line becomes a teal bar filled to done over total, "1.2/3.4 GB" after it; with no total "1.2 GB IN" and no bar; with no progress the hourglass alone
 C33 The message line adds "It needs a 3.4 GB download first." ("It needs a download first." with no size), and the FILE line ends "// DL 3.4 GB"
+C34 No answer yet
+C35 No answer yet
+C36 No answer yet
+C37 No answer yet
+C38 No answer yet
+C39 No answer yet
+C40 No answer yet
+C41 No answer yet

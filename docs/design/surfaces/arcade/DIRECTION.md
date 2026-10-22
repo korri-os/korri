@@ -27,7 +27,7 @@
 ## Capability map
 
 C1  Loading: the strip is empty and the heading reads NOW LOADING; Error: a red ROM ERROR heading with the message in white where the table is; Empty: NO GAMES, SEE OPERATOR; Ready: the strip
-C2  Numbered slots in a ring, in catalog order; a section is a blue divider card in the strip with its name; the subtitle is the SYSTEM row; wide art is the DEMO backdrop; no cover gets the house card
+C2  Numbered slots in a ring, in catalog order; a section is a blue divider card in the strip with its name; the subtitle is the SYSTEM row; the cover is the DEMO backdrop; no cover gets the house card
 C3  The high-score table: PLAYS, LAST and TIME rows; a resumable game wears the red CONTINUE? banner with the countdown on its slot
 C4  One place: A on the slot plays; two places: down to the 1P/2P rows, up/down picks the side, A plays there; no side is ever chosen for the player
 C5  `options` on a slot opens its own DIP page in place of the table: one row per action, dim when disabled, description on the footer line; a destructive row asks ARE YOU SURE? YES/NO
@@ -59,3 +59,11 @@ C30 Focus is the yellow slot frame (flashing red), the yellow triangle on a side
 C31 The heading becomes the kicker, the detail under it in Silkscreen, the gameTitle in chrome when there is one; the host's actions sit where INSERT COIN was as stops, in the host's order and words
 C32 Under the Busy detail a bar of sticker blocks fills to done over total, 1.2/3.4 GB beside it; with no total 1.2 GB IN and no bar; with no progress only the focused slot flashes
 C33 The high-score table adds a DOWNLOAD row with the size (3.4 GB), or NEEDED with none; the slot card wears a DL sticker
+C34 No answer yet
+C35 No answer yet
+C36 No answer yet
+C37 No answer yet
+C38 No answer yet
+C39 No answer yet
+C40 No answer yet
+C41 No answer yet

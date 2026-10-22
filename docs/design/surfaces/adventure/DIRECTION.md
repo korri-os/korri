@@ -72,3 +72,11 @@ C30 Focus is the crosshair, always over one hotspot, verb or pocket (the sentenc
 C31 Confirm: the kicker on the sentence line, the detail printed over the scene, the game's box lit when it has one; the host's actions replace the verbs as dialogue lines, in the host's order and words.
 C32 Progress: the chosen screen draws a bar like the volume bars, filled to done over total, "1.2 of 3.4 GB" on the sentence line; with no total "1.2 GB so far" and no bar; with no progress the kicker alone.
 C33 Look at a box adds "It needs a 3.4 GB download first." ("It needs a download first." with no size); the box wears a parcel sticker on the shelf.
+C34 No answer yet
+C35 No answer yet
+C36 No answer yet
+C37 No answer yet
+C38 No answer yet
+C39 No answer yet
+C40 No answer yet
+C41 No answer yet

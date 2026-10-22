@@ -83,8 +83,6 @@ export interface SurfaceGame {
   readonly subtitle?: string
   /** Cover art. Absent when Korri has none — surfaces must have a fallback. */
   readonly coverArtUrl?: string
-  /** Wide/background art. Absent when Korri has none. */
-  readonly wideArtUrl?: string
   /** True when confirming continues an existing session rather than starting. */
   readonly resumable?: boolean
   /**
