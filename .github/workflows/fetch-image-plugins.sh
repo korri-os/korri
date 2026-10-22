@@ -27,7 +27,32 @@ if ! NIX_CONFIG="$config" nix config show trusted-public-keys | grep -Fq "$key";
   exit 1
 fi
 
-paths=$(NIX_CONFIG="$config" nix eval --json ".#nixosConfigurations.$device.config.sdImage.storePaths" --apply 'xs: map toString xs')
+# GitHub release payloads can return a transient miss even while another
+# runner downloads the same asset. Nix's download-attempts does not retry 404s.
+# Evaluation also fetches plugin references, before the explicit build below.
+fetch_plugin() {
+  local attempt status output
+  local -a refresh=()
+  for attempt in 1 2 3; do
+    # A failed JSON command can write partial stdout. Keep only the successful
+    # attempt's result; stderr still shows every original download failure.
+    if output=$(NIX_CONFIG="$config" nix "${refresh[@]}" "$@"); then
+      printf '%s\n' "$output"
+      return 0
+    else
+      status=$?
+    fi
+    if (( attempt < 3 )); then
+      echo "image plugin fetch failed; retry $((attempt + 1))/3 in $((attempt * 5))s" >&2
+      sleep "$((attempt * 5))"
+      # A metadata miss must not remain in Nix's one-hour negative cache.
+      refresh=(--refresh)
+    fi
+  done
+  return "$status"
+}
+
+paths=$(fetch_plugin eval --json ".#nixosConfigurations.$device.config.sdImage.storePaths" --apply 'xs: map toString xs')
 mapfile -t packages < <(printf '%s' "$paths" | jq -r '.[] | select(endswith("-korri-plugin"))')
 count=$(printf '%s' "$paths" | jq 'length')
 if (( ${#packages[@]} < 1 || ${#packages[@]} != count - 1 )); then
@@ -38,13 +63,13 @@ fi
 for package in "${packages[@]}"; do
   # Read the publisher cache itself. A local unsigned build with the same
   # store path does not count as a release.
-  info=$(NIX_CONFIG="$config" nix path-info --store "$cache" --json "$package")
+  info=$(fetch_plugin path-info --store "$cache" --json "$package")
   if ! printf '%s' "$info" | jq -e --arg path "$package" --arg key "$key_name:" \
     '.[$path].signatures | any(startswith($key))' >/dev/null; then
     echo "plugin package lacks the bound publisher signature: $package" >&2
     exit 1
   fi
-  NIX_CONFIG="$config" nix build --no-link "$package" \
+  fetch_plugin build --no-link "$package" \
     --option max-jobs 0 --option builders "" --option fallback false --option require-sigs true
   echo "verified signed image plugin: $package"
 done
