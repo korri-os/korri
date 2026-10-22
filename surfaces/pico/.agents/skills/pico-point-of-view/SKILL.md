@@ -97,7 +97,6 @@ answer instead.
 
 | Neighbour | Its pull | Pico's answer |
 |---|---|---|
-| Shift, Korri's cinematic surface | Full-screen art scenes and atmosphere | Objects on a flat ground of palette colour |
 | Modern console dashboards | Tiles, glass, blur, soft shadows, rounded cards | Hard-edged objects on the pixel grid |
 | Retro nostalgia | CRT scanlines, synthwave glow, screen curve | A crisp console that never existed |
 | Parody | "PRESS START", "1UP" and coin sounds in place of content | Real content, with dry wit |

@@ -19,8 +19,7 @@ import { createInMemoryKorridClient } from "../korrid/client"
 import type { PortalSurface } from "./surface-registry"
 
 // The portal compiles Pico from source, but Bun resolves Pico's peer React
-// from the surface package. Keep this test on one React instance, as the Shift
-// integration test does.
+// from the surface package. Keep this test on one React instance.
 const picoPackageRoot = new URL("../", import.meta.resolve("@korri/pico"))
 mock.module("react", () => React)
 mock.module("react/jsx-runtime", () => ReactJsxRuntime)

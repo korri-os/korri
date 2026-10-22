@@ -75,8 +75,8 @@ def verdict(before, after, replay, observations):
         after.get("activeIsControl") is not True
         or before["focusNode"] == after["focusNode"]
     ):
-        return False, "Shift focus did not move to a different native control"
-    return True, "Chromium exposed the portal controller and Shift focus moved"
+        return False, "surface focus did not move to a different native control"
+    return True, "Chromium exposed the portal controller and surface focus moved"
 
 
 def main():

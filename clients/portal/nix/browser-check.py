@@ -30,7 +30,6 @@ def main() -> None:
     reports = []
     for surface, selector in [
         ("pico", ".pico-screen"),
-        ("shift", "[data-shift-surface]"),
     ]:
         run("errors", "--clear")
         run("open", f"http://127.0.0.1:8099/?surface={surface}")
@@ -53,8 +52,7 @@ def main() -> None:
         assert facts["nativeBridge"] == "undefined", facts
         assert facts["backendRequests"] == [], facts
         assert facts["preference"] == surface, facts
-        if surface == "pico":
-            assert args.expect_title in facts["text"], facts
+        assert args.expect_title in facts["text"], facts
         run("screenshot", str(args.output / f"{surface}.png"))
         refs = run("snapshot", "-i")["refs"]
         first_button = next(
@@ -63,30 +61,17 @@ def main() -> None:
         run("focus", f"@{first_button}")
         focus_name = "(document.activeElement.getAttribute('aria-label') || document.activeElement.textContent).trim()"
         before = run("eval", focus_name)["result"]
-        expected_focus = "Neverball" if surface == "pico" else "Library"
+        expected_focus = "Neverball"
         assert before != expected_focus, before
         run("press", "ArrowRight")
         run("wait", "--fn", f"{focus_name} === {json.dumps(expected_focus)}")
         assert run("eval", "document.activeElement.tagName")["result"] == "BUTTON"
-        if surface == "pico":
-            run("find", "role", "button", "click", "--name", "Neverball")
-            text = run("get", "text", "body")["text"]
-            assert "PICO ▸ GAME" in text, text
-        else:
-            run("find", "role", "button", "click", "--name", "Settings")
-            run("press", "Enter")
-            run("wait", ".shift-settings-stage, .shift-settings-empty")
+        run("find", "role", "button", "click", "--name", "Neverball")
+        text = run("get", "text", "body")["text"]
+        assert "PICO ▸ GAME" in text, text
         run("screenshot", str(args.output / f"{surface}-interaction.png"))
         run("press", "Escape")
-        if surface == "pico":
-            run("wait", "--text", "PICO ▸ LIBRARY")
-        else:
-            run(
-                "wait",
-                "--fn",
-                "document.querySelector('.shift-settings-stage, .shift-settings-empty') === null",
-            )
-            run("wait", "--text", "Library")
+        run("wait", "--text", "PICO ▸ LIBRARY")
         errors = run("errors")
         assert not errors.get("errors"), errors
         reports.append({"surface": surface, "facts": facts, "errors": errors})

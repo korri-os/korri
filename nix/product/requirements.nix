@@ -21,8 +21,7 @@ let
     # Chromium's native Wayland app_id is its desktop-file WM class. The
     # portal module check binds this value to the packaged Chromium desktop file.
     browserNeverFocusAppIds = [ "chromium-browser" ];
-    # Every product device opens Pico. Shift still ships in the portal
-    # bundle; a browser reaches it with ?surface=shift.
+    # Every product device opens Pico.
     surfaceId = "pico";
     korridAddress = "127.0.0.1:39217";
     publishers = {

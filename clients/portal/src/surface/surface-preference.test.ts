@@ -56,9 +56,9 @@ describe("resolveSurfacePreference", () => {
     const store = storage("pico")
 
     expect(
-      resolveSurfacePreference({ search: `?${SURFACE_PARAM}=shift` }, store),
-    ).toBe("shift")
-    expect(store.written).toEqual(["shift"])
+      resolveSurfacePreference({ search: `?${SURFACE_PARAM}=zone` }, store),
+    ).toBe("zone")
+    expect(store.written).toEqual(["zone"])
   })
 
   test("ignores a surface that does not exist, in either source", () => {
@@ -66,9 +66,10 @@ describe("resolveSurfacePreference", () => {
     expect(
       resolveSurfacePreference({ search: `?${SURFACE_PARAM}=nope` }, storage()),
     ).toBe(DEFAULT_SURFACE_ID)
-    expect(resolveSurfacePreference({ search: "" }, storage("nope"))).toBe(
-      DEFAULT_SURFACE_ID,
-    )
+    const store = storage("nope")
+    expect(resolveSurfacePreference({ search: "" }, store)).toBe(DEFAULT_SURFACE_ID)
+    expect(resolveSurfacePreference({ search: "" }, store, "zone")).toBe("zone")
+    expect(store.written).toEqual([])
   })
 
   test("still boots when storage refuses to answer", () => {
@@ -91,13 +92,13 @@ describe("resolveSurfacePreference", () => {
   test("keeps query and remembered choices above the runtime default", () => {
     expect(
       resolveSurfacePreference(
-        { search: `?${SURFACE_PARAM}=shift` },
-        storage("shift"),
+        { search: `?${SURFACE_PARAM}=zone` },
+        storage("zone"),
         "pico",
       ),
-    ).toBe("shift")
-    expect(resolveSurfacePreference({ search: "" }, storage("shift"), "pico"))
-      .toBe("shift")
+    ).toBe("zone")
+    expect(resolveSurfacePreference({ search: "" }, storage("zone"), "pico"))
+      .toBe("zone")
   })
 
   test("defaults when there is no storage at all", () => {

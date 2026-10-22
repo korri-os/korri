@@ -4,7 +4,6 @@ import { createRoot, type Root } from "react-dom/client"
 import type { SurfaceHost, SurfaceModel } from "@contracts/surface/korri-surface"
 import { FocusOwnership, InitialHandoff, type Game } from "@contracts/generated/korrid"
 import { PicoSurface } from "@korri/pico"
-import { ShiftSurface } from "@korri/shift"
 import { createInputBus } from "../input/bus"
 import { createInMemoryKorridClient, type KorridClient } from "../korrid/client"
 import { SurfaceRoot } from "./SurfaceRoot"
@@ -37,7 +36,7 @@ const seed = (selected: boolean) => ({
   games: [game(selected)],
   gameRoutes: [{ ...runnerRoutes, gameRunner: undefined, systemRunners: {}, routes: runnerRoutes.routes.slice(0, 1) }],
 })
-async function mount(korrid: KorridClient, options: { presentation?: "pico" | "shift"; initialGameId?: string } = {}) {
+async function mount(korrid: KorridClient, options: { initialGameId?: string } = {}) {
   // Session recovery starts on a device whose first-boot setup is complete.
   await korrid.finishOnboarding()
   let model!: SurfaceModel
@@ -51,8 +50,7 @@ async function mount(korrid: KorridClient, options: { presentation?: "pico" | "s
     id: "recovery", title: "Recovery", presentations: ["catalog"],
     render: props => {
       model = props.model; host = props.host
-      return options.presentation === "shift" ? <ShiftSurface {...props} />
-        : <PicoSurface {...props} initialView={{ _tag: "Detail", gameId: options.initialGameId ?? "game:wl4" }} />
+      return <PicoSurface {...props} initialView={{ _tag: "Detail", gameId: options.initialGameId ?? "game:wl4" }} />
     },
   }} />))
   await waitFor(() => model.catalog._tag !== "Loading")
@@ -575,89 +573,69 @@ test("status recovery failure during an in-flight Cancel never advertises an ena
   await waitFor(() => view.model().status._tag === "Browsing")
 })
 
-for (const presentation of ["pico", "shift"] as const) {
-  for (const selected of [false, true]) {
-    test(`${presentation} ${selected ? "selected" : "command"}: startup/remount names the actual catalog entry, not another focused game`, async () => {
-      const local = { ...game(selected), host: "device-label" }
-      const other = { ...game(false), id: "other", title: "Other game", playStats: {
-        lastPlayed: "2026-10-01T00:00:00Z", playCount: 1, totalPlaytimeSeconds: 1,
-      } }
-      const peer = { ...game(false), host: "peer", title: "Unrelated peer game", source: { label: "Peer", isLocal: false } }
-      const client = createInMemoryKorridClient({ ...seed(selected), games: [other, peer, local], sessionFocusDelayMs: 60_000 })
-      const reserves = spyOn(client, "sessionReserve")
-      const starts = spyOn(client, "sessionStart")
-      const cancels = spyOn(client, "sessionCancel")
-      const options = { presentation, initialGameId: "game:other" }
-      const first = await mount(client, options)
-      if (presentation === "shift") {
-        const otherButton = first.container.querySelector<HTMLButtonElement>('button[data-shift-game-id="game:other"]')
-        expect(otherButton).not.toBeNull()
-        await invoke(() => otherButton!.focus())
-        expect(document.activeElement).toBe(otherButton)
-      } else expect(first.container.querySelector(".pico-game-detail")?.textContent).toContain("Other game")
-      await invoke(() => first.host().launchGame("game:device-label:wl4"))
-      await waitFor(() => first.model().status._tag === "Busy")
-      expect(first.model().status).toMatchObject({ _tag: "Busy", gameId: "game:device-label:wl4" })
-      const id = first.currentId()!
-      await first.unmount()
-      const recovered = await mount(client, options)
-      expect(recovered.model().status).toMatchObject({ _tag: "Busy", gameId: "game:device-label:wl4" })
-      if (presentation === "pico") {
-        expect(recovered.container.querySelector('.pico-launch-stage-cart [aria-label="Wario Land 4"]')).not.toBeNull()
-        expect(recovered.container.querySelector(".pico-launch-stage")?.textContent).not.toContain("Other game")
-      } else {
-        const hero = recovered.container.querySelector(".shift-cine-hero-stack")
-        expect(hero?.getAttribute("data-korri-instance-id")).toBe("game:device-label:wl4")
-        expect(hero?.textContent).toContain("Wario Land 4")
-        expect(hero?.textContent).not.toContain("Other game")
-        expect(hero?.textContent).not.toContain("Unrelated peer game")
-      }
-      await invoke(() => recovered.host().runAction("cancel-launch"))
-      await waitFor(() => recovered.model().status._tag === "Browsing")
-      expect(cancels).toHaveBeenCalledWith({ expectedLaunchId: id })
-      expect(reserves).toHaveBeenCalledTimes(1); expect(starts).toHaveBeenCalledTimes(1)
-      reserves.mockRestore(); starts.mockRestore(); cancels.mockRestore()
-    })
-  }
-  test(`${presentation}: missing optional active game metadata stays unknown while exact Cancel remains effective`, async () => {
-    // Deliberately collide a launch id with an unrelated real content id: the
-    // two identities must never be treated as interchangeable.
-    const unrelated = { ...game(false), id: "metadata-free-launch", title: "Unrelated selected game" }
-    const active = { launchId: unrelated.id, phase: "running", initialHandoff: InitialHandoff.Waiting }
-    const client = createInMemoryKorridClient({ games: [unrelated, game(false)], activeSession: active })
+for (const selected of [false, true]) {
+  test(`Pico ${selected ? "selected" : "command"}: startup/remount names the actual catalog entry, not another focused game`, async () => {
+    const local = { ...game(selected), host: "device-label" }
+    const other = { ...game(false), id: "other", title: "Other game", playStats: {
+      lastPlayed: "2026-10-01T00:00:00Z", playCount: 1, totalPlaytimeSeconds: 1,
+    } }
+    const peer = { ...game(false), host: "peer", title: "Unrelated peer game", source: { label: "Peer", isLocal: false } }
+    const client = createInMemoryKorridClient({ ...seed(selected), games: [other, peer, local], sessionFocusDelayMs: 60_000 })
     const reserves = spyOn(client, "sessionReserve")
     const starts = spyOn(client, "sessionStart")
     const cancels = spyOn(client, "sessionCancel")
-    const options = { presentation, initialGameId: "game:metadata-free-launch" }
+    const options = { initialGameId: "game:other" }
     const first = await mount(client, options)
+    expect(first.container.querySelector(".pico-game-detail")?.textContent).toContain("Other game")
+    await invoke(() => first.host().launchGame("game:device-label:wl4"))
+    await waitFor(() => first.model().status._tag === "Busy")
+    expect(first.model().status).toMatchObject({ _tag: "Busy", gameId: "game:device-label:wl4" })
+    const id = first.currentId()!
     await first.unmount()
     const recovered = await mount(client, options)
-    const status = recovered.model().status
-    expect(status._tag).toBe("Busy")
-    expect(status).not.toHaveProperty("gameId")
-    if (presentation === "pico") {
-      expect(recovered.container.querySelector(".pico-launch-stage-cart")).toBeNull()
-      expect(recovered.container.querySelector(".pico-launch-stage")?.textContent).not.toContain("Unrelated selected game")
-    } else {
-      expect(recovered.container.querySelectorAll('[data-korri-part="shift.cine-hero"]').length).toBe(0)
-      expect(recovered.container.querySelector(".shift-cine-heroband")?.textContent).toContain("Starting live session")
-      expect(recovered.container.querySelector(".shift-cine-heroband")?.textContent).not.toContain("Unrelated selected game")
-    }
-    const observed = await client.sessionStatus()
-    expect(observed._tag === "Ok" && observed.payload.active?.gameId).toBeUndefined()
-    await invoke(() => recovered.bus.emit({ type: "back" }))
+    expect(recovered.model().status).toMatchObject({ _tag: "Busy", gameId: "game:device-label:wl4" })
+    expect(recovered.container.querySelector('.pico-launch-stage-cart [aria-label="Wario Land 4"]')).not.toBeNull()
+    expect(recovered.container.querySelector(".pico-launch-stage")?.textContent).not.toContain("Other game")
+    expect(recovered.container.querySelector(".pico-launch-stage")?.textContent).not.toContain("Unrelated peer game")
+    await invoke(() => recovered.host().runAction("cancel-launch"))
     await waitFor(() => recovered.model().status._tag === "Browsing")
-    expect(cancels).toHaveBeenCalledWith({ expectedLaunchId: active.launchId })
-    expect(reserves).not.toHaveBeenCalled(); expect(starts).not.toHaveBeenCalled()
+    expect(cancels).toHaveBeenCalledWith({ expectedLaunchId: id })
+    expect(reserves).toHaveBeenCalledTimes(1); expect(starts).toHaveBeenCalledTimes(1)
     reserves.mockRestore(); starts.mockRestore(); cancels.mockRestore()
   })
-  test(`${presentation}: an exact local startup failure cannot be attributed to a same-id peer copy`, async () => {
-    const local = { ...game(false), host: "device-label" }
-    const peer = { ...game(false), host: "peer", title: "Unrelated peer game", source: { label: "Peer", isLocal: false } }
-    const client = createInMemoryKorridClient({ games: [peer, local], behavior: "prepare-fail" })
-    const view = await mount(client, { presentation, initialGameId: "game:peer:wl4" })
-    await invoke(() => view.host().launchGame("game:device-label:wl4"))
-    await waitFor(() => view.model().status._tag === "Problem")
-    expect(view.model().status).toMatchObject({ _tag: "Problem", gameId: "game:device-label:wl4", gameTitle: "Wario Land 4" })
-  })
 }
+test("Pico: missing optional active game metadata stays unknown while exact Cancel remains effective", async () => {
+  // Deliberately collide a launch id with an unrelated real content id: the
+  // two identities must never be treated as interchangeable.
+  const unrelated = { ...game(false), id: "metadata-free-launch", title: "Unrelated selected game" }
+  const active = { launchId: unrelated.id, phase: "running", initialHandoff: InitialHandoff.Waiting }
+  const client = createInMemoryKorridClient({ games: [unrelated, game(false)], activeSession: active })
+  const reserves = spyOn(client, "sessionReserve")
+  const starts = spyOn(client, "sessionStart")
+  const cancels = spyOn(client, "sessionCancel")
+  const options = { initialGameId: "game:metadata-free-launch" }
+  const first = await mount(client, options)
+  await first.unmount()
+  const recovered = await mount(client, options)
+  const status = recovered.model().status
+  expect(status._tag).toBe("Busy")
+  expect(status).not.toHaveProperty("gameId")
+  expect(recovered.container.querySelector(".pico-launch-stage-cart")).toBeNull()
+  expect(recovered.container.querySelector(".pico-launch-stage")?.textContent).not.toContain("Unrelated selected game")
+  const observed = await client.sessionStatus()
+  expect(observed._tag === "Ok" && observed.payload.active?.gameId).toBeUndefined()
+  await invoke(() => recovered.bus.emit({ type: "back" }))
+  await waitFor(() => recovered.model().status._tag === "Browsing")
+  expect(cancels).toHaveBeenCalledWith({ expectedLaunchId: active.launchId })
+  expect(reserves).not.toHaveBeenCalled(); expect(starts).not.toHaveBeenCalled()
+  reserves.mockRestore(); starts.mockRestore(); cancels.mockRestore()
+})
+test("Pico: an exact local startup failure cannot be attributed to a same-id peer copy", async () => {
+  const local = { ...game(false), host: "device-label" }
+  const peer = { ...game(false), host: "peer", title: "Unrelated peer game", source: { label: "Peer", isLocal: false } }
+  const client = createInMemoryKorridClient({ games: [peer, local], behavior: "prepare-fail" })
+  const view = await mount(client, { initialGameId: "game:peer:wl4" })
+  await invoke(() => view.host().launchGame("game:device-label:wl4"))
+  await waitFor(() => view.model().status._tag === "Problem")
+  expect(view.model().status).toMatchObject({ _tag: "Problem", gameId: "game:device-label:wl4", gameTitle: "Wario Land 4" })
+})

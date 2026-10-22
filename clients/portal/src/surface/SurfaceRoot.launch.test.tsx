@@ -268,7 +268,7 @@ test("Done on selected warnings before handoff dismisses only the panel and star
   cancels.mockRestore()
 })
 
-test("closing the warning panel (Shift's close button and scrim send runner:cancel) never ends startup", async () => {
+test("closing the warning panel (runner:cancel) never ends startup", async () => {
   const view = await mount(true, { gameRoutes: warningRoutes, sessionFocusDelayMs: 60_000 })
   const cancels = spyOn(view.korrid, "sessionCancel")
   await view.launch()

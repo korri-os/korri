@@ -1,7 +1,7 @@
 /**
  * Korri surface treaty — the boundary between Korri and a presentation surface.
  *
- * A surface is a self-contained front end (Shift is the first). It renders what
+ * A surface is a self-contained front end. It renders what
  * Korri can currently do and asks Korri to do things; it never reaches into
  * korrid, the Linux shell, portal state, or any Rust-generated type. That
  * one-way dependency is what lets a surface live in its own repository — or
@@ -13,7 +13,7 @@
  *   - The model carries only facts Korri can actually produce today. A surface
  *     may render less than the model offers, never more than Korri knows.
  *   - Absent data is `undefined`, never invented. A surface decides how to
- *     present the gap (Shift draws a title monogram in place of cover art).
+ *     present the gap, such as a title in place of cover art.
  *   - Commands are fire-and-forget. Korri publishes the consequence as a new
  *     model; the surface never awaits a result or holds Korri's state.
  *
@@ -552,7 +552,7 @@ export interface SurfaceOnboarding {
 /**
  * Getting a game from a provider: a place, such as the PICO-8 BBS, that a
  * provider plugin can search and fetch from. Each surface lists whatever
- * providers Korri publishes; there may be one. Grounded in legacy Shift's store
+ * providers Korri publishes; there may be one. Grounded in the legacy store
  * (search, results, detail, Get/Getting/Play, the ungetable guard) and the
  * legacy acquisition protocol (`ProviderClaim`,
  * `ProviderClaimDetails`, `AcquireJobStatus`).

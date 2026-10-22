@@ -3,7 +3,6 @@ import type {
   SurfaceModel,
 } from "@contracts/surface/korri-surface"
 import { PicoSurface } from "@korri/pico"
-import { ShiftSurface } from "@korri/shift"
 import { ZoneSurface } from "@korri/zone"
 import { lazy, type ReactNode, Suspense } from "react"
 
@@ -20,9 +19,8 @@ const BoxbusterSurface = lazy(() =>
 /**
  * Which of the treaty's presentations a surface actually renders.
  *
- * The treaty lets a surface present less than Korri knows, and both shipped
- * surfaces take it up: Shift renders the catalog and the gameplay overlay, Pico
- * renders only the catalog. Declaring that here means the portal can pick a
+ * The treaty lets a surface present less than Korri knows: Boxbuster renders
+ * only the catalog. Declaring that here means the portal can pick a
  * surface per presentation instead of discovering the gap as a blank screen
  * over a running game.
  */
@@ -40,15 +38,9 @@ export interface PortalSurface {
 
 /**
  * Every surface this build can mount. A surface earns a line here and nothing
- * else: no portal code names one, so adding a third is this list plus an alias.
+ * else: no portal code names one, so adding another is this list plus an alias.
  */
 export const PORTAL_SURFACES: readonly PortalSurface[] = [
-  {
-    id: "shift",
-    title: "Shift",
-    presentations: ["catalog", "gameplay-overlay"],
-    render: ({ model, host }) => <ShiftSurface host={host} model={model} />,
-  },
   {
     id: "pico",
     title: "Pico",
@@ -75,7 +67,7 @@ export const PORTAL_SURFACES: readonly PortalSurface[] = [
 
 /** The surface used when nothing is chosen, and the fallback when a chosen one
  * cannot serve a presentation. It must implement every presentation. */
-export const DEFAULT_SURFACE_ID = "shift"
+export const DEFAULT_SURFACE_ID = "pico"
 
 export function portalSurfaceById(id: string): PortalSurface | undefined {
   return PORTAL_SURFACES.find((surface) => surface.id === id)

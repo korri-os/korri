@@ -3,7 +3,7 @@
  *
  * Through the treaty only: what Korri published (the row, its interaction, the
  * settings status) goes in, and the one call Korri would receive comes out.
- * Shift's sheet is the reference behaviour: text starts from the current value,
+ * Text starts from the current value,
  * a secret starts empty, Save sends the typed text, an empty value is only ever
  * sent by the clear action, and Cancel sends nothing.
  */

@@ -96,7 +96,7 @@ function presentationGroup(
 }
 
 /** Strip active-session and integration authority while translating korrid's
- * materialized controls into the only model Shift is allowed to receive. */
+ * materialized controls into the surface model. */
 export function gameplayOverlayPresentationFrom(
   controls: SessionControls,
 ): SurfaceGameplayOverlayPresentation {

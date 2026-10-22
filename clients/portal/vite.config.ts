@@ -30,8 +30,7 @@ export default defineConfig({
     alias: {
       "@contracts": resolve(__dirname, "../../contracts"),
       // Surfaces are compiled from source by their host. The alias is the only
-      // thing that would change if Shift moved to its own package registry.
-      "@korri/shift": resolve(__dirname, "../../surfaces/shift/src/index.ts"),
+      // thing that would change if a surface moved to its own package registry.
       "@korri/pico": resolve(__dirname, "../../surfaces/pico/src/index.ts"),
       "@korri/zone": resolve(__dirname, "../../surfaces/zone/src/index.ts"),
       "@korri/boxbuster": resolve(

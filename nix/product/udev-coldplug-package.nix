@@ -7,7 +7,7 @@
 # udev works through them in order, so the USB controller bound at 25 s and the
 # seat receiver's first node waited 17.7 s, past its 15 s limit. Replaying
 # devices plus the module events the rules name brought the controller to
-# 12.5 s and Shift from 39.5 s to 35.0 s on the same system.
+# 12.5 s on the same system.
 #
 # The program is the same on every device. The module list is a device fact:
 # udev-coldplug-modules.nix derives it from the device's rules and the unit

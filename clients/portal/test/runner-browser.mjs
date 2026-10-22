@@ -39,22 +39,18 @@ async function load(surface, fixture = "stale") {
     .waitFor()
   await page.evaluate(() => document.fonts.ready)
 }
-async function open(surface) {
-  if (surface === "pico") {
-    const cart = page.getByRole("button", { name: "Wario Land 4, This device", exact: true })
+async function open() {
+  const cart = page.getByRole("button", { name: "Wario Land 4, This device", exact: true })
+  await cart.click()
+  if (!(await page.getByRole("button", { name: "▶ PLAY", exact: true }).count()))
     await cart.click()
-    if (!(await page.getByRole("button", { name: "▶ PLAY", exact: true }).count()))
-      await cart.click()
-    await page.getByRole("button", { name: "▶ PLAY", exact: true }).click()
-  } else {
-    await page.getByRole("button", { name: "Wario Land 4", exact: true }).click()
-  }
+  await page.getByRole("button", { name: "▶ PLAY", exact: true }).click()
   await dialog().waitFor()
 }
 try {
-  for (const surface of ["shift", "pico"]) {
+  for (const surface of ["pico"]) {
     await load(surface)
-    await open(surface)
+    await open()
     assert.equal(
       await dialog().getByRole("button", { name: "Launch once", exact: true }).count(),
       2,
@@ -114,27 +110,21 @@ try {
     }
     await page.keyboard.press("Escape")
     await dialog().waitFor({ state: "detached" })
-    if (surface === "pico")
-      assert.equal(
-        await page.getByRole("button", { name: "▶ PLAY", exact: true }).count(),
-        1,
-        "Back must not also leave game detail",
-      )
+    assert.equal(
+      await page.getByRole("button", { name: "▶ PLAY", exact: true }).count(),
+      1,
+      "Back must not also leave game detail",
+    )
     assert(
       await page
-        .getByRole("button", { name: surface === "pico" ? "▶ PLAY" : "Wario Land 4", exact: true })
+        .getByRole("button", { name: "▶ PLAY", exact: true })
         .evaluate(element => element === document.activeElement),
       "Cancel restores the opener's focus",
     )
 
     // Saved choices remain reachable without playing, including after saving.
     await load(surface)
-    if (surface === "pico")
-      await page.getByRole("button", { name: "Wario Land 4, This device", exact: true }).click()
-    else {
-      await page.getByRole("button", { name: "Wario Land 4", exact: true }).focus()
-      await page.keyboard.press("o")
-    }
+    await page.getByRole("button", { name: "Wario Land 4, This device", exact: true }).click()
     await page.getByRole("button", { name: "Runners on this device", exact: true }).click()
     await dialog()
       .getByRole("button", { name: "Remember for this game", exact: true })
@@ -157,7 +147,7 @@ try {
     await dialog().getByRole("button", { name: "Cancel", exact: true }).click()
 
     await load(surface, "conflict")
-    await open(surface)
+    await open()
     await dialog().getByRole("button", { name: "Launch once", exact: true }).first().click()
     await dialog().getByRole("button", { name: "Stop active session", exact: true }).click()
     await dialog().getByRole("button", { name: "Launch once", exact: true }).first().waitFor()
@@ -169,7 +159,7 @@ try {
     await dialog().waitFor({ state: "detached" })
 
     await load(surface, "warnings")
-    await open(surface)
+    await open()
     await dialog().getByText("Launched with settings warnings", { exact: true }).waitFor()
     assert((await dialog().innerText()).includes("Unsupported in pinned version 1.20"))
     await page.locator("#app").screenshot({ path: `${output}/${surface}-warnings.png` })
@@ -177,7 +167,7 @@ try {
     await dialog().waitFor({ state: "detached" })
 
     await load(surface, "read-only")
-    await open(surface)
+    await open()
     await dialog().getByRole("button", { name: "Launch once", exact: true }).first().click()
     await dialog().getByText("Launching requires session access", { exact: true }).waitFor()
     await dialog().getByRole("button", { name: "Reload runners", exact: true }).click()
@@ -191,13 +181,13 @@ try {
     await page.keyboard.press("Escape")
 
     await load(surface, "loading")
-    await open(surface)
+    await open()
     await page.keyboard.press("Escape")
     await page.waitForTimeout(4200)
     assert.equal(await dialog().count(), 0, "a cancelled read must not reopen chooser")
     assert.equal(errors.length, 0, errors.join("\n"))
   }
-  console.log(`Verified both surfaces at five container sizes. Screenshots: ${output}`)
+  console.log(`Verified Pico at five container sizes. Screenshots: ${output}`)
 } finally {
   await browser.close()
 }

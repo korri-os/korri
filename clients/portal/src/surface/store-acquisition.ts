@@ -137,7 +137,7 @@ type Details =
 export const storeEntryId = (claim: Pick<ProviderClaim, "providerId" | "id">): string =>
   JSON.stringify([claim.providerId, claim.id])
 
-/** Legacy Shift's ungetable guard, in its own words. */
+/** Acquisition guard: only supported, obtainable content can be acquired. */
 export const NO_SYSTEM_REASON =
   "This provider doesn't say which system this game is for, so it can't be downloaded yet."
 export const STOPPED_KICKER = "Download stopped"

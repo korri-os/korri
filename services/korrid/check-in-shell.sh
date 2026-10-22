@@ -38,7 +38,7 @@ bun install --frozen-lockfile --ignore-scripts
 # Every registered surface compiles from source and must share the portal's
 # React instance. A missing local dependency must not fall through to a parent
 # checkout when this check runs in a worktree.
-for surface in shift pico boxbuster zone; do
+for surface in pico boxbuster zone; do
   cd "$ROOT/surfaces/$surface"
   bun install --frozen-lockfile --ignore-scripts
   for package in react react-dom; do
@@ -49,12 +49,6 @@ for surface in shift pico boxbuster zone; do
 done
 
 cd "$ROOT/clients/portal"
-bun run typecheck
-bun test
-
-# Shift is its own package with its own toolchain: check it on its own terms so
-# a surface break is reported as a surface break, not as a portal failure.
-cd "$ROOT/surfaces/shift"
 bun run typecheck
 bun test
 

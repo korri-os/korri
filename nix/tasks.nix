@@ -459,7 +459,7 @@ let
         pkgs.coreutils
       ];
       script = ''
-        cd "$KORRI_ROOT/surfaces/shift"
+        cd "$KORRI_ROOT/surfaces/pico"
         bun install --frozen-lockfile --ignore-scripts
         cd "$KORRI_ROOT/surfaces/zone"
         bun install --frozen-lockfile --ignore-scripts
@@ -476,8 +476,6 @@ let
       description = "Run portal unit tests and typecheck.";
       runtimeInputs = [ pkgs.bun ];
       script = ''
-        cd "$KORRI_ROOT/surfaces/shift"
-        bun install --frozen-lockfile --ignore-scripts
         cd "$KORRI_ROOT/surfaces/pico"
         bun install --frozen-lockfile --ignore-scripts
         cd "$KORRI_ROOT/surfaces/zone"
@@ -496,17 +494,6 @@ let
       runtimeInputs = [ pkgs.bun ];
       script = ''
         cd "$KORRI_ROOT/surfaces/boxbuster"
-        bun install --frozen-lockfile --ignore-scripts
-        bun test
-        bun run typecheck
-      '';
-    };
-
-    shift-check = {
-      description = "Run the Shift surface unit tests and typecheck.";
-      runtimeInputs = [ pkgs.bun ];
-      script = ''
-        cd "$KORRI_ROOT/surfaces/shift"
         bun install --frozen-lockfile --ignore-scripts
         bun test
         bun run typecheck

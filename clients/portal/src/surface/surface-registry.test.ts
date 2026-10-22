@@ -14,6 +14,10 @@ import {
 } from "./surface-registry"
 
 describe("the surface registry", () => {
+  test("uses Pico as the complete default surface", () => {
+    expect(DEFAULT_SURFACE_ID).toBe("pico")
+  })
+
   test("registers each surface once", () => {
     const ids = PORTAL_SURFACES.map(surface => surface.id)
     expect(new Set(ids).size).toBe(ids.length)
@@ -29,7 +33,7 @@ describe("the surface registry", () => {
 
   test("honours a preference where the surface implements the presentation", () => {
     expect(portalSurfaceFor("catalog", "pico").id).toBe("pico")
-    expect(portalSurfaceFor("catalog", "shift").id).toBe("shift")
+    expect(portalSurfaceFor("catalog", "zone").id).toBe("zone")
   })
 
   test("keeps a themed surface for its own overlay", () => {

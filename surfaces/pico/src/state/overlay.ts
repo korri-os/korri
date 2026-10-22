@@ -9,8 +9,7 @@
  * is asked once per gesture: when a held direction is released, or shortly
  * after the last step when the input reports no release. A held d-pad repeats
  * many times a second, and asking Korri on every repeat would queue a stale
- * value behind each fresh one. The timings and the release matching are
- * Shift's (surfaces/shift/src/ui/molecules/ShiftSheetRange.tsx). A value Korri
+ * value behind each fresh one. A value Korri
  * republishes replaces the local one and drops any step not yet sent.
  */
 import {

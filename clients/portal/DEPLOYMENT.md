@@ -112,7 +112,7 @@ version. Do not manually delete profile generations still needed for rollback.
 ## Select a surface
 
 The existing portal URL parameter selects a registered surface:
-`http://127.0.0.1:8099/?surface=pico` or `?surface=shift`.
+`http://127.0.0.1:8099/?surface=pico` or `?surface=zone`.
 The portal remembers this non-sensitive preference in its browser profile.
 Without `services.korri.webSurfaceHost.surfaceId`, kiosk startup uses the
 bare URL, so the remembered choice survives browser restart and reboot.
@@ -132,7 +132,6 @@ negotiation are not implemented.
 nix run .#portal-runtime-check
 nix run .#portal-check
 nix run .#pico-check
-nix run .#shift-check
 nix build .#checks.x86_64-linux.korri-portal-module
 nix build .#korri-portal
 ```

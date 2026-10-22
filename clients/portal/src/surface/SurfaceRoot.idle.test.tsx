@@ -7,11 +7,11 @@ import { createInMemoryKorridClient } from "../korrid/client"
 import type { PortalSurface } from "./surface-registry"
 
 // Same single-React arrangement as SurfaceRoot.test.tsx.
-const shiftPackageRoot = new URL("../", import.meta.resolve("@korri/shift"))
+const picoPackageRoot = new URL("../", import.meta.resolve("@korri/pico"))
 mock.module("react", () => React)
 mock.module("react/jsx-runtime", () => ReactJsxRuntime)
-mock.module(new URL("node_modules/react/index.js", shiftPackageRoot).pathname, () => React)
-mock.module(new URL("node_modules/react/jsx-runtime.js", shiftPackageRoot).pathname, () => ReactJsxRuntime)
+mock.module(new URL("node_modules/react/index.js", picoPackageRoot).pathname, () => React)
+mock.module(new URL("node_modules/react/jsx-runtime.js", picoPackageRoot).pathname, () => ReactJsxRuntime)
 // A render loop never lets act() drain, so this test runs React's real
 // scheduler and only watches the render count.
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false
@@ -70,15 +70,15 @@ test("dismissing an already idle identity status publishes no new model", async 
 
 test("the idle catalog stops rendering once identity status has loaded", async () => {
   const { SurfaceRoot } = await import("./SurfaceRoot")
-  const { ShiftSurface } = await import("@korri/shift")
+  const { PicoSurface } = await import("@korri/pico")
   let renders = 0
   const surface: PortalSurface = {
-    id: "shift",
-    title: "Shift",
+    id: "pico",
+    title: "Pico",
     presentations: ["catalog"],
     render: ({ model, host }) => {
       renders += 1
-      return <ShiftSurface host={host} model={model} />
+      return <PicoSurface host={host} model={model} />
     },
   }
   mount(surface, SurfaceRoot)

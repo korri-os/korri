@@ -81,7 +81,7 @@ replay with no active game, and rollback. It does not authorize an SD rewrite,
 kernel replacement, firmware/internal-storage writes, broader device access,
 or weakened signature checks. Physical tests still require current readiness.
 
-Replay covers portal-target to browser to Shift focus. It does not test the
+Replay covers portal-target to browser to surface focus. It does not test the
 physical buttons, InputPlumber's raw-device normalization, or display wake.
 Those need separate hardware acceptance. Kernel and full Chromium builds are
 not fast component iterations.

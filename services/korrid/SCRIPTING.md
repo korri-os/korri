@@ -599,7 +599,7 @@ Unknown fields and explicit `null` values fail admission. `file.name` follows
 legacy `SafeFileName` (no `/`, `\`, NUL, `.` or `..`); `file.extension` is
 lowercase `[a-z0-9][a-z0-9-]{0,31}`; `sizeBytes` is a positive integer. A
 claim whose `artifact.system` is absent or names no enabled system is shown but
-cannot be acquired (the legacy Shift "ungetable" guard). No provider result
+cannot be acquired (the legacy "ungetable" guard). No provider result
 carries an expected digest: legacy carried `expectedDigests` only on
 `artifact.acquire` output, which main does not carry.
 

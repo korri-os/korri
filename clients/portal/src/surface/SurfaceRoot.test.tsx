@@ -31,21 +31,22 @@ import {
 } from "@contracts/generated/korrid"
 import { createInMemoryKorridClient, type KorridClient } from "../korrid/client"
 import type { PortalSurface } from "./surface-registry"
-// The portal compiles Shift from source, but Bun resolves Shift's peer React
+import type { SurfaceModel } from "@contracts/surface/korri-surface"
+// The portal compiles Pico from source, but Bun resolves Pico's peer React
 // from the surface package once its dependencies are installed. Derive that
 // package location through the same alias the product imports, then keep this
-// cross-boundary test on one React instance without replacing Shift itself.
-const shiftPackageRoot = new URL("../", import.meta.resolve("@korri/shift"))
-const shiftReact = new URL("node_modules/react/index.js", shiftPackageRoot).pathname
-const shiftJsxRuntime = new URL(
+// cross-boundary test on one React instance without replacing Pico itself.
+const picoPackageRoot = new URL("../", import.meta.resolve("@korri/pico"))
+const picoReact = new URL("node_modules/react/index.js", picoPackageRoot).pathname
+const picoJsxRuntime = new URL(
   "node_modules/react/jsx-runtime.js",
-  shiftPackageRoot,
+  picoPackageRoot,
 ).pathname
 
 mock.module("react", () => React)
 mock.module("react/jsx-runtime", () => ReactJsxRuntime)
-mock.module(shiftReact, () => React)
-mock.module(shiftJsxRuntime, () => ReactJsxRuntime)
+mock.module(picoReact, () => React)
+mock.module(picoJsxRuntime, () => ReactJsxRuntime)
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true
@@ -59,16 +60,16 @@ async function surfaceRootComponent() {
   return loadedSurfaceRoot
 }
 
-/* Built from Shift's public entry, loaded after the React mocks above for the
+/* Built from Pico's public entry, loaded after the React mocks above for the
  * same reason SurfaceRoot itself is. Loading the registry would pull every
  * surface package in at once; what it chooses is covered by its own test. */
 async function catalogSurface(): Promise<PortalSurface> {
-  const { ShiftSurface } = await import("@korri/shift")
+  const { PicoSurface } = await import("@korri/pico")
   return {
-    id: "shift",
-    title: "Shift",
+    id: "pico",
+    title: "Pico",
     presentations: ["catalog"],
-    render: ({ model, host }) => <ShiftSurface host={host} model={model} />,
+    render: ({ model, host }) => <PicoSurface host={host} model={model} />,
   }
 }
 
@@ -274,11 +275,13 @@ async function renderSurfaceRoot(
   try {
     const SurfaceRoot = await surfaceRootComponent()
     const surface = options.surface ?? await catalogSurface()
+    const korrid = options.korrid ?? buildKorrid(sources, calls)
+    await korrid.finishOnboarding()
     await act(async () => {
       root.render(
         <SurfaceRoot
           bus={bus}
-          korrid={options.korrid ?? buildKorrid(sources, calls)}
+          korrid={korrid}
           surface={surface}
         />,
       )
@@ -357,19 +360,6 @@ async function confirm(view: SurfaceRootView) {
   })
 }
 
-async function openWarioDetail() {
-  await click(buttonNamed("Library"))
-  await waitFor(
-    () => expect(document.querySelector("[data-shift-library]")).not.toBeNull(),
-    "expected Library screen",
-  )
-  await click(buttonNamed("Wario Land 4", document.querySelector("[data-shift-library]")!))
-  await waitFor(
-    () => expect(document.querySelector("[data-shift-detail]")).not.toBeNull(),
-    "expected Wario detail screen",
-  )
-}
-
 describe("SurfaceRoot", () => {
   test("keeps unsupported settings readable and changes seat count through controller confirmation", async () => {
     const seeded = okSettings()
@@ -398,18 +388,26 @@ describe("SurfaceRoot", () => {
         return base.clearSteamGridDbCredential()
       },
     }
+    const pico = await catalogSurface()
+    let latestModel: SurfaceModel | undefined
     const view = await renderSurfaceRoot(
       { localGames: [], remoteGames: [] },
       { localLaunches: [], prepared: [], streams: [] },
-      { korrid },
+      { korrid, surface: { ...pico, render: props => {
+        latestModel = props.model
+        return pico.render(props)
+      } } },
     )
-    await waitFor(() => expect(buttonNamed("Settings", view.container)).toBeDefined(), "settings navigation")
-    await click(buttonNamed("Settings", view.container))
+    await waitFor(() => expect(buttonNamed("MENU", view.container)).toBeDefined(), "home menu")
+    await click(buttonNamed("MENU", view.container))
+    await click(buttonNamed("SETTINGS", view.container))
     // Plugin rows are no longer settings writes: they come from the plugin
     // repository flow (plugin-repositories.ts) and turn on and off through
     // setPluginEnabled, so they are not part of this read-only check.
-    for (const label of ["Name: Browser", "SteamGridDB API key: Configured"]) {
-      const row = view.container.querySelector<HTMLElement>(`[aria-label="${label}"]`)
+    for (const [group, label, value] of [["DEVICE", "Name", "Browser"], ["METADATA", "SteamGridDB API key", "Configured"]] as const) {
+      await click(buttonNamed(group, view.container))
+      const row = Array.from(view.container.querySelectorAll<HTMLElement>('[role="group"]'))
+        .find(candidate => candidate.textContent === `${label}${value}`) ?? null
       if (row === null) throw new Error(`Missing read-only setting ${label}`)
       expect(row.tagName).toBe("DIV")
       expect(row.getAttribute("role")).toBe("group")
@@ -421,25 +419,24 @@ describe("SurfaceRoot", () => {
         await sleep()
       })
       expect(document.activeElement).toBe(row)
-      expect(view.container.querySelector('[role="dialog"][aria-label^="Change "]')).toBeNull()
+      expect(view.container.querySelector('[role="dialog"]')).toBeNull()
     }
     expect(mutations).toEqual([])
 
-    const count = buttonNamed("Player seats: 4", view.container)
+    await click(buttonNamed("CONTROLLERS", view.container))
+    const seats = latestModel?.settings.flatMap(group => group.items)
+      .find(item => item.id === "host.preferences.playerCount")?.interaction
+    expect(seats?.kind).toBe("choice")
+    if (seats?.kind !== "choice") throw new Error("Missing seat choices")
+    expect(seats.choices.map(choice => choice.value)).toContain("1")
+    expect(seats.choices.map(choice => choice.value)).toContain("255")
+    const count = buttonNamed("Player seats◀ 4 ▶", view.container)
     await act(async () => { count.focus() })
     await confirm(view)
-    await waitFor(() => expect(dialogNamed("Change Player seats")).toBeDefined(), "seat picker")
-    const picker = dialogNamed("Change Player seats")
-    expect(buttonNamed("1", picker)).toBeDefined()
-    expect(buttonNamed("255", picker)).toBeDefined()
-    const six = buttonNamed("6", picker)
-    six.getBoundingClientRect = () => new DOMRect(0, 0, 100, 40)
-    await act(async () => {
-      six.focus()
-      view.bus.emit({ type: "confirm" })
-      await sleep()
-    })
-    await waitFor(() => expect(buttonNamed("Player seats: 6", view.container)).toBeDefined(), "applied count")
-    expect(mutations).toEqual(["setting"])
+    await waitFor(() => expect(buttonNamed("Player seats◀ 5 ▶", view.container)).toBeDefined(), "first count step")
+    await act(async () => { buttonNamed("Player seats◀ 5 ▶", view.container).focus() })
+    await confirm(view)
+    await waitFor(() => expect(buttonNamed("Player seats◀ 6 ▶", view.container)).toBeDefined(), "applied count")
+    expect(mutations).toEqual(["setting", "setting"])
   })
 })

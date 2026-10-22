@@ -46,6 +46,6 @@ createRoot(app).render(
   <SurfaceRoot
     bus={bus}
     korrid={korrid}
-    surface={portalSurfaceFor("catalog", params.get("surface") ?? "shift")}
+    surface={portalSurfaceFor("catalog", params.get("surface") ?? undefined)}
   />,
 )

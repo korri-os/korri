@@ -90,7 +90,7 @@ function center(element: Element): { x: number; y: number } {
 
 /**
  * A focus trap: when the focused element sits inside a container marked
- * `data-block-exit` (Shift's sheet), candidates outside it are ignored so
+ * `data-block-exit`, candidates outside it are ignored so
  * directional input cannot wander onto the surface behind an open panel.
  */
 function scopeFor(active: Element | null): ParentNode {

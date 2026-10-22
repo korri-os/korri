@@ -11,9 +11,6 @@ let
       ../tsconfig.json
       ../vite.config.ts
       ../src
-      ../../../surfaces/shift/package.json
-      ../../../surfaces/shift/tsconfig.json
-      ../../../surfaces/shift/src
       ../../../surfaces/pico/package.json
       ../../../surfaces/pico/tsconfig.json
       ../../../surfaces/pico/src
@@ -24,14 +21,11 @@ let
       ../../../surfaces/boxbuster/tsconfig.json
       ../../../surfaces/boxbuster/src
       ../../../contracts
-      ../../../packages/intrinsic-design/package.json
-      ../../../packages/intrinsic-design/intrinsic.css
-      ../../../packages/intrinsic-design/recipe.css
     ];
   };
 
-  # Follow the existing portal build's two installs. Pico is compiled from
-  # source; its Caliper-only development dependencies do not enter this build.
+  # Surfaces compile from source; their Caliper-only development dependencies
+  # do not enter this build.
   dependencies = pkgs.stdenvNoCC.mkDerivation {
     pname = "korri-portal-dependencies";
     version = "0.0.0";
@@ -40,15 +34,12 @@ let
       fileset = lib.fileset.unions [
         ../package.json
         ../bun.lock
-        ../../../surfaces/shift/package.json
-        ../../../surfaces/shift/bun.lock
         ../../../surfaces/pico/package.json
         ../../../surfaces/pico/bun.lock
         ../../../surfaces/zone/package.json
         ../../../surfaces/zone/bun.lock
         ../../../surfaces/boxbuster/package.json
         ../../../surfaces/boxbuster/bun.lock
-        ../../../packages/intrinsic-design/package.json
       ];
     };
     nativeBuildInputs = [ pkgs.bun ];
@@ -60,13 +51,11 @@ let
       export HOME="$TMPDIR/home"
       export BUN_INSTALL_CACHE_DIR="$TMPDIR/bun-cache"
       mkdir -p "$HOME"
-      for project in surfaces/shift clients/portal; do
-        (
-          cd "$project"
-          # Keep both builders' native packages under the same dependency hash.
-          bun install --frozen-lockfile --ignore-scripts --os=linux --cpu='*'
-        )
-      done
+      (
+        cd clients/portal
+        # Keep both builders' native packages under the same dependency hash.
+        bun install --frozen-lockfile --ignore-scripts --os=linux --cpu='*'
+      )
       (
         cd surfaces/pico
         # Pico is built by Vite; do not fetch its Caliper-only dev dependencies.
@@ -82,16 +71,11 @@ let
         # Boxbuster is built by Vite too; it needs only three and its renderer.
         bun install --production --frozen-lockfile --ignore-scripts --os=linux --cpu='*'
       )
-      # Bun's local-file install must resolve to the build's source, not to a
-      # temporary dependency-fetch directory or a stale copy in this output.
-      # Only Shift uses the shared intrinsic package; Pico derives its own pixel.
-      rm -rf "surfaces/shift/node_modules/@korri/intrinsic-design"
-      ln -s ../../../../packages/intrinsic-design "surfaces/shift/node_modules/@korri/intrinsic-design"
       runHook postBuild
     '';
     installPhase = ''
       runHook preInstall
-      for project in surfaces/shift surfaces/pico surfaces/zone surfaces/boxbuster clients/portal; do
+      for project in surfaces/pico surfaces/zone surfaces/boxbuster clients/portal; do
         mkdir -p "$out/$project"
         cp -R "$project/node_modules" "$out/$project/"
       done
@@ -99,7 +83,7 @@ let
     '';
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-x4hMNxBDh0JphJf6I0zKdGQ4mvHr3QCVLpICYQ6sMLQ=";
+    outputHash = "sha256-4f8wh8FT3ovN/kdZPWe2oR1NvusxwBIIp0zG5fFEzHI=";
   };
 in
 pkgs.stdenvNoCC.mkDerivation {
@@ -119,7 +103,7 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preBuild
     export HOME="$TMPDIR/home"
     mkdir -p "$HOME"
-    for project in surfaces/shift surfaces/pico surfaces/zone surfaces/boxbuster clients/portal; do
+    for project in surfaces/pico surfaces/zone surfaces/boxbuster clients/portal; do
       cp -R "${dependencies}/$project/node_modules" "$project/"
       chmod -R u+w "$project/node_modules"
     done
@@ -172,7 +156,6 @@ pkgs.stdenvNoCC.mkDerivation {
     ! grep -Fq '/runtime.json' "''${js[@]}"
     # The source-built surfaces must ship, not just an empty Vite shell.
     grep -Fq 'pico-screen' "''${css[@]}"
-    grep -Fq 'data-shift-surface' "''${css[@]}"
     grep -Fq 'zone-screen' "''${css[@]}"
     # Pico's faces whose licences ask for their text to travel with every
     # copy (Spleen's BSD 2-Clause, Tiny5's OFL) ship it beside the bundle.
@@ -186,7 +169,7 @@ pkgs.stdenvNoCC.mkDerivation {
 
   passthru = { inherit dependencies; };
   meta = {
-    description = "Immutable static Korri portal with Pico, Zone and Shift";
+    description = "Immutable static Korri portal with Pico, Zone and Boxbuster";
     platforms = [
       "x86_64-linux"
       "aarch64-linux"

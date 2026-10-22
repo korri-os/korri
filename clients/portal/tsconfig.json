@@ -14,7 +14,6 @@
     "types": ["@types/bun"],
     "paths": {
       "@contracts/*": ["../../contracts/*"],
-      "@korri/shift": ["../../surfaces/shift/src/index.ts"],
       "@korri/pico": ["../../surfaces/pico/src/index.ts"],
       "@korri/zone": ["../../surfaces/zone/src/index.ts"],
       "@korri/boxbuster": ["../../surfaces/boxbuster/src/index.ts"]
@@ -24,7 +23,6 @@
     "src",
     "vite.config.ts",
     "../../contracts",
-    "../../surfaces/shift/src",
     "../../surfaces/pico/src",
     "../../surfaces/zone/src",
     "../../surfaces/boxbuster/src"

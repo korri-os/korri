@@ -6,7 +6,6 @@
  * on its own. Every mounted surface must be declared here or its utility
  * classes silently vanish from the bundle.
  */
-@source "../../../surfaces/shift/src";
 
 /*
  * The portal is a full-screen device shell: the surface fills the viewport and
