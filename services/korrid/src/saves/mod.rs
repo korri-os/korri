@@ -65,14 +65,40 @@ pub(crate) fn capture_initial(
     locations: &[types::SaveLocation],
     template: types::SnapshotRecord,
 ) -> Result<(), SaveError> {
-    if store
-        .records(person, &template.game_id)?
-        .iter()
-        .any(|r| r.device == template.device)
-    {
+    let history = store.records(person, &template.game_id)?;
+    if history.iter().any(|r| r.device == template.device) {
         return Ok(());
     }
     let record = store.capture(person, locations, template)?;
+    // ADR 0014: byte-identical first-sync saves join without a question.
+    // Files restored from any device's history are not independent local saves.
+    // Compare every file (screenshots included), so new screenshots still enter
+    // history and reconciliation can preserve their union. Metadata is not content.
+    let content = |record: &SnapshotRecord| {
+        let mut files: Vec<_> = record
+            .locations
+            .iter()
+            .flat_map(|location| {
+                location.files.iter().map(|file| {
+                    (
+                        location.key.clone(),
+                        location.kind.clone(),
+                        file.path.clone(),
+                        file.sha256.clone(),
+                    )
+                })
+            })
+            .collect();
+        files.sort();
+        files
+    };
+    let working_content = content(&record);
+    if history
+        .iter()
+        .any(|known| content(known) == working_content)
+    {
+        return Ok(());
+    }
     if record.locations.iter().any(|l| !l.files.is_empty()) {
         store.put_record(person, &record)?;
     }

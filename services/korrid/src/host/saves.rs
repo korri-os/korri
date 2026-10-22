@@ -23,6 +23,84 @@ fn failure(error: SaveError) -> RpcFailure {
         .into(),
     }
 }
+// Diagnostic detail stays local. RPC callers keep the existing failure contract.
+#[derive(Debug)]
+struct SaveDiagnostic {
+    failure: RpcFailure,
+    reason: String,
+}
+impl From<RpcFailure> for SaveDiagnostic {
+    fn from(failure: RpcFailure) -> Self {
+        Self {
+            reason: failure.message.clone(),
+            failure,
+        }
+    }
+}
+impl From<SaveError> for SaveDiagnostic {
+    fn from(error: SaveError) -> Self {
+        Self {
+            reason: error.to_string(),
+            failure: failure(error),
+        }
+    }
+}
+
+fn declaration_diagnostic(command: &[String], reason: String) -> SaveDiagnostic {
+    use crate::launcher::{
+        plugin_launch::{LaunchComposition, PluginLaunchInput, PreparedLaunch},
+        redaction::{redact_text, LaunchRedaction},
+    };
+    // Use the same native append/env redaction as plugin-launch diagnostics.
+    // Fail closed if the host's handoff cannot supply that context.
+    let context = (|| {
+        let input: PluginLaunchInput = serde_json::from_str(command.get(3)?).ok()?;
+        let composition: LaunchComposition = serde_json::from_str(command.get(4)?).ok()?;
+        let mut redaction = LaunchRedaction::from_composition(&composition).ok()?;
+        if command.get(1).map(String::as_str) == Some("plugin-launch") {
+            let prepared: PreparedLaunch = serde_json::from_str(command.get(5)?).ok()?;
+            redaction.add_env(prepared.plan.env.into_values());
+        }
+        let mut words = redaction.words();
+        words.extend([
+            input.program,
+            input.account_root,
+            input.save_root,
+            input.cache_root,
+        ]);
+        words.extend(input.content_path);
+        words.extend(input.provider_ref);
+        words.extend(input.core_path);
+        words.extend(input.files.into_values());
+        words.extend(input.artifacts.into_values());
+        words.push(command.get(2)?.clone());
+        Some(redact_text(&reason, &words))
+    })();
+    SaveDiagnostic {
+        failure: failure(SaveError::Invalid("save declaration".into())),
+        reason: context.unwrap_or_else(|| "invalid plugin preparation handoff".into()),
+    }
+}
+
+fn baseline_deferral(game: &str, error: &SaveDiagnostic) -> String {
+    use crate::launcher::redaction::{status_text, MAX_REASON_CHARS, REDACTED};
+    // Mask paths not supplied by the launch input too (for example plugin
+    // source errors). Match quoted paths before words, then bound the result
+    // so clipping cannot expose a private path or append/env value's suffix.
+    static PATHS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let paths = PATHS.get_or_init(|| {
+        regex::Regex::new(r#""[^"\n]*/[^"\n]*"|'[^'\n]*/[^'\n]*'|[^\s]*/[^\s]*"#)
+            .expect("diagnostic path pattern")
+    });
+    let reason = paths.replace_all(&error.reason, REDACTED);
+    format!(
+        "korrid save baseline deferred for game {}: {}: {}",
+        status_text(game, 128),
+        status_text(&error.failure.code, 64),
+        status_text(&reason, MAX_REASON_CHARS)
+    )
+}
+
 fn now() -> String {
     chrono::DateTime::from_timestamp(crate::peer_rpc::unix_time() as i64, 0)
         .expect("current UTC time")
@@ -47,7 +125,7 @@ impl HostRuntime {
             crate::launcher::plugin_launch::PluginLaunchInput,
             crate::launcher::plugin_launch::PreparedLaunch,
         )>,
-        RpcFailure,
+        SaveDiagnostic,
     > {
         // Declaration reads are not starts. Use the normal route/prepare
         // producer without the session's require_ready gate; missing runtime
@@ -69,9 +147,10 @@ impl HostRuntime {
             &self.launch_person()?,
         )
         .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
-        crate::launcher::plugin_launch::prepare_command(&launch.command)
-            .and_then(|command| crate::launcher::plugin_launch::declared_saves(&command))
-            .map_err(|_| failure(SaveError::Invalid("save declaration".into())))
+        let command = crate::launcher::plugin_launch::prepare_command(&launch.command)
+            .map_err(|reason| declaration_diagnostic(&launch.command, reason))?;
+        crate::launcher::plugin_launch::declared_saves(&command)
+            .map_err(|reason| declaration_diagnostic(&command, reason))
     }
     fn save_mark(&self, game: &str) -> Result<SaveMark, RpcFailure> {
         let person = &self.launch_person()?;
@@ -508,43 +587,38 @@ impl HostRuntime {
                 let device = host.save_device()?;
                 let account = crate::saves::account_root(root, &person)
                     .map_err(|reason| failure(SaveError::Invalid(reason)))?;
-                fn has_files(path: &Path) -> Result<bool, RpcFailure> {
+                fn has_files(path: &Path) -> Result<bool, SaveDiagnostic> {
                     let metadata = match std::fs::symlink_metadata(path) {
                         Ok(value) => value,
                         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                             return Ok(false)
                         }
-                        Err(error) => return Err(failure(SaveError::Storage(error.to_string()))),
+                        Err(error) => return Err(SaveError::Storage(error.to_string()).into()),
                     };
                     if metadata.file_type().is_symlink() {
-                        return Err(failure(SaveError::Invalid("symlink in save root".into())));
+                        return Err(SaveError::Invalid("symlink in save root".into()).into());
                     }
                     if metadata.is_file() {
                         return Ok(true);
                     }
                     if !metadata.is_dir() {
-                        return Err(failure(SaveError::Invalid(
-                            "special file in save root".into(),
-                        )));
+                        return Err(SaveError::Invalid("special file in save root".into()).into());
                     }
-                    for entry in std::fs::read_dir(path)
-                        .map_err(|e| failure(SaveError::Storage(e.to_string())))?
+                    for entry in
+                        std::fs::read_dir(path).map_err(|e| SaveError::Storage(e.to_string()))?
                     {
-                        if has_files(
-                            &entry
-                                .map_err(|e| failure(SaveError::Storage(e.to_string())))?
-                                .path(),
-                        )? {
+                        if has_files(&entry.map_err(|e| SaveError::Storage(e.to_string()))?.path())?
+                        {
                             return Ok(true);
                         }
                     }
                     Ok(false)
                 }
                 for game in snapshot.library.keys() {
-                    let captured = (|| -> Result<(), RpcFailure> {
+                    let captured = (|| -> Result<(), SaveDiagnostic> {
                         if store
                             .records(&person, game)
-                            .map_err(failure)?
+                            .map_err(SaveDiagnostic::from)?
                             .iter()
                             .any(|r| r.device == device)
                         {
@@ -578,12 +652,12 @@ impl HostRuntime {
                                     locations: vec![],
                                 },
                             )
-                            .map_err(failure)?;
+                            .map_err(SaveDiagnostic::from)?;
                         }
                         Ok(())
                     })();
                     if let Err(error) = captured {
-                        eprintln!("korrid save baseline deferred for one game: {}", error.code);
+                        eprintln!("{}", baseline_deferral(game, &error));
                     }
                 }
                 Ok(())
@@ -747,6 +821,30 @@ mod tests {
         );
         host.claim_save_owner();
         host
+    }
+
+    #[test]
+    fn baseline_deferral_names_game_and_bounds_and_redacts_reason() {
+        let reason = format!(
+            "cannot read '/private/user saves/game.srm': permission denied\n{}",
+            "界".repeat(500)
+        );
+        let error = SaveDiagnostic::from(SaveError::Invalid(reason));
+        let shown = baseline_deferral("wario-land-4", &error);
+        let prefix = "korrid save baseline deferred for game wario-land-4: SavesUnavailable: ";
+        assert!(shown.starts_with(prefix), "{shown}");
+        assert!(
+            shown.contains("cannot read [redacted]: permission denied"),
+            "{shown}"
+        );
+        assert!(!shown.contains("private"));
+        assert!(!shown.contains("user saves"));
+        assert!(!shown.contains('\n'));
+        assert_eq!(shown.strip_prefix(prefix).unwrap().chars().count(), 300);
+        let error = SaveDiagnostic::from(SaveError::Storage(
+            "cannot read relative/private.srm".into(),
+        ));
+        assert!(baseline_deferral("game", &error).ends_with("cannot read [redacted]"));
     }
 
     #[test]
@@ -1261,6 +1359,173 @@ mod tests {
         assert!(result.warnings.iter().all(|warning| !warning
             .contains(peer.host.save_device().unwrap())
             && !warning.contains("another-release")));
+    }
+
+    #[tokio::test]
+    async fn declaration_deferral_keeps_reason_without_changing_rpc_failure() {
+        let device = MigratedDevice::new(b"local progress").await;
+        let source = device.root.path().join("plugin/plugin.ts");
+        let mut plugin = std::fs::read_to_string(&source).unwrap();
+        plugin.push_str("\nhandlers['launch.prepare']=input=>{throw new Error('cannot read content '+input.contentPath)};");
+        std::fs::write(source, plugin).unwrap();
+        let error = device
+            .host
+            .save_declaration("wario-land-4", None)
+            .err()
+            .expect("prepare must fail with the plugin's reason");
+        assert_eq!(error.failure.code, "SavesUnavailable");
+        assert_eq!(
+            error.failure.message,
+            "Save history could not be read or updated."
+        );
+        let shown = baseline_deferral("wario-land-4", &error);
+        assert!(shown.contains("wario-land-4: SavesUnavailable:"), "{shown}");
+        assert!(shown.contains("cannot read content [redacted]"), "{shown}");
+        assert!(
+            !shown.contains(device.root.path().to_str().unwrap()),
+            "{shown}"
+        );
+        assert!(device.host.baseline_saves().await.unwrap());
+        assert!(device
+            .host
+            .save_store()
+            .records(PERSON, "wario-land-4")
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn declaration_diagnostics_redact_native_append_env_and_input_paths_before_clipping() {
+        use crate::launcher::plugin_launch::{LaunchComposition, ResolvedLaunchModifier};
+        let device = MigratedDevice::new(b"local progress").await;
+        let (input, mut prepared) = device
+            .host
+            .save_declaration("wario-land-4", None)
+            .unwrap()
+            .unwrap();
+        let composition = LaunchComposition {
+            modifiers: vec![ResolvedLaunchModifier {
+                modifier_id: "modifier".into(),
+                manifest: device.root.path().join("manifest.json"),
+                entry: "plugin.ts".into(),
+                settings: Default::default(),
+                config: crate::config::modifiers::ModifierConfigAppend {
+                    append: Some("'native secret'".into()),
+                },
+            }],
+            display: None,
+        };
+        prepared
+            .plan
+            .env
+            .insert("TOKEN".into(), "environment secret".into());
+        let command = vec![
+            "korrid".into(),
+            "plugin-launch".into(),
+            "/private/plugin.ts".into(),
+            serde_json::to_string(&input).unwrap(),
+            serde_json::to_string(&composition).unwrap(),
+            serde_json::to_string(&prepared).unwrap(),
+        ];
+        let reason = format!(
+            "bad setting: native secret environment secret {} {}",
+            input.content_path.unwrap(),
+            "界".repeat(500)
+        );
+        let shown = baseline_deferral("wario-land-4", &declaration_diagnostic(&command, reason));
+        assert!(
+            shown.contains("bad setting: [redacted] [redacted] [redacted]"),
+            "{shown}"
+        );
+        assert!(!shown.contains("secret"));
+        assert!(!shown.contains(device.root.path().to_str().unwrap()));
+        let invalid = declaration_diagnostic(&[], "private message".into());
+        assert_eq!(invalid.reason, "invalid plugin preparation handoff");
+    }
+
+    #[tokio::test]
+    async fn restored_peer_snapshot_is_not_a_local_baseline() {
+        let peer = MigratedDevice::new(b"peer progress").await;
+        peer.host.baseline_saves().await.unwrap();
+        let device = MigratedDevice::new(b"").await;
+        let folder = crate::saves::account_root(device.root.path(), PERSON)
+            .unwrap()
+            .join("saves/wario-land-4/saves");
+        std::fs::remove_file(folder.join("game.srm")).unwrap();
+        device.remember(&peer);
+        peer.remember(&device);
+        device
+            .service
+            .on_contact(peer.host.save_device().unwrap())
+            .await
+            .unwrap();
+        let store = device.host.save_store();
+        let record = store.records(PERSON, "wario-land-4").unwrap().remove(0);
+        let id = snapshot_id(&record).unwrap();
+        let (input, prepared) = device
+            .host
+            .save_declaration("wario-land-4", None)
+            .unwrap()
+            .unwrap();
+        store
+            .materialize(
+                PERSON,
+                "wario-land-4",
+                &id,
+                &input.save_root,
+                &prepared.plan.save_locations,
+            )
+            .unwrap();
+        assert_eq!(
+            std::fs::read(folder.join("game.srm")).unwrap(),
+            b"peer progress"
+        );
+        assert!(device.host.baseline_saves().await.unwrap());
+        assert_eq!(
+            store.records(PERSON, "wario-land-4").unwrap(),
+            vec![record.clone()],
+            "restored content must not become an independent root"
+        );
+        // The launch path uses capture_initial too, before materializing again.
+        let mut template = record.clone();
+        template.device = device.host.save_device().unwrap().into();
+        template.ended_at = now();
+        template.locations.clear();
+        crate::saves::capture_initial(&store, PERSON, &prepared.plan.save_locations, template)
+            .unwrap();
+        assert_eq!(store.records(PERSON, "wario-land-4").unwrap(), vec![record]);
+    }
+
+    #[tokio::test]
+    async fn peer_history_does_not_hide_differing_preexisting_files() {
+        let device = MigratedDevice::new(b"independent local progress").await;
+        let peer = MigratedDevice::new(b"different peer progress").await;
+        peer.host.baseline_saves().await.unwrap();
+        let store = device.host.save_store();
+        let peer_record = peer
+            .host
+            .save_store()
+            .records(PERSON, "wario-land-4")
+            .unwrap()
+            .remove(0);
+        // A peer record may arrive before the deferred local baseline.
+        store.put_record(PERSON, &peer_record).unwrap();
+        assert!(device.host.baseline_saves().await.unwrap());
+        let records = store.records(PERSON, "wario-land-4").unwrap();
+        assert_eq!(records.len(), 2);
+        let local = records
+            .iter()
+            .find(|record| record.device == device.host.save_device().unwrap())
+            .unwrap();
+        assert!(local.parents.is_empty());
+        assert_eq!(
+            local.locations[0].files[0].sha256,
+            crate::saves::record::hash(b"independent local progress")
+        );
+        assert_eq!(
+            store.reconcile(PERSON, "wario-land-4").unwrap(),
+            SaveMark::Split
+        );
     }
 
     #[tokio::test]
