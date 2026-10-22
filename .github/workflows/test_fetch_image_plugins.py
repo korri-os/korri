@@ -113,6 +113,7 @@ class PluginFetchTest(unittest.TestCase):
                         "fallback = false\nsubstitute = true\n"
                         "download-attempts = 5\nbuild-users-group =\n",
                         "GITHUB_ENV": str(root / "github-env"),
+                        "KORRI_IMAGE_PLUGIN_RETRY_SECONDS": "1",
                     }
                 )
                 result = subprocess.run(
@@ -124,10 +125,10 @@ class PluginFetchTest(unittest.TestCase):
                     timeout=90,
                 )
                 installed = root / "store-root" / PACKAGE.lstrip("/")
-                self.assertEqual(installed.exists(), failed_payloads < 3, result.stderr)
+                self.assertEqual(installed.exists(), failed_payloads < 4, result.stderr)
                 github_env = Path(env["GITHUB_ENV"])
                 self.assertEqual(
-                    github_env.exists(), failed_payloads < 3, result.stderr
+                    github_env.exists(), failed_payloads < 4, result.stderr
                 )
                 return result, server.payload_requests
             finally:
@@ -146,30 +147,30 @@ class PluginFetchTest(unittest.TestCase):
         result, requests = self.fetch(1)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(requests, 2)
-        self.assertIn("retry 2/3", result.stderr)
-        self.assertNotIn("retry 3/3", result.stderr)
+        self.assertIn("retry 2/4", result.stderr)
+        self.assertNotIn("retry 3/4", result.stderr)
         self.assertIn("verified signed image plugin:", result.stdout)
 
     def test_temporary_payload_miss_during_build_retries_and_succeeds(self):
         result, requests = self.fetch(1, force_eval=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(requests, 2)
-        self.assertIn("retry 2/3", result.stderr)
+        self.assertIn("retry 2/4", result.stderr)
         self.assertIn("verified signed image plugin:", result.stdout)
 
     def test_temporary_metadata_miss_during_eval_refreshes_negative_cache(self):
         result, requests = self.fetch(0, failed_metadata=1)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(requests, 1)
-        self.assertIn("retry 2/3", result.stderr)
+        self.assertIn("retry 2/4", result.stderr)
         self.assertIn("verified signed image plugin:", result.stdout)
 
-    def test_persistent_payload_miss_fails_after_three_attempts(self):
-        result, requests = self.fetch(3)
+    def test_persistent_payload_miss_fails_after_four_attempts(self):
+        result, requests = self.fetch(4)
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(requests, 3)
-        self.assertIn("retry 2/3", result.stderr)
-        self.assertIn("retry 3/3", result.stderr)
+        self.assertEqual(requests, 4)
+        self.assertIn("retry 2/4", result.stderr)
+        self.assertIn("retry 4/4 in 4s", result.stderr)
         self.assertNotIn("verified signed image plugin:", result.stdout)
 
 

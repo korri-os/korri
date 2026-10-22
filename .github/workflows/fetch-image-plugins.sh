@@ -30,10 +30,15 @@ fi
 # GitHub release payloads can return a transient miss even while another
 # runner downloads the same asset. Nix's download-attempts does not retry 404s.
 # Evaluation also fetches plugin references, before the explicit build below.
+# Under load GitHub also answers 403 for a while (run 39744047580: a 404, then
+# 403 for every request in the next 15 s), so the waits are long: 30, 60 and
+# 120 s by default. The tests shorten them.
+retry_seconds="${KORRI_IMAGE_PLUGIN_RETRY_SECONDS:-30}"
+attempts=4
 fetch_plugin() {
-  local attempt status output
+  local attempt status output delay
   local -a refresh=()
-  for attempt in 1 2 3; do
+  for (( attempt = 1; attempt <= attempts; attempt++ )); do
     # A failed JSON command can write partial stdout. Keep only the successful
     # attempt's result; stderr still shows every original download failure.
     if output=$(NIX_CONFIG="$config" nix "${refresh[@]}" "$@"); then
@@ -42,9 +47,10 @@ fetch_plugin() {
     else
       status=$?
     fi
-    if (( attempt < 3 )); then
-      echo "image plugin fetch failed; retry $((attempt + 1))/3 in $((attempt * 5))s" >&2
-      sleep "$((attempt * 5))"
+    if (( attempt < attempts )); then
+      delay=$(( retry_seconds * (1 << (attempt - 1)) ))
+      echo "image plugin fetch failed; retry $((attempt + 1))/$attempts in ${delay}s" >&2
+      sleep "$delay"
       # A metadata miss must not remain in Nix's one-hour negative cache.
       refresh=(--refresh)
     fi
