@@ -89,6 +89,14 @@ _Avoid_: remote play, guest stream, player two
 Shared play in which each device runs its own copy of the game, and the copies are kept in step.
 _Avoid_: online play, linked play
 
+**Signal**:
+A message between devices that is lost when no device is listening. A device that missed one catches up by asking. An invite is a signal.
+_Avoid_: notification, event, ephemeral message
+
+**Record**:
+Data that devices keep until every device of the federation has it, even after the device that made it goes offline. Devices that are online together copy it to each other. Settings, the person name and saves are records.
+_Avoid_: durable message, sync item, state
+
 **Invite**:
 What an idle device shows when another device holds a live session that it can take part in through shared play. It names the person who is playing and the game, not the kind of shared play; the receiving device chooses its route. It lasts until the session ends, the device is no longer idle, or the person dismisses it.
 _Avoid_: notification, broadcast, request
