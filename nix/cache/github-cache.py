@@ -369,21 +369,40 @@ def release(repo, tag):
 
 
 def assets(repo, release_id):
-    result = {}
-    page = 1
-    while True:
-        batch = api(
-            f"repos/{repo}/releases/{release_id}/assets?per_page=100&page={page}"
-        )
-        if not isinstance(batch, list):
-            raise ValueError("invalid GitHub asset list")
-        for asset in batch:
-            if asset["name"] in result:
-                raise ValueError("duplicate remote asset name")
-            result[asset["name"]] = asset
-        if len(batch) < 100:
+    # Pages are not a snapshot. Uploads can repeat a boundary asset; deletions
+    # can skip one without any duplicate. Require two agreeing full scans, not
+    # a union that could keep deleted assets. Download counters are irrelevant.
+    previous = None
+    for _ in range(20):
+        result = {}
+        page = 1
+        while True:
+            batch = api(
+                f"repos/{repo}/releases/{release_id}/assets?per_page=100&page={page}"
+            )
+            if not isinstance(batch, list):
+                raise ValueError("invalid GitHub asset list")
+            for asset in batch:
+                if type(asset.get("id")) is not int:
+                    raise ValueError("invalid GitHub asset id")
+                name = asset["name"]
+                if name in result and result[name]["id"] != asset["id"]:
+                    raise ValueError(
+                        f"duplicate remote asset name: {name} "
+                        f"(ids {result[name]['id']} and {asset['id']})"
+                    )
+                result[name] = asset
+            if len(batch) < 100:
+                break
+            page += 1
+        snapshot = {
+            name: tuple(asset.get(key) for key in ("id", "state", "size", "digest"))
+            for name, asset in result.items()
+        }
+        if snapshot == previous:
             return result
-        page += 1
+        previous = snapshot
+    raise ValueError("GitHub asset listing did not stabilize after 20 scans")
 
 
 def matches(asset, path):

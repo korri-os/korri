@@ -111,7 +111,15 @@ using the existing size, SHA-256 digest, and uploaded-state checks. Narinfos may
 instead pass the existing equivalence check, which preserves the first URL and
 requires all other fields, including signatures, to match. If refresh or
 verification fails, preserve the original POST failure. Never retry a write,
-clobber, or delete an asset. Both repositories still publish the same format;
+clobber, or delete an asset. Release-asset listings also require two consecutive
+full scans that agree on names, IDs, states, sizes and SHA-256 digests. A repeated
+name within a scan is accepted only for the same integer asset ID; different IDs
+fail with the name and both IDs. Download counters do not affect agreement.
+After 20 changing scans, the listing fails without writing. Each scan starts
+fresh, so deleted assets are not retained in a union. This costs at least twice
+the listing requests and can still fail during sustained changes. It is not an
+atomic GitHub snapshot; the existing collision and post-upload verification
+checks remain necessary. Both repositories still publish the same format;
 this patch changes only concurrent-upload reconciliation, not the cache protocol.
 
 The second moves metadata publication to the `cache-index` Git branch and Pages.
@@ -128,6 +136,21 @@ The third keeps trusted non-reproducible outputs already served by Korri's own
 cache during preparation, as described above. It does not relax index-commit
 collision checks: if a different output first appears after preparation, the
 concurrent metadata push still fails rather than replacing it.
+
+The listing change follows run `39744047580`'s `rg35xxsp` failure at
+`2026-10-22T08:40:28Z`: `duplicate remote asset name`. Two read-only API scans of
+release `420180099` (`batch-2026-10-22`) later returned the same 911 assets, with
+911 unique names and IDs, all uploaded. The observed order was ascending name,
+not ID or creation time. Assets created at `08:40:21Z`, `08:40:24Z` and
+`08:40:28Z` verify concurrent uploads around the failure. Name-ordered insertion
+before a page boundary repeats an asset on the next page; deletion before a
+boundary skips one. The [REST asset API](https://docs.github.com/en/rest/releases/assets#list-release-assets)
+offers page numbers, not a stable snapshot or a documented sort parameter. Its
+upload documentation notes that HTTP 502 can leave a `starter` asset and that
+uploading an existing name fails. Deleting such a partial asset can shift page
+boundaries too; this publisher never deletes it. Page drift is the inferred
+cause of that run, not proven: the log records neither the repeated ID nor the
+page responses. Both insertion and deletion are reproduced by the local tests.
 
 The old `cache` release is frozen, not deleted. Publishers never write metadata
 to Releases and devices list only Pages, not both roots. Keys and signatures are
@@ -328,6 +351,11 @@ also verify that a trusted non-reproducible output at the destination keeps the
 published narinfo, uploads no orphan local NAR, and substitutes the published
 bytes into an empty store. Changed references, untrusted signatures, malformed
 transport metadata and NAR differences at other upstreams still fail.
+Release-listing checks use a local HTTP server with name-ordered assets changed
+between page requests. They cover repeated IDs after uploads, skipped assets
+after starter deletion, conflicting IDs, changed integrity fields, changing
+download counters, invalid IDs/lists, and bounded failure during continuous
+changes. An uploader also verifies a skipped existing asset without a POST.
 Two concurrent uploader processes also exercise a file-backed `gh api`
 release-assets contract. A barrier makes both clients read the initial asset
 snapshot before either POSTs. The checks cover duplicate NARs, equivalent

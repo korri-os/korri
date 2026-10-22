@@ -2,7 +2,7 @@
 """File-backed `gh api` release-assets contract for offline concurrency tests.
 
 Writes use a process lock, asset bytes live in files, and duplicate POSTs fail
-without replacement. A barrier returns the same initial snapshot to both clients.
+without replacement. A barrier gives both clients two agreeing initial scans.
 """
 
 import argparse
@@ -46,11 +46,20 @@ def main() -> None:
             page = int(query.get("page", ["1"])[0])
             size = int(query.get("per_page", ["100"])[0])
             data = data[(page - 1) * size : page * size]
-            marker = root / ("snapshot-" + worker)
-            if config.get("barrier") and not marker.exists():
-                marker.touch()
-                wait = True
-            elif config.get("refresh_error") and (root / "collision").exists():
+            if config.get("barrier"):
+                # assets() needs two agreeing scans before a write. Keep both
+                # readers at the same initial snapshot for both scans.
+                for scan in range(2):
+                    marker = root / f"snapshot-{worker}-{scan}"
+                    if not marker.exists():
+                        marker.touch()
+                        wait = scan + 1
+                        break
+            if (
+                not wait
+                and config.get("refresh_error")
+                and (root / "collision").exists()
+            ):
                 status, data = 503, {"message": "asset refresh unavailable"}
         elif args.method == "GET" and route.startswith(prefix + "/assets/"):
             asset_id = route.rsplit("/", 1)[1]
@@ -103,7 +112,7 @@ def main() -> None:
             )
     if wait:
         deadline = time.monotonic() + 10
-        while len(list(root.glob("snapshot-*"))) < 2:
+        while len(list(root.glob(f"snapshot-*-{wait - 1}"))) < 2:
             if time.monotonic() > deadline:
                 raise TimeoutError("second uploader did not reach its snapshot")
             time.sleep(0.005)
