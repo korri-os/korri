@@ -123,12 +123,7 @@ fn restrict_suidsgid() {
         program.push(statement(load, 0, 0, 0));
         program.push(statement(jeq, call as u32, 0, 3));
         program.push(statement(load, 16 + 8 * argument, 0, 0));
-        program.push(statement(
-            jset,
-            libc::S_ISUID | libc::S_ISGID,
-            0,
-            1,
-        ));
+        program.push(statement(jset, libc::S_ISUID | libc::S_ISGID, 0, 1));
         program.push(statement(
             ret,
             libc::SECCOMP_RET_ERRNO | libc::EPERM as u32,
