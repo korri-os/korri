@@ -164,16 +164,44 @@ def location_files(root: Path, recursive: bool):
             raise ValueError(f"Refusing special file: {path}")
 
 
+def retroarch_files(root: Path, location: str, per_game: set[str]):
+    """Old RetroArch files under one shared location.
+
+    states recurse (raw runner folders). saves also look one folder deep for
+    RetroArch's sort-by-core layout, but never into a per-game save root
+    (saves/<encoded game id>), which this migration or korrid already owns.
+    """
+    if location == "states":
+        yield from location_files(root, True)
+        return
+    checked_path(root)
+    if not root.exists():
+        return
+    require_directory(root)
+    for path in sorted(root.iterdir()):
+        checked_path(path)
+        if path.is_dir():
+            if location == "saves" and path.name not in per_game:
+                yield from location_files(path, False)
+        elif path.is_file():
+            yield path
+        else:
+            raise ValueError(f"Refusing special file: {path}")
+
+
 def retroarch_moves(storage: Path, account: Path) -> list[tuple[Path, Path]]:
     require_directory(account)
     stems = catalog_stems(storage)
     moves = []
+    games_encoded = {encode_component(game) for games in stems.values() for game in games}
     for location in ("saves", "states", "screenshots"):
         root = account / location
-        for path in location_files(root, location == "states"):
+        for path in retroarch_files(root, location, games_encoded):
             games: set[str] = set()
             for stem, candidates in stems.items():
                 if location == "saves":
+                    # Flat, or one core folder deep when RetroArch sorts saves
+                    # by core (saves/mGBA/<stem>.srm on the RP Mini V2).
                     matches = path.name == f"{stem}.srm"
                 elif location == "states":
                     matches = path.parent != root and path.name.startswith(f"{stem}.")

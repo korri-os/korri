@@ -175,6 +175,22 @@ class MigrationTest(unittest.TestCase):
         self.command("migrate-retroarch.py", ok=False)
         self.assertEqual(before, self.tree())
 
+    def test_core_sorted_saves_move_with_their_core_folder(self):
+        # RetroArch's sort-by-core layout, as found on the RP Mini V2.
+        self.file("saves/mGBA/Wario.srm")
+        self.file("saves/mGBA/Unknown.srm")
+        self.move_account()
+        result = self.command("migrate-retroarch.py", "--dry-run")
+        self.assertIn("UNMATCHED", result.stdout)
+        self.command("migrate-retroarch.py")
+        moved = self.account / "saves/wario-land-4/saves/mGBA/Wario.srm"
+        self.assertEqual(moved.read_bytes(), b"saved progress")
+        self.assertFalse((self.account / "saves/mGBA/Wario.srm").exists())
+        self.assertTrue((self.account / "saves/mGBA/Unknown.srm").exists())
+        before = self.tree()
+        self.command("migrate-retroarch.py")  # per-game roots are never rescanned
+        self.assertEqual(before, self.tree())
+
     def test_ambiguous_stems_stay_but_multiple_releases_of_one_game_move(self):
         self.catalog(
             {
