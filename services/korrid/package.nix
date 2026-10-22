@@ -76,6 +76,14 @@ craneLib.buildPackage (
   commonArgs
   // {
     inherit cargoArtifacts;
+    # Keep reusable compilation outputs separate from the shipped runtime.
+    outputs = [
+      "out"
+      "buildArtifacts"
+    ];
+    meta = commonArgs.meta // {
+      outputsToInstall = [ "out" ];
+    };
     # korrid bundles no plugin declarations. A plugin arrives through the
     # plugin host's installed registry, never through this package.
     preConfigure = ''
@@ -105,6 +113,7 @@ craneLib.buildPackage (
         ${pkgs.coreutils}/bin \
         ${pkgs.socat}/bin/socat \
         ${pkgs.jq}/bin/jq
+      prepareAndInstallCargoArtifactsDir "$buildArtifacts"
     '';
   }
 )

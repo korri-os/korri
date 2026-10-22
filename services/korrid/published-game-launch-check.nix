@@ -8,6 +8,21 @@ let
 in
 korridPackage.overrideAttrs (old: {
   pname = "korrid-published-game-launch-check";
+  # The runtime already built and tested the unchanged Core library. Only
+  # compile the acceptance harness here, not another runtime package.
+  cargoArtifacts = korridPackage.buildArtifacts;
+  outputs = [ "out" ];
+  doNotPostBuildInstallCargoBinaries = true;
+  buildPhase = ''
+    runHook preBuild
+    runHook postBuild
+  '';
+  installPhase = ''
+    runHook preInstall
+    touch "$out"
+    runHook postInstall
+  '';
+  postInstall = "";
   KORRI_PUBLISHED_MGBA = published.korri-plugin-mgba;
   checkPhase = ''
     runHook preCheck

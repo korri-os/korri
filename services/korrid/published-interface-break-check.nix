@@ -6,6 +6,9 @@ let
 in
 acceptance.overrideAttrs (old: {
   pname = "korrid-published-interface-break-check";
+  # This control changes Core, so it must compile its own library. Start from
+  # third-party dependencies so it can run in parallel with the runtime build.
+  inherit (korridPackage) cargoArtifacts;
   postPatch = old.postPatch + ''
     substituteInPlace src/script.rs \
       --replace-fail 'pub const LAUNCH_PREPARE: &str = "launch.prepare";' \
