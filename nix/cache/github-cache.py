@@ -6,7 +6,8 @@ Nix owns cache metadata, closure export and signatures. Only URL changes when
 splitting a cache between Pages and NAR releases.
 
 Korri vendor deltas: reconcile concurrent release uploads; publish immutable
-metadata additions on the index branch and wait for exact Pages visibility.
+metadata additions on the index branch and wait for exact Pages visibility;
+retain trusted non-reproducible outputs already served by our destination cache.
 """
 
 import argparse
@@ -138,12 +139,13 @@ def upstream_metadata(opener, url):
         return data
 
 
-def upstream_paths(records, upstreams, temporary):
+def upstream_paths(records, upstreams, temporary, cache_url):
     if not upstreams:
         return set()
     context = ssl.create_default_context(cafile=os.environ.get("NIX_SSL_CERT_FILE"))
     opener = build_opener(HTTPSHandler(context=context), HTTPSRedirectHandler())
     omitted = set()
+    different = set()
     local = {path.name: metadata(path)[1] for path in records}
     for index, base in enumerate(upstreams):
         downloaded = Path(temporary) / f"downloaded-{index}"
@@ -194,8 +196,19 @@ def upstream_paths(records, upstreams, temporary):
                 "br",
             ):
                 raise ValueError("invalid upstream NAR compression")
-            if signed_identity(remote) != signed_identity(fields):
-                raise ValueError(f"upstream NAR identity differs: {base}{name}")
+            remote_identity = signed_identity(remote)
+            local_identity = signed_identity(fields)
+            if remote_identity != local_identity:
+                # Only our publication destination keeps the first trusted
+                # build. Public upstreams still require bit-identical outputs.
+                # Matching references preserves the closure's dependency graph.
+                if (
+                    base != cache_url
+                    or remote_identity[0] != local_identity[0]
+                    or remote_identity[3] != local_identity[3]
+                ):
+                    raise ValueError(f"upstream NAR identity differs: {base}{name}")
+                different.add(fields["StorePath"])
             # Verify exactly the fetched signatures, without a second network
             # lookup or signatures from other substituters. Remove only CA in
             # this temporary verification copy: content addressing must never
@@ -229,12 +242,22 @@ def upstream_paths(records, upstreams, temporary):
             omitted.update(
                 Path(path).name.split("-", 1)[0] + ".narinfo" for path in paths
             )
+    for path in sorted(different):
+        print(
+            f"korri-cache: keeping already published non-reproducible output {path} "
+            "(NarHash or NarSize differs)",
+            file=sys.stderr,
+        )
     return omitted
 
 
-def prepare(cache, output, base, upstreams):
+def prepare(cache, output, base, upstreams, cache_url=None):
     base = https_base(base)
     upstreams = [https_base(url) for url in upstreams]
+    if cache_url is not None:
+        cache_url = https_base(cache_url)
+        if cache_url not in upstreams:
+            raise ValueError("destination cache must be a trusted upstream")
     if output.exists():
         raise ValueError("output already exists; do not overwrite a prepared cache")
     records = sorted(cache.glob("*.narinfo"))
@@ -242,7 +265,7 @@ def prepare(cache, output, base, upstreams):
         raise ValueError("file cache contains no narinfos")
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=output.parent) as temporary:
-        omitted = upstream_paths(records, upstreams, temporary)
+        omitted = upstream_paths(records, upstreams, temporary, cache_url)
         staged = Path(temporary) / "prepared"
         nars, notes = staged / "nars", staged / "metadata"
         nars.mkdir(parents=True)
@@ -788,6 +811,12 @@ def main():
         metavar="HTTPS_URL",
         help="omit paths verified in this trusted upstream cache (repeatable)",
     )
+    prepare_parser.add_argument(
+        "--cache-url",
+        metavar="HTTPS_URL",
+        help="publication destination, also listed as an upstream; keep its trusted "
+        "outputs when only NarHash or NarSize differs",
+    )
     combine_parser = commands.add_parser("combine")
     combine_parser.add_argument("output", type=Path)
     combine_parser.add_argument("inputs", type=Path, nargs="+")
@@ -813,7 +842,13 @@ def main():
     elif args.command == "export":
         export(args.cache, args.key_file, args.paths)
     elif args.command == "prepare":
-        prepare(args.cache, args.output, args.nar_base_url, args.upstream_cache)
+        prepare(
+            args.cache,
+            args.output,
+            args.nar_base_url,
+            args.upstream_cache,
+            args.cache_url,
+        )
     elif args.command == "combine":
         combine(args.output, args.inputs)
     elif args.command == "publish":

@@ -40,13 +40,31 @@ source for — at install time, not at publish time. Adding a cache to
 `nix/base/default.nix` widens the filter in the same change.
 
 Pages serves narinfos directly, so `prepare` checks Korri's own cache as a
-normal trusted upstream. The old post-prepare self-filter has been removed: upstream verification also checks signed identity and trusted
-signatures, not only `StorePath`. Missing narinfos retain their payloads;
-shared compressed NARs stay if any retained narinfo needs them.
+trusted upstream. The old post-prepare self-filter has been removed: upstream
+verification checks signed identity, trusted signatures and transport metadata,
+not only `StorePath`. Missing narinfos retain their payloads; shared compressed
+NARs stay if any retained narinfo needs them.
+
+`publish.sh` also passes the destination from `identity.nix` as `--cache-url`.
+Only for that destination, `prepare` keeps an already-published output when
+`StorePath` and `References` match but `NarHash` or `NarSize` differs. Its
+signature must still verify against a device-trusted key, and transport metadata
+must still be well formed. It prints one line naming each non-reproducible path,
+omits the local narinfo and any unneeded local NAR, and never changes the
+published narinfo. Devices substitute the published bytes; matching references
+preserves the closure's dependency graph, but does not prove those bytes behave
+like the locally tested build.
+
+Other upstreams, including cache.nixos.org, still require the full signed
+identity to match. This exception handles Korri's parallel publications without
+weakening checks for unrelated caches. Without `--cache-url`, all upstreams
+remain strict. The destination must also appear in `--upstream-cache`; naming
+it does not grant device trust.
 
 `prepare` does not take the list on faith either: it fetches each upstream's
-`nix-cache-info` and every candidate `.narinfo`, and verifies the hash before dropping
-a path, so a wrong list over-publishes rather than breaking a closure.
+`nix-cache-info` and every candidate `.narinfo`, validates metadata and checks
+trusted signatures before dropping a path. A missing narinfo keeps the local
+output; malformed or untrusted metadata fails preparation.
 
 This matters more than it sounds. `nix copy` works on closures, so publishing
 `inputplumber-korri` without the filter would upload 2198 MiB to deliver
@@ -86,7 +104,7 @@ everywhere; a signature bypass is never the fix for a failed download.
 ## Publishing
 
 `github-cache.py` is vendored from [korri-os/plugins](https://github.com/korri-os/plugins)
-`nix/github-cache.py`, with two intentional Korri patches. The first: after a failed upload
+`nix/github-cache.py`, with three intentional Korri patches. The first: after a failed upload
 POST, refresh the release and its assets. Accept an already-uploaded asset only
 from the same release ID with unchanged draft state and no immutability flag,
 using the existing size, SHA-256 digest, and uploaded-state checks. Narinfos may
@@ -105,6 +123,11 @@ the same equivalence rule: only `URL:` may differ, and the first URL stays.
 publisher then waits up to 20 minutes for HTTP 200 and the exact retained bytes
 of every submitted metadata file at the plain Pages URL. A timeout fails the
 publish, even if the Git push succeeded. Retrying publication is safe.
+
+The third keeps trusted non-reproducible outputs already served by Korri's own
+cache during preparation, as described above. It does not relax index-commit
+collision checks: if a different output first appears after preparation, the
+concurrent metadata push still fails rather than replacing it.
 
 The old `cache` release is frozen, not deleted. Publishers never write metadata
 to Releases and devices list only Pages, not both roots. Keys and signatures are
@@ -180,7 +203,8 @@ nix run .#korri-nix-cache -- export  "$WORK/cache" --key-file ~/.config/korri/ca
 nix run .#korri-nix-cache -- prepare "$WORK/cache" "$WORK/prepared" \
   --nar-base-url https://github.com/korri-os/nix-cache/releases/download/BATCH/ \
   --upstream-cache https://cache.nixos.org \
-  --upstream-cache https://korri-os.github.io/nix-cache/
+  --upstream-cache https://korri-os.github.io/nix-cache/ \
+  --cache-url https://korri-os.github.io/nix-cache/
 nix run .#korri-nix-cache -- upload  "$WORK/prepared" --repo korri-os/nix-cache \
   --tag BATCH --index-branch cache-index --cache-url https://korri-os.github.io/nix-cache/ --part nars
 nix run .#korri-nix-cache -- upload  "$WORK/prepared" --repo korri-os/nix-cache \
@@ -299,7 +323,11 @@ The prepare checks use a local HTTPS server, real signed file caches, and
 shared compressed NARs. They cover
 partial and complete filtering, missing metadata, refusal of mismatched signed
 identity or untrusted signatures (including content-addressed records), preserved
-signatures, and downloads into an empty local store with builds disabled.
+signatures, and downloads into an empty local store with builds disabled. They
+also verify that a trusted non-reproducible output at the destination keeps the
+published narinfo, uploads no orphan local NAR, and substitutes the published
+bytes into an empty store. Changed references, untrusted signatures, malformed
+transport metadata and NAR differences at other upstreams still fail.
 Two concurrent uploader processes also exercise a file-backed `gh api`
 release-assets contract. A barrier makes both clients read the initial asset
 snapshot before either POSTs. The checks cover duplicate NARs, equivalent

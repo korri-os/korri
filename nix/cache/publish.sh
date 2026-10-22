@@ -184,6 +184,7 @@ nix copy --to "file://$store?compression=zstd&secret-key=$key" "${outputs[@]}"
 
 python3 "$publisher" prepare "$store" "$work/prepared" \
   --nar-base-url "$download_base$batch_tag/" \
+  --cache-url "$ours" \
   "${upstreams[@]}"
 
 shopt -s nullglob

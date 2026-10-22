@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Verify prepare filters a Pages-style HTTPS upstream with real signed caches."""
 
+from contextlib import redirect_stderr
 import importlib.util
+import io
+import json
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import ssl
 import threading
 import tempfile
@@ -126,7 +130,41 @@ class PrepareUpstreamTest(unittest.TestCase):
         for name in names:
             shutil.copyfile(self.notes / name, self.remote / name)
 
-    def filter(self):
+    def publish_variant(self, references=None):
+        # Serve real alternate bytes under the original StorePath, as two
+        # non-reproducible builds do. Nix signs the changed fingerprint.
+        name = self.unique
+        _, original = publisher.metadata(self.notes / name)
+        text, alternate = publisher.metadata(self.notes / self.shared[0])
+        text = text.replace(alternate["StorePath"], original["StorePath"])
+        text = text.replace(
+            alternate["URL"], "nar/" + alternate["URL"].rsplit("/", 1)[1]
+        )
+        text = (
+            "\n".join(
+                line
+                for line in text.splitlines()
+                if not line.startswith(("Sig: ", "CA: ", "References: "))
+            )
+            + "\nReferences: "
+            + (references or "")
+            + "\n"
+        )
+        (self.remote / name).write_text(text)
+        shutil.copytree(self.cache / "nar", self.remote / "nar", dirs_exist_ok=True)
+        run(
+            "nix",
+            "store",
+            "sign",
+            "--store",
+            self.remote.as_uri(),
+            "--key-file",
+            str(self.key),
+            original["StorePath"],
+        )
+        return name
+
+    def filter(self, own_cache=True):
         shutil.rmtree(self.prepared)
         previous = {
             key: os.environ.get(key) for key in ("NIX_CONFIG", "NIX_SSL_CERT_FILE")
@@ -138,7 +176,13 @@ class PrepareUpstreamTest(unittest.TestCase):
             + self.public
         )
         try:
-            publisher.prepare(self.cache, self.prepared, BASE, [self.base])
+            publisher.prepare(
+                self.cache,
+                self.prepared,
+                BASE,
+                [self.base],
+                cache_url=self.base if own_cache else None,
+            )
         finally:
             for key, value in previous.items():
                 if value is None:
@@ -162,6 +206,125 @@ class PrepareUpstreamTest(unittest.TestCase):
         self.filter()
         self.assertFalse((self.notes / published).exists())
         self.assert_payloads()
+
+    def test_different_nar_keeps_published_bytes_and_omits_local_payload(self):
+        name = self.publish_variant()
+        published = (self.remote / name).read_bytes()
+        _, remote_fields = publisher.metadata(self.remote / name)
+        _, local_fields = publisher.metadata(self.notes / name)
+        self.assertNotEqual(remote_fields["NarHash"], local_fields["NarHash"])
+        self.assertEqual(remote_fields["NarSize"], local_fields["NarSize"])
+        self.assertEqual(remote_fields["References"], local_fields["References"])
+        output = io.StringIO()
+        with redirect_stderr(output):
+            self.filter()
+        self.assertFalse((self.notes / name).exists())
+        self.assertEqual(len(list((self.prepared / "nars").iterdir())), 1)
+        self.assertEqual((self.remote / name).read_bytes(), published)
+        self.assert_payloads()
+        self.assertIn(
+            publisher.metadata(self.remote / name)[1]["StorePath"], output.getvalue()
+        )
+        self.assertEqual(len(output.getvalue().splitlines()), 1)
+        self.assert_uploads_only_retained_payloads()
+        self.assert_substitutes(published=[self.remote / name])
+
+    def test_public_upstream_still_requires_identical_nar(self):
+        self.publish_variant()
+        with self.assertRaisesRegex(ValueError, "identity differs"):
+            self.filter(own_cache=False)
+        self.assertFalse(self.prepared.exists())
+
+    def test_different_references_fail_even_with_a_trusted_signature(self):
+        self.publish_variant(references=Path(self.paths[0]).name)
+        with self.assertRaisesRegex(ValueError, "identity differs"):
+            self.filter()
+        self.assertFalse(self.prepared.exists())
+
+    def test_different_nar_with_untrusted_signature_fails_without_skip_message(self):
+        name = self.publish_variant()
+        note = self.remote / name
+        note.write_text(
+            note.read_text().replace("Sig: korri-cache-test:", "Sig: untrusted:")
+        )
+        output = io.StringIO()
+        with redirect_stderr(output), self.assertRaises(subprocess.CalledProcessError):
+            self.filter()
+        self.assertEqual(output.getvalue(), "")
+        self.assertFalse(self.prepared.exists())
+
+    def test_different_nar_with_malformed_transport_metadata_fails(self):
+        name = self.publish_variant()
+        note = self.remote / name
+        _, fields = publisher.metadata(note)
+        note.write_text(
+            note.read_text().replace("FileSize: " + fields["FileSize"], "FileSize: 0")
+        )
+        with self.assertRaisesRegex(ValueError, "transport metadata"):
+            self.filter()
+        self.assertFalse(self.prepared.exists())
+
+    def test_destination_must_also_be_a_trusted_upstream(self):
+        with self.assertRaisesRegex(ValueError, "trusted upstream"):
+            publisher.prepare(
+                self.cache, self.root / "untrusted", BASE, [], cache_url=self.base
+            )
+
+    def assert_uploads_only_retained_payloads(self):
+        api = self.root / "release-api"
+        (api / "objects").mkdir(parents=True)
+        (api / "assets.json").write_text("{}")
+        (api / "config.json").write_text("{}")
+        (api / "release.json").write_text(
+            json.dumps(
+                {
+                    "id": 1,
+                    "tag_name": "batch-test",
+                    "draft": False,
+                }
+            )
+        )
+        binary = api / "bin"
+        binary.mkdir()
+        gh = binary / "gh"
+        gh.write_text(
+            f"#!{sys.executable}\nfrom runpy import run_path\n"
+            f"run_path({str(HERE / 'github-cache-test-api.py')!r}, run_name='__main__')\n"
+        )
+        gh.chmod(0o755)
+        subprocess.run(
+            [
+                sys.executable,
+                str(HERE / "github-cache.py"),
+                "upload",
+                str(self.prepared),
+                "--repo",
+                "korri-os/nix-cache",
+                "--tag",
+                "batch-test",
+                "--index-branch",
+                "cache-index",
+                "--cache-url",
+                self.base,
+                "--part",
+                "nars",
+            ],
+            env=os.environ
+            | {
+                "PATH": str(binary) + os.pathsep + os.environ["PATH"],
+                "KORRI_CACHE_TEST_API": str(api),
+                "KORRI_CACHE_TEST_WORKER": "0",
+            },
+            check=True,
+        )
+        self.assertEqual(
+            set(json.loads((api / "assets.json").read_text())),
+            {path.name for path in (self.prepared / "nars").iterdir()},
+        )
+        events = [
+            json.loads(line) for line in (api / "events.jsonl").read_text().splitlines()
+        ]
+        self.assertEqual(sum(event["method"] == "POST" for event in events), 1)
 
     def test_shared_payload_survives_first_metadata_entry_being_filtered(self):
         self.check_shared_payload(self.shared[0])
@@ -230,15 +393,21 @@ class PrepareUpstreamTest(unittest.TestCase):
         self.publish(self.shared[0])
         self.filter()
         self.assert_payloads()
+        self.assert_substitutes()
+
+    def assert_substitutes(self, published=()):
         local = self.root / "local-cache"
         local.mkdir()
         shutil.copytree(self.prepared / "nars", local / "nar")
         shutil.copyfile(self.notes / "nix-cache-info", local / "nix-cache-info")
         paths = []
-        for note in self.notes.glob("*.narinfo"):
+        for note in [*self.notes.glob("*.narinfo"), *published]:
             text, fields = publisher.metadata(note)
             # Transport URLs are unsigned. Require signatures, not CA trust.
-            text = text.replace(BASE, "nar/")
+            url = "nar/" + fields["URL"].rsplit("/", 1)[1]
+            text = text.replace(fields["URL"], url)
+            if note in published:
+                shutil.copyfile(self.remote / url, local / url)
             (local / note.name).write_text(
                 "\n".join(
                     line for line in text.splitlines() if not line.startswith("CA: ")
@@ -291,7 +460,10 @@ class PrepareUpstreamTest(unittest.TestCase):
             *paths,
         )
         for path in paths:
-            self.assertTrue((receiving / path.lstrip("/")).is_file(), path)
+            received = receiving / path.lstrip("/")
+            self.assertTrue(received.is_file(), path)
+            expected = "shared payload\n" if published else Path(path).read_text()
+            self.assertEqual(received.read_text(), expected)
 
 
 if __name__ == "__main__":
