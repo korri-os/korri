@@ -11,6 +11,9 @@ needs an owner, such as save sync or peers, works before setup ends.
 Before this decision the local signer created the automatic identity at first
 boot, so every later join was an identity switch.
 
+When setup has no network, no join is possible. Setup then ends with the
+automatic identity, and the person can join later from Settings (ADR 0023).
+
 ## Considered options
 
 - **First boot, as before.** Rejected: every join becomes an identity switch.

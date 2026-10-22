@@ -55,6 +55,10 @@ _Avoid_: pair, link, sign in, adopt
 A device whose local signer holds the person key. The device that created the automatic identity is one; the person can make another device one on purpose. Only a key holder can approve a join.
 _Avoid_: primary device, main device, master
 
+**Removal**:
+Ending one device's membership in a person's devices with a revoked owner statement that a key holder signs. A removed device can never rejoin with the same device key.
+_Avoid_: unpair, forget, sign out
+
 **Join code**:
 The eight-digit code a device that wants to join shows, and the person enters on a key holder when the devices cannot find each other. It works once and expires.
 _Avoid_: PIN, pairing code, password
