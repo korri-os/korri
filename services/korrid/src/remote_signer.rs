@@ -320,7 +320,9 @@ where
         self
     }
 
-    pub async fn establish(&self, now: u64) -> Result<String, RemoteSignerError> {
+    /// NIP-46 `connect` only. The person key is learned from the first signed
+    /// owner statement, so the signer needs no `get_public_key` permission.
+    pub async fn establish(&self, now: u64) -> Result<(), RemoteSignerError> {
         let connection = self
             .connection
             .lock()
@@ -349,23 +351,7 @@ where
             Err(RemoteSignerError::Denied { reason, .. }) if already_connected(&reason) => {}
             Err(error) => return Err(error),
         }
-        let user = self
-            .send_request(
-                Nip46Request {
-                    id: self.request_ids.next(),
-                    method: "get_public_key".into(),
-                    params: Vec::new(),
-                },
-                now,
-            )
-            .await?;
-        validate_public_key(&user)?;
-        self.connection
-            .lock()
-            .expect("remote signer lock poisoned")
-            .user_public_key = Some(user.clone());
-        self.persist()?;
-        Ok(user)
+        self.persist()
     }
 
     fn persist(&self) -> Result<(), RemoteSignerError> {
@@ -387,13 +373,12 @@ where
         if template.len() > MAX_RESPONSE_BYTES || template_value.kind != OWNER_EVENT_KIND {
             return Err(RemoteSignerError::InvalidResponse);
         }
-        let user = self
+        let known = self
             .connection
             .lock()
             .expect("remote signer lock poisoned")
             .user_public_key
-            .clone()
-            .ok_or(RemoteSignerError::InvalidConnection)?;
+            .clone();
         let result = self
             .send_request(
                 Nip46Request {
@@ -404,7 +389,14 @@ where
                 now,
             )
             .await?;
-        verify_exact_signed_event(template_value, &user, &result)?;
+        let user = verify_exact_signed_event(template_value, known.as_deref(), &result)?;
+        if known.is_none() {
+            self.connection
+                .lock()
+                .expect("remote signer lock poisoned")
+                .user_public_key = Some(user.clone());
+            self.persist()?;
+        }
         Ok((user, result))
     }
 
@@ -565,17 +557,19 @@ struct UnsignedTemplate {
     content: String,
 }
 
+/// The signed event must be exactly the template. With no known person key the
+/// verified author becomes it; with one, the author must match it.
 fn verify_exact_signed_event(
     template: UnsignedTemplate,
-    expected_user_public_key: &str,
+    expected_user_public_key: Option<&str>,
     signed_event_json: &str,
-) -> Result<(), RemoteSignerError> {
+) -> Result<String, RemoteSignerError> {
     if signed_event_json.len() > MAX_RESPONSE_BYTES {
         return Err(RemoteSignerError::InvalidResponse);
     }
     let signed = DeviceIdentity::verify_event(signed_event_json)
         .map_err(|_| RemoteSignerError::InvalidResponse)?;
-    if signed.author != expected_user_public_key
+    if expected_user_public_key.is_some_and(|expected| signed.author != expected)
         || signed.kind != template.kind
         || signed.created_at != template.created_at
         || signed.tags != template.tags
@@ -583,7 +577,8 @@ fn verify_exact_signed_event(
     {
         return Err(RemoteSignerError::InvalidResponse);
     }
-    Ok(())
+    validate_public_key(&signed.author).map_err(|_| RemoteSignerError::InvalidResponse)?;
+    Ok(signed.author)
 }
 
 fn validate_public_key(value: &str) -> Result<(), RemoteSignerError> {
@@ -653,6 +648,15 @@ mod tests {
 
     #[tokio::test]
     async fn accepts_a_strict_nip46_signed_event_response() {
+        sign_owner_template_roundtrip(true).await;
+    }
+
+    #[tokio::test]
+    async fn learns_the_person_key_from_the_signed_owner_statement() {
+        sign_owner_template_roundtrip(false).await;
+    }
+
+    async fn sign_owner_template_roundtrip(known_user: bool) {
         let relays = RelayList::configured(vec![
             "ws://127.0.0.1:18001".into(),
             "ws://127.0.0.1:18002".into(),
@@ -670,7 +674,7 @@ mod tests {
         let connection = RemoteSignerConnection {
             client_public_key: client_identity.public_key(),
             remote_signer_public_key: remote.public_key().to_hex(),
-            user_public_key: Some(owner.public_key().to_hex()),
+            user_public_key: known_user.then(|| owner.public_key().to_hex()),
             relays: relays.as_slice().to_vec(),
             secret: Some("one-use-secret".into()),
         };
@@ -776,6 +780,17 @@ mod tests {
         assert!(matches!(state, PersonSignerState::Approved {
             owner_public_key, unsigned_event_template, ..
         } if owner_public_key == owner.public_key().to_hex() && unsigned_event_template == template));
+        let persisted = Nip46ConnectionIdentity::load_or_create(client_root.path())
+            .unwrap()
+            .load_connection_data()
+            .unwrap();
+        if known_user {
+            assert!(persisted.is_none());
+        } else {
+            let learned: RemoteSignerConnection =
+                serde_json::from_str(&persisted.unwrap()).unwrap();
+            assert_eq!(learned.user_public_key, Some(owner.public_key().to_hex()));
+        }
     }
 
     #[test]

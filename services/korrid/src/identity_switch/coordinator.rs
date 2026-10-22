@@ -157,18 +157,18 @@ impl IdentitySwitchCoordinator {
                 let signer =
                     Nip46PersonSigner::connect_from_bunker(&staged_root, relays, &bunker_uri)
                         .map_err(|error| error.to_string())?;
-                let owner_public_key = signer
+                signer
                     .establish(unix_time())
                     .await
                     .map_err(|error| error.to_string())?;
-                let event = approved_event(
+                // The signed owner statement names the person key.
+                let (owner_public_key, event) = approved_owner_event(
                     signer
                         .request(PersonSignerRequest {
                             unsigned_event_template: new_template.clone(),
                         })
                         .await,
                     &new_template,
-                    &owner_public_key,
                 )?;
                 PreparedReplacement {
                     kind: ReplacementSigner::Nip46,
@@ -444,6 +444,19 @@ fn owned_statement(identity: &DeviceIdentity) -> Result<VerifiedOwnerStatement, 
             }),
         _ => Err("The device is not owned".into()),
     }
+}
+
+fn approved_owner_event(
+    state: PersonSignerState,
+    expected_template: &str,
+) -> Result<(String, String), String> {
+    let owner = match &state {
+        PersonSignerState::Approved {
+            owner_public_key, ..
+        } => owner_public_key.clone(),
+        _ => String::new(),
+    };
+    approved_event(state, expected_template, &owner).map(|event| (owner, event))
 }
 
 fn approved_event(
