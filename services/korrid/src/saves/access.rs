@@ -62,7 +62,12 @@ fn no_default(file: &File) -> Result<(), SaveError> {
 }
 fn directory(path: &Path, gid: u32, mode: u32) -> Result<File, SaveError> {
     super::store::runtime_save_directory(path)?;
-    match fs::DirBuilder::new().mode(mode).create(path) {
+    // korrid.service sets RestrictSUIDSGID. Its seccomp filter refuses any
+    // mkdir or chmod whose mode carries S_ISUID or S_ISGID, with EPERM and
+    // before the kernel would report EEXIST. So the syscalls carry only the
+    // permission bits. S_ISGID comes from the setgid parent: the product's
+    // tmpfiles rule creates users/ as 2710.
+    match fs::DirBuilder::new().mode(mode & 0o777).create(path) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
         Err(error) => return Err(io(error)),
@@ -81,8 +86,20 @@ fn directory(path: &Path, gid: u32, mode: u32) -> Result<File, SaveError> {
     if metadata.gid() != gid && unsafe { libc::fchown(file.as_raw_fd(), u32::MAX, gid) } != 0 {
         return Err(io(std::io::Error::last_os_error()));
     }
-    file.set_permissions(fs::Permissions::from_mode(mode))
-        .map_err(io)?;
+    let current = file.metadata().map_err(io)?.permissions().mode() & 0o7777;
+    if current & libc::S_ISGID != mode & libc::S_ISGID {
+        // Only an unprovisioned root lacks the inherited bit. Outside the
+        // service sandbox this sets it; inside, it fails rather than leaving
+        // the save root without its group inheritance.
+        file.set_permissions(fs::Permissions::from_mode(mode))
+            .map_err(io)?;
+    } else if current != mode && current & libc::S_ISGID == 0 {
+        file.set_permissions(fs::Permissions::from_mode(mode))
+            .map_err(io)?;
+    }
+    // With S_ISGID already present, every caller's access ACL that follows
+    // sets the permission bits; setting an ACL keeps S_ISGID for korrid, a
+    // member of the directory's group.
     Ok(file)
 }
 

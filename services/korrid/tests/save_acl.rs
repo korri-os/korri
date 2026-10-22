@@ -77,6 +77,108 @@ fn restore_uses_shared_acl_without_chown_and_capture_keeps_runtime_access() {
 }
 
 #[test]
+fn account_scaffolding_runs_under_korrid_restrict_suidsgid() {
+    // korrid.service sets RestrictSUIDSGID. A subprocess installs the same
+    // rule, so the seccomp filter cannot reach the parallel test threads.
+    let result = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "restrict_suidsgid_child",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env(
+            "KORRID_RUNTIME_UID",
+            (unsafe { libc::geteuid() } + 1).to_string(),
+        )
+        .env("KORRID_RUNTIME_GID", unsafe { libc::getegid() }.to_string())
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+/// systemd's RestrictSUIDSGID rule for the mode-setting calls account
+/// scaffolding makes: refuse with EPERM when the mode has S_ISUID or S_ISGID.
+fn restrict_suidsgid() {
+    let mut calls = vec![
+        (libc::SYS_mkdirat, 2),
+        (libc::SYS_fchmodat, 2),
+        (libc::SYS_fchmod, 1),
+    ];
+    #[cfg(target_arch = "x86_64")]
+    calls.extend([(libc::SYS_mkdir, 1), (libc::SYS_chmod, 1)]);
+    let statement = |code: u16, k: u32, jt: u8, jf: u8| libc::sock_filter { code, jt, jf, k };
+    let load = (libc::BPF_LD | libc::BPF_W | libc::BPF_ABS) as u16;
+    let jeq = (libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K) as u16;
+    let jset = (libc::BPF_JMP | libc::BPF_JSET | libc::BPF_K) as u16;
+    let ret = (libc::BPF_RET | libc::BPF_K) as u16;
+    let mut program = Vec::new();
+    for (call, argument) in calls {
+        // nr; if it matches, test the low word of the mode argument.
+        program.push(statement(load, 0, 0, 0));
+        program.push(statement(jeq, call as u32, 0, 3));
+        program.push(statement(load, 16 + 8 * argument, 0, 0));
+        program.push(statement(
+            jset,
+            libc::S_ISUID | libc::S_ISGID,
+            0,
+            1,
+        ));
+        program.push(statement(
+            ret,
+            libc::SECCOMP_RET_ERRNO | libc::EPERM as u32,
+            0,
+            0,
+        ));
+    }
+    program.push(statement(ret, libc::SECCOMP_RET_ALLOW, 0, 0));
+    let filter = libc::sock_fprog {
+        len: program.len() as u16,
+        filter: program.as_mut_ptr(),
+    };
+    unsafe {
+        assert_eq!(libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0), 0);
+        assert_eq!(
+            libc::prctl(libc::PR_SET_SECCOMP, libc::SECCOMP_MODE_FILTER, &filter),
+            0,
+            "{}",
+            std::io::Error::last_os_error()
+        );
+    }
+}
+
+#[test]
+#[ignore = "subprocess helper; installs a seccomp filter for the RestrictSUIDSGID test"]
+fn restrict_suidsgid_child() {
+    let root = tempfile::tempdir().unwrap();
+    activate_users(root.path());
+    restrict_suidsgid();
+    // The rule applies: a setgid mode is refused even for an existing path.
+    let refused = fs::DirBuilder::new()
+        .mode(0o2710)
+        .create(root.path().join("users"))
+        .unwrap_err();
+    assert_eq!(refused.raw_os_error(), Some(libc::EPERM));
+    let account = korrid::saves::access::prepare_account(root.path(), PERSON).unwrap();
+    for directory in [account.clone(), account.join("saves")] {
+        let mode = fs::metadata(&directory).unwrap().mode() & 0o7777;
+        assert_eq!(
+            mode & libc::S_ISGID,
+            libc::S_ISGID,
+            "{}",
+            directory.display()
+        );
+    }
+    // A second launch finds everything in place and still succeeds.
+    korrid::saves::access::prepare_account(root.path(), PERSON).unwrap();
+}
+
+#[test]
 #[ignore = "subprocess helper; invoked with a different runtime uid by the ACL test"]
 fn shared_acl_child() {
     let current = unsafe { libc::geteuid() };
