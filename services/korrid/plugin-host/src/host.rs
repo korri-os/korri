@@ -2122,14 +2122,15 @@ mod tests {
     };
     use std::{
         collections::BTreeMap,
-        os::unix::fs::{symlink, PermissionsExt},
-        process::{Command, Stdio},
+        os::unix::{
+            fs::{symlink, PermissionsExt},
+            process::ExitStatusExt,
+        },
+        process::{Child, Command},
         sync::{
             atomic::{AtomicBool, Ordering},
             Arc,
         },
-        thread,
-        time::{Duration, Instant},
     };
 
     fn report(id: &str, suffix: &str) -> Report {
@@ -3633,6 +3634,16 @@ mod tests {
         assert!(runtime.unsafe_stops.borrow().is_empty());
     }
 
+    // A failed assertion must not leave the removal child stopped or running.
+    struct RemovalChild(Child);
+
+    impl Drop for RemovalChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
     #[test]
     fn interrupted_removal_child() {
         let Some(root) = std::env::var_os("KORRI_HOST_INTERRUPTION_CHILD") else {
@@ -3647,16 +3658,19 @@ mod tests {
             runtime(std::slice::from_ref(&selected)),
         )
         .unwrap();
-        let _ = host.remove(&selected.id, false);
+        host.remove(&selected.id, false).unwrap();
     }
 
     #[test]
     fn host_recovers_a_sigkilled_removal_from_the_durable_original_request() {
         let root = tempfile::tempdir().unwrap();
-        let marker = root.path().join("gc-blocked");
+        // Stop the caller at the actual GC boundary, regardless of runner
+        // speed. Keep the helper alive until the caller dies: SIGSTOP delivery
+        // is asynchronous, so an immediate exit could let removal commit first.
+        // tail exits after we reap the caller, including on a failed assertion.
         let nix = cleanup_program(
             root.path(),
-            &format!("touch {}; while :; do sleep 1; done", marker.display()),
+            "caller=$PPID; kill -STOP \"$caller\" && exec tail --pid=\"$caller\" -s 0.01 -f /dev/null",
         );
         let selected = report("@test:clock", "clock-interrupted");
         let runtime = runtime(std::slice::from_ref(&selected));
@@ -3668,26 +3682,49 @@ mod tests {
         )
         .unwrap();
         install(&host, selected.clone());
-        symlink(&selected.package, host.paths.roots.join("download")).unwrap();
-        symlink(&selected.package, host.paths.roots.join("download.new")).unwrap();
         drop(host);
-
-        let mut child = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "host::tests::interrupted_removal_child",
-                "--nocapture",
-            ])
-            .env("KORRI_HOST_INTERRUPTION_CHILD", root.path())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while !marker.exists() && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(20));
+        // Seed acquisition roots after dropping the setup host; its Drop also
+        // releases them. The removal child must remove both names before GC.
+        for name in ["download", "download.new"] {
+            symlink(&selected.package, root.path().join("roots").join(name)).unwrap();
         }
-        assert!(marker.exists(), "child did not reach store cleanup");
+
+        let mut child = RemovalChild(
+            Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "host::tests::interrupted_removal_child",
+                    "--nocapture",
+                ])
+                .env("KORRI_HOST_INTERRUPTION_CHILD", root.path())
+                .spawn()
+                .unwrap(),
+        );
+        let mut event = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
+        loop {
+            // Observe exit too, so an early child failure is reported instead
+            // of waiting forever. Leave reaping to Child, including on panic.
+            let result = unsafe {
+                libc::waitid(
+                    libc::P_PID,
+                    child.0.id(),
+                    &mut event,
+                    libc::WSTOPPED | libc::WEXITED | libc::WNOWAIT,
+                )
+            };
+            if result == 0 {
+                break;
+            }
+            let error = std::io::Error::last_os_error();
+            assert_eq!(error.kind(), std::io::ErrorKind::Interrupted, "{error}");
+        }
+        assert_eq!(
+            event.si_code,
+            libc::CLD_STOPPED,
+            "child exited before store cleanup (status {})",
+            unsafe { event.si_status() }
+        );
+        assert_eq!(unsafe { event.si_status() }, libc::SIGSTOP);
         let receipt_path = root
             .path()
             .join("state")
@@ -3696,12 +3733,10 @@ mod tests {
         let receipt: Receipt = storage::read_json(&receipt_path).unwrap().unwrap();
         assert!(matches!(receipt.desired, Desired::Removed { purge: false }));
         for name in ["download", "download.new"] {
-            assert!(!root.path().join("roots").join(name).exists());
+            assert!(fs::symlink_metadata(root.path().join("roots").join(name)).is_err());
         }
-        unsafe {
-            libc::kill(child.id() as i32, libc::SIGKILL);
-        }
-        child.wait().unwrap();
+        child.0.kill().unwrap();
+        assert_eq!(child.0.wait().unwrap().signal(), Some(libc::SIGKILL));
         cleanup_program(root.path(), "exit 0");
 
         let recovered =
