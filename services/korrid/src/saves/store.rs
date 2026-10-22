@@ -784,7 +784,9 @@ impl NativeSaveStore {
             }
             records.push(record);
         }
-        records.sort_by_key(|r| snapshot_id(r).expect("validated record"));
+        // Canonicalization and hashing are expensive. Compute each immutable id
+        // once for sorting, not once per comparison in every history read.
+        records.sort_by_cached_key(|r| snapshot_id(r).expect("validated record"));
         Ok(records)
     }
     fn read_records(&self, person: &str, game: &str) -> Result<Vec<SnapshotRecord>, SaveError> {
@@ -958,6 +960,28 @@ impl SaveRepository for NativeSaveStore {
             .ok_or(SaveError::Missing)?;
         self.record_complete(&record)
     }
+    fn confirmed_snapshots(
+        &self,
+        person: &str,
+        game: &str,
+        device: &str,
+    ) -> Result<BTreeSet<String>, SaveError> {
+        let _guard = lock()?;
+        let Some(path) = self.game(person, game, false)? else {
+            return Ok(BTreeSet::new());
+        };
+        // Read the existing signed-receipt projection, not a second cache.
+        let confirmations: BTreeMap<String, BTreeSet<String>> =
+            match read_json(&path.join("confirmations.json")) {
+                Ok(value) => value,
+                Err(SaveError::Missing) => BTreeMap::new(),
+                Err(error) => return Err(error),
+            };
+        Ok(confirmations
+            .into_iter()
+            .filter_map(|(id, devices)| devices.contains(device).then_some(id))
+            .collect())
+    }
     fn confirm(&self, person: &str, game: &str, id: &str, device: &str) -> Result<(), SaveError> {
         let _guard = lock()?;
         hash_hex(id)?;
@@ -978,10 +1002,13 @@ impl SaveRepository for NativeSaveStore {
             Err(SaveError::Missing) => BTreeMap::new(),
             Err(e) => return Err(e),
         };
-        confirmations
+        if !confirmations
             .entry(id.into())
             .or_default()
-            .insert(device.into());
+            .insert(device.into())
+        {
+            return Ok(());
+        }
         let bytes = serde_json::to_vec(&confirmations).map_err(|e| invalid(&e.to_string()))?;
         publish(&path, &mut bytes.as_slice(), None)
     }

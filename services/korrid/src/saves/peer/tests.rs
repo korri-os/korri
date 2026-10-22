@@ -36,6 +36,10 @@ struct TransferBehaviour {
     corrupt: bool,
     delay: Duration,
     records_delay: Duration,
+    measure: bool,
+    requests: Arc<Mutex<Vec<(String, Duration)>>>,
+    connections: Arc<std::sync::atomic::AtomicUsize>,
+    record_reads: Arc<Mutex<Vec<Vec<String>>>>,
 }
 async fn transfer_behaviour(
     axum::extract::State((behaviour, credentials)): axum::extract::State<(
@@ -46,7 +50,8 @@ async fn transfer_behaviour(
     next: Next,
 ) -> Response {
     if request.uri().path() != "/peer-saves-object" {
-        if !behaviour.records_delay.is_zero() {
+        let mut tag = String::new();
+        if behaviour.measure || !behaviour.records_delay.is_zero() {
             // Delay the real signed records request, not heads or in-use.
             // Preserve its exact bytes for the shipping authentication boundary.
             let (parts, body) = request.into_parts();
@@ -60,12 +65,28 @@ async fn transfer_behaviour(
                 .unwrap();
             let envelope: serde_json::Value = serde_json::from_str(&plaintext).unwrap();
             request = axum::extract::Request::from_parts(parts, Body::from(body));
-            if envelope["request"]["_tag"] == "app.saves.records" {
+            tag = envelope["request"]["_tag"].as_str().unwrap().to_owned();
+            if tag == "app.saves.records" {
+                if behaviour.measure && envelope["request"]["payload"]["records"].is_null() {
+                    behaviour.record_reads.lock().unwrap().push(
+                        serde_json::from_value(envelope["request"]["payload"]["ids"].clone())
+                            .unwrap(),
+                    );
+                }
                 tokio::time::sleep(behaviour.records_delay).await;
             }
         }
         tokio::time::sleep(behaviour.delay).await;
-        return next.run(request).await;
+        let started = std::time::Instant::now();
+        let response = next.run(request).await;
+        if behaviour.measure {
+            behaviour
+                .requests
+                .lock()
+                .unwrap()
+                .push((tag, started.elapsed()));
+        }
+        return response;
     }
     let first = {
         let mut ranges = behaviour.ranges.lock().unwrap();
@@ -149,6 +170,7 @@ impl Node {
         );
         let (mut state, _) = crate::app_states(runtime);
         state.saves = Some(service.clone());
+        let connections = behaviour.connections.clone();
         let server = PeerRpcServer::with_shared_authority(
             state,
             root.path(),
@@ -164,7 +186,15 @@ impl Node {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let task = tokio::spawn(async move {
-            axum::serve(listener, server).await.unwrap();
+            use axum::serve::ListenerExt;
+            axum::serve(
+                listener.tap_io(move |_| {
+                    connections.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }),
+                server,
+            )
+            .await
+            .unwrap();
         });
         Self {
             _root: root,
@@ -1001,4 +1031,193 @@ async fn metadata_mutation_is_not_sent_again_after_ambiguous_delivery() {
     }
     assert!(matches!(result, Err(PeerSaveError::Network)));
     assert_eq!(received.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn matching_forty_two_record_history_has_constant_prelaunch_requests() {
+    isolated_check("saves::peer::tests::matching_forty_two_record_history_has_constant_prelaunch_requests_child");
+}
+
+#[tokio::test]
+#[ignore = "subprocess helper; isolates large history setup from other save-check deadlines"]
+async fn matching_forty_two_record_history_has_constant_prelaunch_requests_child() {
+    let behaviour = TransferBehaviour {
+        measure: true,
+        ..Default::default()
+    };
+    let a = Node::new(5, 3, behaviour.clone()).await;
+    let b = Node::new(6, 3, behaviour.clone()).await;
+    a.remember(&b);
+    b.remember(&a);
+    seed_shared_history(&a, &b, 42);
+    let started = tokio::time::Instant::now();
+    let checks = b
+        .service
+        .pull_before_launch("wario-land-4", started + Duration::from_millis(2400))
+        .await
+        .unwrap();
+    let elapsed = started.elapsed();
+    let requests = behaviour.requests.lock().unwrap().clone();
+    let mut timings = BTreeMap::<String, (usize, Duration)>::new();
+    for (tag, elapsed) in requests.iter() {
+        let entry = timings.entry(tag.clone()).or_default();
+        entry.0 += 1;
+        entry.1 += *elapsed;
+    }
+    eprintln!(
+        "42-record check: {} requests, {} TCP accepts, {elapsed:?}, server handlers {timings:?}",
+        requests.len(),
+        behaviour
+            .connections
+            .load(std::sync::atomic::Ordering::Relaxed)
+    );
+    assert!(checks[0].transfer.is_ok(), "{:?}", checks[0]);
+    assert!(
+        requests.len() <= 3,
+        "matching history must not walk or push every record"
+    );
+    // Equal heads without previous receipts must also be constant-cost. Only
+    // the current head needs a new two-way receipt during a launch check;
+    // contact/publication gather older receipts for retention separately.
+    for node in [&a, &b] {
+        std::fs::remove_file(
+            node._root
+                .path()
+                .join("saves")
+                .join(node.owner())
+                .join("wario-land-4/confirmations.json"),
+        )
+        .unwrap();
+    }
+    behaviour.requests.lock().unwrap().clear();
+    let checks = b
+        .service
+        .pull_before_launch(
+            "wario-land-4",
+            tokio::time::Instant::now() + Duration::from_millis(2400),
+        )
+        .await
+        .unwrap();
+    assert!(checks[0].transfer.is_ok(), "{:?}", checks[0]);
+    assert!(
+        behaviour.requests.lock().unwrap().len() <= 6,
+        "missing old receipts must not replay shared ancestry during prelaunch"
+    );
+}
+
+fn seed_shared_history(a: &Node, b: &Node, count: usize) -> Vec<String> {
+    let mut parents = vec![];
+    for n in 0..count {
+        let bytes = format!("save {n}");
+        let record = a.seed(bytes.as_bytes(), parents);
+        let id = id(&record);
+        b.repository.put_record(&b.owner(), &record).unwrap();
+        b.repository
+            .put_object(&b.owner(), &digest(bytes.as_bytes()), &mut bytes.as_bytes())
+            .unwrap();
+        a.repository
+            .confirm(&a.owner(), &record.game_id, &id, &b.device())
+            .unwrap();
+        b.repository
+            .confirm(&b.owner(), &record.game_id, &id, &a.device())
+            .unwrap();
+        parents = vec![id];
+    }
+    parents
+}
+
+#[test]
+fn one_new_head_fetches_only_the_missing_record_and_payload() {
+    isolated_check(
+        "saves::peer::tests::one_new_head_fetches_only_the_missing_record_and_payload_child",
+    );
+}
+
+#[tokio::test]
+#[ignore = "subprocess helper; isolates large history setup from other save-check deadlines"]
+async fn one_new_head_fetches_only_the_missing_record_and_payload_child() {
+    let behaviour = TransferBehaviour {
+        measure: true,
+        ..Default::default()
+    };
+    let a = Node::new(5, 3, behaviour.clone()).await;
+    let b = Node::new(6, 3, behaviour.clone()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let parents = seed_shared_history(&a, &b, 42);
+    let head = a.seed(b"new progress", parents);
+    let started = tokio::time::Instant::now();
+    let checks = b
+        .service
+        .pull_before_launch("wario-land-4", started + Duration::from_millis(2400))
+        .await
+        .unwrap();
+    eprintln!(
+        "one new head: {} signed requests, {} object requests, {:?}",
+        behaviour.requests.lock().unwrap().len(),
+        behaviour.ranges.lock().unwrap().len(),
+        started.elapsed()
+    );
+    assert!(checks[0].transfer.is_ok(), "{:?}", checks[0]);
+    assert!(behaviour.requests.lock().unwrap().len() <= 6);
+    assert_eq!(behaviour.ranges.lock().unwrap().len(), 1);
+    for ids in behaviour.record_reads.lock().unwrap().iter() {
+        assert_eq!(
+            ids,
+            &vec![id(&head)],
+            "shared ancestors must not be fetched again"
+        );
+    }
+    for (node, other) in [(&a, &b), (&b, &a)] {
+        assert!(node
+            .repository
+            .complete(&node.owner(), &head.game_id, &id(&head))
+            .unwrap());
+        assert!(node.confirmations()[&id(&head)].contains(&other.device()));
+    }
+}
+
+#[tokio::test]
+async fn matching_heads_repair_missing_payload_despite_old_confirmation() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let ids = seed_shared_history(&a, &b, 2);
+    let head = a
+        .repository
+        .records(&a.owner(), "wario-land-4")
+        .unwrap()
+        .into_iter()
+        .find(|record| id(record) == ids[0])
+        .unwrap();
+    prune_payload(&a, &head);
+    let checks = b
+        .service
+        .pull_before_launch(
+            "wario-land-4",
+            tokio::time::Instant::now() + Duration::from_millis(2400),
+        )
+        .await
+        .unwrap();
+    assert!(checks[0].transfer.is_ok(), "{:?}", checks[0]);
+    assert!(a
+        .repository
+        .complete(&a.owner(), &head.game_id, &id(&head))
+        .unwrap());
+}
+
+// Large fixture setup repeatedly takes the process-wide storage lock. Keep it
+// outside unrelated tests' real-time prelaunch budgets, as on separate devices.
+fn isolated_check(name: &str) {
+    let result = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--ignored", "--nocapture"])
+        .output()
+        .unwrap();
+    eprintln!(
+        "{}{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(result.status.success(), "isolated check failed: {name}");
 }

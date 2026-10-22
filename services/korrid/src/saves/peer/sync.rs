@@ -1,6 +1,6 @@
 use super::*;
 use futures::{stream::FuturesUnordered, StreamExt};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use tokio::time::Instant;
 
 /// Process-local result, not a wire or persisted shape. Retain a known in-use
@@ -13,6 +13,14 @@ pub struct PeerCheckResult {
     /// Signed heads arrived, but their validated head records did not arrive
     /// during this check. This is process-local, not a wire or persisted field.
     pub heads_without_records: Vec<String>,
+}
+
+// Launch checks need current-head receipts, not fresh receipts for every
+// historical snapshot. Contact/publication still gather retention receipts.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SyncPurpose {
+    Replicate,
+    CheckLaunch,
 }
 
 impl SavePeerService {
@@ -39,7 +47,13 @@ impl SavePeerService {
             let person = person.clone();
             async move {
                 let result = self
-                    .synchronize(&person, &peer, Some(game), &mut BTreeSet::new())
+                    .synchronize(
+                        &person,
+                        &peer,
+                        Some(game),
+                        &mut BTreeSet::new(),
+                        SyncPurpose::Replicate,
+                    )
                     .await;
                 (peer, result)
             }
@@ -51,8 +65,14 @@ impl SavePeerService {
     /// The directory is checked again; callers cannot supply an arbitrary origin.
     pub async fn on_contact(&self, peer: &str) -> Result<(), PeerSaveError> {
         let person = self.owner()?;
-        self.synchronize(&person, peer, None, &mut BTreeSet::new())
-            .await
+        self.synchronize(
+            &person,
+            peer,
+            None,
+            &mut BTreeSet::new(),
+            SyncPurpose::Replicate,
+        )
+        .await
     }
 
     /// Caller owns the 3-second budget and Skip. Dropping this future cancels
@@ -95,7 +115,13 @@ impl SavePeerService {
                 let mut pending_head_records = BTreeSet::new();
                 let transfer = tokio::time::timeout_at(
                     deadline,
-                    self.synchronize(&person, &peer, Some(game), &mut pending_head_records),
+                    self.synchronize(
+                        &person,
+                        &peer,
+                        Some(game),
+                        &mut pending_head_records,
+                        SyncPurpose::CheckLaunch,
+                    ),
                 )
                 .await
                 .unwrap_or(Err(PeerSaveError::Deadline));
@@ -205,6 +231,7 @@ impl SavePeerService {
         peer: &str,
         only_game: Option<&str>,
         pending_head_records: &mut BTreeSet<String>,
+        purpose: SyncPurpose,
     ) -> Result<(), PeerSaveError> {
         let remote = self.remote_heads(person, peer).await?;
         pending_head_records.extend(
@@ -228,6 +255,22 @@ impl SavePeerService {
             games.retain(|id| id == game);
         }
         for game in games {
+            let (person_key, game_key, device) = (person.to_owned(), game.clone(), peer.to_owned());
+            let (mut known, confirmed) = self
+                .storage(move |repository| {
+                    let records = repository
+                        .records(&person_key, &game_key)?
+                        .into_iter()
+                        .map(|record| Ok((snapshot_id(&record)?, record)))
+                        .collect::<Result<BTreeMap<_, _>, SaveError>>()?;
+                    let confirmed =
+                        repository.confirmed_snapshots(&person_key, &game_key, &device)?;
+                    Ok((records, confirmed))
+                })
+                .await?;
+            // An advertised head whose immutable record is already local does
+            // not become a missing-record warning while its receipt is queried.
+            pending_head_records.retain(|id| !known.contains_key(id));
             let mut pending: VecDeque<String> = remote
                 .games
                 .iter()
@@ -238,10 +281,20 @@ impl SavePeerService {
             let mut visited = BTreeSet::new();
             let mut head_records = Vec::new();
             let mut confirmations = Vec::new();
+            let mut remote_complete = BTreeSet::new();
             while let Some(id) = pending.pop_front() {
                 validate_hash(&id)?;
                 if !visited.insert(id.clone()) {
                     continue;
+                }
+                // Always ask for current head receipts: matching metadata is
+                // not proof that the peer still holds the head's payload. Walk
+                // ancestors from validated local records; fetch only gaps.
+                if !advertised.contains(&id) {
+                    if let Some(record) = known.get(&id) {
+                        pending.extend(record.parents.clone());
+                        continue;
+                    }
                 }
                 let response = self
                     .remote_records(
@@ -254,6 +307,7 @@ impl SavePeerService {
                         },
                     )
                     .await?;
+                remote_complete.extend(response.confirmed.iter().cloned());
                 // Retention prunes payloads, never the ancestry metadata.
                 if response.records.len() != 1 {
                     return Err(PeerSaveError::Protocol);
@@ -266,8 +320,11 @@ impl SavePeerService {
                     // subsequent storage, ancestor or payload transfer work.
                     pending_head_records.remove(&id);
                     pending.extend(record.parents.clone());
-                    self.import_record(person, peer, record.clone(), Some(&id))
-                        .await?;
+                    if !known.contains_key(&id) {
+                        self.import_record(person, peer, record.clone(), Some(&id))
+                            .await?;
+                        known.insert(id.clone(), record.clone());
+                    }
                     if advertised.contains(&id) {
                         head_records.push(record);
                     }
@@ -291,6 +348,19 @@ impl SavePeerService {
             // native peer envelope bound. Object bytes never enter RPC JSON.
             for record in records {
                 let id = snapshot_id(&record)?;
+                // Prelaunch needs no renewed historical receipts; replication
+                // still gathers them for retention. Shared ancestry with an
+                // existing signed receipt needs no replay in either case.
+                // New records still exchange receipts in both directions. A
+                // head with a missing current receipt must be offered again so
+                // the receiver can repair a pruned/lost payload.
+                if visited.contains(&id)
+                    && ((purpose == SyncPurpose::CheckLaunch && !advertised.contains(&id))
+                        || (confirmed.contains(&id)
+                            && (!advertised.contains(&id) || remote_complete.contains(&id))))
+                {
+                    continue;
+                }
                 let response = self
                     .remote_records(
                         person,
