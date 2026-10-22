@@ -447,3 +447,150 @@ One 640x480 frame took 1.06 ms of engine time. That is a single-frame measuremen
 - The meaning of most traced constants.
 - Input from GPU-rendered buffers: this test used an NV12 buffer in `ve-pool`. Screen capture will need a copy or conversion into contiguous memory.
 - Concurrent decode and encode.
+
+## 10. Stateful H.264 encode and reviewed retirement protocol
+
+The H700 now encodes moving 640×480 NV12 through Cedrus' stateful V4L2 M2M
+node (`/dev/video1`). The existing stateless decoder remains `/dev/video0`.
+Both nodes use one scheduler and the existing 64 MiB reusable physical-address
+`ve-pool`. There is still no IOMMU link.
+
+This is an **intra-only milestone**. Every frame is an IDR, the reported GOP
+size is 1, and joined/repeated SPS/PPS make the packets independently usable.
+The adapted T527 P-frame experiment produced corrupt pictures and is not
+shipped. Main/High profiles, fixed QP, software bitrate-driven QP feedback,
+force-keyframe requests and STOP/LAST/EOS are implemented. Tight CBR is not
+established. No Sunshine service is installed by this change.
+
+### Review fixes
+
+The first normal-path acceptance did not establish context lifetime or
+restart safety. In particular, the old restart probe accepted START but did
+not encode another frame. The old module reproduced `DQBUF: Broken pipe`
+after both restart routes. The sequence of STOP with both queues off, then
+with only CAPTURE streaming, reproduced `Device or resource busy`.
+
+Patch 0237 now uses one per-job ownership protocol:
+
+- `job_lock` protects the job context, sequence, hardware class and owner.
+  IRQ and watchdog paths must claim an ACTIVE job before they read its
+  context. The M2M running transaction retains that context until retirement.
+- IRQ status comes from a hardware-bank table, not an unpinned M2M context.
+  The handler masks and acknowledges every pending supported bank even when
+  WATCHDOG owns the job. Trigger/enable and retirement use the same lock.
+- Preparing a new job synchronously drains the previous watchdog callback
+  before publishing the new sequence. Cancelling delayed work is cleanup,
+  not proof of ownership. Completion validates sequence and owner, clears
+  the context, and makes no context access after M2M retirement wakes close.
+- The watchdog masks/acknowledges sources, synchronizes the IRQ, resets the
+  engine, then returns the buffers and retires its job. A late IRQ cannot
+  finish the same job or acknowledge a newer job outside the shared lock.
+
+START clears CAPTURE's LAST-dequeued flag and schedules already queued work.
+The stopped-state snapshot and START update share `job_lock` with drain
+completion; scheduling occurs after unlocking. OUTPUT STREAMON clears the
+M2M stopped/draining state and the LAST-dequeued flag. STOP is a successful
+no-op unless both queues stream.
+
+### Source and kernel qualification
+
+The reviewed code is committed as `ed8026dbe` and `e4f80a148`, after the
+encoder introduction `e6191a908`, rebased onto `ccaac2d60`.
+
+Main enabled CPU utilization clamping after the running kernel was built.
+The rebased kernel Image differs from the running Image. **The rebased Image
+was not booted or hardware-qualified.** The authorized fallback was used:
+module `/nix/store/i05ygkliay3jpkx2zzjmkrq0akrah1r4-h700-venc-module-aarch64-unknown-linux-gnu`,
+built at `4211683ce5d50ecd69a1ba13f7c152d18d7bdd93` on the `fdd17550a` base,
+against the running kernel's development files. It was cross-built with
+`W=1`, signed before copying, and tested only by live module swap.
+
+The final pre-rebase and rebased patch 0237 are byte-identical:
+`7a925ad7bcaa999ed2d9714498d48530965e37bc0d1672dd7b49c1a6e91ee3ef`.
+`git diff` of those patch blobs is empty. All 18 compiled source files also
+match that committed patch applied to the pristine pre-0237 Cedrus source.
+The rebased Image SHA-256 is
+`862e5b8f2b7dfad9976f80ade3cb49645fc266a77f096de6bb73b3a7c6aa5d68`.
+The running Image remains
+`45ae382a9c700da5623a99d6a43d0d9644a8a6e51a7a77d0b30518d94b885756`.
+
+Host checks pass: the cross-built Pro system, `checks.x86_64-linux.h700`,
+full Cedrus `W=1` build, warnings-as-errors controls probe build, five
+real-FFmpeg verifier unit tests, Ruff and Nixfmt. Strict kernel checkpatch
+reports 0 errors, 1 MAINTAINERS warning and 0 checks. The committed long-probe
+Nix expression builds an ELF byte-identical to the tested long probe
+(SHA-256 `91d61e304836551d6de5cec25a4d9dd9cdb794153c2103040e91489ff1a43556`).
+
+### Repeated device acceptance
+
+The real consumer is Sunshine's approved, unmodified FFmpeg
+`h264_v4l2m2m` probe. The longer probe changes frame count/duration and input
+motion only; the consumer setup and approved FFmpeg remain unchanged.
+Host verification decodes the actual streams, checks every output frame
+against the generated motion, checks headers/keyframe requests and EOF,
+and rejects missing, extra, invalid or wrong-motion frames.
+
+| Check | Final measured result |
+|---|---|
+| Moving 640×480, 10 Mbit/s request | 600 frames; minimum Y PSNR 42.919274 dB; 9,963,371 bytes |
+| Moving 640×480, 1 Mbit/s request | 600 frames; minimum Y PSNR 31.321423 dB; 1,284,892 bytes |
+| Sustained encode with interleaved decode | 12,234 frames / 65.002110 s = **188.209 fps** |
+| Producer and FFmpeg CPU | 48.224385 CPU seconds; 74.189% of one core, including pattern generation and copies |
+| VE timing | Mean 1,285,116 ns per frame at 600 MHz |
+| Interleaved stateless decode | 20/20 rounds, 120 frames each, reference-identical while encode stayed alive |
+| Both restart routes in one context | 62 valid frames, including a queued frame encoded/dequeued after each resume |
+| Isolated START / OUTPUT STREAMON routes | 61 valid frames each, including the queued post-resume frame |
+| STOP before streaming | Both-off and CAPTURE-only cases pass; later encoding still works |
+| Fixed QP 18 / QP 36 | 62 frames each; 545,691 / 182,608 bytes; minimum Y PSNR 47.569649 / 37.313462 dB |
+| High profile / 720p / 1080p | 62 valid frames each; minimum Y PSNR 43.764995 / 44.202272 / 44.278041 dB |
+| Close with work pending | 20 normal rounds plus the forced-timeout close case pass |
+| Display and decode regression | Three panel cycles, real 300-second idle-off/wake, and decode before/after pass |
+
+The decode reference is 120 frames / 55,296,000 NV12 bytes with SHA-256
+`0c891fbb2e0740e006286f92c89aae79c19785f9e43439893ff5338c9ede6b53`.
+The normal run reports no unexpected timeout, kernel fault, oops or IRQ storm.
+The staging-module load warnings remain; literal zero warnings is not claimed.
+
+### Forced watchdog, reset and late-IRQ recovery
+
+A separate **uncommitted test-only module** skipped the first AVC trigger.
+After the watchdog claimed that job, the test triggered its configured
+hardware and waited 30 ms. This produced a real completion IRQ while
+WATCHDOG owned the job, not just an idle engine waiting for a timer.
+No injection parameter or debug interface is in patch 0237.
+
+| Case | Actual IRQ counters: before → after → after 1 s quiet | Result |
+|---|---|---|
+| Recover in the same context | 56,616 → 56,620 → 56,620 | One late IRQ plus three valid frames; no extra IRQs |
+| Close while the timed-out job is pending | 56,860 → 56,861 → 56,861 | One late IRQ; close returns; no extra IRQs |
+
+Both cases log `status=1`, then `control_after=41e0000 status_after=260`:
+the AVC IRQ-enable low nibble and pending-status low three bits are cleared.
+Both log `TEST reset result=0 seq=1`. The recovery case returns both error
+buffers with zero payload, then encodes three valid frames in the same
+context, including both restart routes (minimum Y PSNR 43.942371 dB).
+After **each** fault case, the unmodified Sunshine probe encodes 120 frames
+(minimum Y PSNR 42.919274 dB) and the next 120-frame hardware decode matches
+the reference. The original module is then restored and decode passes again.
+
+Raw evidence is in `/tmp/h700-venc/review/`: `repro.log`,
+`fixed-controls-final.log`, `fault-final-test.log`, `fault-final-raw/`,
+`acceptance-final.log`, `normal-final/`, `verify-final.log`,
+`patch-identity-final.log`, and `module-source-identity.log`.
+Intentional timeout logs and the full boot kernel log are retained, not cleared.
+
+### Remaining limits and final device state
+
+The stateful encoder milestone is met. Actual Sunshine/Moonlight streaming,
+P frames, tight CBR, separate header packets, Baseline/CAVLC, zero-copy GPU
+input and complete V4L2 compliance remain unqualified. The shared retirement
+code builds for other Cedrus codecs; only H.264 decode/encode received these
+hardware tests. No KASAN/lockdep claim is made for this running kernel.
+
+No reboot, partition/firmware write, boot-default/profile change, push or land
+was performed. The original module is loaded, `/dev/video1` is absent, and
+the original system/profile remains
+`/nix/store/rsn5qhm3jhyvzs17ysn2hvj42ir0j9q3-nixos-system-rg35xxpro-sd-card-26.11.20260923.4975466`.
+The boot ID remains `5174ad12-b003-4a39-8c75-ff4431e81df0`; extlinux SHA-256
+remains `d640b3b938cab1dc52713ad08b1dd21db09acfa57b309613576c292c7560f15e`.
+Pico, korrid and Sway retain PIDs 1378, 1434 and 1005 with zero restarts.
