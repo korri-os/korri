@@ -22,6 +22,100 @@ boot-LUN change. A udev rule in `portal.nix` marks every block device on LUNs 1
 to 5 read-only when it appears. This prevents accidental writes. It does not
 stop root from clearing the flag.
 
+## System updates from Zao
+
+Use the build-host app, not `nixos-rebuild` or `switch-to-configuration boot`.
+GRUB installation is disabled. Those commands do not update this ESP's active
+`boot/grub/grub.cfg`. `esp.nix` now produces the same firmware tree for image
+assembly and this updater: store-hash filenames, kernel parameters, GRUB/GOP
+setup, DTB, font, loader and inactive BLS files have one producer.
+
+Coordinate exclusive use and get approval for each device update. The owner's
+2026-10-22 approval covers one Mini V2 update only. The Mini V2 is a development
+device; this operation does not preserve user data or copy backups to Zao.
+It retains only the on-device boot rollback described below.
+
+From the approved checkout on **Zao**:
+
+```sh
+nix run .#rpminiv2-update-check       # offline; no handheld connection
+nix run .#rpminiv2-update -- --status # read-only; SSH root@10.42.3.1:2222
+# Copy the exact current= path from status after checking the intended device.
+nix run .#rpminiv2-update -- --expected-system /nix/store/EXACT-CURRENT-SYSTEM
+```
+
+The command builds `nixosConfigurations.rpminiv2.config.system.build.toplevel`
+and `system.build.rpminiv2Firmware` on the host's Nix daemon and configured
+builders (fuji/yari for ARM). It signs the system closure with
+`nix store sign --recursive --key-file ~/.config/korri/cache-key.secret` on Zao.
+The private key must belong to the current user, have no group/other access,
+and resolve to the device-trusted `korri-cache-zao-1` identity. It is never
+printed or copied. `nix copy` transfers the prebuilt closure over SSH. Signature
+requirements stay enabled. No command builds or dispatches builds on the device.
+
+The tool refuses any board other than `Retroid Pocket Mini V2`, or mounts other
+than writable `/boot` = `/dev/sda21`, vfat, `RPMINIV2`, and `/` = `/dev/sda22`,
+ext4, `NIXOS_RPMINIV2`. It rejects nested ESP mounts and symlink boot directories.
+It checks the device's signature/build policy and compares the installed GRUB
+loader and font with the shared tree. A changed booted system, profile, config,
+GRUB handoff, or differing existing store-hash payload stops the update.
+
+After a conservative ESP free-space check, it copies kernel, initrd and DTB
+alongside old payloads. It saves the exact active config to
+`/boot/boot/grub/grub.cfg.previous`. It roots the previous system with the native
+Nix profile `/nix/var/nix/profiles/system-rpminiv2-previous`. These names extend
+the existing GRUB file and system-profile paths; there is no separate manifest
+or generation database. It writes a new config with exactly two entries:
+new system first, previous booted system second, labelled `(previous)`. Each
+file uses a same-directory temporary file, rename and `sync`. Only then does
+it set `/nix/var/nix/profiles/system`. It does **not** activate or reboot.
+
+Record the before/after store paths, profile generations, mount identities,
+ESP filenames/hashes and free space in `docs/acceptance/`. Then reboot explicitly:
+
+```sh
+ssh -o BatchMode=yes -p 2222 root@10.42.3.1 reboot
+# Wait for this same endpoint to return, then:
+nix run .#rpminiv2-update -- --status
+```
+
+Require `current=` and `profile=` to equal the built system. Check failed units,
+korrid, compositor and portal, unchanged plugin-host trust, uclamp/launch limits,
+and a real korrid launch inside bubblewrap (ADR 0015). Do not treat staged files
+or a successful SSH copy as boot acceptance.
+
+### Rollback and update limits
+
+If acceptance fails and SSH works:
+
+```sh
+nix run .#rpminiv2-update -- --rollback --expected-system /nix/store/EXACT-BOOTED-SYSTEM
+ssh -o BatchMode=yes -p 2222 root@10.42.3.1 reboot
+nix run .#rpminiv2-update -- --status
+```
+
+Rollback verifies that the backup's first entry matches the retained profile,
+restores the **exact previous config bytes**, and sets the system profile back
+to that store path. Nix may create a new generation number for this selection.
+Rollback needs no build or signing key. Verify the old system after reboot.
+If SSH never returns, **stop**. The owner must select the second GRUB entry, or
+boot a rescue SD with labels different from `RPMINIV2` and `NIXOS_RPMINIV2`.
+Selecting the GRUB fallback alone does not reset the Nix system profile; run
+`--rollback` once SSH returns.
+
+This is a one-update fallback, not a history manager. Each successful later
+update replaces the previous config/profile. Old payload files are never
+pruned automatically; a full ESP causes a refusal. Do not remove the fallback's
+profile root or payloads. Filesystem rename plus `sync` does not make FAT immune
+to power loss. An interruption can leave harmless extra payload/temp files or
+a staged config whose profile is not yet selected. Inspect status and restore
+with `--rollback`; do not rerun an update over a profile/boot mismatch.
+
+The tool writes only ordinary files on the existing ESP and root filesystems.
+It never installs GRUB, runs `bootctl`, touches EFI variables, writes a raw block
+device, edits a GPT, reformats, or flashes an image. LUNs 1–5 and LUN 0 #1–#20
+remain outside the update path. A failed update does not authorize writing them.
+
 ## UFS layout
 
 Phison eUFS3.1 128 GB. The device is 4096-byte-sector, boot LUN B
@@ -42,8 +136,6 @@ The GPT keeps its factory label ID, entry count (32) and first and last usable
 blocks. `sfdisk` rewrites protective-MBR fields, so the install wrote the
 shipped block 0 back. `sgdisk -v` reports the same gap and table-size warnings
 on the factory table and on the new table.
-
-`uefivarstore` (LUN 4) changes on every boot. The firmware owns it.
 
 ## Evidence and backup
 
@@ -81,7 +173,9 @@ repository has packages for the original Mini, RP5, Flip 2 and Classic only.
   find two roots with one label. A rescue card needs distinct labels.
 - **Restore the factory LUN 0 table:** write `lun0-head.img` blocks 0 to 5 and
   `lun0-tail-gpt.img` back from an SD-booted system. This restores the table
-  only. Android also needs a `super` image and a factory reset.
+  only. Android also needs a `super` image and a factory reset. This is historical
+  recovery information, **not** part of the system-update procedure or its
+  approval. A GPT/raw write is forbidden in the 2026-10-22 update task.
 - **Boot chain:** not changed. EDL (Power + Volume Up + Volume Down, Qualcomm
   9008) and the `prog_ufs_firehose_sm8250_lite_lp5.elf` programmer are reported
   for the Mini and RP5. Neither is tested on this unit.

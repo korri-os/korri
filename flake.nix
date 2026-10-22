@@ -307,6 +307,7 @@
             };
             h700-inputplumber = self.packages.${system}.h700-inputplumber-data;
             rpminiv2 = rpminiv2.moduleCheck pkgs;
+            rpminiv2-update-firmware = import ./nix/devices/rpminiv2/update/fixtures.nix { inherit pkgs; };
             rpminiv2-inputd-action = rpminiv2.inputdActionCheck pkgs;
             rpminiv2-volume = rpminiv2.volumeCheck pkgs;
             rpminiv2-wifi = rpminiv2.wifiCheck pkgs;

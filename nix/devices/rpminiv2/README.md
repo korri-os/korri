@@ -139,6 +139,31 @@ referenced NixOS init file in the ext4 root. Its tests use real temporary
 filesystems with deliberate corruption. This is stored-file verification, not
 execution of the boot chain or proof of firmware loading.
 
+## Update the existing internal-UFS installation
+
+The build-host app `nix run .#rpminiv2-update` stages a prebuilt, signed system
+on the owner's Mini V2 over `root@10.42.3.1:2222`. It does not install internal
+storage, activate a system, or reboot. Coordinate exclusive use and approval
+before writing; another worker may be using the device.
+
+```sh
+nix run .#rpminiv2-update-check
+nix run .#rpminiv2-update -- --status
+nix run .#rpminiv2-update -- --expected-system /nix/store/EXACT-CURRENT-SYSTEM
+# On failed acceptance with SSH available:
+nix run .#rpminiv2-update -- --rollback --expected-system /nix/store/EXACT-BOOTED-SYSTEM
+```
+
+Run from Zao. Builds use its configured builders, never the handheld. The app
+signs with Zao's private cache key and copies the closure with signatures still
+required. The image and updater share `esp.nix`; updates retain old kernel,
+initrd and DTB files, add a previous-system GRUB entry, and save the prior config
+and profile on the device for exact rollback. They write only files on the
+existing ESP/root. No block writes, GPT changes, firmware changes or image
+flashing exist in this path. See [internal updates and recovery](INTERNAL.md#system-updates-from-zao)
+for checks, explicit reboot/acceptance steps, free-space limits and recovery.
+`switch-to-configuration boot` alone does not update this GRUB config.
+
 ## Verified before arrival
 
 On 2026-09-15, the x86 development machine built the ARM64 kernel and the
@@ -487,5 +512,6 @@ modetest -M msm -c
 The recovery cut still claims only TTY and USB serial. The product candidate
 adds portal display, Adreno compositor rendering, built-in controller
 routing, and the USB network link, but those additions remain
-hardware-unaccepted. Touch, other physical networking, Bluetooth, audio, media decode, gameplay, suspend, and updates stay
-outside this milestone.
+hardware-unaccepted. Touch, other physical networking, Bluetooth, audio, media decode, gameplay, and suspend stay
+outside this milestone. Internal-UFS system updates now have the separate guarded
+procedure above; this does not add an SD update or internal-install tool.

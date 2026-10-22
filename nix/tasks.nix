@@ -90,6 +90,34 @@ let
           .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2-volume
       '';
     };
+    rpminiv2-update = {
+      description = "Build/sign on Zao and stage a Mini V2 internal-UFS update, inspect status, or restore its previous boot selection. Does not reboot.";
+      usageSuffix = " -- [--status | --rollback] [--expected-system STORE_PATH]";
+      runtimeInputs = [
+        pkgs.python3
+        pkgs.nix
+        pkgs.openssh
+      ];
+      script = ''
+        exec python3 "$KORRI_ROOT/nix/devices/rpminiv2/update/run.py" "$@"
+      '';
+    };
+    rpminiv2-update-check = {
+      description = "Test Mini V2 GRUB ordering, mount refusals, file staging and exact rollback offline.";
+      runtimeInputs = [
+        pkgs.python3
+        pkgs.nix
+        pkgs.util-linux
+        pkgs.shellcheck
+      ];
+      script = ''
+        shellcheck "$KORRI_ROOT/nix/devices/rpminiv2/update/target.sh"
+        cd "$KORRI_ROOT"
+        RP_MINIV2_TEST_FIRMWARE="$(nix build --no-link --print-out-paths .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2-update-firmware)"
+        export RP_MINIV2_TEST_FIRMWARE
+        exec python3 "$KORRI_ROOT/nix/devices/rpminiv2/update/update.test.py"
+      '';
+    };
     rpminiv2-input-iterate = {
       description = "Build and test browser/controller changes on the spare Mini V2, then restore the kiosk.";
       usageSuffix = " -- <ssh-target> --ssh-config FILE --expected-system STORE_PATH [--isolate-portal] [--keep-on-pass] [--trace-input]";

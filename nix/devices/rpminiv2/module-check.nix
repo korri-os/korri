@@ -436,10 +436,10 @@ assert lib.all (name: !(lib.elem name (packageNames recovery))) [
 ];
 assert lib.hasInfix (builtins.unsafeDiscardStringContext (
   toString c.boot.kernelPackages.kernel
-)) c.sdImage.populateFirmwareCommands;
+)) c.system.build.rpminiv2Firmware.drvAttrs.buildCommand;
 assert lib.hasInfix (builtins.unsafeDiscardStringContext (
   toString recovery.boot.kernelPackages.kernel
-)) recovery.sdImage.populateFirmwareCommands;
+)) recovery.system.build.rpminiv2Firmware.drvAttrs.buildCommand;
 pkgs.runCommand "rpminiv2-module-check"
   {
     nativeBuildInputs = [
