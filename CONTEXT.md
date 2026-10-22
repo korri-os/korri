@@ -17,6 +17,10 @@ A plugin needed for a Korri release to provide an agreed required behavior on a 
 The Nostr key that identifies one person to Korri. korrid never holds its private half.
 _Avoid_: account, user key, login
 
+**Person name**:
+The name Korri shows for a person key: the name the person typed during setup, or else the name in their Nostr profile. When neither exists, Korri shows the device's label in place of a person.
+_Avoid_: username, display name, nickname
+
 **Device owner**:
 The person key whose signed statement binds one device key. It is the person for every local call on that device.
 _Avoid_: active user, current user
