@@ -21,9 +21,12 @@ person hosts to carry their traffic.
 - No third-party relay carries traffic, including n0's public relays and
   Tailscale's DERP. Korri accepts that some pairs of networks cannot connect,
   and it says so clearly when that happens.
-- Small durable data, such as settings and the person name, is also kept
-  encrypted on several public Nostr relays, so it arrives when no other device
+- Small records, such as settings and the person name, are also kept
+  encrypted on several public Nostr relays, so they arrive when no other device
   is on.
+- Korri hosts a service of its own only when that service is free to run and
+  durable, so that it keeps working with no one paying for it or maintaining
+  it.
 
 ## Considered options
 
