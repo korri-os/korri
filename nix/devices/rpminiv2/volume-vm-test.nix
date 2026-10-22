@@ -28,11 +28,17 @@ let
     name:
     let
       unit = c.systemd.services.${name};
+      # Keep the production step argument, not the board's executable. lib.splitString
+      # copies the whole string's context onto each piece, so without the discard
+      # "+5" would still depend on the aarch64 korri-backlight-step.
+      step = builtins.unsafeDiscardStringContext (
+        lib.last (lib.splitString " " unit.serviceConfig.ExecStart)
+      );
     in
     {
       inherit (unit) description;
       serviceConfig = unit.serviceConfig // {
-        ExecStart = "${lib.getExe backlightStep} ${lib.last (lib.splitString " " unit.serviceConfig.ExecStart)}";
+        ExecStart = "${lib.getExe backlightStep} ${step}";
         Environment = "KORRI_BACKLIGHT_ROOT=/run/fake-backlight";
         ReadWritePaths = [ "/run/fake-backlight" ];
       };
