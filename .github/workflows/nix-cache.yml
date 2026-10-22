@@ -28,6 +28,13 @@ concurrency:
 permissions:
   contents: read
 
+# Each publisher puts its NARs in its own release: batch-<date>-<run><slot>,
+# slot 0 for the cross job and 1-7 for the device jobs. GitHub caps a release
+# at 1,000 assets. One shared daily release filled up on 2026-10-22 (852 assets
+# before the save sync closures; r36tmax then failed in run 39761993867), and
+# seven jobs uploading at once cannot share a capacity check safely. The tag
+# stays inside publish.sh's batch-YYYY-MM-DD-N pattern.
+
 jobs:
   cross:
     name: cross-built outputs (x86_64)
@@ -104,7 +111,10 @@ jobs:
           # nothing, and a default temporary directory lands on /mnt.
           KORRI_CACHE_STORE: /nix/var/korri-nix-cache
           GH_TOKEN: ${{ secrets.KORRI_CACHE_GITHUB_TOKEN }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
+          KORRI_CACHE_BATCH_TAG="batch-$(date -u +%Y-%m-%d)-${RUN_NUMBER}0"
+          export KORRI_CACHE_BATCH_TAG
           nix run .#korri-nix-cache-publish -- \
             --package packages.x86_64-linux.odin2portal-kernel \
             --package packages.x86_64-linux.odin2portal-rescue-kernel \
@@ -200,7 +210,11 @@ jobs:
           KORRI_CACHE_STORE: /nix/var/korri-nix-cache
           GH_TOKEN: ${{ secrets.KORRI_CACHE_GITHUB_TOKEN }}
           DEVICE: ${{ matrix.device }}
+          RUN_NUMBER: ${{ github.run_number }}
+          JOB_INDEX: ${{ strategy.job-index }}
         run: |
+          KORRI_CACHE_BATCH_TAG="batch-$(date -u +%Y-%m-%d)-${RUN_NUMBER}$((JOB_INDEX + 1))"
+          export KORRI_CACHE_BATCH_TAG
           attributes=("nixosConfigurations.$DEVICE.config.boot.kernelPackages.kernel")
           if [ "$DEVICE" = odin2portal ]; then
             attributes+=(packages.aarch64-linux.korrid.cargoArtifacts)
