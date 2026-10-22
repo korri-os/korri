@@ -172,17 +172,19 @@ let
     };
 
     korri-nix-cache-check = {
-      description = "Test offline cache filtering, signed downloads, and concurrent release uploads.";
+      description = "Test signed downloads, concurrent release/index uploads, and Pages visibility.";
       runtimeInputs = [
         pkgs.nix
         pkgs.python3
         pkgs.curl
         pkgs.shellcheck
+        pkgs.git
       ];
       script = ''
         shellcheck -s bash "$KORRI_ROOT/nix/cache/publish.sh" "$KORRI_ROOT/nix/cache/filter-published.sh"
         python3 "$KORRI_ROOT/nix/cache/filter-published.test.py"
-        exec python3 "$KORRI_ROOT/nix/cache/github-cache.test.py"
+        python3 "$KORRI_ROOT/nix/cache/github-cache.test.py"
+        exec python3 "$KORRI_ROOT/nix/cache/pages-cache.test.py"
       '';
     };
 

@@ -7,7 +7,8 @@
 #
 # Two jobs because a device closure is not one architecture. Odin 2 Portal and
 # RP Mini V2 cross-build their kernels and firmware on x86_64. The x86_64 job
-# publishes those outputs first, so the aarch64 jobs substitute them instead of
+# publishes those outputs first and waits for Pages metadata visibility, so the
+# aarch64 jobs substitute them instead of
 # failing on work they cannot do.
 #
 # Both runners are GitHub-hosted and native, so no build depends on a machine of

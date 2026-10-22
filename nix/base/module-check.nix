@@ -7,6 +7,9 @@
 }:
 let
   inherit (pkgs) lib;
+  cache = import ../cache/identity.nix;
+  cacheSubstituters =
+    config: lib.unique (map (lib.removeSuffix "/") config.nix.settings.substituters);
   base = nixpkgs.lib.nixosSystem {
     system = pkgs.stdenv.hostPlatform.system;
     modules = [ ./default.nix ];
@@ -48,6 +51,19 @@ let
     in
     builtins.all (bench: !(builtins.elem bench names)) benchmarkPackageNames;
 in
+assert cache.url == "https://korri-os.github.io/nix-cache/";
+assert
+  cacheSubstituters base.config == [
+    "https://cache.nixos.org"
+    (lib.removeSuffix "/" cache.url)
+  ];
+assert lib.all (device: cacheSubstituters device.config == cacheSubstituters base.config) (
+  lib.attrValues korri.nixosConfigurations
+);
+assert lib.all (
+  device:
+  lib.all (key: builtins.elem key device.config.nix.settings.trusted-public-keys) cache.publicKeys
+) (lib.attrValues korri.nixosConfigurations);
 assert rescue.sdImage.rootVolumeLabel != normal.sdImage.rootVolumeLabel;
 assert rescue.sdImage.firmwarePartitionName != normal.sdImage.firmwarePartitionName;
 assert rescue.fileSystems."/".device == "/dev/disk/by-label/${rescue.sdImage.rootVolumeLabel}";
@@ -62,23 +78,22 @@ assert lib.all samePolicy (lib.attrValues korri.nixosConfigurations);
 assert profile.profiles.korri.wifi.ssid == "$WIFI_SSID";
 assert profile.profiles.korri.wifi-security.psk == "$WIFI_PSK";
 assert profile.environmentFiles == [ "/etc/korri/wifi.env" ];
-assert base.config.systemd.services.NetworkManager-ensure-profiles.serviceConfig.EnvironmentFile == [
-  "-/etc/korri/wifi.env"
-];
+assert
+  base.config.systemd.services.NetworkManager-ensure-profiles.serviceConfig.EnvironmentFile == [
+    "-/etc/korri/wifi.env"
+  ];
 assert !base.config.services.openssh.enable;
 assert !base.config.services.openssh.openFirewall;
 assert base.config.users.users.root.openssh.authorizedKeys.keys == [ ];
 assert lib.all noBenchmarksIn (lib.attrValues korri.nixosConfigurations);
 # Every exported NixOS configuration is a product session. Recovery and
 # first-boot candidates are packages with their own focused checks.
-assert lib.all
-  (
-    device:
-    device.config.hardware.graphics.enable
-    && device.config.services.seatd.enable
-    && device.config.security.polkit.enable
-  )
-  (lib.attrValues korri.nixosConfigurations);
+assert lib.all (
+  device:
+  device.config.hardware.graphics.enable
+  && device.config.services.seatd.enable
+  && device.config.security.polkit.enable
+) (lib.attrValues korri.nixosConfigurations);
 assert korri.nixosConfigurations.rg353m.config.services.korri.compositor.kiosk.enable;
 assert !(korri.nixosConfigurations.odin2portal.options.services ? korriKiosk);
 pkgs.runCommand "korri-base-module-check" { } ''

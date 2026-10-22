@@ -3,7 +3,7 @@
 # Several consumers need these facts and must never disagree.
 # nix/base/default.nix puts the metadata URL and the signing keys into every
 # device's Nix configuration. The publisher asks which substituter is its own so
-# it can treat the rest as upstream caches to filter against; one that carried
+# it can verify consumers trust the publication; one that carried
 # its own copy of the address could filter against a cache the devices do not
 # trust, and the closure would then break at install instead of at publish. The
 # repositories that configure Korri's builders read the same two lists, so
@@ -13,14 +13,14 @@
 # another flake without evaluating a device configuration.
 let
   repo = "korri-os/nix-cache";
-  metadataTag = "cache";
+  metadataBranch = "cache-index";
   # NAR payloads live on dated batch releases under the same download root, so
   # the publisher appends its batch tag rather than composing a second URL.
   downloadBase = "https://github.com/${repo}/releases/download/";
 in
 {
-  inherit repo metadataTag downloadBase;
-  url = "${downloadBase}${metadataTag}/";
+  inherit repo metadataBranch downloadBase;
+  url = "https://korri-os.github.io/nix-cache/";
   # One key per builder, so a machine can be revoked by deleting its line
   # without reissuing the others. require-sigs stays true everywhere, so an
   # unsigned path fails the download rather than being built on a device.

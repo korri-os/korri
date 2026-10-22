@@ -1,13 +1,14 @@
 # Korri's signed Nix cache
 
 Korri's own outputs are published to [korri-os/nix-cache](https://github.com/korri-os/nix-cache)
-as a standard Nix binary cache served from GitHub release assets. Devices and
+as a standard Nix binary cache with metadata on GitHub Pages and payloads on
+GitHub Releases. Devices and
 builders substitute from it like any other cache; nothing here is a bespoke
 archive format.
 
 ```
-cache root  https://github.com/korri-os/nix-cache/releases/download/cache/
-metadata    release tag `cache`   — mutable: nix-cache-info and signed .narinfo
+cache root  https://korri-os.github.io/nix-cache/
+metadata    branch `cache-index` — nix-cache-info and signed .narinfo, via Pages
 payloads    release tag `batch-*` — NAR files, one release per batch
 ```
 
@@ -38,15 +39,11 @@ the device would resolve Korri's output and then fail on a dependency it has no
 source for — at install time, not at publish time. Adding a cache to
 `nix/base/default.nix` widens the filter in the same change.
 
-Korri's own cache is the one entry `prepare` cannot check. A GitHub release
-download answers with a redirect to a signed URL carrying a query string, and
-`github-cache.py` refuses to follow a redirect like that for a cache location — a
-reasonable rule for a tool that treats cache URLs as trusted input. So `publish.sh`
-hands `prepare` the caches it can read, and applies Korri's own cache to
-`prepare`'s output itself, comparing `StorePath` in the published narinfo before
-dropping a path. `filter-published.sh` removes matching metadata first, then removes
-only NARs that no retained metadata references. Distinct store paths can share
-one compressed NAR, so dropping a path must not immediately delete its payload.
+Pages serves narinfos directly, so `prepare` checks Korri's own cache as a
+normal trusted upstream. The old post-prepare self-filter is no longer used by
+the publisher: upstream verification also checks signed identity and trusted
+signatures, not only `StorePath`. Missing narinfos retain their payloads;
+shared compressed NARs stay if any retained narinfo needs them.
 
 `prepare` does not take the list on faith either: it fetches each upstream's
 `nix-cache-info` and every candidate `.narinfo`, and verifies the hash before dropping
@@ -90,7 +87,7 @@ everywhere; a signature bypass is never the fix for a failed download.
 ## Publishing
 
 `github-cache.py` is vendored from [korri-os/plugins](https://github.com/korri-os/plugins)
-`nix/github-cache.py`, with one intentional Korri patch: after a failed upload
+`nix/github-cache.py`, with two intentional Korri patches. The first: after a failed upload
 POST, refresh the release and its assets. Accept an already-uploaded asset only
 from the same release ID with unchanged draft state and no immutability flag,
 using the existing size, SHA-256 digest, and uploaded-state checks. Narinfos may
@@ -99,6 +96,20 @@ requires all other fields, including signatures, to match. If refresh or
 verification fails, preserve the original POST failure. Never retry a write,
 clobber, or delete an asset. Both repositories still publish the same format;
 this patch changes only concurrent-upload reconciliation, not the cache protocol.
+
+The second moves metadata publication to the `cache-index` Git branch and Pages.
+The publisher commits additions together and pushes without force. On a rejected
+concurrent push, it fetches the new tip, rechecks every collision, and reapplies
+its additions (at most 20 attempts). An existing narinfo must match bytes or pass
+the same equivalence rule: only `URL:` may differ, and the first URL stays.
+`nix-cache-info` must match exactly. A mismatch fails the whole commit. The
+publisher then waits up to 20 minutes for HTTP 200 and the exact retained bytes
+of every submitted metadata file at the plain Pages URL. A timeout fails the
+publish, even if the Git push succeeded. Retrying publication is safe.
+
+The old `cache` release is frozen, not deleted. Publishers never write metadata
+to Releases and devices list only Pages, not both roots. Keys and signatures are
+unchanged. The vendored copy in `korri-os/plugins` has not been changed.
 
 Name the devices, from any checkout, on any machine that can build them:
 
@@ -109,7 +120,7 @@ nix run .#korri-nix-cache-publish -- odin2portal rg353m
 That builds each device's system closure, signs it into a local NAR cache with
 this machine's key, drops every path a cache the device trusts already serves,
 creates that day's `batch-<date>` release if it is missing, and uploads NARs and
-then metadata. Nothing else on the machine is touched or inspected.
+then metadata, waiting for Pages visibility before success. Nothing else on the machine is touched or inspected.
 
 Two environment variables change how it runs:
 
@@ -169,17 +180,107 @@ The underlying steps stay available for one-off work:
 nix run .#korri-nix-cache -- export  "$WORK/cache" --key-file ~/.config/korri/cache-key.secret PATH...
 nix run .#korri-nix-cache -- prepare "$WORK/cache" "$WORK/prepared" \
   --nar-base-url https://github.com/korri-os/nix-cache/releases/download/BATCH/ \
-  --upstream-cache https://cache.nixos.org
+  --upstream-cache https://cache.nixos.org \
+  --upstream-cache https://korri-os.github.io/nix-cache/
 nix run .#korri-nix-cache -- upload  "$WORK/prepared" --repo korri-os/nix-cache \
-  --tag BATCH --cache-tag cache --part nars
+  --tag BATCH --index-branch cache-index --cache-url https://korri-os.github.io/nix-cache/ --part nars
 nix run .#korri-nix-cache -- upload  "$WORK/prepared" --repo korri-os/nix-cache \
-  --tag BATCH --cache-tag cache --part metadata
+  --tag BATCH --index-branch cache-index --cache-url https://korri-os.github.io/nix-cache/ --part metadata
 ```
 
 `publish` is the plugins-repo path and requires the NAR tag to resolve to the
 source commit. That cannot hold when source and cache live in different
 repositories, so core uses `upload` and accepts the weaker provenance: the
 signature still binds the bytes to a builder.
+
+## Pages deployment and retention
+
+`pages.yml` is the reviewed source installed as `.github/workflows/pages.yml`
+on `korri-os/nix-cache`'s `cache-index` branch. Pages is configured with
+`build_type = workflow`, and the `github-pages` environment permits that branch.
+Pushes trigger `actions/upload-pages-artifact` and `actions/deploy-pages` with
+Pages write and OIDC permissions. The publisher token only needs contents write;
+installing or updating the workflow itself also needs workflow permission.
+`.nojekyll` ships with the index. The workflow copies metadata without rewriting
+it, and excludes repository/workflow files from the site.
+
+A single main push has one cross publisher and seven device publishers, beside
+zao and fuji. Two nearby runs can exceed the soft limit of 10 branch-built Pages
+builds/hour. [GitHub's documented limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits)
+exempt custom Actions deployments from that limit, so we use Actions rather than
+branch builds. Workflow concurrency never cancels an active deployment; pending
+pushes coalesce. Each deployment checks out the latest index tip so a delayed
+run cannot roll metadata back. No Korri CI workflow needs to be dispatched.
+
+The free site still has a 1 GB published-size limit and a soft 100 GB/month
+bandwidth limit. Only metadata uses Pages bandwidth. Dated payload releases
+still have the 1,000-asset limit, and old payloads must remain available while
+narinfos reference them. This change does not implement payload retention or
+batch rotation beyond the existing daily tags.
+
+### Measured HTTP caching (2026-10-22)
+
+On the Denver Fastly edge, `nix-cache-info` and narinfos returned HTTP 200 with
+`Cache-Control: max-age=600` and an `Expires` value 10 minutes after `Date`.
+A missing narinfo returned HTTP 404 without `Cache-Control` or `Expires`, but
+was still cached: the second plain-URL request 3 seconds later returned
+`X-Cache: HIT`, `Age: 3`, and the same `X-GitHub-Request-Id`. A cached 404's
+exact lifetime was not measured. A probe of the package narinfo before publish
+returned 404; the publish later passed the exact-byte visibility wait without
+cache-busting query strings. These are observations at one edge, not a global
+CDN guarantee. The bounded 20-minute wait allows deployment and cache expiry;
+an outage or longer delay still fails rather than falsely reporting success.
+
+## One-off migration (2026-10-22)
+
+All 988 assets from release `cache` were downloaded: 987 signed narinfos and
+`nix-cache-info`, 1,320,148 bytes total. Each local size and SHA-256 digest matched
+the GitHub asset inventory before seeding. The publisher's index-commit code
+seeded them without changing bytes in index commit
+`777a1193014e2126fe3b97bdefae1d4bb6af2cd0`. The old release, its assets, and its tag
+stay untouched. Pages URL from the API: `https://korri-os.github.io/nix-cache/`.
+
+A running old generation only knows the frozen release URL. For its first
+fetch of a new generation, run as root (using the exact prebuilt path):
+
+```sh
+nix build --no-link /nix/store/EXACT-NEW-SYSTEM-PATH \
+  --option extra-substituters https://korri-os.github.io/nix-cache/
+```
+
+Keep signatures required, builds disabled, and the existing keys. Activate only
+after the full closure is present. The new generation configures Pages itself;
+there is no runtime fallback or dual listing. No device was changed during this
+migration. See [device-cache policy](../device-cache/README.md).
+
+### Live proof (2026-10-22)
+
+All 988 seeded metadata files returned their exact original bytes from Pages.
+`curl` also checked `nix-cache-info` and these signer samples:
+
+| Signer | Narinfo |
+|---|---|
+| fuji | `w5bkbzzb4rpxkk4gdmjlryb6464806yr.narinfo` |
+| zao | `2v1297b520yynwkwxchay0hd4fqz64ky.narinfo` |
+| CI | `0059d2hwfis7k6wl0sk1r0l1sr9jzg1g.narinfo` |
+
+The fuji narinfo's absolute `URL:` points to
+`https://github.com/korri-os/nix-cache/releases/download/batch-2026-09-11/13208kfzmqwl2rb87sx9qlmlq8yms2ymcdh15dnlp7ksfrlk336a.nar.xz`.
+Nix fetched its `korrid-0.0.0` path and six public dependencies into the empty
+chroot store `/tmp/korri-cache-pages-cold-store-20261022`: 15.4 MiB downloaded,
+77.4 MiB unpacked, no build. Settings were `require-sigs = true`, `max-jobs = 0`,
+`fallback = false`, no builders, substituters Pages plus cache.nixos.org, and
+the identity keys plus NixOS's stock key. Nix reported copying korrid from Pages;
+the narinfo directs the payload download to Releases.
+
+The real `--package packages.x86_64-linux.rg353m-inputplumber-data` command on
+zao published one 2,162-byte NAR and signed narinfo
+`3nhx3h6v488lqdbisjxvdqwqj08fnp6f.narinfo`. Its signature is
+`korri-cache-zao-1`, its URL points to `batch-2026-10-22`, and index commit
+`b92b9dadd0163e227f7c7c59667b2c891bffa502` holds the new metadata. The publisher waited
+for exact Pages bytes before success. Repeating the command verified Pages as
+a normal signed upstream and reported all one path already served, with no
+upload. No device was contacted and Korri's CI workflow was not dispatched.
 
 ## Verification
 
@@ -188,6 +289,12 @@ Run the offline publisher regression checks without a device build or upload:
 ```sh
 nix run .#korri-nix-cache-check
 ```
+
+`pages-cache.test.py` races two publishers against a local bare Git remote,
+forcing a rejected push and retry. It checks retained equivalent URLs, refused
+signed-field changes, cache-info replacement, symlinks, unrelated push failures,
+and exact-byte visibility with a local HTTP server,
+including stale responses, HTTP errors, and timeout failures.
 
 The checks use real signed file caches and shared compressed NARs. They cover
 partial and complete filtering, unavailable and mismatched metadata, preserved

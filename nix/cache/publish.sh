@@ -79,7 +79,7 @@ done
 
 cache="$(nix eval --json .#cache)"
 repo="$(jq -r .repo <<<"$cache")"
-metadata_tag="$(jq -r .metadataTag <<<"$cache")"
+metadata_branch="$(jq -r .metadataBranch <<<"$cache")"
 ours="$(jq -r .url <<<"$cache")"
 download_base="$(jq -r .downloadBase <<<"$cache")"
 
@@ -109,28 +109,19 @@ for device in "${reference_devices[@]}"; do
   trusted="$device_trusted"
 done
 
-# Korri's cache is checked separately, below. Its narinfos are GitHub release
-# assets, and a release download redirects to a signed URL carrying a query
-# string, which the publisher refuses to follow for a cache location. Handing it
-# to prepare therefore fails, so prepare gets the caches it can read and the one
-# it cannot is applied to prepare's own output afterwards.
+# Pages serves metadata directly, so prepare can verify Korri's signed narinfos
+# through the same transport and signature checks as every other trusted cache.
 upstreams=()
 serves_us=0
 while IFS= read -r entry; do
+  upstreams+=(--upstream-cache "$entry")
   if [ "$entry" = "$ours" ]; then
     serves_us=1
-  else
-    upstreams+=(--upstream-cache "$entry")
   fi
 done <<<"$trusted"
 
 if [ "$serves_us" -eq 0 ]; then
   echo "korri-cache: $ours is not a device substituter; nothing would read this upload" >&2
-  exit 1
-fi
-
-if [ "${#upstreams[@]}" -eq 0 ]; then
-  echo "korri-cache: these devices trust no other cache, so every path would be uploaded" >&2
   exit 1
 fi
 
@@ -161,8 +152,7 @@ if [ "$dry_run" -eq 1 ]; then
   echo "korri-cache: signing with $key into $store"
   echo "korri-cache: skipping whatever these caches already serve"
   printf '  %s\n' ${upstreams[@]+"${upstreams[@]}"} | grep -v -- '--upstream-cache'
-  echo "  $ours (checked after preparing, see the note in this script)"
-  echo "korri-cache: uploading to $repo, NARs on $batch_tag, metadata on $metadata_tag"
+  echo "korri-cache: uploading to $repo, NARs on $batch_tag, metadata on $metadata_branch (Pages)"
   exit 0
 fi
 
@@ -196,8 +186,6 @@ python3 "$publisher" prepare "$store" "$work/prepared" \
   --nar-base-url "$download_base$batch_tag/" \
   "${upstreams[@]}"
 
-bash "$KORRI_ROOT/nix/cache/filter-published.sh" "$work/prepared" "$ours"
-
 shopt -s nullglob
 
 prepared=("$work/prepared/metadata"/*.narinfo)
@@ -211,20 +199,16 @@ fi
 
 echo "korri-cache: ${#prepared[@]} of ${#staged[@]} paths are new, $(du -sh "$work/prepared/nars" | cut -f1) to upload"
 
-if ! gh release view "$metadata_tag" --repo "$repo" >/dev/null 2>&1; then
-  echo "korri-cache: $repo has no '$metadata_tag' release to hold cache metadata" >&2
-  exit 1
-fi
 if ! gh release view "$batch_tag" --repo "$repo" >/dev/null 2>&1; then
   gh release create "$batch_tag" --repo "$repo" --title "$batch_tag" \
-    --notes "NAR payloads for Korri's signed Nix cache. Metadata lives on the '$metadata_tag' release."
+    --notes "NAR payloads for Korri's signed Nix cache. Metadata lives at $ours."
 fi
 
 # NARs first: upload refuses to publish metadata that points at bytes GitHub does
-# not already serve.
+# not already serve. Metadata publication also waits for exact bytes on Pages.
 for part in nars metadata; do
   python3 "$publisher" upload "$work/prepared" \
-    --repo "$repo" --tag "$batch_tag" --cache-tag "$metadata_tag" --part "$part"
+    --repo "$repo" --tag "$batch_tag" --index-branch "$metadata_branch" --cache-url "$ours" --part "$part"
 done
 
 echo "korri-cache: ${devices[*]-} ${packages[*]-} published to $ours"

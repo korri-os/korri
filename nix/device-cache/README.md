@@ -31,10 +31,12 @@ builds to bypass a failed installation.
 ## Plugin downloads are not a general binary cache
 
 The former Garnix configuration and trust key have been removed. No account or
-GitHub app settings were changed. General core binary cache replacement remains
-unresolved. The stock cache does not contain Korri's custom outputs. Do not
-activate a device generation until every required output has a verified
-prebuilt delivery route.
+GitHub app settings were changed. Korri's core cache is
+`https://korri-os.github.io/nix-cache/`, declared with the unchanged builder keys
+in `nix/cache/identity.nix` and added by `nix/base`. Its signed metadata is on
+Pages; NAR payloads remain on dated GitHub Releases. The stock cache does not
+contain Korri's custom outputs. Do not activate a device generation until every
+required output has a verified prebuilt delivery route.
 
 Production plugin packaging and the publication workflow belong to
 [korri-os/plugins](https://github.com/korri-os/plugins). Core retains the generic
@@ -89,3 +91,20 @@ It also checks unchanged stock cache/key settings, unconfigured builders, and
 conflicting device settings. It does not prove a live publication service,
 retention, or a physical ARM download. Missing outputs and outages can still
 stop an update.
+
+## One-off core cache URL migration (2026-10-22)
+
+The old `cache` release is frozen and remains available for old generations.
+The new generation lists only `https://korri-os.github.io/nix-cache/`; signing
+keys and `require-sigs = true` are unchanged. Before activating that generation,
+its first fetch on an old generation must add the new URL explicitly as root:
+
+```sh
+nix build --no-link /nix/store/EXACT-NEW-SYSTEM-PATH \
+  --option extra-substituters https://korri-os.github.io/nix-cache/
+```
+
+Use an exact prebuilt system path, not a flake build. Keep `max-jobs = 0`,
+`fallback = false`, and signatures required. This is an operational step, not a
+runtime fallback. The new generation then uses Pages without extra options.
+See `nix/cache/README.md` for the seeded inventory and deployment details.
