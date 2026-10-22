@@ -182,6 +182,11 @@ jobs:
       # for one output it could not download.
       # No device installs korrid's Rust dependency artifacts either. Publish
       # them so builders can substitute them again after garbage collection.
+      # Only one job publishes them. The dependency build is not bit for bit
+      # reproducible, and every device job builds it at the same time when
+      # Cargo.lock changes. The publisher refuses a path whose upstream NAR
+      # differs, so the job that finished second failed: run 39721502192
+      # rejected korrid-deps after odin2portal had published its own copy.
       - name: Publish the device closure
         env:
           KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
@@ -189,7 +194,10 @@ jobs:
           # from it, and signing a closure writes a second copy of it.
           KORRI_CACHE_STORE: /nix/var/korri-nix-cache
           GH_TOKEN: ${{ secrets.KORRI_CACHE_GITHUB_TOKEN }}
+          DEVICE: ${{ matrix.device }}
         run: |
-          nix run .#korri-nix-cache-publish -- "${{ matrix.device }}" \
-            --package "nixosConfigurations.${{ matrix.device }}.config.boot.kernelPackages.kernel" \
-            --package packages.aarch64-linux.korrid.cargoArtifacts
+          packages=(--package "nixosConfigurations.$DEVICE.config.boot.kernelPackages.kernel")
+          if [ "$DEVICE" = odin2portal ]; then
+            packages+=(--package packages.aarch64-linux.korrid.cargoArtifacts)
+          fi
+          nix run .#korri-nix-cache-publish -- "$DEVICE" "${packages[@]}"
