@@ -246,7 +246,7 @@ fn inspect_route(
 
 /// Evaluate the same effect-free preparation used by the game handoff.
 /// The command is the LinuxLaunchSpec command built for this exact launch.
-pub fn resolved_game_environment(
+pub fn resolved_plan_environment(
     command: &[String],
     resolved: &crate::launch_settings::ResolvedLaunch,
 ) -> Result<std::collections::BTreeMap<String, String>, String> {
@@ -254,10 +254,7 @@ pub fn resolved_game_environment(
     // exact plan that plugin-launch executes, never a second hook-only merge.
     let _ = resolved;
     let plan = super::plugin_launch::prepared_plan(command)?;
-    let mut env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
-    for key in &plan.env_unset {
-        env.remove(key);
-    }
-    env.extend(plan.env);
-    Ok(env)
+    // Game units inherit their explicit HostConfig baseline, not korrid's
+    // process environment. The host merges these changes over that baseline.
+    Ok(plan.env.into_iter().collect())
 }

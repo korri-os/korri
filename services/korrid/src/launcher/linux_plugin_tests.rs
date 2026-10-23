@@ -229,3 +229,36 @@ fn launch_scopes_account_and_save_root_to_person_and_game() {
             .to_string()
     );
 }
+
+#[test]
+fn prepared_plan_environment_never_reads_the_korrid_process_environment() {
+    let sentinel = "KORRI_TEST_PRIVATE_RPC_CAPABILITY_SENTINEL";
+    std::env::set_var(sentinel, "never-forward-this");
+    let root = tempfile::tempdir().unwrap();
+    let input = serde_json::json!({"runnerId":"@korri:test/runner","program":"/bin/true","accountRoot":root.path(),"saveRoot":root.path(),"cacheRoot":root.path(),"files":{},"artifacts":{}});
+    let prepared = serde_json::json!({"plan":{"command":"/bin/true","args":[],"env":{"GAME":"declared"},"envUnset":["REMOVED"]},"runnerArgv":["/bin/true"]});
+    let command = vec![
+        "korrid".into(),
+        "plugin-launch".into(),
+        "unused.ts".into(),
+        input.to_string(),
+        "{\"modifiers\":[]}".into(),
+        prepared.to_string(),
+    ];
+    let config = ConfigSnapshot::default();
+    let resolved = crate::launch_settings::resolve_launch(
+        &config,
+        &crate::launch_settings::resolution::context(&config, None),
+        None,
+        None,
+    )
+    .unwrap();
+    let plan_env = resolved_plan_environment(&command, &resolved).unwrap();
+    std::env::remove_var(sentinel);
+    assert_eq!(
+        plan_env,
+        std::collections::BTreeMap::from([("GAME".into(), "declared".into())])
+    );
+    assert!(!plan_env.contains_key(sentinel));
+    assert!(!plan_env.contains_key("REMOVED"));
+}
