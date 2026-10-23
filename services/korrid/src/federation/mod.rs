@@ -3,6 +3,7 @@
 pub(crate) mod connect;
 pub mod coordinator;
 pub mod interfaces;
+pub mod reach;
 mod store;
 
 use crate::{

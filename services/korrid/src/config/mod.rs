@@ -400,6 +400,12 @@ pub struct HostPayload {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "optional_non_null"
     )]
+    pub stun: Option<Vec<String>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub patches: Option<Vec<String>>,
 }
 impl std::ops::Deref for HostPayload {

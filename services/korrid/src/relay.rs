@@ -177,6 +177,14 @@ impl EndpointRecord {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CoordinationCommand {
+    ReachOffer {
+        sender_device_public_key: String,
+        offer: crate::federation::reach::signal::Offer,
+    },
+    ReachAnswer {
+        sender_device_public_key: String,
+        answer: crate::federation::reach::signal::Answer,
+    },
     RunIdleKorrid {
         sender_device_public_key: String,
         requested_at: u64,
@@ -201,6 +209,8 @@ pub enum CoordinationCommand {
 impl CoordinationCommand {
     fn expires_at(&self) -> u64 {
         match self {
+            Self::ReachOffer { offer, .. } => offer.expires_at,
+            Self::ReachAnswer { answer, .. } => answer.expires_at,
             Self::RunIdleKorrid { expires_at, .. }
             | Self::OwnerBindingRequested { expires_at, .. }
             | Self::OwnerBindingResponse { expires_at, .. } => *expires_at,
@@ -211,6 +221,8 @@ impl CoordinationCommand {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "_tag", rename_all_fields = "camelCase", deny_unknown_fields)]
 enum QueuedMessage {
+    ReachOffer(crate::federation::reach::signal::Offer),
+    ReachAnswer(crate::federation::reach::signal::Answer),
     RunIdleKorrid {
         requested_at: u64,
         expires_at: u64,
@@ -232,6 +244,8 @@ enum QueuedMessage {
 impl QueuedMessage {
     fn expires_at(&self) -> u64 {
         match self {
+            Self::ReachOffer(offer) => offer.expires_at,
+            Self::ReachAnswer(answer) => answer.expires_at,
             Self::RunIdleKorrid { expires_at, .. }
             | Self::OwnerBindingRequested { expires_at, .. }
             | Self::OwnerBindingResponse { expires_at, .. } => *expires_at,
@@ -788,6 +802,16 @@ where
                 .device_public_key()
                 .ok_or(RelayError::Identity)?;
             let queued = match command {
+                CoordinationCommand::ReachOffer { sender_device_public_key, offer } => {
+                    if sender_device_public_key != own_key { return Err(RelayError::Identity); }
+                    offer.validate(now)?;
+                    QueuedMessage::ReachOffer(offer)
+                }
+                CoordinationCommand::ReachAnswer { sender_device_public_key, answer } => {
+                    if sender_device_public_key != own_key { return Err(RelayError::Identity); }
+                    answer.validate(now)?;
+                    QueuedMessage::ReachAnswer(answer)
+                }
                 CoordinationCommand::RunIdleKorrid {
                     sender_device_public_key,
                     requested_at,
@@ -1001,6 +1025,14 @@ fn decode_command(
     let queued: QueuedMessage = serde_json::from_str(&rumor.content)
         .map_err(|_| RelayError::InvalidEvent("coordination command is malformed".into()))?;
     let command = match queued {
+        QueuedMessage::ReachOffer(offer) => {
+            offer.validate(now)?;
+            CoordinationCommand::ReachOffer { sender_device_public_key: rumor.author, offer }
+        }
+        QueuedMessage::ReachAnswer(answer) => {
+            answer.validate(now)?;
+            CoordinationCommand::ReachAnswer { sender_device_public_key: rumor.author, answer }
+        }
         QueuedMessage::RunIdleKorrid {
             requested_at,
             expires_at,
@@ -1053,6 +1085,8 @@ fn decode_command(
 
 fn command_order(command: &CoordinationCommand) -> (u64, String) {
     match command {
+        CoordinationCommand::ReachOffer { sender_device_public_key, offer } => (offer.expires_at, sender_device_public_key.clone()),
+        CoordinationCommand::ReachAnswer { sender_device_public_key, answer } => (answer.expires_at, sender_device_public_key.clone()),
         CoordinationCommand::RunIdleKorrid {
             sender_device_public_key,
             requested_at,

@@ -24,8 +24,10 @@ useDefault = true
 # directory is refused, not only the key file.
 [[rules]]
 id = "korri-device-private-key"
-description = "korrid device identity private key or surrounding runtime state"
-path = '''(^|/)(korri-state/.*|identity/device\.key)$'''
+description = "korrid device or iroh private key or surrounding runtime state"
+# Iroh's independent Ed25519 key lives beside the Nostr device key. Neither
+# bare hexadecimal secret can be distinguished from a digest by content.
+path = '''(^|/)(korri-state/.*|identity/(device|iroh)\.key)$'''
 
 [allowlist]
 description = "Values and paths that carry no secret."

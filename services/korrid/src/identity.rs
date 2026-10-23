@@ -29,6 +29,7 @@ use zeroize::Zeroizing;
 mod automatic_tests;
 mod nearby;
 pub(crate) mod offline;
+pub(crate) mod iroh;
 
 const IDENTITY_DIRECTORY: &str = "identity";
 const DEVICE_KEY_FILE: &str = "device.key";
