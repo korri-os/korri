@@ -25,6 +25,18 @@ word, including `--help`, starts the daemon.
 - When a portal label and a `CONTEXT.md` term disagree, one word is chosen,
   and the portal, `korri` and the glossary all adopt it.
 - The feel to match is `gh` and `tailscale`.
+- Only the device's person account and root may use `korri` on a device.
+  Shell access already means full trust (ADR 0029).
+- `korri` asks for missing input only on a terminal, never when piped.
+  Destructive actions ask for confirmation, and `--yes` skips it. Richer
+  pickers in the style of Charm's tools follow later.
+- `--device <name>` sends a call through the local korrid to a peer. `korri`
+  itself still talks only to its own korrid, as the portal does.
+- The top level has `status`, `version`, `completion` and `play` beside the
+  mirrored settings areas.
+- `korri` is Rust, in `clients/cli/`.
+- The old `korrid catalog` and `korrid identity` commands go in one cut,
+  after `korri` covers them. There is no alias.
 
 ## Considered options
 
