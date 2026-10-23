@@ -20,6 +20,7 @@ pub struct PeerCheckResult {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SyncPurpose {
     Replicate,
+    Contact,
     CheckLaunch,
 }
 
@@ -70,7 +71,7 @@ impl SavePeerService {
             peer,
             None,
             &mut BTreeSet::new(),
-            SyncPurpose::Replicate,
+            SyncPurpose::Contact,
         )
         .await
     }
@@ -179,6 +180,7 @@ impl SavePeerService {
                                     ids: vec![snapshot_id.into()],
                                     records: None,
                                 },
+                                RequestProvenance::Independent,
                             )
                             .await?;
                         if response.confirmed.iter().any(|id| id != snapshot_id)
@@ -233,7 +235,11 @@ impl SavePeerService {
         pending_head_records: &mut BTreeSet<String>,
         purpose: SyncPurpose,
     ) -> Result<(), PeerSaveError> {
-        let remote = self.remote_heads(person, peer).await?;
+        let provenance = match purpose {
+            SyncPurpose::Contact => RequestProvenance::Contact,
+            _ => RequestProvenance::Independent,
+        };
+        let remote = self.remote_heads(person, peer, provenance).await?;
         pending_head_records.extend(
             remote
                 .games
@@ -305,6 +311,7 @@ impl SavePeerService {
                             ids: vec![id.clone()],
                             records: None,
                         },
+                        provenance,
                     )
                     .await?;
                 remote_complete.extend(response.confirmed.iter().cloned());
@@ -370,6 +377,7 @@ impl SavePeerService {
                             ids: vec![id.clone()],
                             records: Some(vec![record]),
                         },
+                        provenance,
                     )
                     .await?;
                 self.confirm_response(person, peer, &game, &[id], response.confirmed)

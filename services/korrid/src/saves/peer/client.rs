@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    federation::{peer_origin, PeerState},
+    federation::{peer_origin, PeerState, WorkToken},
     identity::OwnerStatementStatus,
     peer_rpc::{unix_time, MAX_PEER_EVENT_BYTES},
     RpcRequest, RpcResponse,
@@ -42,27 +42,30 @@ impl SavePeerService {
             .collect()
     }
 
-    async fn request(
+    async fn request<T>(
         &self,
         person: &str,
         peer: &str,
         request: RpcRequest,
-    ) -> Result<RpcResponse, PeerSaveError> {
-        self.require_owner(person)?;
-        let token = self
-            .directory
-            .begin_peer_work(peer)
-            .map_err(|_| PeerSaveError::Unauthorized)?;
-        let result = self.request_candidates(person, peer, request).await;
-        let state = match &result {
-            Ok(_) => PeerState::Ready,
-            Err(_) => PeerState::Failed {
-                error: "Authenticated peer operation failed".into(),
-            },
-        };
-        // Superseded, revoked or configuration-changed work cannot overwrite
-        // newer state. Repeated Ready completions do not emit another contact.
-        let _ = self.directory.set_peer_state(&token, peer, state);
+        provenance: RequestProvenance,
+        checked: impl FnOnce(RpcResponse) -> Result<T, PeerSaveError>,
+    ) -> Result<T, PeerSaveError> {
+        let mut token = None;
+        let result = self
+            .request_candidates(person, peer, request, provenance, &mut token)
+            .await
+            .and_then(checked);
+        if let Some(token) = token {
+            let state = match &result {
+                Ok(_) => PeerState::Ready,
+                Err(_) => PeerState::Failed {
+                    error: "Authenticated peer operation failed".into(),
+                },
+            };
+            // Superseded, revoked or configuration-changed work cannot overwrite
+            // newer state. Contact provenance also prevents scheduling itself.
+            let _ = self.directory.set_peer_state(&token, peer, state);
+        }
         result
     }
 
@@ -71,6 +74,8 @@ impl SavePeerService {
         person: &str,
         peer: &str,
         request: RpcRequest,
+        provenance: RequestProvenance,
+        token: &mut Option<WorkToken>,
     ) -> Result<RpcResponse, PeerSaveError> {
         let read_only = match &request {
             RpcRequest::SaveHeads(_) | RpcRequest::SaveInUse(_) => true,
@@ -94,6 +99,19 @@ impl SavePeerService {
                 .encode_request(peer, request.clone(), unix_time())
                 .map_err(|_| PeerSaveError::Unauthorized)?;
             let result = tokio::time::timeout_at(deadline, async {
+                // No endpoint, failed probes and encoding failures are not
+                // authenticated request attempts. Preserve state and tokens.
+                if token.is_none() {
+                    *token = Some(
+                        match provenance {
+                            RequestProvenance::Independent => self.directory.begin_peer_work(peer),
+                            RequestProvenance::Contact => {
+                                self.directory.begin_peer_work_from_contact(peer)
+                            }
+                        }
+                        .map_err(|_| PeerSaveError::Unauthorized)?,
+                    );
+                }
                 let mut response = self
                     .http
                     .post(format!("{origin}/peer-rpc"))
@@ -141,15 +159,20 @@ impl SavePeerService {
         &self,
         person: &str,
         peer: &str,
+        provenance: RequestProvenance,
     ) -> Result<SaveHeads, PeerSaveError> {
-        match self
-            .request(person, peer, RpcRequest::SaveHeads(SaveHeadsRequest {}))
-            .await?
-        {
-            RpcResponse::SaveHeads(SaveHeadsOutcome::Ok(value)) => Ok(value),
-            RpcResponse::SaveHeads(SaveHeadsOutcome::Err(_)) => Err(PeerSaveError::Network),
-            _ => Err(PeerSaveError::Protocol),
-        }
+        self.request(
+            person,
+            peer,
+            RpcRequest::SaveHeads(SaveHeadsRequest {}),
+            provenance,
+            |response| match response {
+                RpcResponse::SaveHeads(SaveHeadsOutcome::Ok(value)) => Ok(value),
+                RpcResponse::SaveHeads(SaveHeadsOutcome::Err(_)) => Err(PeerSaveError::Network),
+                _ => Err(PeerSaveError::Protocol),
+            },
+        )
+        .await
     }
 
     pub(super) async fn remote_records(
@@ -157,15 +180,20 @@ impl SavePeerService {
         person: &str,
         peer: &str,
         request: SaveRecordsRequest,
+        provenance: RequestProvenance,
     ) -> Result<SaveRecords, PeerSaveError> {
-        match self
-            .request(person, peer, RpcRequest::SaveRecords(request))
-            .await?
-        {
-            RpcResponse::SaveRecords(SaveRecordsOutcome::Ok(value)) => Ok(value),
-            RpcResponse::SaveRecords(SaveRecordsOutcome::Err(_)) => Err(PeerSaveError::Network),
-            _ => Err(PeerSaveError::Protocol),
-        }
+        self.request(
+            person,
+            peer,
+            RpcRequest::SaveRecords(request),
+            provenance,
+            |response| match response {
+                RpcResponse::SaveRecords(SaveRecordsOutcome::Ok(value)) => Ok(value),
+                RpcResponse::SaveRecords(SaveRecordsOutcome::Err(_)) => Err(PeerSaveError::Network),
+                _ => Err(PeerSaveError::Protocol),
+            },
+        )
+        .await
     }
 
     pub(super) async fn remote_in_use(
@@ -174,27 +202,27 @@ impl SavePeerService {
         peer: &str,
         game: &str,
     ) -> Result<SaveInUse, PeerSaveError> {
-        match self
-            .request(
-                person,
-                peer,
-                RpcRequest::SaveInUse(SaveGameRequest {
-                    game_id: game.into(),
-                }),
-            )
-            .await?
-        {
-            RpcResponse::SaveInUse(SaveInUseOutcome::Ok(value)) => {
-                match &value {
-                    SaveInUse::Active(active) if active.device == peer && active.in_use => {}
-                    SaveInUse::Idle(idle) if idle.device == peer && !idle.in_use => {}
-                    _ => return Err(PeerSaveError::Protocol),
+        self.request(
+            person,
+            peer,
+            RpcRequest::SaveInUse(SaveGameRequest {
+                game_id: game.into(),
+            }),
+            RequestProvenance::Independent,
+            |response| match response {
+                RpcResponse::SaveInUse(SaveInUseOutcome::Ok(value)) => {
+                    match &value {
+                        SaveInUse::Active(active) if active.device == peer && active.in_use => {}
+                        SaveInUse::Idle(idle) if idle.device == peer && !idle.in_use => {}
+                        _ => return Err(PeerSaveError::Protocol),
+                    }
+                    Ok(value)
                 }
-                Ok(value)
-            }
-            RpcResponse::SaveInUse(SaveInUseOutcome::Err(_)) => Err(PeerSaveError::Network),
-            _ => Err(PeerSaveError::Protocol),
-        }
+                RpcResponse::SaveInUse(SaveInUseOutcome::Err(_)) => Err(PeerSaveError::Network),
+                _ => Err(PeerSaveError::Protocol),
+            },
+        )
+        .await
     }
 
     pub(super) async fn import_record(

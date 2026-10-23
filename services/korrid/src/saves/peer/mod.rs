@@ -84,6 +84,12 @@ impl PeerSaveError {
 /// idle; a timestamp is display metadata, not a lease or an expiry.
 pub type InUse = Arc<dyn Fn(&str, &str) -> Result<Option<u64>, SaveError> + Send + Sync>;
 
+#[derive(Clone, Copy)]
+enum RequestProvenance {
+    Independent,
+    Contact,
+}
+
 #[derive(Clone)]
 pub struct SavePeerService {
     repository: Arc<dyn SaveRepository>,
@@ -219,7 +225,9 @@ impl SavePeerService {
             if !ids.is_empty() {
                 // The sender's advertised heads, not this receiver's temporarily
                 // incomplete graph, decide which pushed records need payloads.
-                let heads = self.remote_heads(&person, &peer).await?;
+                let heads = self
+                    .remote_heads(&person, &peer, RequestProvenance::Independent)
+                    .await?;
                 for record in records {
                     let id = snapshot_id(record)?;
                     if heads
@@ -239,6 +247,7 @@ impl SavePeerService {
                             ids: ids.clone(),
                             records: None,
                         },
+                        RequestProvenance::Independent,
                     )
                     .await?;
                 self.confirm_response(&person, &peer, &request.game_id, &ids, response.confirmed)

@@ -100,6 +100,7 @@ pub struct WorkToken {
     epoch: u64,
     identity: IdentityState,
     peer_attempt: Option<(String, u64)>,
+    notify_contact: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -304,6 +305,7 @@ impl FederationDirectory {
             epoch: state.epoch,
             identity: identity.state().clone(),
             peer_attempt: None,
+            notify_contact: true,
         })
     }
 
@@ -329,6 +331,17 @@ impl FederationDirectory {
                 peer_attempt: Some((device.into(), live.attempt)),
                 ..token.clone()
             })
+        })
+    }
+
+    /// Contact-driven work may update readiness, but must not enqueue itself.
+    pub(crate) fn begin_peer_work_from_contact(
+        &self,
+        device: &str,
+    ) -> Result<WorkToken, FederationError> {
+        Ok(WorkToken {
+            notify_contact: false,
+            ..self.begin_peer_work(device)?
         })
     }
 
@@ -625,7 +638,7 @@ impl FederationDirectory {
             live.state = value;
             live.updated_at = live.updated_at.max(now);
             live.attempt = attempt;
-            if contacted {
+            if contacted && token.notify_contact {
                 let _ = self.contacts.send(device.into());
             }
             Ok(())

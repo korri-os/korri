@@ -10,7 +10,7 @@ use axum::{
     body::Body,
     http::{header, StatusCode},
     middleware::{self, Next},
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -36,6 +36,9 @@ struct TransferBehaviour {
     corrupt: bool,
     delay: Duration,
     records_delay: Duration,
+    rpc_started: Arc<tokio::sync::Notify>,
+    rpc_status: Option<StatusCode>,
+    records_status: Option<StatusCode>,
     measure: bool,
     requests: Arc<Mutex<Vec<(String, Duration)>>>,
     connections: Arc<std::sync::atomic::AtomicUsize>,
@@ -50,8 +53,15 @@ async fn transfer_behaviour(
     next: Next,
 ) -> Response {
     if request.uri().path() != "/peer-saves-object" {
+        behaviour.rpc_started.notify_one();
+        if let Some(status) = behaviour.rpc_status {
+            return status.into_response();
+        }
         let mut tag = String::new();
-        if behaviour.measure || !behaviour.records_delay.is_zero() {
+        if behaviour.measure
+            || !behaviour.records_delay.is_zero()
+            || behaviour.records_status.is_some()
+        {
             // Delay the real signed records request, not heads or in-use.
             // Preserve its exact bytes for the shipping authentication boundary.
             let (parts, body) = request.into_parts();
@@ -67,6 +77,9 @@ async fn transfer_behaviour(
             request = axum::extract::Request::from_parts(parts, Body::from(body));
             tag = envelope["request"]["_tag"].as_str().unwrap().to_owned();
             if tag == "app.saves.records" {
+                if let Some(status) = behaviour.records_status {
+                    return status.into_response();
+                }
                 if behaviour.measure && envelope["request"]["payload"]["records"].is_null() {
                     behaviour.record_reads.lock().unwrap().push(
                         serde_json::from_value(envelope["request"]["payload"]["ids"].clone())
@@ -329,7 +342,7 @@ async fn authenticated_save_requests_mark_ready_and_emit_only_one_contact() {
     assert_eq!(directory.snapshot().unwrap()[0].state, PeerState::Loading);
 
     a.service
-        .remote_heads(&a.owner(), &b.device())
+        .remote_heads(&a.owner(), &b.device(), RequestProvenance::Independent)
         .await
         .unwrap();
     assert_eq!(directory.snapshot().unwrap()[0].state, PeerState::Ready);
@@ -338,7 +351,7 @@ async fn authenticated_save_requests_mark_ready_and_emit_only_one_contact() {
     // Contact-triggered save work must not enqueue another contact.
     a.service.on_contact(&b.device()).await.unwrap();
     a.service
-        .remote_heads(&a.owner(), &b.device())
+        .remote_heads(&a.owner(), &b.device(), RequestProvenance::Independent)
         .await
         .unwrap();
     assert_eq!(directory.snapshot().unwrap()[0].state, PeerState::Ready);
@@ -349,7 +362,163 @@ async fn authenticated_save_requests_mark_ready_and_emit_only_one_contact() {
 }
 
 #[tokio::test]
-async fn failed_save_request_marks_peer_failed_without_contact() {
+async fn contact_sync_updates_readiness_without_emitting_contacts() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let directory = &a.service.directory;
+    let mut contacts = directory.save_contacts();
+    assert_eq!(directory.snapshot().unwrap()[0].state, PeerState::Loading);
+
+    a.service.on_contact(&b.device()).await.unwrap();
+    assert_eq!(directory.snapshot().unwrap()[0].state, PeerState::Ready);
+    directory
+        .set_peer_state(
+            &directory.begin_peer_work(&b.device()).unwrap(),
+            &b.device(),
+            PeerState::Failed {
+                error: "Previous operation failed".into(),
+            },
+        )
+        .unwrap();
+    a.service.on_contact(&b.device()).await.unwrap();
+    assert_eq!(directory.snapshot().unwrap()[0].state, PeerState::Ready);
+    assert!(matches!(
+        contacts.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
+}
+
+#[tokio::test]
+async fn regression_contact_sync_does_not_reschedule_after_records_failure() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(
+        6,
+        3,
+        TransferBehaviour {
+            records_status: Some(StatusCode::SERVICE_UNAVAILABLE),
+            ..Default::default()
+        },
+    )
+    .await;
+    a.remember(&b);
+    b.remember(&a);
+    let record = b.seed(b"records remain unavailable", vec![]);
+    let mut contacts = a.service.directory.save_contacts();
+
+    // Independent work queues the first Ready contact, then records fail.
+    let results = a.service.after_snapshot(&record.game_id).await.unwrap();
+    assert!(matches!(results[0].1, Err(PeerSaveError::Network)));
+    assert!(matches!(
+        a.service.directory.snapshot().unwrap()[0].state,
+        PeerState::Failed { .. }
+    ));
+    let mut processed = 0;
+    // Bound the test even if each contact incorrectly schedules another one.
+    for _ in 0..3 {
+        match contacts.try_recv() {
+            Ok(device) => {
+                processed += 1;
+                assert!(matches!(
+                    a.service.on_contact(&device).await,
+                    Err(PeerSaveError::Network)
+                ));
+            }
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => break,
+            Err(error) => panic!("unexpected contact error: {error}"),
+        }
+    }
+    assert_eq!(processed, 1, "contact sync must not schedule itself again");
+    assert!(matches!(
+        contacts.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
+    assert!(matches!(
+        a.service.directory.snapshot().unwrap()[0].state,
+        PeerState::Failed { .. }
+    ));
+}
+
+#[tokio::test]
+async fn regression_signed_save_error_outcome_is_not_ready() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    a.remember(&b);
+    b.remember(&a);
+    // A real repository failure produces a signed SaveHeadsOutcome::Err.
+    let saves = b._root.path().join("saves");
+    std::fs::create_dir_all(&saves).unwrap();
+    std::fs::set_permissions(&saves, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(saves.join(b.owner()), b"not a save directory").unwrap();
+    let mut contacts = a.service.directory.save_contacts();
+
+    assert!(matches!(
+        a.service
+            .remote_heads(&a.owner(), &b.device(), RequestProvenance::Independent)
+            .await,
+        Err(PeerSaveError::Network)
+    ));
+    assert!(matches!(
+        a.service.directory.snapshot().unwrap()[0].state,
+        PeerState::Failed { .. }
+    ));
+    assert!(matches!(
+        contacts.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
+}
+
+#[tokio::test]
+async fn save_request_without_endpoint_leaves_peer_state_and_work_unchanged() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    let directory = &a.service.directory;
+    let membership = b.service.credentials.identity_snapshot().unwrap();
+    directory
+        .apply_membership(
+            &directory.begin_work().unwrap(),
+            &[membership.owner_statement_json().unwrap()],
+        )
+        .unwrap();
+    let before = directory.snapshot().unwrap()[0].state.clone();
+    let token = directory.begin_peer_work(&b.device()).unwrap();
+    let mut contacts = directory.save_contacts();
+
+    assert!(matches!(
+        a.service
+            .remote_heads(&a.owner(), &b.device(), RequestProvenance::Independent)
+            .await,
+        Err(PeerSaveError::Network)
+    ));
+    assert_eq!(directory.snapshot().unwrap()[0].state, before);
+    // No request was sent, so even an older work token remains current.
+    directory
+        .set_peer_state(&token, &b.device(), PeerState::Loading)
+        .unwrap();
+    assert!(matches!(
+        contacts.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
+}
+
+#[tokio::test]
+async fn save_request_without_directory_row_leaves_directory_unchanged() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    assert!(a.service.directory.snapshot().unwrap().is_empty());
+
+    assert!(matches!(
+        a.service
+            .remote_heads(&a.owner(), &b.device(), RequestProvenance::Independent)
+            .await,
+        Err(PeerSaveError::Unauthorized)
+    ));
+    assert!(a.service.directory.snapshot().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn failed_save_connect_probe_leaves_peer_state_unchanged() {
     let a = Node::new(5, 3, TransferBehaviour::default()).await;
     let b = Node::new(6, 3, TransferBehaviour::default()).await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -358,10 +527,36 @@ async fn failed_save_request_marks_peer_failed_without_contact() {
         vec![format!("http://{}", listener.local_addr().unwrap())],
     );
     drop(listener);
+    let before = a.service.directory.snapshot().unwrap()[0].state.clone();
+
+    assert!(matches!(
+        a.service
+            .remote_heads(&a.owner(), &b.device(), RequestProvenance::Independent)
+            .await,
+        Err(PeerSaveError::Network)
+    ));
+    assert_eq!(a.service.directory.snapshot().unwrap()[0].state, before);
+}
+
+#[tokio::test]
+async fn failed_save_request_marks_peer_failed_without_contact() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(
+        6,
+        3,
+        TransferBehaviour {
+            rpc_status: Some(StatusCode::SERVICE_UNAVAILABLE),
+            ..Default::default()
+        },
+    )
+    .await;
+    a.remember(&b);
     let mut contacts = a.service.directory.save_contacts();
 
     assert!(matches!(
-        a.service.remote_heads(&a.owner(), &b.device()).await,
+        a.service
+            .remote_heads(&a.owner(), &b.device(), RequestProvenance::Independent)
+            .await,
         Err(PeerSaveError::Network)
     ));
     assert!(matches!(
@@ -381,21 +576,21 @@ async fn superseded_save_request_cannot_overwrite_newer_peer_state() {
         delay: Duration::from_millis(200),
         ..Default::default()
     };
-    let connections = behaviour.connections.clone();
+    let started = behaviour.rpc_started.clone();
     let b = Node::new(6, 3, behaviour).await;
     a.remember(&b);
     b.remember(&a);
     let service = a.service.clone();
     let (owner, device) = (a.owner(), b.device());
-    let request = tokio::spawn(async move { service.remote_heads(&owner, &device).await });
-    // Even the initial TCP probe starts after the request reserves its token.
-    tokio::time::timeout(Duration::from_secs(3), async {
-        while connections.load(std::sync::atomic::Ordering::Relaxed) == 0 {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap();
+    let request = tokio::spawn(async move {
+        service
+            .remote_heads(&owner, &device, RequestProvenance::Independent)
+            .await
+    });
+    // The token is reserved only after probing, at the authenticated HTTP send.
+    tokio::time::timeout(Duration::from_secs(3), started.notified())
+        .await
+        .unwrap();
     let directory = &a.service.directory;
     let token = directory.begin_peer_work(&b.device()).unwrap();
     let newer = PeerState::Failed {
@@ -553,6 +748,7 @@ async fn declarations_without_verified_objects_are_never_confirmed() {
                 ids: vec![id(&record)],
                 records: None,
             },
+            RequestProvenance::Independent,
         )
         .await
         .unwrap();
@@ -1038,7 +1234,8 @@ async fn stalled_connect_candidate_does_not_consume_the_prelaunch_budget() {
     b.seed(b"progress", vec![]);
     let heads = tokio::time::timeout(
         Duration::from_secs(2),
-        a.service.remote_heads(&a.owner(), &b.device()),
+        a.service
+            .remote_heads(&a.owner(), &b.device(), RequestProvenance::Independent),
     )
     .await
     .unwrap()
@@ -1115,6 +1312,7 @@ async fn metadata_mutation_is_not_sent_again_after_ambiguous_delivery() {
                 ids: vec![],
                 records: Some(vec![record]),
             },
+            RequestProvenance::Independent,
         )
         .await;
     for server in servers {
