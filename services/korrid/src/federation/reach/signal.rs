@@ -23,6 +23,7 @@ pub struct Answer {
     pub expires_at: u64,
     pub request_id: String,
     pub can_relay_now: bool,
+    pub relay_addresses: Vec<SocketAddr>,
 }
 
 pub(crate) fn validate(
@@ -36,23 +37,54 @@ pub(crate) fn validate(
         return Err(RelayError::Expired);
     }
     if request.len() != 64
-        || !request.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        || !request
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         || addresses.len() > 16
-        || addresses.iter().any(|a| a.port() == 0 || a.ip().is_unspecified() || a.ip().is_multicast())
+        || addresses
+            .iter()
+            .any(|a| a.port() == 0 || a.ip().is_unspecified() || a.ip().is_multicast())
         || endpoint.len() != 64
     {
-        return Err(RelayError::InvalidEvent("reach signal exceeds its bounds".into()));
+        return Err(RelayError::InvalidEvent(
+            "reach signal exceeds its bounds".into(),
+        ));
     }
-    endpoint.parse().map_err(|_| RelayError::InvalidEvent("reach endpoint id is invalid".into()))
+    endpoint
+        .parse()
+        .map_err(|_| RelayError::InvalidEvent("reach endpoint id is invalid".into()))
 }
 
 impl Offer {
     pub(crate) fn validate(&self, now: u64) -> Result<iroh::EndpointId, RelayError> {
-        validate(&self.endpoint_id, &self.direct_addresses, self.expires_at, &self.request_id, now)
+        validate(
+            &self.endpoint_id,
+            &self.direct_addresses,
+            self.expires_at,
+            &self.request_id,
+            now,
+        )
     }
 }
 impl Answer {
     pub(crate) fn validate(&self, now: u64) -> Result<iroh::EndpointId, RelayError> {
-        validate(&self.endpoint_id, &self.direct_addresses, self.expires_at, &self.request_id, now)
+        if self.relay_addresses.len() > 8
+            || (!self.can_relay_now && !self.relay_addresses.is_empty())
+            || self
+                .relay_addresses
+                .iter()
+                .any(|a| a.port() == 0 || !super::relay::allowed_relay_ip(a.ip()))
+        {
+            return Err(RelayError::InvalidEvent(
+                "invalid federation relay address".into(),
+            ));
+        }
+        validate(
+            &self.endpoint_id,
+            &self.direct_addresses,
+            self.expires_at,
+            &self.request_id,
+            now,
+        )
     }
 }

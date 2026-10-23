@@ -148,6 +148,7 @@ struct DirectoryState {
 
 #[derive(Clone)]
 pub struct FederationDirectory {
+    reach: reach::Routes,
     contacts: tokio::sync::broadcast::Sender<String>,
     state: Arc<Mutex<DirectoryState>>,
     credentials: PeerCredentials,
@@ -271,6 +272,7 @@ impl FederationDirectory {
             })
             .map_err(|_| FederationError::Identity)??;
         Ok(Self {
+            reach: reach::Routes::default(),
             contacts: tokio::sync::broadcast::channel(64).0,
             state: Arc::new(Mutex::new(state)),
             credentials,

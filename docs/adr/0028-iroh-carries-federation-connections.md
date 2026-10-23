@@ -44,8 +44,11 @@ The phone test window ended before double NAT, strict firewall, federation
 relay and home-to-phone switch cases completed away from home.
 
 A network change needs a reconnect, not migration. The lab gap was about
-7.1 seconds. A home relay is reachable from another network only through
-IPv6 or port mapping. Symmetric NAT on both sides needs a reachable
+7.1 seconds. A home relay needs IPv6 or TCP port mapping to be reachable
+from another network. This chunk does not implement TCP port mapping. Its
+home relay is reachable across networks only through global IPv6. Private
+LAN relay listeners also work on the same network. A UDP port mapping does
+not make a TCP relay reachable. Symmetric NAT on both sides needs a reachable
 relaying device. Only one configured public Nostr relay was live:
 relay.primal.net. relay.nostr.band was dead.
 
@@ -58,6 +61,40 @@ inbound traffic still fails unless the ISP runs PCP and the router bridges
 UPnP to it (RFC 6970). Iroh's documentation calls n0's public relays
 "for development and testing", says they are rate-limited, and recommends
 against production workloads. Korri does not use them.
+
+The embedded relay tries TCP 443 on each approved interface. If that port is
+occupied or not permitted, it binds an ephemeral port and advertises only the
+actual listener. No capability or service permission is added. Korrid most likely
+runs without `CAP_NET_BIND_SERVICE`, so real devices will usually use an ephemeral
+port. A strict firewall that allows only TCP 80 and 443 will then block the relay.
+Granting that capability is follow-up work and needs the owner's approval.
+The Hardware test stage must check which port each device binds.
+
+## Local stream forwards
+
+While a nearby link is up, its peer IP replaces the remembered Moonlight IP.
+The address keeps its named control port, or uses 47989. This uses the same
+nearby-link fact as the HTTP candidate, before the stream probe.
+
+RPC reachability does not prove that Sunshine is reachable. Before choosing
+a forward, korrid probes the existing `moonlight_address` control port. It uses
+47989 unless the address names a port. The TCP probe sends no application bytes
+and has the existing one-second connect timeout. A successful probe keeps the
+existing address. A failed probe uses forwards only if a live iroh route exists.
+Without one, the existing viewer path and its failure stay unchanged.
+
+The viewing device can also run Sunshine. An IPv4 wildcard Sunshine listener
+holds its TCP ports on every IPv4 loopback address. The local forwards therefore
+bind only `[::1]`, with `IPV6_V6ONLY` set. The viewer receives `[::1]:47989`.
+The port numbers stay unchanged, including those Sunshine reports in RTSP.
+The selected remote session owns one forward lease. Relay-only connections do
+not hold it. Changing the selected peer or ending the session releases it.
+
+If any required IPv6 loopback port is busy, stream preparation fails with the
+port named in the error. This is a device setup error, not the network failure
+sentence. There is no IPv4 fallback. The Hardware test stage must prove that
+Moonlight connects to `[::1]` and streams. That has not been measured. A viewer
+in a network namespace is follow-up work if IPv6 loopback does not work.
 
 ## Sources
 

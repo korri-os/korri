@@ -282,6 +282,7 @@ enum SelectedRemoteRoute {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SelectedViewer {
+    reach: Option<crate::federation::reach::StreamLease>,
     moonlight_address: String,
     confirmed_live: bool,
 }
@@ -702,6 +703,13 @@ impl UpstreamRegistry {
                 client: RegisteredClient::Native(client),
             });
         }
+        // Reach failures name the already-resolved peer label. Do not replace
+        // endpoint facts with the transient forward address in this snapshot.
+        for host in &mut hosts {
+            if let RegisteredClient::Native(client) = &mut host.client {
+                *client = client.clone().with_peer_label(host.label.clone());
+            }
+        }
         registry.hosts = hosts;
         Ok(Cow::Owned(registry))
     }
@@ -751,14 +759,31 @@ impl UpstreamRegistry {
             .hosts
             .iter()
             .filter_map(|host| match &host.client {
-                RegisteredClient::Native(_) => host
-                    .moonlight_address
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|address| !address.is_empty())
+                // Reach address view: only a live selected lease overrides
+                // the configured or endpoint address. Never retain it as fact.
+                RegisteredClient::Native(_) => registry
+                    .directory
+                    .as_ref()
+                    .and_then(|directory| {
+                        host.device_public_key
+                            .as_deref()
+                            .and_then(|key| directory.stream_address(key))
+                    })
+                    .or_else(|| {
+                        host.device_public_key
+                            .as_deref()
+                            .and_then(|key| {
+                                crate::federation::reach::nearby_seam::moonlight_address(
+                                    key,
+                                    host.moonlight_address.as_deref(),
+                                )
+                            })
+                            .or_else(|| host.moonlight_address.clone())
+                    })
+                    .filter(|address| !address.trim().is_empty())
                     .map(|address| MoonlightHostCandidate {
                         label: host.label.clone(),
-                        address: address.into(),
+                        address: address.trim().into(),
                     }),
                 RegisteredClient::Legacy(_) => None,
             })
@@ -966,17 +991,37 @@ impl UpstreamRegistry {
                 }
             }
             RegisteredClient::Native(client) => {
-                let moonlight_address = host
-                    .moonlight_address
+                // Reach selection: one IPv6-only fixed-port forward lease for
+                // this exact peer. Relay-only connections never acquire it.
+                let route_key = host.native_route_key().ok_or_else(|| {
+                    UpstreamError::Wire("native peer has no stable device identity".into())
+                })?;
+                let native_address = crate::federation::reach::nearby_seam::moonlight_address(
+                    &route_key,
+                    host.moonlight_address.as_deref(),
+                );
+                let reach = match &self.directory {
+                    Some(directory)
+                        if client
+                            .stream_forward_needed(native_address.as_deref())
+                            .await =>
+                    {
+                        directory
+                            .activate_stream(&route_key)
+                            .await
+                            .map_err(|e| viewer_error("StreamForwardUnavailable", e.to_string()))?
+                    }
+                    _ => None,
+                };
+                let forwarded = reach.as_ref().and_then(|lease| lease.address());
+                let moonlight_address = forwarded
                     .as_deref()
+                    .or(native_address.as_deref())
                     .map(str::trim)
                     .filter(|address| !address.is_empty())
                     .ok_or(UpstreamError::MoonlightHostCandidatesUnavailable)?
                     .to_owned();
                 let prepared = client.prepare_stream(game_id).await?;
-                let route_key = host.native_route_key().ok_or_else(|| {
-                    UpstreamError::Wire("native peer has no stable device identity".into())
-                })?;
                 let selected = SelectedRemoteSession {
                     participation: Participation::Starter,
                     route: SelectedRemoteRoute::Native {
@@ -986,6 +1031,7 @@ impl UpstreamRegistry {
                     viewer: Some(SelectedViewer {
                         moonlight_address: moonlight_address.clone(),
                         confirmed_live: false,
+                        reach: reach.clone(),
                     }),
                 };
                 self.set_selected(selected.clone());
@@ -994,6 +1040,9 @@ impl UpstreamRegistry {
                     .start(&prepared.session.launch_id, &moonlight_address)
                     .await
                 {
+                    if let Some(reach) = &reach {
+                        reach.release();
+                    }
                     return self
                         .compensate_viewer_start_failure(client, &selected, error.to_string())
                         .await;
@@ -1040,38 +1089,88 @@ impl UpstreamRegistry {
             return Ok(());
         };
         let viewer_backgrounded = far_phase.viewer_backgrounded();
-        let result = match self.viewer.status(&selected.launch_id).await {
-            Ok(LinuxViewerStatus::Running) if viewer_backgrounded => {
-                self.viewer.background(&selected.launch_id).await
-            }
-            Ok(LinuxViewerStatus::Backgrounded) if !viewer_backgrounded => {
-                self.viewer.resume_and_focus(&selected.launch_id).await
-            }
-            Ok(LinuxViewerStatus::Running | LinuxViewerStatus::Backgrounded) => Ok(()),
-            Ok(LinuxViewerStatus::Stopped) => match self
-                .viewer
-                .start(&selected.launch_id, &viewer.moonlight_address)
-                .await
-            {
-                Ok(()) if viewer_backgrounded => self.viewer.background(&selected.launch_id).await,
-                other => other,
-            },
-            Err(error) => {
-                return Err(viewer_error(
-                    "NativeViewerRecoveryIncomplete",
-                    error.to_string(),
-                ))
-            }
-        };
+        let mut recovering = selected.clone();
+        let result =
+            match self.viewer.status(&selected.launch_id).await {
+                Ok(LinuxViewerStatus::Running) if viewer_backgrounded => {
+                    self.viewer.background(&selected.launch_id).await
+                }
+                Ok(LinuxViewerStatus::Backgrounded) if !viewer_backgrounded => {
+                    self.viewer.resume_and_focus(&selected.launch_id).await
+                }
+                Ok(LinuxViewerStatus::Running | LinuxViewerStatus::Backgrounded) => Ok(()),
+                Ok(LinuxViewerStatus::Stopped) => {
+                    // A reconnect replaces the transport, never migrates a viewer.
+                    // Reacquire its exact selected peer's lease before a new start.
+                    let mut address = viewer.moonlight_address.clone();
+                    if let SelectedRemoteRoute::Native { device_public_key } = &selected.route {
+                        if let Some(directory) = &self.directory {
+                            let fallback = self
+                                .native_host_by_route_key(device_public_key)
+                                .and_then(|host| {
+                                    crate::federation::reach::nearby_seam::moonlight_address(
+                                        device_public_key,
+                                        host.moonlight_address.as_deref(),
+                                    )
+                                });
+                            let use_iroh = match self.native_host_by_route_key(device_public_key) {
+                                Some(host) => match &host.client {
+                                    RegisteredClient::Native(client) => {
+                                        client.stream_forward_needed(fallback.as_deref()).await
+                                    }
+                                    _ => false,
+                                },
+                                _ => false,
+                            };
+                            let reach =
+                                if use_iroh {
+                                    directory.activate_stream(device_public_key).await.map_err(
+                                        |e| viewer_error("StreamForwardUnavailable", e.to_string()),
+                                    )?
+                                } else {
+                                    None
+                                };
+                            if let Some(forwarded) = reach.as_ref().and_then(|r| r.address()) {
+                                address = forwarded;
+                            } else if let Some(fallback) = fallback {
+                                address = fallback;
+                            }
+                            recovering.viewer = Some(SelectedViewer {
+                                moonlight_address: address.clone(),
+                                confirmed_live: false,
+                                reach,
+                            });
+                            self.set_selected(recovering.clone());
+                        }
+                    }
+                    match self.viewer.start(&selected.launch_id, &address).await {
+                        Ok(()) if viewer_backgrounded => {
+                            self.viewer.background(&selected.launch_id).await
+                        }
+                        other => other,
+                    }
+                }
+                Err(error) => {
+                    return Err(viewer_error(
+                        "NativeViewerRecoveryIncomplete",
+                        error.to_string(),
+                    ))
+                }
+            };
         match result {
             Ok(()) => {
                 self.set_viewer_confirmed(selected, true);
                 Ok(())
             }
-            Err(error) => Err(viewer_error(
-                "NativeViewerRecoveryIncomplete",
-                error.to_string(),
-            )),
+            Err(error) => {
+                if let Some(reach) = recovering.viewer.as_ref().and_then(|v| v.reach.as_ref()) {
+                    reach.release();
+                }
+                Err(viewer_error(
+                    "NativeViewerRecoveryIncomplete",
+                    error.to_string(),
+                ))
+            }
         }
     }
 
@@ -1584,6 +1683,7 @@ impl UpstreamRegistry {
             viewer: Some(SelectedViewer {
                 moonlight_address: moonlight_address.clone(),
                 confirmed_live: false,
+                reach: None,
             }),
         };
         self.set_selected(selected.clone());
@@ -1769,10 +1869,20 @@ impl UpstreamRegistry {
             .lock()
             .expect("stream play end mutex poisoned")
             .take();
-        *self
+        let mut current = self
             .selected_remote_session
             .lock()
-            .expect("selected remote session mutex poisoned") = Some(selected);
+            .expect("selected remote session mutex poisoned");
+        if let Some(old) = current
+            .as_ref()
+            .and_then(|s| s.viewer.as_ref())
+            .and_then(|v| v.reach.as_ref())
+        {
+            if selected.viewer.as_ref().and_then(|v| v.reach.as_ref()) != Some(old) {
+                old.release();
+            }
+        }
+        *current = Some(selected);
     }
 
     fn set_viewer_confirmed(&self, expected: &SelectedRemoteSession, confirmed_live: bool) {
@@ -1819,6 +1929,14 @@ impl UpstreamRegistry {
             .lock()
             .expect("selected remote session mutex poisoned");
         if selected.as_ref() == Some(expected) {
+            // Reach release is idempotent and also runs on the lease's Drop.
+            if let Some(reach) = selected
+                .as_ref()
+                .and_then(|s| s.viewer.as_ref())
+                .and_then(|v| v.reach.as_ref())
+            {
+                reach.release();
+            }
             *selected = None;
         }
     }
@@ -3736,6 +3854,7 @@ command = ["native-game"]
             viewer: Some(SelectedViewer {
                 moonlight_address: "zao:47989".into(),
                 confirmed_live: true,
+                reach: None,
             }),
         };
         registry.set_selected(selected.clone());
@@ -3859,6 +3978,7 @@ command = ["native-game"]
             viewer: Some(SelectedViewer {
                 moonlight_address: "zao:47989".into(),
                 confirmed_live: true,
+                reach: None,
             }),
         };
         *registry.selected_remote_session.lock().unwrap() = Some(selected.clone());

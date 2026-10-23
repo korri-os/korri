@@ -802,13 +802,23 @@ where
                 .device_public_key()
                 .ok_or(RelayError::Identity)?;
             let queued = match command {
-                CoordinationCommand::ReachOffer { sender_device_public_key, offer } => {
-                    if sender_device_public_key != own_key { return Err(RelayError::Identity); }
+                CoordinationCommand::ReachOffer {
+                    sender_device_public_key,
+                    offer,
+                } => {
+                    if sender_device_public_key != own_key {
+                        return Err(RelayError::Identity);
+                    }
                     offer.validate(now)?;
                     QueuedMessage::ReachOffer(offer)
                 }
-                CoordinationCommand::ReachAnswer { sender_device_public_key, answer } => {
-                    if sender_device_public_key != own_key { return Err(RelayError::Identity); }
+                CoordinationCommand::ReachAnswer {
+                    sender_device_public_key,
+                    answer,
+                } => {
+                    if sender_device_public_key != own_key {
+                        return Err(RelayError::Identity);
+                    }
                     answer.validate(now)?;
                     QueuedMessage::ReachAnswer(answer)
                 }
@@ -1026,12 +1036,20 @@ fn decode_command(
         .map_err(|_| RelayError::InvalidEvent("coordination command is malformed".into()))?;
     let command = match queued {
         QueuedMessage::ReachOffer(offer) => {
-            offer.validate(now)?;
-            CoordinationCommand::ReachOffer { sender_device_public_key: rumor.author, offer }
+            // The read may start before this signal exists. Bound its lifetime
+            // by the authenticated producer time; reach rechecks today's clock.
+            offer.validate(rumor.created_at)?;
+            CoordinationCommand::ReachOffer {
+                sender_device_public_key: rumor.author,
+                offer,
+            }
         }
         QueuedMessage::ReachAnswer(answer) => {
-            answer.validate(now)?;
-            CoordinationCommand::ReachAnswer { sender_device_public_key: rumor.author, answer }
+            answer.validate(rumor.created_at)?;
+            CoordinationCommand::ReachAnswer {
+                sender_device_public_key: rumor.author,
+                answer,
+            }
         }
         QueuedMessage::RunIdleKorrid {
             requested_at,
@@ -1085,8 +1103,14 @@ fn decode_command(
 
 fn command_order(command: &CoordinationCommand) -> (u64, String) {
     match command {
-        CoordinationCommand::ReachOffer { sender_device_public_key, offer } => (offer.expires_at, sender_device_public_key.clone()),
-        CoordinationCommand::ReachAnswer { sender_device_public_key, answer } => (answer.expires_at, sender_device_public_key.clone()),
+        CoordinationCommand::ReachOffer {
+            sender_device_public_key,
+            offer,
+        } => (offer.expires_at, sender_device_public_key.clone()),
+        CoordinationCommand::ReachAnswer {
+            sender_device_public_key,
+            answer,
+        } => (answer.expires_at, sender_device_public_key.clone()),
         CoordinationCommand::RunIdleKorrid {
             sender_device_public_key,
             requested_at,
@@ -2997,6 +3021,87 @@ mod tests {
                 .as_slice(),
             &["wss://relay.example.com"]
         );
+    }
+
+    #[tokio::test]
+    async fn reach_signals_use_the_existing_gift_wrap_path_and_stay_bounded() {
+        let (relays, network, first, second, _) = setup();
+        let publisher =
+            CoordinatedRelays::new(relays.clone(), first.clone(), network.clone()).unwrap();
+        let reader = CoordinatedRelays::new(relays, second, network).unwrap();
+        let offer = crate::federation::reach::signal::Offer {
+            endpoint_id: iroh::SecretKey::generate().public().to_string(),
+            direct_addresses: vec!["192.168.1.2:49217".parse().unwrap(); 16],
+            expires_at: 160,
+            request_id: "ab".repeat(32),
+        };
+        let command = CoordinationCommand::ReachOffer {
+            sender_device_public_key: first.device_public_key().unwrap().into(),
+            offer: offer.clone(),
+        };
+        publisher
+            .queue_command(
+                reader.identity.device_public_key().unwrap(),
+                command.clone(),
+                100,
+            )
+            .await
+            .unwrap();
+        let received = reader.receive(101).await.unwrap();
+        assert_eq!(received.commands, [command]);
+        let queued = QueuedMessage::ReachOffer(offer.clone());
+        assert!(serde_json::to_vec(&queued).unwrap().len() < MAX_EVENT_BYTES / 4);
+        let answer = crate::federation::reach::signal::Answer {
+            endpoint_id: offer.endpoint_id,
+            direct_addresses: offer.direct_addresses,
+            expires_at: 160,
+            request_id: offer.request_id,
+            can_relay_now: true,
+            relay_addresses: vec!["192.168.1.3:443".parse().unwrap()],
+        };
+        let command = CoordinationCommand::ReachAnswer {
+            sender_device_public_key: first.device_public_key().unwrap().into(),
+            answer,
+        };
+        publisher
+            .queue_command(
+                reader.identity.device_public_key().unwrap(),
+                command.clone(),
+                101,
+            )
+            .await
+            .unwrap();
+        assert!(reader
+            .receive(102)
+            .await
+            .unwrap()
+            .commands
+            .contains(&command));
+        // receive()'s timestamp is sampled before relay I/O. A signal made
+        // during that read must not fail its 60-second lifetime bound.
+        let during_read = CoordinationCommand::ReachOffer {
+            sender_device_public_key: first.device_public_key().unwrap().into(),
+            offer: crate::federation::reach::signal::Offer {
+                endpoint_id: iroh::SecretKey::generate().public().to_string(),
+                direct_addresses: Vec::new(),
+                expires_at: 161,
+                request_id: "cd".repeat(32),
+            },
+        };
+        publisher
+            .queue_command(
+                reader.identity.device_public_key().unwrap(),
+                during_read.clone(),
+                101,
+            )
+            .await
+            .unwrap();
+        assert!(reader
+            .receive(100)
+            .await
+            .unwrap()
+            .commands
+            .contains(&during_read));
     }
 
     #[tokio::test]

@@ -4712,19 +4712,32 @@ fn secure_host_routers_with_federation(
         None => router,
     });
     let cli = cli::router(lan.clone(), resources.clone());
+    // Only the peer-only router receives QUIC traffic.
     let peer = peer_rpc::PeerRpcServer::with_shared_authority(
         lan,
         private_state_root,
-        resources.credentials,
-        resources.authorization,
+        resources.credentials.clone(),
+        resources.authorization.clone(),
     )
     .expect("load peer replay authority");
+    let reach = federation::reach::start(
+        private_state_root,
+        resources.directory,
+        resources.credentials,
+        runtime.route_root().ok(),
+        peer.clone().iroh_router(),
+        if cfg!(test) { 0 } else { 443 },
+    );
     let local = Router::new().route("/rpc", post(rpc)).with_state(local);
     let local = match private_input {
         Some(input) => local.merge(input),
         None => local,
     };
-    (peer.router(portal), local, cli)
+    (
+        peer.router(portal).layer(axum::Extension(reach.clone())),
+        local.layer(axum::Extension(reach)),
+        cli,
+    )
 }
 
 /// Generate an unguessable capability for one server lifetime.

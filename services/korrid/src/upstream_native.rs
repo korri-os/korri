@@ -1,3 +1,4 @@
+use crate::federation::reach::nearby_seam::moonlight_control_origin;
 use crate::{
     game_routes::SelectedGameLaunchOutcome, CatalogSnapshot, CatalogSnapshotOutcome,
     MoonlightCertificateAttestOutcome, MoonlightCertificateAttestRequest,
@@ -24,6 +25,7 @@ pub(crate) const NATIVE_RPC_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct NativeClient {
     // Secure constructors retain raw input until peer_origin validates it.
     origins: Vec<String>,
+    peer_label: Option<String>,
     directory: Option<Arc<crate::federation::FederationDirectory>>,
     operation_timeout: Duration,
     expected_peer_public_key: Option<String>,
@@ -64,6 +66,7 @@ impl NativeClient {
             .expect("construct native upstream client");
         Self {
             origins: candidates,
+            peer_label: None,
             directory: None,
             operation_timeout: NATIVE_RPC_TIMEOUT,
             expected_peer_public_key: Some(expected_peer_public_key),
@@ -103,6 +106,7 @@ impl NativeClient {
             .expect("construct native upstream client");
         Self {
             origins: vec![base_url.trim_end_matches('/').to_owned()],
+            peer_label: None,
             directory: None,
             operation_timeout: NATIVE_RPC_TIMEOUT,
             expected_peer_public_key: None,
@@ -131,6 +135,29 @@ impl NativeClient {
     ) -> Self {
         self.directory = Some(Arc::new(directory));
         self
+    }
+
+    pub(crate) fn with_peer_label(mut self, label: String) -> Self {
+        self.peer_label = Some(label);
+        self
+    }
+
+    pub(crate) async fn stream_forward_needed(&self, moonlight_address: Option<&str>) -> bool {
+        let (Some(directory), Some(key)) = (&self.directory, &self.expected_peer_public_key) else {
+            return false;
+        };
+        if !directory.has_iroh_route(key) {
+            return false;
+        }
+        // RPC reachability does not prove that Sunshine is reachable. Probe
+        // its existing control address, with no application bytes and the
+        // same one-second bound as the native candidate race.
+        let Some(origin) = moonlight_address.and_then(moonlight_control_origin) else {
+            return true;
+        };
+        crate::federation::connect::select_origin(&[origin])
+            .await
+            .is_err()
     }
 
     pub(crate) fn candidate_origins(&self) -> Vec<String> {
@@ -520,7 +547,11 @@ impl NativeClient {
             let state = match &result {
                 Ok(_) => crate::federation::PeerState::Ready,
                 Err(_) => crate::federation::PeerState::Failed {
-                    error: "Authenticated peer operation failed".into(),
+                    error: self
+                        .peer_label
+                        .as_ref()
+                        .map(|label| format!("Can't reach {label} from this network right now"))
+                        .unwrap_or_else(|| directory.unreachable_sentence(key)),
                 },
             };
             // A superseded/configuration-changed/revoked completion cannot
@@ -563,10 +594,20 @@ impl NativeClient {
                     .map_err(|_| UpstreamError::Wire("invalid peer origin".into()))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        if let Some(key) = &self.expected_peer_public_key {
+            crate::federation::reach::nearby_seam::prepend(key, &mut candidates);
+            // nearby_seam accepts origins; all candidates below name peer HTTP.
+            for candidate in &mut candidates {
+                if !candidate.ends_with("/peer-rpc") {
+                    candidate.push_str("/peer-rpc");
+                }
+            }
+        }
         let mut seen = std::collections::BTreeSet::new();
         candidates.retain(|url| seen.insert(url.clone()));
         let deadline = tokio::time::Instant::now() + self.operation_timeout;
         let mut last_error = UpstreamError::Unreachable("no eligible peer endpoint".into());
+        let mut may_try_reach = true;
         while !candidates.is_empty() {
             // Only TCP probes race. HTTP effects go to one winning origin.
             let selected = match tokio::time::timeout_at(
@@ -594,7 +635,7 @@ impl NativeClient {
             // A connected slow link gets the remaining aggregate budget, not a
             // fraction based on how many unrelated routes were advertised.
             let attempt =
-                tokio::time::timeout(remaining, self.attempt(&url, request.clone())).await;
+                tokio::time::timeout(remaining, self.attempt(&url, request.clone(), None)).await;
             match attempt {
                 Ok(Ok(response)) => return checked_response(request, response),
                 Ok(Err(failure)) => {
@@ -602,14 +643,38 @@ impl NativeClient {
                         || (read_only && !matches!(failure.error, UpstreamError::Http(400..=499)));
                     last_error = failure.error;
                     if !retry {
+                        may_try_reach = false;
                         break;
                     }
                 }
                 Err(_) => {
                     last_error = UpstreamError::Unreachable("peer operation timed out".into());
                     if !read_only {
+                        may_try_reach = false;
                         break;
                     }
+                }
+            }
+        }
+        // Only transport failures before send (or repeatable reads) may use
+        // another route. A mutation with an uncertain result is never replayed.
+        if may_try_reach {
+            if let (Some(directory), Some(key)) = (&self.directory, &self.expected_peer_public_key)
+            {
+                if let Ok(connection) = directory.reach_connection(key).await {
+                    self.ensure_not_revoked()?;
+                    return match tokio::time::timeout(
+                        self.operation_timeout,
+                        self.attempt("/peer-rpc", request.clone(), Some(&connection)),
+                    )
+                    .await
+                    {
+                        Ok(Ok(response)) => checked_response(request, response),
+                        Ok(Err(failure)) => Err(failure.error),
+                        Err(_) => Err(UpstreamError::Unreachable(
+                            "peer operation timed out".into(),
+                        )),
+                    };
                 }
             }
         }
@@ -620,6 +685,7 @@ impl NativeClient {
         &self,
         rpc_url: &str,
         request: RpcRequest,
+        connection: Option<&iroh::endpoint::Connection>,
     ) -> Result<RpcResponse, AttemptFailure> {
         let credentials = self
             .credentials
@@ -643,17 +709,32 @@ impl NativeClient {
         #[cfg(not(test))]
         let encoded = credentials.encode_request(expected_peer_public_key, request, unix_time());
         let encoded = encoded.map_err(|error| UpstreamError::Wire(error.to_string()))?;
-        let response = self
-            .http
-            .post(rpc_url)
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(encoded.event_json.clone())
-            .send()
+        let response = if let Some(connection) = connection {
+            crate::federation::reach::http::post(
+                connection,
+                rpc_url,
+                encoded.event_json.clone(),
+                None,
+            )
             .await
-            .map_err(|error| AttemptFailure {
-                before_send: error.is_connect(),
+            .map_err(|_| AttemptFailure {
+                before_send: false,
                 error: UpstreamError::Unreachable("peer transport failed".into()),
-            })?;
+            })?
+        } else {
+            crate::federation::reach::http::Response::Tcp(
+                self.http
+                    .post(rpc_url)
+                    .header(reqwest::header::CONTENT_TYPE, "application/json")
+                    .body(encoded.event_json.clone())
+                    .send()
+                    .await
+                    .map_err(|error| AttemptFailure {
+                        before_send: error.is_connect(),
+                        error: UpstreamError::Unreachable("peer transport failed".into()),
+                    })?,
+            )
+        };
         let status = response.status();
         if !status.is_success() {
             return Err(UpstreamError::Http(status.as_u16()).into());
@@ -1060,6 +1141,24 @@ command = ["neverball"]
             wrong.source_status(&"ab".repeat(32)).await,
             Err(UpstreamError::Wire(_))
         ));
+    }
+
+    #[test]
+    fn reach_sunshine_control_probe_preserves_explicit_ports_and_defaults_to_47989() {
+        for (address, origin) in [
+            ("sunshine", "http://sunshine:47989"),
+            ("sunshine:80", "http://sunshine"),
+            ("sunshine:49217", "http://sunshine:49217"),
+            ("127.0.0.1", "http://127.0.0.1:47989"),
+            ("[::1]", "http://[::1]:47989"),
+            ("::1", "http://[::1]:47989"),
+            ("[::1]:80", "http://[::1]"),
+        ] {
+            assert_eq!(moonlight_control_origin(address).as_deref(), Some(origin));
+        }
+        for address in ["user:pass@peer", "peer/path", "peer:0", "peer:"] {
+            assert!(moonlight_control_origin(address).is_none());
+        }
     }
 
     #[test]

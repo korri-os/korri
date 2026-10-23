@@ -119,6 +119,7 @@ pub(crate) fn validate_document_shape(yaml: &str) -> Result<(), String> {
                 "title",
                 "preferences",
                 "relays",
+                "stun",
                 "moonlight",
                 "plugin",
                 "patches",

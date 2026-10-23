@@ -2463,6 +2463,7 @@ dependencies = [
  "sevenz-rust2",
  "sha1 0.10.7",
  "sha2 0.10.9",
+ "socket2",
  "subtle",
  "tempfile",
  "thiserror 2.0.19",

@@ -42,7 +42,10 @@ mod tests {
         let a = load_or_create(root.path()).unwrap();
         assert_eq!(a.public(), load_or_create(root.path()).unwrap().public());
         let path = root.path().join("identity/iroh.key");
-        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         fs::write(&path, "broken").unwrap();
         assert!(load_or_create(root.path()).is_err());
         fs::remove_file(&path).unwrap();

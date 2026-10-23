@@ -373,6 +373,20 @@ impl PeerRpcServer {
         }
     }
 
+    /// Iroh is a peer transport, not a local control connection. Keep the
+    /// peer-only mount and explicitly deny the local authority path.
+    pub(crate) fn iroh_router(self) -> Router {
+        self.router(None).layer(axum::middleware::from_fn(
+            |request: axum::extract::Request, next: axum::middleware::Next| async move {
+                if request.uri().path() == "/rpc" {
+                    StatusCode::FORBIDDEN.into_response()
+                } else {
+                    next.run(request).await
+                }
+            },
+        ))
+    }
+
     async fn authenticate(
         &self,
         event_json: &str,
