@@ -15,7 +15,8 @@ person hosts to carry their traffic.
 - Devices connect directly by hole punching. When that fails, any device of the
   same federation that is online and reachable at that moment may relay the
   encrypted traffic. No device is ever designated for this; any device can be
-  offline at any time.
+  offline at any time. A device relays only while it is on external power and
+  an unmetered network.
 - Korri never asks the person to change their router, such as forwarding a port
   by hand.
 - No third-party relay carries traffic, including n0's public relays and
