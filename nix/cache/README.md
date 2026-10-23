@@ -172,12 +172,13 @@ this machine's key, drops every path a cache the device trusts already serves,
 creates that day's `batch-<date>` release if it is missing, and uploads NARs and
 then metadata, waiting for Pages visibility before success. Nothing else on the machine is touched or inspected.
 
-Two environment variables change how it runs:
+These environment variables change how it runs:
 
 | Variable | Effect |
 |---|---|
 | `KORRI_CACHE_SECRET_KEY` | This builder's signing key. Defaults to `~/.config/korri/cache-key.secret`, and must be private and outside the store. |
 | `KORRI_CACHE_STORE` | Keep the local NAR cache at this path instead of a temporary directory, so a later publish does not compress the same paths again. |
+| `KORRI_CACHE_RELEASE_VISIBILITY_DELAYS` | Space-separated waits in seconds for a release to become visible. Defaults to `2 4 8 16 30`. Each attempt lists releases, then checks by tag if missing. Only published (non-draft) releases can use the by-tag result; drafts must appear in the list. |
 
 Compression is zstd, not Nix's default xz. Most of a device closure is public and
 is dropped moments after it is compressed, so the work is thrown away either way

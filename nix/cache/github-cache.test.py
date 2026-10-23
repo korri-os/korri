@@ -504,22 +504,32 @@ class ApiRetryTest(unittest.TestCase):
 
 
 class ReleaseVisibilityTest(unittest.TestCase):
-    """A new release can be missing from the list for a while; wait for it."""
+    """Find published releases by tag during list lag; drafts need listing."""
 
-    def gh(self, hidden):
+    def gh(self, hidden, *, by_tag=None, draft=False, copies=1, tag_status=404):
         temporary = tempfile.TemporaryDirectory(prefix="korri-release-lag-")
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
-        (root / "calls").write_text("0")
+        (root / "calls").write_text('{"lists": 0, "tags": 0}')
+        record = {"tag_name": TAG, "id": 7, "draft": draft}
         gh = root / "gh"
         gh.write_text(
             f"#!{sys.executable}\n"
-            "import json, pathlib\n"
+            "import json, pathlib, sys\n"
             f"calls = pathlib.Path({str(root / 'calls')!r})\n"
-            "count = int(calls.read_text()) + 1\n"
-            "calls.write_text(str(count))\n"
-            f"listed = count > {hidden}\n"
-            f"print(json.dumps([{{'tag_name': {TAG!r}, 'id': 7, 'draft': False}}] if listed else []))\n"
+            "counts = json.loads(calls.read_text())\n"
+            "by_tag = '/releases/tags/' in sys.argv[-1]\n"
+            "counts['tags' if by_tag else 'lists'] += 1\n"
+            "calls.write_text(json.dumps(counts))\n"
+            "if by_tag:\n"
+            f"    record = {by_tag!r}\n"
+            "    if record is None:\n"
+            f"        sys.stderr.write('gh: lookup failed (HTTP {tag_status})\\n')\n"
+            "        sys.exit(1)\n"
+            "    print(json.dumps(record))\n"
+            "else:\n"
+            f"    listed = counts['lists'] > {hidden}\n"
+            f"    print(json.dumps([{record!r}] * {copies} if listed else []))\n"
         )
         gh.chmod(0o755)
         path = os.environ["PATH"]
@@ -528,7 +538,8 @@ class ReleaseVisibilityTest(unittest.TestCase):
         delays = publisher.RELEASE_VISIBILITY_DELAYS
         publisher.RELEASE_VISIBILITY_DELAYS = (0, 0, 0, 0, 0)
         self.addCleanup(setattr, publisher, "RELEASE_VISIBILITY_DELAYS", delays)
-        return lambda: int((root / "calls").read_text())
+        self.tag_calls = lambda: json.loads((root / "calls").read_text())["tags"]
+        return lambda: json.loads((root / "calls").read_text())["lists"]
 
     def quietly(self):
         stderr = sys.stderr
@@ -543,17 +554,63 @@ class ReleaseVisibilityTest(unittest.TestCase):
         calls = self.gh(hidden=2)
         self.assertEqual(self.quietly()["id"], 7)
         self.assertEqual(calls(), 3)
+        self.assertEqual(self.tag_calls(), 2)
 
     def test_a_listed_release_needs_one_call(self):
         calls = self.gh(hidden=0)
         self.assertEqual(self.quietly()["id"], 7)
         self.assertEqual(calls(), 1)
+        self.assertEqual(self.tag_calls(), 0)
 
     def test_a_release_that_never_appears_fails_after_six_lists(self):
         calls = self.gh(hidden=99)
         with self.assertRaisesRegex(ValueError, "expected exactly one release"):
             self.quietly()
         self.assertEqual(calls(), 6)
+        self.assertEqual(self.tag_calls(), 6)
+
+    def test_an_unlisted_published_release_is_found_by_tag(self):
+        calls = self.gh(hidden=99, by_tag={"tag_name": TAG, "id": 7, "draft": False})
+        self.assertEqual(self.quietly()["id"], 7)
+        self.assertEqual(calls(), 1)
+        self.assertEqual(self.tag_calls(), 1)
+
+    def test_a_draft_still_requires_listing(self):
+        calls = self.gh(
+            hidden=2, draft=True, by_tag={"tag_name": TAG, "id": 7, "draft": True}
+        )
+        self.assertTrue(self.quietly()["draft"])
+        self.assertEqual(calls(), 3)
+        self.assertEqual(self.tag_calls(), 2)
+
+    def test_an_unlisted_draft_is_not_accepted_by_tag(self):
+        calls = self.gh(
+            hidden=99, draft=True, by_tag={"tag_name": TAG, "id": 7, "draft": True}
+        )
+        with self.assertRaisesRegex(ValueError, "expected exactly one release"):
+            self.quietly()
+        self.assertEqual(calls(), 6)
+
+    def test_multiple_listed_matches_are_refused_without_tag_lookup(self):
+        calls = self.gh(
+            hidden=0, copies=2, by_tag={"tag_name": TAG, "id": 7, "draft": False}
+        )
+        with self.assertRaisesRegex(ValueError, "multiple releases use the same tag"):
+            self.quietly()
+        self.assertEqual(calls(), 1)
+        self.assertEqual(self.tag_calls(), 0)
+
+    def test_tag_lookup_failure_is_not_treated_as_an_absent_release(self):
+        calls = self.gh(hidden=99, tag_status=403)
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.quietly()
+        self.assertEqual(calls(), 1)
+        self.assertEqual(self.tag_calls(), 1)
+
+    def test_tag_lookup_still_requires_an_integer_release_id(self):
+        self.gh(hidden=99, by_tag={"tag_name": TAG, "id": "7", "draft": False})
+        with self.assertRaisesRegex(ValueError, "expected exactly one release"):
+            self.quietly()
 
 
 if __name__ == "__main__":

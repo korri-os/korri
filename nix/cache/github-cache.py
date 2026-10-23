@@ -400,7 +400,6 @@ def api(endpoint):
 
 
 def release_records(repo, tag):
-    # The by-tag endpoint is for published releases. Drafts require listing.
     found = []
     page = 1
     while True:
@@ -413,13 +412,24 @@ def release_records(repo, tag):
         page += 1
     if len(found) > 1:
         raise ValueError("multiple releases use the same tag")
+    if not found:
+        # Published releases can be absent from the list even after its
+        # visibility window. Drafts still require listing.
+        try:
+            record = api(f"repos/{repo}/releases/tags/{quote(tag, safe='')}")
+        except subprocess.CalledProcessError as error:
+            if "(HTTP 404)" not in error.stderr:
+                raise
+        else:
+            if not isinstance(record, dict) or record.get("tag_name") != tag:
+                raise ValueError("invalid GitHub release record")
+            if record.get("draft") is False:
+                found.append(record)
     return found
 
 
-# A release that publish.sh has just created can be missing from the release
-# list for a few seconds. In nix-cache run 39784357035 rgds created
-# batch-2026-10-22-1103 and failed 3 s later on this lookup. Wait for it; a
-# release that is still missing after about a minute is an error.
+# Newly created drafts can take time to appear in the release list. Retry
+# visibility misses; published releases also have the by-tag lookup above.
 RELEASE_VISIBILITY_DELAYS = tuple(
     int(delay)
     for delay in os.environ.get(
