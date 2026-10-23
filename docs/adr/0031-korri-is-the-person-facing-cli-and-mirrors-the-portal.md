@@ -50,15 +50,34 @@ word, including `--help`, starts the daemon.
   verbs `play`, `leave`, `resume` and `end`, beside the mirrored areas.
   Getting games from providers is `korri get`, with `korri downloads` for
   progress.
+- `korri devices` covers every device the owner has, this one included:
+  `list` marks this device, and `rename [<device>] <name>` renames one. Run
+  setup again is `korri setup`. The SteamGridDB key is `korri metadata key`.
+- Launch settings are `korri launch-settings set <key>=<value>`. The
+  `--system`, `--game`, `--release` and `--profile` flags choose the layer,
+  and the Device layer is the default. `--runner` and `--family` choose the
+  runner scope, and any runner is the default. One launch takes
+  `korri play <game> --set <key>=<value>`. `show` prints each key's
+  effective value and the layer it comes from. Keys follow the wire:
+  `cpu.min`, `cpu.max`, `gpu.min`, `gpu.max`, runner setting names, and
+  `<modifier>.enabled` and `<modifier>.<setting>`. Hooks, environment and
+  arguments stay read-only, as in the portal (ADR 0029).
+- `--device <name>` takes a device name without case, or a device key. An
+  unclear name lists the matches and stops. It never guesses.
+- An error is one line with the cause in product words, then one line with
+  the next step. Exit 1 is a failure, 2 is bad usage, and 4 means korrid
+  cannot be reached. With `--json`, errors go to stderr as JSON.
 - Sleep, power off and Restart Korri wait until korrid has calls for them,
   so the portal and `korri` share one path.
 - `korri` is Rust, in `clients/cli/`.
 - The old `korrid catalog` and `korrid identity` commands go in one cut,
   after `korri` covers them. There is no alias.
 - In that cut, folder pairing, unpairing and rescans become live `korri`
-  commands. `owner-binding-request` and `reset` become `korri` person
-  actions. `identity status` and `identity import` stay as hidden `korrid`
-  subcommands, because boot runs them before korrid starts.
+  commands. `reset` becomes a `korri` recovery action. `identity status`,
+  `owner-binding-request` and `identity import` stay as hidden `korrid`
+  subcommands, because boot runs them before korrid starts. Ownership moves
+  only through `korri identity switch`, the same identity switch as the
+  portal.
   `catalog migrate`, `replace-test-owner-offline` and
   `reconcile-stale-grants-offline` are deleted after each device is known to
   have run them.
