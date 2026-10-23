@@ -5896,7 +5896,7 @@ mod tests {
                 phase: None,
             })
             .unwrap(),
-            serde_json::json!({ "launchId": "l1", "streamPlayers": [] })
+            serde_json::json!({ "launchId": "l1" })
         );
         assert_eq!(
             serde_json::to_value(SessionStopRequest {
