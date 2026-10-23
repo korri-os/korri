@@ -12,6 +12,7 @@ mod input_coordination;
 mod input_seat;
 mod launch_reservation;
 pub(crate) mod moonlight_certificate;
+mod occupied_seats;
 pub(crate) mod play_log;
 mod prepare;
 mod private_input;

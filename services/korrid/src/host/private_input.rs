@@ -203,15 +203,24 @@ mod tests {
                     match event {
                         RemoteEvent::Connected { source } | RemoteEvent::State { source } => {
                             remote_current.insert(
-                                (source.launch_id.clone(), source.controller_number),
+                                (
+                                    source.launch_id.clone(),
+                                    source.client_id.clone(),
+                                    source.controller_number,
+                                ),
                                 source.clone(),
                             );
                         }
                         RemoteEvent::Disconnected {
+                            client_id,
                             launch_id,
                             controller_number,
                         } => {
-                            remote_current.remove(&(launch_id.clone(), *controller_number));
+                            remote_current.remove(&(
+                                launch_id.clone(),
+                                client_id.clone(),
+                                *controller_number,
+                            ));
                         }
                     }
                 }
@@ -342,6 +351,7 @@ mod tests {
         native_batch(&mut browser, "device-removed").await;
 
         let source = RemoteSource {
+            client_id: "paired-client-a".into(),
             launch_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             controller_number: 15,
             state: GamepadState::neutral(),
@@ -353,9 +363,10 @@ mod tests {
         let arrival = native_batch(&mut browser, "device-state-complete").await;
         assert_eq!(
             arrival[0]["device"]["deviceId"],
-            "remote:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:15"
+            "remote:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:paired-client-a:15"
         );
         let held = RemoteSource {
+            client_id: "paired-client-a".into(),
             state: GamepadState {
                 buttons: 0x1000,
                 ..Default::default()

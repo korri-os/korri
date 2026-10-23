@@ -125,7 +125,7 @@ pub struct CaptureRuntime {
     state: RuntimeState,
     owner: Option<String>,
     sources: BTreeMap<String, CapturedSource>,
-    remote: BTreeMap<(String, u8), RemoteShortcutSource>,
+    remote: BTreeMap<(String, String, u8), RemoteShortcutSource>,
     updates: VecDeque<SeatRequest>,
     routes: ActionRoutes,
     activity: Option<ControllerActivity>,
@@ -522,7 +522,7 @@ impl CaptureRuntime {
         match event {
             RemoteEvent::Connected { source } => {
                 self.remote.insert(
-                    (source.launch_id, source.controller_number),
+                    (source.launch_id, source.client_id, source.controller_number),
                     RemoteShortcutSource {
                         state: source.state,
                         policies: Policies::new(self.routes),
@@ -532,17 +532,20 @@ impl CaptureRuntime {
                 Vec::new()
             }
             RemoteEvent::Disconnected {
+                client_id,
                 launch_id,
                 controller_number,
             } => {
-                self.remote.remove(&(launch_id, controller_number));
+                self.remote
+                    .remove(&(launch_id, client_id, controller_number));
                 Vec::new()
             }
             RemoteEvent::State { source } => {
-                let Some(current) = self
-                    .remote
-                    .get_mut(&(source.launch_id, source.controller_number))
-                else {
+                let Some(current) = self.remote.get_mut(&(
+                    source.launch_id,
+                    source.client_id,
+                    source.controller_number,
+                )) else {
                     return Vec::new();
                 };
                 let old = current.state;

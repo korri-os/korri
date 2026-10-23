@@ -54,6 +54,9 @@ struct DryBackend {
     fail_create_slot: Option<u8>,
 }
 impl SeatBackend for DryBackend {
+    fn event_device(&self, slot: u8) -> Result<PathBuf, String> {
+        Ok(PathBuf::from(format!("/dev/input/event{slot}")))
+    }
     fn create(&mut self, spec: &SeatSpec) -> Result<(), String> {
         if self.fail_create_slot == Some(spec.slot) {
             return Err("injected dry-run create failure".into());
@@ -501,6 +504,7 @@ fn decode_coordination(bytes: &[u8]) -> Option<SeatRequest> {
 }
 fn rejected_coordination(failure: SeatFailure) -> SeatReply {
     SeatReply {
+        occupied_local_seats: Vec::new(),
         failure: Some(failure),
         count: 0,
         session: None,

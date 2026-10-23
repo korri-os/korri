@@ -8,6 +8,7 @@ use std::{
     ffi::CString,
     fs,
     os::unix::fs::MetadataExt,
+    path::PathBuf,
     thread,
     time::{Duration, Instant},
 };
@@ -41,6 +42,7 @@ const DPAD_LEFT: u32 = 0x0004;
 const DPAD_RIGHT: u32 = 0x0008;
 
 struct SeatDevice {
+    event_device: PathBuf,
     device: VirtualDevice,
     output: SeatOutput,
 }
@@ -144,14 +146,14 @@ impl UinputSeatBackend {
         builder.build().map_err(display)
     }
 
-    fn wait_for_event_node(&self, device: &mut VirtualDevice) -> Result<(), String> {
+    fn wait_for_event_node(&self, device: &mut VirtualDevice) -> Result<PathBuf, String> {
         let deadline = Instant::now() + EVENT_NODE_BUDGET;
         while Instant::now() < deadline {
             if let Ok(nodes) = device.enumerate_dev_nodes_blocking() {
                 for path in nodes.flatten() {
-                    if let Ok(metadata) = fs::metadata(path) {
+                    if let Ok(metadata) = fs::metadata(&path) {
                         if metadata.gid() == self.event_gid && metadata.mode() & 0o777 == 0o660 {
-                            return Ok(());
+                            return Ok(path);
                         }
                     }
                 }
@@ -163,6 +165,12 @@ impl UinputSeatBackend {
 }
 
 impl SeatBackend for UinputSeatBackend {
+    fn event_device(&self, slot: u8) -> Result<PathBuf, String> {
+        self.devices
+            .get(&slot)
+            .map(|seat| seat.event_device.clone())
+            .ok_or_else(|| "Korri seat is not active".into())
+    }
     fn create(&mut self, spec: &SeatSpec) -> Result<(), String> {
         if spec.slot == 0 || self.devices.contains_key(&spec.slot) {
             return Err("invalid or duplicate Korri seat slot".into());
@@ -172,10 +180,11 @@ impl SeatBackend for UinputSeatBackend {
             self.preflight_complete = true;
         }
         let mut device = self.build_device(spec)?;
-        self.wait_for_event_node(&mut device)?;
+        let event_device = self.wait_for_event_node(&mut device)?;
         self.devices.insert(
             spec.slot,
             SeatDevice {
+                event_device,
                 device,
                 output: SeatOutput {
                     state: Some(GamepadState::neutral()),

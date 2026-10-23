@@ -2,6 +2,7 @@
 //! Each SOCK_SEQPACKET packet is [COORDINATION_VERSION] followed by JSON.
 //! Binary version-1 START/STOP/RESET remains a separate lease connection.
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 pub const COORDINATION_VERSION: u8 = 2;
 pub const MAX_COORDINATION_BYTES: usize = 65_536;
@@ -110,11 +111,12 @@ pub enum SeatFailure {
 }
 
 /// Full current connected remote source set, including sources without seats.
-/// Identity is (launchId, controllerNumber), never a seat number. Absence means
+/// Identity is (launchId, clientId, controllerNumber), never a seat number. Absence means
 /// source loss. Only the current authenticated mirror lease can populate it.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RemoteSource {
+    pub client_id: String,
     pub launch_id: String,
     pub controller_number: u8,
     pub state: GamepadState,
@@ -131,6 +133,8 @@ pub enum RemoteEvent {
         source: RemoteSource,
     },
     Disconnected {
+        #[serde(rename = "clientId")]
+        client_id: String,
         #[serde(rename = "launchId")]
         launch_id: String,
         #[serde(rename = "controllerNumber")]
@@ -141,6 +145,7 @@ pub enum RemoteEvent {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SeatReply {
+    pub occupied_local_seats: Vec<PathBuf>,
     pub failure: Option<SeatFailure>,
     pub count: u8,
     pub session: Option<String>,

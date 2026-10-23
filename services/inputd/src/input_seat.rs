@@ -1,7 +1,7 @@
 use crate::seat_pool::{PoolError, SeatPool, DEFAULT_SEAT_COUNT};
 pub use korri_input_contract::*;
 use serde::Deserialize;
-use std::{collections::BTreeMap, num::NonZeroU8};
+use std::{collections::BTreeMap, num::NonZeroU8, path::PathBuf};
 
 pub const MAX_SEATS: u8 = 4;
 pub const MAX_MIRROR_FRAME_BYTES: usize = 2048;
@@ -26,6 +26,7 @@ impl SeatSpec {
 }
 pub trait SeatBackend: Send {
     fn create(&mut self, spec: &SeatSpec) -> Result<(), String>;
+    fn event_device(&self, slot: u8) -> Result<PathBuf, String>;
     fn write_state(&mut self, slot: u8, state: GamepadState) -> Result<(), String>;
     fn destroy(&mut self, slot: u8) -> Result<(), String>;
 }
@@ -52,7 +53,7 @@ pub enum SeatResetOutcome {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum SourceKey {
     Physical(String),
-    Remote(String, u8),
+    Remote(String, String, u8),
 }
 struct Source {
     state: GamepadState,
@@ -101,12 +102,23 @@ impl<B: SeatBackend> SeatRuntime<B> {
     /// One authenticated coordinator request. Errors are acknowledged, never
     /// represented as successful stored-only count changes.
     pub fn coordinate(&mut self, request: SeatRequest, now_ms: u64) -> SeatReply {
-        let result = self.apply(request, now_ms);
+        let mut result = self.apply(request, now_ms);
+        let occupied_local_seats = match self
+            .pool
+            .occupied_event_devices(|key| matches!(key, SourceKey::Physical(_)))
+        {
+            Ok(paths) => paths,
+            Err(_) => {
+                result = Err(SeatFailure::Backend);
+                Vec::new()
+            }
+        };
         if result == Err(SeatFailure::Backend) {
             self.faulted = true;
             self.recovery_required = true;
         }
         SeatReply {
+            occupied_local_seats,
             failure: result.as_ref().err().cloned(),
             count: self.pool.count(),
             session: self.pool.session().map(str::to_owned),
@@ -296,8 +308,9 @@ impl<B: SeatBackend> SeatRuntime<B> {
             Err(error) => Err(pool_failure(error)),
         };
         if source.has_state {
-            if let SourceKey::Remote(launch_id, controller_number) = key {
+            if let SourceKey::Remote(launch_id, client_id, controller_number) = key {
                 self.push_feedback(RemoteEvent::Disconnected {
+                    client_id: client_id.clone(),
                     launch_id: launch_id.clone(),
                     controller_number: *controller_number,
                 });
@@ -422,6 +435,10 @@ impl<B: SeatBackend> SeatRuntime<B> {
         if envelope.frame.launch_id() != launch {
             return MirrorOutcome::StaleLaunch;
         }
+        if !valid_native_text(envelope.frame.client_id(), 256) {
+            return MirrorOutcome::Invalid;
+        }
+        let client_id = envelope.frame.client_id().to_owned();
         let launch = launch.clone();
         let (controller, state, disconnect) = match envelope.frame {
             SunshineFrame::Connected(frame) => (frame.controller_number, None, false),
@@ -452,7 +469,7 @@ impl<B: SeatBackend> SeatRuntime<B> {
         if controller > 15 {
             return MirrorOutcome::Invalid;
         }
-        let key = SourceKey::Remote(launch, controller);
+        let key = SourceKey::Remote(launch, client_id, controller);
         let result = if disconnect {
             let slot = self.pool.slot(&key);
             self.disconnect_source(&key).map(|_| slot)
@@ -499,7 +516,7 @@ impl<B: SeatBackend> SeatRuntime<B> {
         }
     }
     fn remote_source(&self, key: &SourceKey) -> Option<RemoteSource> {
-        let SourceKey::Remote(launch_id, controller_number) = key else {
+        let SourceKey::Remote(launch_id, client_id, controller_number) = key else {
             return None;
         };
         let source = self.sources.get(key)?;
@@ -507,6 +524,7 @@ impl<B: SeatBackend> SeatRuntime<B> {
             return None;
         }
         Some(RemoteSource {
+            client_id: client_id.clone(),
             launch_id: launch_id.clone(),
             controller_number: *controller_number,
             state: source.state,
@@ -633,6 +651,8 @@ enum SunshineFrame {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SourceConnectedFrame {
+    #[serde(rename = "clientId")]
+    client_id: String,
     #[serde(rename = "launchId")]
     launch_id: String,
     #[serde(rename = "controllerNumber")]
@@ -641,6 +661,8 @@ struct SourceConnectedFrame {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SourceDisconnectedFrame {
+    #[serde(rename = "clientId")]
+    client_id: String,
     #[serde(rename = "launchId")]
     launch_id: String,
     #[serde(rename = "controllerNumber")]
@@ -650,6 +672,8 @@ struct SourceDisconnectedFrame {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SourceStateFrame {
+    #[serde(rename = "clientId")]
+    client_id: String,
     #[serde(rename = "launchId")]
     launch_id: String,
     #[serde(rename = "controllerNumber")]
@@ -669,6 +693,13 @@ struct SourceStateFrame {
     right_stick_y: i16,
 }
 impl SunshineFrame {
+    fn client_id(&self) -> &str {
+        match self {
+            Self::Connected(frame) => &frame.client_id,
+            Self::Disconnected(frame) => &frame.client_id,
+            Self::State(frame) => &frame.client_id,
+        }
+    }
     fn launch_id(&self) -> &str {
         match self {
             Self::Connected(frame) => &frame.launch_id,
@@ -678,6 +709,9 @@ impl SunshineFrame {
     }
 }
 impl<T: SeatBackend + ?Sized> SeatBackend for Box<T> {
+    fn event_device(&self, slot: u8) -> Result<PathBuf, String> {
+        (**self).event_device(slot)
+    }
     fn create(&mut self, spec: &SeatSpec) -> Result<(), String> {
         (**self).create(spec)
     }

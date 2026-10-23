@@ -7,12 +7,14 @@ use tokio_tungstenite::tungstenite::Message;
 
 fn baseline() -> SeatReply {
     SeatReply {
+        occupied_local_seats: Vec::new(),
         failure: None,
         count: 4,
         session: None,
         recovery_required: false,
         slot: None,
         remote_sources: vec![RemoteSource {
+            client_id: "paired-client-a".into(),
             launch_id: "live-launch".into(),
             controller_number: 1,
             state: GamepadState {

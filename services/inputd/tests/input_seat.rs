@@ -25,6 +25,9 @@ impl RecordingSeatBackend {
     }
 }
 impl SeatBackend for RecordingSeatBackend {
+    fn event_device(&self, slot: u8) -> Result<std::path::PathBuf, String> {
+        Ok(format!("/dev/input/event{slot}").into())
+    }
     fn create(&mut self, spec: &SeatSpec) -> Result<(), String> {
         let mut record = self.0.lock().unwrap();
         if record.fail_create == Some(spec.slot) {
@@ -110,17 +113,17 @@ fn envelope(frame: &str, token: &str) -> Vec<u8> {
 }
 fn connected(controller: u8) -> String {
     format!(
-        r#"{{"kind":"source-connected","launchId":"{LAUNCH}","controllerNumber":{controller}}}"#
+        r#"{{"kind":"source-connected","launchId":"{LAUNCH}","clientId":"paired-client-a","controllerNumber":{controller}}}"#
     )
 }
 fn disconnected(controller: u8) -> String {
     format!(
-        r#"{{"kind":"source-disconnected","launchId":"{LAUNCH}","controllerNumber":{controller},"reason":"gone"}}"#
+        r#"{{"kind":"source-disconnected","launchId":"{LAUNCH}","clientId":"paired-client-a","controllerNumber":{controller},"reason":"gone"}}"#
     )
 }
 fn frame_state(controller: u8, state: GamepadState) -> String {
     format!(
-        r#"{{"kind":"source-state","launchId":"{LAUNCH}","controllerNumber":{controller},"buttons":{},"leftTrigger":{},"rightTrigger":{},"leftStickX":{},"leftStickY":{},"rightStickX":{},"rightStickY":{}}}"#,
+        r#"{{"kind":"source-state","launchId":"{LAUNCH}","clientId":"paired-client-a","controllerNumber":{controller},"buttons":{},"leftTrigger":{},"rightTrigger":{},"leftStickX":{},"leftStickY":{},"rightStickX":{},"rightStickY":{}}}"#,
         state.buttons,
         state.left_trigger,
         state.right_trigger,
@@ -147,8 +150,9 @@ fn disconnect_without_optional_reason_uses_its_kind_and_neutralizes_the_seat() {
         MirrorOutcome::Accepted { slot: 1 }
     );
     assert_ne!(backend.state(1), GamepadState::neutral());
-    let disconnected =
-        format!(r#"{{"kind":"source-disconnected","launchId":"{LAUNCH}","controllerNumber":0}}"#);
+    let disconnected = format!(
+        r#"{{"kind":"source-disconnected","launchId":"{LAUNCH}","clientId":"paired-client-a","controllerNumber":0}}"#
+    );
     assert_eq!(
         runtime.accept(&envelope(&disconnected, TOKEN), 20),
         MirrorOutcome::Accepted { slot: 1 }
@@ -772,4 +776,88 @@ fn explicit_remote_disconnect_is_launch_scoped_and_same_controller_reclaims() {
     );
     runtime.bind(OTHER, TOKEN).unwrap();
     assert_eq!(remote(&mut runtime, 7, HELD), MirrorOutcome::StaleLaunch);
+}
+
+#[test]
+fn two_clients_controller_zero_have_distinct_reservations_and_reclaim_their_own_seats() {
+    let (mut runtime, _) = runtime(3);
+    assert_eq!(connect(&mut runtime, "local"), Some(1));
+    begin(&mut runtime);
+    let frame =
+        |frame: String, client: &str| envelope(&frame.replace("paired-client-a", client), TOKEN);
+    assert_eq!(
+        runtime.accept(&frame(connected(0), "a"), 20),
+        MirrorOutcome::Accepted { slot: 2 }
+    );
+    assert_eq!(
+        runtime.accept(&frame(connected(0), "b"), 20),
+        MirrorOutcome::Accepted { slot: 3 }
+    );
+    assert_eq!(
+        runtime.accept(&frame(disconnected(0), "a"), 21),
+        MirrorOutcome::Accepted { slot: 2 }
+    );
+    assert_eq!(
+        runtime.accept(&frame(disconnected(0), "b"), 21),
+        MirrorOutcome::Accepted { slot: 3 }
+    );
+    assert_eq!(
+        runtime.accept(&frame(connected(0), "b"), 22),
+        MirrorOutcome::Accepted { slot: 3 }
+    );
+    assert_eq!(
+        runtime.accept(&frame(connected(0), "a"), 22),
+        MirrorOutcome::Accepted { slot: 2 }
+    );
+    let reply = ok(&mut runtime, SeatRequest::Poll);
+    assert_eq!(
+        reply.occupied_local_seats,
+        vec![std::path::PathBuf::from("/dev/input/event1")]
+    );
+}
+
+#[test]
+fn missing_or_empty_client_identity_is_malformed_on_every_frame_kind() {
+    let (mut runtime, _) = runtime(4);
+    begin(&mut runtime);
+    for frame in [
+        connected(0),
+        disconnected(0),
+        frame_state(0, GamepadState::neutral()),
+    ] {
+        let missing = frame.replace("\"clientId\":\"paired-client-a\",", "");
+        let empty = frame.replace("paired-client-a", "");
+        assert_eq!(
+            runtime.accept(&envelope(&missing, TOKEN), 20),
+            MirrorOutcome::Invalid
+        );
+        assert_eq!(
+            runtime.accept(&envelope(&empty, TOKEN), 20),
+            MirrorOutcome::Invalid
+        );
+    }
+}
+
+#[test]
+fn occupied_local_read_excludes_unbound_remote_and_disconnected_reserved_seats() {
+    let (mut runtime, _) = runtime(4);
+    assert!(ok(&mut runtime, SeatRequest::Poll)
+        .occupied_local_seats
+        .is_empty());
+    connect(&mut runtime, "local");
+    begin(&mut runtime);
+    assert_eq!(
+        ok(&mut runtime, SeatRequest::Poll).occupied_local_seats,
+        vec![std::path::PathBuf::from("/dev/input/event1")]
+    );
+    runtime.accept(&envelope(&connected(0), TOKEN), 20);
+    ok(
+        &mut runtime,
+        SeatRequest::PhysicalDisconnected {
+            device_id: "local".into(),
+        },
+    );
+    assert!(ok(&mut runtime, SeatRequest::Poll)
+        .occupied_local_seats
+        .is_empty());
 }

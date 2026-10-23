@@ -14,7 +14,7 @@
 //! a prior partial failure. This engine cannot repair a backend's stale diff cache.
 
 use crate::input_seat::{validate_launch_id, GamepadState, SeatBackend, SeatSpec, MAX_SEATS};
-use std::num::NonZeroU8;
+use std::{num::NonZeroU8, path::PathBuf};
 
 /// Grounded in the current boot-time seat count, not a configuration schema.
 pub const DEFAULT_SEAT_COUNT: NonZeroU8 = NonZeroU8::new(MAX_SEATS).unwrap();
@@ -178,6 +178,29 @@ impl<K: Eq, B: SeatBackend> SeatPool<K, B> {
 
     pub fn slot(&self, source: &K) -> Option<u8> {
         self.index(source).map(|index| self.seats[index].slot)
+    }
+
+    /// Connected bindings only. Disconnected reservations and unbound devices
+    /// are not occupied inputs, even though all virtual devices remain alive.
+    pub fn occupied_event_devices(
+        &self,
+        include: impl Fn(&K) -> bool,
+    ) -> Result<Vec<PathBuf>, PoolError> {
+        self.seats
+            .iter()
+            .filter(|seat| {
+                seat.binding
+                    .as_ref()
+                    .is_some_and(|binding| binding.connected && include(&binding.source))
+            })
+            .map(|seat| {
+                self.backend
+                    .as_ref()
+                    .expect("live pool owns backend")
+                    .event_device(seat.slot)
+                    .map_err(PoolError::Backend)
+            })
+            .collect()
     }
 
     /// Retains every binding. Routing changes must not end reservation scope.

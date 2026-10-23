@@ -87,6 +87,9 @@ impl Probe {
 struct Backend(Probe);
 
 impl SeatBackend for Backend {
+    fn event_device(&self, slot: u8) -> Result<std::path::PathBuf, String> {
+        Ok(format!("/dev/input/event{slot}").into())
+    }
     fn create(&mut self, spec: &SeatSpec) -> Result<(), String> {
         let mut record = self.0 .0.lock().unwrap();
         record.calls.push(Call::Create(spec.clone()));

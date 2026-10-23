@@ -331,19 +331,28 @@ impl NativeSources {
         for event in &reply.remote_events {
             match event {
                 RemoteEvent::Connected { source } => self.connected(
-                    &remote_id(&source.launch_id, source.controller_number),
+                    &remote_id(
+                        &source.launch_id,
+                        &source.client_id,
+                        source.controller_number,
+                    ),
                     "Remote gamepad",
                     source.state,
                 )?,
                 RemoteEvent::State { source } => self.state(
-                    &remote_id(&source.launch_id, source.controller_number),
+                    &remote_id(
+                        &source.launch_id,
+                        &source.client_id,
+                        source.controller_number,
+                    ),
                     source.state,
                     false,
                 )?,
                 RemoteEvent::Disconnected {
+                    client_id,
                     launch_id,
                     controller_number,
-                } => self.disconnected(&remote_id(launch_id, *controller_number))?,
+                } => self.disconnected(&remote_id(launch_id, client_id, *controller_number))?,
             }
         }
         Ok(())
@@ -355,8 +364,8 @@ impl NativeSources {
         }
     }
 }
-fn remote_id(launch_id: &str, controller_number: u8) -> String {
-    format!("remote:{launch_id}:{controller_number}")
+fn remote_id(launch_id: &str, client_id: &str, controller_number: u8) -> String {
+    format!("remote:{launch_id}:{client_id}:{controller_number}")
 }
 #[cfg(test)]
 pub(super) mod test_support {
@@ -379,6 +388,7 @@ pub(super) mod test_support {
     }
     pub(crate) fn reply() -> SeatReply {
         SeatReply {
+            occupied_local_seats: Vec::new(),
             failure: None,
             count: 4,
             session: None,
@@ -632,6 +642,7 @@ mod tests {
     fn overflow_remote_navigation_uses_source_identity_not_slot() {
         let mut mapper = NativeSources::new(None);
         let source = korri_input_contract::RemoteSource {
+            client_id: "paired-client-a".into(),
             launch_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             controller_number: 7,
             state: GamepadState::neutral(),
@@ -642,8 +653,11 @@ mod tests {
             source: source.clone(),
         });
         mapper.remote(&reply).unwrap();
-        assert!(mapper.states.contains_key(&remote_id(&source.launch_id, 7)));
+        assert!(mapper
+            .states
+            .contains_key(&remote_id(&source.launch_id, &source.client_id, 7)));
         reply.remote_events = vec![RemoteEvent::Disconnected {
+            client_id: "paired-client-a".into(),
             launch_id: source.launch_id,
             controller_number: 7,
         }];

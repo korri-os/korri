@@ -176,7 +176,7 @@ fn exact_start_mirror_and_stop_lifecycle() {
 
     let mirror = connect(&receiver.path("sunshine-input-seat.sock"));
     let frame = format!(
-        r#"{{"mirrorToken":"{token}","frame":{{"kind":"source-connected","launchId":"{LAUNCH}","controllerNumber":0}}}}"#
+        r#"{{"mirrorToken":"{token}","frame":{{"kind":"source-connected","launchId":"{LAUNCH}","clientId":"paired-client-a","controllerNumber":0}}}}"#
     ) + "\n";
     send(mirror.as_raw_fd(), frame.as_bytes());
 
@@ -311,7 +311,7 @@ fn start_mirror(receiver: &Receiver) -> (OwnedFd, String) {
 fn remote_connect(receiver: &Receiver, token: &str, controller: u8) {
     let fd = connect(&receiver.path("sunshine-input-seat.sock"));
     let frame = format!(
-        r#"{{"mirrorToken":"{token}","frame":{{"kind":"source-connected","launchId":"{LAUNCH}","controllerNumber":{controller}}}}}"#
+        r#"{{"mirrorToken":"{token}","frame":{{"kind":"source-connected","launchId":"{LAUNCH}","clientId":"paired-client-a","controllerNumber":{controller}}}}}"#
     ) + "\n";
     send(fd.as_raw_fd(), frame.as_bytes());
     drop(fd);
@@ -319,7 +319,7 @@ fn remote_connect(receiver: &Receiver, token: &str, controller: u8) {
     // expecting this source in native feedback (never fabricate neutral there).
     let fd = connect(&receiver.path("sunshine-input-seat.sock"));
     let frame = format!(
-        r#"{{"mirrorToken":"{token}","frame":{{"kind":"source-state","launchId":"{LAUNCH}","controllerNumber":{controller},"buttons":0,"leftTrigger":0,"rightTrigger":0,"leftStickX":0,"leftStickY":0,"rightStickX":0,"rightStickY":0}}}}"#
+        r#"{{"mirrorToken":"{token}","frame":{{"kind":"source-state","launchId":"{LAUNCH}","clientId":"paired-client-a","controllerNumber":{controller},"buttons":0,"leftTrigger":0,"rightTrigger":0,"leftStickX":0,"leftStickY":0,"rightStickX":0,"rightStickY":0}}}}"#
     ) + "\n";
     send(fd.as_raw_fd(), frame.as_bytes());
 }

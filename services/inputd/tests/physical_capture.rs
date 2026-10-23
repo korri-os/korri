@@ -343,6 +343,7 @@ async fn exact_stop_still_requires_a_complete_authenticated_same_controller_dbus
 
 fn remote(buttons: u32) -> RemoteSource {
     RemoteSource {
+        client_id: "paired-client-a".into(),
         launch_id: "launch-test".into(),
         controller_number: 0,
         state: GamepadState {
@@ -374,6 +375,7 @@ fn remote_shortcuts_work_for_overflow_but_never_gain_authenticated_dbus_exact_st
         .iter()
         .all(|action| action.dispatch_mode != DispatchMode::ExactStop));
     runtime.handle_remote_event(RemoteEvent::Disconnected {
+        client_id: "paired-client-a".into(),
         launch_id: "launch-test".into(),
         controller_number: 0,
     });
