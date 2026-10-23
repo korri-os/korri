@@ -98,8 +98,11 @@ const names = (status: SurfaceStatus, gameId: string): boolean => {
       return status.gameId === undefined || status.gameId === gameId
     case "ChooseSave":
       return status.gameId === gameId
+    // A stream session runs on another device: it is not this launch.
     case "Browsing":
     case "Problem":
+    case "Paused":
+    case "Ended":
       return false
   }
 }

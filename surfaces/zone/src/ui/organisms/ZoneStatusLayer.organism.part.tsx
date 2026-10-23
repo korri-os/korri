@@ -10,6 +10,8 @@ import {
   statusConfirm,
   statusConfirmForGame,
   statusConfirmThree,
+  statusEnded,
+  statusPaused,
   statusProblem,
   statusProblemLong,
   statusProblemNoRetry,
@@ -42,6 +44,8 @@ function Scenario({ status, page, stage }: { readonly status: SurfaceStatus; rea
       focus={model.focus}
       onBusyAction={(actionId) => dispatch({ _tag: "ChoseBusyAction", actionId })}
       onConfirmAction={(actionId) => dispatch({ _tag: "ChoseConfirmAction", actionId })}
+      onEndedDismiss={() => dispatch({ _tag: "ChoseEndedDismiss" })}
+      onPausedAction={(actionId) => dispatch({ _tag: "ChosePausedAction", actionId })}
       onFocusButton={(index) => dispatch({ _tag: "FocusedStatusButton", index })}
       onProblemButton={(button) => dispatch({ _tag: "ChoseProblemButton", button })}
       page={page}
@@ -123,6 +127,16 @@ export function Running() {
 /** The dialog with DISMISS and RETRY. */
 export function Problem() {
   return <Scenario status={statusProblem} />
+}
+
+/** Stream play: the device holding the session paused it. Korri's LEAVE, lit. */
+export function Paused() {
+  return <Scenario page={standInPage} status={statusPaused} />
+}
+
+/** Stream play: the session ended. Korri's reason and DISMISS. */
+export function Ended() {
+  return <Scenario page={standInPage} status={statusEnded} />
 }
 
 /** Korri cannot retry: DISMISS alone. */

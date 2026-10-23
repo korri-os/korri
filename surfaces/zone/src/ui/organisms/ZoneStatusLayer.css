@@ -103,10 +103,13 @@
   font-size: calc(var(--zone-caps-1) * var(--zone-px));
 }
 
-/* Problem and Confirm: the sky dialog from edge to edge across the
- * page's middle, as Mania's is, never taller than the page. */
+/* Problem, Confirm, and a stream paused or ended: the sky dialog from edge
+ * to edge across the page's middle, as Mania's is, never taller than the
+ * page. */
 .zone-status-layer-problem,
-.zone-status-layer-confirm {
+.zone-status-layer-confirm,
+.zone-status-layer-paused,
+.zone-status-layer-ended {
   position: absolute;
   inset: 0;
   display: grid;

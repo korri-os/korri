@@ -146,6 +146,8 @@ export function ZoneSurface({ model: published, host }: { readonly model: Surfac
           focus={state.status.focus}
           onBusyAction={actionId => send.status({ _tag: "ChoseBusyAction", actionId })}
           onConfirmAction={actionId => send.status({ _tag: "ChoseConfirmAction", actionId })}
+          onEndedDismiss={() => send.status({ _tag: "ChoseEndedDismiss" })}
+          onPausedAction={actionId => send.status({ _tag: "ChosePausedAction", actionId })}
           onFocusButton={index => send.status({ _tag: "FocusedStatusButton", index })}
           onProblemButton={button => send.status({ _tag: "ChoseProblemButton", button })}
           page={zonePage(shown, program, model, host, send)}

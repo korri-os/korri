@@ -2,12 +2,14 @@
  * The status layer: what Zone draws over any page while Korri's status is
  * not Browsing, as one value, and the one function that changes it.
  *
- *     shown    which layer is up: none, busy, running, problem or confirm. It
+ *     shown    which layer is up: none, busy, running, problem, confirm,
+ *              paused or ended. It
  *              follows Korri's status on every message, so it can never be
  *              stale.
  *     focus    the index of the lit button in the layer: one of Korri's busy
- *              actions, DISMISS (0) and RETRY (1) in the problem dialog, or
- *              one of Korri's confirm actions in the host's order.
+ *              actions, DISMISS (0) and RETRY (1) in the problem dialog,
+ *              one of Korri's confirm or paused actions in the host's
+ *              order, or DISMISS (0) when a stream session ended.
  *
  * Focus moves into the layer when it opens with a button to hold it (busy
  * with actions, problem, confirm) and goes back to where it was when it closes. The
@@ -20,7 +22,7 @@
 import type { SurfaceStatus } from "@contracts/surface/korri-surface"
 import { ask, stay, type ZoneStep } from "./requests"
 
-export type ZoneStatusShown = "none" | "busy" | "running" | "problem" | "confirm"
+export type ZoneStatusShown = "none" | "busy" | "running" | "problem" | "confirm" | "paused" | "ended"
 
 export interface ZoneStatusModel {
   readonly shown: ZoneStatusShown
@@ -36,9 +38,10 @@ export type ZoneStatusMessage =
   /** Korri published a model. The layer follows its status. */
   | { readonly _tag: "KorriPublished" }
   /**
-   * The host's Back. A problem is dismissed; busy work is never cancelled by
-   * Back, and a question is never answered by it: Korri's actions are the
-   * only ways out, and Zone never infers which one declines.
+   * The host's Back. A problem, and a stream session that ended, are
+   * dismissed; busy work is never cancelled by Back, a question is never
+   * answered by it, and a paused stream is never left by it: Korri's actions
+   * are the only ways out, and Zone never infers which one declines.
    */
   | { readonly _tag: "PressedBack" }
   /** The cursor is on a button of the layer. */
@@ -49,6 +52,10 @@ export type ZoneStatusMessage =
   | { readonly _tag: "ChoseProblemButton"; readonly button: ZoneProblemButton }
   /** A on one of Korri's answers to its question. */
   | { readonly _tag: "ChoseConfirmAction"; readonly actionId: string }
+  /** A on one of Korri's actions while the device holding the stream paused it. */
+  | { readonly _tag: "ChosePausedAction"; readonly actionId: string }
+  /** A on DISMISS after the stream session this device played on ended. */
+  | { readonly _tag: "ChoseEndedDismiss" }
 
 /** Which layer Korri's status calls for. */
 export function shownFor(status: SurfaceStatus): ZoneStatusShown {
@@ -64,6 +71,10 @@ export function shownFor(status: SurfaceStatus): ZoneStatusShown {
     case "Confirm":
     case "ChooseSave":
       return "confirm"
+    case "Paused":
+      return "paused"
+    case "Ended":
+      return "ended"
   }
 }
 
@@ -84,6 +95,10 @@ export function statusButtonCount(status: SurfaceStatus): number {
     case "ChooseSave":
       // One answer per side, then Korri's own (src/zone-save-split.ts).
       return status.sides.length + status.actions.length
+    case "Paused":
+      return status.actions.length
+    case "Ended":
+      return 1
     case "Browsing":
     case "Running":
       return 0
@@ -107,7 +122,7 @@ function step(model: ZoneStatusModel, message: ZoneStatusMessage, status: Surfac
     case "KorriPublished":
       return stay(model)
     case "PressedBack":
-      return status._tag === "Problem" ? ask(model, { _tag: "DismissProblem" }) : stay(model)
+      return status._tag === "Problem" || status._tag === "Ended" ? ask(model, { _tag: "DismissProblem" }) : stay(model)
     case "FocusedStatusButton":
       return stay({ ...model, focus: Math.max(0, message.index) })
     case "ChoseBusyAction": {
@@ -124,16 +139,23 @@ function step(model: ZoneStatusModel, message: ZoneStatusMessage, status: Surfac
       const action = status.actions.find(candidate => candidate.id === message.actionId)
       return action?.enabled === true ? ask(model, { _tag: "RunAction", actionId: action.id }) : stay(model)
     }
+    case "ChosePausedAction": {
+      if (status._tag !== "Paused") return stay(model)
+      const action = status.actions.find(candidate => candidate.id === message.actionId)
+      return action?.enabled === true ? ask(model, { _tag: "RunAction", actionId: action.id }) : stay(model)
+    }
+    case "ChoseEndedDismiss":
+      return status._tag === "Ended" ? ask(model, { _tag: "DismissProblem" }) : stay(model)
   }
 }
 
 /**
- * The button a layer opens on: the first. Korri's question opens on its
- * first enabled action, since an inert button cannot hold the cursor; with
+ * The button a layer opens on: the first. Korri's question, and a paused
+ * stream's actions, open on the first enabled action, since an inert button cannot hold the cursor; with
  * none enabled, on the first.
  */
 function opening(status: SurfaceStatus): number {
-  if (status._tag !== "Confirm") return 0
+  if (status._tag !== "Confirm" && status._tag !== "Paused") return 0
   return Math.max(0, status.actions.findIndex(action => action.enabled))
 }
 

@@ -41,6 +41,12 @@ export type ZoneStatusBusyAt = "middle" | "foot"
  *    order, labels as given, the first lit. No button is read as yes or no
  *    by its label, and Back answers nothing: Korri's actions are the only
  *    ways out.
+ *  - Paused (stream play): the same dialog over the veiled page, with
+ *    Korri's kicker naming the device that paused the session, the detail
+ *    under it, and one button per host action (LEAVE), the first enabled
+ *    lit. Back answers nothing here either; the host owns it.
+ *  - Ended (stream play): the same dialog with Korri's kicker and reason,
+ *    and DISMISS, which acknowledges it. Back acknowledges it too.
  *
  * `stage` is a picture that stands over the page and under the status's
  * own panels: the launch title card. While it stands the busy strip goes
@@ -65,6 +71,8 @@ export function ZoneStatusLayer({
   onBusyAction,
   onProblemButton,
   onConfirmAction,
+  onPausedAction,
+  onEndedDismiss,
 }: {
   readonly status: SurfaceStatus
   /** The catalog's title for a game id; undefined when the catalog has none. */
@@ -84,19 +92,26 @@ export function ZoneStatusLayer({
   readonly onProblemButton?: (button: ZoneStatusProblemButton) => void
   /** A on one of Korri's answers to its question: the action's id. */
   readonly onConfirmAction?: (actionId: string) => void
+  /** A on one of Korri's actions while a stream is paused: the action's id. */
+  readonly onPausedAction?: (actionId: string) => void
+  /** A on DISMISS after a stream session ended. */
+  readonly onEndedDismiss?: () => void
 }) {
   const root = useRef<HTMLDivElement | null>(null)
   const layer = useRef<HTMLDivElement | null>(null)
   const holdsFocus = (status._tag === "Busy" && (status.actions?.length ?? 0) > 0) || status._tag === "Problem"
     || (status._tag === "Confirm" && status.actions.length > 0)
+    || (status._tag === "Paused" && status.actions.length > 0) || status._tag === "Ended"
   useZoneLayerFocus(layer, holdsFocus ? `${status._tag}:${focus}` : undefined, true)
   const hud = status._tag === "Running" && runningHud
   useZoneStatusHud(root, hud)
 
   const covers = status._tag === "Busy" || status._tag === "Problem" || status._tag === "Confirm"
+    || status._tag === "Paused" || status._tag === "Ended"
+  // Ended's reason already names the game: no title over it.
   const gameTitle = status._tag === "Problem"
     ? status.gameTitle ?? (status.gameId === undefined ? undefined : titleOf(status.gameId))
-    : status._tag === "Browsing" || status.gameId === undefined ? undefined : titleOf(status.gameId)
+    : status._tag === "Browsing" || status._tag === "Ended" || status.gameId === undefined ? undefined : titleOf(status.gameId)
 
   return (
     <div className="zone-status-layer" data-status={status._tag} ref={root}>
@@ -181,6 +196,37 @@ export function ZoneStatusLayer({
             lines={status.detail === undefined ? [] : [status.detail]}
             onFocusAction={onFocusButton}
             title={gameTitle}
+          />
+        </div>
+      ) : null}
+      {status._tag === "Paused" ? (
+        <div className="zone-status-layer-paused" data-block-exit ref={layer}>
+          <ZoneDialog
+            actions={status.actions.map(action => ({
+              id: action.id,
+              label: action.label,
+              disabled: !action.enabled,
+              destructive: action.destructive,
+              onPress: onPausedAction === undefined ? undefined : () => onPausedAction(action.id),
+            }))}
+            focused={focus}
+            headline={status.kicker}
+            korriHeadline
+            lines={status.detail === undefined ? [] : [status.detail]}
+            onFocusAction={onFocusButton}
+            title={gameTitle}
+          />
+        </div>
+      ) : null}
+      {status._tag === "Ended" ? (
+        <div className="zone-status-layer-ended" data-block-exit ref={layer}>
+          <ZoneDialog
+            actions={[{ label: "Dismiss", onPress: onEndedDismiss }]}
+            focused={focus}
+            headline={status.kicker}
+            korriHeadline
+            lines={[status.reason]}
+            onFocusAction={onFocusButton}
           />
         </div>
       ) : null}

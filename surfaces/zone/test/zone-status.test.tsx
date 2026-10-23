@@ -18,6 +18,8 @@ import {
   statusConfirm,
   statusConfirmForGame,
   statusConfirmThree,
+  statusEnded,
+  statusPaused,
   statusProblem,
   statusProblemNoRetry,
   statusProgressKnown,
@@ -148,6 +150,27 @@ describe("updateStatus", () => {
   })
 })
 
+describe("stream play: paused and ended", () => {
+  test("Paused is its own layer on its first enabled action; Back leaves nothing, LEAVE runs by its id", () => {
+    expect(settled(statusPaused)).toEqual({ shown: "paused", focus: 0 })
+    expect(statusTakesFocus(statusPaused)).toBe(true)
+    const paused = settled(statusPaused)
+    expect(updateStatus(paused, { _tag: "PressedBack" }, statusPaused).requests).toEqual([])
+    expect(updateStatus(paused, { _tag: "ChosePausedAction", actionId: "stream:leave" }, statusPaused).requests)
+      .toEqual([{ _tag: "RunAction", actionId: "stream:leave" }])
+    expect(updateStatus(paused, { _tag: "ChosePausedAction", actionId: "nope" }, statusPaused).requests).toEqual([])
+    expect(updateStatus(settled(statusConfirm), { _tag: "ChosePausedAction", actionId: "stream:leave" }, statusConfirm).requests).toEqual([])
+  })
+
+  test("Ended: DISMISS and Back both acknowledge it; DISMISS does nothing once it is gone", () => {
+    expect(settled(statusEnded)).toEqual({ shown: "ended", focus: 0 })
+    const ended = settled(statusEnded)
+    expect(updateStatus(ended, { _tag: "PressedBack" }, statusEnded).requests).toEqual([{ _tag: "DismissProblem" }])
+    expect(updateStatus(ended, { _tag: "ChoseEndedDismiss" }, statusEnded).requests).toEqual([{ _tag: "DismissProblem" }])
+    expect(updateStatus(settled(statusBrowsing), { _tag: "ChoseEndedDismiss" }, statusBrowsing).requests).toEqual([])
+  })
+})
+
 /** The organism on the real model, Korri answering, over a page with one button. */
 function Harness({ program }: { readonly program: ReturnType<typeof createStatusProgram> }) {
   const { model, context } = useSyncExternalStore(program.subscribe, program.get)
@@ -157,6 +180,8 @@ function Harness({ program }: { readonly program: ReturnType<typeof createStatus
       focus={model.focus}
       onBusyAction={(actionId) => program.dispatch({ _tag: "ChoseBusyAction", actionId })}
       onConfirmAction={(actionId) => program.dispatch({ _tag: "ChoseConfirmAction", actionId })}
+      onEndedDismiss={() => program.dispatch({ _tag: "ChoseEndedDismiss" })}
+      onPausedAction={(actionId) => program.dispatch({ _tag: "ChosePausedAction", actionId })}
       onFocusButton={(index) => program.dispatch({ _tag: "FocusedStatusButton", index })}
       onProblemButton={(button) => program.dispatch({ _tag: "ChoseProblemButton", button })}
       page={page.current}
@@ -418,5 +443,26 @@ describe("the veil covers the whole page", () => {
     expect(find.closest(".zone-status-layer-content")).not.toBeNull()
     expect(find.closest(".zone-status-layer-page")?.hasAttribute("data-covered")).toBe(true)
     expect(find.closest("[inert]")).not.toBeNull()
+  })
+})
+
+describe("ZoneStatusLayer, stream play", () => {
+  test("Paused: Korri's kicker and detail over the inert page, LEAVE lit and run by its id", () => {
+    const program = mount(statusPaused)
+    const dialog = screen.getByRole("dialog", { name: "Paused on Odin 2 Portal" })
+    expect(within(dialog).getByText(byWords("Turtles in Time goes on when Simon returns to it."))).toBeDefined()
+    const leave = within(dialog).getByRole("button", { name: "Leave" })
+    expect(document.activeElement).toBe(leave)
+    expect(pageOf()).not.toBeNull()
+    fireEvent.click(leave)
+    expect(program.host.calls).toEqual(["action:stream:leave"])
+  })
+
+  test("Ended: Korri's reason and DISMISS, which calls dismiss", () => {
+    const program = mount(statusEnded)
+    const dialog = screen.getByRole("dialog", { name: "Session ended" })
+    expect(within(dialog).getByText(byWords("Turtles in Time ended on Odin 2 Portal."))).toBeDefined()
+    fireEvent.click(within(dialog).getByRole("button", { name: "Dismiss" }))
+    expect(program.host.calls).toEqual(["dismiss"])
   })
 })

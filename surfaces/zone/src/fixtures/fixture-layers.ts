@@ -25,6 +25,24 @@ export const fixtureTitleOf = (gameId: string): string | undefined =>
 
 export const statusBrowsing: SurfaceStatus = { _tag: "Browsing" }
 
+// ---- Stream play: the device holding the session paused it, or it ended ----
+
+/** Paused on the device that holds the session, with the host's Leave. */
+export const statusPaused: SurfaceStatus = {
+  _tag: "Paused",
+  kicker: "Paused on Odin 2 Portal",
+  detail: "Turtles in Time goes on when Simon returns to it.",
+  actions: [{ id: "stream:leave", label: "Leave", enabled: true }],
+}
+
+/** The session this device played on is over, in Korri's words. */
+export const statusEnded: SurfaceStatus = {
+  _tag: "Ended",
+  kicker: "Session ended",
+  reason: "Turtles in Time ended on Odin 2 Portal.",
+  gameTitle: "Turtles in Time",
+}
+
 export const statusBusyKicker: SurfaceStatus = { _tag: "Busy", kicker: "Starting" }
 
 export const statusBusyDetail: SurfaceStatus = {
