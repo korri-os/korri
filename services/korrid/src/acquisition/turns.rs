@@ -339,6 +339,13 @@ fn admit(request: &PluginHttpRequest, hosts: &[String]) -> Result<Admitted, Prov
         {
             return Err(failed("refused or invalid request header"));
         }
+        if request.method.is_some() && lower == "content-type" {
+            if !value.eq_ignore_ascii_case("application/x-www-form-urlencoded") {
+                return Err(failed("a form POST needs the form content type"));
+            }
+            // The shared sender owns this header, as for FinalDownload.
+            continue;
+        }
         headers.push((lower, value.clone()));
     }
     let timeout = match request.timeout_ms {

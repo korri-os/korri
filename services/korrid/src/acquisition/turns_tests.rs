@@ -144,7 +144,7 @@ async fn provider_turns_send_form_posts_without_forwarding_credentials() {
     let handlers = format!(
         "{{'claims.search': (i) => {{
             if (!i.responses.length) return {{_tag: 'HttpRequests', requests: [{{url: '{page}'}}]}};
-            if (i.responses.length === 1) return {{_tag: 'HttpRequests', requests: [{{url: '{file}', method: 'POST', body: {{csrf_token: 'a b&+'}}}}]}};
+            if (i.responses.length === 1) return {{_tag: 'HttpRequests', requests: [{{url: '{file}', method: 'POST', headers: {{'Content-Type': 'application/x-www-form-urlencoded'}}, body: {{csrf_token: 'a b&+'}}}}]}};
             return [{claim}];
         }}}}",
         page = server.url(HOST, "/page"),
@@ -163,9 +163,14 @@ async fn provider_turns_send_form_posts_without_forwarding_credentials() {
     assert_eq!(received[0].method, "GET");
     assert_eq!(received[1].method, "POST");
     assert_eq!(received[1].body, b"csrf_token=a+b%26%2B");
-    assert!(received[1]
-        .headers
-        .contains(&"content-type: application/x-www-form-urlencoded".to_owned()));
+    assert_eq!(
+        received[1]
+            .headers
+            .iter()
+            .filter(|header| header.starts_with("content-type:"))
+            .collect::<Vec<_>>(),
+        [&"content-type: application/x-www-form-urlencoded".to_owned()]
+    );
     for request in received {
         for refused in ["cookie:", "authorization:", "proxy-authorization:"] {
             assert!(!request.headers.iter().any(|h| h.starts_with(refused)));
@@ -243,6 +248,7 @@ async fn invalid_provider_forms_are_refused_before_any_request_in_the_turn() {
         "body: {id: '42'}",
         "method: 'POST', body: null",
         "method: 'POST', body: {id: 42}",
+        "method: 'POST', body: {id: null}",
         "method: 'POST', body: ['id']",
         "method: 'POST', body: {file: 'x'.repeat(8188)}",
         "method: 'POST', body: {file: '&'.repeat(2730)}",
@@ -251,6 +257,7 @@ async fn invalid_provider_forms_are_refused_before_any_request_in_the_turn() {
         "method: 'POST', headers: {'Set-Cookie': 'a=b'}",
         "method: 'POST', headers: {'Proxy-Authorization': 'secret'}",
         "method: 'POST', headers: {Host: 'other.test'}",
+        "method: 'POST', headers: {'Content-Type': 'application/json'}",
     ] {
         failed(failure(&request(fields)).await);
     }
