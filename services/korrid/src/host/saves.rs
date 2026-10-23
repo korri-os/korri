@@ -1735,6 +1735,7 @@ mod tests {
                 },
             }],
             display: None,
+            ..Default::default()
         };
         prepared
             .plan

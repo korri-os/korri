@@ -271,6 +271,11 @@ pub struct HostSessionControl {
 
 impl HostSessionControl {
     #[cfg(test)]
+    pub(super) fn set_limits_client(&mut self, client: crate::launch_settings::helper::Client) {
+        self.limits_client = client;
+    }
+
+    #[cfg(test)]
     pub fn new(private_state_root: &Path, backend: Arc<dyn LaunchUnitBackend>) -> Self {
         Self::with_input_seats(private_state_root, backend, Arc::new(DisabledInputSeats))
     }
@@ -818,11 +823,12 @@ impl HostSessionControl {
 
     fn complete_active_snapshot(&self, interrupted: bool) -> Result<(), String> {
         use crate::saves::{store::NativeSaveStore, types::SnapshotRecord, SaveRepository};
-        let Some(record) = read_active(&self.identity_root)? else {
+        let Some(mut record) = read_active(&self.identity_root)? else {
             return Ok(());
         };
         crate::launch_settings::session::end(&self.limits_client, record.launch_id());
         self.input_seats.end_session(record.launch_id())?;
+        self.finish_after_hooks(&mut record)?;
         let store = NativeSaveStore::new(
             self.identity_root
                 .parent()
@@ -845,6 +851,7 @@ impl HostSessionControl {
                 release_id,
                 runner_id,
                 save_locations,
+                ..
             } => {
                 let key = PlayHistoryKey {
                     user_id: person.clone(),
@@ -930,6 +937,63 @@ impl HostSessionControl {
             self.notify_save_snapshot(&key.game_id);
         }
         Ok(())
+    }
+
+    fn mark_hook_result(&self, result: super::hooks::SessionResult) -> Result<(), String> {
+        if let Some(mut record) = read_active(&self.identity_root)? {
+            let launch_id = record.launch_id().to_owned();
+            if let ActiveSession::Running {
+                after_hooks: Some(hooks),
+                ..
+            } = &mut record
+            {
+                // An explicit stop remains a stop even if systemd reports a
+                // signal while it terminates the unit.
+                if hooks.result != Some(super::hooks::SessionResult::Stopped) {
+                    hooks.result = Some(result);
+                    if result == super::hooks::SessionResult::Exited {
+                        hooks.exit_status = self.backend.exit_status(&launch_id).ok().flatten();
+                    }
+                    replace_active(&self.identity_root, &record)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn finish_after_hooks(&self, record: &mut ActiveSession) -> Result<(), String> {
+        let launch_id = record.launch_id().to_owned();
+        let current_boot = match record {
+            ActiveSession::Running {
+                after_hooks: Some(_),
+                ..
+            } => super::hooks::boot_id()?,
+            _ => return Ok(()),
+        };
+        loop {
+            let ActiveSession::Running {
+                after_hooks: Some(hooks),
+                ..
+            } = record
+            else {
+                return Ok(());
+            };
+            if hooks.boot_id != current_boot || hooks.steps.is_empty() {
+                return Ok(());
+            }
+            if hooks.result.is_none() {
+                hooks.result = Some(super::hooks::SessionResult::Exited);
+                hooks.exit_status = self.backend.exit_status(&launch_id).ok().flatten();
+            }
+            // Persist progress before running an arbitrary command. A daemon
+            // crash cannot execute the same effect twice; remaining steps stay
+            // available to the next daemon on this boot.
+            let step = hooks.steps.pop().expect("nonempty after steps");
+            hooks.next_step += 1;
+            let execution = hooks.clone();
+            replace_active(&self.identity_root, record)?;
+            execution.run_next(self.backend.as_ref(), &launch_id, &step);
+        }
     }
 
     pub(crate) fn set_save_push(&self, sender: tokio::sync::mpsc::UnboundedSender<String>) {
@@ -1051,11 +1115,14 @@ impl HostSessionControl {
 
     fn stop_game_after_seat_failure(&self, state: &mut ActiveState, launch_id: &str) {
         let _ = self.stop_seats(launch_id);
-        if self.backend.stop(launch_id).is_err()
-            && !matches!(
-                self.backend.state(launch_id),
-                Ok(LaunchUnitState::Completed)
-            )
+        if self
+            .mark_hook_result(super::hooks::SessionResult::Stopped)
+            .is_err()
+            || self.backend.stop(launch_id).is_err()
+                && !matches!(
+                    self.backend.state(launch_id),
+                    Ok(LaunchUnitState::Completed)
+                )
         {
             *state = ActiveState::RecoveryBlocked;
             return;
@@ -1138,6 +1205,7 @@ impl HostSessionControl {
         environment: &BTreeMap<String, String>,
         limits: Option<&crate::launch_settings::session::SessionLimits>,
         initial_warnings: Vec<crate::launcher::typed_settings::LaunchWarning>,
+        hooks: Option<&super::hooks::LaunchHooks>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         let mut warnings = initial_warnings;
         let session = self.prepare_inner(
@@ -1150,6 +1218,7 @@ impl HostSessionControl {
             None,
             limits,
             &mut warnings,
+            hooks,
         )?;
         Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
     }
@@ -1172,6 +1241,7 @@ impl HostSessionControl {
             None,
             None,
             &mut Vec::new(),
+            None,
         )
     }
 
@@ -1186,6 +1256,7 @@ impl HostSessionControl {
         configured_command: Result<&[String], RpcFailure>,
         environment: &BTreeMap<String, String>,
         limits: Option<&crate::launch_settings::session::SessionLimits>,
+        hooks: Option<&super::hooks::LaunchHooks>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         let mut warnings = Vec::new();
         let session = self.prepare_inner(
@@ -1198,6 +1269,7 @@ impl HostSessionControl {
             None,
             limits,
             &mut warnings,
+            hooks,
         )?;
         Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
     }
@@ -1209,6 +1281,7 @@ impl HostSessionControl {
         configured_command: Result<&[String], RpcFailure>,
         environment: &BTreeMap<String, String>,
         limits: Option<&crate::launch_settings::session::SessionLimits>,
+        hooks: Option<&super::hooks::LaunchHooks>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         let mut warnings = Vec::new();
         let session = self.prepare_inner(
@@ -1221,6 +1294,7 @@ impl HostSessionControl {
             Some(reservation),
             limits,
             &mut warnings,
+            hooks,
         )?;
         Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
     }
@@ -1236,6 +1310,7 @@ impl HostSessionControl {
         reservation: Option<&LaunchReservation>,
         limits: Option<&crate::launch_settings::session::SessionLimits>,
         warnings: &mut Vec<crate::launcher::typed_settings::LaunchWarning>,
+        hooks: Option<&super::hooks::LaunchHooks>,
     ) -> Result<SessionPrepared, RpcFailure> {
         if self.shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
             return Err(failure("HostStopping", "korrid is stopping"));
@@ -1316,16 +1391,67 @@ impl HostSessionControl {
             }
             None => crate::generate_launch_id(),
         };
+        let prepared_plan = crate::launcher::plugin_launch::declared_saves(configured_command)
+            .map_err(|message| failure("LocalRouteUnavailable", message))?;
+        let mut game_environment = environment.clone();
+        if let Some(hooks) = hooks {
+            if hooks
+                .resolved
+                .before
+                .len()
+                .saturating_add(hooks.resolved.after.len())
+                > 1000
+            {
+                return Err(failure("HookFailed", "HookFailed { phase: before, step: 1000, reason: at most 1000 hook steps fit the authorized unit names }"));
+            }
+            game_environment.extend(hooks.game_environment.clone());
+        }
+        if let Some((_, prepared)) = &prepared_plan {
+            for name in &prepared.plan.env_unset {
+                game_environment.remove(name);
+            }
+        }
+        let hook_environment = hooks.map(|hooks| {
+            super::hooks::environment(
+                &game_environment,
+                &launch_id,
+                game_id,
+                &hooks.context,
+                None,
+                None,
+            )
+        });
+        if let (Some(hooks), Some(environment)) = (hooks, &hook_environment) {
+            super::hooks::before(
+                self.backend.as_ref(),
+                &launch_id,
+                configured_command,
+                environment,
+                &hooks.resolved.before,
+                warnings,
+            )?;
+        }
         let mut active = ActiveSession::running(
             launch_id.clone(),
             game_id.into(),
             person_public_key.map(str::to_owned),
             self.clock.now_epoch_seconds(),
         );
-        if let Some((input, prepared)) =
-            crate::launcher::plugin_launch::declared_saves(configured_command)
-                .map_err(|message| failure("SaveDeclarationInvalid", message))?
-        {
+        if let ActiveSession::Running { after_hooks, .. } = &mut active {
+            if let Some(hooks) = hooks.filter(|hooks| !hooks.resolved.after.is_empty()) {
+                *after_hooks = Some(super::hooks::AfterHooks {
+                    boot_id: super::hooks::boot_id()
+                        .map_err(|message| failure("HookFailed", message))?,
+                    command: configured_command.to_vec(),
+                    environment: hook_environment.clone().expect("hook environment"),
+                    steps: hooks.resolved.after.clone(),
+                    next_step: hooks.resolved.before.len(),
+                    result: None,
+                    exit_status: None,
+                });
+            }
+        }
+        if let Some((input, prepared)) = prepared_plan {
             let person = person_public_key.ok_or_else(|| {
                 failure(
                     "SaveIdentityUnavailable",
@@ -1566,6 +1692,8 @@ impl HostSessionControl {
                 ))
             }
             Ok(LaunchUnitState::Completed) => {
+                self.mark_hook_result(super::hooks::SessionResult::Exited)
+                    .map_err(|message| failure("HostRecoveryBlocked", message))?;
                 // The unit died before prepare returned. No play is
                 // recorded for a launch the player never received.
                 let _ = seat_lease.stop(&launch_id);
@@ -1723,7 +1851,10 @@ impl HostSessionControl {
         launch_id: String,
         message: String,
     ) -> Result<(), ()> {
-        if self.stop_seats(&launch_id).is_err()
+        if self
+            .mark_hook_result(super::hooks::SessionResult::Failed)
+            .is_err()
+            || self.stop_seats(&launch_id).is_err()
             || self.clear_failed_unit(&launch_id).is_err()
             || self.complete_active_snapshot(true).is_err()
         {
@@ -1737,7 +1868,10 @@ impl HostSessionControl {
     fn recover_failed_unit(&self, launch_id: String, message: String) -> ActiveState {
         // Input is not initialized during recovery. As with normal completion,
         // input initialization later reconciles the receiver's retained lease.
-        if self.clear_failed_unit(&launch_id).is_err()
+        if self
+            .mark_hook_result(super::hooks::SessionResult::Failed)
+            .is_err()
+            || self.clear_failed_unit(&launch_id).is_err()
             || self.complete_active_snapshot(true).is_err()
         {
             ActiveState::RecoveryBlocked
@@ -1749,9 +1883,19 @@ impl HostSessionControl {
     /// Removes the active record for a launch that never reached the
     /// player. Nothing is logged.
     fn discard_active(&self) -> Result<(), String> {
-        if let Some(record) = read_active(&self.identity_root)? {
+        if let Some(mut record) = read_active(&self.identity_root)? {
             crate::launch_settings::session::end(&self.limits_client, record.launch_id());
             self.input_seats.end_session(record.launch_id())?;
+            if let ActiveSession::Running {
+                after_hooks: Some(hooks),
+                ..
+            } = &mut record
+            {
+                if hooks.result.is_none() {
+                    hooks.result = Some(super::hooks::SessionResult::Failed);
+                }
+            }
+            self.finish_after_hooks(&mut record)?;
         }
         consume_active(&self.identity_root).map(|_| ())
     }
@@ -2264,6 +2408,13 @@ impl HostSessionControl {
                     if launch_id == expected_launch_id =>
                 {
                     let launch_id = launch_id.clone();
+                    if self
+                        .mark_hook_result(super::hooks::SessionResult::Stopped)
+                        .is_err()
+                    {
+                        *state = ActiveState::RecoveryBlocked;
+                        return observe(HostSessionStop::RecoveryBlocked);
+                    }
                     *state = ActiveState::Stopping {
                         launch_id: launch_id.clone(),
                         game_id: game_id.clone(),
@@ -3704,6 +3855,7 @@ mod tests {
                     config: Default::default(),
                 }],
                 display: None,
+                ..Default::default()
             })
             .unwrap(),
         ];
@@ -6794,6 +6946,7 @@ mod launch_settings_lifecycle_tests {
                 &BTreeMap::new(),
                 Some(&limits()),
                 Vec::new(),
+                None,
             )
             .unwrap();
         assert!(first.warnings.is_empty());
@@ -6809,6 +6962,7 @@ mod launch_settings_lifecycle_tests {
                 &BTreeMap::new(),
                 Some(&limits()),
                 Vec::new(),
+                None,
             )
             .unwrap();
         assert_eq!(first.session.launch_id, resumed.session.launch_id);
@@ -6865,6 +7019,7 @@ mod launch_settings_lifecycle_tests {
                     &BTreeMap::new(),
                     Some(&limits()),
                     Vec::new(),
+                    None,
                 )
                 .unwrap();
             assert_eq!(launch.warnings.len(), 1);
@@ -6933,6 +7088,7 @@ mod launch_settings_completion_tests {
                 &BTreeMap::new(),
                 Some(&limits),
                 Vec::new(),
+                None,
             )
             .unwrap();
         assert!(launch.warnings.is_empty());

@@ -51,6 +51,12 @@ pub(super) enum ActiveSession {
             skip_serializing_if = "Option::is_none"
         )]
         save_locations: Option<Vec<crate::saves::types::SaveLocation>>,
+        #[serde(
+            rename = "afterHooks",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        after_hooks: Option<super::hooks::AfterHooks>,
     },
     CompletionPending {
         #[serde(rename = "launchId")]
@@ -87,6 +93,7 @@ impl ActiveSession {
             release_id: None,
             runner_id: None,
             save_locations: None,
+            after_hooks: None,
         }
     }
 

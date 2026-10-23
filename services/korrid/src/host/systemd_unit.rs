@@ -83,6 +83,24 @@ pub trait LaunchUnitBackend: Send + Sync {
         command: &[String],
         environment: &BTreeMap<String, String>,
     ) -> Result<(), LaunchUnitError>;
+    /// Runs one bounded hook in the game's runtime sandbox, waiting for completion.
+    fn run_hook(
+        &self,
+        _launch_id: &str,
+        _step: usize,
+        _game_command: &[String],
+        _run: &str,
+        _timeout: Duration,
+        _environment: &BTreeMap<String, String>,
+    ) -> Result<(), LaunchUnitError> {
+        Err(LaunchUnitError::new(
+            LaunchUnitErrorKind::Failed,
+            "hook execution unavailable",
+        ))
+    }
+    fn exit_status(&self, _launch_id: &str) -> Result<Option<i32>, LaunchUnitError> {
+        Ok(None)
+    }
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError>;
     /// Stops the unit from any live state. A backend must thaw a frozen
     /// unit itself before stopping it; callers never issue a thaw before
@@ -1036,6 +1054,30 @@ impl SystemdLaunchUnitBackend {
                 "configured command is empty",
             ));
         }
+        let mut arguments = vec![
+            "--system".into(),
+            "--no-ask-password".into(),
+            "--quiet".into(),
+            // Retain failed-game metadata until the controller reads and resets it.
+            "--service-type=exec".into(),
+            format!("--unit={unit}"),
+            "--slice=korri-games.slice".into(),
+            "--property=CPUWeight=100".into(),
+        ];
+        arguments.extend(self.sandbox_properties(launch_id, configured_command, environment)?);
+        arguments.push("--".into());
+        arguments.extend(configured_command.iter().cloned());
+        Ok(arguments)
+    }
+
+    // Both game and hook units consume this builder. Mount and identity policy
+    // must never diverge when a sandbox boundary changes.
+    fn sandbox_properties(
+        &self,
+        launch_id: &str,
+        configured_command: &[String],
+        environment: &BTreeMap<String, String>,
+    ) -> Result<Vec<String>, LaunchUnitError> {
         let modifiers = crate::launcher::plugin_launch::has_modifiers(configured_command);
         // An unwrapped game draws through the compositor's Xwayland display.
         // A modifier such as nested Gamescope runs its own Xwayland and must
@@ -1082,15 +1124,6 @@ impl SystemdLaunchUnitBackend {
             None
         };
         let mut arguments = vec![
-            "--system".into(),
-            "--no-ask-password".into(),
-            "--quiet".into(),
-            // Default CollectMode=inactive retains failed-unit exit metadata.
-            // The controller stops and resets the exact failed unit after reading it.
-            "--service-type=exec".into(),
-            format!("--unit={unit}"),
-            "--slice=korri-games.slice".into(),
-            "--property=CPUWeight=100".into(),
             format!("--uid={}", self.runtime_uid),
             format!("--gid={}", self.runtime_gid),
             "--property=KillMode=control-group".into(),
@@ -1176,8 +1209,72 @@ impl SystemdLaunchUnitBackend {
                 })
                 .map(|(key, value)| format!("--setenv={key}={value}")),
         );
-        arguments.push("--".into());
-        arguments.extend(configured_command.iter().cloned());
+        Ok(arguments)
+    }
+
+    pub(super) fn hook_arguments(
+        &self,
+        launch_id: &str,
+        step: usize,
+        game_command: &[String],
+        run: &str,
+        timeout: Duration,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<Vec<String>, LaunchUnitError> {
+        self.validate()?;
+        validate_launch_id(launch_id)?;
+        if step > 999 || timeout.is_zero() || run.is_empty() || run.contains('\0') {
+            return Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::InvalidConfiguration,
+                "invalid hook step",
+            ));
+        }
+        let mut arguments = vec![
+            "--system".into(),
+            "--no-ask-password".into(),
+            "--quiet".into(),
+            "--wait".into(),
+            "--collect".into(),
+            "--service-type=exec".into(),
+            "--slice=korri-games.slice".into(),
+            "--property=CPUWeight=100".into(),
+            format!("--unit=korri-hook-{launch_id}-{step}.service"),
+            format!("--property=RuntimeMaxSec={}us", timeout.as_micros()),
+            "--property=TimeoutStopSec=5s".into(),
+        ];
+        arguments.extend(self.sandbox_properties(launch_id, game_command, environment)?);
+        // The game's prepared plan sets these values inside plugin-launch,
+        // after the transport defaults. The shell hook has no such wrapper.
+        arguments.extend(
+            environment
+                .iter()
+                .map(|(key, value)| format!("--setenv={key}={value}")),
+        );
+        let mut unset: BTreeSet<String> = super::hooks::VARIABLES
+            .iter()
+            .filter(|name| !environment.contains_key(**name))
+            .map(|name| (*name).to_owned())
+            .collect();
+        if let Some((_, prepared)) = crate::launcher::plugin_launch::declared_saves(game_command)
+            .map_err(|message| {
+                LaunchUnitError::new(LaunchUnitErrorKind::InvalidConfiguration, message)
+            })?
+        {
+            unset.extend(
+                prepared
+                    .plan
+                    .env_unset
+                    .into_iter()
+                    .filter(|name| !environment.contains_key(name)),
+            );
+        }
+        if !unset.is_empty() {
+            arguments.push(format!(
+                "--property=UnsetEnvironment={}",
+                unset.into_iter().collect::<Vec<_>>().join(" ")
+            ));
+        }
+        arguments.extend(["--".into(), "/bin/sh".into(), "-c".into(), run.into()]);
         Ok(arguments)
     }
 
@@ -1568,6 +1665,105 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         }
         self.require_success(&self.systemd_run, &arguments)
             .map(|_| ())
+    }
+
+    fn run_hook(
+        &self,
+        launch_id: &str,
+        step: usize,
+        game_command: &[String],
+        run: &str,
+        timeout: Duration,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<(), LaunchUnitError> {
+        let arguments =
+            self.hook_arguments(launch_id, step, game_command, run, timeout, environment)?;
+        let modifiers = crate::launcher::plugin_launch::has_modifiers(game_command);
+        if modifiers {
+            super::launch_diagnostics::create(
+                &self.diagnostics_root.join(launch_id),
+                self.runtime_uid,
+            )
+            .map_err(|error| {
+                LaunchUnitError::new(LaunchUnitErrorKind::Failed, error.to_string())
+            })?;
+        }
+        // The client must outlive RuntimeMaxSec and systemd's bounded stop job.
+        let mut helper = self.clone();
+        helper.helper_timeout = timeout.saturating_add(Duration::from_secs(15));
+        let result = helper
+            .require_success(&self.systemd_run, &arguments)
+            .map(|_| ());
+        if result.is_err() {
+            // A lost client is not proof the service stopped. Exact-stop before
+            // returning, so an abort cannot overlap the next launch.
+            self.require_success(
+                &self.systemctl,
+                &[
+                    "--system".into(),
+                    "--no-ask-password".into(),
+                    "stop".into(),
+                    format!("korri-hook-{launch_id}-{step}.service"),
+                ],
+            )
+            .or_else(|error| {
+                // --collect may already have removed a failed hook.
+                let output = self.run(
+                    &self.systemctl,
+                    &[
+                        "--system".into(),
+                        "show".into(),
+                        format!("korri-hook-{launch_id}-{step}.service"),
+                        "--property=LoadState".into(),
+                        "--property=ActiveState".into(),
+                    ],
+                )?;
+                let text = String::from_utf8_lossy(&output.stdout);
+                if text.lines().any(|line| {
+                    matches!(
+                        line,
+                        "LoadState=not-found" | "ActiveState=inactive" | "ActiveState=failed"
+                    )
+                }) {
+                    Ok(output)
+                } else {
+                    Err(error)
+                }
+            })?;
+        }
+        if modifiers {
+            super::launch_diagnostics::cleanup(&self.diagnostics_root.join(launch_id)).map_err(
+                |error| {
+                    LaunchUnitError::new(
+                        LaunchUnitErrorKind::Failed,
+                        format!("cannot clean hook diagnostics: {error}"),
+                    )
+                },
+            )?;
+        }
+        result
+    }
+
+    fn exit_status(&self, launch_id: &str) -> Result<Option<i32>, LaunchUnitError> {
+        let output = self.require_success(&self.systemctl, &Self::state_arguments(launch_id)?)?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let values: BTreeMap<_, _> = text
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .collect();
+        Ok(
+            if values
+                .get("ExecMainCode")
+                .and_then(|v| v.parse::<i32>().ok())
+                == Some(libc::CLD_EXITED)
+            {
+                values
+                    .get("ExecMainStatus")
+                    .and_then(|v| v.parse::<i32>().ok())
+            } else {
+                None
+            },
+        )
     }
 
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError> {
@@ -2039,6 +2235,7 @@ mod startup_diagnostic_tests {
                     config: Default::default(),
                 }],
                 display: None,
+                ..Default::default()
             })
             .unwrap(),
         ];
@@ -2295,5 +2492,169 @@ mod diagnostic_cost_tests {
             assert_eq!(result.message, format!("{GENERIC}: {}", "a".repeat(300)));
             eprintln!("256-word / 16 KiB / {stored_bytes}-byte stored stderr: {elapsed:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod hook_unit_tests {
+    use super::*;
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    const ID: &str = "0123456789abcdef0123456789abcdef";
+
+    fn backend() -> SystemdLaunchUnitBackend {
+        SystemdLaunchUnitBackend::new(
+            "/bin/systemd-run".into(),
+            "/bin/systemctl".into(),
+            1000,
+            1000,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn hook_and_game_share_every_sandbox_property_for_plain_and_modifier_launches() {
+        use crate::launcher::plugin_launch::{LaunchComposition, ResolvedLaunchModifier};
+        let modifier = vec![
+            "korrid".into(),
+            "plugin-prepare".into(),
+            "/plugin.ts".into(),
+            "{}".into(),
+            serde_json::to_string(&LaunchComposition {
+                modifiers: vec![ResolvedLaunchModifier {
+                    modifier_id: "@test:modifier/main".into(),
+                    manifest: "/pkg/manifest.json".into(),
+                    entry: "plugin.ts".into(),
+                    settings: Default::default(),
+                    config: Default::default(),
+                }],
+                display: None,
+                ..Default::default()
+            })
+            .unwrap(),
+        ];
+        let backend =
+            backend().with_compositor_wayland_socket(Some("/run/published-wayland".into()));
+        for command in [vec!["game".into()], modifier] {
+            let environment = BTreeMap::from([
+                (
+                    "PULSE_SERVER".into(),
+                    "unix:/run/korri-game-audio/native".into(),
+                ),
+                ("DISPLAY".into(), ":0".into()),
+            ]);
+            let game = backend
+                .launch_arguments(ID, &command, &environment)
+                .unwrap();
+            let hook = backend
+                .hook_arguments(
+                    ID,
+                    0,
+                    &command,
+                    "true",
+                    Duration::from_secs(30),
+                    &environment,
+                )
+                .unwrap();
+            let sandbox = |args: &[String]| {
+                args.iter()
+                    .filter(|arg| {
+                        (arg.starts_with("--property=")
+                            || arg.starts_with("--uid=")
+                            || arg.starts_with("--gid="))
+                            && !arg.starts_with("--property=RuntimeMaxSec=")
+                            && !arg.starts_with("--property=TimeoutStopSec=")
+                            && !arg.starts_with("--property=UnsetEnvironment=")
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(sandbox(&game), sandbox(&hook));
+            assert!(hook.contains(&"--uid=1000".into()));
+            assert!(hook.contains(&"--gid=1000".into()));
+            assert!(hook.contains(&format!("--unit=korri-hook-{ID}-0.service")));
+            assert!(hook.contains(&"--wait".into()));
+            assert!(hook.contains(&"--collect".into()));
+            assert!(hook.contains(&"--property=RuntimeMaxSec=30000000us".into()));
+            assert_eq!(&hook[hook.len() - 4..], ["--", "/bin/sh", "-c", "true"]);
+        }
+    }
+
+    #[test]
+    fn hook_names_and_timeouts_stay_within_the_polkit_authority() {
+        let backend = backend();
+        for (id, index, timeout) in [(ID, 1000, 1), ("bad", 0, 1), (ID, 0, 0)] {
+            assert!(backend
+                .hook_arguments(
+                    id,
+                    index,
+                    &["game".into()],
+                    "true",
+                    Duration::from_secs(timeout),
+                    &BTreeMap::new()
+                )
+                .is_err());
+        }
+        let arguments = backend
+            .hook_arguments(
+                ID,
+                999,
+                &["game".into()],
+                "true",
+                Duration::from_secs(2),
+                &BTreeMap::from([("KORRI_GAME_ID".into(), "game".into())]),
+            )
+            .unwrap();
+        let unset = arguments
+            .iter()
+            .find(|arg| arg.starts_with("--property=UnsetEnvironment="))
+            .unwrap();
+        assert!(unset.contains("KORRI_PROFILE_ID"));
+        assert!(unset.contains("KORRI_EXIT_STATUS"));
+        assert!(!unset.contains("KORRI_GAME_ID"));
+        assert!(arguments.contains(&"--property=RuntimeMaxSec=2000000us".into()));
+    }
+
+    #[test]
+    fn backend_waits_for_real_shell_completion_and_propagates_failure_without_a_short_helper_deadline(
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        let helper = root.path().join("systemd-run");
+        let ctl = root.path().join("systemctl");
+        fs::write(
+            &helper,
+            "#!/bin/sh\nsleep 0.05\nwhile [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n",
+        )
+        .unwrap();
+        fs::write(&ctl, "#!/bin/sh\nprintf 'LoadState=not-found\\n'\n").unwrap();
+        for path in [&helper, &ctl] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let mut backend = SystemdLaunchUnitBackend::new(helper, ctl, 1000, 1000).unwrap();
+        backend.helper_timeout = Duration::from_millis(5);
+        let output = root.path().join("ran");
+        backend
+            .run_hook(
+                ID,
+                0,
+                &["game".into()],
+                &format!("printf complete > '{}'", output.display()),
+                Duration::from_secs(1),
+                &BTreeMap::new(),
+            )
+            .unwrap();
+        assert_eq!(fs::read_to_string(output).unwrap(), "complete");
+        let error = backend
+            .run_hook(
+                ID,
+                1,
+                &["game".into()],
+                "exit 7",
+                Duration::from_secs(1),
+                &BTreeMap::new(),
+            )
+            .unwrap_err();
+        assert_eq!(error.kind, LaunchUnitErrorKind::Failed);
+        assert!(error.message.contains("exit status: 7"));
     }
 }

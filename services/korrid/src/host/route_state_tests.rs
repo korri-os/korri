@@ -164,10 +164,11 @@ async fn valid_system_preferences_on_multiple_releases_require_an_explicit_choic
         for (system, runner) in [("gba", RUNNER), ("snes", OTHER_RUNNER)] {
             let saved = rpc(
                 &app,
-                "app.local-games.runner.set",
+                "app.launch-settings.set",
                 json!({
-                    "scope": {"_tag": "System", "id": system},
-                    "runnerId": runner,
+                    "place": {"layer": {"_tag": "System", "id": system}, "scope": {"_tag": "Any"}},
+                    "path": {"_tag": "Runner"},
+                    "value": runner,
                     "expectedRevision": revisions["device"],
                 }),
             )
@@ -230,7 +231,7 @@ async fn valid_system_preferences_on_multiple_releases_require_an_explicit_choic
 }
 
 #[tokio::test]
-async fn a_stale_saved_runner_is_repairable_without_a_silent_fallback_or_launch() {
+async fn a_missing_saved_runner_is_reported_as_a_notice_while_multiple_routes_still_need_choice() {
     let root = tempfile::tempdir().unwrap();
     let app = library(root.path(), true);
     save_runner(root.path(), "@korri:removed/core");
@@ -246,9 +247,20 @@ async fn a_stale_saved_runner_is_repairable_without_a_silent_fallback_or_launch(
     assert_eq!(rpc(&app, "app.session.status", json!({})).await, idle);
     let catalog = rpc(&app, "app.catalog.snapshot", json!({})).await;
     assert_eq!(catalog["payload"]["games"][0]["id"], GAME);
+    assert!(catalog["payload"]["failures"].is_null(), "{catalog}");
+    let settings = rpc(
+        &app,
+        "app.launch-settings.snapshot",
+        json!({"gameId": GAME}),
+    )
+    .await;
     assert_eq!(
-        catalog["payload"]["failures"][0]["code"],
-        "LocalRouteUnavailable"
+        settings["payload"]["notices"][0]["_tag"], "RunnerUnavailable",
+        "{settings}"
+    );
+    assert_eq!(
+        settings["payload"]["notices"][0]["payload"]["runnerId"],
+        "@korri:removed/core"
     );
     let launch = rpc(&app, "app.session.prepare", json!({"gameId": GAME})).await;
     assert_eq!(launch["_tag"], "Err", "{launch}");
@@ -273,10 +285,11 @@ async fn stale_runner_clear_and_replace_use_current_revisions_without_auto_launc
             let original = rpc(&app, "app.local-games.routes", json!({"gameId": GAME})).await;
             let stale = rpc(
                 &app,
-                "app.local-games.runner.set",
+                "app.launch-settings.set",
                 json!({
-                    "scope": scope,
-                    "runnerId": "@korri:removed/core",
+                    "place": {"layer": scope, "scope": {"_tag": "Any"}},
+                    "path": {"_tag": "Runner"},
+                    "value": "@korri:removed/core",
                     "expectedRevision": original["payload"]["revisions"][revision_key],
                 }),
             )
@@ -294,10 +307,11 @@ async fn stale_runner_clear_and_replace_use_current_revisions_without_auto_launc
             assert_eq!(saved_id, "@korri:removed/core");
             let saved = rpc(
                 &app,
-                "app.local-games.runner.set",
+                "app.launch-settings.set",
                 json!({
-                    "scope": scope,
-                    "runnerId": replacement,
+                    "place": {"layer": scope, "scope": {"_tag": "Any"}},
+                    "path": {"_tag": "Runner"},
+                    "value": replacement,
                     "expectedRevision": routes["payload"]["revisions"][revision_key],
                 }),
             )
@@ -484,24 +498,47 @@ async fn launch_settings_snapshot_explains_missing_route_layers_and_resolves_onl
         let snap = rpc(&app, "app.launch-settings.snapshot", json!({"gameId":GAME})).await;
         assert_eq!(snap["_tag"], "Ok", "{snap}");
         let payload = &snap["payload"];
-        assert_eq!(payload["resolved"]["cpu"]["max"]["value"], 40);
+        assert_eq!(payload["resolved"]["values"]["cpu.max"]["value"], 40);
+        assert_eq!(
+            payload["resolved"]["values"]["cpu.max"]["path"],
+            json!({"_tag":"Editable","payload":{"_tag":"CpuMax"}})
+        );
+        assert_eq!(
+            payload["resolved"]["values"]["cpu.max"]["source"]["payload"]["layer"],
+            json!({"_tag":"Profile","id":{"gameId":GAME,"profileId":"quiet"}})
+        );
         assert_eq!(payload["profiles"][0]["id"], "quiet");
         assert_eq!(payload["selectedProfile"], "quiet");
         if choose {
             assert_eq!(payload["routeLayers"]["_tag"], "NeedsRunnerChoice");
-            assert_eq!(payload["layers"].as_array().unwrap().len(), 3);
-            assert_eq!(payload["resolved"]["gpu"]["max"]["value"], 100);
+            assert!(payload["places"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|place| place["place"]["layer"]["_tag"] == "Game"));
+            assert_eq!(payload["resolved"]["values"]["gpu.max"]["value"], 66);
         } else {
             assert_eq!(payload["routeLayers"]["_tag"], "Present");
-            assert_eq!(payload["layers"].as_array().unwrap().len(), 6);
-            assert_eq!(payload["resolved"]["gpu"]["max"]["value"], 66);
+            assert!(payload["places"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|place| place["place"]["scope"]["_tag"] == "Runner"));
+            assert_eq!(payload["resolved"]["values"]["gpu.max"]["value"], 66);
         }
         fs::remove_file(root.path().join("roms/wl4.gba")).unwrap();
         let snap = rpc(&app, "app.launch-settings.snapshot", json!({"gameId":GAME})).await;
         assert_eq!(snap["_tag"], "Ok", "{snap}");
         assert_eq!(snap["payload"]["routeLayers"]["_tag"], "Unavailable");
         assert!(snap["payload"]["routeLayers"]["message"].is_string());
-        assert_eq!(snap["payload"]["layers"].as_array().unwrap().len(), 3);
-        assert_eq!(snap["payload"]["resolved"]["cpu"]["max"]["value"], 40);
+        assert!(snap["payload"]["places"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|place| place["place"]["layer"]["_tag"] == "Profile"));
+        assert_eq!(
+            snap["payload"]["resolved"]["values"]["cpu.max"]["value"],
+            40
+        );
     }
 }

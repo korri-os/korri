@@ -4,6 +4,9 @@ pub(crate) mod launch_diagnostics;
 pub(crate) use compositor_focus::CompositorControl;
 mod config;
 pub(crate) mod control;
+#[cfg(test)]
+mod hook_tests;
+mod hooks;
 mod identity;
 mod input_coordination;
 mod input_seat;
@@ -125,13 +128,12 @@ impl DynamicHostRuntime {
         }
         for candidates in by_game.into_values() {
             let candidate = &candidates[0];
-            // Discovery validates availability without requiring one chosen
-            // command. A stale saved choice is still a real configuration error.
-            match crate::config::resolver::linux_route_selection(&state.snapshot, &candidates, None)
+            // Missing stored runners fall back through the cascade. The
+            // settings snapshot and launch warning explain the skipped place.
+            if let Err(error) =
+                crate::config::resolver::linux_route_selection(&state.snapshot, &candidates, None)
             {
-                Ok(crate::config::resolver::LinuxRouteSelection::UnavailableSavedChoice(error))
-                | Err(error) => failures.push(crate::route_diagnostic_failure(&error)),
-                Ok(_) => {}
+                failures.push(crate::route_diagnostic_failure(&error));
             }
             for route in &candidates {
                 match linux_plugin::preflight_route(root, &state.snapshot, registry, route, person)
@@ -213,6 +215,7 @@ fn identity_keys(private_state_root: &Path) -> (Option<String>, Option<String>) 
 }
 
 struct HostLaunchCommand {
+    hooks: Option<hooks::LaunchHooks>,
     limits: Option<crate::launch_settings::session::SessionLimits>,
     command: Vec<String>,
     runner_id: Option<String>,
@@ -227,7 +230,7 @@ pub struct HostRuntime {
     launch_reservations: launch_reservation::LaunchReservations,
     // Tests can delay one response after the real setter releases its lock.
     #[cfg(test)]
-    after_runner_choice_write: Option<Arc<dyn Fn() + Send + Sync>>,
+    after_launch_settings_write: Option<Arc<dyn Fn() + Send + Sync>>,
     #[cfg(test)]
     before_reserved_route: Option<Arc<dyn Fn() + Send + Sync>>,
     #[cfg(test)]
@@ -311,7 +314,7 @@ impl HostRuntime {
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
             launch_reservations: launch_reservation::LaunchReservations::default(),
             #[cfg(test)]
-            after_runner_choice_write: None,
+            after_launch_settings_write: None,
             #[cfg(test)]
             before_reserved_route: None,
             #[cfg(test)]
@@ -355,7 +358,7 @@ impl HostRuntime {
             save_service: Arc::new(std::sync::OnceLock::new()),
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
             launch_reservations: launch_reservation::LaunchReservations::default(),
-            after_runner_choice_write: None,
+            after_launch_settings_write: None,
             before_reserved_route: None,
             after_reserved_start: None,
             after_session_rpc: None,
@@ -663,7 +666,7 @@ impl HostRuntime {
         &self,
         game_id: &str,
         runner_id: Option<&str>,
-        overrides: Option<crate::launcher::plugin_launch::PluginLaunchOverrides>,
+        launch_override: Option<crate::launch_settings::LaunchOverride>,
     ) -> Result<HostLaunchCommand, RpcFailure> {
         let owner = self.launch_person()?;
         let config = self.config.as_ref().map_err(config_failure)?;
@@ -672,12 +675,13 @@ impl HostRuntime {
             if let Some(dynamic) = &self.dynamic {
                 dynamic.load(Some(&owner))?.validate_static_games(config)?;
             }
-            if runner_id.is_some() || overrides.is_some() {
+            if runner_id.is_some() || launch_override.is_some() {
                 return Err(dynamic_failure(
                     "host command games do not accept installed runner choices or overrides",
                 ));
             }
             return Ok(HostLaunchCommand {
+                hooks: None,
                 command: launcher.command(game_id)?.to_vec(),
                 runner_id: None,
                 limits: None,
@@ -686,6 +690,7 @@ impl HostRuntime {
         }
         if self.dynamic.is_none() {
             return launcher.command(game_id).map(|command| HostLaunchCommand {
+                hooks: None,
                 command: command.to_vec(),
                 runner_id: None,
                 limits: None,
@@ -701,32 +706,71 @@ impl HostRuntime {
         )
         .map_err(|error| crate::route_diagnostic_failure(&error))?;
         crate::acquisition::require_ready(root, &registry, &route)?;
+        let limit_facts = crate::launch_settings::helper::Client::default()
+            .describe()
+            .ok();
+        let resolved = crate::launch_settings::resolve_launch(
+            &snapshot,
+            &route,
+            launch_override.as_ref(),
+            limit_facts.as_ref(),
+        )
+        .map_err(crate::game_routes::settings_failure)?;
         let launch = linux_plugin::launch_route(
             root,
             &snapshot,
             &registry,
             &route,
-            overrides,
+            launch_override,
             compositor_focus::launch_display(),
             &owner,
         )
         .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
-        let limit_facts = crate::launch_settings::helper::Client::default()
-            .describe()
-            .ok();
-        let limits = crate::launch_settings::session::SessionLimits::for_route(
-            &snapshot,
-            &route,
-            registry
+        let limits = crate::launch_settings::session::SessionLimits {
+            cpu: crate::launch_settings::LaunchPercentRange {
+                min: resolved.limits.cpu.min.value,
+                max: resolved.limits.cpu.max.value,
+            },
+            gpu: crate::launch_settings::LaunchPercentRange {
+                min: resolved.limits.gpu.min.value,
+                max: resolved.limits.gpu.max.value,
+            },
+            runner_id: route.runner_id.clone(),
+            build: registry
                 .installed_package(&route.runner_id)
-                .map_err(|e| dynamic_failure(e.to_string()))?
+                .map_err(|error| dynamic_failure(error.to_string()))?
                 .package
                 .display()
                 .to_string(),
-            limit_facts.as_ref(),
-        )
-        .map_err(crate::game_routes::settings_failure)?;
+        };
+        let hooks = if resolved.hooks.before.is_empty() && resolved.hooks.after.is_empty() {
+            None
+        } else {
+            let game_environment = linux_plugin::resolved_plan_environment(
+                &launch.command,
+                &resolved,
+            )
+            .map_err(|reason| RpcFailure {
+                code: "HookFailed".into(),
+                message: format!("HookFailed {{ phase: before, step: 0, reason: {reason} }}"),
+            })?;
+            Some(hooks::LaunchHooks {
+                resolved: resolved.hooks,
+                game_environment,
+                context: hooks::Context {
+                    release_id: Some(route.release_id.clone()),
+                    system_id: Some(route.system_id.clone()),
+                    runner_id: Some(route.runner_id.clone()),
+                    profile_id: snapshot
+                        .library
+                        .get(game_id)
+                        .and_then(|game| game.profile.as_ref())
+                        .map(|profile| profile.0.clone()),
+                },
+            })
+        };
         Ok(HostLaunchCommand {
+            hooks,
             limits: Some(limits),
             command: launch.command,
             runner_id: Some(route.runner_id),
@@ -756,6 +800,10 @@ impl HostRuntime {
                 .as_ref()
                 .map(|l| l.warnings.clone())
                 .unwrap_or_default(),
+            launch
+                .as_ref()
+                .ok()
+                .and_then(|launch| launch.hooks.as_ref()),
         )?;
         Ok(session)
     }
@@ -924,18 +972,19 @@ impl HostRuntime {
     pub async fn launch_settings_snapshot(
         &self,
         request: crate::launch_settings::LaunchSettingsSnapshotRequest,
-    ) -> Result<crate::launch_settings::LaunchSettingsSnapshot, RpcFailure> {
+    ) -> Result<crate::launch_settings::LaunchSnapshot, RpcFailure> {
         let runtime = self.clone();
         tokio::task::spawn_blocking(move || {
             let registry = if request.game_id.is_some() {
                 match runtime.route_registry() {
                     Ok(registry) => Some(registry),
                     Err(error) => {
-                        let mut snapshot = crate::launch_settings::snapshot(
+                        let mut snapshot = crate::launch_settings::resolution::snapshot_for_person(
                             runtime.route_root()?,
                             None,
                             request.game_id.as_deref(),
                             &crate::launch_settings::helper::Client::default(),
+                            runtime.owner_public_key().as_deref(),
                         )
                         .map_err(crate::game_routes::settings_failure)?;
                         snapshot.route_layers =
@@ -948,11 +997,12 @@ impl HostRuntime {
             } else {
                 None
             };
-            crate::launch_settings::snapshot(
+            crate::launch_settings::resolution::snapshot_for_person(
                 runtime.route_root()?,
                 registry.as_ref(),
                 request.game_id.as_deref(),
                 &crate::launch_settings::helper::Client::default(),
+                runtime.owner_public_key().as_deref(),
             )
             .map_err(crate::game_routes::settings_failure)
         })
@@ -961,18 +1011,23 @@ impl HostRuntime {
     }
     pub async fn launch_settings_set(
         &self,
-        request: crate::launch_settings::LaunchSettingsSetRequest,
+        request: crate::launch_settings::LaunchSetRequest,
     ) -> Result<crate::config::settings::RunnerChoiceRevisions, RpcFailure> {
         let runtime = self.clone();
         tokio::task::spawn_blocking(move || {
-            crate::launch_settings::set(
+            let revisions = crate::launch_settings::set(
                 runtime.route_root()?,
                 &runtime.private_state_root,
                 &runtime.route_write_lock,
                 &request,
                 &crate::launch_settings::helper::Client::default(),
             )
-            .map_err(crate::game_routes::settings_failure)
+            .map_err(crate::game_routes::settings_failure)?;
+            #[cfg(test)]
+            if let Some(after_write) = &runtime.after_launch_settings_write {
+                after_write();
+            }
+            Ok(revisions)
         })
         .await
         .map_err(host_worker_failure)?
@@ -1028,32 +1083,6 @@ impl HostRuntime {
         .await
         .map_err(host_worker_failure)?
     }
-    pub async fn set_game_runner(
-        &self,
-        request: crate::game_routes::GameRunnerSetRequest,
-    ) -> Result<crate::config::settings::RunnerChoiceRevisions, RpcFailure> {
-        let runtime = self.clone();
-        tokio::task::spawn_blocking(move || {
-            let root = runtime.route_root()?;
-            let revisions = crate::config::settings::set_runner_choice(
-                root,
-                &runtime.private_state_root,
-                &runtime.route_write_lock,
-                &request.expected_revision,
-                &request.scope,
-                request.runner_id.as_deref(),
-            )
-            .map_err(crate::game_routes::settings_failure)?;
-            #[cfg(test)]
-            if let Some(after_write) = &runtime.after_runner_choice_write {
-                after_write();
-            }
-            Ok(revisions)
-        })
-        .await
-        .map_err(host_worker_failure)?
-    }
-
     pub(crate) fn reserve_launch(
         &self,
         game_id: &str,
@@ -1154,7 +1183,7 @@ impl HostRuntime {
         let launch = self.prepare_launch_command(
             &request.game_id,
             request.runner_id.as_deref(),
-            request.overrides.clone(),
+            request.launch.clone(),
         );
         let runner_id = launch
             .as_ref()
@@ -1169,6 +1198,10 @@ impl HostRuntime {
             runner_id,
             command,
             launch.as_ref().ok().and_then(|l| l.limits.as_ref()),
+            launch
+                .as_ref()
+                .ok()
+                .and_then(|launch| launch.hooks.as_ref()),
         )?;
         let session = prepared.session;
         let mut warnings = launch?.warnings;
@@ -1211,7 +1244,7 @@ impl HostRuntime {
             let launch = runtime.prepare_launch_command(
                 &request.game_id,
                 Some(&request.runner_id),
-                request.overrides.clone(),
+                request.launch.clone(),
             );
             let launcher = runtime.launcher.as_ref().ok_or_else(|| {
                 config_failure(runtime.config.as_ref().expect_err("invalid host config"))
@@ -1225,6 +1258,10 @@ impl HostRuntime {
                     .map(|launch| launch.command.as_slice())
                     .map_err(Clone::clone),
                 launch.as_ref().ok().and_then(|l| l.limits.as_ref()),
+                launch
+                    .as_ref()
+                    .ok()
+                    .and_then(|launch| launch.hooks.as_ref()),
             )?;
             let mut warnings = launch?.warnings;
             warnings.append(&mut prepared.warnings);
@@ -2276,12 +2313,14 @@ esac
 
     #[tokio::test]
     async fn concurrent_runner_choice_responses_keep_their_own_committed_revisions() {
-        use crate::config::settings::{runner_choice_revisions, RunnerChoiceScope};
-        use crate::game_routes::GameRunnerSetRequest;
+        use crate::config::settings::runner_choice_revisions;
+        use crate::launch_settings::{
+            LaunchLayer, LaunchPath, LaunchPlace, LaunchRunnerScope, LaunchSetRequest,
+        };
 
         for scope in [
-            RunnerChoiceScope::System("gba".into()),
-            RunnerChoiceScope::Game(crate::config::test_fixtures::GBA_ID.into()),
+            LaunchLayer::System("gba".into()),
+            LaunchLayer::Game(crate::config::test_fixtures::GBA_ID.into()),
         ] {
             let root = tempfile::tempdir().unwrap();
             crate::config::test_fixtures::gba(root.path());
@@ -2295,13 +2334,18 @@ esac
             );
             let expected = |revisions: &crate::config::settings::RunnerChoiceRevisions| match &scope
             {
-                RunnerChoiceScope::System(_) => revisions.device.clone(),
-                RunnerChoiceScope::Game(_) => revisions.games.clone(),
+                LaunchLayer::System(_) => revisions.device.clone(),
+                LaunchLayer::Game(_) => revisions.games.clone(),
+                _ => unreachable!(),
             };
-            let request = |revision, runner_id: &str| GameRunnerSetRequest {
-                scope: scope.clone(),
+            let request = |revision, runner_id: &str| LaunchSetRequest {
+                place: LaunchPlace {
+                    layer: scope.clone(),
+                    scope: LaunchRunnerScope::Any,
+                },
+                path: LaunchPath::Runner,
                 expected_revision: revision,
-                runner_id: Some(runner_id.into()),
+                value: Some(runner_id.into()),
             };
             let before = runner_choice_revisions(root.path()).unwrap();
             let (entered, committed) = tokio::sync::oneshot::channel();
@@ -2309,7 +2353,7 @@ esac
             let (release, released) = std::sync::mpsc::channel();
             let released = Mutex::new(released);
             let mut delayed = runtime.clone();
-            delayed.after_runner_choice_write = Some(Arc::new(move || {
+            delayed.after_launch_settings_write = Some(Arc::new(move || {
                 entered.lock().unwrap().take().unwrap().send(()).unwrap();
                 released
                     .lock()
@@ -2318,7 +2362,8 @@ esac
                     .unwrap();
             }));
             let first_request = request(expected(&before), "@test:first/core");
-            let first = tokio::spawn(async move { delayed.set_game_runner(first_request).await });
+            let first =
+                tokio::spawn(async move { delayed.launch_settings_set(first_request).await });
             tokio::time::timeout(Duration::from_secs(10), committed)
                 .await
                 .unwrap()
@@ -2327,26 +2372,32 @@ esac
             // reads those bytes and commits a second real write through the host.
             let first_bytes = runner_choice_revisions(root.path()).unwrap();
             let second = runtime
-                .set_game_runner(request(expected(&first_bytes), "@test:second/core"))
+                .launch_settings_set(request(expected(&first_bytes), "@test:second/core"))
                 .await
                 .unwrap();
             // Also change the other document: the response must describe the pair
             // observed at A's commit, not a later mixed snapshot.
             let other_scope = match &scope {
-                RunnerChoiceScope::System(_) => {
-                    RunnerChoiceScope::Game(crate::config::test_fixtures::GBA_ID.into())
+                LaunchLayer::System(_) => {
+                    LaunchLayer::Game(crate::config::test_fixtures::GBA_ID.into())
                 }
-                RunnerChoiceScope::Game(_) => RunnerChoiceScope::System("gba".into()),
+                LaunchLayer::Game(_) => LaunchLayer::System("gba".into()),
+                _ => unreachable!(),
             };
             let other_revision = match &other_scope {
-                RunnerChoiceScope::System(_) => second.device.clone(),
-                RunnerChoiceScope::Game(_) => second.games.clone(),
+                LaunchLayer::System(_) => second.device.clone(),
+                LaunchLayer::Game(_) => second.games.clone(),
+                _ => unreachable!(),
             };
             runtime
-                .set_game_runner(GameRunnerSetRequest {
-                    scope: other_scope,
+                .launch_settings_set(LaunchSetRequest {
+                    place: LaunchPlace {
+                        layer: other_scope,
+                        scope: LaunchRunnerScope::Any,
+                    },
+                    path: LaunchPath::Runner,
                     expected_revision: other_revision,
-                    runner_id: Some("@test:other/core".into()),
+                    value: Some("@test:other/core".into()),
                 })
                 .await
                 .unwrap();
@@ -2361,7 +2412,7 @@ esac
                 "{scope:?}: games revision belongs to caller A"
             );
             let conflict = runtime
-                .set_game_runner(request(expected(&first), "@test:third/core"))
+                .launch_settings_set(request(expected(&first), "@test:third/core"))
                 .await
                 .unwrap_err();
             assert_eq!(

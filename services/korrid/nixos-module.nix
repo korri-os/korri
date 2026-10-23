@@ -887,6 +887,14 @@ in
         var unit = action.lookup("unit");
         if (action.id == "org.freedesktop.systemd1.manage-units" &&
             subject.user == "korrid" &&
+            typeof unit == "string" && /^korri-hook-[0-9a-f]{32}-[0-9]{1,3}\.service$/.test(unit)) {
+          return polkit.Result.YES;
+        }
+      });
+      polkit.addRule(function(action, subject) {
+        var unit = action.lookup("unit");
+        if (action.id == "org.freedesktop.systemd1.manage-units" &&
+            subject.user == "korrid" &&
             typeof unit == "string" && /^korri-game-[0-9a-f]{32}\.service$/.test(unit)) {
           return polkit.Result.YES;
         }
