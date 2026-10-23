@@ -20,6 +20,7 @@ pub(crate) mod retroarch_control;
 mod route_state_tests;
 mod saves;
 mod session_state;
+mod shared_play;
 mod systemd_unit;
 pub(crate) use systemd_unit::configured_runtime_identity;
 

@@ -1945,8 +1945,8 @@ fn session_status_outcome(
             SessionStatusOutcome::Ok(SessionStatus {
                 stream_play_ended: None,
                 active: active.map(|active| ActiveSession {
-                    person_public_key: None,
-                    stream_players: Vec::new(),
+                    person_public_key: active.person_public_key,
+                    stream_players: active.stream_players,
                     initial_handoff: None,
                     focus_ownership: None,
                     launch_id: active.launch_id,
@@ -3043,8 +3043,8 @@ async fn dispatch(
             };
             RpcResponse::SessionPrepare(outcome)
         }
-        RpcRequest::SessionStreamPlay(_) => RpcResponse::SessionStreamPlay(
-            SessionStreamPlayOutcome::Err(installed_routes_unsupported()),
+        RpcRequest::SessionStreamPlay(request) => RpcResponse::SessionStreamPlay(
+            stream_play::registration::register(state, authorization, &request).await,
         ),
         RpcRequest::InvitesList(_) => {
             RpcResponse::InvitesList(InvitesListOutcome::Err(installed_routes_unsupported()))
@@ -3085,6 +3085,10 @@ async fn dispatch(
                                 if let Some(active) = &mut status.active {
                                     active.focus_ownership = ownership;
                                     active.initial_handoff = handoff;
+                                    if let Err(failure) = observed_host.describe_active_session(active) {
+                                        status.observation_failure = Some(failure);
+                                    }
+                                    stream_play::registration::label_players(&observer, active);
                                 }
                             }
                             let pending = observed_caller.as_deref().and_then(|caller| observed_host.pending_launches(caller, observed_person.as_deref()));
@@ -4635,7 +4639,8 @@ fn secure_host_routers_with_federation(
     let (mut lan, mut local) = app_states(runtime.clone());
     let peers = stream_play::device::registry(&runtime, &resources);
     lan.remote = Some(peers.clone());
-    local.remote = Some(peers);
+    local.remote = Some(peers.clone());
+    stream_play::device::spawn_watch(peers);
     let sessions = runtime.clone();
     let save_peer = Arc::new(
         saves::peer::SavePeerService::new(
@@ -5449,6 +5454,8 @@ mod tests {
     fn status_with_active_session_maps_to_ok_with_details() {
         let outcome = session_status_outcome(Ok(upstream::UpstreamSessionStatus::SessionStatus {
             active: Some(upstream::UpstreamActiveSession {
+                person_public_key: None,
+                stream_players: Vec::new(),
                 launch_id: "l1".into(),
                 host: Some("aka".into()),
                 game_id: Some("g1".into()),

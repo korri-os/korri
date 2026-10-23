@@ -22,6 +22,19 @@ pub(crate) fn registry(
     registry
 }
 
+pub(crate) fn spawn_watch(peers: upstreams::UpstreamRegistry) {
+    tokio::spawn(async move {
+        let mut ticks = tokio::time::interval(std::time::Duration::from_secs(1));
+        ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            ticks.tick().await;
+            if peers.has_selected_session() {
+                let _ = peers.session_status().await;
+            }
+        }
+    });
+}
+
 pub(crate) async fn dispatch(
     state: &AppState,
     authorization: &AuthorizationContext,
@@ -37,6 +50,26 @@ pub(crate) async fn dispatch(
         return None;
     };
     let peers = state.remote.as_ref()?;
+    if matches!(
+        request,
+        RpcRequest::SessionPrepare(_)
+            | RpcRequest::SessionStart(_)
+            | RpcRequest::SelectedGameLaunch(_)
+    ) {
+        if peers.has_selected_session() {
+            let failure = RpcFailure {
+                code: "ActiveSessionConflict".into(),
+                message: "This device already has a selected session.".into(),
+            };
+            let outcome = game_routes::SelectedGameLaunchOutcome::Err(failure);
+            return Some(match request {
+                RpcRequest::SessionStart(_) => RpcResponse::SessionStart(outcome),
+                RpcRequest::SelectedGameLaunch(_) => RpcResponse::SelectedGameLaunch(outcome),
+                _ => RpcResponse::SessionPrepare(outcome),
+            });
+        }
+        peers.clear_stream_play_end();
+    }
     match request {
         RpcRequest::CatalogSnapshot(_) => {
             let local = host
@@ -71,6 +104,24 @@ pub(crate) async fn dispatch(
             Some(RpcResponse::CatalogSnapshot(outcome))
         }
         RpcRequest::SessionPrepare(request) if request.host.is_some() => {
+            if request.host.as_deref() == host.local_label() {
+                match peers.has_peer_label(request.host.as_deref().expect("selected label")) {
+                    Ok(false) => return None,
+                    other => {
+                        return Some(RpcResponse::SessionPrepare(
+                            game_routes::SelectedGameLaunchOutcome::Err(
+                                other
+                                    .err()
+                                    .map(upstream_failure)
+                                    .unwrap_or_else(|| RpcFailure {
+                                        code: "UpstreamFailure".into(),
+                                        message: "The selected device label is ambiguous.".into(),
+                                    }),
+                            ),
+                        ))
+                    }
+                }
+            }
             let outcome = match host.session_status().await {
                 Ok(
                     host::control::HostSessionStatus::NoActive
@@ -92,9 +143,25 @@ pub(crate) async fn dispatch(
                     .unwrap_or_else(game_routes::SelectedGameLaunchOutcome::Err),
             ))
         }
-        RpcRequest::SessionStatus(_) if peers.has_selected_session() => Some(
-            RpcResponse::SessionStatus(session_status_outcome(peers.session_status().await)),
-        ),
+        RpcRequest::SessionStatus(_)
+            if peers.has_selected_session() || peers.stream_play_ended().is_some() =>
+        {
+            let mut outcome = if peers.has_selected_session() {
+                session_status_outcome(peers.session_status().await)
+            } else {
+                SessionStatusOutcome::Ok(SessionStatus {
+                    active: None,
+                    overlay: None,
+                    pending_launches: None,
+                    observation_failure: None,
+                    stream_play_ended: None,
+                })
+            };
+            if let SessionStatusOutcome::Ok(status) = &mut outcome {
+                status.stream_play_ended = peers.stream_play_ended();
+            }
+            Some(RpcResponse::SessionStatus(outcome))
+        }
         RpcRequest::SessionStop(request) if peers.has_selected_session() => {
             Some(RpcResponse::SessionStop(session_stop_outcome(
                 peers
@@ -155,6 +222,28 @@ mod tests {
         );
         runtime.claim_save_owner();
         runtime
+    }
+
+    #[tokio::test]
+    async fn host_portal_keeps_local_catalog_host_labels_launchable() {
+        let root = tempfile::tempdir().unwrap();
+        let runtime = holder(root.path(), "local");
+        let (mut state, _) = crate::app_states(runtime);
+        state.remote = Some(upstreams::UpstreamRegistry::new(Vec::new()));
+        let request = serde_json::from_value(
+            json!({"_tag":"app.session.prepare","payload":{"gameId":"local-game","host":"local"}}),
+        )
+        .unwrap();
+        let response = crate::dispatch(&state, &AuthorizationContext::LocalBrowser, request)
+            .await
+            .unwrap();
+        assert!(
+            matches!(
+                response,
+                RpcResponse::SessionPrepare(game_routes::SelectedGameLaunchOutcome::Ok(_))
+            ),
+            "{response:?}"
+        );
     }
 
     #[tokio::test]

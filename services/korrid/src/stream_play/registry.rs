@@ -1,0 +1,163 @@
+//! Playing on a stream never grants control over the far session.
+use super::*;
+use crate::{
+    stream_play::{StreamPlayEndCause, StreamPlayEnded},
+    ActiveSession,
+};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum Participation {
+    Starter,
+    StreamPlayer {
+        game_id: Option<String>,
+        game_title: Option<String>,
+        device_label: String,
+    },
+}
+
+impl UpstreamRegistry {
+    pub(crate) fn has_peer_label(&self, label: &str) -> Result<bool, UpstreamError> {
+        Ok(self
+            .resolved()?
+            .hosts
+            .iter()
+            .any(|peer| peer.label == label))
+    }
+
+    pub(crate) fn clear_stream_play_end(&self) {
+        self.last_stream_play_end
+            .lock()
+            .expect("stream play end mutex poisoned")
+            .take();
+    }
+
+    pub(crate) fn stream_play_ended(&self) -> Option<StreamPlayEnded> {
+        self.last_stream_play_end
+            .lock()
+            .expect("stream play end mutex poisoned")
+            .clone()
+    }
+
+    pub(crate) async fn stream_play(
+        &self,
+        device_public_key: &str,
+        launch_id: &str,
+    ) -> Result<ActiveSession, UpstreamError> {
+        let registry = self.resolved()?;
+        let _mutation = registry.remote_prepare_mutation.lock().await;
+        if registry.selected().is_some() {
+            return Err(UpstreamError::ActiveRemoteSessionConflict);
+        }
+        let host = registry
+            .native_host_by_route_key(device_public_key)
+            .ok_or(UpstreamError::SourcePeerNotFound)?;
+        let RegisteredClient::Native(client) = &host.client else {
+            unreachable!()
+        };
+        let address = host
+            .moonlight_address
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .ok_or(UpstreamError::MoonlightHostCandidatesUnavailable)?;
+        let mut active = client.stream_play(launch_id).await?;
+        let selected = SelectedRemoteSession {
+            participation: Participation::StreamPlayer {
+                game_id: active.game_id.clone(),
+                game_title: active.title.clone(),
+                device_label: host.label.clone(),
+            },
+            route: SelectedRemoteRoute::Native {
+                device_public_key: device_public_key.into(),
+            },
+            launch_id: launch_id.into(),
+            viewer: Some(SelectedViewer {
+                moonlight_address: address.into(),
+                confirmed_live: false,
+            }),
+        };
+        registry.set_selected(selected.clone());
+        if let Err(error) = registry.viewer.start(launch_id, address).await {
+            // The remote holder and its seat reservations survive every local
+            // viewer failure. In particular, never use prepare compensation.
+            registry
+                .viewer
+                .stop(launch_id)
+                .await
+                .map_err(|cleanup| viewer_error("ViewerControlFailed", cleanup.to_string()))?;
+            registry.clear_selected_if(&selected);
+            return Err(viewer_error("ViewerStartFailed", error.to_string()));
+        }
+        registry.set_viewer_confirmed(&selected, true);
+        registry
+            .last_stream_play_end
+            .lock()
+            .expect("stream play end mutex poisoned")
+            .take();
+        active.host = Some(host.label.clone());
+        if matches!(active.phase.as_deref(), Some("frozen" | "focus-failed")) {
+            registry
+                .viewer
+                .background(launch_id)
+                .await
+                .map_err(|error| viewer_error("ViewerControlFailed", error.to_string()))?;
+        }
+        Ok(active)
+    }
+
+    pub(super) async fn stop_stream_player(
+        &self,
+        selected: &SelectedRemoteSession,
+    ) -> Result<UpstreamSessionStop, UpstreamError> {
+        self.viewer
+            .stop(&selected.launch_id)
+            .await
+            .map_err(|error| viewer_error("ViewerControlFailed", error.to_string()))?;
+        self.clear_selected_if(selected);
+        Ok(UpstreamSessionStop::Stopped {
+            launch_id: Some(selected.launch_id.clone()),
+        })
+    }
+
+    pub(super) async fn observe_stream_player(
+        &self,
+        selected: &SelectedRemoteSession,
+    ) -> Result<UpstreamSessionStatus, UpstreamError> {
+        let result = self.selected_status(selected).await;
+        if let Ok(status) = &result {
+            if let Some(active) =
+                active_session(status).filter(|a| a.launch_id == selected.launch_id)
+            {
+                self.recover_viewer(selected, RecoveredFarPhase::parse(active.phase.as_deref())?)
+                    .await?;
+                return Ok(status.clone());
+            }
+        }
+        self.viewer
+            .stop(&selected.launch_id)
+            .await
+            .map_err(|error| viewer_error("ViewerControlFailed", error.to_string()))?;
+        if let Participation::StreamPlayer {
+            game_id,
+            game_title,
+            device_label,
+        } = &selected.participation
+        {
+            *self
+                .last_stream_play_end
+                .lock()
+                .expect("stream play end mutex poisoned") = Some(StreamPlayEnded {
+                launch_id: selected.launch_id.clone(),
+                game_id: game_id.clone(),
+                game_title: game_title.clone(),
+                device_label: device_label.clone(),
+                cause: if result.is_err() {
+                    StreamPlayEndCause::DeviceUnreachable
+                } else {
+                    StreamPlayEndCause::SessionEnded
+                },
+            });
+        }
+        self.clear_selected_if(selected);
+        Ok(UpstreamSessionStatus::SessionStatus { active: None })
+    }
+}

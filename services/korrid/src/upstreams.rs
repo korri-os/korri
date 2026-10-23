@@ -1,5 +1,9 @@
 //! Ordered host registry: selects legacy or native transport per host.
 
+#[path = "stream_play/registry.rs"]
+mod stream_play;
+use stream_play::Participation;
+
 use crate::{
     linux_viewer::{LinuxStreamViewer, LinuxViewerStatus},
     peer_rpc::PeerCredentials,
@@ -284,6 +288,7 @@ struct SelectedViewer {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SelectedRemoteSession {
+    participation: Participation,
     route: SelectedRemoteRoute,
     launch_id: String,
     viewer: Option<SelectedViewer>,
@@ -341,6 +346,7 @@ fn default_viewer() -> Arc<dyn LinuxStreamViewer> {
 
 #[derive(Clone)]
 pub struct UpstreamRegistry {
+    last_stream_play_end: Arc<Mutex<Option<crate::stream_play::StreamPlayEnded>>>,
     hosts: Vec<RegisteredHost>,
     credentials: Option<PeerCredentials>,
     directory: Option<crate::federation::FederationDirectory>,
@@ -442,6 +448,7 @@ impl UpstreamRegistry {
             })
             .collect();
         Self {
+            last_stream_play_end: Arc::new(Mutex::new(None)),
             hosts,
             credentials,
             directory: None,
@@ -492,6 +499,7 @@ impl UpstreamRegistry {
         match Self::from_file_inner(path, Some(credentials.clone())) {
             Ok(registry) => registry,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self {
+                last_stream_play_end: Arc::new(Mutex::new(None)),
                 hosts: vec![],
                 credentials: Some(credentials.clone()),
                 directory: None,
@@ -602,6 +610,7 @@ impl UpstreamRegistry {
 
     fn invalid_configuration(message: String) -> Self {
         Self {
+            last_stream_play_end: Arc::new(Mutex::new(None)),
             hosts: vec![],
             credentials: None,
             directory: None,
@@ -634,6 +643,7 @@ impl UpstreamRegistry {
         let mut registry = configured.into_owned();
         registry.directory = Some(directory.clone());
         registry.credentials = self.credentials.clone();
+        registry.last_stream_play_end = self.last_stream_play_end.clone();
         registry.selected_remote_session = self.selected_remote_session.clone();
         registry.remote_prepare_mutation = self.remote_prepare_mutation.clone();
         registry.viewer = self.viewer.clone();
@@ -707,6 +717,7 @@ impl UpstreamRegistry {
             Ok(mut registry) if registry.configuration_error.is_none() => {
                 // The deferred file is static configuration only. Selection and
                 // mutation ordering belong to the runtime, not a rebuilt registry.
+                registry.last_stream_play_end = self.last_stream_play_end.clone();
                 registry.selected_remote_session = self.selected_remote_session.clone();
                 registry.remote_prepare_mutation = self.remote_prepare_mutation.clone();
                 registry.viewer = self.viewer.clone();
@@ -942,6 +953,7 @@ impl UpstreamRegistry {
                     launch_id: prepared.session_id,
                 };
                 self.set_selected(SelectedRemoteSession {
+                    participation: Participation::Starter,
                     route: SelectedRemoteRoute::Legacy {
                         label: host.label.clone(),
                     },
@@ -966,6 +978,7 @@ impl UpstreamRegistry {
                     UpstreamError::Wire("native peer has no stable device identity".into())
                 })?;
                 let selected = SelectedRemoteSession {
+                    participation: Participation::Starter,
                     route: SelectedRemoteRoute::Native {
                         device_public_key: route_key,
                     },
@@ -1141,6 +1154,9 @@ impl UpstreamRegistry {
     async fn session_status_resolved(&self) -> Result<UpstreamSessionStatus, UpstreamError> {
         let _mutation = self.remote_prepare_mutation.lock().await;
         if let Some(selected) = self.selected() {
+            if matches!(selected.participation, Participation::StreamPlayer { .. }) {
+                return self.observe_stream_player(&selected).await;
+            }
             let status = self.selected_status(&selected).await?;
             match &status {
                 UpstreamSessionStatus::SessionStatus {
@@ -1340,6 +1356,24 @@ impl UpstreamRegistry {
             .ok_or(UpstreamError::ExpectedLaunchIdRequired)?;
         if expected != selected.launch_id {
             return Err(UpstreamError::StaleLaunchIdentity);
+        }
+        if matches!(selected.participation, Participation::StreamPlayer { .. }) {
+            match verb {
+                FreezerVerb::Freeze => {
+                    self.stop_stream_player(&selected).await?;
+                }
+                FreezerVerb::Thaw => {
+                    return Err(UpstreamError::Tagged {
+                        code: "NotSessionStarter".into(),
+                        message: "A stream player cannot thaw the holding device's session.".into(),
+                    })
+                }
+            }
+            return Ok(SessionFreezeResult {
+                launch_id: selected.launch_id,
+                state: crate::SessionFreezerState::Frozen,
+                changed: true,
+            });
         }
         let SelectedRemoteRoute::Native { device_public_key } = &selected.route else {
             unreachable!("legacy routes returned before exact freezer control")
@@ -1542,6 +1576,7 @@ impl UpstreamRegistry {
             .unwrap_or_default()
             .to_owned();
         let selected = SelectedRemoteSession {
+            participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
                 device_public_key: route_key,
             },
@@ -1566,6 +1601,9 @@ impl UpstreamRegistry {
         selected: &SelectedRemoteSession,
         force: bool,
     ) -> Result<UpstreamSessionStop, UpstreamError> {
+        if matches!(selected.participation, Participation::StreamPlayer { .. }) {
+            return self.stop_stream_player(selected).await;
+        }
         if self.retire_selected_if_revoked(selected)? {
             return Err(UpstreamError::SourcePeerNotFound);
         }
@@ -1727,6 +1765,10 @@ impl UpstreamRegistry {
     }
 
     fn set_selected(&self, selected: SelectedRemoteSession) {
+        self.last_stream_play_end
+            .lock()
+            .expect("stream play end mutex poisoned")
+            .take();
         *self
             .selected_remote_session
             .lock()
@@ -1822,6 +1864,7 @@ fn valid_public_key(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    include!("stream_play/registry_tests.rs");
     use super::*;
     use crate::linux_viewer::test_backend::{
         LinuxViewerAction, LinuxViewerCall, TestLinuxStreamViewer,
@@ -1973,6 +2016,29 @@ mod tests {
             SessionStopResult,
         };
         let response = match request {
+            crate::RpcRequest::SessionStreamPlay(request) => {
+                let phase = state.active_phase.lock().unwrap().clone();
+                let outcome = match phase {
+                    None => crate::stream_play::SessionStreamPlayOutcome::Err(RpcFailure {
+                        code: "NoActiveSession".into(),
+                        message: "No active session".into(),
+                    }),
+                    Some(_) if request.launch_id != state.launch_id => {
+                        crate::stream_play::SessionStreamPlayOutcome::Err(RpcFailure {
+                            code: "LaunchMismatch".into(),
+                            message: "Wrong launch".into(),
+                        })
+                    }
+                    Some(phase) => crate::stream_play::SessionStreamPlayOutcome::Ok(
+                        serde_json::from_value(serde_json::json!({
+                            "launchId":state.launch_id,"gameId":"game","title":"Game","phase":phase,
+                            "streamPlayers":[{"devicePublicKey":"player","label":"Tablet"}]
+                        }))
+                        .unwrap(),
+                    ),
+                };
+                RpcResponse::SessionStreamPlay(outcome)
+            }
             crate::RpcRequest::SessionStatus(_) => {
                 let phase = state.active_phase.lock().unwrap().clone();
                 RpcResponse::SessionStatus(SessionStatusOutcome::Ok(SessionStatus {
@@ -3657,6 +3723,7 @@ command = ["native-game"]
             UpstreamHostConfig::native("sobo", reachable),
         ]);
         let selected = SelectedRemoteSession {
+            participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
                 device_public_key: registry.hosts[0].device_public_key.clone().unwrap(),
             },
@@ -3779,6 +3846,7 @@ command = ["native-game"]
             "http://127.0.0.1:9".into(),
         )]);
         let selected = SelectedRemoteSession {
+            participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
                 device_public_key: registry.hosts[0].device_public_key.clone().unwrap(),
             },

@@ -1,5 +1,7 @@
 #[path = "session_rights.rs"]
 mod session_rights;
+#[path = "stream_players.rs"]
+mod stream_players;
 use super::launch_reservation::LaunchReservation;
 use crate::{InitialHandoff, RpcFailure, SessionPrepared};
 use std::{

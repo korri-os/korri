@@ -80,6 +80,10 @@ pub struct UpstreamPrepared {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpstreamActiveSession {
+    #[serde(default)]
+    pub person_public_key: Option<String>,
+    #[serde(default)]
+    pub stream_players: Vec<crate::stream_play::StreamPlayer>,
     pub launch_id: String,
     #[serde(default)]
     pub host: Option<String>,

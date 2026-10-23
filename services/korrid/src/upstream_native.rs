@@ -307,6 +307,30 @@ impl NativeClient {
         }
     }
 
+    pub(crate) async fn stream_play(
+        &self,
+        launch_id: &str,
+    ) -> Result<crate::ActiveSession, UpstreamError> {
+        match self
+            .call(RpcRequest::SessionStreamPlay(
+                crate::stream_play::SessionStreamPlayRequest {
+                    launch_id: launch_id.into(),
+                },
+            ))
+            .await?
+        {
+            RpcResponse::SessionStreamPlay(crate::stream_play::SessionStreamPlayOutcome::Ok(
+                active,
+            )) => Ok(active),
+            RpcResponse::SessionStreamPlay(crate::stream_play::SessionStreamPlayOutcome::Err(
+                failure,
+            )) => Err(Self::tagged_failure(failure)),
+            _ => Err(UpstreamError::Wire(
+                "unexpected stream play response".into(),
+            )),
+        }
+    }
+
     pub async fn session_status(&self) -> Result<UpstreamSessionStatus, UpstreamError> {
         match self
             .call(RpcRequest::SessionStatus(SessionStatusRequest {}))
@@ -315,6 +339,8 @@ impl NativeClient {
             RpcResponse::SessionStatus(SessionStatusOutcome::Ok(status)) => {
                 Ok(UpstreamSessionStatus::SessionStatus {
                     active: status.active.map(|active| UpstreamActiveSession {
+                        person_public_key: active.person_public_key,
+                        stream_players: active.stream_players,
                         launch_id: active.launch_id,
                         host: active.host,
                         game_id: active.game_id,

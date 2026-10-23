@@ -22,11 +22,18 @@ impl HostSessionControl {
                 launch_id,
                 starter_device_public_key,
                 ..
-            }) if expected_launch_id.is_none_or(|expected| expected == launch_id) => {
+            }) => {
                 crate::authorization::require_session_starter(
                     device,
                     starter_device_public_key.as_deref(),
-                )
+                )?;
+                if expected_launch_id.is_some_and(|expected| expected != launch_id) {
+                    return Err(failure(
+                        "StaleLaunchIdentity",
+                        "That launch is no longer live.",
+                    ));
+                }
+                Ok(())
             }
             _ => Err(failure(
                 "NoActiveSession",

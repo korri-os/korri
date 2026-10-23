@@ -1,12 +1,13 @@
 //! Shared play wire contracts. The holder remains the session authority.
 pub(crate) mod device;
+pub(crate) mod registration;
 pub(crate) mod rights;
 use crate::{ActiveSession, RpcFailure};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 #[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamPlayer {
     pub device_public_key: String,
