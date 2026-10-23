@@ -251,6 +251,16 @@ export default function Ready() {
   return <Games model={fixtureReadyModel} opening={[{ _tag: "FocusedCard", index: 1 }]} />
 }
 
+/** Hollow Knight's next launch uses a launch profile: PROFILE stands in its facts. */
+export function WithProfile() {
+  const catalog = fixtureReadyModel.catalog
+  const model = catalog._tag !== "Ready" ? fixtureReadyModel : {
+    ...fixtureReadyModel,
+    catalog: { ...catalog, games: catalog.games.map((game, index) => index === 1 ? { ...game, activeProfile: "Battery saver" } : game) },
+  }
+  return <Games model={model} opening={[{ _tag: "FocusedCard", index: 1 }]} />
+}
+
 /** Korri is still reading the library: three dim stripe wells and LOADING. */
 export function Loading() {
   return <Games model={fixtureLoadingModel} />

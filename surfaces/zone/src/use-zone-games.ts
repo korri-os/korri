@@ -109,6 +109,7 @@ export function zoneGamesProps(
       playCount: game.playCount,
       playtime: game.totalPlaytimeSeconds === undefined ? undefined : playtime(game.totalPlaytimeSeconds),
       download: game.download,
+      profile: game.activeProfile,
     },
     launches: game === undefined ? [] : launchChoices(game),
     focusedAction: nav.action,

@@ -1,8 +1,8 @@
 import "./ZoneLaunchSettings.css"
 import type { SurfaceLaunchSettings } from "@contracts/surface/korri-surface"
 import { useEffect, useRef } from "react"
-import { launchPlan, type ZoneLaunchState } from "../plan/launch-settings"
-import { entryHeading, focusedRow, optionsPlan, type ZoneOptionsView } from "../plan/options"
+import { launchPlan, ZONE_LAUNCH_SCOPE_ROW, type ZoneLaunchState } from "../plan/launch-settings"
+import { entryHeading, focusedRow, isPick, optionsPlan, type ZoneOptionsView } from "../plan/options"
 import { ZoneBanner } from "../ui/atoms/ZoneBanner"
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
 import { ZonePanel } from "../ui/atoms/ZonePanel"
@@ -14,6 +14,7 @@ import { ZoneFoot } from "../ui/molecules/ZoneFoot"
 import type { ZoneKey } from "../ui/molecules/ZoneKeyboard"
 import { ZoneOptionGroup } from "../ui/molecules/ZoneOptionGroup"
 import { ZoneOptionsEntry } from "../ui/organisms/ZoneOptionsEntry"
+import { ZoneOptionRow } from "../ui/molecules/ZoneOptionRow"
 import { ZoneShell, type ZoneBand, type ZoneStrips } from "../ui/templates/ZoneShell"
 import { useZoneBandWedge } from "../use-zone-band-wedge"
 import { useZoneFit } from "../use-zone-fit"
@@ -29,19 +30,25 @@ const STATE_TAGS: Record<ZoneLaunchState, ZoneTagKind> = {
 
 /**
  * LAUNCH SETTINGS, reached from GAME OPTS. for one game: the values that
- * shape how it runs, on every layer Korri publishes. It stands on the
- * OPTIONS ground and band, as RUN WITH does: the banner where the tabs
- * stand, the game's title on a black panel with Korri's state as a tag,
- * then the band. In the band: Korri's line about the whole editor (layers
- * it cannot show yet) or its message (a change made elsewhere, a failure),
- * then one group per layer, its title the black wedge that holds while its
- * rows pass, then Korri's actions as buttons.
+ * shape how it runs, on every layer and runner scope Korri publishes. It
+ * stands on the OPTIONS ground and band, as RUN WITH does: the banner where
+ * the tabs stand, the game's title on a black panel with Korri's state as a
+ * tag, then the band. In the band: Zone's RUNNER SCOPE row (ANY RUNNER, a
+ * family, each runner), stepped like any choice, which picks the places
+ * shown;
+ * Korri's lines about the whole editor (places it cannot show yet, a runner
+ * that is not installed, a runner whose facts it could not read) or its
+ * message (a change made elsewhere, a failure); then one group per layer
+ * for the chosen scope, its title the black wedge that holds while its rows
+ * pass; then Korri's actions as buttons.
  *
- * The rows are OPTIONS' rows: a choice steps on left, right and A; a
- * profile's name raises the keyboard; DELETE PROFILE asks NO / YES in
- * Korri's words. Every value row carries its source, Korri's note and the
- * DEVICE-ONLY tag under it. While Korri reads, or after a conflict or a
- * failure, the rows give way to Korri's message and actions.
+ * The rows are OPTIONS' rows: a choice steps on left, right and A; a number
+ * steps on left and right and A raises the keyboard; a profile's name
+ * raises the keyboard; ADD SETTING moves a candidate on left and right and
+ * A adds it; DELETE PROFILE asks NO / YES in Korri's words. Every value row
+ * carries its source, Korri's note and the DEVICE-ONLY tag under it; a row
+ * only a file sets draws no control. While Korri reads, or after a conflict
+ * or a failure, the rows give way to Korri's message and actions.
  *
  * A shape: Korri's editor, its status and the page's own state come in as
  * props; every press goes out through a callback. DOM focus follows the
@@ -52,6 +59,7 @@ const STATE_TAGS: Record<ZoneLaunchState, ZoneTagKind> = {
 export function ZoneLaunchSettings({
   launch,
   status,
+  scope = 0,
   view,
   focusedAction,
   strips,
@@ -63,6 +71,7 @@ export function ZoneLaunchSettings({
   onRowStep,
   onKey,
   onKeyFocus,
+  onClear,
   onDialogFocus,
   onDialogPress,
   onAction,
@@ -70,6 +79,8 @@ export function ZoneLaunchSettings({
 }: {
   readonly launch: Exclude<SurfaceLaunchSettings, { readonly _tag: "Closed" }>
   readonly status: Parameters<typeof launchPlan>[1]
+  /** The runner scope shown, by its place on the strip. */
+  readonly scope?: number
   readonly view: ZoneOptionsView
   /** The action the cursor is on, when it is on one. */
   readonly focusedAction?: string
@@ -81,19 +92,32 @@ export function ZoneLaunchSettings({
   readonly onRowPress?: (rowId: string) => void
   readonly onRowStep?: (rowId: string, direction: -1 | 1) => void
   readonly onKey?: (key: ZoneKey) => void
+  /** The clear key beside a number's keyboard (INHERIT), when Korri lets it clear. */
+  readonly onClear?: () => void
   readonly onKeyFocus?: (keyId: string) => void
   readonly onDialogFocus?: (index: 0 | 1) => void
   readonly onDialogPress?: (index: 0 | 1) => void
   readonly onAction?: (actionId: string) => void
   readonly onActionFocus?: (actionId: string) => void
 }) {
-  const launchView = launchPlan(launch, status)
+  const launchView = launchPlan(launch, status, scope)
   const plan = optionsPlan(launchView.slices)
   const rowId = focusedRow(plan, view.focused)?.id
   const keyboard = view.keyboard
   const dialog = keyboard === undefined ? view.dialog : undefined
   const layer = keyboard !== undefined ? "keyboard" : dialog !== undefined ? "dialog" : "none"
-  const words = launch._tag === "Conflict" || launch._tag === "Error" ? launch.message : launch.note
+  const words = launch._tag === "Conflict" || launch._tag === "Error" ? [launch.message, ...launch.notes] : launch.notes
+  // Zone's RUNNER SCOPE row stands on its own above the layers, no wedge.
+  const scopeRow = plan.groups.flatMap(group => group.rows).find(row => row.id === ZONE_LAUNCH_SCOPE_ROW)?.item
+  const groups = plan.groups.filter(group => !group.rows.some(row => row.id === ZONE_LAUNCH_SCOPE_ROW))
+  // A pick row shows the candidate A would send, not Korri's "choose" word.
+  const pick = view.pick
+  const shownRow = (item: (typeof plan.groups)[number]["rows"][number]["item"]) => {
+    if (!isPick(item) || item.interaction?.kind !== "choice") return item
+    const choices = item.interaction.choices
+    const at = pick?.rowId === item.id ? Math.min(pick.at, choices.length - 1) : 0
+    return { ...item, value: choices[at]?.label ?? item.value }
+  }
 
   const body = useRef<HTMLDivElement | null>(null)
   const rowBand = useRef<HTMLDivElement | null>(null)
@@ -157,16 +181,34 @@ export function ZoneLaunchSettings({
         <div className="zone-launch-band" inert={layer !== "none"} ref={rowBand}>
           <div className="zone-launch-scroll" data-block-exit="true">
             <div className="zone-launch-groups">
-              {words === undefined ? null : <p className="zone-launch-message">{words}</p>}
-              {plan.groups.map((group, index) => (
+              {scopeRow === undefined ? null : (
+                <div className="zone-launch-scopes">
+                  <ZoneOptionRow
+                    description={scopeRow.description}
+                    focused={rowId === ZONE_LAUNCH_SCOPE_ROW}
+                    interaction={scopeRow.interaction}
+                    label={scopeRow.label}
+                    onFocus={() => onRowFocus?.(ZONE_LAUNCH_SCOPE_ROW)}
+                    onPress={() => onRowPress?.(ZONE_LAUNCH_SCOPE_ROW)}
+                    onStep={direction => onRowStep?.(ZONE_LAUNCH_SCOPE_ROW, direction)}
+                    value={scopeRow.value}
+                    verbatimValue
+                  />
+                </div>
+              )}
+              {words.map((line, index) => (
+                // Korri's lines may repeat; a line's place is its identity.
+                <p className="zone-launch-message" key={`${index}:${line}`}>{line}</p>
+              ))}
+              {groups.map((group, index) => (
                 <div className="zone-launch-group" key={group.key}>
                   <ZoneOptionGroup
                     focusedId={rowId}
-                    followed={index < plan.groups.length - 1}
+                    followed={index < groups.length - 1}
                     onFocus={onRowFocus}
                     onPress={onRowPress}
                     onStep={onRowStep}
-                    rows={group.rows.map(row => ({ ...row.item, verbatimValue: true }))}
+                    rows={group.rows.map(row => ({ ...shownRow(row.item), verbatimValue: true }))}
                     status={group.status}
                     title={group.title}
                   />
@@ -195,10 +237,12 @@ export function ZoneLaunchSettings({
             <ZoneVeil />
             <ZoneOptionsEntry
               caret={keyboard.caret}
+              clearLabel={heading.clearLabel}
               draft={keyboard.draft}
               focusedKey={keyboard.focusedKey}
               layer={keyboard.layer}
               maxLength={heading.maxLength}
+              onClear={onClear}
               onFocusKey={onKeyFocus}
               onKey={onKey ?? (() => undefined)}
               placeholder={heading.placeholder}

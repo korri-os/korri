@@ -271,11 +271,13 @@ function zonePage(
           onActionFocus={send.launchActionFocus}
           onDialogFocus={index => send.launch({ _tag: "FocusedDialogButton", index })}
           onDialogPress={index => send.launch({ _tag: "PressedDialogButton", index })}
+          onClear={() => send.launch({ _tag: "PressedClear" })}
           onKey={key => send.launch({ _tag: "PressedKey", key })}
           onKeyFocus={keyId => send.launch({ _tag: "FocusedKey", keyId })}
           onRowFocus={rowId => send.launch({ _tag: "FocusedRow", rowId })}
           onRowPress={rowId => send.launch({ _tag: "PressedRow", rowId })}
           onRowStep={(rowId, direction) => send.launch({ _tag: "SteppedRow", rowId, direction })}
+          scope={state.launchScope}
           status={model.settingsStatus}
           strips={layout.strips}
           view={state.launch}

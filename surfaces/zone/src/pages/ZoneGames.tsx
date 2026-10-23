@@ -50,6 +50,8 @@ export interface ZoneGamesFacts {
   readonly playtime?: { readonly hours: number; readonly minutes: number }
   /** Korri's `download`: the first launch fetches something; `bytes` when known. */
   readonly download?: { readonly bytes?: number }
+  /** The launch profile PLAY uses, in Korri's words; absent when none or unread. */
+  readonly profile?: string
 }
 
 export interface ZoneGamesFind {
@@ -333,6 +335,8 @@ export function ZoneGames(props: ZoneGamesProps) {
     // DOWNLOAD and its size, or the word alone when Korri does not know it.
     ...(facts.download === undefined ? []
       : [["Download", facts.download.bytes === undefined ? undefined : formatZoneBytes(facts.download.bytes), true] as const]),
+    // PROFILE: the launch profile PLAY uses, when Korri names one.
+    ...(facts.profile === undefined ? [] : [["Profile", facts.profile, true] as const]),
   ]
   const recorded = factLines.some(([, , known]) => known)
 

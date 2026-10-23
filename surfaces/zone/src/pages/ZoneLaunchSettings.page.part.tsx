@@ -1,13 +1,14 @@
 import type { SurfaceLaunchSettings, SurfaceSettingsStatus } from "@contracts/surface/korri-surface"
 import { useRef, useSyncExternalStore } from "react"
-import { createLaunchProgram, launchSettingsFixtures as launch, type LaunchScript } from "../fixtures/fixture-launch-settings"
+import { createLaunchProgram, launchRowId, launchSettingsFixtures as launch, type LaunchScript } from "../fixtures/fixture-launch-settings"
+import { launchScopes } from "../plan/launch-settings"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import { plan } from "../plan/zone-select"
 import { ZoneGround } from "../ui/organisms/ZoneGround"
 import { ZoneLaunchSettings } from "./ZoneLaunchSettings"
 
 export const name = "Launch settings"
-export const note = "A game's launch settings: a group per layer, each value's source, DEVICE-ONLY, applies at next launch"
+export const note = "A game's launch settings: a runner scope strip, a group per layer, each value's source, DEVICE-ONLY"
 
 export const composition = {
   default: [
@@ -28,14 +29,17 @@ function Live({
   status,
   script = [],
   share = 1,
+  scope = 0,
 }: {
   readonly editor: Open
   readonly status?: SurfaceSettingsStatus
   readonly script?: readonly LaunchScript[]
   readonly share?: number
+  /** The runner scope the strip shows, by its place. */
+  readonly scope?: number
 }) {
   const program = useRef<ReturnType<typeof createLaunchProgram> | null>(null)
-  program.current ??= createLaunchProgram(editor, status, script)
+  program.current ??= createLaunchProgram(editor, status, script, undefined, scope)
   const live = program.current
   const snapshot = useSyncExternalStore(live.subscribe, live.get)
   const layout = plan(innerWidth * share, innerHeight)
@@ -51,11 +55,13 @@ function Live({
         onActionFocus={live.focusAction}
         onDialogFocus={index => live.dispatch({ _tag: "FocusedDialogButton", index })}
         onDialogPress={index => live.dispatch({ _tag: "PressedDialogButton", index })}
+        onClear={() => live.dispatch({ _tag: "PressedClear" })}
         onKey={key => live.dispatch({ _tag: "PressedKey", key })}
         onKeyFocus={keyId => live.dispatch({ _tag: "FocusedKey", keyId })}
         onRowFocus={rowId => live.dispatch({ _tag: "FocusedRow", rowId })}
         onRowPress={rowId => live.dispatch({ _tag: "PressedRow", rowId })}
         onRowStep={(rowId, direction) => live.dispatch({ _tag: "SteppedRow", rowId, direction })}
+        scope={snapshot.scope}
         status={status ?? { _tag: "Idle" }}
         strips={layout.strips}
         view={snapshot.state}
@@ -65,16 +71,39 @@ function Live({
 }
 
 const focus = (rowId: string): LaunchScript => ({ _tag: "FocusedRow", rowId })
+const scopeOf = (editor: Open, label: string) => Math.max(0, launchScopes(editor).findIndex(scope => scope.label === label))
+const MGBA = "game:wario/runner:retroarch/mgba"
 
-/** Every layer, the Device layer first, its CPU floor inherited. */
+/** Any runner, every layer, the Device first: its runner choice, limits and routine. */
 export default function Ready() {
   return <Live editor={launch.ready} />
 }
-/** The Runner layer sets the CPU floor itself: an overridden row. */
+/** mGBA: the Device place sets the CPU floor itself, an overridden row. */
 export function Overridden() {
-  return <Live editor={launch.ready} script={[focus("launch:set:runner:retroarch/mgba:cpu.min")]} />
+  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[focus(launchRowId("device/runner:retroarch/mgba", "cpu.min"))]} />
 }
-/** The Game layer: inherited rows name their source; the profile pick and New profile. */
+/** mGBA's settings on the Game: a number, an enum and ADD SETTING. */
+export function RunnerSettings() {
+  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[focus(launchRowId(MGBA, "setting:frameskip"))]} />
+}
+/** ADD SETTING with its candidate moved one step: A adds it. */
+export function AddSetting() {
+  const row = launchRowId(MGBA, "add-setting")
+  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[focus(row), { _tag: "SteppedRow", rowId: row, direction: 1 }]} />
+}
+/** Frameskip on the keyboard, with INHERIT beside it. */
+export function NumberEditor() {
+  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[{ _tag: "PressedRow", rowId: launchRowId(MGBA, "setting:frameskip") }]} />
+}
+/** gpSP is not the runner in use: its rows say so. */
+export function NotInForce() {
+  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "gpSP")} />
+}
+/** Values only files set, read-only with their source: the Game's environment and folder. */
+export function FileOnly() {
+  return <Live editor={launch.ready} script={[focus(launchRowId("game:wario/any", "file:cwd"))]} />
+}
+/** The Game: inherited rows name their source; the profile pick and New profile. */
 export function ProfilePicker() {
   return <Live editor={launch.ready} script={[focus("launch:profile:pick")]} />
 }
@@ -98,13 +127,8 @@ export function ConfirmDeleteProfile() {
   return <Live editor={launch.ready} script={[{ _tag: "PressedRow", rowId: "launch:profile:remove:battery" }]} />
 }
 export function Saving() {
-  return (
-    <Live
-      editor={launch.ready}
-      script={[focus("launch:set:game:gpu.max")]}
-      status={{ _tag: "Saving", settingId: "launch:set:game:gpu.max" }}
-    />
-  )
+  const row = launchRowId("game:wario/any", "gpu.max")
+  return <Live editor={launch.ready} script={[focus(row)]} status={{ _tag: "Saving", settingId: row }} />
 }
 export function Loading() {
   return <Live editor={launch.loading} />
@@ -122,9 +146,17 @@ export function NeedsRunnerChoice() {
 export function RouteUnavailable() {
   return <Live editor={launch.routeUnavailable} />
 }
+/** The Game names a runner that isn't installed: Korri's line, and the row says so. */
+export function RunnerUnavailable() {
+  return <Live editor={launch.runnerUnavailable} script={[focus(launchRowId("game:wario/any", "runner"))]} />
+}
+/** gpSP's dry run failed: Korri's line, and a read-only row in gpSP's places. */
+export function RunnerFactsUnavailable() {
+  return <Live editor={launch.factsUnavailable} scope={scopeOf(launch.factsUnavailable, "gpSP")} script={[focus(launchRowId("device/runner:retroarch/gpsp", "runner-facts:unavailable"))]} />
+}
 /** Facts present, but no devfreq GPU: one read-only GPU line. */
 export function NoGpu() {
-  return <Live editor={launch.noGpu} script={[focus("launch:set:game:cpu.min")]} />
+  return <Live editor={launch.noGpu} script={[focus(launchRowId("game:wario/any", "cpu.min"))]} />
 }
 /** No device facts: 10 % steps, and the rows say so. */
 export function FactsMissing() {

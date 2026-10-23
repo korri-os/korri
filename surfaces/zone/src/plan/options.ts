@@ -59,6 +59,8 @@ export type ZoneOptionsPress =
       readonly clearLabel?: string
       /** Korri's hint for an empty draft. */
       readonly placeholder?: string
+      /** A number: DONE sends only a number Korri's range takes. */
+      readonly numeric?: ZoneNumberRange
     }
   | { readonly _tag: "Run"; readonly actionId: string; readonly confirm?: ZoneOptionsConfirm }
   | { readonly _tag: "DismissProblem" }
@@ -179,6 +181,55 @@ export function zoneNetworkValue(network: SurfaceWifiNetwork): string {
  */
 export const isPathLabel = (label: string): boolean => /^[/~]/.test(label)
 
+/** A Korri number's range and step, and whether it may be cleared. */
+export interface ZoneNumberRange {
+  readonly min?: number
+  readonly max?: number
+  readonly step?: number
+  readonly clearable: boolean
+}
+
+/** A number's range in Zone's words: "0 TO 10", "AT LEAST 0". Absent: none. */
+export function zoneNumberRange(range: { readonly min?: number; readonly max?: number }): string | undefined {
+  if (range.min !== undefined && range.max !== undefined) return `${range.min} to ${range.max}`
+  if (range.min !== undefined) return `At least ${range.min}`
+  if (range.max !== undefined) return `At most ${range.max}`
+  return undefined
+}
+
+/** Whether a typed draft is a number the range takes. */
+export function zoneNumberFits(draft: string, range: ZoneNumberRange): boolean {
+  const text = draft.trim()
+  if (!/^-?\d*\.?\d+$/.test(text)) return false
+  const value = Number(text)
+  if (range.step === 1 && !Number.isInteger(value)) return false
+  return (range.min === undefined || value >= range.min) && (range.max === undefined || value <= range.max)
+}
+
+/**
+ * Left or right on a number: one step that way, held inside the range. A
+ * number with no value of its own starts from the range's end it moves
+ * away from, or 0. Undefined when it cannot move.
+ */
+export function zoneNumberStep(
+  interaction: { readonly value?: number; readonly min?: number; readonly max?: number; readonly step?: number },
+  direction: -1 | 1,
+): number | undefined {
+  const step = interaction.step ?? 1
+  const from = interaction.value ?? (direction > 0 ? interaction.min ?? 0 : interaction.max ?? 0)
+  const next = interaction.value === undefined ? from : from + direction * step
+  const held = Math.min(interaction.max ?? Infinity, Math.max(interaction.min ?? -Infinity, next))
+  return held === interaction.value ? undefined : Number(held.toFixed(6))
+}
+
+/**
+ * A choice Korri publishes with none of its values chosen (Add setting):
+ * left and right move a candidate on Zone's side, and A sends it, because
+ * stepping would choose for the person.
+ */
+export const isPick = (item: SurfaceSettingItem): boolean =>
+  item.interaction?.kind === "choice" && item.interaction.choices.length > 0 && choiceIndex(item) < 0
+
 /**
  * Where a choice row stands among its choices, by Korri's `selected` value
  * (two choices may share a label); -1 when it names none.
@@ -195,6 +246,26 @@ function settingPress(item: SurfaceSettingItem): ZoneOptionsPress {
   switch (interaction.kind) {
     case "choice":
       return interaction.choices.length === 0 ? { _tag: "Nothing" } : { _tag: "Step", settingId: item.id }
+    case "number": {
+      const range = zoneNumberRange(interaction)
+      return {
+        _tag: "Edit",
+        settingId: item.id,
+        // The keyboard's title carries the range, so the person sees it while typing.
+        label: range === undefined ? item.label : `${item.label} (${range})`,
+        draft: interaction.value === undefined ? "" : String(interaction.value),
+        secret: false,
+        maxLength: 24,
+        placeholder: range ?? "Number",
+        ...(interaction.clearable === true && interaction.value !== undefined ? { clearLabel: "Inherit" } : {}),
+        numeric: {
+          ...(interaction.min === undefined ? {} : { min: interaction.min }),
+          ...(interaction.max === undefined ? {} : { max: interaction.max }),
+          ...(interaction.step === undefined ? {} : { step: interaction.step }),
+          clearable: interaction.clearable === true,
+        },
+      }
+    }
     case "text":
       return {
         _tag: "Edit",
@@ -470,6 +541,7 @@ export type ZoneOptionsEntry =
       readonly maxLength?: number
       readonly clearLabel?: string
       readonly placeholder?: string
+      readonly numeric?: ZoneNumberRange
     }
   | { readonly _tag: "WifiPassword"; readonly networkId: string; readonly ssid: string }
   | { readonly _tag: "HiddenSsid" }
@@ -505,12 +577,14 @@ export function entryHeading(entry: ZoneOptionsEntry): {
   readonly clearLabel?: string
   /** Korri's hint, dimmed on the slab while the draft is empty. */
   readonly placeholder?: string
+  readonly numeric?: ZoneNumberRange
 } {
   switch (entry._tag) {
     case "Setting":
       return {
         title: entry.label,
         secret: entry.secret,
+        ...(entry.numeric === undefined ? {} : { numeric: entry.numeric }),
         ...(entry.maxLength === undefined ? {} : { maxLength: entry.maxLength }),
         ...(entry.clearLabel === undefined ? {} : { clearLabel: entry.clearLabel }),
         ...(entry.placeholder === undefined ? {} : { placeholder: entry.placeholder }),
@@ -527,6 +601,8 @@ export function entryHeading(entry: ZoneOptionsEntry): {
 /** The page's own state, as the page reads it: src/state/options.ts's model
  * is one of these. */
 export interface ZoneOptionsView {
+  /** A pick row's candidate, by row: the choice A would send. */
+  readonly pick?: { readonly rowId: string; readonly at: number } | undefined
   readonly focused?: string | undefined
   readonly keyboard?: ZoneOptionsKeyboard | undefined
   readonly dialog?: ZoneOptionsDialog | undefined

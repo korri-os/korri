@@ -15,7 +15,8 @@
  *     store       GET GAMES, while the person is getting a game (store.ts)
  *     launch      LAUNCH SETTINGS' cursor, keyboard and dialog, while Korri
  *                 shows a game's launch settings: OPTIONS' model, run on the
- *                 layers (plan/launch-settings.ts)
+ *                 layers of the runner scope shown (plan/launch-settings.ts)
+ *     launchScope that runner scope, by its place on the RUNNER SCOPE row
  *
  * The models stay pure and separate; this file only composes them. A page
  * reports in its own model's words (`Options`, `SaveData`, …) and the
@@ -68,7 +69,7 @@ import {
 } from "./options"
 import { updateOverlay, ZONE_OVERLAY_START, type ZoneOverlayMessage, type ZoneOverlayModel } from "./overlay"
 import type { ZoneRequest, ZoneStep } from "./requests"
-import { launchOpen, launchPlan, launchSlices } from "../plan/launch-settings"
+import { launchOpen, launchPlan, launchScopeStep, launchSlices, ZONE_LAUNCH_SCOPE_ROW } from "../plan/launch-settings"
 import { ask } from "./requests"
 import { RUN_WITH_START, update as updateRunWith, type ZoneRunWith, type ZoneRunWithMessage } from "./run-with"
 import { updateStatus, ZONE_STATUS_START, type ZoneStatusMessage, type ZoneStatusModel } from "./status"
@@ -85,6 +86,8 @@ export interface ZoneSurfaceState {
   readonly look: ZoneLook
   readonly store: ZoneStoreModel
   readonly launch: ZoneOptions
+  /** The runner scope LAUNCH SETTINGS shows, by its place on the strip. */
+  readonly launchScope: number
   /** The editor action the cursor is on (RELOAD, CLOSE), when it is on one. */
   readonly launchAction: string | undefined
 }
@@ -155,6 +158,7 @@ export function zoneSurfaceStart(korri: SurfaceModel, look: ZoneLook): ZoneSurfa
     onboarding: ZONE_ONBOARDING_START,
     store: ZONE_STORE_START,
     launch: OPTIONS_START,
+    launchScope: 0,
     launchAction: undefined,
   }
   return update(start, { _tag: "KorriPublished" }, korri).model
@@ -225,7 +229,18 @@ function route(steps: Steps, message: ZoneSurfaceMessage, korri: SurfaceModel): 
       }
       return
     case "Launch": {
-      const slices = launchSlices(korri)
+      // Zone's own RUNNER row changes the scope shown; Korri never hears it.
+      const inner = message.message
+      if ((inner._tag === "SteppedRow" || inner._tag === "PressedRow") && inner.rowId === ZONE_LAUNCH_SCOPE_ROW) {
+        const launch = korri.launchSettings
+        if (launch === undefined || launch._tag === "Closed" || optionsLayer(state.launch) !== "none") return
+        const count = launchPlan(launch, korri.settingsStatus, state.launchScope).scopes.length
+        const next = launchScopeStep(count, state.launchScope, inner._tag === "SteppedRow" ? inner.direction : 1)
+        steps.put("launchScope", { model: next, requests: [] })
+        steps.put("launch", { model: { ...state.launch, focused: ZONE_LAUNCH_SCOPE_ROW, at: 0, pick: undefined }, requests: [] })
+        return
+      }
+      const slices = launchSlices(korri, state.launchScope)
       if (slices !== undefined) steps.put("launch", updateOptions(state.launch, message.message, slices))
       if (message.message._tag === "FocusedRow") steps.put("launchAction", { model: undefined, requests: [] })
       return
@@ -280,10 +295,11 @@ function published(steps: Steps, korri: SurfaceModel): void {
     : { model: ZONE_ONBOARDING_START, requests: [] })
   steps.put("store", updateStore(state.store, message, korri))
   // The editor's cursor and questions start afresh each time Korri opens it.
-  const slices = launchSlices(korri)
+  const slices = launchSlices(korri, state.launchScope)
   steps.put("launch", slices === undefined
     ? { model: OPTIONS_START, requests: [] }
     : updateOptions(state.launch, message, slices))
+  if (slices === undefined) steps.put("launchScope", { model: 0, requests: [] })
 }
 
 /** Back: Korri's problem, then the page's own rule, then the GAMES tab. */
@@ -314,13 +330,13 @@ function back(steps: Steps, korri: SurfaceModel): void {
       return
     case "launch": {
       const launch = korri.launchSettings
-      const slices = launchSlices(korri)
+      const slices = launchSlices(korri, state.launchScope)
       if (launch === undefined || launch._tag === "Closed" || slices === undefined) return
       if (optionsLayer(state.launch) !== "none") {
         steps.put("launch", updateOptions(state.launch, message, slices))
         return
       }
-      const close = launchPlan(launch, korri.settingsStatus).closeActionId
+      const close = launchPlan(launch, korri.settingsStatus, state.launchScope).closeActionId
       if (close !== undefined) steps.put("launch", ask(state.launch, { _tag: "RunAction", actionId: close }))
       return
     }
@@ -377,7 +393,7 @@ function menu(steps: Steps, korri: SurfaceModel): void {
       return
     case "launch": {
       // A keyboard commits its draft, as on OPTIONS; nothing else answers menu here.
-      const slices = launchSlices(korri)
+      const slices = launchSlices(korri, state.launchScope)
       if (slices !== undefined && optionsLayer(state.launch) === "keyboard") {
         steps.put("launch", updateOptions(state.launch, message, slices))
       }

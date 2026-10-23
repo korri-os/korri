@@ -28,6 +28,8 @@ import { ZoneTag } from "../atoms/ZoneTag"
  *
  *  - `choice`: red triangles flank the value while the row is focused;
  *    left and right step it (`onStep`).
+ *  - `number`: the same triangles; left and right step it by Korri's step,
+ *    and A raises the keyboard to type one.
  *  - `text`: the value shows as given; A raises the keyboard (`onPress`).
  *  - `sensitiveText`: the value shows as given, because Korri's value for
  *    a secret is its status ("Configured", "Not set"), never the secret;
@@ -128,7 +130,7 @@ export function ZoneOptionRow({
   const clearLabel = interaction?.kind === "sensitiveText" ? interaction.clearLabel : undefined
   const placeholder = (value === undefined || value === "")
     && (interaction?.kind === "text" || interaction?.kind === "sensitiveText") ? interaction.placeholder : undefined
-  const steps = kind === "choice" && focused && !saving && !disabled
+  const steps = (kind === "choice" || kind === "number") && focused && !saving && !disabled
   const triangles = (steps || flanked) && focused && !saving && !disabled
   const horizontal = useZoneHorizontal(control, steps && onStep !== undefined, kind, onStep)
   const shown = placeholder ?? value

@@ -9,6 +9,8 @@
  *     dialog     the NO / YES dialog over the page, before an action fires
  *     attempt    the last Wi-Fi attempt Korri published, so a fresh rejected
  *                key can reopen the keyboard once and only once
+ *     pick       the candidate on a choice Korri publishes with nothing
+ *                chosen (Add setting): left and right move it, A sends it
  *
  * Korri's SurfaceModel is not stored here. Korri owns it and replaces it
  * whole; `update` receives it beside this value and reads the rows from
@@ -22,6 +24,9 @@ import type { SurfaceModel, SurfaceWifiAttempt } from "@contracts/surface/korri-
 import {
   choiceIndex,
   entryHeading,
+  isPick,
+  zoneNumberFits,
+  zoneNumberStep,
   focusedRow,
   optionsPlan,
   ZONE_OPTIONS_SYSTEM,
@@ -43,6 +48,7 @@ export interface ZoneOptions {
   readonly keyboard: ZoneOptionsKeyboard | undefined
   readonly dialog: ZoneOptionsDialog | undefined
   readonly attempt: SurfaceWifiAttempt
+  readonly pick: { readonly rowId: string; readonly at: number } | undefined
 }
 
 export type ZoneOptionsMessage =
@@ -70,6 +76,7 @@ export const OPTIONS_START: ZoneOptions = {
   keyboard: undefined,
   dialog: undefined,
   attempt: { _tag: "Idle" },
+  pick: undefined,
 }
 
 /** The start, with Korri's current attempt already seen: a failure from
@@ -124,7 +131,8 @@ function step(state: ZoneOptions, message: ZoneOptionsMessage, korri: ZoneOption
       return state.keyboard === undefined ? stay(state) : key(state, state.keyboard, message.key)
     case "PressedClear": {
       const entry = state.keyboard?.entry
-      return entry?._tag === "Setting" && entry.secret && entry.clearLabel !== undefined
+      // A secret Korri can clear, or a number Korri lets clear (its INHERIT).
+      return entry?._tag === "Setting" && (entry.secret || entry.numeric?.clearable === true) && entry.clearLabel !== undefined
         ? ask({ ...state, keyboard: undefined }, { _tag: "ChangeSetting", settingId: entry.settingId, value: "" })
         : stay(state)
     }
@@ -168,7 +176,7 @@ function published(state: ZoneOptions, korri: ZoneOptionsSlices, plan: ZoneOptio
   const entry = next.keyboard?.entry
   if (entry?._tag === "Setting") {
     const kind = plan.rows.find(row => row.id === entry.settingId)?.item.interaction?.kind
-    if (kind !== "text" && kind !== "sensitiveText") next = { ...next, keyboard: undefined }
+    if (kind !== "text" && kind !== "sensitiveText" && kind !== "number") next = { ...next, keyboard: undefined }
   }
   // A dialog closes when the action it asks about is gone.
   const dialog = next.dialog
@@ -201,8 +209,15 @@ function press(state: ZoneOptions, rowId: string, korri: ZoneOptionsSlices, plan
   switch (action._tag) {
     case "Nothing":
       return stay(here)
-    case "Step":
-      return stepChoice(here, rowId, 1, korri, plan)
+    case "Step": {
+      // A pick sends its candidate; any other choice steps forward.
+      if (!isPick(row.item)) return stepChoice(here, rowId, 1, korri, plan)
+      const interaction = row.item.interaction
+      const at = state.pick?.rowId === rowId ? state.pick.at : 0
+      const choice = interaction?.kind === "choice" ? interaction.choices[at] : undefined
+      if (choice === undefined || saving(korri, row.id)) return stay(here)
+      return ask({ ...here, pick: undefined }, { _tag: "ChangeSetting", settingId: row.id, value: choice.value })
+    }
     case "Edit": {
       if (saving(korri, row.id)) return stay(here)
       const entry: ZoneOptionsEntry = {
@@ -213,6 +228,7 @@ function press(state: ZoneOptions, rowId: string, korri: ZoneOptionsSlices, plan
         ...(action.maxLength === undefined ? {} : { maxLength: action.maxLength }),
         ...(action.clearLabel === undefined ? {} : { clearLabel: action.clearLabel }),
         ...(action.placeholder === undefined ? {} : { placeholder: action.placeholder }),
+        ...(action.numeric === undefined ? {} : { numeric: action.numeric }),
       }
       return stay({ ...here, keyboard: openKeyboard(entry, action.draft) })
     }
@@ -250,7 +266,18 @@ function stepChoice(
 ): ZoneStep<ZoneOptions> {
   const row = plan.rows.find(candidate => candidate.id === rowId)
   const interaction = row?.item.interaction
+  if (row !== undefined && interaction?.kind === "number") {
+    if (saving(korri, row.id)) return stay(state)
+    const next = zoneNumberStep(interaction, direction)
+    return next === undefined ? stay(state) : ask(state, { _tag: "ChangeSetting", settingId: row.id, value: String(next) })
+  }
   if (row === undefined || interaction?.kind !== "choice" || interaction.choices.length === 0) return stay(state)
+  // A pick moves its candidate on Zone's side; nothing goes to Korri.
+  if (isPick(row.item)) {
+    const count = interaction.choices.length
+    const from = state.pick?.rowId === rowId ? state.pick.at : 0
+    return stay({ ...state, pick: { rowId, at: (from + direction + count) % count } })
+  }
   // LOOK is Zone's own choice, stepped by the surface, never sent to Korri.
   if (row.press._tag === "Look") return stay(state)
   if (saving(korri, row.id)) return stay(state)
@@ -291,6 +318,15 @@ function commit(state: ZoneOptions, keyboard: ZoneOptionsKeyboard): ZoneStep<Zon
   if (entry._tag !== "Setting") return wifi(state, submitWifi(entry, keyboard.draft))
   // An empty secret says nothing: clearing one is its own key.
   if (entry.secret && keyboard.draft === "") return stay({ ...state, keyboard: undefined })
+  // A number: empty clears it when Korri lets it; anything else must fit the range.
+  if (entry.numeric !== undefined) {
+    if (keyboard.draft.trim() === "") {
+      return entry.numeric.clearable
+        ? ask({ ...state, keyboard: undefined }, { _tag: "ChangeSetting", settingId: entry.settingId, value: "" })
+        : stay({ ...state, keyboard: undefined })
+    }
+    if (!zoneNumberFits(keyboard.draft, entry.numeric)) return stay(state)
+  }
   const request: ZoneRequest = { _tag: "ChangeSetting", settingId: entry.settingId, value: keyboard.draft }
   return ask({ ...state, keyboard: undefined }, request)
 }
