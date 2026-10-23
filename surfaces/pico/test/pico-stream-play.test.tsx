@@ -35,6 +35,7 @@ import { initialNavigation, type PicoNavigation } from "../src/state/navigation"
 import type { PicoRequest } from "../src/state/requests"
 import { inviteNotices } from "../src/state/shown"
 import { update } from "../src/state/update"
+import { PicoInviteNotices } from "../src/ui/organisms/PicoInviteNotices"
 import * as noticesPart from "../src/ui/organisms/PicoInviteNotices.organism.part"
 import * as playingNowPart from "../src/ui/organisms/PicoPlayingNow.organism.part"
 
@@ -161,6 +162,76 @@ describe("invite notices", () => {
     expect(stack?.querySelectorAll("button, a, input, [tabindex]").length).toBe(0)
     expect(stack?.textContent).toContain("Simon is playing")
     expect(stack?.textContent).toContain("Turtles in Time")
+  })
+})
+
+describe("the notice stack follows its container's size", () => {
+  /** A ResizeObserver that reports when the test says the size changed, and
+   * says whether it was disconnected. happy-dom lays nothing out, so the
+   * real one would never fire. */
+  class StubResizeObserver {
+    static live: StubResizeObserver[] = []
+    readonly watched: Element[] = []
+    connected = true
+    constructor(private readonly report: () => void) {
+      StubResizeObserver.live.push(this)
+    }
+    observe(target: Element) { this.watched.push(target) }
+    unobserve() {}
+    disconnect() { this.connected = false }
+    static resized(target: Element) {
+      for (const observer of StubResizeObserver.live) {
+        if (observer.connected && observer.watched.includes(target)) observer.report()
+      }
+    }
+  }
+
+  const box = (left: number, top: number, width: number, height: number) =>
+    ({ left, top, right: left + width, bottom: top + height, width, height, x: left, y: top, toJSON: () => ({}) }) as DOMRect
+
+  test("a container that narrows, with the window as it was, moves the stack off the focused control", () => {
+    const view = document.defaultView!
+    const real = view.ResizeObserver
+    StubResizeObserver.live = []
+    view.ResizeObserver = StubResizeObserver as unknown as typeof ResizeObserver
+    try {
+      const { container, unmount } = render(
+        <div>
+          <button type="button">Focused</button>
+          <PicoInviteNotices notices={[{ id: fixtureInvite.id, personName: "Simon", gameTitle: "Turtles in Time", deviceLabel: "Odin 2 Portal" }]} />
+        </div>,
+      )
+      const frame = container.firstElementChild as HTMLElement
+      const stack = frame.querySelector<HTMLElement>(".pico-invite-notices")!
+      const button = screen.getByRole("button", { name: "Focused" })
+      // The geometry a browser would lay out: an 8 px inset, a 300 x 100
+      // stack in the corner `data-corner` names, a button at the top left.
+      let width = 800
+      const height = 480
+      Object.defineProperty(stack, "offsetParent", { get: () => frame })
+      frame.getBoundingClientRect = () => box(0, 0, width, height)
+      stack.getBoundingClientRect = () => {
+        const corner = stack.dataset.corner ?? "top-left"
+        return box(corner.endsWith("left") ? 8 : width - 8 - 300, corner.startsWith("top") ? 8 : height - 8 - 100, 300, 100)
+      }
+      button.getBoundingClientRect = () => box(16, 20, 184, 40)
+      act(() => button.focus())
+      expect(stack.dataset.corner).toBe("top-right")
+
+      // Only the container narrows: no window resize, no focus move, no drawing.
+      width = 400
+      expect(stack.dataset.corner).toBe("top-right")
+      act(() => StubResizeObserver.resized(frame))
+      expect(stack.dataset.corner).toBe("bottom-left")
+
+      // The stack is watched too, and the observer goes with the component.
+      const observer = StubResizeObserver.live.at(-1)!
+      expect(observer.watched).toEqual([stack, frame])
+      unmount()
+      expect(observer.connected).toBe(false)
+    } finally {
+      view.ResizeObserver = real
+    }
   })
 })
 
