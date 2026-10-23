@@ -188,8 +188,20 @@ Content with its own identity that is applied to a release of another game when 
 _Avoid_: DLC, extension, mod (alone)
 
 **Launch settings**:
-The values that shape how a game runs, such as CPU limits. Any value can be set on the device, a system, a runner, a game, a release or a profile. For each value, the most specific of these that sets it wins. They hold for one session and end with it.
+The values that shape how a game runs, such as its runner, the runner's settings, CPU limits and hooks. Any value can be set on the device, a system, a game, a release, a profile or one launch, and each of these can limit it to one runner or runner family. For each value, the most specific place that sets it wins. They hold for one session and end with it.
 _Avoid_: config, policy, cascade
+
+**Runner scope**:
+Which runners a launch setting applies to: any runner, one runner family, or one runner.
+_Avoid_: runner layer, runner override
+
+**Hook**:
+A command that runs on the device just before a game starts or just after its session ends, with the same limits as the game.
+_Avoid_: script, trigger, callback
+
+**Routine**:
+A named list of hooks that any place in the launch settings can use.
+_Avoid_: hook set, hook profile, preset
 
 **Profile**:
 A person's named variation of launch settings for one game, chosen when the game starts and remembered for its next launch. It changes only the values it names and keeps every other value from the device, system, runner, game and release. It is not content.
