@@ -637,3 +637,33 @@ fn cancel_stops_the_reader_between_writes() {
     let run = unpack_with(&raw_zip(&[raw("Game.gba", ROM)]), &limits);
     assert_eq!(run.result.unwrap_err().failure, Failure::Cancelled);
 }
+
+/// Review P1-2: `Archive::read` decodes a compressed 7z header with LZMA
+/// readers that take no memory limit, before korrid sees any coder. korrid
+/// reads the encoded header's coders first and refuses a dictionary above
+/// `MemAvailable`. Any decoder that still overreaches is killed by the
+/// unit's `MemoryMax=`; that cap is exercised only under systemd
+/// (`unit::tests::a_store_job_unit_is_named_from_its_provider_cache_path`
+/// checks the property).
+#[test]
+fn a_compressed_7z_header_with_a_large_dictionary_is_refused_before_it_decodes() {
+    let names: Vec<String> = (0..400)
+        .map(|i| format!("folder/Game file {i:04}.gba"))
+        .collect();
+    let entries: Vec<(&str, &[u8])> = names.iter().map(|name| (name.as_str(), &b""[..])).collect();
+    let bytes = seven_z(&entries, |_| {});
+    // Precondition: the writer compressed the header (K_ENCODED_HEADER).
+    let next = 32 + u64::from_le_bytes(bytes[12..20].try_into().unwrap()) as usize;
+    assert_eq!(
+        bytes[next], 0x17,
+        "the header must be encoded for this test"
+    );
+    let mut small = limits();
+    small.memory = 64 * 1024;
+    refused(
+        unpack_with(&bytes, &small),
+        Failure::Unpack,
+        "encoded header",
+    );
+    assert!(unpack(&bytes).result.is_ok(), "a larger device reads it");
+}

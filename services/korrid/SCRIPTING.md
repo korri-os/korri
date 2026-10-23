@@ -743,7 +743,9 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   device, FIFO or socket, an encrypted entry, an absolute path, a `..`, `.`
   or empty segment, a backslash or control character, a duplicate path, or
   more entries than discovery's traversal budget. It refuses a 7z or rar
-  whose dictionary is larger than `MemAvailable`. Files are written `0644`,
+  whose dictionary, including a compressed 7z header's, is larger than
+  `MemAvailable`, and its unit runs with `MemoryMax=` set to `MemAvailable`
+  at launch and `MemorySwapMax=0`. Files are written `0644`,
   folders `0755`, with the same 5% free-space floor. Nested, split,
   multi-volume and encrypted archives fail with "The downloaded files could
   not be unpacked." A name that says archive with bytes that are not one is

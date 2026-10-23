@@ -353,7 +353,8 @@ korrid identifies, renames and records after the program exits.
 **The unit.** `acquisition/unit.rs` `unit_arguments` already gives the unit no
 network (`PrivateNetwork=yes`), no capabilities, `ProtectSystem=strict`, the
 contribution folder as its only writable path (`ReadWritePaths`), and the
-private state root as inaccessible. For a store job, the contribution folder
+private state root as inaccessible. A store job's unit also gets a memory cap
+(see "Memory"). For a store job, the contribution folder
 is the provider cache, `cache/<plugin short>/<provider name>`
 (`placement::provider_cache`). It holds both the staged archive under
 `.downloads` and the `.tmp-*` work folder.
@@ -487,9 +488,17 @@ extractor reads each coder's dictionary size before it decodes. `rars` takes
 the same bound through `with_rar50_dictionary_size_limit`. The extractor
 refuses an archive whose dictionary exceeds `MemAvailable` in `/proc/meminfo`,
 read when it starts. That is a check grounded in the device. korrid has no
-`/proc/meminfo` reader today. The failure copy is `Unpack`. No `MemoryMax=`
-is added to the unit, because no grounded value exists. An allocation that the
-check misses ends the extractor, not korrid.
+`/proc/meminfo` reader today. The failure copy is `Unpack`.
+
+Review decision, 2026-10-23: `sevenz-rust2` also decodes a compressed 7z
+header (`kEncodedHeader`) inside `Archive::read`, with no memory limit and
+before any coder is visible. The extractor reads that header's coders itself
+and refuses a dictionary above `MemAvailable` first. The boundary that covers
+every decoder is the unit: korrid launches the store reader's unit with
+`MemoryMax=<MemAvailable at launch>` and `MemorySwapMax=0`, the same rule as
+the dictionary check and never above it. A decoder that overreaches is killed
+inside the sandbox, and the job fails with the `Unpack` copy. ADR 0012
+artifact units are unchanged. The cap is exercised only under systemd.
 
 ### Change 2: a form POST on `FinalDownload`
 

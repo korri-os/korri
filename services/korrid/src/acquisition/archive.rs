@@ -84,14 +84,19 @@ impl Limits {
     pub(super) fn device() -> Result<Self, Stop> {
         Ok(Self {
             budget: TraversalBudget::default(),
-            memory: mem_available(
-                &fs::read_to_string("/proc/meminfo")
-                    .map_err(|error| Stop::unpack(format!("cannot read /proc/meminfo: {error}")))?,
-            )?,
+            memory: device_memory()?,
             space: None,
             cancel: None,
         })
     }
+}
+
+/// `MemAvailable` of this device, in bytes, read now.
+pub(super) fn device_memory() -> Result<u64, Stop> {
+    mem_available(
+        &fs::read_to_string("/proc/meminfo")
+            .map_err(|error| Stop::unpack(format!("cannot read /proc/meminfo: {error}")))?,
+    )
 }
 
 /// `MemAvailable:  <n> kB` in bytes.
@@ -553,15 +558,18 @@ fn zip_central_names(file: &mut File) -> Result<Vec<Vec<u8>>, Stop> {
 
 /// The decoder memory one 7z coder asks for.
 fn seven_z_memory(coder: &sevenz_rust2::Coder) -> Result<u64, Stop> {
+    coder_memory(coder.encoder_method_id(), coder.properties())
+}
+
+fn coder_memory(id: &[u8], properties: &[u8]) -> Result<u64, Stop> {
     use sevenz_rust2::EncoderMethod;
-    let properties = coder.properties();
     let le32 = |at: usize| {
         properties
             .get(at..at + 4)
             .map(|bytes| u64::from(u32::from_le_bytes(bytes.try_into().unwrap())))
             .ok_or_else(|| Stop::unpack("7z coder properties are too short".into()))
     };
-    match coder.encoder_method_id() {
+    match id {
         EncoderMethod::ID_LZMA | EncoderMethod::ID_PPMD => le32(1),
         EncoderMethod::ID_LZMA2 => {
             let bits = u64::from(
@@ -582,6 +590,117 @@ fn seven_z_memory(coder: &sevenz_rust2::Coder) -> Result<u64, Stop> {
     }
 }
 
+/// The decoder memory of a 7z's compressed header (`kEncodedHeader`), read
+/// before `Archive::read` decodes it with no memory limit. 0 when the header
+/// is not compressed. Only the coders of the header's first folder are read
+/// (7-Zip writes one); the unit's `MemoryMax=` covers any other decoder.
+fn seven_z_header_memory(file: &mut File) -> Result<u64, Stop> {
+    use std::io::{Seek, SeekFrom};
+    let malformed = || Stop::unpack("7z: malformed encoded header".into());
+    let mut start = [0u8; 32];
+    file.seek(SeekFrom::Start(0))?;
+    file.read_exact(&mut start)?;
+    let offset = u64::from_le_bytes(start[12..20].try_into().unwrap());
+    let size = u64::from_le_bytes(start[20..28].try_into().unwrap());
+    if size == 0 {
+        return Ok(0);
+    }
+    file.seek(SeekFrom::Start(
+        32u64.checked_add(offset).ok_or_else(malformed)?,
+    ))?;
+    // The coder list sits near the start of the encoded header.
+    let mut header = Vec::new();
+    file.take(size.min(64 * 1024)).read_to_end(&mut header)?;
+    let mut at = 0usize;
+    let byte = |at: &mut usize| -> Result<u8, Stop> {
+        let value = *header.get(*at).ok_or_else(malformed)?;
+        *at += 1;
+        Ok(value)
+    };
+    // 7z ReadNumber: the first byte's leading ones count the extra bytes.
+    let number = |at: &mut usize| -> Result<u64, Stop> {
+        let first = byte(at)?;
+        let mut mask = 0x80u8;
+        let mut value = 0u64;
+        for index in 0..8 {
+            if first & mask == 0 {
+                let high = u64::from(first & mask.wrapping_sub(1));
+                return Ok(value | (high << (8 * index)));
+            }
+            value |= u64::from(byte(at)?) << (8 * index);
+            mask >>= 1;
+        }
+        Ok(value)
+    };
+    if byte(&mut at)? != 0x17 {
+        return Ok(0);
+    }
+    // kPackInfo: packPos, numPackStreams, then properties until kEnd.
+    if byte(&mut at)? != 0x06 {
+        return Err(malformed());
+    }
+    number(&mut at)?;
+    let streams = number(&mut at)?;
+    loop {
+        match byte(&mut at)? {
+            0x00 => break,
+            0x09 => {
+                for _ in 0..streams {
+                    number(&mut at)?;
+                }
+            }
+            0x0A => {
+                // CRC digests: an all-defined byte, a bit field if not, then u32s.
+                let all = byte(&mut at)?;
+                let defined = if all != 0 {
+                    streams
+                } else {
+                    let mut count = 0;
+                    for _ in 0..streams.div_ceil(8) {
+                        count += u64::from(byte(&mut at)?.count_ones());
+                    }
+                    count
+                };
+                at = at
+                    .checked_add(4 * defined as usize)
+                    .filter(|end| *end <= header.len())
+                    .ok_or_else(malformed)?;
+            }
+            _ => return Err(malformed()),
+        }
+    }
+    // kUnpackInfo, kFolder, numFolders, external = 0, then the first folder.
+    if byte(&mut at)? != 0x07 || byte(&mut at)? != 0x0B {
+        return Err(malformed());
+    }
+    number(&mut at)?;
+    if byte(&mut at)? != 0 {
+        return Err(malformed());
+    }
+    let coders = number(&mut at)?;
+    let mut memory = 0u64;
+    for _ in 0..coders.min(64) {
+        let flags = byte(&mut at)?;
+        let id_size = usize::from(flags & 0x0F);
+        let id = header.get(at..at + id_size).ok_or_else(malformed)?.to_vec();
+        at += id_size;
+        if flags & 0x10 != 0 {
+            number(&mut at)?;
+            number(&mut at)?;
+        }
+        let properties = if flags & 0x20 != 0 {
+            let length = number(&mut at)? as usize;
+            let properties = header.get(at..at + length).ok_or_else(malformed)?.to_vec();
+            at += length;
+            properties
+        } else {
+            Vec::new()
+        };
+        memory = memory.saturating_add(coder_memory(&id, &properties)?);
+    }
+    Ok(memory)
+}
+
 fn seven_z(
     archive: &Path,
     work: &Path,
@@ -590,7 +709,15 @@ fn seven_z(
 ) -> Result<(), Stop> {
     use sevenz_rust2::{ArchiveReader, EncoderMethod, Password};
     let unreadable = |error: sevenz_rust2::Error| Stop::unpack(format!("7z: {error}"));
-    let mut file = BufReader::new(File::open(archive)?);
+    let mut raw = File::open(archive)?;
+    let header = seven_z_header_memory(&mut raw)?;
+    if header > limits.memory {
+        return Err(Stop::unpack(format!(
+            "7z: encoded header dictionary of {header} bytes exceeds MemAvailable of {} bytes",
+            limits.memory
+        )));
+    }
+    let mut file = BufReader::new(raw);
     // An encrypted header needs a password and fails here.
     let parsed = sevenz_rust2::Archive::read(&mut file, &Password::empty()).map_err(unreadable)?;
     let mut memory = 0u64;

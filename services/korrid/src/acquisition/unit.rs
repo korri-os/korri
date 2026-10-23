@@ -108,7 +108,19 @@ fn systemctl_path() -> PathBuf {
         .unwrap_or_else(|| "systemctl".into())
 }
 
-fn unit_arguments(base: &Path, private_root: &Path, unit: &str) -> Result<Vec<String>, Failure> {
+/// ADR 0030: the store reader's unit bounds. `memory` is `MemAvailable` at
+/// launch, the same rule as the dictionary check and never above it.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ReaderLimits {
+    pub memory: u64,
+}
+
+fn unit_arguments(
+    base: &Path,
+    private_root: &Path,
+    unit: &str,
+    reader: Option<ReaderLimits>,
+) -> Result<Vec<String>, Failure> {
     // systemd's path list grammar is not argv grammar. Refuse whitespace and
     // specifier expansion rather than inserting a second writable path.
     for path in [base, private_root] {
@@ -120,7 +132,7 @@ fn unit_arguments(base: &Path, private_root: &Path, unit: &str) -> Result<Vec<St
             return Err(Failure::UnsafePath);
         }
     }
-    Ok(vec![
+    let mut arguments = vec![
         "--system".into(),
         "--no-ask-password".into(),
         "--quiet".into(),
@@ -153,8 +165,15 @@ fn unit_arguments(base: &Path, private_root: &Path, unit: &str) -> Result<Vec<St
         ),
         "--property=StandardOutput=null".into(),
         "--property=StandardError=journal".into(),
-        "--".into(),
-    ])
+    ];
+    if let Some(reader) = reader {
+        // Review P1-2: a decoder that overreaches (a 7z header decodes with
+        // no limit) is killed inside the sandbox, not on the device.
+        arguments.push(format!("--property=MemoryMax={}", reader.memory));
+        arguments.push("--property=MemorySwapMax=0".into());
+    }
+    arguments.push("--".into());
+    Ok(arguments)
 }
 
 pub(super) fn unpack(
@@ -172,7 +191,7 @@ pub(super) fn unpack(
         // Recovery normally stopped an orphan before creating this work dir.
         // A still-active named unit is never replaced or mistaken for this run.
         let unit = name(artifact);
-        let mut command = sandboxed(base, private_root, &unit)?;
+        let mut command = sandboxed(base, private_root, &unit, None)?;
         command.arg(program);
         command
     };
@@ -196,7 +215,12 @@ pub(super) fn unpack(
 /// `systemd-run` with the sandbox properties, after any older unit with this
 /// name has stopped.
 #[cfg(not(test))]
-fn sandboxed(base: &Path, private_root: &Path, unit: &str) -> Result<Command, Failure> {
+fn sandboxed(
+    base: &Path,
+    private_root: &Path,
+    unit: &str,
+    reader: Option<ReaderLimits>,
+) -> Result<Command, Failure> {
     // Recovery normally stopped an orphan before creating this work dir.
     // A still-active named unit is never replaced or mistaken for this run.
     let systemctl = systemctl_path();
@@ -209,7 +233,7 @@ fn sandboxed(base: &Path, private_root: &Path, unit: &str) -> Result<Command, Fa
     let mut command = Command::new(
         std::env::var_os("KORRID_SYSTEMD_RUN").unwrap_or_else(|| "systemd-run".into()),
     );
-    command.args(unit_arguments(base, private_root, unit)?);
+    command.args(unit_arguments(base, private_root, unit, reader)?);
     Ok(command)
 }
 
@@ -238,7 +262,8 @@ pub(super) fn unpack_archive(
     }
     #[cfg(not(test))]
     {
-        let mut command = sandboxed(base, private_root, unit)?;
+        let memory = super::archive::device_memory().map_err(|stop| stop.failure)?;
+        let mut command = sandboxed(base, private_root, unit, Some(ReaderLimits { memory }))?;
         let status = command
             .arg(std::env::current_exe()?)
             .arg("unpack-archive")
@@ -286,8 +311,10 @@ mod tests {
             Path::new("/storage/cache/fex/rootfs"),
             Path::new("/private"),
             &name(&artifact()),
+            None,
         )
         .unwrap();
+        assert!(!args.iter().any(|arg| arg.starts_with("--property=Memory")));
         assert_eq!(
             args.iter()
                 .filter(|arg| arg.starts_with("--property=ReadWritePaths="))
@@ -301,7 +328,8 @@ mod tests {
         assert!(unit_arguments(
             Path::new("/storage/other path"),
             Path::new("/private"),
-            &name(&artifact())
+            &name(&artifact()),
+            None,
         )
         .is_err());
     }
@@ -315,8 +343,15 @@ mod tests {
             Path::new("/storage/cache/roms/wowroms"),
             Path::new("/private"),
             &provider_name("@simonwjackson:roms", "@simonwjackson:wowroms"),
+            Some(ReaderLimits {
+                memory: 123_456_789,
+            }),
         )
         .unwrap();
+        // Review P1-2: a hard memory cap from MemAvailable, no swap, so any
+        // decoder that overreaches is killed inside the sandbox.
+        assert!(args.contains(&"--property=MemoryMax=123456789".into()));
+        assert!(args.contains(&"--property=MemorySwapMax=0".into()));
         assert!(args.contains(&"--unit=korri-acquire-roms-wowroms.service".into()));
         assert!(args.contains(&"--property=ReadWritePaths=/storage/cache/roms/wowroms".into()));
         assert!(args.contains(&"--property=PrivateNetwork=yes".into()));
