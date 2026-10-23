@@ -98,6 +98,8 @@ export interface InMemoryStoreConfig {
   /** Status reads a job spends Resolving, then Placing. Default 1 each. */
   readonly resolveSteps?: number
   readonly placeSteps?: number
+  /** Status reads an archive spends Unpacking (ADR 0030). Default 0: no archive. */
+  readonly unpackSteps?: number
   /** acquire answers after this resolves, so a test can press Cancel first. */
   readonly acquireGate?: () => Promise<void>
 }
@@ -147,6 +149,7 @@ interface InMemoryJob {
   partial: number
   resolveLeft: number
   placeLeft: number
+  unpackLeft: number
 }
 
 /** What Downloading reports as `bytesTotal`: the server's length, else the claim's. */
@@ -198,7 +201,7 @@ export function createInMemoryStoreAcquisition(
   /** ADR 0013's queue: one job moves at a time; the rest wait, in order. */
   const moving = (job: InMemoryJob) => {
     const tag = job.status.state._tag
-    return tag === "Resolving" || tag === "Downloading" || tag === "Placing"
+    return tag === "Resolving" || tag === "Downloading" || tag === "Unpacking" || tag === "Placing"
   }
   const queueFree = (except: InMemoryJob) => ![...jobs.values()].some(other => other !== except && moving(other))
   const step = (job: InMemoryJob) => {
@@ -226,10 +229,14 @@ export function createInMemoryStoreAcquisition(
         set(job, { _tag: "Failed", reason: { code: "DownloadFailed", message: fault.message } })
       } else if (done >= end) {
         job.placeLeft = config.placeSteps ?? 1
-        set(job, { _tag: "Placing" })
+        job.unpackLeft = config.unpackSteps ?? 0
+        set(job, job.unpackLeft > 0 ? { _tag: "Unpacking" } : { _tag: "Placing" })
       } else {
         set(job, { _tag: "Downloading", bytesDone: done, ...(total === undefined ? {} : { bytesTotal: total }), bytesPerSecond: bytesPerStep })
       }
+    } else if (state._tag === "Unpacking") {
+      job.unpackLeft -= 1
+      if (job.unpackLeft <= 0) set(job, { _tag: "Placing" })
     } else if (state._tag === "Placing") {
       if (job.placeLeft > 0) job.placeLeft -= 1
       else finish(job)
@@ -292,7 +299,7 @@ export function createInMemoryStoreAcquisition(
       // A repeated acquire for a claim whose newest job is live or Imported
       // returns that job; after Failed or Cancelled it is a new try.
       const tag = running?.status.state._tag
-      if (running !== undefined && (tag === "Queued" || tag === "Resolving" || tag === "Downloading" || tag === "Placing" || tag === "Imported")) {
+      if (running !== undefined && (tag === "Queued" || tag === "Resolving" || tag === "Downloading" || tag === "Unpacking" || tag === "Placing" || tag === "Imported")) {
         return snapshot(running)
       }
       const system = claim.artifact?.system
@@ -305,6 +312,7 @@ export function createInMemoryStoreAcquisition(
         partial: 0,
         resolveLeft: config.resolveSteps ?? 1,
         placeLeft: config.placeSteps ?? 1,
+        unpackLeft: 0,
         status: {
           jobId, providerId, id, system,
           ...(claim.artifact?.file?.name === undefined ? {} : { fileName: claim.artifact.file.name }),
@@ -332,7 +340,8 @@ export function createInMemoryStoreAcquisition(
       const job = jobs.get(jobId)
       if (job === undefined) return failure(ACQUISITION_CODE.unknownJob, "Korri has no such download.")
       const tag = job.status.state._tag
-      if (tag === "Queued" || tag === "Resolving" || tag === "Downloading") set(job, { _tag: "Cancelled" })
+      // ADR 0030: a store job can be cancelled while it unpacks.
+      if (tag === "Queued" || tag === "Resolving" || tag === "Downloading" || tag === "Unpacking") set(job, { _tag: "Cancelled" })
       return snapshot(job)
     },
     restart() {

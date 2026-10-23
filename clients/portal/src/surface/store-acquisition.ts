@@ -201,6 +201,7 @@ function jobFrom(status: AcquireJobStatus, cancelling = false): Job {
     case "Queued":
     case "Resolving":
     case "Downloading":
+    case "Unpacking":
     case "Placing":
       return { _tag: "Active", jobId: status.jobId, state, cancelling }
   }
@@ -303,6 +304,8 @@ export function createStoreAcquisition(
         if (state._tag === "Queued") {
           return { _tag: "Working", kicker: "Waiting to download", detail: QUEUED_DETAIL, queued: true, actions: [cancel()] }
         }
+        // ADR 0030: korrid unpacks an archive; it can still be cancelled.
+        if (state._tag === "Unpacking") return { _tag: "Working", kicker: "Unpacking the download…", actions: [cancel()] }
         // Placing has no position and no Cancel: the file is being moved in.
         if (state._tag === "Placing") return { _tag: "Working", kicker: "Adding to your library…", actions: [] }
         return { _tag: "Working", kicker: "Starting download…", detail: "Asking the provider for the file", actions: [cancel()] }

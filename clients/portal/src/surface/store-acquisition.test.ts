@@ -368,6 +368,19 @@ test("Cancel during the download stops it, and Get is offered again", async () =
   expect(h.calls.filter(call => call.startsWith("cancel"))).toHaveLength(1)
 })
 
+test("An archive shows Unpacking with Cancel, and Cancel there keeps nothing", async () => {
+  const h = harness(base([claim("celeste")], { unpackSteps: 1000 }))
+  await h.open("celeste")
+  h.press("Get")
+  h.press("Download")
+  await h.until("unpacking", () => h.get()._tag === "Working" && (h.get() as { kicker: string }).kicker === "Unpacking the download…")
+  expect(h.get()).toMatchObject({ _tag: "Working", kicker: "Unpacking the download…", actions: [{ label: "Cancel" }] })
+  h.press("Cancel")
+  await h.until("cancelled", () => h.get()._tag === "Offer")
+  expect(h.get()).toMatchObject({ _tag: "Offer", note: CANCELLED_NOTE })
+  expect(h.imported).toEqual([])
+})
+
 test("Cancel before acquire answers is honoured against the job it started", async () => {
   let release: () => void = () => {}
   const held = new Promise<void>(resolve => { release = resolve })
