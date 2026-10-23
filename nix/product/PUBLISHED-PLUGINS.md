@@ -66,6 +66,14 @@ runner declaring per-game save locations under `saveRoot` (#126), its libretro
 cores, FAKE-08, Solarus, ZQuest Classic and the Starter pack, whose fixtures now
 run through `korrid plugin-run`. Each pin was evaluated at that source and found
 in the batch's `paths-SYSTEM.txt`. Gamescope keeps its earlier pin.
+Batch `build-adaccd5610ce` (source `adaccd5610ce5b997670251eb4a117c83d93ce8f`,
+Core input `eab74c96134abed6453ff74c6c80bf4ebca5c52f`) replaces only Sunshine
+on both architectures. It scopes capture FIFO to guarded RAM-KMS and bounds
+vblank waits to 100 ms. Its native unit requests `LimitRTPRIO=5`, accepted by
+the current Core plugin host. The public `revision.txt` matches that source,
+and both expected outputs appear in the batch's `paths-SYSTEM.txt`. The matching
+offline metadata archives are pinned by SHA-256. Every other plugin pin stays
+unchanged. This pin update does not establish physical-device acceptance.
 Each pinned path is grounded in its batch's `paths-SYSTEM.txt` and
 `revision.txt`. The new Starter pack pins were checked against those public
 release assets directly. Earlier batches remain published even when their

@@ -4,6 +4,7 @@
 # and build-824050bfa4c3 (PICO-8, Homebrew Hub and RetroBrews acquisition plugins)
 # and build-365ce4e054d5 (ADR 0012 FEX, Proton and Steam)
 # and build-30594ae66c81 (save sync RetroArch save locations, Core plugin-run fixtures)
+# and build-adaccd5610ce (Sunshine guarded KMS FIFO and bounded vblank waits)
 # paths-SYSTEM.txt and revision.txt from their immutable releases;
 # IDs below come from the current host seed report over each published package.
 # Plugin updates change these pins and matching offline proof assets explicitly.
@@ -41,7 +42,7 @@ let
       korri-plugin-starter-pack = "/nix/store/1347ax0n3zbn5sykxlw4rz4d31mjswgs-korri-plugin";
       korri-plugin-steam = "/nix/store/7ks62xvwfl172rl7i4z8fmn8iiyngaaq-korri-plugin";
       korri-plugin-stella = "/nix/store/xxa3zwd5kdvxankjx38b0rnf0acl64aj-korri-plugin";
-      korri-plugin-sunshine = "/nix/store/7q3fv7767vdzrbax2v2dz2chcvp2yf7r-korri-plugin";
+      korri-plugin-sunshine = "/nix/store/5wgjja8xama24dch72qiifs7d7zz0w1i-korri-plugin";
       korri-plugin-zquest-classic = "/nix/store/fgpg2glx2n202j975w62d73jlj5l86xx-korri-plugin";
     };
     x86_64-linux = {
@@ -75,7 +76,7 @@ let
       korri-plugin-starter-pack = "/nix/store/7w9vb73biwy5444pdag1zy2v6cl7s83p-korri-plugin";
       korri-plugin-steam = "/nix/store/3k5pfp2c1di8rkav0dr6r7j79fqfp98d-korri-plugin";
       korri-plugin-stella = "/nix/store/0qhlw9pl972prd78d7qcdfjfhc55r2bm-korri-plugin";
-      korri-plugin-sunshine = "/nix/store/l6fi46y2m5cwgww7y7mpyriyj0z09d33-korri-plugin";
+      korri-plugin-sunshine = "/nix/store/9vvdhc0lw57yig4mcmwx70my29hvhz34-korri-plugin";
       korri-plugin-zquest-classic = "/nix/store/p9cgjc5c7hw8vry05arnw5dhcxgcwd06-korri-plugin";
     };
   };
