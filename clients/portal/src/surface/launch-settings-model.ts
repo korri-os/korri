@@ -33,6 +33,7 @@ import type {
   SurfaceSettingInteraction,
   SurfaceSettingItem,
 } from "@contracts/surface/korri-surface"
+import { layerKey, placeKey } from "../korrid/launch-place-key"
 
 /** Choice value for "no value on this place". Never a percent or runner id. */
 export const INHERIT = "inherit"
@@ -92,18 +93,21 @@ export interface LaunchWrite {
   readonly encode: (text: string) => { readonly value?: unknown } | null
 }
 
+/** A setting added with Add setting and not yet given a value: a runner's
+ * or a modifier's, so the two never meet. */
+export type PendingSetting =
+  | { readonly _tag: "Runner"; readonly key: string }
+  | { readonly _tag: "Modifier"; readonly id: string; readonly key: string }
+
+export const samePending = (a: PendingSetting, b: PendingSetting): boolean =>
+  a.key === b.key && (a._tag === "Runner" ? b._tag === "Runner" : b._tag === "Modifier" && a.id === b.id)
+
 /** A row's change that adds a pending setting rather than writing. */
 export interface LaunchAdd {
   readonly placeId: string
-  /** The pending entry a chosen key makes: a runner setting or a modifier's. */
-  readonly tokenOf: (key: string) => string
+  /** The pending setting a chosen key makes. */
+  readonly pendingOf: (key: string) => PendingSetting
 }
-
-/** Pending entries, one string each, so runner and modifier settings never meet. */
-export const PENDING = {
-  setting: (key: string) => `setting\u0000${key}`,
-  modifier: (id: string, key: string) => `modifier\u0000${id}\u0000${key}`,
-} as const
 
 export interface LaunchEditor {
   readonly places: readonly SurfaceLaunchSettingsPlace[]
@@ -112,32 +116,15 @@ export interface LaunchEditor {
   /** Add setting rows, by row id. */
   readonly adds: ReadonlyMap<string, LaunchAdd>
   /** Rows added with Add setting and not yet set, by row id. */
-  readonly pending: ReadonlyMap<string, { readonly placeId: string; readonly token: string }>
+  readonly pending: ReadonlyMap<string, { readonly placeId: string; readonly setting: PendingSetting }>
+  /** Inherit rows of string settings, by row id: the setting row each clears. */
+  readonly clears: ReadonlyMap<string, string>
 }
 
 // --- places ----------------------------------------------------------------
 
-export function layerKey(layer: LaunchLayer): string {
-  switch (layer._tag) {
-    case "Device": return "device"
-    case "System": return `system:${layer.id}`
-    case "Game": return `game:${layer.id}`
-    case "Release": return `release:${layer.id.releaseId}`
-    case "Profile": return `profile:${layer.id.profileId}`
-    case "Launch": return "launch"
-  }
-}
-
-export function scopeKey(scope: LaunchRunnerScope): string {
-  switch (scope._tag) {
-    case "Any": return "any"
-    case "Family": return `family:${scope.id}`
-    case "Runner": return `runner:${scope.id}`
-  }
-}
-
 /** A stable place id, unique within one snapshot. */
-export const placeIdOf = (place: LaunchPlace): string => `${layerKey(place.layer)}/${scopeKey(place.scope)}`
+export const placeIdOf = placeKey
 
 const samePlace = (a: LaunchPlace, b: LaunchPlace) => placeIdOf(a) === placeIdOf(b)
 
@@ -176,39 +163,6 @@ const strings = (value: unknown): readonly string[] =>
 const record = (value: unknown): Json | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? value as Json : undefined
 
-/**
- * Profile places. korrid lists them in `places`; a profile it lists only in
- * `profiles` gets its places from its body: any runner, then each installed
- * runner's family and the runner itself.
- */
-function profilePlaces(snapshot: LaunchSnapshot, gameId: string | undefined): readonly LaunchPlaceSnapshot[] {
-  if (gameId === undefined) return []
-  const titles = profileTitles(snapshot.profiles)
-  const titlesOf = runnerTitles(snapshot.runners)
-  return snapshot.profiles.flatMap(profile => {
-    if (snapshot.places.some(place => place.place.layer._tag === "Profile" && place.place.layer.id.profileId === profile.id)) return []
-    const layer: LaunchLayer = { _tag: "Profile", id: { gameId, profileId: profile.id } }
-    const body = record(profile.body) ?? {}
-    const name = `Profile ${titles.get(profile.id) ?? profile.title}`
-    const families = [...new Set(snapshot.runners.flatMap(runner => runner.family === undefined ? [] : [runner.family]))]
-    return [
-      { place: { layer, scope: { _tag: "Any" } }, title: name, body, editableKinds: [KIND.runner, KIND.cpu, KIND.gpu, KIND.modifiers] },
-      ...families.map(family => ({
-        place: { layer, scope: { _tag: "Family" as const, id: family } },
-        title: `${name} for ${family}`,
-        body: record(body.families)?.[family] ?? {},
-        editableKinds: [KIND.cpu, KIND.gpu, KIND.modifiers, KIND.settings],
-      })),
-      ...snapshot.runners.map(runner => ({
-        place: { layer, scope: { _tag: "Runner" as const, id: runner.id } },
-        title: `${name} for ${titlesOf.get(runner.id) ?? runner.title}`,
-        body: record(body.runners)?.[runner.id] ?? {},
-        editableKinds: [KIND.cpu, KIND.gpu, KIND.modifiers, KIND.settings],
-      })),
-    ]
-  })
-}
-
 /** The places the editor shows, most general first: by layer, then scope. */
 export function orderedPlaces(snapshot: LaunchSnapshot, gameId?: string): readonly LaunchPlaceSnapshot[] {
   const runnerRank = new Map(snapshot.runners.map((runner, index) => [runner.id, index]))
@@ -217,7 +171,8 @@ export function orderedPlaces(snapshot: LaunchSnapshot, gameId?: string): readon
     if (runner.family !== undefined && !familyRank.has(runner.family)) familyRank.set(runner.family, index)
   })
   const profileRank = new Map(snapshot.profiles.map((profile, index) => [profile.id, index]))
-  const all = [...snapshot.places, ...profilePlaces(snapshot, gameId)].filter(place => place.place.layer._tag !== "Launch")
+  // korrid lists every place, a profile's too; one launch is not edited here.
+  const all = snapshot.places.filter(place => place.place.layer._tag !== "Launch")
   const rank = (place: LaunchPlace): readonly number[] => [
     LAYER_RANK[place.layer._tag],
     place.layer._tag === "Profile" ? profileRank.get(place.layer.id.profileId) ?? 0 : 0,
@@ -438,7 +393,8 @@ function scopeLabel(context: Context, scope: LaunchRunnerScope): string {
 interface Rows {
   readonly writes: Map<string, LaunchWrite>
   readonly adds: Map<string, LaunchAdd>
-  readonly pending: Map<string, { readonly placeId: string; readonly token: string }>
+  readonly pending: Map<string, { readonly placeId: string; readonly setting: PendingSetting }>
+  readonly clears: Map<string, string>
 }
 
 const percentOf = (value: unknown): number | undefined =>
@@ -663,42 +619,100 @@ function valueInteraction(property: Property | undefined, own: unknown): {
       },
     }
   }
+  // A string: what is typed is the value, an empty one too. Its Inherit is
+  // a row of its own (settingItems), because "" is a value here.
   return {
-    interaction: { kind: "text", placeholder: property?.title ?? "Value" },
+    interaction: { kind: "text", placeholder: property?.title ?? "Value", allowEmpty: true },
     encode: text => ({ value: text }),
   }
 }
 
-function settingsGroup(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly string[]): SurfaceSettingGroup | undefined {
-  const schema = schemaFor(context, place.scope)
-  const own = record(body.settings) ?? {}
-  const added = schemaKeys(pending, PENDING.setting)
-  const keys = [...Object.keys(own), ...added.filter(key => !(key in own))]
-  const items: SurfaceSettingItem[] = keys.map(key => {
+/**
+ * A place's settings of one owner (its runner, or one modifier): those set
+ * here, then those added with Add setting and not yet given a value. A
+ * string's row holds its raw text as its value (absent when empty or not
+ * set, the placeholder then saying which), and an Inherit row follows it,
+ * because an empty string is a value of its own.
+ */
+function settingItems(
+  context: Context,
+  rows: Rows,
+  options: {
+    readonly placeId: string
+    readonly place: LaunchPlace
+    readonly own: Json
+    readonly added: readonly string[]
+    readonly schema: ReadonlyMap<string, Property>
+    readonly pathOf: (key: string) => LaunchPath
+    readonly rowPath: (key: string) => string
+    readonly pendingOf: (key: string) => PendingSetting
+    readonly scopeOf: (property: Property | undefined) => "device" | "shared"
+    readonly missing?: string
+  },
+): { readonly items: readonly SurfaceSettingItem[]; readonly keys: readonly string[] } {
+  const { placeId, place, own, schema } = options
+  const keys = [...Object.keys(own), ...options.added.filter(key => !(key in own))]
+  const items = keys.flatMap((key): SurfaceSettingItem[] => {
     const property = schema.get(key)
-    const value = own[key]
     const set = key in own
-    const id = LAUNCH_ID.set(placeId, `setting:${key}`)
+    const value = own[key]
+    const id = LAUNCH_ID.set(placeId, options.rowPath(key))
     const { interaction, encode } = valueInteraction(property, set ? value : undefined)
-    rows.writes.set(id, { place, path: { _tag: "Setting", payload: { key } }, encode })
-    if (!set) rows.pending.set(id, { placeId, token: PENDING.setting(key) })
-    const source = sourceText(context, place, context.resolved({ _tag: "Setting", payload: { key } }), valueText)
-    return {
+    rows.writes.set(id, { place, path: options.pathOf(key), encode })
+    if (!set) rows.pending.set(id, { placeId, setting: options.pendingOf(key) })
+    const source = sourceText(context, place, context.resolved(options.pathOf(key)), valueText)
+    const label = property?.title ?? key
+    const text = interaction.kind === "text"
+    const shown: Pick<SurfaceSettingItem, "value"> = text
+      ? typeof value === "string" && value !== "" && set ? { value } : {}
+      : { value: set ? valueText(value) : "Not set here" }
+    const row: SurfaceSettingItem = {
       id,
-      label: property?.title ?? key,
-      value: set ? valueText(value) : "Not set here",
+      label,
+      ...shown,
       ...(property?.description === undefined
-        ? property === undefined ? { description: "This runner no longer describes this setting." } : {}
+        ? property === undefined && options.missing !== undefined ? { description: options.missing } : {}
         : { description: property.description }),
       ...(source === undefined ? {} : { source }),
-      scope: property?.device === true ? "device" : "shared",
-      interaction,
+      scope: options.scopeOf(property),
+      // The label for an empty string stays out of its value: the editor starts from the raw text.
+      interaction: text && interaction.kind === "text"
+        ? { ...interaction, placeholder: set ? "Empty" : "Not set here" }
+        : interaction,
     }
+    if (!text) return [row]
+    const clear = LAUNCH_ID.set(placeId, `clear:${options.rowPath(key)}`)
+    rows.clears.set(clear, id)
+    return [row, {
+      id: clear,
+      label: `Inherit ${label}`,
+      value: "Clear",
+      description: "Takes the value set here away, so the value in force comes from elsewhere.",
+      interaction: { kind: "action", actionId: clear },
+    }]
   })
+  return { items, keys }
+}
+
+function settingsGroup(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly PendingSetting[]): SurfaceSettingGroup | undefined {
+  const schema = schemaFor(context, place.scope)
+  const { items: setRows, keys } = settingItems(context, rows, {
+    placeId,
+    place,
+    own: record(body.settings) ?? {},
+    added: pending.flatMap(setting => setting._tag === "Runner" ? [setting.key] : []),
+    schema,
+    pathOf: key => ({ _tag: "Setting", payload: { key } }),
+    rowPath: key => `setting:${key}`,
+    pendingOf: key => ({ _tag: "Runner", key }),
+    scopeOf: property => property?.device === true ? "device" : "shared",
+    missing: "This runner no longer describes this setting.",
+  })
+  const items = [...setRows]
   const unset = [...schema].filter(([key]) => !keys.includes(key))
   if (unset.length > 0) {
     const id = LAUNCH_ID.set(placeId, "add-setting")
-    rows.adds.set(id, { placeId, tokenOf: PENDING.setting })
+    rows.adds.set(id, { placeId, pendingOf: key => ({ _tag: "Runner", key }) })
     items.push({
       id,
       label: "Add setting",
@@ -712,12 +726,6 @@ function settingsGroup(context: Context, rows: Rows, placeId: string, place: Lau
     })
   }
   return items.length === 0 ? undefined : { title: "Runner settings", items }
-}
-
-/** The keys pending entries name for one owner, in the order they were added. */
-function schemaKeys(pending: readonly string[], tokenOf: (key: string) => string): readonly string[] {
-  const prefix = tokenOf("")
-  return pending.filter(token => token.startsWith(prefix)).map(token => token.slice(prefix.length))
 }
 
 const ON_OFF = [INHERIT_CHOICE, { value: "true", label: "On" }, { value: "false", label: "Off" }]
@@ -744,7 +752,7 @@ function modifiersOf(context: Context): readonly { readonly id: string; readonly
  * settings are (what is set here, then Add setting from its schema). A
  * modifier with no schema has no settings to show.
  */
-function modifierGroups(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly string[]): SurfaceSettingGroup[] {
+function modifierGroups(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly PendingSetting[]): SurfaceSettingGroup[] {
   const own = record(body.modifiers) ?? {}
   return modifiersOf(context).map((modifier): SurfaceSettingGroup => {
     const authored = record(own[modifier.id]) ?? {}
@@ -766,31 +774,21 @@ function modifierGroups(context: Context, rows: Rows, placeId: string, place: La
       interaction: { kind: "choice", choices: ON_OFF, selected: enabled === undefined ? INHERIT : String(enabled) },
     }
     const schema = modifier.schema === undefined ? new Map<string, Property>() : propertiesOf(modifier.schema)
-    const settings = record(authored.settings) ?? {}
-    const tokenOf = (key: string) => PENDING.modifier(modifier.id, key)
-    const added = schemaKeys(pending, tokenOf)
-    const keys = [...Object.keys(settings), ...added.filter(key => !(key in settings))]
-    const settingRows = keys.map((key): SurfaceSettingItem => {
-      const property = schema.get(key)
-      const set = key in settings
-      const rowId = LAUNCH_ID.set(placeId, `modifier:${modifier.id}:setting:${key}`)
-      const { interaction, encode } = valueInteraction(property, set ? settings[key] : undefined)
-      rows.writes.set(rowId, { place, path: { _tag: "ModifierSetting", payload: { id: modifier.id, key } }, encode })
-      if (!set) rows.pending.set(rowId, { placeId, token: tokenOf(key) })
-      const from = sourceText(context, place, context.resolved({ _tag: "ModifierSetting", payload: { id: modifier.id, key } }), valueText)
-      return {
-        id: rowId,
-        label: property?.title ?? key,
-        value: set ? valueText(settings[key]) : "Not set here",
-        ...(property?.description === undefined ? {} : { description: property.description }),
-        ...(from === undefined ? {} : { source: from }),
-        scope: "device",
-        interaction,
-      }
+    const pendingOf = (key: string): PendingSetting => ({ _tag: "Modifier", id: modifier.id, key })
+    const { items: settingRows, keys } = settingItems(context, rows, {
+      placeId,
+      place,
+      own: record(authored.settings) ?? {},
+      added: pending.flatMap(setting => setting._tag === "Modifier" && setting.id === modifier.id ? [setting.key] : []),
+      schema,
+      pathOf: key => ({ _tag: "ModifierSetting", payload: { id: modifier.id, key } }),
+      rowPath: key => `modifier:${modifier.id}:setting:${key}`,
+      pendingOf,
+      scopeOf: () => "device",
     })
     const unset = [...schema].filter(([key]) => !keys.includes(key))
     const addId = LAUNCH_ID.set(placeId, `modifier:${modifier.id}:add-setting`)
-    if (unset.length > 0) rows.adds.set(addId, { placeId, tokenOf })
+    if (unset.length > 0) rows.adds.set(addId, { placeId, pendingOf })
     const addRow: SurfaceSettingItem[] = unset.length === 0 ? [] : [{
       id: addId,
       label: `Add ${modifier.title} setting`,
@@ -1026,10 +1024,10 @@ export function launchNotesFrom(snapshot: LaunchSnapshot, gameId?: string): read
 export function launchEditorFrom(
   snapshot: LaunchSnapshot,
   gameId: string | undefined,
-  pending: ReadonlyMap<string, readonly string[]> = new Map(),
+  pending: ReadonlyMap<string, readonly PendingSetting[]> = new Map(),
 ): LaunchEditor {
   const context = contextOf(snapshot, gameId)
-  const rows: Rows = { writes: new Map(), adds: new Map(), pending: new Map() }
+  const rows: Rows = { writes: new Map(), adds: new Map(), pending: new Map(), clears: new Map() }
   const places = context.places.map((entry): SurfaceLaunchSettingsPlace => {
     const { place } = entry
     const placeId = placeIdOf(place)
@@ -1055,13 +1053,13 @@ export function launchEditorFrom(
       groups: groups.filter((group): group is SurfaceSettingGroup => group !== undefined),
     }
   })
-  return { places, notes: launchNotesFrom(snapshot, gameId), writes: rows.writes, adds: rows.adds, pending: rows.pending }
+  return { places, notes: launchNotesFrom(snapshot, gameId), writes: rows.writes, adds: rows.adds, pending: rows.pending, clears: rows.clears }
 }
 
 /** Device settings' "Launch settings" group, from a snapshot without a game. */
 export function deviceLaunchGroup(snapshot: LaunchSnapshot): { readonly group: SurfaceSettingGroup; readonly writes: ReadonlyMap<string, LaunchWrite> } {
   const context = contextOf(snapshot)
-  const rows: Rows = { writes: new Map(), adds: new Map(), pending: new Map() }
+  const rows: Rows = { writes: new Map(), adds: new Map(), pending: new Map(), clears: new Map() }
   const entry = context.places.find(place => place.place.layer._tag === "Device" && place.place.scope._tag === "Any")
   const place: LaunchPlace = entry?.place ?? { layer: { _tag: "Device" }, scope: { _tag: "Any" } }
   const groups = limitGroups(context, rows, place, record(entry?.body) ?? {}, [KIND.cpu, KIND.gpu], LAUNCH_ID.device)

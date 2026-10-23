@@ -260,3 +260,22 @@ test("each place shows only its own hooks, its routine first, marked in force or
   // The Game for any runner repeats none of the Device's hooks.
   expect(hooks(scopeOf("Any runner"), "Game")).toEqual([])
 })
+
+test("a string setting edits from its raw text, sends an empty one as typed, and clears through its Inherit row", () => {
+  const scope = launchScopes(launch.ready).findIndex(candidate => candidate.label === "mGBA")
+  let state = zoneSurfaceStart(ready, "blend")
+  for (let index = 0; index < scope; index++) {
+    state = update(state, { _tag: "Launch", message: { _tag: "SteppedRow", rowId: ZONE_LAUNCH_SCOPE_ROW, direction: 1 } }, ready).model
+  }
+  const lang = launchRowId("device/runner:retroarch/mgba", "setting:lang")
+  state = update(state, { _tag: "Launch", message: { _tag: "PressedRow", rowId: lang } }, ready).model
+  expect(state.launch.keyboard?.draft).toBe("de")
+  for (let index = 0; index < 2; index++) state = update(state, { _tag: "Launch", message: { _tag: "PressedKey", key: { kind: "delete" } } }, ready).model
+  expect(update(state, { _tag: "Launch", message: { _tag: "PressedKey", key: { kind: "done" } } }, ready).requests)
+    .toEqual([{ _tag: "ChangeSetting", settingId: lang, value: "" }])
+  const clear = launchRowId("device/runner:retroarch/mgba", "clear:setting:lang")
+  const fresh = update(zoneSurfaceStart(ready, "blend"), { _tag: "Launch", message: { _tag: "PressedRow", rowId: ZONE_LAUNCH_SCOPE_ROW } }, ready).model
+  const atMgba = update(fresh, { _tag: "Launch", message: { _tag: "PressedRow", rowId: ZONE_LAUNCH_SCOPE_ROW } }, ready).model
+  expect(update(atMgba, { _tag: "Launch", message: { _tag: "PressedRow", rowId: clear } }, ready).requests)
+    .toEqual([{ _tag: "RunAction", actionId: clear }])
+})

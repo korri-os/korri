@@ -275,6 +275,22 @@ function settingsGroup(world: World, layer: Layer, scope: Scope): SurfaceSetting
     })
   }
   if (layer.id === "device" && scope === MGBA) {
+    // A string: its raw text is its value, and Inherit is a row of its own.
+    set.add("lang")
+    items.push({
+      id: id("setting:lang"),
+      label: "Language",
+      value: "de",
+      source: inForce(world, place, scope, "de", "Device for mGBA", place),
+      scope: "device",
+      interaction: { kind: "text", placeholder: "Empty", allowEmpty: true },
+    }, {
+      id: id("clear:setting:lang"),
+      label: "Inherit Language",
+      value: "Clear",
+      description: "Takes the value set here away, so the value in force comes from elsewhere.",
+      interaction: { kind: "action", actionId: id("clear:setting:lang") },
+    })
     set.add("color")
     items.push({
       id: id("setting:color"),

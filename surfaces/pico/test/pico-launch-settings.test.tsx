@@ -363,3 +363,43 @@ test("each place shows only its own hooks, its routine first, marked in force or
   expect(hooks()).toHaveLength(1)
   expect(hooks()[0]).toContain("Not in force: mGBA runs this game")
 })
+
+test("Back closes Add setting's list and returns the cursor to the row that opened it; Korri hears nothing", () => {
+  const host = createFixtureHost()
+  render(<PicoSurface host={host} model={ready} />)
+  fireEvent.click(screen.getAllByRole("tab")[launchLayerIndex(launch.ready, "game:wario")]!)
+  fireEvent.click(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "MGBA" }))
+  const opener = screen.getByRole("button", { name: /Add setting/ })
+  opener.focus()
+  fireEvent.click(opener)
+  expect(screen.getByRole("dialog", { name: "Add setting" })).toBeTruthy()
+  // A raw Escape is not Pico's to read: only the host's Back closes the list.
+  fireEvent.keyDown(screen.getByRole("dialog", { name: "Add setting" }), { key: "Escape" })
+  expect(screen.getByRole("dialog", { name: "Add setting" })).toBeTruthy()
+  act(() => host.press("back"))
+  expect(screen.queryByRole("dialog")).toBeNull()
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: /Add setting/ }))
+  expect(host.calls).toEqual([])
+})
+
+describe("string settings", () => {
+  const LANG = launchRowId("device/runner:retroarch/mgba", "setting:lang")
+  const toMgba = [{ _tag: "ChoseLaunchScope", scope: launchScopeIndex(launch.ready, "device", "mGBA") }] as PicoMessage[]
+
+  test("the editor starts from the raw text, and an emptied string saves as a value", () => {
+    const opened = story(ready, ...toMgba, { _tag: "OpenedEditor", settingId: LANG })
+    expect(opened.nav.launch?.question).toMatchObject({ _tag: "EditingText", draft: { text: "de" } })
+    const emptied = story(ready, ...toMgba, { _tag: "OpenedEditor", settingId: LANG }, { _tag: "ClearedText" }, { _tag: "SavedText" })
+    expect(emptied.requests).toEqual([{ _tag: "ChangeSetting", settingId: LANG, value: "" }])
+    // A profile's name still needs one: Korri does not take an empty name.
+    expect(story(ready, { _tag: "OpenedEditor", settingId: "launch:profile:new" }, { _tag: "SavedText" }).requests).toEqual([])
+  })
+
+  test("its Inherit row runs Korri's clear action", () => {
+    const host = createFixtureHost()
+    render(<PicoSurface host={host} model={ready} />)
+    fireEvent.click(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "MGBA" }))
+    fireEvent.click(screen.getByRole("button", { name: /Inherit Language/ }))
+    expect(host.calls).toEqual([`action:${launchRowId("device/runner:retroarch/mgba", "clear:setting:lang")}`])
+  })
+})

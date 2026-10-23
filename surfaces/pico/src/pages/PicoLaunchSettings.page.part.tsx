@@ -1,5 +1,6 @@
 import type { SurfaceLaunchSettings, SurfaceModel } from "@contracts/surface/korri-surface"
 import { useEffect } from "react"
+import { useFixtureDpad } from "../fixtures/fixture-dpad"
 import { createFixtureHost, fixtureModel } from "../fixtures/fixture-host"
 import {
   launchLayerIndex,
@@ -44,6 +45,8 @@ function Launch({
     model,
     request => performPicoRequest(host, { chooseFont: () => undefined }, request),
   )
+  // The preview's d-pad and B, as the portal's input layer delivers them.
+  useFixtureDpad({ onBack: () => dispatch({ _tag: "PressedBack" }) })
   const view = picoLaunchViewFromModel(model)
   if (view === undefined) return null
   const question = nav.launch?.question ?? { _tag: "None" }
@@ -203,6 +206,19 @@ export function HooksOnGame() {
 /** gpSP's own hook on the Game: not in force while mGBA runs. */
 export function HooksNotInForce() {
   return <Launch cursor="Before launch" model={open(launch.ready)} opening={on(launch.ready, "game:wario", "gpSP")} />
+}
+/** mGBA's Language on the Device: a string, its Inherit row under it. */
+export function StringSetting() {
+  return <Launch cursor="Language" model={open(launch.ready)} opening={on(launch.ready, "device", "mGBA")} />
+}
+/** Language in the keyboard, emptied: SAVE stays on, because an empty string is a value. */
+export function StringEmptied() {
+  return (
+    <Launch
+      model={open(launch.ready)}
+      opening={[...on(launch.ready, "device", "mGBA"), { _tag: "OpenedEditor", settingId: launchRowId("device/runner:retroarch/mgba", "setting:lang") }, { _tag: "ClearedText" }]}
+    />
+  )
 }
 /** Battery saver not picked: Gamescope inherits On from the Device, and says so. */
 export function GamescopeInherited() {

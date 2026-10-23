@@ -232,7 +232,7 @@ describe("game launch settings editor", () => {
     launch.change(LAUNCH_ID.set(MGBA, "setting:color"), "inherit")
     expect(launch.getSnapshot().status).toBeUndefined()
     expect(row(launch.getSnapshot().editor, MGBA, "Colour correction")).toBeUndefined()
-    expect(row(launch.getSnapshot().editor, MGBA, "Language")?.value).toBe("Not set here")
+    expect(row(launch.getSnapshot().editor, MGBA, "Language")?.interaction).toMatchObject({ kind: "text", placeholder: "Not set here" })
 
     // Clearing a written number removes it.
     launch.change(LAUNCH_ID.set(MGBA, "setting:frameskip"), "")
@@ -588,5 +588,63 @@ describe("launch modifiers", () => {
     launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:add-setting"), "filter")
     launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:setting:filter"), "inherit")
     expect(row(launch.getSnapshot().editor, place, "Upscale filter")).toBeUndefined()
+  })
+})
+
+describe("string settings", () => {
+  const LANG = "setting:lang"
+
+  it("hold their raw text, take an empty string as a value, and go back to Inherit through their own row", async () => {
+    const launch = await opened(base)
+    launch.change(LAUNCH_ID.set(MGBA, "add-setting"), "lang")
+    // Pending: no value, the placeholder says so, and the editor starts empty.
+    expect(row(launch.getSnapshot().editor, MGBA, "Language")).toMatchObject({ scope: "device" })
+    expect(row(launch.getSnapshot().editor, MGBA, "Language")?.value).toBeUndefined()
+    expect(row(launch.getSnapshot().editor, MGBA, "Language")?.interaction).toEqual({ kind: "text", placeholder: "Not set here", allowEmpty: true })
+    expect(row(launch.getSnapshot().editor, MGBA, "Inherit Language")?.interaction).toEqual({ kind: "action", actionId: LAUNCH_ID.set(MGBA, `clear:${LANG}`) })
+
+    launch.change(LAUNCH_ID.set(MGBA, LANG), "de")
+    await written()
+    expect(row(launch.getSnapshot().editor, MGBA, "Language")).toMatchObject({ value: "de", source: "from Game for mGBA" })
+
+    // An empty string is a value of its own, not a clear.
+    launch.change(LAUNCH_ID.set(MGBA, LANG), "")
+    await written()
+    const empty = row(launch.getSnapshot().editor, MGBA, "Language")
+    expect(empty?.value).toBeUndefined()
+    expect(empty?.interaction).toMatchObject({ placeholder: "Empty" })
+    expect(empty?.source).toBe("from Game for mGBA")
+
+    // Inherit clears it: the row goes, Add setting offers it again.
+    expect(launch.act(LAUNCH_ID.set(MGBA, `clear:${LANG}`))).toBe(true)
+    await written()
+    expect(row(launch.getSnapshot().editor, MGBA, "Language")).toBeUndefined()
+    const add = row(launch.getSnapshot().editor, MGBA, "Add setting")?.interaction
+    expect(add?.kind === "choice" && add.choices.some(choice => choice.value === "lang")).toBe(true)
+  })
+
+  it("withdraws a pending string through Inherit without writing", async () => {
+    const korrid = createInMemoryKorridClient({ launchSettings: base })
+    let writes = 0
+    const counted = { ...korrid, setLaunch: (request: Parameters<typeof korrid.setLaunch>[0]) => { writes++; return korrid.setLaunch(request) } }
+    const launch = createLaunchSettings(counted)
+    launch.open("wario", "Wario Land 4")
+    await settle()
+    launch.change(LAUNCH_ID.set(MGBA, "add-setting"), "lang")
+    launch.act(LAUNCH_ID.set(MGBA, `clear:${LANG}`))
+    expect(row(launch.getSnapshot().editor, MGBA, "Language")).toBeUndefined()
+    expect(writes).toBe(0)
+  })
+
+  it("does the same for a modifier's string setting", async () => {
+    const launch = await opened({
+      ...base,
+      modifiers: { "korri/gamescope": { title: "Gamescope", schema: { properties: { backend: { type: "string", title: "Backend" } } } } },
+      bodies: { ...chosen, "device/any": { modifiers: { "korri/gamescope": { settings: { backend: "wayland" } } } } },
+    })
+    expect(row(launch.getSnapshot().editor, "device/any", "Backend")).toMatchObject({ value: "wayland" })
+    launch.act(LAUNCH_ID.set("device/any", "clear:modifier:korri/gamescope:setting:backend"))
+    await written()
+    expect(row(launch.getSnapshot().editor, "device/any", "Backend")).toBeUndefined()
   })
 })

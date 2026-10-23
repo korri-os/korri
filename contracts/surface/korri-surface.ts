@@ -179,6 +179,11 @@ export type SurfaceSettingInteraction =
       readonly kind: "text"
       readonly placeholder?: string
       readonly maxLength?: number
+      /**
+       * An empty text is a value Korri takes: the surface may send "".
+       * Absent: Korri refuses an empty text, so a surface need not offer it.
+       */
+      readonly allowEmpty?: boolean
     }
   | {
       readonly kind: "sensitiveText"

@@ -166,6 +166,10 @@ export function HooksOnGame() {
 export function HooksNotInForce() {
   return <Live editor={launch.ready} scope={scopeOf(launch.ready, "gpSP")} script={[focus(launchRowId("game:wario/runner:retroarch/gpsp", "file:hooks:before:own"))]} />
 }
+/** mGBA's Language on the Device: a string, its INHERIT LANGUAGE row under it. */
+export function StringSetting() {
+  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[focus(launchRowId("device/runner:retroarch/mgba", "setting:lang"))]} />
+}
 /** Battery saver not picked: Gamescope inherits On from the Device, and says so. */
 export function GamescopeInherited() {
   return <Live editor={launch.noProfilePicked} script={[focus(launchRowId("game:wario/any", "modifier:korri/gamescope:enabled"))]} />

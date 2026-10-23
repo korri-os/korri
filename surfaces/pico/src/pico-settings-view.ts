@@ -53,6 +53,8 @@ export type PicoSettingControl =
       readonly initial?: string
       /** A number: the editor checks the typing against Korri's range. */
       readonly numeric?: { readonly min?: number; readonly max?: number; readonly step?: number }
+      /** Korri takes an empty text as a value: SAVE stays on with nothing typed. */
+      readonly allowEmpty?: boolean
     }
   | { readonly kind: "network"; readonly actionId: string; readonly network: PicoNetworkView }
 
@@ -368,6 +370,7 @@ function controlFor(item: SurfaceSettingItem): PicoSettingControl {
         sensitive: false,
         ...(interaction.placeholder === undefined ? {} : { placeholder: interaction.placeholder }),
         ...(interaction.maxLength === undefined ? {} : { maxLength: interaction.maxLength }),
+        ...(interaction.allowEmpty === true ? { allowEmpty: true } : {}),
       }
     case "sensitiveText":
       return {

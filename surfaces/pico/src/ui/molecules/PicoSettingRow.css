@@ -62,3 +62,9 @@
 	color: var(--pico-row-ink, var(--pico-ink));
 	background: var(--pico-row-plate, var(--pico-plate));
 }
+
+/* An empty text's placeholder in the row: the row's quiet ink, so it never
+ * reads as a value typed there. */
+.pico-setting-row-placeholder {
+	color: var(--pico-row-quiet, var(--pico-ink-quiet));
+}

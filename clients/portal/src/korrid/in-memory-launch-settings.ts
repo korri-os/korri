@@ -37,6 +37,7 @@ import type {
   RpcFailure,
   RunnerChoiceRevisions,
 } from "@contracts/generated/korrid"
+import { placeKey } from "./launch-place-key"
 
 /** One installed runner as browser dev seeds it. */
 export interface InMemoryLaunchRunner {
@@ -108,23 +109,6 @@ export interface Body {
   hooks?: { before?: unknown[]; after?: unknown[]; use?: string[] }
   config?: unknown
 }
-
-export function layerKey(layer: LaunchLayer): string {
-  switch (layer._tag) {
-    case "Device": return "device"
-    case "System": return `system:${layer.id}`
-    case "Game": return `game:${layer.id}`
-    case "Release": return `release:${layer.id.releaseId}`
-    case "Profile": return `profile:${layer.id.profileId}`
-    case "Launch": return "launch"
-  }
-}
-
-const scopeKey = (scope: LaunchRunnerScope) =>
-  scope._tag === "Any" ? "any" : scope._tag === "Family" ? `family:${scope.id}` : `runner:${scope.id}`
-
-/** A stable key for one place: `device/any`, `game:wl4/runner:mgba`. */
-export const placeKey = (place: LaunchPlace): string => `${layerKey(place.layer)}/${scopeKey(place.scope)}`
 
 const BROWSER_DEFAULTS = { cpu: { min: 0, max: 100 }, gpu: { min: 0, max: 100 }, governor: "schedutil" }
 const ANY_KINDS = ["runner", "cpu", "gpu", "modifiers"]

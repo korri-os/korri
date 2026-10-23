@@ -385,10 +385,11 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       return entry === undefined ? stay(nav) : joinFromSettings(nav, submitEntry(entry))
     }
     case "SavedText": {
-      // Save sends exactly what was typed, never an empty value: emptying a
-      // secret is the clear action's job.
+      // Save sends exactly what was typed, never an empty value unless Korri
+      // takes one (allowEmpty): emptying a secret is the clear action's job.
       const editor = openEditor(nav)
-      if (editor?._tag !== "EditingText" || saving(korri, editor) || editor.draft.text.trim() === "") return stay(nav)
+      if (editor?._tag !== "EditingText" || saving(korri, editor)) return stay(nav)
+      if (editor.draft.text.trim() === "" && textRow(korri, editor.settingId)?.control.allowEmpty !== true) return stay(nav)
       // A number goes to Korri only when it fits the range Korri gave.
       const numeric = textRow(korri, editor.settingId)?.control.numeric
       if (numeric !== undefined && !picoNumberFits(editor.draft.text, numeric)) return stay(nav)

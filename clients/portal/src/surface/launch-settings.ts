@@ -34,8 +34,10 @@ import {
   type LaunchEditor,
   launchEditorFrom,
   type LaunchWrite,
+  type PendingSetting,
   profileFromPick,
   revisionOf,
+  samePending,
 } from "./launch-settings-model"
 
 export const LAUNCH_SETTINGS_ACTION_ID = "launch-settings"
@@ -84,7 +86,7 @@ export function createLaunchSettings(korrid: KorridClient) {
   let deviceSnapshot: LaunchSnapshot | undefined
   let deviceWrites: ReadonlyMap<string, LaunchWrite> = new Map()
   /** Settings added with Add setting and not yet given a value, by place id. */
-  let pending = new Map<string, readonly string[]>()
+  let pending = new Map<string, readonly PendingSetting[]>()
   /** Games whose profile is being read for their page, so it is read once. */
   const learning = new Set<string>()
   /** What Retry runs again: the failed read or write. */
@@ -105,8 +107,8 @@ export function createLaunchSettings(korrid: KorridClient) {
   const build = () => {
     editor = snapshot === undefined ? undefined : launchEditorFrom(snapshot, gameId, pending)
     // A setting once written is a place's own row: it is no longer pending.
-    const still = new Map<string, string[]>()
-    for (const { placeId, token } of editor?.pending.values() ?? []) still.set(placeId, [...still.get(placeId) ?? [], token])
+    const still = new Map<string, PendingSetting[]>()
+    for (const { placeId, setting } of editor?.pending.values() ?? []) still.set(placeId, [...still.get(placeId) ?? [], setting])
     pending = still
   }
   const content = () => ({
@@ -245,11 +247,11 @@ export function createLaunchSettings(korrid: KorridClient) {
   }
 
   /** Add setting: show the chosen setting on its place, with nothing written. */
-  const add = (placeId: string, token: string) => {
+  const add = (placeId: string, setting: PendingSetting) => {
     if (state.editor._tag !== "Ready") return
-    const tokens = pending.get(placeId) ?? []
-    if (tokens.includes(token)) return
-    pending = new Map(pending).set(placeId, [...tokens, token])
+    const settings = pending.get(placeId) ?? []
+    if (settings.some(candidate => samePending(candidate, setting))) return
+    pending = new Map(pending).set(placeId, [...settings, setting])
     ready()
   }
 
@@ -257,7 +259,7 @@ export function createLaunchSettings(korrid: KorridClient) {
   const withdraw = (settingId: string): boolean => {
     const added = editor?.pending.get(settingId)
     if (added === undefined) return false
-    pending = new Map(pending).set(added.placeId, (pending.get(added.placeId) ?? []).filter(token => token !== added.token))
+    pending = new Map(pending).set(added.placeId, (pending.get(added.placeId) ?? []).filter(setting => !samePending(setting, added.setting)))
     ready()
     return true
   }
@@ -278,7 +280,7 @@ export function createLaunchSettings(korrid: KorridClient) {
     }
     const adding = editor?.adds.get(settingId)
     if (adding !== undefined) {
-      if (value !== "") add(adding.placeId, adding.tokenOf(value))
+      if (value !== "") add(adding.placeId, adding.pendingOf(value))
       return true
     }
     if (settingId === LAUNCH_ID.pick) {
@@ -338,6 +340,20 @@ export function createLaunchSettings(korrid: KorridClient) {
         // Retry shows the editor again first, so a repeated write has a row to save on.
         if (snapshot !== undefined) ready()
         operation()
+      }
+      return true
+    }
+    // Inherit on a string setting: a pending one goes, a written one is cleared.
+    const cleared = editor?.clears.get(actionId)
+    if (cleared !== undefined) {
+      if (withdraw(cleared)) return true
+      const target = editor?.writes.get(cleared)
+      if (target !== undefined) {
+        write(actionId, record => korrid.setLaunch({
+          place: target.place,
+          path: target.path,
+          expectedRevision: record.revisions[revisionOf(target.place.layer)],
+        }))
       }
       return true
     }

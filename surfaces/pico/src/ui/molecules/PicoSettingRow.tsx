@@ -48,7 +48,12 @@ export function PicoSettingRow({
         <PicoSegments current={row.control.current} options={row.control.options} />
       ) : row.control.kind === "step" ? (
         <span>{`◀ ${row.control.current} ▶`}</span>
-      ) : row.value === undefined || longFact ? null : (
+      ) : row.value === undefined || longFact ? (
+        // A text with nothing in it shows Korri's word for that, quiet.
+        row.control.kind === "text" && row.control.placeholder !== undefined && !row.control.sensitive && !longFact
+          ? <span className="pico-setting-row-placeholder">{row.control.placeholder}</span>
+          : null
+      ) : (
         <span>{row.value}</span>
       )}
       {row.control.kind === "action" || row.control.kind === "text" || row.control.kind === "pick" ? <span aria-hidden>▶</span> : null}

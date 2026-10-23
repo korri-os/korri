@@ -212,7 +212,7 @@ export function PicoSettings({
               label: "SAVE",
               detail: edited.row.state === "saving" ? <PicoBadge text="SAVING" tone="info" /> : undefined,
               // A number saves only when it is one Korri's range takes.
-              disabled: editing.draft.text.trim() === ""
+              disabled: (editing.draft.text.trim() === "" && edited.row.control.allowEmpty !== true)
                 || (edited.row.control.numeric !== undefined && !picoNumberFits(editing.draft.text, edited.row.control.numeric)),
               onPress: onSaveText,
             },
