@@ -1,0 +1,144 @@
+{
+  "label": "run-1",
+  "primary_clock": "receive_ms",
+  "warmup_seconds": 10,
+  "discovered": {
+    "model": "Anbernic RG35XX SP",
+    "architecture": "aarch64",
+    "os_release": {
+      "ANSI_COLOR": "\"0;38;2;126;186;228\"",
+      "BUG_REPORT_URL": "\"https://github.com/NixOS/nixpkgs/issues\"",
+      "BUILD_ID": "\"26.11.20260923.4975466\"",
+      "CPE_NAME": "\"cpe:/o:nixos:nixos:26.11\"",
+      "DEFAULT_HOSTNAME": "nixos",
+      "DOCUMENTATION_URL": "\"https://nixos.org/learn.html\"",
+      "HOME_URL": "\"https://nixos.org/\"",
+      "ID": "nixos",
+      "LOGO": "\"nix-snowflake\"",
+      "NAME": "NixOS",
+      "PRETTY_NAME": "\"NixOS 26.11 (Zokor)\"",
+      "SUPPORT_URL": "\"https://nixos.org/community.html\"",
+      "VENDOR_NAME": "NixOS",
+      "VENDOR_URL": "\"https://nixos.org/\"",
+      "VERSION": "\"26.11 (Zokor)\"",
+      "VERSION_CODENAME": "zokor",
+      "VERSION_ID": "\"26.11\""
+    },
+    "korri_system_path": "/nix/store/lm2hi53k0jf4rqvxc6z1a41kw9smkwf6-nixos-system-rg35xxsp-sd-card-26.11.20260923.4975466",
+    "plugin_status": {
+      "id": "@korri:sunshine",
+      "package": "/nix/store/7q3fv7767vdzrbax2v2dz2chcvp2yf7r-korri-plugin",
+      "provenance": {
+        "kind": "RawCache",
+        "cache_url": "https://github.com/korri-os/plugins/releases/download/cache/"
+      },
+      "approval": "8c54a706f8b04826434f0a420f14db9ccbe036931377d521d65916f911b5eacf",
+      "desired": {
+        "state": "Enabled"
+      },
+      "previous": null
+    },
+    "plugin_version": null,
+    "sunshine_version": "2025.924.154138-korri",
+    "sunshine_unit": "korri-sunshine.service",
+    "processes": {
+      "sunshine": {
+        "pid": 10164,
+        "uid": 1000,
+        "gid": 980,
+        "user": "korri",
+        "exe": "/nix/store/v9v77hxz3h0syqpi2vk0pqm75x4437qs-sunshine-korri-2025.924.154138-korri/bin/sunshine-2025.924.154138-korri",
+        "start_ticks": "1773433",
+        "environment": {
+          "HOME": "/home/korri",
+          "XDG_RUNTIME_DIR": "/run/user/1000",
+          "XDG_CONFIG_HOME": "/home/korri/.config",
+          "WAYLAND_DISPLAY": "korri-wayland",
+          "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+        }
+      },
+      "compositor": {
+        "pid": 1021,
+        "uid": 1000,
+        "gid": 1000,
+        "user": "korri",
+        "exe": "/nix/store/3w8xw4221isjy5kzp5phvndbwikvq8m5-sway-unwrapped-1.12/bin/sway",
+        "start_ticks": "2136",
+        "environment": {
+          "HOME": "/home/korri",
+          "XDG_RUNTIME_DIR": "/run/user/1000",
+          "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+          "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+          "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+        }
+      },
+      "korrid": {
+        "pid": 11533,
+        "uid": 976,
+        "gid": 976,
+        "user": "korrid",
+        "exe": "/nix/store/jnwchvk2kqs36hclxwciv771nbdxi89m-korrid-0.0.0/bin/korrid",
+        "start_ticks": "2061981",
+        "environment": {
+          "HOME": "/var/empty"
+        }
+      }
+    },
+    "certificate_control": {
+      "path": "/run/korri-certificate-control/control.sock",
+      "uid": "976",
+      "gid": "976",
+      "owner_gid": 976,
+      "mode": 432,
+      "peer_uid": 0,
+      "peer_gid": 0
+    },
+    "sunshine_state_path": "/home/korri/.config/sunshine/sunshine_state.json",
+    "sunshine_state_existed": false,
+    "listening_tcp_ports": [
+      47984,
+      47989,
+      47990,
+      48010
+    ],
+    "working_encoders": [],
+    "display": {
+      "name": "DSI-1",
+      "mode": {
+        "width": 640,
+        "height": 480,
+        "refresh": 60000,
+        "picture_aspect_ratio": "none"
+      },
+      "refresh_hz": 60.0,
+      "transform": "normal",
+      "power": false,
+      "scale": 1.0,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 640,
+        "height": 480
+      }
+    },
+    "valid": false,
+    "run_index": 0,
+    "requested_fps": 60.0,
+    "error": "Sunshine has no working encoder in its current startup journal. Wake the panel and restart the installed Sunshine service by hand, then retry. The test never restarts it.",
+    "restore": {
+      "pass": true,
+      "pids_unchanged": {
+        "sunshine": true,
+        "compositor": true,
+        "korrid": true
+      },
+      "certificate_revoked": true,
+      "run_folder": null,
+      "run_folder_bytes": 0,
+      "run_folder_removed": true,
+      "remaining_processes": [],
+      "errors": []
+    },
+    "host_run_folder_bytes": 2
+  }
+}

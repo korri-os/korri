@@ -1,0 +1,846 @@
+Started Sunshine stream host for Korri.
+mpp[1523]: mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700
+mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700
+[2026-10-22 17:30:11.837172] [0x0000e79c28c43020] [info]    config: 'log_path' = /dev/null
+[2026-10-22 17:30:11.837300] [0x0000e79c28c43020] [info]    config: 'capture' = kms
+[2026-10-22 17:30:11.837385] [0x0000e79c28c43020] [info]    config: 'encoder' = auto
+[2026-10-22 17:30:11.865]: Info: Sunshine version: 2025.924.154138-korri commit:
+[2026-10-22 17:30:11.877]: Info: Package Publisher: nixpkgs
+[2026-10-22 17:30:11.877]: Info: Publisher Website: https://nixos.org
+[2026-10-22 17:30:11.877]: Info: Get support: https://github.com/NixOS/nixpkgs/issues
+[2026-10-22 17:30:11.877]: Info: config: 'encoder' = auto
+[2026-10-22 17:30:11.877]: Info: config: 'capture' = kms
+[2026-10-22 17:30:11.877]: Info: config: 'log_path' = /dev/null
+[2026-10-22 17:30:11.935]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 17:30:11.935]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 17:30:11.936]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 17:30:11.937]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 17:30:11.938]: Info: Found display [korri-wayland]
+[2026-10-22 17:30:11.938]: Info: Found display [korri-wayland]
+[2026-10-22 17:30:11.939]: Info: Found interface: wl_shm(2) version 2
+[2026-10-22 17:30:11.940]: Info: Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-10-22 17:30:11.940]: Info: Found interface: zxdg_output_manager_v1(8) version 3
+[2026-10-22 17:30:11.940]: Info: Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-10-22 17:30:11.940]: Info: Found interface: wl_output(58) version 4
+[2026-10-22 17:30:11.941]: Info: Resolution: 640x480
+[2026-10-22 17:30:11.941]: Info: Name: DSI-1
+[2026-10-22 17:30:11.941]: Info: Found monitor: (null) (null) (DSI-1)
+[2026-10-22 17:30:11.941]: Info: Offset: 0x0
+[2026-10-22 17:30:11.941]: Info: Logical size: 640x480
+[2026-10-22 17:30:11.941]: Info: -------- Start of KMS monitor list --------
+[2026-10-22 17:30:11.941]: Info: KMS rotation probe output match: Wayland output=DSI-1 transform=0 DRM monitor=0 expected=640x480 observed=640x480
+[2026-10-22 17:30:11.941]: Info: Monitor 0 is DSI-1: (null) (null) (DSI-1)
+[2026-10-22 17:30:11.941]: Info: --------- End of KMS monitor list ---------
+[2026-10-22 17:30:12.297]: Warning: Gamepad ds5 is disabled due to No such file or directory
+[2026-10-22 17:30:12.297]: Error: Couldn't find any working encoder matching [auto]
+[2026-10-22 17:30:12.297]: Info: // Testing for available encoders, this may generate errors. You can safely ignore those errors. //
+[2026-10-22 17:30:12.297]: Info: Trying encoder [nvenc]
+[2026-10-22 17:30:12.297]: Info: Screencasting with KMS
+[2026-10-22 17:30:12.297]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 17:30:12.297]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 17:30:12.297]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 17:30:12.298]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 17:30:12.298]: Error: Couldn't find monitor [0]
+[2026-10-22 17:30:12.298]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 17:30:12.298]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 17:30:12.298]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 17:30:12.298]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 17:30:12.299]: Error: Couldn't find monitor [0]
+[2026-10-22 17:30:12.509]: Info: Screencasting with KMS
+[2026-10-22 17:30:12.509]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 17:30:12.509]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 17:30:12.509]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 17:30:12.509]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 17:30:12.509]: Error: Couldn't find monitor [0]
+[2026-10-22 17:30:12.509]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 17:30:12.509]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 17:30:12.509]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 17:30:12.509]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 17:30:12.509]: Error: Couldn't find monitor [0]
+[2026-10-22 17:30:12.701]: Info: Encoder [nvenc] failed
+[2026-10-22 17:30:12.701]: Info: Trying encoder [vaapi]
+[2026-10-22 17:30:12.701]: Info: Screencasting with KMS
+[2026-10-22 17:30:12.702]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 17:30:12.702]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 17:30:12.702]: Info: Found monitor for DRM screencasting
+[2026-10-22 17:30:12.702]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 17:30:12.702]: Info: Found connector ID [51]
+[2026-10-22 17:30:12.703]: Warning: No KMS cursor plane found. Cursor may not be displayed while streaming!
+libva info: VA-API version 1.22.0
+Xlib:  extension "DRI2" missing on display ":0".
+libva error: vaGetDriverNames() failed with operation failed
+[2026-10-22 17:30:12.753]: Error: Couldn't initialize va display: operation failed
+[2026-10-22 17:30:12.753]: Warning: Monitor  doesn't support hardware encoding. Reverting back to GPU -> RAM -> GPU
+[2026-10-22 17:30:12.754]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 17:30:12.754]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 17:30:12.754]: Info: Found monitor for DRM screencasting
+[2026-10-22 17:30:12.754]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 17:30:12.754]: Info: Found connector ID [51]
+[2026-10-22 17:30:12.755]: Warning: No KMS cursor plane found. Cursor may not be displayed while streaming!
+Failed to create /home/korri/.cache for shader cache (Read-only file system)---disabling.
+[2026-10-22 17:30:12.875]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 17:30:12.875]: Info: KMS rotation probe decision: Wayland output=DSI-1 transform=0 expected_270=false CRTC=49 plane=41 DRM rotation=1 expected_rotate_0=true raw=640x480 capture=640x480 offset=0,0
+[2026-10-22 17:30:12.875]: Info: Creating encoder [h264_vaapi]
+[2026-10-22 17:30:12.875]: Info: Color coding: SDR (Rec. 601)
+[2026-10-22 17:30:12.875]: Info: Color depth: 8-bit
+[2026-10-22 17:30:12.875]: Info: Color range: JPEG
+Failed to create /home/korri/.cache for shader cache (Read-only file system)---disabling.
+[2026-10-22 17:30:12.962]: Error: Couldn't open [h264_vaapi]
+[2026-10-22 17:30:12.969]: Info: Creating encoder [h264_vaapi]
+[2026-10-22 17:30:12.969]: Info: Color coding: SDR (Rec. 601)
+[2026-10-22 17:30:12.969]: Info: Color depth: 8-bit
+[2026-10-22 17:30:12.969]: Info: Color range: JPEG
+Failed to create /home/korri/.cache for shader cache (Read-only file system)---disabling.
+[2026-10-22 17:30:13.030]: Error: Couldn't open [h264_vaapi]
+[2026-10-22 17:30:13.037]: Info: Encoder [vaapi] failed
+[2026-10-22 17:30:13.044]: Info: Trying encoder [v4l2m2m]
+[2026-10-22 17:30:13.045]: Info: Screencasting with KMS
+[2026-10-22 17:30:13.045]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 17:30:13.045]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 17:30:13.045]: Info: Found monitor for DRM screencasting
+[2026-10-22 17:30:13.045]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 17:30:13.045]: Info: Found connector ID [51]
+[2026-10-22 17:30:13.046]: Warning: No KMS cursor plane found. Cursor may not be displayed while streaming!
+Failed to create /home/korri/.cache for shader cache (Read-only file system)---disabling.
+[2026-10-22 17:30:13.137]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 17:30:13.137]: Info: KMS rotation probe decision: Wayland output=DSI-1 transform=0 expected_270=false CRTC=49 plane=41 DRM rotation=1 expected_rotate_0=true raw=640x480 capture=640x480 offset=0,0
+[2026-10-22 17:30:13.137]: Info: Creating encoder [h264_v4l2m2m]
+[2026-10-22 17:30:13.137]: Info: Color coding: SDR (Rec. 601)
+[2026-10-22 17:30:13.137]: Info: Color depth: 8-bit
+[2026-10-22 17:30:13.137]: Info: Color range: JPEG
+[2026-10-22 17:30:13.240]: Info: Streaming bitrate is 1000000
+[2026-10-22 17:30:13.254]: Info: [h264_v4l2m2m @ 0xb64c0c5d0880] Using device /dev/video1
+[2026-10-22 17:30:13.254]: Info: [h264_v4l2m2m @ 0xb64c0c5d0880] driver 'cedrus-encoder' on card 'cedrus-encoder' in splane mode
+[2026-10-22 17:30:13.254]: Info: [h264_v4l2m2m @ 0xb64c0c5d0880] requesting formats: output=NV12/nv12 capture=H264/none
+[2026-10-22 17:30:13.588]: Info: V4L2 H.264 SPS crop: coded 1920x1088 visible 1920x1080
+[2026-10-22 17:30:13.607]: Info: Creating encoder [hevc_v4l2m2m]
+[2026-10-22 17:30:13.607]: Info: Color coding: SDR (Rec. 601)
+[2026-10-22 17:30:13.607]: Info: Color depth: 8-bit
+[2026-10-22 17:30:13.607]: Info: Color range: JPEG
+[2026-10-22 17:30:13.607]: Info: Streaming bitrate is 1000000
+[2026-10-22 17:30:13.608]: Error: [hevc_v4l2m2m @ 0xb64c0c5d0880] Could not find a valid device
+[2026-10-22 17:30:13.608]: Error: [hevc_v4l2m2m @ 0xb64c0c5d0880] can't configure encoder
+[2026-10-22 17:30:13.608]: Error: Could not open codec [hevc_v4l2m2m]: Invalid argument
+[2026-10-22 17:30:13.608]: Info: Creating encoder []
+[2026-10-22 17:30:13.608]: Info: Color coding: SDR (Rec. 601)
+[2026-10-22 17:30:13.608]: Info: Color depth: 8-bit
+[2026-10-22 17:30:13.608]: Info: Color range: JPEG
+[2026-10-22 17:30:13.608]: Error: Couldn't open []
+[2026-10-22 17:30:13.617]: Info: Screencasting with KMS
+[2026-10-22 17:30:13.622]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 17:30:13.622]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 17:30:13.622]: Info: Found monitor for DRM screencasting
+[2026-10-22 17:30:13.622]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 17:30:13.622]: Info: Found connector ID [51]
+[2026-10-22 17:30:13.623]: Warning: No KMS cursor plane found. Cursor may not be displayed while streaming!
+Failed to create /home/korri/.cache for shader cache (Read-only file system)---disabling.
+[2026-10-22 17:30:13.726]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 17:30:13.727]: Info: KMS rotation probe decision: Wayland output=DSI-1 transform=0 expected_270=false CRTC=49 plane=41 DRM rotation=1 expected_rotate_0=true raw=640x480 capture=640x480 offset=0,0
+[2026-10-22 17:30:13.727]: Warning: v4l2m2m: h264 missing sps->vui parameters
+[2026-10-22 17:30:13.733]: Info:
+[2026-10-22 17:30:13.733]: Info: // Ignore any errors mentioned above, they are not relevant. //
+[2026-10-22 17:30:13.733]: Info:
+[2026-10-22 17:30:13.733]: Info: Found H.264 encoder: h264_v4l2m2m [v4l2m2m]
+[2026-10-22 17:30:13.734]: Info: Open the Web UI to set your new username and password and getting started
+[2026-10-22 17:30:13.767]: Info: File /home/korri/.config/sunshine/sunshine_state.json doesn't exist
+[2026-10-22 17:30:13.783]: Info: Starting system tray
+[2026-10-22 17:30:13.887]: Info: Configuration UI available at [https://localhost:47990]
+[2026-10-22 17:30:13.888]: Error: Failed to create client: Daemon not running
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 19: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 20: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 23: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 42: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 43: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 46: invalid constant used : sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 68: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 69: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 72: invalid constant used : serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 88: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 89: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 92: invalid constant used : emoji
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 108: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 109: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 112: invalid constant used : math
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 120: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 121: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 124: invalid constant used : system-ui
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 132: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 133: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 136: invalid constant used : cursive
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 144: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 145: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 148: invalid constant used : fantasy
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 156: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 157: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 160: invalid constant used : ui-sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 168: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 169: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 172: invalid constant used : ui-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 180: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 181: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 184: invalid constant used : ui-monospace
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 192: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 193: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 196: invalid constant used : ui-rounded
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 204: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 205: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 208: invalid constant used : fangsong
+Fontconfig warning: "/etc/fonts/conf.d/48-spacing.conf", line 14: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 10: invalid constant used : serif
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 18: invalid constant used : sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 26: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 34: invalid constant used : emoji
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 42: invalid constant used : math
+AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+[2026-10-22 17:30:14.547]: Info: System tray created
+[2026-10-22 17:30:14.548]: Info: Starting main loop
+gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed
+Stopping Sunshine stream host for Korri...
+[2026-10-22 17:58:27.046]: Info: Terminate handler called
+[2026-10-22 17:58:27.047]: Error: Couldn't accept incoming connections: Operation canceled
+[2026-10-22 17:58:27.089]: Info: Shutdown event detected, breaking main loop
+korri-sunshine.service: Deactivated successfully.
+Stopped Sunshine stream host for Korri.
+korri-sunshine.service: Consumed 7.402s CPU time over 28min 23.452s wall clock time, 69.3M memory peak, 63.8M read from disk.
+Started Sunshine stream host for Korri.
+mpp[4343]: mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700
+mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700
+[2026-10-22 17:58:32.569710] [0x0000fff7a98f3020] [info]    config: 'log_path' = /dev/null
+[2026-10-22 17:58:32.570312] [0x0000fff7a98f3020] [info]    config: 'capture' = kms
+[2026-10-22 17:58:32.570360] [0x0000fff7a98f3020] [info]    config: 'encoder' = auto
+[2026-10-22 17:58:32.572]: Info: Sunshine version: 2025.924.154138-korri commit:
+[2026-10-22 17:58:32.572]: Info: Package Publisher: nixpkgs
+[2026-10-22 17:58:32.572]: Info: Publisher Website: https://nixos.org
+[2026-10-22 17:58:32.572]: Info: Get support: https://github.com/NixOS/nixpkgs/issues
+[2026-10-22 17:58:32.572]: Info: config: 'encoder' = auto
+[2026-10-22 17:58:32.572]: Info: config: 'capture' = kms
+[2026-10-22 17:58:32.572]: Info: config: 'log_path' = /dev/null
+[2026-10-22 17:58:32.596]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 17:58:32.596]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 17:58:32.596]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 17:58:32.597]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 17:58:32.608]: Info: Found display [korri-wayland]
+[2026-10-22 17:58:32.608]: Info: Found display [korri-wayland]
+[2026-10-22 17:58:32.609]: Info: Found interface: wl_shm(2) version 2
+[2026-10-22 17:58:32.609]: Info: Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-10-22 17:58:32.609]: Info: Found interface: zxdg_output_manager_v1(8) version 3
+[2026-10-22 17:58:32.609]: Info: Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-10-22 17:58:32.609]: Info: Found interface: wl_output(58) version 4
+[2026-10-22 17:58:32.611]: Info: Resolution: 640x480
+[2026-10-22 17:58:32.611]: Info: Name: DSI-1
+[2026-10-22 17:58:32.611]: Info: Found monitor: (null) (null) (DSI-1)
+[2026-10-22 17:58:32.611]: Info: Offset: 0x0
+[2026-10-22 17:58:32.611]: Info: Logical size: 640x480
+[2026-10-22 17:58:32.611]: Info: -------- Start of KMS monitor list --------
+[2026-10-22 17:58:32.611]: Info: KMS rotation probe output match: Wayland output=DSI-1 transform=0 DRM monitor=0 expected=0x0 observed=640x480
+[2026-10-22 17:58:32.611]: Warning: Mismatch on expected Resolution compared to actual resolution: 0x0 vs 640x480
+[2026-10-22 17:58:32.611]: Info: Monitor 0 is DSI-1: (null) (null) (DSI-1)
+[2026-10-22 17:58:32.611]: Info: --------- End of KMS monitor list ---------
+[2026-10-22 17:58:32.611]: Error: Unable to initialize capture method
+[2026-10-22 17:58:32.611]: Error: Platform failed to initialize
+[2026-10-22 17:58:32.661]: Warning: Gamepad ds5 is disabled due to No such file or directory
+[2026-10-22 17:58:32.662]: Error: Couldn't find any working encoder matching [auto]
+[2026-10-22 17:58:32.662]: Info: // Testing for available encoders, this may generate errors. You can safely ignore those errors. //
+[2026-10-22 17:58:32.663]: Info: Trying encoder [nvenc]
+[2026-10-22 17:58:33.067]: Info: Encoder [nvenc] failed
+[2026-10-22 17:58:33.068]: Info: Trying encoder [vaapi]
+[2026-10-22 17:58:33.468]: Info: Encoder [vaapi] failed
+[2026-10-22 17:58:33.468]: Info: Trying encoder [v4l2m2m]
+[2026-10-22 17:58:33.869]: Info: Encoder [v4l2m2m] failed
+[2026-10-22 17:58:33.870]: Info: Trying encoder [rkmpp]
+[2026-10-22 17:58:34.269]: Info: Encoder [rkmpp] failed
+[2026-10-22 17:58:34.269]: Info: Trying encoder [software]
+[2026-10-22 17:58:34.669]: Info: Encoder [software] failed
+[2026-10-22 17:58:34.670]: Fatal: Unable to find display or encoder during startup.
+[2026-10-22 17:58:34.670]: Fatal: Please check that a display is connected and powered on.
+[2026-10-22 17:58:34.670]: Error: Video failed to find working encoder
+[2026-10-22 17:58:34.670]: Info: Open the Web UI to set your new username and password and getting started
+[2026-10-22 17:58:34.717]: Info: File /home/korri/.config/sunshine/sunshine_state.json doesn't exist
+[2026-10-22 17:58:34.717]: Info: Starting system tray
+[2026-10-22 17:58:34.750]: Info: Configuration UI available at [https://localhost:47990]
+[2026-10-22 17:58:34.788]: Error: Failed to create client: Daemon not running
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 19: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 20: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 23: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 42: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 43: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 46: invalid constant used : sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 68: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 69: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 72: invalid constant used : serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 88: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 89: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 92: invalid constant used : emoji
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 108: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 109: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 112: invalid constant used : math
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 120: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 121: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 124: invalid constant used : system-ui
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 132: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 133: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 136: invalid constant used : cursive
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 144: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 145: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 148: invalid constant used : fantasy
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 156: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 157: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 160: invalid constant used : ui-sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 168: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 169: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 172: invalid constant used : ui-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 180: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 181: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 184: invalid constant used : ui-monospace
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 192: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 193: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 196: invalid constant used : ui-rounded
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 204: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 205: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 208: invalid constant used : fangsong
+Fontconfig warning: "/etc/fonts/conf.d/48-spacing.conf", line 14: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 10: invalid constant used : serif
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 18: invalid constant used : sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 26: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 34: invalid constant used : emoji
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 42: invalid constant used : math
+AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+[2026-10-22 17:58:35.293]: Info: System tray created
+[2026-10-22 17:58:35.293]: Info: Starting main loop
+gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed
+Stopping Sunshine stream host for Korri...
+[2026-10-22 19:42:35.045]: Info: Terminate handler called
+[2026-10-22 19:42:35.096]: Info: Shutdown event detected, breaking main loop
+korri-sunshine.service: Deactivated successfully.
+Stopped Sunshine stream host for Korri.
+korri-sunshine.service: Consumed 16.551s CPU time over 1h 44min 8.209s wall clock time, 30.5M memory peak, 36.2M read from disk.
+Started Sunshine stream host for Korri.
+mpp[6736]: mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700
+mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700
+[2026-10-22 19:42:43.857301] [0x0000e616f752d020] [info]    config: 'log_path' = /dev/null
+[2026-10-22 19:42:43.857405] [0x0000e616f752d020] [info]    config: 'capture' = kms
+[2026-10-22 19:42:43.857425] [0x0000e616f752d020] [info]    config: 'encoder' = auto
+[2026-10-22 19:42:43.870]: Info: Sunshine version: 2025.924.154138-korri commit:
+[2026-10-22 19:42:43.882]: Info: Package Publisher: nixpkgs
+[2026-10-22 19:42:43.882]: Info: Publisher Website: https://nixos.org
+[2026-10-22 19:42:43.882]: Info: Get support: https://github.com/NixOS/nixpkgs/issues
+[2026-10-22 19:42:43.882]: Info: config: 'encoder' = auto
+[2026-10-22 19:42:43.882]: Info: config: 'capture' = kms
+[2026-10-22 19:42:43.882]: Info: config: 'log_path' = /dev/null
+[2026-10-22 19:42:43.919]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 19:42:43.921]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 19:42:43.932]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 19:42:43.932]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 19:42:43.940]: Info: Found display [korri-wayland]
+[2026-10-22 19:42:43.941]: Info: Found display [korri-wayland]
+[2026-10-22 19:42:43.946]: Info: Found interface: wl_shm(2) version 2
+[2026-10-22 19:42:43.948]: Info: Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-10-22 19:42:43.948]: Info: Found interface: zxdg_output_manager_v1(8) version 3
+[2026-10-22 19:42:43.948]: Info: Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-10-22 19:42:43.948]: Info: Found interface: wl_output(58) version 4
+[2026-10-22 19:42:43.948]: Info: Resolution: 640x480
+[2026-10-22 19:42:43.948]: Info: Name: DSI-1
+[2026-10-22 19:42:43.948]: Info: Found monitor: (null) (null) (DSI-1)
+[2026-10-22 19:42:43.948]: Info: Offset: 0x0
+[2026-10-22 19:42:43.948]: Info: Logical size: 640x480
+[2026-10-22 19:42:43.948]: Info: -------- Start of KMS monitor list --------
+[2026-10-22 19:42:43.948]: Info: KMS rotation probe output match: Wayland output=DSI-1 transform=0 DRM monitor=0 expected=0x0 observed=640x480
+[2026-10-22 19:42:43.949]: Warning: Mismatch on expected Resolution compared to actual resolution: 0x0 vs 640x480
+[2026-10-22 19:42:43.949]: Info: Monitor 0 is DSI-1: (null) (null) (DSI-1)
+[2026-10-22 19:42:43.949]: Info: --------- End of KMS monitor list ---------
+[2026-10-22 19:42:43.949]: Error: Unable to initialize capture method
+[2026-10-22 19:42:43.949]: Error: Platform failed to initialize
+[2026-10-22 19:42:43.969]: Warning: Gamepad ds5 is disabled due to No such file or directory
+[2026-10-22 19:42:43.970]: Error: Couldn't find any working encoder matching [auto]
+[2026-10-22 19:42:43.970]: Info: // Testing for available encoders, this may generate errors. You can safely ignore those errors. //
+[2026-10-22 19:42:43.970]: Info: Trying encoder [nvenc]
+[2026-10-22 19:42:44.377]: Info: Encoder [nvenc] failed
+[2026-10-22 19:42:44.377]: Info: Trying encoder [vaapi]
+[2026-10-22 19:42:44.774]: Info: Encoder [vaapi] failed
+[2026-10-22 19:42:44.775]: Info: Trying encoder [v4l2m2m]
+[2026-10-22 19:42:45.175]: Info: Encoder [v4l2m2m] failed
+[2026-10-22 19:42:45.176]: Info: Trying encoder [rkmpp]
+[2026-10-22 19:42:45.576]: Info: Encoder [rkmpp] failed
+[2026-10-22 19:42:45.576]: Info: Trying encoder [software]
+[2026-10-22 19:42:45.981]: Info: Encoder [software] failed
+[2026-10-22 19:42:45.982]: Fatal: Unable to find display or encoder during startup.
+[2026-10-22 19:42:45.983]: Fatal: Please check that a display is connected and powered on.
+[2026-10-22 19:42:45.983]: Error: Video failed to find working encoder
+[2026-10-22 19:42:46.112]: Info: Open the Web UI to set your new username and password and getting started
+[2026-10-22 19:42:46.843]: Info: File /home/korri/.config/sunshine/sunshine_state.json doesn't exist
+[2026-10-22 19:42:46.857]: Info: Starting system tray
+[2026-10-22 19:42:46.968]: Error: Failed to create client: Daemon not running
+[2026-10-22 19:42:46.984]: Info: Configuration UI available at [https://localhost:47990]
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 19: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 20: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 23: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 42: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 43: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 46: invalid constant used : sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 68: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 69: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 72: invalid constant used : serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 88: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 89: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 92: invalid constant used : emoji
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 108: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 109: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 112: invalid constant used : math
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 120: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 121: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 124: invalid constant used : system-ui
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 132: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 133: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 136: invalid constant used : cursive
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 144: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 145: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 148: invalid constant used : fantasy
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 156: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 157: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 160: invalid constant used : ui-sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 168: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 169: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 172: invalid constant used : ui-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 180: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 181: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 184: invalid constant used : ui-monospace
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 192: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 193: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 196: invalid constant used : ui-rounded
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 204: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 205: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 208: invalid constant used : fangsong
+Fontconfig warning: "/etc/fonts/conf.d/48-spacing.conf", line 14: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 10: invalid constant used : serif
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 18: invalid constant used : sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 26: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 34: invalid constant used : emoji
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 42: invalid constant used : math
+AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+[2026-10-22 19:42:47.884]: Info: System tray created
+[2026-10-22 19:42:47.886]: Info: Starting main loop
+gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed
+Stopping Sunshine stream host for Korri...
+[2026-10-22 19:55:24.352]: Info: Terminate handler called
+[2026-10-22 19:55:24.382]: Error: Couldn't accept incoming connections: Operation canceled
+[2026-10-22 19:55:24.386]: Info: Shutdown event detected, breaking main loop
+korri-sunshine.service: Deactivated successfully.
+Stopped Sunshine stream host for Korri.
+korri-sunshine.service: Consumed 3.787s CPU time over 12min 47.685s wall clock time, 51.6M memory peak, 72.9M read from disk.
+Started Sunshine stream host for Korri.
+mpp[7885]: mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700
+mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700
+[2026-10-22 19:55:33.505019] [0x0000e70ea8e29020] [info]    config: 'log_path' = /dev/null
+[2026-10-22 19:55:33.505171] [0x0000e70ea8e29020] [info]    config: 'capture' = kms
+[2026-10-22 19:55:33.505192] [0x0000e70ea8e29020] [info]    config: 'encoder' = auto
+[2026-10-22 19:55:33.525]: Info: Sunshine version: 2025.924.154138-korri commit:
+[2026-10-22 19:55:33.548]: Info: Package Publisher: nixpkgs
+[2026-10-22 19:55:33.548]: Info: Publisher Website: https://nixos.org
+[2026-10-22 19:55:33.548]: Info: Get support: https://github.com/NixOS/nixpkgs/issues
+[2026-10-22 19:55:33.548]: Info: config: 'encoder' = auto
+[2026-10-22 19:55:33.548]: Info: config: 'capture' = kms
+[2026-10-22 19:55:33.548]: Info: config: 'log_path' = /dev/null
+[2026-10-22 19:55:33.583]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 19:55:33.595]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 19:55:33.597]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 19:55:33.597]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 19:55:33.608]: Info: Found display [korri-wayland]
+[2026-10-22 19:55:33.612]: Info: Found display [korri-wayland]
+[2026-10-22 19:55:33.613]: Info: Found interface: wl_shm(2) version 2
+[2026-10-22 19:55:33.613]: Info: Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-10-22 19:55:33.614]: Info: Found interface: zxdg_output_manager_v1(8) version 3
+[2026-10-22 19:55:33.614]: Info: Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-10-22 19:55:33.614]: Info: Found interface: wl_output(58) version 4
+[2026-10-22 19:55:33.616]: Info: Resolution: 640x480
+[2026-10-22 19:55:33.616]: Info: Name: DSI-1
+[2026-10-22 19:55:33.616]: Info: Found monitor: (null) (null) (DSI-1)
+[2026-10-22 19:55:33.616]: Info: Offset: 0x0
+[2026-10-22 19:55:33.616]: Info: Logical size: 640x480
+[2026-10-22 19:55:33.616]: Info: -------- Start of KMS monitor list --------
+[2026-10-22 19:55:33.616]: Info: KMS rotation probe output match: Wayland output=DSI-1 transform=0 DRM monitor=0 expected=640x480 observed=640x480
+[2026-10-22 19:55:33.616]: Info: Monitor 0 is DSI-1: (null) (null) (DSI-1)
+[2026-10-22 19:55:33.616]: Info: --------- End of KMS monitor list ---------
+[2026-10-22 19:55:34.854]: Warning: Gamepad ds5 is disabled due to No such file or directory
+[2026-10-22 19:55:34.855]: Error: Couldn't find any working encoder matching [auto]
+[2026-10-22 19:55:34.855]: Info: // Testing for available encoders, this may generate errors. You can safely ignore those errors. //
+[2026-10-22 19:55:34.855]: Info: Trying encoder [nvenc]
+[2026-10-22 19:55:34.855]: Info: Screencasting with KMS
+[2026-10-22 19:55:34.855]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 19:55:34.855]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 19:55:34.855]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 19:55:34.855]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 19:55:34.855]: Error: Couldn't find monitor [0]
+[2026-10-22 19:55:34.855]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 19:55:34.855]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 19:55:34.855]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 19:55:34.855]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 19:55:34.856]: Error: Couldn't find monitor [0]
+[2026-10-22 19:55:35.060]: Info: Screencasting with KMS
+[2026-10-22 19:55:35.064]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 19:55:35.065]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 19:55:35.065]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 19:55:35.065]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 19:55:35.066]: Error: Couldn't find monitor [0]
+[2026-10-22 19:55:35.068]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 19:55:35.069]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 19:55:35.069]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 19:55:35.070]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 19:55:35.070]: Error: Couldn't find monitor [0]
+[2026-10-22 19:55:35.277]: Info: Encoder [nvenc] failed
+[2026-10-22 19:55:35.281]: Info: Trying encoder [vaapi]
+[2026-10-22 19:55:35.282]: Info: Screencasting with KMS
+[2026-10-22 19:55:35.282]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 19:55:35.282]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 19:55:35.282]: Info: Found monitor for DRM screencasting
+[2026-10-22 19:55:35.282]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 19:55:35.282]: Info: Found connector ID [51]
+[2026-10-22 19:55:35.282]: Warning: No KMS cursor plane found. Cursor may not be displayed while streaming!
+libva info: VA-API version 1.22.0
+Xlib:  extension "DRI2" missing on display ":0".
+libva error: vaGetDriverNames() failed with operation failed
+[2026-10-22 19:55:35.357]: Error: Couldn't initialize va display: operation failed
+[2026-10-22 19:55:35.357]: Warning: Monitor  doesn't support hardware encoding. Reverting back to GPU -> RAM -> GPU
+[2026-10-22 19:55:35.357]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 19:55:35.357]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 19:55:35.357]: Info: Found monitor for DRM screencasting
+[2026-10-22 19:55:35.357]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 19:55:35.357]: Info: Found connector ID [51]
+[2026-10-22 19:55:35.357]: Warning: No KMS cursor plane found. Cursor may not be displayed while streaming!
+[2026-10-22 19:55:35.964]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 19:55:35.965]: Info: KMS rotation probe decision: Wayland output=DSI-1 transform=0 expected_270=false CRTC=49 plane=41 DRM rotation=1 expected_rotate_0=true raw=640x480 capture=640x480 offset=0,0
+[2026-10-22 19:55:35.965]: Info: Creating encoder [h264_vaapi]
+[2026-10-22 19:55:35.965]: Info: Color coding: SDR (Rec. 601)
+[2026-10-22 19:55:35.965]: Info: Color depth: 8-bit
+[2026-10-22 19:55:35.965]: Info: Color range: JPEG
+[2026-10-22 19:55:36.119]: Error: Couldn't open [h264_vaapi]
+[2026-10-22 19:55:36.134]: Info: Creating encoder [h264_vaapi]
+[2026-10-22 19:55:36.141]: Info: Color coding: SDR (Rec. 601)
+[2026-10-22 19:55:36.148]: Info: Color depth: 8-bit
+[2026-10-22 19:55:36.148]: Info: Color range: JPEG
+[2026-10-22 19:55:36.287]: Error: Couldn't open [h264_vaapi]
+[2026-10-22 19:55:36.304]: Info: Encoder [vaapi] failed
+[2026-10-22 19:55:36.317]: Info: Trying encoder [v4l2m2m]
+[2026-10-22 19:55:36.321]: Info: Screencasting with KMS
+[2026-10-22 19:55:36.324]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 19:55:36.325]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 19:55:36.325]: Info: Found monitor for DRM screencasting
+[2026-10-22 19:55:36.325]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 19:55:36.325]: Info: Found connector ID [51]
+[2026-10-22 19:55:36.325]: Warning: No KMS cursor plane found. Cursor may not be displayed while streaming!
+[2026-10-22 19:55:36.534]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 19:55:36.535]: Info: KMS rotation probe decision: Wayland output=DSI-1 transform=0 expected_270=false CRTC=49 plane=41 DRM rotation=1 expected_rotate_0=true raw=640x480 capture=640x480 offset=0,0
+[2026-10-22 19:55:36.536]: Info: Creating encoder [h264_v4l2m2m]
+[2026-10-22 19:55:36.536]: Info: Color coding: SDR (Rec. 601)
+[2026-10-22 19:55:36.536]: Info: Color depth: 8-bit
+[2026-10-22 19:55:36.536]: Info: Color range: JPEG
+[2026-10-22 19:55:36.568]: Info: Streaming bitrate is 1000000
+[2026-10-22 19:55:36.578]: Info: [h264_v4l2m2m @ 0xb5b5cdd348f0] Using device /dev/video1
+[2026-10-22 19:55:36.583]: Info: [h264_v4l2m2m @ 0xb5b5cdd348f0] driver 'cedrus-encoder' on card 'cedrus-encoder' in splane mode
+[2026-10-22 19:55:36.583]: Info: [h264_v4l2m2m @ 0xb5b5cdd348f0] requesting formats: output=NV12/nv12 capture=H264/none
+[2026-10-22 19:55:37.358]: Info: V4L2 H.264 SPS crop: coded 1920x1088 visible 1920x1080
+[2026-10-22 19:55:37.370]: Info: Creating encoder [hevc_v4l2m2m]
+[2026-10-22 19:55:37.370]: Info: Color coding: SDR (Rec. 601)
+[2026-10-22 19:55:37.370]: Info: Color depth: 8-bit
+[2026-10-22 19:55:37.371]: Info: Color range: JPEG
+[2026-10-22 19:55:37.371]: Info: Streaming bitrate is 1000000
+[2026-10-22 19:55:37.371]: Error: [hevc_v4l2m2m @ 0xb5b5cdd348f0] Could not find a valid device
+[2026-10-22 19:55:37.372]: Error: [hevc_v4l2m2m @ 0xb5b5cdd348f0] can't configure encoder
+[2026-10-22 19:55:37.372]: Error: Could not open codec [hevc_v4l2m2m]: Invalid argument
+[2026-10-22 19:55:37.372]: Info: Creating encoder []
+[2026-10-22 19:55:37.372]: Info: Color coding: SDR (Rec. 601)
+[2026-10-22 19:55:37.372]: Info: Color depth: 8-bit
+[2026-10-22 19:55:37.372]: Info: Color range: JPEG
+[2026-10-22 19:55:37.372]: Error: Couldn't open []
+[2026-10-22 19:55:37.379]: Info: Screencasting with KMS
+[2026-10-22 19:55:37.380]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 19:55:37.380]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 19:55:37.380]: Info: Found monitor for DRM screencasting
+[2026-10-22 19:55:37.380]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 19:55:37.380]: Info: Found connector ID [51]
+[2026-10-22 19:55:37.381]: Warning: No KMS cursor plane found. Cursor may not be displayed while streaming!
+[2026-10-22 19:55:37.632]: Error: Failed to determine panel orientation, defaulting to landscape.
+[2026-10-22 19:55:37.632]: Info: KMS rotation probe decision: Wayland output=DSI-1 transform=0 expected_270=false CRTC=49 plane=41 DRM rotation=1 expected_rotate_0=true raw=640x480 capture=640x480 offset=0,0
+[2026-10-22 19:55:37.632]: Warning: v4l2m2m: h264 missing sps->vui parameters
+[2026-10-22 19:55:37.640]: Info:
+[2026-10-22 19:55:37.640]: Info: // Ignore any errors mentioned above, they are not relevant. //
+[2026-10-22 19:55:37.640]: Info:
+[2026-10-22 19:55:37.640]: Info: Found H.264 encoder: h264_v4l2m2m [v4l2m2m]
+[2026-10-22 19:55:37.643]: Info: Open the Web UI to set your new username and password and getting started
+[2026-10-22 19:55:37.643]: Info: Starting system tray
+[2026-10-22 19:55:37.643]: Info: File /home/korri/.config/sunshine/sunshine_state.json doesn't exist
+[2026-10-22 19:55:37.787]: Info: Configuration UI available at [https://localhost:47990]
+[2026-10-22 19:55:38.128]: Error: Failed to create client: Daemon not running
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 19: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 20: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 23: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 42: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 43: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 46: invalid constant used : sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 68: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 69: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 72: invalid constant used : serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 88: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 89: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 92: invalid constant used : emoji
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 108: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 109: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 112: invalid constant used : math
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 120: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 121: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 124: invalid constant used : system-ui
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 132: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 133: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 136: invalid constant used : cursive
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 144: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 145: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 148: invalid constant used : fantasy
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 156: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 157: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 160: invalid constant used : ui-sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 168: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 169: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 172: invalid constant used : ui-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 180: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 181: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 184: invalid constant used : ui-monospace
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 192: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 193: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 196: invalid constant used : ui-rounded
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 204: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 205: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 208: invalid constant used : fangsong
+Fontconfig warning: "/etc/fonts/conf.d/48-spacing.conf", line 14: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 10: invalid constant used : serif
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 18: invalid constant used : sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 26: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 34: invalid constant used : emoji
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 42: invalid constant used : math
+AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+[2026-10-22 19:55:38.742]: Info: System tray created
+[2026-10-22 19:55:38.742]: Info: Starting main loop
+gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed
+[2026-10-22 20:49:41.239]: Info: Terminate handler called
+[2026-10-22 20:49:41.288]: Info: Shutdown event detected, breaking main loop
+Stopping Sunshine stream host for Korri...
+korri-sunshine.service: Deactivated successfully.
+Stopped Sunshine stream host for Korri.
+korri-sunshine.service: Consumed 10.484s CPU time over 54min 15.221s wall clock time, 51.7M memory peak, 74.1M read from disk.
+Started Sunshine stream host for Korri.
+mpp[8893]: mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700
+mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700
+[2026-10-22 20:49:47.956942] [0x0000fdf942547020] [info]    config: 'log_path' = /dev/null
+[2026-10-22 20:49:47.957038] [0x0000fdf942547020] [info]    config: 'capture' = kms
+[2026-10-22 20:49:47.957059] [0x0000fdf942547020] [info]    config: 'encoder' = auto
+[2026-10-22 20:49:47.959]: Info: Sunshine version: 2025.924.154138-korri commit:
+[2026-10-22 20:49:47.966]: Info: Package Publisher: nixpkgs
+[2026-10-22 20:49:47.966]: Info: Publisher Website: https://nixos.org
+[2026-10-22 20:49:47.966]: Info: Get support: https://github.com/NixOS/nixpkgs/issues
+[2026-10-22 20:49:47.966]: Info: config: 'encoder' = auto
+[2026-10-22 20:49:47.966]: Info: config: 'capture' = kms
+[2026-10-22 20:49:47.967]: Info: config: 'log_path' = /dev/null
+[2026-10-22 20:49:47.995]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 20:49:47.995]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 20:49:47.996]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 20:49:47.996]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 20:49:48.005]: Info: Found display [korri-wayland]
+[2026-10-22 20:49:48.005]: Info: Found display [korri-wayland]
+[2026-10-22 20:49:48.006]: Info: Found interface: wl_shm(2) version 2
+[2026-10-22 20:49:48.006]: Info: Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-10-22 20:49:48.006]: Info: Found interface: zxdg_output_manager_v1(8) version 3
+[2026-10-22 20:49:48.006]: Info: Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-10-22 20:49:48.006]: Info: Found interface: wl_output(58) version 4
+[2026-10-22 20:49:48.006]: Info: Resolution: 640x480
+[2026-10-22 20:49:48.006]: Info: Name: DSI-1
+[2026-10-22 20:49:48.006]: Info: Found monitor: (null) (null) (DSI-1)
+[2026-10-22 20:49:48.006]: Info: Offset: 0x0
+[2026-10-22 20:49:48.006]: Info: Logical size: 640x480
+[2026-10-22 20:49:48.006]: Info: -------- Start of KMS monitor list --------
+[2026-10-22 20:49:48.006]: Info: KMS rotation probe output match: Wayland output=DSI-1 transform=0 DRM monitor=0 expected=0x0 observed=640x480
+[2026-10-22 20:49:48.007]: Warning: Mismatch on expected Resolution compared to actual resolution: 0x0 vs 640x480
+[2026-10-22 20:49:48.007]: Info: Monitor 0 is DSI-1: (null) (null) (DSI-1)
+[2026-10-22 20:49:48.007]: Info: --------- End of KMS monitor list ---------
+[2026-10-22 20:49:48.007]: Error: Unable to initialize capture method
+[2026-10-22 20:49:48.007]: Error: Platform failed to initialize
+[2026-10-22 20:49:48.029]: Warning: Gamepad ds5 is disabled due to No such file or directory
+[2026-10-22 20:49:48.029]: Error: Couldn't find any working encoder matching [auto]
+[2026-10-22 20:49:48.029]: Info: // Testing for available encoders, this may generate errors. You can safely ignore those errors. //
+[2026-10-22 20:49:48.029]: Info: Trying encoder [nvenc]
+[2026-10-22 20:49:48.430]: Info: Encoder [nvenc] failed
+[2026-10-22 20:49:48.430]: Info: Trying encoder [vaapi]
+[2026-10-22 20:49:48.830]: Info: Encoder [vaapi] failed
+[2026-10-22 20:49:48.830]: Info: Trying encoder [v4l2m2m]
+[2026-10-22 20:49:49.231]: Info: Encoder [v4l2m2m] failed
+[2026-10-22 20:49:49.231]: Info: Trying encoder [rkmpp]
+[2026-10-22 20:49:49.631]: Info: Encoder [rkmpp] failed
+[2026-10-22 20:49:49.631]: Info: Trying encoder [software]
+[2026-10-22 20:49:50.031]: Info: Encoder [software] failed
+[2026-10-22 20:49:50.032]: Fatal: Unable to find display or encoder during startup.
+[2026-10-22 20:49:50.032]: Fatal: Please check that a display is connected and powered on.
+[2026-10-22 20:49:50.032]: Error: Video failed to find working encoder
+[2026-10-22 20:49:50.032]: Info: Open the Web UI to set your new username and password and getting started
+[2026-10-22 20:49:50.087]: Info: Starting system tray
+[2026-10-22 20:49:50.088]: Info: File /home/korri/.config/sunshine/sunshine_state.json doesn't exist
+[2026-10-22 20:49:50.250]: Info: Configuration UI available at [https://localhost:47990]
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 19: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 20: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 23: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 42: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 43: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 46: invalid constant used : sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 68: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 69: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 72: invalid constant used : serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 88: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 89: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 92: invalid constant used : emoji
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 108: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 109: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 112: invalid constant used : math
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 120: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 121: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 124: invalid constant used : system-ui
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 132: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 133: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 136: invalid constant used : cursive
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 144: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 145: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 148: invalid constant used : fantasy
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 156: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 157: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 160: invalid constant used : ui-sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 168: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 169: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 172: invalid constant used : ui-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 180: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 181: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 184: invalid constant used : ui-monospace
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 192: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 193: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 196: invalid constant used : ui-rounded
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 204: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 205: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 208: invalid constant used : fangsong
+[2026-10-22 20:49:50.399]: Error: Failed to create client: Daemon not running
+Fontconfig warning: "/etc/fonts/conf.d/48-spacing.conf", line 14: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 10: invalid constant used : serif
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 18: invalid constant used : sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 26: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 34: invalid constant used : emoji
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 42: invalid constant used : math
+AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+[2026-10-22 20:49:51.981]: Info: System tray created
+[2026-10-22 20:49:51.981]: Info: Starting main loop
+gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed
+Stopping Sunshine stream host for Korri...
+[2026-10-22 22:24:59.458]: Info: Terminate handler called
+[2026-10-22 22:24:59.494]: Error: Couldn't accept incoming connections: Operation canceled
+[2026-10-22 22:24:59.505]: Info: Shutdown event detected, breaking main loop
+korri-sunshine.service: Deactivated successfully.
+Stopped Sunshine stream host for Korri.
+korri-sunshine.service: Consumed 15.423s CPU time over 1h 35min 17.088s wall clock time, 35.5M memory peak, 48.2M read from disk.
+Started Sunshine stream host for Korri.
+mpp[10164]: mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700
+mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700
+[2026-10-22 22:25:07.031625] [0x0000f6cdbeafd020] [info]    config: 'log_path' = /dev/null
+[2026-10-22 22:25:07.031763] [0x0000f6cdbeafd020] [info]    config: 'capture' = kms
+[2026-10-22 22:25:07.031785] [0x0000f6cdbeafd020] [info]    config: 'encoder' = auto
+[2026-10-22 22:25:07.040]: Info: Sunshine version: 2025.924.154138-korri commit:
+[2026-10-22 22:25:07.046]: Info: Package Publisher: nixpkgs
+[2026-10-22 22:25:07.047]: Info: Publisher Website: https://nixos.org
+[2026-10-22 22:25:07.047]: Info: Get support: https://github.com/NixOS/nixpkgs/issues
+[2026-10-22 22:25:07.047]: Info: config: 'encoder' = auto
+[2026-10-22 22:25:07.047]: Info: config: 'capture' = kms
+[2026-10-22 22:25:07.047]: Info: config: 'log_path' = /dev/null
+[2026-10-22 22:25:07.067]: Info: /dev/dri/card1 -> sun4i-drm
+[2026-10-22 22:25:07.067]: Warning: No render device name for: /dev/dri/card1
+[2026-10-22 22:25:07.067]: Info: /dev/dri/card0 -> panfrost
+[2026-10-22 22:25:07.067]: Error: GPU driver doesn't support universal planes: /dev/dri/card0
+[2026-10-22 22:25:07.077]: Info: Found display [korri-wayland]
+[2026-10-22 22:25:07.078]: Info: Found display [korri-wayland]
+[2026-10-22 22:25:07.078]: Info: Found interface: wl_shm(2) version 2
+[2026-10-22 22:25:07.078]: Info: Found interface: zwp_linux_dmabuf_v1(3) version 5
+[2026-10-22 22:25:07.078]: Info: Found interface: zxdg_output_manager_v1(8) version 3
+[2026-10-22 22:25:07.078]: Info: Found interface: zwlr_screencopy_manager_v1(30) version 3
+[2026-10-22 22:25:07.078]: Info: Found interface: wl_output(58) version 4
+[2026-10-22 22:25:07.079]: Info: Resolution: 640x480
+[2026-10-22 22:25:07.080]: Info: Name: DSI-1
+[2026-10-22 22:25:07.080]: Info: Found monitor: (null) (null) (DSI-1)
+[2026-10-22 22:25:07.080]: Info: Offset: 0x0
+[2026-10-22 22:25:07.080]: Info: Logical size: 640x480
+[2026-10-22 22:25:07.080]: Info: -------- Start of KMS monitor list --------
+[2026-10-22 22:25:07.080]: Info: KMS rotation probe output match: Wayland output=DSI-1 transform=0 DRM monitor=0 expected=0x0 observed=640x480
+[2026-10-22 22:25:07.080]: Warning: Mismatch on expected Resolution compared to actual resolution: 0x0 vs 640x480
+[2026-10-22 22:25:07.080]: Info: Monitor 0 is DSI-1: (null) (null) (DSI-1)
+[2026-10-22 22:25:07.080]: Info: --------- End of KMS monitor list ---------
+[2026-10-22 22:25:07.080]: Error: Unable to initialize capture method
+[2026-10-22 22:25:07.080]: Error: Platform failed to initialize
+[2026-10-22 22:25:07.108]: Warning: Gamepad ds5 is disabled due to No such file or directory
+[2026-10-22 22:25:07.109]: Error: Couldn't find any working encoder matching [auto]
+[2026-10-22 22:25:07.109]: Info: // Testing for available encoders, this may generate errors. You can safely ignore those errors. //
+[2026-10-22 22:25:07.109]: Info: Trying encoder [nvenc]
+[2026-10-22 22:25:07.505]: Info: Encoder [nvenc] failed
+[2026-10-22 22:25:07.506]: Info: Trying encoder [vaapi]
+[2026-10-22 22:25:07.907]: Info: Encoder [vaapi] failed
+[2026-10-22 22:25:07.907]: Info: Trying encoder [v4l2m2m]
+[2026-10-22 22:25:08.308]: Info: Encoder [v4l2m2m] failed
+[2026-10-22 22:25:08.308]: Info: Trying encoder [rkmpp]
+[2026-10-22 22:25:08.708]: Info: Encoder [rkmpp] failed
+[2026-10-22 22:25:08.708]: Info: Trying encoder [software]
+[2026-10-22 22:25:09.108]: Info: Encoder [software] failed
+[2026-10-22 22:25:09.109]: Fatal: Unable to find display or encoder during startup.
+[2026-10-22 22:25:09.109]: Fatal: Please check that a display is connected and powered on.
+[2026-10-22 22:25:09.109]: Error: Video failed to find working encoder
+[2026-10-22 22:25:09.109]: Info: Open the Web UI to set your new username and password and getting started
+[2026-10-22 22:25:10.014]: Info: Starting system tray
+[2026-10-22 22:25:10.014]: Info: File /home/korri/.config/sunshine/sunshine_state.json doesn't exist
+[2026-10-22 22:25:10.067]: Error: Failed to create client: Daemon not running
+[2026-10-22 22:25:10.082]: Info: Configuration UI available at [https://localhost:47990]
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 19: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 20: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 23: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 42: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 43: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 46: invalid constant used : sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 68: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 69: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 72: invalid constant used : serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 88: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 89: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 92: invalid constant used : emoji
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 108: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 109: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 112: invalid constant used : math
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 120: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 121: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 124: invalid constant used : system-ui
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 132: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 133: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 136: invalid constant used : cursive
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 144: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 145: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 148: invalid constant used : fantasy
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 156: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 157: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 160: invalid constant used : ui-sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 168: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 169: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 172: invalid constant used : ui-serif
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 180: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 181: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 184: invalid constant used : ui-monospace
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 192: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 193: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 196: invalid constant used : ui-rounded
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 204: invalid attribute 'xsi:nil'
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 205: invalid constant used :
+Fontconfig warning: "/etc/fonts/conf.d/48-guessfamily.conf", line 208: invalid constant used : fangsong
+Fontconfig warning: "/etc/fonts/conf.d/48-spacing.conf", line 14: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 10: invalid constant used : serif
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 18: invalid constant used : sans-serif
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 26: invalid constant used : monospace
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 34: invalid constant used : emoji
+Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 42: invalid constant used : math
+AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+[2026-10-22 22:25:11.795]: Info: System tray created
+[2026-10-22 22:25:11.795]: Info: Starting main loop
+gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed

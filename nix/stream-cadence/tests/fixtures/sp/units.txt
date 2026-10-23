@@ -1,0 +1,12 @@
+korri-sunshine-input-setup.service        loaded active running Approved Sunshine UHID permissions and group
+korri-sunshine.service                    loaded active running Sunshine stream host for Korri
+korri-sunshine-certificate-control.socket loaded active running Private Korri Sunshine certificate control socket
+Id=korri-compositor.service
+MainPID=1021
+
+Id=korrid.service
+MainPID=11533
+lo               UNKNOWN        127.0.0.1/8 ::1/128 
+sit0@NONE        DOWN           
+wlan0            UP             192.168.1.130/24 2605:b40:1524:e800::20b/128 2605:b40:1524:e800:4fdb:2985:5cdd:1177/64 2605:b40:1524:e800:d036:d4e2:4bed:f893/64 fe80::34c2:edb3:14b4:adc0/64 
+usb0             UP             10.42.5.1/24 fe80::52:33ff:fe35:5302/64 
