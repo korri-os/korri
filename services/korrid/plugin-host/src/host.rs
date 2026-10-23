@@ -3133,6 +3133,92 @@ mod tests {
     }
 
     #[test]
+    fn root_graph_recovery_keeps_required_targets_rooted_until_journal_retirement() {
+        let old = report("@test:runner", "gc-old");
+        let new = report("@test:runner", "gc-new");
+        let first = pack("@test:pack", "gc-pack-old", std::slice::from_ref(&old));
+        let next = pack("@test:pack", "gc-pack-new", std::slice::from_ref(&new));
+        for (initial, boundary) in [(3, 4), (3, 3), (6, 2)] {
+            let directory = tempfile::tempdir().unwrap();
+            let runtime = runtime(&[old.clone(), new.clone(), first.clone(), next.clone()]);
+            let nix = cleanup_program(directory.path(), "exit 0");
+            let host = Host::for_test(
+                directory.path(),
+                nix.clone(),
+                permitted_policy(),
+                runtime.clone(),
+            )
+            .unwrap();
+            install(&host, first.clone());
+            host.set_enabled(&first.id, true).unwrap();
+            let before = host.receipts().unwrap();
+            runtime.interrupt_graph_at.set(Some(initial));
+            assert!(host
+                .install(
+                    next.clone(),
+                    &next.approval,
+                    SelectionIntent::Update { id: &first.id }
+                )
+                .unwrap_err()
+                .contains("injected graph interruption"));
+            runtime.graph_checkpoints.set(0);
+            runtime.interrupt_graph_at.set(Some(boundary));
+            assert!(host
+                .restore_all()
+                .unwrap_err()
+                .contains("injected graph interruption"));
+            runtime.interrupt_graph_at.set(None);
+            assert_eq!(
+                host.state.root().join("graph-update.json").exists(),
+                initial == 6
+            );
+            drop(host);
+            cold_boot(&runtime);
+            let host =
+                Host::for_test(directory.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+            // Simulate GC, including references reachable through a rooted
+            // package. Remove collected target metadata so loading it fails.
+            let mut live = BTreeSet::new();
+            let mut pending = Vec::new();
+            for node in fs::read_dir(&host.paths.roots).unwrap() {
+                for link in fs::read_dir(node.unwrap().path()).unwrap() {
+                    pending.push(fs::read_link(link.unwrap().path()).unwrap());
+                }
+            }
+            while let Some(path) = pending.pop() {
+                if live.insert(path.clone()) {
+                    if let Some(report) = runtime.reports.borrow().get(&path) {
+                        pending.extend(report.requires.clone());
+                    }
+                }
+            }
+            for target in [&new.package, &next.package] {
+                if !live.contains(target) {
+                    runtime.reports.borrow_mut().remove(target);
+                }
+            }
+            let collected = !runtime.reports.borrow().contains_key(&next.package);
+            // Resume first: the old ordering fails here after GC because it
+            // retains a journal whose discarded target must be loaded again.
+            host.restore_all().unwrap();
+            host.restore_all().unwrap();
+            if initial == 3 {
+                assert_eq!(collected, boundary == 4);
+                assert_eq!(host.receipts().unwrap(), before);
+            } else {
+                assert!(!collected, "Switching target must stay active-rooted");
+                assert_eq!(
+                    host.receipt(&first.id).unwrap().unwrap().package,
+                    next.package
+                );
+                assert_eq!(host.receipt(&old.id).unwrap().unwrap().package, new.package);
+            }
+            assert!(!host.state.root().join("graph-update.json").exists());
+            assert!(runtime.unsafe_stops.borrow().is_empty());
+        }
+    }
+
+    #[test]
     fn root_graph_recovers_additions_and_a_receipt_written_before_its_roots() {
         let old = report("@test:runner", "roots-old");
         let new = report("@test:runner", "roots-new");
@@ -3937,6 +4023,8 @@ mod tests {
             for change in [
                 "root-omitted",
                 "root-anchor-omitted",
+                "root-swapped",
+                "root-approval-corrupted",
                 "dependency-omitted",
                 "unrelated-injected",
                 "addition-injected",
@@ -4003,6 +4091,15 @@ mod tests {
                         "root"
                     }
                     "root-anchor-omitted" => "root",
+                    "root-swapped" => "closure",
+                    "root-approval-corrupted" => {
+                        let entry = selections
+                            .iter_mut()
+                            .find(|entry| entry["after"]["id"] == first.id)
+                            .unwrap();
+                        entry["after"]["approval"] = serde_json::json!("corrupted approval");
+                        super::APPROVAL_STALE
+                    }
                     "dependency-omitted" => {
                         selections.retain(|entry| entry["after"]["id"] == first.id);
                         "dependency"
@@ -4102,6 +4199,9 @@ mod tests {
                     }
                     _ => unreachable!(),
                 };
+                if change == "root-swapped" {
+                    value["root"] = serde_json::json!(next.brings[0].report.id);
+                }
                 if change == "root-anchor-omitted" {
                     value.as_object_mut().unwrap().remove("root");
                 }

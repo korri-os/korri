@@ -247,13 +247,19 @@ impl Host {
             match update.phase {
                 Phase::Prepared => {
                     self.quiesce_graph_update(&update)?;
+                    // Retire the decision durably before releasing its target
+                    // roots. storage::remove fsyncs the parent directory. A
+                    // later crash resumes ordinary receipt/pending cleanup,
+                    // which does not need a discarded target's approval.
+                    storage::remove(&path)?;
+                    self.graph_checkpoint("prepared-before-settle")?;
                     for selection in &update.selections {
                         match &selection.before {
                             Some(before) => self.selection(&before.id).settle(before)?,
                             None => self.selection(&selection.after.id).remove()?,
                         }
                     }
-                    storage::remove(&path)?;
+                    self.graph_checkpoint("prepared-settled")?;
                 }
                 Phase::Switching => {
                     // This decision performs no starts. Complete the approved
