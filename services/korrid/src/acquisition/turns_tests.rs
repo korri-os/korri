@@ -167,31 +167,70 @@ async fn transport_failures_are_unreachable_not_plugin_input() {
 }
 
 #[tokio::test]
-async fn handler_input_is_bounded_in_total_and_large_pages_fit_the_heap() {
-    let mib = 1024 * 1024;
+async fn provider_response_body_is_bounded_at_512_kib() {
+    let limit = 512 * 1024;
     let server = HttpFixture::start([
+        ("/limit", Route::ok("text/plain", vec![b'x'; limit])),
+        ("/oversize", Route::ok("text/plain", vec![b'x'; limit + 1])),
         (
-            "/large",
-            Route::ok("text/plain", vec![b'x'; 3 * mib + mib / 2]),
+            "/unsized-limit",
+            Route::ok("text/plain", vec![b'x'; limit]).unsized_body(),
         ),
         (
-            "/half",
-            Route::ok("text/plain", vec![b'x'; 2 * mib + mib / 2]),
+            "/unsized-oversize",
+            Route::ok("text/plain", vec![b'x'; limit + 1]).unsized_body(),
         ),
     ]);
-    let one = format!(
-        "{{'claims.search': (i) => i.responses.length ? [{}] : ({{_tag: 'HttpRequests', requests: [{{url: '{}'}}]}})}}",
-        claim("x", "String(i.responses[0].text.length)"),
-        server.url(HOST, "/large")
-    );
-    let claims = turns::search(&engine(), &context(&one), "q").await.unwrap();
-    assert_eq!(claims[0].title, (3 * mib + mib / 2).to_string());
+    let handler = |path| {
+        format!(
+            "{{'claims.search': (i) => i.responses.length ? [{}] : ({{_tag: 'HttpRequests', requests: [{{url: '{}'}}]}})}}",
+            claim("x", "String(i.responses[0].text.length)"),
+            server.url(HOST, path)
+        )
+    };
+    for path in ["/limit", "/unsized-limit"] {
+        let claims = turns::search(&engine(), &context(&handler(path)), "q")
+            .await
+            .unwrap();
+        assert_eq!(claims[0].title, limit.to_string());
+    }
+    for path in ["/oversize", "/unsized-oversize"] {
+        let error = failure(&handler(path)).await;
+        assert_eq!(error, ProviderError::Unreachable(Failure::TooLarge));
+        assert_eq!(error.rpc().code, "ProviderUnreachable");
+    }
+}
 
-    let two = format!(
-        "{{'claims.search': (i) => i.responses.length ? [] : ({{_tag: 'HttpRequests', requests: [{{url: '{0}'}}, {{url: '{0}'}}]}})}}",
-        server.url(HOST, "/half")
+#[tokio::test]
+async fn handler_input_is_bounded_in_total_after_json_escaping() {
+    let limit = 512 * 1024;
+    let server = HttpFixture::start([
+        ("/page", Route::ok("text/plain", vec![b'x'; limit])),
+        ("/quoted", Route::ok("text/plain", vec![b'\"'; limit])),
+    ]);
+    // Seven pages fit the unchanged 4 MiB input bound and 16 MiB heap.
+    let seven = format!(
+        "{{'claims.search': (i) => i.responses.length ? [{}] : ({{_tag: 'HttpRequests', requests: Array(7).fill({{url: '{}'}})}})}}",
+        claim("x", "String(i.responses.reduce((n, r) => n + r.text.length, 0))"),
+        server.url(HOST, "/page")
     );
-    assert!(failed(failure(&two).await).contains("4 MiB"));
+    let claims = turns::search(&engine(), &context(&seven), "q")
+        .await
+        .unwrap();
+    assert_eq!(claims[0].title, (7 * limit).to_string());
+
+    // Eight plain pages exceed 4 MiB with metadata. Four quoted pages do
+    // too: JSON escaping doubles the body bytes before the total is checked.
+    for (path, count) in [("/page", 8), ("/quoted", 4)] {
+        let handlers = format!(
+            "{{'claims.search': (i) => i.responses.length ? [] : ({{_tag: 'HttpRequests', requests: Array({count}).fill({{url: '{}'}})}})}}",
+            server.url(HOST, path)
+        );
+        assert_eq!(
+            failed(failure(&handlers).await),
+            "handler input exceeds 4 MiB"
+        );
+    }
 }
 
 #[tokio::test]
