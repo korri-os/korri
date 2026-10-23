@@ -80,6 +80,7 @@ pub(crate) fn start(
         relay_port,
         endpoint: None,
         tasks: JoinSet::new(),
+        relay_task: None,
         bindings: Arc::new(RwLock::new(BTreeMap::new())),
         dialing: Arc::new(Mutex::new(BTreeSet::new())),
         relay_addresses: Arc::new(RwLock::new(Vec::new())),
@@ -107,6 +108,7 @@ struct Controller {
     relay_port: u16,
     endpoint: Option<Endpoint>,
     tasks: JoinSet<()>,
+    relay_task: Option<JoinHandle<()>>,
     bindings: relay::Bindings,
     dialing: Arc<Mutex<BTreeSet<String>>>,
     relay_addresses: Arc<RwLock<Vec<SocketAddr>>>,
@@ -118,6 +120,9 @@ struct Controller {
 impl Drop for Controller {
     fn drop(&mut self) {
         self.directory.reach.clear();
+        if let Some(task) = &self.relay_task {
+            task.abort();
+        }
     }
 }
 impl Controller {
@@ -152,9 +157,13 @@ impl Controller {
         Ok((relays, stun))
     }
     async fn reset(&mut self) {
+        self.directory.reach.clear();
+        if let Some(task) = self.relay_task.take() {
+            task.abort();
+            let _ = task.await;
+        }
         self.tasks.abort_all();
         while self.tasks.join_next().await.is_some() {}
-        self.directory.reach.clear();
         if let Some(endpoint) = self.endpoint.take() {
             endpoint.close().await;
         }
@@ -167,6 +176,19 @@ impl Controller {
             .write()
             .expect("relay addresses")
             .clear();
+    }
+    async fn refresh_endpoint(&mut self) {
+        // There is no healthy incoming or outgoing connection. Keep the
+        // independent embedded TCP relay and its clients alive during rebind.
+        self.directory.reach.clear_connections(false);
+        self.tasks.abort_all();
+        while self.tasks.join_next().await.is_some() {}
+        if let Some(endpoint) = self.endpoint.take() {
+            endpoint.close().await;
+        }
+        self.pending.clear();
+        // Keep retry backoff, bindings and still-current relay answers. The
+        // next endpoint runs STUN again before bind and sends a fresh offer.
     }
     async fn ensure_endpoint(&mut self, stun: &StunList) -> io::Result<Endpoint> {
         if let Some(endpoint) = &self.endpoint {
@@ -228,13 +250,17 @@ impl Controller {
             local: self.key.public(),
         };
         let relay_addresses = self.relay_addresses.clone();
-        self.tasks.spawn(relay::supervise(
-            Arc::new(policy::LinuxEnvironment::new()),
-            access.clone(),
-            relay::listener_ips(&addresses),
-            relay_addresses,
-            self.relay_port,
-        ));
+        if self.relay_task.is_none() {
+            self.relay_task = Some(tokio::spawn(relay::supervise(
+                Arc::new(policy::LinuxEnvironment::new()),
+                access.clone(),
+                relay::listener_ips(&addresses),
+                relay_addresses,
+                self.relay_port,
+            )));
+        }
+        let recovery = self.directory.reach.recovery.clone();
+        recovery.lock().expect("reach recovery").started();
         let incoming_endpoint = endpoint.clone();
         let router = self.peer_router.clone();
         self.tasks.spawn(async move {
@@ -243,7 +269,7 @@ impl Controller {
                 tokio::select! {
                     incoming = incoming_endpoint.accept(), if sessions.len() < 64 => {
                         let Some(incoming) = incoming else {break};
-                        let (router,access) = (router.clone(),access.clone());
+                        let (router,access,recovery) = (router.clone(),access.clone(),recovery.clone());
                         sessions.spawn(async move {
                             let Ok(Ok(connection)) = timeout(Duration::from_secs(10),incoming).await else {return};
                             // remote_id is QUIC's authenticated key. It must be
@@ -251,6 +277,13 @@ impl Controller {
                             if !access.allows(connection.remote_id()) {
                                 connection.close(1u32.into(),b"not a bound federation device");return;
                             }
+                            let device = if connection.remote_id() == access.local {
+                                access.directory.credentials.public_key().ok()
+                            } else {
+                                access.bindings.read().expect("reach bindings").get(&connection.remote_id()).cloned()
+                            };
+                            let Some(device) = device else {connection.close(1u32.into(),b"unknown device");return};
+                            if !recovery.lock().expect("reach recovery").register(device,connection.clone()) {return;}
                             let monitor = async {
                                 loop {
                                     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -301,6 +334,18 @@ impl Controller {
     async fn drive(&mut self) {
         let mut old_settings = None;
         loop {
+            if self.endpoint.is_some()
+                && self
+                    .directory
+                    .reach
+                    .recovery
+                    .lock()
+                    .expect("reach recovery")
+                    .take_refresh(Instant::now())
+            {
+                log::info!("refreshing iroh endpoint after connection loss and two failed reconnect attempts");
+                self.refresh_endpoint().await;
+            }
             let settings = self.settings();
             let Ok((Some(relays), stun)) = settings else {
                 self.reset().await;
@@ -468,6 +513,12 @@ impl Controller {
                 .iter()
                 .map(|p| p.device_public_key.clone())
                 .collect::<BTreeSet<_>>();
+            self.directory
+                .reach
+                .recovery
+                .lock()
+                .expect("reach recovery")
+                .retain_members(&devices);
             self.directory
                 .reach
                 .live
@@ -641,6 +692,14 @@ impl Controller {
             let result = connect_iroh(&endpoint, id, addresses, relays).await;
             match result {
                 Ok(connection) => {
+                    if !routes
+                        .recovery
+                        .lock()
+                        .expect("reach recovery")
+                        .register(device.clone(), connection.clone())
+                    {
+                        return;
+                    }
                     if let Some(old) = routes
                         .live
                         .write()
@@ -661,6 +720,11 @@ impl Controller {
                     let _ = client.session_status().await;
                 }
                 Err(_) => {
+                    routes
+                        .recovery
+                        .lock()
+                        .expect("reach recovery")
+                        .failed(&device);
                     let mut candidates = directory
                         .snapshot()
                         .ok()

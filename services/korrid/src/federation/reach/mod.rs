@@ -5,6 +5,7 @@ mod datagrams;
 pub(crate) mod http;
 pub(crate) mod nearby_seam;
 mod policy;
+mod recovery;
 mod relay;
 mod settings;
 pub mod signal;
@@ -30,6 +31,7 @@ pub(super) struct LiveRoute {
 #[derive(Clone, Default)]
 pub(crate) struct Routes {
     live: Arc<RwLock<BTreeMap<String, LiveRoute>>>,
+    recovery: Arc<Mutex<recovery::Recovery>>,
     changed: Arc<Notify>,
     active: Arc<AtomicBool>,
     selected: Arc<tokio::sync::Mutex<Option<Weak<Lease>>>>,
@@ -107,6 +109,13 @@ impl Routes {
         StreamLease(lease).address()
     }
     fn clear(&self) {
+        self.clear_connections(true);
+    }
+    fn clear_connections(&self, forget_losses: bool) {
+        self.recovery
+            .lock()
+            .expect("reach recovery")
+            .stop(forget_losses);
         self.active.store(false, Ordering::Release);
         if let Ok(selected) = self.selected.try_lock() {
             if let Some(lease) = selected.as_ref().and_then(Weak::upgrade) {

@@ -52,6 +52,21 @@ not make a TCP relay reachable. Symmetric NAT on both sides needs a reachable
 relaying device. Only one configured public Nostr relay was live:
 relay.primal.net. relay.nostr.band was dead.
 
+The runtime watches local interfaces, addresses and default routes. It also
+refreshes the endpoint and reruns STUN after an established connection is lost
+and two reconnect attempts to that peer fail, but only when no incoming or
+outgoing connection on the endpoint is healthy. The admission check fences new
+connections during refresh. The independent TCP relay keeps its clients.
+Refreshes are at least 60 seconds apart, with a 60, 120, 240, then 300-second
+backoff until a connection succeeds. Normal peer retry backoff remains in force.
+The trigger logs once at info level, without addresses.
+
+An upstream NAT remap with an unchanged local interface (cell roaming) was not
+covered by any test. Hardware testing gates this case where it can. If another
+connection is healthy, the runtime does not refresh: a stale public address may
+remain until that connection is lost or a local network change occurs. This
+trade-off avoids interrupting a healthy peer to repair another route.
+
 A weak phone link delivered 4.1 Mbit/s at 5 Mbit/s offered, with 18% loss.
 QUIC adds rate control above Moonlight's own rate control. These numbers
 do not prove that a real Moonlight session works well.
