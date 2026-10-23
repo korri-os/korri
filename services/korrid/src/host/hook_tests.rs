@@ -1,7 +1,6 @@
 use super::{
     hooks::{Context, LaunchHooks},
     identity::{read_active, replace_active, ActiveSession},
-    input_seat::DisabledInputSeats,
     session_state::{HostSessionControl, HostSessionStatus, HostSessionStop},
     systemd_unit::{LaunchUnitBackend, LaunchUnitError, LaunchUnitErrorKind, LaunchUnitState},
 };
@@ -148,7 +147,7 @@ fn hooks(before: serde_json::Value, after: serde_json::Value) -> LaunchHooks {
     }
 }
 fn control(root: &std::path::Path, backend: Arc<RecordingBackend>) -> HostSessionControl {
-    HostSessionControl::with_input_seats(root, backend, Arc::new(DisabledInputSeats))
+    HostSessionControl::new(root, backend)
 }
 fn prepare(
     control: &HostSessionControl,

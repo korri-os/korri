@@ -69,10 +69,26 @@ pub(super) struct AfterHooks {
     pub exit_status: Option<i32>,
 }
 
+#[cfg(test)]
+pub(super) const TEST_BOOT_ID: &str = "0123456789abcdef0123456789abcdef";
+
 pub(super) fn boot_id() -> Result<String, String> {
-    std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
-        .map(|id| id.trim().to_owned())
-        .map_err(|error| format!("cannot read hook boot identity: {error}"))
+    // systemd expands %b before entering the service sandbox. /proc/sys is
+    // deliberately unavailable under ProcSubset=pid; do not read it here.
+    let id = std::env::var("KORRID_BOOT_ID")
+        .map_err(|_| "systemd did not supply KORRID_BOOT_ID".to_owned())?;
+    validate_boot_id(&id)
+}
+fn validate_boot_id(id: &str) -> Result<String, String> {
+    if id.len() == 32
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        Ok(id.to_owned())
+    } else {
+        Err("KORRID_BOOT_ID is not a systemd boot identity".into())
+    }
 }
 
 pub(super) fn environment(
@@ -131,8 +147,13 @@ pub(super) fn before(
             environment,
             sandbox,
         ) {
+            let label = step
+                .name
+                .as_ref()
+                .map(|name| name.0.clone())
+                .unwrap_or_else(|| index.to_string());
             let reason = format!(
-                "HookFailed {{ phase: before, step: {index}, reason: {} }}",
+                "HookFailed {{ phase: before, step: {label}, reason: {} }}",
                 error.message
             );
             if step.on_failure == Some(HookBeforeFailurePolicy::Warn) {
@@ -258,6 +279,45 @@ mod tests {
                 Some(result.as_str())
             );
             assert!(!after.contains_key("KORRI_EXIT_STATUS"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod boot_identity_tests {
+    use super::*;
+
+    #[test]
+    fn boot_identity_environment_child() {
+        if std::env::var_os("KORRID_TEST_BOOT_ID_CHILD").is_some() {
+            assert_eq!(boot_id().unwrap(), TEST_BOOT_ID);
+        }
+    }
+
+    #[test]
+    fn systemd_supplied_boot_identity_needs_no_proc_files_or_subprocess_path() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "host::hooks::boot_identity_tests::boot_identity_environment_child",
+            ])
+            .env_clear()
+            .env("KORRID_TEST_BOOT_ID_CHILD", "1")
+            .env("KORRID_BOOT_ID", TEST_BOOT_ID)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        for invalid in [
+            "",
+            "%b",
+            "not-a-boot-id",
+            "0123456789ABCDEF0123456789ABCDEF",
+        ] {
+            assert!(validate_boot_id(invalid).is_err(), "accepted {invalid}");
         }
     }
 }

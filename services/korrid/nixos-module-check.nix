@@ -294,6 +294,7 @@ assert
     KORRID_HOST_CONFIG = toString deviceConfig;
     KORRID_LIMITS_SOCKET = "/run/korri-limits/limits.sock";
     KORRID_MODE = "host";
+    KORRID_BOOT_ID = "%b";
     KORRID_PRIVATE_STATE_ROOT = "/var/lib/korrid";
     KORRID_LOCAL_SIGNER_SOCKET = "/run/korri-local-signer/signer.sock";
     KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE = "/run/korri-local-signer/public/person.pub";
@@ -314,6 +315,11 @@ assert service.serviceConfig.Group == "korrid";
 assert service.environment.KORRID_SYSTEMCTL == "${pkgs.systemd}/bin/systemctl";
 assert service.environment.KORRID_ADDRESS == "[::]:43117";
 assert service.environment.KORRID_PRIVATE_STATE_ROOT == "/var/lib/korrid";
+# The boot identity must be injected by PID 1, not read inside the /proc sandbox.
+assert service.environment.KORRID_BOOT_ID == "%b";
+assert lib.hasInfix ''Environment="KORRID_BOOT_ID=%b"'' enabled.config.systemd.units."korrid.service".text;
+assert service.serviceConfig.ProcSubset == "pid";
+assert service.serviceConfig.ProtectKernelTunables;
 assert service.environment.KORRID_LOCAL_SIGNER_SOCKET == "/run/korri-local-signer/signer.sock";
 assert service.environment.KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE == "/run/korri-local-signer/public/person.pub";
 assert service.environment.KORRID_STREAM_PRIVATE_STATE_ROOT == "/home/korri/.config/sunshine";

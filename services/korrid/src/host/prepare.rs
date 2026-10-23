@@ -98,12 +98,14 @@ impl HostLauncher {
         private_state_root: &Path,
         backend: Arc<dyn LaunchUnitBackend>,
     ) -> Self {
-        Self::with_backends(
+        let mut launcher = Self::with_backends(
             config,
             private_state_root,
             backend,
             Arc::new(super::input_seat::DisabledInputSeats),
-        )
+        );
+        launcher.control = launcher.control.with_boot_id(super::hooks::TEST_BOOT_ID);
+        launcher
     }
 
     pub(crate) fn with_backends(

@@ -243,6 +243,7 @@ pub struct HostSessionControl {
     limits_client: crate::launch_settings::helper::Client,
     input_seats: Arc<dyn InputSeatManager>,
     identity_root: PathBuf,
+    boot_identity: Result<String, String>,
     play_log: PlayLogStore,
     save_push: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<String>>>>,
     shutting_down: Arc<std::sync::atomic::AtomicBool>,
@@ -278,6 +279,13 @@ impl HostSessionControl {
     #[cfg(test)]
     pub fn new(private_state_root: &Path, backend: Arc<dyn LaunchUnitBackend>) -> Self {
         Self::with_input_seats(private_state_root, backend, Arc::new(DisabledInputSeats))
+            .with_boot_id(super::hooks::TEST_BOOT_ID)
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_boot_id(mut self, id: &str) -> Self {
+        self.boot_identity = Ok(id.into());
+        self
     }
 
     pub fn with_input_seats(
@@ -305,6 +313,7 @@ impl HostSessionControl {
             limits_client: crate::launch_settings::helper::Client::default(),
             input_seats,
             identity_root,
+            boot_identity: super::hooks::boot_id(),
             play_log: PlayLogStore::new(private_state_root),
             save_push: Arc::new(Mutex::new(None)),
             shutting_down: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -967,7 +976,7 @@ impl HostSessionControl {
             ActiveSession::Running {
                 after_hooks: Some(_),
                 ..
-            } => super::hooks::boot_id()?,
+            } => self.boot_identity.clone()?,
             _ => {
                 return self
                     .backend
@@ -1459,7 +1468,9 @@ impl HostSessionControl {
         if let ActiveSession::Running { after_hooks, .. } = &mut active {
             if let Some(hooks) = hooks.filter(|hooks| !hooks.resolved.after.is_empty()) {
                 *after_hooks = Some(super::hooks::AfterHooks {
-                    boot_id: super::hooks::boot_id()
+                    boot_id: self
+                        .boot_identity
+                        .clone()
                         .map_err(|message| failure("HookFailed", message))?,
                     command: configured_command.to_vec(),
                     sandbox: sandbox.clone(),

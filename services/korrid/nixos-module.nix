@@ -752,6 +752,8 @@ in
       environment = {
         HOSTNAME = config.networking.hostName;
         KORRID_MODE = "host";
+        # Expanded by PID 1 before ProcSubset=pid hides /proc/sys from korrid.
+        KORRID_BOOT_ID = "%b";
         KORRID_ADDRESS = cfg.address;
         KORRID_HOST_CONFIG = toString cfg.deviceConfig;
         KORRID_STORAGE_ROOT = cfg.storageRoot;

@@ -1799,6 +1799,8 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
     ) -> Result<(), LaunchUnitError> {
         let arguments =
             self.launch_arguments_in_sandbox(launch_id, configured_command, environment, sandbox)?;
+        // Before-hook channels were removed when those units finished. The
+        // game gets a fresh inode, never an exit value authored by a hook.
         if sandbox.plugin {
             super::launch_diagnostics::create_exit_channel(
                 &self.diagnostics_root.join(launch_id),
@@ -1872,8 +1874,18 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         let mut helper = self.clone();
         helper.helper_timeout = timeout.saturating_add(Duration::from_secs(15));
         let result = helper
-            .require_success(&self.systemd_run, &arguments)
-            .map(|_| ());
+            .run(&self.systemd_run, &arguments)
+            .and_then(|output| {
+                if output.status.success() {
+                    Ok(())
+                } else {
+                    let reason = match output.status.code() {
+                        Some(code) => format!("exited with status {code}"),
+                        None => format!("terminated ({})", output.status),
+                    };
+                    Err(LaunchUnitError::new(LaunchUnitErrorKind::Failed, reason))
+                }
+            });
         if result.is_err() {
             // A lost client is not proof the service stopped. Exact-stop before
             // returning, so an abort cannot overlap the next launch.
@@ -1911,6 +1923,8 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
                 }
             })?;
         }
+        // Hooks may write their own diagnostic file. Before a game starts it
+        // is discarded; after a game ends its real status is already journaled.
         if sandbox.plugin {
             super::launch_diagnostics::cleanup(&self.diagnostics_root.join(launch_id)).map_err(
                 |error| {
@@ -2878,7 +2892,7 @@ mod hook_unit_tests {
             )
             .unwrap_err();
         assert_eq!(error.kind, LaunchUnitErrorKind::Failed);
-        assert!(error.message.contains("exit status: 7"));
+        assert_eq!(error.message, "exited with status 7");
     }
 }
 
@@ -2986,13 +3000,28 @@ mod plain_exit_channel_tests {
     #[test]
     fn plugin_exit_writer_child() {
         if std::env::var_os("KORRID_TEST_PLUGIN_EXIT_WRITER").is_some() {
-            crate::host::launch_diagnostics::write_exit_status(0).unwrap();
+            let file = std::env::var_os(crate::host::launch_diagnostics::EXIT_STATUS_ENV).unwrap();
+            assert!(
+                fs::read(&file).unwrap().is_empty(),
+                "every unit must receive a fresh exit channel"
+            );
+            let status = std::env::var("KORRID_TEST_PLUGIN_EXIT_STATUS")
+                .unwrap()
+                .parse()
+                .unwrap();
+            crate::host::launch_diagnostics::write_exit_status(status).unwrap();
+            let mut log = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(std::env::var_os("KORRID_TEST_PLUGIN_STATUS_LOG").unwrap())
+                .unwrap();
+            use std::io::Write;
+            writeln!(log, "{status}").unwrap();
         }
     }
 
     #[test]
-    fn plain_plugin_launch_reports_zero_to_after_hook_after_unit_collection_without_compositor_access(
-    ) {
+    fn plain_plugin_exit_survives_collection_and_hook_exit_file_writes() {
         let root = tempfile::tempdir().unwrap();
         let uid = unsafe { libc::geteuid() };
         let gid = unsafe { libc::getegid() };
@@ -3003,13 +3032,14 @@ mod plain_exit_channel_tests {
             serde_json::json!({"runnerId":"@test:runner/main", "program":"/bin/true", "accountRoot":account,
                 "saveRoot":account.join("saves/game"), "cacheRoot":root.path().join("cache"), "files":{}, "artifacts":{}}).to_string(),
             serde_json::to_string(&crate::launcher::plugin_launch::LaunchComposition::default()).unwrap(),
-            serde_json::json!({"plan":{"command":"/bin/true", "args":[], "saveLocations":[]}, "runnerArgv":[], "releaseId":"release"}).to_string(),
+            serde_json::json!({"plan":{"command":"/bin/true", "args":[], "env":{"PATH":"/game/runtime/bin"}, "saveLocations":[]}, "runnerArgv":[], "releaseId":"release"}).to_string(),
         ];
-        let baseline = BTreeMap::new();
+        let baseline = BTreeMap::from([("PATH".into(), "/baseline/bin".into())]);
         let sandbox = LaunchSandbox::new(&command, &baseline);
         assert!(!sandbox.modifiers);
         let marker = root.path().join("active");
         let observed = root.path().join("hook-arguments");
+        let writes = root.path().join("status-writes");
         let ctl = root.path().join("systemctl");
         fs::write(&ctl,format!(r#"#!/bin/sh
 case " $* " in
@@ -3023,16 +3053,23 @@ esac
         // writer runs as a child process against that exact host-created inode.
         fs::write(&run,format!(r#"#!/bin/sh
 set -eu
+hook=0
 for arg in "$@"; do
   case "$arg" in
-    --unit=korri-hook-*) printf '%s\n' "$@" > '{}'; exit 0 ;;
+    --unit=korri-hook-*) hook=1 ;;
     --unit=korri-game-*) id=${{arg#--unit=korri-game-}}; id=${{id%.service}} ;;
     --property=BindPaths=*) source=${{arg#--property=BindPaths=}}; source=${{source%%:*}} ;;
   esac
 done
-printf '%s' "$id" > '{}'
-KORRID_TEST_PLUGIN_EXIT_WRITER=1 KORRI_LAUNCH_EXIT_STATUS_FILE="$source" KORRI_LAUNCH_DIAGNOSTICS_READER_UID={} '{}' --exact host::systemd_unit::plain_exit_channel_tests::plugin_exit_writer_child
-"#,observed.display(),marker.display(),uid,std::env::current_exe().unwrap().display())).unwrap();
+if [ "$hook" = 1 ]; then
+    printf '%s\n' "$@" > '{observed}'
+    status=3
+else
+    printf '%s' "$id" > '{marker}'
+    status=0
+fi
+KORRID_TEST_PLUGIN_EXIT_WRITER=1 KORRID_TEST_PLUGIN_EXIT_STATUS="$status" KORRID_TEST_PLUGIN_STATUS_LOG='{writes}' KORRI_LAUNCH_EXIT_STATUS_FILE="$source" KORRI_LAUNCH_DIAGNOSTICS_READER_UID={uid} '{exe}' --exact host::systemd_unit::plain_exit_channel_tests::plugin_exit_writer_child
+"#,observed=observed.display(),marker=marker.display(),writes=writes.display(),uid=uid,exe=std::env::current_exe().unwrap().display())).unwrap();
         for path in [&ctl, &run] {
             fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
         }
@@ -3069,12 +3106,18 @@ KORRID_TEST_PLUGIN_EXIT_WRITER=1 KORRI_LAUNCH_EXIT_STATUS_FILE="$source" KORRI_L
             HostSessionControl::new(&root.path().join("private"), std::sync::Arc::new(backend));
         let hooks = LaunchHooks {
             resolved: crate::launch_settings::ResolvedHooks {
-                before: vec![],
-                after: serde_json::from_value(serde_json::json!([{"run":"capture-after"}]))
+                before: serde_json::from_value(serde_json::json!([{"run":"forge-before"}]))
                     .unwrap(),
+                after: serde_json::from_value(
+                    serde_json::json!([{"run":"capture-after"},{"run":"forge-after"}]),
+                )
+                .unwrap(),
             },
             context: Context::default(),
-            environment_changes: Default::default(),
+            environment_changes: crate::launcher::linux_plugin::resolved_plan_environment_changes(
+                &command,
+            )
+            .unwrap(),
         };
         let launched = control
             .prepare_with_limits(
@@ -3095,6 +3138,17 @@ KORRID_TEST_PLUGIN_EXIT_WRITER=1 KORRI_LAUNCH_EXIT_STATUS_FILE="$source" KORRI_L
             }
         );
         let args = fs::read_to_string(observed).unwrap();
+        assert_eq!(
+            fs::read_to_string(writes).unwrap(),
+            "3\n0\n3\n3\n",
+            "hooks can write their own channel, never the game's status"
+        );
+        let game_plan = crate::launcher::plugin_launch::prepared_plan(&command).unwrap();
+        assert!(
+            args.lines()
+                .any(|arg| arg == format!("--setenv=PATH={}", game_plan.env["PATH"])),
+            "the hook and final game must receive the same resolved PATH"
+        );
         assert!(
             args.lines()
                 .any(|arg| arg == "--setenv=KORRI_SESSION_RESULT=exited"),
@@ -3105,5 +3159,53 @@ KORRID_TEST_PLUGIN_EXIT_WRITER=1 KORRI_LAUNCH_EXIT_STATUS_FILE="$source" KORRI_L
                 .any(|arg| arg == "--setenv=KORRI_EXIT_STATUS=0"),
             "{args}"
         );
+    }
+}
+
+#[cfg(test)]
+mod named_hook_failure_tests {
+    use super::*;
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    #[test]
+    fn refusal_names_the_authored_step_or_index_and_reports_exit_status_without_helper_path() {
+        let root = tempfile::tempdir().unwrap();
+        let run = root.path().join("systemd-run");
+        let ctl = root.path().join("systemctl");
+        fs::write(&run, "#!/bin/sh\nexit 3\n").unwrap();
+        fs::write(&ctl, "#!/bin/sh\nprintf 'LoadState=not-found\\n'\n").unwrap();
+        for path in [&run, &ctl] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let backend = SystemdLaunchUnitBackend::new(run, ctl, 1000, 1000).unwrap();
+        for name in [Some("must-fail"), None] {
+            let mut step = serde_json::json!({"run":"exit 3"});
+            if let Some(name) = name {
+                step["name"] = name.into();
+            }
+            let steps =
+                serde_json::from_value::<Vec<crate::config::HookBeforeStep>>(serde_json::json!([
+                    step
+                ]))
+                .unwrap();
+            let failure = crate::host::hooks::before(
+                &backend,
+                "0123456789abcdef0123456789abcdef",
+                &["game".into()],
+                &BTreeMap::new(),
+                &steps,
+                &mut vec![],
+                &LaunchSandbox::default(),
+            )
+            .unwrap_err();
+            assert_eq!(failure.code, "HookFailed");
+            assert_eq!(
+                failure.message,
+                format!(
+                    "HookFailed {{ phase: before, step: {}, reason: exited with status 3 }}",
+                    name.unwrap_or("0")
+                )
+            );
+        }
     }
 }
