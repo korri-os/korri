@@ -541,6 +541,8 @@ connect timeout and stall detection still end a dead request. `method` and
 null fields, other methods, or a form-encoded body above 8192 characters fails
 before any request in that turn is sent. korrid uses the existing game-download
 sender and `application/x-www-form-urlencoded` encoding, not a second client.
+The sender owns a form POST's Content-Type; a conflicting provider header
+fails admission (a matching header is not duplicated).
 After POST, 301/302/303 become GET without the body; 307/308 repeat the POST.
 This narrow addition supports public raw Bitsy attachments on itch.io; it
 adds no cookie session, authorization, host wildcard, or resource-limit change
