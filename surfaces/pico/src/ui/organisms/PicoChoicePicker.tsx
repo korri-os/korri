@@ -12,7 +12,8 @@ import { PicoCard } from "../molecules/PicoCard"
  * A yellow card, because it is a question, over a solid screen. The cursor
  * starts on the first value and returns to the row that opened the list when
  * it closes. The card scrolls with the cursor when the list is longer than
- * the screen.
+ * the screen. It reads no keys: Back reaches it as the host's semantic
+ * action, and the surface's update closes the question (PickingChoice).
  */
 export function PicoChoicePicker({
   title,
@@ -42,13 +43,7 @@ export function PicoChoicePicker({
   return (
     <div className="pico-choice-picker">
       {/* data-block-exit keeps the host's directional focus inside the list. */}
-      <div aria-labelledby={titleId} aria-modal className="pico-choice-picker-dialog" data-block-exit ref={dialog} role="dialog"
-        onKeyDown={(event) => {
-          if (event.key !== "Escape") return
-          event.preventDefault()
-          event.stopPropagation()
-          onCancel()
-        }}>
+      <div aria-labelledby={titleId} aria-modal className="pico-choice-picker-dialog" data-block-exit ref={dialog} role="dialog">
         <PicoCard kicker="CHOOSE ONE" title={title} titleId={titleId} tone="ask">
           {description === undefined ? null : <p className="pico-choice-picker-description">{description}</p>}
           <ul className="pico-choice-picker-list">

@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useFixtureDpad } from "../../fixtures/fixture-dpad"
 import { PicoChoicePicker } from "./PicoChoicePicker"
 
 export const name = "Choice Picker"
@@ -15,9 +16,10 @@ export default function PicoChoicePickerPart() {
   return <PicoChoicePicker description="4 more settings this runner offers." onCancel={() => undefined} onChoose={() => undefined} options={SETTINGS} title="Add setting" />
 }
 
-/** The chosen value, kept in the part, so the list answers a press. */
+/** The chosen value, kept in the part, so the list answers a press; B cancels, as the surface's Back does. */
 export function Choosing() {
   const [chosen, setChosen] = useState<string>()
+  useFixtureDpad({ onBack: () => setChosen(undefined) })
   return (
     <PicoChoicePicker
       description={chosen === undefined ? "Nothing chosen yet." : `Chose ${chosen}.`}
