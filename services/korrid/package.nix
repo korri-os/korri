@@ -17,18 +17,21 @@ let
       let
         relative = relativeSourcePath path;
         inCrate = lib.hasPrefix "services/korrid/" relative;
+        # The controller-lifecycle regression uses inputd's real seat runtime.
+        inSeatRuntime = lib.hasPrefix "services/inputd/" relative;
         inTreaty = lib.hasPrefix "contracts/input/" relative;
       in
       toString path == sourceRootString
       || builtins.elem relative [
         "services"
         "services/korrid"
+        "services/inputd"
         "contracts"
         "contracts/input"
       ]
       # Immutable producer declaration snapshots for consumer tests only.
       || lib.hasPrefix "services/korrid/tests/fixtures/first-party/" relative
-      || ((inCrate || inTreaty) && craneLib.filterCargoSources path type)
+      || ((inCrate || inSeatRuntime || inTreaty) && craneLib.filterCargoSources path type)
       # The shared scheduler is host runtime source included by completion.rs.
       || relative == "services/korrid/src/script/completion.js"
       # The code-generation seal is host runtime source included by preparation.rs.
