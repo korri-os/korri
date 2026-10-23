@@ -1646,6 +1646,7 @@ enum RpcSurface {
 
 #[derive(Clone)]
 struct AppState {
+    remote: Option<upstreams::UpstreamRegistry>,
     saves: Option<Arc<saves::peer::SavePeerService>>,
     acquisition: acquisition::AcquisitionCoordinator,
     network: network::NetworkService,
@@ -2475,6 +2476,9 @@ async fn dispatch(
         if let Some(response) = stream_play::rights::refusal(host, authorization, &request).await {
             return Ok(response);
         }
+    }
+    if let Some(response) = stream_play::device::dispatch(state, authorization, &request).await {
+        return Ok(response);
     }
     let mut response = match request {
         RpcRequest::SaveObject(_) => return Err(authorization::AuthorizationDenied),
@@ -4315,6 +4319,7 @@ fn brain_app_state(
     let local_owner_public_key = brain_owner_public_key(&private_state_root);
     let portal_access = PortalAccess::new(rpc_capability, allowed_origin, PortalPermission::Full);
     let state = AppState {
+        remote: None,
         saves: None,
         acquisition: acquisition::AcquisitionCoordinator::default(),
         network: network::NetworkService::default(),
@@ -4531,6 +4536,7 @@ fn app_states_with(
     let overlay_intent = Arc::new(Mutex::new(None));
     let network = network::NetworkService::default();
     let lan = AppState {
+        remote: None,
         saves: None,
         acquisition: acquisition.clone(),
         network: network.clone(),
@@ -4544,6 +4550,7 @@ fn app_states_with(
         overlay_intent: overlay_intent.clone(),
     };
     let local = AppState {
+        remote: None,
         saves: None,
         acquisition,
         network,
@@ -4626,6 +4633,9 @@ fn secure_host_routers_with_federation(
 ) -> (Router, Router) {
     let private_input = runtime.private_input_router();
     let (mut lan, mut local) = app_states(runtime.clone());
+    let peers = stream_play::device::registry(&runtime, &resources);
+    lan.remote = Some(peers.clone());
+    local.remote = Some(peers);
     let sessions = runtime.clone();
     let save_peer = Arc::new(
         saves::peer::SavePeerService::new(

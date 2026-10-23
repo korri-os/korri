@@ -352,6 +352,10 @@ pub struct UpstreamRegistry {
 }
 
 impl UpstreamRegistry {
+    pub(crate) fn has_selected_session(&self) -> bool {
+        self.selected().is_some()
+    }
+
     fn build(configs: Vec<UpstreamHostConfig>, credentials: Option<PeerCredentials>) -> Self {
         let mut configuration_error = None;
         let hosts = configs
