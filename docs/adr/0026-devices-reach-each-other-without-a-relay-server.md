@@ -12,7 +12,9 @@ person hosts to carry their traffic.
 - Devices find each other and arrange a connection through public Nostr relays.
   They learn their public address from public STUN servers. Both kinds of
   server only see that devices are active; they never carry the connection.
-- Devices connect directly by hole punching. When that fails, any device of the
+- Devices try every method that needs nothing from the person: IPv6, then
+  automatic router port mapping (UPnP, NAT-PMP or PCP), then hole punching.
+  When all of them fail, any device of the
   same federation that is online and reachable at that moment may relay the
   encrypted traffic. No device is ever designated for this; any device can be
   offline at any time. A device relays only while it is on external power and
@@ -27,7 +29,11 @@ person hosts to carry their traffic.
   is on.
 - Korri hosts a service of its own only when that service is free to run and
   durable, so that it keeps working with no one paying for it or maintaining
-  it.
+  it. The Korri-run fallback Nostr relay that the device-join design proposed
+  (ADR 0025 on the `docs/device-join-design` branch) is dropped: devices use
+  public relays only.
+- The connection library is chosen from a spike that builds the hardest case,
+  two devices away from home, with the strongest candidates.
 
 ## Considered options
 
@@ -38,6 +44,8 @@ person hosts to carry their traffic.
 
 ## Consequences
 
+- Two devices that are both away from home, with no reachable device of the
+  federation, are the weakest case. The owner says it is a common one.
 - Coverage is lower than Tailscale's. Research put direct hole punching at
   about 70% to 90% of network pairs (unaudited). Symmetric NAT on mobile
   carriers is the common failure.
