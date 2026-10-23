@@ -14,7 +14,7 @@ impl DeviceIdentity {
         if local == peer_public_key {
             return Err(IdentityError::Encryption);
         }
-        // The same key agreement used by nip44::encrypt/decrypt in identity.rs.
+        // nip44::encrypt and nip44::decrypt use this key agreement in identity.rs.
         let conversation =
             nostr::nips::nip44::v2::ConversationKey::derive(keys.secret_key(), &peer)
                 .map_err(|_| IdentityError::Encryption)?;

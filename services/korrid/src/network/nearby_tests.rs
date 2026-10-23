@@ -6,7 +6,7 @@ use nostr::{
 };
 use std::sync::atomic::Ordering;
 
-// There is one physical radio and one exported nearby candidate in a process.
+// Each process owns one radio. It exposes one nearby candidate.
 static RADIO_TEST: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn identities() -> (Vec<tempfile::TempDir>, Vec<DeviceIdentity>) {
@@ -61,36 +61,28 @@ fn snapshot(state: PeerState) -> PeerSnapshot {
 }
 
 #[test]
-fn nearby_trigger_requires_no_default_route_failed_member_and_elapsed_backoff() {
+fn nearby_trigger_requires_failed_member_and_elapsed_backoff() {
     let mut backoff = Backoff::default();
     let now = Instant::now();
     let peers = [snapshot(PeerState::Failed {
         error: "unreachable".into(),
     })];
-    assert_eq!(backoff.peer(false, &peers, now), Some("test-peer"));
-    assert_eq!(backoff.peer(true, &peers, now), None);
-    assert_eq!(backoff.peer(false, &[], now), None);
+    assert_eq!(backoff.peer(&peers, now), Some("test-peer"));
+    assert_eq!(backoff.peer(&[], now), None);
     for state in [PeerState::Loading, PeerState::Ready] {
-        assert_eq!(backoff.peer(false, &[snapshot(state)], now), None);
+        assert_eq!(backoff.peer(&[snapshot(state)], now), None);
     }
-    backoff.attempted("test-peer", now);
-    assert_eq!(
-        backoff.peer(false, &peers, now + Duration::from_secs(29)),
-        None
-    );
-    assert_eq!(
-        backoff.peer(false, &peers, now + Duration::from_secs(30)),
-        Some("test-peer")
-    );
-    backoff.attempted("test-peer", now);
-    assert_eq!(
-        backoff.peer(false, &peers, now + Duration::from_secs(59)),
-        None
-    );
-    assert_eq!(
-        backoff.peer(false, &peers, now + Duration::from_secs(60)),
-        Some("test-peer")
-    );
+    for seconds in [30, 60, 120, 240, 300, 300] {
+        backoff.attempted("test-peer", now);
+        assert_eq!(
+            backoff.peer(&peers, now + Duration::from_secs(seconds - 1)),
+            None
+        );
+        assert_eq!(
+            backoff.peer(&peers, now + Duration::from_secs(seconds)),
+            Some("test-peer")
+        );
+    }
 }
 
 fn owned_resources(lower: bool) -> (Vec<tempfile::TempDir>, FederationResources, String) {
@@ -188,11 +180,7 @@ async fn nearby_visible_hidden_network_wins_over_starter_rule_and_higher_key_nev
         assert!(state.calls.lock().unwrap().contains(&"NearbyClient"));
         if !lower {
             state.nearby_visible.store(false, Ordering::SeqCst);
-            assert!(
-                tokio::time::timeout(Duration::from_millis(50), link.start(&peer))
-                    .await
-                    .is_err()
-            );
+            link.start(&peer).await.unwrap();
             assert_eq!(
                 state
                     .calls
@@ -210,7 +198,7 @@ async fn nearby_visible_hidden_network_wins_over_starter_rule_and_higher_key_nev
 }
 
 #[tokio::test]
-async fn nearby_trigger_uses_real_member_snapshot_and_default_route_fact() {
+async fn nearby_trigger_starts_lower_key_without_default_route() {
     let _radio = RADIO_TEST.lock().await;
     let (_roots, resources, peer) = owned_resources(true);
     let derived =
@@ -229,6 +217,7 @@ async fn nearby_trigger_uses_real_member_snapshot_and_default_route_fact() {
         .await
         .unwrap();
     assert!(state.calls.lock().unwrap().is_empty());
+    assert_eq!(state.scan_requests.load(Ordering::SeqCst), 0);
     link.resources
         .directory
         .set_peer_state(
@@ -239,23 +228,11 @@ async fn nearby_trigger_uses_real_member_snapshot_and_default_route_fact() {
             },
         )
         .unwrap();
-    // A kernel route outside NetworkManager also blocks the trigger.
-    link.tick(&mut backoff, &mut refresh_at, true)
-        .await
-        .unwrap();
-    assert!(state.calls.lock().unwrap().is_empty());
-    // A route blocks the trigger, even for a Failed member.
-    // Set the D-Bus property through the fixture's shared physical fact.
-    state.default_route.store(true, Ordering::SeqCst);
-    link.tick(&mut backoff, &mut refresh_at, false)
-        .await
-        .unwrap();
-    assert!(state.calls.lock().unwrap().is_empty());
-    state.default_route.store(false, Ordering::SeqCst);
     link.tick(&mut backoff, &mut refresh_at, false)
         .await
         .unwrap();
     assert!(state.calls.lock().unwrap().contains(&"NearbyAP"));
+    assert_eq!(state.scan_requests.load(Ordering::SeqCst), 1);
     assert!(nearby_peer_ip(&peer).is_some());
     link.stop().await.unwrap();
     let calls = state.calls.lock().unwrap().len();
@@ -385,4 +362,94 @@ async fn nearby_refuses_a_device_outside_the_member_snapshot() {
     assert!(link.start(&"00".repeat(32)).await.is_err());
     assert!(state.calls.lock().unwrap().is_empty());
     assert!(state.home.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn nearby_trigger_connects_to_visible_network_despite_either_default_route() {
+    let _radio = RADIO_TEST.lock().await;
+    for lower in [true, false] {
+        for (kernel_route, nm_route) in [(true, false), (false, true), (true, true)] {
+            let (_roots, resources, peer) = owned_resources(lower);
+            let derived =
+                Credentials::derive(&resources.credentials.identity_snapshot().unwrap(), &peer)
+                    .unwrap();
+            resources
+                .directory
+                .set_peer_state(
+                    &resources.directory.begin_peer_work(&peer).unwrap(),
+                    &peer,
+                    PeerState::Failed {
+                        error: "unreachable".into(),
+                    },
+                )
+                .unwrap();
+            let (_server, bus, state) = dbus::dbus_tests::bus().await;
+            *state.nearby_ssid.lock().unwrap() = Some(derived.ssid);
+            state.default_route.store(nm_route, Ordering::SeqCst);
+            let mut link = NearbyLink {
+                bus,
+                resources,
+                link: None,
+            };
+            let mut backoff = Backoff::default();
+            let mut refresh_at = Instant::now();
+            link.tick(&mut backoff, &mut refresh_at, kernel_route)
+                .await
+                .unwrap();
+            assert!(state.calls.lock().unwrap().contains(&"NearbyClient"));
+            assert!(!state.calls.lock().unwrap().contains(&"NearbyAP"));
+            assert_eq!(state.scan_requests.load(Ordering::SeqCst), 1);
+            assert_eq!(nearby_peer_ip(&peer), Some("10.77.77.1".parse().unwrap()));
+            link.stop().await.unwrap();
+            assert!(state.home.load(Ordering::SeqCst));
+        }
+    }
+}
+
+#[tokio::test]
+async fn nearby_trigger_scans_once_with_either_default_route_and_no_visible_network() {
+    let _radio = RADIO_TEST.lock().await;
+    for (kernel_route, nm_route) in [(true, false), (false, true), (true, true)] {
+        let (_roots, resources, peer) = owned_resources(true);
+        let derived =
+            Credentials::derive(&resources.credentials.identity_snapshot().unwrap(), &peer)
+                .unwrap();
+        resources
+            .directory
+            .set_peer_state(
+                &resources.directory.begin_peer_work(&peer).unwrap(),
+                &peer,
+                PeerState::Failed {
+                    error: "unreachable".into(),
+                },
+            )
+            .unwrap();
+        let (_server, bus, state) = dbus::dbus_tests::bus().await;
+        *state.nearby_ssid.lock().unwrap() = Some(derived.ssid);
+        state.nearby_visible.store(false, Ordering::SeqCst);
+        state.default_route.store(nm_route, Ordering::SeqCst);
+        let mut link = NearbyLink {
+            bus,
+            resources,
+            link: None,
+        };
+        let mut backoff = Backoff::default();
+        let mut refresh_at = Instant::now();
+        link.tick(&mut backoff, &mut refresh_at, kernel_route)
+            .await
+            .unwrap();
+        assert_eq!(state.scan_requests.load(Ordering::SeqCst), 1);
+        assert!(state.calls.lock().unwrap().is_empty());
+        assert!(link.link.is_none());
+        assert!(state.home.load(Ordering::SeqCst));
+        assert_eq!(nearby_peer_ip(&peer), None);
+        link.tick(&mut backoff, &mut refresh_at, kernel_route)
+            .await
+            .unwrap();
+        assert_eq!(
+            state.scan_requests.load(Ordering::SeqCst),
+            1,
+            "backoff blocks another scan"
+        );
+    }
 }

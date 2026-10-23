@@ -37,8 +37,8 @@ pub(super) fn radio_operation() -> Arc<tokio::sync::Mutex<()>> {
         .clone()
 }
 
-/// The known peer's Wi-Fi address, only while its nearby link is up. This is a
-/// LAN candidate, not a default route. The caller supplies the peer's korrid port.
+/// This function returns the peer's Wi-Fi address while its nearby link is up.
+/// The caller uses this LAN candidate with the peer's existing korrid port.
 pub fn nearby_peer_ip(device_public_key: &str) -> Option<IpAddr> {
     let active = ACTIVE_PEER.lock().ok()?;
     active
@@ -132,20 +132,18 @@ impl NearbyLink {
             .identity_snapshot()
             .map_err(|_| NetworkFailure::unavailable())?;
         let credentials = Credentials::derive(&identity, peer)?;
-        let mut point = self.scan(&credentials.ssid).await?;
+        let point = self.scan(&credentials.ssid).await?;
         let starter = point.is_none() && credentials.starter && !client_only;
-        if !starter {
-            while point.is_none() {
-                tokio::time::sleep(Duration::from_secs(3)).await;
-                point = self.scan(&credentials.ssid).await?;
-            }
+        if point.is_none() && !starter {
+            // The trigger applies backoff before it requests another scan.
+            return Ok(());
         }
         let checkpoint = tokio::time::timeout(CALL_TIMEOUT, nm::checkpoint(&self.bus))
             .await
             .map_err(|_| NetworkFailure::timeout())?
             .map_err(|_| NetworkFailure::unavailable())?;
-        // Store the checkpoint before activation. Cancellation also leaves a
-        // handle for stop(), and NM's deadline remains armed if korrid dies.
+        // korrid stores the checkpoint before activation.
+        // Cancellation leaves a handle for stop(). NM keeps its deadline.
         self.link = Some(Link {
             checkpoint,
             active: None,
@@ -243,8 +241,8 @@ impl NearbyLink {
                     .contact_deadline
                     .get_or_insert_with(|| Instant::now() + ATTEMPT_TIMEOUT)
             {
-                // An AP with no peer is not success. Let the existing signed
-                // LAN calls prove contact; otherwise return to home Wi-Fi.
+                // Signed LAN calls prove peer contact.
+                // korrid restores home Wi-Fi if those calls fail.
                 backoff.defer(&peer_key, Instant::now());
                 return self.stop().await;
             }
@@ -254,21 +252,21 @@ impl NearbyLink {
             }
             return Ok(());
         }
-        // A VPN or another network service can install a route outside NM.
-        if kernel_has_default_route {
-            return Ok(());
-        }
-        let has_default = tokio::time::timeout(CALL_TIMEOUT, nm::has_default_route(&self.bus))
-            .await
-            .map_err(|_| NetworkFailure::timeout())?
-            .map_err(|_| NetworkFailure::unavailable())?;
-        if let Some(peer) = backoff.peer(has_default, &peers, Instant::now()) {
+        if let Some(peer) = backoff.peer(&peers, Instant::now()) {
             let local = self
                 .resources
                 .credentials
                 .public_key()
                 .map_err(|_| NetworkFailure::unavailable())?;
-            let result = if local.as_str() < peer {
+            // A default route blocks AP creation, not scans or connections.
+            // A VPN can install a route outside NM.
+            let can_start = local.as_str() < peer
+                && !kernel_has_default_route
+                && matches!(
+                    tokio::time::timeout(CALL_TIMEOUT, nm::has_default_route(&self.bus)).await,
+                    Ok(Ok(false))
+                );
+            let result = if can_start {
                 self.start(peer).await
             } else {
                 self.connect_nearby(peer).await
@@ -299,22 +297,14 @@ impl Drop for NearbyLink {
         if let Ok(mut active) = ACTIVE_PEER.lock() {
             *active = None;
         }
-        // No async work in Drop. NM still owns the home rollback deadline.
+        // Drop does not perform async work. NM keeps the home rollback deadline.
     }
 }
 
 #[derive(Default)]
 struct Backoff(BTreeMap<String, (u32, Instant)>);
 impl Backoff {
-    fn peer<'a>(
-        &self,
-        has_default_route: bool,
-        peers: &'a [PeerSnapshot],
-        now: Instant,
-    ) -> Option<&'a str> {
-        if has_default_route {
-            return None;
-        }
+    fn peer<'a>(&self, peers: &'a [PeerSnapshot], now: Instant) -> Option<&'a str> {
         peers
             .iter()
             .filter(|peer| matches!(peer.state, PeerState::Failed { .. }))
@@ -342,8 +332,9 @@ impl Backoff {
     }
 }
 
-/// One automatic trigger, owned by the korrid server lifetime. It only reads
-/// federation snapshots. Peer transport continues to use the existing LAN path.
+/// korrid owns this task for the server lifetime.
+/// The task only reads federation snapshots.
+/// Peer transport uses the existing LAN path.
 pub async fn run(resources: FederationResources, mut stopped: oneshot::Receiver<()>) {
     let Ok(Ok(bus)) = tokio::time::timeout(CALL_TIMEOUT, Connection::system()).await else {
         log::warn!("nearby link: system bus is unavailable");
@@ -358,7 +349,7 @@ pub async fn run(resources: FederationResources, mut stopped: oneshot::Receiver<
     let recover = tokio::time::timeout(CALL_TIMEOUT, nm::recover_stale(&link.bus)).await;
     drop(radio);
     if !matches!(recover, Ok(Ok(()))) {
-        log::warn!("nearby link: startup restoration failed; NM rollback remains armed");
+        log::warn!("nearby link: startup restoration failed. NM keeps its rollback deadline");
         return;
     }
     let mut backoff = Backoff::default();
@@ -371,11 +362,11 @@ pub async fn run(resources: FederationResources, mut stopped: oneshot::Receiver<
             _ = &mut stopped => break,
             result = link.tick(&mut backoff, &mut refresh_at, kernel_has_default_route) => {
                 if result.is_err() {
-                    log::warn!("nearby link: attempt failed; restoring home network");
+                    log::warn!("nearby link: attempt failed. korrid will restore the home network");
                     if link.stop().await.is_err() {
                         // Clearing the candidate prevents further renewal.
-                        // Keep retrying cleanup; NM also owns a deadline.
-                        log::warn!("nearby link: restoration delayed; NM rollback remains armed");
+                        // korrid retries cleanup. NM also keeps a deadline.
+                        log::warn!("nearby link: restoration needs more time. NM keeps its rollback deadline");
                     }
                 }
             }
@@ -386,7 +377,9 @@ pub async fn run(resources: FederationResources, mut stopped: oneshot::Receiver<
         }
     }
     if link.stop().await.is_err() {
-        log::warn!("nearby link: shutdown restoration delayed; NM rollback remains armed");
+        log::warn!(
+            "nearby link: shutdown restoration needs more time. NM keeps its rollback deadline"
+        );
     }
 }
 

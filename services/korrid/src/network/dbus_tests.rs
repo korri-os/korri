@@ -1,5 +1,5 @@
-//! Exercise the real zbus serializer, properties and activation calls on an
-//! isolated Unix socket. No system bus, radio, profiles or user keys are touched.
+//! The tests exercise real zbus serialization on an isolated Unix socket.
+//! The tests do not access the system bus, a radio, saved profiles or user keys.
 use super::*;
 use std::sync::{
     atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering},
@@ -25,7 +25,7 @@ pub(in crate::network) struct State {
     pub(in crate::network) nearby_ssid: Mutex<Option<String>>,
     pub(in crate::network) nearby_visible: AtomicBool,
     delayed_scan: AtomicBool,
-    scan_requests: AtomicU32,
+    pub(in crate::network) scan_requests: AtomicU32,
     stale: AtomicBool,
     checkpoint: AtomicBool,
     pub(in crate::network) home: AtomicBool,
@@ -235,7 +235,7 @@ impl Manager {
         assert_eq!(device.as_str(), WIFI_PATH);
         assert!(matches!(point.as_str(), "/" | AP_PATH));
         assert!(settings.contains_key("802-11-wireless"));
-        // Validate secrets at the receiver and then zeroize its local copy.
+        // The receiver validates secrets. It then zeroizes its local copy.
         // The recording contains method names only, never settings or keys.
         if let Some(security) = settings.get("802-11-wireless-security") {
             assert_eq!(<&str>::try_from(&security["key-mgmt"]).unwrap(), "wpa-psk");
@@ -626,8 +626,9 @@ async fn nearby_dbus_startup_rolls_back_stale_connection_without_touching_home_p
             "CheckpointDestroy"
         ]
     );
-    // No checkpoint remains after NM's own timed rollback. Remove an orphan
-    // volatile profile too; never delete a saved home profile.
+    // NM's timed rollback removes the checkpoint.
+    // The startup check removes orphan volatile profiles.
+    // It does not delete a saved home profile.
     state.stale.store(true, Ordering::SeqCst);
     nearby::recover_stale(&client).await.unwrap();
     assert_eq!(state.calls.lock().unwrap().last(), Some(&"DeleteNearby"));

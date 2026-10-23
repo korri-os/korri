@@ -36,8 +36,8 @@ pub(in crate::network) async fn scan_for(
         .ok_or(zbus::Error::Failure("no Wi-Fi adapter".into()))?;
     let wireless = proxy(bus, device.as_str(), WIRELESS).await?;
     let previous: i64 = wireless.get_property("LastScan").await?;
-    // A hidden beacon does not carry its SSID. A directed probe supplies the
-    // derived SSID. Read the resulting AP list only after this scan completes.
+    // A hidden beacon does not carry its SSID. A directed probe supplies it.
+    // korrid reads the AP list after NM completes this scan.
     wireless
         .call::<_, _, ()>(
             "RequestScan",
@@ -70,7 +70,7 @@ pub(in crate::network) async fn checkpoint(bus: &Connection) -> zbus::Result<Own
     let device = wifi_device(bus)
         .await?
         .ok_or(zbus::Error::Failure("no Wi-Fi adapter".into()))?;
-    // NM owns the rollback timer. A killed korrid cannot strand home Wi-Fi.
+    // NM owns the rollback timer. NM restores home Wi-Fi if korrid crashes.
     // DELETE_NEW_CONNECTIONS also removes the volatile nearby profile.
     proxy(bus, ROOT, NM)
         .await?
@@ -101,7 +101,7 @@ fn settings<'a>(
         Value::from(if starter { "ap" } else { "infrastructure" }),
     );
     if starter {
-        // These are the radio settings exercised on ath11k and ath12k by the probe.
+        // The probe exercised these radio settings on ath11k and ath12k.
         wireless.insert("band", Value::from("a"));
         wireless.insert("channel", Value::from(36u32));
     }
@@ -192,12 +192,13 @@ pub(in crate::network) async fn restore(
     let manager = proxy(bus, ROOT, NM).await?;
     let checkpoints: Vec<OwnedObjectPath> = manager.get_property("Checkpoints").await?;
     if !checkpoints.contains(checkpoint) {
-        // NM already ran its independent deadline and removed the checkpoint.
+        // NM's rollback timer already restored the network.
+        // NM removed the checkpoint.
         return Ok(());
     }
     let results: HashMap<String, u32> = manager.call("CheckpointRollback", &(checkpoint,)).await?;
     if results.values().any(|result| *result != 0) {
-        // Keep the checkpoint armed if NM could not restore a device.
+        // korrid keeps the checkpoint if NM cannot restore a device.
         return Err(zbus::Error::Failure("nearby rollback failed".into()));
     }
     let remaining: Vec<OwnedObjectPath> = manager.get_property("Checkpoints").await?;
@@ -249,8 +250,8 @@ pub(in crate::network) async fn recover_stale(bus: &Connection) -> zbus::Result<
             restore(bus, &checkpoint).await?;
         }
     }
-    // A completed rollback normally deleted these already. List again so we
-    // never call Delete on an object NM removed during restoration.
+    // korrid reads the profile list again after rollback.
+    // NM can remove profiles during restoration.
     let remaining: Vec<OwnedObjectPath> =
         proxy(bus, SETTINGS, "org.freedesktop.NetworkManager.Settings")
             .await?
