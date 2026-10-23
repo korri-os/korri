@@ -36,7 +36,7 @@ impl Invites {
             self.cache.lock().expect("invites mutex poisoned").clear();
             return;
         }
-        let sessions = match (&state.remote, &state.federation) {
+        let mut sessions = match (&state.remote, &state.federation) {
             (Some(peers), Some(directory)) => match directory.snapshot() {
                 Ok(same_owner) => peers
                     .invite_sessions(
@@ -51,6 +51,13 @@ impl Invites {
             },
             _ => Vec::new(),
         };
+        for invite in &mut sessions {
+            if let Some(person) = &invite.session.person_public_key {
+                if let Some(name) = state.person_names.name(state, person).await {
+                    invite.person_name = name;
+                }
+            }
+        }
         let still_idle = idle(state).await;
         let mut cache = self.cache.lock().expect("invites mutex poisoned");
         // Starts share session_selection; a refresh can cross a start, but it

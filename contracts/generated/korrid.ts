@@ -1610,6 +1610,7 @@ export interface SessionThawRequest {
 export interface SettingsSnapshot {
 	revision: string;
 	deviceName?: string;
+	personName?: string;
 	playerCount: number;
 	/**
 	 * Supported write handlers authorized for this caller. Advisory only:

@@ -306,6 +306,42 @@ impl DeviceIdentity {
     }
 
     /// Build the unsigned NIP-78 event that an external person signer signs.
+    /// Store the exact owner-authored app-data event beside owner.event.json.
+    pub(crate) fn store_person_name(&self, json: &str) -> Result<(), IdentityError> {
+        let IdentityState::Owned {
+            owner_public_key, ..
+        } = self.state()
+        else {
+            return Err(IdentityError::Storage);
+        };
+        if crate::stream_play::person_name::verified_name(json, owner_public_key).is_none() {
+            return Err(IdentityError::InvalidEvent(
+                "invalid person-name record".into(),
+            ));
+        }
+        write_private_atomically(
+            &self.directory.join("person-name.event.json"),
+            json.as_bytes(),
+        )
+    }
+
+    pub(crate) fn person_name_event(&self) -> Option<String> {
+        let IdentityState::Owned {
+            owner_public_key, ..
+        } = self.state()
+        else {
+            return None;
+        };
+        let bytes = read_bounded_optional(
+            &self.directory.join("person-name.event.json"),
+            MAX_EVENT_BYTES,
+        )
+        .ok()??;
+        let json = String::from_utf8(bytes).ok()?;
+        crate::stream_play::person_name::verified_name(&json, owner_public_key)?;
+        Some(json)
+    }
+
     pub fn owner_statement_template(
         &self,
         status: OwnerStatementStatus,

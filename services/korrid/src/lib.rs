@@ -949,6 +949,8 @@ pub struct SettingsSnapshot {
     pub revision: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub person_name: Option<String>,
     pub player_count: u8,
     /// Supported write handlers authorized for this caller. Advisory only:
     /// every write still checks authority and runtime preconditions.
@@ -1646,6 +1648,7 @@ enum RpcSurface {
 
 #[derive(Clone)]
 struct AppState {
+    person_names: stream_play::person_name::device::PersonNames,
     invites: invites::device::Invites,
     session_selection: Arc<tokio::sync::Mutex<()>>,
     remote: Option<upstreams::UpstreamRegistry>,
@@ -3434,6 +3437,13 @@ async fn dispatch(
                 local_settings_required(),
             )),
         },
+        RpcRequest::SettingsUpdate(request)
+            if request.setting_id == stream_play::person_name::SETTING_ID =>
+        {
+            RpcResponse::SettingsUpdate(
+                stream_play::person_name::device::update(state, authorization, &request).await,
+            )
+        }
         RpcRequest::SettingsUpdate(request) => match &state.mode {
             ServerMode::Brain(brain) => {
                 // Brain mode has no authoritative local session transition lock.
@@ -3772,6 +3782,7 @@ async fn dispatch(
         RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Ok(snapshot))
         | RpcResponse::SettingsUpdate(SettingsUpdateOutcome::Ok(snapshot)) => {
             snapshot.editable_setting_ids = editable_setting_ids(state, authorization);
+            stream_play::person_name::device::enrich(state, authorization, snapshot).await;
         }
         _ => {}
     }
@@ -3870,6 +3881,7 @@ fn settings_snapshot(
     SettingsSnapshot {
         revision: settings.revision,
         device_name: settings.device_name,
+        person_name: None,
         player_count: settings.player_count,
         // Dispatch fills caller-specific metadata after the successful read/write.
         editable_setting_ids: Vec::new(),
@@ -4324,6 +4336,7 @@ fn brain_app_state(
     let local_owner_public_key = brain_owner_public_key(&private_state_root);
     let portal_access = PortalAccess::new(rpc_capability, allowed_origin, PortalPermission::Full);
     let state = AppState {
+        person_names: stream_play::person_name::device::PersonNames::default(),
         invites: invites::device::Invites::default(),
         session_selection: Arc::new(tokio::sync::Mutex::new(())),
         remote: None,
@@ -4543,6 +4556,7 @@ fn app_states_with(
     let overlay_intent = Arc::new(Mutex::new(None));
     let network = network::NetworkService::default();
     let lan = AppState {
+        person_names: stream_play::person_name::device::PersonNames::default(),
         invites: invites::device::Invites::default(),
         session_selection: Arc::new(tokio::sync::Mutex::new(())),
         remote: None,
@@ -4559,6 +4573,7 @@ fn app_states_with(
         overlay_intent: overlay_intent.clone(),
     };
     let local = AppState {
+        person_names: lan.person_names.clone(),
         invites: lan.invites.clone(),
         session_selection: lan.session_selection.clone(),
         remote: None,
@@ -4673,6 +4688,7 @@ fn secure_host_routers_with_federation(
     lan.federation = Some(resources.directory.clone());
     local.federation = Some(resources.directory.clone());
     invites::device::spawn_watch(lan.clone());
+    stream_play::person_name::device::spawn_publish(lan.clone());
     lan.identity_switch = identity_switch.clone();
     local.identity_switch = identity_switch;
     let portal = portal_router_for(&lan, portal_access).map(|router| match native_router {

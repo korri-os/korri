@@ -573,6 +573,19 @@ impl LocalPersonSigner {
         if template.len() > MAX_MESSAGE_BYTES {
             return Err(());
         }
+        if let Ok(person_name) = crate::stream_play::person_name::validate_template(template) {
+            let tags = person_name
+                .tags
+                .into_iter()
+                .map(|tag| Tag::parse(tag).map_err(|_| ()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let event = EventBuilder::new(Kind::Custom(person_name.kind), person_name.content)
+                .tags(tags)
+                .custom_created_at(Timestamp::from(person_name.created_at))
+                .finalize(&self.keys)
+                .map_err(|_| ())?;
+            return Ok((self.keys.public_key().to_hex(), event.as_json()));
+        }
         let template = validate_signable_owner_statement_template(template).map_err(|_| ())?;
         if template.device_public_key != self.expected_device_public_key {
             return Err(());
@@ -614,7 +627,9 @@ impl PersonSigner for LocalPersonSigner {
                     signed_event_json,
                 },
                 Err(()) => PersonSignerState::InvalidResponse {
-                    message: "Local signer accepts only a valid owner-binding template".into(),
+                    message:
+                        "Local signer accepts only a valid owner-binding or person-name template"
+                            .into(),
                 },
             };
             *self.state.lock().expect("local signer state poisoned") = next.clone();

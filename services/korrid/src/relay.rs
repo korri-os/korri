@@ -485,6 +485,38 @@ where
         Ok(packets)
     }
 
+    pub(crate) async fn read_person_records(
+        &self,
+        person: &str,
+    ) -> Result<Vec<String>, RelayError> {
+        validate_public_key(person)?;
+        let filter = RelayFilter {
+            kinds: vec![30_078, 0],
+            recipient_public_key: None,
+            author_public_key: Some(person.into()),
+            since: None,
+            limit: MAX_READ_EVENTS,
+        };
+        Ok(self
+            .read_all(&filter)
+            .await
+            .0
+            .into_iter()
+            .map(|event| event.event_json)
+            .collect())
+    }
+
+    pub(crate) async fn publish_person_name(
+        &self,
+        event_json: &str,
+        person: &str,
+    ) -> Result<PublishState, RelayError> {
+        if crate::stream_play::person_name::verified_name(event_json, person).is_none() {
+            return Err(RelayError::Identity);
+        }
+        Ok(self.publish_json(event_json).await)
+    }
+
     async fn read_all(&self, filter: &RelayFilter) -> (Vec<RelayEvent>, usize) {
         let auth: Arc<dyn RelayAuthSigner> = Arc::new(DeviceAuthSigner(self.identity.clone()));
         let results = futures::future::join_all(

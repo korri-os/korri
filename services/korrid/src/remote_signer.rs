@@ -320,6 +320,14 @@ where
         self
     }
 
+    pub(crate) fn person_public_key(&self) -> Option<String> {
+        self.connection
+            .lock()
+            .expect("remote signer lock poisoned")
+            .user_public_key
+            .clone()
+    }
+
     /// NIP-46 `connect` only. The person key is learned from the first signed
     /// owner statement, so the signer needs no `get_public_key` permission.
     pub async fn establish(&self, now: u64) -> Result<(), RemoteSignerError> {
