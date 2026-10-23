@@ -173,7 +173,10 @@ pub(super) fn extract(archive: &Path, work: &Path, limits: &Limits) -> Result<()
         Format::Zip => zip_archive(archive, work, limits, &output),
         Format::SevenZ => seven_z(archive, work, limits, &output),
         Format::Rar => rar(archive, work, limits, &output),
-    }
+    }?;
+    // The file system itself, after the last entry (review P2-1).
+    output.borrow().floor.check()?;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -280,9 +283,10 @@ fn plan(entries: Vec<Entry>, budget: &TraversalBudget) -> Result<Plan, Stop> {
     Ok(plan)
 }
 
-fn create_folders(work: &Path, plan: &Plan) -> Result<(), Stop> {
+fn create_folders(work: &Path, plan: &Plan, shared: &Rc<RefCell<Shared>>) -> Result<(), Stop> {
     // Sorted, so every parent exists before its children.
     for folder in &plan.folders {
+        shared.borrow_mut().floor.reserve_entry()?;
         let path = join(work, folder);
         fs::DirBuilder::new().mode(0o755).create(&path)?;
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
@@ -318,6 +322,7 @@ impl Output {
         declared: u64,
         shared: &Rc<RefCell<Shared>>,
     ) -> Result<Self, Stop> {
+        shared.borrow_mut().floor.reserve_entry()?;
         let path = join(work, path);
         // O_EXCL: a name that collides on a case-insensitive file system fails
         // instead of overwriting.
@@ -454,7 +459,7 @@ fn zip_archive(
         });
     }
     let plan = plan(entries, &limits.budget)?;
-    create_folders(work, &plan)?;
+    create_folders(work, &plan, shared)?;
     for index in 0..zip.len() {
         let mut entry = zip.by_index(index).map_err(unreadable)?;
         if entry.is_dir() {
@@ -765,7 +770,7 @@ fn seven_z(
         });
     }
     let plan = plan(entries, &limits.budget)?;
-    create_folders(work, &plan)?;
+    create_folders(work, &plan, shared)?;
     let mut reader = ArchiveReader::from_archive(parsed, file, Password::empty());
     // One decoder thread, so the dictionary checked above is the memory used.
     reader.set_thread_count(1);
@@ -888,7 +893,7 @@ fn rar(
         });
     }
     let plan = plan(entries, &limits.budget)?;
-    create_folders(work, &plan)?;
+    create_folders(work, &plan, shared)?;
     let mut opened: Vec<Rc<RefCell<Option<Output>>>> = Vec::new();
     let result = parsed.extract_with_control(options, |member| {
         if member.meta.is_directory {

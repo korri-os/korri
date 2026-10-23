@@ -712,3 +712,24 @@ fn reader_throughput() {
         );
     }
 }
+
+/// Review P2-1: folders and empty files take file system blocks too. Each
+/// entry is counted as one block (4096 bytes in the fixed probe), so an
+/// archive of many empty entries stops at the floor.
+#[test]
+fn many_empty_entries_near_the_floor_fail_as_no_space() {
+    let names: Vec<String> = (0..100).map(|i| format!("empty {i:03}.txt")).collect();
+    let entries: Vec<Raw<'_>> = names.iter().map(|name| raw(name, b"")).collect();
+    let mut near = limits();
+    near.space = Some(space::fixed(64 * 1024));
+    let run = unpack_with(&raw_zip(&entries), &near);
+    assert_eq!(run.result.unwrap_err().failure, Failure::NoSpace);
+
+    let folders: Vec<String> = (0..40).map(|i| format!("folder {i:03}/")).collect();
+    let entries: Vec<Raw<'_>> = folders.iter().map(|name| raw(name, b"")).collect();
+    let run = unpack_with(&raw_zip(&entries), &near);
+    assert_eq!(run.result.unwrap_err().failure, Failure::NoSpace);
+    // Ten empty entries fit.
+    let run = unpack_with(&raw_zip(&entries[..10]), &near);
+    assert!(run.result.is_ok());
+}

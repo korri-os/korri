@@ -476,6 +476,12 @@ existing `NoSpace` copy ("There is not enough space for this download.").
   folder, which the sandbox allows, and exits 1 at the floor. korrid then
   reports `NoSpace`, not `Unpack`, because it reads the same floor after the
   exit.
+- **Metadata counts too.** Review decision, 2026-10-23: each folder and
+  each file the extractor creates is counted as one allocation unit
+  (`f_frsize` from `fstatvfs`, usually 4 KiB) before it is created, the
+  least a file system spends on a new entry, so an archive of many empty
+  entries also stops at the floor. After the last entry the extractor reads
+  the file system once more and fails with `NoSpace` if it is below the floor.
 - **Copy change.** `Failure::TooLarge` keeps one use: the 512 KiB provider
   page bound in `fetch_text`, which reaches the person as the
   `ProviderUnreachable` copy, not as its own. Its own copy, "The download is

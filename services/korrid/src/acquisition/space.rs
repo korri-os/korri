@@ -27,6 +27,9 @@ pub(super) const WRITE_CHUNK: usize = 64 * 1024;
 pub(super) struct Space {
     pub available: u64,
     pub size: u64,
+    /// `f_frsize`, the allocation unit: the least a folder or an empty
+    /// file can cost (review P2-1).
+    pub block: u64,
 }
 
 /// Reads the space of the file system that holds an open folder.
@@ -43,6 +46,7 @@ pub(super) fn fstatvfs(file: &File) -> io::Result<Space> {
     Ok(Space {
         available: (stat.f_bavail as u64).saturating_mul(unit),
         size: (stat.f_blocks as u64).saturating_mul(unit),
+        block: unit.max(1),
     })
 }
 
@@ -74,10 +78,35 @@ impl Floor {
     /// own figure can lag behind delayed allocation, so the bytes counted
     /// since the start bound it too.
     pub(super) fn room(&self) -> Result<u64, Failure> {
+        let (available, floor, _) = self.measure()?;
+        Ok(available.saturating_sub(floor))
+    }
+
+    /// (available, floor, block) now, the available figure bounded by the
+    /// bytes counted since the start.
+    fn measure(&self) -> Result<(u64, u64, u64), Failure> {
         let space = (self.probe)(&self.folder)?;
         let floor = (u128::from(space.size) * FLOOR_PERCENT).div_ceil(100) as u64;
         let available = space.available.min(self.start.saturating_sub(self.written));
-        Ok(available.saturating_sub(floor))
+        Ok((available, floor, space.block))
+    }
+
+    /// Call before each folder or file is created: one allocation unit for
+    /// its metadata and first block, so many empty entries count too.
+    pub(super) fn reserve_entry(&mut self) -> Result<(), Failure> {
+        let (_, _, block) = self.measure()?;
+        self.reserve(block)
+    }
+
+    /// After the last entry: the file system itself must still be at or
+    /// above the floor, whatever the counts said.
+    pub(super) fn check(&self) -> Result<(), Failure> {
+        let space = (self.probe)(&self.folder)?;
+        let floor = (u128::from(space.size) * FLOOR_PERCENT).div_ceil(100) as u64;
+        if space.available < floor {
+            return Err(Failure::NoSpace);
+        }
+        Ok(())
     }
 
     /// Call before each write of `bytes`.
@@ -97,6 +126,7 @@ pub(super) fn fixed(room: u64) -> Probe {
         Ok(Space {
             available: 5_000 + room,
             size: 100_000,
+            block: 4096,
         })
     })
 }
@@ -122,6 +152,7 @@ mod tests {
             Ok(Space {
                 available: 1,
                 size: 19,
+                block: 1,
             })
         });
         assert_eq!(
