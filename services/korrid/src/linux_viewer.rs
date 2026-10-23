@@ -1,7 +1,10 @@
 //! Injected authority for one exact local Linux stream viewer.
 //!
-//! This module deliberately does not choose or package a viewer executable.
-//! The production systemd/Moonlight adapter is a separate deployment slice.
+//! The production adapter resolves the enabled Moonlight plugin, provisions its
+//! certificate through the broker, and uses exact-launch systemd and focus.
+
+mod production;
+pub use production::{production_viewer, CertificateProvision, LocalSeats};
 
 use futures::future::BoxFuture;
 
