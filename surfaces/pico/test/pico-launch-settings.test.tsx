@@ -314,3 +314,36 @@ describe("places: layer by runner scope", () => {
     expect(screen.getByText("Battery saver")).toBeTruthy()
   })
 })
+
+describe("launch modifiers", () => {
+  const game = launchLayerIndex(launch.ready, "game:wario")
+  const profile = launchLayerIndex(launch.ready, "profile:battery")
+
+  test("each modifier is its own captioned group: on, off or Inherit, with where its value comes from", () => {
+    const host = createFixtureHost()
+    render(<PicoSurface host={host} model={withLaunchSettings(fixtureModel, launch.noProfilePicked)} />)
+    fireEvent.click(screen.getAllByRole("tab")[game]!)
+    expect(screen.getByText("MODIFIER GAMESCOPE")).toBeTruthy()
+    const row = screen.getByRole("button", { name: /^Gamescope/ }).closest("li")
+    if (row === null) throw new Error("no Gamescope row")
+    expect(within(row).getByText("On from Device")).toBeTruthy()
+    expect(within(row).getByText("DEVICE-ONLY")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /^Gamescope/ }))
+    expect(host.calls).toEqual([`setting:${launchRowId("game:wario/any", "modifier:korri/gamescope:enabled")}:true`])
+  })
+
+  test("a profile turning Gamescope off says so on its own layer", () => {
+    render(<PicoSurface host={createFixtureHost()} model={ready} />)
+    fireEvent.click(screen.getAllByRole("tab")[profile]!)
+    const row = screen.getByRole("button", { name: /^Gamescope/ }).closest("li")
+    expect(row?.textContent).toContain("from Profile Battery saver")
+  })
+
+  test("a modifier with no schema has its on/off row and no Add setting", () => {
+    render(<PicoSurface host={createFixtureHost()} model={ready} />)
+    fireEvent.click(screen.getAllByRole("tab")[game]!)
+    expect(screen.getByRole("button", { name: /^MangoHud/ })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Add MangoHud setting/ })).toBeNull()
+    expect(screen.getByRole("button", { name: /Add Gamescope setting/ })).toBeTruthy()
+  })
+})

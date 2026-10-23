@@ -154,6 +154,18 @@ export function RunnerUnavailable() {
 export function RunnerFactsUnavailable() {
   return <Live editor={launch.factsUnavailable} scope={scopeOf(launch.factsUnavailable, "gpSP")} script={[focus(launchRowId("device/runner:retroarch/gpsp", "runner-facts:unavailable"))]} />
 }
+/** Battery saver not picked: Gamescope inherits On from the Device, and says so. */
+export function GamescopeInherited() {
+  return <Live editor={launch.noProfilePicked} script={[focus(launchRowId("game:wario/any", "modifier:korri/gamescope:enabled"))]} />
+}
+/** Battery saver turns Gamescope off for itself. */
+export function GamescopeOffInProfile() {
+  return <Live editor={launch.ready} script={[focus(launchRowId("profile:battery/any", "modifier:korri/gamescope:enabled"))]} />
+}
+/** MangoHud describes no settings: on, off or Inherit, and nothing to add. */
+export function ModifierNoSchema() {
+  return <Live editor={launch.ready} script={[focus(launchRowId("game:wario/any", "modifier:korri/mangohud:enabled"))]} />
+}
 /** Facts present, but no devfreq GPU: one read-only GPU line. */
 export function NoGpu() {
   return <Live editor={launch.noGpu} script={[focus(launchRowId("game:wario/any", "cpu.min"))]} />

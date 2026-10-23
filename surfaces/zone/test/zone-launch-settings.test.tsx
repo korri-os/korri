@@ -81,7 +81,7 @@ describe("launch settings: the page", () => {
     expect(screen.getByText(byWords("Launch settings"))).toBeTruthy()
     // CPU max on every layer but the profile names the profile that sets it.
     expect(screen.getAllByText("61 % (1.10 GHz) from Profile Battery saver")).toHaveLength(4)
-    expect(screen.getByText("from Profile Battery saver")).toBeTruthy()
+    expect(screen.getAllByText("from Profile Battery saver").length).toBeGreaterThan(0)
     // Zone's note stands under the focused row, the first one: RUNNER SCOPE.
     expect(screen.getByText("Which runners the values below apply to.")).toBeTruthy()
     expect(screen.getAllByText("Device-only").length).toBeGreaterThan(10)
@@ -216,5 +216,31 @@ describe("launch settings: places by runner scope", () => {
     expect(screen.getByText(/names runner retroarch\/vba-m, which isn't installed/)).toBeTruthy()
     view.rerender(<ZoneSurface host={createFixtureHost()} model={withLaunchSettings(fixtureModel, launch.factsUnavailable)} />)
     expect(screen.getByText("gpSP facts are unavailable: launch.prepare timed out after 2 s.")).toBeTruthy()
+  })
+})
+
+describe("launch settings: modifiers", () => {
+  const picked = withLaunchSettings(fixtureModel, launch.noProfilePicked)
+
+  test("each modifier steps On, Off or Inherit on every place; a step goes to Korri", () => {
+    const state = zoneSurfaceStart(picked, "blend")
+    const gamescope = launchRowId("game:wario/any", "modifier:korri/gamescope:enabled")
+    expect(update(state, { _tag: "Launch", message: { _tag: "SteppedRow", rowId: gamescope, direction: 1 } }, picked).requests)
+      .toEqual([{ _tag: "ChangeSetting", settingId: gamescope, value: "true" }])
+    render(<ZoneSurface host={createFixtureHost()} model={picked} />)
+    expect(screen.getAllByText("On from Device").length).toBeGreaterThan(0)
+  })
+
+  test("a profile turning Gamescope off says so, and the Game inherits it", () => {
+    render(<ZoneSurface host={createFixtureHost()} model={ready} />)
+    expect(screen.getAllByText("from Profile Battery saver").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Off from Profile Battery saver").length).toBeGreaterThan(0)
+  })
+
+  test("a modifier with no schema has its row and no ADD SETTING", () => {
+    render(<ZoneSurface host={createFixtureHost()} model={ready} />)
+    expect(screen.getAllByText(byWords("MangoHud")).length).toBeGreaterThan(0)
+    expect(screen.queryByText(byWords("Add MangoHud setting"))).toBeNull()
+    expect(screen.getAllByText(byWords("Add Gamescope setting")).length).toBeGreaterThan(0)
   })
 })

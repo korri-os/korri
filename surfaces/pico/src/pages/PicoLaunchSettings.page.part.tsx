@@ -1,4 +1,5 @@
 import type { SurfaceLaunchSettings, SurfaceModel } from "@contracts/surface/korri-surface"
+import { useEffect } from "react"
 import { createFixtureHost, fixtureModel } from "../fixtures/fixture-host"
 import {
   launchLayerIndex,
@@ -24,10 +25,18 @@ export const note = "A game's launch settings: a spine per layer, a tab per runn
 function Launch({
   model,
   opening = [],
+  cursor,
 }: {
   readonly model: SurfaceModel
   readonly opening?: readonly PicoMessage[]
+  /** The row the cursor starts on, by its label, as the d-pad would bring it. */
+  readonly cursor?: string
 }) {
+  useEffect(() => {
+    if (cursor === undefined) return
+    const rows = document.querySelectorAll<HTMLElement>(".pico-setting-row .pico-row")
+    ;[...rows].find(row => row.textContent?.startsWith(cursor) === true)?.focus()
+  }, [cursor])
   const host = createFixtureHost()
   const { model: nav, dispatch } = usePicoProgram<PicoNavigation, PicoMessage, SurfaceModel>(
     () => [{ _tag: "KorriPublished" } as PicoMessage, ...opening].reduce((current, message) => update(current, message, model).model, initialNavigation()),
@@ -183,6 +192,18 @@ export function RunnerFactsUnavailable() {
 }
 /** Facts present, but no devfreq GPU: one read-only GPU line instead of choices. */
 export function NoGpu() { return <Launch model={open(launch.noGpu)} opening={on(launch.noGpu, "game:wario")} /> }
+/** Battery saver not picked: Gamescope inherits On from the Device, and says so. */
+export function GamescopeInherited() {
+  return <Launch cursor="Gamescope" model={open(launch.noProfilePicked)} opening={on(launch.noProfilePicked, "game:wario")} />
+}
+/** Battery saver turns Gamescope off for itself. */
+export function GamescopeOffInProfile() {
+  return <Launch cursor="Gamescope" model={open(launch.ready)} opening={on(launch.ready, "profile:battery")} />
+}
+/** MangoHud describes no settings: on, off or Inherit, and nothing to add. */
+export function ModifierNoSchema() {
+  return <Launch cursor="MangoHud" model={open(launch.ready)} opening={on(launch.ready, "game:wario")} />
+}
 /** No device facts: 10 % steps, and the rows say so. */
 export function FactsMissing() {
   return <Launch model={open(launch.factsMissing)} opening={on(launch.factsMissing, "game:wario")} />

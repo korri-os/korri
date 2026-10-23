@@ -142,6 +142,72 @@ function limitGroups(world: World, layer: Layer, scope: Scope): SurfaceSettingGr
   return [cpu, gpu]
 }
 
+/** Gamescope, on for the device with a width set there and off in the
+ * profile Battery saver; MangoHud, which describes no settings. */
+function modifierGroups(world: World, layer: Layer, scope: Scope): SurfaceSettingGroup[] {
+  const place = placeId(layer, scope)
+  const id = (path: string) => launchRowId(place, path)
+  const battery = world.selected === BATTERY.id && world.profiles.includes(BATTERY)
+  const gamescope = battery
+    ? { value: "Off", from: "Profile Battery saver", place: "profile:battery/any" }
+    : { value: "On", from: "Device", place: "device/any" }
+  const own = place === "device/any" ? "On" : place === "profile:battery/any" ? "Off" : undefined
+  const onOff = (selected: string) => ({
+    kind: "choice" as const,
+    choices: [INHERIT, { value: "true", label: "On" }, { value: "false", label: "Off" }],
+    selected,
+  })
+  const width: SurfaceSettingItem[] = place === "device/any" ? [{
+    id: id("modifier:korri/gamescope:setting:output-width"),
+    label: "Output width",
+    value: "1280",
+    source: "from Device",
+    scope: "device",
+    interaction: { kind: "number", value: 1280, min: 320, max: 7680, step: 1, clearable: true },
+  }] : []
+  const unset = [
+    ...(width.length === 0 ? [{ value: "output-width", label: "Output width" }] : []),
+    { value: "output-height", label: "Output height" },
+    { value: "filter", label: "Upscale filter" },
+  ]
+  return [
+    {
+      title: "Modifier Gamescope",
+      items: [
+        {
+          id: id("modifier:korri/gamescope:enabled"),
+          label: "Gamescope",
+          value: own ?? "Inherit",
+          description: NEXT,
+          source: inForce(world, place, scope, gamescope.value, gamescope.from, gamescope.place),
+          scope: "device",
+          interaction: onOff(own === "On" ? "true" : own === "Off" ? "false" : "inherit"),
+        },
+        ...width,
+        {
+          id: id("modifier:korri/gamescope:add-setting"),
+          label: "Add Gamescope setting",
+          value: "Choose a setting",
+          description: `${unset.length} more settings Gamescope offers.`,
+          interaction: { kind: "choice", choices: unset, selected: "" },
+        },
+      ],
+    },
+    {
+      title: "Modifier MangoHud",
+      items: [{
+        id: id("modifier:korri/mangohud:enabled"),
+        label: "MangoHud",
+        value: "Inherit",
+        description: NEXT,
+        ...(scope.runner !== undefined && scope.runner !== world.inUse ? { source: inForce(world, place, scope, "", "", "") } : {}),
+        scope: "device",
+        interaction: onOff("inherit"),
+      }],
+    },
+  ]
+}
+
 function runnerGroup(world: World, layer: Layer): SurfaceSettingGroup {
   const place = placeId(layer, ANY)
   const named = layer.id === "game:wario" ? world.missingRunner ?? (world.inUse === undefined ? undefined : world.inUse) : undefined
@@ -350,6 +416,7 @@ function placesOf(world: World): readonly SurfaceLaunchSettingsPlace[] {
       scope === ANY ? runnerGroup(world, layer) : undefined,
       settingsGroup(world, layer, scope),
       ...limitGroups(world, layer, scope),
+      ...modifierGroups(world, layer, scope),
       layer === GAME && scope === ANY ? profilePickGroup(world) : undefined,
       profile !== undefined && scope === ANY ? profileOwnGroup(world, profile) : undefined,
       fileGroup(layer, scope),
@@ -386,6 +453,8 @@ export const launchSettingsFixtures = {
   loading: { _tag: "Loading", gameTitle: "Wario Land 4", places: [], profiles: [], notes: [], actions: [LAUNCH_CLOSE] },
   ready: ready(READY),
   noProfiles: ready({ ...READY, profiles: [], selected: undefined }),
+  /** Battery saver is not picked: Gamescope is on from the Device everywhere else. */
+  noProfilePicked: ready({ ...READY, selected: undefined }),
   manyProfiles: ready({
     ...READY,
     profiles: [
