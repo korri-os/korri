@@ -24,6 +24,13 @@ word, including `--help`, starts the daemon.
   subcommands of `korrid`. It never appears in `korri`'s help.
 - When a portal label and a `CONTEXT.md` term disagree, one word is chosen,
   and the portal, `korri` and the glossary all adopt it.
+- The words bind `korri`, the surface treaty, and the copy Korri itself
+  writes, such as the host's settings labels. A surface owns its own text, so
+  for surfaces the words are guidance. `contracts/surface/` points surface
+  authors to the glossary and does not copy it.
+- `--json` prints the RPC wire types as they are. The wire types are renamed
+  to the product words, so there is one schema. A breaking wire change is
+  also a breaking change for scripts.
 - The feel to match is `gh` and `tailscale`.
 - Only the device's person account and root may use `korri` on a device.
   Shell access already means full trust (ADR 0029).
@@ -39,8 +46,12 @@ word, including `--help`, starts the daemon.
   policy table widens so that a device of the same owner can also start
   sessions and manage plugins. Each widening is its own security change with
   its own review.
-- The top level has `status`, `version`, `completion` and `play` beside the
-  mirrored settings areas.
+- The top level has `status`, `version`, `completion`, and the live-session
+  verbs `play`, `leave`, `resume` and `end`, beside the mirrored areas.
+  Getting games from providers is `korri get`, with `korri downloads` for
+  progress.
+- Sleep, power off and Restart Korri wait until korrid has calls for them,
+  so the portal and `korri` share one path.
 - `korri` is Rust, in `clients/cli/`.
 - The old `korrid catalog` and `korrid identity` commands go in one cut,
   after `korri` covers them. There is no alias.
