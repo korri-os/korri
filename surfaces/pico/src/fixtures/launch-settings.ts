@@ -296,33 +296,46 @@ function settingsGroup(world: World, layer: Layer, scope: Scope): SurfaceSetting
 
 /**
  * Values only files set: shown, never changed here. A list kind (arguments,
- * hooks) is the list in force, one row per place's part in merge order: the
- * Device's routine night-mode, then the Game's own parts. A place whose runner
- * is not in use shows only its own parts, of which these fixtures have none.
+ * hooks) shows only this place's parts, its routines first, marked In force
+ * or Not in force: the Device's routine night-mode and its own hook, the
+ * Game's arguments, the Game's hook for the RetroArch family, and gpSP's
+ * hook, not in force while mGBA runs.
  */
 function fileGroup(world: World, layer: Layer, scope: Scope): SurfaceSettingGroup | undefined {
   const place = placeId(layer, scope)
-  const from = `from ${placeTitle(layer, scope)}`
+  const here = placeTitle(layer, scope)
   const describe = `Set in ${layer.file}. Change it there.`
-  const row = (key: string, label: string, value: string, source = from, description = describe): SurfaceSettingItem =>
-    ({ id: launchRowId(place, `file:${key}`), label, value, source, scope: "device", description })
-  const own = layer.id === "game:wario" && scope === ANY ? [
-    row("env:SDL_AUDIODRIVER", "Environment SDL_AUDIODRIVER", "pipewire"),
-    row("env:MESA_DEBUG", "Environment MESA_DEBUG", "Unset"),
-    row("cwd", "Working folder", "/srv/korri/storage/games/gba/Wario_Land_4_(USA,_Europe)_[!]"),
-  ] : []
-  const inForce = scope.runner === undefined ? scope.kind === "any" || world.inUse !== undefined : scope.runner === world.inUse
   const DEVICE_FILE = "Set in device.yaml. Change it there."
-  const LIBRARY_FILE = "Set in library.yaml. Change it there."
-  const lists = !inForce ? [] : [
-    row("args:append:0", "Arguments after", "--verbose --save-dir=/srv/korri/storage/saves/person/wario-land-4-usa-rev-1", "from Game", LIBRARY_FILE),
-    row("hooks:before:0", "Before launch", "brightnessctl set 30%; systemctl --user start fan-quiet", "routine night-mode, used by Device", DEVICE_FILE),
-    ...(world.inUse === undefined ? [] : [
-      row("hooks:before:1", "Before launch", "notify-send 'Wario Land 4 is starting'", "from Game for family retroarch", LIBRARY_FILE),
-    ]),
-    row("hooks:after:0", "After the session", "brightnessctl set 100%", "routine night-mode, used by Device", DEVICE_FILE),
-  ]
-  const items = [...own, ...lists]
+  const row = (key: string, label: string, value: string, source = `from ${here}`, description = describe): SurfaceSettingItem =>
+    ({ id: launchRowId(place, `file:${key}`), label, value, source, scope: "device", description })
+  const inForce = scope.runner === undefined ? scope.kind === "any" || world.inUse !== undefined : scope.runner === world.inUse
+  const notInForce = world.inUse === undefined ? "Applies once a runner is chosen" : `Not in force: ${world.inUse} runs this game`
+  const items: SurfaceSettingItem[] = []
+  if (place === "device/any") {
+    items.push(
+      row("hooks:before:0", "Before launch", "brightnessctl set 30%; systemctl --user start fan-quiet", "In force: routine night-mode, used by Device", DEVICE_FILE),
+      row("hooks:before:1", "Before launch", "sync", "In force: from Device"),
+      row("hooks:after:0", "After the session", "brightnessctl set 100%", "In force: routine night-mode, used by Device", DEVICE_FILE),
+    )
+  }
+  if (place === "game:wario/any") {
+    items.push(
+      row("env:SDL_AUDIODRIVER", "Environment SDL_AUDIODRIVER", "pipewire"),
+      row("env:MESA_DEBUG", "Environment MESA_DEBUG", "Unset"),
+      row("cwd", "Working folder", "/srv/korri/storage/games/gba/Wario_Land_4_(USA,_Europe)_[!]"),
+      row("args:append:0", "Arguments after", "--verbose --save-dir=/srv/korri/storage/saves/person/wario-land-4-usa-rev-1", "In force: from Game"),
+    )
+  }
+  if (place === "game:wario/family:retroarch") {
+    items.push(inForce
+      ? row("hooks:before:0", "Before launch", "notify-send 'Wario Land 4 is starting'", `In force: from ${here}`)
+      : row("hooks:before:own", "Before launch", "notify-send 'Wario Land 4 is starting'", notInForce))
+  }
+  if (place === "game:wario/runner:retroarch/gpsp") {
+    items.push(inForce
+      ? row("hooks:before:0", "Before launch", "gpsp-bios-check --bios /srv/korri/storage/bios/gba_bios.bin", `In force: from ${here}`)
+      : row("hooks:before:own", "Before launch", "gpsp-bios-check --bios /srv/korri/storage/bios/gba_bios.bin", notInForce))
+  }
   return items.length === 0 ? undefined : { title: "From files", items }
 }
 

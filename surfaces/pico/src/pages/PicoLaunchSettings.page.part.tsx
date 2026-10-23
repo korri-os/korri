@@ -192,10 +192,17 @@ export function RunnerFactsUnavailable() {
 }
 /** Facts present, but no devfreq GPU: one read-only GPU line instead of choices. */
 export function NoGpu() { return <Launch model={open(launch.noGpu)} opening={on(launch.noGpu, "game:wario")} /> }
-/** Hooks before launch from two places and a routine, in merge order: the
- * Device's routine night-mode, then the Game's hook for the RetroArch family. */
+/** The Device's own hooks: the routine night-mode it uses, then its own step, in force. */
 export function HooksFromPlacesAndRoutine() {
+  return <Launch cursor="Before launch" model={open(launch.ready)} />
+}
+/** The Game's own hook for the RetroArch family, in force while mGBA runs. */
+export function HooksOnGame() {
   return <Launch cursor="Before launch" model={open(launch.ready)} opening={on(launch.ready, "game:wario", "Family retroarch")} />
+}
+/** gpSP's own hook on the Game: not in force while mGBA runs. */
+export function HooksNotInForce() {
+  return <Launch cursor="Before launch" model={open(launch.ready)} opening={on(launch.ready, "game:wario", "gpSP")} />
 }
 /** Battery saver not picked: Gamescope inherits On from the Device, and says so. */
 export function GamescopeInherited() {

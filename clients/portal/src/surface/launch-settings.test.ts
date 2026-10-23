@@ -275,13 +275,17 @@ describe("game launch settings editor", () => {
     ])
     for (const item of files ?? []) {
       expect(item.interaction).toBeUndefined()
-      expect(item).toMatchObject({ source: "from Game", scope: "device", description: "Set in library.yaml. Change it there." })
+      expect(item).toMatchObject({ scope: "device", description: "Set in library.yaml. Change it there." })
     }
+    // Plain file values name their place; a list's parts also say they are in force.
+    expect(files?.map(item => item.source)).toEqual([
+      "from Game", "from Game", "from Game", "In force: from Game", "In force: from Game", "In force: from Game", "In force: from Game",
+    ])
     expect(row(launch.getSnapshot().editor, MGBA, "Environment MGBA_AUDIO")).toMatchObject({ value: "pulse", source: "from mGBA (default)" })
     expect(row(launch.getSnapshot().editor, MGBA, "Arguments")).toMatchObject({ value: "-f" })
   })
 
-  it("shows a list kind as one row per place's part, in merge order, a routine named with the place that used it", async () => {
+  it("shows each place only its own parts of a list kind, its routines first, marked in force or not", async () => {
     const launch = await opened({
       ...base,
       routines: { "night-mode": { before: [{ run: "brightnessctl set 30%" }, { run: "fan quiet" }], after: [{ run: "brightnessctl set 100%" }] } },
@@ -289,22 +293,37 @@ describe("game launch settings editor", () => {
         ...chosen,
         "device/any": { hooks: { use: ["night-mode"], before: [{ run: "sync" }] } },
         "game:wario/any": { runner: "retroarch/mgba", hooks: { before: [{ run: "notify-send 'Wario Land 4'" }] } },
+        "game:wario/runner:retroarch/gpsp": { hooks: { use: ["night-mode"], before: [{ run: "gpsp-bios-check" }] } },
+        "profile:quiet/any": { args: { append: ["--quiet"] } },
       },
+      profiles: { wario: [{ id: "quiet", title: "Quiet" }] },
     })
     const editor = launch.getSnapshot().editor
-    const hooks = (placeId: string) => rows(editor, placeId).filter(item => item.label === "Before launch")
-    const expected = [
-      { value: "brightnessctl set 30%; fan quiet", source: "routine night-mode, used by Device", description: "Set in device.yaml. Change it there." },
-      { value: "sync", source: "from Device", description: "Set in device.yaml. Change it there." },
-      { value: "notify-send 'Wario Land 4'", source: "from Game", description: "Set in library.yaml. Change it there." },
-    ]
-    // Every place in force shows the list in force, whoever set it.
-    for (const placeId of ["device/any", "game:wario/any", MGBA]) {
-      expect(hooks(placeId).map(({ value, source, description }) => ({ value, source, description }))).toEqual(expected)
-    }
-    expect(rows(editor, "game:wario/any").filter(item => item.label === "After the session").map(item => item.source)).toEqual(["routine night-mode, used by Device"])
-    // A place whose runner is not in use shows only its own part.
-    expect(hooks("game:wario/runner:retroarch/gpsp")).toEqual([])
+    const files = (placeId: string) => rows(editor, placeId)
+      .filter(item => item.id.includes("#file:"))
+      .map(({ label, value, source, description }) => ({ label, value, source, description }))
+    const DEVICE = "Set in device.yaml. Change it there."
+    const LIBRARY = "Set in library.yaml. Change it there."
+    expect(files("device/any")).toEqual([
+      { label: "Before launch", value: "brightnessctl set 30%; fan quiet", source: "In force: routine night-mode, used by Device", description: DEVICE },
+      { label: "Before launch", value: "sync", source: "In force: from Device", description: DEVICE },
+      { label: "After the session", value: "brightnessctl set 100%", source: "In force: routine night-mode, used by Device", description: DEVICE },
+    ])
+    // The Game shows its own hook only, not the Device's.
+    expect(files("game:wario/any")).toEqual([
+      { label: "Before launch", value: "notify-send 'Wario Land 4'", source: "In force: from Game", description: LIBRARY },
+    ])
+    // gpSP is not the runner in use: its own parts and the routines it names.
+    expect(files("game:wario/runner:retroarch/gpsp")).toEqual([
+      { label: "Before launch", value: "gpsp-bios-check", source: "Not in force: mGBA runs this game", description: LIBRARY },
+      { label: "Routine", value: "night-mode", source: "Not in force: mGBA runs this game", description: DEVICE },
+    ])
+    // A profile not picked: its parts are not in force.
+    expect(files("profile:quiet/any")).toEqual([
+      { label: "Arguments after", value: "--quiet", source: "Not in force: this profile isn't picked", description: LIBRARY },
+    ])
+    // Places that add nothing show nothing.
+    expect(files("game:wario/runner:retroarch/mgba")).toEqual([])
   })
 
   it("says when a runner's facts are unavailable, in a note and in its places", async () => {

@@ -171,6 +171,8 @@ function runnerTitles(runners: readonly LaunchRunnerSnapshot[]): ReadonlyMap<str
 }
 
 type Json = Readonly<Record<string, unknown>>
+const strings = (value: unknown): readonly string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
 const record = (value: unknown): Json | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? value as Json : undefined
 
@@ -800,6 +802,15 @@ function modifierGroups(context: Context, rows: Rows, placeId: string, place: La
   })
 }
 
+/** Why a place's list parts are not in force, in the person's words. */
+function notInForceText(context: Context, place: LaunchPlace): string {
+  if (!applies(context, place.scope)) return sourceText(context, place, undefined, valueText) ?? "Not in force"
+  if (place.layer._tag === "Profile" && place.layer.id.profileId !== context.snapshot.selectedProfile) {
+    return "Not in force: this profile isn't picked"
+  }
+  return "Not in force"
+}
+
 /** The four list kinds korrid concatenates across places, in merge order. */
 type ListKind = "ArgsPrepend" | "ArgsAppend" | "HooksBefore" | "HooksAfter"
 const LISTS: readonly { readonly kind: ListKind; readonly label: string; readonly key: string }[] = [
@@ -835,10 +846,10 @@ const isEmptyPart = (value: unknown) => value === undefined || (Array.isArray(va
 
 /**
  * Values set only in files: shown with where they are, never changed here.
- * A list kind (arguments before and after, hooks before and after) is the
- * list in force, one row per place's part in merge order, each naming its
- * place or the routine and the place that used it. A place whose runner
- * scope is not in force shows only its own parts.
+ * A list kind (arguments before and after, hooks before and after) shows
+ * only this place's parts: the routines it uses, then its own steps, each
+ * marked In force or Not in force. The whole list in force is the places'
+ * parts read in order.
  */
 function fileGroup(context: Context, place: LaunchPlaceSnapshot, placeId: string): SurfaceSettingGroup | undefined {
   const body = record(place.body) ?? {}
@@ -851,34 +862,38 @@ function fileGroup(context: Context, place: LaunchPlaceSnapshot, placeId: string
     items.push(row(`env:${key}`, `Environment ${key}`, value === null ? "Unset" : valueText(value)))
   }
   if (typeof body.cwd === "string") items.push(row("cwd", "Working folder", body.cwd))
-  const inForce = applies(context, place.place.scope)
+  // A place shows only its own parts of each list kind. korrid's
+  // contributions say which are in force: the parts this place gave the
+  // launch, its routines first. A place that gave none is not in force, and
+  // its parts come from its own body.
+  const ownContributions = (kind: ListKind) => (context.list(kind)?.contributions ?? [])
+    .filter(part => part.source._tag === "Place" && samePlace(part.source.payload, place.place) && !isEmptyPart(part.value))
+  const inForce = LISTS.some(list => ownContributions(list.kind).length > 0)
+  const notInForce = notInForceText(context, place.place)
   for (const list of LISTS) {
     if (!inForce) {
       const own = ownPart(body, list.kind)
-      if (!isEmptyPart(own)) {
-        items.push(row(`${list.key}:own`, list.label, partText(own), sourceText(context, place.place, undefined, valueText)))
-      }
+      if (!isEmptyPart(own)) items.push(row(`${list.key}:own`, list.label, partText(own), notInForce))
       continue
     }
-    const contributions = context.list(list.kind)?.contributions ?? []
-    contributions.forEach((part, index) => {
-      if (isEmptyPart(part.value)) return
-      const payload = part.source._tag === "Place" ? part.source.payload : undefined
-      const from = payload === undefined ? undefined : context.places.find(candidate => samePlace(candidate.place, payload))
-      const title = sourceTitle(context, part.source)
+    ownContributions(list.kind).forEach((part, index) => {
       // A routine lives in device.yaml; a place's own part in its place's file.
-      const description = part.routine !== undefined ? "Set in device.yaml. Change it there."
-        : from === undefined ? undefined : describeOf(from.place.layer)
-      const source = part.routine !== undefined ? `routine ${part.routine}, used by ${title}` : `from ${title}`
-      items.push({
-        id: LAUNCH_ID.set(placeId, `file:${list.key}:${index}`),
-        label: list.label,
-        value: partText(part.value),
-        source,
-        scope: "device",
-        ...(description === undefined ? {} : { description }),
-      })
+      const routine = part.routine
+      items.push(row(
+        `${list.key}:${index}`,
+        list.label,
+        partText(part.value),
+        routine === undefined ? `In force: from ${here}` : `In force: routine ${routine}, used by ${here}`,
+        routine === undefined ? describeOf(place.place.layer) : "Set in device.yaml. Change it there.",
+      ))
     })
+  }
+  // Routines a place uses that is not in force: their steps are in
+  // device.yaml, and korrid gives them only for the parts in force.
+  if (!inForce) {
+    for (const name of strings(record(body.hooks)?.use)) {
+      items.push(row(`hooks:use:${name}`, "Routine", name, notInForce, "Set in device.yaml. Change it there."))
+    }
   }
   const config = record(body.config)
   if (config !== undefined && Object.keys(config).length > 0) items.push(row("config", "Runner config", valueText(config)))

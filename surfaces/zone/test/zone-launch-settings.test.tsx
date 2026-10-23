@@ -245,13 +245,18 @@ describe("launch settings: modifiers", () => {
   })
 })
 
-test("a hook list shows each place's part in merge order, a routine with the place that used it", () => {
-  const family = launchScopes(launch.ready).findIndex(scope => scope.label === "Family retroarch")
-  const game = launchPlan(launch.ready, { _tag: "Idle" }, family).slices.settings.find(group => group.title === "Game")
-  const hooks = game?.items.filter(item => item.label === "Before launch").map(item => [item.value, item.source, item.description])
-  expect(hooks).toEqual([
-    ["brightnessctl set 30%; systemctl --user start fan-quiet", "routine night-mode, used by Device", "Set in device.yaml. Change it there."],
-    ["notify-send 'Wario Land 4 is starting'", "from Game for family retroarch", "Set in library.yaml. Change it there."],
+test("each place shows only its own hooks, its routine first, marked in force or not", () => {
+  const scopeOf = (label: string) => launchScopes(launch.ready).findIndex(scope => scope.label === label)
+  const hooks = (scope: number, layer: string) => launchPlan(launch.ready, { _tag: "Idle" }, scope).slices.settings
+    .find(group => group.title === layer)?.items.filter(item => item.label === "Before launch").map(item => [item.value, item.source, item.description])
+  expect(hooks(scopeOf("Any runner"), "Device")).toEqual([
+    ["brightnessctl set 30%; systemctl --user start fan-quiet", "In force: routine night-mode, used by Device", "Set in device.yaml. Change it there."],
+    ["sync", "In force: from Device", "Set in device.yaml. Change it there."],
   ])
-  for (const item of game?.items.filter(row => row.label === "Before launch") ?? []) expect(item.interaction).toBeUndefined()
+  expect(hooks(scopeOf("Family retroarch"), "Game")).toEqual([
+    ["notify-send 'Wario Land 4 is starting'", "In force: from Game for family retroarch", "Set in library.yaml. Change it there."],
+  ])
+  expect(hooks(scopeOf("gpSP"), "Game")?.map(([, source]) => source)).toEqual(["Not in force: mGBA runs this game"])
+  // The Game for any runner repeats none of the Device's hooks.
+  expect(hooks(scopeOf("Any runner"), "Game")).toEqual([])
 })

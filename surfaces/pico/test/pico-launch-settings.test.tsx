@@ -348,14 +348,18 @@ describe("launch modifiers", () => {
   })
 })
 
-test("a hook list shows each place's part in merge order, a routine with the place that used it", () => {
+test("each place shows only its own hooks, its routine first, marked in force or not", () => {
   render(<PicoSurface host={createFixtureHost()} model={ready} />)
+  const hooks = () => screen.queryAllByRole("group", { name: /Before launch/ }).map(fact => fact.closest("li")?.textContent ?? "")
+  // The Device: its routine, then its own step.
+  expect(hooks()).toHaveLength(2)
+  expect(hooks()[0]).toContain("In force: routine night-mode, used by Device")
+  expect(hooks()[0]).toContain("Set in device.yaml. Change it there.")
+  expect(hooks()[1]).toContain("In force: from Device")
+  // The Game for any runner adds no hook, and repeats none of the Device's.
   fireEvent.click(screen.getAllByRole("tab")[launchLayerIndex(launch.ready, "game:wario")]!)
-  fireEvent.click(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "FAMILY RETROARCH" }))
-  const hooks = screen.getAllByRole("group", { name: /Before launch/ }).map(fact => fact.closest("li")?.textContent ?? "")
-  expect(hooks).toHaveLength(2)
-  expect(hooks[0]).toContain("routine night-mode, used by Device")
-  expect(hooks[0]).toContain("Set in device.yaml. Change it there.")
-  expect(hooks[1]).toContain("from Game for family retroarch")
-  expect(hooks[1]).toContain("Set in library.yaml. Change it there.")
+  expect(hooks()).toEqual([])
+  fireEvent.click(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "GPSP" }))
+  expect(hooks()).toHaveLength(1)
+  expect(hooks()[0]).toContain("Not in force: mGBA runs this game")
 })
