@@ -1139,7 +1139,7 @@ to 512 KiB. That per-module ceiling also applies to the JavaScript emitted from
 TypeScript, so compact source cannot expand past it. The aggregate prepared graph
 is bounded to 4 MiB. Both checks run after Oxc allocates; they bound retained and
 executed code, not preparation time or host memory. Each QuickJS runtime
-has a 16 MiB memory limit, a 512 KiB stack limit,
+has a 16 MiB memory limit, a 1 MiB stack limit,
 and a 1000 ms interrupt deadline. The existing empty I/O sandbox remains.
 korrid's allocator enforces the memory limit, and reaching it ends the call
 with `plugin exceeded its 16 MiB heap`. A plugin cannot catch an

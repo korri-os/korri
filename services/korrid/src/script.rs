@@ -191,10 +191,14 @@ fn evaluate_module(
     let runtime = Runtime::new_with_alloc(budget).map_err(|error| error.to_string())?;
     // QuickJS measures this from the native stack pointer at Runtime::new and
     // throws a RangeError before deep recursion, a deep JSON value or regex
-    // compilation can overrun the thread. Calls run on Tokio blocking threads
-    // and Rust test threads, which have 2 MiB stacks, so 512 KiB leaves more
-    // than 1 MiB for the Rust frames above and the native code below it.
-    runtime.set_max_stack_size(512 * 1024);
+    // compilation can overrun the thread. Calls run on Tokio blocking threads,
+    // the discovery thread and Rust test threads, which have 2 MiB stacks.
+    // 1 MiB is quickjs-ng's own default. A call that reaches it needs about
+    // 1056 KiB of thread in total, so 2 MiB leaves about 1 MiB for the Rust
+    // frames above and the native frames that run past the limit. Measured on
+    // x86_64, it allows 1,000 levels of plain recursion and 294 through `map`
+    // callbacks; 512 KiB allowed 495 and 145.
+    runtime.set_max_stack_size(1024 * 1024);
     let installed = graph.install(&runtime);
     let rejections = completion::Rejections::install(&runtime);
     // Preparation has finished. One deadline includes context initialization,

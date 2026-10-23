@@ -32,6 +32,7 @@ const CHILD: &str = "KORRID_ENGINE_LIMITS_CHILD";
 const PLUGIN: &str = r#"
 export const name = 'limits';
 function depth(n) { return n === 0 ? 0 : 1 + depth(n - 1); }
+function mapped(n) { return n === 0 ? 0 : [n].map((x) => 1 + mapped(x - 1))[0]; }
 export const handlers = {
   'page.parse': (input) => {
     const text = input.responses[0].text;
@@ -45,6 +46,7 @@ export const handlers = {
   'page.backtrack': (input) => ({ hit: /^(\w+\s?)*$/.test(input.responses[0].text) }),
   'items.count': (input) => ({ count: input.items.length }),
   'stack.recurse': (input) => ({ depth: depth(input.depth) }),
+  'stack.map': (input) => ({ depth: mapped(input.depth) }),
   'deadline.spin': () => { while (true) {} },
   'heap.hold': (input) => {
     const keep = [];
@@ -248,6 +250,67 @@ fn filling_the_heap_ends_as_an_error() {
             .ok();
     }
     calls.assert_still_usable();
+}
+
+/// Plugin calls run on Tokio blocking threads, which have 2 MiB stacks.
+const CALL_THREAD_STACK: usize = 2 * 1024 * 1024;
+
+/// Recursion up to the 1 MiB QuickJS stack limit works, and every depth
+/// across the limit ends as a result or as a stack error on a 2 MiB thread.
+/// The exact depth depends on frame sizes, so on the compiler and its
+/// hardening flags: in a debug `korrid-test` build on x86_64 the limit stops
+/// plain recursion after 1,000 levels and recursion through `map` callbacks
+/// after 294, while the `korrid-check` development shell stops them after
+/// 580 and 175. A 512 KiB limit stopped them after 495 and 145 in the first
+/// build. The floors below sit under every measured 1 MiB depth and above
+/// the old 512 KiB depths in the `korrid-check` shell.
+#[test]
+fn recursion_across_the_stack_limit_ends_as_an_error() {
+    if std::env::var_os(CHILD).is_none() {
+        return run_isolated(
+            "recursion_across_the_stack_limit_ends_as_an_error",
+            Duration::from_secs(120),
+        );
+    }
+    std::thread::Builder::new()
+        .stack_size(CALL_THREAD_STACK)
+        .spawn(|| {
+            let mut calls = Calls::new();
+            for (operation, floor, across) in [
+                ("stack.recurse", 450, (50..=3_000).step_by(10)),
+                ("stack.map", 130, (10..=1_000).step_by(5)),
+            ] {
+                let mut deepest = 0;
+                let mut stopped = 0;
+                for depth in across {
+                    match calls.call(operation, &format!("{{\"depth\":{depth}}}")) {
+                        Ok(result) => {
+                            assert_eq!(result["depth"], depth, "{operation} at depth {depth}");
+                            if stopped == 0 {
+                                deepest = depth;
+                            }
+                        }
+                        Err(error) => {
+                            assert!(
+                                error.contains("Maximum call stack size exceeded"),
+                                "{operation} at depth {depth}: {error}"
+                            );
+                            stopped += 1;
+                        }
+                    }
+                }
+                eprintln!("{operation}: deepest working depth {deepest}");
+                assert!(stopped > 0, "{operation} never reached the stack limit");
+                assert!(
+                    deepest >= floor,
+                    "{operation} stopped at {deepest}, below the floor {floor}"
+                );
+            }
+            calls.assert_still_usable();
+        })
+        .expect("spawn a 2 MiB call thread")
+        .join()
+        .unwrap();
 }
 
 /// A regular expression that backtracks without end must stop at the
