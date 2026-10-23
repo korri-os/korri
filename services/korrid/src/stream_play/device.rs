@@ -3,6 +3,25 @@
 use crate::authorization::AuthorizationContext;
 use crate::*;
 
+/// Holder preparation and local peer selection share one admission fence.
+/// The holder's own mutation lock still owns exact launch operations.
+pub(crate) async fn serialize_selection<'a>(
+    state: &'a AppState,
+    request: &RpcRequest,
+) -> Option<tokio::sync::MutexGuard<'a, ()>> {
+    if matches!(
+        request,
+        RpcRequest::SessionPrepare(_)
+            | RpcRequest::SessionStart(_)
+            | RpcRequest::SelectedGameLaunch(_)
+            | RpcRequest::InvitesStreamPlay(_)
+    ) {
+        Some(state.session_selection.lock().await)
+    } else {
+        None
+    }
+}
+
 pub(crate) fn registry(
     host: &host::HostRuntime,
     resources: &FederationResources,

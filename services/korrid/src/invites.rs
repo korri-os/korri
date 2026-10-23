@@ -1,4 +1,6 @@
 //! Idle-device invites. Session facts come from same-owner peers.
+mod cache;
+pub(crate) mod device;
 use crate::{ActiveSession, RpcFailure};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;

@@ -1646,6 +1646,8 @@ enum RpcSurface {
 
 #[derive(Clone)]
 struct AppState {
+    invites: invites::device::Invites,
+    session_selection: Arc<tokio::sync::Mutex<()>>,
     remote: Option<upstreams::UpstreamRegistry>,
     saves: Option<Arc<saves::peer::SavePeerService>>,
     acquisition: acquisition::AcquisitionCoordinator,
@@ -2472,6 +2474,7 @@ async fn dispatch(
 ) -> Result<RpcResponse, authorization::AuthorizationDenied> {
     let request_arrived = tokio::time::Instant::now();
     authorization::authorize(authorization, &request)?;
+    let _selection = stream_play::device::serialize_selection(state, &request).await;
     if let ServerMode::Host(host) = &state.mode {
         if let Some(response) = stream_play::rights::refusal(host, authorization, &request).await {
             return Ok(response);
@@ -3046,14 +3049,12 @@ async fn dispatch(
         RpcRequest::SessionStreamPlay(request) => RpcResponse::SessionStreamPlay(
             stream_play::registration::register(state, authorization, &request).await,
         ),
-        RpcRequest::InvitesList(_) => {
-            RpcResponse::InvitesList(InvitesListOutcome::Err(installed_routes_unsupported()))
+        RpcRequest::InvitesList(_) => RpcResponse::InvitesList(invites::device::list(state).await),
+        RpcRequest::InvitesStreamPlay(request) => {
+            RpcResponse::InvitesStreamPlay(invites::device::stream_play(state, &request).await)
         }
-        RpcRequest::InvitesStreamPlay(_) => RpcResponse::InvitesStreamPlay(
-            SessionStreamPlayOutcome::Err(installed_routes_unsupported()),
-        ),
-        RpcRequest::InvitesDismiss(_) => {
-            RpcResponse::InvitesDismiss(InviteDismissOutcome::Err(installed_routes_unsupported()))
+        RpcRequest::InvitesDismiss(request) => {
+            RpcResponse::InvitesDismiss(invites::device::dismiss(state, &request))
         }
         RpcRequest::SessionStatus(_) => {
             let (outcome, recovered_overlay_intent) = match (&state.mode, state.rpc_surface) {
@@ -4323,6 +4324,8 @@ fn brain_app_state(
     let local_owner_public_key = brain_owner_public_key(&private_state_root);
     let portal_access = PortalAccess::new(rpc_capability, allowed_origin, PortalPermission::Full);
     let state = AppState {
+        invites: invites::device::Invites::default(),
+        session_selection: Arc::new(tokio::sync::Mutex::new(())),
         remote: None,
         saves: None,
         acquisition: acquisition::AcquisitionCoordinator::default(),
@@ -4540,6 +4543,8 @@ fn app_states_with(
     let overlay_intent = Arc::new(Mutex::new(None));
     let network = network::NetworkService::default();
     let lan = AppState {
+        invites: invites::device::Invites::default(),
+        session_selection: Arc::new(tokio::sync::Mutex::new(())),
         remote: None,
         saves: None,
         acquisition: acquisition.clone(),
@@ -4554,6 +4559,8 @@ fn app_states_with(
         overlay_intent: overlay_intent.clone(),
     };
     let local = AppState {
+        invites: lan.invites.clone(),
+        session_selection: lan.session_selection.clone(),
         remote: None,
         saves: None,
         acquisition,
@@ -4665,6 +4672,7 @@ fn secure_host_routers_with_federation(
     });
     lan.federation = Some(resources.directory.clone());
     local.federation = Some(resources.directory.clone());
+    invites::device::spawn_watch(lan.clone());
     lan.identity_switch = identity_switch.clone();
     local.identity_switch = identity_switch;
     let portal = portal_router_for(&lan, portal_access).map(|router| match native_router {

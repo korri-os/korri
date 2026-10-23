@@ -53,3 +53,20 @@ async fn stream_player_lost_device_stops_its_viewer_and_keeps_the_end_cause() {
     assert!(viewer.calls().iter().any(|call| call.action == LinuxViewerAction::Stop && call.launch_id == "exact"));
     assert_eq!(registry.stream_play_ended().unwrap().device_label, "far");
 }
+
+#[tokio::test]
+async fn invite_poll_reads_only_same_owner_live_sessions_without_selecting_them() {
+    let (url, far) = exact_native_server(false).await;
+    let config = UpstreamHostConfig::native("far", url);
+    let key = config.device_public_key.clone().unwrap();
+    let registry = UpstreamRegistry::new(vec![config]);
+    far.set_phase("running");
+    assert!(registry.invite_sessions(&BTreeSet::new()).await.unwrap().is_empty());
+    let invites = registry.invite_sessions(&BTreeSet::from([key.clone()])).await.unwrap();
+    assert_eq!(invites.len(), 1);
+    assert_eq!(invites[0].device_public_key, key);
+    assert_eq!(invites[0].session.launch_id, far.launch_id);
+    assert!(!registry.has_selected_session());
+    *far.active_phase.lock().unwrap() = None;
+    assert!(registry.invite_sessions(&BTreeSet::from([key])).await.unwrap().is_empty());
+}

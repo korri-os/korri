@@ -16,6 +16,41 @@ pub(super) enum Participation {
 }
 
 impl UpstreamRegistry {
+    /// Only verified same-owner directory members produce idle signals. This
+    /// reads the peer directly: session_status() would recover a selection.
+    pub(crate) async fn invite_sessions(
+        &self,
+        same_owner: &BTreeSet<String>,
+    ) -> Result<Vec<crate::invites::Invite>, UpstreamError> {
+        let registry = self.resolved()?;
+        let polls = registry.hosts.iter().filter_map(|host| {
+            let key = host.native_route_key()?;
+            if !same_owner.contains(&key) {
+                return None;
+            }
+            Some(async move {
+                let status = timeout(Duration::from_secs(2), host.native_session_status())
+                    .await
+                    .ok()?
+                    .ok()?;
+                let crate::SessionStatusOutcome::Ok(status) =
+                    crate::session_status_outcome(Ok(status))
+                else {
+                    return None;
+                };
+                let active = status.active?;
+                Some(crate::invites::Invite {
+                    invite_id: String::new(),
+                    device_public_key: key,
+                    device_label: host.label.clone(),
+                    person_name: host.label.clone(),
+                    session: active,
+                })
+            })
+        });
+        Ok(join_all(polls).await.into_iter().flatten().collect())
+    }
+
     pub(crate) fn has_peer_label(&self, label: &str) -> Result<bool, UpstreamError> {
         Ok(self
             .resolved()?
