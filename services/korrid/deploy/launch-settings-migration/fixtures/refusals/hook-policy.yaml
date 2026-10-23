@@ -1,0 +1,6 @@
+routines:
+  setup:
+    before:
+    - run: 'true'
+      on-failure:
+      - warn

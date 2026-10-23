@@ -1,0 +1,8 @@
+provider-links:
+  link:
+    provider: '@korri:example'
+    playable: game
+    refs:
+    - kind: provider-item-id
+      value: item
+      targetPart: false

@@ -1,0 +1,3 @@
+host:
+  env:
+    BAD=NAME: value

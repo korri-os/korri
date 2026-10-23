@@ -1,0 +1,3 @@
+modifiers:
+  '@korri:example/main':
+    enabled: 'true'

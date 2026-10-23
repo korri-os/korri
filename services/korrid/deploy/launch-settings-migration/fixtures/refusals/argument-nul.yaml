@@ -1,0 +1,3 @@
+host:
+  argsAppend:
+  - "a\0b"

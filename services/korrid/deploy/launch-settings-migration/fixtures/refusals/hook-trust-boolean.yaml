@@ -1,0 +1,3 @@
+host:
+  hooks:
+    trust-removable: 'yes'

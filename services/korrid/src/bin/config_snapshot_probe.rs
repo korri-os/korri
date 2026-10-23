@@ -4,7 +4,13 @@
 //! wired into the brain runner. It creates no watchers and performs no route
 //! resolution or launch effects.
 
-use std::{env, fs, path::PathBuf, process};
+use std::{
+    env,
+    ffi::OsStr,
+    fs,
+    path::{Path, PathBuf},
+    process,
+};
 
 use korrid::config::snapshot::{ConfigSnapshotCoordinator, DEVICE_FILE_NAME, LIBRARY_FILE_NAME};
 
@@ -20,6 +26,18 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
+    let arguments: Vec<_> = env::args_os().skip(1).collect();
+    if arguments
+        .first()
+        .is_some_and(|v| v == OsStr::new("--check"))
+    {
+        if arguments.len() != 3 {
+            return Err(
+                "usage: config_snapshot_probe --check <device.yaml> <catalog/library.yaml>".into(),
+            );
+        }
+        return check_documents(Path::new(&arguments[1]), Path::new(&arguments[2]));
+    }
     let root = env::args()
         .nth(1)
         .map(PathBuf::from)
@@ -89,6 +107,23 @@ fn run() -> Result<(), String> {
         )
     );
 
+    Ok(())
+}
+
+/// Validate captured documents only. Unlike review mode, this never initializes,
+/// rewrites or watches the source root, including when validation fails.
+fn check_documents(device_path: &Path, library_path: &Path) -> Result<(), String> {
+    let read =
+        |path: &Path| fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()));
+    let snapshot =
+        korrid::config::decode_config_documents(&read(device_path)?, &read(library_path)?)
+            .map_err(|e| e.to_string())?;
+    korrid::config::classify_snapshot_support(&snapshot).map_err(|e| e.to_string())?;
+    println!(
+        "CONFIG VALID: {} and {}",
+        device_path.display(),
+        library_path.display()
+    );
     Ok(())
 }
 

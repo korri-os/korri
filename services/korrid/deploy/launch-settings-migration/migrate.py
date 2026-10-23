@@ -7,9 +7,11 @@ import copy
 from datetime import datetime, timezone
 import os
 import math
+import hashlib
 import re
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 
 import yaml
@@ -58,9 +60,14 @@ UniqueLoader.add_implicit_resolver(
 
 
 def setting_scalar(value):
-    return type(value) in {str, int, bool} or (
-        type(value) is float and math.isfinite(value)
-    )
+    if type(value) in {str, bool}:
+        return True
+    if type(value) not in {int, float}:
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def yaml_integer(loader, node):
@@ -88,28 +95,139 @@ UniqueLoader.add_constructor(
 )
 
 
+def invalid(path, value, expected):
+    raise MigrationError(f"{path}: value {value!r}; expected {expected}")
+
+
 def record(value, path):
     if not isinstance(value, dict):
-        raise MigrationError(f"{path} must be a record")
+        invalid(path, value, "a record")
     return value
 
 
 def keys(value, allowed, path):
     record(value, path)
-    unknown = set(value) - set(allowed)
-    if unknown:
-        raise MigrationError(f"{path}: unknown keys: {sorted(unknown)}")
+    for key in value:
+        if key not in allowed:
+            invalid(f"{path}.{key}", value[key], "a recognized key")
+
+
+def text(value, path, *, nonempty=False, no_nul=False):
+    if (
+        not isinstance(value, str)
+        or (nonempty and not value)
+        or (no_nul and "\0" in value)
+    ):
+        invalid(
+            path,
+            value,
+            "a nonempty string"
+            if nonempty
+            else "a string without NUL"
+            if no_nul
+            else "a string",
+        )
+
+
+def integer(value, path, lower, upper):
+    if type(value) is not int or not lower <= value <= upper:
+        invalid(path, value, f"an integer from {lower} to {upper}")
+
+
+def boolean(value, path):
+    if type(value) is not bool:
+        invalid(path, value, "a boolean")
+
+
+def sequence(value, path):
+    if not isinstance(value, list):
+        invalid(path, value, "a list")
+    return value
+
+
+def texts(value, path, *, nonempty=False, no_nul=False):
+    for index, entry in enumerate(sequence(value, path)):
+        text(entry, f"{path}[{index}]", nonempty=nonempty, no_nul=no_nul)
+
+
+def scalar_settings(value, path):
+    for key, entry in record(value, path).items():
+        if not setting_scalar(entry):
+            invalid(f"{path}.{key}", entry, "a boolean, finite number or string")
+
+
+def json_value(value, path):
+    if value is None or setting_scalar(value):
+        return
+    if isinstance(value, dict):
+        for key, entry in value.items():
+            text(key, path)
+            json_value(entry, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, entry in enumerate(value):
+            json_value(entry, f"{path}[{index}]")
+    else:
+        invalid(path, value, "a JSON value")
+
+
+def native_config(value, path, allowed, *, nullable=False):
+    if nullable and value is None:
+        return
+    keys(value, allowed, path)
+    for key, entry in value.items():
+        if not nullable or entry is not None:
+            text(entry, f"{path}.{key}")
+
+
+def provider_id(value, path):
+    if not isinstance(value, str) or not re.fullmatch(
+        r"@[a-z0-9][a-z0-9._-]*:[a-z0-9][a-z0-9._-]*", value
+    ):
+        invalid(path, value, "a plugin ID such as @korri:example")
+
+
+def scope_id(value, path, family=False, modifier=False):
+    if family:
+        provider_id(value, path)
+        return
+    text(value, path, nonempty=True)
+    owner, slash, reference = value.partition("/")
+    provider_id(owner, path)
+    if (
+        not slash
+        or not reference
+        or len(reference.encode("utf-8")) > 2048
+        or any(ord(c) < 32 or ord(c) == 127 for c in reference)
+    ):
+        invalid(path, value, "a fully qualified contribution ID")
+    if modifier and not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", reference):
+        invalid(path, value, "a modifier contribution ID")
 
 
 def rename(value, old, new, path):
     if old not in value:
         return
     if new in value:
-        raise MigrationError(f"{path}: {old} clashes with {new}")
+        invalid(
+            f"{path}.{old}", value[old], f"no clash with {path}.{new}={value[new]!r}"
+        )
     value[new] = value.pop(old)
 
 
-def hooks(value, path, routine=False):
+def modifiers(value, path):
+    for id, modifier in record(value, path).items():
+        current = f"{path}.{id}"
+        scope_id(id, current, modifier=True)
+        keys(modifier, {"enabled", "settings", "config"}, current)
+        if "enabled" in modifier:
+            boolean(modifier["enabled"], f"{current}.enabled")
+        if "settings" in modifier:
+            scalar_settings(modifier["settings"], f"{current}.settings")
+        if "config" in modifier:
+            native_config(modifier["config"], f"{current}.config", {"append"})
+
+
+def hooks(value, path, routine_names, routine=False):
     allowed = (
         {"before", "after"}
         if routine
@@ -117,37 +235,34 @@ def hooks(value, path, routine=False):
     )
     keys(value, allowed, path)
     if "trust-removable" in value:
-        if not isinstance(value.pop("trust-removable"), bool):
-            raise MigrationError(f"{path}.trust-removable must be boolean")
-    if "use" in value and (
-        not isinstance(value["use"], list)
-        or not all(isinstance(v, str) for v in value["use"])
-    ):
-        raise MigrationError(f"{path}.use must be a name list")
+        boolean(value["trust-removable"], f"{path}.trust-removable")
+        value.pop("trust-removable")
+    if "use" in value:
+        texts(value["use"], f"{path}.use", nonempty=True)
+        for index, name in enumerate(value["use"]):
+            if name not in routine_names:
+                invalid(f"{path}.use[{index}]", name, "an existing routine name")
     for phase in ("before", "after"):
         if phase not in value:
             continue
-        if not isinstance(value[phase], list):
-            raise MigrationError(f"{path}.{phase} must be a step list")
-        for step in value[phase]:
+        for index, step in enumerate(sequence(value[phase], f"{path}.{phase}")):
+            current = f"{path}.{phase}[{index}]"
             allowed = (
                 {"run", "name", "timeout", "on-failure"}
                 if phase == "before"
                 else {"run", "name", "timeout"}
             )
-            keys(step, allowed, f"{path}.{phase}")
-            if not isinstance(step.get("run"), str) or not step["run"]:
-                raise MigrationError(f"{path}.{phase}: step needs run")
-            if "name" in step and (
-                not isinstance(step["name"], str) or not step["name"]
+            keys(step, allowed, current)
+            text(step.get("run"), f"{current}.run", nonempty=True)
+            if "name" in step:
+                text(step["name"], f"{current}.name", nonempty=True)
+            if "timeout" in step:
+                integer(step["timeout"], f"{current}.timeout", 1, 2**64 - 1)
+            if "on-failure" in step and (
+                not isinstance(step["on-failure"], str)
+                or step["on-failure"] not in {"abort", "warn"}
             ):
-                raise MigrationError(f"{path}.{phase}: step name must be nonempty")
-            if "timeout" in step and (
-                type(step["timeout"]) is not int or step["timeout"] <= 0
-            ):
-                raise MigrationError(f"{path}.{phase}: timeout must be positive")
-            if "on-failure" in step and step["on-failure"] not in {"abort", "warn"}:
-                raise MigrationError(f"{path}.{phase}: unknown on-failure policy")
+                invalid(f"{current}.on-failure", step["on-failure"], "abort or warn")
 
 
 PLACE = {
@@ -179,7 +294,7 @@ GAME = {
 RELEASE = {"id", "system", "identity", "display"}
 
 
-def place(value, path, extra=(), scoped=False):
+def place(value, path, extra=(), scoped=False, routine_names=()):
     allowed = (
         (PLACE - {"runner", "families", "runners"}) | {"settings", "config"}
         if scoped
@@ -187,96 +302,293 @@ def place(value, path, extra=(), scoped=False):
     )
     keys(value, allowed, path)
     if "argsAppend" in value:
+        texts(value["argsAppend"], f"{path}.argsAppend", no_nul=True)
         args = value.setdefault("args", {})
         record(args, f"{path}.args")
         if "append" in args:
-            raise MigrationError(f"{path}: argsAppend clashes with args.append")
+            invalid(
+                f"{path}.argsAppend",
+                value["argsAppend"],
+                f"no clash with {path}.args.append={args['append']!r}",
+            )
         args["append"] = value.pop("argsAppend")
     for kind in ("cpu", "gpu"):
-        if kind in value:
-            keys(
-                value[kind],
-                {"min", "max", "governor"} if kind == "cpu" else {"min", "max"},
-                f"{path}.{kind}",
-            )
-            for bound in ("min", "max"):
-                if bound in value[kind]:
-                    n = value[kind][bound]
-                    if (
-                        type(n) is not int
-                        or not (0 if bound == "min" else 1) <= n <= 100
-                    ):
-                        raise MigrationError(
-                            f"{path}.{kind}.{bound} is not a valid integer percent"
-                        )
-            if value[kind].get("min", 0) > value[kind].get("max", 100):
-                raise MigrationError(f"{path}.{kind}: min exceeds max")
-            if "governor" in value[kind] and (
-                path != "host"
-                or not isinstance(value[kind]["governor"], str)
-                or not value[kind]["governor"]
-            ):
-                raise MigrationError(f"{path}.{kind}: governor belongs only to host")
+        if kind not in value:
+            continue
+        current = f"{path}.{kind}"
+        bounds = value[kind]
+        keys(
+            bounds,
+            {"min", "max", "governor"} if kind == "cpu" else {"min", "max"},
+            current,
+        )
+        for bound in ("min", "max"):
+            if bound in bounds:
+                integer(
+                    bounds[bound], f"{current}.{bound}", 0 if bound == "min" else 1, 100
+                )
+        if bounds.get("min", 0) > bounds.get("max", 100):
+            invalid(current, bounds, "min <= max")
+        if "governor" in bounds:
+            text(bounds["governor"], f"{current}.governor", nonempty=True)
+            if path != "host":
+                invalid(
+                    f"{current}.governor", bounds["governor"], "a governor only on host"
+                )
     if "args" in value:
         keys(value["args"], {"prepend", "append"}, f"{path}.args")
-        for v in value["args"].values():
-            if not isinstance(v, list) or not all(isinstance(s, str) for s in v):
-                raise MigrationError(f"{path}.args must contain string lists")
+        for kind, args in value["args"].items():
+            texts(args, f"{path}.args.{kind}", no_nul=True)
     if "env" in value:
-        record(value["env"], f"{path}.env")
-        if any(not isinstance(v, str) and v is not None for v in value["env"].values()):
-            raise MigrationError(f"{path}.env values must be strings or null")
-    if "cwd" in value and not isinstance(value["cwd"], str):
-        raise MigrationError(f"{path}.cwd must be a string")
+        for key, entry in record(value["env"], f"{path}.env").items():
+            if not key or "=" in key or "\0" in key:
+                invalid(
+                    f"{path}.env", key, "a nonempty environment name without '=' or NUL"
+                )
+            if entry is not None:
+                text(entry, f"{path}.env.{key}", no_nul=True)
+    if "cwd" in value:
+        text(value["cwd"], f"{path}.cwd", no_nul=True)
     if "hooks" in value:
-        hooks(value["hooks"], f"{path}.hooks")
-    if "runner" in value and (
-        not isinstance(value["runner"], str) or not value["runner"]
-    ):
-        raise MigrationError(f"{path}.runner must be a nonempty string")
+        hooks(value["hooks"], f"{path}.hooks", routine_names)
+    if "runner" in value:
+        text(value["runner"], f"{path}.runner", nonempty=True)
     if "config" in value:
-        keys(value["config"], {"prepend", "append", "replace"}, f"{path}.config")
-        if not all(isinstance(v, str) for v in value["config"].values()):
-            raise MigrationError(f"{path}.config values must be strings")
+        native_config(
+            value["config"],
+            f"{path}.config",
+            {"prepend", "append", "replace"},
+            nullable=True,
+        )
     if "settings" in value:
-        record(value["settings"], f"{path}.settings")  # Plugin-owned keys are opaque.
-        if not all(setting_scalar(v) for v in value["settings"].values()):
-            raise MigrationError(f"{path}.settings values must be scalars")
-    for id, modifier in record(value.get("modifiers", {}), f"{path}.modifiers").items():
-        keys(modifier, {"enabled", "settings", "config"}, f"{path}.modifiers.{id}")
-        if "enabled" in modifier and type(modifier["enabled"]) is not bool:
-            raise MigrationError(f"{path}.modifiers.{id}.enabled must be boolean")
-        if "settings" in modifier:
-            record(modifier["settings"], f"{path}.modifiers.{id}.settings")
-            if not all(setting_scalar(v) for v in modifier["settings"].values()):
-                raise MigrationError(
-                    f"{path}.modifiers.{id}.settings values must be scalars"
-                )
-        if "config" in modifier:
-            keys(modifier["config"], {"append"}, f"{path}.modifiers.{id}.config")
-            if not all(isinstance(v, str) for v in modifier["config"].values()):
-                raise MigrationError(
-                    f"{path}.modifiers.{id}.config values must be strings"
-                )
+        scalar_settings(value["settings"], f"{path}.settings")
+    if "modifiers" in value:
+        modifiers(value["modifiers"], f"{path}.modifiers")
     if not scoped:
         for kind in ("families", "runners"):
             for id, child in record(value.get(kind, {}), f"{path}.{kind}").items():
-                place(child, f"{path}.{kind}.{id}", scoped=True)
+                current = f"{path}.{kind}.{id}"
+                scope_id(id, current, family=kind == "families")
+                place(child, current, scoped=True, routine_names=routine_names)
     if "preferences" in value:
         preferences = record(value["preferences"], f"{path}.preferences")
-        rename(preferences, "playerCount", "player-count", path)
-        keys(preferences, {"player-count", "launch"}, f"{path}.preferences")
+        keys(
+            preferences,
+            {"playerCount", "player-count", "launch"},
+            f"{path}.preferences",
+        )
+        for key in ("playerCount", "player-count"):
+            if key in preferences:
+                integer(preferences[key], f"{path}.preferences.{key}", 1, 255)
+        rename(preferences, "playerCount", "player-count", f"{path}.preferences")
+        if "launch" in preferences:
+            invalid(
+                f"{path}.preferences.launch",
+                preferences["launch"],
+                "host launch preferences to remain absent (unsupported by korrid)",
+            )
+    for key in ("title", "name", "manufacturer"):
+        if key in value:
+            text(
+                value[key],
+                f"{path}.{key}",
+                nonempty=key == "title" and set(extra) == {"title"},
+            )
+    for key in ("system", "profile", "version-of", "relation"):
+        if key in value:
+            text(value[key], f"{path}.{key}", nonempty=True)
+    for key in ("relays", "aliases"):
+        if key in value:
+            texts(value[key], f"{path}.{key}")
+    if "plugin" in value:
+        for id, enabled in record(value["plugin"], f"{path}.plugin").items():
+            provider_id(id, f"{path}.plugin.{id}")
+            boolean(enabled, f"{path}.plugin.{id}")
+    for key in ("moonlight", "patches"):
+        if key in value:
+            invalid(
+                f"{path}.{key}", value[key], "unsupported host policy to remain absent"
+            )
+    for key in ("metadata", "contains", "display"):
+        if key in value:
+            record(value[key], f"{path}.{key}")
+            json_value(value[key], f"{path}.{key}")
     for id, profile in record(value.get("profiles", {}), f"{path}.profiles").items():
-        place(profile, f"{path}.profiles.{id}", {"title"})
+        text(id, f"{path}.profiles", nonempty=True)
+        text(
+            record(profile, f"{path}.profiles.{id}").get("title"),
+            f"{path}.profiles.{id}.title",
+            nonempty=True,
+        )
+        place(profile, f"{path}.profiles.{id}", {"title"}, routine_names=routine_names)
+    if "profile" in value and value["profile"] not in value.get("profiles", {}):
+        invalid(f"{path}.profile", value["profile"], "an existing profile ID")
     if "releases" in value:
-        if not isinstance(value["releases"], list):
-            raise MigrationError(f"{path}.releases must be a list")
-        for release in value["releases"]:
-            place(release, f"{path}.releases", RELEASE)
+        for index, release in enumerate(
+            sequence(value["releases"], f"{path}.releases")
+        ):
+            current = f"{path}.releases[{index}]"
+            place(release, current, RELEASE, routine_names=routine_names)
+            text(release.get("id"), f"{current}.id", nonempty=True)
             if "identity" in release:
                 keys(
-                    release["identity"], {"kind", "value", "parts"}, f"{path}.identity"
+                    release["identity"],
+                    {"kind", "value", "parts"},
+                    f"{current}.identity",
                 )
+
+
+def release_key(value, path):
+    text(value, path, nonempty=True)
+    if re.fullmatch(r"sha256:[0-9a-f]{64}|sha1:[0-9a-f]{40}", value):
+        return
+    scope_id(value, path)
+
+
+def identity(value, path):
+    keys(value, {"kind", "value", "parts"}, path)
+    kind = value.get("kind")
+    if not isinstance(kind, str) or kind not in {"hash", "chd", "parts", "provider"}:
+        invalid(f"{path}.kind", kind, "hash, chd, parts or provider")
+    release_key(value.get("value"), f"{path}.value")
+    content = value["value"]
+    if kind == "hash" and not content.startswith(("sha256:", "sha1:")):
+        invalid(f"{path}.value", content, "a SHA-256 or SHA-1 hash identity")
+    if kind == "chd" and not content.startswith("sha1:"):
+        invalid(f"{path}.value", content, "a SHA-1 CHD identity")
+    if kind == "provider" and not content.startswith("@"):
+        invalid(f"{path}.value", content, "a provider release identity")
+    if kind != "parts" and "parts" in value:
+        invalid(f"{path}.parts", value["parts"], "parts only on a parts identity")
+    if kind == "parts":
+        parts = sequence(value.get("parts"), f"{path}.parts")
+        if not parts:
+            invalid(f"{path}.parts", parts, "a nonempty list of release identities")
+        for index, part in enumerate(parts):
+            release_key(part, f"{path}.parts[{index}]")
+        expected = "sha256:" + hashlib.sha256("\n".join(parts).encode()).hexdigest()
+        if content != expected:
+            invalid(f"{path}.value", content, f"the ordered parts hash {expected}")
+
+
+def target(value, path):
+    text(value, path, nonempty=True)
+    if value.startswith("/"):
+        invalid(path, value, "a non-absolute target path")
+
+
+def discovery(value, path):
+    keys(value, {"first-seen-at", "missing-since"}, path)
+    for key in ("first-seen-at", "missing-since"):
+        if key not in value and key != "first-seen-at":
+            continue
+        stamp = value.get(key)
+        text(stamp, f"{path}.{key}", nonempty=True)
+        if not re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})",
+            stamp,
+        ):
+            invalid(f"{path}.{key}", stamp, "an RFC 3339 timestamp")
+        try:
+            # chrono permits leap seconds. Validate their calendar with :59.
+            normalized = (
+                stamp[:17]
+                + ("59" if stamp[17:19] == "60" else stamp[17:19])
+                + stamp[19:]
+            )
+            datetime.fromisoformat(normalized.upper().replace("Z", "+00:00"))
+        except ValueError:
+            invalid(f"{path}.{key}", stamp, "an RFC 3339 timestamp")
+
+
+def location(value, path, release):
+    record(value, path)
+    if "storage" in value:
+        allowed = (
+            {"storage", "path", "discovery"}
+            if "files" not in value
+            else {"storage", "root", "files", "discovery"}
+        )
+        keys(value, allowed, path)
+        text(value.get("storage"), f"{path}.storage", nonempty=True)
+        if "files" not in value:
+            target(value.get("path"), f"{path}.path")
+        else:
+            if "root" in value:
+                target(value["root"], f"{path}.root")
+            parts = sequence(value["files"], f"{path}.files")
+            if not parts:
+                invalid(f"{path}.files", parts, "a nonempty file list")
+            ids = set()
+            for index, part in enumerate(parts):
+                current = f"{path}.files[{index}]"
+                keys(part, {"id", "role", "path"}, current)
+                text(part.get("id"), f"{current}.id", nonempty=True)
+                if part["id"] in ids:
+                    invalid(f"{current}.id", part["id"], "a unique file ID")
+                ids.add(part["id"])
+                if "role" in part:
+                    text(part["role"], f"{current}.role", nonempty=True)
+                target(part.get("path"), f"{current}.path")
+        if "discovery" in value:
+            discovery(value["discovery"], f"{path}.discovery")
+    elif "path" in value:
+        keys(value, {"path"}, path)
+        target(value["path"], f"{path}.path")
+    elif "value" in value:
+        keys(value, {"value"}, path)
+        target(value["value"], f"{path}.value")
+    else:
+        keys(value, {"provider", "ref"}, path)
+        provider_id(value.get("provider"), f"{path}.provider")
+        text(value.get("ref"), f"{path}.ref", nonempty=True)
+        if release != f"{value['provider']}/{value['ref']}":
+            invalid(path, value, f"a provider location matching release {release}")
+
+
+def validate_catalog(device, library):
+    # Mirrors config/catalog.rs for the records a migration preserves beside
+    # moved values. The optional Rust guard independently checks this boundary.
+    identities = set()
+    for game_id, game in library.get("library", {}).items():
+        path = f"library.{game_id}"
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", game_id):
+            invalid(path, game_id, "a readable local game ID")
+        releases = sequence(game.get("releases"), f"{path}.releases")
+        if not releases:
+            invalid(f"{path}.releases", releases, "at least one release")
+        ids = set()
+        for index, release in enumerate(releases):
+            current = f"{path}.releases[{index}]"
+            id = release["id"]
+            if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", id) or id in ids:
+                invalid(f"{current}.id", id, "a unique readable local release ID")
+            ids.add(id)
+            if "identity" in release:
+                identity(release["identity"], f"{current}.identity")
+                key = release["identity"]["value"]
+                if key in identities:
+                    invalid(
+                        f"{current}.identity.value", key, "a unique content identity"
+                    )
+                identities.add(key)
+                if release["identity"]["kind"] == "provider" and any(
+                    "provider" not in loc
+                    for loc in device.get("locations", {}).get(key, [])
+                ):
+                    invalid(f"{current}.identity.value", key, "provider locations only")
+    for id, source in device.get("sources", {}).items():
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", id):
+            invalid(f"sources.{id}", id, "a readable local source ID")
+        if source["storage"] not in device.get("storage", {}):
+            invalid(
+                f"sources.{id}.storage", source["storage"], "an existing storage ID"
+            )
+    for id, link in device.get("provider-links", {}).items():
+        if link["playable"] not in library.get("library", {}):
+            invalid(
+                f"provider-links.{id}.playable", link["playable"], "an existing game ID"
+            )
 
 
 def transform(device, library):
@@ -300,6 +612,21 @@ def transform(device, library):
         "device",
     )
     keys(library, {"library"}, "library")
+    routine_names = record(
+        device.get("routines", device.get("hooks", {})),
+        "routines" if "routines" in device else "hooks",
+    )
+    for kind in ("runners", "families"):
+        for id, child in record(device.get(kind, {}), kind).items():
+            current = f"{kind}.{id}"
+            scope_id(id, current, family=kind == "families")
+            place(child, current, scoped=True, routine_names=routine_names)
+    if "modifiers" in device:
+        modifiers(device["modifiers"], "modifiers")
+    if "hooks" in device:
+        for id, routine in record(device["hooks"], "hooks").items():
+            text(id, "hooks", nonempty=True)
+            hooks(routine, f"hooks.{id}", routine_names, routine=True)
     for kind in ("runners", "families", "modifiers"):
         if kind in device:
             host = record(device.setdefault("host", {}), "host")
@@ -308,59 +635,66 @@ def transform(device, library):
             host[kind] = device.pop(kind)
     rename(device, "hooks", "routines", "device")
     if "host" in device:
-        place(device["host"], "host", HOST)
+        place(device["host"], "host", HOST, routine_names=routine_names)
     for id, system in record(device.get("systems", {}), "systems").items():
-        place(system, f"systems.{id}", SYSTEM)
+        text(id, "systems", nonempty=True)
+        place(system, f"systems.{id}", SYSTEM, routine_names=routine_names)
     for id, routine in record(device.get("routines", {}), "routines").items():
-        hooks(routine, f"routines.{id}", routine=True)
+        text(id, "routines", nonempty=True)
+        hooks(routine, f"routines.{id}", routine_names, routine=True)
     for id, game in record(library.get("library", {}), "library").items():
-        place(game, f"library.{id}", GAME)
+        place(game, f"library.{id}", GAME, routine_names=routine_names)
     for id, storage in record(device.get("storage", {}), "storage").items():
+        text(id, "storage", nonempty=True)
         keys(storage, {"root", "path"}, f"storage.{id}")
+        text(storage.get("root"), f"storage.{id}.root", nonempty=True)
+        if "path" in storage:
+            for key, entry in record(storage["path"], f"storage.{id}.path").items():
+                text(entry, f"storage.{id}.path.{key}", nonempty=True)
     for id, provider in record(device.get("providers", {}), "providers").items():
+        provider_id(id, f"providers.{id}")
         keys(provider, {"title"}, f"providers.{id}")
+        if "title" in provider:
+            text(provider["title"], f"providers.{id}.title")
     for id, source in record(device.get("sources", {}), "sources").items():
         keys(source, {"title", "kind", "storage", "system"}, f"sources.{id}")
+        for key in ("storage", "system"):
+            text(source.get(key), f"sources.{id}.{key}", nonempty=True)
+        texts(source.get("kind"), f"sources.{id}.kind", nonempty=True)
+        if "title" in source:
+            text(source["title"], f"sources.{id}.title")
     for id, link in record(device.get("provider-links", {}), "provider-links").items():
         keys(link, {"provider", "playable", "release", "refs"}, f"provider-links.{id}")
-        if not isinstance(link.get("refs"), list):
-            raise MigrationError(f"provider-links.{id}.refs must be a list")
-        for ref in link["refs"]:
-            rename(ref, "targetPart", "target-part", f"provider-links.{id}.refs")
-            keys(
-                ref,
-                {"kind", "value", "scope", "target-part"},
-                f"provider-links.{id}.refs",
-            )
-    for id, locations in record(device.get("locations", {}), "locations").items():
-        if not isinstance(locations, list):
-            raise MigrationError(f"locations.{id} must be a list")
-        for location in locations:
-            keys(
-                location,
-                {
-                    "storage",
-                    "path",
-                    "root",
-                    "files",
-                    "discovery",
-                    "value",
-                    "provider",
-                    "ref",
-                },
-                f"locations.{id}",
-            )
-            if "discovery" in location:
-                keys(
-                    location["discovery"],
-                    {"first-seen-at", "missing-since"},
-                    f"locations.{id}.discovery",
+        provider_id(link.get("provider"), f"provider-links.{id}.provider")
+        text(link.get("playable"), f"provider-links.{id}.playable", nonempty=True)
+        if "release" in link:
+            text(link["release"], f"provider-links.{id}.release", nonempty=True)
+        refs = sequence(link.get("refs"), f"provider-links.{id}.refs")
+        if not refs:
+            invalid(f"provider-links.{id}.refs", refs, "a nonempty reference list")
+        for index, ref in enumerate(refs):
+            current = f"provider-links.{id}.refs[{index}]"
+            keys(ref, {"kind", "value", "scope", "targetPart", "target-part"}, current)
+            for key in ("targetPart", "target-part", "scope"):
+                if key in ref:
+                    text(ref[key], f"{current}.{key}", nonempty=True)
+            rename(ref, "targetPart", "target-part", current)
+            text(ref.get("value"), f"{current}.value", nonempty=True)
+            if not isinstance(ref.get("kind"), str) or ref["kind"] not in {
+                "url",
+                "provider-item-id",
+                "external-id",
+            }:
+                invalid(
+                    f"{current}.kind",
+                    ref.get("kind"),
+                    "url, provider-item-id or external-id",
                 )
-            if "files" in location:
-                if not isinstance(location["files"], list):
-                    raise MigrationError(f"locations.{id}.files must be a list")
-                for file in location["files"]:
-                    keys(file, {"id", "role", "path"}, f"locations.{id}.files")
+    for id, locations in record(device.get("locations", {}), "locations").items():
+        release_key(id, f"locations.{id}")
+        for index, entry in enumerate(sequence(locations, f"locations.{id}")):
+            location(entry, f"locations.{id}[{index}]", id)
+    validate_catalog(device, library)
     return device, library
 
 
@@ -375,7 +709,36 @@ def korrid_running(proc_root=Path("/proc")):
     return False
 
 
-def migrate(root, dry_run=False):
+def check_with_korrid(documents, probe):
+    # The probe is prebuilt and optional. Never compile on the device. Captured
+    # candidate files live outside the storage root and are deleted on refusal.
+    with tempfile.TemporaryDirectory(
+        prefix="korri-launch-settings-check-"
+    ) as directory:
+        root = Path(directory)
+        paths = [root / "device.yaml", root / "library.yaml"]
+        for path, document in zip(paths, documents):
+            path.write_text(
+                yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
+            )
+        try:
+            result = subprocess.run(
+                [str(probe), "--check", *(str(p) for p in paths)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise MigrationError(f"config-check {probe!s} failed: {error}") from error
+        if result.returncode:
+            diagnostic = (result.stderr or result.stdout).strip() or "no diagnostic"
+            raise MigrationError(
+                f"config-check refused transformed documents (probe={probe}, status={result.returncode}): {diagnostic}"
+            )
+
+
+def migrate(root, dry_run=False, config_check=None):
     if korrid_running():
         raise MigrationError("stop korrid before migrating")
     paths = [root / "device.yaml", root / "catalog/library.yaml"]
@@ -386,6 +749,8 @@ def migrate(root, dry_run=False):
     if any(document is None for document in documents):
         raise MigrationError("empty documents are not a known configuration shape")
     migrated = transform(*documents)
+    if config_check is not None:
+        check_with_korrid(migrated, config_check)
     changed = tuple(documents) != migrated
     if dry_run or not changed:
         return changed, None
@@ -423,9 +788,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--storage-root", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--config-check",
+        type=Path,
+        help="optional prebuilt config_snapshot_probe for a second read-only check",
+    )
     args = parser.parse_args()
     try:
-        changed, backup = migrate(args.storage_root, args.dry_run)
+        changed, backup = migrate(args.storage_root, args.dry_run, args.config_check)
     except (MigrationError, OSError, yaml.YAMLError) as error:
         parser.exit(1, f"migration refused: {error}\n")
     print(

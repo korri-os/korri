@@ -1,4 +1,6 @@
 import importlib.util
+import copy
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,6 +14,33 @@ HERE = Path(__file__).parent
 SPEC = importlib.util.spec_from_file_location("migration", HERE / "migrate.py")
 migration = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(migration)
+
+
+REFUSALS = [
+    ("player-count-string.yaml", "host.preferences.playerCount", "four"),
+    ("player-count-range.yaml", "host.preferences.player-count", 256),
+    ("player-count-boolean.yaml", "host.preferences.playerCount", True),
+    ("modifier-boolean.yaml", "modifiers.@korri:example/main.enabled", "true"),
+    ("argument-list.yaml", "host.argsAppend", "--flag"),
+    ("argument-member.yaml", "host.argsAppend[0]", False),
+    ("argument-nul.yaml", "host.argsAppend[0]", "a\x00b"),
+    ("settings-record.yaml", "families.@korri:example.settings", []),
+    ("setting-scalar.yaml", "runners.@korri:example/main.settings.key", []),
+    ("native-config-string.yaml", "runners.@korri:example/main.config.append", 42),
+    ("hook-list.yaml", "routines.setup.before", "true"),
+    ("hook-command.yaml", "hooks.setup.before[0].run", ""),
+    ("hook-timeout.yaml", "routines.setup.before[0].timeout", 18446744073709551616),
+    ("hook-policy.yaml", "routines.setup.before[0].on-failure", ["warn"]),
+    ("hook-trust-boolean.yaml", "host.hooks.trust-removable", "yes"),
+    ("cpu-range.yaml", "host.cpu.min", 101),
+    ("gpu-range.yaml", "host.gpu.max", 0),
+    ("environment-string.yaml", "host.env.VALUE", False),
+    ("environment-name.yaml", "host.env", "BAD=NAME"),
+    ("cwd-string.yaml", "host.cwd", []),
+    ("family-id.yaml", "families.not-a-plugin", "not-a-plugin"),
+    ("routine-reference.yaml", "host.hooks.use[0]", "missing"),
+    ("target-part-string.yaml", "provider-links.link.refs[0].targetPart", False),
+]
 
 
 class MigrationTests(unittest.TestCase):
@@ -73,6 +102,268 @@ class MigrationTests(unittest.TestCase):
             )
             self.assertEqual(migration.migrate(root), (False, None))
             self.assertEqual(len(list(root.glob("launch-settings-backup-*"))), 1)
+
+    def test_invalid_player_count_is_refused_before_any_backup_or_write(self):
+        source = (HERE / "fixtures/refusals/player-count-string.yaml").read_text()
+        device = yaml.load(source, Loader=migration.UniqueLoader)
+        with self.assertRaisesRegex(
+            migration.MigrationError, "host.preferences.playerCount.*four"
+        ):
+            migration.transform(device, {})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "catalog").mkdir()
+            (root / "device.yaml").write_text(source)
+            (root / "catalog/library.yaml").write_text("{}\n")
+            with self.assertRaises(migration.MigrationError):
+                migration.migrate(root)
+            self.assertEqual((root / "device.yaml").read_text(), source)
+            self.assertEqual(list(root.glob("launch-settings-backup-*")), [])
+
+    def test_refusal_fixtures_name_the_path_key_and_value_before_any_writes(self):
+        library = yaml.load(
+            (HERE / "fixtures/library.after.yaml").read_text(),
+            Loader=migration.UniqueLoader,
+        )
+        for filename, path, value in REFUSALS:
+            source = (HERE / "fixtures/refusals" / filename).read_text()
+            device = yaml.load(source, Loader=migration.UniqueLoader)
+            before = copy.deepcopy(device)
+            with self.subTest(fixture=filename):
+                with self.assertRaises(migration.MigrationError) as caught:
+                    migration.transform(device, library)
+                self.assertIn(path, str(caught.exception))
+                self.assertIn(repr(value), str(caught.exception))
+                self.assertEqual(device, before)
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    (root / "catalog").mkdir()
+                    (root / "device.yaml").write_text(source)
+                    shutil.copyfile(
+                        HERE / "fixtures/library.after.yaml",
+                        root / "catalog/library.yaml",
+                    )
+                    original_device = (root / "device.yaml").read_bytes()
+                    original_library = (root / "catalog/library.yaml").read_bytes()
+                    for dry_run in [True, False]:
+                        with self.assertRaises(migration.MigrationError):
+                            migration.migrate(root, dry_run=dry_run)
+                        self.assertEqual(
+                            (root / "device.yaml").read_bytes(), original_device
+                        )
+                        self.assertEqual(
+                            (root / "catalog/library.yaml").read_bytes(),
+                            original_library,
+                        )
+                        self.assertEqual(
+                            list(root.glob("launch-settings-backup-*")), []
+                        )
+                        self.assertEqual(list(root.rglob(".launch-settings-*")), [])
+
+    def test_renamed_and_moved_values_check_all_boundary_types_and_ranges(self):
+        for key in ["playerCount", "player-count"]:
+            for value in [None, True, False, "four", 4.0, 0, -1, 256, 2**64]:
+                with (
+                    self.subTest(key=key, value=value),
+                    self.assertRaises(migration.MigrationError),
+                ):
+                    migration.transform({"host": {"preferences": {key: value}}}, {})
+            for value in [1, 255]:
+                migrated, _ = migration.transform(
+                    {"host": {"preferences": {key: value}}}, {}
+                )
+                self.assertEqual(migrated["host"]["preferences"]["player-count"], value)
+                if os.environ.get("KORRI_CONFIG_CHECK"):
+                    migration.check_with_korrid(
+                        [migrated, {}], Path(os.environ["KORRI_CONFIG_CHECK"])
+                    )
+        for value in [None, False, 0, 1.0, "30", -1, 0, 2**64]:
+            with (
+                self.subTest(timeout=value),
+                self.assertRaises(migration.MigrationError),
+            ):
+                migration.transform(
+                    {
+                        "hooks": {
+                            "setup": {"before": [{"run": "true", "timeout": value}]}
+                        }
+                    },
+                    {},
+                )
+        for value in [1, 2**64 - 1]:
+            migrated, _ = migration.transform(
+                {"hooks": {"setup": {"before": [{"run": "true", "timeout": value}]}}},
+                {},
+            )
+            self.assertEqual(
+                migrated["routines"]["setup"]["before"][0]["timeout"], value
+            )
+            if os.environ.get("KORRI_CONFIG_CHECK"):
+                migration.check_with_korrid(
+                    [migrated, {}], Path(os.environ["KORRI_CONFIG_CHECK"])
+                )
+        for section in ["families", "runners", "modifiers"]:
+            with (
+                self.subTest(section=section),
+                self.assertRaises(migration.MigrationError),
+            ):
+                migration.transform({section: []}, {})
+        for value in [None, False, 0, 1, [], {}, ""]:
+            with (
+                self.subTest(targetPart=value),
+                self.assertRaises(migration.MigrationError),
+            ):
+                migration.transform(
+                    {
+                        "provider-links": {
+                            "link": {
+                                "provider": "@korri:example",
+                                "playable": "game",
+                                "refs": [
+                                    {
+                                        "kind": "provider-item-id",
+                                        "value": "item",
+                                        "targetPart": value,
+                                    }
+                                ],
+                            }
+                        }
+                    },
+                    {},
+                )
+
+    def test_moved_records_keep_accepted_booleans_settings_and_nullable_runner_config(
+        self,
+    ):
+        for enabled in [True, False]:
+            for config in [
+                None,
+                {"prepend": None, "append": "native", "replace": None},
+            ]:
+                source = {
+                    "runners": {
+                        "@korri:example/main": {
+                            "config": config,
+                            "settings": {
+                                "boolean": enabled,
+                                "number": 3.5,
+                                "string": "native",
+                            },
+                            "argsAppend": ["", "--flag"],
+                        }
+                    },
+                    "families": {
+                        "@korri:example": {
+                            "cpu": {"min": 0, "max": 100},
+                            "env": {"UNSET": None, "SET": "value"},
+                        }
+                    },
+                    "modifiers": {
+                        "@korri:example/main": {
+                            "enabled": enabled,
+                            "settings": {"value": enabled},
+                            "config": {"append": "native"},
+                        }
+                    },
+                }
+                device, _ = migration.transform(source, {})
+                self.assertEqual(
+                    device["host"]["runners"]["@korri:example/main"]["config"], config
+                )
+                self.assertIs(
+                    device["host"]["modifiers"]["@korri:example/main"]["enabled"],
+                    enabled,
+                )
+                if os.environ.get("KORRI_CONFIG_CHECK"):
+                    migration.check_with_korrid(
+                        [device, {}], Path(os.environ["KORRI_CONFIG_CHECK"])
+                    )
+
+    def test_guard_failures_refuse_before_backup_or_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            paths = [root / "device.yaml", root / "catalog/library.yaml"]
+            before = [path.read_bytes() for path in paths]
+            # A real rejecting program and a missing executable exercise both
+            # external guard failures without replacing subprocess or file I/O.
+            for probe in [Path("/bin/false"), root / "missing-probe"]:
+                with (
+                    self.subTest(probe=probe),
+                    self.assertRaises(migration.MigrationError),
+                ):
+                    migration.migrate(root, config_check=probe)
+                self.assertEqual([path.read_bytes() for path in paths], before)
+                self.assertEqual(list(root.glob("launch-settings-backup-*")), [])
+                self.assertEqual(list(root.rglob(".launch-settings-*")), [])
+
+    @unittest.skipUnless(
+        os.environ.get("KORRI_CONFIG_CHECK"),
+        "set KORRI_CONFIG_CHECK to the prebuilt probe for decoder parity checks",
+    )
+    def test_real_probe_validates_transformed_documents_without_source_writes(self):
+        probe = Path(os.environ["KORRI_CONFIG_CHECK"])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            before = [
+                (root / path).read_bytes()
+                for path in ["device.yaml", "catalog/library.yaml"]
+            ]
+            self.assertEqual(
+                migration.migrate(root, dry_run=True, config_check=probe), (True, None)
+            )
+            self.assertEqual(
+                [
+                    (root / path).read_bytes()
+                    for path in ["device.yaml", "catalog/library.yaml"]
+                ],
+                before,
+            )
+            self.assertEqual(list(root.glob("launch-settings-backup-*")), [])
+            command = [
+                sys.executable,
+                str(HERE / "migrate.py"),
+                "--storage-root",
+                str(root),
+                "--config-check",
+                str(probe),
+            ]
+            self.assertIn("backup:", subprocess.check_output(command, text=True))
+            self.assertEqual(
+                subprocess.check_output(command, text=True).strip(), "already migrated"
+            )
+
+    @unittest.skipUnless(
+        os.environ.get("KORRI_CONFIG_CHECK"),
+        "set KORRI_CONFIG_CHECK to the prebuilt probe for decoder parity checks",
+    )
+    def test_real_probe_refuses_invalid_fixture_documents_without_writes(self):
+        probe = Path(os.environ["KORRI_CONFIG_CHECK"])
+        library_path = HERE / "fixtures/library.after.yaml"
+        library = yaml.load(library_path.read_text(), Loader=migration.UniqueLoader)
+        for filename, _, _ in REFUSALS:
+            path = HERE / "fixtures/refusals" / filename
+            before = path.read_bytes()
+            library_before = library_path.read_bytes()
+            with self.subTest(fixture=filename):
+                result = subprocess.run(
+                    [str(probe), "--check", str(path), str(library_path)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("CONFIG SNAPSHOT FAILED", result.stderr)
+                with self.assertRaisesRegex(
+                    migration.MigrationError, "config-check refused"
+                ):
+                    migration.check_with_korrid(
+                        [yaml.load(before, Loader=migration.UniqueLoader), library],
+                        probe,
+                    )
+                self.assertEqual(path.read_bytes(), before)
+                self.assertEqual(library_path.read_bytes(), library_before)
 
     def test_unknown_shapes_and_key_clashes_refuse_without_writes(self):
         fixtures = [

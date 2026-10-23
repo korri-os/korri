@@ -1,0 +1,4 @@
+runners:
+  '@korri:example/main':
+    config:
+      append: 42
