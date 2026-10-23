@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     authorization::Authorization,
-    federation::FederationDirectory,
+    federation::{FederationDirectory, PeerState},
     peer_rpc::{self, unix_time, PeerRpcServer},
     relay::{EndpointRecord, ENDPOINT_EVENT_KIND},
     RpcRequest,
@@ -316,6 +316,97 @@ impl Node {
         };
         request.send().await.unwrap()
     }
+}
+
+#[tokio::test]
+async fn authenticated_save_requests_mark_ready_and_emit_only_one_contact() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let directory = &a.service.directory;
+    let mut contacts = directory.save_contacts();
+    assert_eq!(directory.snapshot().unwrap()[0].state, PeerState::Loading);
+
+    a.service
+        .remote_heads(&a.owner(), &b.device())
+        .await
+        .unwrap();
+    assert_eq!(directory.snapshot().unwrap()[0].state, PeerState::Ready);
+    assert_eq!(contacts.try_recv().unwrap(), b.device());
+
+    // Contact-triggered save work must not enqueue another contact.
+    a.service.on_contact(&b.device()).await.unwrap();
+    a.service
+        .remote_heads(&a.owner(), &b.device())
+        .await
+        .unwrap();
+    assert_eq!(directory.snapshot().unwrap()[0].state, PeerState::Ready);
+    assert!(matches!(
+        contacts.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
+}
+
+#[tokio::test]
+async fn failed_save_request_marks_peer_failed_without_contact() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    a.remember_candidates(
+        &b,
+        vec![format!("http://{}", listener.local_addr().unwrap())],
+    );
+    drop(listener);
+    let mut contacts = a.service.directory.save_contacts();
+
+    assert!(matches!(
+        a.service.remote_heads(&a.owner(), &b.device()).await,
+        Err(PeerSaveError::Network)
+    ));
+    assert!(matches!(
+        a.service.directory.snapshot().unwrap()[0].state,
+        PeerState::Failed { .. }
+    ));
+    assert!(matches!(
+        contacts.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
+}
+
+#[tokio::test]
+async fn superseded_save_request_cannot_overwrite_newer_peer_state() {
+    let a = Node::new(5, 3, TransferBehaviour::default()).await;
+    let behaviour = TransferBehaviour {
+        delay: Duration::from_millis(200),
+        ..Default::default()
+    };
+    let connections = behaviour.connections.clone();
+    let b = Node::new(6, 3, behaviour).await;
+    a.remember(&b);
+    b.remember(&a);
+    let service = a.service.clone();
+    let (owner, device) = (a.owner(), b.device());
+    let request = tokio::spawn(async move { service.remote_heads(&owner, &device).await });
+    // Even the initial TCP probe starts after the request reserves its token.
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while connections.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let directory = &a.service.directory;
+    let token = directory.begin_peer_work(&b.device()).unwrap();
+    let newer = PeerState::Failed {
+        error: "Newer operation failed".into(),
+    };
+    directory
+        .set_peer_state(&token, &b.device(), newer.clone())
+        .unwrap();
+
+    request.await.unwrap().unwrap();
+    assert_eq!(directory.snapshot().unwrap()[0].state, newer);
 }
 
 #[tokio::test]

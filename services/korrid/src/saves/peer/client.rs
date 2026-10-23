@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    federation::peer_origin,
+    federation::{peer_origin, PeerState},
     identity::OwnerStatementStatus,
     peer_rpc::{unix_time, MAX_PEER_EVENT_BYTES},
     RpcRequest, RpcResponse,
@@ -43,6 +43,30 @@ impl SavePeerService {
     }
 
     async fn request(
+        &self,
+        person: &str,
+        peer: &str,
+        request: RpcRequest,
+    ) -> Result<RpcResponse, PeerSaveError> {
+        self.require_owner(person)?;
+        let token = self
+            .directory
+            .begin_peer_work(peer)
+            .map_err(|_| PeerSaveError::Unauthorized)?;
+        let result = self.request_candidates(person, peer, request).await;
+        let state = match &result {
+            Ok(_) => PeerState::Ready,
+            Err(_) => PeerState::Failed {
+                error: "Authenticated peer operation failed".into(),
+            },
+        };
+        // Superseded, revoked or configuration-changed work cannot overwrite
+        // newer state. Repeated Ready completions do not emit another contact.
+        let _ = self.directory.set_peer_state(&token, peer, state);
+        result
+    }
+
+    async fn request_candidates(
         &self,
         person: &str,
         peer: &str,
