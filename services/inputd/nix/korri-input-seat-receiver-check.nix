@@ -31,6 +31,7 @@ pkgs.runCommand "korri-input-seat-receiver-check"
     from pathlib import Path
     root = Path(sys.argv[1])
     launch = "0123456789abcdef0123456789abcdef"
+    client_id = "01234567-89ab-cdef-0123-456789abcdef"
     def request(op): return bytes([1, op]) + launch.encode()
     coordinator = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
     coordinator.settimeout(2)
@@ -60,17 +61,24 @@ pkgs.runCommand "korri-input-seat-receiver-check"
     assert set(sidecar) == {"launchId", "generation", "mirrorToken"}
     assert sidecar["launchId"] == launch
     assert len(sidecar["mirrorToken"]) == 64
-    mirror = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
-    mirror.connect(str(root / "sunshine-input-seat.sock"))
     # The first measured state establishes a baseline. A connection announcement
     # alone must not invent neutral state or produce browser input.
     frame = {"mirrorToken": sidecar["mirrorToken"], "frame": {
-        "kind": "source-state", "launchId": launch, "controllerNumber": 0,
+        "kind": "source-state", "launchId": launch, "clientId": client_id, "controllerNumber": 0,
         "buttons": 0, "leftTrigger": 0, "rightTrigger": 0,
         "leftStickX": 0, "leftStickY": 0, "rightStickX": 0, "rightStickY": 0,
     }}
-    mirror.sendall((json.dumps(frame, separators=(",", ":")) + "\n").encode())
-    mirror.close()
+    def send_frame(frame):
+        mirror = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        mirror.connect(str(root / "sunshine-input-seat.sock"))
+        mirror.sendall((json.dumps(frame, separators=(",", ":")) + "\n").encode())
+        mirror.close()
+    # A missing client identity must not create a source or reserve a seat.
+    # Queue it before the valid baseline so the next observation proves both.
+    malformed = dict(frame, frame=dict(frame["frame"], controllerNumber=1))
+    del malformed["frame"]["clientId"]
+    send_frame(malformed)
+    send_frame(frame)
     for _ in range(100):
         reply = coordinate('poll')
         if reply['remoteSources']:
@@ -79,6 +87,8 @@ pkgs.runCommand "korri-input-seat-receiver-check"
     assert len(reply['remoteSources']) == 1, 'remote baseline did not arrive'
     assert reply['remoteSources'][0]['slot'] == 2
     assert reply['remoteSources'][0]['controllerNumber'] == 0
+    assert reply['remoteSources'][0]['clientId'] == client_id
+    assert all(source['controllerNumber'] != 1 for source in reply['remoteSources']), 'frame without clientId was accepted'
     control.sendall(request(2))
     assert control.recv(3) == bytes([1, 0, 0])
     control.close()
