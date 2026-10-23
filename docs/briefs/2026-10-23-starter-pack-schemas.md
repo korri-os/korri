@@ -1,6 +1,6 @@
 # Starter-pack schema proposals
 
-**Proposed, not approved.** This brief does not change a contract or authorize
+**Approved by the owner on 2026-10-23.** This brief does not itself change a contract; it authorizes
 implementation. It covers #192, #193, #194 and #197, under #189 and ADR 0033.
 
 Core citations refer to `299166068095982bbed0c7600f1e97b8480605d0`.
