@@ -52,6 +52,16 @@ also equals the pre-edit evaluated path. Whole disk-image GUIDs are already
 non-deterministic; this proof compares the actual populated firmware contents,
 not full-image hashes.
 
+A later staging-mode check also compared permissions. Nix freezes the shared
+output's directories to 0555, so the image population explicitly restores
+owner-write on directories after copying (the original producer used 0755).
+Executed the new evaluated `populateFirmwareCommands` into a second temporary
+tree and compared it with the original: **all 9 file bytes and all 18 file /
+directory modes match**. Payload modes remain 0444. Re-ran the 8 updater tests
+and the Mini module check successfully. This staging-only adjustment does not
+change either the toplevel or shared firmware derivation and needs no device
+write.
+
 ```text
 39de9119311fa4274f27908a561f2b876133810325d9deff89a9461f832c838b  EFI/BOOT/BOOTAA64.EFI
 f9de4f9f3faa4b914901eab6eeb819a2dba79b6398c709bab73df5d3ddd317e9  EFI/nixos/s1yqrmp6xk30x8h7vbywkm73jnwpsmni-initrd-linux-aarch64-unknown-linux-gnu-7.2-initrd

@@ -108,6 +108,9 @@
     populateFirmwareCommands = ''
       mkdir -p ./firmware
       cp -r ${config.system.build.rpminiv2Firmware}/. ./firmware/
+      # Nix freezes store directories to 0555. Keep the original image staging
+      # permissions (0755 directories, unchanged payload modes).
+      find ./firmware -type d -exec chmod u+w {} +
     '';
     # These operations target only the image file inside the Nix sandbox.
     # GPT conversion and first-boot expansion follow the Odin implementation.
