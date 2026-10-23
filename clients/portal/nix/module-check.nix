@@ -199,7 +199,7 @@ assert
   service.serviceConfig.ExecStart
   == "${korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-portal-wpe}/bin/korri-portal-wpe";
 assert service.serviceConfig.NoNewPrivileges;
-assert service.serviceConfig.RestrictNamespaces == false;
+assert !service.serviceConfig.RestrictNamespaces;
 assert service.serviceConfig.ProtectSystem == "strict";
 assert service.serviceConfig.ProtectHome;
 assert service.serviceConfig.PrivateTmp;

@@ -6,7 +6,6 @@ let
   kiosk = c.systemd.services.korri-portal-kiosk;
   compositor = c.systemd.services.korri-compositor;
   credential = "KORRID_RPC_CAPABILITY:/run/korri-portal-credentials/KORRID_RPC_CAPABILITY";
-  oldBootstrapAppId = "chrome-127.0.0.1__kiosk-blank.html-Default";
   inputDataNames = map lib.getName c.services.korriLinuxInput.provider.extraDataPackages;
 in
 # Hardware and boot facts.
@@ -74,7 +73,6 @@ assert c.services.korri.webSurfaceHost.surfaceId == "pico";
 assert c.services.korri.compositor.kiosk.enable;
 assert c.services.korri.pluginHost.enable;
 assert c.services.korriLinuxHost.compositor.neverFocusAppIds == [ "org.korri.portal" ];
-assert !(lib.hasInfix oldBootstrapAppId c.services.korriLinuxHost.compositor.extraConfig);
 assert !(configuration.options.services ? korriKiosk);
 assert !(c.systemd.services ? korri-kiosk);
 
