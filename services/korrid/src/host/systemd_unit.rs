@@ -1217,6 +1217,64 @@ impl SystemdLaunchUnitBackend {
         Ok(arguments)
     }
 
+    fn collect_previous_hook_attempt(
+        &self,
+        launch_id: &str,
+        step: usize,
+    ) -> Result<(), LaunchUnitError> {
+        let unit = format!("korri-hook-{launch_id}-{step}.service");
+        let deadline = Instant::now() + self.helper_timeout;
+        let mut stopped = false;
+        loop {
+            let output = self.run(
+                &self.systemctl,
+                &[
+                    "--system".into(),
+                    "--no-ask-password".into(),
+                    "show".into(),
+                    unit.clone(),
+                    "--property=LoadState".into(),
+                    "--property=ActiveState".into(),
+                ],
+            )?;
+            let text = String::from_utf8_lossy(&output.stdout);
+            let values: BTreeMap<_, _> = text
+                .lines()
+                .filter_map(|line| line.split_once('='))
+                .collect();
+            if values.get("LoadState") == Some(&"not-found") {
+                return Ok(());
+            }
+            if !output.status.success() || !values.contains_key("LoadState") {
+                return Err(LaunchUnitError::new(
+                    LaunchUnitErrorKind::Protocol,
+                    "cannot observe previous hook attempt",
+                ));
+            }
+            if !stopped {
+                // A daemon restart may leave this exact --wait client/unit
+                // running. End it before replaying the unfinished step.
+                self.require_success(
+                    &self.systemctl,
+                    &[
+                        "--system".into(),
+                        "--no-ask-password".into(),
+                        "stop".into(),
+                        unit.clone(),
+                    ],
+                )?;
+                stopped = true;
+            }
+            if Instant::now() >= deadline {
+                return Err(LaunchUnitError::new(
+                    LaunchUnitErrorKind::Timeout,
+                    "previous hook attempt was not collected",
+                ));
+            }
+            thread::sleep(HELPER_POLL_INTERVAL);
+        }
+    }
+
     pub(super) fn hook_arguments(
         &self,
         launch_id: &str,
@@ -1683,6 +1741,7 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
     ) -> Result<(), LaunchUnitError> {
         let arguments =
             self.hook_arguments(launch_id, step, game_command, run, timeout, environment)?;
+        self.collect_previous_hook_attempt(launch_id, step)?;
         let modifiers = crate::launcher::plugin_launch::has_modifiers(game_command);
         if modifiers {
             super::launch_diagnostics::create(
@@ -2656,7 +2715,7 @@ mod hook_unit_tests {
         let ctl = root.path().join("systemctl");
         fs::write(
             &helper,
-            "#!/bin/sh\nsleep 0.05\nwhile [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n",
+            "#!/bin/sh\nsleep 1.05\nwhile [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n",
         )
         .unwrap();
         fs::write(&ctl, "#!/bin/sh\nprintf 'LoadState=not-found\\n'\n").unwrap();
@@ -2664,7 +2723,7 @@ mod hook_unit_tests {
             fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
         }
         let mut backend = SystemdLaunchUnitBackend::new(helper, ctl, 1000, 1000).unwrap();
-        backend.helper_timeout = Duration::from_millis(5);
+        backend.helper_timeout = Duration::from_secs(1);
         let output = root.path().join("ran");
         backend
             .run_hook(
@@ -2743,5 +2802,42 @@ mod captured_exit_tests {
             None,
             "do not follow a runtime-created link"
         );
+    }
+}
+
+#[cfg(test)]
+mod hook_replay_tests {
+    use super::*;
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    #[test]
+    fn unfinished_hook_attempt_is_stopped_and_collected_before_its_step_replays() {
+        let root = tempfile::tempdir().unwrap();
+        let marker = root.path().join("running");
+        let events = root.path().join("events");
+        fs::write(&marker, "old hook").unwrap();
+        let ctl = root.path().join("systemctl");
+        fs::write(&ctl, format!("#!/bin/sh\ncase \" $* \" in\n*' stop '*) rm '{}'; echo stopped >> '{}' ;;\n*) if [ -f '{}' ]; then printf 'LoadState=loaded\\nActiveState=active\\n'; else printf 'LoadState=not-found\\n'; fi ;;\nesac\n", marker.display(), events.display(), marker.display())).unwrap();
+        let run = root.path().join("systemd-run");
+        fs::write(
+            &run,
+            format!("#!/bin/sh\necho replayed >> '{}'\n", events.display()),
+        )
+        .unwrap();
+        for path in [&ctl, &run] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let backend = SystemdLaunchUnitBackend::new(run, ctl, 1000, 1000).unwrap();
+        backend
+            .run_hook(
+                "0123456789abcdef0123456789abcdef",
+                0,
+                &["game".into()],
+                "true",
+                Duration::from_secs(30),
+                &BTreeMap::new(),
+            )
+            .unwrap();
+        assert_eq!(fs::read_to_string(events).unwrap(), "stopped\nreplayed\n");
     }
 }

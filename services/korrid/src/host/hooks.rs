@@ -172,7 +172,7 @@ impl AfterHooks {
         }
         if let Err(error) = backend.run_hook(
             launch_id,
-            self.next_step - 1,
+            self.next_step,
             &self.command,
             &step.run.0,
             Duration::from_secs(step.timeout.as_ref().map_or(30, |timeout| timeout.0)),
@@ -180,8 +180,7 @@ impl AfterHooks {
         ) {
             eprintln!(
                 "korrid: HookFailed {{ phase: after, step: {}, reason: {} }}",
-                self.next_step - 1,
-                error.message
+                self.next_step, error.message
             );
         }
     }

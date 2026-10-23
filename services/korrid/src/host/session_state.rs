@@ -993,17 +993,25 @@ impl HostSessionControl {
                 hooks.result = Some(super::hooks::SessionResult::Exited);
                 hooks.exit_status = self.backend.exit_status(&launch_id).ok().flatten();
             }
-            // Persist progress before running an arbitrary command. A daemon
-            // crash cannot execute the same effect twice; remaining steps stay
-            // available to the next daemon on this boot.
-            let step = hooks.steps.pop().expect("nonempty after steps");
-            hooks.next_step += 1;
+            let step = hooks.steps.last().expect("nonempty after steps").clone();
             let execution = hooks.clone();
+            // Journal the result before releasing its diagnostic source. Mark
+            // a step done only after it finishes. After-steps must be safe to
+            // run twice: a daemon crash replays the interrupted step.
             replace_active(&self.identity_root, record)?;
             self.backend
                 .cleanup_completed(&launch_id)
                 .map_err(|error| error.message)?;
             execution.run_next(self.backend.as_ref(), &launch_id, &step);
+            if let ActiveSession::Running {
+                after_hooks: Some(hooks),
+                ..
+            } = record
+            {
+                hooks.steps.pop();
+                hooks.next_step += 1;
+            }
+            replace_active(&self.identity_root, record)?;
         }
     }
 

@@ -24,6 +24,7 @@ struct RecordingBackend {
     unit: Mutex<Option<(String, LaunchUnitState)>>,
     fail_game: Mutex<bool>,
     exit_unknown: Mutex<bool>,
+    interrupt_step_once: Mutex<Option<String>>,
     hooks: Mutex<Vec<(String, Duration, BTreeMap<String, String>)>>,
 }
 impl LaunchUnitBackend for RecordingBackend {
@@ -57,6 +58,18 @@ impl LaunchUnitBackend for RecordingBackend {
             .lock()
             .unwrap()
             .push((run.into(), timeout, env.clone()));
+        let interrupt = {
+            let mut interrupted = self.interrupt_step_once.lock().unwrap();
+            if interrupted.as_deref() == Some(run) {
+                interrupted.take();
+                true
+            } else {
+                false
+            }
+        };
+        if interrupt {
+            panic!("daemon lost while hook was running");
+        }
         match run {
             "fail" => Err(LaunchUnitError::new(
                 LaunchUnitErrorKind::Failed,
@@ -435,4 +448,62 @@ async fn prepared_hook_environment_uses_only_the_games_explicit_baseline_and_pla
     assert!(!captured.contains_key(SENTINEL));
     assert_eq!(captured["KORRI_LAUNCH_ID"], launched.session.launch_id);
     assert_eq!(captured["KORRI_RUNNER_ID"], "@korri:mgba/mgba");
+}
+
+#[test]
+fn daemon_loss_mid_after_step_replays_only_that_step_and_the_remaining_steps() {
+    let root = tempfile::tempdir().unwrap();
+    let backend = Arc::new(RecordingBackend::default());
+    let first = control(root.path(), backend.clone());
+    let steps = hooks(
+        json!([]),
+        json!([
+            {"run":"remaining"}, {"run":"interrupted"}, {"run":"finished"}
+        ]),
+    );
+    prepare(&first, &steps).unwrap();
+    backend.unit.lock().unwrap().as_mut().unwrap().1 = LaunchUnitState::Completed;
+    *backend.interrupt_step_once.lock().unwrap() = Some("interrupted".into());
+    let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| first.status()));
+    assert!(
+        stopped.is_err(),
+        "simulate daemon loss after the step starts"
+    );
+    let record = read_active(&root.path().join("host-session"))
+        .unwrap()
+        .unwrap();
+    if let ActiveSession::Running {
+        after_hooks: Some(hooks),
+        ..
+    } = record
+    {
+        assert_eq!(
+            hooks
+                .steps
+                .iter()
+                .map(|step| step.run.0.as_str())
+                .collect::<Vec<_>>(),
+            ["remaining", "interrupted"]
+        );
+    } else {
+        panic!("unfinished after steps must remain journaled");
+    }
+    drop(first);
+    assert_eq!(
+        control(root.path(), backend.clone()).status(),
+        HostSessionStatus::NoActive
+    );
+    assert_eq!(
+        *backend.events.lock().unwrap(),
+        [
+            "game",
+            "finished",
+            "interrupted",
+            "interrupted",
+            "remaining"
+        ]
+    );
+    assert!(read_active(&root.path().join("host-session"))
+        .unwrap()
+        .is_none());
 }
