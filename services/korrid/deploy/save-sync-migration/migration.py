@@ -93,7 +93,26 @@ def account_moves(storage: Path, account: Path) -> list[tuple[Path, Path]]:
     return [(source, account)]
 
 
-def catalog_stems(storage: Path) -> dict[str, set[str]]:
+# Audited cartdata() calls in the unchanged Starter pack PNG payload. Keys are
+# existing catalog release identities, never cart filenames or game IDs. See
+# README.md for source pins, Lua extraction and the consumer path proof.
+FAKE08_CARTDATA = {
+    "sha256:310a57c27b0c2a49a6cfe68f0a9fddf5ebcb4b35be6f385c1695da5b32beffcd": "i_k_wormnomnom",
+    "sha256:07c1155f63a0a13e6300ef9aef8a26b0df650f15eb24a9ed73bb68394f079c0a": "toad_spaceman8",
+    "sha256:9e2c7759826af559697e0c69a331c8a14db2ddd5b1108bc91ea9fbe1570706d1": "nusan_defacto",
+    "sha256:ba3250ad0f3e73844d7003139ec0f46efe708d4764bac7d55075f851ddbfe1de": "sweetbuns1",
+    "sha256:e6b223cc8d91fded83605444cf9ef68366e88a987713e5c6bbbf4260163e51e3": "cherrybomb",
+    "sha256:a5cff876236fdc4a225684b43f5acf92cb8e9e06bc12de819dcac521233c3ab6": "highstakes",
+    "sha256:9d98592e889a7e8a6efaac2534f09f70b3770d96b521911c36adfefe346f0c07": "2darray_marble_merger",
+    "sha256:f42ffd0cfb87cc24d9eb26f92bd4553d46b1b2bef5c6ee201e5b9665b23cac8f": "mot_whiplashtaxi",
+    "sha256:6022f3e36884e02ea851f35663a6ebeef0bde51d2146a65ec1d541fc8d1b9f56": "disc",
+    "sha256:cacfc19bd8aaa6e7f19aea36e5c8c726e43a895e45a8a208912ecb18699862fe": "mush_vitreous_1",
+}
+
+
+def catalog_matches(
+    storage: Path,
+) -> tuple[dict[str, set[str]], dict[str, set[str]], set[str]]:
     import yaml
 
     class UniqueLoader(yaml.SafeLoader):
@@ -122,6 +141,8 @@ def catalog_stems(storage: Path) -> dict[str, set[str]]:
     if not isinstance(library, dict) or not isinstance(device, dict):
         raise TypeError("Catalog documents must be mappings")
     stems: dict[str, set[str]] = {}
+    cartdata: dict[str, set[str]] = {}
+    games: set[str] = set()
     for game, item in library.get("library", {}).items():
         if (
             not isinstance(game, str)
@@ -129,12 +150,17 @@ def catalog_stems(storage: Path) -> dict[str, set[str]]:
             or len(encode_component(game)) > 255
         ):
             raise ValueError("Invalid catalog game id")
+        games.add(game)
         for release in item["releases"]:
             identity = release.get("identity")
             if identity is None:
                 continue
+            if release["system"] == "pico8" and identity["kind"] == "hash":
+                data_id = FAKE08_CARTDATA.get(identity["value"])
+                if data_id is not None:
+                    cartdata.setdefault(data_id, set()).add(game)
             for location in device.get("locations", {}).get(identity["value"], []):
-                # Provider, executable and multi-file locations are not this GBA slice.
+                # Provider, executable and multi-file locations have no file stem.
                 if "storage" not in location or "path" not in location:
                     continue
                 path = location["path"]
@@ -147,7 +173,7 @@ def catalog_stems(storage: Path) -> dict[str, set[str]]:
                     raise ValueError("Unsafe catalog content path")
                 stem = Path(path).stem
                 stems.setdefault(stem, set()).add(game)
-    return stems
+    return stems, cartdata, games
 
 
 def location_files(root: Path, recursive: bool):
@@ -166,74 +192,96 @@ def location_files(root: Path, recursive: bool):
             raise ValueError(f"Refusing special file: {path}")
 
 
-def retroarch_files(root: Path, location: str, per_game: set[str]):
-    """Old RetroArch files under one shared location.
-
-    states recurse (raw runner folders). saves also look one folder deep for
-    RetroArch's sort-by-core layout, but never into a per-game save root
-    (saves/<encoded game id>), which this migration or korrid already owns.
-    """
-    if location == "states":
-        yield from location_files(root, True)
-        return
-    checked_path(root)
-    if not root.exists():
-        return
-    require_directory(root)
-    for path in sorted(root.iterdir()):
-        checked_path(path)
-        if path.is_dir():
-            if location == "saves" and path.name not in per_game:
-                yield from location_files(path, False)
-        elif path.is_file():
-            yield path
-        else:
-            raise ValueError(f"Refusing special file: {path}")
+def check_classification(
+    files: set[Path],
+    moves: list[tuple[Path, Path]],
+    retained: list[Path],
+    unresolved: list[Path],
+) -> None:
+    classified = [source for source, _ in moves] + retained + unresolved
+    if len(classified) != len(set(classified)):
+        raise ValueError("File classified more than once; no files moved")
+    missing = files - set(classified)
+    if missing:
+        raise ValueError(
+            f"Unclassified files; no files moved: {sorted(map(str, missing))}"
+        )
+    if set(classified) - files:
+        raise ValueError("Report includes files outside the inventory; no files moved")
+    print(
+        f"CLASSIFIED total={len(files)} moved={len(moves)} retained={len(retained)} "
+        f"unresolved={len(unresolved)} unclassified=0"
+    )
 
 
 def retroarch_moves(storage: Path, account: Path) -> list[tuple[Path, Path]]:
     require_directory(account)
-    stems = catalog_stems(storage)
-    moves = []
-    games_encoded = {
-        encode_component(game) for games in stems.values() for game in games
+    stems, cartdata, library_games = catalog_matches(storage)
+    moves: list[tuple[Path, Path]] = []
+    retained: list[Path] = []
+    unresolved: list[Path] = []
+    games_encoded = {encode_component(game) for game in library_games}
+    # Inventory recursively, independently of which old layouts we understand.
+    # An unknown nested file must be unresolved, never absent from the report.
+    inventory = {
+        location: set(location_files(account / location, True))
+        for location in ("saves", "states", "screenshots")
     }
-    for location in ("saves", "states", "screenshots"):
+    for location, files in inventory.items():
         root = account / location
-        for path in retroarch_files(root, location, games_encoded):
+        for path in sorted(files):
+            relative = path.relative_to(root)
+            if (
+                location == "saves"
+                and len(relative.parts) > 1
+                and relative.parts[0] in games_encoded
+            ):
+                retained.append(path)
+                print(f"RETAINED (per-game root): {str(path)!r}")
+                continue
             games: set[str] = set()
-            for stem, candidates in stems.items():
-                if location == "saves":
-                    # Flat, or one core folder deep when RetroArch sorts saves
-                    # by core (saves/mGBA/<stem>.srm on the RP Mini V2).
-                    matches = path.name == f"{stem}.srm"
-                elif location == "states":
-                    matches = path.parent != root and path.name.startswith(f"{stem}.")
-                else:
-                    # RetroArch task_screenshot.c + fill_str_dated_filename:
-                    # name_base.png or name_base-YYMMDD-HHMMSS.{png,bmp}.
-                    matches = (
-                        re.fullmatch(
-                            re.escape(stem) + r"(?:-\d{6}-\d{6})?\.(?:png|bmp)",
-                            path.name,
+            if (
+                location == "saves"
+                and relative.parts[:2] == ("fake-08", "cdata")
+                and len(relative.parts) == 3
+                and path.name.endswith(".p8d.txt")
+            ):
+                # Host::getCartDataFile uses the Lua cartdata key, not the
+                # cartridge stem. Keep fake-08/cdata exactly as the core reads it.
+                games.update(cartdata.get(path.name.removesuffix(".p8d.txt"), set()))
+            else:
+                for stem, candidates in stems.items():
+                    if location == "saves":
+                        matches = (
+                            len(relative.parts) <= 2 and path.name == f"{stem}.srm"
                         )
-                        is not None
-                    )
-                if matches:
-                    games.update(candidates)
+                    elif location == "states":
+                        matches = path.parent != root and path.name.startswith(
+                            f"{stem}."
+                        )
+                    else:
+                        # RetroArch task_screenshot.c + fill_str_dated_filename.
+                        matches = (
+                            len(relative.parts) == 1
+                            and re.fullmatch(
+                                re.escape(stem) + r"(?:-\d{6}-\d{6})?\.(?:png|bmp)",
+                                path.name,
+                            )
+                            is not None
+                        )
+                    if matches:
+                        games.update(candidates)
             if len(games) != 1:
+                unresolved.append(path)
                 label = "AMBIGUOUS" if games else "UNMATCHED"
-                print(f"{label} (left in place): {str(path)!r}")
+                print(
+                    f"{label} (left in place): {str(path)!r}; games={sorted(games)!r}"
+                )
                 continue
             game = next(iter(games))
-            target = (
-                account
-                / "saves"
-                / encode_component(game)
-                / location
-                / path.relative_to(root)
-            )
+            target = account / "saves" / encode_component(game) / location / relative
             moves.append((path, target))
+    check_classification(set().union(*inventory.values()), moves, retained, unresolved)
     return moves
 
 

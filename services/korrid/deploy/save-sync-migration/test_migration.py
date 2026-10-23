@@ -52,16 +52,18 @@ class MigrationTest(unittest.TestCase):
     def write_event(self):
         (self.private / "identity/owner.event.json").write_text(json.dumps(self.event))
 
-    def catalog(self, games):
+    def catalog(self, games, identities=None):
         library, locations = {}, {}
         for index, (game, paths) in enumerate(games.items()):
             releases = []
             for number, path in enumerate(paths):
-                identity = f"sha256:{index * 100 + number:064x}"
+                identity = (identities or {}).get(
+                    path, f"sha256:{index * 100 + number:064x}"
+                )
                 releases.append(
                     {
                         "id": f"release-{number}",
-                        "system": "gba",
+                        "system": "pico8" if path.endswith(".p8.png") else "gba",
                         "identity": {"kind": "hash", "value": identity},
                     }
                 )
@@ -371,6 +373,150 @@ class MigrationTest(unittest.TestCase):
         before = self.tree()
         self.command("migrate-retroarch.py", ok=False)
         self.assertEqual(before, self.tree())
+
+    def fake08_catalog(self, *, duplicate=False, known_identity=True):
+        # Original Starter pack bytes, not guessed from the save/cart filenames.
+        games = {
+            "marble-merger": ["pico8/marble_merger-5.p8.png"],
+            "worm-nom-nom": ["pico8/23208.p8.png"],
+        }
+        if duplicate:
+            games["another-marble"] = ["pico8/marble_merger-5.p8.png"]
+        identities = {
+            "pico8/marble_merger-5.p8.png": "sha256:9d98592e889a7e8a6efaac2534f09f70b3770d96b521911c36adfefe346f0c07",
+            "pico8/23208.p8.png": "sha256:310a57c27b0c2a49a6cfe68f0a9fddf5ebcb4b35be6f385c1695da5b32beffcd",
+        }
+        self.catalog(games, identities if known_identity else None)
+
+    def test_real_fake08_cartdata_ids_move_to_consumer_paths_and_rerun_retains(
+        self,
+    ) -> None:
+        self.fake08_catalog()
+        pairs = [
+            ("2darray_marble_merger", "marble-merger"),
+            ("i_k_wormnomnom", "worm-nom-nom"),
+        ]
+        for cartdata, _ in pairs:
+            self.file(f"saves/fake-08/cdata/{cartdata}.p8d.txt", b"0" * 520)
+        self.move_account()
+        before = self.tree()
+        result = self.command("migrate-retroarch.py", "--dry-run")
+        self.assertEqual(before, self.tree())
+        self.assertIn("moved=2 retained=0 unresolved=0 unclassified=0", result.stdout)
+        for cartdata, game in pairs:
+            self.assertIn(
+                str(
+                    self.account
+                    / f"saves/{game}/saves/fake-08/cdata/{cartdata}.p8d.txt"
+                ),
+                result.stdout,
+            )
+        self.command("migrate-retroarch.py")
+        for cartdata, game in pairs:
+            destination = (
+                self.account / f"saves/{game}/saves/fake-08/cdata/{cartdata}.p8d.txt"
+            )
+            self.assertEqual(destination.read_bytes(), b"0" * 520)
+            self.assert_shared_acl(destination, 6)
+            self.assertFalse(
+                (self.account / f"saves/fake-08/cdata/{cartdata}.p8d.txt").exists()
+            )
+        before = self.tree()
+        result = self.command("migrate-retroarch.py")
+        self.assertIn("moved=0 retained=2 unresolved=0 unclassified=0", result.stdout)
+        self.assertEqual(before, self.tree())
+
+    def test_fake08_ambiguous_or_absent_library_identity_is_not_guessed(self) -> None:
+        self.fake08_catalog(duplicate=True)
+        paths = [
+            "saves/fake-08/cdata/2darray_marble_merger.p8d.txt",
+            "saves/fake-08/cdata/unknown.p8d.txt",
+        ]
+        for path in paths:
+            self.file(path)
+        self.move_account()
+        result = self.command("migrate-retroarch.py", "--dry-run")
+        self.assertIn("AMBIGUOUS", result.stdout)
+        self.assertIn("another-marble", result.stdout)
+        self.assertIn("marble-merger", result.stdout)
+        self.assertIn("UNMATCHED", result.stdout)
+        self.assertIn("moved=0 retained=0 unresolved=2 unclassified=0", result.stdout)
+        # A matching filename with different bytes is not evidence of cartdata use.
+        self.fake08_catalog(known_identity=False)
+        result = self.command("migrate-retroarch.py")
+        self.assertNotIn("MOVE ", result.stdout)
+        self.assertIn("unresolved=2", result.stdout)
+        for path in paths:
+            self.assertTrue((self.account / path).is_file())
+        self.catalog({"unrelated": ["gba/Unrelated.gba"]})
+        result = self.command("migrate-retroarch.py", "--dry-run")
+        self.assertIn("unresolved=2", result.stdout)
+
+    def test_nested_unknown_files_are_reported_and_per_game_files_are_retained(
+        self,
+    ) -> None:
+        paths = [
+            "saves/unknown/deep/file.bin",
+            "saves/fake-08/cdata/not-a-save.txt",
+            "saves/unknown/deep/Wario.srm",
+            "states/unknown/deep/file.bin",
+            "screenshots/unknown/deep/Wario.png",
+        ]
+        for path in paths:
+            self.file(path)
+        self.file("saves/wario-land-4/saves/mGBA/Wario.srm")
+        self.move_account()
+        before = self.tree()
+        result = self.command("migrate-retroarch.py", "--dry-run")
+        for path in paths:
+            self.assertIn(str(self.account / path), result.stdout)
+        self.assertIn("RETAINED", result.stdout)
+        self.assertIn(
+            "total=6 moved=0 retained=1 unresolved=5 unclassified=0", result.stdout
+        )
+        self.assertEqual(before, self.tree())
+
+    def test_fake08_uses_library_identity_not_game_id_or_cartridge_filename(
+        self,
+    ) -> None:
+        self.catalog(
+            {"renamed-game": ["pico8/renamed.p8.png", "other/renamed.p8.png"]},
+            {
+                "pico8/renamed.p8.png": "sha256:310a57c27b0c2a49a6cfe68f0a9fddf5ebcb4b35be6f385c1695da5b32beffcd",
+                "other/renamed.p8.png": "sha256:310a57c27b0c2a49a6cfe68f0a9fddf5ebcb4b35be6f385c1695da5b32beffcd",
+            },
+        )
+        self.file("saves/fake-08/cdata/i_k_wormnomnom.p8d.txt")
+        self.move_account()
+        result = self.command("migrate-retroarch.py", "--dry-run")
+        self.assertIn(
+            "saves/renamed-game/saves/fake-08/cdata/i_k_wormnomnom.p8d.txt",
+            result.stdout,
+        )
+        self.assertIn("moved=1 retained=0 unresolved=0 unclassified=0", result.stdout)
+
+    def test_fake08_collision_refuses_before_any_move_or_acl(self) -> None:
+        self.fake08_catalog()
+        self.file("saves/fake-08/cdata/i_k_wormnomnom.p8d.txt")
+        self.file("saves/fake-08/cdata/2darray_marble_merger.p8d.txt")
+        self.file(
+            "saves/worm-nom-nom/saves/fake-08/cdata/i_k_wormnomnom.p8d.txt",
+            b"other progress",
+        )
+        self.move_account()
+        before = self.tree()
+        self.command("migrate-retroarch.py", "--dry-run", ok=False)
+        self.command("migrate-retroarch.py", ok=False)
+        self.assertEqual(before, self.tree())
+
+    def test_incomplete_or_duplicate_classification_refuses(self) -> None:
+        from migration import check_classification
+
+        path = self.file("saves/unknown/deep/file.bin")
+        with self.assertRaisesRegex(ValueError, "Unclassified"):
+            check_classification({path}, [], [], [])
+        with self.assertRaisesRegex(ValueError, "more than once"):
+            check_classification({path}, [], [path], [path])
 
     def test_core_sorted_saves_move_with_their_core_folder(self):
         # RetroArch's sort-by-core layout, as found on the RP Mini V2.

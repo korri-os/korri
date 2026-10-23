@@ -291,7 +291,11 @@ On each device, before starting the new korrid:
    run requires the first migration to have completed.
 3. Review every `UNMATCHED` and `AMBIGUOUS` line. Those files stay where they
    are; the new runner will not load them. Resolve their game identity before
-   playing if they contain progress to keep. Do not delete them.
+   playing if they contain progress to keep. Do not delete them. Check the
+   `CLASSIFIED` summary: every file under the old `saves/`, `states/` and
+   `screenshots/` roots must be moved, retained in a known per-game root, or
+   unresolved. An incomplete or duplicate classification refuses all effects.
+   Nested unknown files must appear in the report too.
 4. Activate the new product and plugin, restart korrid, and launch the GBA game.
    Confirm its old progress loads. End the session and check save history.
    The first peer contact can require the first-sync review; do not overwrite
@@ -318,9 +322,17 @@ are the existing `config/library.rs` and `config/mod.rs` shapes, not a new
 migration manifest. Multiple releases of one game can match; a stem shared by
 different games is ambiguous and stays untouched. The slice covers `.srm`,
 `states/<runnerId>/<stem>.*`, and RetroArch's plain or dated PNG/BMP screenshots.
+It also carries the observed FAKE-08 `saves/fake-08/cdata/<id>.p8d.txt` files.
+Those IDs come from Lua `cartdata("<id>")`, not cartridge filenames. An audit
+of the real Starter pack payload supplies the cartdata IDs for exact existing
+release hashes. The tool joins these hashes to catalog games; zero or several
+candidate games stay unresolved. It preserves `fake-08/cdata/` beneath each
+per-game `saves/`, exactly where the current core reads and writes it. See the
+[migration README](../../services/korrid/deploy/save-sync-migration/README.md)
+for the consumer path proof, cartridge audit, report format and host rehearsal.
 The raw runner id is preserved, including its nested folders. Provider and
-multi-file locations, custom screenshot names and files without a catalog
-match are not guessed.
+multi-file locations, custom screenshot names, unaudited cartridges and files
+without a catalog match are not guessed.
 
 Both commands refuse any nonempty `host-session` journal, including pending
 completion or recovery files. Recover with the old korrid; never delete that
