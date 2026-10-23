@@ -420,7 +420,10 @@ async fn prepared_hook_environment_uses_only_the_games_explicit_baseline_and_pla
     .with_route_registry(root.path().into(), registry);
     runtime.claim_save_owner();
     let launched = runtime
-        .prepare(crate::plugin_test_fixtures::GBA_ID, None)
+        .prepare(
+            crate::plugin_test_fixtures::GBA_ID,
+            runtime.owner_public_key().as_deref(),
+        )
         .await
         .unwrap();
     let captured = backend.hooks.lock().unwrap()[0].2.clone();
