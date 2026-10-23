@@ -331,3 +331,24 @@ test("launch settings open from the game page, offer the runner chooser for miss
   expect(view.model().launchSettings?._tag).toBe("Closed")
   reads.mockRestore()
 })
+
+test("a game's page shows the launch profile its next launch uses, read once", async () => {
+  const korrid = createInMemoryKorridClient({
+    games: [game()],
+    gameRoutes: [routes()],
+    launchSettings: { profiles: { wl4: [{ id: "quiet", title: "Quiet" }] }, selected: { wl4: "quiet" } },
+  })
+  const reads = spyOn(korrid, "launchSettingsSnapshot")
+  const view = await mount(korrid)
+  const id = view.id("wl4")
+  const shown = () => {
+    const catalog = view.model().catalog
+    return catalog._tag === "Ready" ? catalog.games.find(candidate => candidate.id === id)?.activeProfile : undefined
+  }
+  expect(shown()).toBeUndefined()
+  await invoke(() => view.host().gameActions(id))
+  await waitFor(() => shown() === "Quiet")
+  await invoke(() => view.host().gameActions(id))
+  expect(reads.mock.calls.filter(call => call[0] === "wl4")).toHaveLength(1)
+  reads.mockRestore()
+})
