@@ -1601,6 +1601,7 @@ export interface SessionStopResult {
 
 export interface SessionStreamPlayRequest {
 	launchId: string;
+	deviceLabel: string;
 }
 
 export interface SessionThawRequest {

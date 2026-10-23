@@ -50,11 +50,18 @@ impl HostSessionControl {
                 .map_err(|_| recovery_blocked_failure())?
                 .ok_or_else(|| failure("NoActiveSession", "This device has no live session."))?;
             if let ActiveSession::Running { stream_players, .. } = &mut record {
-                if !stream_players
-                    .iter()
-                    .any(|known| known.device_public_key == player.device_public_key)
+                let changed = if let Some(known) = stream_players
+                    .iter_mut()
+                    .find(|known| known.device_public_key == player.device_public_key)
                 {
+                    let changed = known.label != player.label;
+                    known.label = player.label;
+                    changed
+                } else {
                     stream_players.push(player);
+                    true
+                };
+                if changed {
                     replace_active(&self.identity_root, &record)
                         .map_err(|_| recovery_blocked_failure())?;
                 }

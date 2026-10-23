@@ -83,6 +83,7 @@ impl UpstreamRegistry {
         &self,
         device_public_key: &str,
         launch_id: &str,
+        device_label: &str,
     ) -> Result<ActiveSession, UpstreamError> {
         let registry = self.resolved()?;
         let _mutation = registry.remote_prepare_mutation.lock().await;
@@ -100,7 +101,7 @@ impl UpstreamRegistry {
             .as_deref()
             .filter(|s| !s.trim().is_empty())
             .ok_or(UpstreamError::MoonlightHostCandidatesUnavailable)?;
-        let mut active = client.stream_play(launch_id).await?;
+        let mut active = client.stream_play(launch_id, device_label).await?;
         let selected = SelectedRemoteSession {
             participation: Participation::StreamPlayer {
                 game_id: active.game_id.clone(),

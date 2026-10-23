@@ -2032,7 +2032,7 @@ mod tests {
                     Some(phase) => crate::stream_play::SessionStreamPlayOutcome::Ok(
                         serde_json::from_value(serde_json::json!({
                             "launchId":state.launch_id,"gameId":"game","title":"Game","phase":phase,
-                            "streamPlayers":[{"devicePublicKey":"player","label":"Tablet"}]
+                            "streamPlayers":[{"devicePublicKey":"player","label":request.device_label}]
                         }))
                         .unwrap(),
                     ),

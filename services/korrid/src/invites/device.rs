@@ -140,11 +140,19 @@ pub(crate) async fn stream_play(
             .expect("invites mutex poisoned")
             .get(&request.invite_id)
             .ok_or_else(absent)?;
+        let caller = state.clone();
+        let label =
+            tokio::task::spawn_blocking(move || stream_play::registration::caller_label(&caller))
+                .await
+                .map_err(|error| RpcFailure {
+                    code: "DeviceLabelUnavailable".into(),
+                    message: error.to_string(),
+                })??;
         let active = state
             .remote
             .as_ref()
             .ok_or_else(absent)?
-            .stream_play(&invite.device_public_key, &invite.session.launch_id)
+            .stream_play(&invite.device_public_key, &invite.session.launch_id, &label)
             .await
             .map_err(upstream_failure)?;
         state

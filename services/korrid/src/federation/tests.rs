@@ -540,3 +540,6 @@ fn optional_endpoint_metadata_is_bounded_and_empty_endpoints_are_invalid() {
     endpoint.candidates.clear();
     assert!(endpoint.validate(1000).is_err());
 }
+
+#[path = "stream_play_label_tests.rs"]
+mod stream_play_labels;

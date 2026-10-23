@@ -6,11 +6,12 @@ async fn stream_player_pause_end_and_local_leave_never_control_the_holder() {
     let key = config.device_public_key.clone().unwrap();
     let viewer = TestLinuxStreamViewer::default();
     let registry = UpstreamRegistry::new(vec![config]).with_linux_viewer(Arc::new(viewer.clone()));
-    assert_eq!(registry.stream_play(&key, &far.launch_id).await.unwrap_err().code(), "NoActiveSession");
+    assert_eq!(registry.stream_play(&key, &far.launch_id, "Pocket Mini").await.unwrap_err().code(), "NoActiveSession");
     far.set_phase("running");
-    assert_eq!(registry.stream_play(&key, "wrong").await.unwrap_err().code(), "LaunchMismatch");
-    let active = registry.stream_play(&key, &far.launch_id).await.unwrap();
+    assert_eq!(registry.stream_play(&key, "wrong", "Pocket Mini").await.unwrap_err().code(), "LaunchMismatch");
+    let active = registry.stream_play(&key, &far.launch_id, "Pocket Mini").await.unwrap();
     assert_eq!(active.stream_players.len(), 1);
+    assert_eq!(active.stream_players[0].label, "Pocket Mini");
     for tag in ["app.session.controls", "app.session.control.invoke"] {
         let payload = if tag == "app.session.controls" { serde_json::json!({"launchId":far.launch_id}) }
             else { serde_json::json!({"launchId":far.launch_id,"controlId":"plugin/action"}) };
@@ -30,10 +31,10 @@ async fn stream_player_pause_end_and_local_leave_never_control_the_holder() {
     assert_eq!(far.active_phase.lock().unwrap().as_deref(), Some("running"));
     assert!(!registry.has_selected_session());
     assert!(registry.stream_play_launch_id().is_none());
-    registry.stream_play(&key, &far.launch_id).await.unwrap();
+    registry.stream_play(&key, &far.launch_id, "Pocket Mini").await.unwrap();
     registry.session_stop(Some(&far.launch_id), true).await.unwrap();
     assert_eq!(far.active_phase.lock().unwrap().as_deref(), Some("running"));
-    registry.stream_play(&key, &far.launch_id).await.unwrap();
+    registry.stream_play(&key, &far.launch_id, "Pocket Mini").await.unwrap();
     *far.active_phase.lock().unwrap() = None;
     registry.session_status().await.unwrap();
     assert!(!registry.has_selected_session());

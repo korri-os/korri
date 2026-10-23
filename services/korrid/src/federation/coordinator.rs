@@ -38,6 +38,19 @@ impl FederationResources {
     }
 }
 
+/// The one label producer used by endpoint publication and stream registration.
+pub(crate) fn device_label(
+    snapshot: &crate::config::ConfigSnapshot,
+    fallback: Option<String>,
+) -> Option<String> {
+    snapshot
+        .host
+        .as_ref()
+        .and_then(|host| host.title.clone())
+        .filter(|title| !title.trim().is_empty())
+        .or(fallback)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DiscoveryInputs {
     pub relays: Option<RelayList>,
@@ -77,13 +90,7 @@ impl DiscoveryInputs {
             inputs.label = None;
             inputs.moonlight_address = None;
         } else {
-            inputs.label = state
-                .snapshot
-                .host
-                .as_ref()
-                .and_then(|host| host.title.clone())
-                .filter(|title| !title.trim().is_empty())
-                .or(inputs.label);
+            inputs.label = device_label(&state.snapshot, inputs.label);
         }
         Ok(inputs)
     }

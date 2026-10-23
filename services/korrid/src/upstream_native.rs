@@ -310,11 +310,13 @@ impl NativeClient {
     pub(crate) async fn stream_play(
         &self,
         launch_id: &str,
+        device_label: &str,
     ) -> Result<crate::ActiveSession, UpstreamError> {
         match self
             .call(RpcRequest::SessionStreamPlay(
                 crate::stream_play::SessionStreamPlayRequest {
                     launch_id: launch_id.into(),
+                    device_label: device_label.into(),
                 },
             ))
             .await?

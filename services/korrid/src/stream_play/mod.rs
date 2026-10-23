@@ -21,6 +21,7 @@ pub struct StreamPlayer {
 #[serde(rename_all = "camelCase")]
 pub struct SessionStreamPlayRequest {
     pub launch_id: String,
+    pub device_label: String,
 }
 
 #[typeshare]
@@ -64,7 +65,7 @@ mod tests {
         for (tag, payload, expected) in [
             (
                 "app.session.streamPlay",
-                serde_json::json!({"launchId":"exact"}),
+                serde_json::json!({"launchId":"exact", "deviceLabel":"Device"}),
                 PeerPolicy::OwnerDeviceOnly,
             ),
             (
