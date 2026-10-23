@@ -1,0 +1,37 @@
+--- a/Source/WebCore/platform/graphics/gbm/DRMDeviceManager.cpp
++++ b/Source/WebCore/platform/graphics/gbm/DRMDeviceManager.cpp
+@@ -28,6 +28,8 @@
+ 
+ #if USE(GBM)
+ #include "GBMDevice.h"
++#include <xf86drm.h>
++#include <wtf/Vector.h>
+ 
+ namespace WebCore {
+ 
+@@ -65,7 +67,24 @@
+             m_mainDevice.gbmRenderNode = GBMDevice::create(m_mainDevice.device.renderNode);
+             return *m_mainDevice.gbmRenderNode;
+         }
+-        // Fallback to primary node.
++        // Display-only controllers (H700 sun4i-drm card1) have no render node.
++        // Use a GPU (panfrost renderD128), not a privileged primary node.
++        m_mainDevice.gbmRenderNode = nullptr;
++        int count = drmGetDevices2(0, nullptr, 0);
++        if (count > 0) {
++            Vector<drmDevicePtr> devices(count);
++            count = drmGetDevices2(0, devices.data(), count);
++            for (int i = 0; i < count; ++i) {
++                if (!(devices[i]->available_nodes & (1 << DRM_NODE_RENDER)))
++                    continue;
++                m_mainDevice.gbmRenderNode = GBMDevice::create(CString(devices[i]->nodes[DRM_NODE_RENDER]));
++                if (*m_mainDevice.gbmRenderNode)
++                    break;
++            }
++            if (count > 0)
++                drmFreeDevices(devices.data(), count);
++        }
++        return *m_mainDevice.gbmRenderNode;
+     }
+ 
+     if (!m_mainDevice.gbmPrimaryNode)

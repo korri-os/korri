@@ -170,6 +170,7 @@
               inherit pkgs;
             };
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
+            korri-wpewebkit = pkgs.callPackage ./clients/linux/wpewebkit/wpewebkit.nix { };
             korri-chromium = import ./clients/linux/chromium/package.nix { inherit pkgs; };
           }
         )
