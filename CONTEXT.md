@@ -175,6 +175,10 @@ _Avoid_: merge, match, personal link
 A game a plugin states directly, naming its releases' hashes and any files it prepared or artifacts that hold them, instead of one discovery found in a source. A hash list is a set of declared games. A declared game whose release comes from artifacts is in the library before its artifacts are on the device.
 _Avoid_: prepared game, plugin game, hash database
 
+**Starter pack**:
+A one-time offer that adds a set of games and the runners that play them, during setup or later. Its games are acquired from providers like any download, and work offline when the device already holds their content. After it runs, each game and each plugin stands alone: its games belong to the device's library as if the person had added them, the person can remove any game or runner, and the starter pack keeps no claim on what it added. Removing a game or a runner never removes saves. A removed game stays in library history as unavailable. The person can run a starter pack again; it adds back only what is missing, after asking.
+_Avoid_: bundle, game pack, pack plugin
+
 **Artifact**:
 A download a plugin declares by fixed address and hash. Korri fetches it, checks it and unpacks it on the device that needs it, and can fetch it again if it is lost. It can hold a runtime or a game's content.
 _Avoid_: payload, package, download (alone), delivery
