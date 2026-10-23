@@ -24,7 +24,7 @@ korrid makes every request, adds the person's API key itself, downloads the
 image, checks it and stores it. The plugin never sees the key and performs no
 effects (AGENTS.md, "Plugin boundaries"). The API key becomes a plugin secret,
 the general mechanism in
-[ADR 0033](0033-korrid-holds-plugin-secrets-and-plugins-never-see-them.md).
+[ADR 0034](0034-korrid-holds-plugin-secrets-and-plugins-never-see-them.md).
 The built-in title rewrite is dropped. One clean cut removes the Rust fetcher,
 and a one-off migration moves each device's real data.
 
@@ -161,7 +161,7 @@ folder that the owner chose. `attempts.json` is main's `ATTEMPTS_FILE`
 ### 3. The API key is a plugin secret
 
 The key uses the plugin secret of
-[ADR 0033](0033-korrid-holds-plugin-secrets-and-plugins-never-see-them.md).
+[ADR 0034](0034-korrid-holds-plugin-secrets-and-plugins-never-see-them.md).
 That ADR decides who reads it (korrid only), how it is stored, how the
 person enters it, how the approval report shows it, and the generic set and
 clear RPCs that replace `system.settings.steamgriddbCredential.set` and
@@ -230,7 +230,7 @@ needs nothing.
 1. `<private>/steamgriddb.credential`: write its trimmed content as the
    `@korri:steamgriddb` plugin secret, in `<private>/@korri:steamgriddb/`.
    The file is `<private>/@korri:steamgriddb/credential`. The folder is
-   mode 0700 and the file 0600, both owned by `korrid` (ADR 0033). Then
+   mode 0700 and the file 0600, both owned by `korrid` (ADR 0034). Then
    delete the old file.
 2. `<private>/steamgriddb-enrichment/`: delete it. It records past lookups,
    not user data, and its outcome names change.
@@ -305,7 +305,7 @@ it.
 | `source.url` | legacy `GameAssetSource.url` (optional, no query or fragment) | Required, because korrid downloads it. HTTPS only (main `asset_download.rs`). The host must be in `hosts`. |
 | Stored provenance | main `SteamGridDbProvenance`, legacy `GameAssetSource` | `game_id` and `grid_id` become `id`, `provider` becomes the plugin id, and `url` is optional. `sha256`, `width`, `height` and `format` stay. |
 | Attempt record and key | main `AttemptRecord`, `attempt_key`, `ATTEMPTS_FILE` | Kept, one set per plugin, in the plugin's folder (owner decision). Three outcomes go (section 2). |
-| Secret declaration, value, RPCs, status | ADR 0033 grounding table | See ADR 0033. |
+| Secret declaration, value, RPCs, status | ADR 0034 grounding table | See ADR 0034. |
 | Bearer header | SteamGridDB OpenAPI, legacy `vite.config.mjs` proxy | None. |
 
 ## Amendments to ADR 0016
@@ -317,7 +317,7 @@ artwork section beside "Acquisition providers".
 | ADR 0016 place | Today | Amended |
 |---|---|---|
 | Decision, third bullet (`plugin.nix` gains `hosts`) | "for provider turns and the game download alike" | Also artwork turns and the artwork image download. |
-| Grounding row `PluginHttpRequest { url, query?, headers?, timeoutMs? }` | "`authorization` … refused (no auth provider in scope)" | The plugin still cannot set `authorization`. korrid adds it from the plugin secret (ADR 0033). |
+| Grounding row `PluginHttpRequest { url, query?, headers?, timeoutMs? }` | "`authorization` … refused (no auth provider in scope)" | The plugin still cannot set `authorization`. korrid adds it from the plugin secret (ADR 0034). |
 | Grounding row `hosts` | "and only with a `providers` export" | Or with a `game-assets.candidates` handler. The check is `plugin-host/src/package.rs` :972–978 ("hosts require a providers contribution"). |
 | Grounding row RPC methods | "`credentialRequired` … have no main producer" | The secret declaration is now its producer. It lives in the manifest and settings, not in `AcquisitionProvider`. |
 | Turn bounds paragraph | provider operations | Applies unchanged to `game-assets.candidates`. |
@@ -326,7 +326,7 @@ artwork section beside "Acquisition providers".
 
 - **Keep the fetcher in korrid.** Rejected by the owner decision.
 - **The plugin receives the key** (legacy `credentials.get`). Rejected in
-  ADR 0033.
+  ADR 0034.
 - **The plugin downloads and returns image bytes** (legacy
   `artifact.acquire`). Rejected: plugins perform no I/O, and ADR 0016 already
   dropped plugin-side bytes.
@@ -360,6 +360,6 @@ artwork section beside "Acquisition providers".
 
 ## Owner questions
 
-No open owner questions. ADR 0033 records the answers that change this ADR:
+No open owner questions. ADR 0034 records the answers that change this ADR:
 the key is the person's and follows the play-log choice at an identity
 switch, and the migrated file is named `credential`.
