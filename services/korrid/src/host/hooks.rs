@@ -12,7 +12,7 @@ use std::{collections::BTreeMap, time::Duration};
 pub(super) struct LaunchHooks {
     pub resolved: crate::launch_settings::ResolvedHooks,
     pub context: Context,
-    pub game_environment: BTreeMap<String, String>,
+    pub environment_changes: crate::launcher::linux_plugin::PlanEnvironment,
 }
 
 pub(super) const VARIABLES: [&str; 10] = [

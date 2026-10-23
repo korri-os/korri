@@ -746,17 +746,17 @@ impl HostRuntime {
         let hooks = if resolved.hooks.before.is_empty() && resolved.hooks.after.is_empty() {
             None
         } else {
-            let game_environment = linux_plugin::resolved_plan_environment(
-                &launch.command,
-                &resolved,
-            )
-            .map_err(|reason| RpcFailure {
-                code: "HookFailed".into(),
-                message: format!("HookFailed {{ phase: before, step: 0, reason: {reason} }}"),
-            })?;
+            let environment_changes =
+                linux_plugin::resolved_plan_environment_changes(&launch.command, &resolved)
+                    .map_err(|reason| RpcFailure {
+                        code: "HookFailed".into(),
+                        message: format!(
+                            "HookFailed {{ phase: before, step: 0, reason: {reason} }}"
+                        ),
+                    })?;
             Some(hooks::LaunchHooks {
                 resolved: resolved.hooks,
-                game_environment,
+                environment_changes,
                 context: hooks::Context {
                     release_id: Some(route.release_id.clone()),
                     system_id: Some(route.system_id.clone()),

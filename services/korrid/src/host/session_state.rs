@@ -1423,12 +1423,10 @@ impl HostSessionControl {
             {
                 return Err(failure("HookFailed", "HookFailed { phase: before, step: 1000, reason: at most 1000 hook steps fit the authorized unit names }"));
             }
-            game_environment.extend(hooks.game_environment.clone());
-        }
-        if let Some((_, prepared)) = &prepared_plan {
-            for name in &prepared.plan.env_unset {
+            for name in &hooks.environment_changes.unset {
                 game_environment.remove(name);
             }
+            game_environment.extend(hooks.environment_changes.values.clone());
         }
         let hook_environment = hooks.map(|hooks| {
             super::hooks::environment(

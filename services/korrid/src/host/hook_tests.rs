@@ -132,7 +132,7 @@ fn hooks(before: serde_json::Value, after: serde_json::Value) -> LaunchHooks {
             before: serde_json::from_value(before).unwrap(),
             after: serde_json::from_value(after).unwrap(),
         },
-        game_environment: BTreeMap::new(),
+        environment_changes: Default::default(),
         context: Context {
             release_id: Some("release-1".into()),
             system_id: Some("system-1".into()),
@@ -409,6 +409,14 @@ async fn prepared_hook_environment_uses_only_the_games_explicit_baseline_and_pla
     std::fs::create_dir(root.path().join("roms")).unwrap();
     std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
     let registry = crate::plugin_test_fixtures::installed(root.path());
+    let source = root.path().join("plugin-mgba/retroarch.ts");
+    let plugin = std::fs::read_to_string(&source).unwrap();
+    assert!(plugin.contains("envUnset: []"));
+    std::fs::write(
+        source,
+        plugin.replace("envUnset: []", "envUnset: ['PLUGIN_REMOVED']"),
+    )
+    .unwrap();
     let device = root.path().join("device.yaml");
     let mut value: serde_yaml::Value =
         serde_yaml::from_str(&std::fs::read_to_string(&device).unwrap()).unwrap();
@@ -422,7 +430,7 @@ async fn prepared_hook_environment_uses_only_the_games_explicit_baseline_and_pla
     .unwrap();
     std::fs::write(device, serde_yaml::to_string(&value).unwrap()).unwrap();
     let config = root.path().join("host.toml");
-    std::fs::write(&config, "label = 'test'\n[environment]\nBASELINE = 'explicit-value'\nSHARED = 'baseline-value'\nREMOVED = 'baseline-value'\n").unwrap();
+    std::fs::write(&config, "label = 'test'\n[environment]\nBASELINE = 'explicit-value'\nSHARED = 'baseline-value'\nREMOVED = 'baseline-value'\nPLUGIN_REMOVED = 'baseline-private-value'\n").unwrap();
     let backend = Arc::new(RecordingBackend::default());
     let runtime = super::HostRuntime::from_paths_with_backend(
         &config,
@@ -444,6 +452,7 @@ async fn prepared_hook_environment_uses_only_the_games_explicit_baseline_and_pla
     assert_eq!(captured["LAYER"], "plan-value");
     assert_eq!(captured["SHARED"], "plan-wins");
     assert!(!captured.contains_key("REMOVED"));
+    assert!(!captured.contains_key("PLUGIN_REMOVED"));
     assert!(!captured.contains_key("KORRI_PROFILE_ID"));
     assert!(!captured.contains_key(SENTINEL));
     assert_eq!(captured["KORRI_LAUNCH_ID"], launched.session.launch_id);
@@ -506,4 +515,23 @@ fn daemon_loss_mid_after_step_replays_only_that_step_and_the_remaining_steps() {
     assert!(read_active(&root.path().join("host-session"))
         .unwrap()
         .is_none());
+}
+
+#[test]
+fn plan_unsets_baseline_before_values_and_hook_identity_are_applied() {
+    let root = tempfile::tempdir().unwrap();
+    let backend = Arc::new(RecordingBackend::default());
+    let control = control(root.path(), backend.clone());
+    let mut steps = hooks(json!([{"run":"capture"}]), json!([]));
+    steps.environment_changes = crate::launcher::linux_plugin::PlanEnvironment {
+        values: BTreeMap::from([
+            ("GAME_ENV".into(), "plan-wins-after-unset".into()),
+            ("KORRI_PROFILE_ID".into(), "forged".into()),
+        ]),
+        unset: vec!["GAME_ENV".into(), "KORRI_PROFILE_ID".into()],
+    };
+    prepare(&control, &steps).unwrap();
+    let captured = &backend.hooks.lock().unwrap()[0].2;
+    assert_eq!(captured["GAME_ENV"], "plan-wins-after-unset");
+    assert_eq!(captured["KORRI_PROFILE_ID"], "fast");
 }
