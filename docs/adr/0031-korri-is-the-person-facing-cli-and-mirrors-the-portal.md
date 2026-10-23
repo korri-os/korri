@@ -52,7 +52,9 @@ word, including `--help`, starts the daemon.
   progress.
 - `korri devices` covers every device the owner has, this one included:
   `list` marks this device, and `rename [<device>] <name>` renames one. Run
-  setup again is `korri setup`. The SteamGridDB key is `korri metadata key`.
+  setup again is `korri setup`. The SteamGridDB key is `korri metadata key`
+  while korrid holds it. If ADR 0032 makes it a plugin secret, it moves to
+  `korri plugins` with the other plugin settings.
 - Launch settings are `korri launch-settings set <key>=<value>`. The
   `--system`, `--game`, `--release` and `--profile` flags choose the layer,
   and the Device layer is the default. `--runner` and `--family` choose the
