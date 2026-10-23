@@ -74,6 +74,14 @@ the current Core plugin host. The public `revision.txt` matches that source,
 and both expected outputs appear in the batch's `paths-SYSTEM.txt`. The matching
 offline metadata archives are pinned by SHA-256. Every other plugin pin stays
 unchanged. This pin update does not establish physical-device acceptance.
+Batches `build-bd4bfcfe4e9a` and `build-bd4bfcfe4e9a-starter-pack` (source
+`bd4bfcfe4e9a449b8a0525ba527ba19e98564b99`) replace only FAKE-08 and the
+Starter pack for both architectures. FAKE-08 includes upstream PR #288 and
+Korri's auto-load patch for save states. Each pin was evaluated at that source
+and found in its batch's `paths-SYSTEM.txt`; both `revision.txt` assets match
+that source. Each Starter pack manifest requires the new FAKE-08 and the
+existing exact Solarus and ZQuest Classic pins of its architecture. The matching
+`offline-metadata-SYSTEM.tar.gz` archives are pinned with their SHA-256 hashes.
 Each pinned path is grounded in its batch's `paths-SYSTEM.txt` and
 `revision.txt`. The new Starter pack pins were checked against those public
 release assets directly. Earlier batches remain published even when their
