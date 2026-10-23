@@ -245,15 +245,7 @@ fn prepared_plan_environment_never_reads_the_korrid_process_environment() {
         "{\"modifiers\":[]}".into(),
         prepared.to_string(),
     ];
-    let config = ConfigSnapshot::default();
-    let resolved = crate::launch_settings::resolve_launch(
-        &config,
-        &crate::launch_settings::resolution::context(&config, None),
-        None,
-        None,
-    )
-    .unwrap();
-    let plan_env = resolved_plan_environment_changes(&command, &resolved).unwrap();
+    let plan_env = resolved_plan_environment_changes(&command).unwrap();
     std::env::remove_var(sentinel);
     assert_eq!(
         plan_env.values,
@@ -336,8 +328,7 @@ fn snapshot_dry_run_and_schema_defaults_do_not_change_launch_input_and_set_valid
     assert_eq!(plan.env["LAYER"], "authored");
     assert!(!plan.env.contains_key("REMOVE"));
     assert!(plan.env_unset.iter().any(|v| v == "REMOVE"));
-    let resolved = ls::resolve_launch(&config, &game.route, None, None).unwrap();
-    let plan_env = resolved_plan_environment_changes(&spec.command, &resolved).unwrap();
+    let plan_env = resolved_plan_environment_changes(&spec.command).unwrap();
     assert_eq!(plan_env.values, plan.env.into_iter().collect());
     assert_eq!(plan_env.unset, plan.env_unset);
     let private = tempfile::tempdir().unwrap();
