@@ -51,7 +51,9 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-pub(crate) use systemd_unit::{LaunchUnitBackend, LaunchUnitState, SystemdLaunchUnitBackend};
+pub(crate) use systemd_unit::{
+    LaunchUnitBackend, LaunchUnitError, LaunchUnitState, SystemdLaunchUnitBackend,
+};
 
 #[derive(Clone)]
 struct DynamicHostGame {
