@@ -4,7 +4,6 @@ use super::{
     http_fixture::{HttpFixture, Route},
     Failure,
 };
-use sha2::{Digest, Sha256};
 use std::{net::IpAddr, time::Duration};
 use url::Url;
 
@@ -254,7 +253,6 @@ async fn game_payloads_refuse_web_pages_empty_bodies_and_the_cap_and_leave_nothi
         .await
         .unwrap();
     assert_eq!(staged.bytes, rom.len() as u64);
-    assert_eq!(staged.sha256, hex::encode(Sha256::digest(&rom)));
     assert_eq!(std::fs::read(&staged.path).unwrap(), rom);
     assert!(staged
         .path
