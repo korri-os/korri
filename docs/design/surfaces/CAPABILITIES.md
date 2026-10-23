@@ -61,6 +61,18 @@ Rules for an answer:
   with `done` and no `total`, how far it has got without an end; without
   `progress`, only that work is under way.
 
+## Shared play (`SurfaceModel.invites`)
+
+- **C42 Invites.** A notice that never takes focus, once per new invite, and
+  a home entry listing all invites; `personName`, `gameTitle`, `deviceLabel`,
+  optional `coverArtUrl`, and host `actions` through `runAction` unchanged.
+- **C43 Paused.** `kicker`, optional `detail`, exact host `actions` and the
+  game, while the device that holds a stream-play session has paused it.
+- **C44 Ended.** `kicker`, `reason`, optional `gameId` and `gameTitle`;
+  acknowledge with `dismiss()`.
+- **C45 Stream players.** Overlay `streamPlayers`: person names, falling
+  back to device labels; absent when nobody plays on the stream.
+
 ## Saves (`SurfaceGame.saves`, `ChooseSave`, `SurfaceModel.saveHistory`)
 
 - **C34 Save marks.** `saves` on a game: Synced, NotChecked, NotSynced,
@@ -141,10 +153,11 @@ Rules for an answer:
 ## Onboarding (`SurfaceModel.onboarding`)
 
 - **C25 First boot.** Controllers with `heard`; the surface owns the steps
-  (controllers, Wi-Fi, device name, identity) and ends with
+  (controllers, Wi-Fi, device name, person name, identity) and ends with
   `finishOnboarding()`. When `starterPack` is present: Offered with the
   host's `actions`, Installing, Installed, Failed with a message and
-  actions.
+  actions. The `person-name` text setting has `maxLength` 64 and is
+  editable only where the signer can sign for the owner.
 
 ## Store (`SurfaceModel.store`)
 

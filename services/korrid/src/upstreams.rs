@@ -1972,7 +1972,10 @@ mod tests {
             crate::RpcRequest::SessionStatus(_) => {
                 let phase = state.active_phase.lock().unwrap().clone();
                 RpcResponse::SessionStatus(SessionStatusOutcome::Ok(SessionStatus {
+                    stream_play_ended: None,
                     active: phase.map(|phase| ActiveSession {
+                        person_public_key: None,
+                        stream_players: Vec::new(),
                         initial_handoff: None,
                         focus_ownership: None,
                         launch_id: state.launch_id.clone(),

@@ -15,11 +15,12 @@ pub enum PortalPermission {
 impl PortalPermission {
     fn permits(self, request: &RpcRequest) -> bool {
         let initial_read = match request {
+            RpcRequest::SessionStreamPlay(_) => false,
             RpcRequest::SaveHeads(_)
             | RpcRequest::SaveRecords(_)
             | RpcRequest::SaveInUse(_)
             | RpcRequest::SaveObject(_) => false,
-            RpcRequest::SavesStatus(_)
+            RpcRequest::InvitesList(_) | RpcRequest::SavesStatus(_)
             | RpcRequest::SavesHistory(_)
             | RpcRequest::NetworkStatus(_)
             | RpcRequest::OnboardingStatus(_)
@@ -39,7 +40,7 @@ impl PortalPermission {
             | RpcRequest::SessionStatus(_)
             | RpcRequest::SessionControls(_)
             | RpcRequest::PluginRepositories(_) => true,
-            RpcRequest::SavesChoose(_)
+            RpcRequest::InvitesStreamPlay(_) | RpcRequest::InvitesDismiss(_) | RpcRequest::SavesChoose(_)
             | RpcRequest::SavesRestore(_)
             | RpcRequest::SavesCheck(_)
             | RpcRequest::WifiScan(_)
@@ -102,7 +103,8 @@ impl PortalPermission {
             Self::LocalSessions => {
                 initial_read
                     || match request {
-                        RpcRequest::SessionPrepare(request) => request.host.is_none(),
+                        RpcRequest::SessionPrepare(_) => true,
+                        RpcRequest::InvitesStreamPlay(_) | RpcRequest::InvitesDismiss(_) => true,
                         RpcRequest::SettingsUpdate(request) => {
                             request.setting_id == crate::config::settings::PLAYER_COUNT_SETTING_ID
                         }

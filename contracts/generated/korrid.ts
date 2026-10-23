@@ -152,6 +152,11 @@ export interface AcquisitionStatusRequest {
 	runnerId?: string;
 }
 
+export interface StreamPlayer {
+	devicePublicKey: string;
+	label: string;
+}
+
 /** Initial window handoff history, separate from current focus ownership. */
 export enum InitialHandoff {
 	/** This daemon accepted the launch but has not observed exact screen ownership. */
@@ -172,6 +177,8 @@ export enum FocusOwnership {
 }
 
 export interface ActiveSession {
+	personPublicKey?: string;
+	streamPlayers?: StreamPlayer[];
 	initialHandoff?: InitialHandoff;
 	/** Exact compositor ownership observation, not a rendered-frame guarantee. */
 	focusOwnership?: FocusOwnership;
@@ -487,6 +494,28 @@ export interface IdentityStatusRequest {
 
 export interface IdentitySwitchCompleted {
 	ownerPublicKey: string;
+}
+
+export interface Invite {
+	inviteId: string;
+	devicePublicKey: string;
+	deviceLabel: string;
+	personName: string;
+	session: ActiveSession;
+}
+
+export interface InviteDismissed {
+}
+
+export interface InviteRequest {
+	inviteId: string;
+}
+
+export interface InvitesList {
+	invites: Invite[];
+}
+
+export interface InvitesListRequest {
 }
 
 export interface LaunchArgs {
@@ -1523,7 +1552,21 @@ export interface SessionStartRequest {
 	launch?: LaunchOverride;
 }
 
+export enum StreamPlayEndCause {
+	SessionEnded = "sessionEnded",
+	DeviceUnreachable = "deviceUnreachable",
+}
+
+export interface StreamPlayEnded {
+	launchId: string;
+	gameId?: string;
+	gameTitle?: string;
+	deviceLabel: string;
+	cause: StreamPlayEndCause;
+}
+
 export interface SessionStatus {
+	streamPlayEnded?: StreamPlayEnded;
 	/** All pending reservations owned by this authenticated portal caller; never a selection. */
 	pendingLaunches?: PendingLaunch[];
 	/**
@@ -1552,6 +1595,10 @@ export enum SessionStopPhase {
 
 export interface SessionStopResult {
 	phase: SessionStopPhase;
+}
+
+export interface SessionStreamPlayRequest {
+	launchId: string;
 }
 
 export interface SessionThawRequest {
@@ -1682,6 +1729,14 @@ export type IdentitySwitchOutcome =
 	| { _tag: "Ok", payload: IdentitySwitchCompleted }
 	| { _tag: "Err", payload: RpcFailure };
 
+export type InviteDismissOutcome =
+	| { _tag: "Ok", payload: InviteDismissed }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type InvitesListOutcome =
+	| { _tag: "Ok", payload: InvitesList }
+	| { _tag: "Err", payload: RpcFailure };
+
 export type LaunchSettingsSnapshotOutcome =
 	| { _tag: "Ok", payload: LaunchSnapshot }
 	| { _tag: "Err", payload: RpcFailure };
@@ -1795,6 +1850,10 @@ export type RpcRequest =
 	| { _tag: "app.session.reserve", payload: SessionReserveRequest }
 	| { _tag: "app.session.start", payload: SessionStartRequest }
 	| { _tag: "app.session.cancel", payload: SessionCancelRequest }
+	| { _tag: "app.session.streamPlay", payload: SessionStreamPlayRequest }
+	| { _tag: "app.invites.list", payload: InvitesListRequest }
+	| { _tag: "app.invites.streamPlay", payload: InviteRequest }
+	| { _tag: "app.invites.dismiss", payload: InviteRequest }
 	| { _tag: "app.session.status", payload: SessionStatusRequest }
 	| { _tag: "app.session.controls", payload: SessionControlsRequest }
 	| { _tag: "app.session.control.invoke", payload: SessionControlInvokeRequest }
@@ -1870,6 +1929,10 @@ export type RpcResponse =
 	| { _tag: "app.session.reserve", outcome: SessionReserveOutcome }
 	| { _tag: "app.session.start", outcome: SelectedGameLaunchOutcome }
 	| { _tag: "app.session.cancel", outcome: SessionStopOutcome }
+	| { _tag: "app.session.streamPlay", outcome: SessionStreamPlayOutcome }
+	| { _tag: "app.invites.list", outcome: InvitesListOutcome }
+	| { _tag: "app.invites.streamPlay", outcome: SessionStreamPlayOutcome }
+	| { _tag: "app.invites.dismiss", outcome: InviteDismissOutcome }
 	| { _tag: "app.session.status", outcome: SessionStatusOutcome }
 	| { _tag: "app.session.controls", outcome: SessionControlsOutcome }
 	| { _tag: "app.session.control.invoke", outcome: SessionControlInvokeOutcome }
@@ -1952,6 +2015,10 @@ export type SessionStatusOutcome =
 
 export type SessionStopOutcome =
 	| { _tag: "Ok", payload: SessionStopResult }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type SessionStreamPlayOutcome =
+	| { _tag: "Ok", payload: ActiveSession }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type SettingsSnapshotOutcome =

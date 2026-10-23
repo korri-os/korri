@@ -318,6 +318,30 @@ export type SurfaceStatus =
       readonly gameId?: string
     }
   /**
+   * This device plays on another device's live session, and that device has
+   * paused it. `kicker` names it ("Paused on Odin 2 Portal"). Korri hides the
+   * stream until it resumes. The surface renders exactly the host's actions.
+   */
+  | {
+      readonly _tag: "Paused"
+      readonly kicker: string
+      readonly detail?: string
+      readonly actions: readonly SurfaceAction[]
+      readonly gameId?: string
+    }
+  /**
+   * The live session this device played on has ended. `reason` is finished,
+   * user-facing copy ("Turtles in Time ended on Odin 2 Portal"). Acknowledge
+   * it with `SurfaceHost.dismiss`.
+   */
+  | {
+      readonly _tag: "Ended"
+      readonly kicker: string
+      readonly reason: string
+      readonly gameId?: string
+      readonly gameTitle?: string
+    }
+  /**
    * Something did not work, stated in plain language. `reason` is already
    * user-facing copy — a surface must not attempt to interpret failure codes.
    */
@@ -384,6 +408,9 @@ export interface SurfaceGameplayOverlayPresentation {
   /** Overlay-owned controls such as Resume, always before plugin groups. */
   readonly controls: readonly SurfaceGameplayControl[]
   readonly groups: readonly SurfaceGameplayControlGroup[]
+  /** Who plays on this session's stream: person names, or device labels when
+   * a person has none. Absent when nobody does. */
+  readonly streamPlayers?: readonly string[]
 }
 
 export type SurfacePresentation =
@@ -739,6 +766,24 @@ export type SurfaceSaveHistory =
   | { readonly _tag: "Error"; readonly gameId: string; readonly message: string; readonly actions: readonly SurfaceAction[] }
   | { readonly _tag: "Ready"; readonly gameId: string; readonly entries: readonly SurfaceSaveHistoryEntry[]; readonly actions: readonly SurfaceAction[] }
 
+/**
+ * Another device of the same person holds a live session that this device can
+ * take part in through shared play. `actions` are the routes this device can
+ * take (stream play today) and a dismiss. Run them through `runAction`
+ * unchanged; the surface never infers a route from a label.
+ */
+export interface SurfaceInvite {
+  /** Opaque. Stable for one live session on one device. */
+  readonly id: string
+  /** The person name, or the device label when the person has none. */
+  readonly personName: string
+  readonly gameTitle: string
+  /** The label of the device that holds the session. */
+  readonly deviceLabel: string
+  readonly coverArtUrl?: string
+  readonly actions: readonly SurfaceAction[]
+}
+
 /** Everything Korri publishes to the surface. Replaced wholesale on change. */
 export interface SurfaceModel {
   readonly presentation: SurfacePresentation
@@ -767,6 +812,8 @@ export interface SurfaceModel {
   readonly onboarding?: SurfaceOnboarding
   /** Absent in hosts that cannot get games from providers. */
   readonly store?: SurfaceStore
+  /** Absent in hosts without shared play. Empty when no invite stands. */
+  readonly invites?: readonly SurfaceInvite[]
 }
 
 /** Everything the surface may ask Korri to do. */

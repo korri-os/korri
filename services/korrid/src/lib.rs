@@ -1,6 +1,13 @@
 //! Embedded-capable korrid server core: contracts, dispatch, and lifecycle.
 
 pub mod acquisition;
+pub mod invites;
+pub mod stream_play;
+use invites::{InviteDismissOutcome, InviteRequest, InvitesListOutcome, InvitesListRequest};
+use stream_play::{
+    SessionStreamPlayOutcome, SessionStreamPlayRequest, StreamPlayEnded, StreamPlayer,
+};
+
 #[cfg(test)]
 mod launch_handoff_tests;
 pub mod launch_settings;
@@ -594,6 +601,10 @@ pub struct PendingLaunch {
 #[serde(rename_all = "camelCase")]
 pub struct ActiveSession {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub person_public_key: Option<String>,
+    #[serde(default)]
+    pub stream_players: Vec<StreamPlayer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_handoff: Option<InitialHandoff>,
     /** Exact compositor ownership observation, not a rendered-frame guarantee. */
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -613,6 +624,8 @@ pub struct ActiveSession {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionStatus {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_play_ended: Option<StreamPlayEnded>,
     /// All pending reservations owned by this authenticated portal caller; never a selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_launches: Option<Vec<PendingLaunch>>,
@@ -1333,6 +1346,14 @@ pub enum RpcRequest {
     SessionStart(SessionStartRequest),
     #[serde(rename = "app.session.cancel")]
     SessionCancel(SessionCancelRequest),
+    #[serde(rename = "app.session.streamPlay")]
+    SessionStreamPlay(SessionStreamPlayRequest),
+    #[serde(rename = "app.invites.list")]
+    InvitesList(InvitesListRequest),
+    #[serde(rename = "app.invites.streamPlay")]
+    InvitesStreamPlay(InviteRequest),
+    #[serde(rename = "app.invites.dismiss")]
+    InvitesDismiss(InviteRequest),
     #[serde(rename = "app.session.status")]
     SessionStatus(SessionStatusRequest),
     #[serde(rename = "app.session.controls")]
@@ -1496,6 +1517,14 @@ pub enum RpcResponse {
     SessionStart(game_routes::SelectedGameLaunchOutcome),
     #[serde(rename = "app.session.cancel")]
     SessionCancel(SessionStopOutcome),
+    #[serde(rename = "app.session.streamPlay")]
+    SessionStreamPlay(SessionStreamPlayOutcome),
+    #[serde(rename = "app.invites.list")]
+    InvitesList(InvitesListOutcome),
+    #[serde(rename = "app.invites.streamPlay")]
+    InvitesStreamPlay(SessionStreamPlayOutcome),
+    #[serde(rename = "app.invites.dismiss")]
+    InvitesDismiss(InviteDismissOutcome),
     #[serde(rename = "app.session.status")]
     SessionStatus(SessionStatusOutcome),
     #[serde(rename = "app.session.controls")]
@@ -1912,7 +1941,10 @@ fn session_status_outcome(
     match result {
         Ok(upstream::UpstreamSessionStatus::SessionStatus { active }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_ended: None,
                 active: active.map(|active| ActiveSession {
+                    person_public_key: None,
+                    stream_players: Vec::new(),
                     initial_handoff: None,
                     focus_ownership: None,
                     launch_id: active.launch_id,
@@ -1991,7 +2023,10 @@ fn host_session_status_outcome(
     match result {
         Ok(HostSessionStatus::Running { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_ended: None,
                 active: Some(ActiveSession {
+                    person_public_key: None,
+                    stream_players: Vec::new(),
                     launch_id,
                     host: None,
                     game_id,
@@ -2007,7 +2042,10 @@ fn host_session_status_outcome(
         }
         Ok(HostSessionStatus::Frozen { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_ended: None,
                 active: Some(ActiveSession {
+                    person_public_key: None,
+                    stream_players: Vec::new(),
                     launch_id,
                     host: None,
                     game_id,
@@ -2023,7 +2061,10 @@ fn host_session_status_outcome(
         }
         Ok(HostSessionStatus::FocusFailed { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_ended: None,
                 active: Some(ActiveSession {
+                    person_public_key: None,
+                    stream_players: Vec::new(),
                     launch_id,
                     host: None,
                     game_id,
@@ -2039,7 +2080,10 @@ fn host_session_status_outcome(
         }
         Ok(HostSessionStatus::Stopping { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_ended: None,
                 active: Some(ActiveSession {
+                    person_public_key: None,
+                    stream_players: Vec::new(),
                     launch_id,
                     host: None,
                     game_id,
@@ -2350,6 +2394,7 @@ fn with_pending_launches(
             let observation_failure =
                 (!is_terminal_session_identity_code(&failure.code)).then_some(failure);
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_ended: None,
                 pending_launches: Some(pending),
                 observation_failure,
                 active: None,
@@ -2983,6 +3028,18 @@ async fn dispatch(
                 }
             };
             RpcResponse::SessionPrepare(outcome)
+        }
+        RpcRequest::SessionStreamPlay(_) => RpcResponse::SessionStreamPlay(
+            SessionStreamPlayOutcome::Err(installed_routes_unsupported()),
+        ),
+        RpcRequest::InvitesList(_) => {
+            RpcResponse::InvitesList(InvitesListOutcome::Err(installed_routes_unsupported()))
+        }
+        RpcRequest::InvitesStreamPlay(_) => RpcResponse::InvitesStreamPlay(
+            SessionStreamPlayOutcome::Err(installed_routes_unsupported()),
+        ),
+        RpcRequest::InvitesDismiss(_) => {
+            RpcResponse::InvitesDismiss(InviteDismissOutcome::Err(installed_routes_unsupported()))
         }
         RpcRequest::SessionStatus(_) => {
             let (outcome, recovered_overlay_intent) = match (&state.mode, state.rpc_surface) {
@@ -5411,7 +5468,10 @@ mod tests {
         let outcome = correlate_overlay_status(
             &intent,
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_ended: None,
                 active: Some(ActiveSession {
+                    person_public_key: None,
+                    stream_players: Vec::new(),
                     launch_id: "a".into(),
                     host: None,
                     game_id: Some("one".into()),
@@ -5438,6 +5498,8 @@ mod tests {
     #[test]
     fn overlay_intent_never_retargets_after_a_exits_or_is_replaced_by_b() {
         let session = |launch_id: &str| ActiveSession {
+            person_public_key: None,
+            stream_players: Vec::new(),
             initial_handoff: None,
             focus_ownership: None,
             launch_id: launch_id.into(),
@@ -5451,6 +5513,7 @@ mod tests {
         let replaced = correlate_overlay_status(
             &replaced_intent,
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_ended: None,
                 active: Some(session("b")),
                 pending_launches: None,
                 observation_failure: None,
@@ -5546,7 +5609,10 @@ mod tests {
         let stopping = correlate_overlay_status(
             &intent,
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_ended: None,
                 active: Some(ActiveSession {
+                    person_public_key: None,
+                    stream_players: Vec::new(),
                     launch_id: "a".into(),
                     host: None,
                     game_id: Some("one".into()),
@@ -5569,7 +5635,10 @@ mod tests {
         let frozen_again = correlate_overlay_status(
             &intent,
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_ended: None,
                 active: Some(ActiveSession {
+                    person_public_key: None,
+                    stream_players: Vec::new(),
                     launch_id: "a".into(),
                     host: None,
                     game_id: Some("one".into()),
@@ -5626,6 +5695,8 @@ mod tests {
         for phase in ["frozen", "focus-failed"] {
             let intent = Mutex::new(Some("a".into()));
             let active = ActiveSession {
+                person_public_key: None,
+                stream_players: Vec::new(),
                 initial_handoff: None,
                 focus_ownership: None,
                 launch_id: "a".into(),
@@ -5637,6 +5708,7 @@ mod tests {
             let outcome = correlate_overlay_status(
                 &intent,
                 SessionStatusOutcome::Ok(SessionStatus {
+                    stream_play_ended: None,
                     active: Some(active.clone()),
                     pending_launches: None,
                     observation_failure: None,
@@ -5657,7 +5729,10 @@ mod tests {
     fn remote_gameplay_controls_refuse_stale_identity_before_unavailable_routing() {
         let exact = unavailable_remote_session_controls(
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_ended: None,
                 active: Some(ActiveSession {
+                    person_public_key: None,
+                    stream_players: Vec::new(),
                     launch_id: "launch-a".into(),
                     host: Some("peer".into()),
                     game_id: Some("wario".into()),
@@ -5682,6 +5757,7 @@ mod tests {
         for stale in [
             unavailable_remote_session_controls(
                 SessionStatusOutcome::Ok(SessionStatus {
+                    stream_play_ended: None,
                     active: None,
                     pending_launches: None,
                     observation_failure: None,
@@ -5715,6 +5791,7 @@ mod tests {
         assert!(matches!(
             outcome,
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_ended: None,
                 active: None,
                 overlay: None,
                 pending_launches: None,
@@ -5727,6 +5804,7 @@ mod tests {
     fn absent_optional_fields_are_omitted_from_the_wire() {
         assert_eq!(
             serde_json::to_value(SessionStatus {
+                stream_play_ended: None,
                 active: None,
                 pending_launches: None,
                 observation_failure: None,
@@ -5737,6 +5815,8 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(ActiveSession {
+                person_public_key: None,
+                stream_players: Vec::new(),
                 initial_handoff: None,
                 focus_ownership: None,
                 launch_id: "l1".into(),
@@ -5746,7 +5826,7 @@ mod tests {
                 phase: None,
             })
             .unwrap(),
-            serde_json::json!({ "launchId": "l1" })
+            serde_json::json!({ "launchId": "l1", "streamPlayers": [] })
         );
         assert_eq!(
             serde_json::to_value(SessionStopRequest {
