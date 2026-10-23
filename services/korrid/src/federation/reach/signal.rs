@@ -1,5 +1,5 @@
-//! The approved short-lived signal. The gift wrap authenticates its author;
-//! the directory checks membership before binding this endpoint to that device.
+//! The approved short-lived signal. The gift wrap authenticates its author.
+//! The directory checks membership before it binds this endpoint to that device.
 use crate::relay::RelayError;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;

@@ -101,7 +101,7 @@ async fn reach_direct_failure_waits_five_seconds_before_the_member_relay() {
     config.relay = Some(relay_config);
     let server = iroh_relay::server::Server::spawn(config).await.unwrap();
     let address = server.http_addr().unwrap();
-    // No direct candidate is supplied. Both sides dial only after their
+    // This test supplies no direct candidate. Both sides dial only after their
     // device-signed signal, as the production controller does.
     let start = tokio::time::Instant::now();
     let (outgoing, incoming) = tokio::join!(

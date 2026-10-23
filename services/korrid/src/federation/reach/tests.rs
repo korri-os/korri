@@ -7,6 +7,8 @@ mod order;
 mod relaying;
 #[path = "saves_tests.rs"]
 mod saves;
+#[path = "signalling_tests.rs"]
+mod signalling;
 use crate::{
     authorization::Authorization,
     federation::{FederationDirectory, PeerState},

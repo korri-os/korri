@@ -1,6 +1,7 @@
 //! Recovery for a public NAT remap that produces no local interface event.
 //! Connection handles remain the health source. This table records only loss
-//! history and retry policy; it is never persisted or sent to another device.
+//! history and retry policy. Korrid does not persist this table.
+//! Korrid does not send it to another device.
 use iroh::endpoint::Connection;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -65,7 +66,7 @@ impl Recovery {
         }
     }
     /// Call before publishing a route or serving an accepted connection. A
-    /// refresh claim fences new admissions until the new endpoint is bound.
+    /// refresh claim stops new admissions until korrid binds the new endpoint.
     pub fn register(&mut self, peer: String, connection: Connection) -> bool {
         self.observe_closed();
         if self.refreshing || connection.close_reason().is_some() {

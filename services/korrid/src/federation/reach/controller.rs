@@ -59,8 +59,8 @@ pub(crate) fn start(
     peer_router: axum::Router,
     relay_port: u16,
 ) -> Option<ReachLifetime> {
-    // Some unit-test composition paths are synchronous. Production constructs
-    // these routers inside its runtime. There is no detached private runtime.
+    // Some unit tests compose routers synchronously. Korrid constructs its
+    // production routers inside its runtime. It starts no private runtime.
     let runtime = tokio::runtime::Handle::try_current().ok()?;
     let key = match crate::identity::iroh::load_or_create(root) {
         Ok(key) => key,
@@ -272,8 +272,8 @@ impl Controller {
                         let (router,access,recovery) = (router.clone(),access.clone(),recovery.clone());
                         sessions.spawn(async move {
                             let Ok(Ok(connection)) = timeout(Duration::from_secs(10),incoming).await else {return};
-                            // remote_id is QUIC's authenticated key. It must be
-                            // the id bound by an accepted device-signed signal.
+                            // QUIC authenticates remote_id. The member's
+                            // device-signed signal must bind that id.
                             if !access.allows(connection.remote_id()) {
                                 connection.close(1u32.into(),b"not a bound federation device");return;
                             }
@@ -379,7 +379,7 @@ impl Controller {
                 .iter()
                 .filter(|(_, pending)| pending.expires_at <= now)
             {
-                set_failed(&self.directory, device, &pending.token);
+                handle_signalling_failure(&self.directory, device, &pending.token).await;
             }
             self.pending.retain(|_, pending| pending.expires_at > now);
             self.relaying.retain(|_, (expires, _)| *expires > now);
@@ -573,7 +573,7 @@ impl Controller {
                     .unwrap_or_default();
                 super::nearby_seam::prepend(&device, &mut candidates);
                 // Existing LAN/VPN race first. Do not send HTTP to every route.
-                // A successful signed read proves that the error can be cleared.
+                // A successful signed read clears the error.
                 if let Ok(index) = connect::select_origin(&candidates).await {
                     let client = crate::upstream_native::NativeClient::new_secure(
                         candidates[index].clone(),
@@ -598,7 +598,7 @@ impl Controller {
                         if self.endpoint.is_none() {
                             continue;
                         }
-                        // This token is consumed by Ready. A missing optional
+                        // Ready consumes this token. A missing optional
                         // relay answer must not make a native-reachable peer fail.
                     }
                 }
@@ -632,7 +632,7 @@ impl Controller {
                     .is_ok_and(|p| p.accepted())
                 {
                     self.pending.remove(&device);
-                    set_failed(&self.directory, &device, &token);
+                    handle_signalling_failure(&self.directory, &device, &token).await;
                 }
             }
             while self.tasks.try_join_next().is_some() {}
@@ -902,6 +902,34 @@ pub(super) fn retry_delay(failures: u32) -> Duration {
     Duration::from_secs(5u64.saturating_mul(1u64.checked_shl(failures).unwrap_or(u64::MAX)))
         .min(Duration::from_secs(300))
 }
+pub(super) async fn handle_signalling_failure(
+    directory: &FederationDirectory,
+    device: &str,
+    token: &crate::federation::WorkToken,
+) {
+    // A missing relay answer says nothing about a working data connection.
+    // Check the signed peer response before changing its reachability state.
+    let Some(connection) = directory.reach.connection(device) else {
+        set_failed(directory, device, token);
+        return;
+    };
+    let client = crate::upstream_native::NativeClient::new_secure_candidates(
+        Vec::new(),
+        device.to_owned(),
+        directory.credentials.clone(),
+    )
+    .with_directory(directory.clone());
+    match client.probe_signed_connection(&connection).await {
+        Ok(()) => {
+            let _ = directory.set_peer_state(token, device, PeerState::Ready);
+        }
+        Err(crate::upstreams::UpstreamError::Unreachable(_)) => {
+            set_failed(directory, device, token)
+        }
+        Err(_) => set_operation_failed(directory, device, token),
+    }
+}
+
 fn set_operation_failed(
     directory: &FederationDirectory,
     device: &str,

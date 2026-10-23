@@ -1037,7 +1037,7 @@ fn decode_command(
     let command = match queued {
         QueuedMessage::ReachOffer(offer) => {
             // The read may start before this signal exists. Bound its lifetime
-            // by the authenticated producer time; reach rechecks today's clock.
+            // by the authenticated producer time. Reach rechecks the current clock.
             offer.validate(rumor.created_at)?;
             CoordinationCommand::ReachOffer {
                 sender_device_public_key: rumor.author,
@@ -3077,7 +3077,7 @@ mod tests {
             .unwrap()
             .commands
             .contains(&command));
-        // receive()'s timestamp is sampled before relay I/O. A signal made
+        // The caller samples the time before relay I/O. A signal that arrives
         // during that read must not fail its 60-second lifetime bound.
         let during_read = CoordinationCommand::ReachOffer {
             sender_device_public_key: first.device_public_key().unwrap().into(),

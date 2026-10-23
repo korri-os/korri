@@ -1,5 +1,6 @@
-//! Sunshine packets remain unreliable. The spike's version/port/packet/fragment
-//! framing is bounded here before allocation. A missing fragment drops a packet.
+//! Sunshine packets remain unreliable. This module bounds the spike's
+//! version/port/packet/fragment framing before it allocates buffers.
+//! The reassembler drops a packet if a fragment is missing.
 use iroh::endpoint::Connection;
 use std::{
     collections::HashMap,

@@ -64,8 +64,8 @@ pub(crate) async fn post(
         hyper::client::conn::http1::handshake(TokioIo::new(tokio::io::join(recv, send)))
             .await
             .map_err(io::Error::other)?;
-    // The task owns this stream only. It exits when the body is consumed or
-    // dropped. The endpoint lifetime closes every remaining stream at shutdown.
+    // The task owns this stream only. It exits when the caller consumes or
+    // drops the body. The endpoint closes all remaining streams at shutdown.
     tokio::spawn(async move {
         let _ = task.await;
     });

@@ -3,7 +3,7 @@ use super::*;
 
 /// Follow identity.rs::load_or_create_named_keys: the same storage lock,
 /// private directory, bounded read, create_new 0600 write, and directory fsync.
-/// The file is removed with the other keys when DeviceIdentity::reset runs.
+/// DeviceIdentity::reset removes this file with the other keys.
 pub(crate) fn load_or_create(root: &Path) -> Result<::iroh::SecretKey, IdentityError> {
     let _storage = IDENTITY_STORAGE
         .get_or_init(|| Mutex::new(()))

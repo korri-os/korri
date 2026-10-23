@@ -1,4 +1,3 @@
-use crate::federation::reach::nearby_seam::moonlight_control_origin;
 use crate::{
     game_routes::SelectedGameLaunchOutcome, CatalogSnapshot, CatalogSnapshotOutcome,
     MoonlightCertificateAttestOutcome, MoonlightCertificateAttestRequest,
@@ -147,24 +146,6 @@ impl NativeClient {
     pub(crate) fn with_peer_label(mut self, label: String) -> Self {
         self.peer_label = Some(label);
         self
-    }
-
-    pub(crate) async fn stream_forward_needed(&self, moonlight_address: Option<&str>) -> bool {
-        let (Some(directory), Some(key)) = (&self.directory, &self.expected_peer_public_key) else {
-            return false;
-        };
-        if !directory.has_iroh_route(key) {
-            return false;
-        }
-        // RPC reachability does not prove that Sunshine is reachable. Probe
-        // its existing control address, with no application bytes and the
-        // same one-second bound as the native candidate race.
-        let Some(origin) = moonlight_address.and_then(moonlight_control_origin) else {
-            return true;
-        };
-        crate::federation::connect::select_origin(&[origin])
-            .await
-            .is_err()
     }
 
     pub(crate) fn candidate_origins(&self) -> Vec<String> {
@@ -422,6 +403,37 @@ impl NativeClient {
         }
     }
 
+    /// Read one signed status through this existing connection. The caller
+    /// owns the directory work token. This read starts no route discovery.
+    pub(crate) async fn probe_signed_connection(
+        &self,
+        connection: &iroh::endpoint::Connection,
+    ) -> Result<(), UpstreamError> {
+        self.ensure_not_revoked()?;
+        let request = RpcRequest::SessionStatus(SessionStatusRequest {});
+        let answered = AtomicBool::new(false);
+        let result = match tokio::time::timeout(
+            self.operation_timeout,
+            self.attempt("/peer-rpc", request.clone(), Some(connection), &answered),
+        )
+        .await
+        {
+            Ok(Ok(response)) => match checked_response(&request, response) {
+                Ok(_) | Err(UpstreamError::Tagged { .. }) => Ok(()),
+                Err(error) => Err(error),
+            },
+            Ok(Err(failure)) => Err(failure.error),
+            Err(_) if answered.load(Ordering::Relaxed) => {
+                Err(UpstreamError::Wire("peer response did not complete".into()))
+            }
+            Err(_) => Err(UpstreamError::Unreachable(
+                "peer operation timed out".into(),
+            )),
+        };
+        self.ensure_not_revoked()?;
+        result
+    }
+
     pub async fn session_stop(
         &self,
         expected_launch_id: &str,
@@ -491,9 +503,8 @@ impl NativeClient {
         }
     }
 
-    /// Asks the peer host for its own readiness. The peer answers for
-    /// itself only; the `devicePublicKey` it receives must be its own key so
-    /// that a host cannot be asked to speak for another device.
+    /// Ask the peer for its own readiness. The request must name the peer's
+    /// own `devicePublicKey`. The peer never answers for another device.
     pub async fn source_status(
         &self,
         device_public_key: &str,
@@ -621,7 +632,7 @@ impl NativeClient {
             .collect::<Result<Vec<_>, _>>()?;
         if let Some(key) = &self.expected_peer_public_key {
             crate::federation::reach::nearby_seam::prepend(key, &mut candidates);
-            // nearby_seam accepts origins; all candidates below name peer HTTP.
+            // nearby_seam accepts origins. All candidates below name peer HTTP.
             for candidate in &mut candidates {
                 if !candidate.ends_with("/peer-rpc") {
                     candidate.push_str("/peer-rpc");
@@ -830,7 +841,7 @@ impl From<UpstreamError> for AttemptFailure {
 }
 
 /// Validate the operation tag before marking a directory attempt ready. Typed
-/// application failures are terminal even on a read; never try another origin.
+/// application failures end even a read. Never try another origin.
 fn checked_response(
     request: &RpcRequest,
     response: RpcResponse,
@@ -1174,24 +1185,6 @@ command = ["neverball"]
             wrong.source_status(&"ab".repeat(32)).await,
             Err(UpstreamError::Wire(_))
         ));
-    }
-
-    #[test]
-    fn reach_sunshine_control_probe_preserves_explicit_ports_and_defaults_to_47989() {
-        for (address, origin) in [
-            ("sunshine", "http://sunshine:47989"),
-            ("sunshine:80", "http://sunshine"),
-            ("sunshine:49217", "http://sunshine:49217"),
-            ("127.0.0.1", "http://127.0.0.1:47989"),
-            ("[::1]", "http://[::1]:47989"),
-            ("::1", "http://[::1]:47989"),
-            ("[::1]:80", "http://[::1]"),
-        ] {
-            assert_eq!(moonlight_control_origin(address).as_deref(), Some(origin));
-        }
-        for address in ["user:pass@peer", "peer/path", "peer:0", "peer:"] {
-            assert!(moonlight_control_origin(address).is_none());
-        }
     }
 
     #[test]

@@ -1,12 +1,8 @@
 //! Read the live nearby-link fact without persisting another address. Pure
 //! helpers below keep candidate ordering and port handling injectable in tests.
 use std::net::{IpAddr, SocketAddr};
-pub fn nearby_peer_ip(device_public_key: &str) -> Option<IpAddr> {
-    crate::network::nearby::nearby_peer_ip(device_public_key)
-}
-
 pub(crate) fn prepend(device: &str, candidates: &mut Vec<String>) {
-    prepend_ip(nearby_peer_ip(device), candidates);
+    prepend_ip(crate::network::nearby::nearby_peer_ip(device), candidates);
 }
 fn prepend_ip(ip: Option<IpAddr>, candidates: &mut Vec<String>) {
     let port = candidates
@@ -37,7 +33,7 @@ pub(crate) fn moonlight_control_origin(address: &str) -> Option<String> {
     crate::federation::peer_origin(url.as_str()).ok()
 }
 pub(crate) fn moonlight_address(device: &str, current: Option<&str>) -> Option<String> {
-    moonlight_address_ip(nearby_peer_ip(device), current)
+    moonlight_address_ip(crate::network::nearby::nearby_peer_ip(device), current)
 }
 fn moonlight_address_ip(ip: Option<IpAddr>, current: Option<&str>) -> Option<String> {
     match ip {
@@ -54,6 +50,24 @@ fn moonlight_address_ip(ip: Option<IpAddr>, current: Option<&str>) -> Option<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reach_sunshine_control_probe_preserves_explicit_ports_and_defaults_to_47989() {
+        for (address, origin) in [
+            ("sunshine", "http://sunshine:47989"),
+            ("sunshine:80", "http://sunshine"),
+            ("sunshine:49217", "http://sunshine:49217"),
+            ("127.0.0.1", "http://127.0.0.1:47989"),
+            ("[::1]", "http://[::1]:47989"),
+            ("::1", "http://[::1]:47989"),
+            ("[::1]:80", "http://[::1]"),
+        ] {
+            assert_eq!(moonlight_control_origin(address).as_deref(), Some(origin));
+        }
+        for address in ["user:pass@peer", "peer/path", "peer:0", "peer:"] {
+            assert!(moonlight_control_origin(address).is_none());
+        }
+    }
+
     #[test]
     fn nearby_stream_address_uses_the_link_ip_and_keeps_the_control_port() {
         let ip = "10.42.0.2".parse().unwrap();

@@ -11,6 +11,10 @@ mod settings;
 pub mod signal;
 mod stun;
 mod tunnel;
+mod viewer;
+
+// The registry uses this boundary to prepare a viewer and retain its lease.
+pub(crate) use viewer::{prepare_peer_viewer, SelectedViewer};
 
 use crate::federation::FederationDirectory;
 use iroh::endpoint::Connection;
