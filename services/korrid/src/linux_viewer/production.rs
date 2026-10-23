@@ -204,12 +204,26 @@ fn run(program: &Path, args: &[String]) -> Result<(bool, String), LinuxViewerErr
 }
 
 fn platform() -> &'static str {
-    // The device tree is a hardware fact. These are the two Qualcomm devices
-    // accepted by this slice; every other device uses software X11 decoding.
-    let compatible = std::fs::read("/proc/device-tree/compatible").unwrap_or_default();
+    platform_from_path(
+        Path::new("/sys/firmware/devicetree/base/compatible"),
+        |error| {
+            log::warn!("Moonlight cannot read device-tree compatibility; using x11: {error}");
+        },
+    )
+}
+
+fn platform_from_path(path: &Path, report: impl FnOnce(&std::io::Error)) -> &'static str {
+    let compatible = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return "x11",
+        Err(error) => {
+            report(&error);
+            return "x11";
+        }
+    };
     if compatible
-        .split(|b| *b == 0)
-        .any(|s| s == b"qcom,sm8550" || s == b"qcom,sm8250")
+        .split(|byte| *byte == 0)
+        .any(|value| value == b"qcom,sm8550" || value == b"qcom,sm8250")
     {
         "v4l2m2m"
     } else {

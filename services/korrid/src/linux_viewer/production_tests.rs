@@ -320,3 +320,34 @@ fn linux_viewer_bootstrap_rejects_live_and_selected_unit_id_collisions() {
     assert_eq!(id, fresh);
     assert!(validate_launch(&id).is_ok());
 }
+
+#[test]
+fn linux_viewer_reads_sysfs_device_tree_and_reports_read_failures() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("compatible");
+    assert_eq!(
+        platform_from_path(&path, |_| panic!("Non-DT hardware is not an error")),
+        "x11"
+    );
+    for compatible in [
+        b"device\0qcom,sm8550\0".as_slice(),
+        b"qcom,sm8250\0".as_slice(),
+    ] {
+        std::fs::write(&path, compatible).unwrap();
+        assert_eq!(
+            platform_from_path(&path, |_| panic!("readable hardware fact")),
+            "v4l2m2m"
+        );
+    }
+    std::fs::write(&path, b"other-device\0").unwrap();
+    assert_eq!(
+        platform_from_path(&path, |_| panic!("readable hardware fact")),
+        "x11"
+    );
+    let mut reason = None;
+    assert_eq!(
+        platform_from_path(root.path(), |error| reason = Some(error.to_string())),
+        "x11"
+    );
+    assert!(reason.is_some_and(|reason| !reason.is_empty()));
+}
