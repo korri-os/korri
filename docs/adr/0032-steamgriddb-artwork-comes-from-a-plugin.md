@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: proposed (ready for review)
 ---
 
 # SteamGridDB artwork comes from a plugin, not from korrid
@@ -12,6 +12,12 @@ status: proposed
   plugin, named by the plugin's id".
 - Publish the plugin without asking SteamGridDB first (section 7).
 
+**Coordinator decisions, 2026-10-23:**
+
+- korrid serves cover bytes on a `GET` route, with the capability in a
+  request header (section 6).
+- The names stay `game-assets.candidates` and `@korri:steamgriddb`.
+
 The proposal: korrid loses its built-in SteamGridDB fetcher. A plugin in
 `korri-os/plugins` finds cover art for a game and returns image candidates.
 korrid makes every request, adds the person's API key itself, downloads the
@@ -22,8 +28,7 @@ the general mechanism in
 The built-in title rewrite is dropped. One clean cut removes the Rust fetcher,
 and a one-off migration moves each device's real data.
 
-The owner questions at the end ask about choices that have no grounding on
-main or legacy.
+No open owner questions.
 
 ## What exists today
 
@@ -224,9 +229,9 @@ needs nothing.
 
 1. `<private>/steamgriddb.credential`: write its trimmed content as the
    `@korri:steamgriddb` plugin secret, in `<private>/@korri:steamgriddb/`.
-   The folder is mode 0700 and the file 0600, both owned by `korrid`
-   (ADR 0033). The file name waits for ADR 0033 question 2. Then delete the
-   old file.
+   The file is `<private>/@korri:steamgriddb/credential`. The folder is
+   mode 0700 and the file 0600, both owned by `korrid` (ADR 0033). Then
+   delete the old file.
 2. `<private>/steamgriddb-enrichment/`: delete it. It records past lookups,
    not user data, and its outcome names change.
 3. `<private>/game-assets/assignments.json`: rewrite each `source` from
@@ -251,8 +256,15 @@ because nobody can confirm the plugin on a device without it.
 The portal cannot put the capability in an image URL (AGENTS.md: never in a
 URL). So the portal must fetch the bytes from its own korrid with the bearer
 capability and turn them into an object URL for `coverArtUrl`. A `blob:` URL
-is same-origin, so boxbuster can draw it to a WebGL canvas. How korrid serves
-the bytes is owner question 1.
+is same-origin, so boxbuster can draw it to a WebGL canvas.
+
+**Coordinator decision, 2026-10-23:** korrid serves the bytes on a `GET`
+route of the local router. The portal sends the capability in the
+`Authorization` request header, never in the URL. The CORS layer
+(`lib.rs` :4295–4298) then allows `GET` as well as `POST`. It already allows
+the `Authorization` header. Reason: the image bytes stay binary, without a
+base64 copy a third larger that a handheld must parse as JSON. The route's
+path belongs to the section 6 slice. This ADR does not choose it.
 
 ### 7. Terms of use
 
@@ -280,7 +292,8 @@ it.
 
 | Element | Comes from | Delta and why |
 |---|---|---|
-| Handler `game-assets.candidates` | legacy RPC `app.game-assets.candidates.list` | New as a plugin operation. `app.` and `.list` dropped because it is not a portal RPC. Owner question 2. |
+| Handler `game-assets.candidates` | legacy RPC `app.game-assets.candidates.list` | New as a plugin operation. `app.` and `.list` dropped because it is not a portal RPC. Name kept by coordinator decision. |
+| Plugin id `@korri:steamgriddb` | official `@korri:<name>` ids such as `@korri:pico8`, legacy provider `steamgriddb` | None. Name kept by coordinator decision. |
 | Input `{ title, responses }` | `enrich_one` uses `game.title` only, ADR 0016 `responses` | No playable id, release or path: no consumer in the plugin. |
 | Result `{ candidates }` | legacy `ListGameAssetCandidatesResponse` | None. No new `_tag`: ADR 0016 treats anything but `HttpRequests` as the result. |
 | `candidateId` | legacy `GameAssetCandidate` | Dropped. It named a file in legacy's candidate cache. main names an asset by its bytes. |
@@ -347,28 +360,6 @@ artwork section beside "Acquisition providers".
 
 ## Owner questions
 
-ADR 0033 asks two questions that also change this ADR. Its question 1 (is
-the key the person's or the device's) decides what an identity switch does
-with the migrated key. Its question 2 (names) gives the migration its file
-name.
-
-1. **How does the portal get cover bytes from its korrid?** Today nothing
-   serves a stored cover, so Linux shows no covers at all (section 6). The
-   portal must not put its capability in a URL (AGENTS.md), so an `<img src>`
-   that points at korrid cannot work. The portal must fetch the bytes itself
-   and make a `blob:` URL.
-   - (a) A `GET` route on the local korrid, called with the bearer
-     capability in a header. korrid's CORS then allows `GET` as well as
-     `POST`.
-   - (b) An `/rpc` method that returns the bytes as base64 in JSON. It keeps
-     one route. A cover grows by a third, and handhelds parse it as JSON.
-
-   Lean (opinion): (a).
-2. **Keep these two names?** The plugin's operation is
-   `game-assets.candidates`, and the plugin is `@korri:steamgriddb`. The
-   operation name comes from legacy `app.game-assets.candidates.list`, with
-   `app.` and `.list` dropped because it is not a portal RPC. The plugin name
-   follows the other official plugins, such as `@korri:pico8`, and legacy's
-   `steamgriddb` provider name. Both names become permanent: other plugins
-   will implement the operation, and the plugin id names its folder and its
-   provenance in `assignments.json`.
+No open owner questions. ADR 0033 records the answers that change this ADR:
+the key is the person's and follows the play-log choice at an identity
+switch, and the migrated file is named `credential`.

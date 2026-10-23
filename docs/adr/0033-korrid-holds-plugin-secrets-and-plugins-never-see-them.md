@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: proposed (ready for review)
 ---
 
 # korrid holds plugin secrets, and plugins never see them
@@ -10,8 +10,16 @@ a plugin need. And for this one it's an API key, but for another plugin it may
 be something else. Then there's the question of how do we store it in a secure
 way. Maybe that's already covered by the current design."
 
-**Owner decision, 2026-10-23:** per-plugin state lives "In korrid's private
-folder, one subfolder per plugin, named by the plugin's id".
+**Owner decisions, 2026-10-23:**
+
+- Per-plugin state lives "In korrid's private folder, one subfolder per
+  plugin, named by the plugin's id".
+- A plugin secret is the person's. It stays on the one device where the
+  person entered it and never moves. At an identity switch it follows the
+  person's play-log choice (section 2, "Owner and devices").
+
+**Coordinator decision, 2026-10-23:** the names keep their main and legacy
+roots, with the SteamGridDB part removed (section 2, "Names").
 
 The answer: the current design already covers four of the five kinds of input
 that real plugins need. One kind has a real case and no home. That kind is a
@@ -19,8 +27,7 @@ secret that korrid uses for a plugin, such as the SteamGridDB API key
 ([ADR 0032](0032-steamgriddb-artwork-comes-from-a-plugin.md)). This ADR gives
 that kind a home and adds nothing for the other four.
 
-Items marked **unresolved** have no grounding on main or legacy. The owner
-questions at the end ask about them.
+No open owner questions.
 
 ## What exists today
 
@@ -143,10 +150,12 @@ passes admission. Native programs do not receive it (section 3).
 **Declaration.** The plugin's `plugin.nix` declares that it uses one secret
 and names the one host that receives it. The host must also be in `hosts`.
 The builder carries it into `manifest.json`, so the approval digest binds it,
-as it does `hosts` (ADR 0016). The field name is **unresolved** (question 2).
-The legacy baseline is `credentialRequired: boolean`
+as it does `hosts` (ADR 0016). The field is `credentialHost`, for example
+`credentialHost = "www.steamgriddb.com"`. The legacy baseline is
+`credentialRequired: boolean`
 (`legacy:product/platform/protocol/acquisition/plugin.ts` :19). The delta is
-the host. A boolean would send the key to every declared host, and SteamGridDB
+the host, and the rename follows it: a field named "Required" that holds a
+host reads like a yes or no. A boolean would send the key to every declared host, and SteamGridDB
 must not send it to its image host (legacy `tools/lab/vite.config.mjs`
 proxies the image host with no key). One secret per plugin: every real case
 has one.
@@ -171,8 +180,8 @@ plugin's handler that needs it. korrid reports a diagnostic, as
   cannot start with `.` (`plugin-host/src/declaration.rs` :101–117). So an id
   is always one safe path part. korrid checks the id again before it builds
   the path.
-- File: one file in that folder. Its name is **unresolved** (question 2). The
-  closest root is main's `steamgriddb.credential`.
+- File: `<private>/<plugin id>/credential`. The name is main's
+  `steamgriddb.credential` without the SteamGridDB part.
 - Owner `korrid`. korrid creates the folder with mode 0700 and the file with
   mode 0600, in code, as `identity.rs` does. Delta from today: the
   SteamGridDB write relies on the unit's `UMask`. A korrid that runs outside
@@ -191,13 +200,25 @@ plugin's handler that needs it. korrid reports a diagnostic, as
 settings (`pluginSettingGroups`, `plugin-repositories.ts` :506). The row uses
 the existing `sensitiveText` interaction with a clear action. The surface
 receives only `SecretSettingStatus` (`Configured`, `NotConfigured`), never the
-value. The set and clear RPCs are today's pair with a plugin id added. Their
-names are **unresolved** (question 2). They stay `OwnerDeviceOnly`, so a
+value. The set and clear RPCs are today's pair with a plugin id added:
+`system.settings.credential.set { pluginId, token }` and
+`system.settings.credential.clear { pluginId }`. They stay `OwnerDeviceOnly`, so a
 person's other device can also set a handheld's secret over the encrypted
 peer wire. They answer in host mode too, wherever the plugin runs. This
-removes today's host-mode refusal. `PluginSetting` gains the plugin's
-`SecretSettingStatus` when the plugin declares a secret. The field name is
-**unresolved** (question 2).
+removes today's host-mode refusal. `PluginSetting` gains
+`credential: SecretSettingStatus` when the plugin declares a secret.
+`SettingsSnapshot.steam_grid_db_credential` goes.
+
+**Names.** Coordinator decision, 2026-10-23. Each name keeps its root, with
+the SteamGridDB part removed:
+
+| Name | Root |
+|---|---|
+| `plugin.nix` `credentialHost` (one host, a string) | legacy `credentialRequired: boolean`, renamed because the value is now the one receiving host, not a yes or no |
+| file `<private>/<plugin id>/credential` | main `steamgriddb.credential` (`settings.rs` :29) |
+| `system.settings.credential.set { pluginId, token }` | main `system.settings.steamgriddbCredential.set { token }` (`lib.rs` :1378) |
+| `system.settings.credential.clear { pluginId }` | main `system.settings.steamgriddbCredential.clear {}` (`lib.rs` :1380) |
+| `PluginSetting.credential: SecretSettingStatus` | main `SettingsSnapshot.steam_grid_db_credential` (`lib.rs` :943) |
 
 **Approval.** The plugin host adds one sentence to the report's `warning`
 when a plugin declares a secret. The sentence names the receiving host, as
@@ -208,11 +229,23 @@ gets the key before approval. The wording is the implementer's.
 **Removal.** Removing a plugin keeps its folder and its secret, as plugin-host
 removal keeps credentials (`README.md` :181). Clear deletes the secret.
 
-**Owner and devices.** Whether the secret belongs to the device or to the
-person is **unresolved** (question 1). It decides what an identity switch does
-with the secret and whether the secret spreads as a record (ADR 0027). Until
-the owner answers, the secret stays on the device where the person entered it
-and never leaves it.
+**Owner and devices.** Owner decision, 2026-10-23: a plugin secret is the
+person's, kept on one device.
+
+- It never moves to another device. It is not a record in the sense of
+  CONTEXT.md and ADR 0027, so it never spreads and never goes to a relay. The
+  person enters it once on each device.
+- At an identity switch it follows the choice the person makes for the play
+  log. The person picks `transfer` or `delete` in the switch request
+  (`IdentityDataDisposition`, `lib.rs` :1079–1083). The journal keeps it as
+  `DataDisposition` (`identity_switch/journal.rs` :15–18, :70). The
+  coordinator applies it to the play log at `coordinator.rs` :350–360:
+  `Transfer` calls `transfer_person_records` (`host/play_log.rs` :215) and
+  `Delete` calls `delete_person_records` (:298). At the same point, korrid
+  applies the same choice to every plugin secret on the device. `Transfer`
+  keeps each `credential` file for the new owner. `Delete` removes each one.
+  A delete of a file that is already gone succeeds, so a switch that resumes
+  from its journal can run the step again, as `delete_person_records` can.
 
 ### 3. What this ADR does not cover
 
@@ -232,15 +265,16 @@ and never leaves it.
 | Element | Comes from | Delta and why |
 |---|---|---|
 | Input kinds | the inputs table above | None invented. Each row has a plugin or legacy producer. |
-| Secret declaration | legacy `credentialRequired: boolean` | Adds the receiving host. Field unresolved (question 2). |
+| Secret declaration | legacy `credentialRequired: boolean` | Renamed to `credentialHost` because the value is now the one receiving host, not a yes or no. |
 | Declaration place | ADR 0016 `hosts` in `plugin.nix` and `manifest.json` | None. Same path into the approval digest. |
 | Secret value | main `steamgriddb.credential`, legacy `credentials.get` | The plugin's JS no longer sees it (legacy did). korrid adds it as a header. |
 | Bearer form | SteamGridDB OpenAPI, legacy itch.io :607, legacy `vite.config.mjs` | None. |
 | Folder | owner decision 2026-10-23 | None. |
-| File name | main `steamgriddb.credential` | Unresolved (question 2). |
+| File name | main `steamgriddb.credential` | `credential`: the SteamGridDB part removed. |
 | Modes 0700 and 0600 | `nixos-module.nix` :496, :852, `identity.rs` :1093, :1199 | Set in code, not by `UMask` alone. |
-| Status | main `SecretSettingStatus`, `SettingsSnapshot.steam_grid_db_credential` | Moves onto `PluginSetting`. Field unresolved (question 2). |
-| Set and clear | main `system.settings.steamgriddbCredential.set { token }` and `.clear {}` | Adds the plugin id. Served in host mode. Names unresolved (question 2). |
+| Status | main `SecretSettingStatus`, `SettingsSnapshot.steam_grid_db_credential` | Moves onto `PluginSetting` as `credential`. |
+| Set and clear | main `system.settings.steamgriddbCredential.set { token }` and `.clear {}` | `system.settings.credential.set { pluginId, token }` and `.clear { pluginId }`. Adds the plugin id. Served in host mode. |
+| Identity switch | main play-log `Transfer` and `Delete` (`coordinator.rs` :350–360) | The same choice now also keeps or deletes plugin secrets. |
 | Approval sentence | `package.rs` :1003–1008 native credential sentence | A second sentence for the plugin secret. |
 
 ## Considered options
@@ -269,35 +303,11 @@ and never leaves it.
   ADR 0016 and is not part of this decision.
 - A plugin secret is plain text on disk. Anyone with root or the `korrid` user
   on the device can read it, including a plugin approved for `User=root`.
-- Until question 1 is answered, an identity switch leaves the secret in place
-  for the next owner, as it leaves the SteamGridDB key today.
+- A secret no longer passes to the next owner without a choice. Today the
+  SteamGridDB key does.
+- The person enters each key once on each device. A later move to spreading
+  secrets between devices adds behaviour and removes none.
 
 ## Owner questions
 
-1. **Is a plugin secret the person's or the device's?** An API key belongs to
-   the person's account at the service, such as their SteamGridDB account.
-   Today the key stays on the device after an identity switch, and the next
-   owner uses it without knowing. CONTEXT.md says settings are records, and
-   records spread between devices (ADR 0027). Small records also sit
-   encrypted on public Nostr relays.
-   - (a) The device's. It stays on the device, never spreads and survives an
-     identity switch. This is today's behaviour.
-   - (b) The person's, on one device. It never spreads. At an identity
-     switch it follows the choice the person makes for the play log:
-     `DataDisposition` `Transfer` keeps it for the new owner, `Delete`
-     deletes it.
-   - (c) The person's, and it spreads. As (b), and when record spreading is
-     built, it reaches the person's other devices and can sit encrypted on
-     public relays.
-
-   Lean (opinion): (b). The key no longer passes to the next owner without a
-   choice, and it stays off public relays. Cost: the person enters the key once on each device. A
-   move to (c) later adds behaviour and removes none.
-2. **Which names?** Four names have no grounding: the `plugin.nix` field that
-   names the receiving host, the secret's file name in the plugin's folder,
-   the set and clear RPC pair, and the status field on `PluginSetting`. Their
-   roots are legacy `credentialRequired`, main `steamgriddb.credential`, main
-   `system.settings.steamgriddbCredential.set` and `.clear`, and main
-   `SettingsSnapshot.steam_grid_db_credential`. These names become wire and
-   file names that plugins in other repositories depend on. Choose them, or
-   say which root each one keeps.
+No open owner questions.
