@@ -5,12 +5,14 @@
 import argparse
 import copy
 from datetime import datetime, timezone
+from dataclasses import dataclass
 import os
 import math
 import hashlib
 import re
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import tempfile
 
@@ -783,6 +785,93 @@ def check_with_korrid(documents, probe):
             )
 
 
+POSIX_ACL_ACCESS = "system.posix_acl_access"
+
+
+@dataclass(frozen=True)
+class FileMetadata:
+    uid: int
+    gid: int
+    mode: int
+    xattrs: dict[str, bytes]
+
+
+def metadata_from_fd(fd: int) -> FileMetadata:
+    status = os.fstat(fd)
+    return FileMetadata(
+        status.st_uid,
+        status.st_gid,
+        stat.S_IMODE(status.st_mode),
+        {name: os.getxattr(fd, name) for name in os.listxattr(fd)},
+    )
+
+
+def read_file_metadata(path: Path) -> FileMetadata:
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise MigrationError(f"metadata source is not a regular file: {path}")
+            return metadata_from_fd(fd)
+        finally:
+            os.close(fd)
+    except OSError as error:
+        raise MigrationError(f"cannot read metadata for {path}: {error}") from error
+
+
+def apply_file_metadata(
+    fd: int, expected: FileMetadata, source: Path, destination: Path
+) -> None:
+    try:
+        current = os.fstat(fd)
+        if (current.st_uid, current.st_gid) != (expected.uid, expected.gid):
+            os.fchown(fd, expected.uid, expected.gid)
+        # These files are unpublished. Keep them private and writable while
+        # installing user xattrs, even for a 0400 source. chown/write can clear
+        # set-ID bits, so restore the complete mode after writing the content.
+        os.fchmod(fd, 0o600)
+        current_xattrs = {name: os.getxattr(fd, name) for name in os.listxattr(fd)}
+        for name in current_xattrs:
+            if name == POSIX_ACL_ACCESS or name not in expected.xattrs:
+                os.removexattr(fd, name)
+        for name, value in expected.xattrs.items():
+            if name != POSIX_ACL_ACCESS and current_xattrs.get(name) != value:
+                os.setxattr(fd, name, value)
+        os.fchmod(fd, expected.mode)
+        # chmod changes the ACL mask. Install the original ACL last; never
+        # retain a default ACL inherited from a destination directory.
+        if POSIX_ACL_ACCESS in expected.xattrs:
+            os.setxattr(fd, POSIX_ACL_ACCESS, expected.xattrs[POSIX_ACL_ACCESS])
+        if metadata_from_fd(fd) != expected:
+            raise MigrationError(
+                f"metadata verification failed for {source} -> {destination}"
+            )
+    except OSError as error:
+        raise MigrationError(
+            f"cannot preserve metadata for {source} -> {destination}: {error}"
+        ) from error
+
+
+def backup_file(source: Path, destination: Path, metadata: FileMetadata) -> None:
+    # Open before copy2 applies a potentially read-only mode. copy2's xattr
+    # copy is best-effort; the explicit copy below must succeed and verify.
+    fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        shutil.copy2(source, destination)
+        apply_file_metadata(fd, metadata, source, destination)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def fsync_directory(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def migrate(root, dry_run=False, config_check=None):
     if korrid_running():
         raise MigrationError("stop korrid before migrating")
@@ -799,32 +888,49 @@ def migrate(root, dry_run=False, config_check=None):
     changed = tuple(documents) != migrated
     if dry_run or not changed:
         return changed, None
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-    backup = root / f"launch-settings-backup-{stamp}"
-    backup.mkdir(mode=0o700)
-    (backup / "catalog").mkdir()
-    for path in paths:
-        shutil.copy2(path, backup / path.relative_to(root))
+    metadata = [read_file_metadata(path) for path in paths]
     temporary = []
+    backup = None
+    backup_created = False
+    publish_started = False
     try:
-        for path, document in zip(paths, migrated):
+        # Preflight both files' metadata before writing candidate YAML. Do not
+        # replace either original until both candidates and complete backups
+        # have been fsynced with their original ownership, mode and xattrs.
+        for path, expected in zip(paths, metadata):
             fd, name = tempfile.mkstemp(prefix=".launch-settings-", dir=path.parent)
-            temporary.append(Path(name))
-            with os.fdopen(fd, "w") as output:
-                os.fchmod(output.fileno(), path.stat().st_mode & 0o777)
+            destination = Path(name)
+            temporary.append((fd, destination))
+            apply_file_metadata(fd, expected, path, destination)
+        for path, document, expected, (fd, destination) in zip(
+            paths, migrated, metadata, temporary
+        ):
+            with os.fdopen(fd, "w", closefd=False) as output:
                 yaml.safe_dump(document, output, sort_keys=False, allow_unicode=True)
                 output.flush()
-                os.fsync(output.fileno())
-        for source, target in zip(temporary, paths):
+                apply_file_metadata(fd, expected, path, destination)
+                os.fsync(fd)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+        backup = root / f"launch-settings-backup-{stamp}"
+        backup.mkdir(mode=0o700)
+        backup_created = True
+        (backup / "catalog").mkdir(mode=0o700)
+        for path, expected in zip(paths, metadata):
+            backup_file(path, backup / path.relative_to(root), expected)
+        for directory in [backup / "catalog", backup, root]:
+            fsync_directory(directory)
+        publish_started = True
+        for (_, source), target in zip(temporary, paths):
             os.replace(source, target)
         for directory in {path.parent for path in paths}:
-            fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
+            fsync_directory(directory)
+    except BaseException:
+        if backup_created and not publish_started:
+            shutil.rmtree(backup)
+        raise
     finally:
-        for path in temporary:
+        for fd, path in temporary:
+            os.close(fd)
             path.unlink(missing_ok=True)
     return True, backup
 

@@ -1,8 +1,10 @@
 import importlib.util
 import copy
+import errno
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -60,6 +62,191 @@ class MigrationTests(unittest.TestCase):
         shutil.copyfile(
             HERE / "fixtures/library.before.yaml", root / "catalog/library.yaml"
         )
+
+    def file_metadata(self, path):
+        status = path.stat()
+        return (
+            status.st_uid,
+            status.st_gid,
+            stat.S_IMODE(status.st_mode),
+            {name: os.getxattr(path, name) for name in os.listxattr(path)},
+        )
+
+    def set_source_metadata(self, paths, mode=0o2640):
+        # Use a supplementary group when possible: a copy owned by the calling
+        # user would otherwise hide the missing-chown bug in an unprivileged run.
+        group = next(
+            (gid for gid in os.getgroups() if gid != os.getegid()), os.getegid()
+        )
+        for path in paths:
+            os.chown(path, -1, group)
+            os.chmod(path, mode)
+
+    def assert_user_xattrs_available(self, paths):
+        for index, path in enumerate(paths):
+            try:
+                os.setxattr(
+                    path, "user.korri-migration-test", f"original-{index}".encode()
+                )
+            except OSError as error:
+                if error.errno in {errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS}:
+                    self.skipTest("filesystem does not support user xattrs")
+                raise
+
+    def set_acl(self, paths, *, default=False):
+        utility = shutil.which("setfacl")
+        if utility is None:
+            self.skipTest("setfacl is unavailable; POSIX ACL test skipped")
+        other_uid = 65534 if os.getuid() != 65534 else 65533
+        spec = (
+            f"u:{other_uid}:r--,m::r--"
+            if not default
+            else f"d:u::rwx,d:u:{other_uid}:r--,d:g::r-x,d:m::r-x,d:o::---"
+        )
+        for path in paths:
+            result = subprocess.run(
+                [utility, "-m", spec, str(path)],
+                capture_output=True,
+                text=True,
+                env={**os.environ, "LC_ALL": "C"},
+                check=False,
+            )
+            if result.returncode and any(
+                reason in result.stderr.lower()
+                for reason in ["not supported", "not implemented"]
+            ):
+                self.skipTest(
+                    f"filesystem does not support POSIX ACLs: {result.stderr.strip()}"
+                )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            key = "system.posix_acl_default" if default else "system.posix_acl_access"
+            try:
+                os.getxattr(path, key)
+            except OSError as error:
+                if error.errno in {
+                    errno.ENODATA,
+                    errno.ENOTSUP,
+                    errno.EOPNOTSUPP,
+                    errno.ENOSYS,
+                }:
+                    self.skipTest("filesystem does not expose the POSIX ACL xattr")
+                raise
+
+    def test_replacements_and_backups_preserve_uid_gid_and_all_mode_bits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            paths = [root / "device.yaml", root / "catalog/library.yaml"]
+            self.set_source_metadata(paths)
+            expected = [
+                (
+                    path.stat().st_uid,
+                    path.stat().st_gid,
+                    stat.S_IMODE(path.stat().st_mode),
+                )
+                for path in paths
+            ]
+            _, backup = migration.migrate(root)
+            for path, metadata in zip(paths, expected):
+                for candidate in [path, backup / path.relative_to(root)]:
+                    actual = candidate.stat()
+                    self.assertEqual(
+                        (actual.st_uid, actual.st_gid, stat.S_IMODE(actual.st_mode)),
+                        metadata,
+                        str(candidate),
+                    )
+
+    def test_replacements_and_backups_preserve_xattrs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            paths = [root / "device.yaml", root / "catalog/library.yaml"]
+            self.assert_user_xattrs_available(paths)
+            self.set_source_metadata(paths)
+            expected = [self.file_metadata(path) for path in paths]
+            _, backup = migration.migrate(root)
+            for path, metadata in zip(paths, expected):
+                self.assertEqual(self.file_metadata(path), metadata, str(path))
+                self.assertEqual(
+                    self.file_metadata(backup / path.relative_to(root)), metadata
+                )
+
+    def test_replacements_and_backups_preserve_posix_acl(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            paths = [root / "device.yaml", root / "catalog/library.yaml"]
+            self.set_source_metadata(paths, 0o640)
+            self.set_acl(paths)
+            expected = [self.file_metadata(path) for path in paths]
+            self.assertTrue(
+                all("system.posix_acl_access" in item[3] for item in expected)
+            )
+            _, backup = migration.migrate(root)
+            for path, metadata in zip(paths, expected):
+                self.assertEqual(self.file_metadata(path), metadata, str(path))
+                self.assertEqual(
+                    self.file_metadata(backup / path.relative_to(root)), metadata
+                )
+
+    def test_read_only_sources_keep_metadata_on_replacements_and_backups(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            paths = [root / "device.yaml", root / "catalog/library.yaml"]
+            self.assert_user_xattrs_available(paths)
+            self.set_source_metadata(paths, 0o440)
+            expected = [self.file_metadata(path) for path in paths]
+            _, backup = migration.migrate(root)
+            for path, metadata in zip(paths, expected):
+                self.assertEqual(self.file_metadata(path), metadata, str(path))
+                self.assertEqual(
+                    self.file_metadata(backup / path.relative_to(root)), metadata
+                )
+
+    def test_destination_default_acls_do_not_add_permissions_to_replacements_or_backups(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            paths = [root / "device.yaml", root / "catalog/library.yaml"]
+            self.assert_user_xattrs_available(paths)
+            self.set_source_metadata(paths)
+            expected = [self.file_metadata(path) for path in paths]
+            self.assertTrue(
+                all("system.posix_acl_access" not in item[3] for item in expected)
+            )
+            self.set_acl([root, root / "catalog"], default=True)
+            _, backup = migration.migrate(root)
+            for path, metadata in zip(paths, expected):
+                self.assertEqual(self.file_metadata(path), metadata, str(path))
+                self.assertEqual(
+                    self.file_metadata(backup / path.relative_to(root)), metadata
+                )
+
+    def test_metadata_copy_refuses_a_real_unprivileged_chown_failure(self):
+        if os.geteuid() == 0:
+            self.skipTest("requires an unprivileged test user")
+        # The real interpreter is root-owned in the Nix toolchain. No mocks or
+        # privileged setup: an ordinary user cannot assign its owner to a file.
+        source = Path(sys.executable).resolve()
+        metadata = migration.read_file_metadata(source)
+        if metadata.uid == os.geteuid():
+            self.skipTest(
+                "interpreter has the test user's uid; no foreign owner to test"
+            )
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "unpublished.yaml"
+            with destination.open("w+") as output:
+                with self.assertRaisesRegex(
+                    migration.MigrationError, "cannot preserve metadata"
+                ):
+                    migration.apply_file_metadata(
+                        output.fileno(), metadata, source, destination
+                    )
+                self.assertEqual(os.fstat(output.fileno()).st_uid, os.geteuid())
+            self.assertEqual(destination.read_bytes(), b"")
 
     def test_fixture_files_migrate_once_keep_plugin_keys_and_preserve_backups(self):
         with tempfile.TemporaryDirectory() as directory:
