@@ -345,6 +345,9 @@ fn unsupported_realtime_authority_is_refused() {
     for request in [
         "LimitRTPRIO=",
         "LimitRTPRIO=0",
+        "LimitRTPRIO=05",
+        "LimitRTPRIO=09",
+        "LimitRTPRIO=020",
         "LimitRTPRIO=21",
         "LimitRTPRIO=99",
         "LimitRTPRIO=-1",

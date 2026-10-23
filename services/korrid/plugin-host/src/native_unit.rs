@@ -268,6 +268,8 @@ impl NativeUnit {
                     ("[Service]", "LimitRTPRIO")
                         if !value.is_empty()
                             && value.bytes().all(|byte| byte.is_ascii_digit())
+                            // systemd reads a leading zero as octal (020 is 16).
+                            && !value.starts_with('0')
                             && value
                                 .parse::<u8>()
                                 .is_ok_and(|priority| (1..=20).contains(&priority)) =>

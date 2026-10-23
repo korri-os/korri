@@ -202,7 +202,8 @@ For the remaining configuration cutover, the task's requirement to preserve grou
 
 `src/declaration.rs` consumes named exports `name`, optional `title` and `description`, `services`, and the existing data exports listed above. A declaration can name zero to three native units. Service names reference the generated manifest. Missing, extra, and repeated names fail by name; a fourth unit fails the three-unit bound. No `daemons` export or compatibility reader remains. The publisher namespace comes from verified packaging, not source. ID segments follow the grammar in `services/korrid/src/plugin.rs`, with a 64-byte bound.
 
-`LimitRTPRIO=` accepts only one decimal integer from **1 to 20**. The native
+`LimitRTPRIO=` accepts only one decimal integer from **1 to 20**, without a
+leading zero (systemd reads `020` as octal 16). The native
 unit remains the configuration source. The exact request appears in
 `warning`, `native_units.privileged_directives` and `unit_configuration`, and
 changes the approval digest. Adding it requires new exact-build approval.
@@ -210,7 +211,7 @@ For that unit only, the host derives `RestrictRealtime=no` in its approval-bound
 hardening drop-in. Other units retain the exact existing RT filter and digest.
 It permits threads to request bounded FIFO/RR priority; it does not select
 any thread or scheduling policy. The Sunshine consumer requests capture-only
-FIFO 15 with reset-on-fork. Lower-priority input and compositor work can be
+FIFO 5 with reset-on-fork. Lower-priority input and compositor work can be
 delayed, so device responsiveness checks remain required. Missing this
 directive leaves existing units and approvals unchanged. Empty resets, zero,
 ranges, `infinity`, soft:hard pairs, `CPUScheduling*`, `CAP_SYS_NICE`, `Nice`,
