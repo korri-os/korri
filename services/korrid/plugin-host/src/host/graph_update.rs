@@ -251,13 +251,51 @@ impl Host {
                     // receipts even if a publisher was since revoked; ordinary
                     // restore checks current authority before any activation.
                     for selection in &update.selections {
-                        self.approved(&selection.after)?;
+                        self.approved_graph_candidate(&selection.after, &update)?;
                     }
                     self.finish_graph_update(&update)?;
                 }
             }
         }
         storage::remove(&path.with_extension("new"))
+    }
+
+    fn approved_graph_candidate(
+        &self,
+        receipt: &Receipt,
+        update: &GraphUpdate,
+    ) -> Result<Report, String> {
+        #[cfg(test)]
+        if self
+            .test_runtime
+            .as_ref()
+            .is_some_and(|runtime| !runtime.real_packages)
+        {
+            return self.approved(receipt);
+        }
+        // The durable decision already records the independently approved
+        // provenance of every target. A mixed set of live receipts cannot
+        // supply it reliably, and current publisher bindings may have changed
+        // since approval. Re-derive exact approvals from these recorded inputs;
+        // ordinary restore still checks current authority before any start.
+        let report = package::load_graph(
+            &self.nix,
+            None,
+            &receipt.package,
+            receipt.provenance.clone(),
+            |path| {
+                update
+                    .selections
+                    .iter()
+                    .find(|selection| selection.after.package == path)
+                    .map(|selection| selection.after.provenance.clone())
+                    .ok_or_else(|| "pending graph update omits an exact dependency".into())
+            },
+        )?;
+        if report.id != receipt.id || report.approval != receipt.approval {
+            return Err(super::APPROVAL_STALE.into());
+        }
+        Ok(report)
     }
 
     fn graph_checkpoint(&self, _stage: &str) -> Result<(), String> {

@@ -4018,7 +4018,7 @@ mod tests {
         host.install(next, &approval, SelectionIntent::Update { id: &first.id })
             .unwrap();
         host.restore_all().unwrap();
-        for previous in before {
+        for previous in &before {
             let selected = host.status(&previous.id).unwrap().unwrap();
             assert!(target.contains(&selected.package));
             assert_eq!(selected.desired, Desired::Enabled);
@@ -4047,6 +4047,46 @@ mod tests {
         assert_eq!(host.enabled_packages().unwrap().len(), 4);
         assert_eq!(fs::read(&data).unwrap(), b"preserve game progress");
         assert!(!host.state.root().join("graph-update.json").exists());
+
+        // A real-store power-loss image: the decision is durable, but only
+        // one dependency's receipt has switched. Publisher revocation must
+        // not lose the recorded dependency provenance or strand this mix.
+        for receipt in &before {
+            host.selection(&receipt.id).commit(receipt).unwrap();
+        }
+        let mut selections = Vec::new();
+        let mut afters = Vec::new();
+        for report in seeded {
+            let previous = before.iter().find(|r| r.id == report.id).unwrap();
+            let after = previous
+                .select(report.package, report.provenance, report.approval)
+                .unwrap();
+            host.selection(&after.id).stage(&after.package).unwrap();
+            selections.push(serde_json::json!({"before": previous, "after": after}));
+            afters.push(after);
+        }
+        storage::write_json(
+            &host.state.root().join("graph-update.json"),
+            &serde_json::json!({"phase": "Switching", "selections": selections}),
+        )
+        .unwrap();
+        host.selection(&afters[0].id).commit(&afters[0]).unwrap();
+        host.publishers.clear();
+        assert!(
+            host.restore_all().is_err(),
+            "revoked packages must not activate"
+        );
+        assert!(
+            !host.state.root().join("graph-update.json").exists(),
+            "revocation must not strand a half-switched graph"
+        );
+        for after in afters {
+            let receipt = host.status(&after.id).unwrap().unwrap();
+            assert_eq!(receipt.package, after.package);
+            assert_eq!(receipt.provenance, after.provenance);
+            assert_eq!(receipt.approval, after.approval);
+        }
+        assert!(published(&host).1.is_empty());
     }
 
     #[test]
