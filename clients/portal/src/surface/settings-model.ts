@@ -104,6 +104,12 @@ export function settingsFrom(
               },
             } : {}),
           },
+      facts.settings === undefined ? undefined : {
+        id: "person-name",
+        label: "Person name",
+        ...(facts.settings.personName === undefined ? {} : { value: facts.settings.personName }),
+        ...(canEdit("person-name") ? { interaction: { kind: "text" as const, placeholder: "Your name", maxLength: 64 } } : {}),
+      },
       // Offered only once setup has finished; during setup the row would be a
       // no-op, and before the first read Korri cannot say which it is.
       facts.onboardingNeeded !== false

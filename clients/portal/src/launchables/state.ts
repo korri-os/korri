@@ -1,5 +1,6 @@
 import type {
   ActiveSession,
+  StreamPlayEnded,
   CatalogSnapshotOutcome,
   Game,
   LocalGamesListOutcome,
@@ -122,6 +123,8 @@ export type LaunchNotice =
   | { readonly _tag: "Action"; readonly message: string }
 
 interface LaunchablesContent {
+  readonly streamPlayLaunchId?: string
+  readonly streamPlayEnded?: StreamPlayEnded
   readonly entries: readonly PortalEntry[]
   readonly notice: LaunchNotice | null
   /** Actual failed daemon observation; entries retain only last-known identity. */
@@ -316,6 +319,9 @@ export const LaunchablesState = {
   /** Daemon facts, never current focus or browser history, define fresh recovery. */
   recoverStartup: (state: ReadyState, status?: SessionStatusOutcome, previousChoices: readonly PendingLaunchChoice[] = []): LaunchablesState => {
     if (status === undefined) return state
+    if (status._tag === "Ok" && (state.streamPlayLaunchId !== status.payload.streamPlayLaunchId || JSON.stringify(state.streamPlayEnded) !== JSON.stringify(status.payload.streamPlayEnded))) {
+      state = { ...state, streamPlayLaunchId: status.payload.streamPlayLaunchId, streamPlayEnded: status.payload.streamPlayEnded }
+    }
     const failure = status._tag === "Err" ? status.payload : status.payload.observationFailure
     if (status._tag === "Err") {
       return !isAuthoritativeSessionStatus(status) && state.entries.some(entry =>
@@ -527,6 +533,10 @@ export const LaunchablesState = {
     state: LaunchablesState,
     status: SessionStatusOutcome,
   ): LaunchablesState => {
+    if (state._tag !== "Loading" && status._tag === "Ok" &&
+        (state.streamPlayLaunchId !== status.payload.streamPlayLaunchId || JSON.stringify(state.streamPlayEnded) !== JSON.stringify(status.payload.streamPlayEnded))) {
+      state = { ...state, streamPlayLaunchId: status.payload.streamPlayLaunchId, streamPlayEnded: status.payload.streamPlayEnded }
+    }
     const active = status._tag === "Ok" ? status.payload.active : undefined
     if (state._tag === "Choosing") {
       if (!isAuthoritativeSessionStatus(status)) {
@@ -599,6 +609,7 @@ export const LaunchablesState = {
       active.phase === previous.phase &&
       active.focusOwnership === previous.focusOwnership &&
       active.initialHandoff === previous.initialHandoff &&
+      JSON.stringify(active.streamPlayers) === JSON.stringify(previous.streamPlayers) &&
       !(status._tag === "Ok" && status.payload.pendingLaunches?.some(pending => pending.session.launchId !== active.launchId))
     ) {
       return state

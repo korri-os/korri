@@ -105,6 +105,7 @@ describe("settingsFrom", () => {
     const items = groups.flatMap(group => group.items)
     expect(items.map(item => [item.id, item.value])).toEqual([
       ["device-name", "usu"],
+      ["person-name", undefined],
       ["host.preferences.playerCount", "4"],
       ["steamgriddb-credential", "Configured"],
     ])
@@ -138,8 +139,8 @@ describe("settingsFrom", () => {
   })
 
   it("offers to run setup again only once Korri has said setup is finished", () => {
-    expect(group({ settings: configuration }, "Device")?.items.map(item => item.id)).toEqual(["device-name"])
-    expect(group({ settings: configuration, onboardingNeeded: true }, "Device")?.items.map(item => item.id)).toEqual(["device-name"])
+    expect(group({ settings: configuration }, "Device")?.items.map(item => item.id)).toEqual(["device-name", "person-name"])
+    expect(group({ settings: configuration, onboardingNeeded: true }, "Device")?.items.map(item => item.id)).toEqual(["device-name", "person-name"])
     expect(group({ onboardingNeeded: false }, "Device")?.items).toEqual([{
       id: "setup-restart",
       label: "Run setup again",
@@ -155,7 +156,7 @@ describe("settingsFrom", () => {
   it("keeps read-only snapshots readable and accepts an absent snapshot", () => {
     const items = settingsFrom({ settings: { ...configuration, editableSettingIds: [] } })
       .flatMap(group => group.items)
-    expect(items).toHaveLength(3)
+    expect(items).toHaveLength(4)
     expect(items.every(item => item.interaction === undefined)).toBe(true)
     expect(settingsFrom({})).toEqual([])
   })
@@ -250,4 +251,12 @@ describe("settingsFrom", () => {
       )?.items.find(item => item.id === "game-discovery-status")?.description,
     ).toBe("Folder is unavailable")
   })
+})
+
+it("person name is skippable bounded text only when this device can sign", () => {
+  const settings = { ...configuration, personName: "Simon", editableSettingIds: [...configuration.editableSettingIds, "person-name"] }
+  const name = (settings: SettingsSnapshot) => group({ settings }, "Device")?.items.find(item => item.id === "person-name")
+  expect(name(settings)).toMatchObject({ value: "Simon", interaction: { kind: "text", maxLength: 64 } })
+  expect(name({ ...settings, editableSettingIds: [] })).not.toHaveProperty("interaction")
+  expect(name({ ...settings, personName: undefined })).not.toHaveProperty("value")
 })

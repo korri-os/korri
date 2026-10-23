@@ -51,6 +51,8 @@ function isStaleSessionCode(code: string): boolean {
 
 function actionFailure(reason: SessionControlFailureReason, message: string): string {
   switch (reason) {
+    case SessionControlFailureReason.NotSessionStarter:
+      return "Only the device that started this session can use its gameplay actions."
     case SessionControlFailureReason.StaleSession:
       return "That game is no longer running. Reload the session before acting."
     case SessionControlFailureReason.UnknownControl:
@@ -198,10 +200,14 @@ export function createLiveOverlayController({
       return
     }
     if (actionProblemIsSticky) return
+    const settings = (active.streamPlayers ?? []).length === 0 ? undefined : await korrid.settingsSnapshot()
+    if (!isCurrent()) return
+    const personName = settings?._tag === "Ok" ? settings.payload.personName : undefined
+    const streamPlayers = (active.streamPlayers ?? []).map(player => personName?.trim() ? personName : player.label)
     retryOperation = undefined
     publish({
       ...current,
-      presentation: gameplayOverlayPresentationFrom(listed.payload),
+      presentation: gameplayOverlayPresentationFrom(listed.payload, streamPlayers),
       status: { _tag: "Browsing" },
     }, expectedEpoch)
   }

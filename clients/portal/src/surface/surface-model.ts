@@ -18,6 +18,7 @@ import type {
   SurfaceSettingsStatus,
   SurfaceStatus,
 } from "@contracts/surface/korri-surface"
+import { streamStatusFrom } from "./shared-play"
 import { mergePlayStats, type PortalGameCopy } from "../launchables/fold-games"
 import type { PlayStats } from "@contracts/generated/korrid"
 import type { GameDownloadFacts } from "./game-downloads"
@@ -365,6 +366,8 @@ function statusFrom(state: LaunchablesState): SurfaceStatus {
     case "Recovery":
       return { _tag: "Problem", kicker: "Launch recovery needed", reason: state.notice.message, canRetry: true }
     case "Ready": {
+      const shared = streamStatusFrom(state)
+      if (shared !== undefined) return shared
       const observation = state.unavailableSessionStatus
       const failure = observation?._tag === "Err" ? observation.payload : observation?.payload.observationFailure
       if (failure) return {

@@ -626,6 +626,8 @@ pub struct ActiveSession {
 #[serde(rename_all = "camelCase")]
 pub struct SessionStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_play_launch_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_play_ended: Option<StreamPlayEnded>,
     /// All pending reservations owned by this authenticated portal caller; never a selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1948,6 +1950,7 @@ fn session_status_outcome(
     match result {
         Ok(upstream::UpstreamSessionStatus::SessionStatus { active }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: active.map(|active| ActiveSession {
                     person_public_key: active.person_public_key,
@@ -2030,6 +2033,7 @@ fn host_session_status_outcome(
     match result {
         Ok(HostSessionStatus::Running { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
                     person_public_key: None,
@@ -2049,6 +2053,7 @@ fn host_session_status_outcome(
         }
         Ok(HostSessionStatus::Frozen { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
                     person_public_key: None,
@@ -2068,6 +2073,7 @@ fn host_session_status_outcome(
         }
         Ok(HostSessionStatus::FocusFailed { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
                     person_public_key: None,
@@ -2087,6 +2093,7 @@ fn host_session_status_outcome(
         }
         Ok(HostSessionStatus::Stopping { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
                     person_public_key: None,
@@ -2132,6 +2139,7 @@ fn unavailable_remote_session_controls(
 ) -> SessionControlsOutcome {
     match status {
         SessionStatusOutcome::Ok(SessionStatus {
+            stream_play_launch_id: None,
             active: Some(active),
             ..
         }) if active.launch_id == expected_launch_id => {
@@ -2401,6 +2409,7 @@ fn with_pending_launches(
             let observation_failure =
                 (!is_terminal_session_identity_code(&failure.code)).then_some(failure);
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 pending_launches: Some(pending),
                 observation_failure,
@@ -5519,6 +5528,7 @@ mod tests {
         let outcome = correlate_overlay_status(
             &intent,
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
                     person_public_key: None,
@@ -5564,6 +5574,7 @@ mod tests {
         let replaced = correlate_overlay_status(
             &replaced_intent,
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(session("b")),
                 pending_launches: None,
@@ -5660,6 +5671,7 @@ mod tests {
         let stopping = correlate_overlay_status(
             &intent,
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
                     person_public_key: None,
@@ -5686,6 +5698,7 @@ mod tests {
         let frozen_again = correlate_overlay_status(
             &intent,
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
                     person_public_key: None,
@@ -5759,6 +5772,7 @@ mod tests {
             let outcome = correlate_overlay_status(
                 &intent,
                 SessionStatusOutcome::Ok(SessionStatus {
+                    stream_play_launch_id: None,
                     stream_play_ended: None,
                     active: Some(active.clone()),
                     pending_launches: None,
@@ -5780,6 +5794,7 @@ mod tests {
     fn remote_gameplay_controls_refuse_stale_identity_before_unavailable_routing() {
         let exact = unavailable_remote_session_controls(
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
                     person_public_key: None,
@@ -5808,6 +5823,7 @@ mod tests {
         for stale in [
             unavailable_remote_session_controls(
                 SessionStatusOutcome::Ok(SessionStatus {
+                    stream_play_launch_id: None,
                     stream_play_ended: None,
                     active: None,
                     pending_launches: None,
@@ -5842,6 +5858,7 @@ mod tests {
         assert!(matches!(
             outcome,
             SessionStatusOutcome::Ok(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: None,
                 overlay: None,
@@ -5855,6 +5872,7 @@ mod tests {
     fn absent_optional_fields_are_omitted_from_the_wire() {
         assert_eq!(
             serde_json::to_value(SessionStatus {
+                stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: None,
                 pending_launches: None,

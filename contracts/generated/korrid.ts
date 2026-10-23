@@ -1567,6 +1567,7 @@ export interface StreamPlayEnded {
 }
 
 export interface SessionStatus {
+	streamPlayLaunchId?: string;
 	streamPlayEnded?: StreamPlayEnded;
 	/** All pending reservations owned by this authenticated portal caller; never a selection. */
 	pendingLaunches?: PendingLaunch[];

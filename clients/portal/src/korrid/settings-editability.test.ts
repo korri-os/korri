@@ -23,7 +23,7 @@ describe("settings editability facts", () => {
     const client = createInMemoryKorridClient()
     const before = await snapshot(client)
     expect(new Set(before.editableSettingIds)).toEqual(new Set([
-      "device-name", "steamgriddb-credential", "host.preferences.playerCount",
+      "device-name", "person-name", "steamgriddb-credential", "host.preferences.playerCount",
       ...before.plugins.map(plugin => plugin.id),
     ]))
     const changed = await client.updateSetting(before.revision, "device-name", "New name")

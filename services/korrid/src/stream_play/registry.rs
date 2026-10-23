@@ -16,6 +16,12 @@ pub(super) enum Participation {
 }
 
 impl UpstreamRegistry {
+    pub(crate) fn stream_play_launch_id(&self) -> Option<String> {
+        let selected = self.selected()?;
+        matches!(selected.participation, Participation::StreamPlayer { .. })
+            .then_some(selected.launch_id)
+    }
+
     /// Only verified same-owner directory members produce idle signals. This
     /// reads the peer directly: session_status() would recover a selection.
     pub(crate) async fn invite_sessions(

@@ -108,7 +108,7 @@ export interface Launchables {
   reload(): void
   /** Re-read the catalog in place, without showing it as loading: a game
    * acquired from a provider joins it. */
-  refresh(): void
+  refresh(): Promise<void>
 }
 
 export type LocalGamesListOutcomeWithCoverUrls =
@@ -202,8 +202,15 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
     setState(next)
   }, [])
 
+  const dismissedStreamEnd = useRef<string | undefined>(undefined)
   const sessionStatusWithTimeout = useCallback(
-    () => korrid.sessionStatus(SESSION_STATUS_TIMEOUT_MS),
+    async () => {
+      const outcome = await korrid.sessionStatus(SESSION_STATUS_TIMEOUT_MS)
+      if (outcome._tag === "Ok" && outcome.payload.streamPlayEnded?.launchId === dismissedStreamEnd.current) {
+        return { ...outcome, payload: { ...outcome.payload, streamPlayEnded: undefined } }
+      }
+      return outcome
+    },
     [korrid],
   )
 
@@ -366,7 +373,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
     ? undefined
     : state.entries.find(entry =>
         entry.kind === "now-playing" &&
-        isLocalCatalogSession(entry.session, state.entries),
+        (isLocalCatalogSession(entry.session, state.entries) || state.streamPlayLaunchId === entry.session.launchId),
       )
   const localLaunchId = localSession?.kind === "now-playing"
     ? localSession.session.launchId
@@ -1011,8 +1018,11 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
   const dismissNotice = useCallback(() => {
     networkOnboarding.dismissProblem()
     const current = stateRef.current
-    if (current._tag !== "Ready" || current.notice === null) return
-    publish({ ...current, notice: null })
+    if (current._tag !== "Ready") return
+    if (current.streamPlayEnded !== undefined) {
+      dismissedStreamEnd.current = current.streamPlayEnded.launchId
+      publish({ ...current, streamPlayEnded: undefined, notice: null })
+    } else if (current.notice !== null) publish({ ...current, notice: null })
   }, [publish, networkOnboarding])
 
   const returnCatalogSession = useCallback((session: ActiveSession) => {
@@ -1030,7 +1040,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
   )
 
   const reload = useCallback(() => { void load(); networkOnboarding.dismissProblem(); void networkOnboarding.refresh() }, [load, networkOnboarding])
-  const refresh = useCallback(() => { void load(true) }, [load])
+  const refresh = useCallback(() => load(true), [load])
 
   return {
     network: networkState.network,

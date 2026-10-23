@@ -184,6 +184,7 @@ pub(crate) async fn dispatch(
                 session_status_outcome(peers.session_status().await)
             } else {
                 SessionStatusOutcome::Ok(SessionStatus {
+                    stream_play_launch_id: None,
                     active: None,
                     overlay: None,
                     pending_launches: None,
@@ -192,6 +193,7 @@ pub(crate) async fn dispatch(
                 })
             };
             if let SessionStatusOutcome::Ok(status) = &mut outcome {
+                status.stream_play_launch_id = peers.stream_play_launch_id();
                 status.stream_play_ended = peers.stream_play_ended();
             }
             Some(RpcResponse::SessionStatus(outcome))

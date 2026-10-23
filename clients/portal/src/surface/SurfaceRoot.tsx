@@ -43,6 +43,7 @@ import {
   type GameDownloadContext,
 } from "./surface-model"
 import { useLaunchables } from "./use-launchables"
+import { createSharedPlay, surfaceInvitesFrom } from "./shared-play"
 
 /** korrid ids of every game this device can launch itself, one per line. */
 function localGameIdsOf(state: LaunchablesState): string {
@@ -180,6 +181,12 @@ export function SurfaceRoot({
   const clockLabel = useClockLabel()
   const launchablesRef = useRef(launchables)
   launchablesRef.current = launchables
+  const sharedPlay = useMemo(() => createSharedPlay(korrid, {
+    state: () => launchablesRef.current.getState(),
+    refreshSession: () => launchablesRef.current.refresh(),
+  }), [korrid])
+  useEffect(() => sharedPlay.start(), [sharedPlay])
+  const shared = useSyncExternalStore(sharedPlay.subscribe, sharedPlay.getSnapshot)
   // Downloads a launch needs come before reserve/start; the gate is a sibling
   // store, so the launch lifecycle never learns about artifacts.
   // Downloads asked for from a game run in the background; the gate tells
@@ -304,6 +311,7 @@ export function SurfaceRoot({
       if (action.type === "back") acquisition.back()
       return
     }
+    if (action.type === "back" && sharedPlay.back()) return
     if (launchablesRef.current.getState()._tag === "Choosing") return
     if (launchablesRef.current.getState()._tag === "Starting") {
       if (action.type === "back") {
@@ -317,7 +325,7 @@ export function SurfaceRoot({
       return
     }
     surfaceInput.emit(action)
-  }), [acquisition, bus, runner, saves, surfaceInput])
+  }), [acquisition, bus, runner, saves, sharedPlay, surfaceInput])
   useEffect(() => () => runner.cancel(), [runner])
   const {
     state,
@@ -421,13 +429,15 @@ export function SurfaceRoot({
     return {
       ...baseModel,
       catalog,
-      status: saveStatus ?? acquisitionStatus ?? downloadProblem ?? baseModel.status,
+      status: saveStatus ?? acquisitionStatus ?? shared.status ?? downloadProblem ?? baseModel.status,
+      invites: shared.status === undefined && state._tag === "Ready" && !state.entries.some(entry => entry.kind === "now-playing")
+        ? surfaceInvitesFrom(shared.invites, state) : [],
       runnerChoice,
       launchSettings: launchState.editor,
       store: storeForSurface(storeSnapshot, state),
       ...(saveHistory === undefined ? {} : { saveHistory }),
     }
-  }, [baseModel, runnerChoice, launchState.editor, launchState.activeProfiles, saveStatus, saveHistory, saveMarks, acquisitionStatus, downloadProblem, downloadFacts, surfaceToKorridId, storeSnapshot, state])
+  }, [baseModel, shared, runnerChoice, launchState.editor, launchState.activeProfiles, saveStatus, saveHistory, saveMarks, acquisitionStatus, downloadProblem, downloadFacts, surfaceToKorridId, storeSnapshot, state])
   const surfaceToKorridIdRef = useRef(surfaceToKorridId)
   surfaceToKorridIdRef.current = surfaceToKorridId
   /**
@@ -499,6 +509,7 @@ export function SurfaceRoot({
         confirm(entry)
       },
       runAction: id => {
+        if (sharedPlay.act(id)) return
         if (launch.act(id)) return
         if (saves.act(id)) return
         if (starterPackOnboarding.act(id)) return
@@ -603,7 +614,7 @@ export function SurfaceRoot({
         if (!saves.retry() && !acquisition.retry()) reload()
       },
       dismiss: () => {
-        if (!saves.dismiss() && !acquisition.dismiss() && !downloads.dismiss()) dismissNotice()
+        if (!sharedPlay.dismiss() && !saves.dismiss() && !acquisition.dismiss() && !downloads.dismiss()) dismissNotice()
       },
       reload: () => {
         reload()
@@ -614,6 +625,7 @@ export function SurfaceRoot({
     }),
     [
       acquisition,
+      sharedPlay,
       starterPackOnboarding,
       downloads,
       downloadSubject,

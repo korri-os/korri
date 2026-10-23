@@ -99,6 +99,7 @@ function presentationGroup(
  * materialized controls into the surface model. */
 export function gameplayOverlayPresentationFrom(
   controls: SessionControls,
+  streamPlayers: readonly string[] = [],
 ): SurfaceGameplayOverlayPresentation {
   const groups = controls.groups
     .map(presentationGroup)
@@ -109,5 +110,6 @@ export function gameplayOverlayPresentationFrom(
     ...(controls.title === undefined ? {} : { title: controls.title }),
     controls: CORE_CONTROLS,
     groups,
+    ...(streamPlayers.length === 0 ? {} : { streamPlayers }),
   }
 }

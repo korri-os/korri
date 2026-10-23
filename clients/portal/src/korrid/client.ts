@@ -7,6 +7,11 @@
  */
 import type {
   ActiveSession,
+  Invite,
+  InvitesListOutcome,
+  InviteDismissOutcome,
+  SessionStreamPlayOutcome,
+  StreamPlayEnded,
   PendingLaunch,
   RpcFailure,
   GameRoutes,
@@ -75,6 +80,7 @@ import {
   type StoreAcquisitionMethods,
 } from "./store-acquisition-client"
 import {
+  StreamPlayEndCause,
   FocusOwnership,
   InitialHandoff,
   PluginInstalledState,
@@ -104,6 +110,9 @@ export type SessionStartResult = Extract<RpcResponse, { _tag: "app.session.start
 export type SessionCancelResult = Extract<RpcResponse, { _tag: "app.session.cancel" }>["outcome"]
 
 export interface KorridClient extends StoreAcquisitionMethods, LaunchSettingsMethods {
+  invitesList(): Promise<InvitesListOutcome>
+  invitesStreamPlay(inviteId: string): Promise<SessionStreamPlayOutcome>
+  invitesDismiss(inviteId: string): Promise<InviteDismissOutcome>
   networkStatus(): Promise<NetworkStatusOutcome>
   scanWifi(): Promise<NetworkStatusOutcome>
   connectWifi(networkId: string, password?: string): Promise<NetworkStatusOutcome>
@@ -616,6 +625,18 @@ export function createHttpKorridClient(
         })).outcome
       } catch (error) { return routeUnavailable(error) }
     },
+    async invitesList() {
+      try { return (await callKorrid(baseUrl, capability, { _tag: "app.invites.list", payload: {} })).outcome }
+      catch (error) { return unreachable(error) }
+    },
+    async invitesStreamPlay(inviteId) {
+      try { return (await callKorrid(baseUrl, capability, { _tag: "app.invites.streamPlay", payload: { inviteId } })).outcome }
+      catch (error) { return unreachable(error) }
+    },
+    async invitesDismiss(inviteId) {
+      try { return (await callKorrid(baseUrl, capability, { _tag: "app.invites.dismiss", payload: { inviteId } })).outcome }
+      catch (error) { return unreachable(error) }
+    },
     async sessionPrepare(gameId, host) {
       try {
         const response = await callKorrid(baseUrl, capability, {
@@ -1082,6 +1103,13 @@ export interface InMemoryArtifact {
 }
 
 export interface InMemoryKorridClientConfig {
+  /** Same-owner live sessions, already cached by the daemon. */
+  readonly invites?: readonly Invite[] | (() => readonly Invite[])
+  /** Selected stream-play launch, including a portal reloaded mid-stream. */
+  readonly streamPlayLaunchId?: string
+  /** Far holder facts while the local viewer is selected. Undefined means End. */
+  readonly streamSession?: () => ActiveSession | undefined
+  readonly streamDeviceUnreachable?: () => boolean
   /** Plugin repositories, catalogs and installs. Defaults to a sample set. */
   readonly pluginHost?: InMemoryPluginHostConfig
   /** Artifacts every loaded plugin declares, and which games need which:
@@ -1252,6 +1280,17 @@ export function createInMemoryKorridClient(
   const localGames = config.localGames ?? []
   const localFailures = config.localFailures
   let activeSession = config.activeSession
+  let streamPlayLaunchId = config.streamPlayLaunchId
+  let streamPlayEnded: StreamPlayEnded | undefined
+  let streamLabel = activeSession?.host ?? "Other device"
+  const dismissedInvites = new Set<string>()
+  const inviteKey = (invite: Invite) => JSON.stringify([invite.devicePublicKey, invite.session.launchId])
+  const liveInvites = () => {
+    const all = typeof config.invites === "function" ? config.invites() : config.invites ?? []
+    const live = new Set(all.map(inviteKey))
+    for (const key of dismissedInvites) if (!live.has(key)) dismissedInvites.delete(key)
+    return all.filter(invite => !dismissedInvites.has(inviteKey(invite)))
+  }
   const reservations = new Map<string, PendingLaunch>()
   let launchSequence = 0
   let focusAt = Infinity
@@ -1388,7 +1427,7 @@ export function createInMemoryKorridClient(
     { id: "@korri:retroarch", title: "RetroArch", enabled: true },
   ])
   const supportedSettingIds = new Set([
-    "device-name", "steamgriddb-credential", "host.preferences.playerCount",
+    "device-name", "person-name", "steamgriddb-credential", "host.preferences.playerCount",
     ...plugins.map(plugin => plugin.id),
   ])
   const editableSettingIds = new Set(
@@ -1398,6 +1437,7 @@ export function createInMemoryKorridClient(
   let settings: SettingsSnapshot = {
     revision: seedSettings?.revision ?? "in-memory-0",
     deviceName: seedSettings === undefined ? "Browser" : seedSettings.deviceName,
+    personName: seedSettings?.personName,
     playerCount: seedSettings?.playerCount ?? 4,
     editableSettingIds: [...editableSettingIds],
     steamGridDbCredential: seedSettings?.steamGridDbCredential ?? SecretSettingStatus.NotConfigured,
@@ -1502,6 +1542,7 @@ export function createInMemoryKorridClient(
       if (settingId === "steamgriddb-credential") {
         return routeFailure("OperationUnsupported", "Credential changes use their dedicated operation.")
       }
+      if (settingId === "person-name" && Array.from(value).length > 64) return routeFailure("SettingsInvalid", "Person name must have at most 64 characters")
       let playerCount: number | undefined
       if (settingId === "host.preferences.playerCount") {
         const parsed = Number(value)
@@ -1527,6 +1568,7 @@ export function createInMemoryKorridClient(
         ...settings,
         revision: `in-memory-${settingsRevision}`,
         ...(settingId === "device-name" ? { deviceName: value.trim() } : {}),
+        ...(settingId === "person-name" ? { personName: value } : {}),
         ...(playerCount === undefined ? {} : { playerCount }),
         plugins: settings.plugins.map(plugin =>
           plugin.id === settingId
@@ -1687,6 +1729,7 @@ export function createInMemoryKorridClient(
       }) }
     },
     async launchSelectedGame(gameId, runnerId) {
+      streamPlayEnded = undefined
       if (config.routeMutationDelayMs) await new Promise(resolve => setTimeout(resolve, config.routeMutationDelayMs))
       if (routePermission === "ReadOnly") return routeFailure("PermissionDenied", "Launching requires session access")
       if (activeSession) return routeFailure("ActiveSessionConflict", "Stop the active session before switching runners")
@@ -1696,6 +1739,7 @@ export function createInMemoryKorridClient(
       return { _tag: "Ok", payload: { session: { gameId, launchId: activeSession.launchId }, warnings: [...route.warnings] } }
     },
     async sessionReserve({ gameId }) {
+      streamPlayEnded = undefined
       if (routePermission === "ReadOnly") return routeFailure("PermissionDenied", "Launching requires session access")
       if (!games.some(game => game.id === gameId) && !routeRecords.some(record => record.gameId === gameId)) {
         return routeFailure("GameNotFound", "Game is not available")
@@ -1706,6 +1750,7 @@ export function createInMemoryKorridClient(
       return { _tag: "Ok", payload: owned }
     },
     async sessionStart({ gameId, expectedLaunchId, runnerId }) {
+      streamPlayEnded = undefined
       const pending = reservations.get(expectedLaunchId)
       if (!pending || pending.phase !== PendingLaunchPhase.Reserved || pending.session.gameId !== gameId) {
         return routeFailure("StaleLaunchIdentity", "The launch reservation changed")
@@ -1768,7 +1813,27 @@ export function createInMemoryKorridClient(
       overlayIntent = undefined
       return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
     },
+    async invitesList() {
+      return { _tag: "Ok", payload: { invites: activeSession === undefined ? structuredClone([...liveInvites()]) : [] } }
+    },
+    async invitesStreamPlay(inviteId) {
+      if (activeSession !== undefined) return routeFailure("ActiveSessionConflict", "This device already has a live session")
+      const invite = liveInvites().find(invite => invite.inviteId === inviteId)
+      if (invite === undefined) return routeFailure("InviteUnavailable", "This invite is no longer available")
+      streamPlayLaunchId = invite.session.launchId
+      streamLabel = invite.deviceLabel
+      activeSession = { ...structuredClone(invite.session), host: streamLabel }
+      streamPlayEnded = undefined
+      return { _tag: "Ok", payload: structuredClone(activeSession) }
+    },
+    async invitesDismiss(inviteId) {
+      const invite = liveInvites().find(invite => invite.inviteId === inviteId)
+      if (invite === undefined) return routeFailure("InviteUnavailable", "This invite is no longer available")
+      dismissedInvites.add(inviteKey(invite))
+      return { _tag: "Ok", payload: {} }
+    },
     async sessionPrepare(gameId, host) {
+      streamPlayEnded = undefined
       if (
         behavior === "prepare-fail" ||
         !games.some(
@@ -1791,6 +1856,16 @@ export function createInMemoryKorridClient(
       }
     },
     async sessionStatus(): Promise<SessionStatusOutcome> {
+      if (streamPlayLaunchId !== undefined && activeSession !== undefined) {
+        const far = config.streamSession === undefined ? activeSession : config.streamSession()
+        if (config.streamDeviceUnreachable?.() || far === undefined || far.launchId !== streamPlayLaunchId) {
+          streamPlayEnded = { launchId: streamPlayLaunchId, gameId: activeSession.gameId,
+            gameTitle: activeSession.title, deviceLabel: streamLabel,
+            cause: config.streamDeviceUnreachable?.() ? StreamPlayEndCause.DeviceUnreachable : StreamPlayEndCause.SessionEnded }
+          activeSession = undefined
+          streamPlayLaunchId = undefined
+        } else activeSession = { ...far, host: streamLabel }
+      }
       if (config.sessionStatusUnavailable?.()) return routeFailure("BrainUnreachable", "Session status is unavailable")
       const pendingLaunches = [...reservations.values()].map(pending => structuredClone(pending))
       const pendingFacts = pendingLaunches.length ? { pendingLaunches } : {}
@@ -1806,7 +1881,7 @@ export function createInMemoryKorridClient(
       }
       if (activeSession === undefined) {
         overlayIntent = undefined
-        return { _tag: "Ok", payload: pendingFacts }
+        return { _tag: "Ok", payload: { ...pendingFacts, ...(streamPlayEnded === undefined ? {} : { streamPlayEnded }) } }
       }
       if (activeSession.phase === "running") {
         const ownership = config.sessionFocusOwnership ? config.sessionFocusOwnership()
@@ -1827,6 +1902,7 @@ export function createInMemoryKorridClient(
         payload: {
           ...pendingFacts,
           active: structuredClone(activeSession),
+          ...(streamPlayLaunchId === undefined ? {} : { streamPlayLaunchId }),
           ...(overlay === undefined ? {} : { overlay }),
         },
       }
@@ -1857,17 +1933,26 @@ export function createInMemoryKorridClient(
         }
       }
       reservations.delete(expectedLaunchId)
+      streamPlayLaunchId = undefined
       activeSession = undefined
       overlayIntent = undefined
       return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
     },
     async sessionFreeze(expectedLaunchId) {
+      if (streamPlayLaunchId === expectedLaunchId) {
+        streamPlayLaunchId = undefined
+        activeSession = undefined
+        return { _tag: "Ok", payload: { launchId: expectedLaunchId, state: SessionFreezerState.Frozen, changed: true } }
+      }
       return setFreezer(expectedLaunchId, SessionFreezerState.Frozen)
     },
     async sessionThaw(expectedLaunchId) {
+      if (streamPlayLaunchId === expectedLaunchId) return routeFailure("NotSessionStarter", "Only the session starter can return to this session")
       return setFreezer(expectedLaunchId, SessionFreezerState.Running)
     },
     async sessionControls(launchId) {
+      if (streamPlayLaunchId === launchId) return { _tag: "Err", payload: { reason: SessionControlFailureReason.NotSessionStarter, message: "Only the session starter can use gameplay controls" } }
+
       if (
         sessionControlBehavior === "unavailable" ||
         overlayControls === undefined
@@ -1884,6 +1969,8 @@ export function createInMemoryKorridClient(
       return { _tag: "Ok", payload: overlayControls }
     },
     async invokeSessionControl(launchId, controlId, value) {
+      if (streamPlayLaunchId === launchId) return { _tag: "Err", payload: { reason: SessionControlFailureReason.NotSessionStarter, message: "Only the session starter can use gameplay controls" } }
+
       if (sessionControlBehavior === "invoke-fail") return invocationUnavailable()
       if (overlayControls === undefined || overlayControls.launchId !== launchId) {
         return {

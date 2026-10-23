@@ -560,3 +560,20 @@ describe("live gameplay overlay controller", () => {
     }
   })
 })
+
+test("overlay stream players use the owner person name and otherwise their device labels", async () => {
+  for (const personName of ["Simon", undefined]) {
+    const base = createInMemoryKorridClient({ activeSession: { launchId: LAUNCH, phase: "frozen", streamPlayers: [{ devicePublicKey: "far", label: "Pocket Mini" }] }, sessionControls: listed })
+    const settings = await base.settingsSnapshot()
+    if (settings._tag !== "Ok") throw Error("settings unavailable")
+    const controller = createLiveOverlayController({ launchId: LAUNCH, platform: platform().value, korrid: {
+      ...base, settingsSnapshot: async () => ({ _tag: "Ok", payload: { ...settings.payload, personName } }),
+    } })
+    await controller.refresh()
+    const presentation = controller.model().presentation
+    expect(presentation.kind).toBe("gameplay-overlay")
+    if (presentation.kind !== "gameplay-overlay") throw Error("wrong presentation")
+    expect(presentation.streamPlayers).toEqual([personName ?? "Pocket Mini"])
+    controller.destroy()
+  }
+})
