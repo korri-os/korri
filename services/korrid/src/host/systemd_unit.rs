@@ -1,3 +1,5 @@
+#[path = "viewer_units.rs"]
+mod viewer_units;
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{self, Read},
@@ -107,6 +109,31 @@ pub trait LaunchUnitBackend: Send + Sync {
         environment: &BTreeMap<String, String>,
         _sandbox: &super::systemd_unit::LaunchSandbox,
     ) -> Result<(), LaunchUnitError>;
+    fn launch_viewer(
+        &self,
+        _launch: &str,
+        _command: &[String],
+        _environment: &BTreeMap<String, String>,
+        _sandbox: &LaunchSandbox,
+        _certificate: &str,
+    ) -> Result<(), LaunchUnitError> {
+        Err(LaunchUnitError::new(
+            LaunchUnitErrorKind::Failed,
+            "Viewer credentials are unavailable",
+        ))
+    }
+    fn bootstrap_viewer(
+        &self,
+        _launch: &str,
+        _command: &[String],
+        _environment: &BTreeMap<String, String>,
+        _sandbox: &LaunchSandbox,
+    ) -> Result<String, LaunchUnitError> {
+        Err(LaunchUnitError::new(
+            LaunchUnitErrorKind::Failed,
+            "Viewer identity bootstrap is unavailable",
+        ))
+    }
     /// Runs one bounded hook in the game's runtime sandbox, waiting for completion.
     fn run_hook(
         &self,
@@ -1791,6 +1818,27 @@ impl SystemdLaunchUnitBackend {
 }
 
 impl LaunchUnitBackend for SystemdLaunchUnitBackend {
+    fn launch_viewer(
+        &self,
+        launch: &str,
+        command: &[String],
+        environment: &BTreeMap<String, String>,
+        sandbox: &LaunchSandbox,
+        certificate: &str,
+    ) -> Result<(), LaunchUnitError> {
+        let args =
+            self.viewer_arguments(launch, command, environment, sandbox, Some(certificate))?;
+        self.require_success(&self.systemd_run, &args).map(|_| ())
+    }
+    fn bootstrap_viewer(
+        &self,
+        launch: &str,
+        command: &[String],
+        environment: &BTreeMap<String, String>,
+        sandbox: &LaunchSandbox,
+    ) -> Result<String, LaunchUnitError> {
+        self.run_viewer_bootstrap(launch, command, environment, sandbox)
+    }
     /// Reads the unit's own control group. Kernel process membership is the
     /// only honest answer to "which windows belong to this launch"; window
     /// titles and classes are set by the game itself.

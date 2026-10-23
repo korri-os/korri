@@ -54,9 +54,6 @@ pub fn production_viewer(
         keydir: PathBuf::from("/home/korri/.config/moonlight"),
         operation: Arc::new(tokio::sync::Mutex::new(())),
     };
-    if let Err(error) = viewer.cleanup_pins() {
-        log::warn!("Moonlight stale certificate pin cleanup failed: {error}");
-    }
     Arc::new(viewer)
 }
 
@@ -85,6 +82,7 @@ fn error(message: impl ToString) -> LinuxViewerError {
 struct MoonlightFiles {
     executable: PathBuf,
     mapping: PathBuf,
+    bootstrap: PathBuf,
 }
 
 fn installed_files() -> Result<MoonlightFiles, LinuxViewerError> {
@@ -111,6 +109,7 @@ fn installed_files() -> Result<MoonlightFiles, LinuxViewerError> {
     Ok(MoonlightFiles {
         executable: file("moonlight")?,
         mapping: file("mapping")?,
+        bootstrap: file("identityBootstrap")?,
     })
 }
 
@@ -204,102 +203,6 @@ fn run(program: &Path, args: &[String]) -> Result<(bool, String), LinuxViewerErr
     result
 }
 
-fn validate_keydir(keydir: &Path) -> Result<(), LinuxViewerError> {
-    use std::os::unix::fs::MetadataExt;
-    let metadata = std::fs::symlink_metadata(keydir).map_err(error)?;
-    let (uid, _) = crate::host::configured_runtime_identity();
-    if !metadata.is_dir() || metadata.uid() != uid || metadata.mode() & 0o077 != 0 {
-        return Err(error(
-            "Moonlight identity directory must be private and runtime-owned",
-        ));
-    }
-    Ok(())
-}
-
-fn bootstrap(
-    files: &MoonlightFiles,
-    keydir: &Path,
-    address: &str,
-    pin: &Path,
-) -> Result<String, LinuxViewerError> {
-    use std::os::unix::fs::OpenOptionsExt;
-    validate_keydir(keydir)?;
-    let (uid, _) = crate::host::configured_runtime_identity();
-    let present = || {
-        ["client.pem", "key.pem", "uniqueid.dat"].iter().all(|f| {
-            std::fs::symlink_metadata(keydir.join(f)).is_ok_and(|m| m.is_file() && m.len() > 0)
-        })
-    };
-    if !present() {
-        // Moonlight generates its identity before HTTP initialization. Supply
-        // the pin even here: until the broker grants it, the missing pin makes
-        // list fail closed without an unverified network request.
-        // Run as the runtime account, never root or a generic shell.
-        let systemd_run = std::env::var_os("KORRID_SYSTEMD_RUN")
-            .map(PathBuf::from)
-            .ok_or_else(|| error("systemd-run is not configured"))?;
-        let (_, gid) = crate::host::configured_runtime_identity();
-        let args = vec![
-            "--system".into(),
-            "--wait".into(),
-            "--pipe".into(),
-            "--collect".into(),
-            "--service-type=exec".into(),
-            format!("--uid={uid}"),
-            format!("--gid={gid}"),
-            "--property=UMask=0077".into(),
-            "--property=NoNewPrivileges=yes".into(),
-            "--property=CapabilityBoundingSet=".into(),
-            "--property=RuntimeMaxSec=15s".into(),
-            "--property=KillMode=control-group".into(),
-            format!(
-                "--setenv=KORRI_MOONLIGHT_SERVER_CERTIFICATE={}",
-                pin.display()
-            ),
-            "--".into(),
-            files.executable.display().to_string(),
-            "list".into(),
-            "-keydir".into(),
-            keydir.display().to_string(),
-            "-port".into(),
-            server_url(address)?
-                .port_or_known_default()
-                .unwrap_or(47989)
-                .to_string(),
-            server_url(address)?
-                .host_str()
-                .ok_or_else(|| error("missing Moonlight host"))?
-                .into(),
-        ];
-        let _ = run(&systemd_run, &args)?;
-        // An unpaired server may refuse list. That is not a bootstrap failure
-        // only if Moonlight has written all its own identity files.
-        if !present() {
-            return Err(error(
-                "Moonlight did not create its complete client identity",
-            ));
-        }
-    }
-    let certificate_file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(keydir.join("client.pem"))
-        .map_err(error)?;
-    if !certificate_file.metadata().map_err(error)?.is_file() {
-        return Err(error("Moonlight certificate is not a regular file"));
-    }
-    // Match the existing certificate broker's 12,288-byte boundary. Read one
-    // extra byte so its validator rejects a certificate beyond that boundary.
-    let mut certificate = String::new();
-    certificate_file
-        .take(12_289)
-        .read_to_string(&mut certificate)
-        .map_err(error)?;
-    crate::host::moonlight_certificate::validate_single_pem(&certificate)
-        .map_err(|_| error("Moonlight client certificate is invalid"))?;
-    Ok(certificate)
-}
-
 fn platform() -> &'static str {
     // The device tree is a hardware fact. These are the two Qualcomm devices
     // accepted by this slice; every other device uses software X11 decoding.
@@ -381,65 +284,28 @@ fn stream_args(
 }
 
 impl ProductionLinuxStreamViewer {
-    fn pin_path(&self, launch: &str) -> PathBuf {
-        self.keydir.join(format!("server-{launch}.pem"))
-    }
-
-    fn cleanup_pins(&self) -> Result<(), LinuxViewerError> {
-        let entries = match std::fs::read_dir(&self.keydir) {
-            Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(e) => return Err(error(e)),
-        };
-        validate_keydir(&self.keydir)?;
+    fn bootstrap(&self, files: &MoonlightFiles, launch: &str) -> Result<String, LinuxViewerError> {
         let live = self.units.live_launch_ids().map_err(unit_error)?;
-        for entry in entries {
-            let entry = entry.map_err(error)?;
-            let name = entry.file_name();
-            let Some(launch) = name
-                .to_str()
-                .and_then(|name| name.strip_prefix("server-"))
-                .and_then(|name| name.strip_suffix(".pem"))
-            else {
-                continue;
-            };
-            if validate_launch(launch).is_err() {
-                continue;
+        let id = loop {
+            let id = crate::generate_launch_id();
+            if id != launch && !live.contains(&id) {
+                break id;
             }
-            // The backend lists activating, active, reloading and stopping
-            // units. A failed/collected unit has no live viewer to preserve.
-            if !live.iter().any(|id| id == launch) {
-                std::fs::remove_file(entry.path()).map_err(error)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn write_pin(&self, launch: &str, certificate: &str) -> Result<PathBuf, LinuxViewerError> {
-        use std::{io::Write, os::unix::fs::OpenOptionsExt};
-        crate::host::moonlight_certificate::validate_single_pem(certificate)
-            .map_err(|_| error("broker returned an invalid Sunshine server certificate"))?;
-        let path = self.pin_path(launch);
-        let temporary = self.keydir.join(format!(
-            ".server-{launch}-{:032x}.tmp",
-            rand::random::<u128>()
-        ));
-        let result = (|| {
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&temporary)
-                .map_err(error)?;
-            file.write_all(certificate.as_bytes()).map_err(error)?;
-            file.sync_all().map_err(error)?;
-            std::fs::rename(&temporary, &path).map_err(error)?;
-            Ok(path.clone())
-        })();
-        if result.is_err() {
-            let _ = std::fs::remove_file(&temporary);
-        }
-        result
+        };
+        let command = vec![
+            files.bootstrap.display().to_string(),
+            files.executable.display().to_string(),
+            self.keydir.display().to_string(),
+        ];
+        let environment = BTreeMap::from([("HOME".into(), "/home/korri".into())]);
+        let sandbox = LaunchSandbox::new(&command, &environment);
+        let certificate = self
+            .units
+            .bootstrap_viewer(&id, &command, &environment, &sandbox)
+            .map_err(unit_error)?;
+        crate::host::moonlight_certificate::validate_single_pem(&certificate)
+            .map_err(|_| error("Moonlight bootstrap returned an invalid client certificate"))?;
+        Ok(certificate)
     }
 
     fn control(&self) -> Result<SwaymsgCompositorControl, LinuxViewerError> {
@@ -537,11 +403,6 @@ impl ProductionLinuxStreamViewer {
     fn confirmed_stop(&self, launch: &str) -> Result<(), LinuxViewerError> {
         let stop = self.units.stop(launch);
         if self.units.state(launch).map_err(unit_error)? == LaunchUnitState::Completed {
-            match std::fs::remove_file(self.pin_path(launch)) {
-                Ok(()) => (),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
-                Err(e) => return Err(error(e)),
-            }
             Ok(())
         } else {
             stop.map_err(unit_error)?;
@@ -589,17 +450,10 @@ impl LinuxStreamViewer for ProductionLinuxStreamViewer {
             let url = server_url(address)?;
             let guard = self.operation.clone().lock_owned().await;
             let this = self.clone();
-            let address_owned = address.to_owned();
             let launch_owned = launch.to_owned();
             let (files, certificate, size) = tokio::task::spawn_blocking(move || {
-                this.cleanup_pins()?;
                 let files = (this.resolve_files)()?;
-                let cert = bootstrap(
-                    &files,
-                    &this.keydir,
-                    &address_owned,
-                    &this.pin_path(&launch_owned),
-                )?;
+                let cert = this.bootstrap(&files, &launch_owned)?;
                 Ok::<_, LinuxViewerError>((files, cert, this.dimensions()?))
             })
             .await
@@ -648,12 +502,7 @@ impl LinuxStreamViewer for ProductionLinuxStreamViewer {
             let launch = launch.to_owned();
             tokio::task::spawn_blocking(move || {
                 let _guard = guard;
-                let pin = this.write_pin(&launch, &server_certificate)?;
                 let environment = BTreeMap::from([
-                    (
-                        "KORRI_MOONLIGHT_SERVER_CERTIFICATE".into(),
-                        pin.display().to_string(),
-                    ),
                     ("KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT".into(), "1".into()),
                     ("DISPLAY".into(), ":0".into()),
                     ("HOME".into(), "/home/korri".into()),
@@ -662,12 +511,14 @@ impl LinuxStreamViewer for ProductionLinuxStreamViewer {
                         "unix:/run/korri-game-audio/native".into(),
                     ),
                 ]);
+                let sandbox = LaunchSandbox::new(&command, &environment);
                 this.units
-                    .launch(
+                    .launch_viewer(
                         &launch,
                         &command,
                         &environment,
-                        &LaunchSandbox::new(&command, &environment),
+                        &sandbox,
+                        &server_certificate,
                     )
                     .map_err(unit_error)?;
                 if let Err(focus_error) = this.focus(&launch, false) {

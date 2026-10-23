@@ -4,6 +4,7 @@ fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
     let files = MoonlightFiles {
         executable: "/nix/store/viewer/bin/moonlight".into(),
         mapping: "/nix/store/viewer/mapping".into(),
+        bootstrap: "/nix/store/viewer/bootstrap".into(),
     };
     let seats = vec![
         PathBuf::from("/dev/input/event8"),
@@ -100,6 +101,8 @@ struct ViewerUnits {
     launches: std::sync::Mutex<Vec<RecordedLaunch>>,
     running: std::sync::atomic::AtomicBool,
     refuse_stop: std::sync::atomic::AtomicBool,
+    certificates: std::sync::Mutex<Vec<String>>,
+    bootstraps: std::sync::Mutex<Vec<String>>,
 }
 impl LaunchUnitBackend for ViewerUnits {
     fn launch(
@@ -117,6 +120,27 @@ impl LaunchUnitBackend for ViewerUnits {
         self.running
             .store(true, std::sync::atomic::Ordering::SeqCst);
         Ok(())
+    }
+    fn bootstrap_viewer(
+        &self,
+        id: &str,
+        _: &[String],
+        _: &BTreeMap<String, String>,
+        _: &LaunchSandbox,
+    ) -> Result<String, crate::host::LaunchUnitError> {
+        self.bootstraps.lock().unwrap().push(id.into());
+        Ok("-----BEGIN CERTIFICATE-----\nY2VydA==\n-----END CERTIFICATE-----\n".into())
+    }
+    fn launch_viewer(
+        &self,
+        id: &str,
+        command: &[String],
+        env: &BTreeMap<String, String>,
+        sandbox: &LaunchSandbox,
+        certificate: &str,
+    ) -> Result<(), crate::host::LaunchUnitError> {
+        self.certificates.lock().unwrap().push(certificate.into());
+        self.launch(id, command, env, sandbox)
     }
     fn state(&self, _: &str) -> Result<LaunchUnitState, crate::host::LaunchUnitError> {
         Ok(if self.running.load(std::sync::atomic::Ordering::SeqCst) {
@@ -164,13 +188,6 @@ async fn linux_viewer_production_lifecycle_uses_broker_seats_focus_and_confirmed
     let root = tempfile::tempdir().unwrap();
     std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let certificate = "-----BEGIN CERTIFICATE-----\nY2VydA==\n-----END CERTIFICATE-----\n";
-    for (file, value) in [
-        ("client.pem", certificate),
-        ("key.pem", "private key stays local"),
-        ("uniqueid.dat", "client-id"),
-    ] {
-        std::fs::write(root.path().join(file), value).unwrap();
-    }
     let focus = root.path().join("focus");
     std::fs::write(&focus, "portal").unwrap();
     let compositor = root.path().join("swaymsg");
@@ -218,13 +235,14 @@ esac
             Ok(MoonlightFiles {
                 executable: "/nix/store/viewer/bin/moonlight".into(),
                 mapping: "/nix/store/viewer/mapping".into(),
+                bootstrap: "/nix/store/viewer/bootstrap".into(),
             })
         }),
         units: units.clone(),
         swaymsg: compositor,
         sway_socket: root.path().join("sway.sock"),
         portal_ids: vec!["chromium-browser".into()],
-        keydir: root.path().into(),
+        keydir: root.path().join("unreadable-identity"),
         operation: Arc::new(tokio::sync::Mutex::new(())),
     };
     let launch = "0123456789abcdef0123456789abcdef";
@@ -234,16 +252,12 @@ esac
         &[("sunshine-host".into(), certificate.into())]
     );
     assert_eq!(
-        std::fs::read_to_string(viewer.pin_path(launch)).unwrap(),
-        certificate
+        &*units.certificates.lock().unwrap(),
+        &[certificate.to_owned()]
     );
-    assert_eq!(
-        std::fs::metadata(viewer.pin_path(launch))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o777,
-        0o600
+    assert!(
+        !viewer.keydir.exists(),
+        "korrid never opens or creates the identity directory"
     );
     assert_eq!(
         viewer.status(launch).await.unwrap(),
@@ -261,10 +275,9 @@ esac
     );
     {
         let launches = units.launches.lock().unwrap();
-        assert_eq!(
-            launches[0].environment["KORRI_MOONLIGHT_SERVER_CERTIFICATE"],
-            viewer.pin_path(launch).display().to_string()
-        );
+        assert!(!launches[0]
+            .environment
+            .contains_key("KORRI_MOONLIGHT_SERVER_CERTIFICATE"));
         assert_eq!(launches[0].id, launch);
         assert!(launches[0]
             .command
@@ -286,55 +299,13 @@ esac
         viewer.stop(launch).await.is_err(),
         "never claim stop until systemd confirms it"
     );
-    assert!(viewer.pin_path(launch).exists());
     units
         .refuse_stop
         .store(false, std::sync::atomic::Ordering::SeqCst);
     viewer.stop(launch).await.unwrap();
-    assert!(!viewer.pin_path(launch).exists());
     assert_eq!(
         viewer.status(launch).await.unwrap(),
         LinuxViewerStatus::Stopped
     );
     task.abort();
-}
-
-#[test]
-fn linux_viewer_stale_pin_cleanup_preserves_live_launch_pins() {
-    use std::os::unix::fs::PermissionsExt;
-    let root = tempfile::tempdir().unwrap();
-    std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-    let units = Arc::new(ViewerUnits::default());
-    let viewer = ProductionLinuxStreamViewer {
-        provision: Arc::new(|_, _| Box::pin(async { panic!("no broker call during cleanup") })),
-        local_seats: Arc::new(|| Box::pin(async { panic!("no input call during cleanup") })),
-        resolve_files: Arc::new(|| panic!("no plugin call during cleanup")),
-        units: units.clone(),
-        swaymsg: "/unused".into(),
-        sway_socket: "/unused".into(),
-        portal_ids: vec![],
-        keydir: root.path().into(),
-        operation: Arc::new(tokio::sync::Mutex::new(())),
-    };
-    let launch = "0123456789abcdef0123456789abcdef";
-    let path = viewer.pin_path(launch);
-    std::fs::write(&path, "stale pin").unwrap();
-    viewer.cleanup_pins().unwrap();
-    assert!(!path.exists());
-    units
-        .launch(
-            launch,
-            &[],
-            &BTreeMap::new(),
-            &LaunchSandbox::new(&[], &BTreeMap::new()),
-        )
-        .unwrap();
-    std::fs::write(&path, "live pin").unwrap();
-    viewer.cleanup_pins().unwrap();
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "live pin");
-    units
-        .running
-        .store(false, std::sync::atomic::Ordering::SeqCst);
-    viewer.cleanup_pins().unwrap();
-    assert!(!path.exists());
 }
