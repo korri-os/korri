@@ -715,6 +715,7 @@ impl Host {
             _ => false,
         };
         let mut additions = Vec::new();
+        let mut replacements = BTreeMap::new();
         // Refuse conflicting selections before the first receipt or daemon changes.
         for dep in &checked.brings {
             let dep = &dep.report;
@@ -725,15 +726,31 @@ impl Host {
                         || receipt.approval != dep.approval
                         || matches!(receipt.desired, Desired::Removed { .. })
                     {
-                        return Err(format!(
-                            "conflicting exact selection for required plugin {}",
-                            dep.id
-                        ));
+                        if !matches!(intent, SelectionIntent::Update { .. })
+                            || matches!(receipt.desired, Desired::Removed { .. })
+                        {
+                            return Err(format!(
+                                "conflicting exact selection for required plugin {}",
+                                dep.id
+                            ));
+                        }
+                        replacements
+                            .insert(dep.id.clone(), matches!(receipt.desired, Desired::Enabled));
                     }
                     self.approved(&receipt)?;
                 }
                 None => additions.push(dep.id.clone()),
             }
+        }
+        // Only this reviewed root and the nodes it replaces may release their
+        // old exact requirements. Every other installed dependent still vetoes.
+        let updating: BTreeSet<_> = replacements
+            .keys()
+            .cloned()
+            .chain((!replacements.is_empty()).then(|| report.id.clone()))
+            .collect();
+        for id in replacements.keys() {
+            self.check_required_by_except(id, false, &updating)?;
         }
         for dep in &checked.brings {
             if !additions.contains(&dep.report.id) {
@@ -743,6 +760,27 @@ impl Host {
             self.selection(&dep.report.id).stage(&dep.report.package)?;
         }
         let result = (|| {
+            if !replacements.is_empty() {
+                // Persist disabled intent and finish all dependent cleanup before
+                // changing any required selection. A crash can leave this graph
+                // disabled, with each old build retained in its own previous slot.
+                if enabled_graph_transition {
+                    self.deactivate(&report.id, Desired::Disabled)?;
+                } else {
+                    // Finish disabled-root cleanup without the disable cascade:
+                    // unchanged, independently enabled dependencies stay enabled.
+                    self.restore_one(&report.id)?;
+                }
+                for dep in checked.brings.iter().rev() {
+                    if replacements.contains_key(&dep.report.id) {
+                        let receipt = self
+                            .receipt(&dep.report.id)?
+                            .ok_or("required plugin is not installed")?;
+                        self.stop_enabled_dependents(&receipt.package)?;
+                        self.deactivate(&dep.report.id, Desired::Disabled)?;
+                    }
+                }
+            }
             for dep in &checked.brings {
                 if additions.contains(&dep.report.id) {
                     self.install_one(
@@ -750,12 +788,30 @@ impl Host {
                         &dep.report.approval,
                         SelectionIntent::Install,
                     )?;
+                } else if replacements.contains_key(&dep.report.id) {
+                    // This dependency's approval came from the re-inspected graph,
+                    // not a separate unreviewed selection or inherited source.
+                    self.install_one_in_graph(
+                        dep.report.clone(),
+                        &dep.report.approval,
+                        None,
+                        &updating,
+                    )?;
+                }
+            }
+            if !enabled_graph_transition {
+                for dep in &checked.brings {
+                    if replacements.get(&dep.report.id) == Some(&true) {
+                        self.set_enabled(&dep.report.id, true)?;
+                    }
                 }
             }
             if enabled_graph_transition {
                 // Stop the pack before a new dependency may be started. Keep
                 // the committed pack disabled on failure, never half-active.
-                self.deactivate(&report.id, Desired::Disabled)?;
+                if replacements.is_empty() {
+                    self.deactivate(&report.id, Desired::Disabled)?;
+                }
                 self.activate_dependencies(&checked)?;
                 self.install_one(report.clone(), approval, intent)?;
                 self.set_enabled(&report.id, true)
@@ -799,6 +855,17 @@ impl Host {
         approval: &str,
         intent: SelectionIntent<'_>,
     ) -> Result<(), String> {
+        self.install_one_in_graph(report, approval, Some(intent), &BTreeSet::new())
+    }
+
+    // None is reserved for a dependency explicitly approved by a root Update.
+    fn install_one_in_graph(
+        &self,
+        report: Report,
+        approval: &str,
+        intent: Option<SelectionIntent<'_>>,
+        updating: &BTreeSet<String>,
+    ) -> Result<(), String> {
         if report.approval != approval {
             return Err(
                 "approval does not match this package and its execution policy; inspect it first"
@@ -807,7 +874,7 @@ impl Host {
         }
         report.provenance.validate(&report.id)?;
         match intent {
-            SelectionIntent::Update { id } | SelectionIntent::SwitchSource { id }
+            Some(SelectionIntent::Update { id } | SelectionIntent::SwitchSource { id })
                 if id != report.id =>
             {
                 return Err("selection cannot change the plugin identity".into());
@@ -815,19 +882,27 @@ impl Host {
             _ => {}
         }
         let old = self.receipt(&report.id)?;
-        intent.validate(
-            &report.id,
-            old.as_ref().map(|r| &r.provenance),
-            &report.provenance,
-        )?;
+        if let Some(intent) = intent {
+            intent.validate(
+                &report.id,
+                old.as_ref().map(|r| &r.provenance),
+                &report.provenance,
+            )?;
+        } else if !updating.contains(&report.id) || old.is_none() {
+            return Err("dependency replacement is not part of the approved root update".into());
+        }
         self.prepare(&report.id)?;
         self.recover_one(&report.id)?;
         let old = self.receipt(&report.id)?;
-        intent.validate(
-            &report.id,
-            old.as_ref().map(|r| &r.provenance),
-            &report.provenance,
-        )?;
+        if let Some(intent) = intent {
+            intent.validate(
+                &report.id,
+                old.as_ref().map(|r| &r.provenance),
+                &report.provenance,
+            )?;
+        } else if !updating.contains(&report.id) || old.is_none() {
+            return Err("dependency replacement is not part of the approved root update".into());
+        }
         let candidate = match old {
             Some(old) if same_selection(&old, &report) => {
                 // A new review of the exact installed selection replaces only
@@ -861,7 +936,7 @@ impl Host {
                 previous: None,
             },
         };
-        self.apply(candidate)?;
+        self.apply_in_graph(candidate, updating)?;
         self.release_download()
     }
 
@@ -994,11 +1069,23 @@ impl Host {
     }
 
     fn check_required_by(&self, id: &str, active_only: bool) -> Result<(), String> {
+        self.check_required_by_except(id, active_only, &BTreeSet::new())
+    }
+
+    fn check_required_by_except(
+        &self,
+        id: &str,
+        active_only: bool,
+        updating: &BTreeSet<String>,
+    ) -> Result<(), String> {
         let Some(selected) = self.receipt(id)? else {
             return Ok(());
         };
         for receipt in self.receipts()? {
-            if receipt.id == id || (active_only && !self.cleanup_unfinished(&receipt)?) {
+            if receipt.id == id
+                || updating.contains(&receipt.id)
+                || (active_only && !self.cleanup_unfinished(&receipt)?)
+            {
                 continue;
             }
             if matches!(receipt.desired, Desired::Removed { .. })
@@ -1738,6 +1825,14 @@ impl Host {
     }
 
     fn apply(&self, candidate: Receipt) -> Result<(), String> {
+        self.apply_in_graph(candidate, &BTreeSet::new())
+    }
+
+    fn apply_in_graph(
+        &self,
+        candidate: Receipt,
+        updating: &BTreeSet<String>,
+    ) -> Result<(), String> {
         let id = &candidate.id;
         let report = self.approved(&candidate)?;
         let changes_selection = self.receipt(id)?.is_some_and(|old| {
@@ -1745,7 +1840,7 @@ impl Host {
                 || old.provenance != candidate.provenance
                 || old.approval != candidate.approval
         });
-        self.check_required_by(id, !changes_selection)?;
+        self.check_required_by_except(id, !changes_selection, updating)?;
         self.check_dependencies(&report, matches!(candidate.desired, Desired::Enabled), None)?;
         self.verify_report(&report, None, package::StoreContents::Rehash)?;
         self.invalidate_registry()?;
@@ -2101,6 +2196,15 @@ fn dependency_provenance(
 ) -> Result<Provenance, String> {
     if let Some(receipt) = receipts.iter().find(|receipt| receipt.package == path) {
         return Ok(receipt.provenance.clone());
+    }
+    // Cleanup and re-review of the displaced root still need the exact source
+    // of its old dependencies. The existing previous selection owns that fact.
+    if let Some(previous) = receipts
+        .iter()
+        .filter_map(|r| r.previous.as_ref())
+        .find(|p| p.package == path)
+    {
+        return Ok(previous.provenance.clone());
     }
     let namespace = package::manifest_namespace(path)?;
     let binding = publishers
@@ -2908,6 +3012,396 @@ mod tests {
         assert_eq!(
             host.status(&b.id).unwrap().unwrap().desired,
             Desired::Disabled
+        );
+    }
+
+    #[test]
+    fn root_update_replaces_exact_dependencies_with_independent_previous_selections() {
+        for enabled in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let nix = cleanup_program(root.path(), "exit 0");
+            let a = report("@runtime:a", "graph-a-before");
+            let b = report("@runtime:b", "graph-b-before");
+            let next_a = report("@runtime:a", "graph-a-after");
+            let next_b = report("@runtime:b", "graph-b-after");
+            let first = pack("@games:pack", "graph-before", &[a.clone(), b.clone()]);
+            let second = pack(
+                "@games:pack",
+                "graph-after",
+                &[next_a.clone(), next_b.clone()],
+            );
+            let unrelated = report("@runtime:unrelated", "graph-unrelated");
+            let runtime = runtime(&[
+                a.clone(),
+                b.clone(),
+                next_a.clone(),
+                next_b.clone(),
+                first.clone(),
+                second.clone(),
+                unrelated.clone(),
+            ]);
+            let host =
+                Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+            install(&host, first.clone());
+            install(&host, unrelated.clone());
+            host.set_enabled(&unrelated.id, true).unwrap();
+            if enabled {
+                host.set_enabled(&first.id, true).unwrap();
+            }
+            let untouched = host.status(&unrelated.id).unwrap();
+            runtime.events.borrow_mut().clear();
+            host.install(
+                second.clone(),
+                &second.approval,
+                SelectionIntent::Update { id: &first.id },
+            )
+            .unwrap();
+            for (old, new) in [(&first, &second), (&a, &next_a), (&b, &next_b)] {
+                let selected = host.status(&new.id).unwrap().unwrap();
+                assert_eq!(selected.package, new.package);
+                assert_eq!(selected.approval, new.approval);
+                assert_eq!(
+                    selected.desired,
+                    if enabled {
+                        Desired::Enabled
+                    } else {
+                        Desired::Disabled
+                    }
+                );
+                let previous = selected.previous.unwrap();
+                assert_eq!(previous.package, old.package);
+                assert_eq!(previous.approval, old.approval);
+                assert_eq!(previous.provenance, old.provenance);
+                assert_eq!(
+                    fs::read_link(host.root(&new.id, "previous")).unwrap(),
+                    old.package
+                );
+            }
+            assert_eq!(host.status(&unrelated.id).unwrap(), untouched);
+            assert!(!runtime
+                .events
+                .borrow()
+                .iter()
+                .any(|e| e == "stop:@runtime:unrelated:false" || e == "start:@runtime:unrelated"));
+            assert!(runtime.unsafe_stops.borrow().is_empty());
+            if enabled {
+                let events = runtime.events.borrow();
+                let at = |event: &str| events.iter().position(|e| e == event).unwrap();
+                assert!(at("stop:@games:pack:false") < at("stop:@runtime:a:false"));
+                assert!(at("stop:@games:pack:false") < at("stop:@runtime:b:false"));
+                assert!(at("start:@runtime:a") < at("start:@games:pack"));
+                assert!(at("start:@runtime:b") < at("start:@games:pack"));
+            }
+        }
+    }
+
+    #[test]
+    fn failed_graph_update_keeps_old_builds_pinned_and_restorable_by_reviewed_update() {
+        for fail_root in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let nix = cleanup_program(root.path(), "exit 0");
+            let a = report("@runtime:a", "failed-graph-a-before");
+            let b = report("@runtime:b", "failed-graph-b-before");
+            let next_a = report("@runtime:a", "failed-graph-a-after");
+            let next_b = report("@runtime:b", "failed-graph-b-after");
+            let first = pack(
+                "@games:pack",
+                "failed-graph-before",
+                &[a.clone(), b.clone()],
+            );
+            let second = pack(
+                "@games:pack",
+                "failed-graph-after",
+                &[next_a.clone(), next_b.clone()],
+            );
+            let runtime = runtime(&[
+                a.clone(),
+                b.clone(),
+                next_a.clone(),
+                next_b.clone(),
+                first.clone(),
+                second.clone(),
+            ]);
+            let host =
+                Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+            install(&host, first.clone());
+            host.set_enabled(&first.id, true).unwrap();
+            runtime.fail_start_package.replace(Some(if fail_root {
+                second.package.clone()
+            } else {
+                next_b.package.clone()
+            }));
+            let error = host
+                .install(
+                    second.clone(),
+                    &second.approval,
+                    SelectionIntent::Update { id: &first.id },
+                )
+                .unwrap_err();
+            assert!(error.contains("start failure"), "{error}");
+            assert_eq!(
+                host.status(&first.id).unwrap().unwrap().desired,
+                Desired::Disabled
+            );
+            assert!(!runtime.running.borrow().contains(&first.id));
+            for old in [&first, &a, &b] {
+                let receipt = host.status(&old.id).unwrap().unwrap();
+                let slot = if receipt.package == old.package {
+                    "active"
+                } else {
+                    assert_eq!(receipt.previous.unwrap().package, old.package);
+                    "previous"
+                };
+                assert_eq!(
+                    fs::read_link(host.root(&old.id, slot)).unwrap(),
+                    old.package
+                );
+            }
+            assert!(runtime.unsafe_stops.borrow().is_empty());
+            runtime.fail_start_package.replace(None);
+            host.restore_all().unwrap();
+            assert_eq!(
+                host.status(&first.id).unwrap().unwrap().desired,
+                Desired::Disabled
+            );
+            assert!(!runtime.running.borrow().contains(&first.id));
+            // No automatic graph rollback: explicitly review/reselect the old graph.
+            host.install(
+                first.clone(),
+                &first.approval,
+                SelectionIntent::Update { id: &first.id },
+            )
+            .unwrap();
+            host.set_enabled(&first.id, true).unwrap();
+            for old in [&first, &a, &b] {
+                let receipt = host.status(&old.id).unwrap().unwrap();
+                assert_eq!(receipt.package, old.package);
+                assert_eq!(receipt.desired, Desired::Enabled);
+                assert!(runtime.running.borrow().contains(&old.id));
+            }
+        }
+    }
+
+    #[test]
+    fn graph_update_keeps_shared_dependency_direct_update_and_install_refusals() {
+        for enabled in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let nix = cleanup_program(root.path(), "exit 0");
+            let a = report("@runtime:a", "shared-graph-before");
+            let next_a = report("@runtime:a", "shared-graph-after");
+            let first = pack(
+                "@games:pack",
+                "shared-pack-before",
+                std::slice::from_ref(&a),
+            );
+            let second = pack(
+                "@games:pack",
+                "shared-pack-after",
+                std::slice::from_ref(&next_a),
+            );
+            let other = pack("@games:other", "shared-other", std::slice::from_ref(&a));
+            let fresh = pack(
+                "@games:fresh",
+                "shared-fresh",
+                std::slice::from_ref(&next_a),
+            );
+            let runtime = runtime(&[
+                a.clone(),
+                next_a.clone(),
+                first.clone(),
+                second.clone(),
+                other.clone(),
+                fresh.clone(),
+            ]);
+            let host =
+                Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+            install(&host, first.clone());
+            install(&host, other.clone());
+            if enabled {
+                host.set_enabled(&first.id, true).unwrap();
+                host.set_enabled(&other.id, true).unwrap();
+            }
+            let before = host.receipts().unwrap();
+            runtime.events.borrow_mut().clear();
+            let error = host
+                .install(
+                    second.clone(),
+                    &second.approval,
+                    SelectionIntent::Update { id: &first.id },
+                )
+                .unwrap_err();
+            assert!(
+                error.contains("required by") && error.contains(&other.id),
+                "{error}"
+            );
+            assert!(host
+                .install(
+                    next_a.clone(),
+                    &next_a.approval,
+                    SelectionIntent::Update { id: &a.id }
+                )
+                .unwrap_err()
+                .contains("required by"));
+            assert!(host
+                .install(fresh.clone(), &fresh.approval, SelectionIntent::Install)
+                .unwrap_err()
+                .contains("conflicting exact selection"));
+            assert_eq!(host.receipts().unwrap(), before);
+            assert!(stops(&runtime).is_empty());
+        }
+    }
+
+    #[test]
+    fn transitive_graph_update_finishes_cleanup_before_replacing_required_nodes() {
+        for fail_cleanup in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let nix = cleanup_program(root.path(), "exit 0");
+            let a = report("@runtime:a", "transitive-update-a-before");
+            let next_a = report("@runtime:a", "transitive-update-a-after");
+            let b = pack(
+                "@runtime:b",
+                "transitive-update-b-before",
+                std::slice::from_ref(&a),
+            );
+            let next_b = pack(
+                "@runtime:b",
+                "transitive-update-b-after",
+                std::slice::from_ref(&next_a),
+            );
+            let first = pack(
+                "@games:pack",
+                "transitive-update-before",
+                std::slice::from_ref(&b),
+            );
+            let second = pack(
+                "@games:pack",
+                "transitive-update-after",
+                std::slice::from_ref(&next_b),
+            );
+            let runtime = runtime(&[
+                a.clone(),
+                b.clone(),
+                next_a.clone(),
+                next_b.clone(),
+                first.clone(),
+                second.clone(),
+            ]);
+            let host =
+                Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+            install(&host, first.clone());
+            host.set_enabled(&first.id, true).unwrap();
+            if fail_cleanup {
+                runtime.fail_stop.replace(Some(b.id.clone()));
+            }
+            runtime.events.borrow_mut().clear();
+            let result = host.install(
+                second.clone(),
+                &second.approval,
+                SelectionIntent::Update { id: &first.id },
+            );
+            if fail_cleanup {
+                let error = result.unwrap_err();
+                assert!(error.contains("stop failure"), "{error}");
+                for old in [&first, &a, &b] {
+                    let receipt = host.status(&old.id).unwrap().unwrap();
+                    assert_eq!(receipt.package, old.package);
+                    assert!(receipt.previous.is_none());
+                }
+                assert!(runtime.running.borrow().contains(&a.id));
+                assert!(!stops(&runtime).iter().any(|e| e.contains(&a.id)));
+                runtime.fail_stop.replace(None);
+                host.install(
+                    second.clone(),
+                    &second.approval,
+                    SelectionIntent::Update { id: &first.id },
+                )
+                .unwrap();
+                host.set_enabled(&second.id, true).unwrap();
+            } else {
+                result.unwrap();
+            }
+            for (old, new) in [(&first, &second), (&a, &next_a), (&b, &next_b)] {
+                let receipt = host.status(&new.id).unwrap().unwrap();
+                assert_eq!(receipt.package, new.package);
+                assert_eq!(receipt.previous.unwrap().package, old.package);
+                assert_eq!(receipt.desired, Desired::Enabled);
+            }
+            assert!(runtime.unsafe_stops.borrow().is_empty());
+        }
+    }
+
+    #[test]
+    fn disabled_root_update_preserves_an_independently_enabled_dependency() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let a = report("@runtime:a", "independent-a-before");
+        let next_a = report("@runtime:a", "independent-a-after");
+        let b = report("@runtime:b", "independent-b-unchanged");
+        let first = pack("@games:pack", "independent-before", &[a.clone(), b.clone()]);
+        let second = pack(
+            "@games:pack",
+            "independent-after",
+            &[next_a.clone(), b.clone()],
+        );
+        let runtime = runtime(&[
+            a.clone(),
+            b.clone(),
+            next_a.clone(),
+            first.clone(),
+            second.clone(),
+        ]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        install(&host, first.clone());
+        host.set_enabled(&a.id, true).unwrap();
+        host.set_enabled(&b.id, true).unwrap();
+        let unchanged = host.status(&b.id).unwrap();
+        host.install(
+            second.clone(),
+            &second.approval,
+            SelectionIntent::Update { id: &first.id },
+        )
+        .unwrap();
+        assert_eq!(
+            host.status(&second.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+        assert_eq!(
+            host.status(&a.id).unwrap().unwrap().desired,
+            Desired::Enabled
+        );
+        assert!(runtime.running.borrow().contains(&a.id));
+        assert_eq!(host.status(&b.id).unwrap(), unchanged);
+        assert!(runtime.running.borrow().contains(&b.id));
+        assert!(!runtime.running.borrow().contains(&first.id));
+    }
+
+    #[test]
+    fn displaced_dependency_keeps_its_exact_repository_provenance_for_root_cleanup() {
+        let old = repository_report(
+            "@runtime:a",
+            "old-repository-dependency",
+            "https://repository.example/catalog.json",
+            "1",
+        );
+        let new = report("@runtime:a", "new-raw-dependency");
+        let receipt = Receipt {
+            id: old.id.clone(),
+            package: old.package.clone(),
+            provenance: old.provenance.clone(),
+            approval: old.approval,
+            desired: Desired::Disabled,
+            previous: None,
+        }
+        .select(new.package.clone(), new.provenance.clone(), new.approval)
+        .unwrap();
+        let receipts = [receipt];
+        assert_eq!(
+            dependency_provenance(&old.package, &receipts, &BTreeMap::new()).unwrap(),
+            old.provenance
+        );
+        assert_eq!(
+            dependency_provenance(&new.package, &receipts, &BTreeMap::new()).unwrap(),
+            new.provenance
         );
     }
 
