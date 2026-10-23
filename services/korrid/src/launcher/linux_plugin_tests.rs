@@ -253,12 +253,13 @@ fn prepared_plan_environment_never_reads_the_korrid_process_environment() {
         None,
     )
     .unwrap();
-    let plan_env = resolved_plan_environment(&command, &resolved).unwrap();
+    let plan_env = resolved_plan_environment_changes(&command, &resolved).unwrap();
     std::env::remove_var(sentinel);
     assert_eq!(
-        plan_env,
+        plan_env.values,
         std::collections::BTreeMap::from([("GAME".into(), "declared".into())])
     );
-    assert!(!plan_env.contains_key(sentinel));
-    assert!(!plan_env.contains_key("REMOVED"));
+    assert!(!plan_env.values.contains_key(sentinel));
+    assert!(!plan_env.values.contains_key("REMOVED"));
+    assert_eq!(plan_env.unset, ["REMOVED"]);
 }
