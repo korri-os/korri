@@ -219,6 +219,11 @@ impl InstalledGraph {
         ctx: &Ctx<'js>,
     ) -> Result<(Module<'js, Evaluated>, Promise<'js>), String> {
         let entry = self.declare(ctx)?;
+        // Every module and CommonJS factory is compiled now. QuickJS's parser
+        // does not survive every refused allocation, so no plugin code may
+        // reach it later, when the plugin controls how full the heap is.
+        ctx.eval::<(), _>(include_str!("code_generation.js"))
+            .map_err(|error| format!("plugin sandbox initialization failed: {error}"))?;
         let evaluating = commonjs::Evaluating::enter(&self.registry, &self.entry);
         let evaluated = entry.eval();
         drop(evaluating);

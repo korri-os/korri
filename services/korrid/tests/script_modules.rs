@@ -289,7 +289,9 @@ fn synthesized_dynamic_imports_cannot_load_even_an_already_linked_module() {
         "(async () => {}).constructor('return import(\"./helper.ts\")')()",
     ] {
         let graph = snapshot(&[
-            ("plugin.ts", &format!("import {{ label }} from './helper.ts'; export const name = label; export const config = {{ blocked: await {expression}.then(() => false, () => true) }};")),
+            // Runtime code generation throws first; the loader is the second
+            // barrier if a route into the parser stays open.
+            ("plugin.ts", &format!("import {{ label }} from './helper.ts'; export const name = label; const blocked = async () => {{ try {{ return await {expression}.then(() => false, () => true); }} catch {{ return true; }} }}; export const config = {{ blocked: await blocked() }};")),
             ("helper.ts", "export const label = 'closed';"),
         ]);
         let json: serde_json::Value =
