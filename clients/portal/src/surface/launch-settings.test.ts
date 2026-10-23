@@ -257,7 +257,7 @@ describe("game launch settings editor", () => {
           env: { SDL_AUDIODRIVER: "pipewire", MESA_DEBUG: null },
           args: { prepend: ["gamemoderun"], append: ["--verbose"] },
           cwd: "/srv/wario",
-          hooks: { before: [{ run: "fan quiet" }], after: [{ run: "fan auto" }], use: ["lights"] },
+          hooks: { before: [{ run: "fan quiet" }], after: [{ run: "fan auto" }] },
         },
       },
     })
@@ -267,12 +267,11 @@ describe("game launch settings editor", () => {
     expect(files?.map(item => [item.label, item.value])).toEqual([
       ["Environment SDL_AUDIODRIVER", "pipewire"],
       ["Environment MESA_DEBUG", "Unset"],
+      ["Working folder", "/srv/wario"],
       ["Arguments before", "gamemoderun"],
       ["Arguments after", "--verbose"],
-      ["Working folder", "/srv/wario"],
       ["Before launch", "fan quiet"],
       ["After the session", "fan auto"],
-      ["Routines", "lights"],
     ])
     for (const item of files ?? []) {
       expect(item.interaction).toBeUndefined()
@@ -280,6 +279,32 @@ describe("game launch settings editor", () => {
     }
     expect(row(launch.getSnapshot().editor, MGBA, "Environment MGBA_AUDIO")).toMatchObject({ value: "pulse", source: "from mGBA (default)" })
     expect(row(launch.getSnapshot().editor, MGBA, "Arguments")).toMatchObject({ value: "-f" })
+  })
+
+  it("shows a list kind as one row per place's part, in merge order, a routine named with the place that used it", async () => {
+    const launch = await opened({
+      ...base,
+      routines: { "night-mode": { before: [{ run: "brightnessctl set 30%" }, { run: "fan quiet" }], after: [{ run: "brightnessctl set 100%" }] } },
+      bodies: {
+        ...chosen,
+        "device/any": { hooks: { use: ["night-mode"], before: [{ run: "sync" }] } },
+        "game:wario/any": { runner: "retroarch/mgba", hooks: { before: [{ run: "notify-send 'Wario Land 4'" }] } },
+      },
+    })
+    const editor = launch.getSnapshot().editor
+    const hooks = (placeId: string) => rows(editor, placeId).filter(item => item.label === "Before launch")
+    const expected = [
+      { value: "brightnessctl set 30%; fan quiet", source: "routine night-mode, used by Device", description: "Set in device.yaml. Change it there." },
+      { value: "sync", source: "from Device", description: "Set in device.yaml. Change it there." },
+      { value: "notify-send 'Wario Land 4'", source: "from Game", description: "Set in library.yaml. Change it there." },
+    ]
+    // Every place in force shows the list in force, whoever set it.
+    for (const placeId of ["device/any", "game:wario/any", MGBA]) {
+      expect(hooks(placeId).map(({ value, source, description }) => ({ value, source, description }))).toEqual(expected)
+    }
+    expect(rows(editor, "game:wario/any").filter(item => item.label === "After the session").map(item => item.source)).toEqual(["routine night-mode, used by Device"])
+    // A place whose runner is not in use shows only its own part.
+    expect(hooks("game:wario/runner:retroarch/gpsp")).toEqual([])
   })
 
   it("says when a runner's facts are unavailable, in a note and in its places", async () => {

@@ -16,6 +16,7 @@ import type {
   GameRoute,
   LaunchDeviceFacts,
   LaunchLayer,
+  LaunchContribution,
   LaunchNotice,
   LaunchPath,
   LaunchPlace,
@@ -72,6 +73,8 @@ export interface InMemoryLaunchModifier {
 export interface InMemoryLaunchSettingsConfig {
   readonly deviceFacts?: LaunchDeviceFacts
   readonly runners?: Readonly<Record<string, InMemoryLaunchRunner>>
+  /** device.yaml's routines: named hook lists any place may `use`. */
+  readonly routines?: Readonly<Record<string, { readonly before?: readonly unknown[]; readonly after?: readonly unknown[] }>>
   /** Installed, enabled launch modifiers, by plugin id. */
   readonly modifiers?: Readonly<Record<string, InMemoryLaunchModifier>>
   /** Keyed by korrid game id. A game not listed gets Device and Game places. */
@@ -132,6 +135,14 @@ const propertiesOf = (schema: unknown): Properties => {
   const properties = (schema as { properties?: unknown } | undefined)?.properties
   return typeof properties === "object" && properties !== null ? properties as Properties : {}
 }
+
+type ListKey = "args.prepend" | "args.append" | "hooks.before" | "hooks.after"
+const LIST_PATH = {
+  "args.prepend": "ArgsPrepend",
+  "args.append": "ArgsAppend",
+  "hooks.before": "HooksBefore",
+  "hooks.after": "HooksAfter",
+} as const satisfies Record<ListKey, LaunchValuePath["_tag"]>
 
 /** Whether a value fits one JSON Schema property: its enum, type and range. */
 function fits(property: Readonly<Record<string, unknown>>, value: unknown): boolean {
@@ -272,6 +283,7 @@ export function createInMemoryLaunchSettings(
         }
       }
     }
+    const lists: Record<ListKey, LaunchContribution[]> = { "args.prepend": [], "args.append": [], "hooks.before": [], "hooks.after": [] }
     mergeOrder(gameId, runner).forEach((place, rank) => {
       const own = body(place)
       const set = (key: string, path: LaunchValuePath, value: unknown) => {
@@ -297,7 +309,27 @@ export function createInMemoryLaunchSettings(
       }
       for (const [key, value] of Object.entries(own.env ?? {})) set(`env.${key}`, { _tag: "Env", payload: { key } }, value)
       if (own.cwd !== undefined) set("cwd", { _tag: "Cwd" }, own.cwd)
+      // List kinds concatenate in merge order; a place's routines come before its own steps.
+      const add = (key: ListKey, value: readonly unknown[] | undefined, routine?: string) => {
+        if (value === undefined || value.length === 0) return
+        lists[key].push({ source: { _tag: "Place", payload: place }, value: [...value], ...(routine === undefined ? {} : { routine }) })
+      }
+      add("args.prepend", own.args?.prepend)
+      add("args.append", own.args?.append)
+      for (const phase of ["before", "after"] as const) {
+        for (const name of own.hooks?.use ?? []) add(`hooks.${phase}`, config.routines?.[name]?.[phase], name)
+        add(`hooks.${phase}`, own.hooks?.[phase])
+      }
     })
+    for (const [key, contributions] of Object.entries(lists) as [ListKey, LaunchContribution[]][]) {
+      if (contributions.length === 0) continue
+      values[key] = {
+        path: { _tag: LIST_PATH[key] },
+        value: contributions.flatMap(part => Array.isArray(part.value) ? part.value : [part.value]),
+        contributions,
+        adjusted: false,
+      }
+    }
     // Across places the more specific value wins; the other moves to meet it.
     for (const kind of ["cpu", "gpu"] as const) {
       const min = values[`${kind}.min`]

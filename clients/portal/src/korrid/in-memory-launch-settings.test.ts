@@ -98,4 +98,28 @@ describe("in-memory launch settings, korrid's rules", () => {
     expect((await brain.methods.setLaunch({ ...at("korri/gamescope#fsr"), value: "yes" }))._tag).toBe("Err")
     expect((await brain.methods.setLaunch({ ...at("korri/gamescope#fsr"), value: true }))._tag).toBe("Ok")
   })
+
+  it("concatenates list kinds in merge order with each place's part, routines before the place's own steps", async () => {
+    const result = await snapshot({
+      routines: { lights: { before: [{ run: "lights off" }] } },
+      bodies: {
+        "device/any": { args: { append: ["--a"] }, hooks: { use: ["lights"], before: [{ run: "sync" }] } },
+        "game:wario/any": { runner: "retroarch/mgba", args: { append: ["--b"] } },
+      },
+    })
+    expect(result.resolved.values["args.append"]).toEqual({
+      path: { _tag: "ArgsAppend" },
+      value: ["--a", "--b"],
+      contributions: [
+        { source: { _tag: "Place", payload: place("device/any") }, value: ["--a"] },
+        { source: { _tag: "Place", payload: place("game:wario/any") }, value: ["--b"] },
+      ],
+      adjusted: false,
+    })
+    expect(result.resolved.values["hooks.before"]?.source).toBeUndefined()
+    expect(result.resolved.values["hooks.before"]?.contributions).toEqual([
+      { source: { _tag: "Place", payload: place("device/any") }, value: [{ run: "lights off" }], routine: "lights" },
+      { source: { _tag: "Place", payload: place("device/any") }, value: [{ run: "sync" }] },
+    ])
+  })
 })

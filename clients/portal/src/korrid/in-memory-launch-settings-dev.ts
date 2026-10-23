@@ -75,9 +75,10 @@ export function inMemoryLaunchSettingsDevConfig(scenario: string | null): InMemo
         games,
         runners,
         modifiers,
+        routines: { "night-mode": { before: [{ run: "brightnessctl set 30%" }], after: [{ run: "brightnessctl set 100%" }] } },
         deviceFacts: RG353M_LAUNCH_FACTS,
         bodies: {
-          "device/any": { cpu: { max: 89 }, hooks: { use: ["fan-quiet"] }, modifiers: { "korri/gamescope": { enabled: true, settings: { "output-width": 1280 } } } },
+          "device/any": { cpu: { max: 89 }, hooks: { use: ["night-mode"] }, modifiers: { "korri/gamescope": { enabled: true, settings: { "output-width": 1280 } } } },
           "device/runner:neverball/native": { cpu: { min: 33 }, settings: { fullscreen: true } },
           "game:neverball/any": { runner: "neverball/native", gpu: { max: 75 }, env: { SDL_AUDIODRIVER: "pipewire", MESA_DEBUG: null }, args: { append: ["--verbose"] } },
           "game:neverball/runner:neverball/native": { settings: { fps: 30 } },

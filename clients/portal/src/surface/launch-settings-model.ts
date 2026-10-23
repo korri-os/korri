@@ -173,8 +173,6 @@ function runnerTitles(runners: readonly LaunchRunnerSnapshot[]): ReadonlyMap<str
 type Json = Readonly<Record<string, unknown>>
 const record = (value: unknown): Json | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? value as Json : undefined
-const strings = (value: unknown): readonly string[] =>
-  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
 
 /**
  * Profile places. korrid lists them in `places`; a profile it lists only in
@@ -335,6 +333,8 @@ interface Context {
   readonly selected?: LaunchRunnerSnapshot
   /** The value in force at a path, for the runner in use. */
   readonly resolved: (path: LaunchPath) => LaunchSourcedValue | undefined
+  /** A list kind in force (arguments, hooks), with each place's part. */
+  readonly list: (kind: ListKind) => LaunchSourcedValue | undefined
 }
 
 function contextOf(snapshot: LaunchSnapshot, gameId?: string): Context {
@@ -342,6 +342,7 @@ function contextOf(snapshot: LaunchSnapshot, gameId?: string): Context {
   const byPath = new Map(Object.values(snapshot.resolved.values).map(value => [valuePathKey(value.path), value]))
   return {
     resolved: path => byPath.get(valuePathKey(editable(path))),
+    list: kind => byPath.get(valuePathKey({ _tag: kind })),
     snapshot,
     places: orderedPlaces(snapshot, gameId),
     cpu: cpuSteps(snapshot.deviceFacts),
@@ -391,11 +392,13 @@ function sourceText(
     const name = context.selected === undefined ? undefined : context.runnerTitles.get(context.selected.id) ?? context.selected.title
     return name === undefined ? "Applies once a runner is chosen" : `Not in force: ${name} runs this game`
   }
-  if (resolved === undefined) return undefined
-  const title = sourceTitle(context, resolved.source)
+  // A list kind has no one source: its contributions name theirs.
+  const source = resolved?.source
+  if (resolved === undefined || source === undefined) return undefined
+  const title = sourceTitle(context, source)
   const value = show(resolved.value)
   if (resolved.adjusted) return `${value} from ${title}, adjusted`
-  return resolved.source._tag === "Place" && samePlace(resolved.source.payload, here) ? `from ${title}` : `${value} from ${title}`
+  return source._tag === "Place" && samePlace(source.payload, here) ? `from ${title}` : `${value} from ${title}`
 }
 
 function layerTitle(context: Context, layer: LaunchLayer): string {
@@ -797,32 +800,86 @@ function modifierGroups(context: Context, rows: Rows, placeId: string, place: La
   })
 }
 
-/** Values set only in files: shown with where they are, never changed here. */
+/** The four list kinds korrid concatenates across places, in merge order. */
+type ListKind = "ArgsPrepend" | "ArgsAppend" | "HooksBefore" | "HooksAfter"
+const LISTS: readonly { readonly kind: ListKind; readonly label: string; readonly key: string }[] = [
+  { kind: "ArgsPrepend", label: "Arguments before", key: "args:prepend" },
+  { kind: "ArgsAppend", label: "Arguments after", key: "args:append" },
+  { kind: "HooksBefore", label: "Before launch", key: "hooks:before" },
+  { kind: "HooksAfter", label: "After the session", key: "hooks:after" },
+]
+
+/** A part of a list as one line: arguments by spaces, hook steps by what they run. */
+function partText(value: unknown): string {
+  if (!Array.isArray(value)) {
+    const run = record(value)?.run
+    return typeof run === "string" ? run : valueText(value)
+  }
+  const words = value.every(item => typeof item === "string")
+  return value.map(partText).join(words ? " " : "; ")
+}
+
+/** A place's own part of a list kind, from its body. */
+function ownPart(body: Json, kind: ListKind): unknown {
+  const args = record(body.args) ?? {}
+  const hooks = record(body.hooks) ?? {}
+  switch (kind) {
+    case "ArgsPrepend": return args.prepend
+    case "ArgsAppend": return args.append
+    case "HooksBefore": return hooks.before
+    case "HooksAfter": return hooks.after
+  }
+}
+
+const isEmptyPart = (value: unknown) => value === undefined || (Array.isArray(value) && value.length === 0)
+
+/**
+ * Values set only in files: shown with where they are, never changed here.
+ * A list kind (arguments before and after, hooks before and after) is the
+ * list in force, one row per place's part in merge order, each naming its
+ * place or the routine and the place that used it. A place whose runner
+ * scope is not in force shows only its own parts.
+ */
 function fileGroup(context: Context, place: LaunchPlaceSnapshot, placeId: string): SurfaceSettingGroup | undefined {
   const body = record(place.body) ?? {}
-  const from = `from ${placeTitle(context, place)}`
-  const describe = `Set in ${fileOf(place.place.layer)}. Change it there.`
-  const row = (key: string, label: string, value: string): SurfaceSettingItem =>
-    ({ id: LAUNCH_ID.set(placeId, `file:${key}`), label, value, source: from, scope: "device", description: describe })
+  const here = placeTitle(context, place)
+  const describeOf = (layer: LaunchLayer) => `Set in ${fileOf(layer)}. Change it there.`
+  const row = (key: string, label: string, value: string, source = `from ${here}`, description = describeOf(place.place.layer)): SurfaceSettingItem =>
+    ({ id: LAUNCH_ID.set(placeId, `file:${key}`), label, value, source, scope: "device", description })
   const items: SurfaceSettingItem[] = []
   for (const [key, value] of Object.entries(record(body.env) ?? {})) {
     items.push(row(`env:${key}`, `Environment ${key}`, value === null ? "Unset" : valueText(value)))
   }
-  const args = record(body.args) ?? {}
-  const before = strings(args.prepend)
-  const after = strings(args.append)
-  if (before.length > 0) items.push(row("args:prepend", "Arguments before", before.join(" ")))
-  if (after.length > 0) items.push(row("args:append", "Arguments after", after.join(" ")))
   if (typeof body.cwd === "string") items.push(row("cwd", "Working folder", body.cwd))
-  const hooks = record(body.hooks) ?? {}
-  const steps = (value: unknown) => Array.isArray(value) ? value.map(step => {
-    const run = record(step)?.run
-    return typeof run === "string" ? run : valueText(step)
-  }) : []
-  steps(hooks.before).forEach((run, index) => items.push(row(`hooks:before:${index}`, "Before launch", run)))
-  steps(hooks.after).forEach((run, index) => items.push(row(`hooks:after:${index}`, "After the session", run)))
-  const use = strings(hooks.use)
-  if (use.length > 0) items.push(row("hooks:use", "Routines", use.join(", ")))
+  const inForce = applies(context, place.place.scope)
+  for (const list of LISTS) {
+    if (!inForce) {
+      const own = ownPart(body, list.kind)
+      if (!isEmptyPart(own)) {
+        items.push(row(`${list.key}:own`, list.label, partText(own), sourceText(context, place.place, undefined, valueText)))
+      }
+      continue
+    }
+    const contributions = context.list(list.kind)?.contributions ?? []
+    contributions.forEach((part, index) => {
+      if (isEmptyPart(part.value)) return
+      const payload = part.source._tag === "Place" ? part.source.payload : undefined
+      const from = payload === undefined ? undefined : context.places.find(candidate => samePlace(candidate.place, payload))
+      const title = sourceTitle(context, part.source)
+      // A routine lives in device.yaml; a place's own part in its place's file.
+      const description = part.routine !== undefined ? "Set in device.yaml. Change it there."
+        : from === undefined ? undefined : describeOf(from.place.layer)
+      const source = part.routine !== undefined ? `routine ${part.routine}, used by ${title}` : `from ${title}`
+      items.push({
+        id: LAUNCH_ID.set(placeId, `file:${list.key}:${index}`),
+        label: list.label,
+        value: partText(part.value),
+        source,
+        scope: "device",
+        ...(description === undefined ? {} : { description }),
+      })
+    })
+  }
   const config = record(body.config)
   if (config !== undefined && Object.keys(config).length > 0) items.push(row("config", "Runner config", valueText(config)))
   for (const [modifier, raw] of Object.entries(record(body.modifiers) ?? {})) {
