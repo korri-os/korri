@@ -53,7 +53,17 @@ word, including `--help`, starts the daemon.
   have run them.
 - Words: **End** destroys a live session and **Resume** goes back to one
   (the glossary's Return is renamed). **seat** names a controller seat.
-  **saves** names the area for save history and snapshots.
+  **saves** names the area for save history and snapshots. **Library
+  folder** replaces the glossary's Source.
+- Remote widening stops at sessions and plugins. Wi-Fi, saves, identity and
+  onboarding stay local to the device.
+- `korri play <game>` matches titles without case. One match plays. Several
+  matches give a picker on a terminal, or an error that lists them when
+  piped. An exact game ID always works.
+- `korri status` shows korrid's state and version, the device name and
+  owner, the live session, nearby devices and whether each can be reached,
+  the count of attention items, the Wi-Fi network and address, and free
+  storage.
 
 ## Considered options
 
