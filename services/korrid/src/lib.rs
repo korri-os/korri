@@ -2487,10 +2487,12 @@ async fn dispatch(
     let request_arrived = tokio::time::Instant::now();
     authorization::authorize(authorization, &request)?;
     let _selection = stream_play::device::serialize_selection(state, &request).await;
-    if let ServerMode::Host(host) = &state.mode {
-        if let Some(response) = stream_play::rights::refusal(host, authorization, &request).await {
-            return Ok(response);
-        }
+    let refusal = match &state.mode {
+        ServerMode::Host(host) => stream_play::rights::refusal(host, authorization, &request).await,
+        ServerMode::Brain(_) => stream_play::rights::brain_refusal(authorization, &request),
+    };
+    if let Some(response) = refusal {
+        return Ok(response);
     }
     if let Some(response) = stream_play::device::dispatch(state, authorization, &request).await {
         return Ok(response);

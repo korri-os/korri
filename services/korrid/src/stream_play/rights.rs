@@ -28,6 +28,32 @@ pub(crate) async fn refusal(
     Some(refused_response(request, failure))
 }
 
+pub(crate) fn brain_refusal(
+    authorization: &AuthorizationContext,
+    request: &RpcRequest,
+) -> Option<RpcResponse> {
+    if !matches!(authorization, AuthorizationContext::Peer(_))
+        || !matches!(
+            request,
+            RpcRequest::SessionStop(_)
+                | RpcRequest::SessionFreeze(_)
+                | RpcRequest::SessionThaw(_)
+                | RpcRequest::SessionControls(_)
+                | RpcRequest::SessionControlInvoke(_)
+        )
+    {
+        return None;
+    }
+    Some(refused_response(
+        request,
+        RpcFailure {
+            code: "NotSessionStarter".into(),
+            message: "Peer session controls must address the holding device, not be forwarded."
+                .into(),
+        },
+    ))
+}
+
 fn refused_response(request: &RpcRequest, failure: RpcFailure) -> RpcResponse {
     let control_failure = || SessionControlFailure {
         reason: if failure.code == "NotSessionStarter" {
@@ -118,5 +144,113 @@ mod tests {
                 }
             }
         }
+    }
+    #[derive(Debug)]
+    struct FarFocus;
+    impl crate::host::CompositorControl for FarFocus {
+        fn tree(&self) -> Result<String, String> {
+            Ok(r#"{"nodes":[{"id":2,"pid":9100,"focused":true}]}"#.into())
+        }
+        fn focus(&self, _: i64) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_play_brain_refuses_peer_controls_but_local_controls_still_reach_the_holder() {
+        let root = tempfile::tempdir().unwrap();
+        let far_config = root.path().join("host.toml");
+        std::fs::write(
+            &far_config,
+            "label = \"far\"\n[[games]]\nid = \"game\"\ntitle = \"Game\"\ncommand = [\"game\"]\n",
+        )
+        .unwrap();
+        let units = Arc::new(InMemoryLaunchUnitBackend::default());
+        let holder = HostRuntime::from_paths_with_backend(
+            &far_config,
+            None,
+            root.path().join("far-private"),
+            units.clone(),
+        )
+        .with_compositor(Arc::new(FarFocus), vec![]);
+        holder.claim_save_owner();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let router = crate::plain_host_routers_for_tests(holder.clone()).0;
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let upstream = crate::upstreams::UpstreamRegistry::new(vec![
+            crate::upstreams::UpstreamHostConfig::native("far", format!("http://{address}")),
+        ]);
+        let launch = upstream
+            .prepare_stream("game", Some("far"))
+            .await
+            .unwrap()
+            .session
+            .launch_id;
+        units.set_window_pids(&launch, [9100].into());
+        let (state, _) = crate::brain_app_state(
+            "cap",
+            "http://portal.local",
+            root.path(),
+            root.path().join("local-private"),
+            crate::plugin_policy::RegistrySource::Installed,
+            crate::config::snapshot::ConfigSnapshotCoordinator::new(root.path()),
+            crate::discovery::FolderSelectionGrantStore::default(),
+            Some(upstream),
+            None,
+            None,
+        );
+        for tag in [
+            "app.session.stop",
+            "app.session.freeze",
+            "app.session.thaw",
+            "app.session.controls",
+            "app.session.control.invoke",
+        ] {
+            let payload = if tag == "app.session.control.invoke" {
+                json!({"launchId":launch,"controlId":"plugin/action"})
+            } else if tag == "app.session.controls" {
+                json!({"launchId":launch})
+            } else {
+                json!({"expectedLaunchId":launch})
+            };
+            let wire = json!({"_tag":tag,"payload":payload});
+            for local in [
+                AuthorizationContext::LocalBrowser,
+                AuthorizationContext::LocalUnixControl,
+            ] {
+                let request = serde_json::from_value(wire.clone()).unwrap();
+                assert!(brain_refusal(&local, &request).is_none());
+            }
+            let request = serde_json::from_value(wire).unwrap();
+            let response = crate::dispatch(&state, &peer("other"), request)
+                .await
+                .unwrap();
+            let value = serde_json::to_value(response).unwrap();
+            let payload = &value["outcome"]["payload"];
+            assert!(
+                payload["code"] == "NotSessionStarter" || payload["reason"] == "NotSessionStarter",
+                "{value}"
+            );
+        }
+        assert!(matches!(
+            holder.session_status().await.unwrap(),
+            crate::host::control::HostSessionStatus::Running { .. }
+                | crate::host::control::HostSessionStatus::FocusFailed { .. }
+        ));
+        for tag in ["app.session.freeze", "app.session.thaw", "app.session.stop"] {
+            let request =
+                serde_json::from_value(json!({"_tag":tag,"payload":{"expectedLaunchId":launch}}))
+                    .unwrap();
+            let response = crate::dispatch(&state, &AuthorizationContext::LocalBrowser, request)
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(response).unwrap()["outcome"]["_tag"],
+                "Ok",
+                "{tag}"
+            );
+        }
+        server.abort();
     }
 }
