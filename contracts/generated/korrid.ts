@@ -498,6 +498,11 @@ export interface IdentitySwitchCompleted {
 	ownerPublicKey: string;
 }
 
+export interface LaunchArgs {
+	prepend?: string[];
+	append?: string[];
+}
+
 /** Legacy LaunchOverrides.config from library-item.ts; RetroArch rejects replace. */
 export interface LaunchConfigOverrides {
 	prepend?: string;
@@ -540,6 +545,65 @@ export interface LaunchExecutor {
 	available: boolean;
 }
 
+export interface LaunchLimits {
+	min?: number;
+	max?: number;
+}
+
+export interface LaunchModifierValues {
+	enabled?: boolean;
+	settings?: Record<string, LaunchSettingValue>;
+}
+
+export type LaunchRunnerScope =
+	| { _tag: "Any", id?: undefined }
+	| { _tag: "Family", id: string }
+	| { _tag: "Runner", id: string };
+
+export interface LaunchScopedSettings {
+	scope: LaunchRunnerScope;
+	values: Record<string, LaunchSettingValue>;
+}
+
+export interface LaunchOverride {
+	settings?: LaunchScopedSettings;
+	modifiers?: Record<string, LaunchModifierValues>;
+	cpu?: LaunchLimits;
+	gpu?: LaunchLimits;
+}
+
+export type LaunchLayer =
+	| { _tag: "Device", id?: undefined }
+	| { _tag: "System", id: string }
+	| { _tag: "Game", id: string }
+	| { _tag: "Release", id: {
+	gameId: string;
+	releaseId: string;
+}}
+	| { _tag: "Profile", id: {
+	gameId: string;
+	profileId: string;
+}}
+	| { _tag: "Launch", id?: undefined };
+
+export interface LaunchPlace {
+	layer: LaunchLayer;
+	scope: LaunchRunnerScope;
+}
+
+export interface LaunchPlaceSnapshot {
+	place: LaunchPlace;
+	title: string;
+	body: Value;
+	editableKinds: string[];
+}
+
+export interface LaunchPrepareFacts {
+	env: Record<string, string>;
+	args: string[];
+	cwd?: string;
+}
+
 export interface LaunchProfileRemoveRequest {
 	gameId: string;
 	profileId: string;
@@ -557,6 +621,12 @@ export interface LaunchProfileSelectRequest {
 	gameId: string;
 	profileId?: string;
 	expectedRevision: string;
+}
+
+export interface LaunchProfileSnapshot {
+	id: string;
+	title: string;
+	body: Value;
 }
 
 export type LaunchSettingsScope =
@@ -586,6 +656,24 @@ export interface LaunchResolvedRange {
 	max: LaunchResolvedValue;
 }
 
+export type LaunchSource =
+	| { _tag: "Place", payload: LaunchPlace }
+	| { _tag: "PluginDefault", payload: {
+	pluginId: string;
+}}
+	| { _tag: "DeviceDefault", payload?: undefined };
+
+export interface LaunchSourcedValue {
+	value: Value;
+	source: LaunchSource;
+	adjusted: boolean;
+}
+
+export interface LaunchResolvedSnapshot {
+	/** Keys are the authored value paths, including file-only kinds. */
+	values: Record<string, LaunchSourcedValue>;
+}
+
 export enum LaunchContributorKind {
 	Runner = "runner",
 	Transport = "transport",
@@ -594,6 +682,45 @@ export enum LaunchContributorKind {
 export interface LaunchRouteContributor {
 	kind: LaunchContributorKind;
 	id: string;
+}
+
+export type LaunchRunnerFacts =
+	| { _tag: "Ready", payload: LaunchPrepareFacts }
+	| { _tag: "Unavailable", payload: string };
+
+export interface LaunchRunnerSnapshot {
+	id: string;
+	family?: string;
+	title: string;
+	selected: boolean;
+	schema: Value;
+	revision: string;
+	prepare: LaunchRunnerFacts;
+}
+
+export type LaunchPath =
+	| { _tag: "Runner", payload?: undefined }
+	| { _tag: "CpuMin", payload?: undefined }
+	| { _tag: "CpuMax", payload?: undefined }
+	| { _tag: "CpuGovernor", payload?: undefined }
+	| { _tag: "GpuMin", payload?: undefined }
+	| { _tag: "GpuMax", payload?: undefined }
+	| { _tag: "ModifierEnabled", payload: {
+	id: string;
+}}
+	| { _tag: "ModifierSetting", payload: {
+	id: string;
+	key: string;
+}}
+	| { _tag: "Setting", payload: {
+	key: string;
+}};
+
+export interface LaunchSetRequest {
+	place: LaunchPlace;
+	path: LaunchPath;
+	value?: Value;
+	expectedRevision: string;
 }
 
 export interface LaunchSettingsValues {
@@ -655,6 +782,24 @@ export interface LaunchSettingsSnapshot {
 
 export interface LaunchSettingsSnapshotRequest {
 	gameId?: string;
+}
+
+export type LaunchNotice =
+	| { _tag: "RunnerUnavailable", payload: {
+	runnerId: string;
+	place: LaunchPlace;
+}};
+
+export interface LaunchSnapshot {
+	places: LaunchPlaceSnapshot[];
+	resolved: LaunchResolvedSnapshot;
+	runners: LaunchRunnerSnapshot[];
+	profiles: LaunchProfileSnapshot[];
+	selectedProfile?: string;
+	deviceFacts?: LaunchDeviceFacts;
+	notices: LaunchNotice[];
+	routeLayers: LaunchSettingsRouteLayers;
+	revisions: RunnerChoiceRevisions;
 }
 
 export interface LocalGame {
