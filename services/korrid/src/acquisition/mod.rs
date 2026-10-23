@@ -1,5 +1,6 @@
 //! Acquisition owns downloads, verification and publication; plugins supply data.
 //! Ready is a cache-directory fact. Only active work and failures live in memory.
+pub mod archive;
 pub mod claims;
 mod download;
 mod game;

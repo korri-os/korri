@@ -5,33 +5,47 @@ use crate::plugin::ArtifactRecord;
 use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::{atomic::AtomicBool, Arc},
 };
 
+/// `korri-acquire-<plugin short>-<key>.service`, from the two segments of the
+/// artifact's cache path `cache/<plugin short>/<key>`.
 fn name(artifact: &ArtifactRecord) -> String {
     let (plugin, key) = artifact.id.split_once('/').expect("validated artifact id");
     let (_, plugin) = plugin.split_once(':').expect("validated plugin id");
     format!("korri-acquire-{plugin}-{key}.service")
 }
 
+/// ADR 0030: a store job's unit, `korri-acquire-<plugin short>-<provider
+/// name>.service`, from the two segments of `placement::provider_cache`, in
+/// the same way as an artifact's. Provider names and artifact keys share one
+/// grammar, and a plugin's artifact key never equals one of its provider
+/// names, so the two kinds of unit never share a name.
+pub(super) fn provider_name(plugin_id: &str, provider_id: &str) -> String {
+    let (_, plugin) = plugin_id.split_once(':').expect("validated plugin id");
+    let (_, provider) = provider_id.split_once(':').expect("validated provider id");
+    format!("korri-acquire-{plugin}-{provider}.service")
+}
+
 fn control(
     systemctl: &Path,
-    artifact: &ArtifactRecord,
+    unit: &str,
     verb: &str,
     extra: &[&str],
 ) -> Result<std::process::Output, Failure> {
     Command::new(systemctl)
         .args(["--system", "--no-ask-password", verb])
-        .arg(name(artifact))
+        .arg(unit)
         .args(extra)
         .env("SYSTEMD_BUS_TIMEOUT", "30s")
         .stdin(Stdio::null())
         .output()
         .map_err(|_| Failure::Unpack)
 }
-fn active(systemctl: &Path, artifact: &ArtifactRecord) -> Result<bool, Failure> {
+fn active(systemctl: &Path, unit: &str) -> Result<bool, Failure> {
     let output = control(
         systemctl,
-        artifact,
+        unit,
         "show",
         &["--property=LoadState", "--property=ActiveState"],
     )?;
@@ -59,18 +73,28 @@ pub(super) fn reclaim(artifact: &ArtifactRecord) -> Result<(), Failure> {
     #[cfg(test)]
     let _ = artifact;
     #[cfg(not(test))]
-    reclaim_with(&systemctl_path(), artifact)?;
+    reclaim_with(&systemctl_path(), &name(artifact))?;
     Ok(())
 }
 
-fn reclaim_with(systemctl: &Path, artifact: &ArtifactRecord) -> Result<(), Failure> {
-    if active(systemctl, artifact)? {
+/// Stop a store job's unit: at startup before `.tmp-*` folders go, and when
+/// the person cancels a job in `Unpacking`.
+pub(super) fn reclaim_provider(unit: &str) -> Result<(), Failure> {
+    #[cfg(test)]
+    let _ = unit;
+    #[cfg(not(test))]
+    reclaim_with(&systemctl_path(), unit)?;
+    Ok(())
+}
+
+fn reclaim_with(systemctl: &Path, unit: &str) -> Result<(), Failure> {
+    if active(systemctl, unit)? {
         // systemctl stop waits for the entire control group to stop. Never
         // discard .tmp-* after a failed stop or an unavailable manager.
-        if !control(systemctl, artifact, "stop", &[])?.status.success() {
+        if !control(systemctl, unit, "stop", &[])?.status.success() {
             return Err(Failure::Unpack);
         }
-        if active(systemctl, artifact)? {
+        if active(systemctl, unit)? {
             return Err(Failure::Unpack);
         }
     }
@@ -84,11 +108,7 @@ fn systemctl_path() -> PathBuf {
         .unwrap_or_else(|| "systemctl".into())
 }
 
-fn unit_arguments(
-    base: &Path,
-    private_root: &Path,
-    artifact: &ArtifactRecord,
-) -> Result<Vec<String>, Failure> {
+fn unit_arguments(base: &Path, private_root: &Path, unit: &str) -> Result<Vec<String>, Failure> {
     // systemd's path list grammar is not argv grammar. Refuse whitespace and
     // specifier expansion rather than inserting a second writable path.
     for path in [base, private_root] {
@@ -107,7 +127,7 @@ fn unit_arguments(
         "--wait".into(),
         "--collect".into(),
         "--service-type=exec".into(),
-        format!("--unit={}", name(artifact)),
+        format!("--unit={unit}"),
         format!("--uid={}", unsafe { libc::geteuid() }),
         format!("--gid={}", unsafe { libc::getegid() }),
         "--property=KillMode=control-group".into(),
@@ -151,19 +171,9 @@ pub(super) fn unpack(
     let mut command = {
         // Recovery normally stopped an orphan before creating this work dir.
         // A still-active named unit is never replaced or mistaken for this run.
-        let systemctl = systemctl_path();
-        if active(&systemctl, artifact)? {
-            while active(&systemctl, artifact)? {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            return Err(Failure::Unpack);
-        }
-        let mut command = Command::new(
-            std::env::var_os("KORRID_SYSTEMD_RUN").unwrap_or_else(|| "systemd-run".into()),
-        );
-        command
-            .args(unit_arguments(base, private_root, artifact)?)
-            .arg(program);
+        let unit = name(artifact);
+        let mut command = sandboxed(base, private_root, &unit)?;
+        command.arg(program);
         command
     };
     #[cfg(test)]
@@ -180,6 +190,81 @@ pub(super) fn unpack(
         Ok(())
     } else {
         Err(Failure::Unpack)
+    }
+}
+
+/// `systemd-run` with the sandbox properties, after any older unit with this
+/// name has stopped.
+#[cfg(not(test))]
+fn sandboxed(base: &Path, private_root: &Path, unit: &str) -> Result<Command, Failure> {
+    // Recovery normally stopped an orphan before creating this work dir.
+    // A still-active named unit is never replaced or mistaken for this run.
+    let systemctl = systemctl_path();
+    if active(&systemctl, unit)? {
+        while active(&systemctl, unit)? {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        return Err(Failure::Unpack);
+    }
+    let mut command = Command::new(
+        std::env::var_os("KORRID_SYSTEMD_RUN").unwrap_or_else(|| "systemd-run".into()),
+    );
+    command.args(unit_arguments(base, private_root, unit)?);
+    Ok(command)
+}
+
+/// ADR 0030: unpack a store download with korrid's own reader,
+/// `korrid unpack-archive <work-dir> <file>`, in the sandbox unit. Tests run
+/// the same reader in this process; `cancel` stops it between writes.
+pub(super) fn unpack_archive(
+    base: &Path,
+    private_root: &Path,
+    unit: &str,
+    work: &Path,
+    archive: &Path,
+    cancel: Arc<AtomicBool>,
+) -> Result<(), Failure> {
+    #[cfg(test)]
+    {
+        let _ = (base, private_root, unit);
+        let limits = super::archive::Limits {
+            cancel: Some(cancel),
+            ..super::archive::Limits::device().map_err(|stop| stop.failure)?
+        };
+        super::archive::extract(archive, work, &limits).map_err(|stop| {
+            log::debug!("korrid unpack-archive: {}", stop.reason);
+            stop.failure
+        })
+    }
+    #[cfg(not(test))]
+    {
+        let mut command = sandboxed(base, private_root, unit)?;
+        let status = command
+            .arg(std::env::current_exe()?)
+            .arg("unpack-archive")
+            .arg(work)
+            .arg(archive)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .status()?;
+        if status.success() {
+            return Ok(());
+        }
+        if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(Failure::Cancelled);
+        }
+        Err(exit_failure(work, None))
+    }
+}
+
+/// The reader exits 1 for every failure. korrid reads the same floor after
+/// the exit: less room than one write means the reader stopped at the floor.
+fn exit_failure(work: &Path, probe: Option<super::space::Probe>) -> Failure {
+    match super::space::Floor::new(work, probe).and_then(|floor| floor.room()) {
+        Ok(room) if room < super::space::WRITE_CHUNK as u64 => Failure::NoSpace,
+        Ok(_) => Failure::Unpack,
+        Err(failure) => failure,
     }
 }
 
@@ -200,7 +285,7 @@ mod tests {
         let args = unit_arguments(
             Path::new("/storage/cache/fex/rootfs"),
             Path::new("/private"),
-            &artifact(),
+            &name(&artifact()),
         )
         .unwrap();
         assert_eq!(
@@ -216,9 +301,37 @@ mod tests {
         assert!(unit_arguments(
             Path::new("/storage/other path"),
             Path::new("/private"),
-            &artifact()
+            &name(&artifact())
         )
         .is_err());
+    }
+    #[test]
+    fn a_store_job_unit_is_named_from_its_provider_cache_path() {
+        assert_eq!(
+            provider_name("@simonwjackson:roms", "@simonwjackson:wowroms"),
+            "korri-acquire-roms-wowroms.service"
+        );
+        let args = unit_arguments(
+            Path::new("/storage/cache/roms/wowroms"),
+            Path::new("/private"),
+            &provider_name("@simonwjackson:roms", "@simonwjackson:wowroms"),
+        )
+        .unwrap();
+        assert!(args.contains(&"--unit=korri-acquire-roms-wowroms.service".into()));
+        assert!(args.contains(&"--property=ReadWritePaths=/storage/cache/roms/wowroms".into()));
+        assert!(args.contains(&"--property=PrivateNetwork=yes".into()));
+    }
+    #[test]
+    fn a_failed_reader_is_no_space_only_at_the_floor() {
+        let work = tempfile::tempdir().unwrap();
+        assert_eq!(
+            exit_failure(work.path(), Some(super::super::space::fixed(1024))),
+            Failure::NoSpace
+        );
+        assert_eq!(
+            exit_failure(work.path(), Some(super::super::space::fixed(1 << 20))),
+            Failure::Unpack
+        );
     }
     #[test]
     fn orphan_recovery_stops_exact_unit_and_refuses_cleanup_when_stop_fails() {
@@ -238,7 +351,7 @@ mod tests {
             fs::write(&calls, "").unwrap();
             fs::write(&helper, format!("#!/bin/sh\nprintf '%s\\n' \"$3 $4\" >> '{}'\ncase \"$3\" in\nshow) cat '{}' ;;\nstop) {stop} ;;\nesac\n", calls.display(), reply.display())).unwrap();
             fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).unwrap();
-            assert_eq!(reclaim_with(&helper, &artifact()).is_ok(), expected);
+            assert_eq!(reclaim_with(&helper, &name(&artifact())).is_ok(), expected);
             let calls = fs::read_to_string(&calls).unwrap();
             assert!(calls.contains("stop korri-acquire-fex-rootfs.service"));
             assert_eq!(calls.lines().count(), if expected { 3 } else { 2 });

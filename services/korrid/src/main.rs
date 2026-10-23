@@ -549,6 +549,18 @@ async fn main() {
         }
         return;
     }
+    // ADR 0030: korrid's own archive reader, which korrid runs in the ADR 0012
+    // sandbox unit for a store download. Exit 0 or 1; diagnostics on stderr.
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "unpack-archive")
+    {
+        if let Err(error) = korrid::acquisition::archive::run(&arguments[1..]) {
+            eprintln!("korrid unpack-archive: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if arguments
         .first()
         .is_some_and(|argument| argument == "catalog")

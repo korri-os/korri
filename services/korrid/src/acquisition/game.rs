@@ -481,6 +481,9 @@ impl GameAcquisition {
             if !cache.is_dir() {
                 continue;
             }
+            // ADR 0030: stop a reader unit that outlived korrid before its
+            // work folder goes.
+            super::unit::reclaim_provider(&super::unit::provider_name(owner, &record.id))?;
             placement::clean_work(&cache)?;
             let Some(library) = &library else {
                 continue;

@@ -49,6 +49,11 @@ tower-http = { version = "0.6", features = ["cors"] }
 typeshare = "1"
 zeroize = "1"
 zbus = { version = "5", default-features = false, features = ["tokio"] }
+# ADR 0030: korrid's own pure-Rust archive readers for store downloads, run in
+# the sandbox unit. No encryption, no writing, no C code (zstd stays off).
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["bzip2", "ppmd"] }
+rars = { version = "0.11.0", default-features = false }
 
 rquickjs = { version = "0.14", features = ["macro", "bindgen", "loader", "allocator"] }
 oxc = { version = "0.142.0", features = ["transformer", "codegen", "semantic"] }
@@ -61,6 +66,9 @@ zbus = { version = "5", default-features = false, features = ["tokio", "p2p"] }
 secp256k1 = { version = "0.30", features = ["global-context"] }
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
+# Tests build small 7z and rar fixtures in code, including encrypted ones.
+sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress", "aes256"] }
+rars = { version = "0.11.0", default-features = false, features = ["write", "encryption"] }
 
 # Match the embedded interpreter's release optimization in budgeted VM tests.
 # Keep the Rust tests debuggable and leave the sandbox limits unchanged.
