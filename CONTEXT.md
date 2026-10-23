@@ -144,15 +144,15 @@ A kind of playable content, declared by plugins, with rules for what one game of
 _Avoid_: platform, console, core
 
 **System group**:
-A named set of related systems that one source can hold together, such as Game Boy and Game Boy Color. Only plugins declare system groups.
+A named set of related systems that one library folder can hold together, such as Game Boy and Game Boy Color. Only plugins declare system groups.
 _Avoid_: family, platform, collection
 
-**Source**:
+**Library folder**:
 A folder on one device that discovery scans, paired with exactly one system or one system group.
-_Avoid_: game folder, entry point, ROM folder, library folder
+_Avoid_: source, game folder, entry point, ROM folder
 
 **Layout**:
-A pattern that says where one game sits inside a source and which values its path names.
+A pattern that says where one game sits inside a library folder and which values its path names.
 _Avoid_: shape, glob, folder structure
 
 **Game**:
@@ -160,7 +160,7 @@ The thing a person plays, with every release of it on every device.
 _Avoid_: title, entry, ROM
 
 **Release**:
-One version of a game's content. A file release is identified by its content bytes, so new bytes make a new release; a multi-disc game's discs form one release. A folder release is identified by its source and path on one device, and stays one release until a person says otherwise. A replaced release stays in the game's history as unavailable.
+One version of a game's content. A file release is identified by its content bytes, so new bytes make a new release; a multi-disc game's discs form one release. A folder release is identified by its library folder and path on one device, and stays one release until a person says otherwise. A replaced release stays in the game's history as unavailable.
 _Avoid_: ROM, build, file
 
 **Game identity**:
@@ -172,7 +172,7 @@ A statement, signed by one person, that two games are the same game. It holds fo
 _Avoid_: merge, match, personal link
 
 **Declared game**:
-A game a plugin states directly, naming its releases' hashes and any files it prepared or artifacts that hold them, instead of one discovery found in a source. A hash list is a set of declared games. A declared game whose release comes from artifacts is in the library before its artifacts are on the device.
+A game a plugin states directly, naming its releases' hashes and any files it prepared or artifacts that hold them, instead of one discovery found in a library folder. A hash list is a set of declared games. A declared game whose release comes from artifacts is in the library before its artifacts are on the device.
 _Avoid_: prepared game, plugin game, hash database
 
 **Starter pack**:
