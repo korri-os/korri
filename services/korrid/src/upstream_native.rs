@@ -10,7 +10,13 @@ use crate::{
     SessionResumeRequest, SessionStatusOutcome, SessionStatusRequest, SessionTransitionOutcome,
     SessionTransitionResult, SourceStatus, SourceStatusOutcome, SourceStatusRequest,
 };
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use crate::{
     peer_rpc::{unix_time, PeerCredentials},
@@ -20,6 +26,7 @@ use crate::{
 
 const MAX_NATIVE_RPC_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const NATIVE_RPC_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const PEER_OPERATION_FAILED_MESSAGE: &str = "Authenticated peer operation failed";
 
 #[derive(Clone)]
 pub struct NativeClient {
@@ -510,7 +517,7 @@ impl NativeClient {
     pub(crate) async fn call(&self, request: RpcRequest) -> Result<RpcResponse, UpstreamError> {
         #[cfg(test)]
         if self.credentials.is_none() {
-            return self.send_request(&request).await;
+            return self.send_request(&request, &AtomicBool::new(false)).await;
         }
         let key = self
             .expected_peer_public_key
@@ -542,16 +549,29 @@ impl NativeClient {
         } else {
             None
         };
-        let result = self.send_request(&request).await;
+        let answered = AtomicBool::new(false);
+        let result = self.send_request(&request, &answered).await;
+        let result = match result {
+            // Preserve the reply evidence for callers such as the background
+            // liveness probe, not only for this directory update.
+            Err(UpstreamError::Unreachable(_)) if answered.load(Ordering::Relaxed) => {
+                Err(UpstreamError::Wire("peer response did not complete".into()))
+            }
+            result => result,
+        };
+
         if let (Some(directory), Some(token)) = (&self.directory, token) {
             let state = match &result {
                 Ok(_) => crate::federation::PeerState::Ready,
-                Err(_) => crate::federation::PeerState::Failed {
+                Err(UpstreamError::Unreachable(_)) => crate::federation::PeerState::Failed {
                     error: self
                         .peer_label
                         .as_ref()
                         .map(|label| format!("Can't reach {label} from this network right now"))
                         .unwrap_or_else(|| directory.unreachable_sentence(key)),
+                },
+                Err(_) => crate::federation::PeerState::Failed {
+                    error: PEER_OPERATION_FAILED_MESSAGE.into(),
                 },
             };
             // A superseded/configuration-changed/revoked completion cannot
@@ -562,7 +582,7 @@ impl NativeClient {
         result
     }
 
-    async fn send_request(&self, request: &RpcRequest) -> Result<RpcResponse, UpstreamError> {
+    async fn send_request(&self, request: &RpcRequest, answered: &AtomicBool) -> Result<RpcResponse, UpstreamError> {
         #[cfg(test)]
         if self.credentials.is_none() {
             let response = self
@@ -574,10 +594,15 @@ impl NativeClient {
                 .map_err(|error| UpstreamError::Unreachable(error.to_string()))?;
             return read_plain_test_response(response).await;
         }
-        self.call_candidates(request).await
+        self.call_candidates(request, answered).await
     }
 
-    async fn call_candidates(&self, request: &RpcRequest) -> Result<RpcResponse, UpstreamError> {
+    async fn call_candidates(
+        &self,
+        request: &RpcRequest,
+        answered: &AtomicBool,
+    ) -> Result<RpcResponse, UpstreamError> {
+
         let read_only = matches!(
             request,
             RpcRequest::CatalogSnapshot(_)
@@ -634,8 +659,11 @@ impl NativeClient {
             }
             // A connected slow link gets the remaining aggregate budget, not a
             // fraction based on how many unrelated routes were advertised.
-            let attempt =
-                tokio::time::timeout(remaining, self.attempt(&url, request.clone(), None)).await;
+            let attempt = tokio::time::timeout(
+                remaining,
+                self.attempt(&url, request.clone(), None, answered),
+            )
+            .await;
             match attempt {
                 Ok(Ok(response)) => return checked_response(request, response),
                 Ok(Err(failure)) => {
@@ -665,7 +693,7 @@ impl NativeClient {
                     self.ensure_not_revoked()?;
                     return match tokio::time::timeout(
                         self.operation_timeout,
-                        self.attempt("/peer-rpc", request.clone(), Some(&connection)),
+                        self.attempt("/peer-rpc", request.clone(), Some(&connection), answered),
                     )
                     .await
                     {
@@ -686,6 +714,7 @@ impl NativeClient {
         rpc_url: &str,
         request: RpcRequest,
         connection: Option<&iroh::endpoint::Connection>,
+        answered: &AtomicBool,
     ) -> Result<RpcResponse, AttemptFailure> {
         let credentials = self
             .credentials
@@ -735,6 +764,10 @@ impl NativeClient {
                     })?,
             )
         };
+        // HTTP headers prove that a method answered, even if the body is
+        // invalid, unauthenticated, or later times out. A subsequent route
+        // failure must not turn that into an unreachable-peer sentence.
+        answered.store(true, Ordering::Relaxed);
         let status = response.status();
         if !status.is_success() {
             return Err(UpstreamError::Http(status.as_u16()).into());

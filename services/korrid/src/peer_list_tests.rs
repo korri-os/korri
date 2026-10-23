@@ -376,6 +376,102 @@ async fn peer_list_encrypted_owner_only_and_local_unix_control() {
 }
 
 #[tokio::test]
+async fn peer_list_unreachable_sentence_requires_no_answer_from_any_method() {
+    let f = PeerListFixture::new();
+    f.roster();
+    f.endpoint(0, "Home PC");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let key = f.peers[0].public_key().unwrap();
+    let client = upstream_native::NativeClient::new_secure(
+        format!("http://{address}"),
+        key.clone(),
+        f.resources.credentials.clone(),
+    )
+    .with_directory(f.resources.directory.clone());
+    assert!(matches!(
+        client.catalog_snapshot().await,
+        Err(upstreams::UpstreamError::Unreachable(_))
+    ));
+    let state = f
+        .resources
+        .directory
+        .snapshot()
+        .unwrap()
+        .into_iter()
+        .find(|peer| peer.device_public_key == key)
+        .unwrap()
+        .state;
+    assert_eq!(
+        state,
+        PeerState::Failed {
+            error: "Can't reach Home PC from this network right now".into()
+        }
+    );
+    assert!(!format!("{state:?}").contains(&address.to_string()));
+}
+
+#[tokio::test]
+async fn peer_list_authenticated_rejection_keeps_sanitized_failure() {
+    let f = PeerListFixture::new();
+    f.roster();
+    let root = f._peer_roots[0].path();
+    let config = root.join("host.toml");
+    fs::write(&config, "label = \"peer\"\n").unwrap();
+    let runtime = host::HostRuntime::from_paths_with_backend(
+        &config,
+        None,
+        root.to_owned(),
+        Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+    );
+    let (state, _) = app_states(runtime);
+    let router = peer_rpc::PeerRpcServer::with_shared_authority(
+        state,
+        root,
+        f.peers[0].clone(),
+        authorization::Authorization::load(root).unwrap(),
+    )
+    .unwrap()
+    .router(None);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let key = f.peers[0].public_key().unwrap();
+    let client = upstream_native::NativeClient::new_secure(
+        format!("http://{address}"),
+        key.clone(),
+        f.resources.credentials.clone(),
+    )
+    .with_directory(f.resources.directory.clone());
+    let result = client
+        .source_status(&f.resources.credentials.public_key().unwrap())
+        .await;
+    assert!(
+        matches!(result,Err(upstreams::UpstreamError::Tagged {code,..}) if code=="SourceDeviceMismatch")
+    );
+    server.abort();
+    let state = f
+        .resources
+        .directory
+        .snapshot()
+        .unwrap()
+        .into_iter()
+        .find(|peer| peer.device_public_key == key)
+        .unwrap()
+        .state;
+    assert_eq!(
+        state,
+        PeerState::Failed {
+            error: "Authenticated peer operation failed".into()
+        }
+    );
+    assert!(!format!("{state:?}").contains(&address.to_string()));
+}
+
+#[tokio::test]
 async fn peer_list_uses_sanitized_native_failure_and_clears_error_on_recovery() {
     let f = PeerListFixture::new();
     f.roster();
@@ -402,6 +498,20 @@ async fn peer_list_uses_sanitized_native_failure_and_clears_error_on_recovery() 
     )
     .with_directory(f.resources.directory.clone());
     assert!(client.catalog_snapshot().await.is_err());
+    // A later transport failure must not hide the earlier invalid reply.
+    let dead = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let dead_address = dead.local_addr().unwrap();
+    drop(dead);
+    assert!(client
+        .clone()
+        .with_candidates(vec![
+            format!("http://{address}"),
+            format!("http://{dead_address}")
+        ])
+        .unwrap()
+        .catalog_snapshot()
+        .await
+        .is_err());
     stop.send(()).unwrap();
     server.await.unwrap();
     let app = f.router();

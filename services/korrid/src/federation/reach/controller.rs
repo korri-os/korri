@@ -580,7 +580,14 @@ impl Controller {
                         device.clone(),
                         self.credentials.clone(),
                     );
-                    if client.session_status().await.is_ok() {
+                    let native = client.session_status().await;
+                    if native.as_ref().is_err_and(|error| {
+                        !matches!(error, crate::upstreams::UpstreamError::Unreachable(_))
+                    }) {
+                        set_operation_failed(&self.directory, &device, &token);
+                        continue;
+                    }
+                    if native.is_ok() {
                         let _ = self
                             .directory
                             .set_peer_state(&token, &device, PeerState::Ready);
@@ -738,10 +745,14 @@ impl Controller {
                         device.clone(),
                         directory.credentials.clone(),
                     );
-                    if native.session_status().await.is_ok() {
-                        let _ = directory.set_peer_state(&token, &device, PeerState::Ready);
-                    } else {
-                        set_failed(&directory, &device, &token);
+                    match native.session_status().await {
+                        Ok(_) => {
+                            let _ = directory.set_peer_state(&token, &device, PeerState::Ready);
+                        }
+                        Err(crate::upstreams::UpstreamError::Unreachable(_)) => {
+                            set_failed(&directory, &device, &token)
+                        }
+                        Err(_) => set_operation_failed(&directory, &device, &token),
                     }
                 }
             }
@@ -890,6 +901,19 @@ pub(super) fn check_remote(connection: &Connection, expected: EndpointId) -> io:
 pub(super) fn retry_delay(failures: u32) -> Duration {
     Duration::from_secs(5u64.saturating_mul(1u64.checked_shl(failures).unwrap_or(u64::MAX)))
         .min(Duration::from_secs(300))
+}
+fn set_operation_failed(
+    directory: &FederationDirectory,
+    device: &str,
+    token: &crate::federation::WorkToken,
+) {
+    let _ = directory.set_peer_state(
+        token,
+        device,
+        PeerState::Failed {
+            error: crate::upstream_native::PEER_OPERATION_FAILED_MESSAGE.into(),
+        },
+    );
 }
 fn set_failed(directory: &FederationDirectory, device: &str, token: &crate::federation::WorkToken) {
     let _ = directory.set_peer_state(
