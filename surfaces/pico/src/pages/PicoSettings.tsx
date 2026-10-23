@@ -4,12 +4,15 @@ import {
   type PicoConfirmation,
   type PicoSettingRowView,
   type PicoSettingsView,
+  picoNumberFits,
+  picoNumberRange,
   picoTextSettingFrom,
 } from "../pico-settings-view"
 import type { PicoTextDraft } from "../pico-text-draft"
 import type { PicoWifiEntryView } from "../pico-wifi-view"
 import { PicoBadge } from "../ui/atoms/PicoBadge"
 import type { PicoTyping } from "../ui/molecules/PicoKeyboard"
+import { PicoChoicePicker } from "../ui/organisms/PicoChoicePicker"
 import { PicoModal } from "../ui/organisms/PicoModal"
 import { PicoTextEditor } from "../ui/organisms/PicoTextEditor"
 import { PicoSettingsPanel } from "./PicoSettingsPanel"
@@ -30,6 +33,15 @@ export interface PicoSettingsEditing {
   readonly settingId: string
   readonly clearing: boolean
   readonly draft: PicoTextDraft
+}
+
+/** What the editor says under its heading: the row's note, and for a number
+ * the range Korri takes. */
+function editorNote(row: PicoSettingRowView): string | undefined {
+  const numeric = row.control.kind === "text" ? row.control.numeric : undefined
+  const range = numeric === undefined ? undefined : picoNumberRange(numeric)
+  const parts = [row.description, range === undefined ? undefined : `${range}.`].filter((part): part is string => part !== undefined)
+  return parts.length === 0 ? undefined : parts.join(" ")
 }
 
 /**
@@ -76,6 +88,11 @@ export function PicoSettings({
   lead,
   from,
   banner,
+  picking,
+  onPick,
+  onPicked,
+  onCancelPick,
+  panelHead,
 }: {
   readonly settings: PicoSettingsView
   /** Which settings group shows, kept by the owner. */
@@ -120,6 +137,14 @@ export function PicoSettings({
   readonly from?: string
   /** One line above the groups about all of them, with its own controls. */
   readonly banner?: ReactNode
+  /** The choice whose list is open, when one is (src/state: PickingChoice). */
+  readonly picking?: string
+  /** A choice with nothing chosen: open its list. */
+  readonly onPick: (settingId: string) => void
+  readonly onPicked: (value: string) => void
+  readonly onCancelPick: () => void
+  /** Controls at the head of the group's card, above its rows. */
+  readonly panelHead?: ReactNode
 }) {
   const activate = (row: PicoSettingRowView) => {
     switch (row.control.kind) {
@@ -139,11 +164,18 @@ export function PicoSettings({
       case "text":
         onEdit(row.id)
         return
+      case "pick":
+        onPick(row.id)
+        return
       case "network":
         onRun(row.control.actionId)
         return
     }
   }
+
+  /* A row Korri stopped publishing closes its list. */
+  const picked = picking === undefined ? undefined
+    : settings.groups.flatMap(group => group.rows).find(row => row.id === picking && row.control.kind === "pick")
 
   /* A row Korri stopped publishing closes its editor. */
   const edited = editing === undefined ? undefined : picoTextSettingFrom(settings, editing.settingId)
@@ -169,6 +201,7 @@ export function PicoSettings({
             onGroup={onGroup}
             onDismissProblem={onDismissProblem}
             settings={settings}
+            {...(panelHead === undefined ? {} : { above: panelHead })}
           />
         )}
       </div>
@@ -178,11 +211,13 @@ export function PicoSettings({
             {
               label: "SAVE",
               detail: edited.row.state === "saving" ? <PicoBadge text="SAVING" tone="info" /> : undefined,
-              disabled: editing.draft.text.trim() === "",
+              // A number saves only when it is one Korri's range takes.
+              disabled: editing.draft.text.trim() === ""
+                || (edited.row.control.numeric !== undefined && !picoNumberFits(editing.draft.text, edited.row.control.numeric)),
               onPress: onSaveText,
             },
             { label: "CANCEL", onPress: onCloseEditor },
-            ...(edited.row.control.sensitive && clearLabel !== undefined
+            ...(clearLabel !== undefined
               ? [{ label: clearLabel.toUpperCase(), danger: true, alone: true, onPress: onAskClear }]
               : []),
           ]}
@@ -191,13 +226,16 @@ export function PicoSettings({
           formLabel={`Change ${edited.row.label}`}
           heading={{
             group: edited.group,
-            ...(edited.row.description === undefined ? {} : { description: edited.row.description }),
+            ...(editorNote(edited.row) === undefined ? {} : { description: editorNote(edited.row) }),
           }}
           key={edited.row.id}
           label={edited.row.label}
           maxLength={edited.row.control.maxLength}
-          now={edited.row.value}
+          now={edited.row.control.numeric === undefined ? edited.row.value : undefined}
           placeholder={edited.row.control.placeholder}
+          {...(edited.row.control.numeric === undefined || picoNumberRange(edited.row.control.numeric) === undefined
+            ? {}
+            : { prompt: `A number, ${picoNumberRange(edited.row.control.numeric)?.toLowerCase()}` })}
           problem={typeof edited.row.state === "object" && "problem" in edited.row.state
             ? { message: edited.row.state.problem, onDismiss: onDismissProblem }
             : undefined}
@@ -227,12 +265,23 @@ export function PicoSettings({
       {editing?.clearing === true && clearLabel !== undefined && edited !== undefined ? (
         <PicoModal
           confirmLabel={clearLabel.toUpperCase()}
-          message="To use it again, you must type it again."
+          message={edited.row.control.sensitive
+            ? "To use it again, you must type it again."
+            : "Its value here goes. The value in force comes from elsewhere again."}
           onCancel={onCancelClear}
           onConfirm={onConfirmClear}
           title={`${clearLabel.toUpperCase()}?`}
         />
       ) : null}
+      {picked === undefined ? null : (
+        <PicoChoicePicker
+          {...(picked.description === undefined ? {} : { description: picked.description })}
+          onCancel={onCancelPick}
+          onChoose={onPicked}
+          options={picked.control.kind === "pick" ? picked.control.options : []}
+          title={picked.label}
+        />
+      )}
       {asking === undefined ? null : (
         <PicoModal
           confirmLabel={asking.confirmation.confirmLabel}

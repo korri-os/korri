@@ -1,4 +1,5 @@
 import "./PicoSettingsPanel.css"
+import type { ReactNode } from "react"
 import type { PicoSettingRowView, PicoSettingsView } from "../pico-settings-view"
 import { PicoRow } from "../ui/atoms/PicoRow"
 import { PicoSettingRow } from "../ui/molecules/PicoSettingRow"
@@ -19,8 +20,12 @@ export function PicoSettingsPanel({
   onGroup,
   onActivate,
   onDismissProblem,
+  above,
 }: {
   readonly settings: PicoSettingsView
+  /** Controls at the head of the group's card, above its rows, such as a
+   * launch settings layer's runner scopes. */
+  readonly above?: ReactNode
   /** The group showing. A group Korri stopped publishing shows the last one. */
   readonly group: number
   readonly onGroup: (index: number) => void
@@ -50,6 +55,7 @@ export function PicoSettingsPanel({
       tabs={settings.groups.map((candidate) => candidate.title)}
       title={shown.title}
     >
+      {above}
       <ul className="pico-settings-panel-rows">
         {shown.rows.map((row) => (
           <PicoSettingRow key={row.id} onActivate={() => onActivate(row)} row={row} />

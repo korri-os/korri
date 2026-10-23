@@ -14,6 +14,10 @@ import { PicoGameStage } from "./PicoGameStage"
  * below it as a quieter list, so the thing people open a game to do is the
  * thing the cursor lands on.
  *
+ * When the next launch uses a launch profile, its name stands beside Play,
+ * because it changes how the game runs and the player chose it on an
+ * earlier visit.
+ *
  * A download running in the background draws its bar above Play. The bar is
  * a few virtual pixels tall, so it stays on a screen too short for the chip
  * that words it, and its label carries the same words.
@@ -45,6 +49,12 @@ export function PicoGameDetail({
         )}
         <div className="pico-game-detail-actions">
           <PicoButton label={`▶ ${game.primaryLabel}`} onPress={onPlay} />
+          {game.profile === undefined ? null : (
+            <p className="pico-game-detail-profile">
+              <span className="pico-game-detail-profile-caption">PROFILE</span>
+              <span className="pico-game-detail-profile-name">{game.profile}</span>
+            </p>
+          )}
         </div>
         <PicoGameActions actions={actions} onRun={onRunAction} />
       </PicoGameStage>

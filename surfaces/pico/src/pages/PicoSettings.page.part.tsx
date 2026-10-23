@@ -119,6 +119,10 @@ function Settings({
     onAsk={(actionId, confirmation) => dispatch({ _tag: "AskedSettingConfirmation", actionId, confirmation })}
     onCancel={() => dispatch({ _tag: "CancelledSettingAction" })}
     onChange={(settingId, value) => dispatch({ _tag: "ChangedSetting", settingId, value })}
+    onPick={settingId => dispatch({ _tag: "OpenedPicker", settingId })}
+    onPicked={value => dispatch({ _tag: "PickedChoice", value })}
+    onCancelPick={() => dispatch({ _tag: "CancelledPicker" })}
+    {...(question._tag === "PickingChoice" ? { picking: question.settingId } : {})}
     onSubmitWifi={() => dispatch({ _tag: "SubmittedWifi" })}
     onToggleShown={() => dispatch({ _tag: "ToggledShown" })}
     wifi={question._tag === "Wifi" ? picoWifiEntryView(question.entry) : undefined}

@@ -921,9 +921,10 @@ export function launchEditorFrom(
     const kinds = entry.editableKinds
     const any = place.scope._tag === "Any"
     const groups: (SurfaceSettingGroup | undefined)[] = [
+      // What a place is for first: the runner choice, or the runner's settings.
       any && kinds.includes(KIND.runner) ? runnerGroup(context, rows, placeId, place, body) : undefined,
-      ...limitGroups(context, rows, place, body, kinds, key => LAUNCH_ID.set(placeId, key)),
       kinds.includes(KIND.settings) ? settingsGroup(context, rows, placeId, place, body, pending.get(placeId) ?? []) : undefined,
+      ...limitGroups(context, rows, place, body, kinds, key => LAUNCH_ID.set(placeId, key)),
       kinds.includes(KIND.modifiers) ? modifierGroup(context, rows, placeId, place, body) : undefined,
       place.layer._tag === "Game" && any ? profileRows(context, "pick") : undefined,
       place.layer._tag === "Profile" && any ? profileRows(context, "own", place.layer.id.profileId) : undefined,

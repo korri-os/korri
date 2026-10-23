@@ -13,6 +13,10 @@ import { PicoNetworkMarks } from "./PicoNetworkMarks"
  * comes from, in Korri's words, and carries DEVICE-ONLY when Korri says it
  * stays on this device.
  *
+ * A row that opens one of Korri's groups (RUNNER, FROM FILES) carries the
+ * group's caption above it, so rows the player can change and rows only a
+ * file sets are told apart.
+ *
  * A fact row is not a disabled button. Disabled reads as "you cannot", and the
  * truth is "there is nothing to do" — the software version is a fact, not a
  * locked control. The Wi-Fi network this device is on is a fact too.
@@ -39,11 +43,12 @@ export function PicoSettingRow({
       ) : row.value === undefined ? null : (
         <span>{row.value}</span>
       )}
-      {row.control.kind === "action" || row.control.kind === "text" ? <span aria-hidden>▶</span> : null}
+      {row.control.kind === "action" || row.control.kind === "text" || row.control.kind === "pick" ? <span aria-hidden>▶</span> : null}
     </>
   )
   return (
     <li className="pico-setting-row">
+      {row.section === undefined ? null : <p className="pico-setting-row-section">{row.section}</p>}
       <PicoRow
         danger={row.control.kind === "action" && row.control.destructive}
         detail={detail}

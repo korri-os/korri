@@ -20,7 +20,10 @@ import {
   picoIdentityRetiredKey,
   picoWifiNetworkId,
   picoSettingsViewFromModel,
+  picoNumberFits,
   picoTextSettingFrom,
+  type PicoSettingControl,
+  type PicoSettingRowView,
   type PicoTextSettingRowView,
 } from "../pico-settings-view"
 import { picoDraftBackspace, picoDraftType, picoTextDraft, type PicoTextDraft } from "../pico-text-draft"
@@ -310,6 +313,23 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       if (question?._tag !== "ConfirmingAction") return stay(nav)
       return ask(withQuestion(nav, { _tag: "None" }), { _tag: "RunAction", actionId: question.actionId })
     }
+    case "ChoseLaunchScope":
+      return stay(nav.launch === undefined ? nav : { ...nav, launch: { ...nav.launch, scope: message.scope } })
+    case "OpenedPicker":
+      return pickRow(korri, message.settingId) === undefined
+        ? stay(nav)
+        : stay(withQuestion(nav, { _tag: "PickingChoice", settingId: message.settingId }))
+    case "PickedChoice": {
+      // Only a value Korri offers on the row the list was opened from.
+      const question = activeSettings(nav)?.question
+      if (question?._tag !== "PickingChoice") return stay(nav)
+      const row = pickRow(korri, question.settingId)
+      if (row === undefined || !row.control.options.some(option => option.value === message.value)) {
+        return stay(withQuestion(nav, { _tag: "None" }))
+      }
+      return ask(withQuestion(nav, { _tag: "None" }), { _tag: "ChangeSetting", settingId: question.settingId, value: message.value })
+    }
+    case "CancelledPicker":
     case "CancelledSettingAction":
     case "ClosedEditor":
     case "ClosedIdentity":
@@ -328,7 +348,7 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
     case "OpenedEditor": {
       const row = textRow(korri, message.settingId)
       if (row === undefined) return stay(nav)
-      const draft = picoTextDraft(row.control.sensitive ? "" : (row.value ?? ""))
+      const draft = picoTextDraft(row.control.sensitive ? "" : (row.control.initial ?? row.value ?? ""))
       return stay(withQuestion(nav, { _tag: "EditingText", settingId: row.id, draft, sawSaving: false }))
     }
     case "AskedClear": {
@@ -369,6 +389,9 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       // secret is the clear action's job.
       const editor = openEditor(nav)
       if (editor?._tag !== "EditingText" || saving(korri, editor) || editor.draft.text.trim() === "") return stay(nav)
+      // A number goes to Korri only when it fits the range Korri gave.
+      const numeric = textRow(korri, editor.settingId)?.control.numeric
+      if (numeric !== undefined && !picoNumberFits(editor.draft.text, numeric)) return stay(nav)
       return ask(nav, { _tag: "ChangeSetting", settingId: editor.settingId, value: editor.draft.text })
     }
 
@@ -440,6 +463,7 @@ function backInSettings(nav: PicoNavigation, settings: Settings): PicoNavigation
       return withQuestion(nav, { ...question, _tag: "EditingText" })
     case "ConfirmingAction":
     case "EditingText":
+    case "PickingChoice":
     case "Identity":
     case "Wifi":
       return withQuestion(nav, { _tag: "None" })
@@ -530,6 +554,15 @@ function identityRequest(actionId: string, form: IdentityForm): PicoRequest | un
     return form.confirmed ? { _tag: "DeleteRetiredIdentity", publicKey: deleteKey, backupConfirmed: form.confirmed } : undefined
   }
   return undefined
+}
+
+type PickRow = PicoSettingRowView & { readonly control: Extract<PicoSettingControl, { readonly kind: "pick" }> }
+
+/** The pick row `settingId`, in launch settings while Korri shows them, else Settings. */
+const pickRow = (korri: SurfaceModel, settingId: string): PickRow | undefined => {
+  const groups = [...(picoLaunchViewFromModel(korri)?.settings.groups ?? []), ...picoSettingsViewFromModel(korri).groups]
+  const row = groups.flatMap(group => group.rows).find(candidate => candidate.id === settingId)
+  return row?.control.kind === "pick" ? row as PickRow : undefined
 }
 
 const textRow = (korri: SurfaceModel, settingId: string): PicoTextSettingRowView | undefined => {

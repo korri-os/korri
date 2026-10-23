@@ -305,11 +305,11 @@ function PicoCatalogSurface({
       {runner !== undefined && runner._tag !== "Closed" ? (
         <PicoRunnerPicker choice={runner} onAction={actionId => dispatch({ _tag: "ChoseRunnerAction", actionId })} />
       ) : null}
-      {launch === undefined ? null : renderLaunch(launch, nav.launch?.question ?? { _tag: "None" }, nav.launch?.group ?? 0)}
+      {launch === undefined ? null : renderLaunch(launch, nav.launch?.question ?? { _tag: "None" }, nav.launch?.group ?? 0, nav.launch?.scope ?? 0)}
     </>
   )
 
-  function renderLaunch(launchView: PicoLaunchView, question: SettingsQuestion, group: number) {
+  function renderLaunch(launchView: PicoLaunchView, question: SettingsQuestion, group: number, scope: number) {
     return (
       <PicoLaunchSettings
         asking={question._tag === "ConfirmingAction"
@@ -333,6 +333,12 @@ function PicoCatalogSurface({
         onGroup={index => dispatch({ _tag: "ChoseSettingsGroup", group: index })}
         onRun={actionId => dispatch({ _tag: "PressedSettingAction", actionId })}
         onSaveText={() => dispatch({ _tag: "SavedText" })}
+        onPick={settingId => dispatch({ _tag: "OpenedPicker", settingId })}
+        onPicked={value => dispatch({ _tag: "PickedChoice", value })}
+        onCancelPick={() => dispatch({ _tag: "CancelledPicker" })}
+        onScope={index => dispatch({ _tag: "ChoseLaunchScope", scope: index })}
+        {...(question._tag === "PickingChoice" ? { picking: question.settingId } : {})}
+        scope={scope}
         typing={typing}
       />
     )
@@ -367,6 +373,10 @@ function PicoCatalogSurface({
             onConfirm={() => dispatch({ _tag: "ConfirmedSettingAction" })}
             onDismissProblem={() => dispatch({ _tag: "DismissedSettingsProblem" })}
             onRun={actionId => dispatch({ _tag: "PressedSettingAction", actionId })}
+            onPick={settingId => dispatch({ _tag: "OpenedPicker", settingId })}
+            onPicked={value => dispatch({ _tag: "PickedChoice", value })}
+            onCancelPick={() => dispatch({ _tag: "CancelledPicker" })}
+            {...(question._tag === "PickingChoice" ? { picking: question.settingId } : {})}
             settings={picoSettingsViewFromModel(model, { font })}
           />
         )

@@ -12,6 +12,17 @@ export function LongTitle() {
   return <PicoGameDetail actions={createFixtureHost().gameActions(longTitleGame.id)} game={picoDetailViewFromGame(longTitleGame)} onPlay={() => undefined} onRunAction={() => undefined} />
 }
 
+/** The next launch uses a profile: its name stands beside Play. */
+export function WithProfile() {
+  const game = fixtureGame("petal")
+  return <PicoGameDetail actions={createFixtureHost().gameActions(game.id)} game={picoDetailViewFromGame({ ...game, activeProfile: "Battery saver" })} onPlay={() => undefined} onRunAction={() => undefined} />
+}
+
+/** A long profile name with no break point wraps under Play. */
+export function WithLongProfile() {
+  return <PicoGameDetail actions={createFixtureHost().gameActions(longTitleGame.id)} game={picoDetailViewFromGame({ ...longTitleGame, activeProfile: "Superextraordinarilyuncompromisingprofile" })} onPlay={() => undefined} onRunAction={() => undefined} />
+}
+
 export const name = "Game Detail"
 export const note = "Only what Korri stated: never-played says so, resumable says CONTINUE"
 

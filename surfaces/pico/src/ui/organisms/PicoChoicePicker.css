@@ -1,0 +1,43 @@
+/* The list takes the screen body it opens over, solid behind, like every
+ * Pico question. Its font-size is the small face: a height in em here is a
+ * line of small text. */
+.pico-choice-picker {
+	container: pico-choice-picker / size;
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	display: grid;
+	place-items: center;
+	padding: var(--pico-u);
+	font-size: var(--pico-text-sm);
+	background: var(--pico-bg);
+}
+
+/* Short: the title steps down a size, so more values show at once. */
+@container pico-choice-picker (height < 45em) {
+	.pico-choice-picker-dialog {
+		--pico-title-xl: var(--pico-text-lg);
+	}
+}
+
+/* A column, so a card taller than the screen scrolls inside itself. */
+.pico-choice-picker-dialog {
+	display: flex;
+	flex-direction: column;
+	width: min(100%, calc(var(--pico-px) * 230));
+	max-height: 100%;
+	min-height: 0;
+}
+
+.pico-choice-picker-description {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.pico-choice-picker-list {
+	display: grid;
+	gap: calc(var(--pico-px) * 2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}

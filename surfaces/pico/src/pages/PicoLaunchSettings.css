@@ -16,7 +16,7 @@
 }
 
 .pico-launch-settings-note > p {
-	flex: 1 1 calc(var(--pico-px) * 160);
+	flex: 1 1 100%;
 	margin: 0;
 	overflow-wrap: anywhere;
 }

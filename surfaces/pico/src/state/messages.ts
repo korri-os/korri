@@ -33,6 +33,8 @@ export type PicoMessage =
   // A game's launch settings. Its rows send the Settings messages.
   /** Reload, Retry or Close, as Korri published them. */
   | { readonly _tag: "PressedLaunchAction"; readonly actionId: string }
+  /** A runner scope tab in a layer's card. */
+  | { readonly _tag: "ChoseLaunchScope"; readonly scope: number }
   // Home
   | { readonly _tag: "ToggledHomeMenu" }
   | { readonly _tag: "ChoseMenuFind" }
@@ -82,6 +84,10 @@ export type PicoMessage =
   | { readonly _tag: "ConfirmedSettingAction" }
   | { readonly _tag: "CancelledSettingAction" }
   | { readonly _tag: "OpenedEditor"; readonly settingId: string }
+  /** A choice with nothing chosen: its list opens, and one value goes to Korri. */
+  | { readonly _tag: "OpenedPicker"; readonly settingId: string }
+  | { readonly _tag: "PickedChoice"; readonly value: string }
+  | { readonly _tag: "CancelledPicker" }
   | { readonly _tag: "AskedClear" }
   | { readonly _tag: "CancelledClear" }
   | { readonly _tag: "ConfirmedClear" }

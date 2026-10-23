@@ -21,6 +21,14 @@ import { picoConnectionLabel, picoNetworksFrom, type PicoNetworkView } from "./p
  * seats offers 255.
  *
  * `network` is one Wi-Fi network from Korri's scan; pressing it joins it.
+ *
+ * `pick` is a Korri choice with none of its values chosen yet, such as Add
+ * setting: a press opens the list to choose from, because stepping would
+ * choose for the player.
+ *
+ * A Korri `number` opens the editor too, holding the number set there. The
+ * row says the range. When Korri lets the number be cleared, the editor
+ * offers INHERIT, which sends "" (the treaty's clear).
  */
 export type PicoSettingControl =
   | { readonly kind: "fact" }
@@ -32,13 +40,19 @@ export type PicoSettingControl =
       readonly current: number
     }
   | { readonly kind: "step"; readonly next: string; readonly current: string }
+  | { readonly kind: "pick"; readonly options: readonly { readonly value: string; readonly label: string }[] }
   | {
       readonly kind: "text"
       readonly sensitive: boolean
       readonly placeholder?: string
       readonly maxLength?: number
-      /** Korri's words for clearing a saved secret, only when there is one to clear. */
+      /** Korri's words for clearing a saved secret, or Pico's INHERIT for a
+       * number Korri lets clear, only when there is something to clear. */
       readonly clearLabel?: string
+      /** What the editor opens with, when it is not the row's value. */
+      readonly initial?: string
+      /** A number: the editor checks the typing against Korri's range. */
+      readonly numeric?: { readonly min?: number; readonly max?: number; readonly step?: number }
     }
   | { readonly kind: "network"; readonly actionId: string; readonly network: PicoNetworkView }
 
@@ -53,6 +67,9 @@ export interface PicoConfirmation {
 
 export interface PicoSettingRowView {
   readonly id: string
+  /** The caption of Korri's group this row opens, when it opens one and the
+   * screen names groups (a launch settings place does). */
+  readonly section?: string
   readonly label: string
   readonly value?: string
   readonly description?: string
@@ -113,6 +130,9 @@ export const PICO_FONT_SETTING = "pico:font"
 
 /** A choice with more values than this shows only the current one (`step`). */
 export const PICO_SEGMENTS_MAX = 4
+/** So does a choice whose labels together are longer than this many
+ * characters: side by side they would squeeze the row's own label. */
+export const PICO_SEGMENTS_CHARS = 24
 
 /** Pico's Wi-Fi rows. Pico handles them through the Wi-Fi host commands. */
 export const PICO_WIFI_SCAN_ACTION = "pico:wifi:scan"
@@ -258,6 +278,23 @@ export function picoSettingsViewFromModel(
   }
 }
 
+/** A number's range in words: "0 to 10", "at least 0". Absent: no range. */
+export function picoNumberRange(range: { readonly min?: number; readonly max?: number }): string | undefined {
+  if (range.min !== undefined && range.max !== undefined) return `${range.min} to ${range.max}`
+  if (range.min !== undefined) return `At least ${range.min}`
+  if (range.max !== undefined) return `At most ${range.max}`
+  return undefined
+}
+
+/** Whether typed text is a number Korri's range takes. */
+export function picoNumberFits(text: string, range: { readonly min?: number; readonly max?: number; readonly step?: number }): boolean {
+  const trimmed = text.trim()
+  if (trimmed === "" || !/^-?\d*\.?\d+$/.test(trimmed)) return false
+  const value = Number(trimmed)
+  if (range.step === 1 && !Number.isInteger(value)) return false
+  return (range.min === undefined || value >= range.min) && (range.max === undefined || value <= range.max)
+}
+
 /** One Korri setting as a row, with what Korri says about it now. */
 export function picoSettingRowFrom(item: SurfaceSettingItem, model: SurfaceModel): PicoSettingRowView {
   const status = model.settingsStatus
@@ -295,9 +332,13 @@ function controlFor(item: SurfaceSettingItem): PicoSettingControl {
     case "choice": {
       const choices = interaction.choices
       // Korri marks the choice in force by value: labels may repeat.
-      const current = Math.max(0, choices.findIndex((choice) => choice.value === interaction.selected))
+      const found = choices.findIndex((choice) => choice.value === interaction.selected)
+      // Nothing chosen yet: the player chooses from the list.
+      if (found < 0) return { kind: "pick", options: choices.map(({ value, label }) => ({ value, label })) }
+      const current = found
       const nextChoice = choices[(current + 1) % choices.length]
-      if (choices.length > PICO_SEGMENTS_MAX) {
+      const width = choices.reduce((sum, choice) => sum + choice.label.length + 1, 0)
+      if (choices.length > PICO_SEGMENTS_MAX || width > PICO_SEGMENTS_CHARS) {
         return { kind: "step", next: nextChoice?.value ?? "", current: choices[current]?.label ?? "" }
       }
       return {
@@ -307,6 +348,20 @@ function controlFor(item: SurfaceSettingItem): PicoSettingControl {
         current,
       }
     }
+    case "number":
+      return {
+        kind: "text",
+        sensitive: false,
+        initial: interaction.value === undefined ? "" : String(interaction.value),
+        numeric: {
+          ...(interaction.min === undefined ? {} : { min: interaction.min }),
+          ...(interaction.max === undefined ? {} : { max: interaction.max }),
+          ...(interaction.step === undefined ? {} : { step: interaction.step }),
+        },
+        placeholder: picoNumberRange(interaction) ?? "Number",
+        maxLength: 24,
+        ...(interaction.clearable === true && interaction.value !== undefined ? { clearLabel: "Inherit" } : {}),
+      }
     case "text":
       return {
         kind: "text",

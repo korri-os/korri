@@ -11,5 +11,30 @@
 .pico-game-detail-actions {
 	display: flex;
 	flex-wrap: wrap;
+	align-items: center;
 	gap: var(--pico-u);
+}
+
+/* The profile Play uses: a caption and Korri's name for it, wrapping under
+ * Play rather than squeezing it. A long name breaks anywhere. */
+.pico-game-detail-profile {
+	display: flex;
+	flex: 1 1 calc(var(--pico-px) * 60);
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0 calc(var(--pico-px) * 3);
+	min-width: 0;
+	margin: 0;
+	font-size: var(--pico-text-sm);
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+
+.pico-game-detail-profile-caption {
+	color: var(--pico-ink-quiet);
+}
+
+.pico-game-detail-profile-name {
+	min-width: 0;
+	color: var(--pico-ink);
 }

@@ -36,3 +36,17 @@
 	line-height: 1.5;
 	overflow-wrap: anywhere;
 }
+
+/* The caption of the group a row opens: small, in the card's kicker ink, with
+ * room above it so a group starts visibly. */
+.pico-setting-row-section {
+	margin: calc(var(--pico-px) * 3) 0 0;
+	padding: 0 calc(var(--pico-px) * 4);
+	font-size: var(--pico-text-sm);
+	line-height: 1.5;
+	color: var(--pico-card-kicker, var(--pico-ink-dim));
+}
+
+.pico-setting-row:first-child > .pico-setting-row-section {
+	margin-top: 0;
+}

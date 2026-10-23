@@ -1,6 +1,12 @@
 import type { SurfaceLaunchSettings, SurfaceModel } from "@contracts/surface/korri-surface"
 import { createFixtureHost, fixtureModel } from "../fixtures/fixture-host"
-import { launchLayerIndex, launchSettingsFixtures as launch, withLaunchSettings } from "../fixtures/launch-settings"
+import {
+  launchLayerIndex,
+  launchRowId,
+  launchScopeIndex,
+  launchSettingsFixtures as launch,
+  withLaunchSettings,
+} from "../fixtures/launch-settings"
 import { performPicoRequest } from "../pico-host"
 import { picoLaunchViewFromModel } from "../pico-launch-view"
 import type { PicoMessage } from "../state/messages"
@@ -10,10 +16,11 @@ import { usePicoProgram } from "../use-pico-program"
 import { PicoLaunchSettings } from "./PicoLaunchSettings"
 
 export const name = "Launch Settings"
-export const note = "A game's launch settings: a spine per layer, each value's source, device-only, applies at next launch"
+export const note = "A game's launch settings: a spine per layer, a tab per runner scope, each value's source and scope"
 
 /* The surface's navigation program against the fixture host, as on the
- * device: the spine, the keyboard and the delete question are Pico's. */
+ * device: the spine, the scope, the keyboard, the list and the delete
+ * question are Pico's. */
 function Launch({
   model,
   opening = [],
@@ -46,6 +53,7 @@ function Launch({
       onAskClear={() => dispatch({ _tag: "AskedClear" })}
       onCancel={() => dispatch({ _tag: "CancelledSettingAction" })}
       onCancelClear={() => dispatch({ _tag: "CancelledClear" })}
+      onCancelPick={() => dispatch({ _tag: "CancelledPicker" })}
       onChange={(settingId, value) => dispatch({ _tag: "ChangedSetting", settingId, value })}
       onCloseEditor={() => dispatch({ _tag: "ClosedEditor" })}
       onConfirm={() => dispatch({ _tag: "ConfirmedSettingAction" })}
@@ -53,8 +61,13 @@ function Launch({
       onDismissProblem={() => dispatch({ _tag: "DismissedSettingsProblem" })}
       onEdit={settingId => dispatch({ _tag: "OpenedEditor", settingId })}
       onGroup={group => dispatch({ _tag: "ChoseSettingsGroup", group })}
+      onPick={settingId => dispatch({ _tag: "OpenedPicker", settingId })}
+      onPicked={value => dispatch({ _tag: "PickedChoice", value })}
       onRun={actionId => dispatch({ _tag: "PressedSettingAction", actionId })}
       onSaveText={() => dispatch({ _tag: "SavedText" })}
+      onScope={scope => dispatch({ _tag: "ChoseLaunchScope", scope })}
+      {...(question._tag === "PickingChoice" ? { picking: question.settingId } : {})}
+      scope={nav.launch?.scope ?? 0}
       typing={{
         onType: character => dispatch({ _tag: "TypedText", character }),
         onBackspace: () => dispatch({ _tag: "PressedTextBackspace" }),
@@ -66,71 +79,113 @@ function Launch({
   )
 }
 
-const on = (editor: SurfaceLaunchSettings, layerId: string): PicoMessage =>
-  ({ _tag: "ChoseSettingsGroup", group: launchLayerIndex(editor, layerId) })
+/** Open on one layer, and on one runner scope in it. */
+const on = (editor: SurfaceLaunchSettings, layerId: string, scope?: string): PicoMessage[] => [
+  { _tag: "ChoseSettingsGroup", group: launchLayerIndex(editor, layerId) },
+  ...(scope === undefined ? [] : [{ _tag: "ChoseLaunchScope", scope: launchScopeIndex(editor, layerId, scope) } as PicoMessage]),
+]
 const open = (editor: SurfaceLaunchSettings, savingId?: string) => withLaunchSettings(fixtureModel, editor, savingId)
+const MGBA_GAME = "game:wario/runner:retroarch/mgba"
 
 export function Loading() { return <Launch model={open(launch.loading)} /> }
-/** The Runner layer sets the CPU floor itself: an overridden row. */
-export function ReadyOverridden() {
-  return <Launch model={open(launch.ready)} opening={[on(launch.ready, "runner:retroarch/mgba")]} />
-}
-/** The Game layer inherits its CPU values: each row names where they come from. */
-export function ReadyInherited() {
-  return <Launch model={open(launch.ready)} opening={[on(launch.ready, "game")]} />
-}
-/** The Device layer, with the governor only it carries. */
+/** The Device place for any runner: its runner choice, limits, governor and routine. */
 export function ReadyDevice() { return <Launch model={open(launch.ready)} /> }
+/** The Device place for mGBA sets the CPU floor itself: an overridden row. */
+export function ReadyOverridden() {
+  return <Launch model={open(launch.ready)} opening={on(launch.ready, "device", "mGBA")} />
+}
+/** The Game place inherits its CPU values; each row names where they come from. */
+export function ReadyInherited() {
+  return <Launch model={open(launch.ready)} opening={on(launch.ready, "game:wario")} />
+}
+/** mGBA's settings on the Game: a number, an enum, and Add setting. */
+export function RunnerSettings() {
+  return <Launch model={open(launch.ready)} opening={on(launch.ready, "game:wario", "mGBA")} />
+}
+/** gpSP is not the runner in use: its rows say so. */
+export function NotInForce() {
+  return <Launch model={open(launch.ready)} opening={on(launch.ready, "game:wario", "gpSP")} />
+}
+/** Add setting's list, open over the screen. */
+export function AddSetting() {
+  return (
+    <Launch
+      model={open(launch.ready)}
+      opening={[...on(launch.ready, "game:wario", "mGBA"), { _tag: "OpenedPicker", settingId: launchRowId(MGBA_GAME, "add-setting") }]}
+    />
+  )
+}
+/** Frameskip in the keyboard, with its range and INHERIT. */
+export function NumberEditor() {
+  return (
+    <Launch
+      model={open(launch.ready)}
+      opening={[...on(launch.ready, "game:wario", "mGBA"), { _tag: "OpenedEditor", settingId: launchRowId(MGBA_GAME, "setting:frameskip") }]}
+    />
+  )
+}
+/** The Game for the RetroArch family: a hook only a file sets, shown read-only. */
+export function FileOnly() {
+  return <Launch model={open(launch.ready)} opening={on(launch.ready, "game:wario", "Family retroarch")} />
+}
 /** The selected profile's own layer: its values, its name and Delete. */
 export function ProfileLayer() {
-  return <Launch model={open(launch.ready)} opening={[on(launch.ready, "profile:battery")]} />
+  return <Launch model={open(launch.ready)} opening={on(launch.ready, "profile:battery")} />
 }
 export function ProfileNone() {
-  return <Launch model={open(launch.noProfiles)} opening={[on(launch.noProfiles, "game")]} />
+  return <Launch model={open(launch.noProfiles)} opening={on(launch.noProfiles, "game:wario")} />
 }
 export function ProfilesMany() {
-  return <Launch model={open(launch.manyProfiles)} opening={[on(launch.manyProfiles, "profile:word")]} />
+  return <Launch model={open(launch.manyProfiles)} opening={on(launch.manyProfiles, "profile:word")} />
 }
 export function NewProfile() {
   return (
     <Launch
       model={open(launch.ready)}
-      opening={[on(launch.ready, "game"), { _tag: "OpenedEditor", settingId: "launch:profile:new" },
+      opening={[...on(launch.ready, "game:wario"), { _tag: "OpenedEditor", settingId: "launch:profile:new" },
         ...[..."Race"].map(character => ({ _tag: "TypedText", character }) as PicoMessage)]}
     />
   )
 }
 export function ConfirmDeleteProfile() {
   const editor = launch.ready
-  const row = editor.layers.find(layer => layer.id === "profile:battery")?.groups.flatMap(group => group.items)
+  const row = editor.places.find(place => place.id === "profile:battery/any")?.groups.flatMap(group => group.items)
     .find(item => item.label === "Delete profile")
   const interaction = row?.interaction
   return (
     <Launch
       model={open(editor)}
-      opening={[on(editor, "profile:battery"), ...(interaction?.kind === "action" && interaction.confirmation !== undefined
+      opening={[...on(editor, "profile:battery"), ...(interaction?.kind === "action" && interaction.confirmation !== undefined
         ? [{ _tag: "AskedSettingConfirmation", actionId: interaction.actionId, confirmation: { ...interaction.confirmation, destructive: true } } as PicoMessage]
         : [])]}
     />
   )
 }
 export function Saving() {
-  return <Launch model={open(launch.ready, "launch:set:game:gpu.max")} opening={[on(launch.ready, "game")]} />
+  return <Launch model={open(launch.ready, launchRowId("game:wario/any", "gpu.max"))} opening={on(launch.ready, "game:wario")} />
 }
 export function Conflict() { return <Launch model={open(launch.conflict)} /> }
 export function Error() { return <Launch model={open(launch.error)} /> }
 /** No runner chosen: Device, Game and the profile stay editable; one line says what is missing. */
 export function NeedsRunnerChoice() {
-  return <Launch model={open(launch.needsRunner)} opening={[on(launch.needsRunner, "game")]} />
+  return <Launch model={open(launch.needsRunner)} opening={on(launch.needsRunner, "game:wario")} />
 }
 export function RouteUnavailable() {
-  return <Launch model={open(launch.routeUnavailable)} opening={[on(launch.routeUnavailable, "game")]} />
+  return <Launch model={open(launch.routeUnavailable)} opening={on(launch.routeUnavailable, "game:wario")} />
+}
+/** The Game names a runner that isn't installed: a note, and the row says so. */
+export function RunnerUnavailable() {
+  return <Launch model={open(launch.runnerUnavailable)} opening={on(launch.runnerUnavailable, "game:wario")} />
+}
+/** gpSP's dry run failed: a note, and a read-only row in gpSP's places. */
+export function RunnerFactsUnavailable() {
+  return <Launch model={open(launch.factsUnavailable)} opening={on(launch.factsUnavailable, "game:wario", "gpSP")} />
 }
 /** Facts present, but no devfreq GPU: one read-only GPU line instead of choices. */
-export function NoGpu() { return <Launch model={open(launch.noGpu)} opening={[on(launch.noGpu, "game")]} /> }
+export function NoGpu() { return <Launch model={open(launch.noGpu)} opening={on(launch.noGpu, "game:wario")} /> }
 /** No device facts: 10 % steps, and the rows say so. */
 export function FactsMissing() {
-  return <Launch model={open(launch.factsMissing)} opening={[on(launch.factsMissing, "game")]} />
+  return <Launch model={open(launch.factsMissing)} opening={on(launch.factsMissing, "game:wario")} />
 }
 
 export default function PicoLaunchSettingsPagePart() {

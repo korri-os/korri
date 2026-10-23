@@ -16,6 +16,9 @@ export interface PicoDetailView {
   readonly artUrl?: string
   /** "CONTINUE" when Korri says the game resumes; "PLAY" otherwise. */
   readonly primaryLabel: "CONTINUE" | "PLAY"
+  /** The launch profile the next launch uses, in Korri's words. Absent: none,
+   * or Korri has not read it. */
+  readonly profile?: string
   /**
    * Facts about play, in display order, each as a figure and its caption. Empty
    * when Korri has never seen the game played, and the screen says so instead.
@@ -36,6 +39,7 @@ export function picoDetailViewFromGame(game: SurfaceGame): PicoDetailView {
     ...(game.subtitle === undefined ? {} : { subtitle: game.subtitle }),
     ...(game.coverArtUrl === undefined ? {} : { artUrl: game.coverArtUrl }),
     primaryLabel: game.resumable === true ? "CONTINUE" : "PLAY",
+    ...(game.activeProfile === undefined ? {} : { profile: game.activeProfile }),
     stats: picoStatsFor(game),
     ...(download === undefined ? {} : { download }),
     ...(game.download?.progress === undefined ? {} : { downloadProgress: game.download.progress }),

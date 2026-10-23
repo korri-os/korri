@@ -2,7 +2,15 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { createFixtureHost, fixtureModel } from "../src/fixtures/fixture-host"
-import { launchLayerIndex, launchSettingsFixtures as launch, withLaunchSettings } from "../src/fixtures/launch-settings"
+import {
+  launchLayerIndex,
+  launchRowId,
+  launchScopeIndex,
+  launchSettingsFixtures as launch,
+  withLaunchSettings,
+} from "../src/fixtures/launch-settings"
+import { PicoGameDetail } from "../src/ui/organisms/PicoGameDetail"
+import { picoDetailViewFromGame } from "../src/pico-detail-view"
 import { PicoSurface } from "../src/PicoSurface"
 import { PicoSegments } from "../src/ui/atoms/PicoSegments"
 import { initialNavigation } from "../src/state/navigation"
@@ -27,7 +35,7 @@ function story(model: SurfaceModel, ...messages: PicoMessage[]) {
 describe("launch settings navigation", () => {
   test("opening starts on the first layer with no question; closing forgets it", () => {
     const { nav } = story(ready)
-    expect(nav.launch).toEqual({ group: 0, question: { _tag: "None" } })
+    expect(nav.launch).toEqual({ group: 0, scope: 0, question: { _tag: "None" } })
     const closed = update(nav, { _tag: "KorriPublished" }, fixtureModel).model
     expect(closed.launch).toBeUndefined()
   })
@@ -51,12 +59,13 @@ describe("launch settings navigation", () => {
   })
 
   test("a spine, a choice and a typed name go to the editor's layer and to Korri unchanged", () => {
-    const game = launchLayerIndex(launch.ready, "game")
+    const game = launchLayerIndex(launch.ready, "game:wario")
     const chose = story(ready, { _tag: "ChoseSettingsGroup", group: game })
     expect(chose.nav.launch?.group).toBe(game)
     expect(chose.nav.settings).toBeUndefined()
-    expect(story(ready, { _tag: "ChangedSetting", settingId: "launch:set:game:cpu.max", value: "45" }).requests)
-      .toEqual([{ _tag: "ChangeSetting", settingId: "launch:set:game:cpu.max", value: "45" }])
+    const cpuMax = launchRowId("game:wario/any", "cpu.max")
+    expect(story(ready, { _tag: "ChangedSetting", settingId: cpuMax, value: "45" }).requests)
+      .toEqual([{ _tag: "ChangeSetting", settingId: cpuMax, value: "45" }])
     const typed = story(ready, { _tag: "OpenedEditor", settingId: "launch:profile:new" },
       ...[..."Race"].map(character => ({ _tag: "TypedText", character }) as PicoMessage), { _tag: "SavedText" })
     expect(typed.requests).toEqual([{ _tag: "ChangeSetting", settingId: "launch:profile:new", value: "Race" }])
@@ -91,12 +100,12 @@ describe("launch settings screen", () => {
     render(<PicoSurface host={host} model={ready} />)
     expect(screen.queryByRole("button", { name: /Celeste Classic/ })).toBeNull()
     expect(screen.getByText("LAUNCH SETTINGS")).toBeTruthy()
-    expect(document.activeElement?.textContent).toContain("CPU min")
+    expect(document.activeElement?.textContent).toContain("Runner")
     const row = screen.getByRole("button", { name: /CPU max/ }).closest("li")
     if (row === null) throw new Error("no CPU max row")
     expect(within(row).getByText("61 % (1.10 GHz) from Profile Battery saver")).toBeTruthy()
     expect(within(row).getByText("DEVICE-ONLY")).toBeTruthy()
-    expect(within(row).getByText("Applies at next launch.")).toBeTruthy()
+    expect(within(row).getByText("Applies at next launch. Sets the device's clock limits.")).toBeTruthy()
     expect(row.textContent).toContain("◀ 89 % (1.61 GHz) ▶")
   })
 
@@ -104,7 +113,7 @@ describe("launch settings screen", () => {
     const host = createFixtureHost()
     render(<PicoSurface host={host} model={ready} />)
     fireEvent.click(screen.getByRole("button", { name: /CPU max/ }))
-    expect(host.calls).toEqual(["setting:launch:set:device:cpu.max:100"])
+    expect(host.calls).toEqual([`setting:${launchRowId("device/any", "cpu.max")}:100`])
   })
 
   test("Back asks Korri to close", () => {
@@ -137,7 +146,7 @@ describe("launch settings screen", () => {
 
   test("without device facts the rows say the clock steps are unknown", () => {
     render(<PicoSurface host={createFixtureHost()} model={withLaunchSettings(fixtureModel, launch.factsMissing)} />)
-    expect(screen.getAllByText("Applies at next launch. Clock steps unknown.").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Applies at next launch. Sets the device's clock limits. Clock steps unknown.").length).toBeGreaterThan(0)
   })
 
   test("missing route layers keep the rest editable, say why, and offer the runner chooser", () => {
@@ -145,6 +154,8 @@ describe("launch settings screen", () => {
     render(<PicoSurface host={host} model={withLaunchSettings(fixtureModel, launch.needsRunner)} />)
     expect(screen.getByText(/appear once you choose a runner\. Values in force leave them out\./)).toBeTruthy()
     expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["DEVICE", "GAME", "PROFILE BATTERY SAVER"])
+    // One place per layer: no scope tabs to choose between.
+    expect(screen.queryByRole("tablist", { name: "Runner" })).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "CHOOSE A RUNNER" }))
     expect(host.calls).toEqual(["action:launch:runner"])
   })
@@ -159,8 +170,8 @@ describe("launch settings screen", () => {
 describe("a choice marked by value", () => {
   const quiet = (selected: string) => withLaunchSettings(fixtureModel, {
     ...launch.ready,
-    layers: launch.ready.layers.map(layer => layer.id !== "game" ? layer : {
-      ...layer,
+    places: launch.ready.places.map(place => place.id !== "game:wario/any" ? place : {
+      ...place,
       groups: [{
         title: "Profile",
         items: [{
@@ -180,7 +191,7 @@ describe("a choice marked by value", () => {
   test("steps from the selected value, not from the first matching label", () => {
     const host = createFixtureHost()
     const model = quiet("p2")
-    const game = launchLayerIndex(model.launchSettings ?? launch.ready, "game")
+    const game = launchLayerIndex(model.launchSettings ?? launch.ready, "game:wario")
     render(<PicoSurface host={host} model={model} />)
     fireEvent.click(screen.getAllByRole("tab")[game]!)
     fireEvent.click(screen.getByRole("button", { name: /Profile at next launch/ }))
@@ -216,4 +227,90 @@ test("segments with a repeated label are keyed by value: no duplicate-key warnin
   } finally {
     console.error = original
   }
+})
+
+describe("places: layer by runner scope", () => {
+  const mgba = launchScopeIndex(launch.ready, "game:wario", "mGBA")
+  const game = launchLayerIndex(launch.ready, "game:wario")
+  const MGBA = "game:wario/runner:retroarch/mgba"
+
+  test("a layer's card shows a tab per runner scope; the scope holds across layers", () => {
+    const host = createFixtureHost()
+    render(<PicoSurface host={host} model={ready} />)
+    const scopes = screen.getByRole("tablist", { name: "Runner" })
+    expect(within(scopes).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["ANY RUNNER", "FAMILY RETROARCH", "MGBA", "GPSP"])
+    fireEvent.click(within(scopes).getByRole("tab", { name: "MGBA" }))
+    expect(screen.getAllByText("from Device for mGBA").length).toBeGreaterThan(0)
+    fireEvent.click(screen.getAllByRole("tab", { name: "GAME" })[0]!)
+    expect(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "MGBA" }).getAttribute("aria-selected")).toBe("true")
+    expect(screen.getByRole("button", { name: /Frameskip/ })).toBeTruthy()
+  })
+
+  test("Add setting opens the runner's settings to choose from, and sends the one chosen", () => {
+    const opened = story(ready, { _tag: "ChoseSettingsGroup", group: game }, { _tag: "ChoseLaunchScope", scope: mgba },
+      { _tag: "OpenedPicker", settingId: launchRowId(MGBA, "add-setting") })
+    expect(opened.nav.launch?.question).toEqual({ _tag: "PickingChoice", settingId: launchRowId(MGBA, "add-setting") })
+    // Only a value Korri offers goes to Korri.
+    expect(update(opened.nav, { _tag: "PickedChoice", value: "bios" }, ready).requests).toEqual([])
+    const picked = update(opened.nav, { _tag: "PickedChoice", value: "lang" }, ready)
+    expect(picked.requests).toEqual([{ _tag: "ChangeSetting", settingId: launchRowId(MGBA, "add-setting"), value: "lang" }])
+    expect(picked.model.launch?.question._tag).toBe("None")
+    expect(update(opened.nav, { _tag: "PressedBack" }, ready).model.launch?.question._tag).toBe("None")
+
+    const host = createFixtureHost()
+    render(<PicoSurface host={host} model={ready} />)
+    fireEvent.click(screen.getAllByRole("tab", { name: "GAME" })[0]!)
+    fireEvent.click(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "MGBA" }))
+    fireEvent.click(screen.getByRole("button", { name: /Add setting/ }))
+    const dialog = screen.getByRole("dialog", { name: "Add setting" })
+    expect(within(dialog).getAllByRole("button").map(button => button.textContent)).toEqual(["Colour correction", "Language", "CANCEL"])
+    expect(document.activeElement?.textContent).toBe("Colour correction")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Language" }))
+    expect(host.calls).toEqual([`setting:${launchRowId(MGBA, "add-setting")}:lang`])
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  test("a number opens the keyboard holding its value, saves only within range, and INHERIT clears it", () => {
+    const frameskip = launchRowId(MGBA, "setting:frameskip")
+    const base = [{ _tag: "ChoseSettingsGroup", group: game }, { _tag: "ChoseLaunchScope", scope: mgba }, { _tag: "OpenedEditor", settingId: frameskip }] as PicoMessage[]
+    const opened = story(ready, ...base)
+    expect(opened.nav.launch?.question).toMatchObject({ _tag: "EditingText", draft: { text: "2" } })
+    const tooMany = story(ready, ...base, { _tag: "TypedText", character: "4" }, { _tag: "SavedText" })
+    expect(tooMany.requests).toEqual([])
+    const fits = story(ready, ...base, { _tag: "PressedTextBackspace" }, { _tag: "TypedText", character: "7" }, { _tag: "SavedText" })
+    expect(fits.requests).toEqual([{ _tag: "ChangeSetting", settingId: frameskip, value: "7" }])
+    const cleared = story(ready, ...base, { _tag: "AskedClear" }, { _tag: "ConfirmedClear" })
+    expect(cleared.requests).toEqual([{ _tag: "ChangeSetting", settingId: frameskip, value: "" }])
+  })
+
+  test("values only files set are statements the cursor reaches, with their source and scope", () => {
+    render(<PicoSurface host={createFixtureHost()} model={ready} />)
+    fireEvent.click(screen.getAllByRole("tab", { name: "GAME" })[0]!)
+    const fact = screen.getByRole("group", { name: /Environment SDL_AUDIODRIVER/ })
+    expect(fact.tabIndex).toBe(0)
+    const row = fact.closest("li")
+    if (row === null) throw new Error("no row")
+    expect(within(row).getByText("from Game")).toBeTruthy()
+    expect(within(row).getByText("DEVICE-ONLY")).toBeTruthy()
+    expect(within(row).getByText("Set in library.yaml. Change it there.")).toBeTruthy()
+    expect(screen.getByText("FROM FILES")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Environment/ })).toBeNull()
+  })
+
+  test("a runner that isn't installed and a runner whose facts are unavailable each get a note", () => {
+    const view = render(<PicoSurface host={createFixtureHost()} model={withLaunchSettings(fixtureModel, launch.runnerUnavailable)} />)
+    expect(screen.getByText(/names runner retroarch\/vba-m, which isn't installed/)).toBeTruthy()
+    view.rerender(<PicoSurface host={createFixtureHost()} model={withLaunchSettings(fixtureModel, launch.factsUnavailable)} />)
+    expect(screen.getByText("gpSP facts are unavailable: launch.prepare timed out after 2 s.")).toBeTruthy()
+    fireEvent.click(screen.getAllByRole("tab", { name: "GAME" })[0]!)
+    fireEvent.click(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "GPSP" }))
+    expect(screen.getByRole("group", { name: /Runner facts unavailable/ })).toBeTruthy()
+  })
+
+  test("the game's page shows the profile its next launch uses beside Play", () => {
+    const game = fixtureModel.catalog._tag === "Ready" ? fixtureModel.catalog.games[0]! : { id: "x", title: "x" }
+    render(<PicoGameDetail actions={[]} game={picoDetailViewFromGame({ ...game, activeProfile: "Battery saver" })} onPlay={() => undefined} onRunAction={() => undefined} />)
+    expect(screen.getByText("PROFILE")).toBeTruthy()
+    expect(screen.getByText("Battery saver")).toBeTruthy()
+  })
 })
