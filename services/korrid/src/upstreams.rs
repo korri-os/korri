@@ -1077,7 +1077,7 @@ impl UpstreamRegistry {
                         let viewer = crate::federation::reach::prepare_peer_viewer(
                             self.directory.as_ref(),
                             device_public_key,
-                            host.moonlight_address.as_deref().or(Some(address.as_str())),
+                            host.moonlight_address.as_deref(),
                         )
                         .await?;
                         address = viewer.moonlight_address.clone();

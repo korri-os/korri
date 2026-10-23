@@ -3,6 +3,8 @@ use super::*;
 mod leases;
 #[path = "order_tests.rs"]
 mod order;
+#[path = "refresh_tests.rs"]
+mod refresh;
 #[path = "relay_tests.rs"]
 mod relaying;
 #[path = "saves_tests.rs"]

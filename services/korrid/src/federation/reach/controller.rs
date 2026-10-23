@@ -662,7 +662,7 @@ impl Controller {
         let Some(endpoint) = self.endpoint.clone() else {
             return;
         };
-        if self.directory.reach.connection(&device).is_some()
+        if refresh_open_route(&mut self.tasks, &self.directory, &device)
             || !self
                 .dialing
                 .lock()
@@ -902,6 +902,33 @@ pub(super) fn retry_delay(failures: u32) -> Duration {
     Duration::from_secs(5u64.saturating_mul(1u64.checked_shl(failures).unwrap_or(u64::MAX)))
         .min(Duration::from_secs(300))
 }
+pub(super) fn refresh_open_route(
+    tasks: &mut JoinSet<()>,
+    directory: &FederationDirectory,
+    device: &str,
+) -> bool {
+    let Some(connection) = directory.reach.connection(device) else {
+        return false;
+    };
+    let Ok(token) = directory.begin_peer_work(device) else {
+        return true;
+    };
+    let (directory, device) = (directory.clone(), device.to_owned());
+    tasks.spawn(async move {
+        // Signalling refreshed the route. A signed reply must refresh its state.
+        let client = crate::upstream_native::NativeClient::new_secure_candidates(
+            Vec::new(),
+            device.clone(),
+            directory.credentials.clone(),
+        )
+        .with_directory(directory.clone());
+        if client.probe_signed_connection(&connection).await.is_ok() {
+            let _ = directory.set_peer_state(&token, &device, PeerState::Ready);
+        }
+    });
+    true
+}
+
 pub(super) async fn handle_signalling_failure(
     directory: &FederationDirectory,
     device: &str,

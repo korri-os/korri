@@ -97,6 +97,27 @@ impl StreamLease {
     }
 }
 impl Routes {
+    fn owns_forward_origin(&self, origin: &str) -> bool {
+        let owns = |forward: &tunnel::Forwards| {
+            nearby_seam::moonlight_control_origin(&forward.address).as_deref() == Some(origin)
+        };
+        // Do not probe an address while another task changes forward ownership.
+        let Ok(selected) = self.selected.try_lock() else {
+            return true;
+        };
+        if let Some(lease) = selected.as_ref().and_then(Weak::upgrade) {
+            let forwards = lease.forwards.lock().expect("stream forwards");
+            if forwards.as_ref().is_some_and(owns) {
+                return true;
+            }
+        }
+        self.retired
+            .lock()
+            .expect("retired forwards")
+            .iter()
+            .any(owns)
+    }
+
     fn connection(&self, device: &str) -> Option<Connection> {
         self.live
             .read()

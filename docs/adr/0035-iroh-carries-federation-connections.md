@@ -91,7 +91,9 @@ Korrid refreshes relay answers independently of peer reachability. A failed
 Nostr publication or an unanswered offer does not prove that a peer is
 unreachable. Before it sets failure state, korrid sends one signed SessionStatus
 read over the existing iroh route. The read has a five-second bound. A valid
-signed reply keeps the peer Ready.
+signed reply keeps the peer Ready. A successful signal also triggers this read
+when the QUIC connection remains open. Its signed reply clears a previous
+network failure without a user operation or a new connection.
 
 ## Local stream forwards
 
@@ -112,6 +114,11 @@ bind only `[::1]`, with `IPV6_V6ONLY` set. The viewer receives `[::1]:47989`.
 The port numbers stay unchanged, including those Sunshine reports in RTSP.
 The selected remote session owns one forward lease. Relay-only connections do
 not hold it. A peer selection change or session end releases it.
+
+A forward address is not native Sunshine evidence. Korrid excludes its reserved
+IPv6 loopback ports and addresses that its lease registry still holds. Recovery
+reads the peer's current address, not the old viewer's forward address. When it
+needs a forward, it reacquires the lease before it restarts a stopped viewer.
 
 If another listener holds a required IPv6 loopback port, korrid refuses stream
 preparation. The error names that port. This is a device setup error, not the
