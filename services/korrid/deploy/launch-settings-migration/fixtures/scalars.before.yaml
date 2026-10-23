@@ -1,0 +1,13 @@
+runners:
+  '@korri:example/main':
+    settings:
+      signed-min: -9223372036854775808
+      unsigned-max: 18446744073709551615
+      leading-zero: 0755
+      signed-leading-zero: -0755
+      positive-leading-zero: +0755
+      separated-digits: 1_000
+      separated-float: 1_0.5
+      explicit-octal: 0o755
+      float-overflow: 1e400
+      large-float: 1.8446744073709552e19

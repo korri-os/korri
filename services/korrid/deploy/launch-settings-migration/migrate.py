@@ -21,10 +21,30 @@ class MigrationError(ValueError):
     pass
 
 
+# config/place.rs decodes through serde_yaml::Value before typed fields. Its
+# integer visitors are i64/u64; LaunchSettingValue's serde_json::Number has the
+# same limits. Typed CPU, player-count and timeout checks remain narrower.
+YAML_INTEGER_MIN = -(2**63)
+YAML_INTEGER_MAX = 2**64 - 1
+INTEGER_LITERAL = re.compile(
+    r"^[-+]?(?:0b[01]+|0o[0-7]+|0x[0-9a-fA-F]+|0|[1-9][0-9]*)$"
+)
+
+
 class UniqueLoader(yaml.SafeLoader):
     # Match serde_yaml's YAML 1.2 scalar interpretation. In particular, plugin
     # keys/values named yes, no, on or off must not become YAML 1.1 booleans.
     yaml_implicit_resolvers = copy.deepcopy(yaml.SafeLoader.yaml_implicit_resolvers)
+
+    def resolve(self, kind, value, implicit):
+        tag = super().resolve(kind, value, implicit)
+        if kind is yaml.nodes.ScalarNode and tag == "tag:yaml.org,2002:float":
+            special = {".inf", "+.inf", "-.inf", ".nan"}
+            # serde_yaml::parse_f64 leaves an overflowing untagged exponent as
+            # a string; do not turn it into infinity or change its meaning.
+            if value.lower() not in special and not math.isfinite(float(value)):
+                return "tag:yaml.org,2002:str"
+        return tag
 
 
 for initial, resolvers in UniqueLoader.yaml_implicit_resolvers.items():
@@ -46,14 +66,14 @@ UniqueLoader.add_implicit_resolver(
 )
 UniqueLoader.add_implicit_resolver(
     "tag:yaml.org,2002:int",
-    re.compile(r"^[-+]?(?:0b[0-1_]+|0o[0-7_]+|0x[0-9a-fA-F_]+|[0-9][0-9_]*)$"),
+    INTEGER_LITERAL,
     list("-+0123456789"),
 )
 
 UniqueLoader.add_implicit_resolver(
     "tag:yaml.org,2002:float",
     re.compile(
-        r"^[-+]?(?:(?:[0-9][0-9_]*\.[0-9_]*|\.[0-9_]+)(?:[eE][-+]?[0-9]+)?|[0-9][0-9_]*[eE][-+]?[0-9]+|\.(?:inf|Inf|INF|nan|NaN|NAN))$"
+        r"^(?:[-+]?(?:(?:[0-9]+\.[0-9]*|\.[0-9]+)(?:[eE][-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+|\.(?:inf|Inf|INF))|\.(?:nan|NaN|NAN))$"
     ),
     list("-+0123456789."),
 )
@@ -62,19 +82,29 @@ UniqueLoader.add_implicit_resolver(
 def setting_scalar(value):
     if type(value) in {str, bool}:
         return True
-    if type(value) not in {int, float}:
-        return False
-    try:
-        return math.isfinite(value)
-    except OverflowError:
-        return False
+    if type(value) is int:
+        return YAML_INTEGER_MIN <= value <= YAML_INTEGER_MAX
+    return type(value) is float and math.isfinite(value)
 
 
 def yaml_integer(loader, node):
-    value = loader.construct_scalar(node).replace("_", "")
+    value = loader.construct_scalar(node)
+    if not INTEGER_LITERAL.fullmatch(value):
+        invalid(
+            f"YAML integer at line {node.start_mark.line + 1}",
+            value,
+            "a serde_yaml integer literal",
+        )
     sign = -1 if value.startswith("-") else 1
     unsigned = value.lstrip("+-")
-    return sign * int(unsigned, 0 if unsigned.startswith(("0b", "0o", "0x")) else 10)
+    try:
+        return sign * int(
+            unsigned, 0 if unsigned.startswith(("0b", "0o", "0x")) else 10
+        )
+    except ValueError as error:
+        raise MigrationError(
+            f"YAML integer at line {node.start_mark.line + 1}: value {value!r}; invalid integer"
+        ) from error
 
 
 UniqueLoader.add_constructor("tag:yaml.org,2002:int", yaml_integer)
@@ -132,6 +162,17 @@ def text(value, path, *, nonempty=False, no_nul=False):
 def integer(value, path, lower, upper):
     if type(value) is not int or not lower <= value <= upper:
         invalid(path, value, f"an integer from {lower} to {upper}")
+
+
+def validate_integer_scalars(value, path):
+    if type(value) is int:
+        integer(value, path, YAML_INTEGER_MIN, YAML_INTEGER_MAX)
+    elif isinstance(value, dict):
+        for key, entry in value.items():
+            validate_integer_scalars(entry, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, entry in enumerate(value):
+            validate_integer_scalars(entry, f"{path}[{index}]")
 
 
 def boolean(value, path):
@@ -257,7 +298,7 @@ def hooks(value, path, routine_names, routine=False):
             if "name" in step:
                 text(step["name"], f"{current}.name", nonempty=True)
             if "timeout" in step:
-                integer(step["timeout"], f"{current}.timeout", 1, 2**64 - 1)
+                integer(step["timeout"], f"{current}.timeout", 1, YAML_INTEGER_MAX)
             if "on-failure" in step and (
                 not isinstance(step["on-failure"], str)
                 or step["on-failure"] not in {"abort", "warn"}
@@ -593,6 +634,10 @@ def validate_catalog(device, library):
 
 def transform(device, library):
     device, library = copy.deepcopy(device), copy.deepcopy(library)
+    # Check every scalar, including opaque JSON metadata and lists, before any
+    # move, rename, external guard, backup or write can consume the documents.
+    validate_integer_scalars(device, "device.yaml")
+    validate_integer_scalars(library, "catalog/library.yaml")
     keys(
         device,
         {

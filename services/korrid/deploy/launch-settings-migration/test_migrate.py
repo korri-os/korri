@@ -39,6 +39,16 @@ REFUSALS = [
     ("cwd-string.yaml", "host.cwd", []),
     ("family-id.yaml", "families.not-a-plugin", "not-a-plugin"),
     ("routine-reference.yaml", "host.hooks.use[0]", "missing"),
+    (
+        "setting-integer-above-u64.yaml",
+        "runners.@korri:example/main.settings.large",
+        18446744073709551616,
+    ),
+    (
+        "setting-integer-below-i64.yaml",
+        "runners.@korri:example/main.settings.large",
+        -9223372036854775809,
+    ),
     ("target-part-string.yaml", "provider-links.link.refs[0].targetPart", False),
 ]
 
@@ -279,6 +289,104 @@ class MigrationTests(unittest.TestCase):
                         [device, {}], Path(os.environ["KORRI_CONFIG_CHECK"])
                     )
 
+    def test_integer_limits_apply_to_every_scalar_position_without_a_probe(self):
+        for number in [18446744073709551616, -9223372036854775809]:
+            cases = [
+                (
+                    {
+                        "runners": {
+                            "@korri:example/main": {"settings": {"large": number}}
+                        }
+                    },
+                    "runners.@korri:example/main.settings.large",
+                ),
+                (
+                    {"families": {"@korri:example": {"settings": {"large": number}}}},
+                    "families.@korri:example.settings.large",
+                ),
+                (
+                    {
+                        "modifiers": {
+                            "@korri:example/main": {"settings": {"large": number}}
+                        }
+                    },
+                    "modifiers.@korri:example/main.settings.large",
+                ),
+                (
+                    {"systems": {"gba": {"metadata": {"nested": [number]}}}},
+                    "systems.gba.metadata.nested[0]",
+                ),
+            ]
+            for source, path in cases:
+                with self.subTest(number=number, path=path):
+                    with self.assertRaises(migration.MigrationError) as caught:
+                        migration.transform(source, {})
+                    self.assertIn(path, str(caught.exception))
+                    self.assertIn(str(number), str(caught.exception))
+                    self.assertFalse(migration.setting_scalar(number))
+            library = yaml.load(
+                (HERE / "fixtures/library.after.yaml").read_text(),
+                Loader=migration.UniqueLoader,
+            )
+            library["library"]["game"]["metadata"] = {"nested": [number]}
+            with self.assertRaises(migration.MigrationError) as caught:
+                migration.transform({}, library)
+            self.assertIn("library.game.metadata.nested[0]", str(caught.exception))
+            self.assertIn(str(number), str(caught.exception))
+
+    def test_integer_boundaries_and_leading_zero_fixture_round_trip(self):
+        source = (HERE / "fixtures/scalars.before.yaml").read_text()
+        expected = yaml.load(
+            (HERE / "fixtures/scalars.after.yaml").read_text(),
+            Loader=migration.UniqueLoader,
+        )
+        input_document = yaml.load(source, Loader=migration.UniqueLoader)
+        settings = input_document["runners"]["@korri:example/main"]["settings"]
+        self.assertEqual(settings["leading-zero"], "0755")
+        self.assertIs(type(settings["leading-zero"]), str)
+        self.assertIs(type(settings["signed-min"]), int)
+        self.assertIs(type(settings["unsigned-max"]), int)
+        self.assertIs(type(settings["large-float"]), float)
+        transformed, _ = migration.transform(input_document, {})
+        self.assertEqual(transformed, expected)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "catalog").mkdir()
+            (root / "device.yaml").write_text(source)
+            (root / "catalog/library.yaml").write_text("{}\n")
+            probe = (
+                Path(os.environ["KORRI_CONFIG_CHECK"])
+                if os.environ.get("KORRI_CONFIG_CHECK")
+                else None
+            )
+            migration.migrate(root, config_check=probe)
+            saved = yaml.load(
+                (root / "device.yaml").read_text(), Loader=migration.UniqueLoader
+            )
+            self.assertEqual(saved, expected)
+            self.assertEqual(
+                saved["host"]["runners"]["@korri:example/main"]["settings"][
+                    "leading-zero"
+                ],
+                "0755",
+            )
+            self.assertEqual(migration.migrate(root), (False, None))
+            if os.environ.get("KORRI_CONFIG_CHECK"):
+                probe = Path(os.environ["KORRI_CONFIG_CHECK"])
+                migration.check_with_korrid([saved, {}], probe)
+                result = subprocess.run(
+                    [
+                        str(probe),
+                        "--check",
+                        str(root / "device.yaml"),
+                        str(root / "catalog/library.yaml"),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_guard_failures_refuse_before_backup_or_writes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -410,7 +518,7 @@ class MigrationTests(unittest.TestCase):
         )
         self.assertEqual(
             device["host"]["runners"]["@korri:example/main"]["settings"],
-            {"on": "off", "number": 755, "time": "1:20.0", "exponent": 1000.0},
+            {"on": "off", "number": "0755", "time": "1:20.0", "exponent": 1000.0},
         )
 
     def test_refuses_while_an_actual_korrid_named_process_runs(self):

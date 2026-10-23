@@ -79,3 +79,72 @@ fn check_mode_refuses_missing_files_and_missing_arguments_without_initialization
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
     }
 }
+
+#[test]
+fn yaml_integer_scalar_domain_is_i64_min_through_u64_max() {
+    use korrid::config::decode_config_documents;
+    for (literal, accepted) in [
+        ("-9223372036854775808", true),
+        ("18446744073709551615", true),
+        ("-9223372036854775809", false),
+        ("18446744073709551616", false),
+    ] {
+        let source=format!("host:\n  runners:\n    '@korri:example/main':\n      settings: {{large: {literal}}}\n  modifiers:\n    '@korri:example/main':\n      settings: {{large: {literal}}}\nsystems:\n  gba:\n    metadata: {{large: {literal}}}\n");
+        let decoded = decode_config_documents(&source, "{}");
+        assert_eq!(decoded.is_ok(), accepted, "{literal}: {decoded:?}");
+        if let Ok(config) = decoded {
+            let expected: serde_json::Value = serde_json::from_str(literal).unwrap();
+            let host = config.host.as_ref().unwrap();
+            assert_eq!(
+                serde_json::to_value(&host.runners["@korri:example/main"].settings["large"])
+                    .unwrap(),
+                expected
+            );
+            assert_eq!(
+                serde_json::to_value(&host.modifiers["@korri:example/main"].settings["large"])
+                    .unwrap(),
+                expected
+            );
+            assert_eq!(
+                config.systems["gba"].metadata.as_ref().unwrap()["large"],
+                expected
+            );
+        }
+    }
+}
+
+#[test]
+fn scalar_fixture_preserves_serde_yaml_leading_zero_strings_and_integer_types() {
+    use korrid::config::{cascade::LaunchSettingValue, decode_config_documents};
+    let before = include_str!("../deploy/launch-settings-migration/fixtures/scalars.before.yaml");
+    // Moving the known top-level runner record does not change its scalars.
+    let before_at_host = format!(
+        "host:\n{}\n",
+        before
+            .lines()
+            .map(|line| format!("  {line}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    let original = decode_config_documents(&before_at_host, "{}").unwrap();
+    let migrated = decode_config_documents(
+        include_str!("../deploy/launch-settings-migration/fixtures/scalars.after.yaml"),
+        "{}",
+    )
+    .unwrap();
+    assert_eq!(migrated, original);
+    let settings = &migrated.host.as_ref().unwrap().runners["@korri:example/main"].settings;
+    for (key, expected) in [
+        ("leading-zero", "0755"),
+        ("signed-leading-zero", "-0755"),
+        ("positive-leading-zero", "+0755"),
+        ("separated-digits", "1_000"),
+        ("separated-float", "1_0.5"),
+    ] {
+        assert_eq!(settings[key], LaunchSettingValue::String(expected.into()));
+    }
+    let signed = serde_json::to_value(&settings["signed-min"]).unwrap();
+    let unsigned = serde_json::to_value(&settings["unsigned-max"]).unwrap();
+    assert_eq!(signed.as_i64(), Some(i64::MIN));
+    assert_eq!(unsigned.as_u64(), Some(u64::MAX));
+}

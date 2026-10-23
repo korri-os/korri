@@ -1,0 +1,4 @@
+runners:
+  '@korri:example/main':
+    settings:
+      large: -9223372036854775809
