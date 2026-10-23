@@ -265,59 +265,131 @@ pub(super) fn remove_game_staging(directory: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
-/// ADR 0016: publish a downloaded game into its ready directory,
-/// `<provider cache>/<sha256 hex>/<URL basename>` (ADR 0012 grammar: the
-/// version directory holds the file named by the URL's last segment). The
-/// file moves into a `.tmp-*` work directory, is frozen and synced, and the
-/// directory is renamed atomically. Identical bytes already published are
-/// reused. Returns the ready directory.
+/// ADR 0030: the ready folder name of a release key, `sha256:<64 hex>` or a
+/// CHD's `sha1:<40 hex>`, without its prefix. The two lengths never collide.
+pub(crate) fn ready_name(key: &str) -> Option<&str> {
+    let hex = key
+        .strip_prefix("sha256:")
+        .filter(|hex| hex.len() == 64)
+        .or_else(|| key.strip_prefix("sha1:").filter(|hex| hex.len() == 40))?;
+    hex.bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        .then_some(hex)
+}
+
+/// The release key a ready folder name stands for (`ready_name` reversed).
+pub(super) fn ready_key(name: &str) -> Option<String> {
+    let key = match name.len() {
+        64 => format!("sha256:{name}"),
+        40 => format!("sha1:{name}"),
+        _ => return None,
+    };
+    (ready_name(&key) == Some(name)).then_some(key)
+}
+
+/// A `.tmp-*` work folder in a provider cache. Dropping it removes whatever
+/// is still there, so a failed or cancelled job leaves nothing.
+pub(super) struct WorkFolder {
+    pub path: PathBuf,
+}
+impl WorkFolder {
+    pub(super) fn create(provider_cache: &Path) -> Result<Self, Failure> {
+        let path = provider_cache.join(format!(".tmp-{:032x}", rand::random::<u128>()));
+        fs::create_dir(&path)?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
+        Ok(Self { path })
+    }
+
+    /// A plain download moves in under its name (ADR 0030 Change 3).
+    pub(super) fn take_file(&self, staged: &Path, name: &str) -> Result<(), Failure> {
+        if !super::claims::safe_file_name(name)
+            || name.starts_with('.')
+            || name.chars().any(char::is_control)
+        {
+            return Err(Failure::UnsafePath);
+        }
+        fs::rename(staged, self.path.join(name))?;
+        fs::set_permissions(self.path.join(name), fs::Permissions::from_mode(0o644))?;
+        Ok(())
+    }
+}
+impl Drop for WorkFolder {
+    fn drop(&mut self) {
+        if fs::symlink_metadata(&self.path).is_ok() {
+            let _ = discard_work(&self.path);
+        }
+    }
+}
+
+/// ADR 0016 and ADR 0030: publish an identified work folder as
+/// `<provider cache>/<hex of the release key>/`. The folder is frozen and
+/// synced, then renamed atomically. Identical content already published is
+/// reused and the work folder is discarded. Returns the ready directory.
 pub(super) fn publish_acquired_game(
     provider_cache: &Path,
-    staged: &Path,
-    name: &str,
-    sha256_hex: &str,
+    work: WorkFolder,
+    key: &str,
 ) -> Result<PathBuf, Failure> {
-    if !super::claims::safe_file_name(name) || name.starts_with('.') {
-        return Err(Failure::UnsafePath);
-    }
-    let ready = provider_cache.join(sha256_hex);
+    let ready = provider_cache.join(ready_name(key).ok_or(Failure::UnsafePath)?);
     if is_ready(&ready) {
         return Ok(ready);
     }
-    let work = provider_cache.join(format!(".tmp-{:032x}", rand::random::<u128>()));
-    fs::create_dir(&work)?;
-    fs::set_permissions(&work, fs::Permissions::from_mode(0o755))?;
-    let outcome = (|| {
-        fs::rename(staged, work.join(name))?;
-        fs::set_permissions(work.join(name), fs::Permissions::from_mode(0o644))?;
-        freeze_and_sync(&work)?;
-        match fs::rename(&work, &ready) {
-            Ok(()) => (),
-            // A concurrent job published the same bytes first.
-            Err(_) if is_ready(&ready) => (),
-            Err(error) => return Err(error.into()),
-        }
-        File::open(provider_cache)?.sync_all()?;
-        Ok(())
-    })();
-    if work.exists() {
-        let _ = discard_work(&work);
+    freeze_and_sync(&work.path)?;
+    match fs::rename(&work.path, &ready) {
+        Ok(()) => (),
+        // A concurrent job published the same content first.
+        Err(_) if is_ready(&ready) => (),
+        Err(error) => return Err(error.into()),
     }
-    outcome.map(|()| ready)
+    File::open(provider_cache)?.sync_all()?;
+    Ok(ready)
 }
 
-/// The one file in an acquired game's ready directory, when the directory is ready.
-pub(crate) fn ready_game_file(ready: &Path) -> Option<PathBuf> {
+/// ADR 0030: the file a route passes as `contentPath`. Among the files whose
+/// names end in one of the release system's extensions, the one `.m3u`, else
+/// the one `.cue`, else the one file: discovery's owner order. Publication
+/// already required exactly one unit, so a ready folder has one candidate.
+pub(crate) fn ready_game_file(ready: &Path, extensions: &[String]) -> Option<PathBuf> {
     if !is_ready(ready) {
         return None;
     }
-    let mut files = fs::read_dir(ready)
-        .ok()?
-        .filter_map(Result::ok)
-        .filter(|entry| {
-            entry.file_type().is_ok_and(|kind| kind.is_file())
-                && !entry.file_name().to_string_lossy().starts_with('.')
-        });
-    let file = files.next()?;
-    files.next().is_none().then(|| file.path())
+    let budget = crate::discovery::scanner::TraversalBudget::default();
+    let mut files = Vec::new();
+    let mut folders = vec![(ready.to_path_buf(), 0)];
+    let mut entries = 0;
+    while let Some((folder, depth)) = folders.pop() {
+        for entry in fs::read_dir(&folder).ok()?.filter_map(Result::ok) {
+            entries += 1;
+            if entries > budget.max_entries {
+                return None;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() && depth < budget.max_depth {
+                folders.push((entry.path(), depth + 1));
+            } else if kind.is_file() {
+                let lower = name.to_ascii_lowercase();
+                if extensions.iter().any(|extension| {
+                    lower.ends_with(&format!(".{}", extension.to_ascii_lowercase()))
+                }) {
+                    files.push((lower, entry.path()));
+                }
+            }
+        }
+    }
+    let only = |suffix: Option<&str>| {
+        let mut matching = files
+            .iter()
+            .filter(|(lower, _)| suffix.is_none_or(|suffix| lower.ends_with(suffix)));
+        let first = matching.next()?;
+        matching.next().is_none().then(|| first.1.clone())
+    };
+    only(Some(".m3u"))
+        .or_else(|| only(Some(".cue")))
+        .or_else(|| only(None))
 }

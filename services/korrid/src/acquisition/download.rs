@@ -64,6 +64,8 @@ pub(super) struct TextResponse {
 pub(super) struct DownloadedGame {
     pub path: PathBuf,
     pub bytes: u64,
+    /// The first bytes, up to 512: they decide whether it is an archive.
+    pub lead: Vec<u8>,
 }
 impl Drop for DownloadedGame {
     fn drop(&mut self) {
@@ -297,6 +299,7 @@ impl DownloadEngine {
         let mut staged = DownloadedGame {
             path: directory.join(format!("{STAGING_PREFIX}{}", hex::encode(name))),
             bytes: 0,
+            lead: Vec::new(),
         };
         let mut output = OpenOptions::new()
             .write(true)
@@ -364,6 +367,7 @@ impl DownloadEngine {
         }
         output.sync_all()?;
         staged.bytes = done;
+        staged.lead = lead;
         Ok(staged)
     }
 

@@ -673,7 +673,7 @@ fn identity_matches(identity: &ContentIdentity, hash: &str) -> bool {
     identity.value() == hash
         || matches!(identity, ContentIdentity::Hash { sha1, .. } if sha1 == hash)
 }
-fn library_identity(identity: &ContentIdentity) -> LibraryIdentity {
+pub(super) fn library_identity(identity: &ContentIdentity) -> LibraryIdentity {
     match identity {
         ContentIdentity::Hash { sha256, .. } => LibraryIdentity::Hash {
             value: sha256.clone(),

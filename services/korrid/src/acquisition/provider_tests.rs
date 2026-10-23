@@ -91,8 +91,11 @@ export const systems = {{
   gb: {{ id: "gb", title: "Game Boy", content: {{ extensions: ["gb"] }} }},
   nes: {{ id: "nes", title: "NES", content: {{ extensions: ["nes"],
     header: [{{ size: 16, bytes: {{ offset: 0, hex: "4e45531a" }} }}] }} }},
+  psx: {{ id: "psx", title: "PlayStation", content: {{ extensions: ["m3u", "cue", "bin", "chd"],
+    layout: ["{{title}}.{{ext}}"] }} }},
+  md: {{ id: "md", title: "Mega Drive", content: {{ extensions: ["md", "gen", "smd", "bin"] }} }},
 }};
-export const runners = {{ run: {{ id: "@test:core/run", program: "run", systems: ["gba", "nes"] }} }};
+export const runners = {{ run: {{ id: "@test:core/run", program: "run", systems: ["gba", "nes", "psx", "md"] }} }};
 export const handlers = {{ "launch.prepare": (input: any) => ({{ command: input.program, args: [input.contentPath] }}) }};
 {artifacts}
 "#
@@ -133,7 +136,7 @@ fn site() -> HttpFixture {
         ("page", "Page", "gba", "", "page"),
         ("slow", "Slow", "gba", "/files/slow.gba", "ok"),
         ("web", "Web", "gba", "/files/web.gba", "ok"),
-        ("zip", "Zipped", "gba", "/files/game.zip", "ok"),
+        ("exe", "Program", "gba", "/files/game.exe", "ok"),
     ];
     server.route(
         "/search?q=2048",
@@ -175,7 +178,10 @@ fn site() -> HttpFixture {
         Route::ok("application/octet-stream", ROM),
     );
     server.route("/files/web.gba", Route::ok("text/html", "<html></html>"));
-    server.route("/files/game.zip", Route::ok("application/zip", ROM));
+    server.route(
+        "/files/game.exe",
+        Route::ok("application/octet-stream", ROM),
+    );
     server.route(
         "/files/slow.gba",
         Route::ok("application/octet-stream", vec![1u8; 64 * 1024])
@@ -250,6 +256,7 @@ fn world_with(server: HttpFixture, pinned: Option<(&str, &str)>) -> World {
         server,
         context: GameContext {
             root,
+            private_root: private.clone(),
             registry,
             discovery,
         },
@@ -320,6 +327,42 @@ impl World {
             )
             .await
             .unwrap();
+    }
+    /// Serve one more game and hold its claim through details.
+    async fn offer(&self, id: &str, system: &str, file: &str, bytes: Vec<u8>) {
+        self.server.route(
+            &format!("/game/{id}"),
+            Route::ok(
+                "application/json",
+                format!(r#"{{"id":"{id}","title":"Offered","system":"{system}","file":"{file}"}}"#),
+            ),
+        );
+        self.server
+            .route(file, Route::ok("application/octet-stream", bytes));
+        self.api()
+            .details(
+                &self.context.registry,
+                &DetailsRequest {
+                    provider_id: PROVIDER.into(),
+                    id: id.into(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    async fn get(&self, id: &str) -> AcquireJobStatus {
+        self.finish(self.acquire(id).await.unwrap()).await
+    }
+    fn route(&self, game_id: &str) -> Option<PathBuf> {
+        config::resolver::resolve_linux_route(
+            &self.root,
+            &self.snapshot(),
+            &self.context.registry,
+            game_id,
+            None,
+        )
+        .ok()
+        .and_then(|route| route.cache_target)
     }
     async fn acquire(&self, id: &str) -> Result<AcquireJobStatus, crate::RpcFailure> {
         self.coordinator.acquire(&self.context, &request(id)).await
@@ -770,11 +813,12 @@ async fn refusals_happen_before_any_download_and_failures_are_plain() {
     );
     assert_eq!(world.downloads(), 0);
 
-    // Not a file of the claim's system: refused by name, never downloaded.
-    let zip = world.finish(world.acquire("zip").await.unwrap()).await;
+    // Neither a system nor an archive extension: refused by name, never
+    // downloaded.
+    let exe = world.finish(world.acquire("exe").await.unwrap()).await;
     assert!(
-        matches!(&zip.state, AcquireJobState::Failed { reason } if reason.message.contains("not a game for this system")),
-        "{zip:?}"
+        matches!(&exe.state, AcquireJobState::Failed { reason } if reason.message.contains("not a game for this system")),
+        "{exe:?}"
     );
     assert_eq!(world.downloads(), 0);
     for (id, code) in [
@@ -1241,4 +1285,287 @@ async fn acquired_headered_and_headerless_dumps_join_the_discovered_release() {
     assert_eq!(snapshot.library.len(), 1);
     assert_eq!(snapshot.library[&game_id].releases.len(), 1);
     assert_eq!(snapshot.locations[identity.value()].len(), 2);
+}
+
+// ADR 0030: archives and multi-file games.
+
+fn zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    use std::io::Write;
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for (name, data) in entries {
+        writer.start_file(*name, options).unwrap();
+        writer.write_all(data).unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+
+fn seven_z(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut writer = sevenz_rust2::ArchiveWriter::new(std::io::Cursor::new(Vec::new())).unwrap();
+    for (name, data) in entries {
+        writer
+            .push_archive_entry(sevenz_rust2::ArchiveEntry::new_file(name), Some(*data))
+            .unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+
+fn rar(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut builder = rars::Builder::new(rars::ArchiveVersion::Rar50);
+    for (name, data) in entries {
+        builder
+            .add_bytes(name.as_bytes().to_vec(), data.to_vec(), None, None)
+            .unwrap();
+    }
+    builder.to_bytes().unwrap()
+}
+
+/// Discovery's identity of the same files in a plain folder, the way a
+/// paired source would give it.
+fn discovered(world: &World, system: &str, files: &[(&str, &[u8])], primary: &str) -> String {
+    let folder = tempfile::tempdir().unwrap();
+    for (name, data) in files {
+        let path = folder.path().join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, data).unwrap();
+    }
+    crate::discovery::identify::identity_of(
+        &folder.path().join(primary),
+        world.context.registry.content_rules(system).unwrap(),
+        &mut crate::discovery::identify::HashCache::default(),
+    )
+    .unwrap()
+    .value()
+    .to_owned()
+}
+
+fn failed_with(status: &AcquireJobStatus, copy: &str) {
+    assert!(
+        matches!(&status.state, AcquireJobState::Failed { reason } if reason.code == "AcquisitionFailed" && reason.message == copy),
+        "{status:?}"
+    );
+}
+
+const NOT_A_GAME: &str = "The downloaded file is not a game for this system.";
+const UNPACK: &str = "The downloaded files could not be unpacked.";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_zipped_rom_is_unpacked_identified_and_routed_and_joins_the_plain_copy() {
+    let world = world();
+    world.search().await;
+    let plain = imported(&world.get("2048").await);
+    world
+        .offer(
+            "zipped",
+            "gba",
+            "/files/2048-usa.zip",
+            zip(&[("2048 (USA).gba", ROM), ("readme.txt", b"hi")]),
+        )
+        .await;
+    let done = world.get("zipped").await;
+    // The same ROM bytes are one release: the zipped copy joins the game and
+    // reuses the ready folder the plain download made.
+    assert_eq!(imported(&done), plain);
+    assert_eq!(done.file_name.as_deref(), Some("2048-usa.zip"));
+    let hex = sha_hex(ROM);
+    assert_eq!(
+        names(&world.cache()),
+        [".downloads".to_owned(), hex.clone()]
+    );
+    assert!(
+        names(&world.cache().join(".downloads")).is_empty(),
+        "the archive is deleted"
+    );
+    assert_eq!(
+        world.snapshot().provider_links["@test:shop/zipped"]
+            .playable
+            .0,
+        plain
+    );
+
+    // On a fresh device the zip publishes its whole content.
+    let fresh = world_with(site(), None);
+    fresh
+        .offer(
+            "zipped",
+            "gba",
+            "/files/2048-usa.zip",
+            zip(&[("2048 (USA).gba", ROM), ("readme.txt", b"hi")]),
+        )
+        .await;
+    let game = imported(&fresh.get("zipped").await);
+    let ready = fresh.cache().join(&hex);
+    assert_eq!(names(&ready), ["2048 (USA).gba", "readme.txt"]);
+    assert_eq!(
+        fresh.snapshot().library[&game].releases[0]
+            .identity
+            .as_ref()
+            .unwrap()
+            .value(),
+        format!("sha256:{hex}")
+    );
+    assert_eq!(fresh.route(&game), Some(ready.join("2048 (USA).gba")));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_7z_disc_under_a_zip_name_is_one_parts_release_routed_to_its_cue() {
+    let world = world();
+    let cue: &[u8] = b"FILE \"Game (Track 1).bin\" BINARY\n TRACK 01 MODE2/2352\nFILE \"Game (Track 2).bin\" BINARY\n TRACK 02 AUDIO\n";
+    let files: [(&str, &[u8]); 3] = [
+        ("Game/Game.cue", cue),
+        ("Game/Game (Track 1).bin", b"data track"),
+        ("Game/Game (Track 2).bin", b"audio track"),
+    ];
+    // romhustler sends 7z bytes under a .zip name: the bytes decide.
+    world
+        .offer("disc", "psx", "/files/disc.zip", seven_z(&files))
+        .await;
+    let game = imported(&world.get("disc").await);
+    let key = discovered(&world, "psx", &files, "Game/Game.cue");
+    let release = &world.snapshot().library[&game].releases[0];
+    assert!(matches!(
+        release.identity.as_ref().unwrap(),
+        config::library::LibraryIdentity::Parts { value, parts } if *value == key && parts.len() == 2
+    ));
+    let ready = world.cache().join(key.strip_prefix("sha256:").unwrap());
+    // The system's own layout "{title}.{ext}" matches no subfolder; the
+    // appended default layout accepts the archive's folder.
+    assert_eq!(world.route(&game), Some(ready.join("Game/Game.cue")));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_m3u_set_in_a_rar_routes_to_the_playlist() {
+    let world = world();
+    let files: [(&str, &[u8]); 5] = [
+        ("Game.m3u", b"Game (Disc 1).cue\nGame (Disc 2).cue\n"),
+        ("Game (Disc 1).cue", b"FILE \"Game (Disc 1).bin\" BINARY\n"),
+        ("Game (Disc 1).bin", b"first disc"),
+        ("Game (Disc 2).cue", b"FILE \"Game (Disc 2).bin\" BINARY\n"),
+        ("Game (Disc 2).bin", b"second disc"),
+    ];
+    world
+        .offer("set", "psx", "/files/set.rar", rar(&files))
+        .await;
+    let game = imported(&world.get("set").await);
+    let key = discovered(&world, "psx", &files, "Game.m3u");
+    assert_eq!(
+        world.snapshot().library[&game].releases[0]
+            .identity
+            .as_ref()
+            .unwrap()
+            .value(),
+        key
+    );
+    let ready = world.cache().join(key.strip_prefix("sha256:").unwrap());
+    assert_eq!(world.route(&game), Some(ready.join("Game.m3u")));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_plain_chd_gets_its_header_identity_and_a_40_digit_ready_folder() {
+    let world = world();
+    let mut chd = vec![0; 124];
+    chd[..8].copy_from_slice(b"MComprHD");
+    chd[8..12].copy_from_slice(&124u32.to_be_bytes());
+    chd[12..16].copy_from_slice(&5u32.to_be_bytes());
+    chd[0x40..0x54].fill(0x12);
+    world.offer("chd", "psx", "/files/Game.chd", chd).await;
+    let game = imported(&world.get("chd").await);
+    let sha1 = "12".repeat(20);
+    let release = &world.snapshot().library[&game].releases[0];
+    assert!(matches!(
+        release.identity.as_ref().unwrap(),
+        config::library::LibraryIdentity::Chd { value } if *value == format!("sha1:{sha1}")
+    ));
+    let ready = world.cache().join(&sha1);
+    assert_eq!(names(&ready), ["Game.chd"]);
+    assert_eq!(world.route(&game), Some(ready.join("Game.chd")));
+
+    // Recovery reports a 40-digit folder that no release names.
+    let orphan = "ab".repeat(20);
+    fs::create_dir(world.cache().join(&orphan)).unwrap();
+    assert_eq!(
+        GameAcquisition::default()
+            .recover(&world.root, &world.context.registry)
+            .unwrap(),
+        [(PROVIDER.to_owned(), orphan)]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn downloads_that_do_not_give_exactly_one_game_leave_nothing() {
+    let world = world();
+    let mut cases: Vec<(&str, &str, &str, Vec<u8>, &str)> = vec![
+        // Two games.
+        (
+            "two",
+            "gba",
+            "/files/two.zip",
+            zip(&[("A.gba", ROM), ("B.gba", b"\x00\x02 other")]),
+            NOT_A_GAME,
+        ),
+        // ADR 0030: README.md beside a Mega Drive ROM is a second unit.
+        (
+            "sonic",
+            "md",
+            "/files/sonic.zip",
+            zip(&[("Sonic (USA).md", ROM), ("README.md", b"# notes")]),
+            NOT_A_GAME,
+        ),
+        // Two discs with no .m3u stay two units.
+        (
+            "discs",
+            "psx",
+            "/files/discs.7z",
+            seven_z(&[
+                ("Game (Disc 1).cue", b"FILE \"Game (Disc 1).bin\" BINARY\n"),
+                ("Game (Disc 1).bin", b"first"),
+                ("Game (Disc 2).cue", b"FILE \"Game (Disc 2).bin\" BINARY\n"),
+                ("Game (Disc 2).bin", b"second"),
+            ]),
+            NOT_A_GAME,
+        ),
+        // A lone cue has no tracks.
+        (
+            "cue",
+            "psx",
+            "/files/Game.cue",
+            b"FILE \"Game.bin\" BINARY\n".to_vec(),
+            NOT_A_GAME,
+        ),
+        // A nested archive is not a game.
+        (
+            "nested",
+            "gba",
+            "/files/nested.zip",
+            zip(&[("inner.zip", &zip(&[("A.gba", ROM)]))]),
+            NOT_A_GAME,
+        ),
+        // An archive name with bytes in no archive format.
+        ("fake", "gba", "/files/fake.zip", ROM.to_vec(), NOT_A_GAME),
+        // An unsafe entry refuses the whole archive.
+        (
+            "escape",
+            "gba",
+            "/files/escape.zip",
+            zip(&[("A.gba", ROM), ("../escape.gba", ROM)]),
+            UNPACK,
+        ),
+    ];
+    for (id, system, file, bytes, _) in &mut cases {
+        world.offer(id, system, file, std::mem::take(bytes)).await;
+    }
+    for (id, _, _, _, copy) in &cases {
+        let done = world.get(id).await;
+        failed_with(&done, copy);
+    }
+    assert_eq!(world.downloads(), cases.len(), "each was downloaded once");
+    assert!(world.snapshot().library.is_empty());
+    assert_eq!(
+        names(&world.cache()),
+        [".downloads"],
+        "no ready or work folder"
+    );
+    assert!(names(&world.cache().join(".downloads")).is_empty());
+    assert!(!world.root.join("cache/shop/escape.gba").exists());
 }

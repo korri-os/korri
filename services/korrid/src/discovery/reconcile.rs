@@ -40,7 +40,8 @@ pub struct AcquiredGame<'a> {
     pub claim_id: &'a str,
     pub title: &'a str,
     pub system: &'a str,
-    pub sha256_hex: &'a str,
+    /// Discovery's identity of the published content (ADR 0030).
+    pub identity: &'a crate::discovery::identify::ContentIdentity,
 }
 
 #[derive(Clone)]
@@ -406,15 +407,16 @@ impl DiscoveryCoordinator {
 
     /// ADR 0016: record a game the acquire job published in korrid's cache.
     /// Written once, under the publication lock: the game (claim title), its
-    /// release (`sha256:` identity, the claim's system) and the provider link
+    /// release (discovery's `hash`, `parts` or `chd` identity, the claim's
+    /// system) and the provider link
     /// `{ provider, ref: claim id }`. No location is saved. Identical bytes
     /// already in the library join that game and the link moves to it;
     /// otherwise an existing link keeps its game. Returns the game id.
     pub fn record_acquired(&self, acquired: &AcquiredGame<'_>) -> Result<String, DiscoveryError> {
         use crate::config::{
             library::{
-                LibraryIdentity, LibraryItemPayload, LibraryReleasePayload, ProviderLinkPayload,
-                ProviderLinkRef, ProviderLinkRefKind,
+                LibraryItemPayload, LibraryReleasePayload, ProviderLinkPayload, ProviderLinkRef,
+                ProviderLinkRefKind,
             },
             InheritableLayer, NonEmptyString,
         };
@@ -428,7 +430,7 @@ impl DiscoveryCoordinator {
         let current = Documents::read(&self.readable_root)?;
         let before = current.validate()?;
         let mut after = before.clone();
-        let key = format!("sha256:{}", acquired.sha256_hex);
+        let key = acquired.identity.value().to_owned();
         let link_id = format!("{}/{}", acquired.provider, acquired.claim_id);
         let holds = |game: &LibraryItemPayload| {
             game.releases
@@ -483,7 +485,7 @@ impl DiscoveryCoordinator {
             game.releases.push(LibraryReleasePayload {
                 id: NonEmptyString(id),
                 system: Some(NonEmptyString(acquired.system.to_owned())),
-                identity: Some(LibraryIdentity::Hash { value: key }),
+                identity: Some(change::library_identity(acquired.identity)),
                 display: None,
                 inheritable: InheritableLayer::default(),
             });

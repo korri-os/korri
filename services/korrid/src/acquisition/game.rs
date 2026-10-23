@@ -11,6 +11,7 @@ use std::{
 use tokio::sync::watch;
 
 use super::{
+    archive,
     claims::{DownloadResolution, FailedDownloadReason, ProviderClaim, ProviderClaimDetails},
     download::{DownloadEngine, DownloadedGame},
     placement,
@@ -24,8 +25,9 @@ use super::{
 use crate::{
     config::ConfigSnapshot,
     discovery::{
-        identify::{self, HashCache, IdentifyError},
+        identify::{self, ContentIdentity, HashCache, SourceInput},
         reconcile::AcquiredGame,
+        scanner::TraversalBudget,
         DiscoveryLifecycleCoordinator,
     },
     plugin::PluginRegistry,
@@ -37,6 +39,8 @@ use crate::{
 #[derive(Clone)]
 pub struct GameContext {
     pub root: PathBuf,
+    /// The private state root, which the reader's sandbox unit cannot see.
+    pub private_root: PathBuf,
     pub registry: PluginRegistry,
     pub discovery: DiscoveryLifecycleCoordinator,
 }
@@ -99,9 +103,10 @@ fn link_key(provider: &str, claim_id: &str) -> String {
     format!("{provider}/{claim_id}")
 }
 
-/// ADR 0016 Q3: the ready directory of one library release in the cache of
-/// a provider linked to its game: `cache/<plugin>/<provider>/<sha256 hex>/`.
-/// Returns the directories in the game's release order.
+/// ADR 0016 Q3 and ADR 0030: the ready directory of one library release in
+/// the cache of a provider linked to its game:
+/// `cache/<plugin>/<provider>/<hex of the release key>/`, with a file of the
+/// release system for the route. Returns the directories in release order.
 pub(crate) fn acquired_game_dirs(
     root: &Path,
     registry: &PluginRegistry,
@@ -125,11 +130,14 @@ pub(crate) fn acquired_game_dirs(
         .iter()
         .filter_map(|release| {
             let key = release.identity.as_ref()?.value();
-            let hex = key.strip_prefix("sha256:")?;
+            let hex = placement::ready_name(key)?;
+            let extensions = &registry
+                .content_rules(&release.system.as_ref()?.0)?
+                .extensions;
             providers
                 .iter()
                 .map(|cache| cache.join(hex))
-                .find(|ready| placement::ready_game_file(ready).is_some())
+                .find(|ready| placement::ready_game_file(ready, extensions).is_some())
                 .map(|ready| (key.to_owned(), ready))
         })
         .collect()
@@ -143,10 +151,20 @@ pub(crate) fn acquired_game_content(
     game_id: &str,
     key: &str,
 ) -> Option<PathBuf> {
+    let system = &snapshot
+        .library
+        .get(game_id)?
+        .releases
+        .iter()
+        .find(|release| release.identity.as_ref().is_some_and(|i| i.value() == key))?
+        .system
+        .as_ref()?
+        .0;
+    let extensions = &registry.content_rules(system)?.extensions;
     acquired_game_dirs(root, registry, snapshot, game_id)
         .into_iter()
         .find(|(release, _)| release == key)
-        .and_then(|(_, ready)| placement::ready_game_file(&ready))
+        .and_then(|(_, ready)| placement::ready_game_file(&ready, extensions))
 }
 
 impl GameAcquisition {
@@ -463,7 +481,7 @@ impl GameAcquisition {
     /// Startup: a game download never resumes (no expected hash, no saved
     /// URL); remove every staging file and interrupted publication.
     ///
-    /// Returns `(provider, sha256 hex)` for every ready folder that no library
+    /// Returns `(provider, folder name)` for every ready folder that no library
     /// release names: korrid stopped between publishing it and writing the
     /// record. Nothing deletes it; the next Get of that game records it.
     pub(super) fn recover(
@@ -490,10 +508,9 @@ impl GameAcquisition {
             };
             for entry in std::fs::read_dir(&cache)? {
                 let name = entry?.file_name().to_string_lossy().into_owned();
-                if name.len() != 64 || !name.bytes().all(|b| b.is_ascii_hexdigit()) {
+                let Some(key) = placement::ready_key(&name) else {
                     continue;
-                }
-                let key = format!("sha256:{name}");
+                };
                 let named = library.library.values().any(|game| {
                     game.releases
                         .iter()
@@ -610,10 +627,9 @@ impl Pipeline {
             .content_rules(&self.system)
             .cloned()
             .ok_or_else(|| download_failed(Failure::NotSystemFile))?;
-        if !rules.extensions.iter().any(|extension| {
-            name.to_ascii_lowercase()
-                .ends_with(&format!(".{}", extension.to_ascii_lowercase()))
-        }) {
+        // ADR 0030: before the download the name must end in a system or an
+        // archive extension; after it, the bytes decide.
+        if !system_name(&name, &rules) && !archive::archive_name(&name) {
             return Err(download_failed(Failure::NotSystemFile));
         }
         self.job
@@ -664,6 +680,39 @@ impl Pipeline {
             }
             job.status.state = AcquireJobState::Placing;
         }
+        let format = archive::format(&downloaded.lead);
+        if format.is_none() && !system_name(&name, &rules) {
+            // A name that says archive with bytes in no archive format.
+            return Err(download_failed(Failure::NotSystemFile));
+        }
+        // ADR 0030 Change 1: the content goes into a work folder, unpacked by
+        // korrid's reader in its sandbox unit or moved in under its name.
+        let work = {
+            let (cache, context) = (cache.clone(), self.context.clone());
+            let unit = super::unit::provider_name(&self.owner, &self.provider.provider_id);
+            let name = name.clone();
+            let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            tokio::task::spawn_blocking(move || {
+                let work = placement::WorkFolder::create(&cache)?;
+                match format {
+                    Some(_) => super::unit::unpack_archive(
+                        &cache,
+                        &context.private_root,
+                        &unit,
+                        &work.path,
+                        &downloaded.path,
+                        cancel,
+                    )?,
+                    None => work.take_file(&downloaded.path, &name)?,
+                }
+                // The archive goes before publication.
+                drop(downloaded);
+                Ok::<_, Failure>(work)
+            })
+            .await
+            .map_err(|_| download_failed(Failure::Storage))?
+            .map_err(download_failed)?
+        };
         let context = self.context.clone();
         let (provider, claim_id, title, system) = (
             self.provider.provider_id.clone(),
@@ -673,20 +722,69 @@ impl Pipeline {
         );
         tokio::task::spawn_blocking(move || {
             publish_and_record(
-                &context,
-                &cache,
-                &rules,
-                &downloaded,
-                &name,
-                &provider,
-                &claim_id,
-                &title,
-                &system,
+                &context, &cache, &rules, work, &provider, &claim_id, &title, &system,
             )
         })
         .await
         .map_err(|_| download_failed(Failure::Storage))?
     }
+}
+
+/// True when a name ends in one of the system's extensions.
+fn system_name(name: &str, rules: &crate::plugin::ContentRules) -> bool {
+    let lower = name.to_ascii_lowercase();
+    rules
+        .extensions
+        .iter()
+        .any(|extension| lower.ends_with(&format!(".{}", extension.to_ascii_lowercase())))
+}
+
+/// ADR 0030 Change 1b: identify the work folder with discovery's rules. The
+/// claim system's layouts come first and the default `**/{title}.{ext}`
+/// after them, because a system's layouts describe a person's folder, not
+/// an archive. The folder must give exactly one unit and no attention
+/// finding: one ROM, a cue with its tracks, an `.m3u` set or one CHD.
+pub(super) fn identify_work(
+    work: &Path,
+    rules: &crate::plugin::ContentRules,
+) -> Result<ContentIdentity, Failure> {
+    let mut rules = rules.clone();
+    rules.layouts.push("**/{title}.{ext}".into());
+    let scan = identify::identify_with_rules(
+        &SourceInput {
+            source_id: "acquisition",
+            storage_id: "cache",
+            root: work,
+            system: &rules.system,
+            excluded_roots: &[],
+        },
+        &[&rules],
+        false,
+        &|_, _, _| None,
+        &|_| Vec::new(),
+        &mut HashCache::default(),
+        &TraversalBudget::default(),
+    );
+    let [unit] = scan.units.as_slice() else {
+        return Err(Failure::NotSystemFile);
+    };
+    if !scan.attention.is_empty() || !scan.diagnostics.is_empty() {
+        return Err(Failure::NotSystemFile);
+    }
+    // Content rules: a header that would consume the whole file is not a game.
+    if matches!(unit.identity, ContentIdentity::Hash { .. }) {
+        use std::io::Read;
+        let path = work.join(&unit.path);
+        let size = std::fs::metadata(&path)?.len();
+        let mut prefix = Vec::new();
+        std::fs::File::open(&path)?
+            .take(64 * 1024)
+            .read_to_end(&mut prefix)?;
+        if identify::header_size(&prefix, size, &rules.header) >= size {
+            return Err(Failure::NotSystemFile);
+        }
+    }
+    Ok(unit.identity.clone())
 }
 
 /// Identify the content, publish the ready directory, write the records.
@@ -695,40 +793,14 @@ fn publish_and_record(
     context: &GameContext,
     cache: &Path,
     rules: &crate::plugin::ContentRules,
-    downloaded: &DownloadedGame,
-    name: &str,
+    work: placement::WorkFolder,
     provider: &str,
     claim_id: &str,
     title: &str,
     system: &str,
 ) -> Result<AcquireJobState, AcquireJobState> {
-    // Content rules: a header that would consume the whole file is not a game.
-    let prefix = {
-        use std::io::Read;
-        let mut bytes = Vec::new();
-        std::fs::File::open(&downloaded.path)
-            .and_then(|file| file.take(64 * 1024).read_to_end(&mut bytes))
-            .map_err(|error| download_failed(error.into()))?;
-        bytes
-    };
-    if identify::header_size(&prefix, downloaded.bytes, &rules.header) >= downloaded.bytes {
-        return Err(download_failed(Failure::NotSystemFile));
-    }
-    // Use discovery's ADR 0005 identity, including the system's header rule.
-    // The private staging name is an ordinary file, never a disc descriptor.
-    let identity = identify::identity_of(&downloaded.path, rules, &mut HashCache::default())
-        .map_err(|error| {
-            download_failed(match error {
-                IdentifyError::Io(error) => error.into(),
-                IdentifyError::Unsupported(_) => Failure::NotSystemFile,
-            })
-        })?;
-    let hex = identity
-        .value()
-        .strip_prefix("sha256:")
-        .ok_or_else(|| download_failed(Failure::NotSystemFile))?;
-    placement::publish_acquired_game(cache, &downloaded.path, name, hex)
-        .map_err(download_failed)?;
+    let identity = identify_work(&work.path, rules).map_err(download_failed)?;
+    placement::publish_acquired_game(cache, work, identity.value()).map_err(download_failed)?;
     let game_id = context
         .discovery
         .record_acquired(&AcquiredGame {
@@ -736,7 +808,7 @@ fn publish_and_record(
             claim_id,
             title,
             system,
-            sha256_hex: hex,
+            identity: &identity,
         })
         .map_err(|error| {
             log::debug!("acquisition library record: {error}");

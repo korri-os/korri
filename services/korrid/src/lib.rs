@@ -1687,6 +1687,7 @@ impl AppState {
         let (root, registry) = self.acquisition_context().map_err(|_| unavailable())?;
         Ok(acquisition::GameContext {
             root: root.to_path_buf(),
+            private_root: self.private_state_root().to_path_buf(),
             registry,
             discovery: library.discovery.clone(),
         })
