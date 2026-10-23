@@ -1,277 +1,337 @@
 use super::*;
 use crate::{
     config::{
+        place::PlaceBody,
         resolver::{self, ResolvedRoute},
         settings::{self, SettingsError},
         ConfigSnapshot,
     },
     plugin::PluginRegistry,
 };
-use std::path::Path;
+use std::{collections::BTreeSet, path::Path};
 
-fn values(limits: Option<&config::Limits>) -> LaunchSettingsValues {
-    LaunchSettingsValues {
-        min: limits.and_then(|v| v.min),
-        max: limits.and_then(|v| v.max),
+pub(crate) fn context(snapshot: &ConfigSnapshot, game_id: Option<&str>) -> ResolvedRoute {
+    let game = game_id.and_then(|id| snapshot.library.get(id));
+    let release = game.and_then(|g| g.releases.first());
+    ResolvedRoute {
+        playable_id: game_id.unwrap_or("").into(),
+        title: game.and_then(|v| v.title.clone()),
+        release_id: release
+            .and_then(|v| v.identity.as_ref())
+            .map(|v| v.value().into())
+            .unwrap_or_default(),
+        identity: None,
+        provider_id: String::new(),
+        system_id: release
+            .and_then(|v| v.system.as_ref())
+            .map(|v| v.0.clone())
+            .unwrap_or_default(),
+        system_title: None,
+        runner_id: String::new(),
+        family_id: None,
+        integration_token: String::new(),
+        flattened_target: String::new(),
+        linux_runner: None,
+        core_path: None,
+        file_target: None,
+        provider_target: None,
+        artifact_target: None,
+        package_target: None,
+        cache_target: None,
     }
 }
-fn layer(
-    scope: LaunchSettingsScope,
-    title: String,
-    cpu: Option<&config::Limits>,
-    gpu: Option<&config::Limits>,
-) -> LaunchSettingsLayer {
-    LaunchSettingsLayer {
-        scope,
-        title,
-        cpu: values(cpu),
-        gpu: values(gpu),
-        governor: None,
-    }
-}
-pub fn layers(
-    snapshot: &ConfigSnapshot,
-    game_id: Option<&str>,
-    route: Option<&ResolvedRoute>,
-) -> Result<Vec<LaunchSettingsLayer>, SettingsError> {
-    let host = snapshot.host.as_ref();
-    let cpu = host.and_then(|h| h.cpu.as_ref());
-    let gpu = host.and_then(|h| h.gpu.as_ref());
-    let mut device = layer(LaunchSettingsScope::Device, "Device".into(), None, gpu);
-    device.cpu = LaunchSettingsValues {
-        min: cpu.and_then(|c| c.min),
-        max: cpu.and_then(|c| c.max),
-    };
-    device.governor = cpu.and_then(|c| c.governor.as_ref()).map(|g| g.0.clone());
-    let mut result = vec![device];
-    if let Some(id) = game_id {
-        let game = snapshot
-            .library
-            .get(id)
-            .ok_or_else(|| SettingsError::Invalid(format!("unknown game {id}")))?;
-        // The same route resolver used at launch supplies release/system/runner.
-        // A game with no selected route can still edit its game and profiles.
-        // ResolvedRoute.release_id is the content identity, not the catalog record ID.
-        let release = route.and_then(|r| {
-            game.releases.iter().find(|v| {
-                v.identity
-                    .as_ref()
-                    .is_some_and(|identity| identity.value() == r.release_id)
-            })
-        });
-        if let Some(route) = route {
-            if !route.system_id.is_empty() {
-                let system = snapshot.systems.get(&route.system_id);
-                result.push(layer(
-                    LaunchSettingsScope::System(route.system_id.clone()),
-                    route
-                        .system_title
-                        .clone()
-                        .unwrap_or_else(|| route.system_id.clone()),
-                    system.and_then(|v| v.cpu.as_ref()),
-                    system.and_then(|v| v.gpu.as_ref()),
-                ));
-            }
-            let runner = snapshot.runners.get(&route.runner_id);
-            result.push(layer(
-                LaunchSettingsScope::Runner(route.runner_id.clone()),
-                route.runner_id.clone(),
-                runner.and_then(|v| v.cpu.as_ref()),
-                runner.and_then(|v| v.gpu.as_ref()),
-            ));
-        }
-        result.push(layer(
-            LaunchSettingsScope::Game(id.into()),
-            game.title.clone().unwrap_or_else(|| id.into()),
-            game.cpu.as_ref(),
-            game.gpu.as_ref(),
-        ));
-        if let Some(release) = release {
-            result.push(layer(
-                LaunchSettingsScope::Release {
-                    game_id: id.into(),
-                    release_id: release.id.0.clone(),
-                },
-                release.id.0.clone(),
-                release.inheritable.cpu.as_ref(),
-                release.inheritable.gpu.as_ref(),
-            ));
-        }
-        if let Some(pick) = game.profile.as_ref() {
-            let profile = game.profiles.get(&pick.0).ok_or_else(|| {
-                SettingsError::Invalid(format!("unknown selected profile {}", pick.0))
-            })?;
-            result.push(layer(
-                LaunchSettingsScope::Profile {
-                    game_id: id.into(),
-                    profile_id: pick.0.clone(),
-                },
-                profile.title.0.clone(),
-                profile.cpu.as_ref(),
-                profile.gpu.as_ref(),
-            ));
-        }
-    }
-    Ok(result)
-}
-
-/// Resolve independently, then move only the less-specific side of a conflict.
-pub fn resolve(layers: &[LaunchSettingsLayer]) -> LaunchSettingsResolved {
-    fn range(layers: &[LaunchSettingsLayer], cpu: bool) -> LaunchResolvedRange {
-        let mut min = (
-            0,
-            LaunchResolvedValue {
-                value: 0,
-                source: LaunchSettingsScope::Device,
-                device_default: true,
-                adjusted: false,
-            },
-        );
-        let mut max = (
-            0,
-            LaunchResolvedValue {
-                value: 100,
-                source: LaunchSettingsScope::Device,
-                device_default: true,
-                adjusted: false,
-            },
-        );
-        for (index, layer) in layers.iter().enumerate() {
-            let values = if cpu { &layer.cpu } else { &layer.gpu };
-            if let Some(value) = values.min {
-                min = (
-                    index,
-                    LaunchResolvedValue {
-                        value,
-                        source: layer.scope.clone(),
-                        device_default: false,
-                        adjusted: false,
-                    },
-                );
-            }
-            if let Some(value) = values.max {
-                max = (
-                    index,
-                    LaunchResolvedValue {
-                        value,
-                        source: layer.scope.clone(),
-                        device_default: false,
-                        adjusted: false,
-                    },
-                );
-            }
-        }
-        if min.1.value > max.1.value {
-            // At equal specificity a min is the floor: move max to meet it.
-            if min.0 >= max.0 {
-                max.1.value = min.1.value;
-                max.1.adjusted = true;
-            } else {
-                min.1.value = max.1.value;
-                min.1.adjusted = true;
-            }
-        }
-        LaunchResolvedRange {
-            min: min.1,
-            max: max.1,
-        }
-    }
-    LaunchSettingsResolved {
-        cpu: range(layers, true),
-        gpu: range(layers, false),
-        governor: layers.first().and_then(|l| l.governor.clone()),
-    }
-}
-
-/// Defaults seed resolution, but are never opinions authored on a layer.
-/// Merge them on the device layer to retain its existing conflict precedence.
-pub(super) fn resolve_with_defaults(
-    layers: &[LaunchSettingsLayer],
-    facts: Option<&LaunchDeviceFacts>,
-) -> LaunchSettingsResolved {
-    let mut effective = layers.to_vec();
-    let Some(device) = effective
-        .first_mut()
-        .filter(|layer| matches!(layer.scope, LaunchSettingsScope::Device))
-    else {
-        return resolve(layers);
-    };
-    if let Some(defaults) = facts.map(|facts| &facts.defaults) {
-        device.cpu.min = device.cpu.min.or(Some(defaults.cpu.min));
-        device.cpu.max = device.cpu.max.or(Some(defaults.cpu.max));
-        device.gpu.min = device.gpu.min.or(Some(defaults.gpu.min));
-        device.gpu.max = device.gpu.max.or(Some(defaults.gpu.max));
-        device.governor = device
-            .governor
-            .clone()
-            .or_else(|| Some(defaults.governor.clone()));
-    }
-    let mut resolved = resolve(&effective);
-    let authored = &layers[0];
-    for (value, authored) in [
-        (&mut resolved.cpu.min, authored.cpu.min),
-        (&mut resolved.cpu.max, authored.cpu.max),
-        (&mut resolved.gpu.min, authored.gpu.min),
-        (&mut resolved.gpu.max, authored.gpu.max),
-    ] {
-        value.device_default =
-            matches!(value.source, LaunchSettingsScope::Device) && authored.is_none();
-    }
-    resolved
-}
-
 pub fn snapshot(
     root: &Path,
     registry: Option<&PluginRegistry>,
     game_id: Option<&str>,
     client: &helper::Client,
-) -> Result<LaunchSettingsSnapshot, SettingsError> {
+) -> Result<LaunchSnapshot, SettingsError> {
+    snapshot_for_person(root, registry, game_id, client, None)
+}
+pub fn snapshot_for_person(
+    root: &Path,
+    registry: Option<&PluginRegistry>,
+    game_id: Option<&str>,
+    client: &helper::Client,
+    person: Option<&str>,
+) -> Result<LaunchSnapshot, SettingsError> {
     let (config, revisions) = settings::runner_choice_snapshot(root)?;
-    let device_facts = client.describe().ok();
-    let (route, route_layers) = match (game_id, registry) {
-        (None, _) => (None, LaunchSettingsRouteLayers::Present),
+    if let Some(id) = game_id {
+        if !config.library.contains_key(id) {
+            return Err(SettingsError::Invalid(format!("unknown game {id}")));
+        }
+    }
+    let facts = client.describe().ok();
+    let mut notices = Vec::new();
+    let (candidates, route_layers) = match (game_id, registry) {
+        (None, _) => (Vec::new(), LaunchSettingsRouteLayers::Present),
         (Some(id), Some(registry)) => {
             match resolver::linux_route_candidates(root, &config, registry, id) {
-                Err(error) => (None, LaunchSettingsRouteLayers::Unavailable(error.message)),
-                Ok(candidates) => match resolver::linux_route_selection(&config, &candidates, None)
-                {
-                    Ok(resolver::LinuxRouteSelection::Selected(id)) => (
-                        candidates.into_iter().find(|r| r.runner_id == id),
-                        LaunchSettingsRouteLayers::Present,
-                    ),
-                    Ok(_) => (None, LaunchSettingsRouteLayers::NeedsRunnerChoice),
-                    Err(error) => (None, LaunchSettingsRouteLayers::Unavailable(error.message)),
-                },
+                Ok(v) => (v, LaunchSettingsRouteLayers::Present),
+                Err(v) => (
+                    Vec::new(),
+                    LaunchSettingsRouteLayers::Unavailable(v.message),
+                ),
             }
         }
-        (Some(_), None) => (
-            None,
+        _ => (
+            Vec::new(),
             LaunchSettingsRouteLayers::Unavailable(
                 "installed runner registry is unavailable".into(),
             ),
         ),
     };
-    let layers = layers(&config, game_id, route.as_ref())?;
+    let (selected, missing) = super::launch::choose_runner(&config, &candidates, None);
+    notices.extend(missing);
+    let route = candidates
+        .iter()
+        .find(|v| Some(v.runner_id.as_str()) == selected.as_deref())
+        .cloned()
+        .unwrap_or_else(|| context(&config, game_id));
+    let route_layers = if game_id.is_some() && selected.is_none() && !candidates.is_empty() {
+        LaunchSettingsRouteLayers::NeedsRunnerChoice
+    } else {
+        route_layers
+    };
+    let mut resolved = resolve_launch(&config, &route, None, facts.as_ref())?.values;
+    let mut runners = Vec::new();
+    if let Some(registry) = registry {
+        let ids: Vec<String> = if game_id.is_some() {
+            candidates.iter().map(|v| v.runner_id.clone()).collect()
+        } else {
+            registry
+                .runners()
+                .values()
+                .filter(|v| v.program.is_some())
+                .map(|v| v.id.clone())
+                .collect()
+        };
+        for id in ids {
+            let declaration = &registry.runners()[&id];
+            let package = registry
+                .installed_package(&id)
+                .map_err(|e| SettingsError::Invalid(e.to_string()))?;
+            let description = (|| {
+                let source = crate::script::source::SourceSnapshot::package_plugin(
+                    &package.package,
+                    &package.entry,
+                    &package.sources,
+                )?;
+                crate::launcher::typed_settings::describe(
+                    &source,
+                    &id,
+                    &package.package.display().to_string(),
+                )
+            })();
+            let prepare = (|| -> Result<LaunchPrepareFacts, String> {
+                let candidate = candidates
+                    .iter()
+                    .find(|v| v.runner_id == id)
+                    .ok_or("select a game to inspect launch preparation")?;
+                let person =
+                    person.ok_or("a device owner is required for person-specific launch facts")?;
+                let spec = crate::launcher::linux_plugin::launch_route(
+                    root, &config, registry, candidate, None, None, person,
+                )
+                .map_err(|v| v.to_string())?;
+                let plan = crate::launcher::plugin_launch::prepared_plan(&spec.command)?;
+                Ok(LaunchPrepareFacts {
+                    env: plan.env,
+                    args: plan.args,
+                    cwd: plan.cwd,
+                })
+            })();
+            if selected.as_deref() == Some(&id) {
+                let source = LaunchSource::PluginDefault {
+                    plugin_id: id.clone(),
+                };
+                if let Ok(description) = &description {
+                    for (key, value) in &description.defaults {
+                        let name = format!("settings.{key}");
+                        if !resolved.values.contains_key(&name) {
+                            super::launch::sourced(
+                                &mut resolved.values,
+                                name,
+                                LaunchValuePath::Editable(LaunchPath::Setting { key: key.clone() }),
+                                serde_json::to_value(value).unwrap(),
+                                source.clone(),
+                            );
+                        }
+                    }
+                }
+                if let Ok(prepare) = &prepare {
+                    for (key, value) in &prepare.env {
+                        let name = format!("env.{key}");
+                        if !resolved.values.contains_key(&name) {
+                            super::launch::sourced(
+                                &mut resolved.values,
+                                name,
+                                LaunchValuePath::Env { key: key.clone() },
+                                value.clone().into(),
+                                source.clone(),
+                            );
+                        }
+                    }
+                    if let Some(cwd) = &prepare.cwd {
+                        if !resolved.values.contains_key("cwd") {
+                            super::launch::sourced(
+                                &mut resolved.values,
+                                "cwd".into(),
+                                LaunchValuePath::Cwd,
+                                cwd.clone().into(),
+                                source.clone(),
+                            );
+                        }
+                    }
+                }
+            }
+            let (schema, revision, prepare) = match description {
+                Ok(v) => (v.schema, v.revision, prepare),
+                Err(e) => (serde_json::json!({}), String::new(), Err(e)),
+            };
+            runners.push(LaunchRunnerSnapshot {
+                id: id.clone(),
+                family: declaration.family.clone(),
+                title: registry.plugin_title(&id).unwrap_or(&id).into(),
+                selected: selected.as_deref() == Some(&id),
+                schema,
+                revision,
+                prepare: match prepare {
+                    Ok(v) => LaunchRunnerFacts::Ready(v),
+                    Err(e) => LaunchRunnerFacts::Unavailable(e),
+                },
+            });
+        }
+    }
+    let mut places = Vec::new();
+    let empty = PlaceBody::default();
     let game = game_id.and_then(|id| config.library.get(id));
-    Ok(LaunchSettingsSnapshot {
-        route_layers,
-        resolved: resolve_with_defaults(&layers, device_facts.as_ref()),
-        layers,
+    let release = game.and_then(|g| {
+        g.releases.iter().find(|v| {
+            v.identity
+                .as_ref()
+                .is_some_and(|id| id.value() == route.release_id)
+        })
+    });
+    let layers = [
+        Some((
+            LaunchLayer::Device,
+            "Device".into(),
+            config.host.as_ref().map(|v| &v.place).unwrap_or(&empty),
+        )),
+        (!route.system_id.is_empty()).then(|| {
+            (
+                LaunchLayer::System(route.system_id.clone()),
+                route
+                    .system_title
+                    .clone()
+                    .unwrap_or_else(|| route.system_id.clone()),
+                config
+                    .systems
+                    .get(&route.system_id)
+                    .map(|v| &v.place)
+                    .unwrap_or(&empty),
+            )
+        }),
+        game_id.zip(game).map(|(id, g)| {
+            (
+                LaunchLayer::Game(id.into()),
+                g.title.clone().unwrap_or_else(|| id.into()),
+                &g.place,
+            )
+        }),
+        game_id.zip(release).map(|(id, r)| {
+            (
+                LaunchLayer::Release {
+                    game_id: id.into(),
+                    release_id: r.id.0.clone(),
+                },
+                r.id.0.clone(),
+                &r.inheritable,
+            )
+        }),
+    ];
+    let families: BTreeSet<_> = runners.iter().filter_map(|v| v.family.clone()).collect();
+    let scopes: Vec<_> = std::iter::once(LaunchRunnerScope::Any)
+        .chain(families.into_iter().map(LaunchRunnerScope::Family))
+        .chain(
+            runners
+                .iter()
+                .map(|v| LaunchRunnerScope::Runner(v.id.clone())),
+        )
+        .collect();
+    let mut append = |layer: LaunchLayer, title: String, body: &PlaceBody| {
+        for scope in &scopes {
+            let authored = match scope {
+                LaunchRunnerScope::Any => {
+                    let mut v = serde_json::to_value(body).unwrap();
+                    v.as_object_mut().unwrap().remove("families");
+                    v.as_object_mut().unwrap().remove("runners");
+                    v
+                }
+                LaunchRunnerScope::Family(id) => body
+                    .families
+                    .get(id)
+                    .map(|v| serde_json::to_value(v).unwrap())
+                    .unwrap_or_else(|| serde_json::json!({})),
+                LaunchRunnerScope::Runner(id) => body
+                    .runners
+                    .get(id)
+                    .map(|v| serde_json::to_value(v).unwrap())
+                    .unwrap_or_else(|| serde_json::json!({})),
+            };
+            let mut kinds = vec!["cpu".into(), "gpu".into(), "modifiers".into()];
+            if matches!(scope, LaunchRunnerScope::Any) {
+                kinds.push("runner".into());
+            } else {
+                kinds.push("settings".into());
+            }
+            places.push(LaunchPlaceSnapshot {
+                place: LaunchPlace {
+                    layer: layer.clone(),
+                    scope: scope.clone(),
+                },
+                title: title.clone(),
+                body: authored,
+                editable_kinds: kinds,
+            });
+        }
+    };
+    for (layer, title, body) in layers.into_iter().flatten() {
+        append(layer, title, body);
+    }
+    if let Some((id, g)) = game_id.zip(game) {
+        for (pid, p) in &g.profiles {
+            append(
+                LaunchLayer::Profile {
+                    game_id: id.into(),
+                    profile_id: pid.clone(),
+                },
+                p.title.0.clone(),
+                &p.place,
+            );
+        }
+    }
+    Ok(LaunchSnapshot {
+        places,
+        resolved,
+        runners,
         profiles: game
             .map(|g| {
                 g.profiles
                     .iter()
-                    .map(|(id, p)| LaunchSettingsProfile {
+                    .map(|(id, p)| LaunchProfileSnapshot {
                         id: id.clone(),
                         title: p.title.0.clone(),
-                        cpu: values(p.cpu.as_ref()),
-                        gpu: values(p.gpu.as_ref()),
+                        body: serde_json::to_value(&p.place).unwrap(),
                     })
                     .collect()
             })
             .unwrap_or_default(),
-        selected_profile: game.and_then(|g| g.profile.as_ref()).map(|p| p.0.clone()),
-        device_facts,
+        selected_profile: game.and_then(|g| g.profile.as_ref()).map(|v| v.0.clone()),
+        device_facts: facts,
+        notices,
+        route_layers,
         revisions,
     })
 }
@@ -279,17 +339,25 @@ pub fn snapshot(
 pub fn apply_device(root: &Path, client: &helper::Client) -> Result<(), String> {
     let (snapshot, _) = settings::runner_choice_snapshot(root).map_err(|e| e.to_string())?;
     let facts = client.describe()?;
-    let layers = layers(&snapshot, None, None).map_err(|e| e.to_string())?;
-    let resolved = resolve_with_defaults(&layers, Some(&facts));
+    let mut only = snapshot.clone();
+    only.library.clear();
+    only.systems.clear();
+    if let Some(host) = &mut only.host {
+        host.place.families.clear();
+        host.place.runners.clear();
+    }
+    let resolved = resolve_launch(&only, &context(&only, None), None, Some(&facts))
+        .map_err(|e| e.to_string())?;
+    let value = |key: &str| resolved.values.values[key].value.as_u64().unwrap() as u8;
     client.apply_device(&LaunchDeviceDefaults {
         cpu: LaunchPercentRange {
-            min: resolved.cpu.min.value,
-            max: resolved.cpu.max.value,
+            min: value("cpu.min"),
+            max: value("cpu.max"),
         },
         gpu: LaunchPercentRange {
-            min: resolved.gpu.min.value,
-            max: resolved.gpu.max.value,
+            min: value("gpu.min"),
+            max: value("gpu.max"),
         },
-        governor: resolved.governor.unwrap_or(facts.defaults.governor),
+        governor: resolved.limits.governor.unwrap_or(facts.defaults.governor),
     })
 }

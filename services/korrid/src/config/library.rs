@@ -16,18 +16,8 @@ pub const LIBRARY_FILE_NAME: &str = "catalog/library.yaml";
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LibraryItemPayload {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub cpu: Option<crate::launch_settings::config::Limits>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub gpu: Option<crate::launch_settings::config::Limits>,
+    #[serde(flatten)]
+    pub place: super::place::PlaceBody,
     #[serde(default)]
     pub profiles: BTreeMap<String, crate::launch_settings::config::Profile>,
     #[serde(
@@ -37,8 +27,6 @@ pub struct LibraryItemPayload {
     )]
     pub profile: Option<NonEmptyString>,
 
-    #[serde(default)]
-    pub modifiers: super::modifiers::ModifierConfigs,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -76,18 +64,15 @@ pub struct LibraryItemPayload {
         deserialize_with = "optional_non_null"
     )]
     pub metadata: Option<BTreeMap<String, serde_json::Value>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub runner: Option<NonEmptyString>,
-    #[serde(default)]
-    pub families: super::cascade::RunnerConfigs,
-    #[serde(default)]
-    pub runners: super::cascade::RunnerConfigs,
     /// Ordered, oldest first, non-empty.
     pub releases: Vec<LibraryReleasePayload>,
+}
+
+impl std::ops::Deref for LibraryItemPayload {
+    type Target = super::place::PlaceBody;
+    fn deref(&self) -> &Self::Target {
+        &self.place
+    }
 }
 
 /// One entry of `library.<id>.releases`. No `target`: device paths stay in
@@ -184,7 +169,7 @@ pub struct ProviderLinkRef {
     pub scope: Option<NonEmptyString>,
     #[serde(
         default,
-        rename = "targetPart",
+        rename = "target-part",
         skip_serializing_if = "Option::is_none",
         deserialize_with = "optional_non_null"
     )]

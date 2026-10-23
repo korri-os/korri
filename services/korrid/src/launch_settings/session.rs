@@ -18,11 +18,8 @@ impl SessionLimits {
         build: String,
         facts: Option<&LaunchDeviceFacts>,
     ) -> Result<Self, crate::config::settings::SettingsError> {
-        let layers = super::resolution::layers(snapshot, Some(&route.playable_id), Some(route))?;
-        // ADR 0019: device CPU bounds are cpufreq, not game uclamp. GPU has
-        // one global devfreq range, so the session must inherit device GPU bounds.
-        let resolved = resolve(&layers[1..]);
-        let gpu = super::resolution::resolve_with_defaults(&layers, facts).gpu;
+        let resolved = super::resolve_launch(snapshot, route, None, facts)?.limits;
+        let gpu = &resolved.gpu;
         Ok(Self {
             cpu: LaunchPercentRange {
                 min: resolved.cpu.min.value,

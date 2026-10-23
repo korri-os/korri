@@ -48,7 +48,7 @@ pub fn launch_route(
     snapshot: &ConfigSnapshot,
     registry: &PluginRegistry,
     route: &ResolvedRoute,
-    overrides: Option<PluginLaunchOverrides>,
+    launch: Option<crate::launch_settings::LaunchOverride>,
     display: Option<PluginDisplay>,
     person: &str,
 ) -> Result<LinuxLaunchSpec, LaunchError> {
@@ -57,7 +57,7 @@ pub fn launch_route(
         snapshot,
         registry,
         route,
-        overrides,
+        launch,
         display,
         Some(person),
     )? {
@@ -71,7 +71,7 @@ fn inspect_route(
     snapshot: &ConfigSnapshot,
     registry: &PluginRegistry,
     route: &ResolvedRoute,
-    overrides: Option<PluginLaunchOverrides>,
+    launch: Option<crate::launch_settings::LaunchOverride>,
     display: Option<PluginDisplay>,
     person: Option<&str>,
 ) -> Result<RouteInspection, LaunchError> {
@@ -146,11 +146,9 @@ fn inspect_route(
                     .into(),
             )),
         };
-    let overrides = overrides.map(|value| crate::config::cascade::RunnerConfig {
-        settings: value.settings,
-        config: value.config,
-    });
-    let folded = crate::config::cascade::resolve(snapshot, route, overrides.as_ref());
+    let resolved = crate::launch_settings::resolve_launch(snapshot, route, launch.as_ref(), None)
+        .map_err(|e| error(e.to_string()))?;
+    let folded = &resolved.runner;
     let build = package.package.display().to_string();
     // Ask the runner what it cannot apply before starting anything. The values
     // are still handed to launch.prepare exactly as they were authored.
@@ -165,9 +163,12 @@ fn inspect_route(
             .map_err(error)?;
     let mut composition = LaunchComposition {
         display,
+        env: resolved.env.clone(),
+        args: resolved.args.clone(),
+        cwd: resolved.cwd.clone(),
         ..Default::default()
     };
-    for (id, record) in crate::config::modifiers::resolve(snapshot, route).iter() {
+    for (id, record) in resolved.modifiers.iter() {
         if record.enabled != Some(true) {
             continue;
         }
@@ -189,7 +190,7 @@ fn inspect_route(
         return Ok(RouteInspection::Unowned(warnings));
     };
     let account_root = crate::saves::account_root(root, person).map_err(error)?;
-    let settings = folded.settings;
+    let settings = folded.settings.clone();
     let input = PluginLaunchInput {
         runner_id: route.runner_id.clone(),
         family_id: route.family_id.clone(),
@@ -214,7 +215,7 @@ fn inspect_route(
             .map_err(|failure| error(failure.message))?,
         overrides: Some(PluginLaunchOverrides {
             settings,
-            config: folded.config,
+            config: folded.config.clone(),
         }),
     };
     // Ask the runner whether it can start this target. A runner whose runtime is
@@ -249,6 +250,14 @@ pub fn resolved_game_environment(
     command: &[String],
     resolved: &crate::launch_settings::ResolvedLaunch,
 ) -> Result<std::collections::BTreeMap<String, String>, String> {
-    let _ = (command, resolved);
-    todo!("the next engine commit supplies the prepared environment")
+    // Preparation includes layer environment and modifier composition. It is the
+    // exact plan that plugin-launch executes, never a second hook-only merge.
+    let _ = resolved;
+    let plan = super::plugin_launch::prepared_plan(command)?;
+    let mut env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+    for key in &plan.env_unset {
+        env.remove(key);
+    }
+    env.extend(plan.env);
+    Ok(env)
 }

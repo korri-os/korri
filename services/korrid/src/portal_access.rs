@@ -51,7 +51,6 @@ impl PortalPermission {
             | RpcRequest::LaunchProfileSave(_)
             | RpcRequest::LaunchProfileRemove(_)
             | RpcRequest::LaunchProfileSelect(_)
-            | RpcRequest::GameRunnerSet(_)
             | RpcRequest::SelectedGameLaunch(_)
             | RpcRequest::AcquisitionStart(_)
             | RpcRequest::AcquisitionDownload(_)

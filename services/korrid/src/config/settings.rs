@@ -292,7 +292,7 @@ pub fn update_with_registry_source(
         SettingChange::PlayerCount(value) => {
             let preferences = mapping_at(mapping_at(&mut document, "host")?, "preferences")?;
             preferences.insert(
-                Value::String("playerCount".into()),
+                Value::String("player-count".into()),
                 Value::from(value.get()),
             );
         }
@@ -669,7 +669,7 @@ mod tests {
     // count fences all controller input.
     #[test]
     fn player_count_is_read_without_the_plugin_registry() {
-        let root = root("host: {preferences: {playerCount: 6}}\n");
+        let root = root("host: {preferences: {player-count: 6}}\n");
         assert!(
             plugin_policy::RegistrySource::Installed.registry().is_err(),
             "this test needs the installed plugin registry to be absent"
@@ -689,7 +689,7 @@ mod tests {
 
     #[test]
     fn removing_only_the_count_leaf_restores_the_default_without_rewriting_the_file() {
-        let root = root("host: {title: handheld, preferences: {playerCount: 6}}\n");
+        let root = root("host: {title: handheld, preferences: {player-count: 6}}\n");
         let before = read(root.path()).unwrap();
         assert_eq!(before.player_count, 6);
         let reset = "host: {title: handheld, preferences: {}}\n";
@@ -777,7 +777,7 @@ mod tests {
                 "preferences",
             )
             .unwrap();
-            preferences.insert(Value::String("playerCount".into()), Value::from(count));
+            preferences.insert(Value::String("player-count".into()), Value::from(count));
             assert_eq!(actual, expected);
             for (name, bytes) in [LIBRARY_FILE_NAME].iter().zip(&catalog_before) {
                 assert_eq!(&fs::read(root.path().join(name)).unwrap(), bytes);
@@ -815,13 +815,13 @@ mod tests {
                 &fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap(),
             )
             .unwrap();
-            assert_eq!(saved["host"]["preferences"]["playerCount"], Value::from(6));
+            assert_eq!(saved["host"]["preferences"]["player-count"], Value::from(6));
         }
     }
 
     #[test]
     fn count_update_rejects_stale_revision_without_mutation() {
-        let root = root("host: {preferences: {playerCount: 1}}\n");
+        let root = root("host: {preferences: {player-count: 1}}\n");
         let private = tempfile::tempdir().unwrap();
         let lock = std::sync::Mutex::new(());
         let before = read(root.path()).unwrap();
@@ -876,11 +876,11 @@ mod tests {
         for (file, content) in [
             (
                 DEVICE_FILE_NAME,
-                "host: {preferences: {playerCount: 6, launch: {audio: {volume: 75}}}}",
+                "host: {preferences: {player-count: 6, launch: {audio: {volume: 75}}}}",
             ),
             (
                 DEVICE_FILE_NAME,
-                "host: {preferences: {playerCount: 6, typo: true}}",
+                "host: {preferences: {player-count: 6, typo: true}}",
             ),
             (DEVICE_FILE_NAME, "host: {env: {EXAMPLE: value}}"),
             (
@@ -888,7 +888,7 @@ mod tests {
                 "games: {bad: {title: broken, releases: []}}",
             ),
         ] {
-            let root = root("host: {preferences: {playerCount: 1}}");
+            let root = root("host: {preferences: {player-count: 1}}");
             fs::write(root.path().join(file), content).unwrap();
             let original = fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap();
             let error = update(
@@ -920,7 +920,7 @@ mod tests {
         if unsafe { libc::geteuid() } == 0 {
             return;
         }
-        let root = root("host: {preferences: {playerCount: 6}}\n");
+        let root = root("host: {preferences: {player-count: 6}}\n");
         let before = read(root.path()).unwrap();
         let original = fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap();
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o500)).unwrap();

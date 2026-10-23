@@ -126,6 +126,12 @@ pub struct ResolvedLaunchModifier {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LaunchComposition {
     pub modifiers: Vec<ResolvedLaunchModifier>,
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, Option<String>>,
+    #[serde(default)]
+    pub args: crate::launch_settings::LaunchArgs,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<PluginDisplay>,
 }
@@ -239,6 +245,42 @@ pub fn prepare_command(command: &[String]) -> Result<Vec<String>, String> {
     Ok(command)
 }
 
+/// Effect-free inspection of the same prepared handoff that the unit executes.
+pub fn prepared_plan(command: &[String]) -> Result<PluginLaunchOutput, String> {
+    let command = prepare_command(command)?;
+    declared_saves(&command)?
+        .map(|(_, v)| v.plan)
+        .ok_or_else(|| "launch command has no plugin preparation".into())
+}
+
+pub fn merge_place_values(plan: &mut PluginLaunchOutput, composition: &LaunchComposition) {
+    for (key, value) in &composition.env {
+        match value {
+            Some(value) => {
+                plan.env_unset.retain(|v| v != key);
+                plan.env.insert(key.clone(), value.clone());
+            }
+            None => {
+                plan.env.remove(key);
+                if !plan.env_unset.contains(key) {
+                    plan.env_unset.push(key.clone());
+                }
+            }
+        }
+    }
+    plan.args = composition
+        .args
+        .prepend
+        .iter()
+        .chain(&plan.args)
+        .chain(&composition.args.append)
+        .cloned()
+        .collect();
+    if composition.cwd.is_some() {
+        plan.cwd = composition.cwd.clone();
+    }
+}
+
 pub(crate) fn declared_saves(
     command: &[String],
 ) -> Result<Option<(PluginLaunchInput, PreparedLaunch)>, String> {
@@ -270,6 +312,7 @@ fn prepare_with_diagnostics(
         .ok_or("invalid plugin entry")?;
     let (snapshot, _) = package_snapshot(&package.join("manifest.json"), entry)?;
     let mut plan = evaluate_snapshot(&snapshot, input)?;
+    merge_place_values(&mut plan, composition);
     validate_plan(&plan)?;
     redaction.add_env(plan.env.values().cloned());
     let runner_argv = std::iter::once(plan.command.clone())

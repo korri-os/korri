@@ -295,72 +295,34 @@ pub(crate) fn package_content_path(
 }
 
 pub fn stored_runner<'a>(snapshot: &'a ConfigSnapshot, route: &ResolvedRoute) -> Option<&'a str> {
-    snapshot
-        .library
-        .get(&route.playable_id)
-        .and_then(|game| game.runner.as_ref())
-        .or_else(|| {
-            snapshot
-                .systems
-                .get(&route.system_id)
-                .and_then(|system| system.runner.as_ref())
-        })
-        .map(|id| id.0.as_str())
+    crate::launch_settings::launch::cells(snapshot, route, None)
+        .into_iter()
+        .rev()
+        .find_map(|c| c.runner)
 }
 
-/// A stale saved choice keeps its diagnostic without hiding valid repair
-/// candidates. Actual route failures remain the separate error outcome.
 pub(crate) enum LinuxRouteSelection {
     Selected(String),
     Choose,
-    UnavailableSavedChoice(RouteDiagnostic),
 }
-
 pub(crate) fn linux_route_selection(
     snapshot: &ConfigSnapshot,
     candidates: &[ResolvedRoute],
     chosen_runner: Option<&str>,
 ) -> Result<LinuxRouteSelection, RouteUnavailable> {
-    let selected: Vec<_> = candidates
-        .iter()
-        .filter(|route| {
-            let choice = chosen_runner.or_else(|| stored_runner(snapshot, route));
-            match choice {
-                Some(id) => route.runner_id == id,
-                None => candidates.len() == 1,
-            }
-        })
-        .collect();
-    if let [route] = selected.as_slice() {
-        return Ok(LinuxRouteSelection::Selected(route.runner_id.clone()));
-    }
-    // Independently valid system preferences can leave more than one route.
-    // They require an explicit choice, not a stale-preference diagnostic.
-    if chosen_runner.is_none() && selected.len() > 1 {
-        return Ok(LinuxRouteSelection::Choose);
-    }
-    let game_id = &candidates
-        .first()
-        .expect("available route candidates")
-        .playable_id;
-    if chosen_runner.is_some()
-        || candidates
-            .iter()
-            .any(|route| stored_runner(snapshot, route).is_some())
-    {
-        let diagnostic = RouteDiagnostic {
+    let (selected, _) =
+        crate::launch_settings::launch::choose_runner(snapshot, candidates, chosen_runner);
+    if chosen_runner.is_some() && selected.is_none() {
+        return Err(RouteDiagnostic {
             code: RouteDiagnosticCode::LocalRouteUnavailable,
-            message: format!(
-                "runner choice for game {game_id} does not select one available route"
-            ),
-            playable_id: Some(game_id.clone()),
-        };
-        if chosen_runner.is_none() && selected.is_empty() {
-            return Ok(LinuxRouteSelection::UnavailableSavedChoice(diagnostic));
-        }
-        return Err(diagnostic);
+            message: "selected runner is unavailable".into(),
+            playable_id: candidates.first().map(|v| v.playable_id.clone()),
+        });
     }
-    Ok(LinuxRouteSelection::Choose)
+    Ok(match selected {
+        Some(id) => LinuxRouteSelection::Selected(id),
+        None => LinuxRouteSelection::Choose,
+    })
 }
 
 pub fn resolve_linux_route(
@@ -379,7 +341,6 @@ pub fn resolve_linux_route(
             .into_iter()
             .find(|route| route.runner_id == id)
             .expect("selection names an available route")),
-        LinuxRouteSelection::UnavailableSavedChoice(diagnostic) => Err(diagnostic),
         LinuxRouteSelection::Choose => Err(RouteDiagnostic {
             code: RouteDiagnosticCode::LocalRouteUnavailable,
             message: format!(

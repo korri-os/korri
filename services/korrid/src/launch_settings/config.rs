@@ -43,18 +43,14 @@ pub struct DeviceCpu {
 #[serde(deny_unknown_fields)]
 pub struct Profile {
     pub title: crate::config::NonEmptyString,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::config::optional_non_null"
-    )]
-    pub cpu: Option<Limits>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::config::optional_non_null"
-    )]
-    pub gpu: Option<Limits>,
+    #[serde(flatten)]
+    pub place: crate::config::place::PlaceBody,
+}
+impl std::ops::Deref for Profile {
+    type Target = crate::config::place::PlaceBody;
+    fn deref(&self) -> &Self::Target {
+        &self.place
+    }
 }
 fn percent<'de, D: Deserializer<'de>>(d: D, lower: u8) -> Result<Option<u8>, D::Error> {
     let n = u8::deserialize(d)?;
@@ -81,17 +77,95 @@ pub fn conflict(kind: &str, layer: &str, min: Option<u8>, max: Option<u8>) -> Op
 pub fn validate(
     snapshot: &crate::config::ConfigSnapshot,
 ) -> Result<(), crate::config::ConfigSchemaError> {
-    fn check(
-        layer: &str,
-        cpu: Option<&Limits>,
-        gpu: Option<&Limits>,
-    ) -> Result<(), crate::config::ConfigSchemaError> {
-        for (kind, limits) in [("CPU", cpu), ("GPU", gpu)] {
-            if let Some(v) = limits {
-                if let Some(message) = conflict(kind, layer, v.min, v.max) {
-                    return Err(crate::config::ConfigSchemaError::Invalid {
-                        path: layer.into(),
-                        message,
+    use crate::config::{
+        place::{PlaceBody, PlaceValues},
+        ConfigSchemaError,
+    };
+    fn check(v: &PlaceValues, path: &str, host: bool) -> Result<(), ConfigSchemaError> {
+        for (kind, min, max) in [
+            (
+                "CPU",
+                v.cpu.as_ref().and_then(|v| v.min),
+                v.cpu.as_ref().and_then(|v| v.max),
+            ),
+            (
+                "GPU",
+                v.gpu.as_ref().and_then(|v| v.min),
+                v.gpu.as_ref().and_then(|v| v.max),
+            ),
+        ] {
+            if let Some(message) = conflict(kind, path, min, max) {
+                return Err(ConfigSchemaError::Invalid {
+                    path: path.into(),
+                    message,
+                });
+            }
+        }
+        if !host && v.cpu.as_ref().is_some_and(|v| v.governor.is_some()) {
+            return Err(ConfigSchemaError::Invalid {
+                path: path.into(),
+                message: "CPU governor belongs only to device-any".into(),
+            });
+        }
+        if v.env.iter().any(|(k, v)| {
+            k.is_empty() || k.contains(['=', '\0']) || v.as_ref().is_some_and(|v| v.contains('\0'))
+        }) || v.cwd.as_ref().is_some_and(|v| v.contains('\0'))
+            || v.args
+                .prepend
+                .iter()
+                .chain(&v.args.append)
+                .any(|v| v.contains('\0'))
+        {
+            return Err(ConfigSchemaError::Invalid {
+                path: path.into(),
+                message: "invalid environment, argument or working directory".into(),
+            });
+        }
+        if let Some(hooks) = &v.hooks {
+            for name in hooks.use_profiles.iter().flatten() {
+                if name.0.is_empty() {
+                    return Err(ConfigSchemaError::Invalid {
+                        path: path.into(),
+                        message: "routine name is empty".into(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+    fn place(
+        v: &PlaceBody,
+        path: &str,
+        host: bool,
+        snapshot: &crate::config::ConfigSnapshot,
+    ) -> Result<(), ConfigSchemaError> {
+        check(v, path, host)?;
+        for (kind, records) in [("families", &v.families), ("runners", &v.runners)] {
+            for (id, v) in records {
+                if id.is_empty() {
+                    return Err(ConfigSchemaError::Invalid {
+                        path: path.into(),
+                        message: "runner scope ID is empty".into(),
+                    });
+                }
+                check(v, &format!("{path}.{kind}.{id}"), false)?;
+            }
+        }
+        for v in std::iter::once(&v.values)
+            .chain(v.families.values().map(|v| &v.values))
+            .chain(v.runners.values().map(|v| &v.values))
+        {
+            for name in v
+                .hooks
+                .as_ref()
+                .and_then(|h| h.use_profiles.as_ref())
+                .into_iter()
+                .flatten()
+            {
+                if !snapshot.routines.contains_key(&name.0) {
+                    return Err(ConfigSchemaError::Invalid {
+                        path: path.into(),
+                        message: format!("unknown routine {}", name.0),
                     });
                 }
             }
@@ -99,42 +173,36 @@ pub fn validate(
         Ok(())
     }
     if let Some(host) = &snapshot.host {
-        let cpu = host.cpu.as_ref().map(|c| Limits {
-            min: c.min,
-            max: c.max,
-        });
-        check("Device", cpu.as_ref(), host.gpu.as_ref())?;
+        place(&host.place, "host", true, snapshot)?;
     }
     for (id, s) in &snapshot.systems {
-        check(&format!("System {id}"), s.cpu.as_ref(), s.gpu.as_ref())?;
-    }
-    for (id, r) in &snapshot.runners {
-        check(&format!("Runner {id}"), r.cpu.as_ref(), r.gpu.as_ref())?;
+        place(&s.place, &format!("systems.{id}"), false, snapshot)?;
     }
     for (id, g) in &snapshot.library {
-        check(&format!("Game {id}"), g.cpu.as_ref(), g.gpu.as_ref())?;
+        place(&g.place, &format!("library.{id}"), false, snapshot)?;
         for r in &g.releases {
-            check(
-                &format!("Release {}", r.id.0),
-                r.inheritable.cpu.as_ref(),
-                r.inheritable.gpu.as_ref(),
+            place(
+                &r.inheritable,
+                &format!("release.{}", r.id.0),
+                false,
+                snapshot,
             )?;
         }
         for (id, p) in &g.profiles {
             if id.is_empty() {
-                return Err(crate::config::ConfigSchemaError::Invalid {
+                return Err(ConfigSchemaError::Invalid {
                     path: "profiles".into(),
                     message: "profile ID must not be empty".into(),
                 });
             }
-            check(&format!("Profile {id}"), p.cpu.as_ref(), p.gpu.as_ref())?;
+            place(&p.place, &format!("profile.{id}"), false, snapshot)?;
         }
         if g.profile
             .as_ref()
             .is_some_and(|p| !g.profiles.contains_key(&p.0))
         {
-            return Err(crate::config::ConfigSchemaError::Invalid {
-                path: format!("Game {id}"),
+            return Err(ConfigSchemaError::Invalid {
+                path: format!("library.{id}"),
                 message: "selected profile does not exist".into(),
             });
         }

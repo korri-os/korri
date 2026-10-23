@@ -228,7 +228,6 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::LaunchProfileSave(_)
         | RpcRequest::LaunchProfileRemove(_)
         | RpcRequest::LaunchProfileSelect(_)
-        | RpcRequest::GameRunnerSet(_)
         | RpcRequest::SelectedGameLaunch(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LocalGamesList(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::Health(_) => PeerPolicy::OwnerDeviceOnly,
@@ -322,7 +321,6 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::LaunchProfileSave(_)
             | RpcRequest::LaunchProfileRemove(_)
             | RpcRequest::LaunchProfileSelect(_)
-            | RpcRequest::GameRunnerSet(_)
             | RpcRequest::SteamGridDbCredentialSet(_)
             | RpcRequest::SteamGridDbCredentialClear(_)
             | RpcRequest::IdentityBackupExport(_)

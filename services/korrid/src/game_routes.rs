@@ -4,11 +4,7 @@ use crate::{
         resolver,
         settings::{self, RunnerChoiceRevisions, RunnerChoiceScope},
     },
-    launcher::{
-        linux_plugin,
-        plugin_launch::{PluginDisplay, PluginLaunchOverrides},
-        typed_settings::LaunchWarning,
-    },
+    launcher::{linux_plugin, plugin_launch::PluginDisplay, typed_settings::LaunchWarning},
     plugin::PluginRegistry,
     RpcFailure, SessionPrepared,
 };
@@ -74,7 +70,7 @@ pub struct SelectedGameLaunchRequest {
     pub game_id: String,
     pub runner_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub overrides: Option<PluginLaunchOverrides>,
+    pub launch: Option<crate::launch_settings::LaunchOverride>,
 }
 
 #[typeshare]
@@ -119,8 +115,7 @@ pub fn list(
         .map_err(|error| crate::route_diagnostic_failure(&error))?
     {
         resolver::LinuxRouteSelection::Selected(id) => GameRouteSelection::Selected(id),
-        resolver::LinuxRouteSelection::Choose
-        | resolver::LinuxRouteSelection::UnavailableSavedChoice(_) => GameRouteSelection::Choose,
+        resolver::LinuxRouteSelection::Choose => GameRouteSelection::Choose,
     };
     // Only the structurally identified stale preference becomes repairable
     // Choose. The saved IDs and revisions below let the caller clear or replace
@@ -175,7 +170,7 @@ pub fn selected_launch(
         registry,
         &request.game_id,
         Some(&request.runner_id),
-        request.overrides.clone(),
+        request.launch.clone(),
         display,
         person,
     )
@@ -197,7 +192,7 @@ fn prepare_launch(
     registry: &PluginRegistry,
     game_id: &str,
     runner_id: Option<&str>,
-    overrides: Option<PluginLaunchOverrides>,
+    launch: Option<crate::launch_settings::LaunchOverride>,
     display: Option<PluginDisplay>,
     person: &str,
 ) -> Result<linux_plugin::LinuxLaunchSpec, RpcFailure> {
@@ -205,10 +200,8 @@ fn prepare_launch(
     let route = resolver::resolve_linux_route(root, &snapshot, registry, game_id, runner_id)
         .map_err(|error| crate::route_diagnostic_failure(&error))?;
     crate::acquisition::require_ready(root, registry, &route)?;
-    linux_plugin::launch_route(
-        root, &snapshot, registry, &route, overrides, display, person,
-    )
-    .map_err(|error| unavailable(error.to_string()))
+    linux_plugin::launch_route(root, &snapshot, registry, &route, launch, display, person)
+        .map_err(|error| unavailable(error.to_string()))
 }
 
 pub(crate) fn settings_failure(error: settings::SettingsError) -> RpcFailure {

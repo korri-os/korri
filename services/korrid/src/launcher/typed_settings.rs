@@ -107,6 +107,9 @@ pub enum SettingScope {
 }
 #[derive(Debug)]
 pub struct SettingsDescription {
+    pub schema: serde_json::Value,
+    pub revision: String,
+    pub defaults: HashMap<String, LaunchSettingValue>,
     pub scopes: HashMap<String, SettingScope>,
     pub diagnostics: Vec<LaunchWarning>,
 }
@@ -122,6 +125,9 @@ pub fn describe(
             Ok(result) => result,
             Err(failure) if failure.is_unimplemented() => {
                 return Ok(SettingsDescription {
+                    schema: serde_json::json!({}),
+                    revision: String::new(),
+                    defaults: HashMap::new(),
                     scopes: HashMap::new(),
                     diagnostics: Vec::new(),
                 })
@@ -130,6 +136,16 @@ pub fn describe(
         };
     let value: serde_json::Value = serde_json::from_str(&result)
         .map_err(|e| format!("invalid settings.describe result: {e}"))?;
+    let mut defaults = HashMap::new();
+    let schema = value
+        .get("schema")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let revision = value
+        .get("revision")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let mut scopes = HashMap::new();
     let mut diagnostics = Vec::new();
     if let Some(properties) = value
@@ -138,6 +154,12 @@ pub fn describe(
         .and_then(serde_json::Value::as_object)
     {
         for (key, property) in properties {
+            if let Some(value) = property
+                .get("default")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            {
+                defaults.insert(key.clone(), value);
+            }
             match property.get("x-korri-scope") {
                 None => {
                     scopes.insert(key.clone(), SettingScope::Shared);
@@ -156,6 +178,9 @@ pub fn describe(
         }
     }
     Ok(SettingsDescription {
+        schema,
+        revision,
+        defaults,
         scopes,
         diagnostics,
     })

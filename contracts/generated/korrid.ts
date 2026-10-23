@@ -28,8 +28,6 @@ export type FinalDownloadTag = "FinalDownload";
 /** Opaque JSON is decoded against the runner schema or the authored place schema. */
 export type LaunchJsonValue = unknown;
 
-export type LaunchLimitValue = number | string;
-
 export type LaunchSettingValue = boolean | number | string;
 
 /**
@@ -632,32 +630,21 @@ export interface LaunchProfileSnapshot {
 	body: LaunchJsonValue;
 }
 
-export type LaunchSettingsScope =
-	| { _tag: "Device", id?: undefined }
-	| { _tag: "System", id: string }
-	| { _tag: "Runner", id: string }
-	| { _tag: "Game", id: string }
-	| { _tag: "Release", id: {
-	gameId: string;
-	releaseId: string;
+/** Structured keys remove ambiguity when a plugin ID or setting contains dots. */
+export type LaunchValuePath =
+	| { _tag: "Editable", payload: LaunchPath }
+	| { _tag: "Env", payload: {
+	key: string;
 }}
-	| { _tag: "Profile", id: {
-	gameId: string;
-	profileId: string;
+	| { _tag: "ArgsPrepend", payload?: undefined }
+	| { _tag: "ArgsAppend", payload?: undefined }
+	| { _tag: "Cwd", payload?: undefined }
+	| { _tag: "HooksBefore", payload?: undefined }
+	| { _tag: "HooksAfter", payload?: undefined }
+	| { _tag: "Config", payload?: undefined }
+	| { _tag: "ModifierConfig", payload: {
+	id: string;
 }};
-
-export interface LaunchResolvedValue {
-	value: number;
-	source: LaunchSettingsScope;
-	/** True when this value comes from the shipped device defaults, not config. */
-	deviceDefault: boolean;
-	adjusted: boolean;
-}
-
-export interface LaunchResolvedRange {
-	min: LaunchResolvedValue;
-	max: LaunchResolvedValue;
-}
 
 export type LaunchSource =
 	| { _tag: "Place", payload: LaunchPlace }
@@ -667,6 +654,7 @@ export type LaunchSource =
 	| { _tag: "DeviceDefault", payload?: undefined };
 
 export interface LaunchSourcedValue {
+	path: LaunchValuePath;
 	value: LaunchJsonValue;
 	source: LaunchSource;
 	adjusted: boolean;
@@ -726,63 +714,6 @@ export interface LaunchSetRequest {
 	expectedRevision: string;
 }
 
-export interface LaunchSettingsValues {
-	min?: number;
-	max?: number;
-}
-
-export interface LaunchSettingsLayer {
-	scope: LaunchSettingsScope;
-	title: string;
-	cpu: LaunchSettingsValues;
-	gpu: LaunchSettingsValues;
-	governor?: string;
-}
-
-export interface LaunchSettingsProfile {
-	id: string;
-	title: string;
-	cpu: LaunchSettingsValues;
-	gpu: LaunchSettingsValues;
-}
-
-export interface LaunchSettingsResolved {
-	cpu: LaunchResolvedRange;
-	gpu: LaunchResolvedRange;
-	governor?: string;
-}
-
-export enum LaunchSetting {
-	CpuMin = "cpu.min",
-	CpuMax = "cpu.max",
-	GpuMin = "gpu.min",
-	GpuMax = "gpu.max",
-	CpuGovernor = "cpu.governor",
-}
-
-export interface LaunchSettingsSetRequest {
-	scope: LaunchSettingsScope;
-	setting: LaunchSetting;
-	value?: LaunchLimitValue;
-	expectedRevision: string;
-}
-
-/** Resolved values use only the layers present when a route is not selected. */
-export type LaunchSettingsRouteLayers =
-	| { _tag: "Present", message?: undefined }
-	| { _tag: "NeedsRunnerChoice", message?: undefined }
-	| { _tag: "Unavailable", message: string };
-
-export interface LaunchSettingsSnapshot {
-	routeLayers: LaunchSettingsRouteLayers;
-	layers: LaunchSettingsLayer[];
-	resolved: LaunchSettingsResolved;
-	profiles: LaunchSettingsProfile[];
-	selectedProfile?: string;
-	deviceFacts?: LaunchDeviceFacts;
-	revisions: RunnerChoiceRevisions;
-}
-
 export interface LaunchSettingsSnapshotRequest {
 	gameId?: string;
 }
@@ -792,6 +723,12 @@ export type LaunchNotice =
 	runnerId: string;
 	place: LaunchPlace;
 }};
+
+/** Resolved values use only the layers present when a route is not selected. */
+export type LaunchSettingsRouteLayers =
+	| { _tag: "Present", message?: undefined }
+	| { _tag: "NeedsRunnerChoice", message?: undefined }
+	| { _tag: "Unavailable", message: string };
 
 export interface LaunchSnapshot {
 	places: LaunchPlaceSnapshot[];
@@ -1452,7 +1389,7 @@ export interface SelectedGameLaunch {
 export interface SelectedGameLaunchRequest {
 	gameId: string;
 	runnerId: string;
-	overrides?: PluginLaunchOverrides;
+	launch?: LaunchOverride;
 }
 
 export enum SecretSettingStatus {
@@ -1578,7 +1515,7 @@ export interface SessionStartRequest {
 	gameId: string;
 	expectedLaunchId: string;
 	runnerId?: string;
-	overrides?: PluginLaunchOverrides;
+	launch?: LaunchOverride;
 }
 
 export interface SessionStatus {
@@ -1745,7 +1682,7 @@ export type IdentitySwitchOutcome =
 	| { _tag: "Err", payload: RpcFailure };
 
 export type LaunchSettingsSnapshotOutcome =
-	| { _tag: "Ok", payload: LaunchSettingsSnapshot }
+	| { _tag: "Ok", payload: LaunchSnapshot }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type LaunchSettingsWriteOutcome =
@@ -1820,7 +1757,7 @@ export enum PluginRepositoryRemoveResult {
 
 export type RpcRequest =
 	| { _tag: "app.launch-settings.snapshot", payload: LaunchSettingsSnapshotRequest }
-	| { _tag: "app.launch-settings.set", payload: LaunchSettingsSetRequest }
+	| { _tag: "app.launch-settings.set", payload: LaunchSetRequest }
 	| { _tag: "app.launch-settings.profile.save", payload: LaunchProfileSaveRequest }
 	| { _tag: "app.launch-settings.profile.remove", payload: LaunchProfileRemoveRequest }
 	| { _tag: "app.launch-settings.profile.select", payload: LaunchProfileSelectRequest }
@@ -1848,7 +1785,6 @@ export type RpcRequest =
 	| { _tag: "system.wifi.scan", payload: WifiScanRequest }
 	| { _tag: "system.network.status", payload: NetworkStatusRequest }
 	| { _tag: "app.local-games.routes", payload: GameRoutesRequest }
-	| { _tag: "app.local-games.runner.set", payload: GameRunnerSetRequest }
 	| { _tag: "app.local-games.launch.selected", payload: SelectedGameLaunchRequest }
 	| { _tag: "app.catalog.snapshot", payload: CatalogSnapshotRequest }
 	| { _tag: "app.moonlight.certificate.attest", payload: MoonlightCertificateAttestRequest }
@@ -1924,7 +1860,6 @@ export type RpcResponse =
 	| { _tag: "system.wifi.scan", outcome: NetworkStatusOutcome }
 	| { _tag: "system.network.status", outcome: NetworkStatusOutcome }
 	| { _tag: "app.local-games.routes", outcome: GameRoutesOutcome }
-	| { _tag: "app.local-games.runner.set", outcome: GameRunnerSetOutcome }
 	| { _tag: "app.local-games.launch.selected", outcome: SelectedGameLaunchOutcome }
 	| { _tag: "app.catalog.snapshot", outcome: CatalogSnapshotOutcome }
 	| { _tag: "app.moonlight.certificate.attest", outcome: MoonlightCertificateAttestOutcome }

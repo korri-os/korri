@@ -1,99 +1,49 @@
-//! Device-only launch limits and game profiles (ADRs 0018–0020).
+//! One launch-settings cascade (ADRs 0028 and 0029).
 use crate::{config::settings::RunnerChoiceRevisions, RpcFailure};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
+pub mod config;
+pub mod helper;
+pub(crate) mod resolution;
+pub mod session;
+mod store;
+pub mod wire;
+pub use wire::*;
+pub(crate) mod launch;
+pub use launch::{resolve_launch, ResolvedHooks, ResolvedLaunch};
+pub use resolution::snapshot;
+pub use store::{remove_profile, save_profile, select_profile, set};
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "_tag", content = "id")]
-pub enum LaunchSettingsScope {
-    Device,
-    System(String),
-    Runner(String),
-    Game(String),
-    Release {
-        #[serde(rename = "gameId")]
-        game_id: String,
-        #[serde(rename = "releaseId")]
-        release_id: String,
-    },
-    Profile {
-        #[serde(rename = "gameId")]
-        game_id: String,
-        #[serde(rename = "profileId")]
-        profile_id: String,
-    },
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct LaunchPercentRange {
     pub min: u8,
     pub max: u8,
 }
-
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LaunchSettingsValues {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub min: Option<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max: Option<u8>,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LaunchSettingsLayer {
-    pub scope: LaunchSettingsScope,
-    pub title: String,
-    pub cpu: LaunchSettingsValues,
-    pub gpu: LaunchSettingsValues,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub governor: Option<String>,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub struct LaunchResolvedValue {
     pub value: u8,
-    pub source: LaunchSettingsScope,
-    /// True when this value comes from the shipped device defaults, not config.
-    pub device_default: bool,
+    pub source: LaunchSource,
     pub adjusted: bool,
 }
-
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub struct LaunchResolvedRange {
     pub min: LaunchResolvedValue,
     pub max: LaunchResolvedValue,
 }
-
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub struct LaunchSettingsResolved {
     pub cpu: LaunchResolvedRange,
     pub gpu: LaunchResolvedRange,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub governor: Option<String>,
 }
-
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LaunchSettingsProfile {
-    pub id: String,
-    pub title: String,
-    pub cpu: LaunchSettingsValues,
-    pub gpu: LaunchSettingsValues,
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LaunchSettingsSnapshotRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_id: Option<String>,
 }
-
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -133,64 +83,6 @@ pub struct LaunchDeviceFacts {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LaunchSettingsSnapshot {
-    pub route_layers: LaunchSettingsRouteLayers,
-    pub layers: Vec<LaunchSettingsLayer>,
-    pub resolved: LaunchSettingsResolved,
-    pub profiles: Vec<LaunchSettingsProfile>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub selected_profile: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub device_facts: Option<LaunchDeviceFacts>,
-    pub revisions: RunnerChoiceRevisions,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LaunchSettingsSnapshotRequest {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub game_id: Option<String>,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-
-pub enum LaunchSetting {
-    #[serde(rename = "cpu.min")]
-    CpuMin,
-    #[serde(rename = "cpu.max")]
-    CpuMax,
-    #[serde(rename = "gpu.min")]
-    GpuMin,
-    #[serde(rename = "gpu.max")]
-    GpuMax,
-    #[serde(rename = "cpu.governor")]
-    CpuGovernor,
-}
-
-#[typeshare(serialized_as = "LaunchLimitValueWire")]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum LaunchLimitValue {
-    Percent(u8),
-    Governor(String),
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LaunchSettingsSetRequest {
-    pub scope: LaunchSettingsScope,
-    pub setting: LaunchSetting,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<LaunchLimitValue>,
-    pub expected_revision: String,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LaunchProfileSaveRequest {
     pub game_id: String,
@@ -223,7 +115,7 @@ pub struct LaunchProfileSelectRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum LaunchSettingsSnapshotOutcome {
-    Ok(Box<LaunchSettingsSnapshot>),
+    Ok(Box<LaunchSnapshot>),
     Err(RpcFailure),
 }
 
@@ -234,18 +126,6 @@ pub enum LaunchSettingsWriteOutcome {
     Ok(RunnerChoiceRevisions),
     Err(RpcFailure),
 }
-pub mod config;
-pub mod helper;
-pub(crate) mod resolution;
-mod store;
-pub use resolution::{resolve, snapshot};
-pub use store::{remove_profile, save_profile, select_profile, set};
-
-pub mod session;
-
-#[cfg(test)]
-mod tests;
-
 /// Resolved values use only the layers present when a route is not selected.
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -257,9 +137,4 @@ pub enum LaunchSettingsRouteLayers {
 }
 
 #[cfg(test)]
-mod snapshot_defaults_tests;
-
-pub mod wire;
-pub use wire::*;
-mod launch;
-pub use launch::{resolve_launch, ResolvedHooks, ResolvedLaunch};
+mod tests;

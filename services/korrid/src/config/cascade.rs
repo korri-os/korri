@@ -22,6 +22,9 @@ pub enum LaunchSettingValue {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RunnerConfig {
+    #[serde(flatten)]
+    #[typeshare(skip)]
+    pub values: super::place::PlaceValues,
     #[serde(default)]
     pub settings: HashMap<String, LaunchSettingValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -35,46 +38,14 @@ pub fn resolve(
     route: &ResolvedRoute,
     overrides: Option<&RunnerConfig>,
 ) -> RunnerConfig {
-    let id = &route.runner_id;
-    let family = route.family_id.as_deref();
-    let mut result = RunnerConfig::default();
-    let layers = [
-        family.and_then(|family| snapshot.families.get(family)),
-        family.and_then(|family| {
-            snapshot
-                .systems
-                .get(&route.system_id)
-                .and_then(|v| v.families.get(family))
+    let launch = overrides.map(|v| crate::launch_settings::LaunchOverride {
+        settings: Some(crate::launch_settings::LaunchScopedSettings {
+            scope: crate::launch_settings::LaunchRunnerScope::Runner(route.runner_id.clone()),
+            values: v.settings.clone(),
         }),
-        snapshot.runners.get(id).map(|v| &v.runner),
-        snapshot
-            .systems
-            .get(&route.system_id)
-            .and_then(|v| v.runners.get(id)),
-        snapshot
-            .library
-            .get(&route.playable_id)
-            .and_then(|v| v.families.get(family.unwrap_or(""))),
-        snapshot
-            .library
-            .get(&route.playable_id)
-            .and_then(|v| v.runners.get(id)),
-        overrides,
-    ];
-    for layer in layers.into_iter().flatten() {
-        result.settings.extend(layer.settings.clone());
-        if let Some(config) = &layer.config {
-            let target = result.config.get_or_insert_with(Default::default);
-            if config.prepend.is_some() {
-                target.prepend = config.prepend.clone();
-            }
-            if config.append.is_some() {
-                target.append = config.append.clone();
-            }
-            if config.replace.is_some() {
-                target.replace = config.replace.clone();
-            }
-        }
-    }
-    result
+        ..Default::default()
+    });
+    crate::launch_settings::resolve_launch(snapshot, route, launch.as_ref(), None)
+        .expect("validated launch settings")
+        .runner
 }

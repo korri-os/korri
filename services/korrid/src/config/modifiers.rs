@@ -89,29 +89,7 @@ impl<'de> Deserialize<'de> for ModifierConfigs {
 }
 
 pub fn resolve(snapshot: &ConfigSnapshot, route: &ResolvedRoute) -> ModifierConfigs {
-    let mut result = ModifierConfigs::default();
-    let layers = [
-        Some(&snapshot.modifiers),
-        snapshot.runners.get(&route.runner_id).map(|v| &v.modifiers),
-        snapshot.systems.get(&route.system_id).map(|v| &v.modifiers),
-        snapshot
-            .library
-            .get(&route.playable_id)
-            .map(|v| &v.modifiers),
-    ];
-    // One modifier exists today. Until a second real modifier defines ordering,
-    // compose in device-layer key order; IDs first seen later follow in layer order.
-    for layer in layers.into_iter().flatten() {
-        for (id, record) in layer.iter() {
-            let target = result.entry(id.clone()).or_default();
-            if record.enabled.is_some() {
-                target.enabled = record.enabled;
-            }
-            target.settings.extend(record.settings.clone());
-            if let Some(append) = record.config.as_ref().and_then(|v| v.append.as_ref()) {
-                target.config.get_or_insert_with(Default::default).append = Some(append.clone());
-            }
-        }
-    }
-    result
+    crate::launch_settings::resolve_launch(snapshot, route, None, None)
+        .expect("validated launch settings")
+        .modifiers
 }

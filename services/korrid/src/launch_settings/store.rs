@@ -74,52 +74,101 @@ pub fn set(
     root: &Path,
     private: &Path,
     lock: &Mutex<()>,
-    request: &LaunchSettingsSetRequest,
+    request: &LaunchSetRequest,
     client: &helper::Client,
 ) -> Result<RunnerChoiceRevisions> {
-    let governor = matches!(request.setting, LaunchSetting::CpuGovernor);
-    if governor && !matches!(request.scope, LaunchSettingsScope::Device) {
-        return Err(invalid("CPU governor belongs only to device"));
+    let registry = if matches!(request.path, LaunchPath::Setting { .. }) && request.value.is_some()
+    {
+        Some(
+            crate::plugin_policy::RegistrySource::Installed
+                .registry()
+                .map_err(|e| invalid(e.to_string()))?,
+        )
+    } else {
+        None
+    };
+    set_with_registry(root, private, lock, request, client, registry.as_ref())
+}
+pub fn set_with_registry(
+    root: &Path,
+    private: &Path,
+    lock: &Mutex<()>,
+    request: &LaunchSetRequest,
+    client: &helper::Client,
+    registry: Option<&crate::plugin::PluginRegistry>,
+) -> Result<RunnerChoiceRevisions> {
+    let any = matches!(request.place.scope, LaunchRunnerScope::Any);
+    let host = matches!(request.place.layer, LaunchLayer::Device) && any;
+    if matches!(request.path, LaunchPath::Runner) && !any {
+        return Err(invalid("runner choice belongs to an any-runner place"));
     }
-    let value = match &request.value {
-        None => None,
-        Some(LaunchLimitValue::Percent(n)) if !governor => {
-            let lower = if matches!(
-                request.setting,
-                LaunchSetting::CpuMax | LaunchSetting::GpuMax
-            ) {
-                1
-            } else {
-                0
-            };
-            if !(lower..=100).contains(n) {
-                return Err(invalid(format!("percent must be {lower}–100")));
-            }
-            Some(Value::from(*n))
-        }
-        Some(LaunchLimitValue::Governor(name)) if governor && !name.trim().is_empty() => {
-            if let Ok(facts) = client.describe() {
-                if facts
-                    .cpu_policies
-                    .iter()
-                    .any(|p| !p.available_governors.contains(name))
-                {
-                    return Err(invalid("governor is not supported by every CPU policy"));
+    if matches!(request.path, LaunchPath::Setting { .. }) && any {
+        return Err(invalid("settings need a runner or family scope"));
+    }
+    if matches!(request.path, LaunchPath::CpuGovernor) && !host {
+        return Err(invalid("CPU governor belongs only to device-any"));
+    }
+    if matches!(request.place.layer, LaunchLayer::Launch) {
+        return Err(invalid("one launch is not a persisted place"));
+    }
+    if let Some(value) = &request.value {
+        match &request.path {
+            LaunchPath::Runner => {
+                let id = value
+                    .as_str()
+                    .ok_or_else(|| invalid("runner must be a string"))?;
+                if !id.starts_with('@') || schema::catalog::validate_release_key(id).is_err() {
+                    return Err(invalid("runner must be a fully qualified contribution ID"));
                 }
             }
-            Some(Value::String(name.clone()))
+            LaunchPath::CpuMin | LaunchPath::CpuMax | LaunchPath::GpuMin | LaunchPath::GpuMax => {
+                let n = value
+                    .as_u64()
+                    .ok_or_else(|| invalid("percent must be an integer"))?;
+                let lower = if matches!(request.path, LaunchPath::CpuMax | LaunchPath::GpuMax) {
+                    1
+                } else {
+                    0
+                };
+                if n < lower || n > 100 {
+                    return Err(invalid("percent is outside its allowed range"));
+                }
+            }
+            LaunchPath::CpuGovernor => {
+                let name = value
+                    .as_str()
+                    .filter(|v| !v.trim().is_empty())
+                    .ok_or_else(|| invalid("governor must be a nonempty string"))?;
+                if let Ok(facts) = client.describe() {
+                    if facts
+                        .cpu_policies
+                        .iter()
+                        .any(|v| !v.available_governors.iter().any(|v| v == name))
+                    {
+                        return Err(invalid("governor is not supported by every CPU policy"));
+                    }
+                }
+            }
+            LaunchPath::ModifierEnabled { .. } => {
+                if !value.is_boolean() {
+                    return Err(invalid("modifier enabled must be boolean"));
+                }
+            }
+            LaunchPath::ModifierSetting { .. } => {
+                serde_json::from_value::<schema::cascade::LaunchSettingValue>(value.clone())
+                    .map_err(|_| invalid("setting must be a scalar"))?;
+            }
+            LaunchPath::Setting { key } => validate_setting(
+                registry.ok_or_else(|| invalid("installed runner registry is unavailable"))?,
+                &request.place.scope,
+                key,
+                value,
+            )?,
         }
-        _ => {
-            return Err(invalid(
-                "expected an integer percent or a device CPU governor",
-            ))
-        }
-    };
+    }
     let device = matches!(
-        request.scope,
-        LaunchSettingsScope::Device
-            | LaunchSettingsScope::System(_)
-            | LaunchSettingsScope::Runner(_)
+        request.place.layer,
+        LaunchLayer::Device | LaunchLayer::System(_)
     );
     let revisions = edit(
         root,
@@ -128,9 +177,9 @@ pub fn set(
         &request.expected_revision,
         device,
         |document, current| {
-            let record = match &request.scope {
-                LaunchSettingsScope::Device => settings::mapping_at(document, "host")?,
-                LaunchSettingsScope::System(id) => {
+            let record = match &request.place.layer {
+                LaunchLayer::Device => settings::mapping_at(document, "host")?,
+                LaunchLayer::System(id) => {
                     if !current.systems.contains_key(id)
                         && !current
                             .library
@@ -142,57 +191,172 @@ pub fn set(
                     }
                     settings::mapping_at(settings::mapping_at(document, "systems")?, id)?
                 }
-                LaunchSettingsScope::Runner(id) => {
-                    if !id.starts_with('@') || schema::catalog::validate_release_key(id).is_err() {
-                        return Err(invalid("runner must be a fully qualified contribution ID"));
-                    }
-                    settings::mapping_at(settings::mapping_at(document, "runners")?, id)?
-                }
-                LaunchSettingsScope::Game(id) => game(document, id)?,
-                LaunchSettingsScope::Profile {
+                LaunchLayer::Game(id) => game(document, id)?,
+                LaunchLayer::Profile {
                     game_id,
                     profile_id,
                 } => profile(document, game_id, profile_id)?,
-                LaunchSettingsScope::Release {
+                LaunchLayer::Release {
                     game_id,
                     release_id,
                 } => game(document, game_id)?
                     .get_mut(key("releases"))
                     .and_then(Value::as_sequence_mut)
-                    .and_then(|releases| {
-                        releases
-                            .iter_mut()
+                    .and_then(|v| {
+                        v.iter_mut()
                             .find(|r| r.get("id").and_then(Value::as_str) == Some(release_id))
                     })
                     .and_then(Value::as_mapping_mut)
                     .ok_or_else(|| invalid(format!("unknown release {release_id}")))?,
+                LaunchLayer::Launch => unreachable!(),
             };
-            let (kind, leaf) = match request.setting {
-                LaunchSetting::CpuMin => ("cpu", "min"),
-                LaunchSetting::CpuMax => ("cpu", "max"),
-                LaunchSetting::GpuMin => ("gpu", "min"),
-                LaunchSetting::GpuMax => ("gpu", "max"),
-                LaunchSetting::CpuGovernor => ("cpu", "governor"),
+            let record = match &request.place.scope {
+                LaunchRunnerScope::Any => record,
+                LaunchRunnerScope::Family(id) | LaunchRunnerScope::Runner(id) => {
+                    if id.is_empty() {
+                        return Err(invalid("runner scope ID must not be empty"));
+                    }
+                    let section = if matches!(request.place.scope, LaunchRunnerScope::Family(_)) {
+                        "families"
+                    } else {
+                        "runners"
+                    };
+                    settings::mapping_at(settings::mapping_at(record, section)?, id)?
+                }
             };
-            let limits = settings::mapping_at(record, kind)?;
-            if let Some(value) = value {
-                limits.insert(key(leaf), value);
+            let (parent, leaf) = match &request.path {
+                LaunchPath::Runner => (record, "runner".to_string()),
+                LaunchPath::CpuMin => (settings::mapping_at(record, "cpu")?, "min".into()),
+                LaunchPath::CpuMax => (settings::mapping_at(record, "cpu")?, "max".into()),
+                LaunchPath::CpuGovernor => {
+                    (settings::mapping_at(record, "cpu")?, "governor".into())
+                }
+                LaunchPath::GpuMin => (settings::mapping_at(record, "gpu")?, "min".into()),
+                LaunchPath::GpuMax => (settings::mapping_at(record, "gpu")?, "max".into()),
+                LaunchPath::ModifierEnabled { id } => (
+                    settings::mapping_at(settings::mapping_at(record, "modifiers")?, id)?,
+                    "enabled".into(),
+                ),
+                LaunchPath::ModifierSetting { id, key } => (
+                    settings::mapping_at(
+                        settings::mapping_at(settings::mapping_at(record, "modifiers")?, id)?,
+                        "settings",
+                    )?,
+                    key.clone(),
+                ),
+                LaunchPath::Setting { key } => {
+                    (settings::mapping_at(record, "settings")?, key.clone())
+                }
+            };
+            if let Some(value) = &request.value {
+                parent.insert(
+                    key(&leaf),
+                    serde_yaml::to_value(value).map_err(|e| invalid(e.to_string()))?,
+                );
             } else {
-                limits.remove(key(leaf));
+                parent.remove(key(&leaf));
             }
             Ok(())
         },
     )?;
-    if matches!(request.scope, LaunchSettingsScope::Device) {
-        let _guard = lock
-            .lock()
-            .expect("launch device limits write lock poisoned");
-        // Do not roll back a valid persisted edit if the optional helper is down.
+    if host
+        && matches!(
+            request.path,
+            LaunchPath::CpuMin
+                | LaunchPath::CpuMax
+                | LaunchPath::CpuGovernor
+                | LaunchPath::GpuMin
+                | LaunchPath::GpuMax
+        )
+    {
+        let _guard = lock.lock().expect("launch limits write lock poisoned");
         if let Err(error) = super::resolution::apply_device(root, client) {
             eprintln!("korrid: launch device limits: {error}");
         }
     }
     Ok(revisions)
+}
+fn validate_setting(
+    registry: &crate::plugin::PluginRegistry,
+    scope: &LaunchRunnerScope,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<()> {
+    let mut errors = Vec::new();
+    for runner in registry.runners().values().filter(|v| match scope {
+        LaunchRunnerScope::Runner(id) => &v.id == id,
+        LaunchRunnerScope::Family(id) => v.family.as_ref() == Some(id),
+        LaunchRunnerScope::Any => false,
+    }) {
+        let accepted = (|| -> std::result::Result<(), String> {
+            let package = registry
+                .installed_package(&runner.id)
+                .map_err(|e| e.to_string())?;
+            let source = crate::script::source::SourceSnapshot::package_plugin(
+                &package.package,
+                &package.entry,
+                &package.sources,
+            )?;
+            let description = crate::launcher::typed_settings::describe(
+                &source,
+                &runner.id,
+                &package.package.display().to_string(),
+            )?;
+            let property = description
+                .schema
+                .get("properties")
+                .and_then(|v| v.get(key))
+                .ok_or_else(|| format!("unknown setting {key}"))?;
+            validate_property(property, value)
+        })();
+        match accepted {
+            Ok(()) => return Ok(()),
+            Err(e) => errors.push(e),
+        }
+    }
+    Err(invalid(if errors.is_empty() {
+        "no installed runner matches the scope".into()
+    } else {
+        errors.join("; ")
+    }))
+}
+pub(crate) fn validate_property(
+    property: &serde_json::Value,
+    value: &serde_json::Value,
+) -> std::result::Result<(), String> {
+    use serde_json::Value as J;
+    let valid_type = match property.get("type").and_then(J::as_str) {
+        Some("boolean") => value.is_boolean(),
+        Some("string") => value.is_string(),
+        Some("number") => value.is_number(),
+        Some("integer") => value.as_i64().is_some() || value.as_u64().is_some(),
+        None => value.is_boolean() || value.is_string() || value.is_number(),
+        _ => false,
+    };
+    if !valid_type {
+        return Err("setting has the wrong type".into());
+    }
+    if property
+        .get("enum")
+        .and_then(J::as_array)
+        .is_some_and(|v| !v.contains(value))
+    {
+        return Err("setting is not an allowed choice".into());
+    }
+    if let Some(n) = value.as_f64() {
+        if property
+            .get("minimum")
+            .and_then(J::as_f64)
+            .is_some_and(|v| n < v)
+            || property
+                .get("maximum")
+                .and_then(J::as_f64)
+                .is_some_and(|v| n > v)
+        {
+            return Err("setting is outside its allowed range".into());
+        }
+    }
+    Ok(())
 }
 pub fn save_profile(
     root: &Path,

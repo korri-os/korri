@@ -180,7 +180,7 @@ pub struct SessionStartRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runner_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub overrides: Option<launcher::plugin_launch::PluginLaunchOverrides>,
+    pub launch: Option<launch_settings::LaunchOverride>,
 }
 
 #[typeshare]
@@ -1247,7 +1247,7 @@ pub enum RpcRequest {
     #[serde(rename = "app.launch-settings.snapshot")]
     LaunchSettingsSnapshot(launch_settings::LaunchSettingsSnapshotRequest),
     #[serde(rename = "app.launch-settings.set")]
-    LaunchSettingsSet(launch_settings::LaunchSettingsSetRequest),
+    LaunchSettingsSet(launch_settings::LaunchSetRequest),
     #[serde(rename = "app.launch-settings.profile.save")]
     LaunchProfileSave(launch_settings::LaunchProfileSaveRequest),
     #[serde(rename = "app.launch-settings.profile.remove")]
@@ -1315,8 +1315,6 @@ pub enum RpcRequest {
     NetworkStatus(network::NetworkStatusRequest),
     #[serde(rename = "app.local-games.routes")]
     GameRoutes(game_routes::GameRoutesRequest),
-    #[serde(rename = "app.local-games.runner.set")]
-    GameRunnerSet(game_routes::GameRunnerSetRequest),
     #[serde(rename = "app.local-games.launch.selected")]
     SelectedGameLaunch(game_routes::SelectedGameLaunchRequest),
     #[serde(rename = "app.catalog.snapshot")]
@@ -1479,8 +1477,6 @@ pub enum RpcResponse {
     NetworkStatus(network::NetworkStatusOutcome),
     #[serde(rename = "app.local-games.routes")]
     GameRoutes(game_routes::GameRoutesOutcome),
-    #[serde(rename = "app.local-games.runner.set")]
-    GameRunnerSet(game_routes::GameRunnerSetOutcome),
     #[serde(rename = "app.local-games.launch.selected")]
     SelectedGameLaunch(game_routes::SelectedGameLaunchOutcome),
     #[serde(rename = "app.catalog.snapshot")]
@@ -2747,16 +2743,6 @@ async fn dispatch(
                 }
             })
         }
-        RpcRequest::GameRunnerSet(request) => RpcResponse::GameRunnerSet(match &state.mode {
-            ServerMode::Host(host) => host
-                .set_game_runner(request)
-                .await
-                .map(game_routes::GameRunnerSetOutcome::Ok)
-                .unwrap_or_else(game_routes::GameRunnerSetOutcome::Err),
-            ServerMode::Brain(_) => {
-                game_routes::GameRunnerSetOutcome::Err(installed_routes_unsupported())
-            }
-        }),
         RpcRequest::SelectedGameLaunch(request) => {
             RpcResponse::SelectedGameLaunch(match &state.mode {
                 ServerMode::Host(host) => host

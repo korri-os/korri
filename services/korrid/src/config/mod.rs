@@ -1,5 +1,6 @@
 pub mod cascade;
 pub(crate) mod catalog;
+pub mod place;
 pub use catalog::ReleaseKey;
 pub mod library;
 pub mod modifiers;
@@ -30,10 +31,7 @@ pub(crate) const DEVICE_SECTIONS: &[&str] = &[
     "storage",
     "providers",
     "systems",
-    "families",
-    "runners",
-    "modifiers",
-    "hooks",
+    "routines",
     "locations",
     "sources",
     "provider-links",
@@ -60,10 +58,7 @@ pub struct ConfigSnapshot {
     pub storage: BTreeMap<String, StoragePayload>,
     pub providers: BTreeMap<String, ProviderPayload>,
     pub systems: BTreeMap<String, SystemPayload>,
-    pub families: BTreeMap<String, FamilyPayload>,
-    pub runners: BTreeMap<String, RunnerPayload>,
-    pub modifiers: modifiers::ModifierConfigs,
-    pub hooks: BTreeMap<String, HookProfilePayload>,
+    pub routines: BTreeMap<String, HookProfilePayload>,
     pub library: BTreeMap<String, LibraryItemPayload>,
     pub sources: BTreeMap<String, SourcePayload>,
     #[serde(rename = "provider-links")]
@@ -131,13 +126,7 @@ struct RawDocument {
     #[serde(default)]
     systems: SectionRecords<SystemPayload>,
     #[serde(default)]
-    families: SectionRecords<FamilyPayload>,
-    #[serde(default)]
-    runners: SectionRecords<RunnerPayload>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    modifiers: Option<modifiers::ModifierConfigs>,
-    #[serde(default)]
-    hooks: SectionRecords<HookProfilePayload>,
+    routines: SectionRecords<HookProfilePayload>,
     #[serde(default)]
     library: SectionRecords<LibraryItemPayload>,
     #[serde(default)]
@@ -240,10 +229,7 @@ pub fn decode_config_documents(
         storage: device.storage.records,
         providers: device.providers.records,
         systems: device.systems.records,
-        families: device.families.records,
-        runners: device.runners.records,
-        modifiers: device.modifiers.unwrap_or_default(),
-        hooks: device.hooks.records,
+        routines: device.routines.records,
         locations: device.locations.records,
         sources: device.sources.records,
         provider_links: device.provider_links.records,
@@ -266,10 +252,7 @@ impl RawDocument {
             "storage" => self.storage.present,
             "providers" => self.providers.present,
             "systems" => self.systems.present,
-            "families" => self.families.present,
-            "runners" => self.runners.present,
-            "modifiers" => self.modifiers.is_some(),
-            "hooks" => self.hooks.present,
+            "routines" => self.routines.present,
             "library" => self.library.present,
             "sources" => self.sources.present,
             "provider-links" => self.provider_links.present,
@@ -292,14 +275,8 @@ fn validate_document_keys(
     for key in document.systems.keys() {
         validate_non_empty_key(file, "systems", key)?;
     }
-    for key in document.families.keys() {
-        validate_provider_id(&format!("{file}.families[{key}]"), key)?;
-    }
-    for key in document.runners.keys() {
-        validate_non_empty_key(file, "runners", key)?;
-    }
-    for key in document.hooks.keys() {
-        validate_non_empty_key(file, "hooks", key)?;
+    for key in document.routines.keys() {
+        validate_non_empty_key(file, "routines", key)?;
     }
     Ok(())
 }
@@ -365,22 +342,6 @@ pub fn classify_snapshot_support(snapshot: &ConfigSnapshot) -> Result<(), Unsupp
     if let Some(host) = &snapshot.host {
         host.collect_support_issues("host", &mut issues);
     }
-    if !snapshot.hooks.is_empty() {
-        push_issue(
-            &mut issues,
-            "hooks",
-            "hook profiles are not executable in this slice",
-        );
-    }
-    for (id, release) in snapshot
-        .library
-        .iter()
-        .flat_map(|(id, game)| game.releases.iter().map(move |release| (id, release)))
-    {
-        release
-            .inheritable
-            .collect_support_issues(&format!("releases.{id}"), &mut issues);
-    }
 
     if issues.is_empty() {
         Ok(())
@@ -396,22 +357,11 @@ fn push_issue(issues: &mut Vec<SupportIssue>, path: &str, message: &str) {
     });
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostPayload {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub cpu: Option<crate::launch_settings::config::DeviceCpu>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub gpu: Option<crate::launch_settings::config::Limits>,
-
+    #[serde(flatten)]
+    pub place: place::PlaceBody,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -447,32 +397,13 @@ pub struct HostPayload {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "optional_non_null"
     )]
-    pub env: Option<BTreeMap<String, String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub cwd: Option<String>,
-    #[serde(
-        default,
-        rename = "argsAppend",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub args_append: Option<Vec<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
     pub patches: Option<Vec<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub hooks: Option<HostHooksPolicy>,
+}
+impl std::ops::Deref for HostPayload {
+    type Target = place::PlaceBody;
+    fn deref(&self) -> &Self::Target {
+        &self.place
+    }
 }
 
 impl HostPayload {
@@ -497,36 +428,11 @@ impl HostPayload {
                 "host preferences are not executable in this slice",
             );
         }
-        if let Some(plugin) = &self.plugin {
-            for (id, value) in plugin {
-                if !value.is_boolean() {
-                    push_issue(
-                        issues,
-                        &format!("{path}.plugin.{}", id.0),
-                        "plugin enablement must be true or false",
-                    );
-                }
-            }
-        }
-        if self.env.is_some() {
+        if self.plugin.is_some() {
             push_issue(
                 issues,
-                &format!("{path}.env"),
-                "host environment policy is not executable in this slice",
-            );
-        }
-        if self.cwd.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.cwd"),
-                "host working directory policy is not executable in this slice",
-            );
-        }
-        if self.args_append.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.argsAppend"),
-                "host argument policy is not executable in this slice",
+                &format!("{path}.plugin"),
+                "host plugin policy is not executable in this slice",
             );
         }
         if self.patches.is_some() {
@@ -534,13 +440,6 @@ impl HostPayload {
                 issues,
                 &format!("{path}.patches"),
                 "host patches are not executable in this slice",
-            );
-        }
-        if self.hooks.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.hooks"),
-                "host hooks are not executable in this slice",
             );
         }
     }
@@ -575,34 +474,11 @@ pub struct ProviderPayload {
     kind: Option<Value>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SystemPayload {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub cpu: Option<crate::launch_settings::config::Limits>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub gpu: Option<crate::launch_settings::config::Limits>,
-
-    #[serde(default)]
-    pub modifiers: modifiers::ModifierConfigs,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub runner: Option<NonEmptyString>,
-    #[serde(default)]
-    pub families: cascade::RunnerConfigs,
-    #[serde(default)]
-    pub runners: cascade::RunnerConfigs,
+    #[serde(flatten)]
+    pub place: place::PlaceBody,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -634,37 +510,10 @@ pub struct SystemPayload {
     )]
     pub metadata: Option<BTreeMap<String, Value>>,
 }
-
-pub type FamilyPayload = cascade::RunnerConfig;
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RunnerPayload {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub cpu: Option<crate::launch_settings::config::Limits>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub gpu: Option<crate::launch_settings::config::Limits>,
-
-    #[serde(flatten)]
-    pub runner: cascade::RunnerConfig,
-    #[serde(default)]
-    pub modifiers: modifiers::ModifierConfigs,
-}
-impl From<cascade::RunnerConfig> for RunnerPayload {
-    fn from(runner: cascade::RunnerConfig) -> Self {
-        Self {
-            runner,
-            cpu: None,
-            gpu: None,
-            modifiers: Default::default(),
-        }
+impl std::ops::Deref for SystemPayload {
+    type Target = place::PlaceBody;
+    fn deref(&self) -> &Self::Target {
+        &self.place
     }
 }
 
@@ -782,133 +631,7 @@ pub struct FileSetPart {
     pub path: TargetString,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default, Serialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct InheritableLayer {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub cpu: Option<crate::launch_settings::config::Limits>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub gpu: Option<crate::launch_settings::config::Limits>,
-
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub moonlight: Option<BTreeMap<String, Value>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub preferences: Option<Preferences>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub plugin: Option<ProviderValueMap>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub env: Option<BTreeMap<String, String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub cwd: Option<String>,
-    #[serde(
-        default,
-        rename = "argsAppend",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub args_append: Option<Vec<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub patches: Option<Vec<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub hooks: Option<HooksPolicy>,
-}
-
-impl InheritableLayer {
-    fn collect_support_issues(&self, path: &str, issues: &mut Vec<SupportIssue>) {
-        if self.moonlight.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.moonlight"),
-                "moonlight policy is not executable in this slice",
-            );
-        }
-        if self.preferences.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.preferences"),
-                "preferences are not executable in this slice",
-            );
-        }
-        if self.plugin.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.plugin"),
-                "plugin policy is not executable in this slice",
-            );
-        }
-        if self.env.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.env"),
-                "environment policy is not executable in this slice",
-            );
-        }
-        if self.cwd.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.cwd"),
-                "working-directory policy is not executable in this slice",
-            );
-        }
-        if self.args_append.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.argsAppend"),
-                "argument policy is not executable in this slice",
-            );
-        }
-        if self.patches.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.patches"),
-                "patches are not executable in this slice",
-            );
-        }
-        if self.hooks.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.hooks"),
-                "hooks are not executable in this slice",
-            );
-        }
-    }
-}
+pub type InheritableLayer = place::PlaceBody;
 
 pub type ProviderValueMap = BTreeMap<ProviderIdString, Value>;
 
@@ -924,7 +647,7 @@ pub struct HostPreferences {
     pub launch: Option<LaunchPreferences>,
     #[serde(
         default,
-        rename = "playerCount",
+        rename = "player-count",
         skip_serializing_if = "Option::is_none",
         deserialize_with = "optional_non_null"
     )]
@@ -1023,37 +746,6 @@ pub struct HooksPolicy {
         deserialize_with = "optional_non_null"
     )]
     pub use_profiles: Option<Vec<NonEmptyString>>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct HostHooksPolicy {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub before: Option<Vec<HookBeforeStep>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub after: Option<Vec<HookAfterStep>>,
-    #[serde(
-        default,
-        rename = "use",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub use_profiles: Option<Vec<NonEmptyString>>,
-    #[serde(
-        default,
-        rename = "trust-removable",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub trust_removable: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

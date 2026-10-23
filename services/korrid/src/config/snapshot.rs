@@ -45,10 +45,7 @@ const ALL_SECTIONS: &[&str] = &[
     "storage",
     "providers",
     "systems",
-    "families",
-    "runners",
-    "modifiers",
-    "hooks",
+    "routines",
     "locations",
     "library",
     "sources",
@@ -218,7 +215,7 @@ impl ConfigSnapshotCoordinator {
                 .map_err(|error| storage_error(&path, error))?;
             documents.push(yaml);
         }
-        let decoded = decode_config_documents(&documents[0], &documents[1])
+        decode_config_documents(&documents[0], &documents[1])
             .map_err(|error| content_error(&root, error))?;
 
         let formats = FormatRegistry::with_builtins();
@@ -237,8 +234,7 @@ impl ConfigSnapshotCoordinator {
         .map_err(|error| CandidateLoadError::Content {
             message: sanitize_message(&root, &error.to_string()),
         })?;
-        let snapshot = snapshot_from_graph(&graph, decoded.modifiers)
-            .map_err(|error| content_error(&root, error))?;
+        let snapshot = snapshot_from_graph(&graph).map_err(|error| content_error(&root, error))?;
         classify_snapshot_support(&snapshot).map_err(|error| CandidateLoadError::Unsupported {
             message: sanitize_message(&root, &error.to_string()),
         })?;
@@ -247,21 +243,13 @@ impl ConfigSnapshotCoordinator {
     }
 }
 
-fn snapshot_from_graph(
-    graph: &LoadedDocumentGraph,
-    modifiers: super::modifiers::ModifierConfigs,
-) -> Result<ConfigSnapshot, ConfigSchemaError> {
+fn snapshot_from_graph(graph: &LoadedDocumentGraph) -> Result<ConfigSnapshot, ConfigSchemaError> {
     Ok(ConfigSnapshot {
         host: decode_graph_host(graph)?,
-        // Graph collection IDs are sorted. Retain the device document's key
-        // order for modifier composition rather than reordering its records.
-        modifiers,
         storage: decode_graph_collection(graph, "storage")?,
         providers: decode_graph_collection(graph, "providers")?,
         systems: decode_graph_collection(graph, "systems")?,
-        families: decode_graph_collection(graph, "families")?,
-        runners: decode_graph_collection(graph, "runners")?,
-        hooks: decode_graph_collection(graph, "hooks")?,
+        routines: decode_graph_collection(graph, "routines")?,
         library: decode_graph_collection(graph, "library")?,
         sources: decode_graph_collection(graph, "sources")?,
         provider_links: decode_graph_collection(graph, "provider-links")?,

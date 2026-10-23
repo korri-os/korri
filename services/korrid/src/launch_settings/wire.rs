@@ -147,6 +147,7 @@ pub struct LaunchPlaceSnapshot {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchSourcedValue {
+    pub path: LaunchValuePath,
     #[typeshare(serialized_as = "LaunchJsonValue")]
     pub value: serde_json::Value,
     pub source: LaunchSource,
@@ -217,3 +218,19 @@ pub struct LaunchSnapshot {
 /// Opaque JSON is decoded against the runner schema or the authored place schema.
 #[typeshare(serialized_as = "unknown")]
 pub type LaunchJsonValue = serde_json::Value;
+
+/// Structured keys remove ambiguity when a plugin ID or setting contains dots.
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum LaunchValuePath {
+    Editable(LaunchPath),
+    Env { key: String },
+    ArgsPrepend,
+    ArgsAppend,
+    Cwd,
+    HooksBefore,
+    HooksAfter,
+    Config,
+    ModifierConfig { id: String },
+}
