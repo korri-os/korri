@@ -1133,6 +1133,7 @@ impl HostRuntime {
         request: crate::SessionStartRequest,
         caller: &str,
         person: Option<&str>,
+        admission: crate::stream_play::admission::LocalLaunchAdmission,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         // Claim the exact caller-bound token before any route work. Cancel only
         // touches the small reservation mutex, never the plugin preparation.
@@ -1144,7 +1145,7 @@ impl HostRuntime {
         )?;
         let runtime = self.clone();
         tokio::task::spawn_blocking(move || {
-            let outcome = runtime.start_reserved_blocking(&request, &reservation);
+            let outcome = runtime.start_reserved_blocking(&request, &reservation, admission);
             if let Some(committed) = runtime.launch_reservations.finish(&reservation) {
                 if !committed {
                     return Err(launch_reservation::cancelled());
@@ -1197,6 +1198,7 @@ impl HostRuntime {
         &self,
         request: &crate::SessionStartRequest,
         reservation: &launch_reservation::LaunchReservation,
+        admission: crate::stream_play::admission::LocalLaunchAdmission,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         #[cfg(test)]
         if let Some(probe) = &self.before_reserved_route {
@@ -1219,6 +1221,10 @@ impl HostRuntime {
             .as_ref()
             .map(|launch| launch.command.as_slice())
             .map_err(Clone::clone);
+        if reservation.is_cancelled() {
+            return Err(launch_reservation::cancelled());
+        }
+        let selection = admission.enter()?;
         let mut prepared = launcher.prepare_reserved(
             reservation,
             runner_id,
@@ -1232,6 +1238,11 @@ impl HostRuntime {
         let session = prepared.session;
         let mut warnings = launch?.warnings;
         warnings.append(&mut prepared.warnings);
+        // Admission ends with native preparation, not with its acknowledgement.
+        // Native state now fences another selection. A late reply must not
+        // block a replacement after this exact launch has ended. The worker
+        // owns the guard so cancelling the RPC cannot release it mid-prepare.
+        drop(selection);
         // Delay only after the session transition releases its lock, allowing
         // native control to accept a newer Home before the start reply.
         #[cfg(test)]

@@ -2995,6 +2995,7 @@ async fn dispatch(
                         request,
                         caller,
                         authorization.person_public_key(host.owner_public_key().as_deref()),
+                        stream_play::admission::LocalLaunchAdmission::for_device(state),
                     )
                     .await
                 }

@@ -1,4 +1,5 @@
 //! Shared play wire contracts. The holder remains the session authority.
+pub(crate) mod admission;
 pub(crate) mod device;
 pub(crate) mod person_name;
 pub(crate) mod registration;

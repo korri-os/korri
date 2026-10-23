@@ -5,20 +5,19 @@ use crate::linux_viewer::LinuxViewerError;
 use crate::linux_viewer::{production_viewer, CertificateProvision, LocalSeats};
 use crate::*;
 
-/// Holder preparation and local peer selection share one admission fence.
-/// The holder's own mutation lock still owns exact launch operations.
-pub(crate) async fn serialize_selection<'a>(
-    state: &'a AppState,
+/// Unreserved preparation and peer selection share one admission fence.
+/// Reserved starts take it in their native worker, after cancellable routing.
+pub(crate) async fn serialize_selection(
+    state: &AppState,
     request: &RpcRequest,
-) -> Option<tokio::sync::MutexGuard<'a, ()>> {
+) -> Option<tokio::sync::OwnedMutexGuard<()>> {
     if matches!(
         request,
         RpcRequest::SessionPrepare(_)
-            | RpcRequest::SessionStart(_)
             | RpcRequest::SelectedGameLaunch(_)
             | RpcRequest::InvitesStreamPlay(_)
     ) {
-        Some(state.session_selection.lock().await)
+        Some(state.session_selection.clone().lock_owned().await)
     } else {
         None
     }
