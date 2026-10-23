@@ -1649,7 +1649,16 @@ async fn a_form_post_download_is_named_by_filename_not_by_its_token_url() {
 /// cancelled" (`tests::unpacking_is_observable_and_cannot_be_cancelled`).
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unpacking_store_job_is_live_and_cancel_leaves_nothing() {
+    /// Releases the hold on every exit, also a panic, so the blocking task
+    /// cannot keep the runtime alive (review P2-2).
+    struct Release(Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for Release {
+        fn drop(&mut self) {
+            self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
     let gate = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let release = Release(gate.clone());
     let world = world_gated(
         site(),
         None,
@@ -1673,9 +1682,17 @@ async fn an_unpacking_store_job_is_live_and_cancel_leaves_nothing() {
         serde_json::to_value(&world.api().status(&job.job_id).unwrap().state).unwrap(),
         serde_json::json!({"_tag": "Unpacking"})
     );
-    assert!(names(&world.cache())
-        .iter()
-        .any(|name| name.starts_with(".tmp-")));
+    // The worker creates the work folder after the state turns Unpacking.
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !names(&world.cache())
+            .iter()
+            .any(|name| name.starts_with(".tmp-"))
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the work folder appears while the reader is held");
     // A live job answers a repeated Get.
     assert_eq!(world.acquire("zipped").await.unwrap().job_id, job.job_id);
     let cancelled = world.api().cancel(&job.job_id).await.unwrap();
@@ -1691,7 +1708,7 @@ async fn an_unpacking_store_job_is_live_and_cancel_leaves_nothing() {
     assert!(world.snapshot().library.is_empty());
 
     // Without the hold the same job goes through Unpacking to Imported.
-    gate.store(false, std::sync::atomic::Ordering::SeqCst);
+    drop(release);
     imported(&world.get("zipped").await);
 }
 
