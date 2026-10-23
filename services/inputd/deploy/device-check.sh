@@ -1737,7 +1737,7 @@ remote_automated_gates() {
   fi
   runtime_gid="$(id -g "$runtime_user")" || fail 'runtime group is unavailable'
   seat_nodes="$(remote_shared_seat_nodes "$runtime_gid")" || fail 'shared seat identity, contiguous slots, or permissions are invalid'
-  browser_user="$(systemctl show korri-chromium-kiosk.service -p User --value)" || fail 'portal identity is unavailable'
+  browser_user="$(systemctl show korri-portal-kiosk.service -p User --value)" || fail 'portal identity is unavailable'
   [[ -n "$browser_user" && "$browser_user" != root ]] || fail 'portal identity is unverified'
   while IFS= read -r node; do
     sudo -n -u "$runtime_user" test -r "$node" || fail 'runtime user cannot read a shared seat'

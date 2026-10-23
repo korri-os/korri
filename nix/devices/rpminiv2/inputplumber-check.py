@@ -67,7 +67,7 @@ expected_buttons = {
 }
 # The vendor driver also exposes BTN_BACK. ROCKNIX routes it to a separate F1
 # keyboard target. This first milestone intentionally creates only one xb360
-# target so an unowned F1 shortcut cannot escape into Chromium.
+# target so an unowned F1 shortcut cannot escape into the portal.
 kernel_buttons = set(expected_buttons) | {"BTN_BACK"}
 intentionally_unbound_buttons = {"BTN_BACK"}
 

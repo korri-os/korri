@@ -4127,7 +4127,7 @@ mod tests {
         }
     }
 
-    const PORTAL_APP_ID: &str = "chromium-browser";
+    const PORTAL_APP_ID: &str = "korri-portal";
 
     fn compositor_tree(game_pid: i32) -> String {
         compositor_tree_with_focus(game_pid, 3)
@@ -4211,7 +4211,7 @@ mod tests {
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = r#"{"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"chromium-browser","focused":true},
+            {"id":2,"pid":4100,"app_id":"korri-portal","focused":true},
             {"id":3,"pid":9100,"focused":false},
             {"id":4,"pid":9100,"focused":false}
         ]}"#

@@ -172,7 +172,7 @@ async def main():
 
     # Real product dependency lists, fixture processes: an actual SIGKILL of
     # the korrid stand-in must stop and then pull in the frozen kiosk once.
-    unit = 'korri-chromium-kiosk.service'
+    unit = 'korri-portal-kiosk.service'
     old = await prop(unit, 'MainPID', DEST + '.Service')
     assert old > 0
     await manager.call_freeze_unit(unit)

@@ -14,7 +14,6 @@ let
         ./kiosk-freezer.nix
         (import ./nixos-module.nix {
           inherit korri;
-          chromiumArgs = [ "--force-prefers-reduced-motion" ];
         })
         {
           system.stateVersion = "25.11";
@@ -56,7 +55,6 @@ let
       services.korri.webSurfaceHost.enable = true;
       services.korri.compositor.kiosk = {
         enable = true;
-        extraChromiumArgs = [ "--disable-gpu" ];
       };
     }).config;
   serverOnly =
@@ -84,30 +82,29 @@ let
       };
       services.korri.compositor.kiosk.enable = true;
     }).config;
-  service = enabled.systemd.services.korri-chromium-kiosk;
-  chromiumArgs = builtins.fromJSON (builtins.readFile service.environment.KORRI_CHROMIUM_ARGS_FILE);
+  service = enabled.systemd.services.korri-portal-kiosk;
   daemon = enabled.systemd.services.korrid;
   credentialService = "korri-portal-credentials.service";
   credential = "KORRID_RPC_CAPABILITY:/run/korri-portal-credentials/KORRID_RPC_CAPABILITY";
   producer = enabled.systemd.services.korri-portal-credentials;
   profile = (import ./runtime-policy.nix).assetRoot;
-  unit = enabled.systemd.units."korri-chromium-kiosk.service".text;
+  unit = enabled.systemd.units."korri-portal-kiosk.service".text;
   nginx = enabled.services.nginx.virtualHosts.korri-portal;
 in
-assert !(disabled.systemd.services ? korri-chromium-kiosk);
+assert !(disabled.systemd.services ? korri-portal-kiosk);
 # korrid freezes the kiosk during a focused live game. Without a kiosk the
 # feature stays inert: no unit name, no grant, no thaw hooks.
 assert !(disabled.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT);
 assert !(serverOnly.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT);
-assert !(disabled.systemd.services ? korri-chromium-kiosk-thaw);
-assert !(serverOnly.systemd.services ? korri-chromium-kiosk-thaw);
-assert !(nixpkgs.lib.hasInfix "korri-chromium-kiosk" disabled.security.polkit.extraConfig);
-assert !(nixpkgs.lib.hasInfix "korri-chromium-kiosk" serverOnly.security.polkit.extraConfig);
+assert !(disabled.systemd.services ? korri-portal-kiosk-thaw);
+assert !(serverOnly.systemd.services ? korri-portal-kiosk-thaw);
+assert !(nixpkgs.lib.hasInfix "korri-portal-kiosk" disabled.security.polkit.extraConfig);
+assert !(nixpkgs.lib.hasInfix "korri-portal-kiosk" serverOnly.security.polkit.extraConfig);
 assert (disabled.systemd.services.korrid.serviceConfig.ExecStopPost or [ ]) == [ ];
 # A shared kiosk must not acquire C3 on unpatched systemd.
 assert !(daemon.environment ? KORRID_PORTAL_UNIT);
-assert !(enabled.systemd.services ? korri-chromium-kiosk-thaw);
-assert !(nixpkgs.lib.hasInfix "korri-chromium-kiosk" enabled.security.polkit.extraConfig);
+assert !(enabled.systemd.services ? korri-portal-kiosk-thaw);
+assert !(nixpkgs.lib.hasInfix "korri-portal-kiosk" enabled.security.polkit.extraConfig);
 assert !(disabled.systemd.services ? korri-portal-initialize);
 assert !(disabled.systemd.services ? korri-portal-credentials);
 assert !disabled.services.nginx.enable;
@@ -162,7 +159,7 @@ assert builtins.all
     "nginx.service"
     credentialService
   ];
-# The kiosk starts beside korrid, not after it: Chromium is ready by the time
+# The kiosk starts beside korrid, not after it: the browser starts while
 # korrid is, and the portal waits for korrid to answer before it mounts.
 assert builtins.elem "korrid.service" service.wantedBy;
 assert builtins.elem "korrid.service" service.requires;
@@ -181,7 +178,7 @@ assert
     "${pkgs.sway-unwrapped}/bin/swaymsg"
     "-s"
     "/run/korri-compositor/sway-ipc.sock"
-    ''[app_id="chromium-browser"] focus''
+    ''[app_id="korri-portal"] focus''
   ];
 # A device that names a surface opens it through the portal's own preference
 # seam; the served origin and asset root stay identical either way.
@@ -192,37 +189,38 @@ assert
       surfaceId = "pico";
     };
     services.korri.compositor.kiosk.enable = true;
-  }).config.systemd.services.korri-chromium-kiosk.environment.KORRI_WEB_SURFACE_URL
+  }).config.systemd.services.korri-portal-kiosk.environment.KORRI_WEB_SURFACE_URL
   == "http://127.0.0.1:8099/?surface=pico";
 assert service.environment.KORRI_ASSET_ROOT == profile;
-assert
-  service.environment.KORRI_CHROMIUM_USER_DATA_DIR
-  == "/var/lib/korri-portal/.local/state/korri/chromium/profile";
-assert
-  chromiumArgs == [
-    "--force-prefers-reduced-motion"
-    "--disable-gpu"
-  ];
+assert service.environment.XDG_DATA_HOME == "/var/lib/korri-portal/.local/share";
+assert service.environment.XDG_CACHE_HOME == "/var/lib/korri-portal/.cache";
+assert service.environment.KORRI_PORTAL_TRANSPARENT == "1";
+assert service.serviceConfig.ExecStart == "${korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-portal-wpe}/bin/korri-portal-wpe";
+assert service.serviceConfig.NoNewPrivileges;
+assert service.serviceConfig.RestrictNamespaces == false;
+assert service.serviceConfig.ProtectSystem == "strict";
+assert service.serviceConfig.ProtectHome;
+assert service.serviceConfig.PrivateTmp;
+assert service.serviceConfig.UMask == "0077";
+assert service.serviceConfig.LimitCORE == 0;
+assert (service.serviceConfig.DevicePolicy or "auto") == "auto";
+assert service.serviceConfig.ReadWritePaths == [
+  "/var/lib/korri-portal/.local/share"
+  "/var/lib/korri-portal/.cache"
+  "/run/korri-portal"
+];
 assert
   service.serviceConfig.ExecStart
-  == alternate.systemd.services.korri-chromium-kiosk.serviceConfig.ExecStart;
+  == alternate.systemd.services.korri-portal-kiosk.serviceConfig.ExecStart;
 assert nginx.root == profile;
 assert builtins.elem "d /var/lib/korri-portal 0700 korri-portal korri-portal -"
   enabled.systemd.tmpfiles.rules;
 assert builtins.elem "d /var/lib/korri-portal/.local - korri-portal korri-portal -"
   enabled.systemd.tmpfiles.rules;
-assert builtins.elem "d /var/lib/korri-portal/.local/state - korri-portal korri-portal -"
+assert builtins.elem "d /var/lib/korri-portal/.local/share 0700 korri-portal korri-portal -"
   enabled.systemd.tmpfiles.rules;
-assert builtins.all
-  (
-    suffix:
-    builtins.elem "d /var/lib/korri-portal/.local/state/korri${suffix} 0700 korri-portal korri-portal -" enabled.systemd.tmpfiles.rules
-  )
-  [
-    ""
-    "/chromium"
-    "/chromium/profile"
-  ];
+assert builtins.elem "d /var/lib/korri-portal/.cache 0700 korri-portal korri-portal -"
+  enabled.systemd.tmpfiles.rules;
 assert
   map (listener: { inherit (listener) addr port; }) nginx.listen == [
     {
@@ -248,16 +246,9 @@ pkgs.runCommand "korri-portal-module-check" { } ''
   grep -F 'User=korri-portal' ${pkgs.writeText "portal-kiosk.service" unit}
   grep -F 'Type=notify' ${pkgs.writeText "portal-kiosk.service" unit}
   grep -F 'Restart=on-failure' ${pkgs.writeText "portal-kiosk.service" unit}
-  grep -F -- 'korri-portal-shell' ${service.serviceConfig.ExecStart}
-  grep -F -- '--ozone-platform=wayland' ${service.serviceConfig.ExecStart}
-  grep -F -- '--kiosk' ${service.serviceConfig.ExecStart}
-  if grep -F -- '--class=' ${service.serviceConfig.ExecStart}; then exit 1; fi
-  # Chromium maps this desktop WM class to the native Wayland app_id. Keep the
-  # product's game-return exclusion tied to the package the portal launches.
-  grep -Fx 'StartupWMClass=chromium-browser' ${pkgs.chromium}/share/applications/chromium-browser.desktop
-  grep -F -- '--force-prefers-reduced-motion' ${service.environment.KORRI_CHROMIUM_ARGS_FILE}
-  grep -F -- '--disable-gpu' ${service.environment.KORRI_CHROMIUM_ARGS_FILE}
-  if grep -E -- '--app|--no-sandbox|--remote-debugging|DBUS_SESSION_BUS_ADDRESS' ${service.serviceConfig.ExecStart}; then exit 1; fi
+  grep -F 'NoNewPrivileges=true' ${pkgs.writeText "portal-kiosk.service" unit}
+  grep -F 'ProtectSystem=strict' ${pkgs.writeText "portal-kiosk.service" unit}
+  grep -F 'PrivateTmp=true' ${pkgs.writeText "portal-kiosk.service" unit}
   export RUNTIME_DIRECTORY="$TMPDIR/credentials"
   mkdir -m 700 "$RUNTIME_DIRECTORY"
   ${producer.serviceConfig.ExecStart} > "$TMPDIR/credential-output"

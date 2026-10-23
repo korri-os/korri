@@ -164,14 +164,8 @@
             rgds-inputplumber-data = rgds.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             rpminiv2-inputplumber-data = rpminiv2.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             h700-inputplumber-data = h700.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
-            korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
-            korri-portal-input-probe = import ./clients/linux/diagnostics/package.nix { inherit pkgs; };
-            korri-portal-native-input-probe = import ./clients/linux/diagnostics/native-package.nix {
-              inherit pkgs;
-            };
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
             korri-wpewebkit = pkgs.callPackage ./clients/linux/wpewebkit/wpewebkit.nix { };
-            korri-chromium = import ./clients/linux/chromium/package.nix { inherit pkgs; };
           }
         )
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
@@ -208,7 +202,6 @@
           h700-uboot = h700.uboot;
         }
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
-          korri-chromium-aarch64 = import ./clients/linux/chromium/cross.nix { inherit pkgs; };
           rpminiv2-kernel = rpminiv2.kernelCross;
           rpminiv2-recovery-kernel = rpminiv2.recoveryKernelCross;
           rpminiv2-kernel-source-gcc15 = rpminiv2.kernelSourceGcc15;

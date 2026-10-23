@@ -6,7 +6,7 @@ V2:
 - `rpminiv2-recovery` preserves the hardware-proven 1080 by 1240 TTY and USB
   serial recovery system.
 - `rpminiv2` extends that same SD-only baseline with the current Korri Linux
-  host, Sway DRM compositor, credential-backed Pico portal, sandboxed Chromium,
+  host, Sway DRM compositor, credential-backed Pico portal, sandboxed WPE WebKit,
   a device-specific InputPlumber profile, and a USB network link beside the USB
   serial console.
 
@@ -203,8 +203,8 @@ replacement for it. Its current first milestone is deliberately local:
 - Sway uses MSM DRM on `/dev/dri/card0`, Adreno rendering on
   `/dev/dri/renderD128`, native `1080x1240@60Hz`, and the hardware-proven
   270-degree panel transform.
-- Chromium uses software drawing for the first pass while remaining sandboxed.
-  Sway itself still requires accelerated GLES2 rendering.
+- WPE WebKit uses Mesa rendering and its bubblewrap sandbox.
+  Device acceptance must verify acceleration and display orientation.
 - The portal and korrid communicate over loopback. The product starts
   NetworkManager and BlueZ and installs the wireless regulatory database.
   Select Wi-Fi after boot with `nmcli device wifi connect <SSID> --ask`; do not
@@ -389,14 +389,14 @@ ip -br addr show usb0
 iptables -S nixos-fw | grep -F usb0
 journalctl -b -u usb-gadget -u systemd-networkd --no-pager
 systemctl is-active inputplumber korri-inputd korrid korri-compositor nginx \
-  korri-chromium-kiosk rpminiv2-display-idle
+  korri-portal-kiosk rpminiv2-display-idle
 systemctl --failed
 systemctl is-active NetworkManager avahi-daemon || true
 systemctl is-active korri-plugin-host || true
 systemctl list-units 'korri-plugin-*.service' --all --no-pager
 ss -ltnp
 journalctl -b -u inputplumber -u korri-inputd -u korrid \
-  -u korri-compositor -u korri-chromium-kiosk --no-pager
+  -u korri-compositor -u korri-portal-kiosk --no-pager
 ```
 
 Require all listed product services to be active, no failed unit, `DSI-1`
@@ -415,12 +415,11 @@ Then verify on the device:
 2. D-pad and both sticks navigate predictably. Physical A confirms, B returns,
    X and Y retain their printed positions, Y opens options, and Start opens the
    menu. Select, Guide, and the vendor `BTN_BACK` control are deliberately
-   unbound in this first milestone; they must not produce a Chromium keyboard
+   unbound in this first milestone; they must not produce a WPE keyboard
    shortcut or a second controller. Exercise both analog triggers through their
    full travel.
-3. Chromium remains sandboxed. The kiosk command line must not contain
-   `--no-sandbox`; renderer processes should report seccomp filtering in
-   `/proc/<pid>/status`.
+3. WPE remains sandboxed. Verify that its web processes use separate user,
+   PID and network namespaces and seccomp filtering in `/proc/<pid>/status`.
 4. Use the controller continuously for more than five minutes. The OLED must
    remain on. Then leave the controller neutral and untouched for five minutes;
    the OLED must power off. Check wake with every button, both sticks, both

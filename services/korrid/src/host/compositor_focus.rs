@@ -469,7 +469,7 @@ mod tests {
             r#"{{
               "id": 1, "nodes": [
                 {{"id": 2, "nodes": [
-                  {{"id": 3, "pid": 4100, "app_id": "chromium-browser",
+                  {{"id": 3, "pid": 4100, "app_id": "korri-portal",
                     "nodes": [], "floating_nodes": []}},
                   {{"id": 4, "pid": {game_pid}, "app_id": null,
                     "window_properties": {{"class": "Neverball"}},
@@ -480,7 +480,7 @@ mod tests {
         )
     }
 
-    const PORTAL: &str = "chromium-browser";
+    const PORTAL: &str = "korri-portal";
 
     fn pids(values: &[i32]) -> BTreeSet<i32> {
         values.iter().copied().collect()

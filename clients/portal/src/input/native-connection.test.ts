@@ -196,7 +196,7 @@ describe("native input connection", () => {
         order.push("acknowledged")
         ack = JSON.parse(frame)
         // Deliberately deliver old payloads while the socket is lifecycle-only.
-        // They stand for events already in TCP/Chromium's queue during freeze.
+        // They stand for events already in TCP/the browser's queue during freeze.
         socket.send(JSON.stringify(INPUT))
         socket.send(JSON.stringify(ADDED))
       },

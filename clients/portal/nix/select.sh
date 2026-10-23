@@ -26,11 +26,11 @@ validate() {
 }
 
 restart_and_check() {
-  "$systemctl" restart korri-chromium-kiosk.service || return 1
+  "$systemctl" restart korri-portal-kiosk.service || return 1
   local attempt
   for attempt in 1 2 3; do
     if "$systemctl" is-active --quiet nginx.service &&
-      "$systemctl" is-active --quiet korri-chromium-kiosk.service &&
+      "$systemctl" is-active --quiet korri-portal-kiosk.service &&
       curl --fail --silent --show-error --max-time 5 "$url" | cmp -s "$profile/index.html" -; then
       return 0
     fi

@@ -465,11 +465,11 @@ async fn status_observes_exact_focus_without_claiming_no_window_is_ready() {
     let compositor = Arc::new(Compositor {
         gate: Mutex::new(None),
         tree: Mutex::new(json!({"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"chromium-browser","focused":true}
+            {"id":2,"pid":4100,"app_id":"korri-portal","focused":true}
         ]})),
     });
     let app = router(
-        runtime.with_compositor(compositor.clone(), vec!["chromium-browser".into()]),
+        runtime.with_compositor(compositor.clone(), vec!["korri-portal".into()]),
         root.path(),
         TOKEN,
         PortalPermission::LocalSessions,
@@ -484,7 +484,7 @@ async fn status_observes_exact_focus_without_claiming_no_window_is_ready() {
     assert!(active.get("focusOwnership").is_none(), "{status}");
     for (focused, expected) in [(2, "excluded"), (3, "launch"), (4, "other")] {
         *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"chromium-browser","focused":focused==2},
+            {"id":2,"pid":4100,"app_id":"korri-portal","focused":focused==2},
             {"id":3,"pid":9100,"focused":focused==3},
             {"id":4,"pid":9200,"focused":focused==4}
         ]});

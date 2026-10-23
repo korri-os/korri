@@ -64,7 +64,7 @@ pkgs.testers.runNixOSTest {
     {
       imports = [ ./kiosk-freezer.nix ];
       # Only the existing kiosk option is needed; this test exercises the native
-      # freezer module without installing Chromium or the rest of the product.
+      # freezer module without installing WPE or the rest of the product.
       options.services.korri.compositor.kiosk.enable = lib.mkEnableOption "kiosk";
       config = {
         services.korri.compositor.kiosk.enable = true;
@@ -126,7 +126,7 @@ pkgs.testers.runNixOSTest {
           "d /dev/inputplumber/sources 0755 root root -"
         ];
         systemd.services = {
-          korri-chromium-kiosk = {
+          korri-portal-kiosk = {
             wantedBy = [ "multi-user.target" ];
             after = [ "systemd-tmpfiles-setup.service" ];
             serviceConfig = {
@@ -181,7 +181,7 @@ pkgs.testers.runNixOSTest {
     import json
     import shlex
 
-    kiosk = "korri-chromium-kiosk.service"
+    kiosk = "korri-portal-kiosk.service"
     manager = "org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager"
 
     def native(user, method, signature, arguments):
@@ -327,7 +327,7 @@ pkgs.testers.runNixOSTest {
         # Deny only native portal ThawUnit. Failed Leave must thaw/refocus the
         # game before returning an existing transition error to inputd.
         denial = """polkit.addRule(function(action, subject) {
-          if (subject.user == "korrid" && action.lookup("unit") == "korri-chromium-kiosk.service" && action.lookup("verb") == "start") {
+          if (subject.user == "korrid" && action.lookup("unit") == "korri-portal-kiosk.service" && action.lookup("verb") == "start") {
             return polkit.Result.NO;
           }
         });"""

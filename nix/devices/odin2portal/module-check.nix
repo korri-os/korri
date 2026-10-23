@@ -3,7 +3,7 @@
 let
   inherit (pkgs) lib;
   c = configuration.config;
-  kiosk = c.systemd.services.korri-chromium-kiosk;
+  kiosk = c.systemd.services.korri-portal-kiosk;
   compositor = c.systemd.services.korri-compositor;
   credential = "KORRID_RPC_CAPABILITY:/run/korri-portal-credentials/KORRID_RPC_CAPABILITY";
   oldBootstrapAppId = "chrome-127.0.0.1__kiosk-blank.html-Default";
@@ -73,14 +73,14 @@ assert c.services.korri.webSurfaceHost.enable;
 assert c.services.korri.webSurfaceHost.surfaceId == "pico";
 assert c.services.korri.compositor.kiosk.enable;
 assert c.services.korri.pluginHost.enable;
-assert c.services.korriLinuxHost.compositor.neverFocusAppIds == [ "chromium-browser" ];
+assert c.services.korriLinuxHost.compositor.neverFocusAppIds == [ "korri-portal" ];
 assert !(lib.hasInfix oldBootstrapAppId c.services.korriLinuxHost.compositor.extraConfig);
 assert !(configuration.options.services ? korriKiosk);
 assert !(c.systemd.services ? korri-kiosk);
 
 # Odin starts the existing private window.KorriRpc host on the compositor's
 # published Wayland socket. No credential is exposed through the environment.
-assert lib.hasSuffix "/bin/korri-chromium-kiosk" kiosk.serviceConfig.ExecStart;
+assert lib.hasSuffix "/bin/korri-portal-wpe" kiosk.serviceConfig.ExecStart;
 assert kiosk.serviceConfig.Type == "notify";
 assert kiosk.serviceConfig.User == "korri-portal";
 assert kiosk.serviceConfig.NoNewPrivileges;
@@ -108,11 +108,8 @@ assert c.services.logind.settings.Login.HandleLidSwitch == "poweroff";
 assert !(c.systemd.services ? sunshine);
 assert !(c.systemd.sockets ? korri-certificate-control);
 assert !(lib.elem "sunshine.service" compositor.wants);
-assert c.systemd.services ? korri-chromium-kiosk;
+assert c.systemd.services ? korri-portal-kiosk;
 
 pkgs.runCommand "odin2portal-module-check" { } ''
-  grep -F 'korri-portal-shell' ${kiosk.serviceConfig.ExecStart}
-  grep -F -- '--ozone-platform=wayland' ${kiosk.serviceConfig.ExecStart}
-  if grep -F '${oldBootstrapAppId}' ${kiosk.serviceConfig.ExecStart}; then exit 1; fi
   touch "$out"
 ''

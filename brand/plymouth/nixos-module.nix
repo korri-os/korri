@@ -118,7 +118,7 @@ in
         };
 
         # Upstream quits without --retain-splash, which blanks the screen the
-        # moment Plymouth exits and leaves the panel dark until Chromium paints.
+        # moment Plymouth exits and leaves the panel dark until the portal paints.
         # The handoff normally quits first. This keeps the frame when it fails.
         #
         # plymouth-quit.service comes from the plymouth package, so this lands

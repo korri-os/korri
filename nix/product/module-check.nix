@@ -517,7 +517,7 @@ let
       "plymouth-quit.service"
     ] [ ]) [
       "korri-compositor.service"
-      "korri-chromium-kiosk.service"
+      "korri-portal-kiosk.service"
       "korri-plugin-host.service"
     ];
   rg353mFirewallTcpPorts =
@@ -586,12 +586,12 @@ let
       value = [ "/" ];
     }
     {
-      unit = "korri-chromium-kiosk";
+      unit = "korri-portal-kiosk";
       field = "ExecStart";
       value = "/bin/false";
     }
     {
-      unit = "korri-chromium-kiosk";
+      unit = "korri-portal-kiosk";
       field = "ExecStopPost";
       value = [ "/bin/true" ];
     }
@@ -738,7 +738,7 @@ assert builtins.elem (check.nativeSystemdPackageFailure nativeName) (
 assert lib.all (device:
   !(device.config.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT)
   && (device.config.systemd.services.korrid.serviceConfig.ExecStopPost or [ ]) == [ ]
-  && !(lib.hasInfix "korri-chromium-kiosk" device.config.security.polkit.extraConfig)
+  && !(lib.hasInfix "korri-portal-kiosk" device.config.security.polkit.extraConfig)
   && lib.intersectLists nativeRequirements.requiredDbusPackages
     (map toString device.config.services.dbus.packages) == [ ]
 ) [ nativeUnpatched nativeWithoutKiosk ];
@@ -990,31 +990,16 @@ assert
 assert !(builtins.elem 22 rg353mFirewallTcpPorts);
 assert lib.intersectLists streamingTcpPorts rg353mFirewallTcpPorts == [ ];
 assert
-  rg353m.systemd.services.korri-chromium-kiosk.environment.WAYLAND_DISPLAY
+  rg353m.systemd.services.korri-portal-kiosk.environment.WAYLAND_DISPLAY
   == rg353m.systemd.services.korri-compositor.environment.KORRI_WAYLAND_DISPLAY;
 assert rg353m.services.korriLinuxHost.label == "haku";
 assert rg353m.services.korriLinuxHost.relays == requirements.constants.relays;
 # Every product device opens Pico (Phase 2 of Pico on Korri).
 assert requirements.constants.surfaceId == "pico";
 assert rg353m.services.korri.webSurfaceHost.surfaceId == "pico";
-assert rg353m.systemd.services.korri-chromium-kiosk.environment.KORRI_WEB_SURFACE_URL == "http://127.0.0.1:8099/?surface=pico";
+assert rg353m.systemd.services.korri-portal-kiosk.environment.KORRI_WEB_SURFACE_URL == "http://127.0.0.1:8099/?surface=pico";
 assert rg353m.services.korridLinuxDevice.address == requirements.constants.korridAddress;
 assert builtins.elem 39217 rg353m.networking.firewall.allowedTCPPorts;
-assert
-  rg353m.services.korri.compositor.kiosk.extraChromiumArgs == [
-    "--disable-gpu"
-    "--force-prefers-reduced-motion"
-  ];
-assert standalone.config.services.korri.compositor.kiosk.extraChromiumArgs == [ ];
-# Only the RG353M forces reduced motion; the product itself passes no flags.
-assert
-  builtins.fromJSON (
-    builtins.readFile standalone.config.systemd.services.korri-chromium-kiosk.environment.KORRI_CHROMIUM_ARGS_FILE
-  ) == [ ];
-assert
-  builtins.fromJSON (
-    builtins.readFile korri.nixosConfigurations.rpminiv2.config.systemd.services.korri-chromium-kiosk.environment.KORRI_CHROMIUM_ARGS_FILE
-  ) == [ ];
 assert
   rg353m.services.korriLinuxHost.compositor.drmDevice
   == "/dev/dri/by-path/platform-display-subsystem-card";

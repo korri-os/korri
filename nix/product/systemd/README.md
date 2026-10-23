@@ -100,7 +100,7 @@ use native DBus manager methods and await `JobRemoved`, not a wrapper retry.
 
 The crash test extracts `wantedBy`, `requires`, `after`, and `partOf` from the
 actual product kiosk, and `Restart`/`RestartSec` from its korrid. Processes are
-fixtures, not the Rust daemon, Chromium, nginx, or the compositor.
+fixtures, not the Rust daemon, WPE, nginx, or the compositor.
 
 All **six** upstream `TEST-38-FREEZER.sh` cases ran on the patched PID1:
 `dbus_api`, `preserve_state`, `recursive`, `systemctl`, `systemctl_show`, and
@@ -133,7 +133,7 @@ acceptance result. `git diff --cached --check` and Nix formatting checks passed.
   pushed, or merged. Parent review and deployment approval remain required.
 - No full systemd integration suite or handheld kernel test ran. In-flight
   freeze is deterministic; thaw/stop interleavings use race stress rather than
-  a separately held kernel thaw. Runtime behavior of real korrid/Chromium is
+  a separately held kernel thaw. Runtime behavior of real korrid/WPE is
   not established by their dependency fixtures.
 - An uninterruptible process must still leave its kernel wait before it can
   handle SIGTERM. Thaw does not solve stuck I/O or replace normal stop timeouts.

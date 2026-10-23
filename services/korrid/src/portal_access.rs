@@ -540,7 +540,7 @@ mod tests {
         let backend = Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default());
         let compositor = Arc::new(InMemoryCompositor {
             tree: Mutex::new(json!({"id":1,"nodes":[
-                {"id":2,"pid":4100,"app_id":"chromium-browser","focused":true},
+                {"id":2,"pid":4100,"app_id":"korri-portal","focused":true},
                 {"id":3,"pid":9100,"app_id":"retroarch","focused":false}
             ]})),
         });
@@ -590,7 +590,7 @@ mod tests {
         )
         .with_route_registry(root.path().into(), registry.clone())
         .with_retroarch_control_port(control_port)
-        .with_compositor(compositor.clone(), vec!["chromium-browser".into()]);
+        .with_compositor(compositor.clone(), vec!["korri-portal".into()]);
         runtime.claim_save_owner();
         let (app, _) = crate::secure_host_routers(
             runtime,
@@ -713,7 +713,7 @@ mod tests {
         )
         .with_route_registry(root.path().into(), registry)
         .with_retroarch_control_port(control_port)
-        .with_compositor(compositor.clone(), vec!["chromium-browser".into()]);
+        .with_compositor(compositor.clone(), vec!["korri-portal".into()]);
         let (app, _) = crate::secure_host_routers(
             recovered,
             &private,

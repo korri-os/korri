@@ -39,8 +39,7 @@ board files live under `devices/`, and shared image behavior lives under
 ## Hardware limits
 
 A board module may record a limit only where observed hardware requires it. For
-example, RG353M carries its thermal CPU ceiling and the unaccepted Chromium GPU
-path locally; `--disable-gpu` is not universal product policy. Such limits must
+example, RG353M carries its measured thermal CPU ceiling locally. Such limits must
 not turn into alternate product composition.
 
 Bootloaders, partition labels, image compression, console order, kernel and

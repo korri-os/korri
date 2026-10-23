@@ -1,11 +1,11 @@
 # Linux portal deployment
 
-The device runs one local web server and one Chromium kiosk. The portal bundle
+The device runs one local web server and one WPE WebKit kiosk. The portal bundle
 contains every registered surface. A web update replaces neither the operating
 system nor the streaming services.
 
-The device portal uses capability-bound RPC to its local korrid. The Linux
-shell supplies the port and capability through the private `window.KorriRpc`
+The device portal uses capability-bound RPC to its local korrid. The native WPE
+launcher supplies the port and capability through the private `window.KorriRpc`
 binding. Korrid grants portal access to sessions, Wi-Fi setup and player-seat
 changes; it rejects other settings changes. An empty device catalog stays empty.
 Unsupported native actions do not simulate success.
@@ -29,22 +29,26 @@ The server listens only on `127.0.0.1:8099`. It opens no firewall port.
 
 A root-owned service generates a capability in its private runtime directory.
 Systemd supplies separate private credential mounts to korrid and the browser
-shell. The shell injects the shared `KorriRpc` binding through Chromium's private
-control pipe, before loading the trusted page. The capability never enters the
+launcher. The launcher injects the shared `KorriRpc` binding in a document-start
+script in the trusted top-level page only. The capability never enters the
 web bundle, URL, command arguments or browser storage. There is no debugging TCP
 listener and no RPC proxy. The browser calls korrid's existing `/rpc` directly.
 
-The shell reports systemd readiness only after the trusted top-level page reads
+The launcher reports systemd readiness only after the trusted top-level page reads
 both credential getters. This rejects old fixture bundles that ignore the
 binding. Readiness does not prove that every RPC succeeds. Verify actual browser
 data separately. Credential-service restart rotates the token and restarts both
 consumers. A normal web update restarts only the browser.
 
-The RG353M composition uses reduced motion and software browser drawing. Its
-pinned Chromium GPU process crashes inside the sandbox, including with the
-benchmark's GLES flags. `--disable-gpu` avoids that crash loop without weakening
-the sandbox. This costs browser acceleration; it does not change Sway rendering
-or Sunshine's hardware encoding. Larger or animated pages need separate testing.
+The kiosk unit is `korri-portal-kiosk.service`. It starts
+`korri-portal-wpe` directly as the notifying main process. The fixed Wayland
+app_id is `korri-portal`. WebKit owns data below
+`/var/lib/korri-portal/.local/share` and cache below `/var/lib/korri-portal/.cache`.
+The unit permits unprivileged user namespaces for WebKit's non-setuid
+bubblewrap sandbox. `NoNewPrivileges` remains enabled. The unit does not
+restrict render-node access and grants neither `video` nor `input` group
+membership. The launcher owns any private session bus; no shared bus is passed.
+The portal background is transparent for the gameplay overlay.
 
 There is no portal-specific temperature cutoff. The earlier 68°C guard was
 removed at the user's request because it interrupted boot and web updates.
@@ -60,15 +64,15 @@ write is part of portal deployment.
 ## Cut over an existing preview
 
 This is an explicit deployment operation, not a runtime migration. Stop the old
-browser before copying its profile. Keep the original profile and selected web
-bundle as backups. After activation creates `korri-portal`, copy the preserved
-profile under its home using the existing Chromium profile suffix. Set ownership
-to `korri-portal:korri-portal` before starting the new browser.
+browser and retain its home and selected web bundle as backups. WPE uses fresh
+WebKit storage in the isolated home; do not copy another engine's profile into
+it. Retain the previous NixOS generation for operational rollback. No automatic
+browser preference or cache migration runs.
 
 Select a web bundle that implements `KorriRpc` and a service bundle containing
 the updated korrid. Preserve both previous bundle selections and the previous OS
 closure as GC roots. Old fixture web generations are not valid rollback targets
-for the new shell. Keep them with the previous runtime for operational recovery,
+for the new launcher. Keep them with the previous runtime for operational recovery,
 not in the live web rollback sequence. Never silently restore sample data when
 the real connection fails.
 
@@ -95,7 +99,7 @@ references, so a laptop's output can run on the ARM device.
 
 Nix owns selection and history through its named profile
 `/nix/var/nix/profiles/korri-portal`. Updates are serialized. The selector restarts
-only Chromium, checks both service states, and compares the served index with
+only `korri-portal-kiosk.service`, checks both service states, and compares the served index with
 the selected bundle. Failed activation restores the original generation and
 removes a newly created failed generation so a future rollback cannot select it.
 Previously accepted generations remain available. These checks establish server
@@ -146,8 +150,8 @@ permission enforcement, Wayland access, streaming, reboot and rollback.
 
 `nix/browser-check.py` is the historical fixture-preview check. It expects sample
 games and no backend requests, so it is not the live-data acceptance gate. Do not
-add a debugging port to the production kiosk to run it. The native shell tests
-use actual sandboxed Chromium and its private pipe. The older
+add a debugging port to the production kiosk to run it. The native launcher tests
+exercise the WPE credential bridge and readiness contract. The older
 [RG353M acceptance](../../docs/acceptance/rg353m-portal-2026-09-06.md) remains
 evidence for the prior preview only.
 
@@ -160,17 +164,14 @@ pruned. Normal web updates do not touch extlinux.
 ## Grounding
 
 `KorriRpc` implements `korridPort()` and `korridCapability()` from
-`contracts/bridge/korri-rpc-bridge.ts` through the Linux shell's private Chromium
-pipe. Systemd's credential ID uses korrid's existing `KORRID_RPC_CAPABILITY` name. The isolated user, home and runtime directory use
-the existing `korri-portal` package namespace. No user library schema changes.
+`contracts/bridge/korri-rpc-bridge.ts` through the WPE launcher's document-start
+script. Systemd's credential ID uses korrid's existing `KORRID_RPC_CAPABILITY`
+name. The isolated user, home and runtime directory use the existing
+`korri-portal` package namespace. No user library schema changes.
 
-The names `services.korri.webSurfaceHost`, `services.korri.compositor.kiosk`,
-loopback port 8099, and the URL/Chromium profile environment come from legacy's
-`product/systems/nixos/modules/korri-web-surface-host.nix`,
-`product/systems/nixos/modules/korri-compositor.nix`, and
-`product/services/device/nix/chromium-kiosk.nix`. Only the preview-relevant
-options are extracted. Nginx supplies static serving; the legacy API proxy and
-sessiond are not ported.
+The names `services.korri.webSurfaceHost`, `services.korri.compositor.kiosk`
+and loopback port 8099 preserve the existing portal contract. Nginx supplies
+static serving; the legacy API proxy and sessiond are not ported.
 
 The asset-root separation preserves legacy's `KORRI_ASSET_ROOT` boundary.
 The named profile uses Nix's existing generation and GC-root format, named for

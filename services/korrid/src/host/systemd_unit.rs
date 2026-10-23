@@ -1802,7 +1802,7 @@ mod tests {
         .unwrap()
     }
 
-    const PORTAL: &str = "korri-chromium-kiosk.service";
+    const PORTAL: &str = "korri-portal-kiosk.service";
 
     #[test]
     fn launch_settings_units_use_the_games_slice_with_an_enabled_cpu_controller() {
@@ -1845,10 +1845,10 @@ mod tests {
         for unit in [
             "",
             ".service",
-            "korri-chromium-kiosk",
-            "korri-chromium-kiosk.socket",
-            "-korri-chromium-kiosk.service",
-            "../korri-chromium-kiosk.service",
+            "korri-portal-kiosk",
+            "korri-portal-kiosk.socket",
+            "-korri-portal-kiosk.service",
+            "../korri-portal-kiosk.service",
             "korri chromium.service",
             "korri-*.service",
             "korri-game-0123456789abcdef0123456789abcdef.service",

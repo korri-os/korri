@@ -4,7 +4,7 @@
   consoleConfiguration,
 }:
 let
-  kiosk = configuration.config.systemd.services.korri-chromium-kiosk;
+  kiosk = configuration.config.systemd.services.korri-portal-kiosk;
   korrid = configuration.config.systemd.services.korrid;
   systemd = pkgs.callPackage ./package.nix { };
   python = pkgs.python3.withPackages (ps: [ ps.dbus-next ]);
@@ -86,11 +86,11 @@ pkgs.testers.runNixOSTest {
         TEST-38-FREEZER-sleep.serviceConfig.ExecStart = "${pkgs.coreutils}/bin/sleep infinity";
       }
       # Use the product's actual dependency lists, with test processes instead of
-      # Chromium, korrid, nginx and the compositor. This tests PID1 recovery wiring,
+      # the portal, korrid, nginx and the compositor. This tests PID1 recovery wiring,
       # not the Rust daemon or the browser's own recovery logic.
       // lib.genAttrs (map (lib.removeSuffix ".service") kiosk.requires) service
       // {
-        korri-chromium-kiosk = (service "recovery-kiosk") // {
+        korri-portal-kiosk = (service "recovery-kiosk") // {
           inherit (kiosk)
             wantedBy
             requires

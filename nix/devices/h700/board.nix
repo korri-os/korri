@@ -116,8 +116,6 @@ in
     renderer = "gles2";
   };
 
-  # Recorded limit: Chromium's GPU path has not been accepted on these boards.
-  services.korri.compositor.kiosk.extraChromiumArgs = [ "--disable-gpu" ];
 
   # The same RTL8821CS as the RG353M, where deep power saving caused pairing
   # failures and dropped links.

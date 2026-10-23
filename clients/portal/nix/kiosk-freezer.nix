@@ -7,7 +7,7 @@
   ...
 }:
 let
-  unit = "korri-chromium-kiosk.service";
+  unit = "korri-portal-kiosk.service";
   systemd = config.systemd.package;
   # 258.2 uses stop/start verbs for the two native freezer methods. The
   # message distinguishes these from actual StopUnit/StartUnit authority.

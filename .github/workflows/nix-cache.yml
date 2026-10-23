@@ -100,9 +100,6 @@ jobs:
       # The module and image checks also consume an x86 DT-driver audit report;
       # the kernel's runtime closure does not include that build-time gate.
       #
-      # korri-chromium-aarch64 is deliberately absent. It is a cross-build no
-      # device uses — every device closure carries an aarch64 chromium — and
-      # building it here cost two runs of over an hour each before it was caught.
       - name: Publish cross-built outputs
         env:
           KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret

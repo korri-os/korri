@@ -24,7 +24,7 @@ for sample in 1 2 3; do
   # Native systemd properties preserve units (MemoryCurrent/Peak are bytes).
   # Missing units on the console baseline are expected, not a passed session.
   systemctl --no-pager show \
-    korri-compositor.service korrid.service korri-chromium-kiosk.service \
+    korri-compositor.service korrid.service korri-portal-kiosk.service \
     nginx.service sunshine.service korri-inputd.service inputplumber.service \
     -p Id -p LoadState -p ActiveState -p SubState -p Result -p NRestarts \
     -p MemoryCurrent -p MemoryPeak 2>&1 || true
@@ -37,7 +37,7 @@ printf '\n%s\n' '--- bounded kernel OOM/GPU messages ---'
 journalctl -k -b --no-pager -n 30 --grep='oom|Out of memory|Killed process|panfrost|drm|GPU' 2>&1 || true
 printf '\n%s\n' '--- candidate service and static-origin sanity ---'
 status=0
-for unit in korri-compositor korrid korri-chromium-kiosk nginx; do
+for unit in korri-compositor korrid korri-portal-kiosk nginx; do
   if ! systemctl is-active "$unit.service"; then status=1; fi
 done
 # Static HTML only. This does not prove authenticated RPC, a rendered frame,

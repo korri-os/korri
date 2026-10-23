@@ -1,6 +1,5 @@
 {
   korri,
-  chromiumArgs ? [ ],
 }:
 {
   config,
@@ -20,8 +19,9 @@ let
   runtimeDir = "/run/${user}";
   compositorControlSocket = "/run/korri-compositor/sway-ipc.sock";
   display = config.systemd.services.korri-compositor.environment.KORRI_WAYLAND_DISPLAY;
-  profile = "${home}${policy.chromiumProfileSuffix}";
-  portalAppId = "chromium-browser";
+  state = "${home}/.local/share";
+  cache = "${home}/.cache";
+  portalAppId = "korri-portal";
   origin = "http://${cfg.host}:${toString cfg.port}";
   # The surface resolver reads ?surface= first and remembers it, so a device
   # that can only open one fixed URL still picks its surface. This path serves
@@ -48,30 +48,7 @@ let
   # The credential ID is the existing korrid capability consumer's name.
   credential = "KORRID_RPC_CAPABILITY:/run/${credentialDirectory}/KORRID_RPC_CAPABILITY";
   selector = import ./select-package.nix { inherit pkgs url; };
-  shell = korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-portal-shell;
-  chromiumArgsFile = pkgs.writeText "korri-chromium-args.json" (
-    builtins.toJSON (chromiumArgs ++ kiosk.extraChromiumArgs)
-  );
-  # Keep the executable implementation independent of device-specific browser
-  # limits. The exact data file path belongs in the service environment.
-  chromium = pkgs.writeShellApplication {
-    name = "korri-chromium-kiosk";
-    text = ''
-      extra_args=()
-      while IFS= read -r encoded; do
-        extra_args+=("$(printf '%s' "$encoded" | ${pkgs.coreutils}/bin/base64 --decode)")
-      done < <(${pkgs.jq}/bin/jq -r '.[] | @base64' "$KORRI_CHROMIUM_ARGS_FILE")
-      exec ${lib.getExe shell} ${pkgs.chromium}/bin/chromium \
-        --ozone-platform=wayland \
-        --kiosk \
-        --user-data-dir="$KORRI_CHROMIUM_USER_DATA_DIR" \
-        --no-first-run --no-default-browser-check \
-        --disable-background-networking --disable-extensions --disable-sync \
-        --disable-session-crashed-bubble \
-        "''${extra_args[@]}" \
-        "$@"
-    '';
-  };
+  launcher = korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-portal-wpe;
   grantWaylandAccess = pkgs.writeShellApplication {
     name = "korri-portal-wayland-access";
     runtimeInputs = [
@@ -106,12 +83,13 @@ let
     "KORRID_PORTAL_ORIGIN"
     "KORRI_ASSET_ROOT"
     "KORRI_WEB_SURFACE_URL"
-    "KORRI_CHROMIUM_USER_DATA_DIR"
-    "KORRI_CHROMIUM_ARGS_FILE"
+    "XDG_DATA_HOME"
+    "XDG_CACHE_HOME"
+    "KORRI_PORTAL_TRANSPARENT"
   ];
 in
 {
-  # Static serving and profile selection preserve the extracted legacy module.
+  # Static serving and bundle selection preserve the extracted legacy module.
   # RPC remains in korrid. This module supplies startup credentials, not a proxy.
   options.services.korri = {
     webSurfaceHost = {
@@ -140,12 +118,7 @@ in
       };
     };
     compositor.kiosk = {
-      enable = lib.mkEnableOption "the Korri Chromium kiosk";
-      extraChromiumArgs = lib.mkOption {
-        type = lib.types.listOf lib.types.str;
-        default = [ ];
-        description = "Device-specific Chromium arguments required by recorded hardware limits.";
-      };
+      enable = lib.mkEnableOption "the Korri WPE kiosk";
     };
   };
 
@@ -233,7 +206,7 @@ in
         ''[app_id="${portalAppId}"] focus''
       ];
       # Controller input arrives through authenticated local korrid delivery.
-      # Chromium needs no raw or normalized controller-device ACL.
+      # The browser needs no raw or normalized controller-device ACL.
       users.groups.${group} = { };
       users.users.${user} = {
         isSystemUser = true;
@@ -265,22 +238,19 @@ in
         serviceConfig.LoadCredential = [ credential ];
       };
       # tmpfiles needs each parent to have the real owner before descending.
-      # Moving an existing browser profile is an explicit deployment operation.
+      # WebKit owns its data layout below the standard XDG directories.
       systemd.tmpfiles.rules = [
         "d ${home} 0700 ${user} ${group} -"
         "d ${home}/.local - ${user} ${group} -"
-        "d ${home}/.local/state - ${user} ${group} -"
-        "d ${home}/.local/state/korri 0700 ${user} ${group} -"
-        "d ${home}/.local/state/korri/chromium 0700 ${user} ${group} -"
-        "d ${profile} 0700 ${user} ${group} -"
+        "d ${state} 0700 ${user} ${group} -"
+        "d ${cache} 0700 ${user} ${group} -"
       ];
-      systemd.services.korri-chromium-kiosk = {
+      systemd.services.korri-portal-kiosk = {
         description = "Korri portal kiosk";
         # A recovered parent must pull the kiosk back in after a failed boot job.
         wantedBy = [ "multi-user.target" ] ++ kioskParents;
         requires = kioskParents;
-        # Not after korrid: Chromium takes about 7 s to start on the RG353M,
-        # so it starts beside korrid and the portal waits for korrid to answer
+        # Start beside korrid; the portal waits for korrid to answer
         # before it mounts (clients/portal/src/korrid/wait-for-korrid.ts).
         after = lib.remove "korrid.service" kioskParents;
         partOf = kioskParents;
@@ -290,8 +260,9 @@ in
           WAYLAND_DISPLAY = display;
           KORRI_ASSET_ROOT = policy.assetRoot;
           KORRI_WEB_SURFACE_URL = url;
-          KORRI_CHROMIUM_USER_DATA_DIR = profile;
-          KORRI_CHROMIUM_ARGS_FILE = chromiumArgsFile;
+          XDG_DATA_HOME = state;
+          XDG_CACHE_HOME = cache;
+          KORRI_PORTAL_TRANSPARENT = "1";
           KORRID_ADDRESS = address;
           KORRID_PORTAL_ORIGIN = origin;
         };
@@ -303,7 +274,7 @@ in
           User = user;
           Group = group;
           ExecStartPre = "+${lib.getExe grantWaylandAccess}";
-          ExecStart = "${chromium}/bin/korri-chromium-kiosk";
+          ExecStart = "${launcher}/bin/korri-portal-wpe";
           LoadCredential = [ credential ];
           StateDirectory = user;
           StateDirectoryMode = "0700";
@@ -318,12 +289,16 @@ in
           RestartSec = 5;
           UMask = "0077";
           NoNewPrivileges = true;
+          # Non-setuid bubblewrap creates WebKit's sandbox in a user namespace.
+          # NoNewPrivileges prevents privilege gains, not unprivileged namespaces.
+          RestrictNamespaces = false;
           ProtectSystem = "strict";
           ProtectHome = true;
           PrivateTmp = true;
           LimitCORE = 0;
           ReadWritePaths = [
-            profile
+            state
+            cache
             runtimeDir
           ];
         };

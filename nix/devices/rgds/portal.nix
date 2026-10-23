@@ -48,9 +48,6 @@ in
     };
   };
 
-  # Recorded limit: Chromium's GPU path has not been accepted on the RG DS.
-  # Keep software rendering local to this device rather than product policy.
-  services.korri.compositor.kiosk.extraChromiumArgs = [ "--disable-gpu" ];
 
   assertions = [
     {

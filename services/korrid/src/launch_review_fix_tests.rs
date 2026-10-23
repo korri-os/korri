@@ -5,7 +5,7 @@ async fn short_watcher_hold(pending: bool) {
     let root = tempfile::tempdir().unwrap();
     let (runtime, backend) = runtime(root.path());
     let compositor = focusable_compositor();
-    let runtime = runtime.with_compositor(compositor.clone(), vec!["chromium-browser".into()]);
+    let runtime = runtime.with_compositor(compositor.clone(), vec!["korri-portal".into()]);
     let (app, native) = native_routers(runtime.clone(), root.path());
     let active = reserve(&app).await;
     assert_eq!(start(&app, &active).await["outcome"]["_tag"], "Ok");

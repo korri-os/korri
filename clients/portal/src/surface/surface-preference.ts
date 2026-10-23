@@ -10,7 +10,7 @@ const STORAGE_KEY = "korri.surface"
  *
  * The storage seam, stated plainly: this is a display preference and nothing
  * else — no identity, no capability, no secret — so it lives in local storage
- * in the Chromium profile across browser restarts. A tampered value cannot do
+ * in browser storage across browser restarts. A tampered value cannot do
  * more than pick a different surface. An unrecognised one is ignored rather
  * than trusted.
  *

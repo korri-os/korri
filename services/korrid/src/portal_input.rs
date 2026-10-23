@@ -1,8 +1,8 @@
 //! Bounded, receive-only native input for the local portal.
 //! Attachment captures metadata and current held state atomically. Before the
-//! host freezes Chromium, suspend() requires every subscriber to retire its
+//! host freezes the browser, suspend() requires every subscriber to retire its
 //! callbacks and clear input, then acknowledge the exact connection/request.
-//! Queue age alone cannot invalidate TCP/Chromium buffered messages.
+//! Queue age alone cannot invalidate TCP/the browser buffered messages.
 
 use std::{
     collections::BTreeMap,

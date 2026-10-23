@@ -18,9 +18,8 @@ let
       "wss://relay.nostr.band"
       "wss://relay.primal.net"
     ];
-    # Chromium's native Wayland app_id is its desktop-file WM class. The
-    # portal module check binds this value to the packaged Chromium desktop file.
-    browserNeverFocusAppIds = [ "chromium-browser" ];
+    # The native WPE launcher fixes its Wayland app_id to this value.
+    browserNeverFocusAppIds = [ "korri-portal" ];
     # Every product device opens Pico.
     surfaceId = "pico";
     korridAddress = "[::]:39217";

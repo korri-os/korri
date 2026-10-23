@@ -195,14 +195,14 @@ assert c.boot.consoleLogLevel == 0;
 assert c.specialisation.development.configuration.boot.consoleLogLevel == 7;
 # The portal freeze is product behavior, never a recovery or unpatched-kiosk feature.
 assert !((recovery.systemd.services.korrid.environment or { }) ? KORRID_PORTAL_UNIT);
-assert !(recovery.systemd.services ? korri-chromium-kiosk-thaw);
-assert !(lib.hasInfix "korri-chromium-kiosk" recovery.security.polkit.extraConfig);
+assert !(recovery.systemd.services ? korri-portal-kiosk-thaw);
+assert !(lib.hasInfix "korri-portal-kiosk" recovery.security.polkit.extraConfig);
 assert
   (c.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT)
   == builtins.any (patch: baseNameOf (toString patch) == "stop-thaws-unit.patch") (
     c.systemd.package.patches or [ ]
   );
-assert !(c.systemd.services ? korri-chromium-kiosk-thaw);
+assert !(c.systemd.services ? korri-portal-kiosk-thaw);
 assert c.services.korri.clockGovernor.enable;
 assert c.services.korri.clockGovernor.cpuGovernor == "schedutil";
 assert c.services.korri.clockGovernor.gpuDevfreqNodes == [ ];
@@ -285,7 +285,7 @@ assert !recovery.services.seatd.enable;
 assert !(recovery.systemd.services ? korrid);
 assert !(recovery.systemd.services ? rpminiv2-thermal-snapshot);
 assert !(recovery.systemd.services ? korri-compositor);
-assert !(recovery.systemd.services ? korri-chromium-kiosk);
+assert !(recovery.systemd.services ? korri-portal-kiosk);
 assert !(c.users.users ? gameplay);
 assert !(c.users.groups ? games);
 assert c.services.korriProduct.sleep.states == [ ];
@@ -302,7 +302,6 @@ assert lib.hasInfix "output DSI-1 transform 90 scale 1"
   c.services.korriLinuxHost.compositor.extraConfig;
 assert lib.hasInfix ''input "0:0:generic_ft5x06_(8d)" map_to_output DSI-1''
   c.services.korriLinuxHost.compositor.extraConfig;
-assert c.services.korri.compositor.kiosk.extraChromiumArgs == [ ];
 assert
   map lib.getName c.services.korriLinuxInput.provider.extraDataPackages == [
     "rpminiv2-inputplumber-data"
@@ -334,7 +333,7 @@ assert lib.elem "korri-compositor.service" idle.requires;
 assert lib.elem "korri-compositor.service" idle.after;
 assert thermalSnapshot.wantedBy == [ "multi-user.target" ];
 assert lib.elem "korri-compositor.service" thermalSnapshot.before;
-assert lib.elem "korri-chromium-kiosk.service" thermalSnapshot.before;
+assert lib.elem "korri-portal-kiosk.service" thermalSnapshot.before;
 assert thermalSnapshot.serviceConfig.ProtectKernelTunables;
 assert thermalSnapshot.serviceConfig.TimeoutStartSec == "10s";
 assert lib.elem "libdrm" (packageNames recovery);
