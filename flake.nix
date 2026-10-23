@@ -166,6 +166,10 @@
             h700-inputplumber-data = h700.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
             korri-wpewebkit = pkgs.callPackage ./clients/linux/wpewebkit/wpewebkit.nix { };
+            korri-portal-wpe = import ./clients/linux/package.nix {
+              inherit pkgs;
+              wpewebkit = self.packages.${system}.korri-wpewebkit;
+            };
           }
         )
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
