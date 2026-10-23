@@ -48,7 +48,6 @@ in
     };
   };
 
-
   assertions = [
     {
       assertion =

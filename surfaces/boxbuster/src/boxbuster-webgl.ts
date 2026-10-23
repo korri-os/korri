@@ -1,7 +1,7 @@
 /**
  * Whether this browser can draw the store at all.
  *
- * Some kiosks run Chromium with `--disable-gpu`, where WebGL may be missing.
+ * WebGL may be missing when graphics initialization fails.
  * Boxbuster must never be a blank screen there: without WebGL the counter is
  * the whole surface. The probe context is released at once, so it does not
  * count against the browser's limit on live WebGL contexts.

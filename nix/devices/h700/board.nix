@@ -116,7 +116,6 @@ in
     renderer = "gles2";
   };
 
-
   # The same RTL8821CS as the RG353M, where deep power saving caused pairing
   # failures and dropped links.
   networking.networkmanager.wifi.powersave = false;

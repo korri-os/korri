@@ -1849,7 +1849,7 @@ mod tests {
             "korri-portal-kiosk.socket",
             "-korri-portal-kiosk.service",
             "../korri-portal-kiosk.service",
-            "korri chromium.service",
+            "korri portal.service",
             "korri-*.service",
             "korri-game-0123456789abcdef0123456789abcdef.service",
         ] {

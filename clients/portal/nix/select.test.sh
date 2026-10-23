@@ -27,7 +27,7 @@ done
 c=$(nix-store --add "$tmp/c")
 d=$(nix-store --add "$tmp/d")
 # Use the installed systemctl CLI shape with controlled subprocess outcomes.
-printf '#!/usr/bin/env bash\nif [ -e %q ]; then exit 1; fi\nexit 0\n' "$tmp/fail-service" > "$tmp/systemctl"
+printf '#!/usr/bin/env bash\ncase "$*" in\n  "restart korri-portal-kiosk.service"|"is-active --quiet korri-portal-kiosk.service"|"is-active --quiet nginx.service") ;;\n  *) exit 64 ;;\nesac\nif [ -e %q ]; then exit 1; fi\nexit 0\n' "$tmp/fail-service" > "$tmp/systemctl"
 chmod +x "$tmp/systemctl"
 ln -s "$tmp/profile" "$tmp/served"
 python3 "$source_dir/test-server.py" "$tmp/served" "$tmp/port" &
