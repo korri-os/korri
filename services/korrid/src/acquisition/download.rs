@@ -42,7 +42,7 @@ impl Default for DownloadEngine {
 /// Legacy `MAX_FALLBACK_DOWNLOAD_BYTES`: the cap for a game with no expected hash.
 pub(super) const MAX_GAME_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// Body text one provider turn response may carry (ADR 0016).
-pub(super) const MAX_TEXT_BYTES: u64 = 4 * 1024 * 1024;
+pub(super) const MAX_TEXT_BYTES: u64 = 512 * 1024;
 
 /// A GET a provider asked for, after the turn runner admitted it.
 pub(super) struct TextRequest<'a> {
@@ -195,7 +195,7 @@ impl DownloadEngine {
         Err(Failure::Redirect)
     }
 
-    /// A provider turn request: GET, body text capped at 4 MiB, decoded as
+    /// A provider turn request: GET, body text capped at 512 KiB, decoded as
     /// UTF-8 with replacement. An HTTP error status is a response.
     pub(super) async fn fetch_text(
         &self,

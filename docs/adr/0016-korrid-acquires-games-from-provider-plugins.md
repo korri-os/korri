@@ -45,6 +45,10 @@ withdrawn.
   provider link and its ready folder before it requires a held claim, so Get
   on an owned cart answers `Imported` with no network.
 
+**Owner decisions, 2026-10-23.** "set the per-page limit to 512 KiB". This
+matches the launch input bound and reduces QuickJS deadline risk on slower
+handhelds; the 4 MiB serialized input bound stays unchanged.
+
 This decision amends ADR 0012, which said "Source acquisition (search,
 claims, resolve-download, browser hand-off, provider health) is OUT". It adds
 search, claims and resolve-download for search providers: a provider plugin finds games on one site and says where their
@@ -121,10 +125,20 @@ boundaries).
 | Failure copy | `launcher/redaction.rs` posture, ADR 0012 closed vocabulary | Fixed plain copy; no URL, path, query, header value, HTTP status or plugin text. Diagnostics go to `log::debug!`, which the build compiles out. |
 
 Turn bounds: at most 4 handler calls per operation, 8 requests per turn,
-4 MiB of body text per response, 4 MiB of serialized handler input in total,
-and the existing 1000 ms deadline and 16 MiB heap per call. The input bound is
-new: the contract's per-response bound needs more than the 512 KiB launch input
-bound, and the heap must hold the input. A 3.5 MiB page fits, as tested.
+512 KiB of body text per response, 4 MiB of serialized handler input in total,
+and the existing 1000 ms deadline and 16 MiB heap per call. The per-response
+bound matches the 512 KiB launch input bound; the larger total allows replay
+of multiple responses, and the heap must hold that input. The total measures
+JSON-escaped input, not raw body bytes: a quote-heavy 3.5 MiB benchmark page
+became 4.30 MB and was refused even under the old 4 MiB body bound. A 3.5 MiB
+page does not fit the new per-response bound.
+
+Grounding: benchmarks in `/tmp/korri-perf/results/summary.md` and
+`/tmp/korri-perf/results/report-table.md` put QuickJS parsing on the aarch64
+builder fuji at about 340 ms per MiB, reaching the 1000 ms deadline near
+2.9 MiB. Handhelds such as RG353M are estimated, not measured, to be 4 to 6
+times slower (deadline near 0.5 to 0.7 MiB). The largest real provider page
+observed was 174 KiB (WoWROMs search); most were 16 to 50 KiB.
 
 ## Considered Options
 

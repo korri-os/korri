@@ -144,8 +144,9 @@ pub fn call_plugin_operation_snapshot(
 }
 
 /// The same call with a caller-chosen input bound. Acquisition provider turns
-/// carry host-read response text and use a 4 MiB bound (ADR 0016); the heap,
-/// stack, deadline and output budget are unchanged.
+/// carry host-read response text (512 KiB per body) and use a 4 MiB total
+/// serialized input bound (ADR 0016); the heap, stack, deadline and output
+/// budget are unchanged.
 pub fn call_plugin_operation_bounded(
     snapshot: &source::SourceSnapshot,
     operation: &str,

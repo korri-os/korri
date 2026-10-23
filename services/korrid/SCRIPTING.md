@@ -526,12 +526,24 @@ response with `ok: false`; the plugin decides what it means. `setCookies` and
 operation, in request order across turns. korrid calls the handler again with
 all responses so far; there is no opaque continuation state. Bounds per
 operation: at most 4 handler calls (the fourth must return a result), 8
-requests per turn, 4 MiB of body text per response, and 4 MiB of serialized
-handler input in total (the 512 KiB launch input bound does not apply; the
-existing 16 MiB interpreter heap must hold that input). The existing 1000 ms
-deadline, 16 MiB heap and output budget apply to each call. A request for zero
-requests, exceeding any bound, a thrown error, a request to an undeclared host,
-or an invalid result is a provider failure (`ProviderFailed`). A transport
+requests per turn, 512 KiB of body text per response, and 4 MiB of serialized
+handler input in total, measured after JSON escaping (not raw body bytes).
+The per-response bound matches the 512 KiB launch input bound; the larger
+total allows replay of multiple responses, and the existing 16 MiB interpreter
+heap must hold that input. ADR 0016's owner decision of 2026-10-23 lowers the
+body bound based on `/tmp/korri-perf/results/summary.md` and
+`/tmp/korri-perf/results/report-table.md`: QuickJS parsing on the aarch64
+builder fuji costs about 340 ms per MiB, reaching the 1000 ms deadline near
+2.9 MiB. RG353M is estimated, not measured, to be
+4 to 6 times slower (deadline near 0.5 to 0.7 MiB); observed real pages peaked
+at 174 KiB (WoWROMs search), with most at 16 to 50 KiB. A quote-heavy 3.5 MiB
+benchmark page became 4.30 MB of serialized input and exceeded the unchanged
+4 MiB input bound even before the body bound was lowered.
+
+The existing 1000 ms deadline, 16 MiB heap and output budget apply to each
+call. A request for zero requests, exceeding a handler or request bound, a
+thrown error, a request to an undeclared host, or an invalid result is a
+provider failure (`ProviderFailed`). A transport
 failure (DNS, connect, timeout, stall, oversize body, refused redirect) fails
 the operation as `ProviderUnreachable`; it is never delivered to the plugin.
 Neither crashes korrid.
