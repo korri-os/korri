@@ -3060,6 +3060,12 @@ mod tests {
                         error.contains("injected graph interruption"),
                         "{interruption}: {error}"
                     );
+                    if interruption == 1 {
+                        assert_eq!(
+                            fs::read_link(host.root(&old_pack.id, "pending")).unwrap(),
+                            new_pack.package
+                        );
+                    }
                     if interruption < 15 {
                         assert!(host
                             .enabled_packages()
@@ -3919,6 +3925,241 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires builder dependency fixtures and real build-machine Nix; native effects are controlled"]
+    fn real_store_graph_recovery_refuses_journal_scope_changes_before_effects() {
+        let fixtures = PathBuf::from(
+            std::env::var_os("KORRI_TEST_DEPENDENCY_FIXTURES").expect("built dependency fixtures"),
+        );
+        let nix = PathBuf::from(std::env::var_os("KORRI_PUBLISH_NIX").expect("immutable Nix"));
+        let fixture = |name| fs::canonicalize(fixtures.join(name)).unwrap();
+        for checkpoint in [3, 6] {
+            // Fully staged Prepared, then Switching before any commit.
+            for change in [
+                "root-omitted",
+                "root-anchor-omitted",
+                "dependency-omitted",
+                "unrelated-injected",
+                "addition-injected",
+                "dependency-altered",
+                "desired-altered",
+                "shared-root-added",
+                "unrelated-pending",
+                "unrelated-graph-altered",
+            ] {
+                let directory = tempfile::tempdir().unwrap();
+                let runtime = TestRuntime {
+                    real_packages: true,
+                    ..TestRuntime::default()
+                };
+                let mut host = Host::for_test(
+                    directory.path(),
+                    nix.clone(),
+                    permitted_policy(),
+                    runtime.clone(),
+                )
+                .unwrap();
+                host.publishers = ["@games", "@runtime"]
+                    .into_iter()
+                    .map(|namespace| {
+                        (
+                            namespace.into(),
+                            package::PublisherBinding {
+                                public_key:
+                                    "seed-fixture:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+                                        .into(),
+                                cache_url: format!("https://cache.example/{namespace}"),
+                            },
+                        )
+                    })
+                    .collect();
+                let origin = |namespace: &str| Provenance::RawCache {
+                    cache_url: format!("https://cache.example/{namespace}"),
+                };
+                let first = host.load(&fixture("pack"), origin("@games")).unwrap();
+                let unrelated = host
+                    .load(&fixture("unrelated"), origin("@runtime"))
+                    .unwrap();
+                install(&host, first.clone());
+                install(&host, unrelated.clone());
+                host.set_enabled(&first.id, true).unwrap();
+                host.set_enabled(&unrelated.id, true).unwrap();
+                let next = host.load(&fixture("secondPack"), origin("@games")).unwrap();
+                runtime.interrupt_graph_at.set(Some(checkpoint));
+                let error = host
+                    .install(
+                        next.clone(),
+                        &next.approval,
+                        SelectionIntent::Update { id: &first.id },
+                    )
+                    .unwrap_err();
+                assert!(error.contains("injected graph interruption"), "{error}");
+                runtime.interrupt_graph_at.set(None);
+                let journal = host.state.root().join("graph-update.json");
+                let mut value: serde_json::Value = storage::read_json(&journal).unwrap().unwrap();
+                let selections = value["selections"].as_array_mut().unwrap();
+                let expected = match change {
+                    "root-omitted" => {
+                        selections.retain(|entry| entry["after"]["id"] != first.id);
+                        "root"
+                    }
+                    "root-anchor-omitted" => "root",
+                    "dependency-omitted" => {
+                        selections.retain(|entry| entry["after"]["id"] == first.id);
+                        "dependency"
+                    }
+                    "unrelated-injected" => {
+                        let target = host
+                            .load(&fixture("nextUnrelated"), origin("@runtime"))
+                            .unwrap();
+                        let before = host.receipt(&unrelated.id).unwrap().unwrap();
+                        let after = before
+                            .select(target.package, target.provenance, target.approval)
+                            .unwrap();
+                        selections.push(serde_json::json!({"before": before, "after": after}));
+                        "closure"
+                    }
+                    "addition-injected" => {
+                        let target = host.load(&fixture("native"), origin("@runtime")).unwrap();
+                        let after = Receipt {
+                            id: target.id,
+                            package: target.package,
+                            provenance: target.provenance,
+                            approval: target.approval,
+                            desired: Desired::Enabled,
+                            previous: None,
+                        };
+                        host.prepare(&after.id).unwrap();
+                        host.selection(&after.id).stage(&after.package).unwrap();
+                        selections.push(serde_json::json!({"before": null, "after": after}));
+                        "closure"
+                    }
+                    "dependency-altered" => {
+                        let target = host
+                            .load(&fixture("thirdRunner"), origin("@runtime"))
+                            .unwrap();
+                        let before = host.receipt(&target.id).unwrap().unwrap();
+                        let after = before
+                            .select(target.package, target.provenance, target.approval)
+                            .unwrap();
+                        let entry = selections
+                            .iter_mut()
+                            .find(|entry| entry["after"]["id"] == after.id)
+                            .unwrap();
+                        *entry = serde_json::json!({"before": before, "after": after});
+                        "dependency"
+                    }
+                    "desired-altered" => {
+                        let entry = selections
+                            .iter_mut()
+                            .find(|entry| entry["after"]["id"] != first.id)
+                            .unwrap();
+                        entry["after"]["desired"] =
+                            serde_json::to_value(Desired::Disabled).unwrap();
+                        "desired"
+                    }
+                    "shared-root-added" => {
+                        let target = host.load(&fixture("transitive"), origin("@games")).unwrap();
+                        let receipt = Receipt {
+                            id: target.id,
+                            package: target.package,
+                            provenance: target.provenance,
+                            approval: target.approval,
+                            desired: Desired::Disabled,
+                            previous: None,
+                        };
+                        host.prepare(&receipt.id).unwrap();
+                        host.selection(&receipt.id).commit(&receipt).unwrap();
+                        "required"
+                    }
+                    "unrelated-pending" => {
+                        let target = host
+                            .load(&fixture("nextUnrelated"), origin("@runtime"))
+                            .unwrap();
+                        host.selection(&target.id).stage(&target.package).unwrap();
+                        "unfinished"
+                    }
+                    "unrelated-graph-altered" => {
+                        let other = host.load(&fixture("other"), origin("@games")).unwrap();
+                        let receipt = Receipt {
+                            id: other.id,
+                            package: other.package,
+                            provenance: other.provenance,
+                            approval: other.approval,
+                            desired: Desired::Disabled,
+                            previous: None,
+                        };
+                        host.prepare(&receipt.id).unwrap();
+                        host.selection(&receipt.id).commit(&receipt).unwrap();
+                        let target = host
+                            .load(&fixture("nextUnrelated"), origin("@runtime"))
+                            .unwrap();
+                        let before = host.receipt(&unrelated.id).unwrap().unwrap();
+                        let after = before
+                            .select(target.package, target.provenance, target.approval)
+                            .unwrap();
+                        host.selection(&after.id).commit(&after).unwrap();
+                        "incomplete root update"
+                    }
+                    _ => unreachable!(),
+                };
+                if change == "root-anchor-omitted" {
+                    value.as_object_mut().unwrap().remove("root");
+                }
+                storage::write_json(&journal, &value).unwrap();
+                let bytes = fs::read(&journal).unwrap();
+                let receipts = host.receipts().unwrap();
+                // Include a newly injected addition's roots even without a receipt.
+                let roots: BTreeMap<_, _> = fs::read_dir(&host.paths.roots)
+                    .unwrap()
+                    .map(|entry| {
+                        let entry = entry.unwrap();
+                        let links = fs::read_dir(entry.path())
+                            .unwrap()
+                            .map(|link| {
+                                let link = link.unwrap();
+                                (link.file_name(), fs::read_link(link.path()).unwrap())
+                            })
+                            .collect::<BTreeMap<_, _>>();
+                        (entry.file_name(), links)
+                    })
+                    .collect();
+                let running = runtime.running.borrow().clone();
+                let owned = runtime.owned_packages.borrow().clone();
+                runtime.events.borrow_mut().clear();
+                let error = host.restore_all().expect_err(change);
+                assert!(
+                    error.contains(expected),
+                    "phase checkpoint {checkpoint}, {change}: {error}"
+                );
+                assert_eq!(host.receipts().unwrap(), receipts, "{change}");
+                assert_eq!(fs::read(&journal).unwrap(), bytes, "{change}");
+                for (name, links) in roots {
+                    let actual = fs::read_dir(host.paths.roots.join(name))
+                        .unwrap()
+                        .map(|link| {
+                            let link = link.unwrap();
+                            (link.file_name(), fs::read_link(link.path()).unwrap())
+                        })
+                        .collect::<BTreeMap<_, _>>();
+                    assert_eq!(actual, links, "{change}");
+                }
+                assert!(stops(&runtime).is_empty(), "{change}");
+                assert!(
+                    !runtime
+                        .events
+                        .borrow()
+                        .iter()
+                        .any(|event| event.starts_with("start")),
+                    "{change}"
+                );
+                assert_eq!(*runtime.running.borrow(), running, "{change}");
+                assert_eq!(*runtime.owned_packages.borrow(), owned, "{change}");
+                assert!(runtime.unsafe_stops.borrow().is_empty(), "{change}");
+            }
+        }
+    }
+
+    #[test]
     #[ignore = "requires the signed old Pro graph and current published ARM outputs in the build-machine store; no device access"]
     fn real_store_graph_rg35xxpro_updates_all_four_with_one_root_approval() {
         // Old outputs and approvals: observed device receipts in
@@ -4067,7 +4308,7 @@ mod tests {
         }
         storage::write_json(
             &host.state.root().join("graph-update.json"),
-            &serde_json::json!({"phase": "Switching", "selections": selections}),
+            &serde_json::json!({"root": first.id, "phase": "Switching", "selections": selections}),
         )
         .unwrap();
         host.selection(&afters[0].id).commit(&afters[0]).unwrap();

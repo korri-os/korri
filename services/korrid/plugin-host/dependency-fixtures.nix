@@ -12,7 +12,7 @@ let
     echo 'export const handlers = { "launch.prepare": (input: unknown) => input };' > "$out/launch.ts"
   '';
   packSource = pkgs.writeTextDir "plugin.ts" ''export const name = "starter-pack";'';
-  program = pkgs.writeShellScriptBin "fixture-fake08" ''exit 0'';
+  program = pkgs.writeShellScriptBin "fixture-fake08" "exit 0";
   runner = mkPlugin {
     publisher.namespace = "@runtime";
     source = runnerSource;
@@ -48,6 +48,23 @@ let
     publisher.namespace = "@games";
     source = packSource;
     plugin = _: { requires = [ runner ]; };
+  };
+  independent =
+    revision:
+    mkPlugin {
+      publisher.namespace = "@runtime";
+      source = pkgs.writeTextDir "plugin.ts" ''
+        export const name = "independent";
+        export const description = "${revision}";
+      '';
+      plugin = _: { };
+    };
+  unrelated = independent "before";
+  nextUnrelated = independent "after";
+  other = mkPlugin {
+    publisher.namespace = "@games";
+    source = pkgs.writeTextDir "plugin.ts" ''export const name = "other-pack";'';
+    plugin = _: { requires = [ unrelated ]; };
   };
   transitive = mkPlugin {
     publisher.namespace = "@games";
@@ -100,6 +117,9 @@ in
     thirdRunner
     secondPack
     thirdPack
+    unrelated
+    nextUnrelated
+    other
     pack
     transitive
     conflict

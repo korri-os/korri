@@ -18,6 +18,9 @@ pub(super) const JOURNAL: &str = "graph-update.json";
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct GraphUpdate {
+    // Anchor membership to the owner-reviewed root, never to a guessed entry
+    // or to a collection of individually reproducible dependency approvals.
+    root: String,
     phase: Phase,
     selections: Vec<Selection>,
 }
@@ -105,10 +108,15 @@ impl Host {
         }
         validate_final_graph(&final_graph)?;
         let mut update = GraphUpdate {
+            root: root.id.clone(),
             phase: Phase::Prepared,
             selections,
         };
         let switched = (|| {
+            // Recovery must be able to reload the approved root even if a
+            // crash/error precedes the remaining staging operations. Its
+            // validated Nix closure pins every exact required output too.
+            self.selection(&root.id).stage(&report.package)?;
             storage::write_json(&self.state.root().join(JOURNAL), &update)?;
             self.graph_checkpoint("prepared")?;
             self.invalidate_registry()?;
@@ -235,6 +243,7 @@ impl Host {
                     return Err("pending graph update conflicts with installed selection".into());
                 }
             }
+            self.validate_recovery_graph(&update)?;
             match update.phase {
                 Phase::Prepared => {
                     self.quiesce_graph_update(&update)?;
@@ -250,14 +259,107 @@ impl Host {
                     // This decision performs no starts. Complete the approved
                     // receipts even if a publisher was since revoked; ordinary
                     // restore checks current authority before any activation.
-                    for selection in &update.selections {
-                        self.approved_graph_candidate(&selection.after, &update)?;
-                    }
                     self.finish_graph_update(&update)?;
                 }
             }
         }
         storage::remove(&path.with_extension("new"))
+    }
+
+    fn validate_recovery_graph(&self, update: &GraphUpdate) -> Result<(), String> {
+        validate_id(&update.root)?;
+        let root = update
+            .selections
+            .iter()
+            .find(|selection| selection.after.id == update.root)
+            .ok_or("pending graph update omits its approved root")?;
+        let before = root
+            .before
+            .as_ref()
+            .ok_or("pending graph update root is not installed")?;
+        if root.after.desired != before.desired {
+            return Err("pending graph update changes the root's desired state".into());
+        }
+        crate::provenance::SelectionIntent::Update { id: &update.root }.validate(
+            &update.root,
+            Some(&before.provenance),
+            &root.after.provenance,
+        )?;
+        let report = self.approved_graph_candidate(&root.after, update)?;
+        let mut candidates: BTreeMap<_, _> = report
+            .brings
+            .iter()
+            .map(|dep| (dep.report.id.clone(), dep.report.clone()))
+            .collect();
+        candidates.insert(report.id.clone(), report);
+        if candidates.len() != update.selections.len() {
+            return Err(
+                "pending graph update selections differ from the approved root closure".into(),
+            );
+        }
+        let mut updating = BTreeSet::from([update.root.clone()]);
+        for selection in &update.selections {
+            let after = &selection.after;
+            let approved = candidates.get(&after.id).ok_or(
+                "pending graph update includes a plugin outside the approved root closure",
+            )?;
+            if after.package != approved.package
+                || after.provenance != approved.provenance
+                || after.approval != approved.approval
+            {
+                return Err(
+                    "pending graph update dependency differs from the approved root closure".into(),
+                );
+            }
+            let desired = if root.after.desired == Desired::Enabled {
+                Desired::Enabled
+            } else {
+                selection
+                    .before
+                    .as_ref()
+                    .map(|receipt| receipt.desired.clone())
+                    .unwrap_or(Desired::Disabled)
+            };
+            if after.desired != desired {
+                return Err("pending graph update changes a dependency's desired state".into());
+            }
+            if selection.before.as_ref().is_some_and(|before| {
+                before.package != after.package
+                    || before.provenance != after.provenance
+                    || before.approval != after.approval
+            }) {
+                updating.insert(after.id.clone());
+            }
+        }
+        // Recheck installed dependents, including disabled ones and any
+        // unfinished native cleanup. The host may have been reopened after a
+        // crash; current state must not silently expand the approved scope.
+        self.check_required_by(&update.root, false)?;
+        for id in updating.iter().filter(|id| **id != update.root) {
+            self.check_required_by_except(id, false, &updating)?;
+        }
+        let mut final_graph = BTreeMap::new();
+        for receipt in self.receipts()? {
+            if candidates.contains_key(&receipt.id) {
+                continue;
+            }
+            if matches!(receipt.desired, Desired::Removed { .. }) {
+                return Err("installed plugin removal is unfinished during graph recovery".into());
+            }
+            self.settled(&receipt)?;
+            let report = self.approved(&receipt)?;
+            final_graph.insert(receipt.id.clone(), (receipt, report));
+        }
+        for selection in &update.selections {
+            final_graph.insert(
+                selection.after.id.clone(),
+                (
+                    selection.after.clone(),
+                    candidates.remove(&selection.after.id).unwrap(),
+                ),
+            );
+        }
+        validate_final_graph(&final_graph)
     }
 
     fn approved_graph_candidate(
