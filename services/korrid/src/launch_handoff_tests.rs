@@ -131,7 +131,10 @@ async fn reserved_selected_and_stored_routes_keep_exact_identity_overrides_and_w
             "app.session.start",
             json!({
                 "gameId":game_id,"expectedLaunchId":launch_id,"runnerId":runner,
-                "overrides":{"settings":{"video_vsync":false,"absent_key":1}}
+                "launch":{"settings":{
+                    "scope":{"_tag":"Runner","id":"@korri:mgba/mgba"},
+                    "values":{"video_vsync":false,"absent_key":1}
+                }}
             }),
         )
         .await;
@@ -143,6 +146,10 @@ async fn reserved_selected_and_stored_routes_keep_exact_identity_overrides_and_w
         assert_eq!(
             launch["outcome"]["payload"]["warnings"][0]["setting"],
             "absent_key"
+        );
+        assert_eq!(
+            launch["outcome"]["payload"]["warnings"][0]["runnerId"],
+            "@korri:mgba/mgba"
         );
         assert_eq!(
             cancel(&app, launch_id).await["outcome"]["payload"]["phase"],
@@ -738,8 +745,39 @@ async fn launch_settings_rpc_snapshot_set_profiles_and_revision_conflict_round_t
     .await;
     assert_eq!(selected["outcome"]["_tag"], "Ok", "{selected}");
     let revision = selected["outcome"]["payload"]["games"].as_str().unwrap();
-    let set = rpc(&full,"app.launch-settings.set",json!({"scope":{"_tag":"Profile","id":{"gameId":"one","profileId":"quiet"}},"setting":"cpu.max","value":45,"expectedRevision":revision})).await;
+    let set_request = json!({
+        "place": {
+            "layer":{"_tag":"Profile","id":{"gameId":"one","profileId":"quiet"}},
+            "scope":{"_tag":"Any"}
+        },
+        "path":{"_tag":"CpuMax"},
+        "value":45,
+        "expectedRevision":revision
+    });
+    let set = rpc(&full, "app.launch-settings.set", set_request.clone()).await;
     assert_eq!(set["outcome"]["_tag"], "Ok", "{set}");
+    let library_path = root.path().join("catalog/library.yaml");
+    let saved_library = std::fs::read(&library_path).unwrap();
+    let stale = rpc(&full, "app.launch-settings.set", set_request).await;
+    assert_eq!(
+        stale["outcome"]["payload"]["code"], "SettingsConflict",
+        "{stale}"
+    );
+    assert_eq!(std::fs::read(&library_path).unwrap(), saved_library);
+    let updated = rpc(
+        &full,
+        "app.launch-settings.snapshot",
+        json!({"gameId":"one"}),
+    )
+    .await;
+    assert_eq!(updated["outcome"]["_tag"], "Ok", "{updated}");
+    let payload = &updated["outcome"]["payload"];
+    assert_eq!(payload["selectedProfile"], "quiet");
+    assert_eq!(payload["resolved"]["values"]["cpu.max"]["value"], 45);
+    assert_eq!(
+        payload["revisions"]["games"],
+        set["outcome"]["payload"]["games"]
+    );
     let snap = crate::config::settings::runner_choice_snapshot(root.path())
         .unwrap()
         .0;
