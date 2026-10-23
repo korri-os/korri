@@ -2,7 +2,7 @@
 use crate::{
     config::{
         resolver,
-        settings::{self, RunnerChoiceRevisions, RunnerChoiceScope},
+        settings::{self, RunnerChoiceRevisions},
     },
     launcher::{linux_plugin, plugin_launch::PluginDisplay, typed_settings::LaunchWarning},
     plugin::PluginRegistry,
@@ -56,16 +56,6 @@ pub struct GameRoutes {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct GameRunnerSetRequest {
-    pub scope: RunnerChoiceScope,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runner_id: Option<String>,
-    pub expected_revision: String,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SelectedGameLaunchRequest {
     pub game_id: String,
     pub runner_id: String,
@@ -85,13 +75,6 @@ pub struct SelectedGameLaunch {
 #[serde(tag = "_tag", content = "payload")]
 pub enum GameRoutesOutcome {
     Ok(GameRoutes),
-    Err(RpcFailure),
-}
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "_tag", content = "payload")]
-pub enum GameRunnerSetOutcome {
-    Ok(RunnerChoiceRevisions),
     Err(RpcFailure),
 }
 #[typeshare]

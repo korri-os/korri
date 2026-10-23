@@ -112,12 +112,6 @@ pub(super) fn validate(snapshot: &ConfigSnapshot) -> Result<(), ConfigSchemaErro
                     _ => {}
                 }
             }
-            if release.inheritable.hooks.as_ref().is_some_and(|hooks| {
-                hooks.before.as_ref().is_some_and(|v| !v.is_empty())
-                    || hooks.after.as_ref().is_some_and(|v| !v.is_empty())
-            }) {
-                return Err(invalid(&path, "only device.yaml may carry commands"));
-            }
         }
     }
     for (id, source) in &snapshot.sources {

@@ -322,14 +322,6 @@ pub fn update_with_registry_source(
 /// Choices extend the approved system/game records, never a separate document.
 #[typeshare::typeshare]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "_tag", content = "id")]
-pub enum RunnerChoiceScope {
-    System(String),
-    Game(String),
-}
-
-#[typeshare::typeshare]
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RunnerChoiceRevisions {
     pub device: String,
     pub games: String,
@@ -356,82 +348,6 @@ pub fn runner_choice_snapshot(
             games: revision(&games),
         },
     ))
-}
-
-pub fn set_runner_choice(
-    root: &Path,
-    private_root: &Path,
-    write_lock: &std::sync::Mutex<()>,
-    expected_revision: &str,
-    scope: &RunnerChoiceScope,
-    runner_id: Option<&str>,
-) -> Result<RunnerChoiceRevisions, SettingsError> {
-    if let Some(id) = runner_id {
-        // The same fully-qualified contribution syntax as release provider refs.
-        if !id.starts_with('@') || super::catalog::validate_release_key(id).is_err() {
-            return Err(SettingsError::Invalid(
-                "runner must be a fully-qualified contribution ID".into(),
-            ));
-        }
-    }
-    let _guard = write_lock
-        .lock()
-        .expect("runner choice write lock poisoned");
-    crate::discovery::reconcile::reject_pending_publication(private_root).map_err(|error| {
-        match error {
-            crate::discovery::DiscoveryError::Conflict => SettingsError::Conflict,
-            other => SettingsError::Storage(other.to_string()),
-        }
-    })?;
-    let mut device = read_fixed(root, DEVICE_FILE_NAME)?;
-    let mut games = read_fixed(root, LIBRARY_FILE_NAME)?;
-    let current = decode_config_documents(&device, &games)
-        .map_err(|error| SettingsError::Candidate(error.to_string()))?;
-    let (file, section, id, text) = match scope {
-        RunnerChoiceScope::System(id) => {
-            // Installed systems need no local record until their first opinion.
-            if !current
-                .library
-                .values()
-                .flat_map(|game| &game.releases)
-                .any(|release| release.system.as_ref().is_some_and(|s| &s.0 == id))
-                && !current.systems.contains_key(id)
-            {
-                return Err(SettingsError::Invalid(format!("unknown system {id}")));
-            }
-            (DEVICE_FILE_NAME, "systems", id, &mut device)
-        }
-        RunnerChoiceScope::Game(id) => {
-            if !current.library.contains_key(id) {
-                return Err(SettingsError::Invalid(format!("unknown game {id}")));
-            }
-            (LIBRARY_FILE_NAME, "library", id, &mut games)
-        }
-    };
-    if revision(text) != expected_revision {
-        return Err(SettingsError::Conflict);
-    }
-    let mut document = parse_mapping(text)?;
-    let record = mapping_at(mapping_at(&mut document, section)?, id)?;
-    let key = Value::String("runner".into());
-    if let Some(id) = runner_id {
-        record.insert(key, Value::String(id.into()));
-    } else {
-        record.remove(&key);
-    }
-    *text = serde_yaml::to_string(&Value::Mapping(document))
-        .map_err(|error| SettingsError::Candidate(error.to_string()))?;
-    let candidate = text.clone();
-    let snapshot = decode_config_documents(&device, &games)
-        .map_err(|error| SettingsError::Candidate(error.to_string()))?;
-    classify_snapshot_support(&snapshot)
-        .map_err(|error| SettingsError::Candidate(error.to_string()))?;
-    write_atomically(&root.join(file), candidate.as_bytes(), expected_revision)?;
-    // These are this commit's bytes, captured before another writer can enter.
-    Ok(RunnerChoiceRevisions {
-        device: revision(&device),
-        games: revision(&games),
-    })
 }
 
 fn set_device_name(document: &mut Mapping, value: String) -> Result<(), SettingsError> {

@@ -12,9 +12,10 @@ use std::{
     sync::Mutex,
     thread,
 };
-
-const DEVICE: &str = "host: {cpu: {min: 10, max: 95, governor: schedutil}, gpu: {max: 99}}\nsystems: {gba: {cpu: {max: 85}}}\nrunners: {'@korri:mgba/mgba': {gpu: {min: 15}}}\n";
-const LIBRARY: &str = "library:\n  game:\n    title: Game\n    cpu: {min: 20}\n    releases: [{id: gba, system: gba, identity: {kind: provider, value: '@korri:content/one'}, gpu: {max: 80}}]\n    profiles:\n      quiet: {title: Quiet, cpu: {max: 60}}\n    profile: quiet\n";
+const RUNNER: &str = "@korri:test/runner";
+const FAMILY: &str = "@korri:test";
+const DEVICE:&str="host: {cpu: {min: 10, max: 95, governor: schedutil}, gpu: {max: 99}, runners: {'@korri:test/runner': {gpu: {min: 15}}}}\nsystems: {gba: {cpu: {max: 85}}}\n";
+const LIBRARY:&str="library:\n  game:\n    title: Game\n    cpu: {min: 20}\n    releases: [{id: gba, system: gba, identity: {kind: provider, value: '@korri:content/one'}, gpu: {max: 80}}]\n    profiles:\n      quiet: {title: Quiet, cpu: {max: 60}}\n    profile: quiet\n";
 fn root() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("catalog")).unwrap();
@@ -28,140 +29,251 @@ fn unavailable(root: &std::path::Path) -> helper::Client {
     }
 }
 fn route() -> ResolvedRoute {
-    ResolvedRoute {
-        playable_id: "game".into(),
-        title: None,
-        release_id: "@korri:content/one".into(),
-        identity: None,
-        provider_id: "@korri:mgba".into(),
-        system_id: "gba".into(),
-        system_title: None,
-        runner_id: "@korri:mgba/mgba".into(),
-        family_id: None,
-        integration_token: String::new(),
-        flattened_target: String::new(),
-        linux_runner: None,
-        core_path: None,
-        file_target: None,
-        provider_target: None,
-        artifact_target: None,
-        package_target: None,
-        cache_target: None,
+    let c = decode_config_documents(DEVICE, LIBRARY).unwrap();
+    let mut r = resolution::context(&c, Some("game"));
+    r.runner_id = RUNNER.into();
+    r.family_id = Some(FAMILY.into());
+    r
+}
+pub(super) fn facts() -> LaunchDeviceFacts {
+    serde_json::from_value(json!({"defaults":{"cpu":{"min":0,"max":61},"gpu":{"min":0,"max":100},"governor":"schedutil"},"cpuPolicies":[{"name":"policy0","cpus":[0,1],"cpuinfoMaxFreq":1800000,"availableFrequencies":[408000,1800000],"availableGovernors":["schedutil","performance"]}],"gpuDevfreq":[]})).unwrap()
+}
+fn req(
+    place: LaunchPlace,
+    path: LaunchPath,
+    value: Option<serde_json::Value>,
+    revision: String,
+) -> LaunchSetRequest {
+    LaunchSetRequest {
+        place,
+        path,
+        value,
+        expected_revision: revision,
     }
 }
-fn facts() -> LaunchDeviceFacts {
-    serde_json::from_value(json!({"defaults":{"cpu":{"min":0,"max":61},"gpu":{"min":0,"max":100},"governor":"schedutil"},"cpuPolicies":[{"name":"policy0","cpus":[0,1],"cpuinfoMaxFreq":1800000,"availableFrequencies":[408000,1800000],"availableGovernors":["schedutil","performance"]}],"gpuDevfreq":[{"name":"gpu","availableFrequencies":[200000000,600000000]}]})).unwrap()
+fn any(layer: LaunchLayer) -> LaunchPlace {
+    LaunchPlace {
+        layer,
+        scope: LaunchRunnerScope::Any,
+    }
 }
+
 #[test]
-fn launch_settings_each_layer_contributes_and_independent_values_record_sources() {
-    let config = decode_config_documents(DEVICE, LIBRARY).unwrap();
-    let layers = resolution::layers(&config, Some("game"), Some(&route())).unwrap();
-    assert_eq!(layers.len(), 6);
-    let expected = [
-        (10, 95, 0, 99),
-        (10, 85, 0, 99),
-        (10, 85, 15, 99),
-        (20, 85, 15, 99),
-        (20, 85, 15, 80),
-        (20, 60, 15, 80),
-    ];
-    for (n, (cmin, cmax, gmin, gmax)) in expected.into_iter().enumerate() {
-        let r = resolve(&layers[..=n]);
-        assert_eq!(
-            (
-                r.cpu.min.value,
-                r.cpu.max.value,
-                r.gpu.min.value,
-                r.gpu.max.value
-            ),
-            (cmin, cmax, gmin, gmax)
-        );
+fn one_order_table_covers_every_place_for_every_kind() {
+    fn body(n: u8) -> serde_json::Value {
+        json!({"cpu":{"min":n},"gpu":{"min":n},"env":{"ORDER":n.to_string()},"args":{"prepend":[n.to_string()],"append":[n.to_string()]},"hooks":{"before":[{"run":n.to_string()}],"after":[{"run":n.to_string()}]},"modifiers":{"@korri:test.foo/wrapper":{"enabled":true,"settings":{"order":n}}}})
     }
-    let r = resolve(&layers);
-    assert!(matches!(r.cpu.min.source, LaunchSettingsScope::Game(_)));
-    assert!(matches!(
-        r.cpu.max.source,
-        LaunchSettingsScope::Profile { .. }
-    ));
-    assert!(matches!(r.gpu.min.source, LaunchSettingsScope::Runner(_)));
-    assert!(matches!(
-        r.gpu.max.source,
-        LaunchSettingsScope::Release { .. }
-    ));
-    assert_eq!(r.governor.as_deref(), Some("schedutil"));
-    let session =
-        session::SessionLimits::for_route(&config, &route(), "build".into(), None).unwrap();
-    assert_eq!(
-        (
-            session.cpu.min,
-            session.cpu.max,
-            session.gpu.min,
-            session.gpu.max
-        ),
-        (20, 60, 15, 80)
-    );
-    let empty = decode_config_documents(
-        "{}",
-        &LIBRARY
-            .replace("    cpu: {min: 20}\n", "")
-            .replace("gpu: {max: 80}", "gpu: {}")
-            .replace("cpu: {max: 60}", "cpu: {}"),
+    fn layer(start: u8) -> serde_json::Value {
+        let mut v = body(start);
+        let mut family = body(start + 1);
+        family["settings"] = json!({"order":start+1});
+        let mut runner = body(start + 2);
+        runner["settings"] = json!({"order":start+2});
+        v["families"] = json!({FAMILY:family});
+        v["runners"] = json!({RUNNER:runner});
+        v
+    }
+    let mut host = layer(1);
+    host["families"][FAMILY] = body(3);
+    host["runners"][RUNNER] = body(4);
+    let mut system = layer(2);
+    system["families"][FAMILY] = body(5);
+    system["runners"][RUNNER] = body(6);
+    let mut game = layer(7);
+    let mut release = layer(10);
+    release["id"] = json!("gba");
+    release["system"] = json!("gba");
+    release["identity"] = json!({"kind":"provider","value":"@korri:content/one"});
+    game["releases"] = json!([release]);
+    let mut profile = layer(13);
+    profile["title"] = json!("Quiet");
+    game["profiles"] = json!({"quiet":profile});
+    game["profile"] = json!("quiet");
+    let snapshot = decode_config_documents(
+        &json!({"host":host,"systems":{"gba":system}}).to_string(),
+        &json!({"library":{"game":game}}).to_string(),
     )
     .unwrap();
-    let session =
-        session::SessionLimits::for_route(&empty, &route(), "build".into(), None).unwrap();
+    let one: crate::config::place::PlaceBody = serde_json::from_value(layer(16)).unwrap();
+    let route = route();
+    let cells = launch::cells(&snapshot, &route, Some(&one));
+    assert_eq!(cells.len(), 18);
     assert_eq!(
-        (
-            session.cpu.min,
-            session.cpu.max,
-            session.gpu.min,
-            session.gpu.max
-        ),
-        (0, 100, 0, 100)
+        cells
+            .iter()
+            .map(|v| v.values.env["ORDER"].clone().unwrap())
+            .collect::<Vec<_>>(),
+        (1..=18).map(|n| n.to_string()).collect::<Vec<_>>()
+    );
+    let resolved = resolve_launch(&snapshot, &route, None, None).unwrap();
+    assert_eq!(resolved.env["ORDER"].as_deref(), Some("15"));
+    assert_eq!(
+        resolved.args.prepend,
+        (1..=15).map(|n| n.to_string()).collect::<Vec<_>>()
+    );
+    assert_eq!(resolved.args.prepend, resolved.args.append);
+    assert_eq!(
+        resolved
+            .hooks
+            .before
+            .iter()
+            .map(|s| s.run.0.clone())
+            .collect::<Vec<_>>(),
+        resolved.args.prepend
+    );
+    assert_eq!(
+        resolved
+            .hooks
+            .after
+            .iter()
+            .map(|s| s.run.0.clone())
+            .collect::<Vec<_>>(),
+        resolved.args.prepend
+    );
+    assert_eq!(resolved.limits.cpu.min.value, 15);
+    assert_eq!(resolved.limits.gpu.min.value, 15);
+    assert_eq!(
+        serde_json::to_value(&resolved.runner.settings["order"]).unwrap(),
+        15
+    );
+    let value = &resolved.values.values["modifiers.@korri:test.foo/wrapper.settings.order"];
+    assert!(
+        matches!(&value.path,LaunchValuePath::Editable(LaunchPath::ModifierSetting{id,key}) if id=="@korri:test.foo/wrapper" && key=="order")
+    );
+    assert!(
+        matches!(&value.source,LaunchSource::Place(LaunchPlace {layer:LaunchLayer::Profile{..},scope:LaunchRunnerScope::Runner(id)}) if id==RUNNER)
     );
 }
 #[test]
-fn launch_settings_more_specific_min_or_max_moves_the_other_side_and_records_adjustment() {
-    for (min, max, profile, rmin, rmax, adjmin, adjmax) in [
-        (80, 90, 40, 40, 40, true, false),
-        (10, 40, 80, 80, 80, false, true),
+fn routines_expand_before_inline_steps_and_each_kind_keeps_its_merge_rule() {
+    let device=format!("routines: {{setup: {{before: [{{run: routine}}], after: [{{run: cleanup}}]}}}}\nhost: {{env: {{KEEP: yes, REMOVE: old}}, cwd: /device, hooks: {{use: [setup], before: [{{run: inline}}]}}, runners: {{'{RUNNER}': {{settings: {{a: 1, b: 2}}, config: {{prepend: first, append: first}}, modifiers: {{'@korri:test.foo/wrapper': {{enabled: true, settings: {{a: 1, b: 2}}, config: {{append: first}}}}}}}}}}\n");
+    let library=LIBRARY.replace("    cpu: {min: 20}", &format!("    cpu: {{min: 20}}\n    env: {{REMOVE: null, ADD: final}}\n    cwd: /game\n    runners: {{'{RUNNER}': {{settings: {{b: 3}}, config: {{append: last}}, modifiers: {{'@korri:test.foo/wrapper': {{enabled: false, settings: {{b: 4}}, config: {{append: last}}}}}}}}"));
+    let snapshot = decode_config_documents(&device, &library).unwrap();
+    let r = resolve_launch(&snapshot, &route(), None, None).unwrap();
+    assert_eq!(r.env["REMOVE"], None);
+    assert_eq!(r.env["KEEP"].as_deref(), Some("yes"));
+    assert_eq!(r.cwd.as_deref(), Some("/game"));
+    assert_eq!(
+        serde_json::to_value(&r.runner.settings).unwrap(),
+        json!({"a":1,"b":3})
+    );
+    assert_eq!(
+        r.runner.config.as_ref().unwrap().prepend.as_deref(),
+        Some("first")
+    );
+    assert_eq!(
+        r.runner.config.as_ref().unwrap().append.as_deref(),
+        Some("last")
+    );
+    let m = &r.modifiers["@korri:test.foo/wrapper"];
+    assert_eq!(m.enabled, Some(false));
+    assert_eq!(
+        serde_json::to_value(&m.settings).unwrap(),
+        json!({"a":1,"b":4})
+    );
+    assert_eq!(m.config.as_ref().unwrap().append.as_deref(), Some("last"));
+    assert_eq!(
+        r.hooks
+            .before
+            .iter()
+            .map(|v| v.run.0.as_str())
+            .collect::<Vec<_>>(),
+        ["routine", "inline"]
+    );
+    assert_eq!(r.hooks.after[0].run.0, "cleanup");
+}
+#[test]
+fn runner_choice_falls_back_and_skips_unselected_scope_values() {
+    let device=format!("host: {{runner: '{RUNNER}', runners: {{'@korri:missing/main': {{env: {{BAD: wrong}}}}, '{RUNNER}': {{env: {{GOOD: selected}}}}}}}}\nsystems: {{gba: {{runner: '@korri:missing/system'}}}}");
+    let library = LIBRARY.replace(
+        "    title: Game",
+        "    title: Game\n    runner: '@korri:missing/game'",
+    );
+    let snapshot = decode_config_documents(&device, &library).unwrap();
+    let route = route();
+    let (selected, notices) = launch::choose_runner(&snapshot, &[route.clone()], None);
+    assert_eq!(selected.as_deref(), Some(RUNNER));
+    assert_eq!(notices.len(), 2);
+    assert!(
+        matches!(&notices[0],LaunchNotice::RunnerUnavailable {runner_id,place} if runner_id=="@korri:missing/game" && matches!(place.layer,LaunchLayer::Game(_)))
+    );
+    let resolved = resolve_launch(&snapshot, &route, None, None).unwrap();
+    assert!(!resolved.env.contains_key("BAD"));
+    assert_eq!(resolved.env["GOOD"].as_deref(), Some("selected"));
+    let mut other = route.clone();
+    other.runner_id = "@korri:other/main".into();
+    let empty = decode_config_documents("{}", LIBRARY).unwrap();
+    assert!(launch::choose_runner(&empty, &[route, other], None)
+        .0
+        .is_none());
+}
+#[test]
+fn cpu_device_any_is_cpufreq_but_device_runner_is_session_and_gpu_inherits_device() {
+    let library = LIBRARY
+        .replace("cpu: {min: 20}", "cpu: {}")
+        .replace("cpu: {max: 60}", "cpu: {}")
+        .replace("gpu: {max: 80}", "gpu: {}");
+    let config =
+        decode_config_documents("host: {cpu: {max: 65}, gpu: {max: 80}}", &library).unwrap();
+    let limits =
+        session::SessionLimits::for_route(&config, &route(), "build".into(), None).unwrap();
+    assert_eq!(limits.cpu.max, 100);
+    assert_eq!(limits.gpu.max, 80);
+    let config = decode_config_documents(
+        &format!("host: {{cpu: {{max: 65}}, runners: {{'{RUNNER}': {{cpu: {{max: 40}}}}}}}}"),
+        &library,
+    )
+    .unwrap();
+    let limits =
+        session::SessionLimits::for_route(&config, &route(), "build".into(), None).unwrap();
+    assert_eq!(limits.cpu.max, 40);
+    let config = decode_config_documents("{}", &library).unwrap();
+    let mut facts = facts();
+    facts.defaults.gpu.max = 55;
+    let limits =
+        session::SessionLimits::for_route(&config, &route(), "build".into(), Some(&facts)).unwrap();
+    assert_eq!(limits.gpu.max, 55);
+    assert_eq!(limits.cpu.max, 100);
+}
+#[test]
+fn across_place_range_conflicts_move_only_the_less_specific_side() {
+    for (min, max, profile, expected, adjusted) in [
+        (80, 90, "max: 40", 40, "cpu.min"),
+        (10, 40, "min: 80", 80, "cpu.max"),
     ] {
         let device = format!("host: {{cpu: {{min: {min}, max: {max}}}}}");
-        let library = if adjmin {
-            LIBRARY
-                .replace("cpu: {min: 20}", "cpu: {}")
-                .replace("max: 60", &format!("max: {profile}"))
-        } else {
-            LIBRARY
-                .replace("cpu: {min: 20}", "cpu: {}")
-                .replace("max: 60", &format!("min: {profile}"))
-        };
+        let library = LIBRARY
+            .replace("cpu: {min: 20}", "cpu: {}")
+            .replace("max: 60", profile);
         let config = decode_config_documents(&device, &library).unwrap();
-        let layers = resolution::layers(&config, Some("game"), Some(&route())).unwrap();
-        let r = resolve(&layers);
-        assert_eq!(
-            (
-                r.cpu.min.value,
-                r.cpu.max.value,
-                r.cpu.min.adjusted,
-                r.cpu.max.adjusted
-            ),
-            (rmin, rmax, adjmin, adjmax)
-        );
+        let values = resolve_launch(&config, &route(), None, None)
+            .unwrap()
+            .values
+            .values;
+        assert_eq!(values["cpu.min"].value, expected);
+        assert_eq!(values["cpu.max"].value, expected);
+        assert!(values[adjusted].adjusted);
     }
 }
 #[test]
-fn launch_settings_schema_rejects_governor_outside_host_and_invalid_ranges() {
+fn schema_rejects_removed_shapes_bad_ranges_unknown_routines_and_nonhost_governor() {
     for device in [
+        "runners: {}",
+        "families: {}",
+        "modifiers: {}",
+        "hooks: {}",
+        "host: {argsAppend: []}",
+        "host: {hooks: {trust-removable: true}}",
+        "host: {preferences: {playerCount: 2}}",
         "host: {gpu: {governor: schedutil}}",
         "systems: {gba: {cpu: {governor: schedutil}}}",
-        "runners: {'@korri:mgba/mgba': {cpu: {governor: schedutil}}}",
-        "profiles: {}",
+        "host: {hooks: {use: [missing]}}",
         "host: {cpu: {max: 0}}",
         "host: {cpu: {min: 101}}",
         "host: {cpu: {min: 1.5}}",
         "host: {cpu: {min: null}}",
         "host: {cpu: {min: 90, max: 80}}",
+        "host: {runners: {'@korri:test/runner': {runner: nope}}}",
     ] {
         assert!(
             decode_config_documents(device, LIBRARY).is_err(),
@@ -170,49 +282,34 @@ fn launch_settings_schema_rejects_governor_outside_host_and_invalid_ranges() {
     }
     for library in [
         LIBRARY.replace("cpu: {min: 20}", "cpu: {governor: schedutil}"),
-        LIBRARY.replace("gpu: {max: 80}", "cpu: {governor: schedutil}"),
-        LIBRARY.replace("cpu: {max: 60}", "cpu: {governor: schedutil}"),
         LIBRARY.replace("profile: quiet", "profile: absent"),
     ] {
-        assert!(
-            decode_config_documents(DEVICE, &library).is_err(),
-            "{library}"
-        );
+        assert!(decode_config_documents(DEVICE, &library).is_err());
     }
-    assert!(crate::config::classify_snapshot_support(
-        &decode_config_documents("hooks: {check: {}}", "{}").unwrap()
-    )
-    .is_err());
 }
 #[test]
-fn launch_settings_atomic_setters_clear_inherit_and_reject_conflicts_without_mutation() {
+fn atomic_set_clears_to_inherit_and_rejects_conflicts_without_mutation() {
     let root = root();
     let private = tempfile::tempdir().unwrap();
     let lock = Mutex::new(());
     let client = unavailable(root.path());
     let before = settings::runner_choice_revisions(root.path()).unwrap();
-    let request = LaunchSettingsSetRequest {
-        scope: LaunchSettingsScope::Game("game".into()),
-        setting: LaunchSetting::CpuMax,
-        value: Some(LaunchLimitValue::Percent(10)),
-        expected_revision: before.games.clone(),
-    };
     let bytes = fs::read(root.path().join("catalog/library.yaml")).unwrap();
-    let error = set(root.path(), private.path(), &lock, &request, &client).unwrap_err();
-    assert!(matches!(error, SettingsError::Invalid(_)));
-    let text = error.to_string();
-    assert!(
-        text.contains("CPU min 20 %") && text.contains("CPU max 10 %") && text.contains("Game"),
-        "{text}"
+    let mut request = req(
+        any(LaunchLayer::Game("game".into())),
+        LaunchPath::CpuMax,
+        Some(json!(10)),
+        before.games.clone(),
     );
+    assert!(matches!(
+        set(root.path(), private.path(), &lock, &request, &client),
+        Err(SettingsError::Invalid(_))
+    ));
     assert_eq!(
         fs::read(root.path().join("catalog/library.yaml")).unwrap(),
         bytes
     );
-    let mut request = LaunchSettingsSetRequest {
-        value: Some(LaunchLimitValue::Percent(70)),
-        ..request
-    };
+    request.value = Some(json!(70));
     let after = set(root.path(), private.path(), &lock, &request, &client).unwrap();
     assert_eq!(before.device, after.device);
     assert_ne!(before.games, after.games);
@@ -232,70 +329,237 @@ fn launch_settings_atomic_setters_clear_inherit_and_reject_conflicts_without_mut
         .unwrap()
         .max
         .is_none());
-    for setting in [
-        LaunchSetting::CpuMin,
-        LaunchSetting::GpuMin,
-        LaunchSetting::CpuMax,
-        LaunchSetting::GpuMax,
-    ] {
-        let req = LaunchSettingsSetRequest {
-            scope: LaunchSettingsScope::Device,
-            setting,
-            value: Some(LaunchLimitValue::Percent(101)),
-            expected_revision: before.device.clone(),
-        };
-        assert!(matches!(
-            set(root.path(), private.path(), &lock, &req, &client),
-            Err(SettingsError::Invalid(_))
-        ));
-    }
 }
 #[test]
-fn launch_settings_set_writes_every_scope_to_its_existing_document() {
+fn setters_write_every_layer_and_runner_place_to_the_correct_document() {
     let root = root();
     let private = tempfile::tempdir().unwrap();
     let lock = Mutex::new(());
     let client = unavailable(root.path());
-    let scopes = [
-        LaunchSettingsScope::Device,
-        LaunchSettingsScope::System("gba".into()),
-        LaunchSettingsScope::Runner("@korri:mgba/mgba".into()),
-        LaunchSettingsScope::Game("game".into()),
-        LaunchSettingsScope::Release {
+    for layer in [
+        LaunchLayer::Device,
+        LaunchLayer::System("gba".into()),
+        LaunchLayer::Game("game".into()),
+        LaunchLayer::Release {
             game_id: "game".into(),
             release_id: "gba".into(),
         },
-        LaunchSettingsScope::Profile {
+        LaunchLayer::Profile {
             game_id: "game".into(),
             profile_id: "quiet".into(),
         },
-    ];
-    for (n, scope) in scopes.into_iter().enumerate() {
-        let before = settings::runner_choice_revisions(root.path()).unwrap();
-        let device = n < 3;
-        let req = LaunchSettingsSetRequest {
-            scope,
-            setting: LaunchSetting::GpuMin,
-            value: Some(LaunchLimitValue::Percent(22)),
-            expected_revision: if device {
+    ] {
+        for scope in [
+            LaunchRunnerScope::Any,
+            LaunchRunnerScope::Family(FAMILY.into()),
+            LaunchRunnerScope::Runner(RUNNER.into()),
+        ] {
+            let before = settings::runner_choice_revisions(root.path()).unwrap();
+            let device = matches!(layer, LaunchLayer::Device | LaunchLayer::System(_));
+            let revision = if device {
                 before.device.clone()
             } else {
                 before.games.clone()
-            },
-        };
-        let after = set(root.path(), private.path(), &lock, &req, &client).unwrap();
-        if device {
-            assert_ne!(after.device, before.device);
-            assert_eq!(after.games, before.games);
-        } else {
-            assert_ne!(after.games, before.games);
-            assert_eq!(after.device, before.device);
+            };
+            let after = set(
+                root.path(),
+                private.path(),
+                &lock,
+                &req(
+                    LaunchPlace {
+                        layer: layer.clone(),
+                        scope,
+                    },
+                    LaunchPath::GpuMin,
+                    Some(json!(22)),
+                    revision,
+                ),
+                &client,
+            )
+            .unwrap();
+            assert_eq!(after.device == before.device, !device);
+            assert_eq!(after.games == before.games, device);
         }
     }
-    let snap = settings::runner_choice_snapshot(root.path()).unwrap().0;
-    let layers = resolution::layers(&snap, Some("game"), Some(&route())).unwrap();
-    assert!(layers.iter().all(|l| l.gpu.min == Some(22)));
+    let snapshot = settings::runner_choice_snapshot(root.path()).unwrap().0;
+    assert!(launch::cells(&snapshot, &route(), None).iter().all(|v| v
+        .values
+        .gpu
+        .as_ref()
+        .unwrap()
+        .min
+        == Some(22)));
 }
+#[test]
+fn override_and_set_wire_refuse_every_file_only_kind_and_removed_rpc() {
+    for key in [
+        "env", "args", "cwd", "hooks", "routines", "config", "runner", "unknown",
+    ] {
+        assert!(
+            serde_json::from_value::<LaunchOverride>(json!({key:{}})).is_err(),
+            "{key}"
+        );
+    }
+    for path in ["Env", "Args", "Cwd", "Hooks", "Config"] {
+        assert!(serde_json::from_value::<LaunchSetRequest>(json!({"place":{"layer":{"_tag":"Device"},"scope":{"_tag":"Any"}},"path":{"_tag":path},"value":{},"expectedRevision":"rev"})).is_err());
+    }
+    assert!(serde_json::from_value::<crate::RpcRequest>(
+        json!({"_tag":"app.local-games.runner.set","payload":{}})
+    )
+    .is_err());
+    assert!(serde_json::from_value::<crate::SessionStartRequest>(
+        json!({"gameId":"game","expectedLaunchId":"id","overrides":{}})
+    )
+    .is_err());
+    let config = decode_config_documents(DEVICE, LIBRARY).unwrap();
+    let one:LaunchOverride=serde_json::from_value(json!({"cpu":{"max":45},"settings":{"scope":{"_tag":"Runner","id":RUNNER},"values":{"speed":2}}})).unwrap();
+    let resolved = resolve_launch(&config, &route(), Some(&one), None).unwrap();
+    assert_eq!(resolved.limits.cpu.max.value, 45);
+    assert_eq!(
+        serde_json::to_value(&resolved.runner.settings["speed"]).unwrap(),
+        2
+    );
+}
+#[test]
+fn runner_property_validation_uses_schema_type_enum_and_range() {
+    let schema = json!({"type":"integer","minimum":1,"maximum":4});
+    assert!(store::validate_property(&schema, &json!(2)).is_ok());
+    for v in [json!(0), json!(5), json!(1.5), json!("2")] {
+        assert!(store::validate_property(&schema, &v).is_err());
+    }
+    assert!(
+        store::validate_property(&json!({"type":"string","enum":["a","b"]}), &json!("c")).is_err()
+    );
+}
+pub(super) fn server(
+    root: &std::path::Path,
+    replies: Vec<serde_json::Value>,
+) -> (helper::Client, thread::JoinHandle<Vec<serde_json::Value>>) {
+    let socket = root.join("limits.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    let handle = thread::spawn(move || {
+        replies
+            .into_iter()
+            .map(|reply| {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut line = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut line)
+                    .unwrap();
+                stream.write_all(format!("{reply}\n").as_bytes()).unwrap();
+                serde_json::from_str(&line).unwrap()
+            })
+            .collect()
+    });
+    (helper::Client { socket }, handle)
+}
+#[test]
+fn defaults_are_not_authored_and_apply_device_does_not_use_session_cpu() {
+    let root = tempfile::tempdir().unwrap();
+    settings::runner_choice_snapshot(root.path()).unwrap();
+    let describe = json!({"_tag":"Ok","payload":facts()});
+    let (client, handle) = server(
+        root.path(),
+        vec![
+            describe.clone(),
+            describe,
+            json!({"_tag":"Ok","payload":{}}),
+        ],
+    );
+    let snapshot = snapshot(root.path(), None, None, &client).unwrap();
+    assert_eq!(snapshot.resolved.values["cpu.max"].value, 61);
+    assert!(matches!(
+        snapshot.resolved.values["cpu.max"].source,
+        LaunchSource::DeviceDefault
+    ));
+    assert!(snapshot.places[0].body.get("cpu").is_none());
+    resolution::apply_device(root.path(), &client).unwrap();
+    let requests = handle.join().unwrap();
+    assert_eq!(
+        requests[2],
+        json!({"_tag":"ApplyDevice","payload":{"cpu":{"min":0,"max":61},"gpu":{"min":0,"max":100},"governor":"schedutil"}})
+    );
+    let snapshot = super::snapshot(root.path(), None, None, &unavailable(root.path())).unwrap();
+    assert!(snapshot.device_facts.is_none());
+    assert_eq!(snapshot.resolved.values["cpu.max"].value, 100);
+}
+#[test]
+fn helper_apply_end_and_warning_use_the_actual_socket_protocol() {
+    let root = tempfile::tempdir().unwrap();
+    let (client, handle) = server(
+        root.path(),
+        vec![
+            json!({"_tag":"Ok","payload":{}}),
+            json!({"_tag":"Ok","payload":{}}),
+            json!({"_tag":"Err","payload":{"message":"write refused"}}),
+        ],
+    );
+    let limits = session::SessionLimits {
+        cpu: LaunchPercentRange { min: 0, max: 40 },
+        gpu: LaunchPercentRange { min: 20, max: 80 },
+        runner_id: RUNNER.into(),
+        build: "build".into(),
+    };
+    let id = "0123456789abcdef0123456789abcdef";
+    assert!(limits.apply(&client, id).is_none());
+    client.end_session(&session::unit(id)).unwrap();
+    assert!(limits
+        .apply(&client, id)
+        .unwrap()
+        .message
+        .contains("write refused"));
+    let requests = handle.join().unwrap();
+    assert_eq!(requests[0]["_tag"], "ApplySession");
+    assert_eq!(requests[0]["payload"]["cpu"]["max"], 40);
+    assert_eq!(requests[1]["_tag"], "EndSession");
+    assert!(limits.apply(&unavailable(root.path()), id).is_some());
+}
+#[test]
+fn kiosk_and_owner_authority_cover_set_and_profile_rpcs() {
+    use crate::{
+        authorization::{self, AuthorizationContext, Principal},
+        RpcRequest,
+    };
+    for (tag, payload) in [
+        ("app.launch-settings.snapshot", json!({})),
+        (
+            "app.launch-settings.set",
+            json!({"place":{"layer":{"_tag":"Device"},"scope":{"_tag":"Any"}},"path":{"_tag":"CpuMax"},"value":60,"expectedRevision":"rev"}),
+        ),
+        (
+            "app.launch-settings.profile.save",
+            json!({"gameId":"game","title":"Quiet","expectedRevision":"rev"}),
+        ),
+        (
+            "app.launch-settings.profile.remove",
+            json!({"gameId":"game","profileId":"quiet","expectedRevision":"rev"}),
+        ),
+        (
+            "app.launch-settings.profile.select",
+            json!({"gameId":"game","expectedRevision":"rev"}),
+        ),
+    ] {
+        let request: RpcRequest =
+            serde_json::from_value(json!({"_tag":tag,"payload":payload})).unwrap();
+        assert_eq!(
+            authorization::policy_for(&request),
+            authorization::PeerPolicy::OwnerDeviceOnly
+        );
+        assert!(authorization::authorize(&AuthorizationContext::LocalBrowser, &request).is_ok());
+        assert!(authorization::authorize(
+            &AuthorizationContext::Peer(Principal::Unknown {
+                device_public_key: "peer".into()
+            }),
+            &request
+        )
+        .is_err());
+        assert_eq!(
+            authorization::is_security_mutation(&request),
+            tag != "app.launch-settings.snapshot"
+        );
+    }
+}
+
 #[test]
 fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
     let root = root();
@@ -388,160 +652,6 @@ fn launch_settings_profile_create_rename_select_remove_and_remembered_pick() {
     )
     .unwrap();
 }
-/// The server speaks the helper's actual newline protocol on an actual socket.
-fn server(
-    root: &std::path::Path,
-    replies: Vec<serde_json::Value>,
-) -> (helper::Client, thread::JoinHandle<Vec<serde_json::Value>>) {
-    let socket = root.join("limits.sock");
-    let listener = UnixListener::bind(&socket).unwrap();
-    let handle = thread::spawn(move || {
-        replies
-            .into_iter()
-            .map(|reply| {
-                let (mut stream, _) = listener.accept().unwrap();
-                let mut line = String::new();
-                BufReader::new(stream.try_clone().unwrap())
-                    .read_line(&mut line)
-                    .unwrap();
-                stream.write_all(format!("{reply}\n").as_bytes()).unwrap();
-                serde_json::from_str(&line).unwrap()
-            })
-            .collect()
-    });
-    (helper::Client { socket }, handle)
-}
-#[test]
-fn launch_settings_describe_defaults_snapshot_apply_device_governor_validation_and_unavailable_facts(
-) {
-    let root = tempfile::tempdir().unwrap();
-    settings::runner_choice_snapshot(root.path()).unwrap();
-    let private = tempfile::tempdir().unwrap();
-    let lock = Mutex::new(());
-    let ok = json!({"_tag":"Ok","payload":facts()});
-    let (client, handle) = server(
-        root.path(),
-        vec![
-            ok.clone(),
-            ok.clone(),
-            json!({"_tag":"Ok","payload":{}}),
-            ok,
-        ],
-    );
-    let snapshot = snapshot(root.path(), None, None, &client).unwrap();
-    assert_eq!(snapshot.layers.len(), 1);
-    assert_eq!(snapshot.resolved.cpu.max.value, 61);
-    assert!(matches!(
-        snapshot.resolved.cpu.max.source,
-        LaunchSettingsScope::Device
-    ));
-    resolution::apply_device(root.path(), &client).unwrap();
-    let req = LaunchSettingsSetRequest {
-        scope: LaunchSettingsScope::Device,
-        setting: LaunchSetting::CpuGovernor,
-        value: Some(LaunchLimitValue::Governor("invalid".into())),
-        expected_revision: snapshot.revisions.device,
-    };
-    assert!(matches!(
-        set(root.path(), private.path(), &lock, &req, &client),
-        Err(SettingsError::Invalid(_))
-    ));
-    let requests = handle.join().unwrap();
-    assert_eq!(requests[0]["_tag"], "Describe");
-    assert_eq!(
-        requests[2],
-        json!({"_tag":"ApplyDevice","payload":{"cpu":{"min":0,"max":61},"gpu":{"min":0,"max":100},"governor":"schedutil"}})
-    );
-    let snapshot = super::snapshot(root.path(), None, None, &unavailable(root.path())).unwrap();
-    assert!(snapshot.device_facts.is_none());
-    assert_eq!(snapshot.resolved.cpu.max.value, 100);
-}
-#[test]
-fn launch_settings_helper_client_apply_end_error_and_warning_path() {
-    let root = tempfile::tempdir().unwrap();
-    let (client, handle) = server(
-        root.path(),
-        vec![
-            json!({"_tag":"Ok","payload":{}}),
-            json!({"_tag":"Ok","payload":{}}),
-            json!({"_tag":"Err","payload":{"message":"write refused"}}),
-        ],
-    );
-    let limits = session::SessionLimits {
-        cpu: LaunchPercentRange { min: 0, max: 40 },
-        gpu: LaunchPercentRange { min: 20, max: 80 },
-        runner_id: "runner".into(),
-        build: "build".into(),
-    };
-    assert!(limits
-        .apply(&client, "0123456789abcdef0123456789abcdef")
-        .is_none());
-    client
-        .end_session("korri-game-0123456789abcdef0123456789abcdef.service")
-        .unwrap();
-    let warning = limits
-        .apply(&client, "0123456789abcdef0123456789abcdef")
-        .unwrap();
-    assert!(warning.message.contains("write refused"));
-    assert_eq!(warning.runner_id, "runner");
-    let requests = handle.join().unwrap();
-    assert_eq!(
-        requests[0],
-        json!({"_tag":"ApplySession","payload":{"unit":"korri-game-0123456789abcdef0123456789abcdef.service","cpu":{"min":0,"max":40},"gpu":{"min":20,"max":80}}})
-    );
-    assert_eq!(requests[1]["_tag"], "EndSession");
-    assert!(limits
-        .apply(
-            &unavailable(root.path()),
-            "0123456789abcdef0123456789abcdef"
-        )
-        .is_some());
-}
-#[test]
-fn launch_settings_rpc_wire_and_authority_match_runner_choice() {
-    use crate::{
-        authorization::{self, AuthorizationContext, Principal},
-        RpcRequest,
-    };
-    for (tag, payload) in [
-        ("app.launch-settings.snapshot", json!({})),
-        (
-            "app.launch-settings.set",
-            json!({"scope":{"_tag":"Device"},"setting":"cpu.max","value":60,"expectedRevision":"rev"}),
-        ),
-        (
-            "app.launch-settings.profile.save",
-            json!({"gameId":"game","title":"Quiet","expectedRevision":"rev"}),
-        ),
-        (
-            "app.launch-settings.profile.remove",
-            json!({"gameId":"game","profileId":"quiet","expectedRevision":"rev"}),
-        ),
-        (
-            "app.launch-settings.profile.select",
-            json!({"gameId":"game","expectedRevision":"rev"}),
-        ),
-    ] {
-        let req: RpcRequest =
-            serde_json::from_value(json!({"_tag":tag,"payload":payload})).unwrap();
-        assert_eq!(
-            authorization::policy_for(&req),
-            authorization::PeerPolicy::OwnerDeviceOnly
-        );
-        assert!(authorization::authorize(&AuthorizationContext::LocalBrowser, &req).is_ok());
-        assert!(authorization::authorize(
-            &AuthorizationContext::Peer(Principal::Unknown {
-                device_public_key: "peer".into()
-            }),
-            &req
-        )
-        .is_err());
-        assert_eq!(
-            authorization::is_security_mutation(&req),
-            tag != "app.launch-settings.snapshot"
-        );
-    }
-}
 
 #[test]
 fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_files() {
@@ -560,10 +670,10 @@ fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_f
             root.path(),
             private.path(),
             &lock,
-            &LaunchSettingsSetRequest {
-                scope: LaunchSettingsScope::Game("game".into()),
-                setting: LaunchSetting::CpuMax,
-                value: Some(LaunchLimitValue::Percent(50)),
+            &LaunchSetRequest {
+                place: any(LaunchLayer::Game("game".into())),
+                path: LaunchPath::CpuMax,
+                value: Some(json!(50)),
                 expected_revision: before.games.clone()
             },
             &client
@@ -618,71 +728,4 @@ fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_f
         fs::read_to_string(root.path().join("catalog/library.yaml")).unwrap(),
         library
     );
-}
-
-#[test]
-fn launch_settings_valid_device_edit_applies_merged_describe_defaults_immediately() {
-    let root = tempfile::tempdir().unwrap();
-    let before = settings::runner_choice_revisions(root.path()).unwrap();
-    let private = tempfile::tempdir().unwrap();
-    let lock = Mutex::new(());
-    let (client, server) = server(
-        root.path(),
-        vec![
-            json!({"_tag":"Ok","payload":facts()}),
-            json!({"_tag":"Ok","payload":facts()}),
-            json!({"_tag":"Ok","payload":{}}),
-        ],
-    );
-    let after = set(
-        root.path(),
-        private.path(),
-        &lock,
-        &LaunchSettingsSetRequest {
-            scope: LaunchSettingsScope::Device,
-            setting: LaunchSetting::CpuGovernor,
-            value: Some(LaunchLimitValue::Governor("performance".into())),
-            expected_revision: before.device,
-        },
-        &client,
-    )
-    .unwrap();
-    assert_eq!(after.games, before.games);
-    let requests = server.join().unwrap();
-    assert_eq!(
-        requests[2],
-        json!({"_tag":"ApplyDevice","payload":{"cpu":{"min":0,"max":61},"gpu":{"min":0,"max":100},"governor":"performance"}})
-    );
-}
-
-#[test]
-fn launch_settings_session_gpu_inherits_device_limit_while_cpu_uclamp_excludes_device() {
-    let root = tempfile::tempdir().unwrap();
-    let library = LIBRARY.replace("gpu: {max: 80}", "gpu: {}");
-    let config =
-        decode_config_documents("host: {cpu: {max: 65}, gpu: {max: 80}}", &library).unwrap();
-    let limits =
-        session::SessionLimits::for_route(&config, &route(), "build".into(), None).unwrap();
-    assert_eq!(limits.gpu.max, 80);
-    let (client, server) = server(root.path(), vec![json!({"_tag":"Ok","payload":{}})]);
-    assert!(limits
-        .apply(&client, "0123456789abcdef0123456789abcdef")
-        .is_none());
-    let requests = server.join().unwrap();
-    assert_eq!(requests[0]["payload"]["gpu"]["max"], 80);
-    let config = decode_config_documents(
-        "host: {cpu: {max: 65}, gpu: {max: 80}}",
-        &library.replace("cpu: {max: 60}", "cpu: {}"),
-    )
-    .unwrap();
-    let limits =
-        session::SessionLimits::for_route(&config, &route(), "build".into(), None).unwrap();
-    assert_eq!(limits.cpu.max, 100);
-    let config = decode_config_documents("{}", &library).unwrap();
-    let mut defaults = facts();
-    defaults.defaults.gpu.max = 55;
-    let limits =
-        session::SessionLimits::for_route(&config, &route(), "build".into(), Some(&defaults))
-            .unwrap();
-    assert_eq!(limits.gpu.max, 55);
 }

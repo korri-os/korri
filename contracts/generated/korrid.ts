@@ -401,6 +401,7 @@ export type GameRouteSelection =
 	| { _tag: "Selected", runnerId: string }
 	| { _tag: "Choose", runnerId?: undefined };
 
+/** Choices extend the approved system/game records, never a separate document. */
 export interface RunnerChoiceRevisions {
 	device: string;
 	games: string;
@@ -417,17 +418,6 @@ export interface GameRoutes {
 
 export interface GameRoutesRequest {
 	gameId: string;
-}
-
-/** Choices extend the approved system/game records, never a separate document. */
-export type RunnerChoiceScope =
-	| { _tag: "System", id: string }
-	| { _tag: "Game", id: string };
-
-export interface GameRunnerSetRequest {
-	scope: RunnerChoiceScope;
-	runnerId?: string;
-	expectedRevision: string;
 }
 
 export enum SaveMark {
@@ -1655,10 +1645,6 @@ export type DiscoverySnapshotOutcome =
 
 export type GameRoutesOutcome =
 	| { _tag: "Ok", payload: GameRoutes }
-	| { _tag: "Err", payload: RpcFailure };
-
-export type GameRunnerSetOutcome =
-	| { _tag: "Ok", payload: RunnerChoiceRevisions }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type HealthOutcome =
