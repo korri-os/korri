@@ -107,6 +107,7 @@ impl LaunchUnitBackend for ViewerUnits {
         id: &str,
         command: &[String],
         env: &BTreeMap<String, String>,
+        _sandbox: &LaunchSandbox,
     ) -> Result<(), crate::host::LaunchUnitError> {
         self.launches.lock().unwrap().push(RecordedLaunch {
             id: id.into(),
@@ -320,7 +321,14 @@ fn linux_viewer_stale_pin_cleanup_preserves_live_launch_pins() {
     std::fs::write(&path, "stale pin").unwrap();
     viewer.cleanup_pins().unwrap();
     assert!(!path.exists());
-    units.launch(launch, &[], &BTreeMap::new()).unwrap();
+    units
+        .launch(
+            launch,
+            &[],
+            &BTreeMap::new(),
+            &LaunchSandbox::new(&[], &BTreeMap::new()),
+        )
+        .unwrap();
     std::fs::write(&path, "live pin").unwrap();
     viewer.cleanup_pins().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "live pin");

@@ -5,7 +5,7 @@ use crate::host::compositor_focus::{
     focused_ownership, select_focus_target, CompositorControl, FocusTarget,
     SwaymsgCompositorControl,
 };
-use crate::host::{LaunchUnitBackend, LaunchUnitState, SystemdLaunchUnitBackend};
+use crate::host::{LaunchSandbox, LaunchUnitBackend, LaunchUnitState, SystemdLaunchUnitBackend};
 use futures::future::BoxFuture;
 use std::{
     collections::BTreeMap,
@@ -663,7 +663,12 @@ impl LinuxStreamViewer for ProductionLinuxStreamViewer {
                     ),
                 ]);
                 this.units
-                    .launch(&launch, &command, &environment)
+                    .launch(
+                        &launch,
+                        &command,
+                        &environment,
+                        &LaunchSandbox::new(&command, &environment),
+                    )
                     .map_err(unit_error)?;
                 if let Err(focus_error) = this.focus(&launch, false) {
                     this.confirmed_stop(&launch)?;

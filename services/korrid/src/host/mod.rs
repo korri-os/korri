@@ -53,7 +53,7 @@ use std::{
     sync::Arc,
 };
 pub(crate) use systemd_unit::{
-    LaunchUnitBackend, LaunchUnitError, LaunchUnitState, SystemdLaunchUnitBackend,
+    LaunchSandbox, LaunchUnitBackend, LaunchUnitError, LaunchUnitState, SystemdLaunchUnitBackend,
 };
 
 #[derive(Clone)]

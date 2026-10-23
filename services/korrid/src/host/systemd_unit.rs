@@ -87,7 +87,7 @@ pub struct LaunchSandbox {
 }
 
 impl LaunchSandbox {
-    pub(super) fn new(command: &[String], baseline: &BTreeMap<String, String>) -> Self {
+    pub(crate) fn new(command: &[String], baseline: &BTreeMap<String, String>) -> Self {
         Self {
             modifiers: crate::launcher::plugin_launch::has_modifiers(command),
             plugin: command
