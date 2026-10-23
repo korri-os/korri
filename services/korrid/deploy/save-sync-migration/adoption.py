@@ -17,6 +17,13 @@ from migration import (
 
 
 KEY = re.compile(r"[0-9a-f]{64}")
+# Public facts from backup-20261023T164148Z/identity/owner.event.json and the
+# retired signer record. This approval covers this SP switch only. A different
+# switch needs its own approved repair, even if its records agree internally.
+SP_RETIRED_PERSON = "f7a1bc9e47b9ed7cd2022d0046b65e03126888eb42d321f605c777af3419d5a9"
+SP_OWNER = "a80db13fd36d6e15cb45df12db658da04dd6dc7c6d9200dcebabdcb207ed3dca"
+SP_OWNER_EVENT = "c4503c1d27ae38484ec0880886c03109f58d0aeeab71744547141faf209fa97f"
+SP_OWNER_CREATED_AT = 1792710750  # 2026-10-22T23:12:30Z
 
 
 def fingerprint(path: Path) -> tuple[int, str]:
@@ -39,14 +46,20 @@ def one_tree(source: Path, target: Path) -> Path:
 
 
 def adoption_moves(
-    storage: Path, private: Path, account: Path, person: str, signer_root: Path
+    storage: Path, private: Path, account: Path, consent: str, signer_root: Path
 ) -> list[tuple[Path, Path]]:
     # Owner decision 2026-10-22, ADR "An owned device joins by identity switch,
     # keeping its data" (0023, docs/device-join-design). The shipped coordinator
     # moved only play-log records. This is a consented offline repair, not a
     # rule that another person's saves automatically belong to the current owner.
-    if not KEY.fullmatch(person) or person == account.name:
-        raise ValueError("Adoption needs a different retired person public key")
+    if consent != f"{SP_RETIRED_PERSON}:{SP_OWNER}":
+        raise ValueError(
+            "Only the captured SP identity switch is approved; "
+            "--adopt-retired-person must name its retired-person:owner pair"
+        )
+    person = SP_RETIRED_PERSON
+    if account.name != SP_OWNER:
+        raise ValueError("Device owner differs from the approved SP switch owner")
     transaction = checked_path(private / "identity-switch")
     if transaction.exists():
         require_directory(transaction)
@@ -82,12 +95,16 @@ def adoption_moves(
     # record. Never read, copy, hash or print the person private key.
     owner = json.loads(read_regular(private / "identity/owner.event.json"))
     connection = json.loads(read_regular(private / "identity/nip46.connection.json"))
-    if connection.get("userPublicKey") != account.name:
-        raise ValueError("NIP-46 person does not match the device owner")
+    if connection.get("userPublicKey") != SP_OWNER:
+        raise ValueError("NIP-46 person does not match the approved SP switch owner")
+    if (
+        owner.get("id") != SP_OWNER_EVENT
+        or type(owner.get("created_at")) is not int
+        or owner["created_at"] != SP_OWNER_CREATED_AT
+    ):
+        raise ValueError("Owner event differs from the captured SP switch statement")
     device = owner["tags"][1][1]
     owner_time = owner["created_at"]
-    if type(owner_time) is not int:
-        raise ValueError("Owner statement has no creation time")
 
     old_account = checked_path(storage / "users" / person)
     old_history = checked_path(private / "saves" / person)

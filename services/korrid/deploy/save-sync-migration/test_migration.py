@@ -7,10 +7,12 @@ import hashlib
 import json
 import os
 import pwd
+import re
 import struct
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -18,6 +20,9 @@ sys.dont_write_bytecode = True
 HERE = Path(__file__).parent
 OWNER = "ab" * 32
 DEVICE = "cd" * 32
+SP_RETIRED = "f7a1bc9e47b9ed7cd2022d0046b65e03126888eb42d321f605c777af3419d5a9"
+SP_OWNER = "a80db13fd36d6e15cb45df12db658da04dd6dc7c6d9200dcebabdcb207ed3dca"
+SP_EVENT = "c4503c1d27ae38484ec0880886c03109f58d0aeeab71744547141faf209fa97f"
 RUNNER = "@korri:mgba/mgba"
 DAEMON_UID = os.getuid()
 RUNTIME_UID = pwd.getpwnam(
@@ -160,7 +165,8 @@ class MigrationTest(unittest.TestCase):
 
     def stranded_switch(self):
         """SP's real layout; authored progress/key bytes, never backup secrets."""
-        self.retired = "ef" * 32
+        self.retired = SP_RETIRED
+        self.account = self.storage / "users" / SP_OWNER
         self.old.rename(self.storage / "users" / self.retired)
         self.old = self.storage / "users" / self.retired
         self.signer = self.root / "signer"
@@ -175,10 +181,10 @@ class MigrationTest(unittest.TestCase):
         public = self.root / "run/korri-local-signer/public/person.pub"
         public.parent.mkdir(parents=True)
         public.write_text(self.retired + "\n")
-        self.event.update(id="12" * 32, created_at=1792710750)
+        self.event.update(pubkey=SP_OWNER, id=SP_EVENT, created_at=1792710750)
         self.write_event()
         (self.private / "identity/nip46.connection.json").write_text(
-            json.dumps({"userPublicKey": OWNER})
+            json.dumps({"userPublicKey": SP_OWNER})
         )
         self.catalog({"anguna": ["gba/anguna.gba"]})
         locations = []
@@ -218,12 +224,12 @@ class MigrationTest(unittest.TestCase):
         self.snapshot = self.history / "anguna" / f"{digest}.json"
         self.snapshot.parent.mkdir(parents=True)
         self.snapshot.write_bytes(data)
-        log = self.private / "play-log" / OWNER / "anguna.json"
+        log = self.private / "play-log" / SP_OWNER / "anguna.json"
         log.parent.mkdir(parents=True)
         log.write_text(
             json.dumps(
                 {
-                    "userId": OWNER,
+                    "userId": SP_OWNER,
                     "gameId": "anguna",
                     "entries": [
                         {"occurredAt": record["endedAt"], "durationSeconds": 41}
@@ -233,7 +239,7 @@ class MigrationTest(unittest.TestCase):
         )
         return [
             "--adopt-retired-person",
-            self.retired,
+            f"{self.retired}:{SP_OWNER}",
             "--local-signer-state-root",
             str(self.signer),
         ]
@@ -262,7 +268,7 @@ class MigrationTest(unittest.TestCase):
         self.assertFalse(self.history.exists())
         self.assertEqual(
             (
-                self.private / "saves" / OWNER / "anguna" / self.snapshot.name
+                self.private / "saves" / SP_OWNER / "anguna" / self.snapshot.name
             ).read_bytes(),
             snapshot_bytes,
         )
@@ -277,7 +283,7 @@ class MigrationTest(unittest.TestCase):
             [
                 x
                 for x in self.tree()
-                if "/users/" not in x[0] and f"/saves/{OWNER}" not in x[0]
+                if "/users/" not in x[0] and f"/saves/{SP_OWNER}" not in x[0]
             ],
         )
         after = self.tree()
@@ -289,6 +295,106 @@ class MigrationTest(unittest.TestCase):
         )
         self.command("migrate-retroarch.py")
 
+    def test_sp_switch_refuses_a_different_internally_consistent_owner(self):
+        args = self.stranded_switch()
+        self.event["pubkey"] = OWNER
+        self.write_event()
+        (self.private / "identity/nip46.connection.json").write_text(
+            json.dumps({"userPublicKey": OWNER})
+        )
+        log_path = self.private / "play-log" / SP_OWNER / "anguna.json"
+        log = json.loads(log_path.read_bytes())
+        log["userId"] = OWNER
+        other_log = self.private / "play-log" / OWNER / "anguna.json"
+        other_log.parent.mkdir()
+        log_path.rename(other_log)
+        other_log.write_text(json.dumps(log))
+        log_path.parent.rmdir()
+        before = self.tree()
+        for pair in (f"{SP_RETIRED}:{SP_OWNER}", f"{SP_RETIRED}:{OWNER}", SP_RETIRED):
+            with self.subTest(consent=pair):
+                args[1] = pair
+                self.command("migrate-account.py", *args, "--dry-run", ok=False)
+                self.assertEqual(before, self.tree())
+
+    def test_sp_switch_refuses_a_different_internally_consistent_retired_key(self):
+        args = self.stranded_switch()
+        other = "ef" * 32
+        self.old.rename(self.storage / "users" / other)
+        self.history.rename(self.private / "saves" / other)
+        (self.signer / "identity/retired" / SP_RETIRED).rename(
+            self.signer / "identity/retired" / other
+        )
+        before = self.tree()
+        for pair in (f"{SP_RETIRED}:{SP_OWNER}", f"{other}:{SP_OWNER}"):
+            with self.subTest(consent=pair):
+                args[1] = pair
+                self.command("migrate-account.py", *args, "--dry-run", ok=False)
+                self.assertEqual(before, self.tree())
+
+    def test_sp_switch_requires_the_captured_owner_statement(self):
+        args = self.stranded_switch()
+        for field, value in (("id", "12" * 32), ("created_at", 1792710751)):
+            with self.subTest(field=field):
+                self.event.update(id=SP_EVENT, created_at=1792710750)
+                self.event[field] = value
+                self.write_event()
+                before = self.tree()
+                result = self.command(
+                    "migrate-account.py", *args, "--dry-run", ok=False
+                )
+                self.assertIn("captured SP switch statement", result.stderr)
+                self.assertEqual(before, self.tree())
+
+    def test_documented_runtime_cleanup_aborts_before_removing_projection(self):
+        document = (HERE / "SP-ACCOUNT-REPAIR.md").read_text()
+        snippet = next(
+            textwrap.dedent(block)
+            for block in re.findall(r"```sh\n(.*?)```", document, re.S)
+            if "/identity/active" in block
+        )
+        for state in ("empty", "nonempty", "missing", "find-fails", "wrong-projection"):
+            with self.subTest(state=state):
+                self.setUp()
+                self.stranded_switch()
+                active = self.signer / "identity/active"
+                public = self.root / "run/korri-local-signer/public/person.pub"
+                environment = {**os.environ, "OLD_PERSON": SP_RETIRED}
+                if state == "nonempty":
+                    (active / "person.key").write_text("active key")
+                elif state == "missing":
+                    active.rmdir()
+                elif state == "find-fails":
+                    # A real failing subprocess also covers root-run tests where
+                    # chmod(000) cannot make find fail through permissions.
+                    commands = self.root / "commands"
+                    commands.mkdir()
+                    find = commands / "find"
+                    find.write_text("#!/bin/sh\nexit 42\n")
+                    find.chmod(0o755)
+                    environment["PATH"] = f"{commands}:{environment['PATH']}"
+                elif state == "wrong-projection":
+                    public.write_text(OWNER + "\n")
+                before = self.tree()
+                code = snippet.replace(
+                    "/var/lib/korri-local-signer", str(self.signer)
+                ).replace(
+                    "/run/korri-local-signer", str(self.root / "run/korri-local-signer")
+                )
+                result = subprocess.run(
+                    ["bash", "-c", code],
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                )
+                if state == "empty":
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertFalse(public.exists())
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(before, self.tree())
+                    self.assertTrue(public.is_file())
+
     def test_sp_switch_keeps_all_snapshot_ids_and_parent_links(self):
         args = self.stranded_switch()
         record = json.loads(self.snapshot.read_bytes())
@@ -297,7 +403,7 @@ class MigrationTest(unittest.TestCase):
         data = json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
         digest = hashlib.sha256(data).hexdigest()
         (self.snapshot.parent / f"{digest}.json").write_bytes(data)
-        log_path = self.private / "play-log" / OWNER / "anguna.json"
+        log_path = self.private / "play-log" / SP_OWNER / "anguna.json"
         log = json.loads(log_path.read_bytes())
         log["entries"].append({"occurredAt": record["endedAt"], "durationSeconds": 41})
         log_path.write_text(json.dumps(log))
@@ -309,7 +415,7 @@ class MigrationTest(unittest.TestCase):
         self.assertIn("snapshots=2", result.stdout)
         for relative, original in before.items():
             self.assertEqual(
-                (self.private / "saves" / OWNER / relative).read_bytes(), original
+                (self.private / "saves" / SP_OWNER / relative).read_bytes(), original
             )
         self.assertEqual(len(before), 2)
 
@@ -318,11 +424,11 @@ class MigrationTest(unittest.TestCase):
             lambda: (self.signer / "identity/active/person.key").write_text("active"),
             lambda: (self.signer / "identity/retired" / ("98" * 32)).mkdir(),
             lambda: (self.private / "identity/nip46.connection.json").write_text("{}"),
-            lambda: (self.private / "play-log" / OWNER / "anguna.json").write_text(
+            lambda: (self.private / "play-log" / SP_OWNER / "anguna.json").write_text(
                 "{}"
             ),
             lambda: self.account.mkdir(),
-            lambda: (self.private / "saves" / OWNER).mkdir(),
+            lambda: (self.private / "saves" / SP_OWNER).mkdir(),
             lambda: self.snapshot.write_text("{}"),
             lambda: next((self.private / "saves/objects").iterdir()).write_bytes(
                 b"damaged"
@@ -355,10 +461,10 @@ class MigrationTest(unittest.TestCase):
                 if moved == "account":
                     self.old.rename(self.account)
                 else:
-                    self.history.rename(self.private / "saves" / OWNER)
+                    self.history.rename(self.private / "saves" / SP_OWNER)
                 self.command("migrate-account.py", *args)
                 self.assertTrue(self.account.is_dir())
-                self.assertTrue((self.private / "saves" / OWNER).is_dir())
+                self.assertTrue((self.private / "saves" / SP_OWNER).is_dir())
                 self.assertFalse(self.old.exists())
                 self.assertFalse(self.history.exists())
 

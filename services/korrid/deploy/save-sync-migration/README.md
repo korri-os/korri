@@ -10,9 +10,10 @@ The owner decision dated **2026-10-22**, ADR 0023, **“An owned device joins by
 identity switch, keeping its data”**, grounds the explicit account repair.
 The shipped switch moved the SP's play log but left its live saves and private
 snapshot history under the retired person. The ordinary `users/default` move
-cannot repair that layout. Use `--adopt-retired-person` only with consent and
-`--local-signer-state-root`; the script refuses missing or ambiguous switch
-proof. See [SP account repair](SP-ACCOUNT-REPAIR.md) for exact records, code
+cannot repair that layout. Use `--adopt-retired-person RETIRED_PERSON:OWNER`
+only with consent and `--local-signer-state-root`. The script pins the SP's
+captured f7a1… → a80d… switch and owner statement, and refuses missing or
+ambiguous proof. Another switch needs its own approved repair. See [SP account repair](SP-ACCOUNT-REPAIR.md) for exact records, code
 paths, report guarantees, commands, and the required stopped-signer cleanup
 of its stale runtime public-key projection. A signer restart alone does not
 clear that projection. Never rename a different person's saves by assumption.

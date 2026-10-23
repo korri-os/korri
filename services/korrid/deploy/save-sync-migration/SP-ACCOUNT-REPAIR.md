@@ -101,16 +101,22 @@ only key stored on disk. The local signer does not hold a80d's private key.
 
    ```sh
    OLD_PERSON=f7a1bc9e47b9ed7cd2022d0046b65e03126888eb42d321f605c777af3419d5a9
+   OWNER=a80db13fd36d6e15cb45df12db658da04dd6dc7c6d9200dcebabdcb207ed3dca
    ./migrate-account.py --storage-root /var/lib/korri \
      --private-state-root /var/lib/korrid \
      --local-signer-state-root /var/lib/korri-local-signer \
-     --adopt-retired-person "$OLD_PERSON" --dry-run
+     --adopt-retired-person "$OLD_PERSON:$OWNER" --dry-run
    ```
 
    Review and retain stdout/stderr in a restricted operator report. Then run
    the identical command without `--dry-run`, retaining its report too.
    These are CLI arguments, not new persistent identity schema.
-3. The script requires exactly that retired key, an empty active directory,
+3. Consent must explicitly name the captured `f7a1…:a80d…` pair. The script
+   pins both full public keys, owner event ID
+   `c4503c1d27ae38484ec0880886c03109f58d0aeeab71744547141faf209fa97f`,
+   and its creation time `2026-10-22T23:12:30Z` (`1792710750`). A different
+   internally consistent switch is refused; it needs its own approved repair.
+   The script also requires exactly that retired key, an empty active directory,
    the matching owned/NIP-46 person, and each old snapshot's session in the
    new person's transferred play log. It checks complete snapshot ancestry,
    object hashes/lengths, and exact live-save equality to the unique head.
@@ -133,10 +139,26 @@ only key stored on disk. The local signer does not hold a80d's private key.
    **runtime public projection**, after verifying it names the retired key:
 
    ```sh
-   test -z "$(find /var/lib/korri-local-signer/identity/active -mindepth 1 -print -quit)"
-   if test -e /run/korri-local-signer/public/person.pub; then
-     test "$(cat /run/korri-local-signer/public/person.pub)" = "$OLD_PERSON" &&
-       rm -- /run/korri-local-signer/public/person.pub
+   active=/var/lib/korri-local-signer/identity/active
+   projection=/run/korri-local-signer/public/person.pub
+   if ! test -d "$active" || test -L "$active"; then
+     echo 'Refusing cleanup: active directory is missing or unsafe' >&2
+     exit 1
+   fi
+   if ! active_entry=$(find "$active" -mindepth 1 -print -quit); then
+     echo 'Refusing cleanup: cannot inspect active directory' >&2
+     exit 1
+   fi
+   if test -n "$active_entry"; then
+     echo 'Refusing cleanup: local signer still has an active key' >&2
+     exit 1
+   fi
+   test -n "${OLD_PERSON:-}" || exit 1
+   if test -e "$projection" || test -L "$projection"; then
+     test -f "$projection" && test ! -L "$projection" || exit 1
+     projected_person=$(cat "$projection") || exit 1
+     test "$projected_person" = "$OLD_PERSON" || exit 1
+     rm -- "$projection" || exit 1
    fi
    ```
 

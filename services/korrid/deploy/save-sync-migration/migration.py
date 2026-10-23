@@ -398,7 +398,8 @@ def run(kind: str, save_users: tuple[int, int] | None = None) -> int:
     if kind == "account":
         parser.add_argument(
             "--adopt-retired-person",
-            help="consent to repair the proven identity switch from this public key",
+            metavar="RETIRED_PERSON:OWNER",
+            help="consent to repair only the captured SP switch between these public keys",
         )
         parser.add_argument("--local-signer-state-root", type=Path)
     args = parser.parse_args()
