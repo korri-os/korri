@@ -31,6 +31,10 @@ hook used `sudo -n`.
   `KORRI_SESSION_RESULT` (`exited`, `failed` or `stopped`) and, when the game
   exited, `KORRI_EXIT_STATUS`. A variable whose value does not exist is unset,
   not empty. Nothing keeps legacy's names for compatibility.
+- Korri stores a session's after-steps with the session. After a korrid
+  restart, an after-step that was interrupted runs again. After-steps run at
+  least once, so each one must be safe to run twice. After a device reboot,
+  after-steps do not run.
 - Hook step rules follow legacy. Before-steps run in order, and on failure
   they abort the launch or warn (default abort). After-steps run in reverse
   order and never block teardown. The default timeout is 30 seconds.
