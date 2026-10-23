@@ -405,6 +405,7 @@ pub struct SessionControlInvokeRequest {
 #[typeshare]
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum SessionControlFailureReason {
+    NotSessionStarter,
     StaleSession,
     UnknownControl,
     Disabled,
@@ -2470,6 +2471,11 @@ async fn dispatch(
 ) -> Result<RpcResponse, authorization::AuthorizationDenied> {
     let request_arrived = tokio::time::Instant::now();
     authorization::authorize(authorization, &request)?;
+    if let ServerMode::Host(host) = &state.mode {
+        if let Some(response) = stream_play::rights::refusal(host, authorization, &request).await {
+            return Ok(response);
+        }
+    }
     let mut response = match request {
         RpcRequest::SaveObject(_) => return Err(authorization::AuthorizationDenied),
         RpcRequest::SaveHeads(_) => {
@@ -2791,6 +2797,8 @@ async fn dispatch(
         RpcRequest::SelectedGameLaunch(request) => {
             RpcResponse::SelectedGameLaunch(match &state.mode {
                 ServerMode::Host(host) => host
+                    .clone()
+                    .for_starting_device(authorization.starting_device())
                     .prepare_selected(
                         request,
                         authorization.person_public_key(host.owner_public_key().as_deref()),
@@ -3011,6 +3019,8 @@ async fn dispatch(
                         game_routes::SelectedGameLaunchOutcome::Err(upstream_failure(error))
                     }),
                 (ServerMode::Host(host), RpcSurface::Lan) => host
+                    .clone()
+                    .for_starting_device(authorization.starting_device())
                     .prepare(
                         &request.game_id,
                         authorization.person_public_key(host.owner_public_key().as_deref()),

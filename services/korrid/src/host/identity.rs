@@ -27,6 +27,11 @@ const MAX_GAME_ID_BYTES: usize = 1_024;
 #[serde(tag = "phase", rename_all = "camelCase", deny_unknown_fields)]
 pub(super) enum ActiveSession {
     Running {
+        #[serde(
+            rename = "starterDevicePublicKey",
+            skip_serializing_if = "Option::is_none"
+        )]
+        starter_device_public_key: Option<String>,
         #[serde(rename = "launchId")]
         launch_id: String,
         #[serde(rename = "gameId")]
@@ -85,6 +90,7 @@ impl ActiveSession {
         started_at: u64,
     ) -> Self {
         Self::Running {
+            starter_device_public_key: None,
             launch_id,
             game_id,
             person_public_key,

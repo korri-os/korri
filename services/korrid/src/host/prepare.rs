@@ -56,6 +56,11 @@ pub struct HostLauncher {
 }
 
 impl HostLauncher {
+    pub(crate) fn for_starting_device(mut self, device: Option<String>) -> Self {
+        self.control = self.control.for_starting_device(device);
+        self
+    }
+
     pub(crate) fn new(
         config: &HostConfig,
         private_state_root: &Path,

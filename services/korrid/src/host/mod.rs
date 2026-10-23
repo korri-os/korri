@@ -252,6 +252,30 @@ pub struct HostRuntime {
 }
 
 impl HostRuntime {
+    pub(crate) fn for_starting_device(mut self, device: Option<String>) -> Self {
+        self.launcher = self
+            .launcher
+            .map(|launcher| launcher.for_starting_device(device));
+        self
+    }
+
+    pub(crate) async fn require_session_starter(
+        &self,
+        device: &str,
+        expected: Option<&str>,
+    ) -> Result<(), RpcFailure> {
+        let runtime = self.clone();
+        let device = device.to_owned();
+        let expected = expected.map(str::to_owned);
+        tokio::task::spawn_blocking(move || {
+            runtime
+                .control()?
+                .require_session_starter(&device, expected.as_deref())
+        })
+        .await
+        .map_err(host_worker_failure)?
+    }
+
     pub(crate) fn private_state_root(&self) -> &Path {
         &self.private_state_root
     }

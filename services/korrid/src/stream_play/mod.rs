@@ -1,4 +1,5 @@
 //! Shared play wire contracts. The holder remains the session authority.
+pub(crate) mod rights;
 use crate::{ActiveSession, RpcFailure};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;

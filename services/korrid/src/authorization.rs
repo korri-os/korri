@@ -127,7 +127,29 @@ impl Principal {
     }
 }
 
+/// Local sessions have no peer starter. Authority never falls back to owner.
+pub(crate) fn require_session_starter(
+    device: &str,
+    starter: Option<&str>,
+) -> Result<(), crate::RpcFailure> {
+    if starter == Some(device) {
+        Ok(())
+    } else {
+        Err(crate::RpcFailure {
+            code: "NotSessionStarter".into(),
+            message: "Only the device that started this session can control it.".into(),
+        })
+    }
+}
+
 impl AuthorizationContext {
+    pub(crate) fn starting_device(&self) -> Option<String> {
+        match self {
+            Self::Peer(principal) => Some(principal.device_public_key().into()),
+            _ => None,
+        }
+    }
+
     /// The authenticated person for a call. Local surfaces act for the
     /// device owner, so they take the local owner key when the device is
     /// owned. Trust reconciliation is not a person.

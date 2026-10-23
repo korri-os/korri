@@ -1,3 +1,5 @@
+#[path = "session_rights.rs"]
+mod session_rights;
 use super::launch_reservation::LaunchReservation;
 use crate::{InitialHandoff, RpcFailure, SessionPrepared};
 use std::{
@@ -239,6 +241,8 @@ impl Drop for SessionStateGuard<'_> {
 
 #[derive(Clone)]
 pub struct HostSessionControl {
+    // Authenticated call context, used only when creating a fresh journal.
+    starting_device: Option<String>,
     backend: Arc<dyn LaunchUnitBackend>,
     limits_client: crate::launch_settings::helper::Client,
     input_seats: Arc<dyn InputSeatManager>,
@@ -309,6 +313,7 @@ impl HostSessionControl {
     ) -> Self {
         let identity_root = private_state_root.join("host-session");
         Self {
+            starting_device: None,
             backend,
             limits_client: crate::launch_settings::helper::Client::default(),
             input_seats,
@@ -1348,6 +1353,18 @@ impl HostSessionControl {
             .ready()
             .map_err(|message| failure("InputSeatUnavailable", message))?;
         self.refresh_recovery(&mut state);
+        if let Some(device) = &self.starting_device {
+            if let Some(ActiveSession::Running {
+                starter_device_public_key,
+                ..
+            }) = read_active(&self.identity_root).map_err(|_| recovery_blocked_failure())?
+            {
+                crate::authorization::require_session_starter(
+                    device,
+                    starter_device_public_key.as_deref(),
+                )?;
+            }
+        }
         match &*state {
             ActiveState::Running {
                 launch_id,
@@ -1465,6 +1482,13 @@ impl HostSessionControl {
             person_public_key.map(str::to_owned),
             self.clock.now_epoch_seconds(),
         );
+        if let ActiveSession::Running {
+            starter_device_public_key,
+            ..
+        } = &mut active
+        {
+            *starter_device_public_key = self.starting_device.clone();
+        }
         if let ActiveSession::Running { after_hooks, .. } = &mut active {
             if let Some(hooks) = hooks.filter(|hooks| !hooks.resolved.after.is_empty()) {
                 *after_hooks = Some(super::hooks::AfterHooks {

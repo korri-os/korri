@@ -1478,6 +1478,7 @@ export interface SessionControlCompleted {
 }
 
 export enum SessionControlFailureReason {
+	NotSessionStarter = "NotSessionStarter",
 	StaleSession = "StaleSession",
 	UnknownControl = "UnknownControl",
 	Disabled = "Disabled",
