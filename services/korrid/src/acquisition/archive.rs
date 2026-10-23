@@ -99,6 +99,35 @@ pub(super) fn device_memory() -> Result<u64, Stop> {
     )
 }
 
+/// Memory for the reader unit's `MemoryMax=`, read by korrid at launch.
+/// korrid's own service runs with `ProcSubset=pid`, which hides
+/// `/proc/meminfo`, so korrid cannot read `MemAvailable` there; on the Mini V2
+/// every store extraction failed with `Unpack` before its unit started.
+/// `sysinfo(2)` needs no `/proc`. Free plus buffer memory leaves out the page
+/// cache that `MemAvailable` counts, so the cap is lower, never higher. The
+/// reader still checks a 7z or rar dictionary against `MemAvailable` inside
+/// its own unit, where `/proc/meminfo` is visible.
+pub(super) fn launch_memory() -> Result<u64, Stop> {
+    // SAFETY: `sysinfo` only writes the struct it is given.
+    let mut info: libc::sysinfo = unsafe { std::mem::zeroed() };
+    if unsafe { libc::sysinfo(&mut info) } != 0 {
+        return Err(Stop::unpack(format!(
+            "sysinfo failed: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    Ok(free_memory(
+        info.freeram as u64,
+        info.bufferram as u64,
+        u64::from(info.mem_unit),
+    ))
+}
+
+/// `sysinfo` counts in units of `mem_unit` bytes.
+fn free_memory(free: u64, buffer: u64, unit: u64) -> u64 {
+    free.saturating_add(buffer).saturating_mul(unit.max(1))
+}
+
 /// `MemAvailable:  <n> kB` in bytes.
 fn mem_available(meminfo: &str) -> Result<u64, Stop> {
     meminfo

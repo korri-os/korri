@@ -404,7 +404,7 @@ pub(super) fn unpack_archive(
     }
     #[cfg(not(test))]
     {
-        let memory = super::archive::device_memory().map_err(|stop| stop.failure)?;
+        let memory = super::archive::launch_memory().map_err(|stop| stop.failure)?;
         run_reader(
             &Programs::device(),
             base,

@@ -250,6 +250,16 @@ fn magic_bytes_decide_the_format_and_names_decide_only_the_early_check() {
     assert!(mem_available("MemTotal: 1 kB\n").is_err());
 }
 
+/// korrid's service hides `/proc/meminfo` (`ProcSubset=pid`), so the launch
+/// cap comes from `sysinfo(2)`, in `mem_unit` bytes.
+#[test]
+fn the_launch_cap_needs_no_proc_meminfo() {
+    assert_eq!(free_memory(3, 1, 4096), 16_384);
+    assert_eq!(free_memory(3, 1, 0), 4);
+    assert_eq!(free_memory(u64::MAX, 1, 2), u64::MAX);
+    assert!(launch_memory().unwrap() > 0);
+}
+
 #[test]
 fn unsafe_names_are_refused_by_segment() {
     for name in [

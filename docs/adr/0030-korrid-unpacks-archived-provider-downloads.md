@@ -531,6 +531,15 @@ the dictionary check and never above it. A decoder that overreaches is killed
 inside the sandbox, and the job fails with the `Unpack` copy. ADR 0012
 artifact units are unchanged. The cap is exercised only under systemd.
 
+Device finding, 2026-10-23: korrid's own service runs with `ProcSubset=pid`,
+which hides `/proc/meminfo` from korrid. On the RP Mini V2 every store
+extraction therefore failed with the `Unpack` copy before its unit started.
+korrid now reads the launch cap from `sysinfo(2)` (free plus buffer memory),
+which needs no `/proc`. That leaves out the page cache that `MemAvailable`
+counts, so the cap is lower than `MemAvailable`, never higher. The reader still
+checks a dictionary against `MemAvailable` inside its own unit, which does not
+set `ProcSubset`.
+
 ### Change 2: a form POST on `FinalDownload`
 
 `FinalDownload` gains two optional fields, `method` and `body`. korrid sends
