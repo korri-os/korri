@@ -101,6 +101,11 @@ pub trait LaunchUnitBackend: Send + Sync {
     fn exit_status(&self, _launch_id: &str) -> Result<Option<i32>, LaunchUnitError> {
         Ok(None)
     }
+    /// Release completion diagnostics only after the host journals the result.
+    fn cleanup_completed(&self, _launch_id: &str) -> Result<(), LaunchUnitError> {
+        Ok(())
+    }
+
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError>;
     /// Stops the unit from any live state. A backend must thaw a frozen
     /// unit itself before stopping it; callers never issue a thaw before
@@ -1744,7 +1749,26 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         result
     }
 
+    fn cleanup_completed(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
+        validate_launch_id(launch_id)?;
+        super::launch_diagnostics::cleanup(&self.diagnostics_root.join(launch_id)).map_err(
+            |error| {
+                LaunchUnitError::new(
+                    LaunchUnitErrorKind::Failed,
+                    format!("cannot clean game diagnostics: {error}"),
+                )
+            },
+        )
+    }
+
     fn exit_status(&self, launch_id: &str) -> Result<Option<i32>, LaunchUnitError> {
+        validate_launch_id(launch_id)?;
+        if let Ok(Some(status)) = super::launch_diagnostics::read_exit_status(
+            &self.diagnostics_root.join(launch_id),
+            self.runtime_uid,
+        ) {
+            return Ok(Some(status));
+        }
         let output = self.require_success(&self.systemctl, &Self::state_arguments(launch_id)?)?;
         let text = String::from_utf8_lossy(&output.stdout);
         let values: BTreeMap<_, _> = text
@@ -1823,6 +1847,15 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
                 Err(self.failure_with_stderr(launch_id, error))
             }
             Ok(LaunchUnitState::Completed) => {
+                if super::launch_diagnostics::read_exit_status(&directory, self.runtime_uid)
+                    .ok()
+                    .flatten()
+                    .is_some()
+                {
+                    // Preserve the bounded result until after the host's durable
+                    // completion record contains it, including across a restart.
+                    return Ok(LaunchUnitState::Completed);
+                }
                 super::launch_diagnostics::cleanup(&directory).map_err(|error| {
                     LaunchUnitError::new(
                         LaunchUnitErrorKind::Failed,
@@ -2656,5 +2689,59 @@ mod hook_unit_tests {
             .unwrap_err();
         assert_eq!(error.kind, LaunchUnitErrorKind::Failed);
         assert!(error.message.contains("exit status: 7"));
+    }
+}
+
+#[cfg(test)]
+mod captured_exit_tests {
+    use super::*;
+    use std::{
+        fs,
+        os::unix::fs::{symlink, PermissionsExt},
+    };
+    const ID: &str = "0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn collected_game_keeps_a_hardened_exit_result_until_host_journals_it_even_after_daemon_restart(
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        let ctl = root.path().join("systemctl");
+        fs::write(&ctl, "#!/bin/sh\nprintf 'LoadState=not-found\\n'\n").unwrap();
+        fs::set_permissions(&ctl, fs::Permissions::from_mode(0o700)).unwrap();
+        let uid = unsafe { libc::geteuid() };
+        let mut backend =
+            SystemdLaunchUnitBackend::new(ctl.clone(), ctl, uid, unsafe { libc::getegid() })
+                .unwrap();
+        backend.diagnostics_root = root.path().join("launches");
+        let directory = backend.diagnostics_root.join(ID);
+        fs::create_dir_all(&directory).unwrap();
+        super::super::launch_diagnostics::write_status(&directory, uid, 0).unwrap();
+        assert_eq!(backend.state(ID).unwrap(), LaunchUnitState::Completed);
+        assert!(
+            directory.exists(),
+            "state must retain status until it is journaled"
+        );
+        let restarted = backend.clone();
+        assert_eq!(restarted.exit_status(ID).unwrap(), Some(0));
+        assert!(
+            directory.exists(),
+            "reading is not a durable completion acknowledgement"
+        );
+        restarted.cleanup_completed(ID).unwrap();
+        assert!(!directory.exists());
+        assert_eq!(
+            restarted.exit_status(ID).unwrap(),
+            None,
+            "an unavailable status must remain absent"
+        );
+        fs::create_dir_all(&directory).unwrap();
+        let outside = root.path().join("private");
+        fs::write(&outside, "7").unwrap();
+        symlink(&outside, directory.join("exit-status")).unwrap();
+        assert_eq!(
+            restarted.exit_status(ID).unwrap(),
+            None,
+            "do not follow a runtime-created link"
+        );
     }
 }

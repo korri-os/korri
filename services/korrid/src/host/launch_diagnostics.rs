@@ -14,6 +14,8 @@ pub(crate) const DIRECTORY_ENV: &str = "KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY";
 pub(crate) const READER_ENV: &str = "KORRI_LAUNCH_DIAGNOSTICS_READER_UID";
 pub(crate) const STDERR: &str = "stderr";
 const WORDS: &str = "redaction-words.json";
+const EXIT_STATUS: &str = "exit-status";
+const MAX_EXIT_STATUS_BYTES: u64 = 4;
 // /run is tmpfs: a long-running chatty game must not keep consuming handheld RAM.
 // The existing one-second session watcher checks this, retaining the last 32 KiB.
 pub(crate) const MAX_STDERR_BYTES: u64 = 64 * 1024;
@@ -130,6 +132,59 @@ pub(super) fn write_words(directory: &Path, reader: u32, words: &[String]) -> io
     // access; 0640 after this is the ACL mask, never owning-group permission.
     grant_user(&file, 6, reader, 4)?;
     file.write_all(&bytes)
+}
+
+/// Called by plugin-launch's namespace supervisor before it exits. This
+/// channel exists only for units with the host's diagnostic directory bind.
+pub(crate) fn write_exit_status(status: i32) -> Result<(), String> {
+    let Some(directory) = std::env::var_os(DIRECTORY_ENV) else {
+        return Ok(());
+    };
+    let reader: u32 = std::env::var(READER_ENV)
+        .map_err(|_| "diagnostics reader uid is missing")?
+        .parse()
+        .map_err(|_| "diagnostics reader uid is not numeric")?;
+    write_status(Path::new(&directory), reader, status)
+        .map_err(|error| format!("cannot record game exit status: {error}"))
+}
+pub(super) fn write_status(directory: &Path, reader: u32, status: i32) -> io::Result<()> {
+    if !(0..=255).contains(&status) {
+        return Err(io::Error::other("game exit status is out of range"));
+    }
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(directory.join(EXIT_STATUS))?;
+    grant_user(&file, 6, reader, 4)?;
+    write!(file, "{status}")?;
+    file.sync_all()
+}
+/// Runtime-owned data can spoil only this launch's result. Refuse links,
+/// special files, a different uid, oversized data, and non-exit-status values.
+pub(super) fn read_exit_status(directory: &Path, runtime_uid: u32) -> io::Result<Option<i32>> {
+    let mut file = match regular(&directory.join(EXIT_STATUS), false, runtime_uid) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        other => other?,
+    };
+    if file.metadata()?.len() > MAX_EXIT_STATUS_BYTES {
+        return Err(io::Error::other("game exit status is oversized"));
+    }
+    let mut bytes = Vec::new();
+    Read::by_ref(&mut file)
+        .take(MAX_EXIT_STATUS_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    let status = std::str::from_utf8(&bytes)
+        .ok()
+        .filter(|value| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()))
+        .and_then(|value| value.parse::<i32>().ok())
+        .filter(|status| (0..=255).contains(status))
+        .ok_or_else(|| io::Error::other("game exit status is malformed"))?;
+    if bytes.len() as u64 > MAX_EXIT_STATUS_BYTES {
+        return Err(io::Error::other("game exit status is oversized"));
+    }
+    Ok(Some(status))
 }
 
 pub(super) fn maintain(directory: &Path) -> io::Result<()> {
@@ -498,5 +553,50 @@ mod redaction_budget_tests {
             reason,
             "[redacted]".repeat(MAX_REASON_CHARS / "[redacted]".len())
         );
+    }
+}
+
+#[cfg(test)]
+mod exit_status_tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn clean_exit_status_is_bounded_private_and_readable_only_for_the_exact_runtime_uid() {
+        let root = tempfile::tempdir().unwrap();
+        let reader = unsafe { libc::geteuid() };
+        assert_eq!(read_exit_status(root.path(), reader).unwrap(), None);
+        write_status(root.path(), reader, 7).unwrap();
+        assert_eq!(read_exit_status(root.path(), reader).unwrap(), Some(7));
+        assert!(read_exit_status(root.path(), reader + 1).is_err());
+        assert!(
+            write_status(root.path(), reader, 8).is_err(),
+            "never overwrite a prior result"
+        );
+        assert_eq!(
+            fs::metadata(root.path().join(EXIT_STATUS)).unwrap().mode() & 0o007,
+            0
+        );
+    }
+
+    #[test]
+    fn exit_status_tampering_cannot_follow_links_read_large_data_or_supply_a_non_status() {
+        let root = tempfile::tempdir().unwrap();
+        let uid = unsafe { libc::geteuid() };
+        let target = root.path().join("outside");
+        fs::write(&target, "7").unwrap();
+        symlink(&target, root.path().join(EXIT_STATUS)).unwrap();
+        assert!(read_exit_status(root.path(), uid).is_err());
+        fs::remove_file(root.path().join(EXIT_STATUS)).unwrap();
+        for value in ["", "-1", "256", "0 extra", "00000000", "private-data"] {
+            fs::write(root.path().join(EXIT_STATUS), value).unwrap();
+            assert!(
+                read_exit_status(root.path(), uid).is_err(),
+                "accepted {value:?}"
+            );
+        }
+        for status in [-1, 256] {
+            assert!(write_status(root.path(), uid, status).is_err());
+        }
     }
 }

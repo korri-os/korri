@@ -968,7 +968,12 @@ impl HostSessionControl {
                 after_hooks: Some(_),
                 ..
             } => super::hooks::boot_id()?,
-            _ => return Ok(()),
+            _ => {
+                return self
+                    .backend
+                    .cleanup_completed(&launch_id)
+                    .map_err(|error| error.message)
+            }
         };
         loop {
             let ActiveSession::Running {
@@ -979,7 +984,10 @@ impl HostSessionControl {
                 return Ok(());
             };
             if hooks.boot_id != current_boot || hooks.steps.is_empty() {
-                return Ok(());
+                return self
+                    .backend
+                    .cleanup_completed(&launch_id)
+                    .map_err(|error| error.message);
             }
             if hooks.result.is_none() {
                 hooks.result = Some(super::hooks::SessionResult::Exited);
@@ -992,6 +1000,9 @@ impl HostSessionControl {
             hooks.next_step += 1;
             let execution = hooks.clone();
             replace_active(&self.identity_root, record)?;
+            self.backend
+                .cleanup_completed(&launch_id)
+                .map_err(|error| error.message)?;
             execution.run_next(self.backend.as_ref(), &launch_id, &step);
         }
     }

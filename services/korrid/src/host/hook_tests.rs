@@ -23,6 +23,7 @@ struct RecordingBackend {
     events: Arc<Mutex<Vec<String>>>,
     unit: Mutex<Option<(String, LaunchUnitState)>>,
     fail_game: Mutex<bool>,
+    exit_unknown: Mutex<bool>,
     hooks: Mutex<Vec<(String, Duration, BTreeMap<String, String>)>>,
 }
 impl LaunchUnitBackend for RecordingBackend {
@@ -83,7 +84,11 @@ impl LaunchUnitBackend for RecordingBackend {
             .map_or(LaunchUnitState::Completed, |(_, state)| *state))
     }
     fn exit_status(&self, _: &str) -> Result<Option<i32>, LaunchUnitError> {
-        Ok(Some(0))
+        Ok(if *self.exit_unknown.lock().unwrap() {
+            None
+        } else {
+            Some(0)
+        })
     }
     fn stop(&self, _: &str) -> Result<(), LaunchUnitError> {
         self.events.lock().unwrap().push("stop".into());
@@ -252,6 +257,7 @@ fn after_steps_receive_exit_failure_stop_and_restart_results_and_exact_launch_id
         "restart-failed",
         "restart-stopped",
         "start-failed",
+        "exited-unknown",
     ] {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(RecordingBackend::default());
@@ -260,6 +266,10 @@ fn after_steps_receive_exit_failure_stop_and_restart_results_and_exact_launch_id
         if result == "start-failed" {
             *backend.fail_game.lock().unwrap() = true;
         }
+        if result == "exited-unknown" {
+            *backend.exit_unknown.lock().unwrap() = true;
+        }
+
         let launched = prepare(&first, &steps);
         if result == "start-failed" {
             assert_eq!(launched.unwrap_err().code, "HostLaunchFailed");
@@ -332,7 +342,7 @@ fn after_steps_receive_exit_failure_stop_and_restart_results_and_exact_launch_id
         assert_eq!(after["KORRI_SESSION_RESULT"], expected, "{result}");
         assert_eq!(
             after.get("KORRI_EXIT_STATUS").map(String::as_str),
-            if expected == "exited" {
+            if expected == "exited" && result != "exited-unknown" {
                 Some("0")
             } else {
                 None
