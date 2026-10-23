@@ -97,6 +97,10 @@ _Avoid_: notification, event, ephemeral message
 Data that devices keep until every device of the federation has it, even after the device that made it goes offline. Devices that are online together copy it to each other. Settings, the person name and saves are records.
 _Avoid_: durable message, sync item, state
 
+**Nearby link**:
+A private Wi-Fi network that one device starts so that a device next to it can reach it with no router and no internet.
+_Avoid_: hotspot, local link, direct link, ad hoc network
+
 **Invite**:
 What an idle device shows when another device holds a live session that it can take part in through shared play. It names the person who is playing and the game, not the kind of shared play; the receiving device chooses its route. It lasts until the session ends, the device is no longer idle, or the person dismisses it.
 _Avoid_: notification, broadcast, request
