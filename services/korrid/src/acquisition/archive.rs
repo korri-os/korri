@@ -399,12 +399,17 @@ fn zip_archive(
 ) -> Result<(), Stop> {
     let unreadable = |error: zip::result::ZipError| Stop::unpack(format!("zip: {error}"));
     let mut file = File::open(archive)?;
-    let declared = zip_entry_count(&mut file)?;
+    let names = zip_central_names(&mut file)?;
     let mut zip = zip::ZipArchive::new(BufReader::new(file)).map_err(unreadable)?;
     // The reader keeps one entry per raw name, so a repeated name shows only
-    // as a shorter list than the central directory declares.
-    if declared != zip.len() as u64 {
+    // as fewer entries than korrid walked.
+    if names.iter().collect::<BTreeSet<_>>().len() != names.len() {
         return Err(Stop::unpack("zip: repeated entry name".into()));
+    }
+    if zip.len() != names.len() {
+        return Err(Stop::unpack(
+            "zip: the reader lists other entries than the directory".into(),
+        ));
     }
     let mut entries = Vec::with_capacity(zip.len().min(limits.budget.max_entries + 1));
     for index in 0..zip.len() {
@@ -460,11 +465,19 @@ fn zip_archive(
     Ok(())
 }
 
-/// The entry count the zip's end-of-central-directory record declares
-/// (APPNOTE 4.3.16), or its zip64 record's (4.3.14) when it says 0xFFFF.
-fn zip_entry_count(file: &mut File) -> Result<u64, Stop> {
+/// The raw names of every central-directory entry, walked by korrid from the
+/// end record the `zip` crate also uses: the zip64 end record (APPNOTE
+/// 4.3.14) when its locator (4.3.15) sits before the end record (4.3.16).
+/// This reader is single-volume, so the disk numbers must be 0 and the
+/// on-this-disk count, the total count and the walked count must agree; a
+/// forged count could otherwise hide an entry from korrid's own checks.
+fn zip_central_names(file: &mut File) -> Result<Vec<Vec<u8>>, Stop> {
     use std::io::{Seek, SeekFrom};
-    let corrupt = || Stop::unpack("zip: no end of central directory".into());
+    let corrupt = |why: &str| Stop::unpack(format!("zip: {why}"));
+    let le16 = |b: &[u8], at: usize| u64::from(u16::from_le_bytes([b[at], b[at + 1]]));
+    let le32 =
+        |b: &[u8], at: usize| u64::from(u32::from_le_bytes(b[at..at + 4].try_into().unwrap()));
+    let le64 = |b: &[u8], at: usize| u64::from_le_bytes(b[at..at + 8].try_into().unwrap());
     let length = file.metadata()?.len();
     let tail_start = length.saturating_sub(22 + 65_535);
     file.seek(SeekFrom::Start(tail_start))?;
@@ -474,23 +487,68 @@ fn zip_entry_count(file: &mut File) -> Result<u64, Stop> {
         .windows(4)
         .rposition(|window| window == b"PK\x05\x06")
         .filter(|at| at + 22 <= tail.len())
-        .ok_or_else(corrupt)?;
-    let count = u16::from_le_bytes([tail[at + 10], tail[at + 11]]);
-    if count != 0xFFFF {
-        return Ok(u64::from(count));
+        .ok_or_else(|| corrupt("no end of central directory"))?;
+    let end = &tail[at..at + 22];
+    let end_at = tail_start + at as u64;
+    let (mut disk, mut cd_disk, mut on_disk, mut total) =
+        (le16(end, 4), le16(end, 6), le16(end, 8), le16(end, 10));
+    let (mut size, mut offset) = (le32(end, 12), le32(end, 16));
+    let mut records_at = end_at;
+    if at >= 20 && &tail[at - 20..at - 16] == b"PK\x06\x07" {
+        let locator = &tail[at - 20..at];
+        if le32(locator, 4) != 0 || le32(locator, 16) != 1 {
+            return Err(corrupt("multi-disk zip64 archive"));
+        }
+        let record_at = le64(locator, 8);
+        file.seek(SeekFrom::Start(record_at))?;
+        let mut record = [0u8; 56];
+        file.read_exact(&mut record)?;
+        if &record[..4] != b"PK\x06\x06" {
+            return Err(corrupt("no zip64 end of central directory"));
+        }
+        disk = le32(&record, 16);
+        cd_disk = le32(&record, 20);
+        on_disk = le64(&record, 24);
+        total = le64(&record, 32);
+        size = le64(&record, 40);
+        offset = le64(&record, 48);
+        records_at = record_at;
     }
-    let locator = at.checked_sub(20).ok_or_else(corrupt)?;
-    if &tail[locator..locator + 4] != b"PK\x06\x07" {
-        return Err(corrupt());
+    if disk != 0 || cd_disk != 0 || on_disk != total {
+        return Err(corrupt("end record counts disagree or name another disk"));
     }
-    let record = u64::from_le_bytes(tail[locator + 8..locator + 16].try_into().unwrap());
-    file.seek(SeekFrom::Start(record))?;
-    let mut header = [0u8; 40];
-    file.read_exact(&mut header)?;
-    if &header[..4] != b"PK\x06\x06" {
-        return Err(corrupt());
+    // The central directory ends where the end records begin.
+    let start = records_at
+        .checked_sub(size)
+        .filter(|start| *start == offset)
+        .ok_or_else(|| corrupt("central directory is not where the end record says"))?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut directory = Vec::new();
+    file.take(size).read_to_end(&mut directory)?;
+    let mut names = Vec::new();
+    let mut cursor = 0usize;
+    while cursor < directory.len() {
+        let header = directory
+            .get(cursor..cursor + 46)
+            .filter(|header| &header[..4] == b"PK\x01\x02")
+            .ok_or_else(|| corrupt("bad central directory entry"))?;
+        let (name, extra, comment) = (
+            le16(header, 28) as usize,
+            le16(header, 30) as usize,
+            le16(header, 32) as usize,
+        );
+        let raw = directory
+            .get(cursor + 46..cursor + 46 + name)
+            .ok_or_else(|| corrupt("bad central directory entry"))?;
+        names.push(raw.to_vec());
+        cursor += 46 + name + extra + comment;
     }
-    Ok(u64::from_le_bytes(header[32..40].try_into().unwrap()))
+    if cursor != directory.len() || names.len() as u64 != total {
+        return Err(corrupt(
+            "central directory holds a different number of entries",
+        ));
+    }
+    Ok(names)
 }
 
 /// The decoder memory one 7z coder asks for.

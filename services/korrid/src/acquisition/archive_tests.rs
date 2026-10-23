@@ -23,6 +23,13 @@ fn raw(name: &str, data: &'static [u8]) -> Raw<'static> {
 }
 
 fn raw_zip(entries: &[Raw<'_>]) -> Vec<u8> {
+    let count = entries.len() as u16;
+    raw_zip_counts(entries, 0, count, count)
+}
+
+/// The end record's disk number, on-this-disk count and total count, which
+/// a forged archive can set apart from the entries it holds.
+fn raw_zip_counts(entries: &[Raw<'_>], disk: u16, on_disk: u16, total: u16) -> Vec<u8> {
     let mut out = Vec::new();
     let mut central = Vec::new();
     for entry in entries {
@@ -64,11 +71,45 @@ fn raw_zip(entries: &[Raw<'_>]) -> Vec<u8> {
     let start = out.len() as u32;
     out.extend_from_slice(&central);
     out.extend_from_slice(&0x06054b50u32.to_le_bytes());
-    out.extend_from_slice(&[0; 4]);
-    out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
-    out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+    out.extend_from_slice(&disk.to_le_bytes());
+    out.extend_from_slice(&disk.to_le_bytes());
+    out.extend_from_slice(&on_disk.to_le_bytes());
+    out.extend_from_slice(&total.to_le_bytes());
     out.extend_from_slice(&(central.len() as u32).to_le_bytes());
     out.extend_from_slice(&start.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out
+}
+
+/// Rewrite a small zip's end record as zip64: a zip64 end record and its
+/// locator before an end record whose counts say 0xFFFF.
+fn zip64(zip: &[u8], on_disk: u64, total: u64) -> Vec<u8> {
+    let end = zip.len() - 22;
+    let size = u64::from(u32::from_le_bytes(
+        zip[end + 12..end + 16].try_into().unwrap(),
+    ));
+    let offset = u64::from(u32::from_le_bytes(
+        zip[end + 16..end + 20].try_into().unwrap(),
+    ));
+    let mut out = zip[..end].to_vec();
+    let record_at = out.len() as u64;
+    out.extend_from_slice(b"PK\x06\x06");
+    out.extend_from_slice(&44u64.to_le_bytes());
+    out.extend_from_slice(&45u16.to_le_bytes());
+    out.extend_from_slice(&45u16.to_le_bytes());
+    out.extend_from_slice(&[0; 8]); // this disk, central directory disk
+    out.extend_from_slice(&on_disk.to_le_bytes());
+    out.extend_from_slice(&total.to_le_bytes());
+    out.extend_from_slice(&size.to_le_bytes());
+    out.extend_from_slice(&offset.to_le_bytes());
+    out.extend_from_slice(b"PK\x06\x07");
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&record_at.to_le_bytes());
+    out.extend_from_slice(&1u32.to_le_bytes());
+    out.extend_from_slice(b"PK\x05\x06");
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(&[0xff; 4]);
+    out.extend_from_slice(&[0xff; 8]);
     out.extend_from_slice(&0u16.to_le_bytes());
     out
 }
@@ -442,6 +483,38 @@ fn repeated_paths_and_files_used_as_folders_are_refused() {
         Failure::Unpack,
         "repeated",
     );
+}
+
+/// Review P1-1: the reader walks the on-this-disk count, so a forged total
+/// of 1 once hid a second `Game.gba` behind the first, also when the hidden
+/// first entry was a symbolic link.
+#[test]
+fn forged_end_record_counts_cannot_hide_a_repeated_or_linked_entry() {
+    let mut link = raw("Game.gba", b"../../etc/passwd");
+    link.mode = Some(0o120777);
+    for first in [raw("Game.gba", ROM), link] {
+        let entries = [first, raw("Game.gba", b"\x00\x02 second")];
+        for (disk, on_disk, total) in [(0, 2, 1), (0, 1, 2), (1, 2, 2)] {
+            let bytes = raw_zip_counts(&entries, disk, on_disk, total);
+            let run = unpack(&bytes);
+            let stop = run.result.expect_err("a forged end record must be refused");
+            assert_eq!(stop.failure, Failure::Unpack, "{}", stop.reason);
+            assert!(tree(&run.work).is_empty(), "{disk} {on_disk} {total}");
+        }
+    }
+    // The zip64 end record is the one that counts when present.
+    for (on_disk, total, ok) in [(2u64, 2u64, true), (2, 1, false), (1, 2, false)] {
+        let bytes = zip64(
+            &raw_zip(&[raw("A.gba", ROM), raw("B.gba", b"\x00\x02")]),
+            on_disk,
+            total,
+        );
+        let run = unpack(&bytes);
+        assert_eq!(run.result.is_ok(), ok, "zip64 {on_disk} {total}");
+    }
+    // Honest counts with distinct names still unpack.
+    let honest = raw_zip_counts(&[raw("A.gba", ROM), raw("B.gba", ROM)], 0, 2, 2);
+    assert!(unpack(&honest).result.is_ok());
 }
 
 #[test]
