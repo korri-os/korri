@@ -1,3 +1,5 @@
+mod graph_update;
+
 use crate::{
     archive,
     declaration::validate_id,
@@ -103,6 +105,8 @@ struct TestRuntime {
     fail_registry_after_rename: std::rc::Rc<std::cell::Cell<bool>>,
     owned_packages: std::rc::Rc<std::cell::RefCell<BTreeMap<String, PathBuf>>>,
     unsafe_stops: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    graph_checkpoints: std::rc::Rc<std::cell::Cell<usize>>,
+    interrupt_graph_at: std::rc::Rc<std::cell::Cell<Option<usize>>>,
 }
 
 impl Drop for Host {
@@ -188,6 +192,7 @@ impl Host {
     }
 
     pub fn inspect(&self, source: &str, package: &Path) -> Result<Report, String> {
+        self.graph_update_pending()?;
         package::validate_store_path(package)?;
         let download = self.paths.roots.join("download");
         storage::root_link(&download, package)?;
@@ -209,6 +214,7 @@ impl Host {
         id: &str,
         revision: &str,
     ) -> Result<Report, String> {
+        self.graph_update_pending()?;
         validate_id(id)?;
         let batch = crate::release::batch_url(source, revision)?;
         let namespace = id.split_once(':').ok_or("invalid plugin ID")?.0;
@@ -243,6 +249,7 @@ impl Host {
 
     /// Every committed selection receipt, read under the host lock.
     pub fn installed(&self) -> Result<Vec<Receipt>, String> {
+        self.graph_update_pending()?;
         self.receipts()
     }
 
@@ -304,6 +311,7 @@ impl Host {
         id: &str,
         release: &str,
     ) -> Result<Report, String> {
+        self.graph_update_pending()?;
         validate_id(id)?;
         crate::catalog::validate_release_version(release)?;
         let catalog = self.catalog(config, source)?;
@@ -498,6 +506,7 @@ impl Host {
     where
         F: FnOnce() -> Result<(), String>,
     {
+        self.graph_update_pending()?;
         let (roots, _optional_ids) = review.into_parts();
         let mut required = Vec::<Report>::new();
         // Root approval covers its disclosed closure. Keep the existing
@@ -669,6 +678,7 @@ impl Host {
     /// other selection for an installed plugin needs `repository update` or
     /// `repository switch`, which the socket does not offer.
     pub fn install_reviewed(&self, report: Report, approval: &str) -> Result<(), String> {
+        self.graph_update_pending()?;
         validate_id(&report.id)?;
         let id = report.id.clone();
         match self.receipt(&id)? {
@@ -686,6 +696,7 @@ impl Host {
         approval: &str,
         intent: SelectionIntent<'_>,
     ) -> Result<(), String> {
+        self.graph_update_pending()?;
         if report.approval != approval {
             return Err(
                 "approval does not match this package and its execution policy; inspect it first"
@@ -788,6 +799,9 @@ impl Host {
                 }
             }
         }
+        if !replacements.is_empty() {
+            return self.update_root_graph(checked);
+        }
         for dep in &checked.brings {
             if !additions.contains(&dep.report.id) {
                 continue;
@@ -796,27 +810,6 @@ impl Host {
             self.selection(&dep.report.id).stage(&dep.report.package)?;
         }
         let result = (|| {
-            if !replacements.is_empty() {
-                // Persist disabled intent and finish all dependent cleanup before
-                // changing any required selection. A crash can leave this graph
-                // disabled, with each old build retained in its own previous slot.
-                if enabled_graph_transition {
-                    self.deactivate(&report.id, Desired::Disabled)?;
-                } else {
-                    // Finish disabled-root cleanup without the disable cascade:
-                    // unchanged, independently enabled dependencies stay enabled.
-                    self.restore_one(&report.id)?;
-                }
-                for dep in checked.brings.iter().rev() {
-                    if replacements.contains_key(&dep.report.id) {
-                        let receipt = self
-                            .receipt(&dep.report.id)?
-                            .ok_or("required plugin is not installed")?;
-                        self.stop_enabled_dependents(&receipt.package)?;
-                        self.deactivate(&dep.report.id, Desired::Disabled)?;
-                    }
-                }
-            }
             for dep in &checked.brings {
                 if additions.contains(&dep.report.id) {
                     self.install_one(
@@ -824,30 +817,12 @@ impl Host {
                         &dep.report.approval,
                         SelectionIntent::Install,
                     )?;
-                } else if replacements.contains_key(&dep.report.id) {
-                    // This dependency's approval came from the re-inspected graph,
-                    // not a separate unreviewed selection or inherited source.
-                    self.install_one_in_graph(
-                        dep.report.clone(),
-                        &dep.report.approval,
-                        None,
-                        &updating,
-                    )?;
-                }
-            }
-            if !enabled_graph_transition {
-                for dep in &checked.brings {
-                    if replacements.get(&dep.report.id) == Some(&true) {
-                        self.set_enabled(&dep.report.id, true)?;
-                    }
                 }
             }
             if enabled_graph_transition {
                 // Stop the pack before a new dependency may be started. Keep
                 // the committed pack disabled on failure, never half-active.
-                if replacements.is_empty() {
-                    self.deactivate(&report.id, Desired::Disabled)?;
-                }
+                self.deactivate(&report.id, Desired::Disabled)?;
                 self.activate_dependencies(&checked)?;
                 self.install_one(report.clone(), approval, intent)?;
                 self.set_enabled(&report.id, true)
@@ -891,17 +866,6 @@ impl Host {
         approval: &str,
         intent: SelectionIntent<'_>,
     ) -> Result<(), String> {
-        self.install_one_in_graph(report, approval, Some(intent), &BTreeSet::new())
-    }
-
-    // None is reserved for a dependency explicitly approved by a root Update.
-    fn install_one_in_graph(
-        &self,
-        report: Report,
-        approval: &str,
-        intent: Option<SelectionIntent<'_>>,
-        updating: &BTreeSet<String>,
-    ) -> Result<(), String> {
         if report.approval != approval {
             return Err(
                 "approval does not match this package and its execution policy; inspect it first"
@@ -910,7 +874,7 @@ impl Host {
         }
         report.provenance.validate(&report.id)?;
         match intent {
-            Some(SelectionIntent::Update { id } | SelectionIntent::SwitchSource { id })
+            SelectionIntent::Update { id } | SelectionIntent::SwitchSource { id }
                 if id != report.id =>
             {
                 return Err("selection cannot change the plugin identity".into());
@@ -918,27 +882,19 @@ impl Host {
             _ => {}
         }
         let old = self.receipt(&report.id)?;
-        if let Some(intent) = intent {
-            intent.validate(
-                &report.id,
-                old.as_ref().map(|r| &r.provenance),
-                &report.provenance,
-            )?;
-        } else if !updating.contains(&report.id) || old.is_none() {
-            return Err("dependency replacement is not part of the approved root update".into());
-        }
+        intent.validate(
+            &report.id,
+            old.as_ref().map(|r| &r.provenance),
+            &report.provenance,
+        )?;
         self.prepare(&report.id)?;
         self.recover_one(&report.id)?;
         let old = self.receipt(&report.id)?;
-        if let Some(intent) = intent {
-            intent.validate(
-                &report.id,
-                old.as_ref().map(|r| &r.provenance),
-                &report.provenance,
-            )?;
-        } else if !updating.contains(&report.id) || old.is_none() {
-            return Err("dependency replacement is not part of the approved root update".into());
-        }
+        intent.validate(
+            &report.id,
+            old.as_ref().map(|r| &r.provenance),
+            &report.provenance,
+        )?;
         let candidate = match old {
             Some(old) if same_selection(&old, &report) => {
                 // A new review of the exact installed selection replaces only
@@ -972,13 +928,14 @@ impl Host {
                 previous: None,
             },
         };
-        self.apply_in_graph(candidate, updating)?;
+        self.apply(candidate)?;
         self.release_download()
     }
 
     /// Swap the two exact approved selections. No inspection, repository
     /// lookup, import, or dependency substitution is part of rollback.
     pub fn rollback(&self, id: &str) -> Result<(), String> {
+        self.graph_update_pending()?;
         validate_id(id)?;
         self.prepare(id)?;
         // Validate before recovery can start anything. A refused swap must
@@ -1001,6 +958,7 @@ impl Host {
     }
 
     pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<(), String> {
+        self.graph_update_pending()?;
         validate_id(id)?;
         self.prepare(id)?;
         if !enabled {
@@ -1289,6 +1247,7 @@ impl Host {
     }
 
     pub fn remove(&self, id: &str, purge: bool) -> Result<(), String> {
+        self.graph_update_pending()?;
         self.lifecycle.check_removal(id)?;
         self.prepare(id)?;
         self.deactivate(id, Desired::Removed { purge })
@@ -1332,6 +1291,7 @@ impl Host {
     }
 
     pub fn status(&self, id: &str) -> Result<Option<Receipt>, String> {
+        self.graph_update_pending()?;
         validate_id(id)?;
         self.receipt(id)
     }
@@ -1341,6 +1301,7 @@ impl Host {
     /// callback execution occurs. Signature verification may consult the bound
     /// cache; pending transitions never publish launch authority.
     pub fn enabled_packages(&self) -> Result<Vec<Report>, String> {
+        self.graph_update_pending()?;
         // Every install, enable, disable, update and rollback republishes this
         // list. Loading each enabled graph separately costs several Nix calls
         // and a declaration evaluation per plugin, so a batch of N changes did
@@ -1391,6 +1352,8 @@ impl Host {
             if entry.file_name() == "lock"
                 || entry.file_name() == storage::SOURCES_DIR
                 || entry.file_name() == storage::STAGING_DIR
+                || entry.file_name() == graph_update::JOURNAL
+                || entry.file_name() == "graph-update.new"
             {
                 continue;
             }
@@ -1421,6 +1384,7 @@ impl Host {
 
     pub fn restore_all(&self) -> Result<(), String> {
         self.invalidate_registry()?;
+        self.recover_graph_update()?;
         let mut errors = Vec::new();
         if let Err(error) = self.state.cleanup_staging() {
             errors.push(error);
@@ -1861,14 +1825,6 @@ impl Host {
     }
 
     fn apply(&self, candidate: Receipt) -> Result<(), String> {
-        self.apply_in_graph(candidate, &BTreeSet::new())
-    }
-
-    fn apply_in_graph(
-        &self,
-        candidate: Receipt,
-        updating: &BTreeSet<String>,
-    ) -> Result<(), String> {
         let id = &candidate.id;
         let report = self.approved(&candidate)?;
         let changes_selection = self.receipt(id)?.is_some_and(|old| {
@@ -1876,7 +1832,7 @@ impl Host {
                 || old.provenance != candidate.provenance
                 || old.approval != candidate.approval
         });
-        self.check_required_by_except(id, !changes_selection, updating)?;
+        self.check_required_by(id, !changes_selection)?;
         self.check_dependencies(&report, matches!(candidate.desired, Desired::Enabled), None)?;
         self.verify_report(&report, None, package::StoreContents::Rehash)?;
         self.invalidate_registry()?;
@@ -3053,6 +3009,261 @@ mod tests {
     }
 
     #[test]
+    fn root_graph_power_loss_never_leaves_mixed_exact_selections() {
+        let old: Vec<_> = ["fake08", "solarus", "zquest"]
+            .iter()
+            .map(|name| report(&format!("@test:{name}"), &format!("{name}-old")))
+            .collect();
+        let new: Vec<_> = ["fake08", "solarus", "zquest"]
+            .iter()
+            .map(|name| report(&format!("@test:{name}"), &format!("{name}-new")))
+            .collect();
+        let old_pack = pack("@test:starter-pack", "starter-old", &old);
+        let new_pack = pack("@test:starter-pack", "starter-new", &new);
+        let reports: Vec<_> = old
+            .iter()
+            .chain(&new)
+            .chain([&old_pack, &new_pack])
+            .cloned()
+            .collect();
+        // Prepared, four stages, four stops, Switching, four commits, Finished.
+        for interruption in 1..=15 {
+            for cold in [false, true] {
+                for all_enabled in [false, true] {
+                    let root = tempfile::tempdir().unwrap();
+                    let runtime = runtime(&reports);
+                    let nix = cleanup_program(root.path(), "exit 0");
+                    let host = Host::for_test(
+                        root.path(),
+                        nix.clone(),
+                        permitted_policy(),
+                        runtime.clone(),
+                    )
+                    .unwrap();
+                    install(&host, old_pack.clone());
+                    if all_enabled {
+                        host.set_enabled(&old_pack.id, true).unwrap();
+                    } else {
+                        host.set_enabled(&old[0].id, true).unwrap();
+                    }
+                    let before = host.receipts().unwrap();
+                    fs::write(root.path().join("save-data"), "retain progress").unwrap();
+                    runtime.interrupt_graph_at.set(Some(interruption));
+                    let error = host
+                        .install(
+                            new_pack.clone(),
+                            &new_pack.approval,
+                            SelectionIntent::Update { id: &old_pack.id },
+                        )
+                        .unwrap_err();
+                    assert!(
+                        error.contains("injected graph interruption"),
+                        "{interruption}: {error}"
+                    );
+                    if interruption < 15 {
+                        assert!(host
+                            .enabled_packages()
+                            .err()
+                            .unwrap()
+                            .contains("run restore-all"));
+                        assert!(host
+                            .set_enabled(&old[0].id, true)
+                            .unwrap_err()
+                            .contains("run restore-all"));
+                        assert!(host
+                            .rollback(&old[0].id)
+                            .unwrap_err()
+                            .contains("run restore-all"));
+                    }
+                    runtime.interrupt_graph_at.set(None);
+                    if cold {
+                        cold_boot(&runtime);
+                    }
+                    drop(host);
+                    let host =
+                        Host::for_test(root.path(), nix, permitted_policy(), runtime.clone())
+                            .unwrap();
+                    host.restore_all().unwrap();
+                    host.restore_all().unwrap();
+                    for original in before {
+                        let selected = host.status(&original.id).unwrap().unwrap();
+                        assert_eq!(
+                            selected.desired, original.desired,
+                            "interruption {interruption}"
+                        );
+                        if interruption < 10 {
+                            assert_eq!(selected, original);
+                        } else {
+                            let target = reports
+                                .iter()
+                                .find(|r| r.id == original.id && r.package != original.package)
+                                .unwrap();
+                            assert_eq!(selected.package, target.package);
+                            assert_eq!(selected.previous.unwrap().package, original.package);
+                        }
+                        assert_eq!(
+                            fs::read_link(host.root(&original.id, "active")).unwrap(),
+                            selected.package
+                        );
+                        assert!(fs::symlink_metadata(host.root(&original.id, "pending")).is_err());
+                        assert_eq!(
+                            runtime.running.borrow().contains(&original.id),
+                            matches!(original.desired, Desired::Enabled)
+                        );
+                    }
+                    assert_eq!(
+                        fs::read_to_string(root.path().join("save-data")).unwrap(),
+                        "retain progress"
+                    );
+                    assert!(
+                        runtime.unsafe_stops.borrow().is_empty(),
+                        "{:?}",
+                        runtime.unsafe_stops.borrow()
+                    );
+                    assert!(!host.state.root().join("graph-update.json").exists());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn root_graph_recovers_additions_and_a_receipt_written_before_its_roots() {
+        let old = report("@test:runner", "roots-old");
+        let new = report("@test:runner", "roots-new");
+        let added = report("@test:added", "roots-added");
+        let first = pack("@test:pack", "roots-pack-old", std::slice::from_ref(&old));
+        let second = pack(
+            "@test:pack",
+            "roots-pack-new",
+            &[new.clone(), added.clone()],
+        );
+        for interruption in [4, 7, 8] {
+            let root = tempfile::tempdir().unwrap();
+            let runtime = runtime(&[
+                old.clone(),
+                new.clone(),
+                added.clone(),
+                first.clone(),
+                second.clone(),
+            ]);
+            let nix = cleanup_program(root.path(), "exit 0");
+            let host = Host::for_test(
+                root.path(),
+                nix.clone(),
+                permitted_policy(),
+                runtime.clone(),
+            )
+            .unwrap();
+            install(&host, first.clone());
+            host.set_enabled(&first.id, true).unwrap();
+            runtime.interrupt_graph_at.set(Some(interruption));
+            let error = host
+                .install(
+                    second.clone(),
+                    &second.approval,
+                    SelectionIntent::Update { id: &first.id },
+                )
+                .unwrap_err();
+            assert!(error.contains("injected graph interruption"), "{error}");
+            if interruption == 7 {
+                // Switching is durable, but no receipt/root pair has committed.
+                // Simulate loss of power between the receipt rename and settle.
+                let before = host.receipt(&old.id).unwrap().unwrap();
+                let after = before
+                    .select(
+                        new.package.clone(),
+                        new.provenance.clone(),
+                        new.approval.clone(),
+                    )
+                    .unwrap();
+                storage::write_json(&host.receipt_path(&old.id), &after).unwrap();
+                assert_eq!(
+                    fs::read_link(host.root(&old.id, "active")).unwrap(),
+                    old.package
+                );
+                assert_eq!(
+                    fs::read_link(host.root(&old.id, "pending")).unwrap(),
+                    new.package
+                );
+            }
+            runtime.interrupt_graph_at.set(None);
+            cold_boot(&runtime);
+            drop(host);
+            let host =
+                Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+            host.restore_all().unwrap();
+            let committed = interruption >= 7;
+            assert_eq!(
+                host.status(&first.id).unwrap().unwrap().package,
+                if committed {
+                    second.package.clone()
+                } else {
+                    first.package.clone()
+                }
+            );
+            assert_eq!(
+                host.status(&old.id).unwrap().unwrap().package,
+                if committed {
+                    new.package.clone()
+                } else {
+                    old.package.clone()
+                }
+            );
+            let addition = host.status(&added.id).unwrap();
+            assert_eq!(addition.is_some(), committed);
+            if let Some(receipt) = addition {
+                assert!(receipt.previous.is_none());
+                assert_eq!(receipt.desired, Desired::Enabled);
+            }
+            assert!(runtime.unsafe_stops.borrow().is_empty());
+            assert!(!host.state.root().join("graph-update.json").exists());
+        }
+    }
+
+    #[test]
+    fn root_graph_finishes_committed_selections_before_refusing_revoked_activation() {
+        let root = tempfile::tempdir().unwrap();
+        let old = report("@test:runner", "revoked-old");
+        let new = report("@test:runner", "revoked-new");
+        let first = pack("@test:pack", "revoked-pack-old", std::slice::from_ref(&old));
+        let second = pack("@test:pack", "revoked-pack-new", std::slice::from_ref(&new));
+        let runtime = runtime(&[old.clone(), new.clone(), first.clone(), second.clone()]);
+        let host = Host::for_test(
+            root.path(),
+            cleanup_program(root.path(), "exit 0"),
+            permitted_policy(),
+            runtime.clone(),
+        )
+        .unwrap();
+        install(&host, first.clone());
+        host.set_enabled(&first.id, true).unwrap();
+        runtime.interrupt_graph_at.set(Some(6));
+        assert!(host
+            .install(
+                second.clone(),
+                &second.approval,
+                SelectionIntent::Update { id: &first.id }
+            )
+            .is_err());
+        runtime.interrupt_graph_at.set(None);
+        cold_boot(&runtime);
+        runtime.events.borrow_mut().clear();
+        runtime.revoked.borrow_mut().insert(new.package.clone());
+        let error = host.restore_all().unwrap_err();
+        assert!(error.contains("revocation"), "{error}");
+        assert_eq!(host.status(&new.id).unwrap().unwrap().package, new.package);
+        let parent = host.status(&second.id).unwrap().unwrap();
+        assert_eq!(parent.package, second.package);
+        assert_eq!(parent.desired, Desired::Disabled);
+        assert!(!host.state.root().join("graph-update.json").exists());
+        assert!(!runtime
+            .events
+            .borrow()
+            .iter()
+            .any(|e| e == &format!("start:{}", new.id)));
+    }
+
+    #[test]
     fn root_update_replaces_exact_dependencies_with_independent_previous_selections() {
         for enabled in [false, true] {
             let root = tempfile::tempdir().unwrap();
@@ -3176,6 +3387,10 @@ mod tests {
                 )
                 .unwrap_err();
             assert!(error.contains("start failure"), "{error}");
+            assert!(
+                error.contains(&format!("{} left Disabled", first.id)),
+                "{error}"
+            );
             assert_eq!(
                 host.status(&first.id).unwrap().unwrap().desired,
                 Desired::Disabled
@@ -3340,13 +3555,14 @@ mod tests {
                 let error = result.unwrap_err();
                 assert!(error.contains("stop failure"), "{error}");
                 for old in [&first, &a, &b] {
-                    let receipt = host.status(&old.id).unwrap().unwrap();
+                    let receipt = host.receipt(&old.id).unwrap().unwrap();
                     assert_eq!(receipt.package, old.package);
                     assert!(receipt.previous.is_none());
                 }
                 assert!(runtime.running.borrow().contains(&a.id));
                 assert!(!stops(&runtime).iter().any(|e| e.contains(&a.id)));
                 runtime.fail_stop.replace(None);
+                host.restore_all().unwrap();
                 host.install(
                     second.clone(),
                     &second.approval,
@@ -3459,6 +3675,8 @@ mod tests {
         assert_eq!(root0.brings[0].report.provenance, dependency_origin);
         install(&host, root0.clone());
         host.set_enabled(&root0.id, true).unwrap();
+        let mut legacy_committed = host.status(&root0.id).unwrap().unwrap();
+        legacy_committed.desired = Desired::Disabled;
         let root1 = host
             .load(&fixture("secondPack"), root_origin.clone())
             .unwrap();
@@ -3474,6 +3692,14 @@ mod tests {
             )
             .unwrap_err();
         assert!(error.contains("injected start failure"), "{error}");
+        assert_eq!(
+            host.status(&root0.id).unwrap().unwrap().package,
+            root1.package
+        );
+        // Reproduce #202's pre-transaction failed-update state explicitly. The
+        // new decision prevents creating this state, but must still refuse
+        // overwriting provenance a committed root needs when it is observed.
+        host.selection(&root0.id).commit(&legacy_committed).unwrap();
         let committed = host.status(&root0.id).unwrap().unwrap();
         assert_eq!(committed.package, root0.package);
         assert_eq!(committed.desired, Desired::Disabled);
@@ -3642,6 +3868,137 @@ mod tests {
         cleanup_program(root.path(), "exit 0");
         host.restore_all().unwrap();
         assert!(host.status(&fake08.id).unwrap().is_none());
+    }
+
+    #[test]
+    #[ignore = "requires the signed old Pro graph and current published ARM outputs in the build-machine store; no device access"]
+    fn real_store_graph_rg35xxpro_updates_all_four_with_one_root_approval() {
+        // Old outputs and approvals: observed device receipts in
+        // /tmp/rg35xxpro-upgrade/report.md, Exact transactional graph acceptance.
+        // Targets: nix/product/published-plugins.nix aarch64-linux at 5097e69ea,
+        // including build-bd4bfcfe4e9a's FAKE-08 save-state fix and rebuilt pack.
+        let old = [
+            "/nix/store/c0j4s87fx0j81n7s1szhszpimjlp9f48-korri-plugin",
+            "/nix/store/66c4hds7g34kra7jkl53wmrm42p60v2w-korri-plugin",
+            "/nix/store/2yp6hpj8bk6h78h3p46cq51af6p36kq3-korri-plugin",
+            "/nix/store/1wkq4gsf2fkak9w3r3dbzg3nbsrpf5gs-korri-plugin",
+        ]
+        .map(PathBuf::from);
+        let target = [
+            "/nix/store/9rz2xjv1ppqzkgxkivvkqdy40573z4kj-korri-plugin",
+            "/nix/store/yy6pl7m6k7c2icgvmjig1xp5dcki83wg-korri-plugin",
+            "/nix/store/vpirf6d752ax7mbilbx8wv2g61d3vl5r-korri-plugin",
+            "/nix/store/fgpg2glx2n202j975w62d73jlj5l86xx-korri-plugin",
+        ]
+        .map(PathBuf::from);
+        let approvals = [
+            (
+                "@korri:starter-pack",
+                "1217c3d5c7fcea11da169f96e33a14df331eda4da11f465146b8bc7ddb7fd7b8",
+            ),
+            (
+                "@korri:fake08",
+                "8097740bbe89b89b257a4228eecaa0c825cbee5f2199ce2e93c0246440037e99",
+            ),
+            (
+                "@korri:solarus",
+                "b955d4d6cb1ee9de8cc5a344e58fa88679001750c3c29dee379b15e0026a6e57",
+            ),
+            (
+                "@korri:zquest-classic",
+                "76b2475368d63e273499eb307606fb4298af8dbd13c0f3ca49b6b60e043645f5",
+            ),
+        ];
+        let nix = PathBuf::from(
+            std::env::var_os("KORRI_PUBLISH_NIX").expect("immutable build-machine Nix"),
+        );
+        let helper = package::tools(&PathBuf::from(
+            std::env::var_os("KORRI_TEST_TRUE").expect("immutable no-effect helper"),
+        ))
+        .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let mut host =
+            Host::for_test(root.path(), nix, permitted_policy(), TestRuntime::default()).unwrap();
+        // No report or signature double. The packages, source evaluation,
+        // closure checks and bound full-key verification are production code.
+        // These game plugins have zero native units; never run ARM payloads.
+        host.test_runtime = None;
+        host.units.systemctl = helper.clone();
+        host.units.firewall.ipv4 = helper.clone();
+        host.units.firewall.ipv6 = helper;
+        let cache = "https://github.com/korri-os/plugins/releases/download/cache/";
+        host.publishers.insert(
+            "@korri".into(),
+            package::PublisherBinding {
+                public_key: "korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=".into(),
+                cache_url: cache.into(),
+            },
+        );
+        let origin = Provenance::RawCache {
+            cache_url: cache.into(),
+        };
+        let first = host.load(&old[0], origin.clone()).unwrap();
+        assert_eq!(first.brings.len(), 3);
+        assert_eq!(
+            first.requires.iter().cloned().collect::<BTreeSet<_>>(),
+            old[1..].iter().cloned().collect()
+        );
+        install(&host, first.clone());
+        host.set_enabled(&first.id, true).unwrap();
+        let before = host.receipts().unwrap();
+        for (id, approval) in approvals {
+            assert_eq!(host.status(id).unwrap().unwrap().approval, approval);
+        }
+        let data = root.path().join("existing-user-data");
+        fs::write(&data, b"preserve game progress").unwrap();
+        let seeded = package::load_graph_for_seed(&target, &host.publishers).unwrap();
+        let next = host.load(&target[0], origin).unwrap();
+        assert_eq!(
+            next.requires.iter().cloned().collect::<BTreeSet<_>>(),
+            target[1..].iter().cloned().collect()
+        );
+        assert!(next.native_units.is_empty());
+        assert!(next.brings.iter().all(|r| r.report.native_units.is_empty()));
+        let approval = seeded
+            .iter()
+            .find(|r| r.id == first.id)
+            .unwrap()
+            .approval
+            .clone();
+        assert_eq!(next.approval, approval);
+        // This is the same Host entry and single approval as plain CLI update.
+        host.install(next, &approval, SelectionIntent::Update { id: &first.id })
+            .unwrap();
+        host.restore_all().unwrap();
+        for previous in before {
+            let selected = host.status(&previous.id).unwrap().unwrap();
+            assert!(target.contains(&selected.package));
+            assert_eq!(selected.desired, Desired::Enabled);
+            assert_eq!(
+                selected.previous.as_ref().unwrap().package,
+                previous.package
+            );
+            assert_eq!(
+                selected.previous.as_ref().unwrap().provenance,
+                previous.provenance
+            );
+            assert_eq!(
+                selected.previous.as_ref().unwrap().approval,
+                previous.approval
+            );
+            assert_eq!(
+                fs::read_link(host.root(&selected.id, "active")).unwrap(),
+                selected.package
+            );
+            assert_eq!(
+                fs::read_link(host.root(&selected.id, "previous")).unwrap(),
+                previous.package
+            );
+            assert!(fs::symlink_metadata(host.root(&selected.id, "pending")).is_err());
+        }
+        assert_eq!(host.enabled_packages().unwrap().len(), 4);
+        assert_eq!(fs::read(&data).unwrap(), b"preserve game progress");
+        assert!(!host.state.root().join("graph-update.json").exists());
     }
 
     #[test]

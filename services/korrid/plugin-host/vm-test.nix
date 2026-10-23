@@ -90,6 +90,48 @@ let
       files.run = "${pkgs.coreutils}/bin/true";
     };
   };
+  graphNode =
+    name: revision:
+    mkPlugin {
+      publisher.namespace = "@korri";
+      source = pkgs.writeTextDir "plugin.ts" ''
+        export const name = "graph-${name}";
+        export const title = "Graph ${name} revision ${revision}";
+        export const services = ["graph-${name}"];
+      '';
+      plugin = _: {
+        services."graph-${name}".serviceConfig = {
+          Type = "exec";
+          ExecStart = "${pkgs.coreutils}/bin/sleep infinity";
+        };
+      };
+    };
+  graphOld = map (name: graphNode name "1") [
+    "fake08"
+    "solarus"
+    "zquest"
+  ];
+  graphNew = map (name: graphNode name "2") [
+    "fake08"
+    "solarus"
+    "zquest"
+  ];
+  graphPack =
+    requires:
+    mkPlugin {
+      publisher.namespace = "@korri";
+      source = pkgs.writeTextDir "plugin.ts" ''export const name = "graph-starter-pack";'';
+      plugin = _: { inherit requires; };
+    };
+  graphOldPack = graphPack graphOld;
+  graphNewPack = graphPack graphNew;
+  graphFixtures =
+    graphOld
+    ++ graphNew
+    ++ [
+      graphOldPack
+      graphNewPack
+    ];
   alternate = mkPlugin {
     publisher.namespace = "@example";
     source = pkgs.writeTextDir "plugin.ts" "export const name = 'clock'; export const title = 'Clock'; export const services = ['example-clock'];";
@@ -390,6 +432,7 @@ let
           impostor
         ]
         ++ injections
+        ++ graphFixtures
       )
   );
   # A test-only signing identity. This key grants no authority outside this VM.
@@ -446,7 +489,8 @@ pkgs.testers.runNixOSTest {
           impostor
           splitDependency.drvPath
         ]
-        ++ injections;
+        ++ injections
+        ++ graphFixtures;
         services.nix-serve = {
           enable = true;
           secretKeyFile = toString key;
@@ -726,6 +770,48 @@ pkgs.testers.runNixOSTest {
         report = inspect(package)
         machine.succeed("korri-plugin install http://cache:5000 " + package + " " + report["approval"])
         return report
+
+    # Real CLI graph cut, with approvals from the existing host-side producer.
+    # The cold client imports every native package from the signed VM cache.
+    old_graph_pack = install("${graphOldPack}")
+    old_graph_paths = ${builtins.toJSON (map toString (graphOld ++ [ graphOldPack ]))}
+    new_graph_paths = ${builtins.toJSON (map toString (graphNew ++ [ graphNewPack ]))}
+    new_graph_reports = [inspect(path) for path in new_graph_paths]
+    target_seed = json.loads(cache.succeed(
+        "korri-plugin seed-graph $(readlink -f /etc/korri-plugin-host/publishers.json) " + " ".join(new_graph_paths)))
+    seeded = {receipt["id"]: receipt for receipt in target_seed}
+    for report in new_graph_reports:
+        assert report["approval"] == seeded[report["id"]]["approval"]
+    ids = [report["id"] for report in new_graph_reports]
+    machine.succeed("korri-plugin enable @korri:graph-fake08")
+    before_graph = {id: json.loads(machine.succeed("korri-plugin status " + id)) for id in ids}
+    def root_update(report):
+        return "korri-plugin update " + report["id"] + " http://cache:5000 " + report["package"] + " " + report["approval"]
+    next_pack = new_graph_reports[-1]
+    mismatch = machine.fail(root_update(next_pack) + "bad 2>&1")
+    assert "approval" in mismatch, mismatch
+    # One root approval covers the exact individual approvals shown in brings.
+    machine.succeed(root_update(next_pack))
+    for report in new_graph_reports:
+        current = json.loads(machine.succeed("korri-plugin status " + report["id"]))
+        assert current["package"] == report["package"]
+        assert current["desired"] == before_graph[report["id"]]["desired"]
+        assert current["previous"]["package"] == before_graph[report["id"]]["package"]
+    machine.succeed("systemctl is-active graph-fake08.service")
+    machine.fail("systemctl is-active graph-solarus.service")
+    machine.fail("systemctl is-active graph-zquest.service")
+    machine.succeed("korri-plugin restore-all")
+    machine.succeed("korri-plugin enable @korri:graph-starter-pack")
+    # Existing raw-cache update rules permit older exact outputs. No version
+    # ordering is invented for store paths; all four approvals are still exact.
+    old_graph_reports = [inspect(path) for path in old_graph_paths]
+    machine.succeed(root_update(old_graph_reports[-1]))
+    for id in ids:
+        assert json.loads(machine.succeed("korri-plugin status " + id))["desired"]["state"] == "Enabled"
+    machine.succeed("systemctl is-active graph-fake08.service graph-solarus.service graph-zquest.service")
+    machine.succeed("korri-plugin remove @korri:graph-starter-pack")
+    for name in ["fake08", "solarus", "zquest"]:
+        machine.succeed("korri-plugin remove @korri:graph-" + name + " --purge")
 
     def plugin_file(report, name):
         manifest = json.loads(machine.succeed("cat " + report["package"] + "/manifest.json"))
