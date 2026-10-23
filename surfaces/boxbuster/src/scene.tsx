@@ -230,7 +230,7 @@ export function Scene({
   const focusedDeck =
     target?._tag === "Deck" || target?._tag === "Work"
       ? target.index
-      : target?._tag === "Eject" || target?._tag === "Retry"
+      : target?._tag === "Eject" || target?._tag === "Retry" || target?._tag === "Dismiss"
         ? 0
         : undefined
   // A way on through an archway lights that archway's sign: its mark on the

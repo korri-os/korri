@@ -243,6 +243,8 @@ export type TvStatus =
       /** The game the problem belongs to, when Korri named one. */
       readonly title?: string
     }
+  /** The stream session this device played on is over, in Korri's words. */
+  | { readonly _tag: "Ended"; readonly kicker: string; readonly reason: string }
 
 export function tvStatusFrom(model: SurfaceModel): TvStatus {
   const status: SurfaceStatus = model.status
@@ -278,6 +280,19 @@ export function tvStatusFrom(model: SurfaceModel): TvStatus {
         canRetry: status.canRetry,
         ...(status.gameTitle === undefined ? {} : { title: status.gameTitle }),
       }
+    // The device holding a stream paused it: the VCR's blue screen with
+    // Korri's words, and the decks run Korri's actions (Leave), as for work
+    // under way.
+    case "Paused":
+      return {
+        _tag: "Working",
+        kicker: status.kicker,
+        ...(status.detail === undefined ? {} : { detail: status.detail }),
+        ...(status.gameId === undefined ? {} : { tapeId: status.gameId }),
+        ...(status.actions.length > 1 ? { lines: status.actions.map(action => action.label) } : {}),
+      }
+    case "Ended":
+      return { _tag: "Ended", kicker: status.kicker, reason: status.reason }
     // A question before Korri acts: the TV states it and the decks answer it,
     // the same way they run the actions of work under way. A save split is
     // that question with one answer per side.
@@ -309,8 +324,8 @@ export function saveTimeLabel(at: number): string {
 }
 
 /**
- * What the decks run while Korri works or asks: Busy's and Confirm's own
- * actions, and for a save split one answer per side (its device and end time,
+ * What the decks run while Korri works or asks: Busy's, Confirm's and a
+ * paused stream's own actions, and for a save split one answer per side (its device and end time,
  * running the side's own action id) before Korri's other actions (Not now).
  * Undefined while Korri neither works nor asks.
  */
@@ -319,6 +334,7 @@ export function statusActionsFrom(status: SurfaceStatus): readonly SurfaceAction
     case "Busy":
       return status.actions ?? []
     case "Confirm":
+    case "Paused":
       return status.actions
     case "ChooseSave":
       return [
@@ -332,6 +348,7 @@ export function statusActionsFrom(status: SurfaceStatus): readonly SurfaceAction
     case "Browsing":
     case "Running":
     case "Problem":
+    case "Ended":
       return undefined
   }
 }

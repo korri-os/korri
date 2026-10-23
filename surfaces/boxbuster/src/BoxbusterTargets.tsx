@@ -30,6 +30,7 @@ export function BoxbusterTargets({
   onDeck,
   onEject,
   onRetry,
+  onDismiss,
   onWork,
 }: {
   targets: readonly Target[]
@@ -46,6 +47,8 @@ export function BoxbusterTargets({
   onDeck: (locationId?: string) => void
   onEject: () => void
   onRetry: () => void
+  /** Acknowledge a stream session that ended. */
+  onDismiss: () => void
   /** Run Korri's action for the work under way, unchanged. */
   onWork: (actionId: string) => void
 }) {
@@ -122,6 +125,8 @@ export function BoxbusterTargets({
                 return onEject()
               case "Retry":
                 return onRetry()
+              case "Dismiss":
+                return onDismiss()
               case "Work":
                 return onWork(target.actionId)
             }

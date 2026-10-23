@@ -67,7 +67,7 @@ export function updateTvSpill(
   loaded: boolean,
 ): void {
   lighting.uniforms.uTvSpill.value =
-    loaded || status._tag === "Working" || status._tag === "Problem" ? 1 : 0
+    loaded || status._tag === "Working" || status._tag === "Problem" || status._tag === "Ended" ? 1 : 0
 }
 
 /** Local light only, before the existing dither and fog. No exposure lift,

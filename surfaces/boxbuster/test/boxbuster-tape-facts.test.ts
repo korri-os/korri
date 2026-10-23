@@ -12,6 +12,7 @@ import type {
   SurfaceStatus,
 } from "@contracts/surface/korri-surface"
 import {
+  statusActionsFrom,
   tvStatusFrom,
   tapeFactsFrom,
   storeViewFrom,
@@ -175,6 +176,25 @@ describe("the TV status", () => {
       detail: "Waking zao",
       tapeId: "wario",
     })
+  })
+
+  test("a stream paused on another device: Korri's words on the VCR's blue screen, its actions on the decks", () => {
+    const paused = {
+      _tag: "Paused",
+      kicker: "Paused on Odin 2 Portal",
+      detail: "Back when Simon is.",
+      actions: [{ id: "stream:leave", label: "Leave", enabled: true }],
+    } as const
+    expect(tvStatusFrom(modelWith({ _tag: "Ready", games: [] }, paused)))
+      .toEqual({ _tag: "Working", kicker: "Paused on Odin 2 Portal", detail: "Back when Simon is." })
+    expect(statusActionsFrom(paused)).toEqual(paused.actions)
+  })
+
+  test("a stream session that ended: Korri's kicker and reason, and no work for the decks", () => {
+    const ended = { _tag: "Ended", kicker: "Session ended", reason: "Turtles in Time ended on Odin 2 Portal." } as const
+    expect(tvStatusFrom(modelWith({ _tag: "Ready", games: [] }, ended)))
+      .toEqual({ _tag: "Ended", kicker: "Session ended", reason: "Turtles in Time ended on Odin 2 Portal." })
+    expect(statusActionsFrom(ended)).toBeUndefined()
   })
 
   test("says a game is running", () => {

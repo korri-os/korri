@@ -64,6 +64,17 @@ export function TvScreen({
       done()
       return
     }
+    // A stream session that ended: no alarm, the VCR's standby blue, Korri's
+    // words, and how to take it out.
+    if (tv._tag === "Ended") {
+      screen(ctx, "#0f2470", "#081845")
+      let y = PAD + 18
+      y = say(ctx, tv.kicker.toUpperCase(), y, 20, "#ffffff", 2)
+      say(ctx, tv.reason, y + 6, 14, "#cfe0ff", 3)
+      say(ctx, "EJECT TO TAKE IT OUT", H - PAD, 12, "#9fb6e0", 1)
+      done()
+      return
+    }
     if (tv._tag === "Working") {
       // the blue screen a VCR shows while it works
       screen(ctx, "#1d3fa8", "#0f2470")

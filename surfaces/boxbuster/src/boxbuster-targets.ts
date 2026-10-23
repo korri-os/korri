@@ -45,6 +45,8 @@ export type Target =
     })
   /** Pressing play again on the deck after a launch failed. */
   | (At & { readonly _tag: "Retry"; readonly label: string })
+  /** Acknowledging, on the deck, a stream session that ended. */
+  | (At & { readonly _tag: "Dismiss"; readonly label: string })
 
 /** How far in from the container's edges a pulled-in target sits. */
 const MARGIN = 28
@@ -59,6 +61,7 @@ export function targetsFor({
   width,
   height,
   retry = false,
+  ended = false,
   work,
 }: {
   spots: StoreSpots
@@ -69,6 +72,8 @@ export function targetsFor({
   height: number
   /** A launch failed and Korri can try it again. */
   retry?: boolean
+  /** A stream session this device played on ended: the deck acknowledges it. */
+  ended?: boolean
   /** Korri is working and these are its actions. While Korri works, the
    * decks run these actions and take no tape. */
   work?: readonly {
@@ -119,6 +124,8 @@ export function targetsFor({
       })
     } else if (retry) {
       place({ _tag: "Retry", key: "retry", label: "Try again", ...deckAt(0) })
+    } else if (ended) {
+      place({ _tag: "Dismiss", key: "dismiss", label: "OK", ...deckAt(0) })
     } else if (visit.hand._tag === "Holding") {
       const heldId = visit.hand.tapeId
       const title = titleOf(heldId)
@@ -191,7 +198,7 @@ function spread(
 /**
  * Where focus lands when you arrive, or when the focused target goes away:
  * on the first deck that can act while Korri works; on the retry when a
- * launch failed; on the deck when you bring a tape to
+ * launch failed; on OK when a stream session ended; on the deck when you bring a tape to
  * the TV; on the tape nearest the way you came, so a step along a shelf
  * continues where you were looking; on the way back when there is nothing to
  * pick up; otherwise on the first tape.
@@ -204,6 +211,8 @@ export function landingFor(
   if (work.length > 0) return (work.find(t => !t.disabled) ?? work[0])?.key
   const retry = targets.find(t => t._tag === "Retry")
   if (retry !== undefined) return retry.key
+  const dismiss = targets.find(t => t._tag === "Dismiss")
+  if (dismiss !== undefined) return dismiss.key
   const deck = targets.find(t => t._tag === "Deck" || t._tag === "Eject")
   if (deck !== undefined && visit.hand._tag === "Holding") return deck.key
   const back = targets.find(

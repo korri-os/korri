@@ -39,6 +39,10 @@ import {
 import { placeTapes } from "./tape-placement"
 import { useBoxbusterSize } from "./use-boxbuster-size"
 
+/** The door's one control for a stream session that ended. Not Korri's
+ * action: it calls dismiss, never runAction. */
+const ENDED_OK = { id: "boxbuster:ended:ok", label: "OK", enabled: true } as const
+
 export function BoxbusterSurface({
   model,
   host,
@@ -128,9 +132,10 @@ export function BoxbusterSurface({
         else setDeskPlace(next)
         return
       }
+      // An ended stream session is taken out the same way as a problem.
       dispatchRef.current({
         _tag: "Back",
-        problem: latest.current.status._tag === "Problem",
+        problem: latest.current.status._tag === "Problem" || latest.current.status._tag === "Ended",
       })
     })
     const offOptions = host.input.on("options", () => {
@@ -142,9 +147,10 @@ export function BoxbusterSurface({
     }
   }, [host])
 
-  // A problem is told on the TV, so it brings you to the TV.
+  // A problem, or a stream session that ended, is told on the TV, so it
+  // brings you to the TV.
   useEffect(() => {
-    if (status._tag === "Problem") dispatchRef.current({ _tag: "ProblemShown" })
+    if (status._tag === "Problem" || status._tag === "Ended") dispatchRef.current({ _tag: "ProblemShown" })
   }, [status._tag])
 
   // A choice is made at the TV too.
@@ -184,12 +190,21 @@ export function BoxbusterSurface({
 
   // Without a store, Korri's work and its actions still need a place: the door.
   const doorWork =
-    (model.status._tag === "Busy" || model.status._tag === "Confirm" || model.status._tag === "ChooseSave") && (work?.length ?? 0) > 0 ? (
+    (model.status._tag === "Busy" || model.status._tag === "Confirm" || model.status._tag === "ChooseSave" || model.status._tag === "Paused") && (work?.length ?? 0) > 0 ? (
       <BoxbusterWorkNotice
         kicker={model.status.kicker}
         {...(model.status.detail === undefined ? {} : { detail: model.status.detail })}
         actions={work ?? []}
         onAction={actionId => host.runAction(actionId)}
+      />
+    ) : model.status._tag === "Ended" ? (
+      // A stream session that ended, where the TV is out of reach: Korri's
+      // reason on the door, and OK, which acknowledges it.
+      <BoxbusterWorkNotice
+        kicker={model.status.kicker}
+        detail={model.status.reason}
+        actions={[ENDED_OK]}
+        onAction={() => host.dismiss()}
       />
     ) : null
   if (view._tag !== "Open" || store === undefined) {
@@ -216,6 +231,7 @@ export function BoxbusterSurface({
     width: size.width,
     height: size.height,
     retry: status._tag === "Problem" && status.canRetry,
+    ended: status._tag === "Ended",
     ...(work === undefined ? {} : { work }),
   })
   const hand = visit.hand
@@ -283,6 +299,7 @@ export function BoxbusterSurface({
         }
         onEject={() => dispatch({ _tag: "Eject" })}
         onRetry={() => host.retry()}
+        onDismiss={() => host.dismiss()}
         onWork={actionId => host.runAction(actionId)}
       />
     </div>

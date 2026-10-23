@@ -111,4 +111,32 @@ describe("the Boxbuster door", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Cancel/ }))
     expect(host.calls).toEqual(["action:acquisition:1:download", "action:acquisition:1:cancel"])
   })
+
+  test("a stream paused on the device that holds it: Korri's words and its Leave, run by its id", () => {
+    const host = createRecordingHost()
+    render(<BoxbusterSurface host={host} model={{
+      ...modelWith({ _tag: "Empty" }),
+      status: {
+        _tag: "Paused", kicker: "Paused on Odin 2 Portal",
+        actions: [{ id: "stream:leave", label: "Leave", enabled: true }],
+      },
+    }} />)
+    expect(screen.getByRole("heading").textContent).toBe("Paused on Odin 2 Portal")
+    const leave = screen.getByRole("button", { name: /^Leave/ })
+    expect(document.activeElement).toBe(leave)
+    fireEvent.click(leave)
+    expect(host.calls).toEqual(["action:stream:leave"])
+  })
+
+  test("a stream session that ended: Korri's reason, and OK calls dismiss, never runAction", () => {
+    const host = createRecordingHost()
+    render(<BoxbusterSurface host={host} model={{
+      ...modelWith({ _tag: "Empty" }),
+      status: { _tag: "Ended", kicker: "Session ended", reason: "Turtles in Time ended on Odin 2 Portal." },
+    }} />)
+    expect(screen.getByRole("heading").textContent).toBe("Session ended")
+    expect(screen.getByText("Turtles in Time ended on Odin 2 Portal.")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /^OK/ }))
+    expect(host.calls).toEqual(["dismiss"])
+  })
 })

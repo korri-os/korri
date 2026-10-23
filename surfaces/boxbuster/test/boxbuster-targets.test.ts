@@ -116,6 +116,21 @@ describe("targets", () => {
     expect(landingFor(targets, { ...empty, spot: spots.viewing })).toBe("retry")
   })
 
+  test("after a stream session ended, the deck is OK, and the cursor lands on it", () => {
+    const targets = targetsFor({
+      spots,
+      visit: { ...empty, spot: spots.viewing },
+      tapes,
+      placed,
+      width: 640,
+      height: 480,
+      ended: true,
+    })
+    const decks = targets.filter(t => t._tag !== "Exit" && t._tag !== "Tape")
+    expect(decks.map(t => [t._tag, "label" in t ? t.label : ""])).toEqual([["Dismiss", "OK"]])
+    expect(landingFor(targets, { ...empty, spot: spots.viewing })).toBe("dismiss")
+  })
+
   test("every way on is a mark on the floor", () => {
     for (const spot of spots.byId.values()) {
       for (const exit of spot.exits) expect(exit.anchor.y).toBeLessThan(0.1)
