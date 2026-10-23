@@ -27,16 +27,33 @@ word, including `--help`, starts the daemon.
 - The feel to match is `gh` and `tailscale`.
 - Only the device's person account and root may use `korri` on a device.
   Shell access already means full trust (ADR 0029).
+- `korri` reaches korrid through its own socket. inputd's control socket
+  stays as narrow as it is.
+- A local `korri` call has the portal's authority, as its own entry in the
+  policy table in `authorization.rs`.
 - `korri` asks for missing input only on a terminal, never when piped.
   Destructive actions ask for confirmation, and `--yes` skips it. Richer
   pickers in the style of Charm's tools follow later.
 - `--device <name>` sends a call through the local korrid to a peer. `korri`
-  itself still talks only to its own korrid, as the portal does.
+  itself still talks only to its own korrid, as the portal does. The peer
+  policy table widens so that a device of the same owner can also start
+  sessions and manage plugins. Each widening is its own security change with
+  its own review.
 - The top level has `status`, `version`, `completion` and `play` beside the
   mirrored settings areas.
 - `korri` is Rust, in `clients/cli/`.
 - The old `korrid catalog` and `korrid identity` commands go in one cut,
   after `korri` covers them. There is no alias.
+- In that cut, folder pairing, unpairing and rescans become live `korri`
+  commands. `owner-binding-request` and `reset` become `korri` person
+  actions. `identity status` and `identity import` stay as hidden `korrid`
+  subcommands, because boot runs them before korrid starts.
+  `catalog migrate`, `replace-test-owner-offline` and
+  `reconcile-stale-grants-offline` are deleted after each device is known to
+  have run them.
+- Words: **End** destroys a live session and **Resume** goes back to one
+  (the glossary's Return is renamed). **seat** names a controller seat.
+  **saves** names the area for save history and snapshots.
 
 ## Considered options
 
