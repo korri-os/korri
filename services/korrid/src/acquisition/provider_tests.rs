@@ -98,8 +98,10 @@ export const systems = {{
   psx: {{ id: "psx", title: "PlayStation", content: {{ extensions: ["m3u", "cue", "bin", "chd"],
     layout: ["{{title}}.{{ext}}"] }} }},
   md: {{ id: "md", title: "Mega Drive", content: {{ extensions: ["md", "gen", "smd", "bin"] }} }},
+  sat: {{ id: "sat", title: "Saturn", content: {{ extensions: ["cue", "bin"],
+    layout: ["{{title}} (Disc {{disc}}).{{ext}}"] }} }},
 }};
-export const runners = {{ run: {{ id: "@test:core/run", program: "run", systems: ["gba", "nes", "psx", "md"] }} }};
+export const runners = {{ run: {{ id: "@test:core/run", program: "run", systems: ["gba", "nes", "psx", "md", "sat"] }} }};
 export const handlers = {{ "launch.prepare": (input: any) => ({{ command: input.program, args: [input.contentPath] }}) }};
 {artifacts}
 "#
@@ -1770,4 +1772,51 @@ async fn a_name_without_an_extension_downloads_and_the_bytes_decide() {
         [".downloads".to_owned(), sha_hex(ROM)]
     );
     assert!(names(&world.cache().join(".downloads")).is_empty());
+}
+
+/// Review P1-4: discovery's `combine_discs` joins two cues under a `{disc}`
+/// layout into one unit, and the route must find its primary file too.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_disc_set_that_the_system_layout_combines_routes_to_its_first_disc() {
+    let world = world();
+    let files: [(&str, &[u8]); 4] = [
+        ("Game (Disc 2).cue", b"FILE \"Game (Disc 2).bin\" BINARY\n"),
+        ("Game (Disc 2).bin", b"second disc"),
+        ("Game (Disc 1).cue", b"FILE \"Game (Disc 1).bin\" BINARY\n"),
+        ("Game (Disc 1).bin", b"first disc"),
+    ];
+    world
+        .offer("discs", "sat", "/files/discs.zip", zip(&files))
+        .await;
+    let game = imported(&world.get("discs").await);
+    let key = world.snapshot().library[&game].releases[0]
+        .identity
+        .as_ref()
+        .unwrap()
+        .value()
+        .to_owned();
+    let ready = world.cache().join(key.strip_prefix("sha256:").unwrap());
+    assert_eq!(world.route(&game), Some(ready.join("Game (Disc 1).cue")));
+}
+
+/// Review P1-4: a playlist that names another playlist owns it, so the
+/// folder holds two `.m3u` files and one unit.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_nested_playlist_routes_to_the_outer_playlist() {
+    let world = world();
+    let files: [(&str, &[u8]); 6] = [
+        ("Game.m3u", b"lists/Inner.m3u\n"),
+        ("lists/Inner.m3u", b"../a.cue\n../b.cue\n"),
+        ("a.cue", b"FILE a.bin BINARY\n"),
+        ("a.bin", b"first disc"),
+        ("b.cue", b"FILE b.bin BINARY\n"),
+        ("b.bin", b"second disc"),
+    ];
+    world
+        .offer("nested-list", "psx", "/files/set.7z", seven_z(&files))
+        .await;
+    let game = imported(&world.get("nested-list").await);
+    let key = discovered(&world, "psx", &files, "Game.m3u");
+    let ready = world.cache().join(key.strip_prefix("sha256:").unwrap());
+    assert_eq!(world.route(&game), Some(ready.join("Game.m3u")));
 }

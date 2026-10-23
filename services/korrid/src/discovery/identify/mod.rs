@@ -117,8 +117,47 @@ pub fn identify_with_rules(
         &root,
         &files,
         None,
+        true,
         scan,
     )
+}
+
+/// ADR 0030 route, review P1-4: the primary path of every unit discovery
+/// would find in `source`, from the same layouts, descriptor ownership and
+/// disc combination as `identify_with_rules`, without hashing content.
+/// `None` when discovery would report an attention finding or a diagnostic.
+pub fn unit_paths_with_rules(
+    source: &SourceInput<'_>,
+    members: &[&ContentRules],
+    budget: &TraversalBudget,
+) -> Option<Vec<String>> {
+    let scan = SourceScan {
+        source_id: source.source_id.into(),
+        ..SourceScan::default()
+    };
+    let root = source
+        .root
+        .canonicalize()
+        .ok()
+        .filter(|root| root.is_dir())?;
+    let mut scan = scan;
+    let files = traversal::layout(source, &root, budget, &mut scan).files;
+    let scan = identify_files(
+        source,
+        members,
+        false,
+        &|_, _, _| None,
+        &|_| Vec::new(),
+        &mut HashCache::default(),
+        budget,
+        &root,
+        &files,
+        None,
+        false,
+        scan,
+    );
+    (scan.attention.is_empty() && scan.diagnostics.is_empty())
+        .then(|| scan.units.into_iter().map(|unit| unit.path).collect())
 }
 
 /// A read-only projection of file moves. Existing files and incoming files share
@@ -204,6 +243,7 @@ pub fn identify_planned_with_rules(
             paths: &mapped,
             physical_root: None,
         }),
+        true,
         scan,
     )
 }
@@ -220,6 +260,7 @@ fn identify_files(
     root: &Path,
     files: &BTreeSet<PathBuf>,
     mapped: Option<MappedFiles<'_>>,
+    hash: bool,
     mut scan: SourceScan,
 ) -> SourceScan {
     let before = cache.read_bytes;
@@ -234,6 +275,7 @@ fn identify_files(
         allowed: Some(files),
         max_depth: TraversalBudget::default().max_depth,
         max_references: budget.max_entries,
+        hash,
     };
     let mut ordered: Vec<_> = files.iter().collect();
     // Playlists own discs, cues own tracks. Always visit owners before their
@@ -635,6 +677,7 @@ fn declared_identity(
         allowed: None,
         max_depth: 1,
         max_references: 1,
+        hash: true,
     };
     match disc::checked_path(&path, &scope).and_then(|path| file_identity(&path, cache)) {
         Err(IdentifyError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -659,6 +702,7 @@ pub fn descriptor_files(path: &Path, root: &Path, excluded_roots: &[PathBuf]) ->
         allowed: None,
         max_depth: budget.max_depth,
         max_references: budget.max_entries,
+        hash: true,
     };
     disc::dependencies(path, &scope)
 }
@@ -695,6 +739,7 @@ pub fn identity_in_source(
         allowed: None,
         max_depth: TraversalBudget::default().max_depth,
         max_references: TraversalBudget::default().max_entries,
+        hash: true,
     };
     Ok(disc::identify(path, rules, cache, &scope)?.identity)
 }

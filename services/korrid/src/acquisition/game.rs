@@ -136,13 +136,11 @@ pub(crate) fn acquired_game_dirs(
         .filter_map(|release| {
             let key = release.identity.as_ref()?.value();
             let hex = placement::ready_name(key)?;
-            let extensions = &registry
-                .content_rules(&release.system.as_ref()?.0)?
-                .extensions;
+            let rules = registry.content_rules(&release.system.as_ref()?.0)?;
             providers
                 .iter()
                 .map(|cache| cache.join(hex))
-                .find(|ready| placement::ready_game_file(ready, extensions).is_some())
+                .find(|ready| placement::ready_game_file(ready, rules).is_some())
                 .map(|ready| (key.to_owned(), ready))
         })
         .collect()
@@ -165,11 +163,11 @@ pub(crate) fn acquired_game_content(
         .system
         .as_ref()?
         .0;
-    let extensions = &registry.content_rules(system)?.extensions;
+    let rules = registry.content_rules(system)?;
     acquired_game_dirs(root, registry, snapshot, game_id)
         .into_iter()
         .find(|(release, _)| release == key)
-        .and_then(|(_, ready)| placement::ready_game_file(&ready, extensions))
+        .and_then(|(_, ready)| placement::ready_game_file(&ready, rules))
 }
 
 impl GameAcquisition {
@@ -828,8 +826,7 @@ pub(super) fn identify_work(
     work: &Path,
     rules: &crate::plugin::ContentRules,
 ) -> Result<ContentIdentity, Failure> {
-    let mut rules = rules.clone();
-    rules.layouts.push("**/{title}.{ext}".into());
+    let rules = placement::work_rules(rules);
     let scan = identify::identify_with_rules(
         &SourceInput {
             source_id: "acquisition",

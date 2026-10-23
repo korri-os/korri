@@ -345,51 +345,40 @@ pub(super) fn publish_acquired_game(
     Ok(ready)
 }
 
-/// ADR 0030: the file a route passes as `contentPath`. Among the files whose
-/// names end in one of the release system's extensions, the one `.m3u`, else
-/// the one `.cue`, else the one file: discovery's owner order. Publication
-/// already required exactly one unit, so a ready folder has one candidate.
-pub(crate) fn ready_game_file(ready: &Path, extensions: &[String]) -> Option<PathBuf> {
+/// ADR 0030 Change 1b: the claim system's rules for a work or ready folder:
+/// its layouts first and the default `**/{title}.{ext}` after them, because
+/// a system's layouts describe a person's folder, not an archive.
+pub(crate) fn work_rules(rules: &crate::plugin::ContentRules) -> crate::plugin::ContentRules {
+    let mut rules = rules.clone();
+    rules.layouts.push("**/{title}.{ext}".into());
+    rules
+}
+
+/// ADR 0030: the file a route passes as `contentPath`: the primary file of
+/// the one unit discovery finds in the ready folder (review P1-4), with the
+/// same layouts, descriptor ownership and disc combination as publication,
+/// without hashing.
+pub(crate) fn ready_game_file(
+    ready: &Path,
+    rules: &crate::plugin::ContentRules,
+) -> Option<PathBuf> {
     if !is_ready(ready) {
         return None;
     }
-    let budget = crate::discovery::scanner::TraversalBudget::default();
-    let mut files = Vec::new();
-    let mut folders = vec![(ready.to_path_buf(), 0)];
-    let mut entries = 0;
-    while let Some((folder, depth)) = folders.pop() {
-        for entry in fs::read_dir(&folder).ok()?.filter_map(Result::ok) {
-            entries += 1;
-            if entries > budget.max_entries {
-                return None;
-            }
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
-                continue;
-            }
-            let Ok(kind) = entry.file_type() else {
-                continue;
-            };
-            if kind.is_dir() && depth < budget.max_depth {
-                folders.push((entry.path(), depth + 1));
-            } else if kind.is_file() {
-                let lower = name.to_ascii_lowercase();
-                if extensions.iter().any(|extension| {
-                    lower.ends_with(&format!(".{}", extension.to_ascii_lowercase()))
-                }) {
-                    files.push((lower, entry.path()));
-                }
-            }
-        }
-    }
-    let only = |suffix: Option<&str>| {
-        let mut matching = files
-            .iter()
-            .filter(|(lower, _)| suffix.is_none_or(|suffix| lower.ends_with(suffix)));
-        let first = matching.next()?;
-        matching.next().is_none().then(|| first.1.clone())
+    let rules = work_rules(rules);
+    let paths = crate::discovery::identify::unit_paths_with_rules(
+        &crate::discovery::identify::SourceInput {
+            source_id: "acquisition",
+            storage_id: "cache",
+            root: ready,
+            system: &rules.system,
+            excluded_roots: &[],
+        },
+        &[&rules],
+        &crate::discovery::scanner::TraversalBudget::default(),
+    )?;
+    let [path] = paths.as_slice() else {
+        return None;
     };
-    only(Some(".m3u"))
-        .or_else(|| only(Some(".cue")))
-        .or_else(|| only(None))
+    Some(ready.join(path))
 }

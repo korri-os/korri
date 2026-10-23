@@ -774,9 +774,10 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   joins the same game by hash.
 - **Route.** For a release with no saved location and no declared artifact,
   the resolver looks in the caches of the acquisition providers linked to the
-  game for `<hex of the release key>/`. Among the files with one of the
-  release system's extensions it takes the one `.m3u`, else the one `.cue`,
-  else the one file, and the runner gets it as `contentPath`
+  game for `<hex of the release key>/`. It runs discovery's unit selection
+  over that folder without hashing (the same layouts, descriptor ownership
+  and disc combination as publication) and the runner gets the one unit's
+  primary file (its `.m3u`, `.cue`, first disc or file) as `contentPath`
   (`ResolvedRoute.cache_target`). No ready folder, no route: the
   release is unavailable, like a missing file.
 - **Remove download.** `app.acquisition.remove { gameId }` also removes the

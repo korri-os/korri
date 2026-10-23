@@ -25,6 +25,10 @@ pub(super) struct ReadScope<'a> {
     pub allowed: Option<&'a BTreeSet<PathBuf>>,
     pub max_depth: usize,
     pub max_references: usize,
+    /// False when only the units' files matter (ADR 0030 route): content is
+    /// not hashed and identities are placeholders. Descriptor ownership and
+    /// CHD headers are read as usual.
+    pub hash: bool,
 }
 
 pub(super) struct Identified {
@@ -162,6 +166,15 @@ fn identify_inner(
                 consumed: BTreeSet::new(),
             })
         }
+        _ if !scope.hash => Ok(Identified {
+            identity: ContentIdentity::Hash {
+                sha256: format!("unhashed:{}", canonical.display()),
+                sha1: String::new(),
+            },
+            parts: vec![path.to_owned()],
+            tracks: BTreeSet::new(),
+            consumed: BTreeSet::new(),
+        }),
         _ => Ok(Identified {
             identity: cache.hash(&canonical, &rules.header)?,
             parts: vec![path.to_owned()],

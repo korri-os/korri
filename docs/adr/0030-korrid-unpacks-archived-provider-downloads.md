@@ -313,6 +313,14 @@ the walk finds exactly one candidate. The route still hashes nothing on
 launch. No location is saved, as ADR 0016 owner answer Q3 says. Cost: a
 folder walk on each route resolution.
 
+Review decision, 2026-10-23: the three "the one" rules miss a set that a
+system's `{disc}` layout combines (two cues, no playlist) and a playlist that
+names another playlist. The route therefore runs discovery's own unit
+selection over the ready folder (`identify::unit_paths_with_rules`): the same
+layouts with the default appended, descriptor ownership and
+`combine_discs`, with content hashing turned off. It takes the primary path
+of the one unit. Discovery is the one producer of that rule.
+
 **Plain downloads.** The staging file is named `.acquire-<hex>`. Rust's
 `Path::extension` returns nothing for that name, so `identity_of` hashes every
 plain download as ordinary bytes today. A plain `.chd` download therefore gets
@@ -609,7 +617,7 @@ content inside. The rest of ADR 0016 Q1 stays.
 | Identification of the work folder | `identify_with_rules`, `ContentRules`, `TraversalBudget` (discovery v2) | New caller. The default layout is appended after the system's layouts. Exactly one unit and no attention finding are required. |
 | Release identity kinds | `ContentIdentity` and `LibraryIdentity` `Hash`, `Parts`, `Chd` | `record_acquired` writes all three. |
 | Ready folder name | ADR 0016 row "The version segment is discovery's content hash (ADR 0005)", `ContentIdentity::value` | The release key's hex without its prefix, so a CHD gets its 40-digit SHA-1. |
-| Main file for the route | discovery's owner order in `identify_files` (`m3u`, `cue`, other) | Replaces `ready_game_file`'s one-top-level-file rule. |
+| Main file for the route | discovery's unit selection in `identify_files`, without hashing (`unit_paths_with_rules`) | Replaces `ready_game_file`'s one-top-level-file rule. |
 | Safe extraction rules, modes `0644` and `0755` | Rock N Roll `unpack.py`, legacy `safeZipPath`, `O_NOFOLLOW` staging | Moved from one plugin program into korrid. |
 | Entry, folder and depth limits | discovery `TraversalBudget::default()` | Reused, not new. |
 | Free-space floor of 5% | ext4 default reserved-blocks percentage, mke2fs(8) `-m`. `libc` is a direct dependency. `Failure::NoSpace` copy exists. | New check in place of the 2 GiB cap. |
