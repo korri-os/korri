@@ -38,11 +38,11 @@ The explicit, consented replacement of a device owner by a different person key.
 _Avoid_: login, account transfer, sign in
 
 **Live session**:
-The one exact game launch a device holds as active. Every session control names it and is refused for any other launch. Its launch modifiers belong to it: they freeze, return and end with the game.
+The one exact game launch a device holds as active. Every session control names it and is refused for any other launch. Its launch modifiers belong to it: they freeze, resume and end with the game.
 _Avoid_: current game, running process
 
 **Controller seat**:
-A stable Korri input position to which a controller is bound. A seat is distinct from a physical controller and from a player inside a game.
+A stable Korri input position to which a controller is bound. A seat is distinct from a physical controller and from a player inside a game. People see it as **seat**.
 _Avoid_: physical controller, game player
 
 **Pending launch**:
@@ -62,19 +62,19 @@ A controller's claim to its seat during a live session, including while it is di
 _Avoid_: connected controller
 
 **Leave**:
-Moving away from a live session without ending it. The session is frozen and Korri owns input until the user returns.
+Moving away from a live session without ending it. The session is frozen and Korri owns input until the user resumes it.
 _Avoid_: pause, minimise, background
 
-**Return**:
+**Resume**:
 Coming back to a live session. Korri thaws it, raises its window, and gives it live input.
-_Avoid_: resume, unpause
+_Avoid_: return, unpause
 
 **End**:
 Destroying a live session on purpose. Unsaved progress is lost.
 _Avoid_: quit, kill, close
 
 **Gameplay overlay**:
-The screen Korri shows over a live session. It offers return, end, the full Korri screen, and the actions the active plugin supports.
+The screen Korri shows over a live session. It offers resume, end, the full Korri screen, and the actions the active plugin supports.
 _Avoid_: pause menu, system panel
 
 **Shared play**:
