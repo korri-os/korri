@@ -109,7 +109,7 @@ fn installed_files() -> Result<MoonlightFiles, LinuxViewerError> {
     Ok(MoonlightFiles {
         executable: file("moonlight")?,
         mapping: file("mapping")?,
-        bootstrap: file("identityBootstrap")?,
+        bootstrap: file("identity-bootstrap")?,
     })
 }
 
