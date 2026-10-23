@@ -19,6 +19,11 @@ person hosts to carry their traffic.
   encrypted traffic. No device is ever designated for this; any device can be
   offline at any time. A device relays only while it is on external power and
   an unmetered network.
+- When two devices are together and cannot reach each other, one device starts
+  a private Wi-Fi network and the other joins it on its own. This works with no
+  router and no internet.
+- When a device already has Tailscale or a similar VPN, Korri uses it as one
+  more method. Korri never requires one.
 - Korri never asks the person to change their router, such as forwarding a port
   by hand.
 - No third-party relay carries traffic, including n0's public relays and
