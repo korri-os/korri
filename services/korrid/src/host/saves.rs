@@ -1897,19 +1897,20 @@ mod tests {
                 let mut entry = template.clone();
                 entry["title"] = game.into();
                 entry["releases"][0]["identity"]["value"] = hash.clone().into();
-                if game == "aaa-blocked" {
-                    entry["runner"] = "@missing:runner/run".into();
-                }
                 library["library"][game] = entry;
                 config["locations"][hash.as_str()] = serde_yaml::to_value(
                     serde_json::json!([{"storage":"roms","path":format!("{game}.gba")}]),
                 )
                 .unwrap();
-                std::fs::write(
-                    device.root.path().join("roms").join(format!("{game}.gba")),
-                    content,
-                )
-                .unwrap();
+                // A missing runner now falls back to the installed route.
+                // Missing content makes only this game's declaration unavailable.
+                if game != "aaa-blocked" {
+                    std::fs::write(
+                        device.root.path().join("roms").join(format!("{game}.gba")),
+                        content,
+                    )
+                    .unwrap();
+                }
             }
             std::fs::write(library_path, serde_yaml::to_string(&library).unwrap()).unwrap();
             std::fs::write(device_path, serde_yaml::to_string(&config).unwrap()).unwrap();
@@ -1939,6 +1940,12 @@ mod tests {
                 error.code, "ArtifactsNotReady",
                 "real starts still require artifacts; declaration reads do not"
             );
+            let blocked = device
+                .host
+                .save_declaration("aaa-blocked", None)
+                .err()
+                .expect("the deferred game's content must really be unavailable");
+            assert_eq!(blocked.failure.code, "LocalRomMissing");
         }
         a.host
             .save_contact(&a.service, b.host.save_device().unwrap())
@@ -1981,11 +1988,11 @@ mod tests {
                 );
             }
             assert_eq!(device.backend.launch_count(), 0);
-            let path = device.root.path().join("catalog/library.yaml");
-            let mut library: serde_yaml::Value =
-                serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-            library["library"]["aaa-blocked"]["runner"] = "@korri:mgba/mgba".into();
-            std::fs::write(path, serde_yaml::to_string(&library).unwrap()).unwrap();
+            std::fs::write(
+                device.root.path().join("roms/aaa-blocked.gba"),
+                b"rom for aaa-blocked",
+            )
+            .unwrap();
         }
         a.host
             .save_contact(&a.service, b.host.save_device().unwrap())
