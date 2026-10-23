@@ -14,6 +14,8 @@ const ACTIVE: &str = "org.freedesktop.NetworkManager.Connection.Active";
 const SETTINGS: &str = "/org/freedesktop/NetworkManager/Settings";
 type Settings = HashMap<String, HashMap<String, OwnedValue>>;
 
+pub(super) mod nearby;
+
 pub struct DbusNetworkManager;
 
 async fn proxy<'a>(
@@ -383,4 +385,4 @@ mod tests {
 
 #[cfg(test)]
 #[path = "dbus_tests.rs"]
-mod dbus_tests;
+pub(in crate::network) mod dbus_tests;

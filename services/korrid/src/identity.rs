@@ -27,6 +27,7 @@ use zeroize::Zeroizing;
 
 #[cfg(test)]
 mod automatic_tests;
+mod nearby;
 pub(crate) mod offline;
 
 const IDENTITY_DIRECTORY: &str = "identity";

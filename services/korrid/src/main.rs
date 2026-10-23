@@ -769,6 +769,12 @@ async fn main() {
         )
     };
     let wake = discovery.as_ref().map(|(control, _)| control.clone());
+    // The nearby link reads federation snapshots. NM owns crash restoration.
+    let (stop_nearby, nearby_stopped) = tokio::sync::oneshot::channel();
+    let nearby = tokio::spawn(korrid::network::nearby::run(
+        resources.clone(),
+        nearby_stopped,
+    ));
     let (lan_router, local_control_router, cli_router, host_runtime) = match mode {
         Mode::Brain => (
             brain_router(resources, wake)
@@ -867,6 +873,8 @@ async fn main() {
             result = serving => Some(result),
         }
     };
+    let _ = stop_nearby.send(());
+    nearby.await.expect("stop nearby link");
     if let Some(runtime) = host_runtime {
         if let Err(error) = runtime.shutdown_sessions().await {
             eprintln!("korrid shutdown: {}", error.message);

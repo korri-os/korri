@@ -8,6 +8,7 @@ use typeshare::typeshare;
 use zeroize::Zeroize;
 
 mod dbus;
+pub mod nearby;
 #[cfg(test)]
 #[path = "network_tests.rs"]
 mod tests;
@@ -180,7 +181,9 @@ pub struct NetworkService {
 }
 impl Default for NetworkService {
     fn default() -> Self {
-        Self::new(Arc::new(dbus::DbusNetworkManager))
+        let mut service = Self::new(Arc::new(dbus::DbusNetworkManager));
+        service.operation = nearby::radio_operation();
+        service
     }
 }
 impl NetworkService {
