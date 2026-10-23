@@ -2,6 +2,8 @@
 mod session_rights;
 #[path = "stream_players.rs"]
 mod stream_players;
+#[path = "viewer_input.rs"]
+mod viewer_input;
 use super::launch_reservation::LaunchReservation;
 use crate::{InitialHandoff, RpcFailure, SessionPrepared};
 use std::{
@@ -245,6 +247,7 @@ impl Drop for SessionStateGuard<'_> {
 pub struct HostSessionControl {
     // Authenticated call context, used only when creating a fresh journal.
     starting_device: Option<String>,
+    peer_selection: viewer_input::PeerSelection,
     backend: Arc<dyn LaunchUnitBackend>,
     limits_client: crate::launch_settings::helper::Client,
     input_seats: Arc<dyn InputSeatManager>,
@@ -316,6 +319,7 @@ impl HostSessionControl {
         let identity_root = private_state_root.join("host-session");
         Self {
             starting_device: None,
+            peer_selection: viewer_input::PeerSelection::default(),
             backend,
             limits_client: crate::launch_settings::helper::Client::default(),
             input_seats,
@@ -491,6 +495,13 @@ impl HostSessionControl {
     /// compositor contract before freezing, including initial launch and
     /// every watcher tick. Missing/delayed windows leave the portal running.
     fn reconcile_portal(&self, state: &ActiveState) -> Result<(), String> {
+        if self.peer_selection.active() {
+            return Ok(());
+        }
+        self.reconcile_local_portal(state)
+    }
+
+    fn reconcile_local_portal(&self, state: &ActiveState) -> Result<(), String> {
         if self.input_seats.is_fenced() {
             self.emergency_thaw_portal()?;
             return Err("input coordination is fenced; restart korrid after resolving the exact active session".into());

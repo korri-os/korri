@@ -52,7 +52,12 @@ pub(crate) fn registry(
         let input = input.clone();
         Box::pin(async move { input.occupied_local_seats().map_err(LinuxViewerError::new) })
     });
-    registry.with_linux_viewer(production_viewer(provision, local_seats))
+    let selection = registry.clone();
+    let viewer = host.viewer_with_local_input(
+        production_viewer(provision, local_seats),
+        Arc::new(move || selection.has_selected_session()),
+    );
+    registry.with_linux_viewer(viewer)
 }
 
 pub(crate) fn spawn_watch(peers: upstreams::UpstreamRegistry) {

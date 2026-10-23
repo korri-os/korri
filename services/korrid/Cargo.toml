@@ -62,6 +62,7 @@ proseql-formats = { path = ".cache/proseql/crates/proseql-formats" }
 proseql-storage = { path = ".cache/proseql/crates/proseql-storage" }
 
 [dev-dependencies]
+korri-inputd = { path = "../inputd" }
 zbus = { version = "5", default-features = false, features = ["tokio", "p2p"] }
 secp256k1 = { version = "0.30", features = ["global-context"] }
 tempfile = "3"
