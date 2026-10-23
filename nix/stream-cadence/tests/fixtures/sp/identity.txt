@@ -1,0 +1,33 @@
+aarch64
+Anbernic RG35XX SP
+ANSI_COLOR="0;38;2;126;186;228"
+BUG_REPORT_URL="https://github.com/NixOS/nixpkgs/issues"
+BUILD_ID="26.11.20260923.4975466"
+CPE_NAME="cpe:/o:nixos:nixos:26.11"
+DEFAULT_HOSTNAME=nixos
+DOCUMENTATION_URL="https://nixos.org/learn.html"
+HOME_URL="https://nixos.org/"
+ID=nixos
+LOGO="nix-snowflake"
+NAME=NixOS
+PRETTY_NAME="NixOS 26.11 (Zokor)"
+SUPPORT_URL="https://nixos.org/community.html"
+VENDOR_NAME=NixOS
+VENDOR_URL="https://nixos.org/"
+VERSION="26.11 (Zokor)"
+VERSION_CODENAME=zokor
+VERSION_ID="26.11"
+/nix/store/lm2hi53k0jf4rqvxc6z1a41kw9smkwf6-nixos-system-rg35xxsp-sd-card-26.11.20260923.4975466
+{
+  "id": "@korri:sunshine",
+  "package": "/nix/store/7q3fv7767vdzrbax2v2dz2chcvp2yf7r-korri-plugin",
+  "provenance": {
+    "kind": "RawCache",
+    "cache_url": "https://github.com/korri-os/plugins/releases/download/cache/"
+  },
+  "approval": "8c54a706f8b04826434f0a420f14db9ccbe036931377d521d65916f911b5eacf",
+  "desired": {
+    "state": "Enabled"
+  },
+  "previous": null
+}

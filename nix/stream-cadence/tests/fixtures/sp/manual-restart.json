@@ -1,0 +1,190 @@
+{
+  "at": "2026-10-23T03:28:50Z",
+  "before_display": {
+    "id": 3,
+    "type": "output",
+    "orientation": "none",
+    "percent": 1.0,
+    "urgent": false,
+    "marks": [],
+    "layout": "output",
+    "border": "none",
+    "current_border_width": 0,
+    "rect": {
+      "x": 0,
+      "y": 0,
+      "width": 640,
+      "height": 480
+    },
+    "deco_rect": {
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0
+    },
+    "window_rect": {
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0
+    },
+    "geometry": {
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0
+    },
+    "name": "DSI-1",
+    "window": null,
+    "nodes": [],
+    "floating_nodes": [],
+    "focus": [
+      4
+    ],
+    "fullscreen_mode": 0,
+    "sticky": false,
+    "floating": null,
+    "scratchpad_state": null,
+    "primary": false,
+    "make": "Unknown",
+    "model": "Unknown",
+    "serial": "Unknown",
+    "modes": [
+      {
+        "width": 640,
+        "height": 480,
+        "refresh": 60000,
+        "picture_aspect_ratio": "none"
+      },
+      {
+        "width": 640,
+        "height": 480,
+        "refresh": 120000,
+        "picture_aspect_ratio": "none"
+      }
+    ],
+    "features": {
+      "adaptive_sync": false,
+      "hdr": false
+    },
+    "non_desktop": false,
+    "active": true,
+    "dpms": false,
+    "power": false,
+    "scale": 1.0,
+    "scale_filter": "nearest",
+    "transform": "normal",
+    "adaptive_sync_status": "disabled",
+    "current_workspace": "korri:game:active",
+    "current_mode": {
+      "width": 640,
+      "height": 480,
+      "refresh": 60000,
+      "picture_aspect_ratio": "none"
+    },
+    "max_render_time": 0,
+    "allow_tearing": false,
+    "hdr": false,
+    "focused": true,
+    "subpixel_hinting": "unknown"
+  },
+  "manual_sunshine_restart": true,
+  "manual_blank": false,
+  "sunshine_unit": "korri-sunshine",
+  "before_pid": "10164",
+  "restart_reply": "",
+  "after_pid": "13379",
+  "after_start_timestamp": "Fri 2026-10-23 03:28:56 UTC",
+  "fresh_journal": "korri-sunshine.service: Deactivated successfully.\nStopped Sunshine stream host for Korri.\nkorri-sunshine.service: Consumed 45.340s CPU time over 5h 3min 53.045s wall clock time, 41.1M memory peak, 59.1M read from disk.\nStarted Sunshine stream host for Korri.\nmpp[13379]: mpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700\nmpp_platform: can not found match soc name: anbernic,rg35xx-sp allwinner,sun50i-h700\n[2026-10-23 03:28:58.504528] [0x0000fc7e39405020] [info]    config: 'log_path' = /dev/null\n[2026-10-23 03:28:58.504629] [0x0000fc7e39405020] [info]    config: 'capture' = kms\n[2026-10-23 03:28:58.504659] [0x0000fc7e39405020] [info]    config: 'encoder' = auto\n[2026-10-23 03:28:58.512]: Info: Sunshine version: 2025.924.154138-korri commit:\n[2026-10-23 03:28:58.518]: Info: Package Publisher: nixpkgs\n[2026-10-23 03:28:58.518]: Info: Publisher Website: https://nixos.org\n[2026-10-23 03:28:58.519]: Info: Get support: https://github.com/NixOS/nixpkgs/issues\n[2026-10-23 03:28:58.519]: Info: config: 'encoder' = auto\n[2026-10-23 03:28:58.519]: Info: config: 'capture' = kms\n[2026-10-23 03:28:58.519]: Info: config: 'log_path' = /dev/null\n[2026-10-23 03:28:58.533]: Info: /dev/dri/card1 -> sun4i-drm\n[2026-10-23 03:28:58.534]: Warning: No render device name for: /dev/dri/card1\n[2026-10-23 03:28:58.534]: Info: /dev/dri/card0 -> panfrost\n[2026-10-23 03:28:58.535]: Error: GPU driver doesn't support universal planes: /dev/dri/card0\n[2026-10-23 03:28:58.539]: Info: Found display [korri-wayland]\n[2026-10-23 03:28:58.539]: Info: Found display [korri-wayland]\n[2026-10-23 03:28:58.539]: Info: Found interface: wl_shm(2) version 2\n[2026-10-23 03:28:58.539]: Info: Found interface: zwp_linux_dmabuf_v1(3) version 5\n[2026-10-23 03:28:58.539]: Info: Found interface: zxdg_output_manager_v1(8) version 3\n[2026-10-23 03:28:58.539]: Info: Found interface: zwlr_screencopy_manager_v1(30) version 3\n[2026-10-23 03:28:58.540]: Info: Found interface: wl_output(58) version 4\n[2026-10-23 03:28:58.540]: Info: Resolution: 640x480\n[2026-10-23 03:28:58.540]: Info: Name: DSI-1\n[2026-10-23 03:28:58.540]: Info: Found monitor: (null) (null) (DSI-1)\n[2026-10-23 03:28:58.540]: Info: Offset: 0x0\n[2026-10-23 03:28:58.540]: Info: Logical size: 640x480\n[2026-10-23 03:28:58.540]: Info: -------- Start of KMS monitor list --------\n[2026-10-23 03:28:58.540]: Info: KMS rotation probe output match: Wayland output=DSI-1 transform=0 DRM monitor=0 expected=640x480 observed=640x480\n[2026-10-23 03:28:58.540]: Info: Monitor 0 is DSI-1: (null) (null) (DSI-1)\n[2026-10-23 03:28:58.540]: Info: --------- End of KMS monitor list ---------\n[2026-10-23 03:29:01.160]: Warning: Gamepad ds5 is disabled due to No such file or directory\n[2026-10-23 03:29:01.160]: Error: Couldn't find any working encoder matching [auto]\n[2026-10-23 03:29:01.160]: Info: // Testing for available encoders, this may generate errors. You can safely ignore those errors. //\n[2026-10-23 03:29:01.161]: Info: Trying encoder [nvenc]\n[2026-10-23 03:29:01.161]: Info: Screencasting with KMS\n[2026-10-23 03:29:01.161]: Info: /dev/dri/card1 -> sun4i-drm\n[2026-10-23 03:29:01.161]: Warning: No render device name for: /dev/dri/card1\n[2026-10-23 03:29:01.161]: Info: /dev/dri/card0 -> panfrost\n[2026-10-23 03:29:01.161]: Error: GPU driver doesn't support universal planes: /dev/dri/card0\n[2026-10-23 03:29:01.161]: Error: Couldn't find monitor [0]\n[2026-10-23 03:29:01.161]: Info: /dev/dri/card1 -> sun4i-drm\n[2026-10-23 03:29:01.161]: Warning: No render device name for: /dev/dri/card1\n[2026-10-23 03:29:01.161]: Info: /dev/dri/card0 -> panfrost\n[2026-10-23 03:29:01.161]: Error: GPU driver doesn't support universal planes: /dev/dri/card0\n[2026-10-23 03:29:01.161]: Error: Couldn't find monitor [0]\n[2026-10-23 03:29:01.361]: Info: Screencasting with KMS\n[2026-10-23 03:29:01.362]: Info: /dev/dri/card1 -> sun4i-drm\n[2026-10-23 03:29:01.362]: Warning: No render device name for: /dev/dri/card1\n[2026-10-23 03:29:01.362]: Info: /dev/dri/card0 -> panfrost\n[2026-10-23 03:29:01.362]: Error: GPU driver doesn't support universal planes: /dev/dri/card0\n[2026-10-23 03:29:01.363]: Error: Couldn't find monitor [0]\n[2026-10-23 03:29:01.363]: Info: /dev/dri/card1 -> sun4i-drm\n[2026-10-23 03:29:01.363]: Warning: No render device name for: /dev/dri/card1\n[2026-10-23 03:29:01.363]: Info: /dev/dri/card0 -> panfrost\n[2026-10-23 03:29:01.364]: Error: GPU driver doesn't support universal planes: /dev/dri/card0\n[2026-10-23 03:29:01.364]: Error: Couldn't find monitor [0]\n[2026-10-23 03:29:01.568]: Info: Encoder [nvenc] failed\n[2026-10-23 03:29:01.568]: Info: Trying encoder [vaapi]\n[2026-10-23 03:29:01.568]: Info: Screencasting with KMS\n[2026-10-23 03:29:01.568]: Info: /dev/dri/card1 -> sun4i-drm\n[2026-10-23 03:29:01.568]: Warning: No render device name for: /dev/dri/card1\n[2026-10-23 03:29:01.568]: Info: Found monitor for DRM screencasting\n[2026-10-23 03:29:01.568]: Error: Failed to determine panel orientation, defaulting to landscape.\n[2026-10-23 03:29:01.568]: Info: Found connector ID [51]\n[2026-10-23 03:29:01.568]: Warning: No KMS cursor plane found. Cursor may not be displayed while streaming!\nlibva info: VA-API version 1.22.0\nXlib:  extension \"DRI2\" missing on display \":0\".\nlibva error: vaGetDriverNames() failed with operation failed\n[2026-10-23 03:29:01.622]: Error: Couldn't initialize va display: operation failed\n[2026-10-23 03:29:01.622]: Warning: Monitor  doesn't support hardware encoding. Reverting back to GPU -> RAM -> GPU\n[2026-10-23 03:29:01.622]: Info: /dev/dri/card1 -> sun4i-drm\n[2026-10-23 03:29:01.622]: Warning: No render device name for: /dev/dri/card1\n[2026-10-23 03:29:01.622]: Info: Found monitor for DRM screencasting\n[2026-10-23 03:29:01.622]: Error: Failed to determine panel orientation, defaulting to landscape.\n[2026-10-23 03:29:01.622]: Info: Found connector ID [51]\n[2026-10-23 03:29:01.622]: Warning: No KMS cursor plane found. Cursor may not be displayed while streaming!\n[2026-10-23 03:29:02.256]: Error: Failed to determine panel orientation, defaulting to landscape.\n[2026-10-23 03:29:02.257]: Info: KMS rotation probe decision: Wayland output=DSI-1 transform=0 expected_270=false CRTC=49 plane=41 DRM rotation=1 expected_rotate_0=true raw=640x480 capture=640x480 offset=0,0\n[2026-10-23 03:29:02.257]: Info: Creating encoder [h264_vaapi]\n[2026-10-23 03:29:02.257]: Info: Color coding: SDR (Rec. 601)\n[2026-10-23 03:29:02.257]: Info: Color depth: 8-bit\n[2026-10-23 03:29:02.257]: Info: Color range: JPEG\n[2026-10-23 03:29:02.351]: Error: Couldn't open [h264_vaapi]\n[2026-10-23 03:29:02.360]: Info: Creating encoder [h264_vaapi]\n[2026-10-23 03:29:02.361]: Info: Color coding: SDR (Rec. 601)\n[2026-10-23 03:29:02.361]: Info: Color depth: 8-bit\n[2026-10-23 03:29:02.361]: Info: Color range: JPEG\n[2026-10-23 03:29:02.441]: Error: Couldn't open [h264_vaapi]\n[2026-10-23 03:29:02.450]: Info: Encoder [vaapi] failed\n[2026-10-23 03:29:02.459]: Info: Trying encoder [v4l2m2m]\n[2026-10-23 03:29:02.460]: Info: Screencasting with KMS\n[2026-10-23 03:29:02.460]: Info: /dev/dri/card1 -> sun4i-drm\n[2026-10-23 03:29:02.460]: Warning: No render device name for: /dev/dri/card1\n[2026-10-23 03:29:02.461]: Info: Found monitor for DRM screencasting\n[2026-10-23 03:29:02.461]: Error: Failed to determine panel orientation, defaulting to landscape.\n[2026-10-23 03:29:02.461]: Info: Found connector ID [51]\n[2026-10-23 03:29:02.462]: Warning: No KMS cursor plane found. Cursor may not be displayed while streaming!\n[2026-10-23 03:29:02.579]: Error: Failed to determine panel orientation, defaulting to landscape.\n[2026-10-23 03:29:02.580]: Info: KMS rotation probe decision: Wayland output=DSI-1 transform=0 expected_270=false CRTC=49 plane=41 DRM rotation=1 expected_rotate_0=true raw=640x480 capture=640x480 offset=0,0\n[2026-10-23 03:29:02.580]: Info: Creating encoder [h264_v4l2m2m]\n[2026-10-23 03:29:02.580]: Info: Color coding: SDR (Rec. 601)\n[2026-10-23 03:29:02.580]: Info: Color depth: 8-bit\n[2026-10-23 03:29:02.580]: Info: Color range: JPEG\n[2026-10-23 03:29:02.609]: Info: Streaming bitrate is 1000000\n[2026-10-23 03:29:02.616]: Info: [h264_v4l2m2m @ 0xc3a7c33b9c80] Using device /dev/video1\n[2026-10-23 03:29:02.616]: Info: [h264_v4l2m2m @ 0xc3a7c33b9c80] driver 'cedrus-encoder' on card 'cedrus-encoder' in splane mode\n[2026-10-23 03:29:02.616]: Info: [h264_v4l2m2m @ 0xc3a7c33b9c80] requesting formats: output=NV12/nv12 capture=H264/none\n[2026-10-23 03:29:02.907]: Info: V4L2 H.264 SPS crop: coded 1920x1088 visible 1920x1080\n[2026-10-23 03:29:02.920]: Info: Creating encoder [hevc_v4l2m2m]\n[2026-10-23 03:29:02.920]: Info: Color coding: SDR (Rec. 601)\n[2026-10-23 03:29:02.920]: Info: Color depth: 8-bit\n[2026-10-23 03:29:02.920]: Info: Color range: JPEG\n[2026-10-23 03:29:02.920]: Info: Streaming bitrate is 1000000\n[2026-10-23 03:29:02.921]: Error: [hevc_v4l2m2m @ 0xc3a7c33b9c80] Could not find a valid device\n[2026-10-23 03:29:02.921]: Error: [hevc_v4l2m2m @ 0xc3a7c33b9c80] can't configure encoder\n[2026-10-23 03:29:02.921]: Error: Could not open codec [hevc_v4l2m2m]: Invalid argument\n[2026-10-23 03:29:02.921]: Info: Creating encoder []\n[2026-10-23 03:29:02.921]: Info: Color coding: SDR (Rec. 601)\n[2026-10-23 03:29:02.921]: Info: Color depth: 8-bit\n[2026-10-23 03:29:02.921]: Info: Color range: JPEG\n[2026-10-23 03:29:02.921]: Error: Couldn't open []\n[2026-10-23 03:29:02.928]: Info: Screencasting with KMS\n[2026-10-23 03:29:02.928]: Info: /dev/dri/card1 -> sun4i-drm\n[2026-10-23 03:29:02.928]: Warning: No render device name for: /dev/dri/card1\n[2026-10-23 03:29:02.929]: Info: Found monitor for DRM screencasting\n[2026-10-23 03:29:02.929]: Error: Failed to determine panel orientation, defaulting to landscape.\n[2026-10-23 03:29:02.929]: Info: Found connector ID [51]\n[2026-10-23 03:29:02.930]: Warning: No KMS cursor plane found. Cursor may not be displayed while streaming!\n[2026-10-23 03:29:03.035]: Error: Failed to determine panel orientation, defaulting to landscape.\n[2026-10-23 03:29:03.035]: Info: KMS rotation probe decision: Wayland output=DSI-1 transform=0 expected_270=false CRTC=49 plane=41 DRM rotation=1 expected_rotate_0=true raw=640x480 capture=640x480 offset=0,0\n[2026-10-23 03:29:03.035]: Warning: v4l2m2m: h264 missing sps->vui parameters\n[2026-10-23 03:29:03.042]: Info:\n[2026-10-23 03:29:03.042]: Info: // Ignore any errors mentioned above, they are not relevant. //\n[2026-10-23 03:29:03.042]: Info:\n[2026-10-23 03:29:03.042]: Info: Found H.264 encoder: h264_v4l2m2m [v4l2m2m]\n[2026-10-23 03:29:03.042]: Info: Open the Web UI to set your new username and password and getting started\n[2026-10-23 03:29:03.055]: Info: File /home/korri/.config/sunshine/sunshine_state.json doesn't exist\n[2026-10-23 03:29:03.060]: Info: Starting system tray\n[2026-10-23 03:29:03.098]: Info: Configuration UI available at [https://localhost:47990]\n[2026-10-23 03:29:03.338]: Error: Failed to create client: Daemon not running\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 19: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 20: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 23: invalid constant used : monospace\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 42: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 43: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 46: invalid constant used : sans-serif\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 68: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 69: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 72: invalid constant used : serif\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 88: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 89: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 92: invalid constant used : emoji\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 108: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 109: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 112: invalid constant used : math\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 120: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 121: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 124: invalid constant used : system-ui\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 132: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 133: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 136: invalid constant used : cursive\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 144: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 145: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 148: invalid constant used : fantasy\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 156: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 157: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 160: invalid constant used : ui-sans-serif\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 168: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 169: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 172: invalid constant used : ui-serif\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 180: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 181: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 184: invalid constant used : ui-monospace\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 192: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 193: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 196: invalid constant used : ui-rounded\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 204: invalid attribute 'xsi:nil'\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 205: invalid constant used :\nFontconfig warning: \"/etc/fonts/conf.d/48-guessfamily.conf\", line 208: invalid constant used : fangsong\nFontconfig warning: \"/etc/fonts/conf.d/48-spacing.conf\", line 14: invalid constant used : monospace\nFontconfig warning: \"/etc/fonts/conf.d/49-sansserif.conf\", line 10: invalid constant used : serif\nFontconfig warning: \"/etc/fonts/conf.d/49-sansserif.conf\", line 18: invalid constant used : sans-serif\nFontconfig warning: \"/etc/fonts/conf.d/49-sansserif.conf\", line 26: invalid constant used : monospace\nFontconfig warning: \"/etc/fonts/conf.d/49-sansserif.conf\", line 34: invalid constant used : emoji\nFontconfig warning: \"/etc/fonts/conf.d/49-sansserif.conf\", line 42: invalid constant used : math",
+  "working_encoder_confirmed": true,
+  "after_display": [
+    {
+      "id": 3,
+      "type": "output",
+      "orientation": "none",
+      "percent": 1.0,
+      "urgent": false,
+      "marks": [],
+      "layout": "output",
+      "border": "none",
+      "current_border_width": 0,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 640,
+        "height": 480
+      },
+      "deco_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "window_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "geometry": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "name": "DSI-1",
+      "window": null,
+      "nodes": [],
+      "floating_nodes": [],
+      "focus": [
+        4
+      ],
+      "fullscreen_mode": 0,
+      "sticky": false,
+      "floating": null,
+      "scratchpad_state": null,
+      "primary": false,
+      "make": "Unknown",
+      "model": "Unknown",
+      "serial": "Unknown",
+      "modes": [
+        {
+          "width": 640,
+          "height": 480,
+          "refresh": 60000,
+          "picture_aspect_ratio": "none"
+        },
+        {
+          "width": 640,
+          "height": 480,
+          "refresh": 120000,
+          "picture_aspect_ratio": "none"
+        }
+      ],
+      "features": {
+        "adaptive_sync": false,
+        "hdr": false
+      },
+      "non_desktop": false,
+      "active": true,
+      "dpms": true,
+      "power": true,
+      "scale": 1.0,
+      "scale_filter": "nearest",
+      "transform": "normal",
+      "adaptive_sync_status": "disabled",
+      "current_workspace": "korri:game:active",
+      "current_mode": {
+        "width": 640,
+        "height": 480,
+        "refresh": 60000,
+        "picture_aspect_ratio": "none"
+      },
+      "max_render_time": 0,
+      "allow_tearing": false,
+      "hdr": false,
+      "focused": true,
+      "subpixel_hinting": "unknown"
+    }
+  ]
+}

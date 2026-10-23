@@ -1,0 +1,98 @@
+Name:	sway
+Umask:	0007
+State:	S (sleeping)
+Tgid:	1021
+Ngid:	0
+Pid:	1021
+PPid:	1
+TracerPid:	0
+Uid:	1000	1000	1000	1000
+Gid:	1000	1000	1000	1000
+FDSize:	1024
+Groups:	17 26 303 995 1000 
+NStgid:	1021
+NSpid:	1021
+NSpgid:	1021
+NSsid:	1021
+Kthread:	0
+VmPeak:	  408332 kB
+VmSize:	  352168 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	   82724 kB
+VmRSS:	   59808 kB
+RssAnon:	   20600 kB
+RssFile:	   36808 kB
+RssShmem:	    2400 kB
+VmData:	   27360 kB
+VmStk:	     132 kB
+VmExe:	     604 kB
+VmLib:	  240172 kB
+VmPTE:	     496 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+untag_mask:	0xffffffffffffff
+Threads:	2
+SigQ:	0/3626
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000004002
+SigIgn:	0000000000011000
+SigCgt:	0000000100000000
+CapInh:	0000000000200100
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	000001fbfffeffff
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	9
+Speculation_Store_Bypass:	not vulnerable
+SpeculationIndirectBranch:	unknown
+Cpus_allowed:	f
+Cpus_allowed_list:	0-3
+Mems_allowed:	0001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	47359
+nonvoluntary_ctxt_switches:	45087
+SHELL=/run/current-system/sw/bin/bash
+WLR_NO_HARDWARE_CURSORS=1
+XDG_DATA_HOME=/run/korri-compositor/data
+XDG_CONFIG_HOME=/run/korri-compositor/config
+MEMORY_PRESSURE_WRITE=c29tZSAyMDAwMDAgMjAwMDAwMAA=
+IO_PRESSURE_WATCH=/sys/fs/cgroup/system.slice/korri-compositor.service/io.pressure
+PWD=/
+IO_PRESSURE_WRITE=c29tZSAyMDAwMDAgMjAwMDAwMAA=
+LOGNAME=korri
+SYSTEMD_EXEC_PID=1021
+HOME=/home/korri
+WLR_DRM_DEVICES=/dev/dri/by-path/platform-display-engine-card
+LANG=en_US.UTF-8
+XDG_CURRENT_DESKTOP=sway
+MEMORY_PRESSURE_WATCH=/sys/fs/cgroup/system.slice/korri-compositor.service/memory.pressure
+SWAYSOCK=/run/korri-compositor/sway-ipc.sock
+INVOCATION_ID=5ccb3670d9734fdbbd8c4fd5fe899baa
+WLR_RENDERER=gles2
+RUNTIME_DIRECTORY=/run/korri-compositor
+WLR_BACKENDS=drm,libinput
+KORRI_SWAY_CONFIG=/nix/store/m2dpavwdakjivi3wbwqjvdgak5rjvx4x-korri-sway.conf
+KORRI_COMPOSITOR_OUTPUT_WIDTH=640
+USER=korri
+TZDIR=/nix/store/i8an849ir6g3f4n2wrsm88s2qgrzjayq-tzdata-2026c/share/zoneinfo
+KORRI_COMPOSITOR_OUTPUT_HEIGHT=480
+WLR_RENDER_DRM_DEVICE=/dev/dri/by-path/platform-1800000.gpu-render
+SHLVL=0
+LOCALE_ARCHIVE=/nix/store/k8as1kdn16q5w6zq6z3vih70qby9l40i-glibc-locales-2.42-84/lib/locale/locale-archive
+XDG_STATE_HOME=/run/korri-compositor/state
+XDG_RUNTIME_DIR=/run/user/1000
+KORRI_RENDER_DEVICE=/dev/dri/by-path/platform-1800000.gpu-render
+JOURNAL_STREAM=10:13497
+KORRI_WAYLAND_DISPLAY=korri-wayland
+PATH=/nix/store/kik5qyy1h61vkhamvi53l0iw18zfp4gh-dbus-1.16.2/bin:/nix/store/m2h5j584z9ay0g0pzmwvming36hcvkvf-sway-1.12/bin:/nix/store/p6s91vq6xsrqca1p3hldzl4pfqibrkfr-xwayland-24.1.13/bin:/nix/store/p7xdvcvl4aw7m229qzlq601aq0w0nb9n-coreutils-9.11/bin:/nix/store/xqx65i7cwacw7rsnj3dlbqas27mwvpn2-findutils-4.11.0/bin:/nix/store/3b3k72bbr01bgff7bdkiz6r05gmlx5s9-gnugrep-3.12/bin:/nix/store/1nwgsy4c5862g44s9lkf50643p3nbwm5-gnused-4.10/bin:/nix/store/x0iv5hlpqfrpykdckbj8jdxy78clbjpz-systemd-261.2/bin:/nix/store/kik5qyy1h61vkhamvi53l0iw18zfp4gh-dbus-1.16.2/sbin:/nix/store/m2h5j584z9ay0g0pzmwvming36hcvkvf-sway-1.12/sbin:/nix/store/p6s91vq6xsrqca1p3hldzl4pfqibrkfr-xwayland-24.1.13/sbin:/nix/store/p7xdvcvl4aw7m229qzlq601aq0w0nb9n-coreutils-9.11/sbin:/nix/store/xqx65i7cwacw7rsnj3dlbqas27mwvpn2-findutils-4.11.0/sbin:/nix/store/3b3k72bbr01bgff7bdkiz6r05gmlx5s9-gnugrep-3.12/sbin:/nix/store/1nwgsy4c5862g44s9lkf50643p3nbwm5-gnused-4.10/sbin:/nix/store/x0iv5hlpqfrpykdckbj8jdxy78clbjpz-systemd-261.2/sbin
+KORRI_COMPOSITOR_OUTPUT_NAME=DSI-1
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+_SWAY_WRAPPER_ALREADY_EXECUTED=1
+LIBSEAT_BACKEND=seatd
+/nix/store/3w8xw4221isjy5kzp5phvndbwikvq8m5-sway-unwrapped-1.12/bin/sway

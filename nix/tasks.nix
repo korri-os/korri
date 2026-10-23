@@ -10,6 +10,14 @@ let
   rustToolchain = pkgs.rust-bin.stable.latest.default;
 
   definitions = {
+    stream-cadence = {
+      description = "Measure distinct Sunshine frames against the discovered display ceiling; compare receive-clock windows.";
+      usageSuffix = " -- <run --device ssh-target | compare old.json new.json>";
+      runtimeInputs = [ (import ./stream-cadence/default.nix { inherit pkgs; }).app ];
+      script = ''
+        exec stream-cadence "$@"
+      '';
+    };
     hooks-install = {
       description = "Install the Git hook that refuses a commit which stages a secret.";
       runtimeInputs = [
