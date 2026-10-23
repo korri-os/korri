@@ -151,8 +151,30 @@ pub fn run(arguments: &[OsString]) -> Result<(), String> {
         return Err("usage: korrid unpack-archive WORK_DIR FILE".into());
     };
     let limits = Limits::device().map_err(|stop| stop.reason)?;
-    extract(Path::new(file), Path::new(work), &limits)
-        .map_err(|stop| format!("{:?}: {}", stop.failure, stop.reason))
+    run_with(Path::new(work), Path::new(file), &limits)
+}
+
+/// The file beside the work folder where the reader leaves its outcome when
+/// it exits 1: `<work-dir>.result`. It sits in the provider cache, the unit's
+/// writable path, outside the work folder, so no archive entry can write it;
+/// startup removes it with the `.tmp-*` folders.
+pub(super) fn result_marker(work: &Path) -> PathBuf {
+    let mut name = work.file_name().unwrap_or_default().to_os_string();
+    name.push(".result");
+    work.with_file_name(name)
+}
+
+/// The one word the reader writes there at the free-space floor. ADR 0012's
+/// exit 0/1 contract stays; korrid ignores any other content.
+pub(super) const NO_SPACE_MARKER: &str = "no-space";
+
+pub(super) fn run_with(work: &Path, file: &Path, limits: &Limits) -> Result<(), String> {
+    extract(file, work, limits).map_err(|stop| {
+        if stop.failure == Failure::NoSpace {
+            let _ = fs::write(result_marker(work), format!("{NO_SPACE_MARKER}\n"));
+        }
+        format!("{:?}: {}", stop.failure, stop.reason)
+    })
 }
 
 /// Unpack `archive` into the empty folder `work`, which korrid made.

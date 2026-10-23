@@ -16,9 +16,7 @@ use std::{
 /// The part of the file system that a store download leaves free, in percent.
 const FLOOR_PERCENT: u128 = 5;
 
-/// The largest single write that the archive reader makes. korrid reads the
-/// floor again after the reader exits: less room than this means the reader
-/// stopped at the floor, so the failure is `NoSpace`, not `Unpack`.
+/// The largest single write that the archive reader makes.
 pub(super) const WRITE_CHUNK: usize = 64 * 1024;
 
 /// What `fstatvfs` reports: bytes available to an unprivileged writer

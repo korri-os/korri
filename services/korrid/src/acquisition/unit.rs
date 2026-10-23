@@ -373,7 +373,7 @@ fn run_reader(
     if status.success() {
         Ok(())
     } else {
-        Err(exit_failure(work, None))
+        Err(exit_failure(work))
     }
 }
 
@@ -433,13 +433,17 @@ pub(super) fn cancel_reader(unit: &str, launch: &Launch) {
     }
 }
 
-/// The reader exits 1 for every failure. korrid reads the same floor after
-/// the exit: less room than one write means the reader stopped at the floor.
-fn exit_failure(work: &Path, probe: Option<super::space::Probe>) -> Failure {
-    match super::space::Floor::new(work, probe).and_then(|floor| floor.room()) {
-        Ok(room) if room < super::space::WRITE_CHUNK as u64 => Failure::NoSpace,
-        Ok(_) => Failure::Unpack,
-        Err(failure) => failure,
+/// The reader exits 1 for every failure and leaves its own outcome in the
+/// result marker beside the work folder. korrid reads that, not a fresh
+/// floor: the reader's counted reservations can reach the floor while the
+/// file system's figure has not moved. Anything unrecognised is `Unpack`.
+fn exit_failure(work: &Path) -> Failure {
+    let marker = super::archive::result_marker(work);
+    let outcome = std::fs::read_to_string(&marker).ok();
+    let _ = std::fs::remove_file(&marker);
+    match outcome.as_deref().map(str::trim) {
+        Some(super::archive::NO_SPACE_MARKER) => Failure::NoSpace,
+        _ => Failure::Unpack,
     }
 }
 
@@ -509,17 +513,41 @@ mod tests {
         assert!(args.contains(&"--property=ReadWritePaths=/storage/cache/roms/wowroms".into()));
         assert!(args.contains(&"--property=PrivateNetwork=yes".into()));
     }
+    /// Review P2 (round 2): the reader's own outcome reaches korrid. A fake
+    /// `systemd-run` plays the reader: it writes `marker` next to the work
+    /// folder, as `korrid unpack-archive` does, and exits 1. korrid's
+    /// production mapping reads it whatever the file system reports: on
+    /// Btrfs, 100 empty files left the reported free space unchanged, so a
+    /// fresh floor said Unpack.
     #[test]
-    fn a_failed_reader_is_no_space_only_at_the_floor() {
-        let work = tempfile::tempdir().unwrap();
-        assert_eq!(
-            exit_failure(work.path(), Some(super::super::space::fixed(1024))),
-            Failure::NoSpace
-        );
-        assert_eq!(
-            exit_failure(work.path(), Some(super::super::space::fixed(1 << 20))),
-            Failure::Unpack
-        );
+    fn a_failed_reader_reports_its_own_no_space_through_the_result_marker() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+        for (marker, expected) in [
+            (Some("no-space\n"), Failure::NoSpace),
+            (Some("something-else\n"), Failure::Unpack),
+            (None, Failure::Unpack),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let mut programs = fake_systemd(root.path());
+            let run = root.path().join("reader-run");
+            let write = marker.map_or(String::new(), |marker| {
+                format!("printf '{marker}' > \"$work.result\"\n")
+            });
+            fs::write(
+                &run,
+                format!("#!/bin/sh\nwhile [ \"$1\" != unpack-archive ]; do shift; done\nwork=\"$2\"\n{write}exit 1\n"),
+            )
+            .unwrap();
+            fs::set_permissions(&run, fs::Permissions::from_mode(0o755)).unwrap();
+            programs.systemd_run = run;
+            let launch = Arc::new(Launch::default());
+            let result = reader_run(root.path(), programs, launch).join().unwrap();
+            assert_eq!(result, Err(expected), "{marker:?}");
+            assert!(
+                !root.path().join("work.result").exists(),
+                "korrid removes the marker"
+            );
+        }
     }
     #[test]
     fn orphan_recovery_stops_exact_unit_and_refuses_cleanup_when_stop_fails() {

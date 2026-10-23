@@ -476,9 +476,15 @@ existing `NoSpace` copy ("There is not enough space for this download.").
 - **Peak use.** The archive and the unpacked folder exist together until
   publication. The check measures the file system, so it covers both.
 - **The extractor checks too.** The extractor runs `fstatvfs` on its work
-  folder, which the sandbox allows, and exits 1 at the floor. korrid then
-  reports `NoSpace`, not `Unpack`, because it reads the same floor after the
-  exit.
+  folder, which the sandbox allows, and exits 1 at the floor. Review
+  decision, 2026-10-23: before that exit it writes the one word `no-space`
+  to `<work-dir>.result`, beside the work folder in the provider cache, and
+  korrid reports `NoSpace`, not `Unpack`, when it reads that word. korrid
+  does not guess from a fresh floor, because the extractor's counted
+  reservations can reach the floor while the file system's figure has not
+  moved (on Btrfs, 100 empty files left it unchanged). Any other content is
+  `Unpack`. The exit 0/1 contract is unchanged, and no archive entry can
+  write the marker, because entries stay inside the work folder.
 - **Metadata counts too.** Review decision, 2026-10-23: each folder and
   each file the extractor creates is counted as one allocation unit
   (`f_frsize` from `fstatvfs`, usually 4 KiB) before it is created, the

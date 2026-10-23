@@ -682,7 +682,7 @@ fn reader_throughput() {
             state ^= state >> 17;
             state ^= state << 5;
             // Half the bytes are noise, half a repeating pattern, like a ROM.
-            if i % 2 == 0 {
+            if i.is_multiple_of(2) {
                 state as u8
             } else {
                 (i / 64) as u8
@@ -732,4 +732,29 @@ fn many_empty_entries_near_the_floor_fail_as_no_space() {
     // Ten empty entries fit.
     let run = unpack_with(&raw_zip(&entries[..10]), &near);
     assert!(run.result.is_ok());
+}
+
+/// Review P2 (round 2): `korrid unpack-archive` writes `no-space` next to the
+/// work folder before it exits 1 at the floor, and nothing for another
+/// failure. The marker is outside the work folder, so no archive entry can
+/// forge it.
+#[test]
+fn the_reader_command_marks_no_space_next_to_the_work_folder() {
+    let names: Vec<String> = (0..100).map(|i| format!("empty {i:03}.txt")).collect();
+    let entries: Vec<Raw<'_>> = names.iter().map(|name| raw(name, b"")).collect();
+    let mut near = limits();
+    near.space = Some(space::fixed(65_536));
+    for (bytes, marker) in [
+        (raw_zip(&entries), Some("no-space\n")),
+        (raw_zip(&[raw("../escape.gba", ROM)]), None),
+    ] {
+        let folder = tempfile::tempdir().unwrap();
+        let archive = folder.path().join("download");
+        fs::write(&archive, &bytes).unwrap();
+        let work = folder.path().join(".tmp-0123");
+        fs::create_dir(&work).unwrap();
+        assert!(run_with(&work, &archive, &near).is_err());
+        let written = fs::read_to_string(result_marker(&work)).ok();
+        assert_eq!(written.as_deref(), marker);
+    }
 }
