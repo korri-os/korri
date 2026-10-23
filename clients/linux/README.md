@@ -15,11 +15,14 @@ There is no Chromium subprocess, debugging pipe, debugging listener or fallback.
 | `KORRI_WEB_SURFACE_URL` | The same origin followed by `/` and an optional path/query. |
 | `HOME`, `XDG_RUNTIME_DIR` | Required absolute paths belonging to the isolated portal service. |
 | `WAYLAND_DISPLAY` | Required for Wayland. |
-| `WPE_PLATFORM` | Optional `wayland` or `headless`. Headless is for acceptance tests. |
+| `WPE_PLATFORM` | Optional `wayland` (default) or `headless`. The launcher builds that display itself and never falls back to another backend; a missing Wayland socket fails startup. Headless is for acceptance tests. |
 | `NOTIFY_SOCKET` | Optional filesystem or `@`-prefixed abstract Unix datagram socket. |
 
-The credential must be a regular file owned by the effective service user,
-with no group or other permission bits. The launcher opens it with
+The credential must be a regular file in one of two shapes. Either it is owned
+by the effective service user with no group or other permission bits, or it
+has the form systemd's `LoadCredential=` produces for a non-root service:
+owned by root, and readable by the service user through a POSIX ACL entry,
+with no other user or group able to read it. The launcher opens it with
 `O_NOFOLLOW`, `O_CLOEXEC` and `O_NONBLOCK`. It rejects symlinks, empty files,
 files larger than 4096 bytes, NULs and control characters. One trailing newline
 is accepted. The value must use ASCII bearer-token characters
