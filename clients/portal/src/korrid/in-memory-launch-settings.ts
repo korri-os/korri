@@ -62,9 +62,18 @@ export interface InMemoryLaunchProfile {
   readonly title: string
 }
 
+/** One installed, enabled launch modifier as browser dev seeds it. */
+export interface InMemoryLaunchModifier {
+  readonly title: string
+  /** Its settings JSON Schema. Absent: it has no settings. */
+  readonly schema?: unknown
+}
+
 export interface InMemoryLaunchSettingsConfig {
   readonly deviceFacts?: LaunchDeviceFacts
   readonly runners?: Readonly<Record<string, InMemoryLaunchRunner>>
+  /** Installed, enabled launch modifiers, by plugin id. */
+  readonly modifiers?: Readonly<Record<string, InMemoryLaunchModifier>>
   /** Keyed by korrid game id. A game not listed gets Device and Game places. */
   readonly games?: Readonly<Record<string, InMemoryLaunchGame>>
   /** Seeded place bodies, keyed by `placeKey`. */
@@ -122,6 +131,20 @@ type Properties = Readonly<Record<string, Readonly<Record<string, unknown>>>>
 const propertiesOf = (schema: unknown): Properties => {
   const properties = (schema as { properties?: unknown } | undefined)?.properties
   return typeof properties === "object" && properties !== null ? properties as Properties : {}
+}
+
+/** Whether a value fits one JSON Schema property: its enum, type and range. */
+function fits(property: Readonly<Record<string, unknown>>, value: unknown): boolean {
+  const type = property.type
+  const enumValues = Array.isArray(property.enum) ? property.enum as unknown[] : undefined
+  const ok = enumValues !== undefined ? enumValues.some(item => JSON.stringify(item) === JSON.stringify(value))
+    : type === "boolean" ? typeof value === "boolean"
+      : type === "integer" ? Number.isInteger(value)
+        : type === "number" ? typeof value === "number"
+          : type === "string" ? typeof value === "string" : true
+  const low = typeof property.minimum === "number" ? property.minimum : undefined
+  const high = typeof property.maximum === "number" ? property.maximum : undefined
+  return ok && !(typeof value === "number" && ((low !== undefined && value < low) || (high !== undefined && value > high)))
 }
 
 export interface InMemoryRunnerChoices {
@@ -323,6 +346,11 @@ export function createInMemoryLaunchSettings(
         revision: "describe-1",
         prepare: runner.runner?.prepare ?? { _tag: "Ready", payload: { env: {}, args: [] } },
       })),
+      modifiers: Object.entries(config.modifiers ?? {}).map(([id, modifier]) => ({
+        id,
+        title: modifier.title,
+        ...(modifier.schema === undefined ? {} : { schema: modifier.schema, revision: "describe-1" }),
+      })),
       profiles: gameProfiles.map(profile => ({
         id: profile.id,
         title: profile.title,
@@ -391,6 +419,13 @@ export function createInMemoryLaunchSettings(
       }
       case "ModifierEnabled":
       case "ModifierSetting": {
+        const installed = config.modifiers?.[path.payload.id]
+        if (installed === undefined) return failure("InvalidSetting", `No installed modifier ${path.payload.id}.`)
+        if (path._tag === "ModifierSetting" && !clear) {
+          const property = propertiesOf(installed.schema)[path.payload.key]
+          if (property === undefined) return failure("InvalidSetting", `${installed.title} has no setting ${path.payload.key}.`)
+          if (!fits(property, value)) return failure("InvalidSetting", `That value doesn't fit ${String(property.title ?? path.payload.key)}.`)
+        }
         const modifiers = { ...stored.modifiers }
         const modifier = { ...modifiers[path.payload.id] }
         if (path._tag === "ModifierEnabled") {
@@ -414,19 +449,8 @@ export function createInMemoryLaunchSettings(
           .filter(([id, runner]) => scope._tag === "Runner" ? id === scope.id : runner.family === scope.id)
         const property = candidates.map(([, runner]) => propertiesOf(runner.schema)[path.payload.key]).find(found => found !== undefined)
         if (property === undefined) return failure("InvalidSetting", `No installed runner here has a setting ${path.payload.key}.`)
-        if (!clear) {
-          const type = property.type
-          const enumValues = Array.isArray(property.enum) ? property.enum as unknown[] : undefined
-          const ok = enumValues !== undefined ? enumValues.some(item => JSON.stringify(item) === JSON.stringify(value))
-            : type === "boolean" ? typeof value === "boolean"
-              : type === "integer" ? Number.isInteger(value)
-                : type === "number" ? typeof value === "number"
-                  : type === "string" ? typeof value === "string" : true
-          const low = typeof property.minimum === "number" ? property.minimum : undefined
-          const high = typeof property.maximum === "number" ? property.maximum : undefined
-          if (!ok || (typeof value === "number" && ((low !== undefined && value < low) || (high !== undefined && value > high)))) {
-            return failure("InvalidSetting", `That value doesn't fit ${String(property.title ?? path.payload.key)}.`)
-          }
+        if (!clear && !fits(property, value)) {
+          return failure("InvalidSetting", `That value doesn't fit ${String(property.title ?? path.payload.key)}.`)
         }
         const settings = { ...stored.settings }
         if (clear) delete settings[path.payload.key]

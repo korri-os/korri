@@ -87,4 +87,15 @@ describe("in-memory launch settings, korrid's rules", () => {
       ["Game for gpSP", ["cpu", "gpu", "modifiers", "settings"]],
     ])
   })
+
+  it("lists installed modifiers and refuses a setting a modifier's schema does not name", async () => {
+    const modifiers = { "korri/gamescope": { title: "Gamescope", schema: { properties: { fsr: { type: "boolean" } } } }, "korri/mangohud": { title: "MangoHud" } }
+    const brain = createInMemoryLaunchSettings({ games, runners, modifiers })
+    const result = await brain.methods.launchSettingsSnapshot("wario")
+    expect(result._tag === "Ok" && result.payload.modifiers.map(modifier => [modifier.id, modifier.schema !== undefined])).toEqual([["korri/gamescope", true], ["korri/mangohud", false]])
+    const at = (key: string) => ({ place: place("game:wario/any"), path: { _tag: "ModifierSetting" as const, payload: { id: key.split("#")[0] ?? "", key: key.split("#")[1] ?? "" } }, expectedRevision: "games-1" })
+    expect((await brain.methods.setLaunch({ ...at("korri/mangohud#fps"), value: 1 }))._tag).toBe("Err")
+    expect((await brain.methods.setLaunch({ ...at("korri/gamescope#fsr"), value: "yes" }))._tag).toBe("Err")
+    expect((await brain.methods.setLaunch({ ...at("korri/gamescope#fsr"), value: true }))._tag).toBe("Ok")
+  })
 })

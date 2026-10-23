@@ -106,7 +106,7 @@ export function createLaunchSettings(korrid: KorridClient) {
     editor = snapshot === undefined ? undefined : launchEditorFrom(snapshot, gameId, pending)
     // A setting once written is a place's own row: it is no longer pending.
     const still = new Map<string, string[]>()
-    for (const { placeId, key } of editor?.pending.values() ?? []) still.set(placeId, [...still.get(placeId) ?? [], key])
+    for (const { placeId, token } of editor?.pending.values() ?? []) still.set(placeId, [...still.get(placeId) ?? [], token])
     pending = still
   }
   const content = () => ({
@@ -245,11 +245,11 @@ export function createLaunchSettings(korrid: KorridClient) {
   }
 
   /** Add setting: show the chosen setting on its place, with nothing written. */
-  const add = (placeId: string, key: string) => {
+  const add = (placeId: string, token: string) => {
     if (state.editor._tag !== "Ready") return
-    const keys = pending.get(placeId) ?? []
-    if (key === "" || keys.includes(key)) return
-    pending = new Map(pending).set(placeId, [...keys, key])
+    const tokens = pending.get(placeId) ?? []
+    if (tokens.includes(token)) return
+    pending = new Map(pending).set(placeId, [...tokens, token])
     ready()
   }
 
@@ -257,7 +257,7 @@ export function createLaunchSettings(korrid: KorridClient) {
   const withdraw = (settingId: string): boolean => {
     const added = editor?.pending.get(settingId)
     if (added === undefined) return false
-    pending = new Map(pending).set(added.placeId, (pending.get(added.placeId) ?? []).filter(key => key !== added.key))
+    pending = new Map(pending).set(added.placeId, (pending.get(added.placeId) ?? []).filter(token => token !== added.token))
     ready()
     return true
   }
@@ -278,7 +278,7 @@ export function createLaunchSettings(korrid: KorridClient) {
     }
     const adding = editor?.adds.get(settingId)
     if (adding !== undefined) {
-      add(adding.placeId, value)
+      if (value !== "") add(adding.placeId, adding.tokenOf(value))
       return true
     }
     if (settingId === LAUNCH_ID.pick) {

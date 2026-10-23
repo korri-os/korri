@@ -4,7 +4,9 @@
  *
  *   (none)        no device facts, as a browser has: 10 % steps, "clock steps unknown"
  *   rg353m        the RG353M's real CPU and GPU clock steps; Neverball with two
- *                 runners of one family, runner settings, a profile, hooks and env
+ *                 runners of one family, runner settings, a profile, hooks and env;
+ *                 Gamescope on for the device and off in the profile, and
+ *                 MangoHud, which has no settings
  *   needs-runner  Neverball's two runners and no runner named anywhere
  *   missing-runner Neverball's game place names a runner that is not installed
  *   facts-unavailable the native runner's dry run fails
@@ -43,6 +45,22 @@ const runners: Readonly<Record<string, InMemoryLaunchRunner>> = {
   "rpcs3/linux": { title: "RPCS3", family: "rpcs3" },
 }
 
+/** Gamescope with a few of its options, and MangoHud, which describes none. */
+const modifiers: InMemoryLaunchSettingsConfig["modifiers"] = {
+  "korri/gamescope": {
+    title: "Gamescope",
+    schema: {
+      type: "object",
+      properties: {
+        "output-width": { type: "integer", title: "Output width", minimum: 320, maximum: 7680 },
+        "output-height": { type: "integer", title: "Output height", minimum: 240, maximum: 4320 },
+        filter: { type: "string", title: "Upscale filter", enum: ["linear", "nearest", "fsr", "nis"] },
+      },
+    },
+  },
+  "korri/mangohud": { title: "MangoHud" },
+}
+
 const games: InMemoryLaunchSettingsConfig["games"] = {
   neverball: { systemId: "linux", runners: ["neverball/native", "neverball/flatpak"] },
   skate3: { systemId: "ps3", runners: ["rpcs3/linux"], releaseId: "BLUS30464" },
@@ -56,14 +74,15 @@ export function inMemoryLaunchSettingsDevConfig(scenario: string | null): InMemo
       return {
         games,
         runners,
+        modifiers,
         deviceFacts: RG353M_LAUNCH_FACTS,
         bodies: {
-          "device/any": { cpu: { max: 89 }, hooks: { use: ["fan-quiet"] } },
+          "device/any": { cpu: { max: 89 }, hooks: { use: ["fan-quiet"] }, modifiers: { "korri/gamescope": { enabled: true, settings: { "output-width": 1280 } } } },
           "device/runner:neverball/native": { cpu: { min: 33 }, settings: { fullscreen: true } },
           "game:neverball/any": { runner: "neverball/native", gpu: { max: 75 }, env: { SDL_AUDIODRIVER: "pipewire", MESA_DEBUG: null }, args: { append: ["--verbose"] } },
           "game:neverball/runner:neverball/native": { settings: { fps: 30 } },
           "game:neverball/family:neverball": { hooks: { before: [{ run: "notify-send 'Rolling'" }] } },
-          "profile:battery/any": { cpu: { max: 61 } },
+          "profile:battery/any": { cpu: { max: 61 }, modifiers: { "korri/gamescope": { enabled: false } } },
         },
         profiles: { neverball: [{ id: "battery", title: "Battery saver" }] },
         selected: { neverball: "battery" },
@@ -98,6 +117,6 @@ export function inMemoryLaunchSettingsDevConfig(scenario: string | null): InMemo
     case "error":
       return { games, runners, failures: { snapshot: { code: "LaunchSettingsUnavailable", message: "Korri could not read launch settings." } } }
     default:
-      return { games, runners, bodies: chosen }
+      return { games, runners, modifiers, bodies: chosen }
   }
 }

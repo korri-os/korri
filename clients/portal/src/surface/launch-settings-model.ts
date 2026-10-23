@@ -95,7 +95,15 @@ export interface LaunchWrite {
 /** A row's change that adds a pending setting rather than writing. */
 export interface LaunchAdd {
   readonly placeId: string
+  /** The pending entry a chosen key makes: a runner setting or a modifier's. */
+  readonly tokenOf: (key: string) => string
 }
+
+/** Pending entries, one string each, so runner and modifier settings never meet. */
+export const PENDING = {
+  setting: (key: string) => `setting\u0000${key}`,
+  modifier: (id: string, key: string) => `modifier\u0000${id}\u0000${key}`,
+} as const
 
 export interface LaunchEditor {
   readonly places: readonly SurfaceLaunchSettingsPlace[]
@@ -104,7 +112,7 @@ export interface LaunchEditor {
   /** Add setting rows, by row id. */
   readonly adds: ReadonlyMap<string, LaunchAdd>
   /** Rows added with Add setting and not yet set, by row id. */
-  readonly pending: ReadonlyMap<string, { readonly placeId: string; readonly key: string }>
+  readonly pending: ReadonlyMap<string, { readonly placeId: string; readonly token: string }>
 }
 
 // --- places ----------------------------------------------------------------
@@ -425,7 +433,7 @@ function scopeLabel(context: Context, scope: LaunchRunnerScope): string {
 interface Rows {
   readonly writes: Map<string, LaunchWrite>
   readonly adds: Map<string, LaunchAdd>
-  readonly pending: Map<string, { readonly placeId: string; readonly key: string }>
+  readonly pending: Map<string, { readonly placeId: string; readonly token: string }>
 }
 
 const percentOf = (value: unknown): number | undefined =>
@@ -659,7 +667,8 @@ function valueInteraction(property: Property | undefined, own: unknown): {
 function settingsGroup(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly string[]): SurfaceSettingGroup | undefined {
   const schema = schemaFor(context, place.scope)
   const own = record(body.settings) ?? {}
-  const keys = [...Object.keys(own), ...pending.filter(key => !(key in own))]
+  const added = schemaKeys(pending, PENDING.setting)
+  const keys = [...Object.keys(own), ...added.filter(key => !(key in own))]
   const items: SurfaceSettingItem[] = keys.map(key => {
     const property = schema.get(key)
     const value = own[key]
@@ -667,7 +676,7 @@ function settingsGroup(context: Context, rows: Rows, placeId: string, place: Lau
     const id = LAUNCH_ID.set(placeId, `setting:${key}`)
     const { interaction, encode } = valueInteraction(property, set ? value : undefined)
     rows.writes.set(id, { place, path: { _tag: "Setting", payload: { key } }, encode })
-    if (!set) rows.pending.set(id, { placeId, key })
+    if (!set) rows.pending.set(id, { placeId, token: PENDING.setting(key) })
     const source = sourceText(context, place, context.resolved({ _tag: "Setting", payload: { key } }), valueText)
     return {
       id,
@@ -684,7 +693,7 @@ function settingsGroup(context: Context, rows: Rows, placeId: string, place: Lau
   const unset = [...schema].filter(([key]) => !keys.includes(key))
   if (unset.length > 0) {
     const id = LAUNCH_ID.set(placeId, "add-setting")
-    rows.adds.set(id, { placeId })
+    rows.adds.set(id, { placeId, tokenOf: PENDING.setting })
     items.push({
       id,
       label: "Add setting",
@@ -700,57 +709,92 @@ function settingsGroup(context: Context, rows: Rows, placeId: string, place: Lau
   return items.length === 0 ? undefined : { title: "Runner settings", items }
 }
 
-/** Every modifier any place names, so each place can enable or disable it. */
-function modifierIds(context: Context): readonly string[] {
-  const ids = new Set<string>()
-  for (const place of context.places) for (const id of Object.keys(record(record(place.body)?.modifiers) ?? {})) ids.add(id)
-  return [...ids].sort()
+/** The keys pending entries name for one owner, in the order they were added. */
+function schemaKeys(pending: readonly string[], tokenOf: (key: string) => string): readonly string[] {
+  const prefix = tokenOf("")
+  return pending.filter(token => token.startsWith(prefix)).map(token => token.slice(prefix.length))
 }
 
-function modifierGroup(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json): SurfaceSettingGroup | undefined {
+const ON_OFF = [INHERIT_CHOICE, { value: "true", label: "On" }, { value: "false", label: "Off" }]
+
+/**
+ * The modifiers a place can turn on or off: every installed, enabled one
+ * korrid lists, then any a place names that it does not list.
+ */
+function modifiersOf(context: Context): readonly { readonly id: string; readonly title: string; readonly schema?: unknown; readonly listed: boolean }[] {
+  const listed = context.snapshot.modifiers.map(modifier => ({
+    id: modifier.id,
+    title: modifier.title,
+    ...(modifier.schema === undefined ? {} : { schema: modifier.schema }),
+    listed: true,
+  }))
+  const named = new Set<string>()
+  for (const place of context.places) for (const id of Object.keys(record(record(place.body)?.modifiers) ?? {})) named.add(id)
+  const unlisted = [...named].filter(id => !listed.some(modifier => modifier.id === id)).sort()
+  return [...listed, ...unlisted.map(id => ({ id, title: id, listed: false }))]
+}
+
+/**
+ * One group per modifier: on, off or Inherit, then its settings as runner
+ * settings are (what is set here, then Add setting from its schema). A
+ * modifier with no schema has no settings to show.
+ */
+function modifierGroups(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly string[]): SurfaceSettingGroup[] {
   const own = record(body.modifiers) ?? {}
-  const items = modifierIds(context).flatMap((modifier): SurfaceSettingItem[] => {
-    const authored = record(own[modifier]) ?? {}
+  return modifiersOf(context).map((modifier): SurfaceSettingGroup => {
+    const authored = record(own[modifier.id]) ?? {}
     const enabled = typeof authored.enabled === "boolean" ? authored.enabled : undefined
-    const id = LAUNCH_ID.set(placeId, `modifier:${modifier}:enabled`)
+    const id = LAUNCH_ID.set(placeId, `modifier:${modifier.id}:enabled`)
     rows.writes.set(id, {
       place,
-      path: { _tag: "ModifierEnabled", payload: { id: modifier } },
+      path: { _tag: "ModifierEnabled", payload: { id: modifier.id } },
       encode: text => text === INHERIT ? {} : text === "true" ? { value: true } : text === "false" ? { value: false } : null,
     })
-    const source = sourceText(context, place, context.resolved({ _tag: "ModifierEnabled", payload: { id: modifier } }), valueText)
+    const source = sourceText(context, place, context.resolved({ _tag: "ModifierEnabled", payload: { id: modifier.id } }), valueText)
+    const enabledRow: SurfaceSettingItem = {
+      id,
+      label: modifier.title,
+      value: enabled === undefined ? "Inherit" : enabled ? "On" : "Off",
+      description: modifier.listed ? NEXT_LAUNCH : "This modifier isn't installed or is turned off on this device.",
+      ...(source === undefined ? {} : { source }),
+      scope: "device",
+      interaction: { kind: "choice", choices: ON_OFF, selected: enabled === undefined ? INHERIT : String(enabled) },
+    }
+    const schema = modifier.schema === undefined ? new Map<string, Property>() : propertiesOf(modifier.schema)
     const settings = record(authored.settings) ?? {}
-    return [
-      {
-        id,
-        label: modifier,
-        value: enabled === undefined ? "Inherit" : enabled ? "On" : "Off",
-        description: NEXT_LAUNCH,
-        ...(source === undefined ? {} : { source }),
+    const tokenOf = (key: string) => PENDING.modifier(modifier.id, key)
+    const added = schemaKeys(pending, tokenOf)
+    const keys = [...Object.keys(settings), ...added.filter(key => !(key in settings))]
+    const settingRows = keys.map((key): SurfaceSettingItem => {
+      const property = schema.get(key)
+      const set = key in settings
+      const rowId = LAUNCH_ID.set(placeId, `modifier:${modifier.id}:setting:${key}`)
+      const { interaction, encode } = valueInteraction(property, set ? settings[key] : undefined)
+      rows.writes.set(rowId, { place, path: { _tag: "ModifierSetting", payload: { id: modifier.id, key } }, encode })
+      if (!set) rows.pending.set(rowId, { placeId, token: tokenOf(key) })
+      const from = sourceText(context, place, context.resolved({ _tag: "ModifierSetting", payload: { id: modifier.id, key } }), valueText)
+      return {
+        id: rowId,
+        label: property?.title ?? key,
+        value: set ? valueText(settings[key]) : "Not set here",
+        ...(property?.description === undefined ? {} : { description: property.description }),
+        ...(from === undefined ? {} : { source: from }),
         scope: "device",
-        interaction: {
-          kind: "choice",
-          choices: [INHERIT_CHOICE, { value: "true", label: "On" }, { value: "false", label: "Off" }],
-          selected: enabled === undefined ? INHERIT : String(enabled),
-        },
-      },
-      ...Object.entries(settings).map(([key, value]): SurfaceSettingItem => {
-        const rowId = LAUNCH_ID.set(placeId, `modifier:${modifier}:setting:${key}`)
-        const { interaction, encode } = valueInteraction(undefined, value)
-        rows.writes.set(rowId, { place, path: { _tag: "ModifierSetting", payload: { id: modifier, key } }, encode })
-        const from = sourceText(context, place, context.resolved({ _tag: "ModifierSetting", payload: { id: modifier, key } }), valueText)
-        return {
-          id: rowId,
-          label: `${modifier} ${key}`,
-          value: valueText(value),
-          ...(from === undefined ? {} : { source: from }),
-          scope: "device",
-          interaction,
-        }
-      }),
-    ]
+        interaction,
+      }
+    })
+    const unset = [...schema].filter(([key]) => !keys.includes(key))
+    const addId = LAUNCH_ID.set(placeId, `modifier:${modifier.id}:add-setting`)
+    if (unset.length > 0) rows.adds.set(addId, { placeId, tokenOf })
+    const addRow: SurfaceSettingItem[] = unset.length === 0 ? [] : [{
+      id: addId,
+      label: `Add ${modifier.title} setting`,
+      value: "Choose a setting",
+      description: `${unset.length} more ${unset.length === 1 ? "setting" : "settings"} ${modifier.title} offers.`,
+      interaction: { kind: "choice", choices: unset.map(([key, property]) => ({ value: key, label: property.title ?? key })), selected: "" },
+    }]
+    return { title: `Modifier ${modifier.title}`, items: [enabledRow, ...settingRows, ...addRow] }
   })
-  return items.length === 0 ? undefined : { title: "Modifiers", items }
 }
 
 /** Values set only in files: shown with where they are, never changed here. */
@@ -925,7 +969,7 @@ export function launchEditorFrom(
       any && kinds.includes(KIND.runner) ? runnerGroup(context, rows, placeId, place, body) : undefined,
       kinds.includes(KIND.settings) ? settingsGroup(context, rows, placeId, place, body, pending.get(placeId) ?? []) : undefined,
       ...limitGroups(context, rows, place, body, kinds, key => LAUNCH_ID.set(placeId, key)),
-      kinds.includes(KIND.modifiers) ? modifierGroup(context, rows, placeId, place, body) : undefined,
+      ...(kinds.includes(KIND.modifiers) ? modifierGroups(context, rows, placeId, place, body, pending.get(placeId) ?? []) : []),
       place.layer._tag === "Game" && any ? profileRows(context, "pick") : undefined,
       place.layer._tag === "Profile" && any ? profileRows(context, "own", place.layer.id.profileId) : undefined,
       fileGroup(context, entry, placeId),

@@ -460,3 +460,89 @@ describe("profiles and choices", () => {
     }
   })
 })
+
+describe("launch modifiers", () => {
+  const modifiers: InMemoryLaunchSettingsConfig["modifiers"] = {
+    "korri/gamescope": {
+      title: "Gamescope",
+      schema: {
+        type: "object",
+        properties: {
+          "output.width": { type: "integer", title: "Output width", minimum: 320, maximum: 7680 },
+          filter: { type: "string", title: "Upscale filter", enum: ["linear", "fsr"] },
+        },
+      },
+    },
+    "korri/mangohud": { title: "MangoHud" },
+  }
+  const withModifiers: InMemoryLaunchSettingsConfig = {
+    ...base,
+    modifiers,
+    bodies: {
+      ...chosen,
+      "device/any": { modifiers: { "korri/gamescope": { enabled: true, settings: { "output.width": 1280 } } } },
+      "profile:quiet/any": { modifiers: { "korri/gamescope": { enabled: false } } },
+      "game:wario/any": { runner: "retroarch/mgba", modifiers: { "korri/vkbasalt": { enabled: true } } },
+    },
+    profiles: { wario: [{ id: "quiet", title: "Quiet" }] },
+  }
+  const group = (editor: SurfaceLaunchSettings, placeId: string, title: string) =>
+    editor._tag === "Closed" ? undefined : editor.places.find(place => place.id === placeId)?.groups.find(candidate => candidate.title === title)
+
+  it("lists every installed modifier on every place, inherited with its source", async () => {
+    const launch = await opened(withModifiers)
+    const editor = launch.getSnapshot().editor
+    const gamescope = group(editor, "game:wario/runner:retroarch/mgba", "Modifier Gamescope")
+    expect(gamescope?.items[0]).toMatchObject({ label: "Gamescope", value: "Inherit", source: "On from Device", scope: "device" })
+    expect(gamescope?.items[0]?.interaction).toEqual({
+      kind: "choice",
+      selected: "inherit",
+      choices: [{ value: "inherit", label: "Inherit" }, { value: "true", label: "On" }, { value: "false", label: "Off" }],
+    })
+    expect(gamescope?.items.map(item => item.label)).toEqual(["Gamescope", "Add Gamescope setting"])
+    const device = group(editor, "device/any", "Modifier Gamescope")
+    expect(device?.items.map(item => [item.label, item.value])).toEqual([["Gamescope", "On"], ["Output width", "1280"], ["Add Gamescope setting", "Choose a setting"]])
+  })
+
+  it("shows a profile turning a modifier off, and the off in force once the profile is picked", async () => {
+    const launch = await opened({ ...withModifiers, selected: { wario: "quiet" } })
+    const editor = launch.getSnapshot().editor
+    expect(group(editor, "profile:quiet/any", "Modifier Gamescope")?.items[0]).toMatchObject({ value: "Off", source: "from Profile Quiet" })
+    expect(group(editor, "game:wario/any", "Modifier Gamescope")?.items[0]).toMatchObject({ value: "Inherit", source: "Off from Profile Quiet" })
+  })
+
+  it("gives a modifier with no schema its on/off row and nothing else", async () => {
+    const launch = await opened(withModifiers)
+    expect(group(launch.getSnapshot().editor, "game:wario/any", "Modifier MangoHud")?.items.map(item => item.label)).toEqual(["MangoHud"])
+  })
+
+  it("names a modifier a place sets that isn't installed", async () => {
+    const launch = await opened(withModifiers)
+    expect(group(launch.getSnapshot().editor, "game:wario/any", "Modifier korri/vkbasalt")?.items[0]).toMatchObject({
+      value: "On",
+      description: "This modifier isn't installed or is turned off on this device.",
+    })
+  })
+
+  it("turns a modifier on, adds a setting from its schema, writes it once it has a value, and never splits a dotted key", async () => {
+    const launch = await opened(withModifiers)
+    const place = "game:wario/any"
+    launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:enabled"), "false")
+    await written()
+    expect(group(launch.getSnapshot().editor, place, "Modifier Gamescope")?.items[0]).toMatchObject({ value: "Off", source: "from Game" })
+    launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:add-setting"), "output.width")
+    const pending = LAUNCH_ID.set(place, "modifier:korri/gamescope:setting:output.width")
+    expect(row(launch.getSnapshot().editor, place, "Output width")).toMatchObject({ value: "Not set here", source: "1280 from Device", scope: "device" })
+    expect(row(launch.getSnapshot().editor, place, "Output width")?.interaction).toEqual({ kind: "number", min: 320, max: 7680, step: 1, clearable: true })
+    launch.change(pending, "100")
+    expect(launch.getSnapshot().status).toMatchObject({ _tag: "Problem", settingId: pending })
+    launch.dismissProblem()
+    launch.change(pending, "1920")
+    await written()
+    expect(row(launch.getSnapshot().editor, place, "Output width")).toMatchObject({ value: "1920", source: "from Game" })
+    // A runner setting and a modifier's are pending apart.
+    launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:add-setting"), "filter")
+    launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:setting:filter"), "inherit")
+    expect(row(launch.getSnapshot().editor, place, "Upscale filter")).toBeUndefined()
+  })
+})
