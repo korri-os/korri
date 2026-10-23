@@ -34,7 +34,7 @@ async fn stream_play_prefers_a_verified_directory_label_and_otherwise_keeps_the_
     state.federation = Some(directory.clone());
     let caller = AuthorizationContext::Peer(Principal::OwnerDevice {
         device_public_key: fixture.key(),
-        owner_statement: fixture.peer.owner_statement_json().unwrap().into(),
+        owner_statement: fixture.peer.owner_statement_json().unwrap(),
         owner_public_key: fixture.owner.public_key().to_hex(),
     });
     for (generation, label) in [(1, None), (2, Some("Living room")), (3, None)] {
