@@ -25,6 +25,9 @@ export type FinalDownloadMethod = "POST";
 
 export type FinalDownloadTag = "FinalDownload";
 
+/** Opaque JSON is decoded against the runner schema or the authored place schema. */
+export type LaunchJsonValue = unknown;
+
 export type LaunchLimitValue = number | string;
 
 export type LaunchSettingValue = boolean | number | string;
@@ -594,7 +597,7 @@ export interface LaunchPlace {
 export interface LaunchPlaceSnapshot {
 	place: LaunchPlace;
 	title: string;
-	body: Value;
+	body: LaunchJsonValue;
 	editableKinds: string[];
 }
 
@@ -626,7 +629,7 @@ export interface LaunchProfileSelectRequest {
 export interface LaunchProfileSnapshot {
 	id: string;
 	title: string;
-	body: Value;
+	body: LaunchJsonValue;
 }
 
 export type LaunchSettingsScope =
@@ -664,7 +667,7 @@ export type LaunchSource =
 	| { _tag: "DeviceDefault", payload?: undefined };
 
 export interface LaunchSourcedValue {
-	value: Value;
+	value: LaunchJsonValue;
 	source: LaunchSource;
 	adjusted: boolean;
 }
@@ -693,7 +696,7 @@ export interface LaunchRunnerSnapshot {
 	family?: string;
 	title: string;
 	selected: boolean;
-	schema: Value;
+	schema: LaunchJsonValue;
 	revision: string;
 	prepare: LaunchRunnerFacts;
 }
@@ -719,7 +722,7 @@ export type LaunchPath =
 export interface LaunchSetRequest {
 	place: LaunchPlace;
 	path: LaunchPath;
-	value?: Value;
+	value?: LaunchJsonValue;
 	expectedRevision: string;
 }
 

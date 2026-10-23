@@ -242,3 +242,13 @@ fn inspect_route(
         ],
     }))
 }
+
+/// Evaluate the same effect-free preparation used by the game handoff.
+/// The command is the LinuxLaunchSpec command built for this exact launch.
+pub fn resolved_game_environment(
+    command: &[String],
+    resolved: &crate::launch_settings::ResolvedLaunch,
+) -> Result<std::collections::BTreeMap<String, String>, String> {
+    let _ = (command, resolved);
+    todo!("the next engine commit supplies the prepared environment")
+}

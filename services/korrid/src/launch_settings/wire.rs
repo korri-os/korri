@@ -72,7 +72,7 @@ pub struct LaunchSetRequest {
     pub place: LaunchPlace,
     pub path: LaunchPath,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[typeshare(serialized_as = "Option<serde_json::Value>")]
+    #[typeshare(serialized_as = "Option<LaunchJsonValue>")]
     pub value: Option<serde_json::Value>,
     pub expected_revision: String,
 }
@@ -139,6 +139,7 @@ pub enum LaunchNotice {
 pub struct LaunchPlaceSnapshot {
     pub place: LaunchPlace,
     pub title: String,
+    #[typeshare(serialized_as = "LaunchJsonValue")]
     pub body: serde_json::Value,
     pub editable_kinds: Vec<String>,
 }
@@ -146,6 +147,7 @@ pub struct LaunchPlaceSnapshot {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchSourcedValue {
+    #[typeshare(serialized_as = "LaunchJsonValue")]
     pub value: serde_json::Value,
     pub source: LaunchSource,
     pub adjusted: bool,
@@ -182,6 +184,7 @@ pub struct LaunchRunnerSnapshot {
     pub family: Option<String>,
     pub title: String,
     pub selected: bool,
+    #[typeshare(serialized_as = "LaunchJsonValue")]
     pub schema: serde_json::Value,
     pub revision: String,
     pub prepare: LaunchRunnerFacts,
@@ -191,6 +194,7 @@ pub struct LaunchRunnerSnapshot {
 pub struct LaunchProfileSnapshot {
     pub id: String,
     pub title: String,
+    #[typeshare(serialized_as = "LaunchJsonValue")]
     pub body: serde_json::Value,
 }
 #[typeshare]
@@ -209,3 +213,7 @@ pub struct LaunchSnapshot {
     pub route_layers: super::LaunchSettingsRouteLayers,
     pub revisions: RunnerChoiceRevisions,
 }
+
+/// Opaque JSON is decoded against the runner schema or the authored place schema.
+#[typeshare(serialized_as = "unknown")]
+pub type LaunchJsonValue = serde_json::Value;
