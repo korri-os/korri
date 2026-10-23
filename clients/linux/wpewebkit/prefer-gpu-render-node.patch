@@ -4,13 +4,13 @@
  
  #if USE(GBM)
  #include "GBMDevice.h"
++#include <array>
 +#include <wtf/MainThread.h>
-+#include <wtf/Vector.h>
 +#include <xf86drm.h>
  
  namespace WebCore {
  
-@@ -57,20 +60,50 @@
+@@ -57,20 +60,47 @@
      if (m_mainDevice.device.isNull())
          return nullptr;
  
@@ -30,11 +30,8 @@
              return *m_mainDevice.gbmRenderNode;
          }
 +        m_mainDevice.gbmRenderNode = RefPtr<GBMDevice> { };
-+        int count = drmGetDevices2(0, nullptr, 0);
-+        if (count <= 0)
-+            return nullptr;
-+        Vector<drmDevicePtr> devices(count, nullptr);
-+        count = drmGetDevices2(0, devices.data(), count);
++        std::array<drmDevicePtr, 32> devices { };
++        int count = drmGetDevices2(0, devices.data(), devices.size());
 +        for (int i = 0; i < count; ++i) {
 +            if (!(devices[i]->available_nodes & (1 << DRM_NODE_RENDER)))
 +                continue;
