@@ -1,37 +1,66 @@
 --- a/Source/WebCore/platform/graphics/gbm/DRMDeviceManager.cpp
 +++ b/Source/WebCore/platform/graphics/gbm/DRMDeviceManager.cpp
-@@ -28,6 +28,8 @@
+@@ -28,6 +28,9 @@
  
  #if USE(GBM)
  #include "GBMDevice.h"
-+#include <xf86drm.h>
++#include <wtf/MainThread.h>
 +#include <wtf/Vector.h>
++#include <xf86drm.h>
  
  namespace WebCore {
  
-@@ -65,7 +67,24 @@
+@@ -57,20 +60,50 @@
+     if (m_mainDevice.device.isNull())
+         return nullptr;
+ 
+-    if (nodeType == NodeType::Render) {
++    // Korri: display-only KMS controllers (Allwinner H700 sun4i-drm) have no
++    // render node, and their primary node needs group video. Use a GPU render
++    // node (panfrost renderD128) instead of failing or needing that group.
++    auto renderNode = [this]() -> RefPtr<GBMDevice> {
+         if (m_mainDevice.gbmRenderNode)
+             return *m_mainDevice.gbmRenderNode;
+-
++        // GBMDevice::create asserts the main thread; never create elsewhere.
++        if (!isMainThread())
++            return nullptr;
+         if (!m_mainDevice.device.renderNode.isNull()) {
              m_mainDevice.gbmRenderNode = GBMDevice::create(m_mainDevice.device.renderNode);
              return *m_mainDevice.gbmRenderNode;
          }
--        // Fallback to primary node.
-+        // Display-only controllers (H700 sun4i-drm card1) have no render node.
-+        // Use a GPU (panfrost renderD128), not a privileged primary node.
-+        m_mainDevice.gbmRenderNode = nullptr;
++        m_mainDevice.gbmRenderNode = RefPtr<GBMDevice> { };
 +        int count = drmGetDevices2(0, nullptr, 0);
-+        if (count > 0) {
-+            Vector<drmDevicePtr> devices(count);
-+            count = drmGetDevices2(0, devices.data(), count);
-+            for (int i = 0; i < count; ++i) {
-+                if (!(devices[i]->available_nodes & (1 << DRM_NODE_RENDER)))
-+                    continue;
-+                m_mainDevice.gbmRenderNode = GBMDevice::create(CString(devices[i]->nodes[DRM_NODE_RENDER]));
-+                if (*m_mainDevice.gbmRenderNode)
-+                    break;
++        if (count <= 0)
++            return nullptr;
++        Vector<drmDevicePtr> devices(count, nullptr);
++        count = drmGetDevices2(0, devices.data(), count);
++        for (int i = 0; i < count; ++i) {
++            if (!(devices[i]->available_nodes & (1 << DRM_NODE_RENDER)))
++                continue;
++            if (auto device = GBMDevice::create(CString(devices[i]->nodes[DRM_NODE_RENDER]))) {
++                m_mainDevice.gbmRenderNode = WTF::move(device);
++                break;
 +            }
-+            if (count > 0)
-+                drmFreeDevices(devices.data(), count);
 +        }
++        if (count > 0)
++            drmFreeDevices(devices.data(), count);
 +        return *m_mainDevice.gbmRenderNode;
++    };
++
++    if (nodeType == NodeType::Render) {
++        if (auto device = renderNode())
++            return device;
+         // Fallback to primary node.
      }
  
      if (!m_mainDevice.gbmPrimaryNode)
+         m_mainDevice.gbmPrimaryNode = GBMDevice::create(m_mainDevice.device.primaryNode);
+-    return *m_mainDevice.gbmPrimaryNode;
++    if (*m_mainDevice.gbmPrimaryNode || nodeType == NodeType::Render)
++        return *m_mainDevice.gbmPrimaryNode;
++    // Korri: an unopenable primary node falls back to the GPU render node.
++    return renderNode();
+ }
+ 
+ RefPtr<GBMDevice> DRMDeviceManager::gbmDevice(const DRMDevice& device, NodeType nodeType) const
