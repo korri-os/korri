@@ -69,6 +69,15 @@ impl Host {
             .chain(std::iter::once(&report))
         {
             let before = self.receipt(&target.id)?;
+            if before.is_none()
+                && (!self.selection(&target.id).software_released()?
+                    || self.units_owned(&target.id)?)
+            {
+                return Err(format!(
+                    "required plugin {} has an unrecorded pending selection or native cleanup; run restore-all",
+                    target.id
+                ));
+            }
             let mut after = match &before {
                 Some(before) => before.select(
                     target.package.clone(),

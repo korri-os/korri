@@ -3221,6 +3221,54 @@ mod tests {
     }
 
     #[test]
+    fn root_graph_refuses_to_overwrite_an_additions_unfinished_selection() {
+        let root = tempfile::tempdir().unwrap();
+        let old = report("@test:runner", "pending-old");
+        let new = report("@test:runner", "pending-new");
+        let added = report("@test:added", "pending-addition");
+        let first = pack("@test:pack", "pending-pack-old", std::slice::from_ref(&old));
+        let second = pack(
+            "@test:pack",
+            "pending-pack-new",
+            &[new.clone(), added.clone()],
+        );
+        let runtime = runtime(&[
+            old.clone(),
+            new.clone(),
+            added.clone(),
+            first.clone(),
+            second.clone(),
+        ]);
+        let host = Host::for_test(
+            root.path(),
+            cleanup_program(root.path(), "exit 0"),
+            permitted_policy(),
+            runtime.clone(),
+        )
+        .unwrap();
+        install(&host, first.clone());
+        host.prepare(&added.id).unwrap();
+        host.selection(&added.id).stage(&added.package).unwrap();
+        let before = host.receipts().unwrap();
+        runtime.events.borrow_mut().clear();
+        let error = host
+            .install(
+                second.clone(),
+                &second.approval,
+                SelectionIntent::Update { id: &first.id },
+            )
+            .unwrap_err();
+        assert!(error.contains("unrecorded pending selection"), "{error}");
+        assert_eq!(host.receipts().unwrap(), before);
+        assert_eq!(
+            fs::read_link(host.root(&added.id, "pending")).unwrap(),
+            added.package
+        );
+        assert!(stops(&runtime).is_empty());
+        assert!(!host.state.root().join("graph-update.json").exists());
+    }
+
+    #[test]
     fn root_graph_finishes_committed_selections_before_refusing_revoked_activation() {
         let root = tempfile::tempdir().unwrap();
         let old = report("@test:runner", "revoked-old");
