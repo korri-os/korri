@@ -12,3 +12,12 @@ Archives are not supported in the first version.
 ## Consequences
 
 A CHD and a bin/cue of the same disc are different releases of the same game. They join only through a hash list or a link. This was chosen to avoid decompressing every CHD on a handheld.
+
+## Amendment
+
+[ADR 0030](0030-korrid-unpacks-archived-provider-downloads.md) (2026-10-23)
+amends "Archives are not supported in the first version" for store downloads
+(ADR 0016) only. korrid unpacks a zip, 7z or rar download and identifies the
+files inside with these rules, so the archive is never a release and a
+download joins the copy that discovery finds in a source. Discovery of
+sources still refuses archives.

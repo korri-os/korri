@@ -513,7 +513,8 @@ and `timeoutMs` are the legacy `PluginHttpRequestOptions` fields. `query`
 follows legacy `withQuery` (`searchParams.set`). Legacy had no default
 timeout, so none is invented: without `timeoutMs` the download policy's
 connect timeout and stall detection still end a dead request. `method` and
-`body` are not carried: every request is a GET. korrid refuses `cookie`,
+`body` are not carried: every provider turn request is a GET. Only the game
+download can be a POST (`FinalDownload.method`, below). korrid refuses `cookie`,
 `set-cookie`, `authorization`, `proxy-authorization` and `host` request
 headers.
 
@@ -553,7 +554,9 @@ Neither crashes korrid.
 The legacy results are preserved verbatim with these deltas: `ref`, `playable`
 and `facets` are dropped (their only consumer authored library entries;
 discovery owns library records on main), and `FinalDownload.requestHeaders` is
-dropped (no in-scope provider forwards Referer or Cookie).
+dropped (no in-scope provider forwards Referer or Cookie). `FinalDownload`
+gains `method` and `body` (ADR 0030), from legacy
+`PluginHttpRequestOptions.method` and `.body`.
 
 ```ts
 interface ProviderClaim {
@@ -589,8 +592,10 @@ interface FinalDownload {
   _tag: "FinalDownload"
   providerId: string
   url: string             // SafeUrl; its host must be declared
-  filename?: string       // SafeFileName
+  filename?: string       // SafeFileName, no control characters; names the download
   contentType?: string
+  method?: "POST"         // absent: GET
+  body?: Record<string, string>  // form fields; needs method "POST"
 }
 interface NonFinalDownload {
   _tag: "NonFinalDownload"
@@ -614,6 +619,15 @@ claim whose `artifact.system` is absent or names no enabled system is shown but
 cannot be acquired (the legacy "ungetable" guard). No provider result
 carries an expected digest: legacy carried `expectedDigests` only on
 `artifact.acquire` output, which main does not carry.
+
+`method: "POST"` sends the game download as a form POST. korrid encodes
+`body` as `application/x-www-form-urlencoded` and sets that `Content-Type`;
+it adds no other header. The encoded body is at most 8192 characters (the
+`SafeText` bound). A `body` without `method: "POST"`, or any other `method`
+value, fails admission. After a POST, a 301, 302 or 303 redirect is followed
+with a GET and no body; a 307 or 308 redirect sends the same POST again. Every
+hop must be a declared host, as for a GET. korrid makes one attempt and never
+retries a store download, so a POST is sent at most once per hop.
 
 #### RPC
 
@@ -648,6 +662,7 @@ type AcquireJobState =
   | { _tag: "Queued" }      // waiting in ADR 0013's one-at-a-time queue
   | { _tag: "Resolving" }
   | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number }
+  | { _tag: "Unpacking" }   // korrid's archive reader runs in its sandbox unit
   | { _tag: "Placing" }     // publishing into the cache and writing the library record
   | { _tag: "Imported"; gameId: string }
   | { _tag: "Failed"; reason: RpcFailure }
@@ -657,7 +672,7 @@ type AcquireJobState =
 `acquire` checks, in this order:
 
 1. A live job for the same claim (`Queued`, `Resolving`, `Downloading`,
-   `Placing`) answers again (legacy `activeByClaim`).
+   `Unpacking`, `Placing`) answers again (legacy `activeByClaim`).
 2. The provider link `<providerId>/<id>` names a game whose download is in the
    cache: a new job answers `Imported { gameId }` at once. This needs no claim
    in memory and no network, so Get on an owned game works after a restart.
@@ -667,9 +682,11 @@ type AcquireJobState =
    claim's fields. A claim whose system is unknown answers
    `AcquisitionSystemUnknown`. A new job starts `Queued`.
 
-`acquire-cancel` stops a `Queued`, `Resolving` or `Downloading` job; a queued
-job leaves the queue and a downloading one loses its staging file. A `Placing`
-or finished job is returned unchanged. Claims and jobs live in memory only.
+`acquire-cancel` stops a `Queued`, `Resolving`, `Downloading` or `Unpacking`
+job; a queued job leaves the queue, a downloading one loses its staging file,
+and an unpacking one stops its unit and loses its work folder and archive
+(ADR 0030; an ADR 0012 artifact still cannot be cancelled while it unpacks).
+A `Placing` or finished job is returned unchanged. Claims and jobs live in memory only.
 After a restart `acquire-status` answers `AcquisitionUnknownJob`, startup
 removes leftover staging files and `.tmp-*` directories, and a store download
 never continues: korrid holds no expected hash and no saved URL.
@@ -700,21 +717,48 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   `<storage-root>/cache/<plugin short name>/<provider name>/.downloads/`
   (the provider name is the part of the provider id after `:`), private
   (0700), with a random `.acquire-*` name. It follows the declared hosts and
-  the SSRF/redirect policy, ADR 0012's connect timeout and stall detection,
-  and a 2 GiB cap (legacy `MAX_FALLBACK_DOWNLOAD_BYTES`). It refuses an empty
-  body and a web page (legacy `rejectNonArtifactPayload`). Discovery computes
-  the content SHA-256 after download, excluding the matching system header
-  (ADR 0005); it is identity, not authentication.
-- **Content rules.** The file name is the `FinalDownload.url`'s last segment
-  (ADR 0012). It must end in one of the claim system's extensions (checked
-  before the download), and a matching header rule must leave content.
+  the SSRF/redirect policy, ADR 0012's connect timeout and stall detection.
+  It has no size cap (ADR 0030). Before each write korrid checks that the
+  cache's file system keeps at least 5% of its size free for korrid's user
+  (`fstatvfs`), counting the bytes it wrote; at the floor, or when a
+  `Content-Length` is larger than the space above the floor, the download
+  fails with "There is not enough space for this download." It refuses an
+  empty body and a web page (legacy `rejectNonArtifactPayload`).
+- **File name.** `FinalDownload.filename`, else the `FinalDownload.url`'s last
+  segment (ADR 0030). The name must pass `SafeFileName` and contain no control
+  character. Before the download it must end in one of the claim system's
+  extensions or in `.zip`, `.7z` or `.rar`.
+- **Unpacking.** After the download the first bytes decide: zip
+  (`50 4b 03 04`, `50 4b 05 06`, `50 4b 07 08`), 7z (`37 7a bc af 27 1c`) or
+  rar (`52 61 72 21 1a 07`) is an archive whatever its name. The job becomes
+  `Unpacking` and korrid runs its own pure-Rust reader (`korrid
+  unpack-archive <work-dir> <file>`) in the ADR 0012 sandbox unit
+  `korri-acquire-<plugin short>-<provider name>.service`. The reader checks
+  every entry before it writes one and refuses the whole archive for a link,
+  device, FIFO or socket, an encrypted entry, an absolute path, a `..`, `.`
+  or empty segment, a backslash or control character, a duplicate path, or
+  more entries than discovery's traversal budget. It refuses a 7z or rar
+  whose dictionary is larger than `MemAvailable`. Files are written `0644`,
+  folders `0755`, with the same 5% free-space floor. Nested, split,
+  multi-volume and encrypted archives fail with "The downloaded files could
+  not be unpacked." A name that says archive with bytes that are not one is
+  "not a game for this system".
+- **Identification.** korrid runs discovery's identification over the work
+  folder (a plain download sits there under its name) with the claim
+  system's rules and `**/{title}.{ext}` after the system's layouts. The folder
+  must give exactly one unit and no attention finding: one ROM, a cue with
+  its tracks, an `.m3u` set or one CHD. Files with no system extension are
+  ignored; a `README.md` beside a Mega Drive ROM is a second unit and fails.
+  The identity is discovery's (ADR 0005): `Hash`, header excluded, `Parts` or
+  `Chd`. It is identity, not authentication.
 - **Ready folder.** korrid publishes
-  `<storage-root>/cache/<plugin>/<provider>/<sha256 hex>/<URL basename>`
-  through a `.tmp-*` directory and an atomic rename, read-only. Ready means
-  the folder exists. Identical bytes share one folder.
+  `<storage-root>/cache/<plugin>/<provider>/<hex of the release key>/`
+  (64 digits for `sha256:`, 40 for a CHD's `sha1:`) through a `.tmp-*`
+  directory and an atomic rename, read-only. Ready means the folder exists.
+  Identical content shares one folder.
 - **Library record.** Once, under discovery's publication lock: the game
-  (title from the claim), its release (`identity: { kind: hash, value:
-  "sha256:<hex>" }`, `system` from the claim) and the provider link
+  (title from the claim), its release (`identity` `hash`, `parts` or `chd`
+  as identified, `system` from the claim) and the provider link
   `provider-links."<providerId>/<claim id>" = { provider, playable, refs:
   [{ kind: provider-item-id, value: <claim id> }] }`. No location is saved.
   Identical bytes from another claim join the same game with a second link.
@@ -723,8 +767,10 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   joins the same game by hash.
 - **Route.** For a release with no saved location and no declared artifact,
   the resolver looks in the caches of the acquisition providers linked to the
-  game for `<sha256 hex>/`, and the runner gets the one file in it as
-  `contentPath` (`ResolvedRoute.cache_target`). No ready folder, no route: the
+  game for `<hex of the release key>/`. Among the files with one of the
+  release system's extensions it takes the one `.m3u`, else the one `.cue`,
+  else the one file, and the runner gets it as `contentPath`
+  (`ResolvedRoute.cache_target`). No ready folder, no route: the
   release is unavailable, like a missing file.
 - **Remove download.** `app.acquisition.remove { gameId }` also removes the
   game's download folders, unless another game's release names the same hash. The
@@ -732,7 +778,8 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   runs (`ActiveSessionConflict`) and while a store job for the game works
   (`AcquisitionBusy`). Saves are never touched. A removed download comes back only
   through Get in the store, into the same game through the provider link.
-- **Restart.** Startup removes staging files and `.tmp-*` folders and logs
+- **Restart.** Startup stops a provider's unpack unit that is still active,
+  then removes staging files and `.tmp-*` folders and logs
   one line per ready folder that no library release names (korrid stopped
   between publishing and recording). Nothing deletes such a folder; the next
   Get of that game records it.

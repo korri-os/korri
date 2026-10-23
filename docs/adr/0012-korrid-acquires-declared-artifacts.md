@@ -92,3 +92,11 @@ so a `.part` file with no ready directory always means an interrupted download.
 [ADR 0016](0016-korrid-acquires-games-from-provider-plugins.md) amends "Source
 acquisition (search, claims, resolve-download …) is OUT" for search provider
 plugins; their downloads stay in this cache grammar.
+
+[ADR 0030](0030-korrid-unpacks-archived-provider-downloads.md) (2026-10-23)
+runs korrid's own archive reader for store downloads in this ADR's sandbox
+unit, with this ADR's unpack-program contract. The store job's unit is
+`korri-acquire-<plugin short>-<provider name>.service`, from the two segments
+of the provider cache path, as an artifact's unit comes from its
+contribution path. A store job can be cancelled while it unpacks; an artifact
+still cannot. Unpacking for declared artifacts is unchanged.

@@ -174,3 +174,24 @@ observed was 174 KiB (WoWROMs search); most were 16 to 50 KiB.
   its provider names, so ADR 0012 artifact caches and ADR 0016 provider
   caches never share `cache/<plugin>/<key>/`.
 - Device evidence is still owed; the Mini V2 was unreachable during this work.
+
+## Amendment
+
+[ADR 0030](0030-korrid-unpacks-archived-provider-downloads.md) (2026-10-23)
+amends this ADR:
+
+- **Archives.** A zip, 7z or rar store download is unpacked by korrid and
+  identified with discovery's rules. Exactly one release per download.
+- **2 GiB cap.** Removed for store downloads and their unpacked result. korrid
+  keeps 5% of the cache's file system free instead. The `TooLarge` copy now
+  reads "The provider sent more data than Korri accepts."
+- **Q1, ready folder.** `cache/<plugin short>/<provider name>/<hex of the
+  release key>/` with the content inside: 64 hex digits for a `sha256:` key,
+  40 for a CHD's `sha1:` key. A plain download keeps its name inside; an
+  archive's entries keep their paths.
+- **Q1, file name.** `FinalDownload.filename`, then the URL's last segment.
+- **Q2, release identity.** `Hash`, `Parts` or `Chd`, as discovery computes it.
+- **`FinalDownload`.** Gains `method` (`"POST"` or absent) and `body` (an
+  object of string values, form-encoded) for the game download. Provider turns
+  stay GET only, so the `PluginHttpRequest` row still holds for them.
+- **`AcquireJobState`.** Gains `Unpacking`, which can be cancelled.

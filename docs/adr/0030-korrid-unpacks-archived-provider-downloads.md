@@ -1,12 +1,12 @@
 ---
-status: proposed (ready for review)
+status: accepted (2026-10-23)
 ---
 
 # korrid unpacks archives in its core
 
-**Ready for review. No open owner questions.** Every choice below is an owner
-answer, a coordinator decision, or a proposal that follows from existing code
-and says where it comes from.
+**Accepted 2026-10-23.** Owner: "Accept it, land it, and start building it".
+Every choice below is an owner answer, a coordinator decision, or a proposal
+that follows from existing code and says where it comes from.
 
 **Owner answers, 2026-10-23, first round.**
 
@@ -681,7 +681,7 @@ artifact with no `unpack` program lands as the downloaded file, unchanged.
 
 ## What an implementation changes
 
-No code changes with this ADR. Line numbers are from main at `ad3da260f`.
+Line numbers are from main at `ad3da260f`, before the implementation.
 
 | File | Place | Change |
 |---|---|---|
