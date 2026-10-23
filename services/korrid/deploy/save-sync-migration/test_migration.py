@@ -3,6 +3,7 @@
 """Exercise the actual operator commands, only on temporary fixture trees."""
 
 import errno
+import hashlib
 import json
 import os
 import pwd
@@ -156,6 +157,210 @@ class MigrationTest(unittest.TestCase):
 
     def move_account(self):
         self.command("migrate-account.py")
+
+    def stranded_switch(self):
+        """SP's real layout; authored progress/key bytes, never backup secrets."""
+        self.retired = "ef" * 32
+        self.old.rename(self.storage / "users" / self.retired)
+        self.old = self.storage / "users" / self.retired
+        self.signer = self.root / "signer"
+        (self.signer / "identity/active").mkdir(parents=True)
+        retired = self.signer / "identity/retired" / self.retired
+        retired.mkdir(parents=True)
+        key = retired / "person.key"
+        key.write_text("1" * 64 + "\n")
+        key.chmod(0o600)
+        # Shipped Activate leaves this stale when switching to a remote signer.
+        # It is not evidence of an active key. Deployment clears it while stopped.
+        public = self.root / "run/korri-local-signer/public/person.pub"
+        public.parent.mkdir(parents=True)
+        public.write_text(self.retired + "\n")
+        self.event.update(id="12" * 32, created_at=1792710750)
+        self.write_event()
+        (self.private / "identity/nip46.connection.json").write_text(
+            json.dumps({"userPublicKey": OWNER})
+        )
+        self.catalog({"anguna": ["gba/anguna.gba"]})
+        locations = []
+        for key, kind, path, data in (
+            ("saves", "save", "mGBA/anguna.srm", b"s" * 32768),
+            ("states", "savestate", f"{RUNNER}/mGBA/anguna.state.auto", b"t" * 37063),
+        ):
+            self.file(f"saves/anguna/{key}/{path}", data)
+            digest = hashlib.sha256(data).hexdigest()
+            obj = self.private / "saves/objects" / digest
+            obj.parent.mkdir(parents=True, exist_ok=True)
+            obj.write_bytes(data)
+            locations.append(
+                {
+                    "key": key,
+                    "kind": kind,
+                    "files": [
+                        {"path": path, "bytes": len(data), "sha256": f"sha256:{digest}"}
+                    ],
+                }
+            )
+        self.file("retroarch.cfg", b"runner configuration")
+        record = {
+            "parents": [],
+            "gameId": "anguna",
+            "device": "34" * 32,
+            "runnerId": RUNNER,
+            "releaseId": "sha256:" + "56" * 32,
+            "endedAt": "2026-10-22T18:30:42.000Z",
+            "durationSeconds": 41,
+            "interrupted": False,
+            "locations": locations,
+        }
+        data = json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
+        digest = hashlib.sha256(data).hexdigest()
+        self.history = self.private / "saves" / self.retired
+        self.snapshot = self.history / "anguna" / f"{digest}.json"
+        self.snapshot.parent.mkdir(parents=True)
+        self.snapshot.write_bytes(data)
+        log = self.private / "play-log" / OWNER / "anguna.json"
+        log.parent.mkdir(parents=True)
+        log.write_text(
+            json.dumps(
+                {
+                    "userId": OWNER,
+                    "gameId": "anguna",
+                    "entries": [
+                        {"occurredAt": record["endedAt"], "durationSeconds": 41}
+                    ],
+                }
+            )
+        )
+        return [
+            "--adopt-retired-person",
+            self.retired,
+            "--local-signer-state-root",
+            str(self.signer),
+        ]
+
+    def test_sp_switch_requires_consent_then_preserves_history_and_objects(self):
+        args = self.stranded_switch()
+        before = self.tree()
+        self.command("migrate-account.py", "--dry-run", ok=False)
+        self.assertEqual(before, self.tree())
+        dry = self.command("migrate-account.py", *args, "--dry-run")
+        self.assertIn("ADOPTION CLASSIFIED total=6", dry.stdout)
+        self.assertIn(
+            str(self.signer / "identity/retired" / self.retired / "person.key"),
+            dry.stdout,
+        )
+        self.assertIn("live-saves=2 snapshots=1 objects=2 unclassified=0", dry.stdout)
+        self.assertEqual(before, self.tree())
+        snapshot_bytes = self.snapshot.read_bytes()
+        inodes = {
+            p.relative_to(self.old): p.stat().st_ino
+            for p in self.old.rglob("*")
+            if p.is_file()
+        }
+        self.command("migrate-account.py", *args)
+        self.assertFalse(self.old.exists())
+        self.assertFalse(self.history.exists())
+        self.assertEqual(
+            (
+                self.private / "saves" / OWNER / "anguna" / self.snapshot.name
+            ).read_bytes(),
+            snapshot_bytes,
+        )
+        for relative, inode in inodes.items():
+            self.assertEqual((self.account / relative).stat().st_ino, inode)
+        self.assertEqual(
+            [
+                x
+                for x in before
+                if "/users/" not in x[0] and f"/saves/{self.retired}" not in x[0]
+            ],
+            [
+                x
+                for x in self.tree()
+                if "/users/" not in x[0] and f"/saves/{OWNER}" not in x[0]
+            ],
+        )
+        after = self.tree()
+        self.command("migrate-account.py", *args)
+        self.assertEqual(after, self.tree())
+        result = self.command("migrate-retroarch.py", "--dry-run")
+        self.assertIn(
+            "total=2 moved=0 retained=2 unresolved=0 unclassified=0", result.stdout
+        )
+        self.command("migrate-retroarch.py")
+
+    def test_sp_switch_keeps_all_snapshot_ids_and_parent_links(self):
+        args = self.stranded_switch()
+        record = json.loads(self.snapshot.read_bytes())
+        record["parents"] = [f"sha256:{self.snapshot.stem}"]
+        record["endedAt"] = "2026-10-22T19:30:42.000Z"
+        data = json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
+        digest = hashlib.sha256(data).hexdigest()
+        (self.snapshot.parent / f"{digest}.json").write_bytes(data)
+        log_path = self.private / "play-log" / OWNER / "anguna.json"
+        log = json.loads(log_path.read_bytes())
+        log["entries"].append({"occurredAt": record["endedAt"], "durationSeconds": 41})
+        log_path.write_text(json.dumps(log))
+        before = {
+            p.relative_to(self.history): p.read_bytes()
+            for p in self.history.rglob("*.json")
+        }
+        result = self.command("migrate-account.py", *args)
+        self.assertIn("snapshots=2", result.stdout)
+        for relative, original in before.items():
+            self.assertEqual(
+                (self.private / "saves" / OWNER / relative).read_bytes(), original
+            )
+        self.assertEqual(len(before), 2)
+
+    def test_sp_switch_refuses_missing_or_ambiguous_proof_without_writes(self):
+        mutations = [
+            lambda: (self.signer / "identity/active/person.key").write_text("active"),
+            lambda: (self.signer / "identity/retired" / ("98" * 32)).mkdir(),
+            lambda: (self.private / "identity/nip46.connection.json").write_text("{}"),
+            lambda: (self.private / "play-log" / OWNER / "anguna.json").write_text(
+                "{}"
+            ),
+            lambda: self.account.mkdir(),
+            lambda: (self.private / "saves" / OWNER).mkdir(),
+            lambda: self.snapshot.write_text("{}"),
+            lambda: next((self.private / "saves/objects").iterdir()).write_bytes(
+                b"damaged"
+            ),
+            lambda: self.file("saves/anguna/unknown", b"unclassified"),
+            lambda: self.file("saves/anguna/saves/mGBA/anguna.srm", b"changed"),
+            lambda: (
+                self.signer / "identity/retired" / self.retired / "person.key"
+            ).unlink(),
+            lambda: (
+                (self.private / "identity-switch").mkdir()
+                or (self.private / "identity-switch/journal.json").write_text("{}")
+            ),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                # Reuse setUp's real isolated filesystem per refusal case.
+                self.setUp()
+                args = self.stranded_switch()
+                mutate()
+                before = self.tree()
+                self.command("migrate-account.py", *args, ok=False)
+                self.assertEqual(before, self.tree())
+
+    def test_sp_switch_resumes_after_either_directory_move(self):
+        for moved in ("account", "history"):
+            with self.subTest(moved=moved):
+                self.setUp()
+                args = self.stranded_switch()
+                if moved == "account":
+                    self.old.rename(self.account)
+                else:
+                    self.history.rename(self.private / "saves" / OWNER)
+                self.command("migrate-account.py", *args)
+                self.assertTrue(self.account.is_dir())
+                self.assertTrue((self.private / "saves" / OWNER).is_dir())
+                self.assertFalse(self.old.exists())
+                self.assertFalse(self.history.exists())
 
     def test_account_dry_run_is_read_only_and_move_keeps_metadata(self):
         source = self.file("saves/Wario.srm")

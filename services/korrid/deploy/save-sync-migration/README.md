@@ -4,6 +4,19 @@ Follow [ADR 0014's deployment cut](../../../../docs/adr/0014-saves-sync-by-sessi
 for the stopped-daemon backup, account move, dry runs, review and activation.
 These scripts are offline operator tools, not runtime compatibility code.
 
+## Stranded SP identity switch
+
+The owner decision dated **2026-10-22**, ADR 0023, **“An owned device joins by
+identity switch, keeping its data”**, grounds the explicit account repair.
+The shipped switch moved the SP's play log but left its live saves and private
+snapshot history under the retired person. The ordinary `users/default` move
+cannot repair that layout. Use `--adopt-retired-person` only with consent and
+`--local-signer-state-root`; the script refuses missing or ambiguous switch
+proof. See [SP account repair](SP-ACCOUNT-REPAIR.md) for exact records, code
+paths, report guarantees, commands, and the required stopped-signer cleanup
+of its stale runtime public-key projection. A signer restart alone does not
+clear that projection. Never rename a different person's saves by assumption.
+
 ## Report and coverage
 
 `migrate-retroarch.py` recursively inventories every regular file under the

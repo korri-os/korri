@@ -395,16 +395,39 @@ def run(kind: str, save_users: tuple[int, int] | None = None) -> int:
         action="store_true",
         help="list moves and ACL changes without writing anything",
     )
+    if kind == "account":
+        parser.add_argument(
+            "--adopt-retired-person",
+            help="consent to repair the proven identity switch from this public key",
+        )
+        parser.add_argument("--local-signer-state-root", type=Path)
     args = parser.parse_args()
     try:
         storage = require_directory(args.storage_root)
         require_idle(args.private_state_root)
         account = owner_account(storage, args.private_state_root)
-        plan = (
-            account_moves(storage, account)
-            if kind == "account"
-            else retroarch_moves(storage, account)
-        )
+        if kind == "account" and args.adopt_retired_person:
+            from adoption import adoption_moves
+
+            if args.local_signer_state_root is None:
+                raise ValueError("Adoption requires --local-signer-state-root")
+            plan = adoption_moves(
+                storage,
+                args.private_state_root,
+                account,
+                args.adopt_retired_person,
+                args.local_signer_state_root,
+            )
+        else:
+            if kind == "account" and args.local_signer_state_root is not None:
+                raise ValueError(
+                    "Signer root requires explicit --adopt-retired-person consent"
+                )
+            plan = (
+                account_moves(storage, account)
+                if kind == "account"
+                else retroarch_moves(storage, account)
+            )
         preflight(plan)
         if kind == "retroarch":
             if save_users is None:
