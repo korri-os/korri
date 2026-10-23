@@ -213,10 +213,13 @@ refuses any other name before the download, as today. After the download, the
 bytes decide. A name that says archive, or has no extension, with bytes in no
 archive format fails as `NotSystemFile`.
 
-Nested archives, split and multi-volume archives (`.7z.001`, `.part1.rar`,
-`.rev` recovery sets), encrypted archives, and any file that the chosen
-reader cannot read fail with the existing `Unpack` copy ("The downloaded files
-could not be unpacked.").
+Multi-volume archives (`.part1.rar` and other volume sets), encrypted
+archives, and any file that the chosen reader cannot read fail with the
+existing `Unpack` copy ("The downloaded files could not be unpacked."). A
+nested archive unpacks, then gives no unit with a system extension, so it
+fails as `NotSystemFile`, as the table in Change 1b says. A split name such as
+`.7z.001` or a `.rev` recovery set has a non-system, non-archive extension and
+fails as `NotSystemFile` before the download (review decision, 2026-10-23).
 
 ### Change 1b: korrid identifies the content with discovery's rules
 

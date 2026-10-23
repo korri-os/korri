@@ -746,10 +746,12 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   whose dictionary, including a compressed 7z header's, is larger than
   `MemAvailable`, and its unit runs with `MemoryMax=` set to `MemAvailable`
   at launch and `MemorySwapMax=0`. Files are written `0644`,
-  folders `0755`, with the same 5% free-space floor. Nested, split,
-  multi-volume and encrypted archives fail with "The downloaded files could
-  not be unpacked." A name that says archive with bytes that are not one is
-  "not a game for this system".
+  folders `0755`, with the same 5% free-space floor. Multi-volume and
+  encrypted archives and files the reader cannot read fail with "The
+  downloaded files could not be unpacked." A nested archive gives no game and
+  is "not a game for this system", as is a split name such as `.7z.001`
+  (before the download) and a name that says archive with bytes that are not
+  one.
 - **Identification.** korrid runs discovery's identification over the work
   folder (a plain download sits there under its name) with the claim
   system's rules and `**/{title}.{ext}` after the system's layouts. The folder
