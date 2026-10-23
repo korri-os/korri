@@ -50,7 +50,7 @@ typeshare = "1"
 zeroize = "1"
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 
-rquickjs = { version = "0.9", features = ["macro", "bindgen", "loader"] }
+rquickjs = { version = "0.14", features = ["macro", "bindgen", "loader", "allocator"] }
 oxc = { version = "0.142.0", features = ["transformer", "codegen", "semantic"] }
 proseql-engine = { path = ".cache/proseql/crates/proseql-engine" }
 proseql-formats = { path = ".cache/proseql/crates/proseql-formats" }
