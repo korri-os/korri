@@ -719,10 +719,10 @@ impl Pipeline {
         // korrid's reader in its sandbox unit or moved in under its name.
         // Dropping the work folder or the download deletes it.
         let unit = super::unit::provider_name(&self.owner, &self.provider.provider_id);
-        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let launch = Arc::new(super::unit::Launch::default());
         let mut task = {
             let (cache, context, unit) = (cache.clone(), self.context.clone(), unit.clone());
-            let (name, cancel) = (name.clone(), cancel.clone());
+            let (name, launch) = (name.clone(), launch.clone());
             #[cfg(test)]
             let hold = self.hold_unpack.clone();
             tokio::task::spawn_blocking(move || {
@@ -731,8 +731,7 @@ impl Pipeline {
                     Some(_) => {
                         #[cfg(test)]
                         while hold.as_ref().is_some_and(|hold| {
-                            hold.load(std::sync::atomic::Ordering::SeqCst)
-                                && !cancel.load(std::sync::atomic::Ordering::SeqCst)
+                            hold.load(std::sync::atomic::Ordering::SeqCst) && !launch.is_cancelled()
                         }) {
                             std::thread::sleep(std::time::Duration::from_millis(5));
                         }
@@ -742,7 +741,7 @@ impl Pipeline {
                             &unit,
                             &work.path,
                             &downloaded.path,
-                            cancel,
+                            &launch,
                         )?
                     }
                     None => work.take_file(&downloaded.path, &name)?,
@@ -756,13 +755,11 @@ impl Pipeline {
             tokio::select! {
                 biased;
                 _ = cancelled.changed() => {
-                    // Stop the unit, as recovery stops an orphan, then let
-                    // the task delete the work folder and the archive.
-                    cancel.store(true, std::sync::atomic::Ordering::SeqCst);
-                    let stopped = tokio::task::spawn_blocking(move || super::unit::reclaim_provider(&unit)).await;
-                    if !matches!(stopped, Ok(Ok(()))) {
-                        log::debug!("acquisition: the unpack unit did not stop on cancel");
-                    }
+                    // Prevent the launch, or stop the launched unit and
+                    // wait for it; then the task deletes the work folder and
+                    // the archive.
+                    let stopper = launch.clone();
+                    let _ = tokio::task::spawn_blocking(move || super::unit::cancel_reader(&unit, &stopper)).await;
                     let _ = task.await;
                     return Err(AcquireJobState::Cancelled);
                 }

@@ -336,7 +336,15 @@ it unpacks.
 
 A store job can be cancelled in `Unpacking`. korrid has published nothing yet,
 so cancel stops the unit, the same way `unit::reclaim_with` stops an orphan,
-and then deletes the work folder and the archive. ADR 0012 artifacts keep
+and then deletes the work folder and the archive. Review decision,
+2026-10-23: launch and cancel are mutually exclusive under one lock. The
+worker starts the unit only if no cancel came first and records that it
+started; a cancel either prevents the start or stops the started unit,
+retrying every 50 ms until `systemd-run` has returned, because the unit can
+register after the launch. The unit also has `RuntimeMaxSec=9000`, so a
+stuck reader cannot hold the queue: the slowest measured reader (7z LZMA2,
+38.7 MiB/s on an i9-11900H) assumed 20 times slower on a device, 8 GiB
+unpacked, and a factor 2 margin. ADR 0012 artifacts keep
 their rule, "Unpacking cannot be cancelled". Cost: the two kinds of job differ
 on this point.
 
@@ -354,7 +362,7 @@ korrid identifies, renames and records after the program exits.
 network (`PrivateNetwork=yes`), no capabilities, `ProtectSystem=strict`, the
 contribution folder as its only writable path (`ReadWritePaths`), and the
 private state root as inaccessible. A store job's unit also gets a memory cap
-(see "Memory"). For a store job, the contribution folder
+(see "Memory") and `RuntimeMaxSec=9000` (see Change 1c). For a store job, the contribution folder
 is the provider cache, `cache/<plugin short>/<provider name>`
 (`placement::provider_cache`). It holds both the staged archive under
 `.downloads` and the `.tmp-*` work folder.

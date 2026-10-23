@@ -667,3 +667,48 @@ fn a_compressed_7z_header_with_a_large_dictionary_is_refused_before_it_decodes()
     );
     assert!(unpack(&bytes).result.is_ok(), "a larger device reads it");
 }
+
+/// How the reader unit's `RuntimeMaxSec=` was chosen (review P1-3): the
+/// reader's throughput per format on 64 MiB of half-compressible data, in a
+/// release build. Run with
+/// `cargo test --release --lib acquisition::archive::tests::reader_throughput -- --ignored --nocapture`.
+#[test]
+#[ignore = "measurement, not a check"]
+fn reader_throughput() {
+    let mut state = 0x9e37_79b9u32;
+    let data: Vec<u8> = (0..64 * 1024 * 1024)
+        .map(|i: usize| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            // Half the bytes are noise, half a repeating pattern, like a ROM.
+            if i % 2 == 0 {
+                state as u8
+            } else {
+                (i / 64) as u8
+            }
+        })
+        .collect();
+    let archives = [
+        ("zip deflate", deflated_zip(&[("Game.iso", &data)])),
+        ("7z lzma2", seven_z(&[("Game.iso", &data)], |_| {})),
+        (
+            "rar5",
+            rar(|builder| {
+                builder
+                    .add_bytes(b"Game.iso".to_vec(), data.clone(), None, None)
+                    .unwrap()
+            }),
+        ),
+    ];
+    for (kind, bytes) in archives {
+        let started = std::time::Instant::now();
+        let run = unpack(&bytes);
+        run.result.as_ref().map_err(|stop| &stop.reason).unwrap();
+        let seconds = started.elapsed().as_secs_f64();
+        println!(
+            "{kind}: {:.1} MiB/s ({seconds:.2} s for 64 MiB)",
+            64.0 / seconds
+        );
+    }
+}

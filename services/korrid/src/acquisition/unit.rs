@@ -5,8 +5,99 @@ use crate::plugin::ArtifactRecord;
 use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::{atomic::AtomicBool, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::Duration,
 };
+
+/// The programs that start and stop units. Tests use fakes.
+#[derive(Clone)]
+pub(super) struct Programs {
+    pub systemd_run: PathBuf,
+    pub systemctl: PathBuf,
+}
+impl Programs {
+    #[cfg(not(test))]
+    fn device() -> Self {
+        Self {
+            systemd_run: std::env::var_os("KORRID_SYSTEMD_RUN")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| "systemd-run".into()),
+            systemctl: systemctl_path(),
+        }
+    }
+}
+
+/// Review P1-3: launch and cancel of one store reader are mutually
+/// exclusive. The worker starts the unit under the lock only when no cancel
+/// came first; a cancel under the same lock either prevents the start or
+/// reports that the unit must be stopped (`stop_launched`).
+#[derive(Default)]
+pub(super) struct Launch {
+    state: Mutex<LaunchState>,
+    /// Read by the in-process test reader between writes.
+    cancelled: Arc<AtomicBool>,
+    done: AtomicBool,
+}
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+enum LaunchState {
+    #[default]
+    Waiting,
+    Started,
+    Cancelled,
+}
+impl Launch {
+    fn start<T>(&self, start: impl FnOnce() -> std::io::Result<T>) -> Result<T, Failure> {
+        let mut state = self.state.lock().expect("launch mutex poisoned");
+        if *state == LaunchState::Cancelled {
+            return Err(Failure::Cancelled);
+        }
+        let started = start()?;
+        *state = LaunchState::Started;
+        Ok(started)
+    }
+    /// True when the unit was launched and must be stopped.
+    pub(super) fn cancel(&self) -> bool {
+        let mut state = self.state.lock().expect("launch mutex poisoned");
+        self.cancelled.store(true, Ordering::SeqCst);
+        if *state == LaunchState::Started {
+            true
+        } else {
+            *state = LaunchState::Cancelled;
+            false
+        }
+    }
+    pub(super) fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+    /// The worker is past the unit: it has exited or never started.
+    pub(super) fn done(&self) -> bool {
+        self.done.load(Ordering::SeqCst)
+    }
+}
+
+/// Marks the launch done on every exit of the worker.
+struct Finished<'a>(&'a Launch);
+impl Drop for Finished<'_> {
+    fn drop(&mut self) {
+        self.0.done.store(true, Ordering::SeqCst);
+    }
+}
+
+/// After `Launch::cancel` said the unit was launched: stop it until the
+/// worker has seen it exit. `systemd-run` may not have registered the unit
+/// at the first stop, so korrid tries again every 50 ms. `RuntimeMaxSec=`
+/// bounds the wait if systemd never answers.
+pub(super) fn stop_launched(programs: &Programs, unit: &str, launch: &Launch) {
+    while !launch.done() {
+        if let Err(failure) = reclaim_with(&programs.systemctl, unit) {
+            log::debug!("acquisition: stopping {unit}: {failure:?}");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
 
 /// `korri-acquire-<plugin short>-<key>.service`, from the two segments of the
 /// artifact's cache path `cache/<plugin short>/<key>`.
@@ -110,10 +201,22 @@ fn systemctl_path() -> PathBuf {
 
 /// ADR 0030: the store reader's unit bounds. `memory` is `MemAvailable` at
 /// launch, the same rule as the dictionary check and never above it.
+/// `runtime` stops a stuck reader so it cannot hold the queue forever.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ReaderLimits {
     pub memory: u64,
+    pub runtime: Duration,
 }
+
+/// The reader's runtime limit, 9000 s (2.5 h). Measured on 2026-10-23 in a
+/// release build on an i9-11900H (`archive::tests::reader_throughput`, 64 MiB
+/// of half-compressible data): zip 589 MiB/s, rar 5 65 MiB/s, 7z LZMA2
+/// 38.7 MiB/s, the slowest. The device rate is not measured; korrid assumes
+/// 20 times slower (1.9 MiB/s), which covers ADR 0016's estimate of the
+/// RG353M as 4 to 6 times slower than the fuji builder with fuji up to about
+/// 3 times slower than this host (inferred). 8 GiB unpacked (two DVD-size
+/// ISOs) at 1.9 MiB/s is about 4300 s; a factor 2 margin gives 9000 s.
+pub(super) const READER_RUNTIME: Duration = Duration::from_secs(9000);
 
 fn unit_arguments(
     base: &Path,
@@ -171,6 +274,10 @@ fn unit_arguments(
         // no limit) is killed inside the sandbox, not on the device.
         arguments.push(format!("--property=MemoryMax={}", reader.memory));
         arguments.push("--property=MemorySwapMax=0".into());
+        arguments.push(format!(
+            "--property=RuntimeMaxSec={}",
+            reader.runtime.as_secs().max(1)
+        ));
     }
     arguments.push("--".into());
     Ok(arguments)
@@ -191,7 +298,7 @@ pub(super) fn unpack(
         // Recovery normally stopped an orphan before creating this work dir.
         // A still-active named unit is never replaced or mistaken for this run.
         let unit = name(artifact);
-        let mut command = sandboxed(base, private_root, &unit, None)?;
+        let mut command = sandboxed(&Programs::device(), base, private_root, &unit, None)?;
         command.arg(program);
         command
     };
@@ -214,8 +321,8 @@ pub(super) fn unpack(
 
 /// `systemd-run` with the sandbox properties, after any older unit with this
 /// name has stopped.
-#[cfg(not(test))]
 fn sandboxed(
+    programs: &Programs,
     base: &Path,
     private_root: &Path,
     unit: &str,
@@ -223,36 +330,71 @@ fn sandboxed(
 ) -> Result<Command, Failure> {
     // Recovery normally stopped an orphan before creating this work dir.
     // A still-active named unit is never replaced or mistaken for this run.
-    let systemctl = systemctl_path();
-    if active(&systemctl, unit)? {
-        while active(&systemctl, unit)? {
+    if active(&programs.systemctl, unit)? {
+        while active(&programs.systemctl, unit)? {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
         return Err(Failure::Unpack);
     }
-    let mut command = Command::new(
-        std::env::var_os("KORRID_SYSTEMD_RUN").unwrap_or_else(|| "systemd-run".into()),
-    );
+    let mut command = Command::new(&programs.systemd_run);
     command.args(unit_arguments(base, private_root, unit, reader)?);
     Ok(command)
 }
 
+/// The production reader: `korrid unpack-archive <work> <archive>` in the
+/// sandbox unit, launched only if no cancel came first.
+#[allow(clippy::too_many_arguments)]
+fn run_reader(
+    programs: &Programs,
+    base: &Path,
+    private_root: &Path,
+    unit: &str,
+    work: &Path,
+    archive: &Path,
+    korrid: &Path,
+    limits: ReaderLimits,
+    launch: &Launch,
+) -> Result<(), Failure> {
+    let _finished = Finished(launch);
+    let mut command = sandboxed(programs, base, private_root, unit, Some(limits))?;
+    command
+        .arg(korrid)
+        .arg("unpack-archive")
+        .arg(work)
+        .arg(archive)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit());
+    let mut child = launch.start(|| command.spawn())?;
+    let status = child.wait()?;
+    if launch.is_cancelled() {
+        return Err(Failure::Cancelled);
+    }
+    if status.success() {
+        Ok(())
+    } else {
+        Err(exit_failure(work, None))
+    }
+}
+
 /// ADR 0030: unpack a store download with korrid's own reader,
 /// `korrid unpack-archive <work-dir> <file>`, in the sandbox unit. Tests run
-/// the same reader in this process; `cancel` stops it between writes.
+/// the same reader in this process, where cancel stops it between writes.
 pub(super) fn unpack_archive(
     base: &Path,
     private_root: &Path,
     unit: &str,
     work: &Path,
     archive: &Path,
-    cancel: Arc<AtomicBool>,
+    launch: &Launch,
 ) -> Result<(), Failure> {
     #[cfg(test)]
     {
         let _ = (base, private_root, unit);
+        let _finished = Finished(launch);
+        launch.start(|| Ok(()))?;
         let limits = super::archive::Limits {
-            cancel: Some(cancel),
+            cancel: Some(launch.cancelled.clone()),
             ..super::archive::Limits::device().map_err(|stop| stop.failure)?
         };
         super::archive::extract(archive, work, &limits).map_err(|stop| {
@@ -263,23 +405,31 @@ pub(super) fn unpack_archive(
     #[cfg(not(test))]
     {
         let memory = super::archive::device_memory().map_err(|stop| stop.failure)?;
-        let mut command = sandboxed(base, private_root, unit, Some(ReaderLimits { memory }))?;
-        let status = command
-            .arg(std::env::current_exe()?)
-            .arg("unpack-archive")
-            .arg(work)
-            .arg(archive)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .status()?;
-        if status.success() {
-            return Ok(());
-        }
-        if cancel.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err(Failure::Cancelled);
-        }
-        Err(exit_failure(work, None))
+        run_reader(
+            &Programs::device(),
+            base,
+            private_root,
+            unit,
+            work,
+            archive,
+            &std::env::current_exe()?,
+            ReaderLimits {
+                memory,
+                runtime: READER_RUNTIME,
+            },
+            launch,
+        )
+    }
+}
+
+/// Cancel a store reader: prevent its launch, or stop the launched unit
+/// and wait for the worker to see it exit.
+pub(super) fn cancel_reader(unit: &str, launch: &Launch) {
+    if launch.cancel() {
+        #[cfg(not(test))]
+        stop_launched(&Programs::device(), unit, launch);
+        #[cfg(test)]
+        let _ = unit;
     }
 }
 
@@ -345,6 +495,7 @@ mod tests {
             &provider_name("@simonwjackson:roms", "@simonwjackson:wowroms"),
             Some(ReaderLimits {
                 memory: 123_456_789,
+                runtime: Duration::from_secs(5400),
             }),
         )
         .unwrap();
@@ -352,6 +503,8 @@ mod tests {
         // decoder that overreaches is killed inside the sandbox.
         assert!(args.contains(&"--property=MemoryMax=123456789".into()));
         assert!(args.contains(&"--property=MemorySwapMax=0".into()));
+        assert!(args.contains(&"--property=RuntimeMaxSec=5400".into()));
+        assert_eq!(READER_RUNTIME.as_secs(), 9000);
         assert!(args.contains(&"--unit=korri-acquire-roms-wowroms.service".into()));
         assert!(args.contains(&"--property=ReadWritePaths=/storage/cache/roms/wowroms".into()));
         assert!(args.contains(&"--property=PrivateNetwork=yes".into()));
@@ -391,5 +544,89 @@ mod tests {
             assert!(calls.contains("stop korri-acquire-fex-rootfs.service"));
             assert_eq!(calls.lines().count(), if expected { 3 } else { 2 });
         }
+    }
+    /// Fake `systemd-run` and `systemctl` with a delayed unit registration:
+    /// the unit appears 300 ms after systemd-run starts and "extracts" for
+    /// 3 s unless it is stopped.
+    fn fake_systemd(root: &Path) -> Programs {
+        use std::{fs, os::unix::fs::PermissionsExt};
+        let (calls, active, wrote) = (root.join("calls"), root.join("active"), root.join("wrote"));
+        let run = root.join("systemd-run");
+        fs::write(&run, format!("#!/bin/sh\necho spawned >> '{c}'\nsleep 0.3\ntouch '{a}'\ni=0\nwhile [ $i -lt 60 ]; do\n  [ -e '{a}' ] || exit 1\n  sleep 0.05; i=$((i+1))\ndone\ntouch '{w}'\nrm -f '{a}'\n", c = calls.display(), a = active.display(), w = wrote.display())).unwrap();
+        let ctl = root.join("systemctl");
+        fs::write(&ctl, format!("#!/bin/sh\ncase \"$3\" in\nshow) if [ -e '{a}' ]; then printf 'LoadState=loaded\\nActiveState=active\\n'; else printf 'LoadState=not-found\\n'; fi ;;\nstop) echo stop >> '{c}'; rm -f '{a}' ;;\nesac\n", a = active.display(), c = calls.display())).unwrap();
+        for program in [&run, &ctl] {
+            fs::set_permissions(program, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        Programs {
+            systemd_run: run,
+            systemctl: ctl,
+        }
+    }
+
+    fn reader_run(
+        root: &Path,
+        programs: Programs,
+        launch: Arc<Launch>,
+    ) -> std::thread::JoinHandle<Result<(), Failure>> {
+        let (work, archive) = (root.join("work"), root.join("archive"));
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::write(&archive, b"PK\x03\x04").unwrap();
+        let base = root.to_path_buf();
+        std::thread::spawn(move || {
+            run_reader(
+                &programs,
+                &base,
+                Path::new("/private"),
+                "korri-acquire-roms-wowroms.service",
+                &work,
+                &archive,
+                Path::new("/nix/store/korrid/bin/korrid"),
+                ReaderLimits {
+                    memory: 1 << 30,
+                    runtime: std::time::Duration::from_secs(60),
+                },
+                &launch,
+            )
+        })
+    }
+
+    /// Review P1-3: cancel during a delayed launch stops the unit once it
+    /// exists and waits for it; the reader never finishes its work.
+    #[test]
+    fn cancel_during_a_delayed_launch_stops_the_unit_and_waits_for_it() {
+        let root = tempfile::tempdir().unwrap();
+        let programs = fake_systemd(root.path());
+        let launch = Arc::new(Launch::default());
+        let worker = reader_run(root.path(), programs.clone(), launch.clone());
+        let started = std::time::Instant::now();
+        while !std::fs::read_to_string(root.path().join("calls"))
+            .is_ok_and(|c| c.contains("spawned"))
+        {
+            assert!(started.elapsed() < std::time::Duration::from_secs(5));
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        // The unit is not registered yet: one stop would find nothing.
+        assert!(launch.cancel(), "the unit was launched");
+        stop_launched(&programs, "korri-acquire-roms-wowroms.service", &launch);
+        assert_eq!(worker.join().unwrap(), Err(Failure::Cancelled));
+        assert!(launch.done());
+        assert!(
+            !root.path().join("wrote").exists(),
+            "the reader never finished"
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
+    }
+
+    /// Cancel before the launch: the worker never starts the unit.
+    #[test]
+    fn cancel_before_the_launch_prevents_it() {
+        let root = tempfile::tempdir().unwrap();
+        let programs = fake_systemd(root.path());
+        let launch = Arc::new(Launch::default());
+        assert!(!launch.cancel(), "nothing was launched yet");
+        let worker = reader_run(root.path(), programs, launch.clone());
+        assert_eq!(worker.join().unwrap(), Err(Failure::Cancelled));
+        assert!(!root.path().join("calls").exists(), "systemd-run never ran");
     }
 }
