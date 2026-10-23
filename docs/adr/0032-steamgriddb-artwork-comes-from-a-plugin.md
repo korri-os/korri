@@ -4,24 +4,31 @@ status: proposed
 
 # SteamGridDB artwork comes from a plugin, not from korrid
 
-**Owner decision, 2026-10-23, verbatim:** "It should be a plug-in in the
-plug-in repo. It should not be baked into the main application."
+**Owner decisions, 2026-10-23:**
+
+- Verbatim: "It should be a plug-in in the plug-in repo. It should not be
+  baked into the main application."
+- Per-plugin state lives "In korrid's private folder, one subfolder per
+  plugin, named by the plugin's id".
+- Publish the plugin without asking SteamGridDB first (section 7).
 
 The proposal: korrid loses its built-in SteamGridDB fetcher. A plugin in
 `korri-os/plugins` finds cover art for a game and returns image candidates.
 korrid makes every request, adds the person's API key itself, downloads the
 image, checks it and stores it. The plugin never sees the key and performs no
-effects (AGENTS.md, "Plugin boundaries"). The SteamGridDB setting becomes a
-per-plugin secret. The built-in title rewrite is dropped. One clean cut
-removes the Rust fetcher, and a one-off migration moves each device's real
-data.
+effects (AGENTS.md, "Plugin boundaries"). The API key becomes a plugin secret,
+the general mechanism in
+[ADR 0033](0033-korrid-holds-plugin-secrets-and-plugins-never-see-them.md).
+The built-in title rewrite is dropped. One clean cut removes the Rust fetcher,
+and a one-off migration moves each device's real data.
 
-Items marked **unresolved** have no grounding on main or legacy. The owner
-questions at the end ask about them.
+The owner questions at the end ask about choices that have no grounding on
+main or legacy.
 
 ## What exists today
 
-Read on this branch (`ad3da260f`) unless a line says otherwise.
+Read on main at `a2151a47e` unless a line says otherwise. None of the cited
+files changed since `ad3da260f`, where this ADR was first written.
 
 | Part | Where | What it does |
 |---|---|---|
@@ -115,11 +122,11 @@ For each game, korrid does this:
 
 The trigger does not move. After each successful discovery pass, korrid runs
 the artwork pass in the `Enriching` phase, wherever discovery runs (ADR 0017).
-It asks every enabled plugin that has the handler and a configured secret if
-it needs one. It asks at most 8 games per plugin per pass. If several plugins
-have the handler, korrid asks them in plugin id order and stops for a game
-once it has a tile. Nothing on main tests this order, because there is one
-real case.
+It asks every enabled plugin that has the handler and, if the plugin declares
+a secret, has that secret set. It asks at most 8 games per plugin per pass.
+If several plugins have the handler, korrid asks them in plugin id order and
+stops for a game once it has a tile. Nothing on main tests this order,
+because there is one real case.
 
 Attempt tracking keeps today's record (`AttemptRecord`, the same key) per
 plugin. The outcomes become:
@@ -141,45 +148,29 @@ an attempt only if the secret did not change during the pass, as
 nothing. korrid does not retry 429 or 5xx. The plugin sees them as
 `ok: false` and fails, and the game becomes `transient`.
 
-The file that holds a plugin's attempts is **unresolved** (owner question 1).
+The attempts file is `<private>/<plugin id>/attempts.json`, in the plugin's
+folder that the owner chose. `attempts.json` is main's `ATTEMPTS_FILE`
+(`steamgriddb.rs` :21–22). For this plugin that is
+`<private>/@korri:steamgriddb/attempts.json`.
 
-### 3. A plugin secret seam
+### 3. The API key is a plugin secret
 
-- korrid stores one secret per plugin, on the device, in the private state
-  root. The location is **unresolved** (owner question 1). The secret never
-  leaves the device and never syncs to a peer (ADR 0027). Each device needs
-  its own entry.
-- The plugin's manifest declares that it uses a secret and names the one host
-  that receives it. That host must also be in `hosts`. The field is
-  **unresolved** (owner question 2). The legacy baseline is
-  `credentialRequired: boolean`. The delta is the host, because
-  `www.steamgriddb.com` needs the key and the image host must not get it
-  (legacy `vite.config.mjs`). The administrator shows the field in `inspect`
-  and binds it in the approval digest through the manifest bytes, as it does
-  for `hosts`.
-- korrid adds `Authorization: Bearer <secret>` to a turn request after
-  admission, only if the request's host is the declared secret host. It adds
-  it again on a redirect hop only if that hop's host is the same. The plugin
-  still cannot set `authorization`. No response, diagnostic or failure text
-  carries the secret.
-- `Bearer` is the only scheme, because SteamGridDB is the only real case.
-  Other header names and schemes wait for a second plugin.
-- With no secret set, korrid does not call the plugin and reports a
-  diagnostic, as `SteamGridDbCredentialMissing` does today.
-- `system.settings.steamgriddbCredential.set { token }` and `.clear {}`
-  become one pair that also takes the plugin id. The names are owner
-  question 5. They stay owner-device only. They answer wherever discovery
-  runs on the device's library, in both modes, through ADR 0017's
-  `AppState::local_library`. This removes today's host-mode refusal. Set and
-  clear also clear that plugin's attempts except `assigned`, as today.
-- `SettingsSnapshot.steam_grid_db_credential` goes. The existing
-  `PluginSetting { id, title, enabled }` gains the plugin's
-  `SecretSettingStatus` when the plugin declares a secret. The field name is
-  owner question 5.
-- A person enters the key in the existing row, moved from the "Metadata"
-  group into the plugin's own row in `pluginSettingGroups`. The label comes
-  from the plugin title. The interaction stays `sensitiveText`, 256
-  characters, with "Clear saved key". The editable id becomes per plugin.
+The key uses the plugin secret of
+[ADR 0033](0033-korrid-holds-plugin-secrets-and-plugins-never-see-them.md).
+That ADR decides who reads it (korrid only), how it is stored, how the
+person enters it, how the approval report shows it, and the generic set and
+clear RPCs that replace `system.settings.steamgriddbCredential.set` and
+`.clear`. This plugin adds only these facts:
+
+- `plugin.nix` declares one secret for `www.steamgriddb.com`. That host and
+  the image host are in `hosts`. The image host never gets the key.
+- korrid adds the key as `Authorization: Bearer`, the form in SteamGridDB's
+  OpenAPI `securitySchemes`.
+- A set or a clear of this plugin's secret also clears its attempts except
+  `assigned`, as a key change does today (`lib.rs` :3447, :3476).
+- The "SteamGridDB API key" row leaves the "Metadata" group
+  (`settings-model.ts` :141–160). The plugin's own row takes its place, with
+  the same `sensitiveText` interaction, 256 characters and "Clear saved key".
 
 ### 4. Title rewriting is dropped
 
@@ -232,8 +223,10 @@ It is an operational step, not korrid code. A device with none of these files
 needs nothing.
 
 1. `<private>/steamgriddb.credential`: write its trimmed content as the
-   `@korri:steamgriddb` secret (owner question 1), owner-only, then delete
-   the old file.
+   `@korri:steamgriddb` plugin secret, in `<private>/@korri:steamgriddb/`.
+   The folder is mode 0700 and the file 0600, both owned by `korrid`
+   (ADR 0033). The file name waits for ADR 0033 question 2. Then delete the
+   old file.
 2. `<private>/steamgriddb-enrichment/`: delete it. It records past lookups,
    not user data, and its outcome names change.
 3. `<private>/game-assets/assignments.json`: rewrite each `source` from
@@ -259,7 +252,7 @@ The portal cannot put the capability in an image URL (AGENTS.md: never in a
 URL). So the portal must fetch the bytes from its own korrid with the bearer
 capability and turn them into an object URL for `coverArtUrl`. A `blob:` URL
 is same-origin, so boxbuster can draw it to a WebGL canvas. How korrid serves
-the bytes is owner question 3.
+the bytes is owner question 1.
 
 ### 7. Terms of use
 
@@ -278,14 +271,16 @@ plugin README quotes these terms. The plugin fetches one image per game for
 that person's device and never redistributes images. A background lookup
 after each discovery pass is still automated use as written.
 
-Recommendation: ask SteamGridDB for written permission before the plugin is
-published in `korri-os/plugins`. The owner decides (owner question 4).
+**Owner decision, 2026-10-23:** publish the plugin in `korri-os/plugins`
+without asking SteamGridDB first. The cost: after publication, SteamGridDB
+can ask for the plugin's withdrawal or revoke the keys that people use with
+it.
 
 ## Grounding and deltas
 
 | Element | Comes from | Delta and why |
 |---|---|---|
-| Handler `game-assets.candidates` | legacy RPC `app.game-assets.candidates.list` | New as a plugin operation. `app.` and `.list` dropped because it is not a portal RPC. Owner question 5. |
+| Handler `game-assets.candidates` | legacy RPC `app.game-assets.candidates.list` | New as a plugin operation. `app.` and `.list` dropped because it is not a portal RPC. Owner question 2. |
 | Input `{ title, responses }` | `enrich_one` uses `game.title` only, ADR 0016 `responses` | No playable id, release or path: no consumer in the plugin. |
 | Result `{ candidates }` | legacy `ListGameAssetCandidatesResponse` | None. No new `_tag`: ADR 0016 treats anything but `HttpRequests` as the result. |
 | `candidateId` | legacy `GameAssetCandidate` | Dropped. It named a file in legacy's candidate cache. main names an asset by its bytes. |
@@ -296,11 +291,8 @@ published in `korri-os/plugins`. The owner decides (owner question 4).
 | `source.id` | legacy `GameAssetSource.id`, the legacy importer's `imageId` | None. |
 | `source.url` | legacy `GameAssetSource.url` (optional, no query or fragment) | Required, because korrid downloads it. HTTPS only (main `asset_download.rs`). The host must be in `hosts`. |
 | Stored provenance | main `SteamGridDbProvenance`, legacy `GameAssetSource` | `game_id` and `grid_id` become `id`, `provider` becomes the plugin id, and `url` is optional. `sha256`, `width`, `height` and `format` stay. |
-| Attempt record and key | main `AttemptRecord`, `attempt_key` | Kept, one set per plugin. Three outcomes go (section 2). Location unresolved. |
-| Secret declaration | legacy `credentialRequired: boolean` | Adds the receiving host. Field unresolved (owner question 2). |
-| Secret value | main `steamgriddb.credential`, legacy `credentials.get` | The plugin no longer sees it (legacy did). korrid adds it as a header. |
-| Secret RPCs | main `system.settings.steamgriddbCredential.set` and `.clear` | Adds the plugin id. Served in both modes. Names are owner question 5. |
-| Secret status | main `SettingsSnapshot.steam_grid_db_credential`, `PluginSetting` | Moves onto `PluginSetting`. |
+| Attempt record and key | main `AttemptRecord`, `attempt_key`, `ATTEMPTS_FILE` | Kept, one set per plugin, in the plugin's folder (owner decision). Three outcomes go (section 2). |
+| Secret declaration, value, RPCs, status | ADR 0033 grounding table | See ADR 0033. |
 | Bearer header | SteamGridDB OpenAPI, legacy `vite.config.mjs` proxy | None. |
 
 ## Amendments to ADR 0016
@@ -312,7 +304,7 @@ artwork section beside "Acquisition providers".
 | ADR 0016 place | Today | Amended |
 |---|---|---|
 | Decision, third bullet (`plugin.nix` gains `hosts`) | "for provider turns and the game download alike" | Also artwork turns and the artwork image download. |
-| Grounding row `PluginHttpRequest { url, query?, headers?, timeoutMs? }` | "`authorization` … refused (no auth provider in scope)" | The plugin still cannot set `authorization`. korrid adds it from the plugin secret (this ADR, section 3). |
+| Grounding row `PluginHttpRequest { url, query?, headers?, timeoutMs? }` | "`authorization` … refused (no auth provider in scope)" | The plugin still cannot set `authorization`. korrid adds it from the plugin secret (ADR 0033). |
 | Grounding row `hosts` | "and only with a `providers` export" | Or with a `game-assets.candidates` handler. The check is `plugin-host/src/package.rs` :972–978 ("hosts require a providers contribution"). |
 | Grounding row RPC methods | "`credentialRequired` … have no main producer" | The secret declaration is now its producer. It lives in the manifest and settings, not in `AcquisitionProvider`. |
 | Turn bounds paragraph | provider operations | Applies unchanged to `game-assets.candidates`. |
@@ -320,9 +312,8 @@ artwork section beside "Acquisition providers".
 ## Considered options
 
 - **Keep the fetcher in korrid.** Rejected by the owner decision.
-- **The plugin receives the key** (legacy `credentials.get`). Rejected: the
-  plugin can put it in a URL or a header to any declared host, and the
-  sandbox stays free of secrets only if korrid holds them.
+- **The plugin receives the key** (legacy `credentials.get`). Rejected in
+  ADR 0033.
 - **The plugin downloads and returns image bytes** (legacy
   `artifact.acquire`). Rejected: plugins perform no I/O, and ADR 0016 already
   dropped plugin-side bytes.
@@ -336,12 +327,12 @@ artwork section beside "Acquisition providers".
 
 - korrid has no SteamGridDB code. A second artwork source is a plugin.
 - The image download now has a host list. Today any public HTTPS host passes.
-  The SteamGridDB image host is `cdn2.steamgriddb.com` according to legacy
-  `vite.config.mjs` and the site's own preconnect. Nobody has confirmed it in
-  an API response, because that needs a key. Confirm it before release, or
-  every download fails as an undeclared host.
-- Legacy refused a `url` with a query. Nobody has confirmed that SteamGridDB
-  image URLs have none.
+  The SteamGridDB image host is `cdn2.steamgriddb.com`. Legacy
+  `product/surfaces/web/shift/dev-game-media.ts` :5–9 says its image URLs
+  "were resolved once via the SteamGridDB API", and every one is on
+  `cdn2.steamgriddb.com` with no query (:29, :31 and on). That record is
+  from legacy, not from a current API response. Check one current response
+  before release, or every download fails as an undeclared host.
 - A 429 no longer waits and retries in the same pass. The game waits for the
   next rescan.
 - The `ambiguous` and `unverified` diagnostics go. A person sees only that
@@ -356,24 +347,28 @@ artwork section beside "Acquisition providers".
 
 ## Owner questions
 
-1. **Where does korrid keep a plugin's secret and its artwork attempts?**
-   Today the key is `<private>/steamgriddb.credential` and the attempts are
-   `<private>/steamgriddb-enrichment/attempts.json`. main has no per-plugin
-   private state, so no path is grounded. The migration writes there.
-2. **Which manifest field says a plugin uses a secret, and which host gets
-   it?** Legacy had `credentialRequired: boolean` and no host. A boolean
-   alone would send the key to every declared host, including the image host.
-   Lean (opinion): a `plugin.nix` field beside `hosts` that names one host.
-3. **How does the portal get cover bytes from its korrid?** (a) A `GET`
-   route on the local korrid, called with the bearer capability. CORS then
-   allows `GET`. (b) An `/rpc` method that returns the bytes as base64. It
-   keeps one route, but a cover grows by a third and is parsed as JSON on
-   handhelds. Lean (opinion): (a).
-4. **Publish the plugin before SteamGridDB answers?** The terms forbid
-   "any automated use" and distribution without written permission. (a) Ask
-   first and publish after a yes. (b) Publish now with the terms in the
-   README. Lean (opinion): (a).
-5. **Accept these names, or choose others?** Handler
-   `game-assets.candidates`, plugin `@korri:steamgriddb`, the renamed secret
-   RPC pair and the secret status field on `PluginSetting`. Only the handler
-   name has a legacy root.
+ADR 0033 asks two questions that also change this ADR. Its question 1 (is
+the key the person's or the device's) decides what an identity switch does
+with the migrated key. Its question 2 (names) gives the migration its file
+name.
+
+1. **How does the portal get cover bytes from its korrid?** Today nothing
+   serves a stored cover, so Linux shows no covers at all (section 6). The
+   portal must not put its capability in a URL (AGENTS.md), so an `<img src>`
+   that points at korrid cannot work. The portal must fetch the bytes itself
+   and make a `blob:` URL.
+   - (a) A `GET` route on the local korrid, called with the bearer
+     capability in a header. korrid's CORS then allows `GET` as well as
+     `POST`.
+   - (b) An `/rpc` method that returns the bytes as base64 in JSON. It keeps
+     one route. A cover grows by a third, and handhelds parse it as JSON.
+
+   Lean (opinion): (a).
+2. **Keep these two names?** The plugin's operation is
+   `game-assets.candidates`, and the plugin is `@korri:steamgriddb`. The
+   operation name comes from legacy `app.game-assets.candidates.list`, with
+   `app.` and `.list` dropped because it is not a portal RPC. The plugin name
+   follows the other official plugins, such as `@korri:pico8`, and legacy's
+   `steamgriddb` provider name. Both names become permanent: other plugins
+   will implement the operation, and the plugin id names its folder and its
+   provenance in `assignments.json`.
