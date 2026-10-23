@@ -1412,6 +1412,7 @@ impl HostSessionControl {
         };
         let prepared_plan = crate::launcher::plugin_launch::declared_saves(configured_command)
             .map_err(|message| failure("LocalRouteUnavailable", message))?;
+        let sandbox = super::systemd_unit::LaunchSandbox::new(configured_command, environment);
         let mut game_environment = environment.clone();
         if let Some(hooks) = hooks {
             if hooks
@@ -1446,6 +1447,7 @@ impl HostSessionControl {
                 environment,
                 &hooks.resolved.before,
                 warnings,
+                &sandbox,
             )?;
         }
         let mut active = ActiveSession::running(
@@ -1460,6 +1462,7 @@ impl HostSessionControl {
                     boot_id: super::hooks::boot_id()
                         .map_err(|message| failure("HookFailed", message))?,
                     command: configured_command.to_vec(),
+                    sandbox: sandbox.clone(),
                     environment: hook_environment.clone().expect("hook environment"),
                     steps: hooks.resolved.after.clone(),
                     next_step: hooks.resolved.before.len(),
@@ -1613,10 +1616,12 @@ impl HostSessionControl {
             };
             return Err(super::launch_reservation::cancelled());
         }
-        if let Err(error) = self
-            .backend
-            .launch(&launch_id, configured_command, &launch_environment)
-        {
+        if let Err(error) = self.backend.launch(
+            &launch_id,
+            configured_command,
+            &launch_environment,
+            &sandbox,
+        ) {
             let seats_stopped = seat_lease.stop(&launch_id).is_ok();
             match self.backend.live_launch_ids() {
                 Ok(live) if !live.iter().any(|id| id == &launch_id) => {
@@ -2955,6 +2960,7 @@ mod tests {
             launch_id: &str,
             _command: &[String],
             environment: &BTreeMap<String, String>,
+            _sandbox: &crate::host::systemd_unit::LaunchSandbox,
         ) -> Result<(), LaunchUnitError> {
             if self.state.lock().unwrap().launch_rejected {
                 return Err(LaunchUnitError::new(
@@ -3939,7 +3945,7 @@ mod tests {
             "--property=StandardError=append:/run/korrid/launches/{id}/stderr"
         )));
         assert!(with_modifiers.contains(&format!(
-            "--property=BindPaths=/run/korrid/launches/{id}:/run/korri-game-{id}/diagnostics"
+            "--property=BindPaths=/run/korrid/launches/{id}/exit-status:/run/korri-game-{id}/exit-status /run/korrid/launches/{id}:/run/korri-game-{id}/diagnostics"
         )));
         assert!(with_modifiers.contains(&format!(
             "--setenv=KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY=/run/korri-game-{id}/diagnostics"
@@ -6044,8 +6050,9 @@ mod tests {
                 launch_id: &str,
                 command: &[String],
                 environment: &BTreeMap<String, String>,
+                _sandbox: &crate::host::systemd_unit::LaunchSandbox,
             ) -> Result<(), LaunchUnitError> {
-                self.0.launch(launch_id, command, environment)?;
+                self.0.launch(launch_id, command, environment, _sandbox)?;
                 self.0.insert(launch_id, LaunchUnitState::Frozen);
                 Ok(())
             }

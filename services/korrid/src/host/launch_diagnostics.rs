@@ -1,4 +1,4 @@
-//! Runtime-only diagnostics for one exact modifier launch. No journal authority.
+//! Runtime-only exit status for every plugin launch; stderr for modifier launches.
 use crate::launcher::redaction::{redact_display_tail, MAX_REASON_CHARS, MAX_REASON_LINES};
 use std::{
     fs::{self, File, OpenOptions},
@@ -14,7 +14,8 @@ pub(crate) const DIRECTORY_ENV: &str = "KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY";
 pub(crate) const READER_ENV: &str = "KORRI_LAUNCH_DIAGNOSTICS_READER_UID";
 pub(crate) const STDERR: &str = "stderr";
 const WORDS: &str = "redaction-words.json";
-const EXIT_STATUS: &str = "exit-status";
+pub(super) const EXIT_STATUS: &str = "exit-status";
+pub(crate) const EXIT_STATUS_ENV: &str = "KORRI_LAUNCH_EXIT_STATUS_FILE";
 const MAX_EXIT_STATUS_BYTES: u64 = 4;
 // /run is tmpfs: a long-running chatty game must not keep consuming handheld RAM.
 // The existing one-second session watcher checks this, retaining the last 32 KiB.
@@ -78,13 +79,35 @@ fn regular(path: &Path, write: bool, owner: u32) -> io::Result<File> {
     Ok(file)
 }
 
+/// A plain plugin launch gets only this pre-created file bind, not the
+/// diagnostics directory. The host owns the inode; only the runtime uid gains
+/// write access. It cannot replace the inode or expose another launch's data.
+pub(super) fn create_exit_channel(directory: &Path, runtime_uid: u32) -> io::Result<()> {
+    let parent = directory
+        .parent()
+        .ok_or_else(|| io::Error::other("exit channel has no parent"))?;
+    fs::create_dir_all(parent)?;
+    fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
+    fs::create_dir(directory)?;
+    fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(directory.join(EXIT_STATUS))?;
+    grant_user(&file, 6, runtime_uid, 6)
+}
+
 pub(super) fn create(directory: &Path, runtime_uid: u32) -> io::Result<()> {
     let parent = directory
         .parent()
         .ok_or_else(|| io::Error::other("diagnostics directory has no parent"))?;
     fs::create_dir_all(parent)?;
     fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
-    fs::create_dir(directory)?;
+    if !directory.exists() {
+        fs::create_dir(directory)?;
+    }
     // Sticky protects korrid-owned stderr from unlink/rename by the runtime
     // uid, while still allowing that uid to create its own words file.
     fs::set_permissions(directory, fs::Permissions::from_mode(0o1700))?;
@@ -135,18 +158,28 @@ pub(super) fn write_words(directory: &Path, reader: u32, words: &[String]) -> io
 }
 
 /// Called by plugin-launch's namespace supervisor before it exits. This
-/// channel exists only for units with the host's diagnostic directory bind.
+/// host supplies a dedicated file bind even without modifier diagnostics.
 pub(crate) fn write_exit_status(status: i32) -> Result<(), String> {
-    let Some(directory) = std::env::var_os(DIRECTORY_ENV) else {
+    let Some(path) = std::env::var_os(EXIT_STATUS_ENV) else {
         return Ok(());
     };
     let reader: u32 = std::env::var(READER_ENV)
         .map_err(|_| "diagnostics reader uid is missing")?
         .parse()
         .map_err(|_| "diagnostics reader uid is not numeric")?;
-    write_status(Path::new(&directory), reader, status)
+    write_existing_status(Path::new(&path), reader, status)
         .map_err(|error| format!("cannot record game exit status: {error}"))
 }
+fn write_existing_status(path: &Path, owner: u32, status: i32) -> io::Result<()> {
+    if !(0..=255).contains(&status) {
+        return Err(io::Error::other("game exit status is out of range"));
+    }
+    let mut file = regular(path, true, owner)?;
+    file.set_len(0)?;
+    write!(file, "{status}")?;
+    file.sync_all()
+}
+#[cfg(test)]
 pub(super) fn write_status(directory: &Path, reader: u32, status: i32) -> io::Result<()> {
     if !(0..=255).contains(&status) {
         return Err(io::Error::other("game exit status is out of range"));
@@ -161,10 +194,10 @@ pub(super) fn write_status(directory: &Path, reader: u32, status: i32) -> io::Re
     write!(file, "{status}")?;
     file.sync_all()
 }
-/// Runtime-owned data can spoil only this launch's result. Refuse links,
+/// A runtime process can spoil only this launch's result. Refuse links,
 /// special files, a different uid, oversized data, and non-exit-status values.
-pub(super) fn read_exit_status(directory: &Path, runtime_uid: u32) -> io::Result<Option<i32>> {
-    let mut file = match regular(&directory.join(EXIT_STATUS), false, runtime_uid) {
+pub(super) fn read_exit_status(directory: &Path, owner: u32) -> io::Result<Option<i32>> {
+    let mut file = match regular(&directory.join(EXIT_STATUS), false, owner) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         other => other?,
     };
@@ -562,7 +595,7 @@ mod exit_status_tests {
     use std::os::unix::fs::symlink;
 
     #[test]
-    fn clean_exit_status_is_bounded_private_and_readable_only_for_the_exact_runtime_uid() {
+    fn clean_exit_status_is_bounded_private_and_requires_the_expected_owner() {
         let root = tempfile::tempdir().unwrap();
         let reader = unsafe { libc::geteuid() };
         assert_eq!(read_exit_status(root.path(), reader).unwrap(), None);
@@ -598,5 +631,32 @@ mod exit_status_tests {
         for status in [-1, 256] {
             assert!(write_status(root.path(), uid, status).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod dedicated_exit_channel_tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn dedicated_exit_inode_is_host_owned_writable_by_only_the_runtime_uid_and_hardened() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("launch");
+        let owner = unsafe { libc::geteuid() };
+        create_exit_channel(&directory, owner + 1).unwrap();
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+        let path = directory.join(EXIT_STATUS);
+        assert_eq!(fs::metadata(&path).unwrap().uid(), owner);
+        write_existing_status(&path, owner, 0).unwrap();
+        assert_eq!(read_exit_status(&directory, owner).unwrap(), Some(0));
+        assert!(write_existing_status(&path, owner + 1, 0).is_err());
+        assert!(write_existing_status(&path, owner, 256).is_err());
+        let outside = root.path().join("outside");
+        fs::write(&outside, "private").unwrap();
+        fs::remove_file(&path).unwrap();
+        symlink(&outside, &path).unwrap();
+        assert!(write_existing_status(&path, owner, 0).is_err());
+        assert_eq!(fs::read_to_string(outside).unwrap(), "private");
     }
 }

@@ -22,6 +22,8 @@ use std::{
 struct RecordingBackend {
     events: Arc<Mutex<Vec<String>>>,
     unit: Mutex<Option<(String, LaunchUnitState)>>,
+    game_sandbox: Mutex<Option<super::systemd_unit::LaunchSandbox>>,
+    hook_sandboxes: Mutex<Vec<super::systemd_unit::LaunchSandbox>>,
     fail_game: Mutex<bool>,
     exit_unknown: Mutex<bool>,
     interrupt_step_once: Mutex<Option<String>>,
@@ -33,8 +35,10 @@ impl LaunchUnitBackend for RecordingBackend {
         id: &str,
         _: &[String],
         _: &BTreeMap<String, String>,
+        _sandbox: &super::systemd_unit::LaunchSandbox,
     ) -> Result<(), LaunchUnitError> {
         self.events.lock().unwrap().push("game".into());
+        *self.game_sandbox.lock().unwrap() = Some(_sandbox.clone());
         if *self.fail_game.lock().unwrap() {
             return Err(LaunchUnitError::new(
                 LaunchUnitErrorKind::Failed,
@@ -52,8 +56,10 @@ impl LaunchUnitBackend for RecordingBackend {
         run: &str,
         timeout: Duration,
         env: &BTreeMap<String, String>,
+        _sandbox: &super::systemd_unit::LaunchSandbox,
     ) -> Result<(), LaunchUnitError> {
         self.events.lock().unwrap().push(run.into());
+        self.hook_sandboxes.lock().unwrap().push(_sandbox.clone());
         self.hooks
             .lock()
             .unwrap()
@@ -534,4 +540,100 @@ fn plan_unsets_baseline_before_values_and_hook_identity_are_applied() {
     let captured = &backend.hooks.lock().unwrap()[0].2;
     assert_eq!(captured["GAME_ENV"], "plan-wins-after-unset");
     assert_eq!(captured["KORRI_PROFILE_ID"], "fast");
+}
+
+#[test]
+fn layer_changes_and_unsets_do_not_change_the_game_sandbox_for_hooks_or_restart() {
+    use super::systemd_unit::{LaunchSandbox, SystemdLaunchUnitBackend};
+    const PULSE: &str = "unix:/run/korri-game-audio/native";
+    for (baseline, value, unset) in [
+        (None, Some(PULSE), false),
+        (Some(PULSE), Some("tcp:localhost:4713"), false),
+        (Some(PULSE), None, true),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(RecordingBackend::default());
+        let first = control(root.path(), backend.clone());
+        let mut steps = hooks(json!([{"run":"before"}]), json!([{"run":"after"}]));
+        if let Some(value) = value {
+            steps
+                .environment_changes
+                .values
+                .insert("PULSE_SERVER".into(), value.into());
+        }
+        if unset {
+            steps.environment_changes.unset.push("PULSE_SERVER".into());
+        }
+        let baseline: BTreeMap<String, String> = baseline
+            .map(|value| ("PULSE_SERVER".into(), value.into()))
+            .into_iter()
+            .collect();
+        let command = ["game".into()];
+        let launch = first
+            .prepare_with_limits(
+                "game-1",
+                None,
+                Ok(&command),
+                &baseline,
+                None,
+                vec![],
+                Some(&steps),
+            )
+            .unwrap()
+            .session;
+        let sandbox = backend.game_sandbox.lock().unwrap().clone().unwrap();
+        assert_eq!(sandbox, LaunchSandbox::new(&command, &baseline));
+        backend.unit.lock().unwrap().as_mut().unwrap().1 = LaunchUnitState::Completed;
+        drop(first);
+        assert_eq!(
+            control(root.path(), backend.clone()).status(),
+            HostSessionStatus::NoActive
+        );
+        let unit = SystemdLaunchUnitBackend::new(
+            "/bin/systemd-run".into(),
+            "/bin/systemctl".into(),
+            1000,
+            1000,
+        )
+        .unwrap();
+        let game = unit
+            .launch_arguments_in_sandbox(&launch.launch_id, &command, &baseline, &sandbox)
+            .unwrap();
+        for (index, ((_, _, environment), hook_sandbox)) in backend
+            .hooks
+            .lock()
+            .unwrap()
+            .iter()
+            .zip(backend.hook_sandboxes.lock().unwrap().iter())
+            .enumerate()
+        {
+            assert_eq!(hook_sandbox, &sandbox);
+            assert_eq!(environment.get("PULSE_SERVER").map(String::as_str), value);
+            let hook = unit
+                .hook_arguments_in_sandbox(
+                    &launch.launch_id,
+                    index,
+                    &command,
+                    "true",
+                    Duration::from_secs(30),
+                    environment,
+                    hook_sandbox,
+                )
+                .unwrap();
+            let properties = |args: &[String]| {
+                args.iter()
+                    .filter(|arg| {
+                        (arg.starts_with("--property=")
+                            || arg.starts_with("--uid=")
+                            || arg.starts_with("--gid="))
+                            && !arg.starts_with("--property=RuntimeMaxSec=")
+                            && !arg.starts_with("--property=TimeoutStopSec=")
+                            && !arg.starts_with("--property=UnsetEnvironment=")
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(properties(&game), properties(&hook));
+        }
+    }
 }

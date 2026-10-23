@@ -253,6 +253,7 @@ mod tests {
             launch_id: &str,
             command: &[String],
             _environment: &BTreeMap<String, String>,
+            _sandbox: &crate::host::systemd_unit::LaunchSandbox,
         ) -> Result<(), LaunchUnitError> {
             self.launches
                 .lock()
@@ -435,6 +436,7 @@ mod tests {
             launch_id: &str,
             _command: &[String],
             _environment: &BTreeMap<String, String>,
+            _sandbox: &crate::host::systemd_unit::LaunchSandbox,
         ) -> Result<(), LaunchUnitError> {
             self.events.lock().unwrap().push("game-launch");
             if self.fail_launch {

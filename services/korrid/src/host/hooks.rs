@@ -1,5 +1,5 @@
 //! Hook execution and the session's restart-safe after-step journal.
-use super::systemd_unit::LaunchUnitBackend;
+use super::systemd_unit::{LaunchSandbox, LaunchUnitBackend};
 use crate::{
     config::{HookAfterStep, HookBeforeFailurePolicy, HookBeforeStep},
     launcher::typed_settings::LaunchWarning,
@@ -61,6 +61,7 @@ impl SessionResult {
 pub(super) struct AfterHooks {
     pub boot_id: String,
     pub command: Vec<String>,
+    pub sandbox: LaunchSandbox,
     pub environment: BTreeMap<String, String>,
     pub steps: Vec<HookAfterStep>,
     pub next_step: usize,
@@ -118,6 +119,7 @@ pub(super) fn before(
     environment: &BTreeMap<String, String>,
     steps: &[HookBeforeStep],
     warnings: &mut Vec<LaunchWarning>,
+    sandbox: &LaunchSandbox,
 ) -> Result<(), RpcFailure> {
     for (index, step) in steps.iter().enumerate() {
         if let Err(error) = backend.run_hook(
@@ -127,6 +129,7 @@ pub(super) fn before(
             &step.run.0,
             Duration::from_secs(step.timeout.as_ref().map_or(30, |timeout| timeout.0)),
             environment,
+            sandbox,
         ) {
             let reason = format!(
                 "HookFailed {{ phase: before, step: {index}, reason: {} }}",
@@ -177,6 +180,7 @@ impl AfterHooks {
             &step.run.0,
             Duration::from_secs(step.timeout.as_ref().map_or(30, |timeout| timeout.0)),
             &environment,
+            &self.sandbox,
         ) {
             eprintln!(
                 "korrid: HookFailed {{ phase: after, step: {}, reason: {} }}",

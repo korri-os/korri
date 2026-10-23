@@ -2068,7 +2068,12 @@ mod tests {
         use super::super::systemd_unit::LaunchUnitBackend;
         device
             .backend
-            .launch(id, &["game".into()], &Default::default())
+            .launch(
+                id,
+                &["game".into()],
+                &Default::default(),
+                &super::super::systemd_unit::LaunchSandbox::default(),
+            )
             .unwrap();
         assert!(!device.host.baseline_saves().await.unwrap());
         device.backend.freeze(id).unwrap();

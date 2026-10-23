@@ -746,14 +746,13 @@ impl HostRuntime {
         let hooks = if resolved.hooks.before.is_empty() && resolved.hooks.after.is_empty() {
             None
         } else {
-            let environment_changes =
-                linux_plugin::resolved_plan_environment_changes(&launch.command, &resolved)
-                    .map_err(|reason| RpcFailure {
-                        code: "HookFailed".into(),
-                        message: format!(
-                            "HookFailed {{ phase: before, step: 0, reason: {reason} }}"
-                        ),
-                    })?;
+            let environment_changes = linux_plugin::resolved_plan_environment_changes(
+                &launch.command,
+            )
+            .map_err(|reason| RpcFailure {
+                code: "HookFailed".into(),
+                message: format!("HookFailed {{ phase: before, step: 0, reason: {reason} }}"),
+            })?;
             Some(hooks::LaunchHooks {
                 resolved: resolved.hooks,
                 environment_changes,
@@ -2433,6 +2432,7 @@ esac
             _launch_id: &str,
             _command: &[String],
             _environment: &BTreeMap<String, String>,
+            _sandbox: &crate::host::systemd_unit::LaunchSandbox,
         ) -> Result<(), LaunchUnitError> {
             unreachable!()
         }
