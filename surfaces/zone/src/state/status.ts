@@ -19,7 +19,7 @@
  * Korri's SurfaceStatus is not stored here. `update` receives it beside this
  * value, as navigation receives the whole model.
  */
-import type { SurfaceStatus } from "@contracts/surface/korri-surface"
+import type { SurfaceAction, SurfaceStatus } from "@contracts/surface/korri-surface"
 import { ask, stay, type ZoneStep } from "./requests"
 
 export type ZoneStatusShown = "none" | "busy" | "running" | "problem" | "confirm" | "paused" | "ended"
@@ -125,28 +125,26 @@ function step(model: ZoneStatusModel, message: ZoneStatusMessage, status: Surfac
       return status._tag === "Problem" || status._tag === "Ended" ? ask(model, { _tag: "DismissProblem" }) : stay(model)
     case "FocusedStatusButton":
       return stay({ ...model, focus: Math.max(0, message.index) })
-    case "ChoseBusyAction": {
-      if (status._tag !== "Busy") return stay(model)
-      const action = status.actions?.find(candidate => candidate.id === message.actionId)
-      return action?.enabled === true ? ask(model, { _tag: "RunAction", actionId: action.id }) : stay(model)
-    }
+    case "ChoseBusyAction":
+      return status._tag === "Busy" ? runOffered(model, status.actions, message.actionId) : stay(model)
     case "ChoseProblemButton":
       if (status._tag !== "Problem") return stay(model)
       if (message.button === "retry") return status.canRetry ? ask(model, { _tag: "Retry" }) : stay(model)
       return ask(model, { _tag: "DismissProblem" })
-    case "ChoseConfirmAction": {
-      if (status._tag !== "Confirm") return stay(model)
-      const action = status.actions.find(candidate => candidate.id === message.actionId)
-      return action?.enabled === true ? ask(model, { _tag: "RunAction", actionId: action.id }) : stay(model)
-    }
-    case "ChosePausedAction": {
-      if (status._tag !== "Paused") return stay(model)
-      const action = status.actions.find(candidate => candidate.id === message.actionId)
-      return action?.enabled === true ? ask(model, { _tag: "RunAction", actionId: action.id }) : stay(model)
-    }
+    case "ChoseConfirmAction":
+      return status._tag === "Confirm" ? runOffered(model, status.actions, message.actionId) : stay(model)
+    case "ChosePausedAction":
+      return status._tag === "Paused" ? runOffered(model, status.actions, message.actionId) : stay(model)
     case "ChoseEndedDismiss":
       return status._tag === "Ended" ? ask(model, { _tag: "DismissProblem" }) : stay(model)
   }
+}
+
+/** Run one of Korri's actions by its id, only while Korri still offers it,
+ * enabled, in the layer up now. */
+function runOffered(model: ZoneStatusModel, actions: readonly SurfaceAction[] | undefined, actionId: string): ZoneStep<ZoneStatusModel> {
+  const action = actions?.find(candidate => candidate.id === actionId)
+  return action?.enabled === true ? ask(model, { _tag: "RunAction", actionId: action.id }) : stay(model)
 }
 
 /**
