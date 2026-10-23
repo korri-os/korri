@@ -1,10 +1,8 @@
-//! Merge seam: replace this one-line body with
-//! crate::network::nearby::nearby_peer_ip(device_public_key) when the nearby
-//! worker lands. Its function is not present on this branch.
+//! Read the live nearby-link fact without persisting another address. Pure
+//! helpers below keep candidate ordering and port handling injectable in tests.
 use std::net::{IpAddr, SocketAddr};
 pub fn nearby_peer_ip(device_public_key: &str) -> Option<IpAddr> {
-    let _ = device_public_key;
-    None
+    crate::network::nearby::nearby_peer_ip(device_public_key)
 }
 
 pub(crate) fn prepend(device: &str, candidates: &mut Vec<String>) {

@@ -159,7 +159,7 @@ impl Routes {
         if let Some(old) = selected.take().and_then(|old| old.upgrade()) {
             old.release();
         }
-        // Join aborted tasks before reusing ports, including an error-path Drop.
+        // Wait for cancelled tasks before reusing ports, including an error-path Drop.
         let retired = std::mem::take(&mut *self.retired.lock().expect("retired forwards"));
         for forwards in retired {
             forwards.shutdown().await;
