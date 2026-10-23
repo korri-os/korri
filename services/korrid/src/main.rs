@@ -1096,6 +1096,14 @@ mod tests {
             ),
             (
                 serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"missing","host":"rg353m"}}),
+                StatusCode::OK,
+            ),
+            (
+                serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"missing","host":""}}),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"missing","host":" "}}),
                 StatusCode::FORBIDDEN,
             ),
             (

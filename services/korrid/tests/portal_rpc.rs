@@ -170,6 +170,7 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
             json!({"_tag":"app.session.prepare","payload":{"gameId":"g","host":"peer"}}),
             json!({"_tag":"app.session.prepare","payload":{"gameId":"g","host":"rg353m"}}),
             json!({"_tag":"app.session.prepare","payload":{"gameId":"g","host":""}}),
+            json!({"_tag":"app.session.prepare","payload":{"gameId":"g","host":" "}}),
             json!({"_tag":"app.session.controls","payload":{"launchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}),
             json!({"_tag":"app.session.control.invoke","payload":{"launchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","controlId":"@korri:mgba/open-menu"}}),
             json!({"_tag":"app.session.stop","payload":{}}),
@@ -186,8 +187,10 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
         ] {
             let method = body["_tag"].as_str().unwrap().to_owned();
             let read = method == "app.session.controls";
+            let host = body["payload"].get("host").and_then(Value::as_str);
+            let named_peer = host == Some("peer");
             let local_session = (method == "app.session.prepare"
-                && body["payload"].get("host").is_none())
+                && matches!(host, None | Some("peer" | "rg353m")))
                 || matches!(
                     method.as_str(),
                     "app.session.control.invoke"
@@ -207,12 +210,22 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
                 "{permission:?}: {method}"
             );
             if allowed {
-                // HTTP 200 proves dispatch, not launch: this portal has no configured game.
+                // HTTP 200 proves dispatch, not launch: this portal has neither
+                // configured games nor peers.
                 let body = response.json::<Value>().await.unwrap();
                 assert_eq!(body["_tag"], method);
                 assert_eq!(body["outcome"]["_tag"], "Err");
                 if method == "app.session.prepare" {
-                    assert_eq!(body["outcome"]["payload"]["code"], "HostGameNotFound");
+                    assert_eq!(
+                        body["outcome"]["payload"]["code"],
+                        // The fixture has no input pool, so peer selection is
+                        // blocked by native session admission after dispatch.
+                        if named_peer {
+                            "ActiveSessionConflict"
+                        } else {
+                            "HostGameNotFound"
+                        }
+                    );
                 } else if matches!(
                     method.as_str(),
                     "app.session.stop" | "app.session.freeze" | "app.session.thaw"
