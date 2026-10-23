@@ -5,9 +5,10 @@
 /**
  * Legacy job states as a tagged union with ADR 0012 progress fields.
  * `Queued` mirrors ADR 0013's `ArtifactState::Queued`: the job waits for its
- * turn in the one-at-a-time queue.
+ * turn in the one-at-a-time queue. `Unpacking` is ADR 0012's artifact state
+ * (ADR 0030 Change 1c): korrid's archive reader runs; it can be cancelled.
  */
-export type AcquireJobState = { _tag: "Queued" } | { _tag: "Resolving" } | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number } | { _tag: "Placing" } | { _tag: "Imported"; gameId: string } | { _tag: "Failed"; reason: RpcFailure } | { _tag: "Cancelled" };
+export type AcquireJobState = { _tag: "Queued" } | { _tag: "Resolving" } | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number } | { _tag: "Unpacking" } | { _tag: "Placing" } | { _tag: "Imported"; gameId: string } | { _tag: "Failed"; reason: RpcFailure } | { _tag: "Cancelled" };
 
 export type ArtifactKind = "content" | "patch";
 

@@ -67,6 +67,10 @@ pub(super) struct GameAcquisition {
     jobs: Arc<Mutex<BTreeMap<String, Arc<Mutex<Job>>>>>,
     newest: Arc<Mutex<BTreeMap<ClaimKey, String>>>,
     engine: DownloadEngine,
+    /// Test-only: while set, the reader waits before it starts, so a test
+    /// can observe and cancel `Unpacking`.
+    #[cfg(test)]
+    hold_unpack: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 fn failure(code: &str, message: &str) -> RpcFailure {
@@ -94,6 +98,7 @@ fn live(state: &AcquireJobState) -> bool {
         AcquireJobState::Queued
             | AcquireJobState::Resolving
             | AcquireJobState::Downloading { .. }
+            | AcquireJobState::Unpacking
             | AcquireJobState::Placing
     )
 }
@@ -174,6 +179,12 @@ impl GameAcquisition {
             engine,
             ..Self::default()
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn holding_unpack(mut self, hold: Arc<std::sync::atomic::AtomicBool>) -> Self {
+        self.hold_unpack = Some(hold);
+        self
     }
 
     pub(super) fn providers(&self, registry: &PluginRegistry) -> PluginListResponse {
@@ -289,11 +300,14 @@ impl GameAcquisition {
         let job = self.jobs.lock().expect("jobs mutex poisoned")[job_id].clone();
         let done = {
             let job = job.lock().expect("job mutex poisoned");
+            // ADR 0030: a store job can be cancelled while it unpacks;
+            // korrid has published nothing yet.
             matches!(
                 job.status.state,
                 AcquireJobState::Queued
                     | AcquireJobState::Resolving
                     | AcquireJobState::Downloading { .. }
+                    | AcquireJobState::Unpacking
             )
             .then(|| {
                 let _ = job.cancel.send(true);
@@ -436,6 +450,8 @@ impl GameAcquisition {
             file_name: request.file_name.clone(),
             engine: self.engine.clone(),
             job: job.clone(),
+            #[cfg(test)]
+            hold_unpack: self.hold_unpack.clone(),
         };
         tokio::spawn(async move {
             let state = match pipeline.run(cancelled).await {
@@ -559,6 +575,8 @@ struct Pipeline {
     file_name: Option<String>,
     engine: DownloadEngine,
     job: Arc<Mutex<Job>>,
+    #[cfg(test)]
+    hold_unpack: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 fn failed(failure: RpcFailure) -> AcquireJobState {
@@ -674,6 +692,11 @@ impl Pipeline {
                 }
             }) => downloaded.map_err(download_failed)?,
         };
+        let format = archive::format(&downloaded.lead);
+        if format.is_none() && !system_name(&name, &rules) {
+            // A name that says archive with bytes in no archive format.
+            return Err(download_failed(Failure::NotSystemFile));
+        }
         {
             // Cancellation wins until placement starts; placing cannot be
             // cancelled. Cancel checks the state under this same lock.
@@ -681,41 +704,77 @@ impl Pipeline {
             if *cancelled.borrow() {
                 return Err(AcquireJobState::Cancelled);
             }
-            job.status.state = AcquireJobState::Placing;
-        }
-        let format = archive::format(&downloaded.lead);
-        if format.is_none() && !system_name(&name, &rules) {
-            // A name that says archive with bytes in no archive format.
-            return Err(download_failed(Failure::NotSystemFile));
+            job.status.state = match format {
+                Some(_) => AcquireJobState::Unpacking,
+                None => AcquireJobState::Placing,
+            };
         }
         // ADR 0030 Change 1: the content goes into a work folder, unpacked by
         // korrid's reader in its sandbox unit or moved in under its name.
-        let work = {
-            let (cache, context) = (cache.clone(), self.context.clone());
-            let unit = super::unit::provider_name(&self.owner, &self.provider.provider_id);
-            let name = name.clone();
-            let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // Dropping the work folder or the download deletes it.
+        let unit = super::unit::provider_name(&self.owner, &self.provider.provider_id);
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut task = {
+            let (cache, context, unit) = (cache.clone(), self.context.clone(), unit.clone());
+            let (name, cancel) = (name.clone(), cancel.clone());
+            #[cfg(test)]
+            let hold = self.hold_unpack.clone();
             tokio::task::spawn_blocking(move || {
                 let work = placement::WorkFolder::create(&cache)?;
                 match format {
-                    Some(_) => super::unit::unpack_archive(
-                        &cache,
-                        &context.private_root,
-                        &unit,
-                        &work.path,
-                        &downloaded.path,
-                        cancel,
-                    )?,
+                    Some(_) => {
+                        #[cfg(test)]
+                        while hold.as_ref().is_some_and(|hold| {
+                            hold.load(std::sync::atomic::Ordering::SeqCst)
+                                && !cancel.load(std::sync::atomic::Ordering::SeqCst)
+                        }) {
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                        }
+                        super::unit::unpack_archive(
+                            &cache,
+                            &context.private_root,
+                            &unit,
+                            &work.path,
+                            &downloaded.path,
+                            cancel,
+                        )?
+                    }
                     None => work.take_file(&downloaded.path, &name)?,
                 }
                 // The archive goes before publication.
                 drop(downloaded);
                 Ok::<_, Failure>(work)
             })
-            .await
-            .map_err(|_| download_failed(Failure::Storage))?
-            .map_err(download_failed)?
         };
+        let unpacked = if format.is_some() {
+            tokio::select! {
+                biased;
+                _ = cancelled.changed() => {
+                    // Stop the unit, as recovery stops an orphan, then let
+                    // the task delete the work folder and the archive.
+                    cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+                    let stopped = tokio::task::spawn_blocking(move || super::unit::reclaim_provider(&unit)).await;
+                    if !matches!(stopped, Ok(Ok(()))) {
+                        log::debug!("acquisition: the unpack unit did not stop on cancel");
+                    }
+                    let _ = task.await;
+                    return Err(AcquireJobState::Cancelled);
+                }
+                unpacked = &mut task => unpacked,
+            }
+        } else {
+            task.await
+        };
+        let work = unpacked
+            .map_err(|_| download_failed(Failure::Storage))?
+            .map_err(download_failed)?;
+        {
+            let mut job = self.job.lock().expect("job mutex poisoned");
+            if *cancelled.borrow() {
+                return Err(AcquireJobState::Cancelled);
+            }
+            job.status.state = AcquireJobState::Placing;
+        }
         let context = self.context.clone();
         let (provider, claim_id, title, system) = (
             self.provider.provider_id.clone(),

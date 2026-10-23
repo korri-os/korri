@@ -212,6 +212,10 @@ fn engine() -> DownloadEngine {
 }
 
 fn world_with(server: HttpFixture, pinned: Option<(&str, &str)>) -> World {
+    world_gated(server, pinned, GameAcquisition::with_engine(engine()))
+}
+
+fn world_gated(server: HttpFixture, pinned: Option<(&str, &str)>, games: GameAcquisition) -> World {
     let dirs: Vec<_> = (0..3).map(|_| tempfile::tempdir().unwrap()).collect();
     let root = dirs[0].path().to_path_buf();
     let private = dirs[1].path().to_path_buf();
@@ -240,7 +244,7 @@ fn world_with(server: HttpFixture, pinned: Option<(&str, &str)>) -> World {
     let coordinator = AcquisitionCoordinator {
         engine: DownloadEngine::for_test(Duration::from_secs(5)),
         sleep: sleep::SleepBlock::InMemory(blocks.clone()),
-        games: GameAcquisition::with_engine(engine()),
+        games,
         ..Default::default()
     };
     let app = crate::secure_host_routers_with_acquisition(
@@ -380,6 +384,7 @@ impl World {
                     AcquireJobState::Queued
                         | AcquireJobState::Resolving
                         | AcquireJobState::Downloading { .. }
+                        | AcquireJobState::Unpacking
                         | AcquireJobState::Placing
                 ) {
                     return status;
@@ -1638,4 +1643,56 @@ async fn a_form_post_download_is_named_by_filename_not_by_its_token_url() {
         names(&world.cache().join(sha_hex(ROM))),
         ["Super Mario World (USA).gba"]
     );
+}
+
+/// ADR 0030 Change 1c: a store job reports Unpacking while korrid's reader
+/// runs, stays live, and can be cancelled there: the unit stops, and the work
+/// folder and the archive go. ADR 0012 artifacts keep "Unpacking cannot be
+/// cancelled" (`tests::unpacking_is_observable_and_cannot_be_cancelled`).
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unpacking_store_job_is_live_and_cancel_leaves_nothing() {
+    let gate = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let world = world_gated(
+        site(),
+        None,
+        GameAcquisition::with_engine(engine()).holding_unpack(gate.clone()),
+    );
+    world
+        .offer("zipped", "gba", "/files/zipped.zip", zip(&[("A.gba", ROM)]))
+        .await;
+    let job = world.acquire("zipped").await.unwrap();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !matches!(
+            world.api().status(&job.job_id).unwrap().state,
+            AcquireJobState::Unpacking
+        ) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(&world.api().status(&job.job_id).unwrap().state).unwrap(),
+        serde_json::json!({"_tag": "Unpacking"})
+    );
+    assert!(names(&world.cache())
+        .iter()
+        .any(|name| name.starts_with(".tmp-")));
+    // A live job answers a repeated Get.
+    assert_eq!(world.acquire("zipped").await.unwrap().job_id, job.job_id);
+    let cancelled = world.api().cancel(&job.job_id).await.unwrap();
+    assert!(
+        matches!(cancelled.state, AcquireJobState::Cancelled),
+        "{cancelled:?}"
+    );
+    assert_eq!(names(&world.cache()), [".downloads"], "no work folder");
+    assert!(
+        names(&world.cache().join(".downloads")).is_empty(),
+        "no archive"
+    );
+    assert!(world.snapshot().library.is_empty());
+
+    // Without the hold the same job goes through Unpacking to Imported.
+    gate.store(false, std::sync::atomic::Ordering::SeqCst);
+    imported(&world.get("zipped").await);
 }

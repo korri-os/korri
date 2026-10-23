@@ -184,7 +184,8 @@ pub struct AcquireCancelRequest {
 
 /// Legacy job states as a tagged union with ADR 0012 progress fields.
 /// `Queued` mirrors ADR 0013's `ArtifactState::Queued`: the job waits for its
-/// turn in the one-at-a-time queue.
+/// turn in the one-at-a-time queue. `Unpacking` is ADR 0012's artifact state
+/// (ADR 0030 Change 1c): korrid's archive reader runs; it can be cancelled.
 #[typeshare(serialized_as = "AcquireJobStateWire")]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag")]
@@ -201,6 +202,7 @@ pub enum AcquireJobState {
         #[serde(rename = "bytesPerSecond", skip_serializing_if = "Option::is_none")]
         bytes_per_second: Option<f64>,
     },
+    Unpacking,
     Placing,
     Imported {
         #[serde(rename = "gameId")]
