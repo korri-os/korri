@@ -385,6 +385,7 @@ pub(super) fn read_unit_pids(root: &Path, unit: &str) -> Result<BTreeSet<i32>, L
 
 #[derive(Clone, Debug)]
 pub struct SystemdLaunchUnitBackend {
+    stream_viewer: bool,
     pub(super) systemd_run: PathBuf,
     pub(super) systemctl: PathBuf,
     runtime_uid: u32,
@@ -635,6 +636,12 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
 }
 
 impl SystemdLaunchUnitBackend {
+    /// Only the native viewer may read Moonlight's client private key.
+    pub(crate) fn for_stream_viewer(mut self) -> Self {
+        self.stream_viewer = true;
+        self
+    }
+
     #[cfg(test)]
     pub fn new(
         systemd_run: PathBuf,
@@ -771,6 +778,7 @@ impl SystemdLaunchUnitBackend {
             ));
         }
         Ok(Self {
+            stream_viewer: false,
             systemd_run,
             systemctl,
             runtime_uid,
@@ -827,6 +835,7 @@ impl SystemdLaunchUnitBackend {
             DEFAULT_HELPER_TIMEOUT,
         )
         .unwrap_or(Self {
+            stream_viewer: false,
             systemd_run,
             systemctl,
             runtime_uid,
@@ -1192,7 +1201,7 @@ impl SystemdLaunchUnitBackend {
             // installed. systemd refuses to start the unit for a missing
             // path unless it has the "-" prefix.
             format!(
-                "--property=InaccessiblePaths={} /run/korrid {} {} {} -{} {} -{} /run/user/{} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources",
+                "--property=InaccessiblePaths={} /run/korrid {} {} {} -{} {} -{} /run/user/{} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources{}",
                 self.private_state_root.display(),
                 DEFAULT_BROWSER_RUNTIME_DIRECTORY,
                 self.control_socket.display(),
@@ -1200,7 +1209,8 @@ impl SystemdLaunchUnitBackend {
                 self.stream_private_state_root.display(),
                 self.compositor_control_directory.display(),
                 self.certificate_control_directory.display(),
-                self.runtime_uid
+                self.runtime_uid,
+                if self.stream_viewer { "" } else { " -/home/korri/.config/moonlight" }
             ),
             "--property=RestrictSUIDSGID=yes".into(),
         ];
@@ -2330,6 +2340,40 @@ mod tests {
     }
 
     #[test]
+    fn games_hide_the_moonlight_keydir_and_only_viewer_units_can_read_it() {
+        let backend = backend(2001);
+        let command = ["/games/program".into()];
+        let game = backend
+            .launch_arguments(LAUNCH_ID, &command, &BTreeMap::new())
+            .unwrap();
+        let viewer = backend
+            .for_stream_viewer()
+            .launch_arguments(LAUNCH_ID, &command, &BTreeMap::new())
+            .unwrap();
+        let game_paths = game
+            .iter()
+            .find(|arg| arg.starts_with("--property=InaccessiblePaths="))
+            .unwrap();
+        let viewer_paths = viewer
+            .iter()
+            .find(|arg| arg.starts_with("--property=InaccessiblePaths="))
+            .unwrap();
+        assert!(game_paths.ends_with(" -/home/korri/.config/moonlight"));
+        assert_eq!(
+            game_paths
+                .strip_suffix(" -/home/korri/.config/moonlight")
+                .unwrap(),
+            viewer_paths
+        );
+        let mut permitted = game;
+        *permitted
+            .iter_mut()
+            .find(|arg| arg.starts_with("--property=InaccessiblePaths="))
+            .unwrap() = viewer_paths.clone();
+        assert_eq!(permitted, viewer);
+    }
+
+    #[test]
     fn pulse_opt_in_adds_only_the_runtime_audio_bind_and_environment() {
         for uid in [2001, 3001] {
             let backend = backend(uid);
@@ -2362,7 +2406,7 @@ mod tests {
             );
             assert_eq!(launch, expected);
             assert!(launch.contains(&format!(
-                "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-browser /run/korrid-control/control.sock /run/korrid-control -/home/korri/.config/sunshine /run/korri-compositor -/run/korri-certificate-control /run/user/{uid} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources"
+                "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-browser /run/korrid-control/control.sock /run/korrid-control -/home/korri/.config/sunshine /run/korri-compositor -/run/korri-certificate-control /run/user/{uid} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight"
             )));
         }
     }
