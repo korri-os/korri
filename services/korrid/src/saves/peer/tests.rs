@@ -518,7 +518,7 @@ async fn save_request_without_directory_row_leaves_directory_unchanged() {
 }
 
 #[tokio::test]
-async fn failed_save_connect_probe_leaves_peer_state_unchanged() {
+async fn failed_save_connect_probe_marks_previously_ready_peer_failed() {
     let a = Node::new(5, 3, TransferBehaviour::default()).await;
     let b = Node::new(6, 3, TransferBehaviour::default()).await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -527,7 +527,17 @@ async fn failed_save_connect_probe_leaves_peer_state_unchanged() {
         vec![format!("http://{}", listener.local_addr().unwrap())],
     );
     drop(listener);
-    let before = a.service.directory.snapshot().unwrap()[0].state.clone();
+    let directory = &a.service.directory;
+    directory
+        .set_peer_state(
+            &directory.begin_peer_work(&b.device()).unwrap(),
+            &b.device(),
+            PeerState::Ready,
+        )
+        .unwrap();
+    assert_eq!(directory.snapshot().unwrap()[0].state, PeerState::Ready);
+    let old_token = directory.begin_peer_work(&b.device()).unwrap();
+    let mut contacts = directory.save_contacts();
 
     assert!(matches!(
         a.service
@@ -535,7 +545,18 @@ async fn failed_save_connect_probe_leaves_peer_state_unchanged() {
             .await,
         Err(PeerSaveError::Network)
     ));
-    assert_eq!(a.service.directory.snapshot().unwrap()[0].state, before);
+    assert!(matches!(
+        directory.snapshot().unwrap()[0].state,
+        PeerState::Failed { .. }
+    ));
+    // A failed probe is work too: an older attempt cannot restore stale Ready.
+    assert!(directory
+        .set_peer_state(&old_token, &b.device(), PeerState::Ready)
+        .is_err());
+    assert!(matches!(
+        contacts.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
 }
 
 #[tokio::test]
@@ -587,7 +608,7 @@ async fn superseded_save_request_cannot_overwrite_newer_peer_state() {
             .remote_heads(&owner, &device, RequestProvenance::Independent)
             .await
     });
-    // The token is reserved only after probing, at the authenticated HTTP send.
+    // The request already holds its token when the peer receives HTTP.
     tokio::time::timeout(Duration::from_secs(3), started.notified())
         .await
         .unwrap();

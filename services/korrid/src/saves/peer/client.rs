@@ -84,6 +84,18 @@ impl SavePeerService {
         };
         let deadline = tokio::time::Instant::now() + TRANSFER_TIMEOUT;
         let mut origins = self.origins(person, peer)?;
+        if origins.is_empty() {
+            return Err(PeerSaveError::Network);
+        }
+        // Reserve work before probing: an unreachable advertised peer must
+        // become Failed too. Peers with no endpoint never reserve a token.
+        *token = Some(
+            match provenance {
+                RequestProvenance::Independent => self.directory.begin_peer_work(peer),
+                RequestProvenance::Contact => self.directory.begin_peer_work_from_contact(peer),
+            }
+            .map_err(|_| PeerSaveError::Unauthorized)?,
+        );
         while !origins.is_empty() {
             let selected = tokio::time::timeout_at(
                 deadline,
@@ -99,19 +111,6 @@ impl SavePeerService {
                 .encode_request(peer, request.clone(), unix_time())
                 .map_err(|_| PeerSaveError::Unauthorized)?;
             let result = tokio::time::timeout_at(deadline, async {
-                // No endpoint, failed probes and encoding failures are not
-                // authenticated request attempts. Preserve state and tokens.
-                if token.is_none() {
-                    *token = Some(
-                        match provenance {
-                            RequestProvenance::Independent => self.directory.begin_peer_work(peer),
-                            RequestProvenance::Contact => {
-                                self.directory.begin_peer_work_from_contact(peer)
-                            }
-                        }
-                        .map_err(|_| PeerSaveError::Unauthorized)?,
-                    );
-                }
                 let mut response = self
                     .http
                     .post(format!("{origin}/peer-rpc"))
