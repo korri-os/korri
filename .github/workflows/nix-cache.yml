@@ -137,6 +137,12 @@ jobs:
     name: ${{ matrix.device }} closure (aarch64)
     needs: cross
     runs-on: ubuntu-24.04-arm
+    # GitHub's default is 360 minutes. In run 39820673308 rg35xxpro published
+    # in 19 minutes, then hung in nothing-but-nix's post step until that
+    # default cancelled it, holding the nix-cache queue for 6 hours. The
+    # slowest device job so far built its kernel natively and ran 153 minutes
+    # (rg353m, run 39721502192), so 180 leaves room for a cold build.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
