@@ -1,5 +1,6 @@
 //! Process-local signals. Dismissal names one device and one exact launch.
 use super::Invite;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
@@ -23,11 +24,7 @@ impl Cache {
             if self.dismissed.contains(&key) {
                 continue;
             }
-            invite.invite_id = self
-                .invites
-                .get(&key)
-                .map(|old| old.invite_id.clone())
-                .unwrap_or_else(|| format!("{:032x}", rand::random::<u128>()));
+            invite.invite_id = invite_id(&key.0, &key.1);
             next.insert(key, invite);
         }
         self.invites = next;
@@ -59,6 +56,15 @@ impl Cache {
         self.dismissed.insert(key);
         true
     }
+}
+
+fn invite_id(device: &str, launch: &str) -> String {
+    let mut hash = Sha256::new();
+    for part in [device, launch] {
+        hash.update((part.len() as u64).to_be_bytes());
+        hash.update(part.as_bytes());
+    }
+    hex::encode(hash.finalize())
 }
 
 fn key(invite: &Invite) -> (String, String) {
@@ -101,5 +107,20 @@ mod tests {
         assert_ne!(cache.list()[0].invite_id, first);
         cache.replace(vec![]);
         assert!(cache.list().is_empty());
+    }
+    #[test]
+    fn an_invite_keeps_its_id_across_clear_and_rediscovery() {
+        let mut cache = Cache::default();
+        cache.replace(vec![invite("device", "launch")]);
+        let original = cache.list()[0].invite_id.clone();
+        cache.clear();
+        cache.replace(vec![invite("device", "launch")]);
+        assert_eq!(cache.list()[0].invite_id, original);
+        let mut restarted = Cache::default();
+        restarted.replace(vec![invite("device", "launch")]);
+        assert_eq!(restarted.list()[0].invite_id, original);
+        assert_ne!(invite_id("ab", "c"), invite_id("a", "bc"));
+        assert_ne!(invite_id("device", "other"), original);
+        assert_ne!(invite_id("other", "launch"), original);
     }
 }
