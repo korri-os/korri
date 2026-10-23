@@ -23,7 +23,11 @@ use super::{
 };
 use crate::{
     config::ConfigSnapshot,
-    discovery::{reconcile::AcquiredGame, DiscoveryLifecycleCoordinator},
+    discovery::{
+        identify::{self, HashCache, IdentifyError},
+        reconcile::AcquiredGame,
+        DiscoveryLifecycleCoordinator,
+    },
     plugin::PluginRegistry,
     RpcFailure,
 };
@@ -668,7 +672,7 @@ impl Pipeline {
             publish_and_record(
                 &context,
                 &cache,
-                &rules.header,
+                &rules,
                 &downloaded,
                 &name,
                 &provider,
@@ -682,12 +686,12 @@ impl Pipeline {
     }
 }
 
-/// Check the header rule, publish the ready directory, write the records.
+/// Identify the content, publish the ready directory, write the records.
 #[allow(clippy::too_many_arguments)]
 fn publish_and_record(
     context: &GameContext,
     cache: &Path,
-    header: &[crate::plugin::HeaderRule],
+    rules: &crate::plugin::ContentRules,
     downloaded: &DownloadedGame,
     name: &str,
     provider: &str,
@@ -704,12 +708,23 @@ fn publish_and_record(
             .map_err(|error| download_failed(error.into()))?;
         bytes
     };
-    if crate::discovery::identify::header_size(&prefix, downloaded.bytes, header)
-        >= downloaded.bytes
-    {
+    if identify::header_size(&prefix, downloaded.bytes, &rules.header) >= downloaded.bytes {
         return Err(download_failed(Failure::NotSystemFile));
     }
-    placement::publish_acquired_game(cache, &downloaded.path, name, &downloaded.sha256)
+    // Use discovery's ADR 0005 identity, including the system's header rule.
+    // The private staging name is an ordinary file, never a disc descriptor.
+    let identity = identify::identity_of(&downloaded.path, rules, &mut HashCache::default())
+        .map_err(|error| {
+            download_failed(match error {
+                IdentifyError::Io(error) => error.into(),
+                IdentifyError::Unsupported(_) => Failure::NotSystemFile,
+            })
+        })?;
+    let hex = identity
+        .value()
+        .strip_prefix("sha256:")
+        .ok_or_else(|| download_failed(Failure::NotSystemFile))?;
+    placement::publish_acquired_game(cache, &downloaded.path, name, hex)
         .map_err(download_failed)?;
     let game_id = context
         .discovery
@@ -718,7 +733,7 @@ fn publish_and_record(
             claim_id,
             title,
             system,
-            sha256_hex: &downloaded.sha256,
+            sha256_hex: hex,
         })
         .map_err(|error| {
             log::debug!("acquisition library record: {error}");

@@ -89,8 +89,10 @@ export const name = "core";
 export const systems = {{
   gba: {{ id: "gba", title: "Game Boy Advance", content: {{ extensions: ["gba"] }} }},
   gb: {{ id: "gb", title: "Game Boy", content: {{ extensions: ["gb"] }} }},
+  nes: {{ id: "nes", title: "NES", content: {{ extensions: ["nes"],
+    header: [{{ size: 16, bytes: {{ offset: 0, hex: "4e45531a" }} }}] }} }},
 }};
-export const runners = {{ run: {{ id: "@test:core/run", program: "run", systems: ["gba"] }} }};
+export const runners = {{ run: {{ id: "@test:core/run", program: "run", systems: ["gba", "nes"] }} }};
 export const handlers = {{ "launch.prepare": (input: any) => ({{ command: input.program, args: [input.contentPath] }}) }};
 {artifacts}
 "#
@@ -126,7 +128,7 @@ fn site() -> HttpFixture {
         ("2048", TITLE, "gba", "/files/2048.gba", "ok"),
         ("copy", "2048 Again", "gba", "/files/copy.gba", "ok"),
         ("tetris", "Tetris", "gb", "/files/tetris.gb", "ok"),
-        ("nosys", "Unknown", "nes", "", "ok"),
+        ("nosys", "Unknown", "unknown", "", "ok"),
         ("gone", "Gone", "gba", "", "gone"),
         ("page", "Page", "gba", "", "page"),
         ("slow", "Slow", "gba", "/files/slow.gba", "ok"),
@@ -1109,4 +1111,134 @@ async fn a_declared_artifact_game_appears_in_the_device_library() {
         .expect("the declared game is in the library");
     assert_eq!(game.releases[0].identity.as_ref().unwrap().value(), sha256);
     assert!(library.locations.is_empty());
+}
+
+/// ADR 0005: acquisition and discovery identify the payload, not its header.
+#[tokio::test(flavor = "multi_thread")]
+async fn acquired_headered_and_headerless_dumps_join_the_discovered_release() {
+    let world = world();
+    let payload = vec![42; 128 * 1024];
+    let mut headered = vec![0; 16];
+    headered[..4].copy_from_slice(b"NES\x1a");
+    headered.extend_from_slice(&payload);
+    let folder = tempfile::tempdir().unwrap();
+    fs::write(folder.path().join("Headered.nes"), &headered).unwrap();
+    fs::write(folder.path().join("Plain.nes"), &payload).unwrap();
+    let rules = world.context.registry.content_rules("nes").unwrap();
+    let mut cache = crate::discovery::identify::HashCache::default();
+    let identity = crate::discovery::identify::identity_of(
+        &folder.path().join("Headered.nes"),
+        rules,
+        &mut cache,
+    )
+    .unwrap();
+    assert_eq!(identity.value(), format!("sha256:{}", sha_hex(&payload)));
+    assert_eq!(
+        crate::discovery::identify::identity_of(
+            &folder.path().join("Plain.nes"),
+            rules,
+            &mut cache,
+        )
+        .unwrap(),
+        identity,
+    );
+
+    let mut game_id = None;
+    for (id, bytes) in [("headered", &headered), ("plain", &payload)] {
+        world.server.route(
+            &format!("/game/{id}"),
+            Route::ok(
+                "application/json",
+                format!(
+                    r#"{{"id":"{id}","title":"NES Game","system":"nes","file":"/files/{id}.nes"}}"#,
+                ),
+            ),
+        );
+        world.server.route(
+            &format!("/files/{id}.nes"),
+            Route::ok("application/octet-stream", bytes.clone()),
+        );
+        world
+            .api()
+            .details(
+                &world.context.registry,
+                &DetailsRequest {
+                    provider_id: PROVIDER.into(),
+                    id: id.into(),
+                },
+            )
+            .await
+            .unwrap();
+        let acquired = imported(&world.finish(world.acquire(id).await.unwrap()).await);
+        if let Some(previous) = &game_id {
+            assert_eq!(&acquired, previous);
+        }
+        let snapshot = world.snapshot();
+        let releases = &snapshot.library[&acquired].releases;
+        assert_eq!(releases.len(), 1);
+        assert_eq!(
+            releases[0].identity.as_ref().unwrap().value(),
+            identity.value()
+        );
+        game_id = Some(acquired);
+    }
+    let game_id = game_id.unwrap();
+    let ready = world.cache().join(sha_hex(&payload));
+    assert_eq!(names(&ready), ["headered.nes"]);
+    assert_eq!(fs::read(ready.join("headered.nes")).unwrap(), headered);
+    assert_eq!(
+        names(&world.cache()),
+        [".downloads".to_owned(), sha_hex(&payload)]
+    );
+    let route = config::resolver::resolve_linux_route(
+        &world.root,
+        &world.snapshot(),
+        &world.context.registry,
+        &game_id,
+        None,
+    )
+    .unwrap();
+    assert_eq!(route.cache_target, Some(ready.join("headered.nes")));
+
+    let restarted = AcquisitionCoordinator::default();
+    assert!(restarted
+        .games
+        .recover(&world.root, &world.context.registry)
+        .unwrap()
+        .is_empty());
+    let requests = world.server.received().len();
+    assert_eq!(
+        imported(
+            &restarted
+                .acquire(&world.context, &request("headered"))
+                .await
+                .unwrap()
+        ),
+        game_id
+    );
+    assert_eq!(world.server.received().len(), requests);
+
+    // A real discovery scan adds both dumps as locations of that release.
+    let receipt = world
+        .context
+        .discovery
+        .grants()
+        .issue_approved_path(folder.path())
+        .unwrap()
+        .token;
+    let paired = world
+        .call(
+            "app.discovery.pair",
+            serde_json::json!({"receipt": receipt, "system": "nes"}),
+        )
+        .await;
+    assert_eq!(paired["outcome"]["_tag"], "Ok", "{paired}");
+    world
+        .context
+        .discovery
+        .wait_until_idle(Duration::from_secs(20));
+    let snapshot = world.snapshot();
+    assert_eq!(snapshot.library.len(), 1);
+    assert_eq!(snapshot.library[&game_id].releases.len(), 1);
+    assert_eq!(snapshot.locations[identity.value()].len(), 2);
 }

@@ -690,8 +690,9 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   (0700), with a random `.acquire-*` name. It follows the declared hosts and
   the SSRF/redirect policy, ADR 0012's connect timeout and stall detection,
   and a 2 GiB cap (legacy `MAX_FALLBACK_DOWNLOAD_BYTES`). It refuses an empty
-  body and a web page (legacy `rejectNonArtifactPayload`). SHA-256 is computed
-  while writing; it is byte identity, not authentication.
+  body and a web page (legacy `rejectNonArtifactPayload`). Discovery computes
+  the content SHA-256 after download, excluding the matching system header
+  (ADR 0005); it is identity, not authentication.
 - **Content rules.** The file name is the `FinalDownload.url`'s last segment
   (ADR 0012). It must end in one of the claim system's extensions (checked
   before the download), and a matching header rule must leave content.

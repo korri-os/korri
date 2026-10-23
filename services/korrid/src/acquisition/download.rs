@@ -64,8 +64,6 @@ pub(super) struct TextResponse {
 pub(super) struct DownloadedGame {
     pub path: PathBuf,
     pub bytes: u64,
-    pub sha256: String,
-    pub sha1: String,
 }
 impl Drop for DownloadedGame {
     fn drop(&mut self) {
@@ -254,7 +252,7 @@ impl DownloadEngine {
     }
 
     /// A resolved game with no expected hash: one attempt, streamed to a
-    /// private random file, hashed while writing, capped at 2 GiB. Empty bodies
+    /// private random file, capped at 2 GiB. Empty bodies
     /// and web pages are refused (legacy `rejectNonArtifactPayload`).
     pub(super) async fn fetch_game(
         &self,
@@ -286,8 +284,6 @@ impl DownloadEngine {
         let mut staged = DownloadedGame {
             path: directory.join(format!("{STAGING_PREFIX}{}", hex::encode(name))),
             bytes: 0,
-            sha256: String::new(),
-            sha1: String::new(),
         };
         let mut output = OpenOptions::new()
             .write(true)
@@ -295,7 +291,6 @@ impl DownloadEngine {
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW)
             .open(&staged.path)?;
-        let (mut sha256, mut sha1) = (Sha256::new(), sha1::Sha1::new());
         let mut lead = Vec::with_capacity(512);
         let mut done = 0u64;
         let mut samples = VecDeque::from([(Instant::now(), 0u64)]);
@@ -327,8 +322,6 @@ impl DownloadEngine {
                     }
                 }
                 output.write_all(&chunk)?;
-                sha256.update(&chunk);
-                sha1::Digest::update(&mut sha1, &chunk);
             }
             let now = Instant::now();
             if now.duration_since(window_start) >= self.stall_window {
@@ -360,8 +353,6 @@ impl DownloadEngine {
         }
         output.sync_all()?;
         staged.bytes = done;
-        staged.sha256 = hex::encode(sha256.finalize());
-        staged.sha1 = hex::encode(sha1::Digest::finalize(sha1));
         Ok(staged)
     }
 
