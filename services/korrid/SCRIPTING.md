@@ -1134,6 +1134,11 @@ is bounded to 4 MiB. Both checks run after Oxc allocates; they bound retained an
 executed code, not preparation time or host memory. Each QuickJS runtime
 has a 16 MiB memory limit, a 512 KiB stack limit,
 and a 1000 ms interrupt deadline. The existing empty I/O sandbox remains.
+korrid's allocator enforces the memory limit, and reaching it ends the call
+with `plugin exceeded its 16 MiB heap`. A plugin cannot catch an
+out-of-memory error and recover: quickjs-ng 0.16.2 can drop a promise job
+whose allocation fails, so the run would otherwise end without an error.
+`tests/script_engine_limits.rs` drives korrid's call path at each limit.
 `plugin-host/tests/declaration.rs` exercises nonterminating and memory-growing
 source through the real evaluator. Launch inputs are bounded to 512 KiB.
 Data conversion permits 8,192 nodes, 64 nesting levels, and 512 KiB of copied

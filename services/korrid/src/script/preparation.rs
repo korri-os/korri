@@ -20,7 +20,7 @@ use oxc::{
     transformer::{TransformOptions, Transformer},
 };
 use rquickjs::{
-    loader::{Loader, Resolver},
+    loader::{ImportAttributes, Loader, Resolver},
     module::Evaluated,
     Ctx, Error, Module, Persistent, Promise, Runtime,
 };
@@ -237,7 +237,7 @@ impl InstalledGraph {
         for name in self.modules.keys() {
             if !self.registry.borrow().modules.contains_key(name) {
                 loader
-                    .load(ctx, name)
+                    .load(ctx, name, None)
                     .map_err(|error| format!("plugin evaluation failed: {error}"))?;
             }
         }
@@ -382,7 +382,17 @@ impl Resolver for ClosedResolver {
         _ctx: &Ctx<'js>,
         base: &str,
         name: &str,
+        attributes: Option<ImportAttributes<'js>>,
     ) -> rquickjs::Result<String> {
+        // The closed graph has no attribute-typed modules. QuickJS before
+        // quickjs-ng 0.12 refused an import `with` clause as a syntax error.
+        if attributes.is_some() {
+            return Err(Error::new_resolving_message(
+                base,
+                name,
+                "plugin import attributes are not permitted",
+            ));
+        }
         if self.linking.get() {
             if let Some(identity) = self.edges.get(base).and_then(|edges| edges.get(name)) {
                 return Ok(identity.clone());
@@ -397,7 +407,18 @@ struct ClosedLoader {
     registry: Weak<RefCell<Registry>>,
 }
 impl Loader for ClosedLoader {
-    fn load<'js>(&mut self, ctx: &Ctx<'js>, name: &str) -> rquickjs::Result<Module<'js>> {
+    fn load<'js>(
+        &mut self,
+        ctx: &Ctx<'js>,
+        name: &str,
+        attributes: Option<ImportAttributes<'js>>,
+    ) -> rquickjs::Result<Module<'js>> {
+        if attributes.is_some() {
+            return Err(Error::new_loading_message(
+                name,
+                "plugin import attributes are not permitted",
+            ));
+        }
         if name == commonjs::BRIDGE {
             return Module::declare_def::<commonjs::Bridge, _>(ctx.clone(), name);
         }

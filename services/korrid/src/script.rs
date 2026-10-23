@@ -17,6 +17,8 @@
 mod commonjs;
 #[path = "script/completion.rs"]
 mod completion;
+#[path = "script/heap.rs"]
+mod heap;
 #[path = "script/packages.rs"]
 mod packages;
 #[path = "script/preparation.rs"]
@@ -182,10 +184,11 @@ fn evaluate_module(
     graph: preparation::PreparedGraph,
     invocation: Option<Invocation<'_>>,
 ) -> Result<String, OperationFailure> {
-    let runtime = Runtime::new().map_err(|error| error.to_string())?;
     // External declarations run before permission approval. Resource limits
     // therefore belong to the empty interpreter, not to the installed payload.
-    runtime.set_memory_limit(16 * 1024 * 1024);
+    // The allocator enforces the heap limit, so QuickJS keeps no limit of its own.
+    let (budget, heap_exhausted) = heap::Budget::new();
+    let runtime = Runtime::new_with_alloc(budget).map_err(|error| error.to_string())?;
     // QuickJS measures this from the native stack pointer at Runtime::new and
     // throws a RangeError before deep recursion, a deep JSON value or regex
     // compilation can overrun the thread. Calls run on Tokio blocking threads
@@ -204,7 +207,7 @@ fn evaluate_module(
     runtime.set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline)));
     let context = Context::full(&runtime).map_err(|error| error.to_string())?;
 
-    context.with(|ctx| -> Result<String, OperationFailure> {
+    let outcome = context.with(|ctx| -> Result<String, OperationFailure> {
         // Own all module roots inside this scope. Loader/native callbacks retain
         // only Weak references and cannot keep the interpreter alive on errors.
         let mut installed = installed;
@@ -359,7 +362,13 @@ fn evaluate_module(
             .map_err(|error| format!("plugin result not serialisable: {error}"))?;
         completion.check_deadline()?;
         Ok(output)
-    })
+    });
+    // A refused allocation fails the call even if the plugin caught the error
+    // or QuickJS dropped the work that hit it.
+    if heap_exhausted.get() {
+        return Err(format!("plugin exceeded its {} MiB heap", heap::HEAP_BYTES >> 20).into());
+    }
+    outcome
 }
 
 /// Every entry of the `handlers` export must be callable. Admission inspects
