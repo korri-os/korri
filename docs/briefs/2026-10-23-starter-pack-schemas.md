@@ -9,6 +9,26 @@ Core citations refer to `299166068095982bbed0c7600f1e97b8480605d0`.
 `legacy:` citations refer to `0e4cec9da3d77e6578b8a01a5d83420ba0d98e62`.
 Line ranges are from those revisions, not the estimates in the issues.
 
+## Owner decisions on the open points (2026-10-23)
+
+- **#194 removal authority:** korrid's plugin-admin host on the device supplies
+  the authoritative lifecycle policy. It may remove any plugin that no installed
+  root still requires and no live session uses, including plugins that came
+  with the system image. Every existing plugin-host refusal stays.
+- **#193 / #192 offline titles and systems:** retain the provider's own
+  `ProviderClaimDetails`, captured when the image's cache is pre-filled and
+  shipped next to the cached file. Its storage location is still to place.
+- **Into Ruins:** leave it out of the starter pack until acquire supports
+  companion files, then put it back. Tracked in its own issue.
+- **Hash mismatch:** that game fails with a clear error, listed at the end; no
+  library record is written; running the pack again retries it. New acquisition
+  failure code `ContentHashMismatch`.
+- **#192 discovery:** a new read RPC, `app.acquisition.lists`, returns the lists
+  offered by enabled plugins. Running one reuses `app.acquisition.acquire` per
+  game.
+- **#197:** land the reviewed update half first (#202). Graph rollback waits for
+  its own crash-protocol design.
+
 The terms **Release**, **Declared game**, **Starter pack** and **Artifact**
 keep their meanings in `CONTEXT.md:162-184`. A list is an offer, not a declared
 game or an artifact. Accepting it leaves ordinary games and plugins. It leaves
