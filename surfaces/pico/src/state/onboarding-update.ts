@@ -428,13 +428,15 @@ function submitName(nav: OnboardingNav, korri: SurfaceModel): PicoStep<Onboardin
 
 /**
  * NEXT on the person name: save it through Korri's person-name setting and
- * wait for the save, exactly as the device's name does. An unchanged name,
- * or a host that no longer lets this device change it, goes straight on.
+ * wait for the save, as the device's name does. An empty field is SKIP: the
+ * name may stay empty (Korri falls back to the profile's name, then the
+ * device's), so it goes on and sends nothing. An unchanged name, or a host
+ * that no longer lets this device change it, goes straight on too.
  */
 function submitPerson(nav: OnboardingNav, korri: SurfaceModel): PicoStep<OnboardingNav> {
   const text = nav.person.draft?.text ?? ""
-  if (text.trim() === "" || nav.person.saving !== "No") return stay(nav)
-  if (personNameSetting(korri) === undefined || text === personName(korri)) return stay(at(nav, "pads"))
+  if (nav.person.saving !== "No") return stay(nav)
+  if (text.trim() === "" || personNameSetting(korri) === undefined || text === personName(korri)) return stay(at(nav, "pads"))
   return ask({ ...nav, person: { ...nav.person, saving: "Sent" } }, { _tag: "ChangeSetting", settingId: PERSON_NAME_SETTING, value: text })
 }
 

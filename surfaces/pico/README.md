@@ -227,9 +227,11 @@ shows setup instead of home: Hello, Wi-Fi, Name, You, Pads, Games, Play.
 Wi-Fi is required unless the device is on a cable or has no Wi-Fi; "Continue
 offline" appears only where no network worked, and asks first. GO TO GAMES
 calls `finishOnboarding`, and home appears once Korri drops `onboarding`.
-After YOU, setup asks the person name (setting `person-name`) exactly as
-NAME asks the device's (`device-name`): the keyboard, NEXT saves through
-`changeSetting` and waits for Korri's save. The step exists only where Korri
+After YOU, setup asks the person name (setting `person-name`) as NAME asks
+the device's (`device-name`): the keyboard, NEXT saves through
+`changeSetting` and waits for Korri's save. The person name may stay empty
+(Korri falls back to the profile's name, then the device's): with nothing
+typed the key reads SKIP and sends nothing. The step exists only where Korri
 publishes the setting as editable text, and the track draws it as part of YOU.
 
 Stream play: an invite Korri publishes
@@ -246,6 +248,8 @@ the row the cursor is on, the cursor goes to the next row, or back to the
 chosen cart. Connecting and failing are Korri's `Busy` and `Problem`, drawn
 as any launch. `Paused` is the launch stage at rest: no meter, a pause mark,
 the cart when this device's library holds the game, and Korri's actions.
+Back there is the host's, as on cancellable work: the host takes it as its
+own Leave, so Pico shows B BACK and runs nothing on Back.
 `Ended` is a blue card with Korri's reason and OK, which calls `dismiss`, as
 Back does. Player 1's pause menu names who plays on the stream
 (`streamPlayers`) above its controls.

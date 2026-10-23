@@ -479,10 +479,22 @@ describe("the person name", () => {
     expect(screen._tag === "Entry" && screen.entry.draft.text).toBe("Simon")
   })
 
-  test("NEXT waits for a name, then saves it through person-name and goes on once Korri saved", () => {
-    const empty = storyFrom(ready(), korri, next, submit)
-    expect(empty.nav.step).toBe("person")
-    expect(empty.requests).toEqual([])
+  test("may stay empty: the key reads SKIP, goes on, and sends nothing", () => {
+    const opened = storyFrom(ready(), korri, next).screen
+    expect(opened._tag === "Entry" && [opened.entry.submitLabel, opened.entry.ready]).toEqual(["SKIP", true])
+    const skipped = storyFrom(ready(), korri, next, submit)
+    expect(skipped.nav.step).toBe("pads")
+    expect(skipped.requests).toEqual([])
+    // Spaces alone are nothing typed, and a name Korri holds, cleared, is kept: nothing is sent.
+    expect(storyFrom(ready(), korri, next, ...typed("  "), submit).requests).toEqual([])
+    const named = withPersonName("Simon", true)
+    const cleared = storyFrom(ready(), named, next, { _tag: "ClearedText" }, submit)
+    expect([cleared.nav.step, cleared.requests]).toEqual(["pads", []])
+  })
+
+  test("NEXT saves a typed name through person-name and goes on once Korri saved", () => {
+    const typedScreen = storyFrom(ready(), korri, next, ...typed("Simon")).screen
+    expect(typedScreen._tag === "Entry" && typedScreen.entry.submitLabel).toBe("NEXT")
     const { nav, requests } = storyFrom(ready(), korri, next, ...typed("Simon"), submit)
     expect(requests.at(-1)).toEqual({ _tag: "ChangeSetting", settingId: "person-name", value: "Simon" })
     const saving = storyFrom(nav, { ...korri, settingsStatus: { _tag: "Saving", settingId: "person-name" } }, published).nav

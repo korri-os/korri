@@ -158,8 +158,9 @@ export function PicoHome({
   const open = offered && menu.open
   /* Work with nothing to press (unpacking, stopping) takes no Back either:
    * the host delivers Back only as an action Korri published. No hint, then.
-   * Paused, Back is whatever the host makes of it; the screen says nothing
-   * it cannot keep. */
+   * A paused stream is the same: with Korri's actions (Leave) the host takes
+   * Back as its own Leave, as it takes Back as Cancel on work; Pico runs
+   * nothing on Back and shows the hint. */
   const hints = open
     ? [
         ...(aim === undefined || aim === MENU_LABEL ? [] : [{ hintKey: "a" as const, label: aim }]),
@@ -168,7 +169,8 @@ export function PicoHome({
     : offered && aim === MENU_LABEL
       ? [{ hintKey: "a" as const, label: MENU_LABEL }, { hintKey: "b" as const, label: "BACK" }]
       : view._tag === "Shelf" && !asking ? SHELF_HINTS
-        : (view._tag === "Busy" && (view.actions?.length ?? 0) === 0) || view._tag === "Paused" ? NO_HINTS : QUIET_HINTS
+        : (view._tag === "Busy" && (view.actions?.length ?? 0) === 0) || (view._tag === "Paused" && view.actions.length === 0)
+          ? NO_HINTS : QUIET_HINTS
 
   return (
     <PicoScreenShell

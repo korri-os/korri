@@ -238,11 +238,21 @@ describe("paused and ended on the device that holds the session", () => {
     expect(host.calls).toEqual(["dismiss"])
   })
 
-  test("the paused screen offers Korri's action and no meter", () => {
+  test("the paused screen offers Korri's action and no meter, and hints B BACK as cancellable work does", () => {
     render(<homePart.StreamPaused />)
     expect(screen.getByRole("heading", { name: "Paused on Odin 2 Portal" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Leave" })).toBeTruthy()
     expect(screen.queryByRole("progressbar")).toBeNull()
+    expect(document.body.textContent).toContain("BACK")
+  })
+
+  test("Back on a paused stream is the host's: Pico runs nothing, and with no action shows no hint", () => {
+    const host = createFixtureHost()
+    const view = render(<PicoSurface host={host} model={{ ...fixtureModel, status: streamPausedStatus }} />)
+    act(() => host.press("back"))
+    expect(host.calls).toEqual([])
+    view.rerender(<PicoSurface host={host} model={{ ...fixtureModel, status: { ...streamPausedStatus, actions: [] } }} />)
+    expect(document.body.textContent).not.toContain("BACK")
   })
 })
 

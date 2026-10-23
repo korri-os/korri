@@ -379,22 +379,28 @@ function nameEntry(nav: OnboardingNav, korri: SurfaceModel): PicoSetupEntryView 
   }
 }
 
+/**
+ * The person name may stay empty: Korri then shows the Nostr profile's name,
+ * else the device's. With nothing typed the key says SKIP, and it sends
+ * nothing.
+ */
 function personEntry(nav: OnboardingNav, korri: SurfaceModel): PicoSetupEntryView {
   const draft = nav.person.draft ?? picoTextDraft(personName(korri) ?? "")
+  const empty = draft.text.trim() === ""
   const maxLength = personNameSetting(korri)?.maxLength
   const problem = settingProblem(korri, PERSON_NAME_SETTING)
   return {
     place: "YOUR NAME",
     prompt: "What is your name?",
     fieldLabel: "Your name",
-    note: "Your devices show it when you play.",
+    note: "Your devices show it when you play. You can leave it empty.",
     placeholder: "Your name",
     ...(maxLength === undefined ? {} : { maxLength }),
     secret: false,
     shown: true,
     draft,
-    submitLabel: "NEXT",
-    ready: draft.text.trim() !== "" && nav.person.saving === "No",
+    submitLabel: empty ? "SKIP" : "NEXT",
+    ready: nav.person.saving === "No",
     busy: nav.person.saving !== "No",
     ...(problem === undefined ? {} : { problem }),
   }
