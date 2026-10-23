@@ -186,6 +186,11 @@ fn evaluate_module(
     // External declarations run before permission approval. Resource limits
     // therefore belong to the empty interpreter, not to the installed payload.
     runtime.set_memory_limit(16 * 1024 * 1024);
+    // QuickJS measures this from the native stack pointer at Runtime::new and
+    // throws a RangeError before deep recursion, a deep JSON value or regex
+    // compilation can overrun the thread. Calls run on Tokio blocking threads
+    // and Rust test threads, which have 2 MiB stacks, so 512 KiB leaves more
+    // than 1 MiB for the Rust frames above and the native code below it.
     runtime.set_max_stack_size(512 * 1024);
     let installed = graph.install(&runtime);
     let rejections = completion::Rejections::install(&runtime);
