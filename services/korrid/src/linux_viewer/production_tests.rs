@@ -309,3 +309,14 @@ esac
     );
     task.abort();
 }
+
+#[test]
+fn linux_viewer_bootstrap_rejects_live_and_selected_unit_id_collisions() {
+    let live = "11".repeat(16);
+    let selected = "22".repeat(16);
+    let fresh = "33".repeat(16);
+    let mut candidates = [live.clone(), selected.clone(), fresh.clone()].into_iter();
+    let id = fresh_bootstrap_id(&[live], &selected, || candidates.next().unwrap());
+    assert_eq!(id, fresh);
+    assert!(validate_launch(&id).is_ok());
+}

@@ -141,4 +141,63 @@ mod tests {
             .iter()
             .any(|arg| arg.contains("server-0123456789abcdef")));
     }
+    #[test]
+    fn linux_viewer_bootstrap_timeout_stops_the_exact_named_sandbox_unit() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let run = root.path().join("systemd-run");
+        let ctl = root.path().join("systemctl");
+        let args_path = root.path().join("args");
+        let calls_path = root.path().join("calls");
+        std::fs::write(
+            &run,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nsleep 2\n",
+                args_path.display()
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            &ctl,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nprintf 'LoadState=not-found\\n'\n",
+                calls_path.display()
+            ),
+        )
+        .unwrap();
+        for path in [&run, &ctl] {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let mut backend =
+            SystemdLaunchUnitBackend::with_timeout(run, ctl, 1001, 1002, Duration::from_millis(50))
+                .unwrap()
+                .for_stream_viewer();
+        backend.diagnostics_root = root.path().join("diagnostics");
+        let id = "0123456789abcdef0123456789abcdef";
+        let command = vec!["/nix/store/viewer/bootstrap".into()];
+        let env = BTreeMap::new();
+        let error = backend
+            .bootstrap_viewer(id, &command, &env, &LaunchSandbox::new(&command, &env))
+            .unwrap_err();
+        assert!(error.message.contains("bootstrap failed"), "{error:?}");
+        assert!(error.message.contains("timed out"), "{error:?}");
+        let args = std::fs::read_to_string(args_path).unwrap();
+        for expected in [
+            "--unit=korri-game-0123456789abcdef0123456789abcdef.service",
+            "--wait",
+            "--pipe",
+            "--property=RuntimeMaxSec=15s",
+            "--property=UMask=0077",
+            "--uid=1001",
+        ] {
+            assert!(
+                args.lines().any(|arg| arg == expected),
+                "missing {expected}"
+            );
+        }
+        assert!(!args.contains("-/home/korri/.config/moonlight"));
+        assert!(std::fs::read_to_string(calls_path)
+            .unwrap()
+            .contains("stop korri-game-0123456789abcdef0123456789abcdef.service"));
+    }
 }

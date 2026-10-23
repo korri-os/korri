@@ -283,15 +283,19 @@ fn stream_args(
     Ok(args)
 }
 
+fn fresh_bootstrap_id(live: &[String], selected: &str, mut next: impl FnMut() -> String) -> String {
+    loop {
+        let id = next();
+        if id != selected && !live.contains(&id) {
+            return id;
+        }
+    }
+}
+
 impl ProductionLinuxStreamViewer {
     fn bootstrap(&self, files: &MoonlightFiles, launch: &str) -> Result<String, LinuxViewerError> {
         let live = self.units.live_launch_ids().map_err(unit_error)?;
-        let id = loop {
-            let id = crate::generate_launch_id();
-            if id != launch && !live.contains(&id) {
-                break id;
-            }
-        };
+        let id = fresh_bootstrap_id(&live, launch, crate::generate_launch_id);
         let command = vec![
             files.bootstrap.display().to_string(),
             files.executable.display().to_string(),
