@@ -72,6 +72,10 @@ async fn handlers_get_every_response_in_order_across_turns() {
     assert!(server.received()[1]
         .headers
         .contains(&"accept: text/plain".to_owned()));
+    assert!(server
+        .received()
+        .iter()
+        .all(|r| r.method == "GET" && r.body.is_empty()));
 }
 
 async fn failure(handlers: &str) -> ProviderError {
@@ -109,8 +113,8 @@ async fn turn_bounds_and_requests_are_enforced_before_any_fetch() {
     let credentials = format!(
         "{{'claims.search': () => ({{_tag: 'HttpRequests', requests: [{{url: 'http://u:p@{HOST}/p'}}]}})}}"
     );
-    let post = format!("{{'claims.search': () => ({{_tag: 'HttpRequests', requests: [{{url: '{page}', method: 'POST'}}]}})}}");
-    for handlers in [nine, zero, undeclared, cookie, credentials, post] {
+    let put = format!("{{'claims.search': () => ({{_tag: 'HttpRequests', requests: [{{url: '{page}', method: 'PUT'}}]}})}}");
+    for handlers in [nine, zero, undeclared, cookie, credentials, put] {
         failed(failure(&handlers).await);
     }
     assert_eq!(
@@ -118,6 +122,150 @@ async fn turn_bounds_and_requests_are_enforced_before_any_fetch() {
         3,
         "refused requests never reach the network"
     );
+}
+
+/// Public itch.io attachments resolve through a form POST that returns JSON,
+/// not artifact bytes. It uses the game sender without adding a cookie session.
+#[tokio::test]
+async fn provider_turns_send_form_posts_without_forwarding_credentials() {
+    let server = HttpFixture::start([
+        (
+            "/page",
+            Route::ok("text/html", "page").header("Set-Cookie", "session=secret; Path=/"),
+        ),
+        (
+            "/file",
+            Route::ok(
+                "application/json",
+                r#"{"url":"https://provider.test/cart.bitsy"}"#,
+            ),
+        ),
+    ]);
+    let handlers = format!(
+        "{{'claims.search': (i) => {{
+            if (!i.responses.length) return {{_tag: 'HttpRequests', requests: [{{url: '{page}'}}]}};
+            if (i.responses.length === 1) return {{_tag: 'HttpRequests', requests: [{{url: '{file}', method: 'POST', body: {{csrf_token: 'a b&+'}}}}]}};
+            return [{claim}];
+        }}}}",
+        page = server.url(HOST, "/page"),
+        file = server.url(HOST, "/file"),
+        claim = claim("x", "i.responses[1].text"),
+    );
+    let claims = turns::search(&engine(), &context(&handlers), "q")
+        .await
+        .unwrap();
+    assert_eq!(
+        claims[0].title,
+        r#"{"url":"https://provider.test/cart.bitsy"}"#
+    );
+    let received = server.received();
+    assert_eq!(received.len(), 2);
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(received[1].method, "POST");
+    assert_eq!(received[1].body, b"csrf_token=a+b%26%2B");
+    assert!(received[1]
+        .headers
+        .contains(&"content-type: application/x-www-form-urlencoded".to_owned()));
+    for request in received {
+        for refused in ["cookie:", "authorization:", "proxy-authorization:"] {
+            assert!(!request.headers.iter().any(|h| h.starts_with(refused)));
+        }
+    }
+}
+
+#[tokio::test]
+async fn provider_form_posts_preserve_redirect_rules_and_exact_hosts() {
+    let server = HttpFixture::start([("/answer", Route::ok("text/plain", "done"))]);
+    for status in [301, 302, 303, 307, 308] {
+        server.route(
+            &format!("/p{status}"),
+            Route::redirect_with(status, "/answer").header("Set-Cookie", "session=secret; Path=/"),
+        );
+    }
+    server.route(
+        "/away",
+        Route::redirect_with(307, &server.url("other.test", "/answer")),
+    );
+    let handler = |path: &str| {
+        format!(
+        "{{'claims.search': (i) => i.responses.length ? [{claim}] : ({{_tag: 'HttpRequests', requests: [{{url: '{url}', method: 'POST', body: {{csrf_token: 'token'}}}}]}})}}",
+        claim = claim("x", "i.responses[0].text"),
+        url = server.url(HOST, path),
+    )
+    };
+    for status in [301, 302, 303, 307, 308] {
+        let before = server.received().len();
+        let claims = turns::search(&engine(), &context(&handler(&format!("/p{status}"))), "q")
+            .await
+            .unwrap();
+        assert_eq!(claims[0].title, "done");
+        let hops = &server.received()[before..];
+        assert_eq!(hops.len(), 2);
+        assert_eq!(hops[0].method, "POST");
+        assert_eq!(hops[0].body, b"csrf_token=token");
+        if status >= 307 {
+            assert_eq!(hops[1].method, "POST");
+            assert_eq!(hops[1].body, b"csrf_token=token");
+        } else {
+            assert_eq!(hops[1].method, "GET");
+            assert!(hops[1].body.is_empty());
+            assert!(!hops[1]
+                .headers
+                .iter()
+                .any(|h| h.starts_with("content-type:")));
+        }
+        assert!(hops
+            .iter()
+            .all(|r| !r.headers.iter().any(|h| h.starts_with("cookie:"))));
+    }
+    let before = server.received().len();
+    assert_eq!(
+        failure(&handler("/away")).await,
+        ProviderError::Unreachable(Failure::UndeclaredHost)
+    );
+    assert_eq!(server.received().len(), before + 1);
+}
+
+#[tokio::test]
+async fn invalid_provider_forms_are_refused_before_any_request_in_the_turn() {
+    let server = HttpFixture::start([("/file", Route::ok("text/plain", "ok"))]);
+    let request = |fields: &str| {
+        format!(
+        "{{'claims.search': (i) => i.responses.length ? [] : ({{_tag: 'HttpRequests', requests: [{{url: '{url}'}}, {{url: '{url}', {fields}}}]}})}}",
+        url = server.url(HOST, "/file"),
+    )
+    };
+    for fields in [
+        "method: 'PUT'",
+        "method: 'GET'",
+        "method: 'post'",
+        "method: null",
+        "body: {id: '42'}",
+        "method: 'POST', body: null",
+        "method: 'POST', body: {id: 42}",
+        "method: 'POST', body: ['id']",
+        "method: 'POST', body: {file: 'x'.repeat(8188)}",
+        "method: 'POST', body: {file: '&'.repeat(2730)}",
+        "method: 'POST', headers: {Cookie: 'a=b'}",
+        "method: 'POST', headers: {Authorization: 'Bearer secret'}",
+        "method: 'POST', headers: {'Set-Cookie': 'a=b'}",
+        "method: 'POST', headers: {'Proxy-Authorization': 'secret'}",
+        "method: 'POST', headers: {Host: 'other.test'}",
+    ] {
+        failed(failure(&request(fields)).await);
+    }
+    assert!(server.received().is_empty());
+    // Encoded body limit is inclusive, like FinalDownload. Empty POSTs also work.
+    for fields in [
+        "method: 'POST', body: {file: 'x'.repeat(8187)}",
+        "method: 'POST'",
+        "method: 'POST', body: {}",
+    ] {
+        turns::search(&engine(), &context(&request(fields)), "q")
+            .await
+            .unwrap();
+    }
+    assert_eq!(server.received().len(), 6);
 }
 
 #[tokio::test]

@@ -518,6 +518,8 @@ interface PluginHttpRequest {
   query?: Record<string, string | number | boolean>  // PluginHttpQueryValue
   headers?: Record<string, string>
   timeoutMs?: number                              // whole request, positive integer milliseconds
+  method?: "POST"                                 // absent: GET, same as FinalDownload
+  body?: Record<string, string>                    // form fields; needs method "POST"
 }
 
 interface PluginHttpResponse {
@@ -534,8 +536,15 @@ and `timeoutMs` are the legacy `PluginHttpRequestOptions` fields. `query`
 follows legacy `withQuery` (`searchParams.set`). Legacy had no default
 timeout, so none is invented: without `timeoutMs` the download policy's
 connect timeout and stall detection still end a dead request. `method` and
-`body` are not carried: every provider turn request is a GET. Only the game
-download can be a POST (`FinalDownload.method`, below). korrid sends
+`body` reuse `FinalDownload`'s form semantics: absent method means GET; only
+`"POST"` is admitted, with string-valued form fields. A body without POST,
+null fields, other methods, or a form-encoded body above 8192 characters fails
+before any request in that turn is sent. korrid uses the existing game-download
+sender and `application/x-www-form-urlencoded` encoding, not a second client.
+After POST, 301/302/303 become GET without the body; 307/308 repeat the POST.
+This narrow addition supports public raw Bitsy attachments on itch.io; it
+adds no cookie session, authorization, host wildcard, or resource-limit change
+(ADR 0016's provisional public-attachment amendment). korrid sends
 `User-Agent: Korri/<korrid version>` on every acquisition request and
 redirect hop; a request's own `user-agent` header replaces it. korrid refuses `cookie`,
 `set-cookie`, `authorization`, `proxy-authorization` and `host` request

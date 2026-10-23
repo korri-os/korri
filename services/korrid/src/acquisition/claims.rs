@@ -4,7 +4,8 @@
 //! claim.ts` and `download-resolution.ts` verbatim, minus the ADR 0016 deltas:
 //! no `ref`, `playable`, `facets`, or `FinalDownload.requestHeaders`. ADR 0030
 //! moves legacy `PluginHttpRequestOptions.method` and `.body` onto
-//! `FinalDownload` for the game download only.
+//! `FinalDownload` for the game download. Provider turns also reuse those
+//! form semantics for public attachment resolution.
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -237,12 +238,33 @@ impl FinalDownload {
     /// The `application/x-www-form-urlencoded` body of a POST, empty when the
     /// POST has no fields. `None` for a GET.
     pub(super) fn form(&self) -> Option<String> {
-        self.method.map(|FinalDownloadMethod::Post| {
-            url::form_urlencoded::Serializer::new(String::new())
-                .extend_pairs(self.body.iter().flatten())
-                .finish()
-        })
+        encode_form(self.method, &self.body)
     }
+}
+
+fn encode_form(
+    method: Option<FinalDownloadMethod>,
+    body: &Option<BTreeMap<String, String>>,
+) -> Option<String> {
+    method.map(|FinalDownloadMethod::Post| {
+        url::form_urlencoded::Serializer::new(String::new())
+            .extend_pairs(body.iter().flatten())
+            .finish()
+    })
+}
+
+/// One form admission policy for final downloads and intermediate requests.
+/// The encoded body keeps the existing SafeText bound (ADR 0030 Q2d).
+pub(super) fn admit_form(
+    method: Option<FinalDownloadMethod>,
+    body: &Option<BTreeMap<String, String>>,
+) -> Result<Option<String>, Inadmissible> {
+    if body.is_some() && method.is_none() {
+        return Err(Inadmissible("download body needs method POST"));
+    }
+    let form = encode_form(method, body);
+    optional(&form, |value| safe_text(value))?;
+    Ok(form)
 }
 
 #[typeshare(serialized_as = "NonFinalDownloadReasonWire")]
@@ -473,11 +495,7 @@ impl DownloadResolution {
                         .then_some(())
                         .ok_or(Inadmissible("download file name is unsafe"))
                 })?;
-                if value.body.is_some() && value.method.is_none() {
-                    return Err(Inadmissible("download body needs method POST"));
-                }
-                // ADR 0030 Q2d: the `SafeText` bound on the encoded body.
-                optional(&value.form(), |v| safe_text(v))?;
+                admit_form(value.method, &value.body)?;
                 optional(&value.content_type, |v| safe_text(v))
             }
             Self::NonFinal(value) => {

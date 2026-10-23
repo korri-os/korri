@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use super::claims::{DownloadResolution, ProviderClaim, ProviderClaimDetails};
+use super::claims::{
+    admit_form, DownloadResolution, FinalDownloadMethod, ProviderClaim, ProviderClaimDetails,
+};
 use crate::plugin::deserialize_optional_non_null as non_null;
 
 pub const CLAIMS_SEARCH: &str = "claims.search";
@@ -24,7 +26,8 @@ pub enum PluginHttpQueryValue {
 }
 
 /// The legacy `request(url, options)` call as a value: `url` plus the legacy
-/// `PluginHttpRequestOptions` fields `query`, `headers`, `timeoutMs`. GET only.
+/// `PluginHttpRequestOptions` fields `query`, `headers`, `timeoutMs`, and the
+/// same GET/form-POST semantics as `FinalDownload`.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -51,6 +54,20 @@ pub struct PluginHttpRequest {
     )]
     #[typeshare(serialized_as = "Option<number>")]
     pub timeout_ms: Option<u64>,
+    /// Absent: GET. POST uses the final-download form semantics.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "non_null"
+    )]
+    pub method: Option<FinalDownloadMethod>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "non_null"
+    )]
+    #[typeshare(serialized_as = "Option<HashMap<String, String>>")]
+    pub body: Option<BTreeMap<String, String>>,
 }
 
 #[typeshare(serialized_as = "PluginHttpRequestsTagWire")]
@@ -248,13 +265,14 @@ async fn run<T>(
             .iter()
             .map(|request| admit(request, &context.hosts))
             .collect::<Result<Vec<_>, _>>()?;
-        for (url, headers, timeout) in admitted {
+        for request in admitted {
             let response = engine
                 .fetch_text(
                     super::download::TextRequest {
-                        url,
-                        headers: &headers,
-                        timeout,
+                        url: request.url,
+                        headers: &request.headers,
+                        timeout: request.timeout,
+                        form: request.form.as_deref(),
                     },
                     &context.hosts,
                 )
@@ -272,7 +290,12 @@ async fn run<T>(
     unreachable!("the loop returns by the fourth call")
 }
 
-type Admitted = (url::Url, Vec<(String, String)>, Option<std::time::Duration>);
+struct Admitted {
+    url: url::Url,
+    headers: Vec<(String, String)>,
+    timeout: Option<std::time::Duration>,
+    form: Option<String>,
+}
 
 fn admit(request: &PluginHttpRequest, hosts: &[String]) -> Result<Admitted, ProviderError> {
     let failed = |reason: &str| ProviderError::Failed(reason.to_owned());
@@ -323,7 +346,13 @@ fn admit(request: &PluginHttpRequest, hosts: &[String]) -> Result<Admitted, Prov
         Some(ms) => Some(std::time::Duration::from_millis(ms)),
         None => None,
     };
-    Ok((url, headers, timeout))
+    let form = admit_form(request.method, &request.body).map_err(|error| failed(error.0))?;
+    Ok(Admitted {
+        url,
+        headers,
+        timeout,
+        form,
+    })
 }
 
 fn requests<T>(value: &serde_json::Value) -> Option<serde_json::Result<Turn<T>>> {

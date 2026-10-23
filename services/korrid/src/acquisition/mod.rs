@@ -1045,6 +1045,8 @@ mod game_download_tests;
 #[cfg(test)]
 mod http_fixture;
 #[cfg(test)]
+mod provider_live_tests;
+#[cfg(test)]
 mod provider_tests;
 #[cfg(test)]
 mod turns_tests;

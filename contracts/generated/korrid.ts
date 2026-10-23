@@ -1122,13 +1122,17 @@ export interface PluginDetailsInput {
 
 /**
  * The legacy `request(url, options)` call as a value: `url` plus the legacy
- * `PluginHttpRequestOptions` fields `query`, `headers`, `timeoutMs`. GET only.
+ * `PluginHttpRequestOptions` fields `query`, `headers`, `timeoutMs`, and the
+ * same GET/form-POST semantics as `FinalDownload`.
  */
 export interface PluginHttpRequest {
 	url: string;
 	query?: Record<string, PluginHttpQueryValue>;
 	headers?: Record<string, string>;
 	timeoutMs?: number;
+	/** Absent: GET. POST uses the final-download form semantics. */
+	method?: FinalDownloadMethod;
+	body?: Record<string, string>;
 }
 
 /** A handler's "fetch these, then call me again" answer. */

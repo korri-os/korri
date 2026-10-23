@@ -48,11 +48,12 @@ pub(super) const USER_AGENT: &str = concat!("Korri/", env!("CARGO_PKG_VERSION"))
 /// Body text one provider turn response may carry (ADR 0016).
 pub(super) const MAX_TEXT_BYTES: u64 = 512 * 1024;
 
-/// A GET a provider asked for, after the turn runner admitted it.
+/// A GET or form POST a provider asked for, after turn admission.
 pub(super) struct TextRequest<'a> {
     pub url: Url,
     pub headers: &'a [(String, String)],
     pub timeout: Option<Duration>,
+    pub form: Option<&'a str>,
 }
 
 /// The game download a `FinalDownload` names (ADR 0030 Change 2). With a
@@ -186,7 +187,7 @@ impl DownloadEngine {
         .map(|(_, response)| response)
     }
 
-    /// One GET, or one form POST for a game download, with manual
+    /// One GET, or one form POST for a provider turn or game download, with manual
     /// redirects. Every hop passes the SSRF policy and, for provider traffic,
     /// the owning plugin's declared hosts. After a POST, 301, 302 and 303
     /// continue as a GET with no body and 307 and 308 repeat the POST, as
@@ -233,7 +234,7 @@ impl DownloadEngine {
         Err(Failure::Redirect)
     }
 
-    /// A provider turn request: GET, body text capped at 512 KiB, decoded as
+    /// A provider turn request: GET or form POST, text capped at 512 KiB, decoded as
     /// UTF-8 with replacement. An HTTP error status is a response.
     pub(super) async fn fetch_text(
         &self,
@@ -245,7 +246,7 @@ impl DownloadEngine {
                 .send(
                     request.url,
                     policy::Hosts::Only(hosts),
-                    None,
+                    request.form,
                     |mut builder| {
                         for (name, value) in request.headers {
                             builder = builder.header(name, value);

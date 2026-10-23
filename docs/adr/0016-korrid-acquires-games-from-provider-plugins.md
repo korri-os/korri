@@ -100,7 +100,7 @@ boundaries).
 | `providers` export, `ProviderRecord { id, title }` | `services/korrid/src/plugin.rs` | An explicit record needs a non-empty title; the three handlers are checked, never called (like `discovery.discover`). |
 | Handler names | legacy `product/plugins/AGENTS.md` operation list | `claims.parse-url`, `provider.validate` and `artifact.acquire` are not carried: no consumer in scope, and `artifact.acquire` needs plugin-side bytes. |
 | Handler input | legacy `SearchRequest.query`, `DetailsRequest`, `ResolveDownloadRequest`, `context.provider`; main's `ReleaseDiscoveryInput` (host-read text in) | Adds `providerId` and `responses`. `platforms`, `size` and `artifactFormat` are not carried. |
-| `PluginHttpRequest { url, query?, headers?, timeoutMs? }` | legacy `request(url, PluginHttpRequestOptions)` (`product/platform/plugin/services.ts`), legacy `withQuery` | The call becomes a returned value. GET only: `method` and `body` are not carried (no in-scope provider posts). No default timeout is invented (legacy had none); connect timeout and stall detection still apply. `cookie`, `set-cookie`, `authorization`, `proxy-authorization` and `host` headers are refused (no auth provider in scope). |
+| `PluginHttpRequest { url, query?, headers?, timeoutMs?, method?, body? }` | legacy `request(url, PluginHttpRequestOptions)` (`product/platform/plugin/services.ts`), legacy `withQuery`; ADR 0030 `FinalDownload` forms | The call becomes a returned value. GET or the same bounded form POST as `FinalDownload` (public-attachment amendment below). No default timeout is invented (legacy had none); connect timeout and stall detection still apply. `cookie`, `set-cookie`, `authorization`, `proxy-authorization` and `host` headers are refused (no auth provider in scope). |
 | `PluginHttpResponse { status, ok, url, headers, text }` | legacy `PluginHttpResponse` | `text()` becomes `text`; `setCookies` and `bytes` are not carried. Headers lower-cased, repeats joined with `", "`; UTF-8 with replacement (legacy `TextDecoder`). korrid follows redirects, so no 3xx reaches a plugin. |
 | Tag `HttpRequests` | — | New. Results keep their legacy shapes: an array for search, `_tag`-tagged objects otherwise. |
 | `ProviderClaim`, `ProviderClaimDetails`, `ArtifactAcquisitionHint`, `DownloadResolution`, `DownloadChoice` | legacy `claim.ts`, `download-resolution.ts`, `artifact.ts` | Dropped: `ref`, `playable`, `facets`. Their only legacy consumer authored library entries from plugin-supplied hints; on main the acquire job writes one fixed record (claim title, the downloaded bytes' hash, the claim's system, a provider link), so no plugin-authored library data is needed. `FinalDownload.requestHeaders` is also dropped, because no in-scope provider forwards Referer or Cookie. `SafeText`, `SafeUrl`, `SafeFileName`, `SEMANTIC_ID` and `SAFE_EXTENSION` are kept in korrid's admission. A claim id is 1 to 2048 characters (legacy `ProviderRef.value` bound). Details must name the asked id. |
@@ -195,8 +195,40 @@ amends this ADR:
 - **Q2, release identity.** `Hash`, `Parts` or `Chd`, as discovery computes it.
 - **`FinalDownload`.** Gains `method` (`"POST"` or absent) and `body` (an
   object of string values, form-encoded) for the game download. Provider turns
-  stay GET only, so the `PluginHttpRequest` row still holds for them.
+  originally stayed GET only; the narrow amendment below also admits forms.
 - **`AcquireJobState`.** Gains `Unpacking`, which can be cancelled.
 - **User-Agent.** korrid sends `User-Agent: Korri/<korrid version>` on every
   acquisition request and redirect hop. The `PluginHttpRequest` row's refused
   headers are unchanged, so a provider turn may still set its own.
+
+### Public raw Bitsy attachment forms (provisional, 2026-10-23)
+
+The coordinator selected a narrow reuse of the existing form effect under
+exact declared-host approvals. This is a provisional implementation decision,
+not deployment, installation or publication approval.
+
+The real case is `0neforgetfulbug.itch.io/average-day-in-america`. Its public
+`init_ViewHtmlGame` JSON declares numeric `min_price: 0` and `actual_price: 0`,
+and its page offers the raw `adia.bitsy` attachment for Bitsybox. Unlike the
+legacy session resolver, this public page supplies both its CSRF token and
+upload control. GET page, form POST `/file/<upload id>`, then a result uses
+three handler calls. Its `/data.json` has no price: absence is not free.
+Browser exports, paid/entitled files, cookies and the four-request legacy
+session path are not carried.
+
+`PluginHttpRequest` gains `method` and `body`, grounded in legacy
+`PluginHttpRequestOptions` and narrowed to main's existing `FinalDownload`
+semantics: absent method means GET, or `"POST"` with string-valued form fields.
+A body requires POST. Nulls and other methods fail admission. The encoded form
+has the existing 8192-character `SafeText` bound. Both request kinds share that
+admission and use the same sender, DNS/SSRF checks, per-hop exact hosts and
+POST redirect rules (301/302/303 become GET; 307/308 repeat POST).
+
+The cost is that a provider turn, not only the final game download, can now
+perform a server-side effect on an approved host. This adds neither arbitrary
+methods nor a second network permission mechanism. It does not permit Cookie
+or Authorization headers, hold a cookie jar, broaden hosts, retry refusals, or
+change the four-call, body, input, heap or deadline bounds. Artifact bytes still
+flow through korrid's existing cache, identification, record and route path.
+Provider approval remains separate from acquiring an author's file; an engine
+tag or browser-playable listing alone never establishes a Bitsy artifact.
