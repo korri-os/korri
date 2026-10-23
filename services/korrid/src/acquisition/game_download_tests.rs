@@ -32,6 +32,7 @@ async fn text(
                 url: Url::parse(url).unwrap(),
                 headers: &[("accept".into(), "text/html".into())],
                 timeout: None,
+                form: None,
             },
             &hosts(),
         )
@@ -84,6 +85,7 @@ async fn provider_requests_reach_only_declared_hosts_on_every_hop() {
                 url: Url::parse("http://private.test/").unwrap(),
                 headers: &[],
                 timeout: None,
+                form: None,
             },
             &private,
         )
@@ -96,6 +98,7 @@ async fn provider_requests_reach_only_declared_hosts_on_every_hop() {
                 url: Url::parse(&server.url(HOST, "/page")).unwrap(),
                 headers: &[],
                 timeout: None,
+                form: None,
             },
             &[],
         )
@@ -483,6 +486,7 @@ async fn every_acquisition_request_and_hop_carries_korris_user_agent() {
                 url: Url::parse(&server.url(HOST, "/page")).unwrap(),
                 headers: &[("user-agent".into(), "Plugin/2".into())],
                 timeout: None,
+                form: None,
             },
             &hosts(),
         )
