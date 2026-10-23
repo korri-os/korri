@@ -1,113 +1,153 @@
-# Linux portal shell
+# Linux WPE portal launcher
 
-`korri-portal-shell` starts Chromium and supplies the existing `window.KorriRpc`
-bridge before the trusted portal loads. It implements
-[`contracts/bridge/korri-rpc-bridge.ts`](../../contracts/bridge/korri-rpc-bridge.ts).
-It does not implement RPC or hardware operations.
+`korri-portal-wpe` is the native Linux client for the
+[`KorriRpc` bridge](../../contracts/bridge/korri-rpc-bridge.ts).
+It embeds the vendored `korri-wpewebkit` (currently 2.52.6) through WPEPlatform. It accepts no arguments.
+There is no Chromium subprocess, debugging pipe, debugging listener or fallback.
 
-## Startup contract
+## Startup inputs
 
-```text
-korri-portal-shell CHROMIUM [--flag ...]
-```
-
-`CHROMIUM` is an executable path. Each subsequent argument is one complete
-Chromium flag. Use `--name=value`, not separate flag and value arguments. The
-operator must supply trusted flags, including a private `--user-data-dir=...`.
-The shell supplies the initial `about:blank` page and `--remote-debugging-pipe`.
-It rejects caller-supplied URLs, debugging flags, app-mode navigation, session
-restoration, and common sandbox-disabling flags. It never opens a debugging TCP
-port. The caller must not wrap Chromium with a program that adds debugging or
-sandbox-disabling flags.
-
-| Input | Existing producer or consumer |
+| Environment input | Contract |
 | --- | --- |
-| `CREDENTIALS_DIRECTORY/KORRID_RPC_CAPABILITY` | systemd `LoadCredential`, with the existing korrid capability environment name as its credential ID. |
-| `KORRID_ADDRESS` | korrid's existing socket address. The bridge uses only its nonzero port and the portal client connects to `127.0.0.1`. |
-| `KORRID_PORTAL_ORIGIN` | korrid's existing allowed portal origin. This shell accepts the deployed Linux form, canonical `http://127.0.0.1:PORT`. |
-| `KORRI_WEB_SURFACE_URL` | the existing Linux kiosk URL. It must start with the configured origin and `/`. Query parameters remain supported. |
+| `CREDENTIALS_DIRECTORY` | Absolute systemd credential directory. Read only `KORRID_RPC_CAPABILITY` inside it. |
+| `KORRID_ADDRESS` | Numeric socket address with a nonzero port. Only the port enters the binding; the portal connects to `127.0.0.1`. |
+| `KORRID_PORTAL_ORIGIN` | Canonical `http://127.0.0.1:PORT`, with a nonzero explicit port. |
+| `KORRI_WEB_SURFACE_URL` | The same origin followed by `/` and an optional path/query. |
+| `HOME`, `XDG_RUNTIME_DIR` | Required absolute paths belonging to the isolated portal service. |
+| `WAYLAND_DISPLAY` | Required for Wayland. |
+| `WPE_PLATFORM` | Optional `wayland` or `headless`. Headless is for acceptance tests. |
+| `NOTIFY_SOCKET` | Optional filesystem or `@`-prefixed abstract Unix datagram socket. |
 
-The credential must be a regular file owned by the shell's service user, without
-permissions for its group or other users. Symlinks and credentials above 4 KiB
-are rejected. One final newline is accepted from the credential producer. The
-shell does not read `KORRID_RPC_CAPABILITY` from its environment.
+The credential must be a regular file owned by the effective service user,
+with no group or other permission bits. The launcher opens it with
+`O_NOFOLLOW`, `O_CLOEXEC` and `O_NONBLOCK`. It rejects symlinks, empty files,
+files larger than 4096 bytes, NULs and control characters. One trailing newline
+is accepted. The value must use ASCII bearer-token characters
+(`A-Z`, `a-z`, `0-9`, `-._~+/=`). It never reads the capability environment value.
 
-The caller also supplies normal Chromium environment values, including `HOME`,
-`XDG_RUNTIME_DIR` and `WAYLAND_DISPLAY`. The shell removes the credential
-variables and common Chromium flag/log overrides from the child environment.
-It suppresses Chromium stdout and stderr. Shell failures report fixed messages
-without protocol payloads or credentials. Core dumps are disabled. Chromium
-receives `--disable-breakpad` and `--disable-crash-reporter`; caller flags cannot
-enable crash reporting or file logging.
+Before creating WPE processes, the launcher removes all environment variables
+except `HOME`, `XDG_RUNTIME_DIR`, `WAYLAND_DISPLAY`, `WPE_PLATFORM`, `LANG`,
+`LC_ALL`, `TZ`, `GBM_BACKENDS_PATH`, `LIBGL_DRIVERS_PATH` and
+`__EGL_VENDOR_LIBRARY_FILENAMES`. The last three are native graphics-loader
+inputs; the test app supplies store paths because Fuji has no
+`/run/opengl-driver`. In particular, credential paths, `NOTIFY_SOCKET`, bus
+addresses, `LD_*`, `WEBKIT_*`, inspector and sandbox overrides are not passed
+to engine processes. The service must supply a trusted launcher environment:
+variables such as `LD_PRELOAD` can act before native `main()` runs.
 
-## Credential boundary
+## Credential and readiness boundary
 
-The shell uses two Unix socket pairs as Chromium's inherited fd 3 and fd 4.
-Descriptor reservation prevents a `dup2` collision. The child starts in a new
-process group. The shell attaches the initial page, installs the bridge, and
-then navigates to the configured URL.
+A document-start user script runs in the top frame only. WebKit's URL match
+patterns do not support ports, so its allow list restricts injection to
+`http://127.0.0.1/*`; the script's first statement checks the **exact** configured
+`location.origin`, including its port, before installing any binding.
 
-Startup succeeds only after the trusted top-level page calls both
-`korridPort()` and `korridCapability()`. The shell receives this signal through
-the private debugging pipe. It checks Chromium's execution-context origin,
-frame and session before accepting the signal. A direct callback from a child
-frame or another origin cannot report readiness. A page that ignores the bridge,
-including an old fixture bundle, fails startup after 15 seconds. The shell then
-stops and reaps Chromium.
+`window.KorriRpc` is non-enumerable, non-writable and non-configurable. Its
+object is frozen. `korridPort()` returns a number and `korridCapability()` returns
+a string. The binding is not written to a URL, command argument, static asset,
+browser storage or log. Same-origin scripts share the trusted document's
+security principal; this is not isolation from malicious code on that origin.
+Child frames receive no binding of their own.
 
-After binding consumption, the shell sends `READY=1` to systemd's
-`NOTIFY_SOCKET`. Configure `Type=notify`, `NotifyAccess=main` and a startup timeout
-longer than the bootstrap deadline. The shell supports filesystem and abstract
-Unix notification sockets. It removes `NOTIFY_SOCKET` from Chromium's environment.
-Without this variable, standalone invocation still waits for binding consumption.
-Notification failure fails startup.
+The script captures its native message sender before page code runs. After
+both methods are consumed, it sends a 256-bit per-launch nonce through the
+`korriReady` script-message handler. The nonce exists only in native memory and
+the injected closure, not in page properties, environment or requests. The
+launcher ignores wrong nonce messages. A page that does not consume both
+methods fails after the production 15-second bootstrap deadline. Frame messages
+without the nonce cannot make the service ready.
 
-This check proves that the page consumes the real connection binding. It does
-not prove that korrid is available or that an RPC succeeds. Backend failures
-remain the portal client's responsibility. No token appears in the readiness
-signal, and no readiness HTTP endpoint or marker file is used.
+Only then does the main process send `READY=1` to `NOTIFY_SOCKET`. Notification
+failure fails startup. Without a notification socket, it still requires binding
+consumption. This proves binding consumption, not successful RPC or korrid
+availability. Use `Type=notify`, `NotifyAccess=main`, `KillMode=control-group` and
+a systemd startup timeout longer than 15 seconds.
 
-The injected script installs the bridge only in the top-level document with the
-exact configured origin. The binding is frozen, non-enumerable, non-writable,
-and non-configurable. Navigation to another origin does not receive the binding.
-Popups and child frames do not receive their own binding. Credentials never
-enter browser URLs, command arguments, browser storage, or the public bundle.
+The launcher stops loading and terminates its web process on failure or
+SIGTERM/SIGINT. WPE owns its helper processes. Systemd must retain control-group
+cleanup for helpers and for uncatchable signals. Run the portal as a separate
+service user from games. The credential mount remains accessible to native
+code with the same user identity; this launcher does not replace OS isolation.
 
-Each protocol message has a 1 MiB limit. Startup commands have a 15-second limit.
-The shell keeps the private debugging pipe open to monitor Chromium. It stops
-the browser process group and reaps Chromium on failure or shutdown. SIGTERM and
-SIGINT trigger this cleanup. Systemd must retain `KillMode=control-group` for
-cleanup after an uncatchable signal such as SIGKILL.
+## Browser policy
 
-Run this shell and Chromium under a service user separate from game processes.
-Give that service only the Wayland access it needs. A credential mount still
-exists inside the service, even though the child no longer receives its path
-in the environment. This shell does not protect credentials from arbitrary
-native code running under the same service user. It does not set up those OS
-permissions or supply credentials to the service.
+- Deny every `permission-request` with `webkit_permission_request_deny()`.
+- Reject navigation outside the configured origin, including frame navigation.
+- Reject every new-window policy decision and every view creation request.
+- Disable developer extras, automatic JavaScript windows and console forwarding.
+- Keep the engine's process sandbox enabled. No crash reporter is installed or
+  started. Core dumps are disabled before WPE starts.
+- Request fullscreen through `wpe_toplevel_fullscreen()`.
+- Use persistent WPE network-session defaults under `HOME`. WPE owns its native
+  data/cache layout; there is no Chromium profile reader or runtime migration.
+  Any transfer of existing browser data is a separate deployment operation.
+
+### Wayland app_id
+
+The actual app_id is **`org.korri.portal`**. The tested WPE 2.52 API has no public app_id
+setter. It obtains its app_id from `GApplication`, whose valid IDs require a
+dot, so it cannot use the requested `korri-portal` through that API. The launcher
+sets a non-registered, non-unique `GApplication` with `org.korri.portal` as its
+ID. The saved Wayland test verifies the actual `xdg_toplevel.set_app_id` and
+`set_fullscreen` protocol requests against a private headless Sway compositor.
+Focus rules must match `org.korri.portal`.
+
+### D-Bus decision
+
+**No session bus.** The launcher removes inherited D-Bus addresses and does not
+register its `GApplication`. Real-engine bootstrap, permissions and navigation
+tests pass without a session bus. WPE's sandbox remains enabled. A private bus
+and `dbus-run-session` are not needed for this slice. An accessibility-bus
+warning can occur; accessibility integration is not verified here. The
+launcher remains the unit's main process.
+
+### Gameplay transparency
+
+The native background is always transparent, with no opaque-region hint.
+There is no `KORRI_PORTAL_TRANSPARENT` input. This follows the existing portal:
+`src/main.tsx` switches between catalog and gameplay overlay in one window;
+`src/index.css` paints catalog black and changes the overlay root to transparent.
+A process-wide opt-in would prevent that in-place switch. The native WPE
+background-color API supplies alpha without a browser patch. This does not
+imply click-through. Compositor pixel blending and handheld GPU performance
+still need device acceptance; the headless security tests do not prove them.
 
 ## Verification
 
 ```sh
-cargo test --locked
-KORRI_TEST_CHROMIUM=/absolute/path/to/chromium \
-  cargo test --locked --test chromium -- --include-ignored
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
+nix build .#korri-portal-wpe
+nix run .#korri-portal-wpe-test -- -v
 ```
 
-The browser acceptance test uses an actual headless Chromium with its sandbox
-enabled and two actual loopback HTTP servers. It checks authenticated use on
-the trusted origin, absence on another origin, bridge properties, command-line
-and environment exclusions, a real Unix readiness notification, and browser
-cleanup. Four additional real-browser tests use the production 15-second
-deadline. They reject an old fixture page, partial binding consumption, and
-readiness callbacks from a child frame or an untrusted origin. Browser tests
-require an explicit Chromium executable and are ignored during the default test
-run. A default unit test verifies abstract Unix readiness notification.
+The app runs the real launcher and engine with `WPE_PLATFORM=headless`, real
+loopback HTTP servers, real credential files, and filesystem/abstract readiness
+sockets. It checks bridge descriptors and values, console credential exclusion,
+child binding exclusion, wrong nonces, full and partial bootstrap deadlines,
+permission denial, popup rejection, off-origin navigation rejection, and
+scrubbing of the engine process environment. Another origin is blocked before
+its document can load or receive a binding.
 
-## Chromium transparency experiment
+For the temporary prebuilt aarch64 engine on Fuji, copy `clients/linux/` and
+`flake.lock` into the same relative layout, then run the saved scripts there:
 
-[`chromium/`](chromium/) owns the independent native app-window transparency
-patch, patched browser packages, and compositor pixel test. The experiment does
-not change this shell's credential contract or certify the Odin GPU.
+```sh
+clients/linux/tests/fuji-build.sh
+clients/linux/tests/fuji-test.sh -v
+clients/linux/tests/fuji-wayland.sh
+```
+
+These scripts build locally on Fuji, not on handhelds. The build uses the
+repository's locked nixpkgs and the two prebuilt WPE 2.52.3 store paths named in
+`fuji-build.sh`. That engine lacks the separate DRM-node patch. The Wayland
+protocol test can pass even if Fuji's GBM device cannot render a mapped window;
+it reports the mapped-window count separately. It does not prove pixel output.
+
+Focused formatting/lint checks:
+
+```sh
+nix shell nixpkgs#clang-tools --command clang-format -style=WebKit --dry-run --Werror clients/linux/src/main.c
+nix shell nixpkgs#ruff --command ruff check clients/linux/tests/acceptance.py
+nix shell nixpkgs#nixfmt --command nixfmt --check clients/linux/package.nix clients/linux/test-app.nix
+```
+
+The package builds C11 with `-Wall -Wextra -Werror` and hardening enabled.

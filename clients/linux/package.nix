@@ -5,7 +5,13 @@ pkgs.stdenv.mkDerivation {
   src = ./src;
   strictDeps = true;
   nativeBuildInputs = [ pkgs.pkg-config ];
-  buildInputs = [ wpewebkit pkgs.glib pkgs.libsoup_3 ];
+  buildInputs = [
+    wpewebkit
+    pkgs.glib
+    pkgs.libsoup_3
+    pkgs.libwpe
+    pkgs.libxkbcommon
+  ];
   buildPhase = ''
     runHook preBuild
     $CC -std=c11 -Wall -Wextra -Werror -O2 -D_FORTIFY_SOURCE=3 \

@@ -140,7 +140,18 @@
         };
       in
       {
-        apps = tasks // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (inputplumber.apps // pluginHost.apps);
+        apps =
+          tasks
+          // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
+            inputplumber.apps
+            // pluginHost.apps
+            // {
+              korri-portal-wpe-test = import ./clients/linux/test-app.nix {
+                inherit pkgs;
+                launcher = self.packages.${system}.korri-portal-wpe;
+              };
+            }
+          );
         devShells.default = import ./devshell.nix {
           inherit pkgs;
           hooksInstall = tasks.hooks-install.program;
