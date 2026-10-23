@@ -294,29 +294,36 @@ function settingsGroup(world: World, layer: Layer, scope: Scope): SurfaceSetting
   return { title: "Runner settings", items }
 }
 
-/** Values only files set: shown, never changed here. */
-function fileGroup(layer: Layer, scope: Scope): SurfaceSettingGroup | undefined {
+/**
+ * Values only files set: shown, never changed here. A list kind (arguments,
+ * hooks) is the list in force, one row per place's part in merge order: the
+ * Device's routine night-mode, then the Game's own parts. A place whose runner
+ * is not in use shows only its own parts, of which these fixtures have none.
+ */
+function fileGroup(world: World, layer: Layer, scope: Scope): SurfaceSettingGroup | undefined {
   const place = placeId(layer, scope)
   const from = `from ${placeTitle(layer, scope)}`
   const describe = `Set in ${layer.file}. Change it there.`
-  const row = (key: string, label: string, value: string): SurfaceSettingItem =>
-    ({ id: launchRowId(place, `file:${key}`), label, value, source: from, scope: "device", description: describe })
-  if (layer.id === "device" && scope === ANY) return { title: "From files", items: [row("hooks:use", "Routines", "fan-quiet")] }
-  if (layer.id === "game:wario" && scope === ANY) {
-    return {
-      title: "From files",
-      items: [
-        row("env:SDL_AUDIODRIVER", "Environment SDL_AUDIODRIVER", "pipewire"),
-        row("env:MESA_DEBUG", "Environment MESA_DEBUG", "Unset"),
-        row("args:append", "Arguments after", "--verbose --save-dir=/srv/korri/storage/saves/person/wario-land-4-usa-rev-1"),
-        row("cwd", "Working folder", "/srv/korri/storage/games/gba/Wario_Land_4_(USA,_Europe)_[!]"),
-      ],
-    }
-  }
-  if (layer.id === "game:wario" && scope === FAMILY) {
-    return { title: "From files", items: [row("hooks:before:0", "Before launch", "notify-send 'Wario Land 4 is starting'")] }
-  }
-  return undefined
+  const row = (key: string, label: string, value: string, source = from, description = describe): SurfaceSettingItem =>
+    ({ id: launchRowId(place, `file:${key}`), label, value, source, scope: "device", description })
+  const own = layer.id === "game:wario" && scope === ANY ? [
+    row("env:SDL_AUDIODRIVER", "Environment SDL_AUDIODRIVER", "pipewire"),
+    row("env:MESA_DEBUG", "Environment MESA_DEBUG", "Unset"),
+    row("cwd", "Working folder", "/srv/korri/storage/games/gba/Wario_Land_4_(USA,_Europe)_[!]"),
+  ] : []
+  const inForce = scope.runner === undefined ? scope.kind === "any" || world.inUse !== undefined : scope.runner === world.inUse
+  const DEVICE_FILE = "Set in device.yaml. Change it there."
+  const LIBRARY_FILE = "Set in library.yaml. Change it there."
+  const lists = !inForce ? [] : [
+    row("args:append:0", "Arguments after", "--verbose --save-dir=/srv/korri/storage/saves/person/wario-land-4-usa-rev-1", "from Game", LIBRARY_FILE),
+    row("hooks:before:0", "Before launch", "brightnessctl set 30%; systemctl --user start fan-quiet", "routine night-mode, used by Device", DEVICE_FILE),
+    ...(world.inUse === undefined ? [] : [
+      row("hooks:before:1", "Before launch", "notify-send 'Wario Land 4 is starting'", "from Game for family retroarch", LIBRARY_FILE),
+    ]),
+    row("hooks:after:0", "After the session", "brightnessctl set 100%", "routine night-mode, used by Device", DEVICE_FILE),
+  ]
+  const items = [...own, ...lists]
+  return items.length === 0 ? undefined : { title: "From files", items }
 }
 
 /** What the runner plugin itself sets, from korrid's dry run. */
@@ -419,7 +426,7 @@ function placesOf(world: World): readonly SurfaceLaunchSettingsPlace[] {
       ...modifierGroups(world, layer, scope),
       layer === GAME && scope === ANY ? profilePickGroup(world) : undefined,
       profile !== undefined && scope === ANY ? profileOwnGroup(world, profile) : undefined,
-      fileGroup(layer, scope),
+      fileGroup(world, layer, scope),
       runnerFactsGroup(world, layer, scope),
     ].filter((group): group is SurfaceSettingGroup => group !== undefined)
     return {

@@ -7,7 +7,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { createFixtureHost, fixtureModel } from "../src/fixtures/fixture-host"
 import { launchRowId, launchSettingsFixtures as launch, withLaunchSettings } from "../src/fixtures/fixture-launch-settings"
-import { ZONE_LAUNCH_SCOPE_ROW } from "../src/plan/launch-settings"
+import { launchPlan, launchScopes, ZONE_LAUNCH_SCOPE_ROW } from "../src/plan/launch-settings"
 import { update, zoneShown, zoneSurfaceStart } from "../src/state/surface"
 import { ZoneSurface } from "../src/ZoneSurface"
 import { byWords } from "./words"
@@ -243,4 +243,15 @@ describe("launch settings: modifiers", () => {
     expect(screen.queryByText(byWords("Add MangoHud setting"))).toBeNull()
     expect(screen.getAllByText(byWords("Add Gamescope setting")).length).toBeGreaterThan(0)
   })
+})
+
+test("a hook list shows each place's part in merge order, a routine with the place that used it", () => {
+  const family = launchScopes(launch.ready).findIndex(scope => scope.label === "Family retroarch")
+  const game = launchPlan(launch.ready, { _tag: "Idle" }, family).slices.settings.find(group => group.title === "Game")
+  const hooks = game?.items.filter(item => item.label === "Before launch").map(item => [item.value, item.source, item.description])
+  expect(hooks).toEqual([
+    ["brightnessctl set 30%; systemctl --user start fan-quiet", "routine night-mode, used by Device", "Set in device.yaml. Change it there."],
+    ["notify-send 'Wario Land 4 is starting'", "from Game for family retroarch", "Set in library.yaml. Change it there."],
+  ])
+  for (const item of game?.items.filter(row => row.label === "Before launch") ?? []) expect(item.interaction).toBeUndefined()
 })

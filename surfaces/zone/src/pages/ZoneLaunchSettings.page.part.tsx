@@ -154,6 +154,11 @@ export function RunnerUnavailable() {
 export function RunnerFactsUnavailable() {
   return <Live editor={launch.factsUnavailable} scope={scopeOf(launch.factsUnavailable, "gpSP")} script={[focus(launchRowId("device/runner:retroarch/gpsp", "runner-facts:unavailable"))]} />
 }
+/** Hooks before launch from two places and a routine, in merge order: the
+ * Device's routine night-mode, then the Game's hook for the RetroArch family. */
+export function HooksFromPlacesAndRoutine() {
+  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "Family retroarch")} script={[focus(launchRowId("game:wario/family:retroarch", "file:hooks:before:0"))]} />
+}
 /** Battery saver not picked: Gamescope inherits On from the Device, and says so. */
 export function GamescopeInherited() {
   return <Live editor={launch.noProfilePicked} script={[focus(launchRowId("game:wario/any", "modifier:korri/gamescope:enabled"))]} />

@@ -17,10 +17,17 @@ import { PicoNetworkMarks } from "./PicoNetworkMarks"
  * group's caption above it, so rows the player can change and rows only a
  * file sets are told apart.
  *
+ * A fact whose value is longer than PICO_FACT_INLINE_MAX characters (a
+ * command a hook runs, a folder) stands whole on its own line under the
+ * label, wrapping anywhere, rather than squeezing the label beside it.
+ *
  * A fact row is not a disabled button. Disabled reads as "you cannot", and the
  * truth is "there is nothing to do" — the software version is a fact, not a
  * locked control. The Wi-Fi network this device is on is a fact too.
  */
+/** A fact longer than this many characters moves under its label. */
+export const PICO_FACT_INLINE_MAX = 20
+
 export function PicoSettingRow({
   row,
   onActivate,
@@ -30,6 +37,7 @@ export function PicoSettingRow({
 }) {
   const interactive = row.control.kind !== "fact"
     && !(row.control.kind === "network" && row.control.network.connected)
+  const longFact = row.control.kind === "fact" && row.value !== undefined && row.value.length > PICO_FACT_INLINE_MAX
   const failure = typeof row.state !== "object" ? undefined : "problem" in row.state ? row.state.problem : row.state.failed
   const detail = (
     <>
@@ -40,7 +48,7 @@ export function PicoSettingRow({
         <PicoSegments current={row.control.current} options={row.control.options} />
       ) : row.control.kind === "step" ? (
         <span>{`◀ ${row.control.current} ▶`}</span>
-      ) : row.value === undefined ? null : (
+      ) : row.value === undefined || longFact ? null : (
         <span>{row.value}</span>
       )}
       {row.control.kind === "action" || row.control.kind === "text" || row.control.kind === "pick" ? <span aria-hidden>▶</span> : null}
@@ -56,6 +64,7 @@ export function PicoSettingRow({
         focusable={!interactive}
         onPress={interactive ? onActivate : undefined}
       />
+      {longFact ? <p className="pico-setting-row-fact">{row.value}</p> : null}
       {row.source === undefined && row.deviceOnly !== true ? null : (
         <p className="pico-setting-row-source">
           {row.source === undefined ? null : <span>{row.source}</span>}

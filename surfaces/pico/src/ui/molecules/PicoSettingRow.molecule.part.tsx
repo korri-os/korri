@@ -15,6 +15,25 @@ export function ReadOnlyFact() {
   return <PicoSettingRow onActivate={() => undefined} row={row} />
 }
 
+/** A hook a routine adds: a long fact under its label, its source and file. */
+export function LongFact() {
+  return (
+    <PicoSettingRow
+      onActivate={() => undefined}
+      row={{
+        id: "launch:set:game:wario/any#file:hooks:before:0",
+        label: "Before launch",
+        value: "brightnessctl set 30%; systemctl --user start fan-quiet; /srv/korri/storage/scripts/night-mode-with-a-very-long-name.sh",
+        description: "Set in device.yaml. Change it there.",
+        source: "routine night-mode, used by Device",
+        deviceOnly: true,
+        control: { kind: "fact" },
+        state: "idle",
+      }}
+    />
+  )
+}
+
 export function Saving() {
   const model = {
     ...fixtureModel,
