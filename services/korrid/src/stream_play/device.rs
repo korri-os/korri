@@ -1,8 +1,8 @@
 //! The device's local portal can select a peer without giving peer calls a
 //! second federation hop. Peer catalog and status always describe this holder.
-use super::viewer_wiring::{production_viewer, CertificateProvision, LocalSeats};
 use crate::authorization::AuthorizationContext;
 use crate::linux_viewer::LinuxViewerError;
+use crate::linux_viewer::{production_viewer, CertificateProvision, LocalSeats};
 use crate::*;
 
 /// Holder preparation and local peer selection share one admission fence.
