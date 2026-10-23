@@ -20,8 +20,11 @@ person hosts to carry their traffic.
   offline at any time. A device relays only while it is on external power and
   an unmetered network.
 - When two devices are together and cannot reach each other, one device starts
-  a private Wi-Fi network and the other joins it on its own. This works with no
-  router and no internet.
+  a nearby link, a private Wi-Fi network, and the other joins it on its own.
+  This works with no router and no internet. Bluetooth or Wi-Fi may help the
+  devices find each other. Bluetooth carries traffic only where its bandwidth
+  is enough; a Moonlight stream needs several megabits per second, so the
+  stream always goes over Wi-Fi.
 - When a device already has Tailscale or a similar VPN, Korri uses it as one
   more method. Korri never requires one.
 - Korri never asks the person to change their router, such as forwarding a port
