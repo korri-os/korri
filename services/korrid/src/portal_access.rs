@@ -107,6 +107,7 @@ impl PortalPermission {
                         RpcRequest::InvitesStreamPlay(_) | RpcRequest::InvitesDismiss(_) => true,
                         RpcRequest::SettingsUpdate(request) => {
                             request.setting_id == crate::config::settings::PLAYER_COUNT_SETTING_ID
+                                || request.setting_id == crate::stream_play::person_name::SETTING_ID
                         }
                         // The existing stop contract has no peer selector. The host
                         // executor enforces expectedLaunchId before changing a session.
@@ -1005,5 +1006,13 @@ mod launch_settings_permission_tests {
             json!({"_tag":"app.local-games.runner.set","payload":{}})
         )
         .is_err());
+    }
+    #[test]
+    fn the_device_portal_can_set_person_name_but_read_only_cannot() {
+        let request: RpcRequest = serde_json::from_value(serde_json::json!({
+            "_tag":"system.settings.update", "payload":{"settingId":"person-name", "value":"", "expectedRevision":"observed"}
+        })).unwrap();
+        assert!(PortalPermission::LocalSessions.permits(&request));
+        assert!(!PortalPermission::ReadOnly.permits(&request));
     }
 }

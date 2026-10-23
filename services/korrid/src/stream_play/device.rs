@@ -74,12 +74,6 @@ pub(crate) async fn dispatch(
     authorization: &AuthorizationContext,
     request: &RpcRequest,
 ) -> Option<RpcResponse> {
-    if !matches!(
-        authorization,
-        AuthorizationContext::LocalBrowser | AuthorizationContext::LocalUnixControl
-    ) {
-        return None;
-    }
     let ServerMode::Host(host) = &state.mode else {
         return None;
     };
@@ -103,6 +97,17 @@ pub(crate) async fn dispatch(
             });
         }
         peers.clear_stream_play_end();
+    }
+    if !matches!(
+        authorization,
+        AuthorizationContext::LocalBrowser | AuthorizationContext::LocalUnixControl
+    ) {
+        return None;
+    }
+    if let Some(launch_id) = peers.stream_play_launch_id() {
+        if let Some(response) = stream_player_control_refusal(&launch_id, request) {
+            return Some(response);
+        }
     }
     match request {
         RpcRequest::CatalogSnapshot(_) => {
@@ -238,6 +243,32 @@ pub(crate) async fn dispatch(
     }
 }
 
+/// A local viewer has no plugin controls, even if an old surface retained ids.
+pub(crate) fn stream_player_control_refusal(
+    launch_id: &str,
+    request: &RpcRequest,
+) -> Option<RpcResponse> {
+    let expected = match request {
+        RpcRequest::SessionControls(request) => &request.launch_id,
+        RpcRequest::SessionControlInvoke(request) => &request.launch_id,
+        _ => return None,
+    };
+    let failure = SessionControlFailure {
+        reason: if expected == launch_id {
+            SessionControlFailureReason::NotSessionStarter
+        } else {
+            SessionControlFailureReason::StaleSession
+        },
+        message: "A stream player cannot use the holding device's gameplay controls.".into(),
+    };
+    Some(match request {
+        RpcRequest::SessionControls(_) => {
+            RpcResponse::SessionControls(SessionControlsOutcome::Err(failure))
+        }
+        _ => RpcResponse::SessionControlInvoke(SessionControlInvokeOutcome::Err(failure)),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,6 +367,112 @@ mod tests {
             host::control::HostSessionStatus::Running { .. }
                 | host::control::HostSessionStatus::FocusFailed { .. }
         ));
+        server.abort();
+    }
+    #[tokio::test]
+    async fn simultaneous_local_and_peer_launches_admit_exactly_one_selection() {
+        let far_root = tempfile::tempdir().unwrap();
+        let far = holder(far_root.path(), "far");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let entered = Arc::new(tokio::sync::Semaphore::new(0));
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let gate = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let (arrived, resume) = (entered.clone(), release.clone());
+        let router = crate::plain_host_routers_for_tests(far)
+            .0
+            .layer(axum::middleware::from_fn(
+                move |request: axum::extract::Request, next: axum::middleware::Next| {
+                    let (arrived, resume, gate) = (arrived.clone(), resume.clone(), gate.clone());
+                    async move {
+                        if gate.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                            arrived.add_permits(1);
+                            resume.acquire().await.unwrap().forget();
+                        }
+                        next.run(request).await
+                    }
+                },
+            ));
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let peers = upstreams::UpstreamRegistry::new(vec![upstreams::UpstreamHostConfig::native(
+            "far",
+            format!("http://{address}"),
+        )]);
+        let local_root = tempfile::tempdir().unwrap();
+        let (mut state, _) = crate::app_states(holder(local_root.path(), "local"));
+        state.remote = Some(peers);
+        let remote_state = state.clone();
+        let peer_state = state.clone();
+        let remote = tokio::spawn(async move {
+            crate::dispatch(&remote_state, &AuthorizationContext::LocalBrowser,
+            serde_json::from_value(json!({"_tag":"app.session.prepare", "payload":{"gameId":"far-game","host":"far"}})).unwrap()).await.unwrap()
+        });
+        entered.acquire().await.unwrap().forget();
+        let mut local = tokio::spawn(async move {
+            crate::dispatch(&state, &AuthorizationContext::LocalBrowser,
+            serde_json::from_value(json!({"_tag":"app.session.prepare", "payload":{"gameId":"local-game","host":"local"}})).unwrap()).await.unwrap()
+        });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), &mut local)
+                .await
+                .is_err()
+        );
+        release.add_permits(1);
+        assert!(matches!(
+            remote.await.unwrap(),
+            RpcResponse::SessionPrepare(game_routes::SelectedGameLaunchOutcome::Ok(_))
+        ));
+        assert!(
+            matches!(local.await.unwrap(), RpcResponse::SessionPrepare(game_routes::SelectedGameLaunchOutcome::Err(RpcFailure { code, .. })) if code == "ActiveSessionConflict")
+        );
+        let incoming = AuthorizationContext::Peer(authorization::Principal::OwnerDevice {
+            device_public_key: "33".repeat(32),
+            owner_public_key: "44".repeat(32),
+            owner_statement: "verified".into(),
+        });
+        let response = crate::dispatch(
+            &peer_state,
+            &incoming,
+            serde_json::from_value(json!({
+                "_tag":"app.session.prepare", "payload":{"gameId":"local-game"}
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            matches!(response, RpcResponse::SessionPrepare(game_routes::SelectedGameLaunchOutcome::Err(RpcFailure { code, .. })) if code == "ActiveSessionConflict")
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn idle_host_does_not_adopt_an_unselected_peers_live_session() {
+        // Merely observing the directory is not selecting a session.
+        let far_root = tempfile::tempdir().unwrap();
+        let far = holder(far_root.path(), "far");
+        let prepared = far.prepare("far-game", None).await.unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let far_router = crate::plain_host_routers_for_tests(far).0;
+        let server = tokio::spawn(async move { axum::serve(listener, far_router).await.unwrap() });
+        let config = upstreams::UpstreamHostConfig::native("far", format!("http://{address}"));
+        let peers = upstreams::UpstreamRegistry::new(vec![config]);
+        assert!(peers.stream_play_launch_id().is_none());
+        let local_root = tempfile::tempdir().unwrap();
+        let (mut state, _) = crate::app_states(holder(local_root.path(), "local"));
+        state.remote = Some(peers);
+        let response = crate::dispatch(
+            &state,
+            &AuthorizationContext::LocalBrowser,
+            serde_json::from_value(json!({"_tag":"app.session.status","payload":{}})).unwrap(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            matches!(response, RpcResponse::SessionStatus(SessionStatusOutcome::Err(RpcFailure { code, .. })) if code == "NoActiveSession")
+        );
+        assert_ne!(prepared.session.launch_id, "");
         server.abort();
     }
 }

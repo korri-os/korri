@@ -11,6 +11,15 @@ async fn stream_player_pause_end_and_local_leave_never_control_the_holder() {
     assert_eq!(registry.stream_play(&key, "wrong").await.unwrap_err().code(), "LaunchMismatch");
     let active = registry.stream_play(&key, &far.launch_id).await.unwrap();
     assert_eq!(active.stream_players.len(), 1);
+    for tag in ["app.session.controls", "app.session.control.invoke"] {
+        let payload = if tag == "app.session.controls" { serde_json::json!({"launchId":far.launch_id}) }
+            else { serde_json::json!({"launchId":far.launch_id,"controlId":"plugin/action"}) };
+        let request = serde_json::from_value(serde_json::json!({"_tag":tag,"payload":payload})).unwrap();
+        let response = crate::stream_play::device::stream_player_control_refusal(&far.launch_id, &request).unwrap();
+        assert_eq!(serde_json::to_value(response).unwrap()["outcome"]["payload"]["reason"], "NotSessionStarter");
+    }
+
+    assert_eq!(registry.stream_play_launch_id().as_deref(), Some(far.launch_id.as_str()));
     far.set_phase("frozen");
     registry.session_status().await.unwrap();
     assert!(viewer.calls().iter().any(|call| call.action == LinuxViewerAction::Background));
@@ -20,6 +29,7 @@ async fn stream_player_pause_end_and_local_leave_never_control_the_holder() {
     registry.session_freeze(Some(&far.launch_id)).await.unwrap();
     assert_eq!(far.active_phase.lock().unwrap().as_deref(), Some("running"));
     assert!(!registry.has_selected_session());
+    assert!(registry.stream_play_launch_id().is_none());
     registry.stream_play(&key, &far.launch_id).await.unwrap();
     registry.session_stop(Some(&far.launch_id), true).await.unwrap();
     assert_eq!(far.active_phase.lock().unwrap().as_deref(), Some("running"));

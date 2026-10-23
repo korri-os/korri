@@ -10,8 +10,13 @@ pub(crate) struct Cache {
 
 impl Cache {
     pub(crate) fn replace(&mut self, sessions: Vec<Invite>) {
-        let live: HashSet<_> = sessions.iter().map(key).collect();
-        self.dismissed.retain(|key| live.contains(key));
+        // Absence can be a failed peer observation, not an observed End.
+        // Retire a dismissal only when this device announces another launch.
+        self.dismissed.retain(|(device, launch)| {
+            !sessions.iter().any(|invite| {
+                &invite.device_public_key == device && &invite.session.launch_id != launch
+            })
+        });
         let mut next = HashMap::new();
         for mut invite in sessions {
             let key = key(&invite);
@@ -85,6 +90,9 @@ mod tests {
         assert!(cache.dismiss(&first));
         cache.replace(vec![invite("a", "1"), invite("b", "1")]);
         assert_eq!(cache.list().len(), 1);
+        cache.replace(vec![]); // Missing a peer is not proof that its launch ended.
+        cache.replace(vec![invite("a", "1")]);
+        assert!(cache.list().is_empty());
         cache.clear(); // Device is not idle. Dismissal must survive this.
         cache.replace(vec![invite("a", "1")]);
         assert!(cache.list().is_empty());

@@ -52,15 +52,15 @@ fn relays(identity: &DeviceIdentity) -> Option<Relays> {
 async fn signer(state: &AppState, identity: &DeviceIdentity) -> Option<Arc<dyn PersonSigner>> {
     let owner = owner(identity)?;
     if let Some(socket) = std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET").map(PathBuf::from) {
-        let status = tokio::time::timeout(
+        if let Ok(Ok(status)) = tokio::time::timeout(
             Duration::from_secs(1),
             UnixLocalSignerAdmin::new(socket.clone()).status(),
         )
         .await
-        .ok()?
-        .ok()?;
-        if status.0.as_deref() == Some(owner) {
-            return Some(Arc::new(UnixPersonSigner::new(socket)));
+        {
+            if status.0.as_deref() == Some(owner) {
+                return Some(Arc::new(UnixPersonSigner::new(socket)));
+            }
         }
     }
     let relay_list =
@@ -110,6 +110,17 @@ impl PersonNames {
     }
 }
 
+fn can_write(state: &AppState, context: &authorization::AuthorizationContext) -> bool {
+    matches!(context, authorization::AuthorizationContext::LocalBrowser)
+        && state.portal_access.as_ref().is_some_and(|access| {
+            access.permits(&RpcRequest::SettingsUpdate(SettingsUpdateRequest {
+                setting_id: SETTING_ID.into(),
+                expected_revision: String::new(),
+                value: String::new(),
+            }))
+        })
+}
+
 pub(crate) async fn enrich(
     state: &AppState,
     context: &authorization::AuthorizationContext,
@@ -122,10 +133,7 @@ pub(crate) async fn enrich(
         return;
     };
     snapshot.person_name = state.person_names.name(state, owner).await;
-    if matches!(context, authorization::AuthorizationContext::LocalBrowser)
-        && state.portal_access.is_some()
-        && signer(state, &identity).await.is_some()
-    {
+    if can_write(state, context) && signer(state, &identity).await.is_some() {
         snapshot.editable_setting_ids.push(SETTING_ID.into());
     }
 }
@@ -136,9 +144,7 @@ pub(crate) async fn update(
     request: &SettingsUpdateRequest,
 ) -> SettingsUpdateOutcome {
     let result = async {
-        if !matches!(context, authorization::AuthorizationContext::LocalBrowser)
-            || state.portal_access.is_none()
-        {
+        if !can_write(state, context) {
             return Err(crate::local_settings_required());
         }
         let _write = state.person_names.writes.lock().await;
