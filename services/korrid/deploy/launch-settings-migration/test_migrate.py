@@ -110,7 +110,7 @@ class MigrationTests(unittest.TestCase):
 
     def test_loader_keeps_yaml12_plugin_names_and_values_unchanged(self):
         value = yaml.load(
-            "host: {env: {ON: yes, OFF: no, DATE: 2026-10-22}, runners: {'@korri:example/main': {settings: {on: off, number: 0755}}}}",
+            "host: {env: {ON: yes, OFF: no, DATE: 2026-10-22}, runners: {'@korri:example/main': {settings: {on: off, number: 0755, time: 1:20.0, exponent: 1e3}}}}",
             Loader=migration.UniqueLoader,
         )
         device, _ = migration.transform(value, {})
@@ -119,7 +119,7 @@ class MigrationTests(unittest.TestCase):
         )
         self.assertEqual(
             device["host"]["runners"]["@korri:example/main"]["settings"],
-            {"on": "off", "number": 755},
+            {"on": "off", "number": 755, "time": "1:20.0", "exponent": 1000.0},
         )
 
     def test_refuses_while_an_actual_korrid_named_process_runs(self):

@@ -6,6 +6,7 @@ import argparse
 import copy
 from datetime import datetime, timezone
 import os
+import math
 import re
 from pathlib import Path
 import shutil
@@ -33,6 +34,7 @@ for initial, resolvers in UniqueLoader.yaml_implicit_resolvers.items():
             "tag:yaml.org,2002:bool",
             "tag:yaml.org,2002:timestamp",
             "tag:yaml.org,2002:int",
+            "tag:yaml.org,2002:float",
         }
     ]
 UniqueLoader.add_implicit_resolver(
@@ -45,6 +47,20 @@ UniqueLoader.add_implicit_resolver(
     re.compile(r"^[-+]?(?:0b[0-1_]+|0o[0-7_]+|0x[0-9a-fA-F_]+|[0-9][0-9_]*)$"),
     list("-+0123456789"),
 )
+
+UniqueLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:float",
+    re.compile(
+        r"^[-+]?(?:(?:[0-9][0-9_]*\.[0-9_]*|\.[0-9_]+)(?:[eE][-+]?[0-9]+)?|[0-9][0-9_]*[eE][-+]?[0-9]+|\.(?:inf|Inf|INF|nan|NaN|NAN))$"
+    ),
+    list("-+0123456789."),
+)
+
+
+def setting_scalar(value):
+    return type(value) in {str, int, bool} or (
+        type(value) is float and math.isfinite(value)
+    )
 
 
 def yaml_integer(loader, node):
@@ -224,9 +240,7 @@ def place(value, path, extra=(), scoped=False):
             raise MigrationError(f"{path}.config values must be strings")
     if "settings" in value:
         record(value["settings"], f"{path}.settings")  # Plugin-owned keys are opaque.
-        if not all(
-            type(v) in {str, int, float, bool} for v in value["settings"].values()
-        ):
+        if not all(setting_scalar(v) for v in value["settings"].values()):
             raise MigrationError(f"{path}.settings values must be scalars")
     for id, modifier in record(value.get("modifiers", {}), f"{path}.modifiers").items():
         keys(modifier, {"enabled", "settings", "config"}, f"{path}.modifiers.{id}")
@@ -234,10 +248,7 @@ def place(value, path, extra=(), scoped=False):
             raise MigrationError(f"{path}.modifiers.{id}.enabled must be boolean")
         if "settings" in modifier:
             record(modifier["settings"], f"{path}.modifiers.{id}.settings")
-            if not all(
-                type(v) in {str, int, float, bool}
-                for v in modifier["settings"].values()
-            ):
+            if not all(setting_scalar(v) for v in modifier["settings"].values()):
                 raise MigrationError(
                     f"{path}.modifiers.{id}.settings values must be scalars"
                 )
