@@ -68,7 +68,11 @@ export const handlers = {
     if (game.state === "page") {
       return { _tag: "NonFinalDownload", providerId: input.providerId, reason: "interstitial", url: site };
     }
-    return { _tag: "FinalDownload", providerId: input.providerId, url: site + game.file };
+    return {
+      _tag: "FinalDownload", providerId: input.providerId, url: site + game.file,
+      ...(game.filename ? { filename: game.filename } : {}),
+      ...(game.form ? { method: "POST", body: game.form } : {}),
+    };
   },
 };
 "#;
@@ -1568,4 +1572,70 @@ async fn downloads_that_do_not_give_exactly_one_game_leave_nothing() {
     );
     assert!(names(&world.cache().join(".downloads")).is_empty());
     assert!(!world.root.join("cache/shop/escape.gba").exists());
+}
+
+/// ADR 0030 Changes 2 and 3 with the WoWROMs shape: an opaque token URL, the
+/// name in `filename`, and the game only for a form POST.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_form_post_download_is_named_by_filename_not_by_its_token_url() {
+    let world = world();
+    let archive = zip(&[("Super Mario World (USA).gba", ROM)]);
+    for (id, filename) in [
+        ("named", r#","filename":"Super Mario World (USA).zip""#),
+        ("token", ""),
+    ] {
+        world.server.route(
+            &format!("/game/{id}"),
+            Route::ok(
+                "application/json",
+                format!(r#"{{"id":"{id}","title":"Super Mario World","system":"gba","file":"/dl/7bf4e0908e024c5"{filename},"form":{{"emuid":"1","id":"42","file":"Super Mario World (USA).zip"}}}}"#),
+            ),
+        );
+        world
+            .api()
+            .details(
+                &world.context.registry,
+                &DetailsRequest {
+                    provider_id: PROVIDER.into(),
+                    id: id.into(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    world
+        .server
+        .route("/dl/7bf4e0908e024c5", Route::ok("application/zip", archive));
+
+    // N1: with no filename, the token is the name; it is no game or archive
+    // name, so the job fails before any download.
+    failed_with(&world.get("token").await, NOT_A_GAME);
+    assert!(!world
+        .server
+        .received()
+        .iter()
+        .any(|r| r.path.starts_with("/dl/")));
+
+    let done = world.get("named").await;
+    imported(&done);
+    assert_eq!(
+        done.file_name.as_deref(),
+        Some("Super Mario World (USA).zip")
+    );
+    let posts: Vec<_> = world
+        .server
+        .received()
+        .into_iter()
+        .filter(|r| r.path.starts_with("/dl/"))
+        .collect();
+    assert_eq!(posts.len(), 1, "one attempt");
+    assert_eq!(posts[0].method, "POST");
+    assert_eq!(
+        String::from_utf8_lossy(&posts[0].body),
+        "emuid=1&file=Super+Mario+World+%28USA%29.zip&id=42"
+    );
+    assert_eq!(
+        names(&world.cache().join(sha_hex(ROM))),
+        ["Super Mario World (USA).gba"]
+    );
 }

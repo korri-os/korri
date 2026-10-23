@@ -19,6 +19,9 @@ export type FailedDownloadReason = "provider-error" | "configuration" | "not-fou
 
 export type FailedDownloadTag = "FailedDownload";
 
+/** ADR 0030 Q2a: POST is the only method besides the GET default. */
+export type FinalDownloadMethod = "POST";
+
 export type FinalDownloadTag = "FinalDownload";
 
 export type LaunchLimitValue = number | string;
@@ -365,6 +368,10 @@ export interface FinalDownload {
 	url: string;
 	filename?: string;
 	contentType?: string;
+	/** Absent: GET. `"POST"`: korrid sends `body` form-encoded. */
+	method?: FinalDownloadMethod;
+	/** Form fields of string values; needs `method: "POST"`. */
+	body?: Record<string, string>;
 }
 
 export interface GameProviderIdentity {

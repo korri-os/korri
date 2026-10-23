@@ -264,3 +264,51 @@ async fn a_final_download_must_name_a_declared_host() {
         .unwrap_err(),
     );
 }
+
+/// ADR 0030 Q2a, Q2d and Q3a: the game download may be a form POST with a
+/// string-valued body of at most 8192 encoded characters; `filename` must
+/// also pass the URL-name rule (no control characters).
+#[tokio::test]
+async fn a_final_download_admits_a_bounded_form_post_and_a_strict_filename() {
+    use super::claims::FinalDownloadMethod;
+    let resolve = |fields: &str| {
+        context(&format!(
+            "{{'artifact.resolve-download': (i) => ({{_tag: 'FinalDownload', providerId: i.providerId, url: 'https://{HOST}/dl/7bf4e0908e024c5', {fields}}})}}"
+        ))
+    };
+    let engine = engine();
+    let admitted = |fields: &str| {
+        let context = resolve(fields);
+        let engine = engine.clone();
+        async move {
+            turns::resolve_download(&engine, &context, "https://provider.test/g/x", None).await
+        }
+    };
+    let resolution = admitted(
+        "method: 'POST', body: {emuid: '1', id: '42', file: 'Super Mario World (USA).zip'}, filename: 'Super Mario World (USA).zip'",
+    )
+    .await
+    .unwrap();
+    let DownloadResolution::Final(download) = resolution else {
+        panic!("{resolution:?}");
+    };
+    assert_eq!(download.method, Some(FinalDownloadMethod::Post));
+    assert_eq!(download.body.as_ref().unwrap().len(), 3);
+    assert!(admitted("method: 'POST', body: {file: 'x'.repeat(8187)}")
+        .await
+        .is_ok());
+    for fields in [
+        "body: {id: '42'}",
+        "method: 'PUT'",
+        "method: 'GET'",
+        "method: 'post'",
+        "method: 'POST', body: {id: 42}",
+        "method: 'POST', body: ['id']",
+        "method: 'POST', body: {file: 'x'.repeat(8188)}",
+        "filename: 'bell\\u0007.zip'",
+        "filename: 'a/b.zip'",
+        "filename: '..'",
+    ] {
+        failed(admitted(fields).await.unwrap_err());
+    }
+}

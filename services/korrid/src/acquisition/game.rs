@@ -13,7 +13,7 @@ use tokio::sync::watch;
 use super::{
     archive,
     claims::{DownloadResolution, FailedDownloadReason, ProviderClaim, ProviderClaimDetails},
-    download::{DownloadEngine, DownloadedGame},
+    download::{DownloadEngine, DownloadedGame, GameRequest},
     placement,
     turns::{self, ProviderContext, ProviderError},
     types::{
@@ -619,8 +619,7 @@ impl Pipeline {
                 )))
             }
         };
-        // ADR 0012: the file is named by the URL's last segment.
-        let name = super::policy::basename(&download.url).map_err(download_failed)?;
+        let name = outer_name(&download).map_err(download_failed)?;
         let rules = self
             .context
             .registry
@@ -657,10 +656,14 @@ impl Pipeline {
             bytes_per_second: None,
         });
         let flag = cancelled.clone();
+        let request = GameRequest {
+            url: download.url.clone(),
+            form: download.form(),
+        };
         let downloaded: DownloadedGame = tokio::select! {
             biased;
             _ = cancelled.changed() => return Err(AcquireJobState::Cancelled),
-            downloaded = self.engine.fetch_game(&download.url, &self.provider.hosts, &staging, |progress| {
+            downloaded = self.engine.fetch_game(&request, &self.provider.hosts, &staging, |progress| {
                 let mut job = self.job.lock().expect("job mutex poisoned");
                 if !*flag.borrow() {
                     job.status.state = AcquireJobState::Downloading {
@@ -728,6 +731,21 @@ impl Pipeline {
         .await
         .map_err(|_| download_failed(Failure::Storage))?
     }
+}
+
+/// ADR 0030 Change 3, coordinator decision Q3a (N1): the download's name is
+/// `FinalDownload.filename`, then the URL's last segment, under the stricter
+/// of legacy `SafeFileName` and the URL name rule. It never comes from the
+/// server.
+fn outer_name(download: &super::claims::FinalDownload) -> Result<String, Failure> {
+    let name = match &download.filename {
+        Some(name) => name.clone(),
+        None => super::policy::basename(&download.url)?,
+    };
+    if !super::claims::safe_file_name(&name) || name.chars().any(char::is_control) {
+        return Err(Failure::UnsafePath);
+    }
+    Ok(name)
 }
 
 /// True when a name ends in one of the system's extensions.

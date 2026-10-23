@@ -2,7 +2,7 @@
 //! tests. It records every request line and header block it receives.
 use std::{
     collections::BTreeMap,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::{SocketAddr, TcpListener},
     sync::{Arc, Mutex},
     thread,
@@ -38,8 +38,11 @@ impl Route {
         self
     }
     pub fn redirect(location: &str) -> Self {
+        Self::redirect_with(302, location)
+    }
+    pub fn redirect_with(status: u16, location: &str) -> Self {
         Self {
-            status: 302,
+            status,
             headers: vec![("Location".into(), location.into())],
             body: Vec::new(),
             pace: None,
@@ -54,8 +57,10 @@ impl Route {
 
 #[derive(Clone, Debug)]
 pub(super) struct Received {
+    pub method: String,
     pub path: String,
     pub headers: Vec<String>,
+    pub body: Vec<u8>,
 }
 
 pub(super) struct HttpFixture {
@@ -86,6 +91,7 @@ impl HttpFixture {
                     if reader.read_line(&mut line).is_err() {
                         return;
                     }
+                    let method = line.split_whitespace().next().unwrap_or("").to_owned();
                     let path = line.split_whitespace().nth(1).unwrap_or("/").to_owned();
                     let mut headers = Vec::new();
                     loop {
@@ -98,9 +104,20 @@ impl HttpFixture {
                         }
                         headers.push(header.trim_end().to_ascii_lowercase());
                     }
+                    let length = headers
+                        .iter()
+                        .find_map(|header| header.strip_prefix("content-length: "))
+                        .and_then(|length| length.parse::<usize>().ok())
+                        .unwrap_or(0);
+                    let mut body = vec![0; length];
+                    if reader.read_exact(&mut body).is_err() {
+                        return;
+                    }
                     log.lock().unwrap().push(Received {
+                        method,
                         path: path.clone(),
                         headers,
+                        body,
                     });
                     let route = routes.lock().unwrap().get(&path).cloned().unwrap_or(Route {
                         status: 404,

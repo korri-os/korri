@@ -51,6 +51,20 @@ pub(super) struct TextRequest<'a> {
     pub timeout: Option<Duration>,
 }
 
+/// The game download a `FinalDownload` names (ADR 0030 Change 2). With a
+/// form it is a POST of that `application/x-www-form-urlencoded` body;
+/// without one it is a GET.
+pub(super) struct GameRequest {
+    pub url: String,
+    pub form: Option<String>,
+}
+impl GameRequest {
+    #[cfg(test)]
+    pub(super) fn get(url: String) -> Self {
+        Self { url, form: None }
+    }
+}
+
 /// A text response: final URL, lower-cased headers (repeats joined with ", ").
 pub(super) struct TextResponse {
     pub status: u16,
@@ -156,7 +170,7 @@ impl DownloadEngine {
 
     async fn response(&self, value: &str, offset: u64) -> Result<Response, Failure> {
         let url = Url::parse(value).map_err(|_| Failure::UnsafeUrl)?;
-        self.send(url, policy::Hosts::Any, |request| {
+        self.send(url, policy::Hosts::Any, None, |request| {
             if offset > 0 {
                 request.header(header::RANGE, format!("bytes={offset}-"))
             } else {
@@ -167,22 +181,29 @@ impl DownloadEngine {
         .map(|(_, response)| response)
     }
 
-    /// One GET with manual redirects. Every hop passes the SSRF policy and,
-    /// for provider traffic, the owning plugin's declared hosts.
+    /// One GET, or one form POST for a game download, with manual
+    /// redirects. Every hop passes the SSRF policy and, for provider traffic,
+    /// the owning plugin's declared hosts. After a POST, 301, 302 and 303
+    /// continue as a GET with no body and 307 and 308 repeat the POST, as
+    /// browsers do (RFC 9110 section 15.4).
     async fn send(
         &self,
         mut url: Url,
         hosts: policy::Hosts<'_>,
+        mut form: Option<&str>,
         configure: impl Fn(reqwest::RequestBuilder) -> reqwest::RequestBuilder,
     ) -> Result<(Url, Response), Failure> {
         policy::declared(&url, hosts)?;
         for hops in 0..=5 {
             let client = self.client(&url).await?;
-            let request = configure(
-                client
-                    .get(url.clone())
-                    .header(header::ACCEPT_ENCODING, "identity"),
-            );
+            let request = match form {
+                Some(body) => client
+                    .post(url.clone())
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(body.to_owned()),
+                None => client.get(url.clone()),
+            };
+            let request = configure(request.header(header::ACCEPT_ENCODING, "identity"));
             let response = request.send().await.map_err(|error| {
                 if error.is_timeout() {
                     Failure::Stalled
@@ -192,6 +213,9 @@ impl DownloadEngine {
             })?;
             if !response.status().is_redirection() {
                 return Ok((url, response));
+            }
+            if matches!(response.status().as_u16(), 301..=303) {
+                form = None;
             }
             let location = response
                 .headers()
@@ -213,12 +237,17 @@ impl DownloadEngine {
     ) -> Result<TextResponse, Failure> {
         let work = async {
             let (url, mut response) = self
-                .send(request.url, policy::Hosts::Only(hosts), |mut builder| {
-                    for (name, value) in request.headers {
-                        builder = builder.header(name, value);
-                    }
-                    builder
-                })
+                .send(
+                    request.url,
+                    policy::Hosts::Only(hosts),
+                    None,
+                    |mut builder| {
+                        for (name, value) in request.headers {
+                            builder = builder.header(name, value);
+                        }
+                        builder
+                    },
+                )
                 .await?;
             if response
                 .content_length()
@@ -266,13 +295,20 @@ impl DownloadEngine {
     /// `rejectNonArtifactPayload`).
     pub(super) async fn fetch_game(
         &self,
-        url: &str,
+        request: &GameRequest,
         hosts: &[String],
         directory: &Path,
         mut progress: impl FnMut(Progress),
     ) -> Result<DownloadedGame, Failure> {
-        let url = Url::parse(url).map_err(|_| Failure::UnsafeUrl)?;
-        let (_, mut response) = self.send(url, policy::Hosts::Only(hosts), |b| b).await?;
+        let url = Url::parse(&request.url).map_err(|_| Failure::UnsafeUrl)?;
+        let (_, mut response) = self
+            .send(
+                url,
+                policy::Hosts::Only(hosts),
+                request.form.as_deref(),
+                |b| b,
+            )
+            .await?;
         if !response.status().is_success() || response.status() == StatusCode::PARTIAL_CONTENT {
             return Err(Failure::Network);
         }

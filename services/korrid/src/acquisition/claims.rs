@@ -2,7 +2,11 @@
 //!
 //! Field names and unions are legacy `product/platform/protocol/acquisition/
 //! claim.ts` and `download-resolution.ts` verbatim, minus the ADR 0016 deltas:
-//! no `ref`, `playable`, `facets`, or `FinalDownload.requestHeaders`.
+//! no `ref`, `playable`, `facets`, or `FinalDownload.requestHeaders`. ADR 0030
+//! moves legacy `PluginHttpRequestOptions.method` and `.body` onto
+//! `FinalDownload` for the game download only.
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 use url::Url;
@@ -184,6 +188,14 @@ pub enum FailedDownloadTag {
     FailedDownload,
 }
 
+/// ADR 0030 Q2a: POST is the only method besides the GET default.
+#[typeshare(serialized_as = "FinalDownloadMethodWire")]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum FinalDownloadMethod {
+    #[serde(rename = "POST")]
+    Post,
+}
+
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -204,6 +216,33 @@ pub struct FinalDownload {
         deserialize_with = "non_null"
     )]
     pub content_type: Option<String>,
+    /// Absent: GET. `"POST"`: korrid sends `body` form-encoded.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "non_null"
+    )]
+    pub method: Option<FinalDownloadMethod>,
+    /// Form fields of string values; needs `method: "POST"`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "non_null"
+    )]
+    #[typeshare(serialized_as = "Option<HashMap<String, String>>")]
+    pub body: Option<BTreeMap<String, String>>,
+}
+
+impl FinalDownload {
+    /// The `application/x-www-form-urlencoded` body of a POST, empty when the
+    /// POST has no fields. `None` for a GET.
+    pub(super) fn form(&self) -> Option<String> {
+        self.method.map(|FinalDownloadMethod::Post| {
+            url::form_urlencoded::Serializer::new(String::new())
+                .extend_pairs(self.body.iter().flatten())
+                .finish()
+        })
+    }
 }
 
 #[typeshare(serialized_as = "NonFinalDownloadReasonWire")]
@@ -427,11 +466,18 @@ impl DownloadResolution {
             Self::Final(value) => {
                 provider(asked, &value.provider_id)?;
                 safe_url(&value.url)?;
+                // ADR 0030 Q3a: the stricter of `SafeFileName` and the URL
+                // name rule, which also refuses control characters.
                 optional(&value.filename, |v| {
-                    safe_file_name(v)
+                    (safe_file_name(v) && !v.chars().any(char::is_control))
                         .then_some(())
                         .ok_or(Inadmissible("download file name is unsafe"))
                 })?;
+                if value.body.is_some() && value.method.is_none() {
+                    return Err(Inadmissible("download body needs method POST"));
+                }
+                // ADR 0030 Q2d: the `SafeText` bound on the encoded body.
+                optional(&value.form(), |v| safe_text(v))?;
                 optional(&value.content_type, |v| safe_text(v))
             }
             Self::NonFinal(value) => {

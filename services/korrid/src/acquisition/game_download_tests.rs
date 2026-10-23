@@ -1,6 +1,6 @@
 //! Declared hosts, SSRF, text bounds and game payload rules on a real server.
 use super::{
-    download::{DownloadEngine, TextRequest, MAX_TEXT_BYTES, STAGING_PREFIX},
+    download::{DownloadEngine, GameRequest, TextRequest, MAX_TEXT_BYTES, STAGING_PREFIX},
     http_fixture::{HttpFixture, Route},
     Failure,
 };
@@ -164,7 +164,7 @@ async fn the_free_space_floor_holds_for_a_body_without_a_length() {
     assert_eq!(
         engine
             .fetch_game(
-                &server.url(HOST, "/big.gb"),
+                &GameRequest::get(server.url(HOST, "/big.gb")),
                 &hosts(),
                 directory.path(),
                 |_| {}
@@ -176,7 +176,7 @@ async fn the_free_space_floor_holds_for_a_body_without_a_length() {
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
     let fits = engine
         .fetch_game(
-            &server.url(HOST, "/fits.gb"),
+            &GameRequest::get(server.url(HOST, "/fits.gb")),
             &hosts(),
             directory.path(),
             |_| {},
@@ -207,7 +207,7 @@ async fn a_content_length_beyond_the_floor_fails_before_any_byte_and_2_gib_is_no
         engine()
             .with_space(super::space::fixed(4095))
             .fetch_game(
-                &server.url(HOST, "/declared.gb"),
+                &GameRequest::get(server.url(HOST, "/declared.gb")),
                 &hosts(),
                 directory.path(),
                 |_| progress += 1,
@@ -221,7 +221,7 @@ async fn a_content_length_beyond_the_floor_fails_before_any_byte_and_2_gib_is_no
     let result = engine()
         .with_space(super::space::fixed(4 * 1024 * 1024 * 1024))
         .fetch_game(
-            &server.url(HOST, "/huge.gb"),
+            &GameRequest::get(server.url(HOST, "/huge.gb")),
             &hosts(),
             directory.path(),
             |_| {},
@@ -270,7 +270,12 @@ async fn game_payloads_refuse_web_pages_and_empty_bodies_and_leave_nothing() {
         ("/missing", Failure::Network),
     ] {
         let result = engine
-            .fetch_game(&server.url(HOST, path), &hosts(), directory.path(), |_| {})
+            .fetch_game(
+                &GameRequest::get(server.url(HOST, path)),
+                &hosts(),
+                directory.path(),
+                |_| {},
+            )
             .await;
         assert_eq!(result.err(), Some(failure), "{path}");
         assert_eq!(
@@ -282,7 +287,7 @@ async fn game_payloads_refuse_web_pages_and_empty_bodies_and_leave_nothing() {
     assert_eq!(
         engine
             .fetch_game(
-                &server.url(OTHER, "/rom.gb"),
+                &GameRequest::get(server.url(OTHER, "/rom.gb")),
                 &hosts(),
                 directory.path(),
                 |_| {}
@@ -295,7 +300,7 @@ async fn game_payloads_refuse_web_pages_and_empty_bodies_and_leave_nothing() {
     let mut progress = Vec::new();
     let staged = engine
         .fetch_game(
-            &server.url(HOST, "/rom.gb"),
+            &GameRequest::get(server.url(HOST, "/rom.gb")),
             &hosts(),
             directory.path(),
             |p| progress.push(p.done),
@@ -315,4 +320,111 @@ async fn game_payloads_refuse_web_pages_and_empty_bodies_and_leave_nothing() {
     let path = staged.path.clone();
     drop(staged);
     assert!(!path.exists());
+}
+
+const FORM: &str = "emuid=1&file=Super+Mario+World+%28USA%29.zip&id=42";
+
+fn form() -> GameRequest {
+    GameRequest {
+        url: String::new(),
+        form: Some(FORM.into()),
+    }
+}
+
+/// ADR 0030 Q2a: `method: "POST"` sends the form-encoded body once, with
+/// the form content type as the only added header and no credentials.
+#[tokio::test]
+async fn a_form_post_sends_the_encoded_body_with_only_the_form_content_type() {
+    let server = HttpFixture::start([(
+        "/dl/7bf4e0908e024c5",
+        Route::ok("application/zip", b"PK\x03\x04 bytes".to_vec()),
+    )]);
+    let directory = tempfile::tempdir().unwrap();
+    let request = GameRequest {
+        url: server.url(HOST, "/dl/7bf4e0908e024c5"),
+        ..form()
+    };
+    engine()
+        .fetch_game(&request, &hosts(), directory.path(), |_| {})
+        .await
+        .unwrap();
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "POST");
+    assert_eq!(received[0].body, FORM.as_bytes());
+    assert!(received[0]
+        .headers
+        .contains(&"content-type: application/x-www-form-urlencoded".to_owned()));
+    for refused in ["cookie", "authorization", "referer"] {
+        assert!(
+            !received[0].headers.iter().any(|h| h.starts_with(refused)),
+            "{refused}"
+        );
+    }
+}
+
+/// ADR 0030 Q2b, browser rules (RFC 9110 section 15.4): 301, 302 and 303
+/// become a GET with no body; 307 and 308 send the same POST again. Every
+/// hop stays inside the declared hosts.
+#[tokio::test]
+async fn redirects_after_a_post_follow_browser_rules_and_declared_hosts() {
+    let server = HttpFixture::start([(
+        "/file",
+        Route::ok("application/octet-stream", vec![1u8; 64]),
+    )]);
+    for status in [301u16, 302, 303, 307, 308] {
+        server.route(
+            &format!("/p{status}"),
+            Route::redirect_with(status, "/file"),
+        );
+    }
+    server.route(
+        "/away",
+        Route::redirect_with(307, &server.url(OTHER, "/file")),
+    );
+    let directory = tempfile::tempdir().unwrap();
+    for status in [301u16, 302, 303, 307, 308] {
+        let before = server.received().len();
+        let request = GameRequest {
+            url: server.url(HOST, &format!("/p{status}")),
+            ..form()
+        };
+        engine()
+            .fetch_game(&request, &hosts(), directory.path(), |_| {})
+            .await
+            .unwrap();
+        let hops = &server.received()[before..];
+        assert_eq!(hops.len(), 2, "{status}");
+        assert_eq!(
+            (hops[0].method.as_str(), hops[0].body.as_slice()),
+            ("POST", FORM.as_bytes())
+        );
+        if status >= 307 {
+            assert_eq!(hops[1].method, "POST", "{status}");
+            assert_eq!(hops[1].body, FORM.as_bytes(), "{status}");
+        } else {
+            assert_eq!(hops[1].method, "GET", "{status}");
+            assert!(hops[1].body.is_empty(), "{status}");
+            assert!(
+                !hops[1]
+                    .headers
+                    .iter()
+                    .any(|h| h.starts_with("content-type")),
+                "{status}"
+            );
+        }
+    }
+    let before = server.received().len();
+    let away = GameRequest {
+        url: server.url(HOST, "/away"),
+        ..form()
+    };
+    assert_eq!(
+        engine()
+            .fetch_game(&away, &hosts(), directory.path(), |_| {})
+            .await
+            .err(),
+        Some(Failure::UndeclaredHost)
+    );
+    assert_eq!(server.received().len(), before + 1, "the hop is never sent");
 }

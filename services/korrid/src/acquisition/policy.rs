@@ -103,7 +103,10 @@ pub(super) fn redirect(
     Ok(to)
 }
 
-/// Names come from the declared URL, not a server-controlled redirect or header.
+/// The URL's last segment, decoded. A store download is named by
+/// `FinalDownload.filename` first and this second (ADR 0030 Q3a); an ADR 0012
+/// artifact file by this alone. Neither name comes from a server-controlled
+/// redirect or header.
 pub(super) fn basename(value: &str) -> Result<String, Failure> {
     let url = Url::parse(value).map_err(|_| Failure::UnsafeUrl)?;
     let encoded = url
