@@ -195,7 +195,9 @@ assert service.environment.KORRI_ASSET_ROOT == profile;
 assert service.environment.XDG_DATA_HOME == "/var/lib/korri-portal/.local/share";
 assert service.environment.XDG_CACHE_HOME == "/var/lib/korri-portal/.cache";
 assert service.environment.KORRI_PORTAL_TRANSPARENT == "1";
-assert service.serviceConfig.ExecStart == "${korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-portal-wpe}/bin/korri-portal-wpe";
+assert
+  service.serviceConfig.ExecStart
+  == "${korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-portal-wpe}/bin/korri-portal-wpe";
 assert service.serviceConfig.NoNewPrivileges;
 assert service.serviceConfig.RestrictNamespaces == false;
 assert service.serviceConfig.ProtectSystem == "strict";
@@ -204,11 +206,12 @@ assert service.serviceConfig.PrivateTmp;
 assert service.serviceConfig.UMask == "0077";
 assert service.serviceConfig.LimitCORE == 0;
 assert (service.serviceConfig.DevicePolicy or "auto") == "auto";
-assert service.serviceConfig.ReadWritePaths == [
-  "/var/lib/korri-portal/.local/share"
-  "/var/lib/korri-portal/.cache"
-  "/run/korri-portal"
-];
+assert
+  service.serviceConfig.ReadWritePaths == [
+    "/var/lib/korri-portal/.local/share"
+    "/var/lib/korri-portal/.cache"
+    "/run/korri-portal"
+  ];
 assert
   service.serviceConfig.ExecStart
   == alternate.systemd.services.korri-portal-kiosk.serviceConfig.ExecStart;
