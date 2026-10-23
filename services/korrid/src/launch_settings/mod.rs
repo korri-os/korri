@@ -12,7 +12,7 @@ pub use wire::*;
 pub(crate) mod launch;
 pub use launch::{resolve_launch, ResolvedHooks, ResolvedLaunch};
 pub use resolution::snapshot;
-pub use store::{remove_profile, save_profile, select_profile, set};
+pub use store::{remove_profile, save_profile, select_profile, set, set_with_registry};
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -138,3 +138,6 @@ pub enum LaunchSettingsRouteLayers {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod snapshot_defaults_tests;

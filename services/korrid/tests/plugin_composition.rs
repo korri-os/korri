@@ -98,7 +98,7 @@ fn setup(root: &Path, record: &str) -> (Vec<String>, PluginLaunchInput, LaunchCo
     );
     let registry = PluginRegistry::from_installed(vec![runner, modifier]).unwrap();
     let device = format!(
-        "{}\nmodifiers: {{'@test:wrapper/main': {record}}}",
+        "{}\nhost: {{modifiers: {{'@test:wrapper/main': {record}}}}}",
         readable::gba_locations("roms", "wl4.gba", false)
     );
     fs::create_dir_all(root.join("roms")).unwrap();
@@ -324,7 +324,7 @@ export const handlers = {'launch.compose': input => {
         .unwrap();
     }
     let snapshot = decode_config_documents(
-        "locations:\n  '@korri:steam/401710': [{provider: '@korri:steam', ref: '401710'}]\nmodifiers: {'@test:wrapper/main': {enabled: true}}\n",
+        "locations:\n  '@korri:steam/401710': [{provider: '@korri:steam', ref: '401710'}]\nhost: {modifiers: {'@test:wrapper/main': {enabled: true}}}\n",
         "library:\n  flinthook:\n    title: Flinthook\n    releases:\n      - id: steam\n        system: steam\n        identity: {kind: provider, value: '@korri:steam/401710'}\n",
     ).unwrap();
     let route = korrid::config::resolver::resolve_linux_route(
@@ -475,7 +475,7 @@ fn enabled_modifiers_require_their_exact_installed_contribution() {
         ("@test:wrapper/main", "true", true),
     ] {
         let device = format!(
-            "{}\nmodifiers: {{'{id}': {{enabled: {enabled}}}}}",
+            "{}\nhost: {{modifiers: {{'{id}': {{enabled: {enabled}}}}}}}",
             readable::gba_locations("roms", "wl4.gba", false)
         );
         let snapshot = decode_config_documents(&device, &readable::gba_library()).unwrap();
@@ -523,7 +523,7 @@ fn multiple_modifiers_compose_the_previous_plan_in_device_key_order() {
     fs::create_dir(root.path().join("roms")).unwrap();
     fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
     let device = format!(
-        "{}\nmodifiers:\n  '@test:z/main': {{enabled: true}}\n  '@test:a/main': {{enabled: true}}",
+        "{}\nhost:\n  modifiers:\n    '@test:z/main': {{enabled: true}}\n    '@test:a/main': {{enabled: true}}",
         readable::gba_locations("roms", "wl4.gba", false)
     );
     let snapshot = decode_config_documents(&device, &readable::gba_library()).unwrap();
@@ -675,4 +675,139 @@ fn plugin_launch_records_native_words_and_final_environment_before_exec() {
         !words.contains(&"must disappear".to_string()),
         "envUnset is not in the final environment"
     );
+}
+
+#[test]
+fn snapshot_lists_installed_modifiers_without_authored_values_and_validates_optional_schemas() {
+    use korrid::launch_settings::{
+        self as ls, LaunchLayer, LaunchPath, LaunchPlace, LaunchRunnerScope, LaunchSetRequest,
+        LaunchSource,
+    };
+    let root = tempfile::tempdir().unwrap();
+    let private = tempfile::tempdir().unwrap();
+    readable::install(
+        root.path(),
+        "{}",
+        &format!(
+            "{}    profiles: {{quiet: {{title: Quiet}}}}\n",
+            readable::gba_library()
+        ),
+    );
+    let described = package(
+        root.path(),
+        "@test:described",
+        r#"export const name='described';export const title='Described wrapper';export const modifiers={main:{id:'@test:described/main'}};export const handlers={'settings.describe':()=>({revision:'modifier-rev-1',schema:{properties:{width:{type:'integer',minimum:1,maximum:100,default:50}}}}),'launch.compose':input=>input.plan};"#,
+        None,
+    );
+    let no_schema = package(
+        root.path(),
+        "@test:plain",
+        r#"export const name='plain';export const title='Plain wrapper';export const modifiers={main:{id:'@test:plain/main'}};export const handlers={'launch.compose':input=>input.plan};"#,
+        None,
+    );
+    let registry = PluginRegistry::from_installed(vec![described, no_schema]).unwrap();
+    let client = ls::helper::Client {
+        socket: root.path().join("absent.sock"),
+    };
+    let snapshot = ls::snapshot(
+        root.path(),
+        Some(&registry),
+        Some(readable::GBA_ID),
+        &client,
+    )
+    .unwrap();
+    assert_eq!(snapshot.modifiers.len(), 2);
+    assert_eq!(snapshot.modifiers[0].title, "Described wrapper");
+    assert_eq!(
+        snapshot.modifiers[0].revision.as_deref(),
+        Some("modifier-rev-1")
+    );
+    assert_eq!(
+        snapshot.modifiers[0].schema.as_ref().unwrap()["properties"]["width"]["maximum"],
+        100
+    );
+    assert!(snapshot.modifiers[1].schema.is_none());
+    assert!(snapshot.modifiers[1].revision.is_none());
+    assert!(matches!(
+        snapshot.resolved.values["modifiers.@test:described/main.settings.width"].source,
+        LaunchSource::PluginDefault { .. }
+    ));
+    assert!(snapshot
+        .places
+        .iter()
+        .all(|v| v.body.get("modifiers").is_none()));
+    let lock = std::sync::Mutex::new(());
+    let mut request = LaunchSetRequest {
+        place: LaunchPlace {
+            layer: LaunchLayer::Profile {
+                game_id: readable::GBA_ID.into(),
+                profile_id: "quiet".into(),
+            },
+            scope: LaunchRunnerScope::Any,
+        },
+        path: LaunchPath::ModifierEnabled {
+            id: "@test:described/main".into(),
+        },
+        value: Some(serde_json::json!(true)),
+        expected_revision: snapshot.revisions.games,
+    };
+    let revisions = ls::set_with_registry(
+        root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&registry),
+    )
+    .unwrap();
+    request.expected_revision = revisions.games;
+    request.path = LaunchPath::ModifierSetting {
+        id: "@test:described/main".into(),
+        key: "width".into(),
+    };
+    request.value = Some(serde_json::json!(101));
+    let before = fs::read(root.path().join("catalog/library.yaml")).unwrap();
+    assert!(ls::set_with_registry(
+        root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&registry)
+    )
+    .is_err());
+    assert_eq!(
+        fs::read(root.path().join("catalog/library.yaml")).unwrap(),
+        before
+    );
+    request.value = Some(serde_json::json!(75));
+    let revisions = ls::set_with_registry(
+        root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&registry),
+    )
+    .unwrap();
+    request.expected_revision = revisions.games;
+    request.path = LaunchPath::ModifierSetting {
+        id: "@test:plain/main".into(),
+        key: "pluginOwnedKey".into(),
+    };
+    request.value = Some(serde_json::json!("native"));
+    ls::set_with_registry(
+        root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&registry),
+    )
+    .unwrap();
+    let uninstalled=PluginRegistry::new(vec![load_plugin_source("@test","export const name='uninstalled';export const modifiers={main:{id:'@test:uninstalled/main'}};").unwrap()],vec!["@test:uninstalled".into()]).unwrap();
+    assert!(ls::snapshot(root.path(), Some(&uninstalled), None, &client)
+        .unwrap()
+        .modifiers
+        .is_empty());
 }

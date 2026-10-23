@@ -9,7 +9,7 @@ use korrid::{
     config::snapshot::ConfigSnapshotCoordinator,
     launcher::{
         linux_plugin::launch_route,
-        plugin_launch::{evaluate_snapshot, PluginLaunchInput, PluginLaunchOverrides},
+        plugin_launch::{evaluate_snapshot, PluginLaunchInput},
     },
     plugin::PluginRegistry,
     plugin_installation::EnabledPackage,
@@ -69,7 +69,7 @@ fn published_mgba_route_and_launch_prepare() {
     // Storage resolution needs a file, not an emulator-valid ROM. No process
     // executes this marker and this test makes no gameplay claim.
     fs::write(root.path().join("roms/wl4.gba"), b"route-only marker").unwrap();
-    let snapshot = (*ConfigSnapshotCoordinator::new(root.path())
+    let mut snapshot = (*ConfigSnapshotCoordinator::new(root.path())
         .reload()
         .snapshot)
         .clone();
@@ -95,16 +95,22 @@ fn published_mgba_route_and_launch_prepare() {
         Some("@korri:mgba/mgba"),
     )
     .unwrap();
-    let overrides: PluginLaunchOverrides = serde_json::from_value(serde_json::json!({
-        "config": {"append": "video_vsync = true"}
-    }))
-    .unwrap();
+    snapshot
+        .library
+        .get_mut(readable::GBA_ID)
+        .unwrap()
+        .place
+        .runners
+        .insert(
+            "@korri:mgba/mgba".into(),
+            serde_yaml::from_str("config: {append: 'video_vsync = true'}").unwrap(),
+        );
     let spec = launch_route(
         root.path(),
         &snapshot,
         &registry,
         &resolved,
-        Some(overrides),
+        None,
         None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )

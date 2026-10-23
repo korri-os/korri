@@ -1,20 +1,17 @@
 #[path = "fixtures/readable.rs"]
 mod readable;
-use korrid::config::{
-    cascade::{self, RunnerConfig},
-    decode_config_documents,
-};
+use korrid::config::{cascade::RunnerConfig, decode_config_documents};
 
 #[test]
 fn settings_only_family_and_runner_overrides_decode_without_executable_redeclaration() {
     let snapshot = decode_config_documents(
-        "families:\n  '@korri:retroarch':\n    settings: {video-vsync: false}\nrunners:\n  '@korri:mgba/mgba':\n    settings: {video-vsync: true}\n",
+        "host: {families: {'@korri:retroarch': {settings: {video-vsync: false}}}, runners: {'@korri:mgba/mgba': {settings: {video-vsync: true}}}}",
         "{}",
     )
     .unwrap();
     korrid::config::classify_snapshot_support(&snapshot).unwrap();
-    assert_eq!(snapshot.families.len(), 1);
-    assert_eq!(snapshot.runners.len(), 1);
+    assert_eq!(snapshot.host.as_ref().unwrap().families.len(), 1);
+    assert_eq!(snapshot.host.as_ref().unwrap().runners.len(), 1);
     assert!(decode_config_documents("runners: {core: {program: /bin/program}}", "{}").is_err());
 }
 
@@ -34,13 +31,23 @@ fn family_then_system_then_runner_then_game_then_override_is_explainable() {
         ))
         .unwrap()
     };
-    snapshot.families.insert(family.into(), config(1));
-    snapshot.runners.insert(runner.into(), config(3).into());
+    snapshot
+        .host
+        .as_mut()
+        .unwrap()
+        .families
+        .insert(family.into(), config(1));
+    snapshot
+        .host
+        .as_mut()
+        .unwrap()
+        .runners
+        .insert(runner.into(), config(2));
     let system = snapshot
         .systems
         .entry("gba".into())
         .or_insert_with(|| serde_yaml::from_str("{}").unwrap());
-    system.families.insert(family.into(), config(2));
+    system.families.insert(family.into(), config(3));
     system.runners.insert(runner.into(), config(4));
     let game = snapshot.library.get_mut(readable::GBA_ID).unwrap();
     game.families.insert(family.into(), config(5));
@@ -66,22 +73,21 @@ fn family_then_system_then_runner_then_game_then_override_is_explainable() {
 
         cache_target: None,
     };
-    let result = cascade::resolve(&snapshot, &route, None);
+    let result = korrid::launch_settings::resolve_launch(&snapshot, &route, None, None)
+        .unwrap()
+        .runner;
     assert_eq!(
         serde_json::to_value(&result.settings).unwrap(),
         serde_json::json!({"level":6})
     );
     assert_eq!(result.config.unwrap().append.as_deref(), Some("layer = 6"));
-    let overrides: RunnerConfig =
-        serde_yaml::from_str("settings: {level: 7}\nconfig: {prepend: 'extra = true'}").unwrap();
-    let result = cascade::resolve(&snapshot, &route, Some(&overrides));
+    let launch: korrid::launch_settings::LaunchOverride=serde_json::from_value(serde_json::json!({"settings":{"scope":{"_tag":"Runner","id":runner},"values":{"level":7}}})).unwrap();
+    let result = korrid::launch_settings::resolve_launch(&snapshot, &route, Some(&launch), None)
+        .unwrap()
+        .runner;
     assert_eq!(
-        serde_json::to_value(&result.settings).unwrap(),
+        serde_json::to_value(result.settings).unwrap(),
         serde_json::json!({"level":7})
-    );
-    assert_eq!(
-        result.config.as_ref().unwrap().prepend.as_deref(),
-        Some("extra = true")
     );
     assert_eq!(result.config.unwrap().append.as_deref(), Some("layer = 6"));
 }

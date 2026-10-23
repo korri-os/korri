@@ -141,12 +141,12 @@ pub fn validate(
         check(v, path, host)?;
         for (kind, records) in [("families", &v.families), ("runners", &v.runners)] {
             for (id, v) in records {
-                if id.is_empty() {
-                    return Err(ConfigSchemaError::Invalid {
+                crate::config::place::validate_scope_id(kind, id).map_err(|message| {
+                    ConfigSchemaError::Invalid {
                         path: path.into(),
-                        message: "runner scope ID is empty".into(),
-                    });
-                }
+                        message,
+                    }
+                })?;
                 check(v, &format!("{path}.{kind}.{id}"), false)?;
             }
         }
@@ -207,4 +207,10 @@ pub fn validate(
         }
     }
     Ok(())
+}
+
+impl std::ops::DerefMut for Profile {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.place
+    }
 }

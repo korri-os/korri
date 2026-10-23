@@ -133,7 +133,7 @@ async fn host_count_default_read_update_and_cas_use_real_device_config() {
     );
     assert_eq!(snapshot(&app).await, updated["outcome"]["payload"]);
     let bytes = fixture.bytes();
-    assert!(String::from_utf8_lossy(&bytes).contains("playerCount: 6"));
+    assert!(String::from_utf8_lossy(&bytes).contains("player-count: 6"));
     let stale = rpc(&app, update(revision, COUNT, "8")).await;
     assert_error(&stale, "SettingsConflict");
     assert_eq!(fixture.bytes(), bytes);

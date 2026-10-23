@@ -1,7 +1,5 @@
-//! ADR 0009: device → runner → system → library item, independent of runner settings.
-use super::{
-    cascade::LaunchSettingValue, optional_non_null, resolver::ResolvedRoute, ConfigSnapshot,
-};
+//! Authored modifier values; the launch-settings resolver owns their order.
+use super::{cascade::LaunchSettingValue, optional_non_null};
 use indexmap::IndexMap;
 use serde::{
     de::{Error, MapAccess, Visitor},
@@ -86,10 +84,4 @@ impl<'de> Deserialize<'de> for ModifierConfigs {
         }
         deserializer.deserialize_map(Records)
     }
-}
-
-pub fn resolve(snapshot: &ConfigSnapshot, route: &ResolvedRoute) -> ModifierConfigs {
-    crate::launch_settings::resolve_launch(snapshot, route, None, None)
-        .expect("validated launch settings")
-        .modifiers
 }

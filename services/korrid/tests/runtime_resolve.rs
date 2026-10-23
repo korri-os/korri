@@ -190,7 +190,7 @@ fn the_person_sees_the_refusal_through_the_existing_route_error() {
         &SelectedGameLaunchRequest {
             game_id: readable::GBA_ID.into(),
             runner_id: RUNNER_ID.into(),
-            overrides: None,
+            launch: None,
         },
         None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",

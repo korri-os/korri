@@ -95,7 +95,56 @@ pub fn snapshot_for_person(
     };
     let mut resolved = resolve_launch(&config, &route, None, facts.as_ref())?.values;
     let mut runners = Vec::new();
+    let mut modifiers = Vec::new();
     if let Some(registry) = registry {
+        for declaration in registry
+            .modifiers()
+            .values()
+            .filter(|v| registry.enabled_modifier(&v.id).is_ok())
+        {
+            let package = registry
+                .installed_package(&declaration.id)
+                .map_err(|e| SettingsError::Invalid(e.to_string()))?;
+            let source = crate::script::source::SourceSnapshot::package_plugin(
+                &package.package,
+                &package.entry,
+                &package.sources,
+            )
+            .map_err(SettingsError::Invalid)?;
+            let description = crate::launcher::typed_settings::describe(
+                &source,
+                &declaration.id,
+                &package.package.display().to_string(),
+            )
+            .map_err(SettingsError::Invalid)?;
+            for (key, value) in &description.defaults {
+                let name = format!("modifiers.{}.settings.{key}", declaration.id);
+                if !resolved.values.contains_key(&name) {
+                    super::launch::sourced(
+                        &mut resolved.values,
+                        name,
+                        LaunchValuePath::Editable(LaunchPath::ModifierSetting {
+                            id: declaration.id.clone(),
+                            key: key.clone(),
+                        }),
+                        serde_json::to_value(value).unwrap(),
+                        LaunchSource::PluginDefault {
+                            plugin_id: declaration.id.clone(),
+                        },
+                    );
+                }
+            }
+            let owner = declaration.id.split_once('/').unwrap().0;
+            modifiers.push(LaunchModifierSnapshot {
+                id: declaration.id.clone(),
+                title: registry
+                    .plugin_title(owner)
+                    .unwrap_or(&declaration.id)
+                    .into(),
+                schema: description.schema_available.then_some(description.schema),
+                revision: description.schema_available.then_some(description.revision),
+            });
+        }
         let ids: Vec<String> = if game_id.is_some() {
             candidates.iter().map(|v| v.runner_id.clone()).collect()
         } else {
@@ -134,7 +183,7 @@ pub fn snapshot_for_person(
                     root, &config, registry, candidate, None, None, person,
                 )
                 .map_err(|v| v.to_string())?;
-                let plan = crate::launcher::plugin_launch::prepared_plan(&spec.command)?;
+                let plan = crate::launcher::plugin_launch::runner_prepare_plan(&spec.command)?;
                 Ok(LaunchPrepareFacts {
                     env: plan.env,
                     args: plan.args,
@@ -192,7 +241,10 @@ pub fn snapshot_for_person(
             runners.push(LaunchRunnerSnapshot {
                 id: id.clone(),
                 family: declaration.family.clone(),
-                title: registry.plugin_title(&id).unwrap_or(&id).into(),
+                title: registry
+                    .plugin_title(id.split_once('/').unwrap().0)
+                    .unwrap_or(&id)
+                    .into(),
                 selected: selected.as_deref() == Some(&id),
                 schema,
                 revision,
@@ -316,6 +368,7 @@ pub fn snapshot_for_person(
         places,
         resolved,
         runners,
+        modifiers,
         profiles: game
             .map(|g| {
                 g.profiles

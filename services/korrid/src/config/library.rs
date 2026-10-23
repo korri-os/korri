@@ -181,3 +181,9 @@ pub enum ProviderLinkRefKind {
     ProviderItemId,
     ExternalId,
 }
+
+impl std::ops::DerefMut for LibraryItemPayload {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.place
+    }
+}

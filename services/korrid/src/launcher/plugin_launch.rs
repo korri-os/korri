@@ -245,6 +245,31 @@ pub fn prepare_command(command: &[String]) -> Result<Vec<String>, String> {
     Ok(command)
 }
 
+/// The runner's own defaults, before place values and modifier composition.
+/// Snapshot facts use this effect-free launch.prepare operation, not the final plan.
+pub fn runner_prepare_plan(command: &[String]) -> Result<PluginLaunchOutput, String> {
+    if !matches!(
+        command.get(1).map(String::as_str),
+        Some("plugin-prepare" | "plugin-launch")
+    ) || command.len() != 6
+    {
+        return Err("invalid plugin preparation command".into());
+    }
+    let source = Path::new(&command[2]);
+    let package = source
+        .parent()
+        .ok_or("plugin source has no package directory")?;
+    let entry = source
+        .file_name()
+        .and_then(|v| v.to_str())
+        .ok_or("invalid plugin entry")?;
+    let (snapshot, _) = package_snapshot(&package.join("manifest.json"), entry)?;
+    let input: PluginLaunchInput = serde_json::from_str(&command[3]).map_err(|e| e.to_string())?;
+    let plan = evaluate_snapshot(&snapshot, &input)?;
+    validate_plan(&plan)?;
+    Ok(plan)
+}
+
 /// Effect-free inspection of the same prepared handoff that the unit executes.
 pub fn prepared_plan(command: &[String]) -> Result<PluginLaunchOutput, String> {
     let command = prepare_command(command)?;
@@ -616,5 +641,28 @@ mod tests {
         assert_eq!(exit_code(7 << 8), 7);
         assert_eq!(exit_code(libc::SIGTERM), 128 + libc::SIGTERM);
         assert_eq!(exit_code(libc::SIGKILL | 0x80), 128 + libc::SIGKILL);
+    }
+}
+
+#[cfg(test)]
+mod place_merge_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn layer_environment_unsets_arguments_and_cwd_merge_once_around_plugin_values() {
+        let mut plan:PluginLaunchOutput=serde_json::from_value(json!({"command":"/bin/true","args":["plugin"],"env":{"KEEP":"plugin","CHANGE":"plugin","REMOVE":"plugin"},"envUnset":["SET"],"cwd":"/plugin"})).unwrap();
+        let composition:LaunchComposition=serde_json::from_value(json!({"modifiers":[],"env":{"CHANGE":"layer","REMOVE":null,"SET":"layer"},"args":{"prepend":["before"],"append":["after"]},"cwd":"/layer"})).unwrap();
+        merge_place_values(&mut plan, &composition);
+        assert_eq!(plan.args, ["before", "plugin", "after"]);
+        assert_eq!(plan.cwd.as_deref(), Some("/layer"));
+        assert_eq!(
+            plan.env,
+            HashMap::from([
+                ("KEEP".into(), "plugin".into()),
+                ("CHANGE".into(), "layer".into()),
+                ("SET".into(), "layer".into())
+            ])
+        );
+        assert_eq!(plan.env_unset, ["REMOVE"]);
     }
 }

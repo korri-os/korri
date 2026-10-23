@@ -346,8 +346,11 @@ pub(crate) fn initial_document(
     if modifiers.is_empty() {
         return Ok(canonical.to_owned());
     }
-    serde_yaml::to_string(&BTreeMap::from([("modifiers", &modifiers)]))
-        .map_err(|error| error.to_string())
+    serde_yaml::to_string(&BTreeMap::from([(
+        "host",
+        BTreeMap::from([("modifiers", &modifiers)]),
+    )]))
+    .map_err(|error| error.to_string())
 }
 
 fn graph_source_config(
@@ -505,12 +508,13 @@ mod initial_document_tests {
         let yaml = initial_document(DEVICE_FILE_NAME, Some(GAMESCOPE)).unwrap();
         let value: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(
-            value["modifiers"]["@korri:gamescope/gamescope"]["enabled"],
+            value["host"]["modifiers"]["@korri:gamescope/gamescope"]["enabled"],
             serde_yaml::Value::Bool(true)
         );
         let decoded: super::super::modifiers::ModifierConfigs =
-            serde_yaml::from_value(value["modifiers"].clone()).unwrap();
+            serde_yaml::from_value(value["host"]["modifiers"].clone()).unwrap();
         assert_eq!(decoded.len(), 1);
+        super::super::decode_config_documents(&yaml, "{}").unwrap();
     }
 
     #[test]

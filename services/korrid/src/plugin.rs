@@ -895,6 +895,10 @@ impl PluginRegistry {
         &self.runners
     }
 
+    pub fn modifiers(&self) -> &BTreeMap<String, ModifierRecord> {
+        &self.modifiers
+    }
+
     pub fn transports(&self) -> &BTreeMap<String, TransportRecord> {
         &self.transports
     }

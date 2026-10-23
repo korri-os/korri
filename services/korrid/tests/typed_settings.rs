@@ -7,7 +7,7 @@ use korrid::{
     config::{resolver::resolve_linux_route, snapshot::ConfigSnapshotCoordinator},
     launcher::{
         linux_plugin::launch_route,
-        plugin_launch::{evaluate_snapshot, PluginLaunchInput, PluginLaunchOverrides},
+        plugin_launch::{evaluate_snapshot, PluginLaunchInput},
         typed_settings::validate,
     },
     plugin::PluginRegistry,
@@ -261,10 +261,7 @@ fn an_unsupported_setting_is_reported_once_and_never_reaches_the_native_config()
     runner
         .files
         .insert("autoconfig".into(), "/autoconfig".into());
-    let overrides: PluginLaunchOverrides = serde_json::from_value(serde_json::json!({
-        "settings":{"audio_volume":-3,"video_vsync":false,"absent_key":1}
-    }))
-    .unwrap();
+    let overrides: korrid::launch_settings::LaunchOverride = serde_json::from_value(serde_json::json!({"settings":{"scope":{"_tag":"Runner","id":"@korri:mgba/mgba"},"values":{"audio_volume":-3,"video_vsync":false,"absent_key":1}}})).unwrap();
     let registry = PluginRegistry::from_installed(vec![runner.clone()]).unwrap();
     let route = resolve_linux_route(
         root.path(),
@@ -381,4 +378,19 @@ fn plugin_settings_scope_mark_defaults_shared_and_only_accepts_device() {
     // Diagnostics still reach launch warnings even without settings.validate.
     let warnings = validate(&source, &Default::default(), "@test:runner/main", "build").unwrap();
     assert_eq!(warnings.len(), 3);
+}
+
+#[test]
+fn schema_defaults_are_display_only_and_keep_the_runner_revision() {
+    use korrid::launcher::typed_settings::{describe, SettingScope};
+    let source=SourceSnapshot::plugin("export const name='defaults'; export const handlers={'settings.describe':()=>({revision:'runner-build-123',schema:{properties:{scale:{type:'integer',default:2},clock:{type:'number',default:50,'x-korri-scope':'device'},broken:{default:[]}}}})};").unwrap();
+    let description = describe(&source, "@test:runner/main", "build").unwrap();
+    assert_eq!(description.revision, "runner-build-123");
+    assert_eq!(
+        serde_json::to_value(&description.defaults).unwrap(),
+        serde_json::json!({"scale":2,"clock":50})
+    );
+    assert_eq!(description.scopes["scale"], SettingScope::Shared);
+    assert_eq!(description.scopes["clock"], SettingScope::Device);
+    assert_eq!(description.schema["properties"]["scale"]["default"], 2);
 }

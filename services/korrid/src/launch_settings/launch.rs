@@ -165,14 +165,10 @@ pub(crate) fn override_body(
         min: v.min,
         max: v.max,
     });
-    for (id, v) in &launch.modifiers {
-        let record = crate::config::modifiers::ModifierConfig {
-            enabled: v.enabled,
-            settings: v.settings.clone(),
-            config: None,
-        };
-        body.values.modifiers.insert(id.clone(), record);
-    }
+    body.values.modifiers = serde_json::from_value(
+        serde_json::to_value(&launch.modifiers).expect("serializable launch modifiers"),
+    )
+    .map_err(|e| invalid(&e.to_string()))?;
     if let Some(settings) = &launch.settings {
         let record = RunnerConfig {
             settings: settings.values.clone(),
@@ -180,9 +176,11 @@ pub(crate) fn override_body(
         };
         match &settings.scope {
             LaunchRunnerScope::Runner(id) => {
+                crate::config::place::validate_scope_id("runners", id).map_err(|e| invalid(&e))?;
                 body.runners.insert(id.clone(), record);
             }
             LaunchRunnerScope::Family(id) => {
+                crate::config::place::validate_scope_id("families", id).map_err(|e| invalid(&e))?;
                 body.families.insert(id.clone(), record);
             }
             LaunchRunnerScope::Any => {
@@ -310,7 +308,7 @@ pub fn resolve_launch(
     for cell in &cells {
         let v = cell.values;
         let p = &cell.place;
-        if let Some(id) = cell.runner {
+        if let Some(id) = cell.runner.filter(|id| *id == route.runner_id) {
             put(
                 &mut values,
                 "runner",

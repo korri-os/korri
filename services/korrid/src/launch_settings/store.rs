@@ -77,7 +77,10 @@ pub fn set(
     request: &LaunchSetRequest,
     client: &helper::Client,
 ) -> Result<RunnerChoiceRevisions> {
-    let registry = if matches!(request.path, LaunchPath::Setting { .. }) && request.value.is_some()
+    let registry = if matches!(
+        request.path,
+        LaunchPath::Setting { .. } | LaunchPath::ModifierSetting { .. }
+    ) && request.value.is_some()
     {
         Some(
             crate::plugin_policy::RegistrySource::Installed
@@ -154,9 +157,37 @@ pub fn set_with_registry(
                     return Err(invalid("modifier enabled must be boolean"));
                 }
             }
-            LaunchPath::ModifierSetting { .. } => {
+            LaunchPath::ModifierSetting { id, key } => {
                 serde_json::from_value::<schema::cascade::LaunchSettingValue>(value.clone())
                     .map_err(|_| invalid("setting must be a scalar"))?;
+                let registry = registry
+                    .ok_or_else(|| invalid("installed modifier registry is unavailable"))?;
+                registry
+                    .enabled_modifier(id)
+                    .map_err(|e| invalid(e.to_string()))?;
+                let package = registry
+                    .installed_package(id)
+                    .map_err(|e| invalid(e.to_string()))?;
+                let source = crate::script::source::SourceSnapshot::package_plugin(
+                    &package.package,
+                    &package.entry,
+                    &package.sources,
+                )
+                .map_err(invalid)?;
+                let description = crate::launcher::typed_settings::describe(
+                    &source,
+                    id,
+                    &package.package.display().to_string(),
+                )
+                .map_err(invalid)?;
+                if description.schema_available {
+                    let property = description
+                        .schema
+                        .get("properties")
+                        .and_then(|v| v.get(key))
+                        .ok_or_else(|| invalid(format!("unknown modifier setting {key}")))?;
+                    validate_property(property, value).map_err(invalid)?;
+                }
             }
             LaunchPath::Setting { key } => validate_setting(
                 registry.ok_or_else(|| invalid("installed runner registry is unavailable"))?,

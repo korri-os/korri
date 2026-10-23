@@ -107,6 +107,7 @@ pub enum SettingScope {
 }
 #[derive(Debug)]
 pub struct SettingsDescription {
+    pub schema_available: bool,
     pub schema: serde_json::Value,
     pub revision: String,
     pub defaults: HashMap<String, LaunchSettingValue>,
@@ -125,6 +126,7 @@ pub fn describe(
             Ok(result) => result,
             Err(failure) if failure.is_unimplemented() => {
                 return Ok(SettingsDescription {
+                    schema_available: false,
                     schema: serde_json::json!({}),
                     revision: String::new(),
                     defaults: HashMap::new(),
@@ -178,6 +180,7 @@ pub fn describe(
         }
     }
     Ok(SettingsDescription {
+        schema_available: value.get("schema").is_some(),
         schema,
         revision,
         defaults,

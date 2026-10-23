@@ -261,5 +261,115 @@ fn prepared_plan_environment_never_reads_the_korrid_process_environment() {
     );
     assert!(!plan_env.values.contains_key(sentinel));
     assert!(!plan_env.values.contains_key("REMOVED"));
-    assert_eq!(plan_env.unset, ["REMOVED"]);
+}
+
+#[test]
+fn snapshot_dry_run_and_schema_defaults_do_not_change_launch_input_and_set_validates_schema() {
+    use crate::launch_settings::{
+        self as ls, LaunchLayer, LaunchPath, LaunchPlace, LaunchRunnerFacts, LaunchRunnerScope,
+        LaunchSetRequest, LaunchSource,
+    };
+    let game = DiscoveredGame::new();
+    let package = game
+        .registry
+        .installed_package(&game.route.runner_id)
+        .unwrap();
+    let source=include_str!("../../examples/libretro-core.plugin.ts").replace("export { handlers } from \"./retroarch\"",r#"export const handlers = {
+      'settings.describe': () => ({revision:'schema-rev-1',schema:{properties:{scale:{type:'integer',minimum:1,maximum:4,default:2,title:'Scale',description:'Pixel scale'}}}}),
+      'launch.prepare': input => ({command:input.program,args:[input.overrides?.settings.scale === undefined ? 'default-not-passed' : 'authored'],env:{PLUGIN:'default',REMOVE:'plugin'},cwd:'/plugin'})
+    }"#);
+    fs::write(package.package.join("plugin.ts"), source).unwrap();
+    let device_path = game.root.path().join("device.yaml");
+    let mut device: serde_json::Value =
+        serde_yaml::from_str(&fs::read_to_string(&device_path).unwrap()).unwrap();
+    device["host"] = serde_json::json!({"env":{"LAYER":"authored","REMOVE":null},"args":{"prepend":["before"],"append":["after"]},"cwd":"/layer"});
+    fs::write(&device_path, serde_yaml::to_string(&device).unwrap()).unwrap();
+    let person = "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9";
+    let client = ls::helper::Client {
+        socket: game.root.path().join("absent.sock"),
+    };
+    let snapshot = ls::resolution::snapshot_for_person(
+        game.root.path(),
+        Some(&game.registry),
+        Some(&game.route.playable_id),
+        &client,
+        Some(person),
+    )
+    .unwrap();
+    assert_eq!(snapshot.runners.len(), 1);
+    assert_eq!(snapshot.runners[0].revision, "schema-rev-1");
+    let LaunchRunnerFacts::Ready(facts) = &snapshot.runners[0].prepare else {
+        panic!("{:?}", snapshot.runners[0].prepare)
+    };
+    assert_eq!(facts.args, ["default-not-passed"]);
+    assert_eq!(facts.env["REMOVE"], "plugin");
+    assert!(!facts.env.contains_key("LAYER"));
+    assert_eq!(facts.cwd.as_deref(), Some("/plugin"));
+    assert_eq!(snapshot.resolved.values["settings.scale"].value, 2);
+    assert!(matches!(
+        snapshot.resolved.values["settings.scale"].source,
+        LaunchSource::PluginDefault { .. }
+    ));
+    assert_eq!(
+        snapshot.resolved.values["env.REMOVE"].value,
+        serde_json::Value::Null
+    );
+    let config = crate::config::settings::runner_choice_snapshot(game.root.path())
+        .unwrap()
+        .0;
+    let spec = launch_route(
+        game.root.path(),
+        &config,
+        &game.registry,
+        &game.route,
+        None,
+        None,
+        person,
+    )
+    .unwrap();
+    let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
+    assert!(!input.overrides.unwrap().settings.contains_key("scale"));
+    let plan = crate::launcher::plugin_launch::prepared_plan(&spec.command).unwrap();
+    assert_eq!(plan.args, ["before", "default-not-passed", "after"]);
+    assert_eq!(plan.cwd.as_deref(), Some("/layer"));
+    assert_eq!(plan.env["PLUGIN"], "default");
+    assert_eq!(plan.env["LAYER"], "authored");
+    assert!(!plan.env.contains_key("REMOVE"));
+    assert!(plan.env_unset.iter().any(|v| v == "REMOVE"));
+    let resolved = ls::resolve_launch(&config, &game.route, None, None).unwrap();
+    let plan_env = resolved_plan_environment_changes(&spec.command, &resolved).unwrap();
+    assert_eq!(plan_env.values, plan.env.into_iter().collect());
+    assert_eq!(plan_env.unset, plan.env_unset);
+    let private = tempfile::tempdir().unwrap();
+    let lock = std::sync::Mutex::new(());
+    let mut request = LaunchSetRequest {
+        place: LaunchPlace {
+            layer: LaunchLayer::Game(game.route.playable_id.clone()),
+            scope: LaunchRunnerScope::Family("@korri:retroarch".into()),
+        },
+        path: LaunchPath::Setting {
+            key: "scale".into(),
+        },
+        value: Some(serde_json::json!(9)),
+        expected_revision: snapshot.revisions.games,
+    };
+    assert!(ls::set_with_registry(
+        game.root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&game.registry)
+    )
+    .is_err());
+    request.value = Some(serde_json::json!(3));
+    ls::set_with_registry(
+        game.root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&game.registry),
+    )
+    .unwrap();
 }

@@ -1,0 +1,30 @@
+host:
+  title: Handheld
+  preferences: {playerCount: 4}
+  env: {PLUGIN_KEY: keep, REMOVE: null}
+  argsAppend: [--device]
+  hooks: {use: [prepare], trust-removable: false}
+runners:
+  '@korri:example/main':
+    settings: {pluginCamelCase: true}
+    argsAppend: [--runner]
+families:
+  '@korri:example':
+    settings: {anotherCamelCase: 2}
+modifiers:
+  '@korri:example.foo/wrapper':
+    enabled: true
+    settings: {pluginOwnedKey: value}
+hooks:
+  prepare:
+    before: [{run: 'echo before', on-failure: warn}]
+    after: [{run: 'echo after'}]
+systems:
+  gba:
+    env: {SYSTEM: gba}
+    argsAppend: [--system]
+provider-links:
+  link:
+    provider: '@korri:example'
+    playable: game
+    refs: [{kind: provider-item-id, value: item, targetPart: disc}]

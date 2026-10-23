@@ -1,0 +1,18 @@
+library:
+  game:
+    title: Game
+    argsAppend: [--game]
+    runners:
+      '@korri:example/main':
+        settings: {pluginSettingCamelCase: true}
+        argsAppend: [--game-runner]
+    profiles:
+      quiet:
+        title: Quiet
+        cpu: {max: 50}
+    profile: quiet
+    releases:
+      - id: release
+        system: gba
+        identity: {kind: hash, value: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+        argsAppend: [--release]

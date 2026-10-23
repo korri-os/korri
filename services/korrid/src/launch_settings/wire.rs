@@ -237,14 +237,14 @@ pub enum LaunchValuePath {
 }
 
 #[typeshare]
-#[derive(Clone,Debug,Serialize,Deserialize)]
-#[serde(rename_all="camelCase")]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LaunchModifierSnapshot {
     pub id: String,
     pub title: String,
-    #[serde(default,skip_serializing_if="Option::is_none")]
-    #[typeshare(serialized_as="Option<LaunchJsonValue>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[typeshare(serialized_as = "Option<LaunchJsonValue>")]
     pub schema: Option<serde_json::Value>,
-    #[serde(default,skip_serializing_if="Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revision: Option<String>,
 }

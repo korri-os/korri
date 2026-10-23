@@ -218,7 +218,7 @@ fn each_accepted_dump_offers_the_launcher_beside_the_system_runner() {
             &SelectedGameLaunchRequest {
                 game_id: id,
                 runner_id: "@test:content/main".into(),
-                overrides: None,
+                launch: None,
             },
             None,
             "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
@@ -279,7 +279,7 @@ fn an_unlisted_hash_keeps_only_the_system_runner_and_refuses_the_content_launche
         &SelectedGameLaunchRequest {
             game_id: id,
             runner_id: "@test:content/main".into(),
-            overrides: None,
+            launch: None,
         },
         None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
@@ -326,7 +326,7 @@ fn a_missing_accepted_dump_keeps_its_diagnostic_when_another_release_can_play() 
         &SelectedGameLaunchRequest {
             game_id: id,
             runner_id: "@test:content/main".into(),
-            overrides: None,
+            launch: None,
         },
         None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
@@ -350,7 +350,7 @@ fn an_accepted_hash_with_a_missing_file_is_not_playable() {
         &SelectedGameLaunchRequest {
             game_id: id,
             runner_id: "@test:content/main".into(),
-            overrides: None,
+            launch: None,
         },
         None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",

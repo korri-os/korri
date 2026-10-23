@@ -38,10 +38,10 @@ fn readable_sections_keep_non_executable_opinions_decodable() {
     assert_eq!(snapshot.storage.len(), 2);
     assert_eq!(snapshot.providers.len(), 2);
     assert_eq!(snapshot.systems.len(), 2);
-    assert_eq!(snapshot.families.len(), 1);
-    assert_eq!(snapshot.runners.len(), 1);
-    assert_eq!(snapshot.hooks.len(), 1);
-    assert!(classify_snapshot_support(&snapshot).is_err());
+    assert_eq!(snapshot.host.as_ref().unwrap().families.len(), 1);
+    assert_eq!(snapshot.host.as_ref().unwrap().runners.len(), 1);
+    assert_eq!(snapshot.routines.len(), 1);
+    classify_snapshot_support(&snapshot).unwrap();
 }
 #[test]
 fn unknown_fields_old_sections_and_wrong_document_sections_fail() {
@@ -63,26 +63,20 @@ fn unknown_fields_old_sections_and_wrong_document_sections_fail() {
     ] {
         assert!(decode_config_documents("{}", library).is_err(), "{library}");
     }
-    for field in [
-        "target: {}",
-        "launch: {}",
-        "app: retroarch",
-        "runner: mgba",
-        "typo: true",
-    ] {
+    for field in ["target: {}", "launch: {}", "app: retroarch", "typo: true"] {
         let library = format!("{}        {field}\n", gba_library());
         assert!(decode_config_documents("{}", &library).is_err(), "{field}");
     }
 }
 #[test]
-fn catalog_releases_cannot_carry_hook_commands() {
+fn catalog_releases_and_device_places_accept_hook_commands() {
     let library = format!(
         "{}        hooks:\n          before:\n            - run: 'true'\n",
         gba_library()
     );
-    let error = decode_config_documents("{}", &library).unwrap_err();
-    assert!(error.to_string().contains("commands"), "{error}");
-    decode_config_documents("hooks: {device-check: {before: [{run: 'true'}]}}", "{}").unwrap();
+    let snapshot = decode_config_documents("{}", &library).unwrap();
+    classify_snapshot_support(&snapshot).unwrap();
+    decode_config_documents("routines: {device-check: {before: [{run: 'true'}]}}", "{}").unwrap();
 }
 #[test]
 fn explicit_null_is_not_absence() {
@@ -207,7 +201,7 @@ fn player_count_defaults_only_from_device_configuration() {
         classify_snapshot_support(&snapshot).unwrap();
     }
     for count in [1, 6, 255] {
-        let device = format!("host: {{preferences: {{playerCount: {count}}}}}");
+        let device = format!("host: {{preferences: {{player-count: {count}}}}}");
         let snapshot = decode_config_documents(&device, &gba_library()).unwrap();
         assert_eq!(snapshot.player_count(), count);
         classify_snapshot_support(&snapshot).unwrap();
@@ -219,14 +213,14 @@ fn player_count_rejects_non_positive_out_of_range_and_non_integer_values() {
     for value in [
         "0", "-1", "256", "1.5", "6.0", "null", "'6'", "true", "false", "[]", "{}",
     ] {
-        let device = format!("host: {{preferences: {{playerCount: {value}}}}}");
+        let device = format!("host: {{preferences: {{player-count: {value}}}}}");
         assert!(decode_config_documents(&device, "{}").is_err(), "{value}");
     }
     for device in [
         "host: {preferences: null}",
-        "host: {preferences: {playerCount: 6, typo: true}}",
+        "host: {preferences: {player-count: 6, typo: true}}",
         "host: {preferences: {player_count: 6}}",
-        "host: {playerCount: 6}",
+        "host: {player-count: 6}",
     ] {
         assert!(decode_config_documents(device, "{}").is_err(), "{device}");
     }
@@ -235,23 +229,19 @@ fn player_count_rejects_non_positive_out_of_range_and_non_integer_values() {
 #[test]
 fn player_count_is_not_an_inheritable_or_catalog_preference() {
     for device in [
-        "profiles: {local: {preferences: {playerCount: 6}}}",
-        "systems: {gba: {preferences: {playerCount: 6}}}",
-        "families: {'@korri:retroarch': {preferences: {playerCount: 6}}}",
-        "runners: {'@korri:mgba/mgba': {preferences: {playerCount: 6}}}",
+        "profiles: {local: {preferences: {player-count: 6}}}",
+        "systems: {gba: {preferences: {player-count: 6}}}",
+        "families: {'@korri:retroarch': {preferences: {player-count: 6}}}",
+        "runners: {'@korri:mgba/mgba': {preferences: {player-count: 6}}}",
     ] {
         assert!(decode_config_documents(device, "{}").is_err(), "{device}");
     }
-    let games = format!("{}    preferences: {{playerCount: 6}}\n", gba_library());
+    let games = format!("{}    preferences: {{player-count: 6}}\n", gba_library());
     assert!(decode_config_documents("{}", &games).is_err());
-    let releases = format!("{}    preferences: {{playerCount: 6}}\n", gba_library());
+    let releases = format!("{}    preferences: {{player-count: 6}}\n", gba_library());
     assert!(decode_config_documents("{}", &releases).is_err());
-    assert!(serde_yaml::from_str::<korrid::config::Preferences>("playerCount: 6").is_err());
-    assert!(serde_yaml::from_str::<korrid::config::InheritableLayer>(
-        "preferences: {playerCount: 6}"
-    )
-    .is_err());
-    assert!(decode_config_documents("{}", "host: {preferences: {playerCount: 6}}").is_err());
+    assert!(serde_yaml::from_str::<korrid::config::Preferences>("player-count: 6").is_err());
+    assert!(decode_config_documents("{}", "host: {preferences: {player-count: 6}}").is_err());
 }
 
 #[test]
@@ -261,7 +251,7 @@ fn player_count_does_not_enable_unsupported_launch_preferences() {
         "{video: {fullscreen: true, resolution: {width: 640, height: 480}, aspect-ratio: '4:3'}}",
         "{audio: {volume: 75}}",
     ] {
-        for count in ["", "playerCount: 6, "] {
+        for count in ["", "player-count: 6, "] {
             let device = format!("host: {{preferences: {{{count}launch: {launch}}}}}");
             let snapshot = decode_config_documents(&device, "{}").unwrap();
             assert!(classify_snapshot_support(&snapshot)
@@ -276,16 +266,14 @@ fn player_count_does_not_enable_unsupported_launch_preferences() {
         "{audio: {volume: 101}}",
         "{video: {fullscreen: null}}",
     ] {
-        let device = format!("host: {{preferences: {{playerCount: 6, launch: {launch}}}}}");
+        let device = format!("host: {{preferences: {{player-count: 6, launch: {launch}}}}}");
         assert!(decode_config_documents(&device, "{}").is_err(), "{launch}");
     }
     let releases = format!(
         "{}        preferences: {{launch: {{audio: {{volume: 75}}}}}}\n",
         gba_library()
     );
-    let snapshot =
-        decode_config_documents("host: {preferences: {playerCount: 6}}", &releases).unwrap();
-    assert!(classify_snapshot_support(&snapshot).is_err());
+    assert!(decode_config_documents("host: {preferences: {player-count: 6}}", &releases).is_err());
 }
 
 #[test]
@@ -370,4 +358,20 @@ fn provider_identity_requires_a_matching_provider_location() {
     }
     // A catalog entry need not have an available device location yet.
     decode_config_documents("{}", PROVIDER_LIBRARY).unwrap();
+}
+
+#[test]
+fn migrated_fixture_files_are_accepted_by_the_actual_config_decoder() {
+    let snapshot = decode_config_documents(
+        include_str!("../deploy/launch-settings-migration/fixtures/device.after.yaml"),
+        include_str!("../deploy/launch-settings-migration/fixtures/library.after.yaml"),
+    )
+    .unwrap();
+    classify_snapshot_support(&snapshot).unwrap();
+    assert_eq!(snapshot.host.as_ref().unwrap().args.append, ["--device"]);
+    assert_eq!(
+        snapshot.library["game"].releases[0].inheritable.args.append,
+        ["--release"]
+    );
+    assert!(snapshot.host.as_ref().unwrap().env["REMOVE"].is_none());
 }

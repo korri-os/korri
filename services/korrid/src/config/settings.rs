@@ -798,7 +798,7 @@ mod tests {
                 DEVICE_FILE_NAME,
                 "host: {preferences: {player-count: 6, typo: true}}",
             ),
-            (DEVICE_FILE_NAME, "host: {env: {EXAMPLE: value}}"),
+            (DEVICE_FILE_NAME, "host: {env: {EXAMPLE: []}}"),
             (
                 LIBRARY_FILE_NAME,
                 "games: {bad: {title: broken, releases: []}}",
@@ -946,5 +946,63 @@ mod tests {
             fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap(),
             original
         );
+    }
+    #[test]
+    fn settings_preserves_boolean_plugin_states_and_keeps_administrator_approval() {
+        for enabled in [false, true] {
+            let root = root(&format!("host: {{plugin: {{'@korri:core': {enabled}}}}}\n"));
+            let private = tempfile::tempdir().unwrap();
+            let lock = std::sync::Mutex::new(());
+            let before = read(root.path()).unwrap();
+            let snapshot = decode_config_documents(
+                &fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap(),
+                "{}",
+            )
+            .unwrap();
+            classify_snapshot_support(&snapshot).unwrap();
+            assert_eq!(
+                snapshot.host.as_ref().unwrap().plugin.as_ref().unwrap()
+                    [&super::super::ProviderIdString("@korri:core".into())],
+                serde_json::json!(enabled)
+            );
+            assert_eq!(before.plugins[0].id, "@korri:core");
+            let after = update(
+                root.path(),
+                private.path(),
+                &lock,
+                &before.revision,
+                SettingChange::DeviceName("Preserved".into()),
+            )
+            .unwrap();
+            let saved = fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap();
+            let snapshot = decode_config_documents(&saved, "{}").unwrap();
+            assert_eq!(
+                snapshot.host.as_ref().unwrap().plugin.as_ref().unwrap()
+                    [&super::super::ProviderIdString("@korri:core".into())],
+                serde_json::json!(enabled)
+            );
+            let error = update(
+                root.path(),
+                private.path(),
+                &lock,
+                &after.revision,
+                SettingChange::PluginEnabled {
+                    id: "@korri:core".into(),
+                    enabled: !enabled,
+                },
+            )
+            .unwrap_err();
+            assert!(error
+                .to_string()
+                .contains("installed plugin selections require local administrator approval"));
+            assert_eq!(
+                fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap(),
+                saved
+            );
+        }
+        let snapshot =
+            decode_config_documents("host: {plugin: {'@korri:core': {policy: true}}}", "{}")
+                .unwrap();
+        assert!(classify_snapshot_support(&snapshot).is_err());
     }
 }

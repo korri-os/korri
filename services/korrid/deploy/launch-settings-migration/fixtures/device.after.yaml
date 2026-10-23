@@ -1,0 +1,51 @@
+host:
+  title: Handheld
+  preferences:
+    player-count: 4
+  env:
+    PLUGIN_KEY: keep
+    REMOVE: null
+  hooks:
+    use:
+    - prepare
+  runners:
+    '@korri:example/main':
+      settings:
+        pluginCamelCase: true
+      args:
+        append:
+        - --runner
+  families:
+    '@korri:example':
+      settings:
+        anotherCamelCase: 2
+  modifiers:
+    '@korri:example.foo/wrapper':
+      enabled: true
+      settings:
+        pluginOwnedKey: value
+  args:
+    append:
+    - --device
+systems:
+  gba:
+    env:
+      SYSTEM: gba
+    args:
+      append:
+      - --system
+provider-links:
+  link:
+    provider: '@korri:example'
+    playable: game
+    refs:
+    - kind: provider-item-id
+      value: item
+      target-part: disc
+routines:
+  prepare:
+    before:
+    - run: echo before
+      on-failure: warn
+    after:
+    - run: echo after

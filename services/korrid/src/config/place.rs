@@ -166,3 +166,24 @@ pub(crate) fn validate_document_shape(yaml: &str) -> Result<(), String> {
     }
     Ok(())
 }
+
+impl std::ops::DerefMut for PlaceBody {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.values
+    }
+}
+impl std::ops::DerefMut for super::cascade::RunnerConfig {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.values
+    }
+}
+
+pub(crate) fn validate_scope_id(kind: &str, id: &str) -> Result<(), String> {
+    if kind == "families" {
+        super::validate_provider_id("family", id).map_err(|e| e.to_string())
+    } else if id.starts_with('@') {
+        super::catalog::validate_release_key(id)
+    } else {
+        Err("runner must be a fully qualified contribution ID".into())
+    }
+}

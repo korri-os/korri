@@ -431,12 +431,16 @@ impl HostPayload {
                 "host preferences are not executable in this slice",
             );
         }
-        if self.plugin.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.plugin"),
-                "host plugin policy is not executable in this slice",
-            );
+        if let Some(plugin) = &self.plugin {
+            for (id, value) in plugin {
+                if !value.is_boolean() {
+                    push_issue(
+                        issues,
+                        &format!("{path}.plugin.{}", id.0),
+                        "plugin enablement must be true or false",
+                    );
+                }
+            }
         }
         if self.patches.is_some() {
             push_issue(
@@ -975,7 +979,7 @@ where
     T::deserialize(value).map(Some).map_err(D::Error::custom)
 }
 
-fn validate_provider_id(path: &str, value: &str) -> Result<(), ConfigSchemaError> {
+pub(crate) fn validate_provider_id(path: &str, value: &str) -> Result<(), ConfigSchemaError> {
     let Some(without_at) = value.strip_prefix('@') else {
         return Err(invalid(
             path,
@@ -1020,3 +1024,15 @@ fn invalid(path: &str, message: &str) -> ConfigSchemaError {
 #[cfg(test)]
 #[path = "../../tests/fixtures/readable.rs"]
 pub(crate) mod test_fixtures;
+
+impl std::ops::DerefMut for HostPayload {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.place
+    }
+}
+
+impl std::ops::DerefMut for SystemPayload {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.place
+    }
+}

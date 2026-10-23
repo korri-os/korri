@@ -243,6 +243,27 @@ korrid keeps no key table and reads no settings metadata file: a runner that
 implements neither operation says nothing, which is silence and not an error,
 and authored values are never rewritten or deleted.
 
+The `default` on each `settings.describe.schema.properties` entry is the
+plugin's display-only base value. korrid passes only authored settings to
+`launch.prepare` and `launch.compose`. Settings are shared unless their property
+marks `x-korri-scope: device`; other marks produce a diagnostic. The snapshot
+carries the schema and revision so the editor can show titles, descriptions,
+enums and numeric bounds. Setting writes must satisfy the installed runner's
+schema (any installed member for a family place). Installed modifiers also
+appear before any place enables them. Their optional settings schema follows
+the same rule; a modifier with no describe handler has no schema.
+
+ADRs 0028 and 0029 define one place cascade for runner settings, modifiers,
+limits, environment, arguments, working directory and hooks. The plugin's
+`launch.prepare` environment is the base: place values override it per key and
+null unsets a key. Final arguments are place prepend, plugin arguments, then
+place append. Place cwd overrides plugin cwd. These changes happen once before
+modifier composition, in korrid's private handoff, never in plugin input.
+The portal cannot author environment, arguments, cwd, hooks or raw config.
+One-launch requests carry only the restricted `launch: LaunchOverride` shape;
+plugin `PluginLaunchInput.overrides` remains the authored runner settings and
+file-only native config consumed by the callback.
+
 `runtime.resolve` asks the runner whether it can start this target now, and what
 is missing if not. `launcher/runtime.rs` calls it before a launch starts, with
 the same `PluginLaunchInput` that `launch.prepare` receives, because both
