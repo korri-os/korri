@@ -534,7 +534,11 @@ pub fn execute(
     // init that has no handler for it, so a game exec'd here without a SIGTERM
     // handler ignores systemd's stop until the stop timeout and SIGKILL.
     if unsafe { libc::getpid() } == 1 {
-        std::process::exit(run_as_namespace_init(command)?);
+        let status = run_as_namespace_init(command)?;
+        if let Err(error) = crate::host::launch_diagnostics::write_exit_status(status) {
+            eprintln!("korrid plugin-launch exit diagnostics: {error}");
+        }
+        std::process::exit(status);
     }
     Err(format!("cannot exec composed launch: {}", command.exec()))
 }

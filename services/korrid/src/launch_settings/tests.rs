@@ -146,8 +146,13 @@ fn one_order_table_covers_every_place_for_every_kind() {
 }
 #[test]
 fn routines_expand_before_inline_steps_and_each_kind_keeps_its_merge_rule() {
-    let device=format!("routines: {{setup: {{before: [{{run: routine}}], after: [{{run: cleanup}}]}}}}\nhost: {{env: {{KEEP: yes, REMOVE: old}}, cwd: /device, hooks: {{use: [setup], before: [{{run: inline}}]}}, runners: {{'{RUNNER}': {{settings: {{a: 1, b: 2}}, config: {{prepend: first, append: first}}, modifiers: {{'@korri:test.foo/wrapper': {{enabled: true, settings: {{a: 1, b: 2}}, config: {{append: first}}}}}}}}}}\n");
-    let library=LIBRARY.replace("    cpu: {min: 20}", &format!("    cpu: {{min: 20}}\n    env: {{REMOVE: null, ADD: final}}\n    cwd: /game\n    runners: {{'{RUNNER}': {{settings: {{b: 3}}, config: {{append: last}}, modifiers: {{'@korri:test.foo/wrapper': {{enabled: false, settings: {{b: 4}}, config: {{append: last}}}}}}}}"));
+    let device=json!({"routines":{"setup":{"before":[{"run":"routine"}],"after":[{"run":"cleanup"}]}},"host":{"env":{"KEEP":"yes","REMOVE":"old"},"cwd":"/device","hooks":{"use":["setup"],"before":[{"run":"inline"}]},"runners":{RUNNER:{"settings":{"a":1,"b":2},"config":{"prepend":"first","append":"first"},"modifiers":{"@korri:test.foo/wrapper":{"enabled":true,"settings":{"a":1,"b":2},"config":{"append":"first"}}}}}}}).to_string();
+    let mut library: serde_json::Value = serde_yaml::from_str(LIBRARY).unwrap();
+    let game = &mut library["library"]["game"];
+    game["env"] = json!({"REMOVE":null,"ADD":"final"});
+    game["cwd"] = json!("/game");
+    game["runners"] = json!({RUNNER:{"settings":{"b":3},"config":{"append":"last"},"modifiers":{"@korri:test.foo/wrapper":{"enabled":false,"settings":{"b":4},"config":{"append":"last"}}}}});
+    let library = library.to_string();
     let snapshot = decode_config_documents(&device, &library).unwrap();
     let r = resolve_launch(&snapshot, &route(), None, None).unwrap();
     assert_eq!(r.env["REMOVE"], None);

@@ -605,22 +605,20 @@ mod tests {
             "{list}"
         );
         assert_eq!(listed["routes"][0]["runnerId"], "@korri:mgba/mgba");
-        let set = json!({"scope":{"_tag":"Game","id":game_id},"runnerId":"@missing:build/core","expectedRevision":listed["revisions"]["games"]});
-        let saved = rpc(&app, "app.local-games.runner.set", set.clone()).await;
+        let set = json!({"place":{"layer":{"_tag":"Game","id":game_id},"scope":{"_tag":"Any"}},"path":{"_tag":"Runner"},"value":"@missing:build/core","expectedRevision":listed["revisions"]["games"]});
+        let saved = rpc(&app, "app.launch-settings.set", set.clone()).await;
         assert_eq!(saved["outcome"]["_tag"], "Ok", "{saved}");
         let saved_preferences = std::fs::read(root.path().join("catalog/library.yaml")).unwrap();
-        let conflict = rpc(&app, "app.local-games.runner.set", set).await;
+        let conflict = rpc(&app, "app.launch-settings.set", set).await;
         assert_eq!(conflict["outcome"]["payload"]["code"], "SettingsConflict");
         let list = rpc(&app, "app.local-games.routes", json!({"gameId":game_id})).await;
         assert_eq!(list["outcome"]["_tag"], "Ok", "{list}");
-        assert_eq!(list["outcome"]["payload"]["selection"]["_tag"], "Choose");
+        assert_eq!(list["outcome"]["payload"]["selection"]["_tag"], "Selected");
         assert_eq!(
             list["outcome"]["payload"]["gameRunner"],
             "@missing:build/core"
         );
-        let prepare = rpc(&app, "app.session.prepare", json!({"gameId":game_id})).await;
-        assert_eq!(prepare["outcome"]["_tag"], "Err");
-        let launch = rpc(&app, "app.local-games.launch.selected", json!({"gameId":game_id,"runnerId":"@korri:mgba/mgba","overrides":{"settings":{"video_vsync":false,"absent_key":1}}})).await;
+        let launch = rpc(&app, "app.local-games.launch.selected", json!({"gameId":game_id,"runnerId":"@korri:mgba/mgba","launch":{"settings":{"scope":{"_tag":"Runner","id":"@korri:mgba/mgba"},"values":{"video_vsync":false,"absent_key":1}}}})).await;
         assert_eq!(launch["outcome"]["_tag"], "Ok", "{launch}");
         assert_eq!(launch["outcome"]["payload"]["session"]["gameId"], game_id);
         let launch_id = launch["outcome"]["payload"]["session"]["launchId"]
@@ -880,7 +878,7 @@ mod tests {
     }
 
     #[test]
-    fn route_reads_and_explicit_launch_do_not_grant_preference_write_permission() {
+    fn kiosk_can_edit_runner_choice_but_readonly_cannot() {
         let request = |tag: &str, payload| {
             serde_json::from_value::<RpcRequest>(json!({"_tag":tag,"payload":payload})).unwrap()
         };
@@ -890,13 +888,13 @@ mod tests {
             json!({"gameId":"game","runnerId":"@korri:mgba/mgba"}),
         );
         let set = request(
-            "app.local-games.runner.set",
-            json!({"scope":{"_tag":"System","id":"gba"},"runnerId":null,"expectedRevision":"r"}),
+            "app.launch-settings.set",
+            json!({"place":{"layer":{"_tag":"System","id":"gba"},"scope":{"_tag":"Any"}},"path":{"_tag":"Runner"},"expectedRevision":"r"}),
         );
         assert!(PortalPermission::ReadOnly.permits(&list));
         assert!(!PortalPermission::ReadOnly.permits(&launch));
         assert!(PortalPermission::LocalSessions.permits(&launch));
-        assert!(!PortalPermission::LocalSessions.permits(&set));
+        assert!(PortalPermission::LocalSessions.permits(&set));
         assert!(PortalPermission::Full.permits(&set));
     }
 
@@ -977,11 +975,11 @@ mod launch_settings_permission_tests {
     use super::*;
     use serde_json::json;
     #[test]
-    fn launch_settings_local_sessions_may_edit_but_runner_choice_stays_forbidden() {
+    fn launch_settings_local_sessions_may_edit_all_portal_kinds() {
         for (tag, payload) in [
             (
                 "app.launch-settings.set",
-                json!({"scope":{"_tag":"Device"},"setting":"cpu.max","value":60,"expectedRevision":"rev"}),
+                json!({"place":{"layer":{"_tag":"Device"},"scope":{"_tag":"Any"}},"path":{"_tag":"CpuMax"},"value":60,"expectedRevision":"rev"}),
             ),
             (
                 "app.launch-settings.profile.save",
@@ -1001,7 +999,9 @@ mod launch_settings_permission_tests {
             assert!(PortalPermission::LocalSessions.permits(&request), "{tag}");
             assert!(!PortalPermission::ReadOnly.permits(&request), "{tag}");
         }
-        let request: RpcRequest = serde_json::from_value(json!({"_tag":"app.local-games.runner.set","payload":{"scope":{"_tag":"Game","id":"game"},"expectedRevision":"rev"}})).unwrap();
-        assert!(!PortalPermission::LocalSessions.permits(&request));
+        assert!(serde_json::from_value::<RpcRequest>(
+            json!({"_tag":"app.local-games.runner.set","payload":{}})
+        )
+        .is_err());
     }
 }

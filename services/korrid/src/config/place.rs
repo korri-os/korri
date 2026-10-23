@@ -13,7 +13,6 @@ pub struct Args {
     pub append: Vec<String>,
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct PlaceValues {
     #[serde(
         default,
@@ -47,7 +46,6 @@ pub struct PlaceValues {
     pub hooks: Option<HooksPolicy>,
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct PlaceBody {
     #[serde(flatten)]
     pub values: PlaceValues,

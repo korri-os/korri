@@ -1401,14 +1401,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn game_runner_set_nonce_survives_server_restart() {
+    async fn launch_settings_set_nonce_survives_server_restart() {
         let (host_root, _client_root, credentials, host_key, config) = setup();
         let encoded = credentials
             .encode_request_with_tokens(
                 &host_key,
-                RpcRequest::GameRunnerSet(crate::game_routes::GameRunnerSetRequest {
-                    scope: crate::config::settings::RunnerChoiceScope::Game("neverball".into()),
-                    runner_id: None,
+                RpcRequest::LaunchSettingsSet(crate::launch_settings::LaunchSetRequest {
+                    place: crate::launch_settings::LaunchPlace {
+                        layer: crate::launch_settings::LaunchLayer::Game("neverball".into()),
+                        scope: crate::launch_settings::LaunchRunnerScope::Any,
+                    },
+                    path: crate::launch_settings::LaunchPath::CpuMax,
+                    value: Some(serde_json::json!(60)),
                     expected_revision: String::new(),
                 }),
                 NOW,
