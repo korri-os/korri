@@ -541,6 +541,13 @@ export interface LaunchLimits {
 	max?: number;
 }
 
+export interface LaunchModifierSnapshot {
+	id: string;
+	title: string;
+	schema?: LaunchJsonValue;
+	revision?: string;
+}
+
 export interface LaunchModifierValues {
 	enabled?: boolean;
 	settings?: Record<string, LaunchSettingValue>;
@@ -724,6 +731,7 @@ export interface LaunchSnapshot {
 	places: LaunchPlaceSnapshot[];
 	resolved: LaunchResolvedSnapshot;
 	runners: LaunchRunnerSnapshot[];
+	modifiers: LaunchModifierSnapshot[];
 	profiles: LaunchProfileSnapshot[];
 	selectedProfile?: string;
 	deviceFacts?: LaunchDeviceFacts;
