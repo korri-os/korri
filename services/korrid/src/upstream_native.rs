@@ -334,10 +334,30 @@ impl NativeClient {
     }
 
     pub async fn session_status(&self) -> Result<UpstreamSessionStatus, UpstreamError> {
-        match self
-            .call(RpcRequest::SessionStatus(SessionStatusRequest {}))
-            .await?
-        {
+        Self::session_status_response(
+            self.call(RpcRequest::SessionStatus(SessionStatusRequest {}))
+                .await?,
+        )
+    }
+
+    /// Idle invite discovery is not a federation health probe. Keep peer
+    /// authentication and revocation checks, without starting or completing a
+    /// directory observation (which would also supersede genuine peer work).
+    pub(crate) async fn invite_session_status(
+        &self,
+    ) -> Result<UpstreamSessionStatus, UpstreamError> {
+        self.ensure_not_revoked()?;
+        let result = self
+            .send_request(&RpcRequest::SessionStatus(SessionStatusRequest {}))
+            .await;
+        self.ensure_not_revoked()?;
+        Self::session_status_response(result?)
+    }
+
+    fn session_status_response(
+        response: RpcResponse,
+    ) -> Result<UpstreamSessionStatus, UpstreamError> {
+        match response {
             RpcResponse::SessionStatus(SessionStatusOutcome::Ok(status)) => {
                 Ok(UpstreamSessionStatus::SessionStatus {
                     active: status.active.map(|active| UpstreamActiveSession {
@@ -463,14 +483,7 @@ impl NativeClient {
     async fn call(&self, request: RpcRequest) -> Result<RpcResponse, UpstreamError> {
         #[cfg(test)]
         if self.credentials.is_none() {
-            let response = self
-                .http
-                .post(format!("{}/rpc", self.origins[0]))
-                .json(&request)
-                .send()
-                .await
-                .map_err(|error| UpstreamError::Unreachable(error.to_string()))?;
-            return read_plain_test_response(response).await;
+            return self.send_request(&request).await;
         }
         let key = self
             .expected_peer_public_key
@@ -502,7 +515,7 @@ impl NativeClient {
         } else {
             None
         };
-        let result = self.call_candidates(&request).await;
+        let result = self.send_request(&request).await;
         if let (Some(directory), Some(token)) = (&self.directory, token) {
             let state = match &result {
                 Ok(_) => crate::federation::PeerState::Ready,
@@ -516,6 +529,21 @@ impl NativeClient {
         }
         self.ensure_not_revoked()?;
         result
+    }
+
+    async fn send_request(&self, request: &RpcRequest) -> Result<RpcResponse, UpstreamError> {
+        #[cfg(test)]
+        if self.credentials.is_none() {
+            let response = self
+                .http
+                .post(format!("{}/rpc", self.origins[0]))
+                .json(request)
+                .send()
+                .await
+                .map_err(|error| UpstreamError::Unreachable(error.to_string()))?;
+            return read_plain_test_response(response).await;
+        }
+        self.call_candidates(request).await
     }
 
     async fn call_candidates(&self, request: &RpcRequest) -> Result<RpcResponse, UpstreamError> {

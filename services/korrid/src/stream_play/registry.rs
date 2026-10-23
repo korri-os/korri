@@ -34,13 +34,16 @@ impl UpstreamRegistry {
             if !same_owner.contains(&key) {
                 return None;
             }
+            let RegisteredClient::Native(client) = &host.client else {
+                return None;
+            };
             Some(async move {
-                let status = timeout(Duration::from_secs(2), host.native_session_status())
+                let status = timeout(Duration::from_secs(2), client.invite_session_status())
                     .await
                     .ok()?
                     .ok()?;
                 let crate::SessionStatusOutcome::Ok(status) =
-                    crate::session_status_outcome(Ok(status))
+                    crate::session_status_outcome(Ok(host.qualify_status(status)))
                 else {
                     return None;
                 };

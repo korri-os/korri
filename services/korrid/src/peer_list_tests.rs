@@ -453,3 +453,47 @@ async fn peer_list_directory_failure_is_sanitized() {
         serde_json::json!({"_tag":"Err","payload":{"code":"PeerListUnavailable","message":"peer directory unavailable"}})
     );
 }
+
+#[tokio::test]
+async fn invites_poll_does_not_write_peer_state_or_supersede_federation_work() {
+    let f = PeerListFixture::new();
+    f.roster();
+    // One unreachable endpoint, one known-ready peer, and one membership-only
+    // peer must all keep their independently observed federation state.
+    f.endpoint(0, "Unreachable peer");
+    let directory = &f.resources.directory;
+    let ready = f.peers[1].public_key().unwrap();
+    directory
+        .set_peer_state(
+            &directory.begin_peer_work(&ready).unwrap(),
+            &ready,
+            PeerState::Ready,
+        )
+        .unwrap();
+    let key = f.peers[0].public_key().unwrap();
+    let pending = directory.begin_peer_work(&key).unwrap();
+    let before = directory.snapshot().unwrap();
+    let mut contacts = directory.save_contacts();
+    let peers =
+        upstreams::UpstreamRegistry::new_secure(Vec::new(), f.resources.credentials.clone())
+            .with_federation(directory.clone());
+    let same_owner = before
+        .iter()
+        .map(|peer| peer.device_public_key.clone())
+        .collect();
+    f.clock.store(NOW + 10, Ordering::SeqCst);
+    assert!(peers.invite_sessions(&same_owner).await.unwrap().is_empty());
+    let after = directory.snapshot().unwrap();
+    for (before, after) in before.iter().zip(&after) {
+        assert_eq!(before.device_public_key, after.device_public_key);
+        assert_eq!(before.state, after.state);
+        assert_eq!(before.updated_at, after.updated_at);
+    }
+    assert!(matches!(
+        contacts.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
+    directory
+        .set_peer_state(&pending, &key, PeerState::Ready)
+        .unwrap();
+}
