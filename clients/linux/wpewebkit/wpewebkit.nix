@@ -1,6 +1,9 @@
 # Vendored from eval-exec/nix-wpe-webkit at
 # f00a6fa7b7fe678bba8588edc21e233ac1eedce8 (pkgs/wpewebkit.nix).
 # Dependencies come from Korri's pinned nixpkgs, not the upstream flake.
+# Version 2.52.6 and clangStdenv follow the pinned nixpkgs webkitgtk_6_0
+# (same 2.52.6 base): 2.52.3's WebKitMacros.cmake does not configure with the
+# pinned CMake 4.4 ("if given arguments ... Unknown arguments specified").
 {
   addDriverRunpath,
   at-spi2-core,
@@ -53,7 +56,7 @@
   replaceVars,
   ruby,
   sqlite,
-  stdenv,
+  clangStdenv,
   systemd,
   testers,
   unifdef,
@@ -65,9 +68,9 @@
   zlib,
 }:
 
-stdenv.mkDerivation (finalAttrs: {
+clangStdenv.mkDerivation (finalAttrs: {
   pname = "wpewebkit";
-  version = "2.52.3";
+  version = "2.52.6";
 
   outputs = [
     "out"
@@ -78,7 +81,7 @@ stdenv.mkDerivation (finalAttrs: {
 
   src = fetchurl {
     url = "https://wpewebkit.org/releases/wpewebkit-${finalAttrs.version}.tar.xz";
-    hash = "sha256-tRsdsebumdF3H0o1jBKP3ieneYTfIO5stZhY5SBmLQs=";
+    hash = "sha256-srr+8nUWJbf99TDyMP8PVC/w7ro1kMOpidkxsqVchY4=";
   };
 
   # From nixpkgs 549bd84d6279f9852cae6225e372cc67fb91a4c1:
@@ -100,6 +103,8 @@ stdenv.mkDerivation (finalAttrs: {
     libsysprof-capture
     ninja
     perl
+    perl.pkgs.FileCopyRecursive # copy-user-interface-resources.pl, as in nixpkgs webkitgtk
+    glib # gdbus-codegen
     pkg-config
     python3
     ruby
@@ -107,6 +112,12 @@ stdenv.mkDerivation (finalAttrs: {
     wayland-protocols
     wayland-scanner
   ];
+
+  postPatch = ''
+    patchShebangs .
+  '';
+
+  requiredSystemFeatures = [ "big-parallel" ];
 
   buildInputs = [
     at-spi2-core
@@ -172,7 +183,7 @@ stdenv.mkDerivation (finalAttrs: {
       package = finalAttrs.finalPackage;
     };
 
-    simple-compilation = stdenv.mkDerivation {
+    simple-compilation = clangStdenv.mkDerivation {
       name = "wpewebkit-test-simple-compilation";
 
       nativeBuildInputs = [ pkg-config ];
