@@ -134,7 +134,7 @@ The screen is off, the live session is frozen, and the device stays awake. A fix
 _Avoid_: standby, fake suspend, idle
 
 **Deep sleep**:
-Suspend to RAM. The frozen live session returns on wake, with no time limit.
+Suspend to RAM. The frozen live session is still there on wake, with no time limit.
 _Avoid_: S3, mem, real suspend
 
 ### Content and discovery
