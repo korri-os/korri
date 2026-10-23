@@ -27,7 +27,11 @@ const MAX_GAME_ID_BYTES: usize = 1_024;
 #[serde(tag = "phase", rename_all = "camelCase", deny_unknown_fields)]
 pub(super) enum ActiveSession {
     Running {
-        #[serde(rename = "streamPlayers", default)]
+        #[serde(
+            rename = "streamPlayers",
+            default,
+            skip_serializing_if = "Vec::is_empty"
+        )]
         stream_players: Vec<crate::stream_play::StreamPlayer>,
         #[serde(
             rename = "starterDevicePublicKey",

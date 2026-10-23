@@ -603,7 +603,7 @@ pub struct PendingLaunch {
 pub struct ActiveSession {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub person_public_key: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stream_players: Vec<StreamPlayer>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_handoff: Option<InitialHandoff>,

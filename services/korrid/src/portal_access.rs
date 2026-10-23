@@ -103,7 +103,11 @@ impl PortalPermission {
             Self::LocalSessions => {
                 initial_read
                     || match request {
-                        RpcRequest::SessionPrepare(_) => true,
+                        // The host is a device label, not an endpoint origin.
+                        // Use the same bounds as federation endpoint labels.
+                        RpcRequest::SessionPrepare(request) => request.host.as_deref().is_none_or(|host| {
+                            !host.trim().is_empty() && host.len() <= 256 && !host.chars().any(char::is_control)
+                        }),
                         RpcRequest::InvitesStreamPlay(_) | RpcRequest::InvitesDismiss(_) => true,
                         RpcRequest::SettingsUpdate(request) => {
                             request.setting_id == crate::config::settings::PLAYER_COUNT_SETTING_ID
@@ -308,15 +312,27 @@ mod tests {
     }
 
     #[test]
-    fn local_sessions_allow_only_local_prepare_and_exact_session_controls() {
-        for host in [None, Some("peer"), Some("rg353m"), Some("")] {
+    fn local_sessions_allow_local_or_peer_prepare_and_exact_session_controls() {
+        let longest_label = "x".repeat(256);
+        let oversized_label = "x".repeat(257);
+        for (host, allowed) in [
+            (None, true),
+            (Some("peer"), true),
+            (Some("rg353m"), true),
+            (Some(longest_label.as_str()), true),
+            (Some(""), false),
+            (Some(" "), false),
+            (Some("peer\n"), false),
+            (Some(oversized_label.as_str()), false),
+        ] {
             let request = RpcRequest::SessionPrepare(crate::SessionPrepareRequest {
                 game_id: "neverball".into(),
                 host: host.map(str::to_owned),
             });
             assert_eq!(
                 PortalPermission::LocalSessions.permits(&request),
-                host.is_none()
+                allowed,
+                "host={host:?}"
             );
             assert!(!PortalPermission::ReadOnly.permits(&request));
             assert!(PortalPermission::Full.permits(&request));
@@ -594,6 +610,7 @@ mod tests {
         .with_retroarch_control_port(control_port)
         .with_compositor(compositor.clone(), vec!["chromium-browser".into()]);
         runtime.claim_save_owner();
+        let person_public_key = runtime.owner_public_key().expect("verified fixture owner");
         let (app, _) = crate::secure_host_routers(
             runtime,
             &private,
@@ -664,7 +681,7 @@ mod tests {
         let open_menu_still_frozen = rpc(&app, "app.session.status", json!({})).await;
         assert_eq!(
             open_menu_still_frozen["outcome"]["payload"]["active"],
-            json!({"launchId":launch_id,"gameId":game_id,"phase":"frozen","focusOwnership":"excluded","initialHandoff":"waiting"}),
+            json!({"launchId":launch_id,"gameId":game_id,"personPublicKey":person_public_key,"title":"Wario Land 4","phase":"frozen","focusOwnership":"excluded","initialHandoff":"waiting"}),
             "a control executed after thaw must restore the exact frozen state"
         );
         let ignored_quit = rpc(
@@ -685,7 +702,7 @@ mod tests {
         let still_frozen = rpc(&app, "app.session.status", json!({})).await;
         assert_eq!(
             still_frozen["outcome"]["payload"]["active"],
-            json!({"launchId":launch_id,"gameId":game_id,"phase":"frozen","focusOwnership":"excluded","initialHandoff":"waiting"})
+            json!({"launchId":launch_id,"gameId":game_id,"personPublicKey":person_public_key,"title":"Wario Land 4","phase":"frozen","focusOwnership":"excluded","initialHandoff":"waiting"})
         );
         let unknown = rpc(
             &app,

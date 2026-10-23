@@ -80,3 +80,25 @@ async fn invite_poll_reads_only_same_owner_live_sessions_without_selecting_them(
     *far.active_phase.lock().unwrap() = None;
     assert!(registry.invite_sessions(&BTreeSet::from([key])).await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn stream_play_prepare_rejects_unknown_device_labels_and_invalid_peer_origins() {
+    use crate::linux_viewer::test_backend::TestLinuxStreamViewer;
+    let (url, far) = exact_native_server(false).await;
+    let viewer = TestLinuxStreamViewer::default();
+    let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
+        .with_linux_viewer(Arc::new(viewer.clone()));
+    for selector in ["", "unknown", "http://peer/path"] {
+        assert!(registry.prepare_stream("game", Some(selector)).await.is_err());
+        assert!(!registry.has_selected_session());
+        assert!(viewer.calls().is_empty());
+        assert!(far.active_phase.lock().unwrap().is_none());
+    }
+    // Selectors are labels. Endpoint origins are validated separately when
+    // the registry resolves that label, before any native launch can run.
+    let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native(
+        "far", "http://127.0.0.1:9/path".into(),
+    )]).with_linux_viewer(Arc::new(viewer.clone()));
+    assert!(matches!(registry.prepare_stream("game", Some("far")).await, Err(UpstreamError::Wire(_))));
+    assert!(viewer.calls().is_empty());
+}
