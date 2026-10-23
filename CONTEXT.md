@@ -200,7 +200,7 @@ Which runners a launch setting applies to: any runner, one runner family, or one
 _Avoid_: runner layer, runner override
 
 **Hook**:
-A command that runs on the device just before a game starts or just after its session ends, with the same limits as the game.
+A command that runs on the device just before a game starts or just after its session ends, as the game's user and inside the game's sandbox.
 _Avoid_: script, trigger, callback
 
 **Routine**:
