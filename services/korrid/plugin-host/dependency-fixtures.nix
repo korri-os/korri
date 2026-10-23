@@ -26,6 +26,24 @@ let
       files.evidence = "${pkgs.writeTextDir "evidence" "different exact build"}/evidence";
     };
   };
+  thirdRunner = mkPlugin {
+    publisher.namespace = "@runtime";
+    source = runnerSource;
+    plugin = _: {
+      files.fake08 = "${program}/bin/fixture-fake08";
+      files.evidence = "${pkgs.writeTextDir "evidence" "third exact build"}/evidence";
+    };
+  };
+  secondPack = mkPlugin {
+    publisher.namespace = "@games";
+    source = packSource;
+    plugin = _: { requires = [ secondRunner ]; };
+  };
+  thirdPack = mkPlugin {
+    publisher.namespace = "@games";
+    source = packSource;
+    plugin = _: { requires = [ thirdRunner ]; };
+  };
   pack = mkPlugin {
     publisher.namespace = "@games";
     source = packSource;
@@ -79,6 +97,9 @@ in
   inherit
     runner
     secondRunner
+    thirdRunner
+    secondPack
+    thirdPack
     pack
     transitive
     conflict

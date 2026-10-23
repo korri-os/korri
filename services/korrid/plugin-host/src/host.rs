@@ -89,6 +89,8 @@ enum Restored {
 #[cfg(test)]
 #[derive(Clone, Default)]
 struct TestRuntime {
+    /// Exercise immutable package loading while keeping native effects controlled.
+    real_packages: bool,
     reports: std::rc::Rc<std::cell::RefCell<BTreeMap<PathBuf, Report>>>,
     events: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
     fail_stop: std::rc::Rc<std::cell::RefCell<Option<String>>>,
@@ -372,7 +374,7 @@ impl Host {
         contents: Option<package::StoreContents>,
     ) -> Result<Report, String> {
         #[cfg(test)]
-        if let Some(runtime) = &self.test_runtime {
+        if let Some(runtime) = self.test_runtime.as_ref().filter(|r| !r.real_packages) {
             return runtime
                 .reports
                 .borrow()
@@ -751,6 +753,40 @@ impl Host {
             .collect();
         for id in replacements.keys() {
             self.check_required_by_except(id, false, &updating)?;
+        }
+        if !replacements.is_empty() {
+            let committed = self.approved(old.as_ref().ok_or("plugin is not installed")?)?;
+            for dep in &checked.brings {
+                let target = &dep.report;
+                if !replacements.contains_key(&target.id) {
+                    continue;
+                }
+                let Some(required) = committed
+                    .brings
+                    .iter()
+                    .find(|dep| dep.report.id == target.id)
+                else {
+                    continue;
+                };
+                let required = &required.report;
+                let current = self
+                    .receipt(&target.id)?
+                    .ok_or("required plugin is not installed")?;
+                let current_matches =
+                    same_selection(&current, required) && current.approval == required.approval;
+                let restores_required = target.package == required.package
+                    && target.provenance == required.provenance
+                    && target.approval == required.approval;
+                // A failed graph update can leave the committed root's exact
+                // dependency only in previous. A third build would overwrite
+                // its provenance before that root can be approved for cleanup.
+                if !current_matches && !restores_required {
+                    return Err(format!(
+                        "cannot replace required plugin {} again; restore the committed root's exact dependency graph for {} first",
+                        target.id, committed.id
+                    ));
+                }
+            }
         }
         for dep in &checked.brings {
             if !additions.contains(&dep.report.id) {
@@ -1165,7 +1201,7 @@ impl Host {
     fn selection_requires(&self, path: &Path) -> Result<Vec<PathBuf>, String> {
         package::validate_store_path(path)?;
         #[cfg(test)]
-        if let Some(runtime) = &self.test_runtime {
+        if let Some(runtime) = self.test_runtime.as_ref().filter(|r| !r.real_packages) {
             return runtime
                 .reports
                 .borrow()
@@ -2062,7 +2098,8 @@ impl Host {
             )
         };
         #[cfg(test)]
-        let report = if let Some(runtime) = &self.test_runtime {
+        let report = if let Some(runtime) = self.test_runtime.as_ref().filter(|r| !r.real_packages)
+        {
             runtime
                 .events
                 .borrow_mut()
@@ -3373,6 +3410,146 @@ mod tests {
         assert_eq!(host.status(&b.id).unwrap(), unchanged);
         assert!(runtime.running.borrow().contains(&b.id));
         assert!(!runtime.running.borrow().contains(&first.id));
+    }
+
+    #[test]
+    #[ignore = "requires builder dependency fixtures and real build-machine Nix; native effects are controlled"]
+    fn real_store_graph_repeated_failed_update_keeps_committed_dependency_provenance() {
+        let fixtures = PathBuf::from(
+            std::env::var_os("KORRI_TEST_DEPENDENCY_FIXTURES")
+                .expect("built builder-check fixtures"),
+        );
+        let nix = PathBuf::from(std::env::var_os("KORRI_PUBLISH_NIX").expect("immutable Nix"));
+        let fixture = |name| fs::canonicalize(fixtures.join(name)).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let runtime = TestRuntime {
+            real_packages: true,
+            ..TestRuntime::default()
+        };
+        let mut host =
+            Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        host.publishers = ["@games", "@runtime"]
+            .into_iter()
+            .map(|namespace| {
+                (
+                    namespace.into(),
+                    package::PublisherBinding {
+                        public_key: "seed-fixture:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+                            .into(),
+                        cache_url: format!("https://cache.example/{namespace}"),
+                    },
+                )
+            })
+            .collect();
+        let root_origin = Provenance::RawCache {
+            cache_url: host.publishers["@games"].cache_url.clone(),
+        };
+        let dependency_origin = Provenance::Repository {
+            source_url: "https://repository.example/catalog.json".into(),
+            plugin_id: "@runtime:fake08".into(),
+            release_version: "0".into(),
+            platform: current_platform().into(),
+            archive_sha256: "a".repeat(64),
+        };
+        let dependency0 = host
+            .load(&fixture("runner"), dependency_origin.clone())
+            .unwrap();
+        install(&host, dependency0.clone());
+        let root0 = host.load(&fixture("pack"), root_origin.clone()).unwrap();
+        assert_eq!(root0.brings[0].report.provenance, dependency_origin);
+        install(&host, root0.clone());
+        host.set_enabled(&root0.id, true).unwrap();
+        let root1 = host
+            .load(&fixture("secondPack"), root_origin.clone())
+            .unwrap();
+        let dependency1 = &root1.brings[0].report;
+        runtime
+            .fail_start_package
+            .replace(Some(dependency1.package.clone()));
+        let error = host
+            .install(
+                root1.clone(),
+                &root1.approval,
+                SelectionIntent::Update { id: &root0.id },
+            )
+            .unwrap_err();
+        assert!(error.contains("injected start failure"), "{error}");
+        let committed = host.status(&root0.id).unwrap().unwrap();
+        assert_eq!(committed.package, root0.package);
+        assert_eq!(committed.desired, Desired::Disabled);
+        assert_eq!(host.approved(&committed).unwrap().approval, root0.approval);
+        let selected = host.status(&dependency0.id).unwrap().unwrap();
+        assert_eq!(selected.package, dependency1.package);
+        let previous = selected.previous.unwrap();
+        assert_eq!(previous.package, dependency0.package);
+        assert_eq!(previous.provenance, dependency_origin);
+
+        runtime.fail_start_package.replace(None);
+        let root2 = host
+            .load(&fixture("thirdPack"), root_origin.clone())
+            .unwrap();
+        let before = host.receipts().unwrap();
+        let roots: Vec<_> = before
+            .iter()
+            .map(|receipt| {
+                ["active", "previous", "pending"]
+                    .map(|name| fs::read_link(host.root(&receipt.id, name)).ok())
+            })
+            .collect();
+        runtime.events.borrow_mut().clear();
+        let error = host
+            .install(
+                root2.clone(),
+                &root2.approval,
+                SelectionIntent::Update { id: &root0.id },
+            )
+            .unwrap_err();
+        assert!(
+            error.contains("restore the committed root's exact dependency graph"),
+            "{error}"
+        );
+        assert_eq!(host.receipts().unwrap(), before);
+        for (receipt, roots) in before.iter().zip(roots) {
+            for (name, path) in ["active", "previous", "pending"].into_iter().zip(roots) {
+                assert_eq!(fs::read_link(host.root(&receipt.id, name)).ok(), path);
+            }
+        }
+        assert!(stops(&runtime).is_empty());
+        assert!(!runtime
+            .events
+            .borrow()
+            .iter()
+            .any(|event| event.starts_with("start:")));
+        assert_eq!(host.approved(&committed).unwrap().approval, root0.approval);
+        host.restore_all().unwrap();
+        assert_eq!(host.receipts().unwrap(), before);
+
+        // An explicitly reviewed restoration must remain possible. Once the
+        // committed graph is exact again, another new build may replace it.
+        let restored = host.load(&root0.package, root_origin.clone()).unwrap();
+        assert_eq!(restored.approval, root0.approval);
+        host.install(
+            restored.clone(),
+            &restored.approval,
+            SelectionIntent::Update { id: &root0.id },
+        )
+        .unwrap();
+        host.set_enabled(&root0.id, true).unwrap();
+        let next = host.load(&root2.package, root_origin).unwrap();
+        host.install(
+            next.clone(),
+            &next.approval,
+            SelectionIntent::Update { id: &root0.id },
+        )
+        .unwrap();
+        let selected = host.status(&dependency0.id).unwrap().unwrap();
+        assert_eq!(selected.package, next.brings[0].report.package);
+        assert_eq!(selected.previous.unwrap().provenance, dependency_origin);
+        assert_eq!(
+            host.status(&root0.id).unwrap().unwrap().package,
+            root2.package
+        );
+        assert!(runtime.unsafe_stops.borrow().is_empty());
     }
 
     #[test]
