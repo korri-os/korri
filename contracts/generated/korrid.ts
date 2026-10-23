@@ -501,6 +501,19 @@ export interface LaunchConfigOverrides {
 	replace?: string;
 }
 
+export type LaunchSource =
+	| { _tag: "Place", payload: LaunchPlace }
+	| { _tag: "PluginDefault", payload: {
+	pluginId: string;
+}}
+	| { _tag: "DeviceDefault", payload?: undefined };
+
+export interface LaunchContribution {
+	source: LaunchSource;
+	value: LaunchJsonValue;
+	routine?: string;
+}
+
 export interface LaunchCpuPolicy {
 	name: string;
 	cpus: number[];
@@ -643,17 +656,11 @@ export type LaunchValuePath =
 	id: string;
 }};
 
-export type LaunchSource =
-	| { _tag: "Place", payload: LaunchPlace }
-	| { _tag: "PluginDefault", payload: {
-	pluginId: string;
-}}
-	| { _tag: "DeviceDefault", payload?: undefined };
-
 export interface LaunchSourcedValue {
 	path: LaunchValuePath;
 	value: LaunchJsonValue;
-	source: LaunchSource;
+	source?: LaunchSource;
+	contributions?: LaunchContribution[];
 	adjusted: boolean;
 }
 
