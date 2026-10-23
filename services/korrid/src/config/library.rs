@@ -14,7 +14,6 @@ pub const LIBRARY_FILE_NAME: &str = "catalog/library.yaml";
 
 /// `library.<id>`. Ids are readable legacy playable-id segments.
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct LibraryItemPayload {
     #[serde(flatten)]
     pub place: super::place::PlaceBody,
@@ -78,7 +77,6 @@ impl std::ops::Deref for LibraryItemPayload {
 /// One entry of `library.<id>.releases`. No `target`: device paths stay in
 /// `device.yaml` `locations`.
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct LibraryReleasePayload {
     pub id: NonEmptyString,
     /// Optional only for declared releases with no system.

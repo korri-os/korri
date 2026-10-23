@@ -76,3 +76,93 @@ impl Deref for super::cascade::RunnerConfig {
 fn modifiers_empty(v: &ModifierConfigs) -> bool {
     v.is_empty()
 }
+
+// Serde cannot combine nested flatten with deny_unknown_fields. Validate the
+// flattened record boundary explicitly; leaf records retain Serde's validation.
+pub(crate) fn validate_document_shape(yaml: &str) -> Result<(), String> {
+    use serde_yaml::Value;
+    fn known(value: &Value, extra: &[&str], scoped: bool) -> Result<(), String> {
+        let Some(map) = value.as_mapping() else {
+            return Ok(());
+        };
+        const VALUES: &[&str] = &["cpu", "gpu", "modifiers", "env", "cwd", "args", "hooks"];
+        const ANY: &[&str] = &["runner", "families", "runners"];
+        for key in map.keys() {
+            let key = key.as_str().ok_or("record keys must be strings")?;
+            if !VALUES.contains(&key)
+                && !extra.contains(&key)
+                && !(if scoped {
+                    ["settings", "config"].contains(&key)
+                } else {
+                    ANY.contains(&key)
+                })
+            {
+                return Err(format!("unknown field `{key}`"));
+            }
+        }
+        if !scoped {
+            for kind in ["families", "runners"] {
+                if let Some(records) = value.get(kind).and_then(Value::as_mapping) {
+                    for v in records.values() {
+                        known(v, &[], true)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    let value: Value = serde_yaml::from_str(yaml).map_err(|e| e.to_string())?;
+    if let Some(host) = value.get("host") {
+        known(
+            host,
+            &[
+                "title",
+                "preferences",
+                "relays",
+                "moonlight",
+                "plugin",
+                "patches",
+            ],
+            false,
+        )?;
+    }
+    if let Some(systems) = value.get("systems").and_then(Value::as_mapping) {
+        for system in systems.values() {
+            known(
+                system,
+                &["name", "title", "manufacturer", "aliases", "metadata"],
+                false,
+            )?;
+        }
+    }
+    if let Some(games) = value.get("library").and_then(Value::as_mapping) {
+        for game in games.values() {
+            known(
+                game,
+                &[
+                    "title",
+                    "version-of",
+                    "relation",
+                    "contains",
+                    "display",
+                    "metadata",
+                    "releases",
+                    "profiles",
+                    "profile",
+                ],
+                false,
+            )?;
+            if let Some(releases) = game.get("releases").and_then(Value::as_sequence) {
+                for release in releases {
+                    known(release, &["id", "system", "identity", "display"], false)?;
+                }
+            }
+            if let Some(profiles) = game.get("profiles").and_then(Value::as_mapping) {
+                for profile in profiles.values() {
+                    known(profile, &["title"], false)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}

@@ -20,7 +20,6 @@ pub enum LaunchSettingValue {
 
 #[typeshare]
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct RunnerConfig {
     #[serde(flatten)]
     #[typeshare(skip)]

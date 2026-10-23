@@ -40,7 +40,6 @@ pub struct DeviceCpu {
     pub governor: Option<crate::config::NonEmptyString>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Profile {
     pub title: crate::config::NonEmptyString,
     #[serde(flatten)]

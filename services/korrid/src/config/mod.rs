@@ -241,6 +241,10 @@ pub fn decode_config_documents(
 }
 
 fn decode_document(file: &'static str, yaml: &str) -> Result<RawDocument, ConfigSchemaError> {
+    place::validate_document_shape(yaml).map_err(|message| ConfigSchemaError::Invalid {
+        path: file.into(),
+        message,
+    })?;
     serde_yaml::from_str::<RawDocument>(yaml)
         .map_err(|source| ConfigSchemaError::Yaml { file, source })
 }
@@ -358,7 +362,6 @@ fn push_issue(issues: &mut Vec<SupportIssue>, path: &str, message: &str) {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct HostPayload {
     #[serde(flatten)]
     pub place: place::PlaceBody,
@@ -475,7 +478,6 @@ pub struct ProviderPayload {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SystemPayload {
     #[serde(flatten)]
     pub place: place::PlaceBody,

@@ -734,3 +734,91 @@ fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_f
         library
     );
 }
+
+#[test]
+fn every_flattened_record_and_routine_step_rejects_and_names_unknown_keys() {
+    let records = [
+        (
+            "host: {cpu-maxx: 3}".to_string(),
+            LIBRARY.to_string(),
+            "cpu-maxx",
+        ),
+        (
+            "systems: {gba: {runer: bad}}".to_string(),
+            LIBRARY.to_string(),
+            "runer",
+        ),
+        (
+            "{}".into(),
+            LIBRARY.replace("title: Game", "title: Game\n    runer: bad"),
+            "runer",
+        ),
+        (
+            "{}".into(),
+            LIBRARY.replace("id: gba,", "id: gba, cpu-maxx: 3,"),
+            "cpu-maxx",
+        ),
+        (
+            "{}".into(),
+            LIBRARY.replace("title: Quiet,", "title: Quiet, runer: bad,"),
+            "runer",
+        ),
+        (
+            format!("host: {{families: {{'{FAMILY}': {{cpu-maxx: 3}}}}}}"),
+            LIBRARY.into(),
+            "cpu-maxx",
+        ),
+        (
+            format!("host: {{runners: {{'{RUNNER}': {{runer: bad}}}}}}"),
+            LIBRARY.into(),
+            "runer",
+        ),
+        (
+            "routines: {check: {before: [{run: 'true', runer: bad}]}}".into(),
+            LIBRARY.into(),
+            "runer",
+        ),
+    ];
+    for (device, library, key) in records {
+        let error = decode_config_documents(&device, &library)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(key), "{device} {library}: {error}");
+    }
+    // Every flattened kind also accepts a real value, not just unknown-key errors.
+    decode_config_documents(DEVICE, LIBRARY).unwrap();
+}
+
+#[test]
+fn every_record_accepts_all_approved_place_fields_including_the_host_hook_fixture() {
+    let body = json!({"cpu":{"min":25,"max":75},"gpu":{"min":10,"max":80},"env":{"LAYER":"plan-value","SHARED":"plan-wins","REMOVED":null,"KORRI_PROFILE_ID":"forged"},"args":{"prepend":["--before"],"append":["--after"]},"cwd":"/tmp","hooks":{"before":[{"run":"true","name":"before","timeout":4,"on-failure":"warn"}],"after":[{"run":"true","name":"after","timeout":5}]},"modifiers":{"@korri:test.foo/wrapper":{"enabled":true,"settings":{"pluginCamelCase":true},"config":{"append":"native"}}}});
+    for kind in [
+        "host", "system", "game", "release", "profile", "family", "runner",
+    ] {
+        let mut device = json!({});
+        let mut library: serde_json::Value = serde_yaml::from_str(LIBRARY).unwrap();
+        let target = match kind {
+            "host" => &mut device["host"],
+            "system" => &mut device["systems"]["gba"],
+            "game" => &mut library["library"]["game"],
+            "release" => &mut library["library"]["game"]["releases"][0],
+            "profile" => &mut library["library"]["game"]["profiles"]["quiet"],
+            "family" => &mut device["host"]["families"][FAMILY],
+            _ => &mut device["host"]["runners"][RUNNER],
+        };
+        if !target.is_object() {
+            *target = json!({});
+        }
+        target
+            .as_object_mut()
+            .unwrap()
+            .extend(body.as_object().unwrap().clone());
+        if kind == "family" || kind == "runner" {
+            target["settings"] = json!({"pluginOwnedKey":true});
+            target["config"] = json!({"prepend":"native","append":"native","replace":"native"});
+        }
+        decode_config_documents(&device.to_string(), &library.to_string())
+            .unwrap_or_else(|e| panic!("{kind}: {e}"));
+    }
+    decode_config_documents("routines: {check: {before: [{run: 'true', name: before, timeout: 4, on-failure: warn}], after: [{run: 'true', name: after, timeout: 5}]}}",LIBRARY).unwrap();
+}
