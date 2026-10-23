@@ -1,4 +1,4 @@
-import { retryProblem } from "../../fixtures/named-states"
+import { longStreamPlayersOverlay, retryProblem, streamPlayersOverlay } from "../../fixtures/named-states"
 import { fixtureModel, fixtureOverlay } from "../../fixtures/fixture-host"
 import { picoOverlayViewFrom, type PicoRanging } from "../../pico-overlay-view"
 import { PicoPauseMenu } from "./PicoPauseMenu"
@@ -17,6 +17,15 @@ export function RetryableProblem() {
 
 export function NonRetryableProblem() {
   return <PicoPauseMenu onActivate={() => undefined} ranging={ranging} onRetry={() => undefined} overlay={picoOverlayViewFrom(fixtureOverlay, { ...retryProblem, canRetry: false })} />
+}
+
+/** Two other devices play on this game's stream. */
+export function StreamPlayers() {
+  return <PicoPauseMenu onActivate={() => undefined} ranging={ranging} onRetry={() => undefined} overlay={picoOverlayViewFrom(streamPlayersOverlay, fixtureModel.status)} />
+}
+
+export function LongStreamPlayers() {
+  return <PicoPauseMenu onActivate={() => undefined} ranging={ranging} onRetry={() => undefined} overlay={picoOverlayViewFrom(longStreamPlayersOverlay, fixtureModel.status)} />
 }
 
 export function NoPluginControls() {

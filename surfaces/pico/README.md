@@ -42,6 +42,7 @@ file performs them. No component holds React state.
 | `src/state/font.ts` | The face this device shows: read once at start, stored again through a request. |
 | `src/state/onboarding.ts` | `OnboardingNav`: first-boot setup's step, what is being typed, a question the player opened, and whether the player went on offline. Nothing in it is stored. |
 | `src/state/onboarding-update.ts` | `updateOnboarding(setup, message, korri)`: every setup rule, including Wi-Fi being required and Back going back one step. |
+| `src/pico-invite-view.ts` | Invites as Pico draws them, and how long a notice stays. Which invites have had their notice, and which notices show, are `PicoNavigation.invites`. |
 | `src/state/wifi.ts` | Joining a network, shared by setup and Settings: when a password is asked, what a confirm sends, and when a typed password is dropped. |
 | `src/state/requests.ts` | What an update may ask for. A request that answers (a wait, a drawn QR code) comes back as a message. |
 | `src/pico-host.ts` | The one door to Korri: performs requests, delivers the host's buttons as messages. |
@@ -226,6 +227,28 @@ shows setup instead of home: Hello, Wi-Fi, Name, You, Pads, Games, Play.
 Wi-Fi is required unless the device is on a cable or has no Wi-Fi; "Continue
 offline" appears only where no network worked, and asks first. GO TO GAMES
 calls `finishOnboarding`, and home appears once Korri drops `onboarding`.
+After YOU, setup asks the person name (setting `person-name`) exactly as
+NAME asks the device's (`device-name`): the keyboard, NEXT saves through
+`changeSetting` and waits for Korri's save. The step exists only where Korri
+publishes the setting as editable text, and the track draws it as part of YOU.
+
+Stream play: an invite Korri publishes
+in `SurfaceModel.invites` gets one blue notice in the top left corner, the
+first time it stands while home or Find shows: "Simon is playing Turtles in
+Time", and where. Notices take no focus, let a pointer through, stay 8
+seconds, end at the person's next press, and may cover half the screen
+height; the oldest give way whole. Home lists every standing invite under
+PLAYING NOW, above whichever layout is chosen, with its cover, who plays it
+and where, and exactly the invite's actions as buttons through `runAction`.
+With no invite there is no entry. The entry takes at most 45% of home's body
+and scrolls past that; its heading counts the games. When Korri takes away
+the row the cursor is on, the cursor goes to the next row, or back to the
+chosen cart. Connecting and failing are Korri's `Busy` and `Problem`, drawn
+as any launch. `Paused` is the launch stage at rest: no meter, a pause mark,
+the cart when this device's library holds the game, and Korri's actions.
+`Ended` is a blue card with Korri's reason and OK, which calls `dismiss`, as
+Back does. Player 1's pause menu names who plays on the stream
+(`streamPlayers`) above its controls.
 
 Settings shows a WI-FI group whenever Korri publishes `network`: the
 connection and Korri's words for a failed attempt, a scan, every network the
@@ -312,7 +335,7 @@ bun install
 bun run caliper   # then open http://localhost:5173/__caliper/
 ```
 
-Caliper finds everything else from the source: the 78 `*.part.tsx` files, the
+Caliper finds everything else from the source: the 85 `*.part.tsx` files, the
 entry (`package.json` `exports["."]`), stylesheets and the wrapper
 (`<div className="pico-theme pico-screen">` in `src/PicoSurface.tsx`). Its Setup
 panel shows where each came from.
@@ -333,7 +356,7 @@ meaningful alternate inputs of the same real component. Caliper lists these
 states under the part; **All states** shows them together. Fixtures use the
 existing surface treaty and component props, with no backend or request swapping.
 
-The audit covers all 78 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
+The audit covers all 85 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
 so their default examples are their only states. A second export would duplicate
 the same output. Other parts include alternate inputs such as missing artwork,
 long content, disabled actions, loading, errors, and empty collections where

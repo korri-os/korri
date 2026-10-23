@@ -1,0 +1,57 @@
+/* Cover, words, buttons, on one line while they fit. The words give way to
+ * a second line before any button does; the buttons wrap under the words
+ * when the line is too narrow for both. A floor line under each, as the
+ * shelf stands on one. */
+.pico-invite-row {
+	--pico-art-w: calc(var(--pico-px) * 22);
+	--pico-art-h: calc(var(--pico-px) * 22);
+	--pico-initials-size: var(--pico-text-sm);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: calc(var(--pico-px) * 3) calc(var(--pico-px) * 6);
+	padding: calc(var(--pico-px) * 3) 0;
+	border-bottom: calc(var(--pico-px) * 2) solid var(--pico-floor);
+	font-size: var(--pico-text);
+	line-height: 1.25;
+}
+
+.pico-invite-row-art {
+	flex: none;
+	display: grid;
+	place-items: center;
+	width: var(--pico-art-w);
+	height: var(--pico-art-h);
+}
+
+.pico-invite-row-words {
+	flex: 1 1 18ch;
+	display: grid;
+	gap: var(--pico-px);
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.pico-invite-row-game {
+	color: var(--pico-ink);
+}
+
+.pico-invite-row-who {
+	font-size: var(--pico-text-sm);
+	color: var(--pico-ink-dim);
+}
+
+.pico-invite-row-why {
+	font-size: var(--pico-text-sm);
+	color: var(--pico-ink-quiet);
+}
+
+/* The buttons keep their shadows' room inside the row. */
+.pico-invite-row-actions {
+	flex: none;
+	display: flex;
+	flex-wrap: wrap;
+	gap: calc(var(--pico-px) * 2);
+	max-width: 100%;
+	margin-left: auto;
+}

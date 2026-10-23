@@ -17,7 +17,10 @@ import {
   GAME_RESCAN_ACTION,
   gamesScanning,
   isOffline,
+  PERSON_NAME_SETTING,
   padsView,
+  personName,
+  personNameSetting,
   picoWifiView,
   gamesCanContinue,
   starterPackChoices,
@@ -199,16 +202,32 @@ function continued(nav: OnboardingNav, korri: SurfaceModel): PicoStep<Onboarding
       return stay(enterName({ ...nav, continuedOffline: nav.continuedOffline || isOffline(korri) }, korri))
     }
     case "you":
-      return nav.identity._tag === "Ready" && nav.backup === undefined ? stay(at(nav, "pads")) : stay(nav)
+      return nav.identity._tag === "Ready" && nav.backup === undefined ? stay(afterIdentity(nav, korri)) : stay(nav)
     case "pads":
       return padsView(korri).ready ? stay(at(nav, "games")) : stay(nav)
     case "games":
       return gamesCanContinue(korri) ? stay(at(nav, "play")) : stay(nav)
     case "hello":
     case "name":
+    case "person":
     case "play":
       return stay(nav)
   }
+}
+
+/**
+ * After the identity: the person name, where Korri lets this device change
+ * it, else the controllers. The person name belongs to the identity just
+ * chosen, so it is asked after it, never before.
+ */
+function afterIdentity(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
+  return personNameSetting(korri) === undefined ? at(nav, "pads") : enterPerson(nav, korri)
+}
+
+/** The person-name step. The first time, the field holds Korri's person name. */
+function enterPerson(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
+  const draft = nav.person.draft ?? picoTextDraft(personName(korri) ?? "")
+  return { ...at(nav, "person"), person: { draft, saving: "No" } }
 }
 
 /** Back goes back one step, after closing whatever the step has open. */
@@ -222,8 +241,10 @@ function back(nav: OnboardingNav, korri: SurfaceModel): PicoStep<OnboardingNav> 
       return stay(korri.network === undefined ? at(nav, "hello") : at(nav, "wifi"))
     case "you":
       return backInIdentity(nav, korri)
-    case "pads":
+    case "person":
       return stay(at(nav, "you"))
+    case "pads":
+      return stay(personNameSetting(korri) === undefined ? at(nav, "you") : enterPerson(nav, korri))
     case "games":
       return stay(at(nav, "pads"))
     case "play":
@@ -329,6 +350,10 @@ function editText(
       if (nav.name.saving !== "No" || nav.name.draft === undefined) return nav
       return { ...nav, name: { ...nav.name, draft: change(nav.name.draft, deviceNameSetting(korri)?.maxLength) } }
     }
+    case "person": {
+      if (nav.person.saving !== "No" || nav.person.draft === undefined) return nav
+      return { ...nav, person: { ...nav.person, draft: change(nav.person.draft, personNameSetting(korri)?.maxLength) } }
+    }
     case "you": {
       const identity = nav.identity
       if (identity._tag === "Restore" && identity.editing !== undefined) {
@@ -366,6 +391,8 @@ function submitText(nav: OnboardingNav, korri: SurfaceModel): PicoStep<Onboardin
     }
     case "name":
       return submitName(nav, korri)
+    case "person":
+      return submitPerson(nav, korri)
     case "you": {
       const identity = nav.identity
       if (identity._tag === "Restore" && identity.editing !== undefined) {
@@ -397,6 +424,18 @@ function submitName(nav: OnboardingNav, korri: SurfaceModel): PicoStep<Onboardin
   if (text.trim() === "" || nav.name.saving !== "No") return stay(nav)
   if (deviceNameSetting(korri) === undefined || text === deviceName(korri)) return stay(at(nav, "you"))
   return ask({ ...nav, name: { ...nav.name, saving: "Sent" } }, { _tag: "ChangeSetting", settingId: DEVICE_NAME_SETTING, value: text })
+}
+
+/**
+ * NEXT on the person name: save it through Korri's person-name setting and
+ * wait for the save, exactly as the device's name does. An unchanged name,
+ * or a host that no longer lets this device change it, goes straight on.
+ */
+function submitPerson(nav: OnboardingNav, korri: SurfaceModel): PicoStep<OnboardingNav> {
+  const text = nav.person.draft?.text ?? ""
+  if (text.trim() === "" || nav.person.saving !== "No") return stay(nav)
+  if (personNameSetting(korri) === undefined || text === personName(korri)) return stay(at(nav, "pads"))
+  return ask({ ...nav, person: { ...nav.person, saving: "Sent" } }, { _tag: "ChangeSetting", settingId: PERSON_NAME_SETTING, value: text })
 }
 
 /* ---- Identity ---- */
@@ -492,6 +531,7 @@ const closeBackup = (nav: OnboardingNav): PicoStep<OnboardingNav> =>
 function settle(nav: OnboardingNav, korri: SurfaceModel): PicoStep<OnboardingNav> {
   let next = settlePending(nav, korri)
   next = settleName(next, korri)
+  next = settlePerson(next, korri)
   next = settleIdentity(next, korri)
   if (next.step === "wifi" && korri.network === undefined) next = enterName(next, korri)
   return settleBackup(next, korri)
@@ -527,6 +567,19 @@ function settleName(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
   if (mine && status._tag === "Problem") return { ...nav, name: { ...nav.name, saving: "No" } }
   const saved = saving === "Seen" || deviceName(korri) === nav.name.draft?.text
   return saved ? { ...at(nav, nav.step === "name" ? "you" : nav.step), name: { ...nav.name, saving: "No" } } : nav
+}
+
+/** The person name's save, settled as the device name's is. */
+function settlePerson(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
+  const saving = nav.person.saving
+  if (saving === "No") return nav
+  const status = korri.settingsStatus
+  const mine = status._tag !== "Idle" && status.settingId === PERSON_NAME_SETTING
+  if (mine && status._tag === "Saving") return saving === "Seen" ? nav : { ...nav, person: { ...nav.person, saving: "Seen" } }
+  // A refusal keeps the step and the typing; Korri's words show in the editor.
+  if (mine && status._tag === "Problem") return { ...nav, person: { ...nav.person, saving: "No" } }
+  const saved = saving === "Seen" || personName(korri) === nav.person.draft?.text
+  return saved ? { ...at(nav, nav.step === "person" ? "pads" : nav.step), person: { ...nav.person, saving: "No" } } : nav
 }
 
 function settleIdentity(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {

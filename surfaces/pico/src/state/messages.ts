@@ -53,6 +53,10 @@ export type PicoMessage =
   | { readonly _tag: "PressedDismiss" }
   /** One of the actions Korri published for its work under way, such as Cancel. */
   | { readonly _tag: "PressedStatusAction"; readonly actionId: string }
+  /** One of the actions Korri published with an invite: play on stream, dismiss. */
+  | { readonly _tag: "PressedInviteAction"; readonly actionId: string }
+  /** The cursor was on the home entry's invites, and the last one went. */
+  | { readonly _tag: "LostInviteFocus" }
   // Find
   | { readonly _tag: "TypedCharacter"; readonly character: string }
   | { readonly _tag: "PressedBackspace" }

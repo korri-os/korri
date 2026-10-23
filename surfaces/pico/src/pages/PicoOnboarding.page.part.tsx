@@ -9,6 +9,7 @@ import {
   heardControllers,
   noAdapterNetwork,
   onboardingModel,
+  personNameModel,
   starterPackFailed,
   starterPackFailedLong,
   starterPackModel,
@@ -339,6 +340,20 @@ export function IdentitySignerConfirmed() {
 
 export function IdentityApproving() {
   return <Walk beats={[...signing, confirmed, { _tag: "SubmittedIdentity" }]} />
+}
+
+/* The person name, after the identity: shown only where Korri lets this
+ * device change it. Without it (every walk above), YOU goes on to PADS. */
+export function PersonName() {
+  return <Walk beats={pads} start={personNameModel} />
+}
+
+export function PersonNameFilled() {
+  return <Walk beats={[...pads, ...typed("Simon")]} start={personNameModel} />
+}
+
+export function PersonNameSaving() {
+  return <Walk beats={[...pads, ...typed("Simon"), { _tag: "SubmittedText" }]} start={personNameModel} />
 }
 
 export function Controllers() {

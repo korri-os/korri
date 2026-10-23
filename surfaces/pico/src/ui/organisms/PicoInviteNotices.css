@@ -1,0 +1,26 @@
+/**
+ * The stack floats in the top left corner of the frame it is given, over the
+ * header and the screen below, above attract too: an idle device is exactly
+ * where an invite matters. Left, because the left of home's top is words
+ * (the header, a game's title); the buttons of PLAYING NOW stand at the
+ * right, and a notice must not cover the control it announces.
+ *
+ * It may cover half the frame's height and no more. The stack is a column
+ * that wraps: a notice that does not fit whole goes to a second column,
+ * which starts past the stack's own right edge and is clipped. So the
+ * oldest notices give way first, whole, and none is ever cut in half.
+ */
+.pico-invite-notices {
+	position: absolute;
+	top: var(--pico-u);
+	left: var(--pico-u);
+	z-index: 4;
+	display: flex;
+	flex-flow: column wrap;
+	align-content: flex-start;
+	gap: var(--pico-px);
+	width: min(calc(100% - var(--pico-u) * 2), calc(var(--pico-px) * 150));
+	max-height: 50%;
+	overflow: hidden;
+	pointer-events: none;
+}

@@ -1,5 +1,6 @@
 import type { ComponentProps } from "react"
 import { createFixtureHost, fixtureModel, fixtureOverlay } from "../fixtures/fixture-host"
+import { longStreamPlayersOverlay, streamPlayersOverlay } from "../fixtures/named-states"
 import { performPicoRequest } from "../pico-host"
 import { type PicoOverlayView, picoOverlayViewFrom } from "../pico-overlay-view"
 import { initialOverlay, type PicoOverlayMessage, type PicoOverlayState, rangeValue, updateOverlay } from "../state/overlay"
@@ -98,6 +99,13 @@ export function Problem() {
   return overlay({ overlay: picoOverlayViewFrom(fixtureOverlay, {
     _tag: "Problem", kicker: "SESSION ENDED", reason: "The game is no longer running.", canRetry: false,
   }) })
+}
+/** Player 1's menu while two other devices play on this game's stream. */
+export function StreamPlayers() {
+  return overlay({ overlay: picoOverlayViewFrom(streamPlayersOverlay, fixtureModel.status) })
+}
+export function LongStreamPlayers() {
+  return overlay({ overlay: picoOverlayViewFrom(longStreamPlayersOverlay, fixtureModel.status) })
 }
 export function NoPluginControls() {
   return overlay({ overlay: picoOverlayViewFrom({ ...fixtureOverlay, groups: [] }, fixtureModel.status) })

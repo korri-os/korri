@@ -1,0 +1,34 @@
+/* Inside the pause menu's blue card: the label in the card's kicker ink,
+ * the names on the dark plate the card's rows use. */
+.pico-stream-players {
+	display: grid;
+	gap: var(--pico-px);
+}
+
+.pico-stream-players-label {
+	margin: 0;
+	padding: 0 calc(var(--pico-px) * 4);
+	font-size: var(--pico-text-sm);
+	font-weight: normal;
+	color: var(--pico-card-kicker, var(--pico-ink-quiet));
+}
+
+.pico-stream-players-names {
+	display: flex;
+	flex-wrap: wrap;
+	gap: calc(var(--pico-px) * 2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pico-stream-players-name {
+	min-width: 0;
+	max-width: 100%;
+	padding: var(--pico-px) calc(var(--pico-px) * 4);
+	font-size: var(--pico-text);
+	line-height: 1.25;
+	color: var(--pico-row-ink, var(--pico-ink));
+	background: var(--pico-row-plate, var(--pico-plate));
+	overflow-wrap: anywhere;
+}

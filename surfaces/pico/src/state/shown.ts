@@ -7,6 +7,7 @@
  * the way a launch from the shelf does.
  */
 import type { SurfaceGame, SurfaceModel, SurfaceStore } from "@contracts/surface/korri-surface"
+import type { PicoInviteNoticeView } from "../pico-invite-view"
 import { picoLaunchOpen } from "../pico-launch-view"
 import { type PicoScreenView, picoScreenViewFromModel } from "../pico-screen-view"
 import type { Detail, Home, PicoNavigation, Search, Settings, StorePlace } from "./navigation"
@@ -56,6 +57,36 @@ export function canAttract(nav: PicoNavigation, korri: SurfaceModel): boolean {
     && shown.view._tag === "Shelf"
     && nav.home.menu === "Closed"
     && nav.detail === undefined
+}
+
+/** Home is showing the library: the shelf, or why there is none. Not a
+ * launch, a running game, a failure, or anything else Korri's status says. */
+export const picoLibraryShown = (view: PicoScreenView): boolean =>
+  view._tag === "Shelf" || view._tag === "Loading" || view._tag === "Empty" || view._tag === "Failed"
+
+/**
+ * Invite notices show over the idle home and Find, and nowhere else: not
+ * over a launch, a question, Settings or a game's own screen.
+ */
+export function invitesNoticeable(nav: PicoNavigation, korri: SurfaceModel): boolean {
+  if (runnerOpen(korri) || launchOpen(korri)) return false
+  const shown = shownScreen(nav, korri)
+  return shown._tag === "Find" || (shown._tag === "Home" && picoLibraryShown(shown.view))
+}
+
+/** The notices on screen now, newest first, in Korri's words. */
+export function inviteNotices(nav: PicoNavigation, korri: SurfaceModel): readonly PicoInviteNoticeView[] {
+  if (!invitesNoticeable(nav, korri)) return []
+  const invites = korri.invites ?? []
+  return nav.invites.showing.flatMap(({ inviteId }) => {
+    const invite = invites.find(candidate => candidate.id === inviteId)
+    return invite === undefined ? [] : [{
+      id: invite.id,
+      personName: invite.personName,
+      gameTitle: invite.gameTitle,
+      deviceLabel: invite.deviceLabel,
+    }]
+  })
 }
 
 /** Whether attract is on screen now. A press while it is wakes it and does nothing else. */

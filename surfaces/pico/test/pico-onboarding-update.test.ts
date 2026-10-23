@@ -14,6 +14,7 @@ import {
   offlineNetwork,
   onboardingModel,
   onlineNetwork,
+  personNameModel,
   starterPackFailed,
   starterPackInstalled,
   starterPackInstalling,
@@ -438,6 +439,80 @@ describe("the Starter pack", () => {
     expect(new Set(keys).size).toBe(keys.length)
   })
 
+})
+
+describe("the person name", () => {
+  // Korri lets this device change the person name: a text setting, at most 64.
+  const korri: SurfaceModel = { ...personNameModel, network: onlineNetwork }
+  const ready = (): OnboardingNav => ({ ...initialOnboarding(), step: "you", identity: { _tag: "Ready", origin: "created" } })
+  const withPersonName = (value: string | undefined, interaction: boolean): SurfaceModel => ({
+    ...korri,
+    settings: korri.settings.map(group => ({
+      ...group,
+      items: group.items.map(item => item.id !== "person-name" ? item : {
+        id: item.id,
+        label: item.label,
+        ...(value === undefined ? {} : { value }),
+        ...(interaction && item.interaction !== undefined ? { interaction: item.interaction } : {}),
+      }),
+    })),
+  })
+
+  test("comes after the identity, as part of YOU on the track, starting empty with its placeholder", () => {
+    const { nav, screen } = storyFrom(ready(), korri, next)
+    expect(nav.step).toBe("person")
+    expect(screen._tag === "Entry" && [screen.entry.place, screen.entry.draft.text, screen.entry.placeholder, screen.entry.maxLength])
+      .toEqual(["YOUR NAME", "", "Your name", 64])
+    expect(picoSetupTrack(nav, korri).find(step => step.state === "now")?.label).toBe("YOU")
+  })
+
+  test("is skipped where Korri does not publish it, or publishes it read-only", () => {
+    expect(storyFrom(ready(), withNetwork(onlineNetwork), next).nav.step).toBe("pads")
+    const readOnly = withPersonName("Simon", false)
+    expect(storyFrom(ready(), readOnly, next).nav.step).toBe("pads")
+    expect(storyFrom({ ...ready(), step: "pads" }, readOnly, back).nav.step).toBe("you")
+  })
+
+  test("starts from the name Korri holds", () => {
+    const named = withPersonName("Simon", true)
+    const { screen } = storyFrom(ready(), named, next)
+    expect(screen._tag === "Entry" && screen.entry.draft.text).toBe("Simon")
+  })
+
+  test("NEXT waits for a name, then saves it through person-name and goes on once Korri saved", () => {
+    const empty = storyFrom(ready(), korri, next, submit)
+    expect(empty.nav.step).toBe("person")
+    expect(empty.requests).toEqual([])
+    const { nav, requests } = storyFrom(ready(), korri, next, ...typed("Simon"), submit)
+    expect(requests.at(-1)).toEqual({ _tag: "ChangeSetting", settingId: "person-name", value: "Simon" })
+    const saving = storyFrom(nav, { ...korri, settingsStatus: { _tag: "Saving", settingId: "person-name" } }, published).nav
+    expect(saving.step).toBe("person")
+    expect(storyFrom(saving, korri, published).nav.step).toBe("pads")
+  })
+
+  test("a refusal keeps the step and the typing, with Korri's words", () => {
+    const { nav } = storyFrom(ready(), korri, next, ...typed("Simon"), submit)
+    const refused = { ...korri, settingsStatus: { _tag: "Problem", settingId: "person-name", message: "Your signer did not answer." } } as const
+    const after = storyFrom(nav, refused, published)
+    expect(after.nav.step).toBe("person")
+    expect(after.screen._tag === "Entry" && [after.screen.entry.draft.text, after.screen.entry.problem]).toEqual(["Simon", "Your signer did not answer."])
+  })
+
+  test("the keys stop at Korri's limit", () => {
+    const { screen } = storyFrom(ready(), korri, next, ...typed("x".repeat(70)))
+    expect(screen._tag === "Entry" && screen.entry.draft.text.length).toBe(64)
+  })
+
+  test("an unchanged name goes straight on; Back walks pads, the name, then YOU", () => {
+    const named = withPersonName("Simon", true)
+    const { nav, requests } = storyFrom(ready(), named, next, submit)
+    expect(nav.step).toBe("pads")
+    expect(requests).toEqual([])
+    const onName = storyFrom(nav, named, back)
+    expect(onName.nav.step).toBe("person")
+    expect(onName.screen._tag === "Entry" && onName.screen.entry.draft.text).toBe("Simon")
+    expect(storyFrom(onName.nav, named, back).nav.step).toBe("you")
+  })
 })
 
 describe("signal bars", () => {

@@ -131,6 +131,21 @@ export interface Idle {
   readonly activity: number
 }
 
+/**
+ * Invite notices. Each invite Korri publishes gets one notice, the first time
+ * it stands while home or Find shows; the home entry lists it after that.
+ * `noticed` is kept for this launch of Pico, so an invite that leaves and
+ * comes back does not announce itself twice.
+ */
+export interface InviteNotices {
+  readonly noticed: readonly string[]
+  /** On screen now, newest first. `token` names the wait that ends it. */
+  readonly showing: readonly { readonly inviteId: string; readonly token: number }[]
+  readonly nextToken: number
+}
+
+export const INVITE_NOTICES: InviteNotices = { noticed: [], showing: [], nextToken: 0 }
+
 export interface PicoNavigation {
   readonly home: Home
   readonly find: boolean
@@ -148,6 +163,7 @@ export interface PicoNavigation {
   /** Whether a game played from its own screen should, when it ends, return
    * the player to the shelf (pico-session-return.ts). */
   readonly session: PicoSessionReturn
+  readonly invites: InviteNotices
 }
 
 export type TopLayer = "Settings" | "Detail" | "Store" | "Find" | "Home"
@@ -183,5 +199,6 @@ export function initialNavigation(initial?: PicoInitialView): PicoNavigation {
     },
     idle: { _tag: "Awake", activity: 0 },
     session: { _tag: "Idle" },
+    invites: INVITE_NOTICES,
   }
 }

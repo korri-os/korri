@@ -24,6 +24,7 @@ const emptyStates = new Set([
   "ui/organisms/PicoCartShelf.organism.part.tsx/EmptyLibrary",
   "ui/organisms/PicoGameActions.organism.part.tsx/NoActions",
   "ui/organisms/PicoIdentityDialog.organism.part.tsx/Closed",
+  "ui/organisms/PicoPlayingNow.organism.part.tsx/NoInvites",
   "ui/organisms/PicoResumeList.organism.part.tsx/NoResumableGames",
   "ui/molecules/PicoStarterPack.molecule.part.tsx/NoStarterPack",
 ])

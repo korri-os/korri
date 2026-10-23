@@ -1,0 +1,22 @@
+/* A small card: the game at body size, not a heading's, and a tight shell,
+ * so a notice covers as little of the screen under it as it can. */
+.pico-invite-notice {
+	--pico-card-width: 100%;
+	--pico-card-gap: var(--pico-px);
+	--pico-card-pad: calc(var(--pico-px) * 6) calc(var(--pico-px) * 5) calc(var(--pico-px) * 4);
+	--pico-title-xl: var(--pico-text);
+	/* Whole or not at all: a stack out of room drops a notice rather than
+	 * squeezing it. */
+	flex: none;
+	width: 100%;
+	min-width: 0;
+	/* Inherited: a person name with no break in it wraps, never pokes out. */
+	overflow-wrap: anywhere;
+}
+
+.pico-invite-notice-where {
+	margin: 0;
+	font-size: var(--pico-text-sm);
+	color: var(--pico-card-note);
+	overflow-wrap: anywhere;
+}

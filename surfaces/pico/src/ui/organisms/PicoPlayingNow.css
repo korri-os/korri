@@ -1,0 +1,59 @@
+/**
+ * The entry sits above the library and may take up to 45% of home's body
+ * (the shell body is the size container `cqh` measures). Past that its rows
+ * scroll, so the library below always keeps the larger share.
+ */
+.pico-playing-now {
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr);
+	gap: var(--pico-px);
+	max-height: 45cqh;
+	min-height: 0;
+	padding: calc(var(--pico-px) * 2) calc(var(--pico-u) * 2) var(--pico-u);
+	font-size: var(--pico-text-sm);
+}
+
+.pico-playing-now-heading {
+	display: flex;
+	align-items: center;
+	gap: calc(var(--pico-px) * 3);
+	margin: 0;
+	font-size: var(--pico-text-sm);
+	font-weight: normal;
+	line-height: 1.5;
+	color: var(--pico-go);
+}
+
+.pico-playing-now-count {
+	color: var(--pico-ink-quiet);
+}
+
+/* One lit pixel, blinking: something is live right now. Still when motion
+ * is reduced (pico.css), and still lit. */
+.pico-playing-now-live {
+	flex: none;
+	width: calc(var(--pico-px) * 3);
+	height: calc(var(--pico-px) * 3);
+	background: var(--pico-ok);
+	animation: pico-blink 1200ms steps(1, end) infinite;
+}
+
+/* A cut row shows there is more, above the region's own edge, so a cut row
+ * never runs into the library below. The bottom padding keeps the focused
+ * button's shadow inside the scroll region. */
+.pico-playing-now-list {
+	border-bottom: calc(var(--pico-px) * 2) solid var(--pico-floor-edge);
+	display: grid;
+	align-content: start;
+	min-height: 0;
+	margin: 0;
+	padding: 0 0 var(--pico-drop);
+	list-style: none;
+	overflow-y: auto;
+	scrollbar-width: thin;
+	scrollbar-color: var(--pico-go) var(--pico-plate);
+}
+
+.pico-playing-now-item {
+	min-width: 0;
+}

@@ -32,6 +32,12 @@ export type PicoMeterMode = "clock" | "progress" | "indeterminate"
  * sixteenths, with the cell being filled blinking so a slow download still
  * shows as alive. Without a known game there is no cartridge to seat, and the
  * slot stays empty rather than showing a stand-in.
+ *
+ * Paused, the game runs on another device that has stopped it: nothing here
+ * is under way, so there is no meter. The cart sits seated and still, with a
+ * small pause mark under the words; a game this device does not hold has no
+ * cart, and the pause mark itself stands in the slot instead, large. The
+ * words and the actions are Korri's.
  */
 export function PicoLaunchStage({
   kicker,
@@ -56,7 +62,7 @@ export function PicoLaunchStage({
     readonly disabled: boolean
     readonly onPress: () => void
   }[]
-  readonly phase?: "starting" | "running"
+  readonly phase?: "starting" | "running" | "paused"
 }) {
   const mode: PicoMeterMode = progress === undefined ? "clock" : progress.total === undefined ? "indeterminate" : "progress"
   const lit = progress?.total === undefined ? undefined : picoMeterCells({ done: progress.done, total: progress.total })
@@ -85,28 +91,37 @@ export function PicoLaunchStage({
     <section aria-live="polite" className="pico-launch-stage" data-phase={phase}>
       <div className="pico-launch-stage-words">
         <h1 className="pico-launch-stage-kicker">{kicker}</h1>
-        <span
-          className="pico-launch-stage-meter"
-          data-meter={mode}
-          {...(mode === "clock"
-            ? { "aria-hidden": true }
-            : {
-                role: "progressbar",
-                "aria-label": kicker,
-                ...(percent === undefined
-                  ? {}
-                  : { "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": Math.max(0, Math.min(100, percent)) }),
-              })}
-        >
-          {METER.map((cell) => (
-            <i
-              className="pico-launch-stage-cell"
-              data-cell={cell}
-              {...(lit === undefined ? {} : { "data-lit": cell < lit ? "on" : cell === lit ? "next" : "off" })}
-              key={cell}
-            />
-          ))}
-        </span>
+        {phase === "paused" ? (
+          cart === undefined ? null : (
+            <span aria-hidden className="pico-launch-stage-pause">
+              <i className="pico-launch-stage-pause-bar" />
+              <i className="pico-launch-stage-pause-bar" />
+            </span>
+          )
+        ) : (
+          <span
+            className="pico-launch-stage-meter"
+            data-meter={mode}
+            {...(mode === "clock"
+              ? { "aria-hidden": true }
+              : {
+                  role: "progressbar",
+                  "aria-label": kicker,
+                  ...(percent === undefined
+                    ? {}
+                    : { "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": Math.max(0, Math.min(100, percent)) }),
+                })}
+          >
+            {METER.map((cell) => (
+              <i
+                className="pico-launch-stage-cell"
+                data-cell={cell}
+                {...(lit === undefined ? {} : { "data-lit": cell < lit ? "on" : cell === lit ? "next" : "off" })}
+                key={cell}
+              />
+            ))}
+          </span>
+        )}
         {gameTitle === undefined ? null : (
           <p className="pico-launch-stage-game">{gameTitle}</p>
         )}
@@ -115,6 +130,12 @@ export function PicoLaunchStage({
         )}
       </div>
       <div className="pico-launch-stage-slot">
+        {cart === undefined && phase === "paused" ? (
+          <span aria-hidden className="pico-launch-stage-held">
+            <i className="pico-launch-stage-held-bar" />
+            <i className="pico-launch-stage-held-bar" />
+          </span>
+        ) : null}
         {cart === undefined ? null : (
           <span className="pico-launch-stage-cart">
             <PicoCart artUrl={cart.artUrl} id={cart.id} placement="still" title={cart.title} />

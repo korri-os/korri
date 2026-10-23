@@ -1,4 +1,5 @@
 import { fixtureModel } from "../../fixtures/fixture-host"
+import { streamPausedStatus } from "../../fixtures/named-states"
 import { picoScreenViewFromModel } from "../../pico-screen-view"
 import { PicoLaunchStage } from "./PicoLaunchStage"
 
@@ -8,6 +9,23 @@ export function Running() {
   })
   if (running._tag !== "Running") throw new Error("Expected running fixture")
   return <PicoLaunchStage kicker={running.kicker} gameTitle={running.gameTitle} cart={running.cart} phase="running" />
+}
+
+/** Paused on the device that holds the session: the cart rests, a pause
+ * mark stands where the meter was, and Korri's actions stay. */
+export function Paused() {
+  // A game this device's library also holds, so its cart can rest in the slot.
+  const paused = picoScreenViewFromModel({ ...fixtureModel, status: { ...streamPausedStatus, gameId: "hollow" } })
+  if (paused._tag !== "Paused") throw new Error("Expected paused fixture")
+  return (
+    <PicoLaunchStage
+      actions={paused.actions.map(action => ({ id: action.id, label: action.label, disabled: !action.enabled, onPress: () => undefined }))}
+      cart={paused.cart}
+      detail={paused.detail}
+      kicker={paused.kicker}
+      phase="paused"
+    />
+  )
 }
 
 export function UnknownGame() {

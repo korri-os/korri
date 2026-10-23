@@ -19,9 +19,14 @@ import type { IdentityQr } from "./navigation"
 import type { PicoReply } from "./requests"
 import type { WifiEntry } from "./wifi"
 
-/** The steps, in order. */
-export type OnboardingStep = "hello" | "wifi" | "name" | "you" | "pads" | "games" | "play"
+/**
+ * The steps, in order. `person` is the person name, after the identity it
+ * belongs to; it shows only where Korri lets this device change it, and the
+ * track draws it as part of YOU.
+ */
+export type OnboardingStep = "hello" | "wifi" | "name" | "you" | "person" | "pads" | "games" | "play"
 
+/** The step track. `person` has no mark of its own: it is part of YOU. */
 export const ONBOARDING_STEPS: readonly { readonly id: OnboardingStep; readonly label: string }[] = [
   { id: "hello", label: "HELLO" },
   { id: "wifi", label: "WI-FI" },
@@ -61,8 +66,9 @@ export interface WifiStep {
 }
 
 export interface NameStep {
-  /** What is typed. Seeded from Korri's device name the first time the step
-   * opens; kept when the player goes back and forth. */
+  /** What is typed. Seeded from Korri's name (the device's, or the
+   * person's) the first time the step opens; kept when the player goes back
+   * and forth. */
   readonly draft: PicoTextDraft | undefined
   /** NEXT sent the name and setup waits for Korri's save: `Sent`, then
    * `Seen` once Korri said it was saving. */
@@ -113,6 +119,8 @@ export interface OnboardingNav {
    * or on a device with no Wi-Fi. A later connection makes it moot. */
   readonly continuedOffline: boolean
   readonly name: NameStep
+  /** The person name, typed the way the device's name is. */
+  readonly person: NameStep
   readonly identity: IdentityStep
   readonly backup: BackupDialog | undefined
   /** GO TO GAMES was pressed. Home appears once Korri drops `onboarding`. */
@@ -126,6 +134,7 @@ export const initialOnboarding = (): OnboardingNav => ({
   wifi: WIFI_STEP,
   continuedOffline: false,
   name: { draft: undefined, saving: "No" },
+  person: { draft: undefined, saving: "No" },
   identity: { _tag: "Choose" },
   backup: undefined,
   finishing: false,

@@ -3,6 +3,7 @@ import type { PicoOverlayControlView, PicoOverlayView, PicoRanging } from "../..
 import { PicoRow } from "../atoms/PicoRow"
 import { PicoCard } from "../molecules/PicoCard"
 import { PicoControlRow } from "../molecules/PicoControlRow"
+import { PicoStreamPlayers } from "../molecules/PicoStreamPlayers"
 
 /**
  * Korri's gameplay controls as a pause menu: a blue card, because it tells
@@ -15,6 +16,9 @@ import { PicoControlRow } from "../molecules/PicoControlRow"
  * scrolls, and a failure under the fold means choosing "Save state" without
  * knowing the stream has already dropped. TRY AGAIN appears only when Korri
  * says retrying would do anything.
+ *
+ * Who plays on this game's stream from another device comes next, still
+ * above the controls: player 1 sees it each time the menu opens.
  */
 export function PicoPauseMenu({
   overlay,
@@ -47,6 +51,7 @@ export function PicoPauseMenu({
           {overlay.problem.canRetry ? <PicoRow label="TRY AGAIN" onPress={onRetry} /> : null}
         </section>
       )}
+      {overlay.streamPlayers === undefined ? null : <PicoStreamPlayers names={overlay.streamPlayers} />}
       <ul className="pico-pause-menu-list">
         {overlay.controls.map(row)}
       </ul>

@@ -33,6 +33,9 @@ import type { PicoStep } from "./ui/atoms/PicoStepTrack"
 
 /** Korri's setting for this device's name. */
 export const DEVICE_NAME_SETTING = "device-name"
+/** Korri's setting for the person name: what this person's devices call them
+ * when they play ("Simon is playing Turtles in Time"). */
+export const PERSON_NAME_SETTING = "person-name"
 /** Korri's setting for how many player seats there are. */
 export const PLAYER_SEATS_SETTING = "host.preferences.playerCount"
 /** Korri's settings action that reads the game folders again. */
@@ -189,8 +192,20 @@ function settingItem(korri: SurfaceModel, settingId: string): SurfaceSettingItem
 export const deviceName = (korri: SurfaceModel): string | undefined => settingItem(korri, DEVICE_NAME_SETTING)?.value
 
 /** Korri's device-name setting, when it can be changed here. */
-export function deviceNameSetting(korri: SurfaceModel): { readonly maxLength?: number } | undefined {
-  const interaction = settingItem(korri, DEVICE_NAME_SETTING)?.interaction
+export const deviceNameSetting = (korri: SurfaceModel): { readonly maxLength?: number } | undefined =>
+  textSetting(korri, DEVICE_NAME_SETTING)
+
+/** The person name Korri holds, when it holds one. */
+export const personName = (korri: SurfaceModel): string | undefined => settingItem(korri, PERSON_NAME_SETTING)?.value
+
+/** Korri's person-name setting, when this device can change it. Absent or
+ * read-only, setup has no person-name step. */
+export const personNameSetting = (korri: SurfaceModel): { readonly maxLength?: number } | undefined =>
+  textSetting(korri, PERSON_NAME_SETTING)
+
+/** A text setting Korri lets this device change, and its limit. */
+function textSetting(korri: SurfaceModel, settingId: string): { readonly maxLength?: number } | undefined {
+  const interaction = settingItem(korri, settingId)?.interaction
   if (interaction?.kind !== "text") return undefined
   return interaction.maxLength === undefined ? {} : { maxLength: interaction.maxLength }
 }
@@ -364,6 +379,27 @@ function nameEntry(nav: OnboardingNav, korri: SurfaceModel): PicoSetupEntryView 
   }
 }
 
+function personEntry(nav: OnboardingNav, korri: SurfaceModel): PicoSetupEntryView {
+  const draft = nav.person.draft ?? picoTextDraft(personName(korri) ?? "")
+  const maxLength = personNameSetting(korri)?.maxLength
+  const problem = settingProblem(korri, PERSON_NAME_SETTING)
+  return {
+    place: "YOUR NAME",
+    prompt: "What is your name?",
+    fieldLabel: "Your name",
+    note: "Your devices show it when you play.",
+    placeholder: "Your name",
+    ...(maxLength === undefined ? {} : { maxLength }),
+    secret: false,
+    shown: true,
+    draft,
+    submitLabel: "NEXT",
+    ready: draft.text.trim() !== "" && nav.person.saving === "No",
+    busy: nav.person.saving !== "No",
+    ...(problem === undefined ? {} : { problem }),
+  }
+}
+
 /** The controllers Korri hears, and its player-seats setting. */
 export function padsView(korri: SurfaceModel): PicoPadsView {
   const controllers = korri.onboarding?.controllers ?? []
@@ -488,6 +524,8 @@ export function picoOnboardingScreen(nav: OnboardingNav, korri: SurfaceModel): P
     }
     case "name":
       return { _tag: "Entry", entry: nameEntry(nav, korri) }
+    case "person":
+      return { _tag: "Entry", entry: personEntry(nav, korri) }
     case "you": {
       const entry = identityEntry(nav.identity)
       if (entry !== undefined) return { _tag: "Entry", entry }
@@ -520,7 +558,9 @@ export function picoOnboardingScreen(nav: OnboardingNav, korri: SurfaceModel): P
  * all: that step is passed, not done.
  */
 export function picoSetupTrack(nav: OnboardingNav, korri: SurfaceModel): readonly PicoStep[] {
-  const at = ONBOARDING_STEPS.findIndex(step => step.id === nav.step)
+  // The person name is part of YOU on the track.
+  const shown = nav.step === "person" ? "you" : nav.step
+  const at = ONBOARDING_STEPS.findIndex(step => step.id === shown)
   const wifiSkipped = korri.network === undefined || (nav.continuedOffline && isOffline(korri))
   return ONBOARDING_STEPS.map((step, index) => ({
     label: step.label,

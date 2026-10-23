@@ -6,6 +6,7 @@
  */
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { isPicoFont } from "../pico-font-preference"
+import { PICO_INVITE_NOTICE_MS, picoInviteActionPublished } from "../pico-invite-view"
 import { picoLaunchViewFromModel } from "../pico-launch-view"
 import { picoScreenViewFromModel } from "../pico-screen-view"
 import { picoSessionReturnFromModel, picoSessionReturnOnPlay } from "../pico-session-return"
@@ -42,7 +43,7 @@ import {
   topLayer,
 } from "./navigation"
 import { ask, type PicoRequest, type PicoStep, stay } from "./requests"
-import { attractShowing, canAttract, identityAction, launchOpen, runnerOpen } from "./shown"
+import { attractShowing, canAttract, identityAction, invitesNoticeable, launchOpen, runnerOpen } from "./shown"
 import {
   editEntry,
   entryMaxLength,
@@ -58,7 +59,8 @@ export function update(nav: PicoNavigation, message: PicoMessage, korri: Surface
   const result = step(settleLaunch(nav, korri), message, korri)
   const settled = settleIdle(settleEditor(settleLaunch(settleSession(result.model, korri), korri), korri), korri)
   const identity = settleIdentity(nav, settled, korri)
-  return { model: identity.model, requests: [...result.requests, ...identity.requests] }
+  const invites = settleInvites(identity.model, korri)
+  return { model: invites.model, requests: [...result.requests, ...identity.requests, ...invites.requests] }
 }
 
 function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): PicoStep<PicoNavigation> {
@@ -80,18 +82,26 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
   // A press while attract shows wakes the screen and does nothing else.
   // Picking a device up must not start a game, cycle a layout or open
   // Settings: the first press is how the player gets the screen back.
+  // A press also ends the invite notices on screen: they were for a person
+  // who was not using the device, and must never hide what a press does
+  // (a letter typed in Find). The invites stay on home.
   if (isHostButton(message) || message._tag === "PressedScreen" || message._tag === "MovedFocus") {
-    const waking = message._tag !== "MovedFocus" && attractShowing(nav, korri)
+    const pressed = message._tag !== "MovedFocus"
+    const waking = pressed && attractShowing(nav, korri)
     const activity = nav.idle.activity + 1
-    nav = { ...nav, idle: { _tag: message._tag === "MovedFocus" ? nav.idle._tag : "Awake", activity } }
+    nav = {
+      ...nav,
+      idle: { _tag: pressed ? "Awake" : nav.idle._tag, activity },
+      ...(pressed && nav.invites.showing.length > 0 ? { invites: { ...nav.invites, showing: [] } } : {}),
+    }
     if (waking || !isHostButton(message)) return stay(nav)
   }
 
   // Input acts on what is shown. While Korri shows a launch, a running game
   // or a failure, the host buttons do not change the screens hidden below it.
-  // Back acknowledges a failure.
+  // Back acknowledges a failure, and a session that ended under this device.
   if (isHostButton(message) && korri.status._tag !== "Browsing") {
-    return message._tag === "PressedBack" && korri.status._tag === "Problem"
+    return message._tag === "PressedBack" && (korri.status._tag === "Problem" || korri.status._tag === "Ended")
       ? ask(nav, { _tag: "DismissProblem" })
       : stay(nav)
   }
@@ -174,11 +184,25 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       // A save split's sides are Confirm answers in the screen view.
       {
         const view = picoScreenViewFromModel(korri)
-        return (view._tag === "Busy" || view._tag === "Confirm") &&
+        return (view._tag === "Busy" || view._tag === "Confirm" || view._tag === "Paused") &&
           (view.actions ?? []).some(action => action.id === message.actionId && action.enabled)
           ? ask(nav, { _tag: "RunAction", actionId: message.actionId })
           : stay(nav)
       }
+
+    // Invites. Only an action Korri publishes now, enabled, on an invite, and
+    // only while this device is idle: a press that lands after the invite
+    // went sends nothing.
+    case "PressedInviteAction":
+      return korri.status._tag === "Browsing" && picoInviteActionPublished(korri, message.actionId)
+        ? ask(nav, { _tag: "RunAction", actionId: message.actionId })
+        : stay(nav)
+    case "LostInviteFocus":
+      // The shelf takes the cursor back to the chosen cart. The other layouts
+      // have no cart to return to; the next press finds the first control.
+      return stay(topLayer(nav) === "Home" && nav.home.mode === "shelf"
+        ? { ...nav, home: { ...nav.home, focusOnReturn: "Cart" } }
+        : nav)
 
     // Find
     case "TypedCharacter":
@@ -416,7 +440,37 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
         : stay(nav)
     }
     case "Waited":
-      return stay(nav)
+      // A notice's time is up. The invite stays on home.
+      return stay(nav.invites.showing.some(notice => notice.token === message.token)
+        ? { ...nav, invites: { ...nav.invites, showing: nav.invites.showing.filter(notice => notice.token !== message.token) } }
+        : nav)
+  }
+}
+
+/**
+ * Invites Korri publishes that have had no notice get one now, if home or
+ * Find shows, each with its own wait. A notice goes when its time is up or
+ * its invite goes.
+ */
+function settleInvites(nav: PicoNavigation, korri: SurfaceModel): PicoStep<PicoNavigation> {
+  const standing = korri.invites ?? []
+  const showing = nav.invites.showing.filter(notice => standing.some(invite => invite.id === notice.inviteId))
+  const fresh = invitesNoticeable(nav, korri)
+    ? standing.filter(invite => !nav.invites.noticed.includes(invite.id))
+    : []
+  if (fresh.length === 0 && showing.length === nav.invites.showing.length) return stay(nav)
+  const added = fresh.map((invite, index) => ({ inviteId: invite.id, token: nav.invites.nextToken + index }))
+  return {
+    model: {
+      ...nav,
+      invites: {
+        noticed: [...nav.invites.noticed, ...fresh.map(invite => invite.id)],
+        // Newest first: the last one Korri lists is the newest here.
+        showing: [...[...added].reverse(), ...showing],
+        nextToken: nav.invites.nextToken + added.length,
+      },
+    },
+    requests: added.map(notice => ({ _tag: "Wait" as const, ms: PICO_INVITE_NOTICE_MS, token: notice.token })),
   }
 }
 

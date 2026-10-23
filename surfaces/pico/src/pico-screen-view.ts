@@ -53,6 +53,21 @@ export type PicoScreenView =
       readonly canRetry: boolean
       readonly gameTitle?: string
     }
+  /** This device plays on another device's stream, and that device paused
+   * the session. The kicker names that device; the actions are Korri's. */
+  | {
+      readonly _tag: "Paused"
+      readonly kicker: string
+      readonly detail?: string
+      readonly actions: readonly SurfaceAction[]
+      readonly cart?: PicoLaunchCart
+    }
+  /** The session this device played on ended. `reason` is Korri's words. */
+  | {
+      readonly _tag: "Ended"
+      readonly kicker: string
+      readonly reason: string
+    }
 
 /**
  * What the screen shows, decided once.
@@ -112,6 +127,20 @@ export function picoScreenViewFromModel(model: SurfaceModel): PicoScreenView {
           ? {}
           : { gameTitle: status.gameTitle }),
       }
+    case "Paused": {
+      const cart = cartFor(model, status.gameId)
+      return {
+        _tag: "Paused",
+        kicker: status.kicker,
+        ...(status.detail === undefined ? {} : { detail: status.detail }),
+        actions: status.actions,
+        ...(cart === undefined ? {} : { cart }),
+      }
+    }
+    // Korri's reason already names the game and the device; the title would
+    // say it twice.
+    case "Ended":
+      return { _tag: "Ended", kicker: status.kicker, reason: status.reason }
     case "Browsing":
       return picoHomeViewFromCatalog(model.catalog)
   }

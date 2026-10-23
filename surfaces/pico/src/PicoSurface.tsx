@@ -18,6 +18,7 @@ import { PicoSettings, type PicoSettingsEditing } from "./pages/PicoSettings"
 import { PicoStore } from "./pages/PicoStore"
 import { PicoIdentityDialog } from "./ui/organisms/PicoIdentityDialog"
 import { picoDetailViewFromGame } from "./pico-detail-view"
+import { picoInvitesFrom } from "./pico-invite-view"
 import { performPicoRequest, subscribePicoHostButtons } from "./pico-host"
 import { picoLibraryViewFrom } from "./pico-library-view"
 import { type PicoRanging, picoOverlayViewFrom } from "./pico-overlay-view"
@@ -31,7 +32,7 @@ import type { PicoTyping } from "./ui/molecules/PicoKeyboard"
 import { type PicoFontMessage, updateFont } from "./state/font"
 import { IDENTITY_FORM, type SettingsQuestion } from "./state/navigation"
 import { initialOverlay, type PicoOverlayMessage, type PicoOverlayState, rangeValue, updateOverlay } from "./state/overlay"
-import { attractShowing, identityAction, launchOpen, type PicoShown, runnerOpen, shownScreen } from "./state/shown"
+import { attractShowing, identityAction, inviteNotices, launchOpen, type PicoShown, runnerOpen, shownScreen } from "./state/shown"
 import { usePicoNavigation } from "./use-pico-navigation"
 import { usePicoOnboarding } from "./use-pico-onboarding"
 import { usePicoProgram } from "./use-pico-program"
@@ -227,6 +228,7 @@ function PicoCatalogSurface({
 }) {
   const { nav, dispatch, attractShowingNow } = usePicoNavigation(model, host, onFont, initialView)
   const screen = shownScreen(nav, model)
+  const notices = inviteNotices(nav, model)
   const identityQuestion = nav.settings?.question._tag === "Identity" ? nav.settings.question : undefined
   const typing: PicoTyping = {
     onType: character => dispatch({ _tag: "TypedText", character }),
@@ -404,6 +406,7 @@ function PicoCatalogSurface({
             library={picoLibraryViewFrom(model.catalog, shown.search.query, shown.search.section, shown.search.order)}
             onBackspace={() => dispatch({ _tag: "PressedBackspace" })}
             onClear={() => dispatch({ _tag: "ClearedQuery" })}
+            notices={notices}
             onOpen={gameId => dispatch({ _tag: "OpenedGame", gameId })}
             onOrder={order => dispatch({ _tag: "ChoseOrder", order })}
             onSection={section => dispatch({ _tag: "ChoseSection", section })}
@@ -449,6 +452,10 @@ function PicoCatalogSurface({
             onChooseLocation={locationId => dispatch({ _tag: "ChoseLocation", locationId })}
             onDismiss={() => dispatch({ _tag: "PressedDismiss" })}
             onAction={actionId => dispatch({ _tag: "PressedStatusAction", actionId })}
+            invites={picoInvitesFrom(model)}
+            onInviteAction={actionId => dispatch({ _tag: "PressedInviteAction", actionId })}
+            onLostInviteFocus={() => dispatch({ _tag: "LostInviteFocus" })}
+            notices={notices}
             mode={shown.home.mode}
             onOpenGame={gameId => dispatch({ _tag: "OpenedGame", gameId })}
             onReturnedToCart={() => dispatch({ _tag: "ReturnedFocus" })}

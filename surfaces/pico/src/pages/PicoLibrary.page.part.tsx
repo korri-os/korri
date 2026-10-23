@@ -1,5 +1,6 @@
 import type { SurfaceCatalog } from "@contracts/surface/korri-surface"
 import { fixtureModel } from "../fixtures/fixture-host"
+import { fixtureInvite, inviteNoticeViews } from "../fixtures/named-states"
 import { PICO_ALL_SECTIONS, picoLibraryViewFrom, type PicoOrder } from "../pico-library-view"
 import { PicoLibrary } from "./PicoLibrary"
 
@@ -14,6 +15,14 @@ function library(query: string, section = PICO_ALL_SECTIONS, order: PicoOrder = 
 }
 
 export function SearchResults() { return library("Switch") }
+/** An invite arrives while the person looks: announced over Find, as on home. */
+export function InviteNotice() {
+  return <PicoLibrary clockLabel={fixtureModel.clockLabel}
+    library={picoLibraryViewFrom(fixtureModel.catalog, "", PICO_ALL_SECTIONS, "korri")} section={PICO_ALL_SECTIONS} order="korri"
+    notices={inviteNoticeViews([fixtureInvite])}
+    onBackspace={() => undefined} onOrder={() => undefined} onClear={() => undefined}
+    onOpen={() => undefined} onSection={() => undefined} onType={() => undefined} />
+}
 export function NoResults() { return library("No such cart") }
 // Loading and Error also convert to empty results: this page has no separate notice for them.
 export function Empty() { return library("", PICO_ALL_SECTIONS, "korri", { _tag: "Empty" }) }

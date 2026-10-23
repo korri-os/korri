@@ -239,3 +239,36 @@
 		display: none;
 	}
 }
+
+/* Paused on another device: the cart rests seated and nothing moves. Two
+ * bars stand where the meter was, at the meter's own height. */
+.pico-launch-stage[data-phase="paused"] .pico-launch-stage-cart {
+	animation: none;
+}
+
+.pico-launch-stage-pause {
+	display: flex;
+	justify-content: center;
+	gap: calc(var(--pico-px) * 3);
+	height: calc(var(--pico-px) * 10);
+}
+
+.pico-launch-stage-pause-bar {
+	width: calc(var(--pico-px) * 3);
+	background: var(--pico-ink-quiet);
+}
+
+/* The pause mark in the slot, for a game with no cart here: two bars as
+ * tall as the slot allows, up to a cart's height, standing on the floor. */
+.pico-launch-stage-held {
+	display: flex;
+	justify-content: center;
+	gap: min(calc(var(--pico-px) * 12), 8cqh);
+	height: min(calc(var(--pico-px) * 64), calc(100cqh - var(--pico-px) * 24));
+	margin-bottom: var(--pico-u);
+}
+
+.pico-launch-stage-held-bar {
+	width: min(calc(var(--pico-px) * 12), 8cqh);
+	background: var(--pico-ink-quiet);
+}

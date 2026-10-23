@@ -1,4 +1,7 @@
 import type {
+  SurfaceAction,
+  SurfaceGameplayOverlayPresentation,
+  SurfaceInvite,
   SurfaceGame,
   SurfaceIdentityManagement,
   SurfaceIdentityStatus,
@@ -6,8 +9,10 @@ import type {
   SurfaceStatus,
 } from "@contracts/surface/korri-surface"
 import { picoHomeViewFromCatalog } from "../pico-home-view"
+import { picoInvitesFrom } from "../pico-invite-view"
 import { picoSettingsViewFromModel } from "../pico-settings-view"
-import { fixtureModel } from "./fixture-host"
+import { fixtureModel, fixtureOverlay } from "./fixture-host"
+import { PICO_ART_BRAMBLE, PICO_ART_COMET, PICO_ART_SHORE } from "./sample-art"
 
 /** Fail at the fixture lookup, rather than silently previewing a different game. */
 export function fixtureGame(id: string): SurfaceGame {
@@ -87,3 +92,138 @@ export const backupText = "PREVIEW ONLY — not an identity backup"
 export function identityFixture(status: SurfaceIdentityStatus): SurfaceIdentityManagement {
   return { localBackupAvailable: true, retiredPublicKeys: [retiredPublicKey], status }
 }
+
+/* ---- Stream play ---- */
+
+/** The actions Korri publishes with an invite: the route this device can
+ * take, then a dismiss. The ids are this fixture's own; Pico hands them back
+ * unchanged. */
+export function fixtureInviteActions(inviteId: string): readonly SurfaceAction[] {
+  return [
+    { id: `${inviteId}:stream`, label: "Play on stream", enabled: true },
+    { id: `${inviteId}:dismiss`, label: "Dismiss", enabled: true },
+  ]
+}
+
+/** Simon is playing Turtles in Time on the Odin 2 Portal: the outcome the
+ * feature exists for. */
+export const fixtureInvite: SurfaceInvite = {
+  id: "invite-odin-turtles",
+  personName: "Simon",
+  gameTitle: "Turtles in Time",
+  deviceLabel: "Odin 2 Portal",
+  coverArtUrl: PICO_ART_SHORE,
+  actions: fixtureInviteActions("invite-odin-turtles"),
+}
+
+/** A second person, on a device with a person name of its own. */
+export const fixtureSecondInvite: SurfaceInvite = {
+  id: "invite-tv-comet",
+  personName: "Ana",
+  gameTitle: "Comet Courier",
+  deviceLabel: "Living room",
+  coverArtUrl: PICO_ART_COMET,
+  actions: fixtureInviteActions("invite-tv-comet"),
+}
+
+/** The same person on a third device. */
+export const fixtureThirdInvite: SurfaceInvite = {
+  id: "invite-desk-bramble",
+  personName: "Simon",
+  gameTitle: "Bramble Run",
+  deviceLabel: "Desk PC",
+  coverArtUrl: PICO_ART_BRAMBLE,
+  actions: fixtureInviteActions("invite-desk-bramble"),
+}
+
+/** The longest values the treaty allows a name to reach: a 64-character
+ * person name with no break in it, a long title, a long device label, and
+ * no cover art. */
+export const longInvite: SurfaceInvite = {
+  id: "invite-mini-zelda",
+  personName: "Maximilian-Alexander-Bartholomew-Featherstonehaugh-Wolfeschlegel",
+  gameTitle: "The Legend of Zelda: A Link to the Past & Four Swords",
+  deviceLabel: "Retroid Pocket Mini V2 in the upstairs office",
+  actions: fixtureInviteActions("invite-mini-zelda"),
+}
+
+/** Stream play is offered but cannot start now: Korri dims the route. */
+export const dimmedInvite: SurfaceInvite = {
+  ...fixtureInvite,
+  actions: [
+    { id: "invite-odin-turtles:stream", label: "Play on stream", description: "Odin 2 Portal is busy", enabled: false },
+    { id: "invite-odin-turtles:dismiss", label: "Dismiss", enabled: true },
+  ],
+}
+
+export const fixtureInvites: readonly SurfaceInvite[] = [fixtureInvite, fixtureSecondInvite, fixtureThirdInvite]
+
+/** More invites than PLAYING NOW or the notice stack can show at once. */
+export const manyInvites: readonly SurfaceInvite[] = [
+  ...fixtureInvites,
+  longInvite,
+  ...["Rgds", "Steam Deck"].map((deviceLabel, index): SurfaceInvite => ({
+    ...fixtureSecondInvite,
+    id: `invite-more-${index}`,
+    deviceLabel,
+    actions: fixtureInviteActions(`invite-more-${index}`),
+  })),
+]
+
+/** Invites as Pico draws them, for the parts below the binding. */
+export const inviteViews = (invites: readonly SurfaceInvite[]) => picoInvitesFrom({ invites })
+
+/** Invites as notices say them, newest first. */
+export const inviteNoticeViews = (invites: readonly SurfaceInvite[]) =>
+  [...invites].reverse().map(invite => ({
+    id: invite.id,
+    personName: invite.personName,
+    gameTitle: invite.gameTitle,
+    deviceLabel: invite.deviceLabel,
+  }))
+
+export const inviteModel = (invites: readonly SurfaceInvite[]): SurfaceModel => ({ ...fixtureModel, invites })
+
+/** Player 1's overlay while two other devices play on the stream. */
+export const streamPlayersOverlay: SurfaceGameplayOverlayPresentation = {
+  ...fixtureOverlay,
+  streamPlayers: ["Ana", "Living room"],
+}
+
+/** The overlay with the longest names: a person name with no break, and a
+ * device label standing in for a person with none. */
+export const longStreamPlayersOverlay: SurfaceGameplayOverlayPresentation = {
+  ...fixtureOverlay,
+  streamPlayers: [longInvite.personName, "Ana", "Retroid Pocket Mini V2 in the upstairs office"],
+}
+
+/** The host's words while this device connects to another's stream. */
+export const streamConnectingStatus = {
+  _tag: "Busy",
+  kicker: "Connecting to Odin 2 Portal…",
+  detail: "Turtles in Time",
+  actions: [{ id: "stream:cancel", label: "Cancel", enabled: true }],
+} satisfies SurfaceStatus
+
+export const streamFailedStatus = {
+  _tag: "Problem",
+  kicker: "Couldn't play on the stream",
+  reason: "Odin 2 Portal did not answer. Check that it is on and on this network.",
+  canRetry: true,
+  gameTitle: "Turtles in Time",
+} satisfies SurfaceStatus
+
+/** Player 1 left the game on the device that holds it. */
+export const streamPausedStatus = {
+  _tag: "Paused",
+  kicker: "Paused on Odin 2 Portal",
+  detail: "Turtles in Time goes on when Simon returns to it.",
+  actions: [{ id: "stream:leave", label: "Leave", enabled: true }],
+} satisfies SurfaceStatus
+
+export const streamEndedStatus = {
+  _tag: "Ended",
+  kicker: "Session ended",
+  reason: "Turtles in Time ended on Odin 2 Portal.",
+  gameTitle: "Turtles in Time",
+} satisfies SurfaceStatus

@@ -16,6 +16,9 @@ import { PicoStatusBar } from "../molecules/PicoStatusBar"
  *
  * `lead` is a control that stands on the floor row, before the hints. The
  * hints themselves are never controls.
+ *
+ * `over` floats above the whole frame, header included, and takes no room in
+ * it: something the screen announces while the person goes on using it.
  */
 export function PicoScreenShell({
   place = "korri",
@@ -24,6 +27,7 @@ export function PicoScreenShell({
   hints,
   readout,
   lead,
+  over,
   children,
 }: {
   /** The word before the label: where Back leads. */
@@ -33,6 +37,7 @@ export function PicoScreenShell({
   readonly hints: readonly PicoButtonBarHint[]
   readonly readout?: string
   readonly lead?: ReactNode
+  readonly over?: ReactNode
   readonly children: ReactNode
 }) {
   const bar = <PicoButtonBar hints={hints} readout={readout} />
@@ -48,6 +53,7 @@ export function PicoScreenShell({
           <div className="pico-screen-shell-hints">{bar}</div>
         </div>
       )}
+      {over}
     </div>
   )
 }

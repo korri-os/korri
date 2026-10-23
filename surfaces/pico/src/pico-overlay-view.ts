@@ -97,6 +97,8 @@ export interface PicoOverlayView {
   readonly controls: readonly PicoOverlayControlView[]
   readonly groups: readonly PicoOverlayGroupView[]
   readonly problem?: { readonly kicker: string; readonly reason: string; readonly canRetry: boolean }
+  /** Who plays on this session's stream, in Korri's words. Absent when nobody does. */
+  readonly streamPlayers?: readonly string[]
 }
 
 export function picoOverlayViewFrom(
@@ -114,6 +116,9 @@ export function picoOverlayViewFrom(
     ...(status._tag === "Problem"
       ? { problem: { kicker: status.kicker, reason: status.reason, canRetry: status.canRetry } }
       : {}),
+    ...(presentation.streamPlayers === undefined || presentation.streamPlayers.length === 0
+      ? {}
+      : { streamPlayers: presentation.streamPlayers }),
   }
 }
 

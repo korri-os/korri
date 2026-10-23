@@ -132,6 +132,17 @@ export const onboardingModel: SurfaceModel = {
   onboarding: { controllers: fixtureControllers },
 }
 
+/** A device whose signer can sign for its owner: Korri lets setup type the
+ * person name (setting `person-name`, text, at most 64), in the shape the
+ * device name has. It has no name yet. */
+export const personNameModel: SurfaceModel = {
+  ...onboardingModel,
+  settings: [
+    ...freshSettings,
+    { title: "You", items: [{ id: "person-name", label: "Your name", interaction: { kind: "text", maxLength: 64 } }] },
+  ],
+}
+
 /** Korri's Starter pack actions. The ids are this fixture's own: Pico runs
  * whichever id Korri publishes, and shows Korri's label for neither. */
 export const fixtureStarterPackInstall: SurfaceAction = { id: "starter-pack-install", label: "Install", enabled: true }

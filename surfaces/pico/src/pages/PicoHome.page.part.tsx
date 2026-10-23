@@ -1,7 +1,21 @@
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { type ComponentProps, useState } from "react"
 import { createFixtureHost, fixtureModel } from "../fixtures/fixture-host"
-import { fixtureShelfGame, noArtworkGame } from "../fixtures/named-states"
+import {
+  fixtureInvite,
+  fixtureInvites,
+  fixtureShelfGame,
+  inviteModel,
+  inviteNoticeViews,
+  longInvite,
+  manyInvites,
+  noArtworkGame,
+  streamConnectingStatus,
+  streamEndedStatus,
+  streamFailedStatus,
+  streamPausedStatus,
+} from "../fixtures/named-states"
+import { picoInvitesFrom } from "../pico-invite-view"
 import { picoScreenViewFromModel } from "../pico-screen-view"
 import { PicoHome, type PicoHomeMenu, type PicoHomeMode } from "./PicoHome"
 
@@ -40,11 +54,13 @@ function home(
   mode: PicoHomeMode = "shelf",
   placing?: ReturnType<typeof fixtureShelfGame>,
   menu: PicoHomeMenu = closedMenu,
+  notices: ComponentProps<typeof PicoHome>["notices"] = [],
 ) {
   const host = createFixtureHost()
   return <Home clockLabel={model.clockLabel} menu={menu} mode={mode} placing={placing}
     onOpenGame={() => undefined} onChooseLocation={id => host.launchGame("tetris", id)}
-    onRetry={host.retry} onDismiss={host.dismiss} view={picoScreenViewFromModel(model)} />
+    onRetry={host.retry} onDismiss={host.dismiss} view={picoScreenViewFromModel(model)}
+    invites={picoInvitesFrom(model)} onInviteAction={host.runAction} notices={notices} />
 }
 
 export function Loading() { return home({ ...fixtureModel, catalog: { _tag: "Loading" } }) }
@@ -182,6 +198,56 @@ export function RetryableProblem() {
 }
 export function Problem() {
   return home({ ...fixtureModel, status: { _tag: "Problem", kicker: "COULD NOT START", reason: "No installed runner can play this game.", canRetry: false, gameTitle: "Tetris" } })
+}
+
+/* ---- Stream play ---- */
+
+/** An invite arrives on the idle shelf: its notice in the corner, and its
+ * row under PLAYING NOW. */
+export function InviteNotice() {
+  return home(inviteModel([fixtureInvite]), "shelf", undefined, closedMenu, inviteNoticeViews([fixtureInvite]))
+}
+/** Three arrive together: one notice each, newest on top. */
+export function InviteNotices() {
+  return home(inviteModel(fixtureInvites), "shelf", undefined, closedMenu, inviteNoticeViews(fixtureInvites))
+}
+/** After the notice: PLAYING NOW over the shelf, one game. */
+export function PlayingNowOne() {
+  return home(inviteModel([fixtureInvite]))
+}
+export function PlayingNowThree() {
+  return home(inviteModel(fixtureInvites))
+}
+/** More than its share holds: the rows scroll above the shelf. */
+/** The longest names, and a game with no cover art. */
+export function PlayingNowLongNames() {
+  return home(inviteModel([fixtureInvite, longInvite]), "shelf", undefined, closedMenu, inviteNoticeViews([longInvite]))
+}
+export function PlayingNowMany() {
+  return home(inviteModel(manyInvites))
+}
+/** Nothing in this device's library, and a game to play on another's stream. */
+export function PlayingNowEmptyLibrary() {
+  return home({ ...inviteModel([fixtureInvite]), catalog: { _tag: "Empty" } })
+}
+export function PlayingNowGrid() {
+  return home(inviteModel(fixtureInvites), "grid")
+}
+export function PlayingNowHero() {
+  return home(inviteModel([fixtureInvite]), "hero")
+}
+/** Play on stream pressed: the host connects, with its Cancel. */
+export function StreamConnecting() {
+  return home({ ...fixtureModel, status: streamConnectingStatus })
+}
+export function StreamFailed() {
+  return home({ ...fixtureModel, status: streamFailedStatus })
+}
+export function StreamPaused() {
+  return home({ ...fixtureModel, status: streamPausedStatus })
+}
+export function StreamEnded() {
+  return home({ ...fixtureModel, status: streamEndedStatus })
 }
 
 export default function PicoHomePart() {
