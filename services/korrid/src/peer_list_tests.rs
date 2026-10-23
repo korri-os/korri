@@ -375,14 +375,36 @@ async fn peer_list_encrypted_owner_only_and_local_unix_control() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
+// Keep the port exclusively bound without listening. Linux refuses connects,
+// and another test cannot claim it between fixture setup and the request.
+fn held_refused_peer_socket() -> tokio::net::TcpSocket {
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.set_reuseaddr(false).unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    socket
+}
+
 #[tokio::test]
 async fn peer_list_unreachable_sentence_requires_no_answer_from_any_method() {
     let f = PeerListFixture::new();
     f.roster();
     f.endpoint(0, "Home PC");
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    let refused = held_refused_peer_socket();
+    let address = refused.local_addr().unwrap();
+    assert_eq!(
+        tokio::net::TcpListener::bind(address)
+            .await
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::AddrInUse
+    );
+    assert_eq!(
+        tokio::net::TcpStream::connect(address)
+            .await
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::ConnectionRefused
+    );
     let key = f.peers[0].public_key().unwrap();
     let client = upstream_native::NativeClient::new_secure(
         format!("http://{address}"),
@@ -390,10 +412,22 @@ async fn peer_list_unreachable_sentence_requires_no_answer_from_any_method() {
         f.resources.credentials.clone(),
     )
     .with_directory(f.resources.directory.clone());
-    assert!(matches!(
-        client.catalog_snapshot().await,
-        Err(upstreams::UpstreamError::Unreachable(_))
-    ));
+    // Check both a refused dial and an already-expired aggregate deadline.
+    // Neither path received headers, so neither may become a wire failure.
+    for timeout in [
+        upstream_native::NATIVE_RPC_TIMEOUT,
+        std::time::Duration::ZERO,
+    ] {
+        let result = client
+            .clone()
+            .with_timeout(timeout)
+            .catalog_snapshot()
+            .await;
+        assert!(
+            matches!(&result, Err(upstreams::UpstreamError::Unreachable(_))),
+            "timeout={timeout:?}; native result={result:?}"
+        );
+    }
     let state = f
         .resources
         .directory
@@ -499,9 +533,8 @@ async fn peer_list_uses_sanitized_native_failure_and_clears_error_on_recovery() 
     .with_directory(f.resources.directory.clone());
     assert!(client.catalog_snapshot().await.is_err());
     // A later transport failure must not hide the earlier invalid reply.
-    let dead = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let dead = held_refused_peer_socket();
     let dead_address = dead.local_addr().unwrap();
-    drop(dead);
     assert!(client
         .clone()
         .with_candidates(vec![
