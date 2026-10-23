@@ -129,7 +129,7 @@ pub fn snapshot_for_person(
                         }),
                         serde_json::to_value(value).unwrap(),
                         LaunchSource::PluginDefault {
-                            plugin_id: declaration.id.clone(),
+                            plugin_id: package.id.clone(),
                         },
                     );
                 }
@@ -192,7 +192,7 @@ pub fn snapshot_for_person(
             })();
             if selected.as_deref() == Some(&id) {
                 let source = LaunchSource::PluginDefault {
-                    plugin_id: id.clone(),
+                    plugin_id: package.id.clone(),
                 };
                 if let Ok(description) = &description {
                     for (key, value) in &description.defaults {

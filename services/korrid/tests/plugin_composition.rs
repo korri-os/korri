@@ -730,7 +730,7 @@ fn snapshot_lists_installed_modifiers_without_authored_values_and_validates_opti
     assert!(snapshot.modifiers[1].revision.is_none());
     assert!(matches!(
         snapshot.resolved.values["modifiers.@test:described/main.settings.width"].source,
-        LaunchSource::PluginDefault { .. }
+        LaunchSource::PluginDefault {ref plugin_id} if plugin_id=="@test:described"
     ));
     assert!(snapshot
         .places

@@ -308,7 +308,7 @@ fn snapshot_dry_run_and_schema_defaults_do_not_change_launch_input_and_set_valid
     assert_eq!(snapshot.resolved.values["settings.scale"].value, 2);
     assert!(matches!(
         snapshot.resolved.values["settings.scale"].source,
-        LaunchSource::PluginDefault { .. }
+        LaunchSource::PluginDefault {ref plugin_id} if plugin_id=="@korri:mgba"
     ));
     assert_eq!(
         snapshot.resolved.values["env.REMOVE"].value,
