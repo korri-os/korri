@@ -3,6 +3,7 @@ pub(crate) mod device;
 pub(crate) mod person_name;
 pub(crate) mod registration;
 pub(crate) mod rights;
+mod viewer_wiring;
 use crate::{ActiveSession, RpcFailure};
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;

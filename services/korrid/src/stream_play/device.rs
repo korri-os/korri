@@ -1,6 +1,8 @@
 //! The device's local portal can select a peer without giving peer calls a
 //! second federation hop. Peer catalog and status always describe this holder.
+use super::viewer_wiring::{production_viewer, CertificateProvision, LocalSeats};
 use crate::authorization::AuthorizationContext;
+use crate::linux_viewer::LinuxViewerError;
 use crate::*;
 
 /// Holder preparation and local peer selection share one admission fence.
@@ -36,9 +38,22 @@ pub(crate) fn registry(
         }
     }
     .with_federation(resources.directory.clone());
-    // Production viewer composition is completed with the occupied-local-seat
-    // read. Tests retain the registry's injected TestLinuxStreamViewer.
-    registry
+    let broker = registry.clone();
+    let provision: CertificateProvision = Arc::new(move |host_uuid, certificate| {
+        let broker = broker.clone();
+        Box::pin(async move {
+            broker
+                .moonlight_certificate_provision(&host_uuid, &certificate)
+                .await
+                .map_err(|error| LinuxViewerError::new(error.to_string()))
+        })
+    });
+    let input = host.clone();
+    let local_seats: LocalSeats = Arc::new(move || {
+        let input = input.clone();
+        Box::pin(async move { input.occupied_local_seats().map_err(LinuxViewerError::new) })
+    });
+    registry.with_linux_viewer(production_viewer(provision, local_seats))
 }
 
 pub(crate) fn spawn_watch(peers: upstreams::UpstreamRegistry) {
