@@ -206,10 +206,12 @@ describe("runner chooser", () => {
     const korrid = client()
     const chooser = createRunnerChooser(korrid, () => {})
     await chooser.open("wl4", "Wario Land 4", "inspect")
-    await korrid.setGameRunner({
-      scope: { _tag: "Game", id: "wl4" },
-      runnerId: "retroarch/mgba",
-      expectedRevision: "g1",
+    const before = await korrid.gameRoutes("wl4")
+    await korrid.setLaunch({
+      place: { layer: { _tag: "Game", id: "wl4" }, scope: { _tag: "Any" } },
+      path: { _tag: "Runner" },
+      value: "retroarch/mgba",
+      expectedRevision: before._tag === "Ok" ? before.payload.revisions.games : "",
     })
     await chooser.act("game:1")
     expect(chooser.getSnapshot()._tag).toBe("Conflict")
@@ -233,7 +235,7 @@ describe("runner chooser", () => {
     expect(result._tag === "Ok" && result.payload.systemRunners).toEqual({})
   })
 
-  it("LocalSessions can launch once but cannot save", async () => {
+  it("LocalSessions (kiosk) can save a runner choice and launch once", async () => {
     const korrid = createInMemoryKorridClient({
       gameRoutes: [routes],
       routePermission: "LocalSessions",
@@ -241,12 +243,11 @@ describe("runner chooser", () => {
     const chooser = createRunnerChooser(korrid, () => {})
     await chooser.open("wl4", "Wario Land 4", "inspect")
     await chooser.act("game:0")
-    expect(chooser.getSnapshot()._tag).toBe("Error")
-    await chooser.act("reload")
+    expect(chooser.getSnapshot()._tag).toBe("Ready")
+    const result = await korrid.gameRoutes("wl4")
+    expect(result._tag === "Ok" && result.payload.gameRunner).toBe("retroarch/mgba")
     await chooser.act("launch:0")
     expect(chooser.getSnapshot()._tag).toBe("Closed")
-    const result = await korrid.gameRoutes("wl4")
-    expect(result._tag === "Ok" && result.payload.gameRunner).toBe("missing/runner")
   })
 
   it("read-only can inspect but cannot launch or save", async () => {

@@ -2,17 +2,23 @@
  * Launch settings in the portal: Device settings' "Launch settings" group, and
  * one game's editor, opened from a game action and closed by its close action.
  *
- * Host-owned and DOM-free, like the runner chooser. Every write names the
- * revision of the snapshot it was made from; korrid refuses a stale one with
+ * Host-owned and DOM-free, like the runner chooser. Every write is one typed
+ * `app.launch-settings.set` naming a place, a path and the revision of the
+ * snapshot it was made from; korrid refuses a stale one with
  * SettingsConflict, and the editor then asks for a reload. Each read and
  * write has one generation, so a reply that arrives after a close, a newer
  * open or a newer write changes nothing.
+ *
+ * Add setting writes nothing: the chosen setting shows as a row of its place
+ * until the person gives it a value, or the editor closes.
+ *
+ * The last snapshot read for each game also says which profile its next
+ * launch uses, so a game's page can show it beside Play.
  */
-import {
-  LaunchSetting,
-  type LaunchSettingsSnapshot,
-  type LaunchSettingsWriteOutcome,
-  type RpcFailure,
+import type {
+  LaunchSnapshot,
+  LaunchSettingsWriteOutcome,
+  RpcFailure,
 } from "@contracts/generated/korrid"
 import type {
   SurfaceAction,
@@ -22,16 +28,14 @@ import type {
 } from "@contracts/surface/korri-surface"
 import type { KorridClient } from "../korrid/client"
 import {
+  activeProfileOf,
   deviceLaunchGroup,
   LAUNCH_ID,
-  launchLayersFrom,
-  launchNoteFrom,
-  type LaunchSettingKey,
-  launchValueFrom,
-  parseLaunchId,
+  type LaunchEditor,
+  launchEditorFrom,
+  type LaunchWrite,
   profileFromPick,
   revisionOf,
-  scopeForLayer,
 } from "./launch-settings-model"
 
 export const LAUNCH_SETTINGS_ACTION_ID = "launch-settings"
@@ -51,14 +55,8 @@ const close: SurfaceAction = { id: LAUNCH_ID.cancel, label: "Close", enabled: tr
 const reload: SurfaceAction = { id: LAUNCH_ID.reload, label: "Reload", enabled: true }
 const retry: SurfaceAction = { id: LAUNCH_ID.retry, label: "Retry", enabled: true }
 const chooseRunner: SurfaceAction = { id: LAUNCH_ID.runner, label: "Choose a runner", enabled: true }
-const WIRE: Record<LaunchSettingKey, LaunchSetting> = {
-  "cpu.min": LaunchSetting.CpuMin,
-  "cpu.max": LaunchSetting.CpuMax,
-  "gpu.min": LaunchSetting.GpuMin,
-  "gpu.max": LaunchSetting.GpuMax,
-  "cpu.governor": LaunchSetting.CpuGovernor,
-}
 const CONFLICT = "Launch settings changed elsewhere. Reload to see them before you change them."
+const INVALID = "That value isn't allowed here."
 
 export interface LaunchSettingsSnapshotState {
   readonly editor: SurfaceLaunchSettings
@@ -66,10 +64,13 @@ export interface LaunchSettingsSnapshotState {
   readonly deviceGroup?: SurfaceSettingGroup
   /** A launch write in progress or its problem; absent when there is none. */
   readonly status?: SurfaceSettingsStatus
+  /** The profile each read game's next launch uses, by korrid game id. A
+   * game read with no profile picked maps to undefined. */
+  readonly activeProfiles: ReadonlyMap<string, string | undefined>
 }
 
 export function createLaunchSettings(korrid: KorridClient) {
-  let state: LaunchSettingsSnapshotState = { editor: { _tag: "Closed" } }
+  let state: LaunchSettingsSnapshotState = { editor: { _tag: "Closed" }, activeProfiles: new Map() }
   let disposed = false
   let generation = 0
   let deviceGeneration = 0
@@ -78,8 +79,14 @@ export function createLaunchSettings(korrid: KorridClient) {
   let gameTitle = ""
   /** Opens the runner chooser for this game, when its page offers one. */
   let openRunners: (() => void) | undefined
-  let snapshot: LaunchSettingsSnapshot | undefined
-  let deviceSnapshot: LaunchSettingsSnapshot | undefined
+  let snapshot: LaunchSnapshot | undefined
+  let editor: LaunchEditor | undefined
+  let deviceSnapshot: LaunchSnapshot | undefined
+  let deviceWrites: ReadonlyMap<string, LaunchWrite> = new Map()
+  /** Settings added with Add setting and not yet given a value, by place id. */
+  let pending = new Map<string, readonly string[]>()
+  /** Games whose profile is being read for their page, so it is read once. */
+  const learning = new Set<string>()
   /** What Retry runs again: the failed read or write. */
   let again: (() => void) | undefined
   const listeners = new Set<() => void>()
@@ -88,20 +95,34 @@ export function createLaunchSettings(korrid: KorridClient) {
     state = { ...state, ...next }
     for (const listener of listeners) listener()
   }
-  const content = () => {
-    const note = snapshot === undefined ? undefined : launchNoteFrom(snapshot)
-    return {
-      gameTitle,
-      layers: snapshot === undefined ? [] : launchLayersFrom(snapshot),
-      profiles: (snapshot?.profiles ?? []).map(profile => ({ id: profile.id, title: profile.title })),
-      ...(snapshot?.selectedProfile === undefined ? {} : { selectedProfileId: snapshot.selectedProfile }),
-      ...(note === undefined ? {} : { note }),
-    }
+  const remember = (id: string, record: LaunchSnapshot) => {
+    const active = activeProfileOf(record)
+    if (state.activeProfiles.has(id) && state.activeProfiles.get(id) === active) return
+    const activeProfiles = new Map(state.activeProfiles)
+    activeProfiles.set(id, active)
+    publish({ activeProfiles })
   }
-  /** Choose a runner, when the layers wait on one and the game page offers it. */
+  const build = () => {
+    editor = snapshot === undefined ? undefined : launchEditorFrom(snapshot, gameId, pending)
+    // A setting once written is a place's own row: it is no longer pending.
+    const still = new Map<string, string[]>()
+    for (const { placeId, key } of editor?.pending.values() ?? []) still.set(placeId, [...still.get(placeId) ?? [], key])
+    pending = still
+  }
+  const content = () => ({
+    gameTitle,
+    places: editor?.places ?? [],
+    profiles: (snapshot?.profiles ?? []).map(profile => ({ id: profile.id, title: profile.title })),
+    ...(snapshot?.selectedProfile === undefined ? {} : { selectedProfileId: snapshot.selectedProfile }),
+    notes: editor?.notes ?? [],
+  })
+  /** Choose a runner, when the places wait on one and the game page offers it. */
   const runnerAction = (): SurfaceAction[] =>
     snapshot?.routeLayers._tag === "NeedsRunnerChoice" && openRunners !== undefined ? [chooseRunner] : []
-  const ready = () => publish({ editor: { _tag: "Ready", ...content(), actions: [...runnerAction(), reload, close] } })
+  const ready = () => {
+    build()
+    publish({ editor: { _tag: "Ready", ...content(), actions: [...runnerAction(), reload, close] } })
+  }
   const failed = (failure: RpcFailure, operation: () => void) => {
     again = operation
     publish({
@@ -119,33 +140,39 @@ export function createLaunchSettings(korrid: KorridClient) {
     if (result._tag === "Err") {
       // The group stays, saying what went wrong, with Retry (the contract's Error).
       deviceSnapshot = undefined
+      deviceWrites = new Map()
       publish({ deviceGroup: deviceErrorGroup(result.payload.message) })
       return
     }
     deviceSnapshot = result.payload
-    publish({ deviceGroup: deviceLaunchGroup(result.payload) })
+    const device = deviceLaunchGroup(result.payload)
+    deviceWrites = device.writes
+    publish({ deviceGroup: device.group })
   }
 
   const read = async (keep: boolean) => {
-    if (gameId === undefined) return
+    const id = gameId
+    if (id === undefined) return
     const operation = ++generation
     if (!keep) {
       snapshot = undefined
+      editor = undefined
       publish({ editor: { _tag: "Loading", ...content(), actions: [close] } })
     }
-    const result = await korrid.launchSettingsSnapshot(gameId)
+    const result = await korrid.launchSettingsSnapshot(id)
     if (!open(operation)) return
     if (result._tag === "Err") {
       failed(result.payload, () => void read(false))
       return
     }
     snapshot = result.payload
+    remember(id, result.payload)
     again = undefined
     ready()
   }
 
   /** One write from the editor. Saving shows on the row; the snapshot is read again after. */
-  const write = (settingId: string, send: (record: LaunchSettingsSnapshot) => Promise<LaunchSettingsWriteOutcome> | undefined) => {
+  const write = (settingId: string, send: (record: LaunchSnapshot) => Promise<LaunchSettingsWriteOutcome> | undefined) => {
     const record = snapshot
     if (record === undefined || busy || state.editor._tag !== "Ready") return
     const request = send(record)
@@ -169,23 +196,34 @@ export function createLaunchSettings(korrid: KorridClient) {
     })
   }
 
-  const changeDevice = (settingId: string, setting: LaunchSettingKey, choice: string) => {
+  /** A typed `set` for one row's choice. Refused text shows on the row. */
+  const setFrom = (settingId: string, target: LaunchWrite, text: string, record: LaunchSnapshot) => {
+    const encoded = target.encode(text)
+    if (encoded === null) {
+      publish({ status: { _tag: "Problem", settingId, message: INVALID } })
+      return undefined
+    }
+    return korrid.setLaunch({
+      place: target.place,
+      path: target.path,
+      ...(encoded.value === undefined ? {} : { value: encoded.value }),
+      expectedRevision: record.revisions[revisionOf(target.place.layer)],
+    })
+  }
+
+  const changeDevice = (settingId: string, text: string) => {
     const record = deviceSnapshot
+    const target = deviceWrites.get(settingId)
     if (busy) return
-    if (record === undefined) {
+    if (record === undefined || target === undefined) {
       publish({ status: { _tag: "Problem", settingId, message: "Launch settings are not available." } })
       return
     }
-    const value = launchValueFrom(setting, choice)
-    if (typeof value === "number" && Number.isNaN(value)) return
+    const request = setFrom(settingId, target, text, record)
+    if (request === undefined) return
     busy = true
     publish({ status: { _tag: "Saving", settingId } })
-    void korrid.setLaunchSetting({
-      scope: { _tag: "Device" },
-      setting: WIRE[setting],
-      ...(value === undefined ? {} : { value }),
-      expectedRevision: record.revisions.device,
-    }).then(result => {
+    void request.then(result => {
       busy = false
       if (disposed) return
       if (result._tag === "Err") {
@@ -206,59 +244,73 @@ export function createLaunchSettings(korrid: KorridClient) {
     })
   }
 
+  /** Add setting: show the chosen setting on its place, with nothing written. */
+  const add = (placeId: string, key: string) => {
+    if (state.editor._tag !== "Ready") return
+    const keys = pending.get(placeId) ?? []
+    if (key === "" || keys.includes(key)) return
+    pending = new Map(pending).set(placeId, [...keys, key])
+    ready()
+  }
+
+  /** A pending setting set back to Inherit goes, with nothing written. */
+  const withdraw = (settingId: string): boolean => {
+    const added = editor?.pending.get(settingId)
+    if (added === undefined) return false
+    pending = new Map(pending).set(added.placeId, (pending.get(added.placeId) ?? []).filter(key => key !== added.key))
+    ready()
+    return true
+  }
+
   /** Changes to a launch row. False: not a launch row, the caller routes it. */
   const change = (settingId: string, value: string): boolean => {
-    const parts = parseLaunchId(settingId)
-    if (parts === undefined) return false
+    if (settingId.startsWith("launch-device:")) {
+      changeDevice(settingId, value)
+      return true
+    }
     const game = gameId
-    switch (parts._tag) {
-      case "Device":
-        changeDevice(settingId, parts.setting, value)
-        return true
-      case "Set":
-        write(settingId, record => {
-          const scope = scopeForLayer(record, game, parts.layerId)
-          const sent = launchValueFrom(parts.setting, value)
-          if (scope === undefined || (typeof sent === "number" && Number.isNaN(sent))) return undefined
-          return korrid.setLaunchSetting({
-            scope,
-            setting: WIRE[parts.setting],
-            ...(sent === undefined ? {} : { value: sent }),
-            expectedRevision: record.revisions[revisionOf(scope)],
-          })
-        })
-        return true
-      case "Pick":
-        write(settingId, record => {
-          const profileId = profileFromPick(value)
-          // Only a profile this read published: an id is never matched by title.
-          if (game === undefined || (profileId !== null && !record.profiles.some(profile => profile.id === profileId))) return undefined
-          return korrid.selectLaunchProfile({
-            gameId: game,
-            ...(profileId === null ? {} : { profileId }),
-            expectedRevision: record.revisions.games,
-          })
-        })
-        return true
-      case "Create":
-      case "Rename": {
-        const title = value.trim()
-        if (title === "") {
-          // A profile needs a name; korrid would refuse it too.
-          publish({ status: { _tag: "Problem", settingId, message: "A profile needs a name." } })
-          return true
-        }
-        write(settingId, record => game === undefined ? undefined : korrid.saveLaunchProfile({
+    const target = editor?.writes.get(settingId)
+    if (target !== undefined) {
+      const encoded = target.encode(value)
+      if (encoded !== null && encoded.value === undefined && withdraw(settingId)) return true
+      write(settingId, record => setFrom(settingId, target, value, record))
+      return true
+    }
+    const adding = editor?.adds.get(settingId)
+    if (adding !== undefined) {
+      add(adding.placeId, value)
+      return true
+    }
+    if (settingId === LAUNCH_ID.pick) {
+      write(settingId, record => {
+        const profileId = profileFromPick(value)
+        // Only a profile this read published: an id is never matched by title.
+        if (game === undefined || (profileId !== null && !record.profiles.some(profile => profile.id === profileId))) return undefined
+        return korrid.selectLaunchProfile({
           gameId: game,
-          ...(parts._tag === "Rename" ? { profileId: parts.profileId } : {}),
-          title,
+          ...(profileId === null ? {} : { profileId }),
           expectedRevision: record.revisions.games,
-        }))
+        })
+      })
+      return true
+    }
+    const renaming = settingId.startsWith("launch:profile:rename:") ? settingId.slice("launch:profile:rename:".length) : undefined
+    if (settingId === LAUNCH_ID.create || renaming !== undefined) {
+      const title = value.trim()
+      if (title === "") {
+        // A profile needs a name; korrid would refuse it too.
+        publish({ status: { _tag: "Problem", settingId, message: "A profile needs a name." } })
         return true
       }
-      case "Remove":
-        return false
+      write(settingId, record => game === undefined ? undefined : korrid.saveLaunchProfile({
+        gameId: game,
+        ...(renaming === undefined ? {} : { profileId: renaming }),
+        title,
+        expectedRevision: record.revisions.games,
+      }))
+      return true
     }
+    return settingId.startsWith("launch:")
   }
 
   /** Editor actions and profile deletion. False: not a launch action. */
@@ -289,11 +341,11 @@ export function createLaunchSettings(korrid: KorridClient) {
       }
       return true
     }
-    const parts = parseLaunchId(actionId)
-    if (parts?._tag !== "Remove") return false
+    if (!actionId.startsWith("launch:profile:remove:")) return false
+    const profileId = actionId.slice("launch:profile:remove:".length)
     write(actionId, record => {
-      if (gameId === undefined || !record.profiles.some(profile => profile.id === parts.profileId)) return undefined
-      return korrid.removeLaunchProfile({ gameId, profileId: parts.profileId, expectedRevision: record.revisions.games })
+      if (gameId === undefined || !record.profiles.some(profile => profile.id === profileId)) return undefined
+      return korrid.removeLaunchProfile({ gameId, profileId, expectedRevision: record.revisions.games })
     })
     return true
   }
@@ -303,8 +355,21 @@ export function createLaunchSettings(korrid: KorridClient) {
     gameId = undefined
     openRunners = undefined
     snapshot = undefined
+    editor = undefined
+    pending = new Map()
     again = undefined
     publish({ editor: { _tag: "Closed" }, ...(busy ? {} : { status: undefined }) })
+  }
+
+  /** Read one game's profile pick for its page, once, unless the editor holds it. */
+  const learn = (id: string) => {
+    if (disposed || learning.has(id) || state.activeProfiles.has(id)) return
+    learning.add(id)
+    void korrid.launchSettingsSnapshot(id).then(result => {
+      learning.delete(id)
+      if (disposed || result._tag === "Err") return
+      remember(id, result.payload)
+    })
   }
 
   return {
@@ -321,9 +386,11 @@ export function createLaunchSettings(korrid: KorridClient) {
       gameId = id
       gameTitle = title
       openRunners = chooseRunners
+      pending = new Map()
       void read(false)
     },
     refreshDevice,
+    learn,
     change,
     act,
     cancel,

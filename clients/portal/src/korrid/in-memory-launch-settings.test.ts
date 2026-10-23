@@ -1,82 +1,90 @@
-/** The in-memory brain answers as korrid does (services/korrid/src/launch_settings). */
+/** The in-memory brain answers as korrid does (ADR 0028, services/korrid/src/launch_settings). */
 import { describe, expect, it } from "bun:test"
-import { LaunchSetting, type LaunchSettingsScope } from "@contracts/generated/korrid"
-import { createInMemoryLaunchSettings } from "./in-memory-launch-settings"
+import type { LaunchPlace } from "@contracts/generated/korrid"
+import { createInMemoryLaunchSettings, type InMemoryLaunchSettingsConfig } from "./in-memory-launch-settings"
 
-const games = { wario: { systemId: "gba", runner: { id: "retroarch/mgba", title: "mGBA" } } }
-const game: LaunchSettingsScope = { _tag: "Game", id: "wario" }
+const runners: InMemoryLaunchSettingsConfig["runners"] = {
+  "retroarch/mgba": { title: "mGBA", family: "retroarch", schema: { properties: { frameskip: { type: "integer", minimum: 0, maximum: 10, default: 0 } } } },
+  "retroarch/gpsp": { title: "gpSP", family: "retroarch", schema: { properties: { bios: { type: "boolean" } } } },
+}
+const games: InMemoryLaunchSettingsConfig["games"] = { wario: { systemId: "gba", runners: ["retroarch/mgba", "retroarch/gpsp"] } }
+const place = (key: string): LaunchPlace => {
+  const at = key.indexOf("/")
+  const layer = key.slice(0, at)
+  const scope = key.slice(at + 1)
+  return {
+    layer: layer === "device" ? { _tag: "Device" } : layer.startsWith("system:") ? { _tag: "System", id: layer.slice(7) } : { _tag: "Game", id: layer.slice(5) },
+    scope: scope === "any" ? { _tag: "Any" } : scope.startsWith("family:") ? { _tag: "Family", id: scope.slice(7) } : { _tag: "Runner", id: scope.slice(7) },
+  }
+}
 
-async function resolved(brain: ReturnType<typeof createInMemoryLaunchSettings>) {
-  const snapshot = await brain.launchSettingsSnapshot("wario")
-  if (snapshot._tag === "Err") throw new Error(snapshot.payload.message)
-  return snapshot.payload.resolved
+async function snapshot(config: InMemoryLaunchSettingsConfig) {
+  const brain = createInMemoryLaunchSettings({ games, runners, ...config })
+  const result = await brain.methods.launchSettingsSnapshot("wario")
+  if (result._tag === "Err") throw new Error(result.payload.message)
+  return result.payload
 }
 
 describe("in-memory launch settings, korrid's rules", () => {
-  it("across layers the more specific minimum wins and the maximum moves to meet it", async () => {
-    const brain = createInMemoryLaunchSettings({ games, layers: { device: { cpu: { max: 40 }, gpu: {} }, "game:wario": { cpu: { min: 80 }, gpu: {} } } })
-    expect((await resolved(brain)).cpu).toEqual({
-      min: { value: 80, source: game, deviceDefault: false, adjusted: false },
-      max: { value: 80, source: { _tag: "Device" }, deviceDefault: false, adjusted: true },
+  it("merges in ADR 0028's order: device runner beats system any, game any beats device runner", async () => {
+    const result = await snapshot({
+      bodies: {
+        "game:wario/any": { runner: "retroarch/mgba", gpu: { max: 40 } },
+        "system:gba/any": { cpu: { max: 90 }, gpu: { max: 90 } },
+        "device/runner:retroarch/mgba": { cpu: { max: 70 }, gpu: { max: 70 } },
+      },
     })
+    expect(result.resolved.values["cpu.max"]).toEqual({ path: { _tag: "Editable", payload: { _tag: "CpuMax" } }, value: 70, source: { _tag: "Place", payload: place("device/runner:retroarch/mgba") }, adjusted: false })
+    expect(result.resolved.values["gpu.max"]).toEqual({ path: { _tag: "Editable", payload: { _tag: "GpuMax" } }, value: 40, source: { _tag: "Place", payload: place("game:wario/any") }, adjusted: false })
   })
 
-  it("across layers the more specific maximum wins and the minimum moves to meet it", async () => {
-    const brain = createInMemoryLaunchSettings({ games, layers: { device: { cpu: {}, gpu: { min: 70 } }, "game:wario": { cpu: {}, gpu: { max: 30 } } } })
-    expect((await resolved(brain)).gpu).toEqual({
-      min: { value: 30, source: { _tag: "Device" }, deviceDefault: false, adjusted: true },
-      max: { value: 30, source: game, deviceDefault: false, adjusted: false },
-    })
+  it("chooses the runner first; a more specific place naming a missing runner adds a notice", async () => {
+    const result = await snapshot({ bodies: { "system:gba/any": { runner: "retroarch/gpsp" }, "game:wario/any": { runner: "retroarch/vba" } } })
+    expect(result.runners.find(runner => runner.selected)?.id).toBe("retroarch/gpsp")
+    expect(result.notices).toEqual([{ _tag: "RunnerUnavailable", payload: { runnerId: "retroarch/vba", place: place("game:wario/any") } }])
   })
 
-  it("refuses a minimum above the same layer's maximum, naming the layer and both values", async () => {
-    const brain = createInMemoryLaunchSettings({ games, layers: { "game:wario": { cpu: { max: 10 }, gpu: {} } } })
-    const snapshot = await brain.launchSettingsSnapshot("wario")
-    if (snapshot._tag === "Err") throw new Error("read")
-    const result = await brain.setLaunchSetting({ scope: game, setting: LaunchSetting.CpuMin, value: 80, expectedRevision: snapshot.payload.revisions.games })
-    expect(result._tag).toBe("Err")
-    if (result._tag === "Err") {
-      expect(result.payload.code).toBe("InvalidSetting")
-      expect(result.payload.message).toContain("Game")
-      expect(result.payload.message).toContain("80")
-      expect(result.payload.message).toContain("10")
-    }
-    expect((await resolved(brain)).cpu.min.value).toBe(0)
+  it("asks for a choice when no place names a runner and two can play", async () => {
+    const result = await snapshot({})
+    expect(result.runners.some(runner => runner.selected)).toBe(false)
+    expect(result.routeLayers).toEqual({ _tag: "NeedsRunnerChoice" })
   })
 
-  it("takes whole percents only: minimum 0 to 100, maximum 1 to 100", async () => {
-    const brain = createInMemoryLaunchSettings({ games })
-    const attempt = async (setting: LaunchSetting, value: number) => {
-      const snapshot = await brain.launchSettingsSnapshot("wario")
-      if (snapshot._tag === "Err") throw new Error("read")
-      return (await brain.setLaunchSetting({ scope: game, setting, value, expectedRevision: snapshot.payload.revisions.games }))._tag
-    }
-    expect(await attempt(LaunchSetting.CpuMin, 45.5)).toBe("Err")
-    expect(await attempt(LaunchSetting.CpuMax, 0)).toBe("Err")
-    expect(await attempt(LaunchSetting.CpuMax, 101)).toBe("Err")
-    expect(await attempt(LaunchSetting.GpuMin, -1)).toBe("Err")
-    expect(await attempt(LaunchSetting.CpuMin, 0)).toBe("Ok")
-    expect(await attempt(LaunchSetting.CpuMax, 1)).toBe("Ok")
-    expect(await attempt(LaunchSetting.GpuMin, 100)).toBe("Ok")
+  it("resolves runner settings for the selected runner only, over the plugin's default", async () => {
+    const result = await snapshot({ bodies: { "game:wario/any": { runner: "retroarch/mgba" }, "device/runner:retroarch/gpsp": { settings: { bios: true } } } })
+    expect(result.resolved.values["settings.frameskip"]).toEqual({ path: { _tag: "Editable", payload: { _tag: "Setting", payload: { key: "frameskip" } } }, value: 0, source: { _tag: "PluginDefault", payload: { pluginId: "retroarch/mgba" } }, adjusted: false })
+    expect(result.resolved.values["settings.bios"]).toBeUndefined()
   })
 
-  it("refuses a profile minimum above its own maximum too", async () => {
-    const brain = createInMemoryLaunchSettings({ games, profiles: { wario: [{ id: "p1", title: "Quiet", cpu: { min: 60 }, gpu: {} }] } })
-    const snapshot = await brain.launchSettingsSnapshot("wario")
-    if (snapshot._tag === "Err") throw new Error("read")
-    const result = await brain.setLaunchSetting({
-      scope: { _tag: "Profile", id: { gameId: "wario", profileId: "p1" } },
-      setting: LaunchSetting.CpuMax, value: 20, expectedRevision: snapshot.payload.revisions.games,
-    })
-    expect(result._tag === "Err" && result.payload.message).toContain("Quiet")
+  it("across places the more specific minimum wins and the maximum moves to meet it", async () => {
+    const result = await snapshot({ bodies: { "device/any": { cpu: { max: 40 } }, "game:wario/any": { runner: "retroarch/mgba", cpu: { min: 80 } } } })
+    expect(result.resolved.values["cpu.min"]?.value).toBe(80)
+    expect(result.resolved.values["cpu.max"]).toMatchObject({ value: 80, adjusted: true })
   })
 
-  it("marks a shipped default apart from an authored Device value", async () => {
-    const brain = createInMemoryLaunchSettings({ games, layers: { device: { cpu: { max: 61 }, gpu: {} } } })
-    const cpu = (await resolved(brain)).cpu
-    expect(cpu.min).toEqual({ value: 0, source: { _tag: "Device" }, deviceDefault: true, adjusted: false })
-    expect(cpu.max).toEqual({ value: 61, source: { _tag: "Device" }, deviceDefault: false, adjusted: false })
-    const snapshot = await brain.launchSettingsSnapshot("wario")
-    expect(snapshot._tag === "Ok" && snapshot.payload.layers[0]).toMatchObject({ cpu: { max: 61 }, gpu: {} })
+  it("refuses a floor above the ceiling on one place, a governor off the device, and a setting outside the schema", async () => {
+    const brain = createInMemoryLaunchSettings({ games, runners, bodies: { "game:wario/any": { cpu: { max: 40 } } } })
+    const games_ = "games-1"
+    expect((await brain.methods.setLaunch({ place: place("game:wario/any"), path: { _tag: "CpuMin" }, value: 60, expectedRevision: games_ }))._tag).toBe("Err")
+    expect((await brain.methods.setLaunch({ place: place("game:wario/any"), path: { _tag: "CpuGovernor" }, value: "performance", expectedRevision: games_ }))._tag).toBe("Err")
+    expect((await brain.methods.setLaunch({ place: place("game:wario/runner:retroarch/mgba"), path: { _tag: "Setting", payload: { key: "frameskip" } }, value: 11, expectedRevision: games_ }))._tag).toBe("Err")
+    expect((await brain.methods.setLaunch({ place: place("game:wario/any"), path: { _tag: "Setting", payload: { key: "frameskip" } }, value: 1, expectedRevision: games_ }))._tag).toBe("Err")
+    expect((await brain.methods.setLaunch({ place: place("game:wario/family:retroarch"), path: { _tag: "Setting", payload: { key: "bios" } }, value: true, expectedRevision: games_ }))._tag).toBe("Ok")
+  })
+
+  it("refuses a write made from a stale revision", async () => {
+    const brain = createInMemoryLaunchSettings({ games, runners })
+    const result = await brain.methods.setLaunch({ place: place("device/any"), path: { _tag: "CpuMax" }, value: 50, expectedRevision: "device-0" })
+    expect(result._tag === "Err" && result.payload.code).toBe("SettingsConflict")
+  })
+
+  it("lists a place for each layer and every installed runner, with editable kinds", async () => {
+    const result = await snapshot({ bodies: { "game:wario/any": { runner: "retroarch/mgba" } } })
+    expect(result.places.filter(entry => entry.place.layer._tag === "Game").map(entry => [entry.title, entry.editableKinds])).toEqual([
+      ["Game", ["runner", "cpu", "gpu", "modifiers"]],
+      ["Game for family retroarch", ["cpu", "gpu", "modifiers", "settings"]],
+      ["Game for mGBA", ["cpu", "gpu", "modifiers", "settings"]],
+      ["Game for gpSP", ["cpu", "gpu", "modifiers", "settings"]],
+    ])
   })
 })

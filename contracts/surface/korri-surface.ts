@@ -86,6 +86,11 @@ export interface SurfaceGame {
   /** True when confirming continues an existing session rather than starting. */
   readonly resumable?: boolean
   /**
+   * The title of the launch profile the next launch of this game uses, when
+   * Korri has read it and one is picked. Surfaces show it beside Play.
+   */
+  readonly activeProfile?: string
+  /**
    * Newest recorded session end, as UTC epoch milliseconds. Absent when Korri
    * has never recorded a session for this game. Surfaces format it; Korri
    * never ships a label.
@@ -156,6 +161,21 @@ export type SurfaceSettingInteraction =
       readonly selected: string
     }
   | {
+      /**
+       * A number typed or stepped. `value` is the number set on this row;
+       * absent when the row has none of its own. The surface sends the new
+       * number as decimal text. When `clearable`, `changeSetting(id, "")`
+       * clears the row's own value, so the value in force comes from
+       * elsewhere again.
+       */
+      readonly kind: "number"
+      readonly value?: number
+      readonly min?: number
+      readonly max?: number
+      readonly step?: number
+      readonly clearable?: boolean
+    }
+  | {
       readonly kind: "text"
       readonly placeholder?: string
       readonly maxLength?: number
@@ -179,7 +199,7 @@ export interface SurfaceSettingItem {
   readonly interaction?: SurfaceSettingInteraction
   /**
    * Where the value in force comes from, as display text: "from Device
-   * (default)", "61 % from Runner mGBA". Absent when the row has no layered
+   * (default)", "61 % from Game for mGBA". Absent when the row has no layered
    * value. Surfaces show it beside the value; they never parse it.
    */
   readonly source?: string
@@ -397,17 +417,35 @@ export type SurfaceRunnerChoice =
   | ({ readonly _tag: "Loading" | "Ready" | "Stale" | "Conflict" | "Error" | "Busy" | "Warnings" } & SurfaceRunnerChoiceContent)
 
 /**
- * One layer of a game's launch settings, most general first: Device, System,
- * Runner, Game, Release, then each Profile. `id` is opaque and stable across
- * models, so a surface may keep the layer it shows. Every row id goes
- * unchanged to `SurfaceHost.changeSetting`, every action id to `runAction`.
- * Profile controls (pick, new, rename, delete) are ordinary rows in these
- * groups: the pick and New profile in the Game layer, Name and Delete in
- * each Profile layer.
+ * One place of a game's launch settings: a layer (Device, a System, the Game,
+ * a Release, a Profile) limited to a runner scope (any runner, one runner
+ * family, one runner). For each value the most specific place that sets it
+ * wins. `id` is opaque and stable across models, so a surface may keep the
+ * place it shows. Every row id goes unchanged to `SurfaceHost.changeSetting`,
+ * every action id to `runAction`.
+ *
+ * Places of one layer arrive consecutively, most general layer first, and
+ * within a layer any runner first, then each family, then each runner. A
+ * surface groups on a change of `layer.id`, and may show a layer's places as
+ * one list or one at a time.
+ *
+ * Rows Korri lets the person change carry an interaction. Values set only in
+ * files (environment, arguments, working folder, hooks, routines, runner
+ * config) are rows without one, with `source` and `scope`. A runner place
+ * carries an "Add setting" choice row whose choices are the runner's
+ * settings not yet set there; its `selected` is "" (none). Profile controls
+ * (pick, new, rename, delete) are ordinary rows: the pick and New profile in
+ * the Game place for any runner, Name and Delete in each Profile place for
+ * any runner.
  */
-export interface SurfaceLaunchSettingsLayer {
+export interface SurfaceLaunchSettingsPlace {
   readonly id: string
+  /** The whole place in Korri's words, such as "Game for mGBA". */
   readonly title: string
+  /** The layer this place belongs to. `id` is opaque; `title` is display text. */
+  readonly layer: { readonly id: string; readonly title: string }
+  /** Which runners the place applies to. `label` is display text. */
+  readonly scope: { readonly kind: "any" | "family" | "runner"; readonly label: string }
   readonly groups: readonly SurfaceSettingGroup[]
 }
 
@@ -420,16 +458,17 @@ export interface SurfaceLaunchProfile {
 export interface SurfaceLaunchSettingsContent {
   readonly gameTitle?: string
   /** Empty while Loading, and when Korri could not read them. */
-  readonly layers: readonly SurfaceLaunchSettingsLayer[]
+  readonly places: readonly SurfaceLaunchSettingsPlace[]
   readonly profiles: readonly SurfaceLaunchProfile[]
   /** The profile the next launch uses. Absent: none. */
   readonly selectedProfileId?: string
   /**
-   * One plain line about the whole editor, in Korri's words, such as layers
-   * Korri cannot show yet and that the values in force leave them out.
-   * Absent when there is nothing to say.
+   * Plain lines about the whole editor, in Korri's words: places Korri
+   * cannot show yet, a runner a place names that is not installed, a
+   * runner whose launch facts could not be read. Empty when there is
+   * nothing to say.
    */
-  readonly note?: string
+  readonly notes: readonly string[]
   /** Host actions such as Reload, Retry and Close. Ids go unchanged to
    * runAction; the host's close action ends with ":cancel". */
   readonly actions: readonly SurfaceAction[]

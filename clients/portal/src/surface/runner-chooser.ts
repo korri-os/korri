@@ -261,9 +261,13 @@ export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunch
       _tag: "Busy",
       ...blank("Saving… Cancel closes this panel; it cannot undo a save already sent."),
     })
-    const result = await korrid.setGameRunner({
-      scope,
-      ...(id.startsWith("clear-") ? {} : { runnerId: route?.runnerId }),
+    // A remembered runner is the Runner value of the game's or system's
+    // place for any runner (ADR 0028); clearing it removes the value.
+    const runnerId = id.startsWith("clear-") ? undefined : route?.runnerId
+    const result = await korrid.setLaunch({
+      place: { layer: scope, scope: { _tag: "Any" } },
+      path: { _tag: "Runner" },
+      ...(runnerId === undefined ? {} : { value: runnerId }),
       expectedRevision: scope._tag === "Game" ? record.revisions.games : record.revisions.device,
     })
     if (!current(operation)) return

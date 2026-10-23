@@ -316,8 +316,8 @@ test("launch settings open from the game page, offer the runner chooser for miss
   await waitFor(() => view.model().launchSettings?._tag === "Ready")
   const editor = view.model().launchSettings
   if (editor?._tag !== "Ready") throw new Error("expected the editor")
-  expect(editor.note).toContain("appear once you choose a runner")
-  expect(editor.layers.map(layer => layer.id)).toEqual(["device", "game"])
+  expect(editor.notes.join(" ")).toContain("appear once you choose a runner")
+  expect([...new Set(editor.places.map(place => place.layer.title))]).toEqual(["Device", "Game"])
   // While the editor is open, nothing on the page underneath launches.
   await invoke(() => view.host().launchGame(id))
   expect(view.model().runnerChoice?._tag).toBe("Closed")

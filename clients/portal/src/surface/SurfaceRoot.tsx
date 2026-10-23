@@ -402,16 +402,19 @@ export function SurfaceRoot({
   // Chooser transitions are not new catalog observations. Keep that identity
   // so session-return consumers do not discard an outstanding launch request.
   const model = useMemo(() => {
-    const catalog = baseModel.catalog._tag !== "Ready" || (downloadFacts.size === 0 && saveMarks.size === 0) ? baseModel.catalog : {
+    const activeProfiles = launchState.activeProfiles
+    const catalog = baseModel.catalog._tag !== "Ready" || (downloadFacts.size === 0 && saveMarks.size === 0 && activeProfiles.size === 0) ? baseModel.catalog : {
       _tag: "Ready" as const,
       games: baseModel.catalog.games.map(game => {
         const korridId = surfaceToKorridId.get(game.id)
         const download = korridId === undefined ? undefined : surfaceDownloadFrom(downloadFacts.get(korridId))
         const marked = korridId === undefined ? undefined : surfaceSavesFrom(saveMarks.get(korridId))
+        const activeProfile = korridId === undefined ? undefined : activeProfiles.get(korridId)
         return {
           ...game,
           ...(download === undefined ? {} : { download }),
           ...(marked === undefined ? {} : { saves: marked }),
+          ...(activeProfile === undefined ? {} : { activeProfile }),
         }
       }),
     }
@@ -424,7 +427,7 @@ export function SurfaceRoot({
       store: storeForSurface(storeSnapshot, state),
       ...(saveHistory === undefined ? {} : { saveHistory }),
     }
-  }, [baseModel, runnerChoice, launchState.editor, saveStatus, saveHistory, saveMarks, acquisitionStatus, downloadProblem, downloadFacts, surfaceToKorridId, storeSnapshot, state])
+  }, [baseModel, runnerChoice, launchState.editor, launchState.activeProfiles, saveStatus, saveHistory, saveMarks, acquisitionStatus, downloadProblem, downloadFacts, surfaceToKorridId, storeSnapshot, state])
   const surfaceToKorridIdRef = useRef(surfaceToKorridId)
   surfaceToKorridIdRef.current = surfaceToKorridId
   /**
@@ -538,6 +541,8 @@ export function SurfaceRoot({
         const entry = entryForId(current, id)
         const korridId = surfaceToKorridIdRef.current.get(id)
         const history = korridId !== undefined && saves.hasHistory(korridId)
+        // A game's page shows the profile its next launch uses: read it once.
+        if (korridId !== undefined && current._tag === "Ready") launch.learn(korridId)
         return [...gameActionsForEntry(entry, downloadSubject(id)?.context), ...(localRunnerEntry(entry) ? [{
           id: "runners", label: "Runners on this device", enabled: current._tag === "Ready" && current.unavailableSessionStatus === undefined,
         }] : []), ...(korridId !== undefined ? [{

@@ -11,8 +11,6 @@ import type {
   RpcFailure,
   GameRoutes,
   GameRoutesOutcome,
-  GameRunnerSetRequest,
-  GameRunnerSetOutcome,
   SelectedGameLaunchOutcome,
   CatalogSnapshotOutcome,
   DiscoverySnapshot,
@@ -145,7 +143,6 @@ export interface KorridClient extends StoreAcquisitionMethods, LaunchSettingsMet
   catalogSnapshot(): Promise<CatalogSnapshotOutcome>
   localGames(): Promise<LocalGamesListOutcome>
   gameRoutes(gameId: string): Promise<GameRoutesOutcome>
-  setGameRunner(request: GameRunnerSetRequest): Promise<GameRunnerSetOutcome>
   launchSelectedGame(gameId: string, runnerId: string): Promise<SelectedGameLaunchOutcome>
   sessionReserve(request: SessionReserveRequest): Promise<SessionReserveResult>
   sessionStart(request: SessionStartRequest): Promise<SessionStartResult>
@@ -591,13 +588,6 @@ export function createHttpKorridClient(
         })).outcome
       } catch (error) { return routeUnavailable(error) }
     },
-    async setGameRunner(payload) {
-      try {
-        return (await callKorrid(baseUrl, capability, {
-          _tag: "app.local-games.runner.set", payload,
-        })).outcome
-      } catch (error) { return routeUnavailable(error) }
-    },
     async launchSelectedGame(gameId, runnerId) {
       try {
         return (await callKorrid(baseUrl, capability, {
@@ -856,7 +846,7 @@ export function createHttpKorridClient(
         return (await callKorrid(baseUrl, capability, { _tag: "app.launch-settings.snapshot", payload: gameId === undefined ? {} : { gameId } })).outcome
       } catch (error) { return routeUnavailable(error) }
     },
-    async setLaunchSetting(payload) {
+    async setLaunch(payload) {
       try {
         return (await callKorrid(baseUrl, capability, { _tag: "app.launch-settings.set", payload })).outcome
       } catch (error) { return settingWriteUnavailable(error) }
@@ -1268,7 +1258,17 @@ export function createInMemoryKorridClient(
   let overlayIntent: string | undefined
   const routeRecords = structuredClone([...(config.gameRoutes ?? [])])
   const routePermission = config.routePermission ?? "Full"
-  let routeRevision = 0
+  const launchSettings = createInMemoryLaunchSettings(
+    config.launchSettings,
+    gameId => routeRecords.find(record => record.gameId === gameId)?.routes ?? [],
+  )
+  // Seeded route choices are places' runner values, as korrid keeps them.
+  for (const record of routeRecords) {
+    if (record.gameRunner !== undefined) launchSettings.seedRunner({ layer: { _tag: "Game", id: record.gameId }, scope: { _tag: "Any" } }, record.gameRunner)
+    for (const [systemId, runnerId] of Object.entries(record.systemRunners)) {
+      launchSettings.seedRunner({ layer: { _tag: "System", id: systemId }, scope: { _tag: "Any" } }, runnerId)
+    }
+  }
   const routeFailure = (code: string, message: string) => ({
     _tag: "Err" as const, payload: { code, message },
   })
@@ -1672,35 +1672,19 @@ export function createInMemoryKorridClient(
       if (config.routeDelayMs) await new Promise(resolve => setTimeout(resolve, config.routeDelayMs))
       const record = routeRecords.find(record => record.gameId === gameId)
       if (!record) return routeFailure("NoPlayableRoute", "No installed runtime is available")
-      const preferred = record.gameRunner ?? record.systemRunners[record.routes[0]?.systemId ?? ""]
-      const selected = preferred === undefined
-        ? (record.routes.length === 1 ? record.routes[0]?.runnerId : undefined)
-        : record.routes.find(route => route.runnerId === preferred)?.runnerId
-      return { _tag: "Ok", payload: structuredClone({ ...record,
-        selection: selected === undefined ? { _tag: "Choose" } : { _tag: "Selected", runnerId: selected },
+      // The runner comes first from the launch-settings places (ADR 0028).
+      const choices = launchSettings.runnerChoices(
+        gameId,
+        [...new Set(record.routes.map(route => route.systemId))],
+        record.routes.map(route => route.runnerId),
+      )
+      const { gameRunner: _seeded, ...rest } = record
+      return { _tag: "Ok", payload: structuredClone({ ...rest,
+        ...(choices.gameRunner === undefined ? {} : { gameRunner: choices.gameRunner }),
+        systemRunners: choices.systemRunners,
+        revisions: choices.revisions,
+        selection: choices.selected === undefined ? { _tag: "Choose" } : { _tag: "Selected", runnerId: choices.selected },
       }) }
-    },
-    async setGameRunner(request) {
-      if (config.routeMutationDelayMs) await new Promise(resolve => setTimeout(resolve, config.routeMutationDelayMs))
-      if (routePermission !== "Full") return routeFailure("PermissionDenied", "Saving runner choices requires Full access")
-      const matching = routeRecords.filter(record => request.scope._tag === "Game"
-        ? record.gameId === request.scope.id
-        : record.routes.some(route => route.systemId === request.scope.id))
-      const key = request.scope._tag === "Game" ? "games" : "device"
-      const record = matching[0]
-      if (!record) return routeFailure("GameNotFound", "Game or system is not available")
-      if (request.expectedRevision !== record.revisions[key]) return routeFailure("SettingsConflict", "Runner choices changed. Reload before saving.")
-      if (request.runnerId !== undefined && !record.routes.some(route => route.runnerId === request.runnerId)) return routeFailure("RunnerUnavailable", "Runtime is no longer installed")
-      for (const item of matching) {
-        if (request.scope._tag === "Game") {
-          if (request.runnerId === undefined) delete item.gameRunner
-          else item.gameRunner = request.runnerId
-        } else if (request.runnerId === undefined) delete item.systemRunners[request.scope.id]
-        else item.systemRunners[request.scope.id] = request.runnerId
-      }
-      const revision = `route-${++routeRevision}`
-      for (const item of routeRecords) item.revisions[key] = revision
-      return { _tag: "Ok", payload: { ...record.revisions } }
     },
     async launchSelectedGame(gameId, runnerId) {
       if (config.routeMutationDelayMs) await new Promise(resolve => setTimeout(resolve, config.routeMutationDelayMs))
@@ -2043,7 +2027,13 @@ export function createInMemoryKorridClient(
       return gameList(gameId)
     },
     ...createInMemorySaves(config.saves),
-    ...createInMemoryLaunchSettings(config.launchSettings),
+    ...launchSettings.methods,
+    // Kiosk portals (LocalSessions) may set launch settings; read-only may not.
+    async setLaunch(request) {
+      if (config.routeMutationDelayMs) await new Promise(resolve => setTimeout(resolve, config.routeMutationDelayMs))
+      if (routePermission === "ReadOnly") return routeFailure("PermissionDenied", "Saving launch settings requires session access")
+      return launchSettings.methods.setLaunch(request)
+    },
   }
 }
 

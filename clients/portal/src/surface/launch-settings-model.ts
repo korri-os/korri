@@ -1,42 +1,52 @@
 /**
- * Launch settings as settings rows: korrid's snapshot in, surface layers out.
+ * Launch settings as settings rows: korrid's snapshot in, surface places out.
  *
  * Pure. Every word a surface shows about a launch setting is decided here:
  * the value or "Inherit", where the value in force comes from, the
- * device-only mark (ADR 0018: every CPU and GPU setting is device-only) and
- * "Applies at next launch". Percent choices are this device's real clock
- * steps (ADR 0019: a percent maps to each cluster's top clock, rounded to a
- * real step); without device facts they are 10 % steps, marked as such.
+ * device-only mark and "Applies at next launch". A place is a layer (Device,
+ * System, Game, Release, Profile) limited to a runner scope (any, a family, a
+ * runner); ADR 0028 merges them. Percent choices are this device's real
+ * clock steps (ADR 0019); without device facts they are 10 % steps, marked
+ * as such.
+ *
+ * Each row the person may change is published with a write: the place and
+ * the typed `set` path it names, and how its choice becomes a JSON value.
+ * The controller looks a changed row up by id; nothing parses an id.
  */
 import type {
   LaunchDeviceFacts,
-  LaunchResolvedValue,
-  LaunchSettingsScope,
-  LaunchSettingsSnapshot,
-  LaunchSettingsValues,
+  LaunchLayer,
+  LaunchPath,
+  LaunchPlace,
+  LaunchPlaceSnapshot,
+  LaunchRunnerScope,
+  LaunchRunnerSnapshot,
+  LaunchSnapshot,
+  LaunchSource,
+  LaunchSourcedValue,
+  LaunchValuePath,
 } from "@contracts/generated/korrid"
 import type {
-  SurfaceLaunchSettingsLayer,
+  SurfaceLaunchSettingsPlace,
   SurfaceSettingChoice,
   SurfaceSettingGroup,
+  SurfaceSettingInteraction,
   SurfaceSettingItem,
 } from "@contracts/surface/korri-surface"
 
-export type LaunchSettingKey = "cpu.min" | "cpu.max" | "gpu.min" | "gpu.max" | "cpu.governor"
-type Kind = "cpu" | "gpu"
-type Bound = "min" | "max"
-
-/** Choice value for "no value on this layer". Never a percent or governor. */
+/** Choice value for "no value on this place". Never a percent or runner id. */
 export const INHERIT = "inherit"
 /** The pick's value for "No profile". A profile id is never empty. */
 export const NO_PROFILE = ""
 
+export type LimitKey = "cpu.min" | "cpu.max" | "gpu.min" | "gpu.max" | "cpu.governor"
+
 /** Opaque ids the host publishes and routes. Surfaces never parse them. */
 export const LAUNCH_ID = {
   /** A Device-settings row; the device page reads its own snapshot. */
-  device: (setting: LaunchSettingKey) => `launch-device:${setting}`,
-  /** An editor row: one setting on one layer. */
-  set: (layerId: string, setting: LaunchSettingKey) => `launch:set:${layerId}:${setting}`,
+  device: (setting: LimitKey) => `launch-device:${setting}`,
+  /** An editor row: one value on one place. */
+  set: (placeId: string, path: string) => `launch:set:${placeId}#${path}`,
   pick: "launch:profile:pick",
   create: "launch:profile:new",
   rename: (profileId: string) => `launch:profile:rename:${profileId}`,
@@ -50,85 +60,87 @@ export const LAUNCH_ID = {
   cancel: "launch:cancel",
 } as const
 
-const SETTINGS: readonly LaunchSettingKey[] = ["cpu.min", "cpu.max", "gpu.min", "gpu.max", "cpu.governor"]
-const LABELS: Record<LaunchSettingKey, string> = {
-  "cpu.min": "CPU min",
-  "cpu.max": "CPU max",
-  "gpu.min": "GPU min",
-  "gpu.max": "GPU max",
-  "cpu.governor": "CPU governor",
+/** The `editableKinds` strings korrid uses, in one place. */
+export const KIND = { runner: "runner", cpu: "cpu", gpu: "gpu", modifiers: "modifiers", settings: "settings" } as const
+
+/**
+ * A resolved value's path as one comparable string. korrid names each value
+ * by a structured path; the dotted key of `resolved.values` is never split,
+ * because plugin ids and setting keys may hold dots.
+ */
+export function valuePathKey(path: LaunchValuePath): string {
+  const payload = path._tag === "Editable" ? editablePathKey(path.payload) : path.payload === undefined ? "" : JSON.stringify(Object.entries(path.payload).sort())
+  return `${path._tag}\u0000${payload}`
+}
+const editablePathKey = (path: LaunchPath): string =>
+  `${path._tag}\u0000${path.payload === undefined ? "" : JSON.stringify(Object.entries(path.payload).sort())}`
+const editable = (path: LaunchPath): LaunchValuePath => ({ _tag: "Editable", payload: path })
+
+const LIMIT_PATH: Record<LimitKey, LaunchPath> = {
+  "cpu.min": { _tag: "CpuMin" },
+  "cpu.max": { _tag: "CpuMax" },
+  "gpu.min": { _tag: "GpuMin" },
+  "gpu.max": { _tag: "GpuMax" },
+  "cpu.governor": { _tag: "CpuGovernor" },
 }
 
-export type LaunchSettingIdParts =
-  | { readonly _tag: "Device"; readonly setting: LaunchSettingKey }
-  | { readonly _tag: "Set"; readonly layerId: string; readonly setting: LaunchSettingKey }
-  | { readonly _tag: "Pick" }
-  | { readonly _tag: "Create" }
-  | { readonly _tag: "Rename"; readonly profileId: string }
-  | { readonly _tag: "Remove"; readonly profileId: string }
-
-const isSetting = (value: string): value is LaunchSettingKey => (SETTINGS as readonly string[]).includes(value)
-
-/** The host's reading of an id it published. Undefined: not a launch id. */
-export function parseLaunchId(id: string): LaunchSettingIdParts | undefined {
-  if (id.startsWith("launch-device:")) {
-    const setting = id.slice("launch-device:".length)
-    return isSetting(setting) ? { _tag: "Device", setting } : undefined
-  }
-  if (id === LAUNCH_ID.pick) return { _tag: "Pick" }
-  if (id === LAUNCH_ID.create) return { _tag: "Create" }
-  if (id.startsWith("launch:profile:rename:")) return { _tag: "Rename", profileId: id.slice("launch:profile:rename:".length) }
-  if (id.startsWith("launch:profile:remove:")) return { _tag: "Remove", profileId: id.slice("launch:profile:remove:".length) }
-  if (id.startsWith("launch:set:")) {
-    const rest = id.slice("launch:set:".length)
-    const at = rest.lastIndexOf(":")
-    const setting = rest.slice(at + 1)
-    return at > 0 && isSetting(setting) ? { _tag: "Set", layerId: rest.slice(0, at), setting } : undefined
-  }
-  return undefined
+/** What a changed row writes. `encode` turns the surface's text into the
+ * value to send: `undefined` clears, `null` refuses the text. */
+export interface LaunchWrite {
+  readonly place: LaunchPlace
+  readonly path: LaunchPath
+  readonly encode: (text: string) => { readonly value?: unknown } | null
 }
 
-/** A stable layer id for a scope, unique within one game's snapshot. */
-export function layerIdOf(scope: LaunchSettingsScope): string {
-  switch (scope._tag) {
+/** A row's change that adds a pending setting rather than writing. */
+export interface LaunchAdd {
+  readonly placeId: string
+}
+
+export interface LaunchEditor {
+  readonly places: readonly SurfaceLaunchSettingsPlace[]
+  readonly notes: readonly string[]
+  readonly writes: ReadonlyMap<string, LaunchWrite>
+  /** Add setting rows, by row id. */
+  readonly adds: ReadonlyMap<string, LaunchAdd>
+  /** Rows added with Add setting and not yet set, by row id. */
+  readonly pending: ReadonlyMap<string, { readonly placeId: string; readonly key: string }>
+}
+
+// --- places ----------------------------------------------------------------
+
+export function layerKey(layer: LaunchLayer): string {
+  switch (layer._tag) {
     case "Device": return "device"
-    case "System": return `system:${scope.id}`
-    case "Runner": return `runner:${scope.id}`
-    case "Game": return "game"
-    case "Release": return `release:${scope.id.releaseId}`
-    case "Profile": return `profile:${scope.id.profileId}`
+    case "System": return `system:${layer.id}`
+    case "Game": return `game:${layer.id}`
+    case "Release": return `release:${layer.id.releaseId}`
+    case "Profile": return `profile:${layer.id.profileId}`
+    case "Launch": return "launch"
   }
 }
 
-/** Device, System and Runner live in device.yaml; the rest in the library. */
-export const revisionOf = (scope: LaunchSettingsScope): "device" | "games" =>
-  scope._tag === "Device" || scope._tag === "System" || scope._tag === "Runner" ? "device" : "games"
-
-/** The scope a layer id names in this snapshot, profiles included. */
-export function scopeForLayer(
-  snapshot: LaunchSettingsSnapshot,
-  gameId: string | undefined,
-  layerId: string,
-): LaunchSettingsScope | undefined {
-  const layer = snapshot.layers.find(candidate => layerIdOf(candidate.scope) === layerId)
-  if (layer) return layer.scope
-  if (gameId === undefined) return undefined
-  const profile = snapshot.profiles.find(candidate => `profile:${candidate.id}` === layerId)
-  return profile ? { _tag: "Profile", id: { gameId, profileId: profile.id } } : undefined
+export function scopeKey(scope: LaunchRunnerScope): string {
+  switch (scope._tag) {
+    case "Any": return "any"
+    case "Family": return `family:${scope.id}`
+    case "Runner": return `runner:${scope.id}`
+  }
 }
 
-/** The value a write sends for a choice. Undefined clears it (Inherit). */
-export function launchValueFrom(setting: LaunchSettingKey, choice: string): number | string | undefined {
-  if (choice === INHERIT) return undefined
-  if (setting === "cpu.governor") return choice
-  const percent = Number(choice)
-  return Number.isInteger(percent) && percent >= 0 && percent <= 100 ? percent : Number.NaN
-}
+/** A stable place id, unique within one snapshot. */
+export const placeIdOf = (place: LaunchPlace): string => `${layerKey(place.layer)}/${scopeKey(place.scope)}`
 
-/** The profile a pick chooses: its id, or `null` for "No profile". */
-export function profileFromPick(choice: string): string | null {
-  return choice === NO_PROFILE ? null : choice
-}
+const samePlace = (a: LaunchPlace, b: LaunchPlace) => placeIdOf(a) === placeIdOf(b)
+
+/** Device and System live in device.yaml; the rest in the library. */
+export const revisionOf = (layer: LaunchLayer): "device" | "games" =>
+  layer._tag === "Device" || layer._tag === "System" ? "device" : "games"
+
+const fileOf = (layer: LaunchLayer) => revisionOf(layer) === "device" ? "device.yaml" : "library.yaml"
+
+const LAYER_RANK: Record<LaunchLayer["_tag"], number> = { Device: 0, System: 1, Game: 2, Release: 3, Profile: 4, Launch: 5 }
+const SCOPE_RANK: Record<LaunchRunnerScope["_tag"], number> = { Any: 0, Family: 1, Runner: 2 }
 
 /**
  * Each profile's title as the editor shows it. Titles may repeat; a repeat
@@ -141,6 +153,79 @@ export function profileTitles(profiles: readonly { readonly id: string; readonly
     seen.set(profile.title, count)
     return [profile.id, count === 1 ? profile.title : `${profile.title} (${count})`]
   }))
+}
+
+/** Runner titles, told apart by id when two runners share one. */
+function runnerTitles(runners: readonly LaunchRunnerSnapshot[]): ReadonlyMap<string, string> {
+  const counts = new Map<string, number>()
+  for (const runner of runners) counts.set(runner.title, (counts.get(runner.title) ?? 0) + 1)
+  return new Map(runners.map(runner => [runner.id, (counts.get(runner.title) ?? 0) > 1 ? `${runner.title} (${runner.id})` : runner.title]))
+}
+
+type Json = Readonly<Record<string, unknown>>
+const record = (value: unknown): Json | undefined =>
+  typeof value === "object" && value !== null && !Array.isArray(value) ? value as Json : undefined
+const strings = (value: unknown): readonly string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+
+/**
+ * Profile places. korrid lists them in `places`; a profile it lists only in
+ * `profiles` gets its places from its body: any runner, then each installed
+ * runner's family and the runner itself.
+ */
+function profilePlaces(snapshot: LaunchSnapshot, gameId: string | undefined): readonly LaunchPlaceSnapshot[] {
+  if (gameId === undefined) return []
+  const titles = profileTitles(snapshot.profiles)
+  const titlesOf = runnerTitles(snapshot.runners)
+  return snapshot.profiles.flatMap(profile => {
+    if (snapshot.places.some(place => place.place.layer._tag === "Profile" && place.place.layer.id.profileId === profile.id)) return []
+    const layer: LaunchLayer = { _tag: "Profile", id: { gameId, profileId: profile.id } }
+    const body = record(profile.body) ?? {}
+    const name = `Profile ${titles.get(profile.id) ?? profile.title}`
+    const families = [...new Set(snapshot.runners.flatMap(runner => runner.family === undefined ? [] : [runner.family]))]
+    return [
+      { place: { layer, scope: { _tag: "Any" } }, title: name, body, editableKinds: [KIND.runner, KIND.cpu, KIND.gpu, KIND.modifiers] },
+      ...families.map(family => ({
+        place: { layer, scope: { _tag: "Family" as const, id: family } },
+        title: `${name} for ${family}`,
+        body: record(body.families)?.[family] ?? {},
+        editableKinds: [KIND.cpu, KIND.gpu, KIND.modifiers, KIND.settings],
+      })),
+      ...snapshot.runners.map(runner => ({
+        place: { layer, scope: { _tag: "Runner" as const, id: runner.id } },
+        title: `${name} for ${titlesOf.get(runner.id) ?? runner.title}`,
+        body: record(body.runners)?.[runner.id] ?? {},
+        editableKinds: [KIND.cpu, KIND.gpu, KIND.modifiers, KIND.settings],
+      })),
+    ]
+  })
+}
+
+/** The places the editor shows, most general first: by layer, then scope. */
+export function orderedPlaces(snapshot: LaunchSnapshot, gameId?: string): readonly LaunchPlaceSnapshot[] {
+  const runnerRank = new Map(snapshot.runners.map((runner, index) => [runner.id, index]))
+  const familyRank = new Map<string, number>()
+  snapshot.runners.forEach((runner, index) => {
+    if (runner.family !== undefined && !familyRank.has(runner.family)) familyRank.set(runner.family, index)
+  })
+  const profileRank = new Map(snapshot.profiles.map((profile, index) => [profile.id, index]))
+  const all = [...snapshot.places, ...profilePlaces(snapshot, gameId)].filter(place => place.place.layer._tag !== "Launch")
+  const rank = (place: LaunchPlace): readonly number[] => [
+    LAYER_RANK[place.layer._tag],
+    place.layer._tag === "Profile" ? profileRank.get(place.layer.id.profileId) ?? 0 : 0,
+    SCOPE_RANK[place.scope._tag],
+    place.scope._tag === "Runner" ? runnerRank.get(place.scope.id) ?? 0 : place.scope._tag === "Family" ? familyRank.get(place.scope.id) ?? 0 : 0,
+  ]
+  return all
+    .map((place, index) => ({ place, index, rank: rank(place.place) }))
+    .sort((a, b) => {
+      for (let at = 0; at < a.rank.length; at++) {
+        const delta = (a.rank[at] ?? 0) - (b.rank[at] ?? 0)
+        if (delta !== 0) return delta
+      }
+      return a.index - b.index
+    })
+    .map(entry => entry.place)
 }
 
 // --- clock steps -----------------------------------------------------------
@@ -215,59 +300,147 @@ export function governors(facts: LaunchDeviceFacts | undefined): readonly string
   return first.availableGovernors.filter(governor => rest.every(policy => policy.availableGovernors.includes(governor)))
 }
 
-// --- rows ------------------------------------------------------------------
+// --- words -----------------------------------------------------------------
 
 const INHERIT_CHOICE: SurfaceSettingChoice = { value: INHERIT, label: "Inherit" }
 const NO_FLOOR: SurfaceSettingChoice = { value: "0", label: "0 % (no floor)" }
 const NEXT_LAUNCH = "Applies at next launch."
+const MAX_PROFILE_TITLE = 40
+
+/** A JSON value as one line of display text. */
+export function valueText(value: unknown): string {
+  if (value === null || value === undefined) return "Unset"
+  if (typeof value === "boolean") return value ? "On" : "Off"
+  if (typeof value === "string") return value === "" ? "(empty)" : value
+  if (typeof value === "number") return String(value)
+  if (Array.isArray(value)) return value.map(valueText).join(" ")
+  return JSON.stringify(value)
+}
 
 interface Context {
-  readonly snapshot: LaunchSettingsSnapshot
+  readonly snapshot: LaunchSnapshot
+  readonly places: readonly LaunchPlaceSnapshot[]
   readonly cpu: Steps
   readonly gpu: Steps
   readonly governors: readonly string[]
-  readonly titleOf: (scope: LaunchSettingsScope) => string
-  /** The Device layer's authored values. Korri omits shipped defaults. */
-  readonly deviceValues: { readonly cpu: LaunchSettingsValues; readonly gpu: LaunchSettingsValues; readonly governor?: string }
+  readonly runnerTitles: ReadonlyMap<string, string>
+  readonly selected?: LaunchRunnerSnapshot
+  /** The value in force at a path, for the runner in use. */
+  readonly resolved: (path: LaunchPath) => LaunchSourcedValue | undefined
 }
 
-function contextOf(snapshot: LaunchSettingsSnapshot): Context {
-  const device = snapshot.layers.find(layer => layer.scope._tag === "Device")
+function contextOf(snapshot: LaunchSnapshot, gameId?: string): Context {
+  const selected = snapshot.runners.find(runner => runner.selected)
+  const byPath = new Map(Object.values(snapshot.resolved.values).map(value => [valuePathKey(value.path), value]))
   return {
+    resolved: path => byPath.get(valuePathKey(editable(path))),
     snapshot,
+    places: orderedPlaces(snapshot, gameId),
     cpu: cpuSteps(snapshot.deviceFacts),
     gpu: gpuSteps(snapshot.deviceFacts),
     governors: governors(snapshot.deviceFacts),
-    deviceValues: { cpu: device?.cpu ?? {}, gpu: device?.gpu ?? {}, ...(device?.governor === undefined ? {} : { governor: device.governor }) },
-    titleOf: scope => {
-      if (scope._tag === "Profile") {
-        const title = profileTitles(snapshot.profiles).get(scope.id.profileId)
-        return title === undefined ? "a profile" : `Profile ${title}`
-      }
-      return snapshot.layers.find(layer => layerIdOf(layer.scope) === layerIdOf(scope))?.title ?? scope._tag
-    },
+    runnerTitles: runnerTitles(snapshot.runners),
+    ...(selected === undefined ? {} : { selected }),
   }
 }
 
-/** Where the value in force comes from, said from one layer's row. */
-function sourceText(context: Context, layerId: string, kind: Kind, bound: Bound, resolved: LaunchResolvedValue): string {
-  const steps = context[kind]
-  const fromId = layerIdOf(resolved.source)
-  const defaulted = resolved.deviceDefault
-  const title = defaulted ? "Device (default)" : context.titleOf(resolved.source)
-  const value = steps.labelOf(resolved.value)
-  if (resolved.adjusted) return `${value} from ${title}, adjusted`
-  return fromId === layerId && !defaulted ? `from ${title}` : `${value} from ${title}`
+function sourceTitle(context: Context, source: LaunchSource): string {
+  switch (source._tag) {
+    case "Place": {
+      const place = context.places.find(candidate => samePlace(candidate.place, source.payload))
+      return place === undefined ? layerTitle(context, source.payload.layer) : placeTitle(context, place)
+    }
+    case "PluginDefault": {
+      const runner = context.snapshot.runners.find(candidate => candidate.id === source.payload.pluginId)
+      return `${runner === undefined ? source.payload.pluginId : context.runnerTitles.get(runner.id) ?? runner.title} (default)`
+    }
+    case "DeviceDefault":
+      return "Device (default)"
+  }
 }
+
+/** Whether a place's scope applies to the runner this game launches with. */
+function applies(context: Context, scope: LaunchRunnerScope): boolean {
+  switch (scope._tag) {
+    case "Any": return true
+    case "Family": return context.selected?.family === scope.id
+    case "Runner": return context.selected?.id === scope.id
+  }
+}
+
+/**
+ * Where the value in force comes from, said from one place's row. A place
+ * whose scope is not the runner in use says when it would apply instead:
+ * korrid resolves runner-scoped values for the selected runner only.
+ */
+function sourceText(
+  context: Context,
+  here: LaunchPlace,
+  resolved: LaunchSourcedValue | undefined,
+  show: (value: unknown) => string,
+): string | undefined {
+  if (!applies(context, here.scope)) {
+    const name = context.selected === undefined ? undefined : context.runnerTitles.get(context.selected.id) ?? context.selected.title
+    return name === undefined ? "Applies once a runner is chosen" : `Not in force: ${name} runs this game`
+  }
+  if (resolved === undefined) return undefined
+  const title = sourceTitle(context, resolved.source)
+  const value = show(resolved.value)
+  if (resolved.adjusted) return `${value} from ${title}, adjusted`
+  return resolved.source._tag === "Place" && samePlace(resolved.source.payload, here) ? `from ${title}` : `${value} from ${title}`
+}
+
+function layerTitle(context: Context, layer: LaunchLayer): string {
+  switch (layer._tag) {
+    case "Device": return "Device"
+    case "System": return `System ${layer.id}`
+    case "Game": return "Game"
+    case "Release": return `Release ${layer.id.releaseId}`
+    case "Profile": return `Profile ${profileTitles(context.snapshot.profiles).get(layer.id.profileId) ?? layer.id.profileId}`
+    case "Launch": return "This launch"
+  }
+}
+
+/**
+ * A place's title: korrid's, except a profile's, which names the profile as
+ * the editor does, so two profiles with one title stay apart.
+ */
+function placeTitle(context: Context, entry: LaunchPlaceSnapshot): string {
+  const { layer, scope } = entry.place
+  if (layer._tag !== "Profile") return entry.title
+  const title = layerTitle(context, layer)
+  return scope._tag === "Any" ? title : `${title} for ${scopeLabel(context, scope)}`
+}
+
+function scopeLabel(context: Context, scope: LaunchRunnerScope): string {
+  switch (scope._tag) {
+    case "Any": return "Any runner"
+    case "Family": return `Family ${scope.id}`
+    case "Runner": return context.runnerTitles.get(scope.id) ?? scope.id
+  }
+}
+
+// --- rows ------------------------------------------------------------------
+
+interface Rows {
+  readonly writes: Map<string, LaunchWrite>
+  readonly adds: Map<string, LaunchAdd>
+  readonly pending: Map<string, { readonly placeId: string; readonly key: string }>
+}
+
+const percentOf = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) ? value : undefined
 
 function percentRow(
   context: Context,
+  rows: Rows,
   id: string,
-  layerId: string,
-  setting: Extract<LaunchSettingKey, `${Kind}.${Bound}`>,
+  place: LaunchPlace,
+  key: Exclude<LimitKey, "cpu.governor">,
   own: number | undefined,
+  describe: string,
 ): SurfaceSettingItem {
-  const [kind, bound] = setting.split(".") as [Kind, Bound]
+  const [kind, bound] = key.split(".") as ["cpu" | "gpu", "min" | "max"]
   const steps = context[kind]
   // A minimum may be no floor at all; a maximum is always above 0 (korrid
   // takes min 0 to 100, max 1 to 100).
@@ -276,28 +449,48 @@ function percentRow(
   const choices = own === undefined || offered.some(choice => choice.value === String(own))
     ? offered
     : [...offered, { value: String(own), label: steps.labelOf(own) }].sort((a, b) => Number(a.value) - Number(b.value))
+  const path = LIMIT_PATH[key]
+  rows.writes.set(id, {
+    place,
+    path,
+    encode: text => {
+      if (text === INHERIT) return {}
+      const percent = Number(text)
+      return Number.isInteger(percent) && percent >= 0 && percent <= 100 ? { value: percent } : null
+    },
+  })
+  const label = `${kind.toUpperCase()} ${bound}`
+  const source = sourceText(context, place, context.resolved(LIMIT_PATH[key]), value => {
+    const percent = percentOf(value)
+    return percent === undefined ? valueText(value) : steps.labelOf(percent)
+  })
   return {
     id,
-    label: LABELS[setting],
+    label,
     value: own === undefined ? "Inherit" : choices.find(choice => choice.value === String(own))?.label ?? steps.labelOf(own),
-    description: steps.guessed ? `${NEXT_LAUNCH} Clock steps unknown.` : NEXT_LAUNCH,
-    source: sourceText(context, layerId, kind, bound, context.snapshot.resolved[kind][bound]),
+    description: steps.guessed ? `${describe} Clock steps unknown.` : describe,
+    ...(source === undefined ? {} : { source }),
     scope: "device",
     interaction: { kind: "choice", choices: [INHERIT_CHOICE, ...choices], selected: own === undefined ? INHERIT : String(own) },
   }
 }
 
-function governorRow(context: Context, id: string): SurfaceSettingItem {
-  const own = context.deviceValues.governor
+function governorRow(context: Context, rows: Rows, id: string, place: LaunchPlace, own: string | undefined): SurfaceSettingItem {
   const known = context.governors
   const offered = own === undefined || known.includes(own) ? known : [...known, own]
-  const inForce = context.snapshot.resolved.governor ?? context.snapshot.deviceFacts?.defaults.governor
+  const resolved = context.resolved(LIMIT_PATH["cpu.governor"])
+  const fallback = context.snapshot.deviceFacts?.defaults.governor
+  rows.writes.set(id, { place, path: LIMIT_PATH["cpu.governor"], encode: text => text === INHERIT ? {} : { value: text } })
   return {
     id,
-    label: LABELS["cpu.governor"],
+    label: "CPU governor",
     value: own ?? "Inherit",
     description: known.length === 0 ? `${NEXT_LAUNCH} Governors unknown.` : NEXT_LAUNCH,
-    source: own !== undefined ? "from Device" : inForce === undefined ? "from Device (default)" : `${inForce} from Device (default)`,
+    source: own !== undefined
+      ? "from Device"
+      : resolved !== undefined
+        ? sourceText(context, place, resolved, valueText) ?? "from Device (default)"
+        : fallback === undefined ? "from Device (default)" : `${fallback} from Device (default)`,
     scope: "device",
     interaction: {
       kind: "choice",
@@ -307,70 +500,366 @@ function governorRow(context: Context, id: string): SurfaceSettingItem {
   }
 }
 
-function valueRows(
-  context: Context,
-  layerId: string,
-  values: { readonly cpu: LaunchSettingsValues; readonly gpu: LaunchSettingsValues },
-  withGovernor: boolean,
-  idOf: (setting: LaunchSettingKey) => string,
-): { readonly cpu: SurfaceSettingItem[]; readonly gpu: SurfaceSettingItem[] } {
+/** CPU and GPU rows for one place. Only Device for any runner sets the
+ * device's clock limits; every other place limits the game's session. */
+function limitGroups(context: Context, rows: Rows, place: LaunchPlace, body: Json, kinds: readonly string[], ids: (key: LimitKey) => string): SurfaceSettingGroup[] {
+  const cpu = record(body.cpu) ?? {}
+  const gpu = record(body.gpu) ?? {}
+  const hostWide = place.layer._tag === "Device" && place.scope._tag === "Any"
+  const describe = hostWide ? `${NEXT_LAUNCH} Sets the device's clock limits.` : `${NEXT_LAUNCH} Limits the game's session.`
+  const groups: SurfaceSettingGroup[] = []
+  if (kinds.includes(KIND.cpu)) {
+    groups.push({
+      title: "CPU",
+      items: [
+        percentRow(context, rows, ids("cpu.min"), place, "cpu.min", percentOf(cpu.min), describe),
+        percentRow(context, rows, ids("cpu.max"), place, "cpu.max", percentOf(cpu.max), describe),
+        ...(hostWide ? [governorRow(context, rows, ids("cpu.governor"), place, typeof cpu.governor === "string" ? cpu.governor : undefined)] : []),
+      ],
+    })
+  }
+  if (kinds.includes(KIND.gpu)) {
+    groups.push({
+      title: "GPU",
+      items: context.gpu.unavailable === true
+        ? [{ id: `${ids("gpu.min")}:unavailable`, label: "GPU limits aren't available on this device" }]
+        : [
+            percentRow(context, rows, ids("gpu.min"), place, "gpu.min", percentOf(gpu.min), describe),
+            percentRow(context, rows, ids("gpu.max"), place, "gpu.max", percentOf(gpu.max), describe),
+          ],
+    })
+  }
+  return groups
+}
+
+/** The runner choice, on places that may hold one. */
+function runnerGroup(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json): SurfaceSettingGroup {
+  const own = typeof body.runner === "string" ? body.runner : undefined
+  const id = LAUNCH_ID.set(placeId, "runner")
+  const installed = context.snapshot.runners.map(runner => ({ value: runner.id, label: context.runnerTitles.get(runner.id) ?? runner.title }))
+  const missing = own !== undefined && !installed.some(choice => choice.value === own)
+  const choices = [INHERIT_CHOICE, ...installed, ...(missing ? [{ value: own, label: `${own} (not installed)` }] : [])]
+  rows.writes.set(id, { place, path: { _tag: "Runner" }, encode: text => text === INHERIT ? {} : { value: text } })
+  const source = sourceText(context, place, context.resolved({ _tag: "Runner" }), value =>
+    typeof value === "string" ? context.runnerTitles.get(value) ?? value : valueText(value))
   return {
-    cpu: [
-      percentRow(context, idOf("cpu.min"), layerId, "cpu.min", values.cpu.min),
-      percentRow(context, idOf("cpu.max"), layerId, "cpu.max", values.cpu.max),
-      ...(withGovernor ? [governorRow(context, idOf("cpu.governor"))] : []),
-    ],
-    gpu: context.gpu.unavailable === true
-      ? [{ id: `${idOf("gpu.min")}:unavailable`, label: "GPU limits aren't available on this device" }]
-      : [
-          percentRow(context, idOf("gpu.min"), layerId, "gpu.min", values.gpu.min),
-          percentRow(context, idOf("gpu.max"), layerId, "gpu.max", values.gpu.max),
-        ],
+    title: "Runner",
+    items: [{
+      id,
+      label: "Runner",
+      value: choices.find(choice => choice.value === (own ?? INHERIT))?.label ?? "Inherit",
+      description: missing
+        ? "This runner isn't installed. Korri skips it and its runner settings here."
+        : "The most specific place that names an installed runner wins.",
+      ...(source === undefined ? {} : { source }),
+      scope: "shared",
+      interaction: { kind: "choice", choices, selected: own ?? INHERIT },
+    }],
   }
 }
 
-/** Device settings' "Launch settings" group, from a snapshot without a game. */
-export function deviceLaunchGroup(snapshot: LaunchSettingsSnapshot): SurfaceSettingGroup {
-  const context = contextOf(snapshot)
-  const rows = valueRows(context, "device", context.deviceValues, false, LAUNCH_ID.device)
+// --- runner settings -------------------------------------------------------
+
+interface Property {
+  readonly type?: string
+  readonly title?: string
+  readonly description?: string
+  readonly enum?: readonly unknown[]
+  readonly minimum?: number
+  readonly maximum?: number
+  readonly device: boolean
+}
+
+function propertiesOf(schema: unknown): ReadonlyMap<string, Property> {
+  const properties = record(record(schema)?.properties) ?? {}
+  return new Map(Object.entries(properties).flatMap(([key, raw]) => {
+    const property = record(raw)
+    if (property === undefined) return []
+    const type = Array.isArray(property.type) ? property.type.find(item => item !== "null") : property.type
+    return [[key, {
+      ...(typeof type === "string" ? { type } : {}),
+      ...(typeof property.title === "string" ? { title: property.title } : {}),
+      ...(typeof property.description === "string" ? { description: property.description } : {}),
+      ...(Array.isArray(property.enum) ? { enum: property.enum } : {}),
+      ...(typeof property.minimum === "number" ? { minimum: property.minimum } : {}),
+      ...(typeof property.maximum === "number" ? { maximum: property.maximum } : {}),
+      device: property["x-korri-scope"] === "device",
+    } satisfies Property]]
+  }))
+}
+
+/** The settings a runner place may set: its runner's schema, or for a family
+ * place every installed runner of the family (the first to name a key wins). */
+function schemaFor(context: Context, scope: LaunchRunnerScope): ReadonlyMap<string, Property> {
+  if (scope._tag === "Any") return new Map()
+  const runners = context.snapshot.runners.filter(runner => scope._tag === "Runner" ? runner.id === scope.id : runner.family === scope.id)
+  const merged = new Map<string, Property>()
+  for (const runner of runners) {
+    for (const [key, property] of propertiesOf(runner.schema)) if (!merged.has(key)) merged.set(key, property)
+  }
+  return merged
+}
+
+const choiceValue = (value: unknown) => JSON.stringify(value)
+
+/** How one value is changed, from its schema property or else its own type. */
+function valueInteraction(property: Property | undefined, own: unknown): {
+  readonly interaction: SurfaceSettingInteraction
+  readonly encode: (text: string) => { readonly value?: unknown } | null
+} {
+  if (property?.enum !== undefined && property.enum.length > 0) {
+    const choices = property.enum.map(value => ({ value: choiceValue(value), label: valueText(value) }))
+    return {
+      interaction: { kind: "choice", choices: [INHERIT_CHOICE, ...choices], selected: own === undefined ? INHERIT : choiceValue(own) },
+      encode: text => {
+        if (text === INHERIT) return {}
+        const found = property.enum?.find(value => choiceValue(value) === text)
+        return found === undefined ? null : { value: found }
+      },
+    }
+  }
+  const type = property?.type ?? (typeof own === "boolean" ? "boolean" : typeof own === "number" ? "number" : "string")
+  if (type === "boolean") {
+    return {
+      interaction: {
+        kind: "choice",
+        choices: [INHERIT_CHOICE, { value: "true", label: "On" }, { value: "false", label: "Off" }],
+        selected: own === true ? "true" : own === false ? "false" : INHERIT,
+      },
+      encode: text => text === INHERIT ? {} : text === "true" ? { value: true } : text === "false" ? { value: false } : null,
+    }
+  }
+  if (type === "number" || type === "integer") {
+    const integer = type === "integer"
+    return {
+      interaction: {
+        kind: "number",
+        ...(typeof own === "number" ? { value: own } : {}),
+        ...(property?.minimum === undefined ? {} : { min: property.minimum }),
+        ...(property?.maximum === undefined ? {} : { max: property.maximum }),
+        ...(integer ? { step: 1 } : {}),
+        clearable: true,
+      },
+      encode: text => {
+        if (text.trim() === "") return {}
+        const number = Number(text)
+        if (!Number.isFinite(number) || (integer && !Number.isInteger(number))) return null
+        if (property?.minimum !== undefined && number < property.minimum) return null
+        if (property?.maximum !== undefined && number > property.maximum) return null
+        return { value: number }
+      },
+    }
+  }
   return {
-    title: "Launch settings",
-    items: [...rows.cpu, ...rows.gpu, governorRow(context, LAUNCH_ID.device("cpu.governor"))],
+    interaction: { kind: "text", placeholder: property?.title ?? "Value" },
+    encode: text => ({ value: text }),
   }
 }
 
-const MAX_PROFILE_TITLE = 40
-
-/**
- * What the editor says when korrid could not give the route's layers. The
- * values in force then leave System, Runner and Release out, so the same
- * line says so.
- */
-export function launchNoteFrom(snapshot: LaunchSettingsSnapshot): string | undefined {
-  const partial = "Values in force leave them out."
-  switch (snapshot.routeLayers._tag) {
-    case "Present":
-      return undefined
-    case "NeedsRunnerChoice":
-      return `System, runner and release settings appear once you choose a runner. ${partial}`
-    case "Unavailable":
-      return `System, runner and release settings aren't available: ${snapshot.routeLayers.message.replace(/\.$/, "")}. ${partial}`
+function settingsGroup(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly string[]): SurfaceSettingGroup | undefined {
+  const schema = schemaFor(context, place.scope)
+  const own = record(body.settings) ?? {}
+  const keys = [...Object.keys(own), ...pending.filter(key => !(key in own))]
+  const items: SurfaceSettingItem[] = keys.map(key => {
+    const property = schema.get(key)
+    const value = own[key]
+    const set = key in own
+    const id = LAUNCH_ID.set(placeId, `setting:${key}`)
+    const { interaction, encode } = valueInteraction(property, set ? value : undefined)
+    rows.writes.set(id, { place, path: { _tag: "Setting", payload: { key } }, encode })
+    if (!set) rows.pending.set(id, { placeId, key })
+    const source = sourceText(context, place, context.resolved({ _tag: "Setting", payload: { key } }), valueText)
+    return {
+      id,
+      label: property?.title ?? key,
+      value: set ? valueText(value) : "Not set here",
+      ...(property?.description === undefined
+        ? property === undefined ? { description: "This runner no longer describes this setting." } : {}
+        : { description: property.description }),
+      ...(source === undefined ? {} : { source }),
+      scope: property?.device === true ? "device" : "shared",
+      interaction,
+    }
+  })
+  const unset = [...schema].filter(([key]) => !keys.includes(key))
+  if (unset.length > 0) {
+    const id = LAUNCH_ID.set(placeId, "add-setting")
+    rows.adds.set(id, { placeId })
+    items.push({
+      id,
+      label: "Add setting",
+      value: "Choose a setting",
+      description: `${unset.length} more ${unset.length === 1 ? "setting" : "settings"} this runner offers.`,
+      interaction: {
+        kind: "choice",
+        choices: unset.map(([key, property]) => ({ value: key, label: property.title ?? key })),
+        selected: "",
+      },
+    })
   }
+  return items.length === 0 ? undefined : { title: "Runner settings", items }
 }
 
-/** One game's editor: a layer per scope, most general first, then each profile. */
-export function launchLayersFrom(snapshot: LaunchSettingsSnapshot): readonly SurfaceLaunchSettingsLayer[] {
-  const context = contextOf(snapshot)
+/** Every modifier any place names, so each place can enable or disable it. */
+function modifierIds(context: Context): readonly string[] {
+  const ids = new Set<string>()
+  for (const place of context.places) for (const id of Object.keys(record(record(place.body)?.modifiers) ?? {})) ids.add(id)
+  return [...ids].sort()
+}
+
+function modifierGroup(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json): SurfaceSettingGroup | undefined {
+  const own = record(body.modifiers) ?? {}
+  const items = modifierIds(context).flatMap((modifier): SurfaceSettingItem[] => {
+    const authored = record(own[modifier]) ?? {}
+    const enabled = typeof authored.enabled === "boolean" ? authored.enabled : undefined
+    const id = LAUNCH_ID.set(placeId, `modifier:${modifier}:enabled`)
+    rows.writes.set(id, {
+      place,
+      path: { _tag: "ModifierEnabled", payload: { id: modifier } },
+      encode: text => text === INHERIT ? {} : text === "true" ? { value: true } : text === "false" ? { value: false } : null,
+    })
+    const source = sourceText(context, place, context.resolved({ _tag: "ModifierEnabled", payload: { id: modifier } }), valueText)
+    const settings = record(authored.settings) ?? {}
+    return [
+      {
+        id,
+        label: modifier,
+        value: enabled === undefined ? "Inherit" : enabled ? "On" : "Off",
+        description: NEXT_LAUNCH,
+        ...(source === undefined ? {} : { source }),
+        scope: "device",
+        interaction: {
+          kind: "choice",
+          choices: [INHERIT_CHOICE, { value: "true", label: "On" }, { value: "false", label: "Off" }],
+          selected: enabled === undefined ? INHERIT : String(enabled),
+        },
+      },
+      ...Object.entries(settings).map(([key, value]): SurfaceSettingItem => {
+        const rowId = LAUNCH_ID.set(placeId, `modifier:${modifier}:setting:${key}`)
+        const { interaction, encode } = valueInteraction(undefined, value)
+        rows.writes.set(rowId, { place, path: { _tag: "ModifierSetting", payload: { id: modifier, key } }, encode })
+        const from = sourceText(context, place, context.resolved({ _tag: "ModifierSetting", payload: { id: modifier, key } }), valueText)
+        return {
+          id: rowId,
+          label: `${modifier} ${key}`,
+          value: valueText(value),
+          ...(from === undefined ? {} : { source: from }),
+          scope: "device",
+          interaction,
+        }
+      }),
+    ]
+  })
+  return items.length === 0 ? undefined : { title: "Modifiers", items }
+}
+
+/** Values set only in files: shown with where they are, never changed here. */
+function fileGroup(context: Context, place: LaunchPlaceSnapshot, placeId: string): SurfaceSettingGroup | undefined {
+  const body = record(place.body) ?? {}
+  const from = `from ${placeTitle(context, place)}`
+  const describe = `Set in ${fileOf(place.place.layer)}. Change it there.`
+  const row = (key: string, label: string, value: string): SurfaceSettingItem =>
+    ({ id: LAUNCH_ID.set(placeId, `file:${key}`), label, value, source: from, scope: "device", description: describe })
+  const items: SurfaceSettingItem[] = []
+  for (const [key, value] of Object.entries(record(body.env) ?? {})) {
+    items.push(row(`env:${key}`, `Environment ${key}`, value === null ? "Unset" : valueText(value)))
+  }
+  const args = record(body.args) ?? {}
+  const before = strings(args.prepend)
+  const after = strings(args.append)
+  if (before.length > 0) items.push(row("args:prepend", "Arguments before", before.join(" ")))
+  if (after.length > 0) items.push(row("args:append", "Arguments after", after.join(" ")))
+  if (typeof body.cwd === "string") items.push(row("cwd", "Working folder", body.cwd))
+  const hooks = record(body.hooks) ?? {}
+  const steps = (value: unknown) => Array.isArray(value) ? value.map(step => {
+    const run = record(step)?.run
+    return typeof run === "string" ? run : valueText(step)
+  }) : []
+  steps(hooks.before).forEach((run, index) => items.push(row(`hooks:before:${index}`, "Before launch", run)))
+  steps(hooks.after).forEach((run, index) => items.push(row(`hooks:after:${index}`, "After the session", run)))
+  const use = strings(hooks.use)
+  if (use.length > 0) items.push(row("hooks:use", "Routines", use.join(", ")))
+  const config = record(body.config)
+  if (config !== undefined && Object.keys(config).length > 0) items.push(row("config", "Runner config", valueText(config)))
+  for (const [modifier, raw] of Object.entries(record(body.modifiers) ?? {})) {
+    const modifierConfig = record(raw)?.config
+    if (modifierConfig !== undefined) items.push(row(`modifier-config:${modifier}`, `${modifier} config`, valueText(modifierConfig)))
+  }
+  return items.length === 0 ? undefined : { title: "From files", items }
+}
+
+/** What the runner plugin itself sets, from korrid's dry run, or that it could not say. */
+function runnerFactsGroup(context: Context, placeId: string, scope: LaunchRunnerScope): SurfaceSettingGroup | undefined {
+  if (scope._tag !== "Runner") return undefined
+  const runner = context.snapshot.runners.find(candidate => candidate.id === scope.id)
+  if (runner === undefined) return undefined
+  const title = context.runnerTitles.get(runner.id) ?? runner.title
+  const from = `from ${title} (default)`
+  const row = (key: string, label: string, value: string): SurfaceSettingItem =>
+    ({ id: LAUNCH_ID.set(placeId, `runner-facts:${key}`), label, value, source: from, scope: "device" })
+  if (runner.prepare._tag === "Unavailable") {
+    return {
+      title: "From the runner",
+      items: [{
+        id: LAUNCH_ID.set(placeId, "runner-facts:unavailable"),
+        label: "Runner facts unavailable",
+        value: runner.prepare.payload,
+        description: `Korri could not ask ${title} what it sets. Its environment, arguments and folder are not shown.`,
+      }],
+    }
+  }
+  const facts = runner.prepare.payload
+  const items = [
+    ...Object.entries(facts.env).map(([key, value]) => row(`env:${key}`, `Environment ${key}`, value)),
+    ...(facts.args.length === 0 ? [] : [row("args", "Arguments", facts.args.join(" "))]),
+    ...(facts.cwd === undefined ? [] : [row("cwd", "Working folder", facts.cwd)]),
+  ]
+  return items.length === 0 ? undefined : { title: "From the runner", items }
+}
+
+function profileRows(context: Context, kind: "pick" | "own", profileId?: string): SurfaceSettingGroup {
+  const snapshot = context.snapshot
   const titles = profileTitles(snapshot.profiles)
+  if (kind === "own" && profileId !== undefined) {
+    const profile = snapshot.profiles.find(candidate => candidate.id === profileId)
+    const title = profile?.title ?? profileId
+    const shown = titles.get(profileId) ?? title
+    return {
+      title: "Profile",
+      items: [
+        {
+          id: LAUNCH_ID.rename(profileId),
+          label: "Name",
+          value: title,
+          description: profileId === snapshot.selectedProfile ? "Used at next launch." : "Not used at next launch.",
+          interaction: { kind: "text", placeholder: "Profile name", maxLength: MAX_PROFILE_TITLE },
+        },
+        {
+          id: LAUNCH_ID.remove(profileId),
+          label: "Delete profile",
+          interaction: {
+            kind: "action",
+            actionId: LAUNCH_ID.remove(profileId),
+            destructive: true,
+            confirmation: {
+              title: `Delete ${shown}?`,
+              message: "Its values go. The game's other launch settings stay.",
+              confirmLabel: "Delete profile",
+            },
+          },
+        },
+      ],
+    }
+  }
   const selected = snapshot.profiles.find(profile => profile.id === snapshot.selectedProfile)
-  const profileRows = (): SurfaceSettingGroup => ({
+  return {
     title: "Profile",
     items: [
       {
         id: LAUNCH_ID.pick,
         label: "Profile at next launch",
         value: selected === undefined ? "No profile" : titles.get(selected.id) ?? selected.title,
-        description: "Remembered for this game. Applies at next launch.",
+        description: "Remembered for this game on this device. Applies at next launch.",
         interaction: {
           kind: "choice",
           choices: [
@@ -387,59 +876,93 @@ export function launchLayersFrom(snapshot: LaunchSettingsSnapshot): readonly Sur
         interaction: { kind: "text", placeholder: "Profile name", maxLength: MAX_PROFILE_TITLE },
       },
     ],
+  }
+}
+
+/**
+ * Plain lines about the whole editor: places korrid could not give, runners a
+ * place names that are not installed, and runners whose facts it could not read.
+ */
+export function launchNotesFrom(snapshot: LaunchSnapshot, gameId?: string): readonly string[] {
+  const context = contextOf(snapshot, gameId)
+  const partial = "Values in force leave them out."
+  const route = snapshot.routeLayers._tag === "NeedsRunnerChoice"
+    ? [`System and release settings appear once you choose a runner. ${partial}`]
+    : snapshot.routeLayers._tag === "Unavailable"
+      ? [`System and release settings aren't available: ${snapshot.routeLayers.message.replace(/\.$/, "")}. ${partial}`]
+      : []
+  const inUse = context.selected === undefined ? undefined : context.runnerTitles.get(context.selected.id) ?? context.selected.title
+  const unavailable = snapshot.notices.map(notice => {
+    const place = sourceTitle(context, { _tag: "Place", payload: notice.payload.place })
+    return `${place} names runner ${notice.payload.runnerId}, which isn't installed. Korri skips it and its runner settings there${inUse === undefined ? "." : ` and uses ${inUse}.`}`
   })
-  const layers = snapshot.layers
-    .filter(layer => layer.scope._tag !== "Profile")
-    .map((layer): SurfaceLaunchSettingsLayer => {
-      const layerId = layerIdOf(layer.scope)
-      const rows = valueRows(context, layerId, layer, layer.scope._tag === "Device", setting => LAUNCH_ID.set(layerId, setting))
-      return {
-        id: layerId,
-        title: layer.title,
-        groups: [
-          { title: "CPU", items: rows.cpu },
-          { title: "GPU", items: rows.gpu },
-          ...(layer.scope._tag === "Game" ? [profileRows()] : []),
-        ],
-      }
-    })
-  const profiles = snapshot.profiles.map((profile): SurfaceLaunchSettingsLayer => {
-    const layerId = `profile:${profile.id}`
-    const rows = valueRows(context, layerId, profile, false, setting => LAUNCH_ID.set(layerId, setting))
+  const facts = snapshot.runners.flatMap(runner => runner.prepare._tag === "Unavailable"
+    ? [`${context.runnerTitles.get(runner.id) ?? runner.title} facts are unavailable: ${runner.prepare.payload.replace(/\.$/, "")}.`]
+    : [])
+  return [...route, ...unavailable, ...facts]
+}
+
+/**
+ * One game's editor: a place per layer and runner scope, most general first.
+ * `pending` holds settings the person added with Add setting, by place id,
+ * shown until they are set or the editor closes.
+ */
+export function launchEditorFrom(
+  snapshot: LaunchSnapshot,
+  gameId: string | undefined,
+  pending: ReadonlyMap<string, readonly string[]> = new Map(),
+): LaunchEditor {
+  const context = contextOf(snapshot, gameId)
+  const rows: Rows = { writes: new Map(), adds: new Map(), pending: new Map() }
+  const places = context.places.map((entry): SurfaceLaunchSettingsPlace => {
+    const { place } = entry
+    const placeId = placeIdOf(place)
+    const body = record(entry.body) ?? {}
+    const kinds = entry.editableKinds
+    const any = place.scope._tag === "Any"
+    const groups: (SurfaceSettingGroup | undefined)[] = [
+      any && kinds.includes(KIND.runner) ? runnerGroup(context, rows, placeId, place, body) : undefined,
+      ...limitGroups(context, rows, place, body, kinds, key => LAUNCH_ID.set(placeId, key)),
+      kinds.includes(KIND.settings) ? settingsGroup(context, rows, placeId, place, body, pending.get(placeId) ?? []) : undefined,
+      kinds.includes(KIND.modifiers) ? modifierGroup(context, rows, placeId, place, body) : undefined,
+      place.layer._tag === "Game" && any ? profileRows(context, "pick") : undefined,
+      place.layer._tag === "Profile" && any ? profileRows(context, "own", place.layer.id.profileId) : undefined,
+      fileGroup(context, entry, placeId),
+      runnerFactsGroup(context, placeId, place.scope),
+    ]
     return {
-      id: layerId,
-      title: `Profile ${titles.get(profile.id) ?? profile.title}`,
-      groups: [
-        { title: "CPU", items: rows.cpu },
-        { title: "GPU", items: rows.gpu },
-        {
-          title: "Profile",
-          items: [
-            {
-              id: LAUNCH_ID.rename(profile.id),
-              label: "Name",
-              value: profile.title,
-              description: profile.id === snapshot.selectedProfile ? "Used at next launch." : "Not used at next launch.",
-              interaction: { kind: "text", placeholder: "Profile name", maxLength: MAX_PROFILE_TITLE },
-            },
-            {
-              id: LAUNCH_ID.remove(profile.id),
-              label: "Delete profile",
-              interaction: {
-                kind: "action",
-                actionId: LAUNCH_ID.remove(profile.id),
-                destructive: true,
-                confirmation: {
-                  title: `Delete ${titles.get(profile.id) ?? profile.title}?`,
-                  message: "Its values go. The game's other launch settings stay.",
-                  confirmLabel: "Delete profile",
-                },
-              },
-            },
-          ],
-        },
-      ],
+      id: placeId,
+      title: placeTitle(context, entry),
+      layer: { id: layerKey(place.layer), title: layerTitle(context, place.layer) },
+      scope: { kind: place.scope._tag === "Any" ? "any" : place.scope._tag === "Family" ? "family" : "runner", label: scopeLabel(context, place.scope) },
+      groups: groups.filter((group): group is SurfaceSettingGroup => group !== undefined),
     }
   })
-  return [...layers, ...profiles]
+  return { places, notes: launchNotesFrom(snapshot, gameId), writes: rows.writes, adds: rows.adds, pending: rows.pending }
+}
+
+/** Device settings' "Launch settings" group, from a snapshot without a game. */
+export function deviceLaunchGroup(snapshot: LaunchSnapshot): { readonly group: SurfaceSettingGroup; readonly writes: ReadonlyMap<string, LaunchWrite> } {
+  const context = contextOf(snapshot)
+  const rows: Rows = { writes: new Map(), adds: new Map(), pending: new Map() }
+  const entry = context.places.find(place => place.place.layer._tag === "Device" && place.place.scope._tag === "Any")
+  const place: LaunchPlace = entry?.place ?? { layer: { _tag: "Device" }, scope: { _tag: "Any" } }
+  const groups = limitGroups(context, rows, place, record(entry?.body) ?? {}, [KIND.cpu, KIND.gpu], LAUNCH_ID.device)
+  const items = groups.flatMap(group => group.items)
+  const governor = items.find(item => item.id === LAUNCH_ID.device("cpu.governor"))
+  return {
+    group: { title: "Launch settings", items: [...items.filter(item => item !== governor), ...(governor === undefined ? [] : [governor])] },
+    writes: rows.writes,
+  }
+}
+
+/** The profile a pick chooses: its id, or `null` for "No profile". */
+export function profileFromPick(choice: string): string | null {
+  return choice === NO_PROFILE ? null : choice
+}
+
+/** The selected profile's title, as the editor shows it. Absent: none. */
+export function activeProfileOf(snapshot: LaunchSnapshot): string | undefined {
+  const selected = snapshot.profiles.find(profile => profile.id === snapshot.selectedProfile)
+  return selected === undefined ? undefined : profileTitles(snapshot.profiles).get(selected.id) ?? selected.title
 }

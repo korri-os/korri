@@ -4,7 +4,7 @@ import { createHttpKorridClient, createInMemoryKorridClient } from "./client"
 import { runnerRoutes } from "../surface/fixtures/runner-routes"
 
 describe("runner RPC over localhost", () => {
-  it("uses exact tagged requests and revision checked clears without launch-time writes", async () => {
+  it("clears a remembered runner with a typed set and never writes at launch", async () => {
     const requests: RpcRequest[] = []
     const implementation = createInMemoryKorridClient({ gameRoutes: [runnerRoutes] })
     const server = Bun.serve({
@@ -21,10 +21,10 @@ describe("runner RPC over localhost", () => {
               _tag: rpc._tag,
               outcome: await implementation.gameRoutes(rpc.payload.gameId),
             })
-          case "app.local-games.runner.set":
+          case "app.launch-settings.set":
             return Response.json({
               _tag: rpc._tag,
-              outcome: await implementation.setGameRunner(rpc.payload),
+              outcome: await implementation.setLaunch(rpc.payload),
             })
           case "app.local-games.launch.selected":
             return Response.json({
@@ -41,22 +41,18 @@ describe("runner RPC over localhost", () => {
     })
     try {
       const client = createHttpKorridClient(server.url.origin, "test-capability")
-      expect((await client.gameRoutes("wl4"))._tag).toBe("Ok")
-      expect(
-        (
-          await client.setGameRunner({
-            scope: { _tag: "Game", id: "wl4" },
-            expectedRevision: "g1",
-          })
-        )._tag,
-      ).toBe("Ok")
+      const routes = await client.gameRoutes("wl4")
+      const revision = routes._tag === "Ok" ? routes.payload.revisions.games : ""
+      const clear = {
+        place: { layer: { _tag: "Game" as const, id: "wl4" }, scope: { _tag: "Any" as const } },
+        path: { _tag: "Runner" as const },
+        expectedRevision: revision,
+      }
+      expect((await client.setLaunch(clear))._tag).toBe("Ok")
       expect((await client.launchSelectedGame("wl4", "retroarch/mgba"))._tag).toBe("Ok")
       expect(requests).toEqual([
         { _tag: "app.local-games.routes", payload: { gameId: "wl4" } },
-        {
-          _tag: "app.local-games.runner.set",
-          payload: { scope: { _tag: "Game", id: "wl4" }, expectedRevision: "g1" },
-        },
+        { _tag: "app.launch-settings.set", payload: clear },
         {
           _tag: "app.local-games.launch.selected",
           payload: { gameId: "wl4", runnerId: "retroarch/mgba" },
