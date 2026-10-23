@@ -18,8 +18,8 @@ let
       "wss://relay.nostr.band"
       "wss://relay.primal.net"
     ];
-    # The native WPE launcher fixes its Wayland app_id to this value.
-    browserNeverFocusAppIds = [ "korri-portal" ];
+    # The native WPE launcher fixes its Wayland app_id to this value (a GApplication id needs a dot).
+    browserNeverFocusAppIds = [ "org.korri.portal" ];
     # Every product device opens Pico.
     surfaceId = "pico";
     korridAddress = "[::]:39217";

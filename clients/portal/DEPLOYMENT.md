@@ -42,7 +42,7 @@ consumers. A normal web update restarts only the browser.
 
 The kiosk unit is `korri-portal-kiosk.service`. It starts
 `korri-portal-wpe` directly as the notifying main process. The fixed Wayland
-app_id is `korri-portal`. WebKit owns data below
+app_id is `org.korri.portal`. WebKit owns data below
 `/var/lib/korri-portal/.local/share` and cache below `/var/lib/korri-portal/.cache`.
 The unit permits unprivileged user namespaces for WebKit's non-setuid
 bubblewrap sandbox. `NoNewPrivileges` remains enabled. The unit does not

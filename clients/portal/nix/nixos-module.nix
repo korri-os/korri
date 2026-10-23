@@ -21,7 +21,7 @@ let
   display = config.systemd.services.korri-compositor.environment.KORRI_WAYLAND_DISPLAY;
   state = "${home}/.local/share";
   cache = "${home}/.cache";
-  portalAppId = "korri-portal";
+  portalAppId = "org.korri.portal";
   origin = "http://${cfg.host}:${toString cfg.port}";
   # The surface resolver reads ?surface= first and remembers it, so a device
   # that can only open one fixed URL still picks its surface. This path serves

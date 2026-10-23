@@ -178,7 +178,7 @@ assert
     "${pkgs.sway-unwrapped}/bin/swaymsg"
     "-s"
     "/run/korri-compositor/sway-ipc.sock"
-    ''[app_id="korri-portal"] focus''
+    ''[app_id="org.korri.portal"] focus''
   ];
 # A device that names a surface opens it through the portal's own preference
 # seam; the served origin and asset root stay identical either way.

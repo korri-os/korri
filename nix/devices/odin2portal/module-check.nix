@@ -73,7 +73,7 @@ assert c.services.korri.webSurfaceHost.enable;
 assert c.services.korri.webSurfaceHost.surfaceId == "pico";
 assert c.services.korri.compositor.kiosk.enable;
 assert c.services.korri.pluginHost.enable;
-assert c.services.korriLinuxHost.compositor.neverFocusAppIds == [ "korri-portal" ];
+assert c.services.korriLinuxHost.compositor.neverFocusAppIds == [ "org.korri.portal" ];
 assert !(lib.hasInfix oldBootstrapAppId c.services.korriLinuxHost.compositor.extraConfig);
 assert !(configuration.options.services ? korriKiosk);
 assert !(c.systemd.services ? korri-kiosk);
