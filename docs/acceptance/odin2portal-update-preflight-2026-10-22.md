@@ -1,7 +1,10 @@
 # Odin 2 Portal update preflight — 2026-10-22
 
-**Blocked. No update write, closure copy, profile change, activation, bundle
-switch, reboot, firmware write or lock-state change ran on the Odin.** The
+**Historical preflight refusal, later resolved by explicit owner approval.**
+See [the accepted update](odin2portal-system-update-2026-10-22.md) for the new
+one-run scope and result. At the preflight recorded below, no update write,
+closure copy, profile change, activation, bundle switch, reboot, firmware write
+or lock-state change had run on the Odin. The
 proposed SD-only update does not match the live device. The parent is asking
 the owner for a corrected scope. `bench` still owns the device.
 
@@ -78,5 +81,6 @@ Nix daemon/configured builders. Evaluated candidate paths (not deployed):
 /nix/store/983r04y6kbmmygj6gwqi3f9hbniqzyaz-korri-bundle-0.0.0
 ```
 
-Await owner scope correction and the parent's separate bench-idle go. No
-mount check will be weakened merely because the labels match.
+At this point the task awaited owner scope correction and the parent's
+separate bench-idle go. Both later arrived for an explicitly bounded UFS file
+update; the accepted run is linked at the top. Labels alone did not grant it.
