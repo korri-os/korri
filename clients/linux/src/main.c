@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <errno.h>
 #include <fcntl.h>
 #include <glib-unix.h>
 #include <signal.h>
@@ -11,9 +12,15 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <sys/xattr.h>
 #include <unistd.h>
+#include <wpe/headless/wpe-headless.h>
 #include <wpe/webkit.h>
 #include <wpe/wpe-platform.h>
+
+/* This public constructor does not require any native Wayland protocol types.
+ * Declare it here to avoid a dependency on wayland-client headers. */
+extern WPEDisplay* wpe_display_wayland_new(void);
 
 static GMainLoop* loop;
 static char *origin, *notify_socket, *nonce;
@@ -55,6 +62,54 @@ static gboolean same_origin(const char* url)
     return !strcmp(candidate, origin);
 }
 
+static gboolean credential_acl_is_private(const unsigned char* acl, size_t size, uid_t uid)
+{
+    /* Linux POSIX ACL xattr v2, exactly the five entries systemd writes.
+     * Mode 0440's group read bit is the ACL mask, not a group grant. */
+    if (size != 44)
+        return FALSE;
+    const guint32 version = GUINT32_TO_LE(2);
+    if (memcmp(acl, &version, sizeof(version)))
+        return FALSE;
+    const struct {
+        guint16 tag;
+        guint16 permission;
+        guint32 id;
+    } entries[] = {
+        { 1, 4, G_MAXUINT32 }, /* root owner */
+        { 2, 4, uid }, /* service user */
+        { 4, 0, G_MAXUINT32 }, /* owning group */
+        { 16, 4, G_MAXUINT32 }, /* mask */
+        { 32, 0, G_MAXUINT32 }, /* other */
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(entries); i++) {
+        const unsigned char* entry = acl + 4 + i * 8;
+        const guint16 tag = GUINT16_TO_LE(entries[i].tag);
+        const guint16 permission = GUINT16_TO_LE(entries[i].permission);
+        const guint32 id = GUINT32_TO_LE(entries[i].id);
+        if (memcmp(entry, &tag, 2) || memcmp(entry + 2, &permission, 2) || memcmp(entry + 4, &id, 4))
+            return FALSE;
+    }
+    return TRUE;
+}
+
+static gboolean credential_is_private(int fd, const struct stat* st)
+{
+    uid_t uid = geteuid();
+    if (!S_ISREG(st->st_mode) || (st->st_uid != 0 && st->st_uid != uid))
+        return FALSE;
+    unsigned char acl[44];
+    ssize_t size = fgetxattr(fd, "system.posix_acl_access", acl, sizeof(acl));
+    if (size < 0) {
+        /* Unsupported ACLs are safe only for the service-owned private mode.
+         * All other xattr errors, including oversized ACLs, fail closed. */
+        return (errno == ENODATA || errno == EOPNOTSUPP)
+            && st->st_uid == uid && !(st->st_mode & 077);
+    }
+    return st->st_uid == 0 && (st->st_mode & 0777) == 0440
+        && credential_acl_is_private(acl, (size_t)size, uid);
+}
+
 static char* credential(void)
 {
     const char* directory = g_getenv("CREDENTIALS_DIRECTORY");
@@ -67,7 +122,7 @@ static char* credential(void)
     struct stat st;
     char buffer[4097];
     ssize_t length = -1;
-    if (!fstat(fd, &st) && S_ISREG(st.st_mode) && st.st_uid == geteuid() && !(st.st_mode & 077) && st.st_size > 0 && st.st_size <= 4096)
+    if (!fstat(fd, &st) && credential_is_private(fd, &st) && st.st_size > 0 && st.st_size <= 4096)
         length = read(fd, buffer, sizeof(buffer));
     close(fd);
     if (length <= 0 || length > 4096 || length != st.st_size)
@@ -238,7 +293,11 @@ int main(int argc, char** argv)
     nonce = g_malloc(65);
     for (size_t i = 0; i < sizeof(random); i++)
         g_snprintf(nonce + i * 2, 3, "%02x", random[i]);
+    gboolean headless = platform && !strcmp(platform, "headless");
     scrub_environment();
+    g_autoptr(WPEDisplay) display = headless ? wpe_display_headless_new() : wpe_display_wayland_new();
+    if (!display || !wpe_display_connect(display, NULL))
+        fail();
 
     /* WPE requires a syntactically valid GApplication ID (a dot is mandatory).
      * This also supplies its xdg_toplevel app_id; no public setter exists. */
@@ -273,7 +332,7 @@ int main(int argc, char** argv)
     webkit_settings_set_javascript_can_open_windows_automatically(settings, FALSE);
     g_autoptr(WebKitNetworkSession) session = webkit_network_session_new(NULL, NULL);
     WebKitWebView* view = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW,
-        "user-content-manager", manager, "settings", settings, "network-session", session, NULL));
+        "display", display, "user-content-manager", manager, "settings", settings, "network-session", session, NULL));
     g_signal_connect(view, "permission-request", G_CALLBACK(permission), NULL);
     g_signal_connect(view, "decide-policy", G_CALLBACK(policy), NULL);
     g_signal_connect(view, "create", G_CALLBACK(popup), NULL);
