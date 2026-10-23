@@ -1612,15 +1612,6 @@ async fn a_form_post_download_is_named_by_filename_not_by_its_token_url() {
         .server
         .route("/dl/7bf4e0908e024c5", Route::ok("application/zip", archive));
 
-    // N1: with no filename, the token is the name; it is no game or archive
-    // name, so the job fails before any download.
-    failed_with(&world.get("token").await, NOT_A_GAME);
-    assert!(!world
-        .server
-        .received()
-        .iter()
-        .any(|r| r.path.starts_with("/dl/")));
-
     let done = world.get("named").await;
     imported(&done);
     assert_eq!(
@@ -1643,6 +1634,11 @@ async fn a_form_post_download_is_named_by_filename_not_by_its_token_url() {
         names(&world.cache().join(sha_hex(ROM))),
         ["Super Mario World (USA).gba"]
     );
+    // N1: with no filename, the token is the name. It has no extension, so
+    // the download runs and the zip bytes decide (decision U2).
+    let token = world.get("token").await;
+    imported(&token);
+    assert_eq!(token.file_name.as_deref(), Some("7bf4e0908e024c5"));
 }
 
 /// ADR 0030 Change 1c: a store job reports Unpacking while korrid's reader
@@ -1695,4 +1691,83 @@ async fn an_unpacking_store_job_is_live_and_cancel_leaves_nothing() {
     // Without the hold the same job goes through Unpacking to Imported.
     gate.store(false, std::sync::atomic::Ordering::SeqCst);
     imported(&world.get("zipped").await);
+}
+
+/// Coordinator decision U2 (romhustler): `filename: "Zool"` has no extension
+/// because the real one is only in Content-Disposition, which korrid never
+/// reads (N1). A name with no extension goes to the download and the bytes
+/// decide; a wrong extension still fails before the download.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_name_without_an_extension_downloads_and_the_bytes_decide() {
+    let world = world();
+    let cases = [
+        (
+            "zipped",
+            "Zool",
+            "/dl/zipped/",
+            seven_z(&[("Zool (Europe).gba", ROM)]),
+        ),
+        ("plain", "Zool", "/dl/plain/", ROM.to_vec()),
+        (
+            "wrong",
+            "Zool.exe",
+            "/dl/wrong/",
+            zip(&[("Zool (Europe).gba", ROM)]),
+        ),
+    ];
+    for (id, filename, file, bytes) in &cases {
+        world.server.route(
+            &format!("/game/{id}"),
+            Route::ok(
+                "application/json",
+                format!(r#"{{"id":"{id}","title":"Zool","system":"gba","file":"{file}","filename":"{filename}"}}"#),
+            ),
+        );
+        world
+            .server
+            .route(file, Route::ok("application/octet-stream", bytes.clone()));
+        world
+            .api()
+            .details(
+                &world.context.registry,
+                &DetailsRequest {
+                    provider_id: PROVIDER.into(),
+                    id: (*id).into(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    let fetched = |path: &str| {
+        world
+            .server
+            .received()
+            .iter()
+            .filter(|r| r.path == path)
+            .count()
+    };
+
+    // An archive under an extensionless name is unpacked and identified.
+    let zipped = world.get("zipped").await;
+    imported(&zipped);
+    assert_eq!(zipped.file_name.as_deref(), Some("Zool"));
+    assert_eq!(
+        names(&world.cache().join(sha_hex(ROM))),
+        ["Zool (Europe).gba"]
+    );
+
+    // A plain file with no system extension fails cleanly after the download.
+    failed_with(&world.get("plain").await, NOT_A_GAME);
+    assert_eq!(fetched("/dl/plain/"), 1);
+
+    // A non-system, non-archive extension still fails before the download.
+    failed_with(&world.get("wrong").await, NOT_A_GAME);
+    assert_eq!(fetched("/dl/wrong/"), 0);
+
+    assert_eq!(world.snapshot().library.len(), 1);
+    assert_eq!(
+        names(&world.cache()),
+        [".downloads".to_owned(), sha_hex(ROM)]
+    );
+    assert!(names(&world.cache().join(".downloads")).is_empty());
 }

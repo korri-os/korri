@@ -645,8 +645,13 @@ impl Pipeline {
             .cloned()
             .ok_or_else(|| download_failed(Failure::NotSystemFile))?;
         // ADR 0030: before the download the name must end in a system or an
-        // archive extension; after it, the bytes decide.
-        if !system_name(&name, &rules) && !archive::archive_name(&name) {
+        // archive extension, or have no extension at all (decision U2:
+        // romhustler's real extension is only in Content-Disposition, which
+        // korrid never reads). After the download the bytes decide.
+        if !system_name(&name, &rules)
+            && !archive::archive_name(&name)
+            && Path::new(&name).extension().is_some()
+        {
             return Err(download_failed(Failure::NotSystemFile));
         }
         self.job
@@ -694,7 +699,8 @@ impl Pipeline {
         };
         let format = archive::format(&downloaded.lead);
         if format.is_none() && !system_name(&name, &rules) {
-            // A name that says archive with bytes in no archive format.
+            // A name that says archive, or has no extension, with bytes in
+            // no archive format: discovery could never identify it.
             return Err(download_failed(Failure::NotSystemFile));
         }
         {

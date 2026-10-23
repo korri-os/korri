@@ -66,6 +66,13 @@ each.
   with no User-Agent (`curl -A ''` 403, `curl -A 'Korri/0.1'` 200). It names
   Korri and imitates no browser. A provider turn may still set its own,
   because ADR 0016's refused headers never included `user-agent`.
+- U2, a name with no extension: before the download korrid also accepts a
+  name with no extension at all, and after it the bytes decide. Reason:
+  romhustler's resolve-download gives `filename: "Zool"`, because the real
+  extension arrives only in `Content-Disposition` (which N1 keeps unread) and
+  the URL's last segment is empty. A name with a non-system, non-archive
+  extension still fails before the download, and a non-archive file still
+  needs a system extension to be identified.
 
 **The decision.** A store download that is a zip, 7z or rar archive is
 unpacked by korrid's own Rust reader in a sandboxed unit. The reader refuses
@@ -201,9 +208,10 @@ extractor. korrid moves the file into the work folder under its name
 share one rule.
 
 Before the download, korrid accepts a name that ends in a system extension or
-in `.zip`, `.7z` or `.rar`. It refuses any other name before the download, as
-today. After the download, the bytes decide. A name that says archive with
-bytes in no archive format fails as `NotSystemFile`.
+in `.zip`, `.7z` or `.rar`, or that has no extension at all (decision U2). It
+refuses any other name before the download, as today. After the download, the
+bytes decide. A name that says archive, or has no extension, with bytes in no
+archive format fails as `NotSystemFile`.
 
 Nested archives, split and multi-volume archives (`.7z.001`, `.part1.rar`,
 `.rev` recovery sets), encrypted archives, and any file that the chosen
@@ -562,7 +570,8 @@ applies both rules.
 
 The outer name has two jobs:
 
-- It passes the check before the download (a system or archive extension).
+- It passes the check before the download (a system or archive extension, or
+  none, decision U2).
 - For a plain download, it is the file's name in the ready folder. For an
   archive, it names nothing in the cache. The ready folder holds the
   archive's entries under their own paths.

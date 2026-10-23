@@ -729,7 +729,10 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
 - **File name.** `FinalDownload.filename`, else the `FinalDownload.url`'s last
   segment (ADR 0030). The name must pass `SafeFileName` and contain no control
   character. Before the download it must end in one of the claim system's
-  extensions or in `.zip`, `.7z` or `.rar`.
+  extensions or in `.zip`, `.7z` or `.rar`, or have no extension at all
+  (romhustler gives `"Zool"`); any other extension fails before the
+  download. A name with no extension and bytes that are not an archive is
+  "not a game for this system".
 - **Unpacking.** After the download the first bytes decide: zip
   (`50 4b 03 04`, `50 4b 05 06`, `50 4b 07 08`), 7z (`37 7a bc af 27 1c`) or
   rar (`52 61 72 21 1a 07`) is an archive whatever its name. The job becomes

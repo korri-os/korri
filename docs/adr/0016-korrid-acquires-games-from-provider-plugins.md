@@ -190,6 +190,8 @@ amends this ADR:
   40 for a CHD's `sha1:` key. A plain download keeps its name inside; an
   archive's entries keep their paths.
 - **Q1, file name.** `FinalDownload.filename`, then the URL's last segment.
+  Before the download it must end in a system or archive extension or have
+  no extension; after it the bytes decide (ADR 0030 decision U2).
 - **Q2, release identity.** `Hash`, `Parts` or `Chd`, as discovery computes it.
 - **`FinalDownload`.** Gains `method` (`"POST"` or absent) and `body` (an
   object of string values, form-encoded) for the game download. Provider turns
