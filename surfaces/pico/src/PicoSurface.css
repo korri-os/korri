@@ -8,3 +8,9 @@
 .pico-catalog-surface[hidden] {
 	display: none;
 }
+
+/* The runner picker and launch settings, in a wrapper that only catches a
+ * press: it draws no box, so they lay out against the screen as before. */
+.pico-catalog-covers {
+	display: contents;
+}

@@ -64,9 +64,11 @@ through a callback. The shelf's chosen cart, the settings group, the text in
 the editor and the keyboard's layers, the identity form and its QR code, the
 MENU hint and a range's held value are all fields of a model.
 
-Two measurements are not state, so they are written to the DOM after layout
-and CSS reads them: whether a text field's start is cut (`data-cut`), and a
-cover's shape once its art has loaded (`data-ratio`). Focus and the click that
+Three measurements are not state, so they are written to the DOM after
+layout and CSS reads them: whether a text field's start is cut (`data-cut`),
+a cover's shape once its art has loaded (`data-ratio`), and the corner the
+invite notices stand in to keep the focused control in sight
+(`data-corner`). Focus and the click that
 woke attract are refs. This is where Elm would use a port or a custom element.
 
 Secrets typed into the editor or the identity dialog sit in the model while
@@ -235,11 +237,15 @@ typed the key reads SKIP and sends nothing. The step exists only where Korri
 publishes the setting as editable text, and the track draws it as part of YOU.
 
 Stream play: an invite Korri publishes
-in `SurfaceModel.invites` gets one blue notice in the top left corner, the
-first time it stands while home or Find shows: "Simon is playing Turtles in
-Time", and where. Notices take no focus, let a pointer through, stay 8
-seconds, end at the person's next press, and may cover half the screen
-height; the oldest give way whole. Home lists every standing invite under
+in `SurfaceModel.invites` gets one blue notice at once, on whatever screen of
+the catalog shows (home, Find, the store, a game's screen, Settings and its
+questions, the runner picker, launch settings): "Simon is playing Turtles in
+Time", and where. Korri publishes invites only while the device is idle, so
+Pico announces every one it sees. The composition root draws the notices
+over everything else, in the top left corner, or in the first other corner
+that keeps the focused control in sight. Notices take no focus, let a
+pointer through, stay 8 seconds, end at the person's next press, and may
+cover half the screen height; the oldest give way whole. Home lists every standing invite under
 PLAYING NOW, above whichever layout is chosen, with its cover, who plays it
 and where, and exactly the invite's actions as buttons through `runAction`.
 With no invite there is no entry. The entry takes at most 45% of home's body

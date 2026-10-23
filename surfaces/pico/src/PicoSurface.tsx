@@ -17,6 +17,7 @@ import { PicoOverlay } from "./pages/PicoOverlay"
 import { PicoSettings, type PicoSettingsEditing } from "./pages/PicoSettings"
 import { PicoStore } from "./pages/PicoStore"
 import { PicoIdentityDialog } from "./ui/organisms/PicoIdentityDialog"
+import { PicoInviteNotices } from "./ui/organisms/PicoInviteNotices"
 import { picoDetailViewFromGame } from "./pico-detail-view"
 import { picoInvitesFrom } from "./pico-invite-view"
 import { performPicoRequest, subscribePicoHostButtons } from "./pico-host"
@@ -304,10 +305,22 @@ function PicoCatalogSurface({
           qr={identityQuestion?.qr?.dataUrl}
         />
       </div>
-      {runner !== undefined && runner._tag !== "Closed" ? (
-        <PicoRunnerPicker choice={runner} onAction={actionId => dispatch({ _tag: "ChoseRunnerAction", actionId })} />
-      ) : null}
-      {launch === undefined ? null : renderLaunch(launch, nav.launch?.question ?? { _tag: "None" }, nav.launch?.group ?? 0, nav.launch?.scope ?? 0)}
+      {/* The runner picker and a game's launch settings cover the catalog.
+        * A press on them ends the invite notices too, as a press on the
+        * catalog does; the wrapper draws no box. */}
+      <div
+        className="pico-catalog-covers"
+        onClickCapture={() => dispatch({ _tag: "PressedScreen" })}
+        onKeyDownCapture={() => dispatch({ _tag: "PressedScreen" })}
+      >
+        {runner !== undefined && runner._tag !== "Closed" ? (
+          <PicoRunnerPicker choice={runner} onAction={actionId => dispatch({ _tag: "ChoseRunnerAction", actionId })} />
+        ) : null}
+        {launch === undefined ? null : renderLaunch(launch, nav.launch?.question ?? { _tag: "None" }, nav.launch?.group ?? 0, nav.launch?.scope ?? 0)}
+      </div>
+      {/* Invites, announced over every screen of the catalog, its questions
+        * and the covers above it. Nothing in it takes focus or a pointer. */}
+      <PicoInviteNotices notices={notices} />
     </>
   )
 
@@ -406,7 +419,6 @@ function PicoCatalogSurface({
             library={picoLibraryViewFrom(model.catalog, shown.search.query, shown.search.section, shown.search.order)}
             onBackspace={() => dispatch({ _tag: "PressedBackspace" })}
             onClear={() => dispatch({ _tag: "ClearedQuery" })}
-            notices={notices}
             onOpen={gameId => dispatch({ _tag: "OpenedGame", gameId })}
             onOrder={order => dispatch({ _tag: "ChoseOrder", order })}
             onSection={section => dispatch({ _tag: "ChoseSection", section })}
@@ -455,7 +467,6 @@ function PicoCatalogSurface({
             invites={picoInvitesFrom(model)}
             onInviteAction={actionId => dispatch({ _tag: "PressedInviteAction", actionId })}
             onLostInviteFocus={() => dispatch({ _tag: "LostInviteFocus" })}
-            notices={notices}
             mode={shown.home.mode}
             onOpenGame={gameId => dispatch({ _tag: "OpenedGame", gameId })}
             onReturnedToCart={() => dispatch({ _tag: "ReturnedFocus" })}

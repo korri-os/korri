@@ -1,9 +1,11 @@
 /**
- * The stack floats in the top left corner of the frame it is given, over the
- * header and the screen below, above attract too: an idle device is exactly
- * where an invite matters. Left, because the left of home's top is words
- * (the header, a game's title); the buttons of PLAYING NOW stand at the
- * right, and a notice must not cover the control it announces.
+ * The stack floats in a corner of the screen, over every layer of the
+ * catalog: the header, attract (an idle device is exactly where an invite
+ * matters), Settings' questions and the identity dialog. The top left by
+ * default, because the left of home's top is words (the header, a game's
+ * title); the buttons of PLAYING NOW stand at the right, and a notice must
+ * not cover the control it announces. `data-corner` moves it to keep the
+ * focused control in sight.
  *
  * It may cover half the frame's height and no more. The stack is a column
  * that wraps: a notice that does not fit whole goes to a second column,
@@ -14,7 +16,7 @@
 	position: absolute;
 	top: var(--pico-u);
 	left: var(--pico-u);
-	z-index: 4;
+	z-index: 40;
 	display: flex;
 	flex-flow: column wrap;
 	align-content: flex-start;
@@ -23,4 +25,21 @@
 	max-height: 50%;
 	overflow: hidden;
 	pointer-events: none;
+}
+
+.pico-invite-notices[data-corner="top-right"] {
+	left: auto;
+	right: var(--pico-u);
+}
+
+.pico-invite-notices[data-corner="bottom-left"] {
+	top: auto;
+	bottom: var(--pico-u);
+}
+
+.pico-invite-notices[data-corner="bottom-right"] {
+	top: auto;
+	right: var(--pico-u);
+	bottom: var(--pico-u);
+	left: auto;
 }

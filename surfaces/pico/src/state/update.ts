@@ -56,7 +56,7 @@ import {
 } from "./wifi"
 
 export function update(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): PicoStep<PicoNavigation> {
-  const result = step(settleLaunch(nav, korri), message, korri)
+  const result = step(settleLaunch(endNotices(nav, message), korri), message, korri)
   const settled = settleIdle(settleEditor(settleLaunch(settleSession(result.model, korri), korri), korri), korri)
   const identity = settleIdentity(nav, settled, korri)
   const invites = settleInvites(identity.model, korri)
@@ -82,18 +82,10 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
   // A press while attract shows wakes the screen and does nothing else.
   // Picking a device up must not start a game, cycle a layout or open
   // Settings: the first press is how the player gets the screen back.
-  // A press also ends the invite notices on screen: they were for a person
-  // who was not using the device, and must never hide what a press does
-  // (a letter typed in Find). The invites stay on home.
   if (isHostButton(message) || message._tag === "PressedScreen" || message._tag === "MovedFocus") {
-    const pressed = message._tag !== "MovedFocus"
-    const waking = pressed && attractShowing(nav, korri)
+    const waking = message._tag !== "MovedFocus" && attractShowing(nav, korri)
     const activity = nav.idle.activity + 1
-    nav = {
-      ...nav,
-      idle: { _tag: pressed ? "Awake" : nav.idle._tag, activity },
-      ...(pressed && nav.invites.showing.length > 0 ? { invites: { ...nav.invites, showing: [] } } : {}),
-    }
+    nav = { ...nav, idle: { _tag: message._tag === "MovedFocus" ? nav.idle._tag : "Awake", activity } }
     if (waking || !isHostButton(message)) return stay(nav)
   }
 
@@ -448,14 +440,25 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
 }
 
 /**
- * Invites Korri publishes that have had no notice get one now, if home or
- * Find shows, each with its own wait. A notice goes when its time is up or
+ * Any press, on any screen and under any cover, ends the invite notices on
+ * screen: they were for a person who was not using the device, and must
+ * never hide what a press does (a letter typed in Find). A focus move is not
+ * a press. The invites stay on home.
+ */
+function endNotices(nav: PicoNavigation, message: PicoMessage): PicoNavigation {
+  const pressed = isHostButton(message) || message._tag === "PressedScreen"
+  return pressed && nav.invites.showing.length > 0 ? { ...nav, invites: { ...nav.invites, showing: [] } } : nav
+}
+
+/**
+ * Invites Korri publishes that have had no notice get one now, on whatever
+ * screen of the catalog shows, each with its own wait. A notice goes when its time is up or
  * its invite goes.
  */
 function settleInvites(nav: PicoNavigation, korri: SurfaceModel): PicoStep<PicoNavigation> {
   const standing = korri.invites ?? []
   const showing = nav.invites.showing.filter(notice => standing.some(invite => invite.id === notice.inviteId))
-  const fresh = invitesNoticeable(nav, korri)
+  const fresh = invitesNoticeable(korri)
     ? standing.filter(invite => !nav.invites.noticed.includes(invite.id))
     : []
   if (fresh.length === 0 && showing.length === nav.invites.showing.length) return stay(nav)

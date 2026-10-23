@@ -3,6 +3,8 @@ import {
   emptySettingsModel,
   failedSettingsModel,
   fixtureSettingsConfirmation,
+  fixtureInvite,
+  inviteModel,
   savingSettingsModel,
   secretSettingModel,
 } from "../fixtures/named-states"
@@ -25,7 +27,9 @@ import {
 import { picoWifiEntryView } from "../pico-wifi-view"
 import type { PicoMessage } from "../state/messages"
 import { initialNavigation, type PicoNavigation } from "../state/navigation"
+import { inviteNotices } from "../state/shown"
 import { update } from "../state/update"
+import { PicoInviteNotices } from "../ui/organisms/PicoInviteNotices"
 import { usePicoProgram } from "../use-pico-program"
 import { PicoSettings } from "./PicoSettings"
 
@@ -108,11 +112,13 @@ function Settings({
   )
   const settings = nav.settings
   if (settings === undefined) return null
+  // The composition root lays the invite notices over every screen; laid over Settings as it lays them.
+  const notices = inviteNotices(nav, model)
   const question = settings.question
   const editing = question._tag === "EditingText" || question._tag === "ConfirmingClear"
     ? { settingId: question.settingId, clearing: question._tag === "ConfirmingClear", draft: question.draft }
     : undefined
-  return <PicoSettings clockLabel={model.clockLabel} settings={picoSettingsViewFromModel(model)}
+  return <><PicoSettings clockLabel={model.clockLabel} settings={picoSettingsViewFromModel(model)}
     asking={question._tag === "ConfirmingAction" ? question : undefined}
     editing={editing} group={settings.group}
     onGroup={group => dispatch({ _tag: "ChoseSettingsGroup", group })}
@@ -142,9 +148,21 @@ function Settings({
       onToggleCapitals: () => dispatch({ _tag: "ToggledCapitals" }),
       onToggleSymbols: () => dispatch({ _tag: "ToggledSymbols" }),
     }} />
+    {notices.length === 0 ? null : <PicoInviteNotices notices={notices} />}</>
 }
 
 const edit = (settingId: string): PicoMessage => ({ _tag: "OpenedEditor", settingId })
+
+/** An invite arrives while Settings is open: its notice shows at once, over
+ * Settings, clear of the cursor. Korri's wait is not run here, so it stays. */
+export function InviteNotice() {
+  return <Settings model={inviteModel([fixtureInvite])} opening={[{ _tag: "KorriPublished" }]} />
+}
+
+/** The same notice over a question Settings asks: the text editor. */
+export function InviteNoticeOverEditor() {
+  return <Settings model={inviteModel([fixtureInvite])} opening={[edit("device-name"), { _tag: "KorriPublished" }]} />
+}
 
 export function Empty() { return <Settings model={emptySettingsModel} /> }
 export function Saving() { return <Settings model={savingSettingsModel} /> }

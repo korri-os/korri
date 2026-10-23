@@ -1,6 +1,6 @@
 import "./PicoHome.css"
 import { picoStatsFor } from "../pico-detail-view"
-import type { PicoInviteNoticeView, PicoInviteView } from "../pico-invite-view"
+import type { PicoInviteView } from "../pico-invite-view"
 import { picoCollectionsFrom, picoHeroPick } from "../pico-library-view"
 import type { PicoScreenView } from "../pico-screen-view"
 import type { PicoShelfGame } from "../pico-shelf-game"
@@ -8,7 +8,6 @@ import { PicoNotice } from "../ui/molecules/PicoNotice"
 import { PicoCartGrid } from "../ui/organisms/PicoCartGrid"
 import { PicoCartShelf } from "../ui/organisms/PicoCartShelf"
 import { PicoGameHero } from "../ui/organisms/PicoGameHero"
-import { PicoInviteNotices } from "../ui/organisms/PicoInviteNotices"
 import { PicoPlayingNow } from "../ui/organisms/PicoPlayingNow"
 import { PicoResumeList } from "../ui/organisms/PicoResumeList"
 import { PicoLaunchStage } from "../ui/organisms/PicoLaunchStage"
@@ -94,8 +93,8 @@ function shelfReadout(games: readonly PicoShelfGame[]): string {
  * Over the library, PLAYING NOW lists the invites Korri publishes, above
  * whichever layout is chosen; with none it is not there. The library sits
  * in the same element either way, so an invite that comes or goes never
- * redraws the shelf or moves its cursor. Invite notices float over the
- * whole frame and take nothing from it.
+ * redraws the shelf or moves its cursor. Invite notices are not home's:
+ * the composition root lays them over every screen.
  *
  * Failure copy is Korri's own, passed through untouched: the surface cannot
  * tell a missing file from an unreachable host, and guessing would put a wrong
@@ -118,7 +117,6 @@ export function PicoHome({
   invites = [],
   onInviteAction,
   onLostInviteFocus,
-  notices = [],
   clockLabel,
 }: {
   readonly view: PicoScreenView
@@ -144,8 +142,6 @@ export function PicoHome({
   readonly onInviteAction?: (actionId: string) => void
   /** The cursor was in PLAYING NOW and its last row went. */
   readonly onLostInviteFocus?: () => void
-  /** Invites announced now, newest first. */
-  readonly notices?: readonly PicoInviteNoticeView[]
   readonly clockLabel?: string
 }) {
   const asking = placing !== undefined && view._tag === "Shelf"
@@ -193,7 +189,6 @@ export function PicoHome({
           open={open}
         />
       ) : undefined}
-      over={<PicoInviteNotices notices={notices} />}
       readout={view._tag === "Shelf" ? shelfReadout(view.games) : undefined}
     >
       {asking && placing !== undefined ? (

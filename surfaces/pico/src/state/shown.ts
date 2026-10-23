@@ -59,24 +59,20 @@ export function canAttract(nav: PicoNavigation, korri: SurfaceModel): boolean {
     && nav.detail === undefined
 }
 
-/** Home is showing the library: the shelf, or why there is none. Not a
- * launch, a running game, a failure, or anything else Korri's status says. */
-export const picoLibraryShown = (view: PicoScreenView): boolean =>
-  view._tag === "Shelf" || view._tag === "Loading" || view._tag === "Empty" || view._tag === "Failed"
-
 /**
- * Invite notices show over the idle home and Find, and nowhere else: not
- * over a launch, a question, Settings or a game's own screen.
+ * Invite notices show on every screen of the catalog presentation: home,
+ * Find, the store, a game's own screen, Settings and their questions, the
+ * runner picker and launch settings. Korri publishes an invite only while
+ * this device is idle and drops it when it is not, so whether to announce is
+ * Korri's fact, not a screen's. Setup and the gameplay overlay are other
+ * presentations and draw none. The actionable list stays on home.
  */
-export function invitesNoticeable(nav: PicoNavigation, korri: SurfaceModel): boolean {
-  if (runnerOpen(korri) || launchOpen(korri)) return false
-  const shown = shownScreen(nav, korri)
-  return shown._tag === "Find" || (shown._tag === "Home" && picoLibraryShown(shown.view))
-}
+export const invitesNoticeable = (korri: SurfaceModel): boolean =>
+  korri.presentation.kind === "catalog" && korri.onboarding === undefined
 
 /** The notices on screen now, newest first, in Korri's words. */
 export function inviteNotices(nav: PicoNavigation, korri: SurfaceModel): readonly PicoInviteNoticeView[] {
-  if (!invitesNoticeable(nav, korri)) return []
+  if (!invitesNoticeable(korri)) return []
   const invites = korri.invites ?? []
   return nav.invites.showing.flatMap(({ inviteId }) => {
     const invite = invites.find(candidate => candidate.id === inviteId)

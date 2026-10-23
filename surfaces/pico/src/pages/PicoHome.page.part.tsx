@@ -17,6 +17,7 @@ import {
 } from "../fixtures/named-states"
 import { picoInvitesFrom } from "../pico-invite-view"
 import { picoScreenViewFromModel } from "../pico-screen-view"
+import { PicoInviteNotices } from "../ui/organisms/PicoInviteNotices"
 import { PicoHome, type PicoHomeMenu, type PicoHomeMode } from "./PicoHome"
 
 export const name = "Home"
@@ -54,13 +55,15 @@ function home(
   mode: PicoHomeMode = "shelf",
   placing?: ReturnType<typeof fixtureShelfGame>,
   menu: PicoHomeMenu = closedMenu,
-  notices: ComponentProps<typeof PicoHome>["notices"] = [],
+  notices?: ComponentProps<typeof PicoInviteNotices>["notices"],
 ) {
   const host = createFixtureHost()
-  return <Home clockLabel={model.clockLabel} menu={menu} mode={mode} placing={placing}
+  const page = <Home clockLabel={model.clockLabel} menu={menu} mode={mode} placing={placing}
     onOpenGame={() => undefined} onChooseLocation={id => host.launchGame("tetris", id)}
     onRetry={host.retry} onDismiss={host.dismiss} view={picoScreenViewFromModel(model)}
-    invites={picoInvitesFrom(model)} onInviteAction={host.runAction} notices={notices} />
+    invites={picoInvitesFrom(model)} onInviteAction={host.runAction} />
+  // The notices are the composition root's, over every screen; laid over home as it lays them.
+  return notices === undefined ? page : <>{page}<PicoInviteNotices notices={notices} /></>
 }
 
 export function Loading() { return home({ ...fixtureModel, catalog: { _tag: "Loading" } }) }

@@ -10,6 +10,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { createFixtureHost, fixtureModel, fixtureOverlay } from "../src/fixtures/fixture-host"
+import { runnerChoice } from "../src/fixtures/runner-choice"
+import { storeFixture } from "../src/fixtures/store"
 import {
   dimmedInvite,
   fixtureInvite,
@@ -25,7 +27,7 @@ import * as overlayPart from "../src/pages/PicoOverlay.page.part"
 import * as libraryPart from "../src/pages/PicoLibrary.page.part"
 import * as onboardingPart from "../src/pages/PicoOnboarding.page.part"
 import { PicoSurface } from "../src/PicoSurface"
-import { PICO_INVITE_NOTICE_MS } from "../src/pico-invite-view"
+import { PICO_INVITE_NOTICE_MS, picoNoticeCorner } from "../src/pico-invite-view"
 import { picoOverlayViewFrom } from "../src/pico-overlay-view"
 import { picoScreenViewFromModel } from "../src/pico-screen-view"
 import type { PicoMessage } from "../src/state/messages"
@@ -94,26 +96,62 @@ describe("invite notices", () => {
     expect(storyFrom(nav, inviteModel([fixtureInvite]), { _tag: "PressedScreen" }).notices).toEqual([])
   })
 
-  test("shown over home and Find only; an invite that came during Settings is announced on the way back", () => {
-    const find = story(inviteModel([fixtureInvite]), { _tag: "PressedOptions" }, published)
-    expect(find.notices).toEqual([fixtureInvite.id])
-
+  test("an invite that arrives while Settings is open is announced at once, with its wait", () => {
     const settings = story(fixtureModel, system)
     const during = storyFrom(settings.nav, inviteModel([fixtureInvite]), published)
-    expect(during.notices).toEqual([])
-    expect(waits(during.requests)).toEqual([])
-    const after = storyFrom(during.nav, inviteModel([fixtureInvite]), system)
-    expect(after.notices).toEqual([fixtureInvite.id])
+    expect(during.notices).toEqual([fixtureInvite.id])
+    expect(waits(during.requests)).toEqual([{ _tag: "Wait", ms: PICO_INVITE_NOTICE_MS, token: 0 }])
   })
 
-  test("not over a launch, a failure, or a paused stream", () => {
-    for (const status of [
-      { _tag: "Busy", kicker: "Connecting…" },
-      { _tag: "Problem", kicker: "No", reason: "No.", canRetry: false },
-      streamPausedStatus,
-    ] as const) {
-      expect(story({ ...inviteModel([fixtureInvite]), status }, published).notices).toEqual([])
+  test("announced on every screen of the catalog: Find, the store, a game's own screen, and under a cover", () => {
+    const korri = inviteModel([fixtureInvite])
+    const screens: readonly PicoMessage[][] = [
+      [{ _tag: "PressedOptions" }],
+      [{ _tag: "ChoseMenuStore" }],
+      [{ _tag: "OpenedGame", gameId: "hollow" }],
+      [system, { _tag: "OpenedEditor", settingId: "device-name" }],
+    ]
+    const withStore = { ...korri, store: storeFixture() }
+    for (const opening of screens) {
+      const opened = story({ ...fixtureModel, store: storeFixture() }, ...opening)
+      expect(storyFrom(opened.nav, withStore, published).notices).toEqual([fixtureInvite.id])
     }
+    const covered = { ...korri, runnerChoice: runnerChoice }
+    expect(story(covered, published).notices).toEqual([fixtureInvite.id])
+  })
+
+  test("Korri owns idleness: whatever its status, an invite it publishes is announced", () => {
+    for (const status of [
+      { _tag: "Problem", kicker: "No", reason: "No.", canRetry: false },
+      streamEndedStatus,
+    ] as const) {
+      expect(story({ ...inviteModel([fixtureInvite]), status }, published).notices).toEqual([fixtureInvite.id])
+    }
+  })
+
+  test("setup and the gameplay overlay draw no notice", () => {
+    expect(story({ ...inviteModel([fixtureInvite]), onboarding: { controllers: [] } }, published).notices).toEqual([])
+    expect(story({ ...inviteModel([fixtureInvite]), presentation: fixtureOverlay }, published).notices).toEqual([])
+  })
+
+  test("a press under a cover ends the notices too", () => {
+    const covered = { ...inviteModel([fixtureInvite]), runnerChoice: runnerChoice }
+    const { nav } = story(covered, published)
+    expect(storyFrom(nav, covered, back).notices).toEqual([])
+  })
+
+  test("the stack stands clear of the focused control: top left, else the first corner that is", () => {
+    const frame = { left: 0, top: 0, right: 640, bottom: 480 }
+    const size = { width: 300, height: 100 }
+    expect(picoNoticeCorner(frame, size, 8, undefined)).toBe("top-left")
+    // Settings' first spine, top left: the stack goes to the top right.
+    expect(picoNoticeCorner(frame, size, 8, { left: 16, top: 70, right: 200, bottom: 100 })).toBe("top-right")
+    // A full-width row near the top: the bottom left.
+    expect(picoNoticeCorner(frame, size, 8, { left: 16, top: 60, right: 624, bottom: 90 })).toBe("bottom-left")
+    // A key at the bottom left: the top left stays.
+    expect(picoNoticeCorner(frame, size, 8, { left: 16, top: 400, right: 80, bottom: 440 })).toBe("top-left")
+    // Everywhere covered: the corner that covers least of it.
+    expect(picoNoticeCorner(frame, size, 8, { left: 0, top: 0, right: 640, bottom: 400 })).toBe("bottom-left")
   })
 
   test("a notice has nothing to focus and lets a pointer through", () => {
@@ -178,6 +216,15 @@ describe("PLAYING NOW", () => {
     expect(notice.textContent).toBe("Simon is playingTurtles in Timeon Odin 2 Portal")
     fireEvent.click(within(screen.getByRole("region", { name: "Playing now" })).getByRole("button", { name: "Play on stream" }))
     expect(host.calls).toContain(`action:${fixtureInvite.id}:stream`)
+  })
+
+  test("end to end: an invite that arrives in Settings is announced at once, over Settings", () => {
+    const host = createFixtureHost()
+    const view = render(<PicoSurface host={host} model={fixtureModel} />)
+    act(() => host.press("system"))
+    view.rerender(<PicoSurface host={host} model={inviteModel([fixtureInvite])} />)
+    expect(screen.getByRole("status").textContent).toBe("Simon is playingTurtles in Timeon Odin 2 Portal")
+    expect(screen.queryByRole("region", { name: "Playing now" })).toBeNull()
   })
 
   test("the shelf keeps its cursor when an invite arrives", () => {

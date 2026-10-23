@@ -49,3 +49,57 @@ export function picoInvitesFrom(model: Pick<SurfaceModel, "invites">): readonly 
 export function picoInviteActionPublished(model: Pick<SurfaceModel, "invites">, actionId: string): boolean {
   return (model.invites ?? []).some(invite => invite.actions.some(action => action.id === actionId && action.enabled))
 }
+
+/** A corner of the screen the notice stack can stand in. */
+export type PicoNoticeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right"
+
+const CORNERS: readonly PicoNoticeCorner[] = ["top-left", "top-right", "bottom-left", "bottom-right"]
+
+/** A box on screen, in CSS pixels. */
+export interface PicoBox {
+  readonly left: number
+  readonly top: number
+  readonly right: number
+  readonly bottom: number
+}
+
+/**
+ * Where the notice stack stands, so the focused control stays in sight: the
+ * first corner, in reading order from the top left, whose stack would not
+ * touch the focused control (with `inset` of room round it for its hard
+ * shadow); where every corner would, the one that covers least of it. With
+ * nothing focused, the top left: there the stack covers words, the header
+ * and titles, before it covers controls.
+ */
+export function picoNoticeCorner(
+  frame: PicoBox,
+  size: { readonly width: number; readonly height: number },
+  inset: number,
+  focused: PicoBox | undefined,
+): PicoNoticeCorner {
+  if (focused === undefined) return "top-left"
+  const target = {
+    left: focused.left - inset,
+    top: focused.top - inset,
+    right: focused.right + inset,
+    bottom: focused.bottom + inset,
+  }
+  const covered = (corner: PicoNoticeCorner): number => {
+    const left = corner.endsWith("left") ? frame.left + inset : frame.right - inset - size.width
+    const top = corner.startsWith("top") ? frame.top + inset : frame.bottom - inset - size.height
+    const width = Math.min(left + size.width, target.right) - Math.max(left, target.left)
+    const height = Math.min(top + size.height, target.bottom) - Math.max(top, target.top)
+    return width > 0 && height > 0 ? width * height : 0
+  }
+  let best: PicoNoticeCorner = "top-left"
+  let least = Number.POSITIVE_INFINITY
+  for (const corner of CORNERS) {
+    const area = covered(corner)
+    if (area === 0) return corner
+    if (area < least) {
+      least = area
+      best = corner
+    }
+  }
+  return best
+}

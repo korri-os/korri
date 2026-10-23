@@ -1,6 +1,8 @@
 import { fixtureModel } from "../fixtures/fixture-host"
+import { fixtureInvite, inviteNoticeViews } from "../fixtures/named-states"
 import { STORE_GETS, storeDetails, storeFixture } from "../fixtures/store"
 import { picoTextDraft } from "../pico-text-draft"
+import { PicoInviteNotices } from "../ui/organisms/PicoInviteNotices"
 import { PicoStore, type PicoStoreShown } from "./PicoStore"
 
 export const name = "Get games"
@@ -25,6 +27,17 @@ function store(shown: PicoStoreShown, overrides: Parameters<typeof storeFixture>
 
 export default function PicoStorePagePart() {
   return store({ view: "Providers", providerId: undefined, typing: undefined })
+}
+
+/** An invite arrives while the person searches a provider: the composition
+ * root's notice over the store, clear of the cursor. */
+export function InviteNotice() {
+  return (
+    <>
+      {store({ view: "Results", providerId: BBS, typing: undefined })}
+      <PicoInviteNotices notices={inviteNoticeViews([fixtureInvite])} />
+    </>
+  )
 }
 
 export function Results() { return store({ view: "Results", providerId: BBS, typing: undefined }) }

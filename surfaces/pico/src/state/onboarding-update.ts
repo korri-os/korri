@@ -30,6 +30,7 @@ import {
 import { picoDraftBackspace, picoDraftType, picoTextDraft, type PicoTextDraft } from "../pico-text-draft"
 import {
   type IdentityStep,
+  type NameStep,
   type OnboardingMessage,
   type OnboardingNav,
   type OnboardingStep,
@@ -559,29 +560,33 @@ function settlePending(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
 const sameNetworks = (a: readonly { readonly id: string }[], b: readonly { readonly id: string }[]): boolean =>
   a.length === b.length && a.every((network, index) => network.id === b[index]?.id)
 
-function settleName(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
-  const saving = nav.name.saving
-  if (saving === "No") return nav
+/**
+ * A name sent to Korri, against what Korri says of its save: `Seen` once
+ * Korri says it is saving, `No` again on a refusal (the step and the typing
+ * stay; Korri's words show in the editor), and `Saved` once the save is
+ * over: Korri idle after saving, or holding what was typed.
+ */
+function settleSave(name: NameStep, settingId: string, held: string | undefined, korri: SurfaceModel): NameStep | "Saved" {
+  if (name.saving === "No") return name
   const status = korri.settingsStatus
-  const mine = status._tag !== "Idle" && status.settingId === DEVICE_NAME_SETTING
-  if (mine && status._tag === "Saving") return saving === "Seen" ? nav : { ...nav, name: { ...nav.name, saving: "Seen" } }
-  // A refusal keeps the step and the typing; Korri's words show in the editor.
-  if (mine && status._tag === "Problem") return { ...nav, name: { ...nav.name, saving: "No" } }
-  const saved = saving === "Seen" || deviceName(korri) === nav.name.draft?.text
-  return saved ? { ...at(nav, nav.step === "name" ? "you" : nav.step), name: { ...nav.name, saving: "No" } } : nav
+  const mine = status._tag !== "Idle" && status.settingId === settingId
+  if (mine && status._tag === "Saving") return name.saving === "Seen" ? name : { ...name, saving: "Seen" }
+  if (mine && status._tag === "Problem") return { ...name, saving: "No" }
+  return name.saving === "Seen" || held === name.draft?.text ? "Saved" : name
 }
 
-/** The person name's save, settled as the device name's is. */
+/** The device's name saved moves on to YOU. */
+function settleName(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
+  const name = settleSave(nav.name, DEVICE_NAME_SETTING, deviceName(korri), korri)
+  if (name === "Saved") return { ...at(nav, nav.step === "name" ? "you" : nav.step), name: { ...nav.name, saving: "No" } }
+  return name === nav.name ? nav : { ...nav, name }
+}
+
+/** The person name saved moves on to PADS. */
 function settlePerson(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
-  const saving = nav.person.saving
-  if (saving === "No") return nav
-  const status = korri.settingsStatus
-  const mine = status._tag !== "Idle" && status.settingId === PERSON_NAME_SETTING
-  if (mine && status._tag === "Saving") return saving === "Seen" ? nav : { ...nav, person: { ...nav.person, saving: "Seen" } }
-  // A refusal keeps the step and the typing; Korri's words show in the editor.
-  if (mine && status._tag === "Problem") return { ...nav, person: { ...nav.person, saving: "No" } }
-  const saved = saving === "Seen" || personName(korri) === nav.person.draft?.text
-  return saved ? { ...at(nav, nav.step === "person" ? "pads" : nav.step), person: { ...nav.person, saving: "No" } } : nav
+  const person = settleSave(nav.person, PERSON_NAME_SETTING, personName(korri), korri)
+  if (person === "Saved") return { ...at(nav, nav.step === "person" ? "pads" : nav.step), person: { ...nav.person, saving: "No" } }
+  return person === nav.person ? nav : { ...nav, person }
 }
 
 function settleIdentity(nav: OnboardingNav, korri: SurfaceModel): OnboardingNav {
