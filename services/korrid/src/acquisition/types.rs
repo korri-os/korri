@@ -275,6 +275,8 @@ pub(super) enum Failure {
     Cancelled,
     /// A request or redirect hop outside the plugin's declared hosts.
     UndeclaredHost,
+    /// A provider turn response above its 512 KiB bound (ADR 0016). Store
+    /// downloads have no size cap (ADR 0030).
     TooLarge,
     WebPage,
     Empty,
@@ -295,7 +297,7 @@ impl Failure {
             Self::Unpack => "The downloaded files could not be unpacked.",
             Self::Cancelled => "The download was cancelled.",
             Self::UndeclaredHost => "The download address is not allowed.",
-            Self::TooLarge => "The download is larger than 2 GiB.",
+            Self::TooLarge => "The provider sent more data than Korri accepts.",
             Self::WebPage => "The provider sent a web page instead of the game file.",
             Self::Empty => "The provider sent an empty file.",
             Self::NotSystemFile => "The downloaded file is not a game for this system.",

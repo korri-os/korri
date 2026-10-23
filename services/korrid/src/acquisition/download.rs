@@ -1,6 +1,6 @@
 //! Async reqwest transport. Bytes are streamed to disk and hashed, never buffered
 //! as a complete artifact. Every hop pins a checked DNS answer; proxies are off.
-use super::{policy, Failure};
+use super::{policy, space, Failure};
 use crate::plugin::ArtifactFile;
 use reqwest::{header, redirect::Policy, Client, Response, StatusCode};
 use sha2::{Digest, Sha256};
@@ -20,8 +20,9 @@ pub(super) struct DownloadEngine {
     stall_window: Duration,
     retry_delay: Duration,
     addresses: policy::AddressPolicy,
-    /// The cap for a game with no expected hash (`MAX_GAME_BYTES`).
-    game_cap: u64,
+    /// Test-only file system space, so the free-space floor can be reached.
+    #[cfg(test)]
+    space: Option<space::Probe>,
     /// Test-only DNS answers, so declared DNS names reach a loopback server.
     #[cfg(test)]
     names: std::collections::BTreeMap<String, IpAddr>,
@@ -32,15 +33,14 @@ impl Default for DownloadEngine {
             stall_window: Duration::from_secs(60),
             retry_delay: Duration::from_secs(2),
             addresses: policy::AddressPolicy::Public,
-            game_cap: MAX_GAME_BYTES,
+            #[cfg(test)]
+            space: None,
             #[cfg(test)]
             names: Default::default(),
         }
     }
 }
 
-/// Legacy `MAX_FALLBACK_DOWNLOAD_BYTES`: the cap for a game with no expected hash.
-pub(super) const MAX_GAME_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// Body text one provider turn response may carry (ADR 0016).
 pub(super) const MAX_TEXT_BYTES: u64 = 512 * 1024;
 
@@ -87,15 +87,22 @@ impl DownloadEngine {
             stall_window,
             retry_delay: Duration::from_millis(1),
             addresses: policy::AddressPolicy::AllowLoopback,
-            game_cap: MAX_GAME_BYTES,
+            space: None,
             names: Default::default(),
         }
     }
 
     #[cfg(test)]
-    pub(super) fn with_game_cap(mut self, cap: u64) -> Self {
-        self.game_cap = cap;
+    pub(super) fn with_space(mut self, probe: space::Probe) -> Self {
+        self.space = Some(probe);
         self
+    }
+
+    fn space(&self) -> Option<space::Probe> {
+        #[cfg(test)]
+        return self.space.clone();
+        #[cfg(not(test))]
+        None
     }
 
     #[cfg(test)]
@@ -252,8 +259,9 @@ impl DownloadEngine {
     }
 
     /// A resolved game with no expected hash: one attempt, streamed to a
-    /// private random file, capped at 2 GiB. Empty bodies
-    /// and web pages are refused (legacy `rejectNonArtifactPayload`).
+    /// private random file. No size cap: the free-space floor (ADR 0030)
+    /// bounds it. Empty bodies and web pages are refused (legacy
+    /// `rejectNonArtifactPayload`).
     pub(super) async fn fetch_game(
         &self,
         url: &str,
@@ -276,8 +284,13 @@ impl DownloadEngine {
             return Err(Failure::WebPage);
         }
         let total = response.content_length();
-        if total.is_some_and(|total| total > self.game_cap) {
-            return Err(Failure::TooLarge);
+        let mut floor = space::Floor::new(directory, self.space())?;
+        // A declared length never allows a write; it only refuses early a
+        // download that can never finish.
+        if let Some(total) = total {
+            if total > floor.room()? {
+                return Err(Failure::NoSpace);
+            }
         }
         let mut name = [0u8; 12];
         rand::RngCore::fill_bytes(&mut rand::rng(), &mut name);
@@ -310,10 +323,8 @@ impl DownloadEngine {
                 let Some(chunk) = chunk else {
                     break;
                 };
+                floor.reserve(chunk.len() as u64)?;
                 done += chunk.len() as u64;
-                if done > self.game_cap {
-                    return Err(Failure::TooLarge);
-                }
                 if lead.len() < 512 {
                     let take = (512 - lead.len()).min(chunk.len());
                     lead.extend_from_slice(&chunk[..take]);

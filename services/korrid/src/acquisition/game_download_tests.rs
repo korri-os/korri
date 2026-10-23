@@ -121,6 +121,11 @@ async fn provider_text_is_capped_and_error_statuses_are_responses() {
         text(&engine, &server.url(HOST, "/big")).await.err(),
         Some(Failure::TooLarge)
     );
+    // ADR 0030: the copy no longer names the removed 2 GiB download cap.
+    assert_eq!(
+        Failure::TooLarge.rpc().message,
+        "The provider sent more data than Korri accepts."
+    );
     assert_eq!(
         text(&engine, &server.url(HOST, "/limit"))
             .await
@@ -140,9 +145,10 @@ async fn provider_text_is_capped_and_error_statuses_are_responses() {
     assert_eq!((missing.status, missing.text.as_str()), (404, "missing"));
 }
 
-/// The cap also holds for a body with no Content-Length, counted as it arrives.
+/// ADR 0030: no size cap. korrid counts the bytes it writes and stops before
+/// the cache's file system falls below 5% free, also with no Content-Length.
 #[tokio::test]
-async fn the_game_cap_holds_for_a_body_without_a_length() {
+async fn the_free_space_floor_holds_for_a_body_without_a_length() {
     let server = HttpFixture::start([
         (
             "/big.gb",
@@ -150,10 +156,10 @@ async fn the_game_cap_holds_for_a_body_without_a_length() {
         ),
         (
             "/fits.gb",
-            Route::ok("application/octet-stream", vec![1u8; 1024]).unsized_body(),
+            Route::ok("application/octet-stream", vec![1u8; 2048]).unsized_body(),
         ),
     ]);
-    let engine = engine().with_game_cap(1024);
+    let engine = engine().with_space(super::space::fixed(2048));
     let directory = tempfile::tempdir().unwrap();
     assert_eq!(
         engine
@@ -165,7 +171,7 @@ async fn the_game_cap_holds_for_a_body_without_a_length() {
             )
             .await
             .err(),
-        Some(Failure::TooLarge)
+        Some(Failure::NoSpace)
     );
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
     let fits = engine
@@ -177,11 +183,60 @@ async fn the_game_cap_holds_for_a_body_without_a_length() {
         )
         .await
         .unwrap();
-    assert_eq!(fits.bytes, 1024);
+    assert_eq!(fits.bytes, 2048);
+}
+
+/// A Content-Length larger than the space above the floor can never finish:
+/// it fails before the first byte. A length over the old 2 GiB cap is no
+/// longer refused when the space is there.
+#[tokio::test]
+async fn a_content_length_beyond_the_floor_fails_before_any_byte_and_2_gib_is_no_cap() {
+    let server = HttpFixture::start([
+        (
+            "/declared.gb",
+            Route::ok("application/octet-stream", vec![1u8; 4096]),
+        ),
+        (
+            "/huge.gb",
+            Route::ok("application/octet-stream", "").header("Content-Length", "2147483649"),
+        ),
+    ]);
+    let directory = tempfile::tempdir().unwrap();
+    let mut progress = 0;
+    assert_eq!(
+        engine()
+            .with_space(super::space::fixed(4095))
+            .fetch_game(
+                &server.url(HOST, "/declared.gb"),
+                &hosts(),
+                directory.path(),
+                |_| progress += 1,
+            )
+            .await
+            .err(),
+        Some(Failure::NoSpace)
+    );
+    assert_eq!(progress, 0, "no byte was written");
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+    let result = engine()
+        .with_space(super::space::fixed(4 * 1024 * 1024 * 1024))
+        .fetch_game(
+            &server.url(HOST, "/huge.gb"),
+            &hosts(),
+            directory.path(),
+            |_| {},
+        )
+        .await;
+    assert!(
+        !matches!(result, Err(Failure::NoSpace | Failure::TooLarge) | Ok(_)),
+        "{:?}",
+        result.err()
+    );
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
 }
 
 #[tokio::test]
-async fn game_payloads_refuse_web_pages_empty_bodies_and_the_cap_and_leave_nothing() {
+async fn game_payloads_refuse_web_pages_and_empty_bodies_and_leave_nothing() {
     let rom = b"\x00\x01game bytes".repeat(100);
     let server = HttpFixture::start([
         (
@@ -204,10 +259,6 @@ async fn game_payloads_refuse_web_pages_empty_bodies_and_the_cap_and_leave_nothi
             Route::ok("application/octet-stream", "<html>"),
         ),
         ("/empty.gb", Route::ok("application/octet-stream", "")),
-        (
-            "/huge.gb",
-            Route::ok("application/octet-stream", "").header("Content-Length", "2147483649"),
-        ),
     ]);
     let engine = engine();
     let directory = tempfile::tempdir().unwrap();
@@ -216,7 +267,6 @@ async fn game_payloads_refuse_web_pages_empty_bodies_and_the_cap_and_leave_nothi
         ("/lead.gb", Failure::WebPage),
         ("/lead-short.gb", Failure::WebPage),
         ("/empty.gb", Failure::Empty),
-        ("/huge.gb", Failure::TooLarge),
         ("/missing", Failure::Network),
     ] {
         let result = engine

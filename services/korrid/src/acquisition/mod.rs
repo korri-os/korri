@@ -6,6 +6,7 @@ mod game;
 mod placement;
 mod policy;
 mod sleep;
+mod space;
 pub mod turns;
 mod types;
 mod unit;
