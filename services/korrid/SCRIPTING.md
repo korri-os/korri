@@ -777,6 +777,13 @@ function-only timers described below. `require`, `process`, `fetch`,
 korrid performs them. Neither source imports nor timers grant filesystem,
 network or process access.
 
+Runtime code generation is not available. After korrid compiles the graph and
+before any plugin code runs, `eval` is removed and `Function` and its async,
+generator and async generator forms throw `EvalError`; `Function.prototype`
+and `instanceof Function` are unchanged. quickjs-ng 0.16.2's parser can crash
+the process when an allocation fails, and a plugin can fill its heap before it
+compiles. A route into the parser that is not on this list stays open.
+
 ### In-process module preparation
 
 `eval_plugin_snapshot` and `call_plugin_operation_snapshot` prepare the same closed

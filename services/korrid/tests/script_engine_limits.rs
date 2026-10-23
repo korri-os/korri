@@ -10,9 +10,9 @@
 //! The regression tests run their work in a child process, so that an
 //! abnormal end (a signal, or a call that never returns) is reported as a
 //! test failure and not as a dead test runner. With rquickjs 0.9
-//! (quickjs-ng 0.8.0) the heap sweep ended in SIGSEGV and the backtracking
-//! call never stopped. Two tests are ignored only for their run time (about
-//! 35 s and 140 s in a debug build); run them with
+//! (quickjs-ng 0.8.0) a heap sweep that compiled code ended in SIGSEGV and
+//! the backtracking call never stopped. Two tests are ignored only for their run time (about
+//! 50 s and 140 s in a debug build); run them with
 //! `nix run .#korrid-test -- --test script_engine_limits -- --ignored`.
 
 use std::{
@@ -32,7 +32,6 @@ const CHILD: &str = "KORRID_ENGINE_LIMITS_CHILD";
 const PLUGIN: &str = r#"
 export const name = 'limits';
 function depth(n) { return n === 0 ? 0 : 1 + depth(n - 1); }
-const BODY = 'let t = 0; for (const k of Object.keys(a)) { t += String(a[k]).length; } return `${t}:${a.id}`;';
 export const handlers = {
   'page.parse': (input) => {
     const text = input.responses[0].text;
@@ -52,8 +51,9 @@ export const handlers = {
     for (let i = 0; i < input.blocks; i++) keep.push(new Array(input.size).fill(i));
     return { blocks: keep.length };
   },
-  // Fill the heap to `headroom` bytes below the limit, then compile code.
-  'heap.compile': (input) => {
+  // Fill the heap to `headroom` bytes below the limit, then do ordinary
+  // work, so the refused allocation falls on a different step each time.
+  'heap.work': (input) => {
     let lo = 0, hi = 32 << 20, keep = null;
     while (hi - lo > 16) {
       const mid = (lo + hi) >> 1;
@@ -62,9 +62,14 @@ export const handlers = {
     }
     keep = null;
     keep = new ArrayBuffer(Math.max(0, lo - input.headroom));
-    let compiled = false;
-    try { new Function('a', BODY); compiled = true; } catch {}
-    return { compiled };
+    class Row { constructor(id) { this.id = id; this.label = `row ${id}`; } }
+    const rows = [1, 2, 3, 4, 5, 6, 7, 8].map(id => new Row(id)).filter(row => row.id % 2);
+    const text = JSON.stringify(rows) + rows.map(row => row.label).join('|');
+    const found = [...text.matchAll(/row (\d)/g)].map(match => match[1]);
+    let error;
+    try { throw new Error(`stop ${found.length}`); } catch (caught) { error = caught.stack; }
+    try { new Function('return 1'); } catch {}
+    return { found: found.length, error: typeof error };
   },
 };
 "#;
@@ -223,21 +228,23 @@ fn run_isolated(name: &str, limit: Duration) {
     }
 }
 
-/// Heap exhaustion while QuickJS compiles code at run time. The headroom
-/// sweep makes the failing allocation fall on every compiler step in turn.
+/// Heap exhaustion at every step of ordinary plugin work: object and array
+/// creation, JSON, regex matching, an error backtrace and an attempt to
+/// compile code. With rquickjs 0.9 this sweep, with `new Function` as the
+/// work, ended in SIGSEGV.
 #[test]
-#[ignore = "about 35 s: 4,000 calls; runs its work in a child process"]
-fn compiling_with_an_exhausted_heap_ends_as_an_error() {
+#[ignore = "about 50 s: 4,000 calls; runs its work in a child process"]
+fn filling_the_heap_ends_as_an_error() {
     if std::env::var_os(CHILD).is_none() {
         return run_isolated(
-            "compiling_with_an_exhausted_heap_ends_as_an_error",
+            "filling_the_heap_ends_as_an_error",
             Duration::from_secs(300),
         );
     }
     let mut calls = Calls::new();
     for headroom in (0..16_000).step_by(4) {
         calls
-            .call("heap.compile", &format!("{{\"headroom\":{headroom}}}"))
+            .call("heap.work", &format!("{{\"headroom\":{headroom}}}"))
             .ok();
     }
     calls.assert_still_usable();
@@ -283,10 +290,64 @@ fn ten_thousand_near_limit_calls_keep_the_process_running() {
         calls.near_limit_round(&large_page, &parse_exhausting);
         for headroom in (0..2_000).step_by(16) {
             calls
-                .call("heap.compile", &format!("{{\"headroom\":{headroom}}}"))
+                .call("heap.work", &format!("{{\"headroom\":{headroom}}}"))
                 .ok();
         }
     }
     calls.assert_still_usable();
     eprintln!("{} calls near the limits", calls.count);
+}
+
+/// QuickJS's parser does not survive every refused allocation, so plugin
+/// code cannot compile source at run time. Every route throws; existing
+/// functions and `instanceof Function` keep working.
+#[test]
+fn plugins_cannot_generate_code_at_run_time() {
+    let probe = r#"
+        const refused = route => { try { route(); return 'compiled'; } catch (error) { return error instanceof EvalError ? 'refused' : String(error); } };
+        const routes = () => ({
+            eval: typeof eval,
+            evalCall: refused(() => globalThis.eval('1')),
+            newFunction: refused(() => new Function('return 1')),
+            callFunction: refused(() => Function('return 1')),
+            reflectConstruct: refused(() => Reflect.construct(Function, ['return 1'])),
+            functionConstructor: refused(() => (function () {}).constructor('return 1')),
+            asyncFunction: refused(() => (async function () {}).constructor('return 1')),
+            generatorFunction: refused(() => (function* () {}).constructor('yield 1')),
+            asyncGeneratorFunction: refused(() => (async function* () {}).constructor('yield 1')),
+            instanceOf: (() => 1) instanceof Function && (async () => 1) instanceof Function && class {} instanceof Function,
+            sameConstructor: (function () {}).constructor === Function,
+            ordinary: [1, 2, 3].map(n => n * 2).reduce((a, b) => a + b, 0) + Math.max.apply(null, [1, 4]) + ((a, b) => a - b).call(null, 9, 3) + ((a) => a).bind(null, 5)(),
+        });
+    "#;
+    let expected = serde_json::json!({
+        "eval": "undefined",
+        "evalCall": "TypeError: not a function",
+        "newFunction": "refused",
+        "callFunction": "refused",
+        "reflectConstruct": "refused",
+        "functionConstructor": "refused",
+        "asyncFunction": "refused",
+        "generatorFunction": "refused",
+        "asyncGeneratorFunction": "refused",
+        "instanceOf": true,
+        "sameConstructor": true,
+        "ordinary": 27,
+    });
+    // At module evaluation, in the declaration.
+    let declaration = korrid::script::eval_plugin_ts(&format!(
+        "{probe} export const name = 'sealed'; export const config = routes();"
+    ))
+    .unwrap();
+    let declaration: serde_json::Value = serde_json::from_str(&declaration).unwrap();
+    assert_eq!(declaration["config"], expected);
+    // In an operation call.
+    let mut calls = Calls {
+        snapshot: SourceSnapshot::plugin(&format!(
+            "{probe} export const name = 'sealed'; export const handlers = {{'routes': routes}};"
+        ))
+        .unwrap(),
+        count: 0,
+    };
+    assert_eq!(calls.call("routes", "null").unwrap(), expected);
 }

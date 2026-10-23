@@ -408,7 +408,7 @@ fn caught_esm_initialization_failure_still_fails_shared_completion() {
 
 #[test]
 fn commonjs_cannot_create_a_global_require_or_reopen_dynamic_imports() {
-    let graph = snapshot("import run from './load.cjs'; export const name = 'closed'; export const config = { blocked: await run(), require: typeof globalThis.require };", &[("load.cjs", "module.exports = () => { require('./value.cjs'); return Function('return import(\"./value.cjs\")')().then(() => false, () => true); };"), ("value.cjs", "module.exports = {};")]);
+    let graph = snapshot("import run from './load.cjs'; export const name = 'closed'; export const config = { blocked: await run(), require: typeof globalThis.require };", &[("load.cjs", "module.exports = () => { require('./value.cjs'); try { return Function('return import(\"./value.cjs\")')().then(() => false, () => true); } catch { return Promise.resolve(true); } };"), ("value.cjs", "module.exports = {};")]);
     assert_eq!(
         script::eval_plugin_snapshot(&graph).unwrap(),
         r#"{"config":{"blocked":true,"require":"undefined"},"name":"closed"}"#

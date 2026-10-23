@@ -31,6 +31,8 @@ let
       || ((inCrate || inTreaty) && craneLib.filterCargoSources path type)
       # The shared scheduler is host runtime source included by completion.rs.
       || relative == "services/korrid/src/script/completion.js"
+      # The code-generation seal is host runtime source included by preparation.rs.
+      || relative == "services/korrid/src/script/code_generation.js"
       # The script unit tests include the checked-in example plugin source.
       || lib.hasPrefix "services/korrid/examples/" relative;
   };
