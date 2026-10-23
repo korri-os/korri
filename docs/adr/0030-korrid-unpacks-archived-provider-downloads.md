@@ -57,6 +57,16 @@ each.
    images with their cue files, and multi-disc sets with an `.m3u`. See "Out
    of scope".
 
+**Coordinator decisions, 2026-10-23, from the provider ports' live probes.**
+
+- U1, User-Agent: korrid sends `User-Agent: Korri/<korrid version>`
+  (`CARGO_PKG_VERSION`) on every acquisition request and redirect hop:
+  provider turns, the game download and pinned artifacts. Reason:
+  Cloudflare-fronted coolrom.com and `dl.coolrom.com` answer 403 to a request
+  with no User-Agent (`curl -A ''` 403, `curl -A 'Korri/0.1'` 200). It names
+  Korri and imitates no browser. A provider turn may still set its own,
+  because ADR 0016's refused headers never included `user-agent`.
+
 **The decision.** A store download that is a zip, 7z or rar archive is
 unpacked by korrid's own Rust reader in a sandboxed unit. The reader refuses
 unsafe entries before it writes anything. korrid then identifies what is
@@ -525,7 +535,8 @@ This amends two ADR 0016 "Grounding and deltas" rows:
   redirect hop, as today. The SSRF policy applies to every hop.
 - **Still no cookie or authorization.** `cookie`, `set-cookie`,
   `authorization`, `proxy-authorization` and `host` stay refused. The only
-  header added is the form content type.
+  header added for the POST is the form content type; every request also
+  carries korrid's `User-Agent` (decision U1).
 - **Failure copy never contains the body.** Diagnostics stay at
   `log::debug!`, which the build compiles out.
 - **Side effects.** A POST can change state on the server. The scope is the
@@ -582,6 +593,7 @@ content inside. The rest of ADR 0016 Q1 stays.
 | `Unpacking` job state | Owner answer Q1e, ADR 0012 `ArtifactState::Unpacking` | New `AcquireJobState` variant. Cancellable for store jobs. |
 | `FinalDownload.method`, `FinalDownload.body` | legacy `PluginHttpRequestOptions.method`, `.body` | Moved to `FinalDownload`. Coordinator decisions Q2a to Q2d. |
 | Redirect after POST | legacy `fetchWithValidatedRedirects`, RFC 9110 section 15.4 | Browser rules (Q2b). |
+| `User-Agent: Korri/<version>` on every acquisition request | coolrom 403 without one (live probe, 2026-10-23) | Decision U1. ADR 0016 sent none. |
 | Outer name order | legacy `resolution.filename ?? request.fileName ?? downloadUrlBasename(...)` | N1 drops `request.fileName` (Q3a). |
 | Failure copy | `acquisition/types.rs` `Failure`, code `AcquisitionFailed` | No new wire code. `Unpack`, `NotSystemFile` and `NoSpace` cover the new failures. |
 

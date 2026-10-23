@@ -428,3 +428,71 @@ async fn redirects_after_a_post_follow_browser_rules_and_declared_hosts() {
     );
     assert_eq!(server.received().len(), before + 1, "the hop is never sent");
 }
+
+/// Coordinator decision 2026-10-23: Cloudflare-fronted sites (coolrom.com)
+/// answer 403 without a User-Agent. korrid sends `Korri/<version>` on every
+/// acquisition request and redirect hop. A provider turn may still set its
+/// own: ADR 0016's refused headers do not include `user-agent`.
+#[tokio::test]
+async fn every_acquisition_request_and_hop_carries_korris_user_agent() {
+    let server = HttpFixture::start([
+        ("/page", Route::ok("text/plain", "page")),
+        ("/hop", Route::redirect("/page")),
+        (
+            "/file",
+            Route::ok("application/octet-stream", vec![1u8; 64]),
+        ),
+        ("/to-file", Route::redirect("/file")),
+    ]);
+    let ours = format!(
+        "user-agent: {}",
+        super::download::USER_AGENT.to_ascii_lowercase()
+    );
+    assert_eq!(
+        super::download::USER_AGENT,
+        format!("Korri/{}", env!("CARGO_PKG_VERSION"))
+    );
+    let engine = engine();
+    text(&engine, &server.url(HOST, "/hop")).await.unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    engine
+        .fetch_game(
+            &GameRequest::get(server.url(HOST, "/to-file")),
+            &hosts(),
+            directory.path(),
+            |_| {},
+        )
+        .await
+        .unwrap();
+    let received = server.received();
+    assert_eq!(received.len(), 4);
+    for request in &received {
+        let agents: Vec<_> = request
+            .headers
+            .iter()
+            .filter(|h| h.starts_with("user-agent:"))
+            .collect();
+        assert_eq!(agents, [&ours], "{}", request.path);
+    }
+
+    // A provider turn's own User-Agent replaces korrid's; it is not doubled.
+    let before = server.received().len();
+    engine
+        .fetch_text(
+            TextRequest {
+                url: Url::parse(&server.url(HOST, "/page")).unwrap(),
+                headers: &[("user-agent".into(), "Plugin/2".into())],
+                timeout: None,
+            },
+            &hosts(),
+        )
+        .await
+        .unwrap();
+    let agents: Vec<_> = server.received()[before]
+        .headers
+        .iter()
+        .filter(|h| h.starts_with("user-agent:"))
+        .cloned()
+        .collect();
+    assert_eq!(agents, ["user-agent: plugin/2"]);
+}

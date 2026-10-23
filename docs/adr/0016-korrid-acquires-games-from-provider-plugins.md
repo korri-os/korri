@@ -195,3 +195,6 @@ amends this ADR:
   object of string values, form-encoded) for the game download. Provider turns
   stay GET only, so the `PluginHttpRequest` row still holds for them.
 - **`AcquireJobState`.** Gains `Unpacking`, which can be cancelled.
+- **User-Agent.** korrid sends `User-Agent: Korri/<korrid version>` on every
+  acquisition request and redirect hop. The `PluginHttpRequest` row's refused
+  headers are unchanged, so a provider turn may still set its own.

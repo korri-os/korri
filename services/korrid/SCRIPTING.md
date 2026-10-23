@@ -514,7 +514,9 @@ follows legacy `withQuery` (`searchParams.set`). Legacy had no default
 timeout, so none is invented: without `timeoutMs` the download policy's
 connect timeout and stall detection still end a dead request. `method` and
 `body` are not carried: every provider turn request is a GET. Only the game
-download can be a POST (`FinalDownload.method`, below). korrid refuses `cookie`,
+download can be a POST (`FinalDownload.method`, below). korrid sends
+`User-Agent: Korri/<korrid version>` on every acquisition request and
+redirect hop; a request's own `user-agent` header replaces it. korrid refuses `cookie`,
 `set-cookie`, `authorization`, `proxy-authorization` and `host` request
 headers.
 

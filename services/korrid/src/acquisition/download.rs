@@ -41,6 +41,10 @@ impl Default for DownloadEngine {
     }
 }
 
+/// The User-Agent of every acquisition request and redirect hop. Cloudflare-
+/// fronted sites (coolrom.com) answer 403 to a request without one. It names
+/// Korri and does not imitate a browser. A provider turn may set its own.
+pub(super) const USER_AGENT: &str = concat!("Korri/", env!("CARGO_PKG_VERSION"));
 /// Body text one provider turn response may carry (ADR 0016).
 pub(super) const MAX_TEXT_BYTES: u64 = 512 * 1024;
 
@@ -159,6 +163,7 @@ impl DownloadEngine {
             }
         }
         Client::builder()
+            .user_agent(USER_AGENT)
             .redirect(Policy::none())
             .no_proxy()
             .connect_timeout(Duration::from_secs(30))
