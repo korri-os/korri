@@ -269,7 +269,8 @@ pub(crate) fn sourced(
         LaunchSourcedValue {
             path,
             value,
-            source,
+            source: Some(source),
+            contributions: None,
             adjusted: false,
         },
     );
@@ -288,6 +289,43 @@ fn put(
         serde_json::to_value(value).expect("serializable authored value"),
         LaunchSource::Place(place.clone()),
     );
+}
+
+fn contribute(
+    values: &mut HashMap<String, LaunchSourcedValue>,
+    key: &str,
+    path: LaunchValuePath,
+    part: impl Serialize,
+    place: &LaunchPlace,
+    routine: Option<&str>,
+) {
+    let part = serde_json::to_value(part).expect("serializable launch contribution");
+    let Some(items) = part.as_array().filter(|v| !v.is_empty()) else {
+        return;
+    };
+    let target = values
+        .entry(key.into())
+        .or_insert_with(|| LaunchSourcedValue {
+            path,
+            value: serde_json::json!([]),
+            source: None,
+            contributions: Some(Vec::new()),
+            adjusted: false,
+        });
+    target
+        .value
+        .as_array_mut()
+        .expect("concatenated value is a list")
+        .extend(items.iter().cloned());
+    target
+        .contributions
+        .as_mut()
+        .expect("concatenated value has contributions")
+        .push(LaunchContribution {
+            source: LaunchSource::Place(place.clone()),
+            value: part,
+            routine: routine.map(str::to_owned),
+        });
 }
 
 pub fn resolve_launch(
@@ -388,26 +426,24 @@ pub fn resolve_launch(
                 p,
             );
         }
-        if !v.args.prepend.is_empty() {
-            args.prepend.extend(v.args.prepend.clone());
-            put(
-                &mut values,
-                "args.prepend",
-                LaunchValuePath::ArgsPrepend,
-                &args.prepend,
-                p,
-            );
-        }
-        if !v.args.append.is_empty() {
-            args.append.extend(v.args.append.clone());
-            put(
-                &mut values,
-                "args.append",
-                LaunchValuePath::ArgsAppend,
-                &args.append,
-                p,
-            );
-        }
+        args.prepend.extend(v.args.prepend.clone());
+        args.append.extend(v.args.append.clone());
+        contribute(
+            &mut values,
+            "args.prepend",
+            LaunchValuePath::ArgsPrepend,
+            &v.args.prepend,
+            p,
+            None,
+        );
+        contribute(
+            &mut values,
+            "args.append",
+            LaunchValuePath::ArgsAppend,
+            &v.args.append,
+            p,
+            None,
+        );
         if let Some(v) = &v.cwd {
             cwd = Some(v.clone());
             put(&mut values, "cwd", LaunchValuePath::Cwd, v, p);
@@ -420,33 +456,54 @@ pub fn resolve_launch(
                         name.0
                     ))
                 })?;
-                hooks
-                    .before
-                    .extend(routine.before.iter().flatten().cloned());
-                hooks.after.extend(routine.after.iter().flatten().cloned());
+                if let Some(before) = &routine.before {
+                    hooks.before.extend(before.clone());
+                    contribute(
+                        &mut values,
+                        "hooks.before",
+                        LaunchValuePath::HooksBefore,
+                        before,
+                        p,
+                        Some(&name.0),
+                    );
+                }
+                if let Some(after) = &routine.after {
+                    hooks.after.extend(after.clone());
+                    contribute(
+                        &mut values,
+                        "hooks.after",
+                        LaunchValuePath::HooksAfter,
+                        after,
+                        p,
+                        Some(&name.0),
+                    );
+                }
             }
-            hooks.before.extend(v.before.iter().flatten().cloned());
-            hooks.after.extend(v.after.iter().flatten().cloned());
-            if !hooks.before.is_empty() {
-                put(
+            if let Some(before) = &v.before {
+                hooks.before.extend(before.clone());
+                contribute(
                     &mut values,
                     "hooks.before",
                     LaunchValuePath::HooksBefore,
-                    &hooks.before,
+                    before,
                     p,
+                    None,
                 );
             }
-            if !hooks.after.is_empty() {
-                put(
+            if let Some(after) = &v.after {
+                hooks.after.extend(after.clone());
+                contribute(
                     &mut values,
                     "hooks.after",
                     LaunchValuePath::HooksAfter,
-                    &hooks.after,
+                    after,
                     p,
+                    None,
                 );
             }
         }
     }
+
     let defaults = facts.map(|v| &v.defaults);
     let cpu = range(
         &cells,

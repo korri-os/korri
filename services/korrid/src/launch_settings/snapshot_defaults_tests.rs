@@ -37,7 +37,7 @@ fn snapshot_distinguishes_clear_from_an_authored_value_equal_to_device_default()
     assert_eq!(authored.places[0].body["cpu"]["max"], 61);
     assert!(matches!(
         authored.resolved.values["cpu.max"].source,
-        LaunchSource::Place(_)
+        Some(LaunchSource::Place(_))
     ));
     request.expected_revision = revisions.device;
     request.value = None;
@@ -47,7 +47,7 @@ fn snapshot_distinguishes_clear_from_an_authored_value_equal_to_device_default()
     assert_eq!(cleared.resolved.values["cpu.max"].value, 61);
     assert!(matches!(
         cleared.resolved.values["cpu.max"].source,
-        LaunchSource::DeviceDefault
+        Some(LaunchSource::DeviceDefault)
     ));
     let requests = server.join().unwrap();
     assert_eq!(requests[1], requests[4]);

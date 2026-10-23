@@ -141,7 +141,7 @@ fn one_order_table_covers_every_place_for_every_kind() {
         matches!(&value.path,LaunchValuePath::Editable(LaunchPath::ModifierSetting{id,key}) if id=="@korri:test.foo/wrapper" && key=="order")
     );
     assert!(
-        matches!(&value.source,LaunchSource::Place(LaunchPlace {layer:LaunchLayer::Profile{..},scope:LaunchRunnerScope::Runner(id)}) if id==RUNNER)
+        matches!(&value.source,Some(LaunchSource::Place(LaunchPlace {layer:LaunchLayer::Profile{..},scope:LaunchRunnerScope::Runner(id)})) if id==RUNNER)
     );
 }
 #[test]
@@ -196,7 +196,7 @@ fn runner_choice_falls_back_and_skips_unselected_scope_values() {
     );
     let snapshot = decode_config_documents(&device, &library).unwrap();
     let route = route();
-    let (selected, notices) = launch::choose_runner(&snapshot, &[route.clone()], None);
+    let (selected, notices) = launch::choose_runner(&snapshot, std::slice::from_ref(&route), None);
     assert_eq!(selected.as_deref(), Some(RUNNER));
     assert_eq!(notices.len(), 2);
     assert!(
@@ -475,7 +475,7 @@ fn defaults_are_not_authored_and_apply_device_does_not_use_session_cpu() {
     assert_eq!(snapshot.resolved.values["cpu.max"].value, 61);
     assert!(matches!(
         snapshot.resolved.values["cpu.max"].source,
-        LaunchSource::DeviceDefault
+        Some(LaunchSource::DeviceDefault)
     ));
     assert!(snapshot.places[0].body.get("cpu").is_none());
     resolution::apply_device(root.path(), &client).unwrap();
@@ -821,4 +821,55 @@ fn every_record_accepts_all_approved_place_fields_including_the_host_hook_fixtur
             .unwrap_or_else(|e| panic!("{kind}: {e}"));
     }
     decode_config_documents("routines: {check: {before: [{run: 'true', name: before, timeout: 4, on-failure: warn}], after: [{run: 'true', name: after, timeout: 5}]}}",LIBRARY).unwrap();
+}
+
+#[test]
+fn concatenated_values_preserve_each_place_and_routine_part_without_an_overall_source() {
+    let device="routines: {setup: {before: [{run: routine-before}], after: [{run: routine-after}]}}\nhost: {args: {prepend: [device], append: [device-end]}, hooks: {use: [setup], before: [{run: inline-before}], after: [{run: inline-after}]}}";
+    let library=LIBRARY.replace("    title: Game","    title: Game\n    args: {prepend: [game], append: [game-end]}\n    hooks: {use: [setup], before: [{run: game-before}], after: [{run: game-after}]}");
+    let config = decode_config_documents(device, &library).unwrap();
+    let resolved = resolve_launch(&config, &route(), None, None).unwrap();
+    for key in ["args.prepend", "args.append", "hooks.before", "hooks.after"] {
+        let value = &resolved.values.values[key];
+        assert!(value.source.is_none(), "{key}");
+        let contributions = value.contributions.as_ref().unwrap();
+        let flattened: Vec<_> = contributions
+            .iter()
+            .flat_map(|c| c.value.as_array().unwrap().clone())
+            .collect();
+        assert_eq!(serde_json::Value::Array(flattened), value.value);
+        let wire = serde_json::to_value(value).unwrap();
+        assert!(wire.get("source").is_none());
+    }
+    let args = resolved.values.values["args.prepend"]
+        .contributions
+        .as_ref()
+        .unwrap();
+    assert_eq!(args.len(), 2);
+    assert_eq!(args[0].value, json!(["device"]));
+    assert_eq!(args[1].value, json!(["game"]));
+    assert!(args.iter().all(|c| c.routine.is_none()));
+    for key in ["hooks.before", "hooks.after"] {
+        let parts = resolved.values.values[key].contributions.as_ref().unwrap();
+        assert_eq!(parts.len(), 4);
+        assert_eq!(
+            parts
+                .iter()
+                .map(|c| c.routine.as_deref())
+                .collect::<Vec<_>>(),
+            [Some("setup"), None, Some("setup"), None]
+        );
+        assert!(matches!(
+            &parts[0].source,
+            LaunchSource::Place(LaunchPlace {
+                layer: LaunchLayer::Device,
+                scope: LaunchRunnerScope::Any
+            })
+        ));
+        assert!(
+            matches!(&parts[2].source,LaunchSource::Place(LaunchPlace {layer:LaunchLayer::Game(id),scope:LaunchRunnerScope::Any}) if id=="game")
+        );
+    }
+    assert!(resolved.values.values["cpu.max"].source.is_some());
+    assert!(resolved.values.values["cpu.max"].contributions.is_none());
 }

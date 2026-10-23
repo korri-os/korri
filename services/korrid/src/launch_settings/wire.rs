@@ -150,9 +150,9 @@ pub struct LaunchSourcedValue {
     pub path: LaunchValuePath,
     #[typeshare(serialized_as = "LaunchJsonValue")]
     pub value: serde_json::Value,
-    #[serde(default,skip_serializing_if="Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<LaunchSource>,
-    #[serde(default,skip_serializing_if="Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contributions: Option<Vec<LaunchContribution>>,
     pub adjusted: bool,
 }
@@ -253,11 +253,11 @@ pub struct LaunchModifierSnapshot {
 }
 
 #[typeshare]
-#[derive(Clone,Debug,Serialize,Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LaunchContribution {
     pub source: LaunchSource,
-    #[typeshare(serialized_as="LaunchJsonValue")]
+    #[typeshare(serialized_as = "LaunchJsonValue")]
     pub value: serde_json::Value,
-    #[serde(default,skip_serializing_if="Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routine: Option<String>,
 }
