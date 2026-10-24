@@ -197,6 +197,32 @@ struct RegisteredHost {
 }
 
 impl RegisteredHost {
+    async fn viewer_address(&self) -> Result<String, UpstreamError> {
+        if let Some(address) = self
+            .moonlight_address
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            return Ok(address.to_owned());
+        }
+        let RegisteredClient::Native(client) = &self.client else {
+            return Err(UpstreamError::MoonlightHostCandidatesUnavailable);
+        };
+        // Federation supplies authenticated RPC origins even when the endpoint
+        // has no explicit viewer address. Probe Sunshine on those same hosts.
+        let origins = moonlight_control_origins(&client.candidate_origins());
+        let selected = crate::federation::connect::select_origin(&origins)
+            .await
+            .map_err(|_| UpstreamError::MoonlightHostCandidatesUnavailable)?;
+        let address = origins[selected]
+            .strip_prefix("http://")
+            .expect("derived HTTP origin")
+            .to_owned();
+        log::info!("Moonlight control probe accepted address={address}");
+        Ok(address)
+    }
+
     fn native_route_key(&self) -> Option<String> {
         match &self.client {
             RegisteredClient::Native(_) => self.device_public_key.clone(),
@@ -988,10 +1014,11 @@ impl UpstreamRegistry {
                 let route_key = host.native_route_key().ok_or_else(|| {
                     UpstreamError::Wire("native peer has no stable device identity".into())
                 })?;
+                let native_address = host.viewer_address().await.ok();
                 let viewer = crate::federation::reach::prepare_peer_viewer(
                     self.directory.as_ref(),
                     &route_key,
-                    host.moonlight_address.as_deref(),
+                    native_address.as_deref(),
                 )
                 .await?;
                 let moonlight_address = viewer.moonlight_address.clone();
@@ -1609,13 +1636,7 @@ impl UpstreamRegistry {
         let route_key = host.native_route_key().ok_or_else(|| {
             UpstreamError::Wire("native peer has no stable device identity".into())
         })?;
-        let moonlight_address = host
-            .moonlight_address
-            .as_deref()
-            .map(str::trim)
-            .filter(|address| !address.is_empty())
-            .unwrap_or_default()
-            .to_owned();
+        let moonlight_address = host.viewer_address().await.unwrap_or_default();
         let selected = SelectedRemoteSession {
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
@@ -1895,6 +1916,21 @@ fn viewer_error(code: &'static str, message: impl Into<String>) -> UpstreamError
         code: code.into(),
         message: message.into(),
     }
+}
+
+fn moonlight_control_origins(candidates: &[String]) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    candidates
+        .iter()
+        .filter_map(|candidate| {
+            let origin = crate::federation::peer_origin(candidate).ok()?;
+            let mut url = url::Url::parse(&origin).ok()?;
+            url.set_scheme("http").ok()?;
+            url.set_port(Some(47989)).ok()?;
+            let origin = url.origin().ascii_serialization();
+            seen.insert(origin.clone()).then_some(origin)
+        })
+        .collect()
 }
 
 fn endpoint_candidates(peer: &crate::federation::PeerSnapshot) -> Vec<String> {
@@ -2515,6 +2551,111 @@ mod tests {
         assert!(missing_file.hosts.is_empty());
         assert!(missing_file.configuration_error.is_none());
         assert!(missing_file.deferred_file_config.is_some());
+    }
+
+    #[test]
+    fn moonlight_control_origins_derive_hosts_on_the_sunshine_port() {
+        let candidates = [
+            "https://192.168.1.130:39217",
+            "http://holder.example:8099",
+            "http://[fd00::1]:39217",
+            "http://192.168.1.130:8099",
+        ]
+        .map(str::to_owned);
+        assert_eq!(
+            moonlight_control_origins(&candidates),
+            [
+                "http://192.168.1.130:47989",
+                "http://holder.example:47989",
+                "http://[fd00::1]:47989",
+            ]
+        );
+    }
+
+    // The Sunshine port is fixed by its protocol. Run these network tests in
+    // an isolated namespace, so a build host's own Sunshine cannot answer them.
+    #[tokio::test]
+    async fn moonlight_control_probe_uses_a_reachable_candidate_without_rpc_or_selection() {
+        use tokio::{io::AsyncReadExt, net::TcpListener};
+        let sunshine = TcpListener::bind("127.0.0.2:47989").await.unwrap();
+        let rpc = TcpListener::bind("127.0.0.2:0").await.unwrap();
+        let rpc_origin = format!("http://{}", rpc.local_addr().unwrap());
+        let mut config = UpstreamHostConfig::native("holder", rpc_origin.clone());
+        config.moonlight_address = None;
+        let mut registry = UpstreamRegistry::new(vec![config]);
+        let RegisteredClient::Native(client) = registry.hosts[0].client.clone() else {
+            unreachable!()
+        };
+        registry.hosts[0].client = RegisteredClient::Native(
+            client
+                .with_candidates(vec![
+                    "http://127.0.0.3:39217".into(),
+                    rpc_origin,
+                    "http://127.0.0.2:39218".into(),
+                ])
+                .unwrap(),
+        );
+        assert_eq!(
+            registry.hosts[0].viewer_address().await.unwrap(),
+            "127.0.0.2:47989"
+        );
+        assert!(!registry.has_selected_session());
+        let (mut connection, _) = timeout(Duration::from_secs(1), sunshine.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        let mut byte = [0];
+        assert_eq!(
+            timeout(Duration::from_secs(1), connection.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        assert!(
+            timeout(Duration::from_millis(20), sunshine.accept())
+                .await
+                .is_err(),
+            "no duplicate probe"
+        );
+        assert!(
+            timeout(Duration::from_millis(20), rpc.accept())
+                .await
+                .is_err(),
+            "probe must not send RPC"
+        );
+    }
+
+    #[tokio::test]
+    async fn moonlight_control_probe_refuses_when_only_the_rpc_port_answers() {
+        let rpc = tokio::net::TcpListener::bind("127.0.0.3:0").await.unwrap();
+        let mut config =
+            UpstreamHostConfig::native("holder", format!("http://{}", rpc.local_addr().unwrap()));
+        config.moonlight_address = None;
+        let registry = UpstreamRegistry::new(vec![config]);
+        assert!(matches!(
+            registry.hosts[0].viewer_address().await,
+            Err(UpstreamError::MoonlightHostCandidatesUnavailable)
+        ));
+        assert!(!registry.has_selected_session());
+        assert!(
+            timeout(Duration::from_millis(20), rpc.accept())
+                .await
+                .is_err(),
+            "probe must not send RPC"
+        );
+    }
+
+    #[test]
+    fn moonlight_control_origins_reject_non_origins() {
+        let candidates = [
+            "http://user:secret@holder:39217",
+            "http://holder:39217/path",
+            "ws://holder:39217",
+            "http://holder:0",
+        ]
+        .map(str::to_owned);
+        assert!(moonlight_control_origins(&candidates).is_empty());
     }
 
     #[test]

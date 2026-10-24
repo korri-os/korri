@@ -99,10 +99,11 @@ impl UpstreamRegistry {
         let RegisteredClient::Native(client) = &host.client else {
             unreachable!()
         };
+        let native_address = host.viewer_address().await.ok();
         let viewer = crate::federation::reach::prepare_peer_viewer(
             registry.directory.as_ref(),
             device_public_key,
-            host.moonlight_address.as_deref(),
+            native_address.as_deref(),
         )
         .await?;
         let address = viewer.moonlight_address.clone();
