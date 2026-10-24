@@ -5,6 +5,7 @@ use std::{
     ffi::CStr,
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    sync::Once,
     time::Duration,
 };
 
@@ -12,6 +13,22 @@ pub const ADDRESS_POLL: Duration = Duration::from_secs(1);
 
 pub fn endpoints(bind: SocketAddr) -> io::Result<Vec<String>> {
     Ok(derive_endpoints(bind, interface_addresses()?))
+}
+
+/// Missing interface evidence must not block public membership discovery.
+/// Never announce retained addresses as fresh evidence after enumeration fails.
+pub fn endpoints_or_query_only(
+    observation: io::Result<Vec<String>>,
+    warning: &Once,
+) -> Vec<String> {
+    observation.unwrap_or_else(|error| {
+        warning.call_once(|| {
+            eprintln!(
+                "korrid: federation interface enumeration failed: {error}; continuing owner publication and discovery without endpoint candidates"
+            );
+        });
+        Vec::new()
+    })
 }
 
 // Process-local evidence from getifaddrs and Linux's native proc route tables;
@@ -326,6 +343,28 @@ mod tests {
         assert_eq!(
             derive_endpoints("[::]:39217".parse().unwrap(), addresses)[0],
             "http://[2001:db8::1]:39217"
+        );
+    }
+    #[test]
+    fn missing_interface_evidence_warns_once_without_retaining_stale_candidates() {
+        let warning = Once::new();
+        let candidates = vec!["http://192.168.1.9:39217".into()];
+        assert_eq!(
+            endpoints_or_query_only(Ok(candidates.clone()), &warning),
+            candidates
+        );
+        assert!(!warning.is_completed());
+        for _ in 0..2 {
+            assert!(endpoints_or_query_only(
+                Err(io::Error::from_raw_os_error(libc::EAFNOSUPPORT)),
+                &warning,
+            )
+            .is_empty());
+            assert!(warning.is_completed());
+        }
+        assert_eq!(
+            endpoints_or_query_only(Ok(candidates.clone()), &warning),
+            candidates
         );
     }
     #[test]

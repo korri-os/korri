@@ -837,6 +837,8 @@ in
           "AF_UNIX"
           "AF_INET"
           "AF_INET6"
+          # glibc getifaddrs uses route netlink for live peer candidates.
+          "AF_NETLINK"
         ];
         PrivateTmp = true;
         ProtectSystem = "strict";

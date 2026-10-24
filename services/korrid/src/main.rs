@@ -651,6 +651,7 @@ async fn main() {
             .validate()
             .expect("valid advertised endpoints and metadata");
         let config = korrid::config::snapshot::ConfigSnapshotCoordinator::new(config_root);
+        let interface_warning = std::sync::Once::new();
         Some(
             Discovery::new(
                 resources.directory.clone(),
@@ -659,8 +660,10 @@ async fn main() {
                     DiscoveryInputs::linux(
                         &config,
                         &initial_inputs,
-                        korrid::federation::interfaces::endpoints(address)
-                            .map_err(|_| korrid::federation::FederationError::Endpoint)?,
+                        korrid::federation::interfaces::endpoints_or_query_only(
+                            korrid::federation::interfaces::endpoints(address),
+                            &interface_warning,
+                        ),
                     )
                 }),
                 Arc::new(korrid::relay::WebSocketRelayTransport::new()),

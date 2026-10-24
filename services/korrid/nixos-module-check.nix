@@ -431,8 +431,13 @@ assert builtins.elem "/home/korri/.config/sunshine" service.serviceConfig.Inacce
 assert enabled.config.users.groups.korri-control.gid == 977;
 assert !(builtins.elem "korri-control" enabled.config.users.users.korri.extraGroups);
 assert !(builtins.elem "korrid" enabled.config.users.users.korri.extraGroups);
-assert builtins.elem "AF_UNIX" service.serviceConfig.RestrictAddressFamilies;
-assert builtins.elem "AF_INET" service.serviceConfig.RestrictAddressFamilies;
+assert
+  service.serviceConfig.RestrictAddressFamilies == [
+    "AF_UNIX"
+    "AF_INET"
+    "AF_INET6"
+    "AF_NETLINK"
+  ];
 assert service.serviceConfig.ProtectProc == "invisible";
 assert service.serviceConfig.ProcSubset == "pid";
 assert lib.hasInfix "action.id == \"org.freedesktop.systemd1.manage-units\"" polkit;
