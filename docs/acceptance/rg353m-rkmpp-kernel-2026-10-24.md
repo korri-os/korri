@@ -4,8 +4,7 @@
 
 Restore the RG353M kernel driver and device-tree binding needed by Sunshine's
 Rockchip H.264 encoder. Keep the existing Linux 7.2 kernel, Sunshine plugin,
-and MPP userspace unchanged. Temporary driver and stream tests pass. Persistent
-boot acceptance remains pending.
+and MPP userspace unchanged. Driver, stream, and persistent boot tests pass.
 
 ## Reproduction
 
@@ -98,7 +97,8 @@ InputPlumber, and product composition.
 The approved temporary test loaded the driver and runtime overlay on the
 unchanged booted system. Both device nodes were `root:video 0660`. Installed
 Sunshine logged `Found H.264 encoder: h264_rkmpp [rkmpp]` at 04:48:46 UTC.
-The full system build remains pending. Persistent boot acceptance is not claimed.
+The full system build and persistent deployment subsequently passed as recorded
+below.
 
 ### Native-resolution stream tests
 
@@ -163,6 +163,81 @@ MPP node, test permission rule, and pairing selection were absent, as expected
 on that unchanged generation. The extlinux file's SHA-256 remained
 `a5e1337e16d9abdeeed80c1a77b6242ab05dce40732ddc4744bdd90d99f85e7b`.
 
-This is cleanup verification, not acceptance of the fixed image after boot.
-The unchanged generation still lacks RKMPP support. A persistent image update
-requires separate approval.
+That cleanup boot left the original generation unchanged. The user then gave
+separate approval to install and verify the persistent update.
+
+## Persistent deployment and verification
+
+The complete generation built off-device from source commit
+`19239a22feaac37b36cf0a441eca5031c2ccab5b`. Its signed closure was copied through
+Nix with signature checks enabled. Normal profile selection and
+`switch-to-configuration boot` updated extlinux files. No raw disk, partition,
+U-Boot, GPT, or firmware write occurred.
+
+| Item | Verified value |
+| --- | --- |
+| Booted, current, and persistent system | `/nix/store/sn7ka036qnrxi2xck60580m2d42bbsq9-nixos-system-haku-sd-card-26.11.20260923.4975466` |
+| Matching active bundle | `/nix/store/fc2wy3iwghdjp707i4lsfv66ig1rr5l5-korri-bundle-0.0.0` |
+| Running korrid executable | `/nix/store/3bkmrs404k8giwd11pazhkiq3f2wdyhr-korrid-0.0.0/bin/korrid` |
+| Previous system | `/nix/store/q31gbqf6vf2bsna1wk18vj4qwaybgkpi-nixos-system-haku-sd-card-26.11.20260923.4975466` |
+| Previous bundle | `/nix/store/4cfjpfq64a4yc4zzfhgnj3n1gpwxx5mg-korri-bundle-0.0.0` |
+| Profile and extlinux backup | `/root/rg353m-kernel-update.74jaPV/` |
+
+At boot, `rk_vcodec` and `system_heap` loaded without manual module insertion.
+The production DTB bound `fdf40000.rkvenc` to `mpp_rkvenc`. Both device nodes
+were `root:video 0660`. The temporary runtime overlay module and test permission
+rule were absent.
+
+### Bundle selection correction
+
+The first generation reboot retained the older active bundle, as designed by
+`korri-bundle-selector initialize`. The new units provide two named sockets,
+but the old korrid accepted one. It panicked with
+`korrid requires exactly one inherited listener for its current PID`.
+This was a missed deployment step, not a kernel defect.
+
+The existing `korri-bundle-select switch` operation selected the bundle shipped
+by this generation. Its validation, service restart checks, and rollback logic
+remained enabled. After a second verification reboot, each core service was
+checked individually. korrid kept the same PID for a 60-second stability window,
+with `NRestarts=0`. Its executable matched the selected bundle. Do not treat a
+single active-state snapshot or a combined multi-unit `is-active` exit code as
+proof of stable service health.
+
+Future maintenance and rollback must pair the generation with its matching
+bundle. Use the existing [full host maintenance gate](../../services/inputd/deploy/README.md#full-host-maintenance-gate),
+not a profile change alone. The previous generation and bundle remain retained.
+
+### Installed Sunshine stream
+
+After the persistent boot, the unchanged installed Sunshine served its existing
+command-free `Desktop` app at 640x480, 30 fps, and a 10 Mb/s request:
+
+| Received frames | Active seconds | Received FPS | Missing frame numbers | Sunshine CPU |
+| --- | --- | --- | --- | --- |
+| 2,202 | 73.333 | 30.014 | 0 | 37.6% of one core |
+
+The server selected `h264_rkmpp` and logged zero-copy KMS DRM_PRIME capture.
+FFmpeg decoded all 2,202 captured H.264 frames without errors. Test credentials,
+pairing selection, and service overrides were removed afterward. The corrected
+generation and bundle then survived the final verification reboot without any
+manual startup fix. Sunshine selected `h264_rkmpp` at 06:08:31 UTC.
+
+Effective device policy still had `max-jobs = 0`, no builders,
+`fallback = false`, and `require-sigs = true`. The main services were active,
+and korrid had zero restarts. Evidence is under
+`/tmp/rg353m-persistent-update/` and
+`/tmp/rg353m-kernel-test/persistent-stream/`.
+
+## Separate app-name integration limit
+
+The installed Sunshine inventory is still the unchanged default `apps.json`,
+which advertises `Desktop`, not `Korri Stream`. Core's
+`services/korrid/src/linux_viewer/production.rs` requests `Korri Stream`.
+The failed test with that name was an app-inventory mismatch, not an encoder
+failure. The successful installed-package test used the actual command-free
+`Desktop` record. No app entry was renamed or added during this kernel fix.
+
+The separate Sunshine app/package update remains outside this change. The
+upstream-port branch was not merged or published. This record accepts the
+kernel encoder path, not the unresolved named-app route through Core.
