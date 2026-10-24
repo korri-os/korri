@@ -363,7 +363,10 @@ impl NativeClient {
     ) -> Result<UpstreamSessionStatus, UpstreamError> {
         self.ensure_not_revoked()?;
         let result = self
-            .send_request(&RpcRequest::SessionStatus(SessionStatusRequest {}))
+            .send_request(
+                &RpcRequest::SessionStatus(SessionStatusRequest {}),
+                &AtomicBool::new(false),
+            )
             .await;
         self.ensure_not_revoked()?;
         Self::session_status_response(result?)
@@ -593,7 +596,11 @@ impl NativeClient {
         result
     }
 
-    async fn send_request(&self, request: &RpcRequest, answered: &AtomicBool) -> Result<RpcResponse, UpstreamError> {
+    async fn send_request(
+        &self,
+        request: &RpcRequest,
+        answered: &AtomicBool,
+    ) -> Result<RpcResponse, UpstreamError> {
         #[cfg(test)]
         if self.credentials.is_none() {
             let response = self
@@ -613,7 +620,6 @@ impl NativeClient {
         request: &RpcRequest,
         answered: &AtomicBool,
     ) -> Result<RpcResponse, UpstreamError> {
-
         let read_only = matches!(
             request,
             RpcRequest::CatalogSnapshot(_)

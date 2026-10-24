@@ -99,11 +99,13 @@ impl UpstreamRegistry {
         let RegisteredClient::Native(client) = &host.client else {
             unreachable!()
         };
-        let address = host
-            .moonlight_address
-            .as_deref()
-            .filter(|s| !s.trim().is_empty())
-            .ok_or(UpstreamError::MoonlightHostCandidatesUnavailable)?;
+        let viewer = crate::federation::reach::prepare_peer_viewer(
+            registry.directory.as_ref(),
+            device_public_key,
+            host.moonlight_address.as_deref(),
+        )
+        .await?;
+        let address = viewer.moonlight_address.clone();
         let mut active = client.stream_play(launch_id, device_label).await?;
         let selected = SelectedRemoteSession {
             participation: Participation::StreamPlayer {
@@ -115,13 +117,17 @@ impl UpstreamRegistry {
                 device_public_key: device_public_key.into(),
             },
             launch_id: launch_id.into(),
-            viewer: Some(SelectedViewer {
-                moonlight_address: address.into(),
-                confirmed_live: false,
-            }),
+            viewer: Some(viewer),
         };
         registry.set_selected(selected.clone());
-        if let Err(error) = registry.viewer.start(launch_id, address).await {
+        if let Err(error) = registry.viewer.start(launch_id, &address).await {
+            if let Some(reach) = selected
+                .viewer
+                .as_ref()
+                .and_then(|viewer| viewer.reach.as_ref())
+            {
+                reach.release();
+            }
             // The remote holder and its seat reservations survive every local
             // viewer failure. In particular, never use prepare compensation.
             registry

@@ -56,7 +56,7 @@ async fn stream_player_lost_device_stops_its_viewer_and_keeps_the_end_cause() {
         participation: Participation::StreamPlayer { game_id: Some("game".into()), game_title: Some("Game".into()), device_label: "far".into() },
         route: SelectedRemoteRoute::Native { device_public_key: key },
         launch_id: "exact".into(),
-        viewer: Some(SelectedViewer { moonlight_address: "far:47989".into(), confirmed_live: true }),
+        viewer: Some(SelectedViewer { moonlight_address: "far:47989".into(), confirmed_live: true, reach: None }),
     });
     registry.session_status().await.unwrap();
     assert!(matches!(registry.stream_play_ended().unwrap().cause, crate::stream_play::StreamPlayEndCause::DeviceUnreachable));
