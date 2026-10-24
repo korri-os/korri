@@ -1404,6 +1404,22 @@ async fn a_byte_identified_native_container_keeps_its_bytes_and_routes_as_one_fi
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_native_container_does_not_bypass_archive_entry_validation() {
+    let world = world();
+    world
+        .offer(
+            "unsafe-native",
+            "nativecart",
+            "/files/unsafe.cartz",
+            zip(&[("game/main.txt", b"original fixture"), ("../escape", ROM)]),
+        )
+        .await;
+    failed_with(&world.get("unsafe-native").await, UNPACK);
+    assert_eq!(names(&world.cache()), [".downloads"]);
+    assert!(!world.cache().join("escape").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_native_filename_with_nonmatching_byte_evidence_still_unpacks_transport() {
     let world = world();
     let cart = zip(&[("game/main.txt", b"original native content")]);

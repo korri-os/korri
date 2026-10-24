@@ -695,18 +695,15 @@ impl Pipeline {
                 }
             }) => downloaded.map_err(download_failed)?,
         };
+        let format = archive::format(&downloaded.lead);
         // A native content format can itself use an archive container. Keep
-        // it only with positive plugin-owned byte evidence and a non-transport
-        // system filename. Extension/name guesses never suppress extraction.
-        let native_container = !archive::archive_name(&name)
+        // its bytes only with positive plugin-owned byte evidence and a
+        // non-transport system filename, after the normal archive validation.
+        let native_container = format.is_some()
+            && !archive::archive_name(&name)
             && system_name(&name, &rules)
             && identify::evidence_level(&name, &downloaded.lead, &rules, &[], &|_| Vec::new())
                 == identify::EvidenceLevel::Bytes;
-        let format = if native_container {
-            None
-        } else {
-            archive::format(&downloaded.lead)
-        };
         if format.is_none() && !system_name(&name, &rules) {
             // A name that says archive, or has no extension, with bytes in
             // no archive format: discovery could never identify it.
@@ -735,7 +732,7 @@ impl Pipeline {
             #[cfg(test)]
             let hold = self.hold_unpack.clone();
             tokio::task::spawn_blocking(move || {
-                let work = placement::WorkFolder::create(&cache)?;
+                let mut work = placement::WorkFolder::create(&cache)?;
                 match format {
                     Some(_) => {
                         #[cfg(test)]
@@ -755,7 +752,16 @@ impl Pipeline {
                     }
                     None => work.take_file(&downloaded.path, &name)?,
                 }
-                // The archive goes before publication.
+                if native_container {
+                    // Validation applies to native containers too. Discard the
+                    // validated extracted view, then retain the original bytes
+                    // for the native runner and local-copy content identity.
+                    drop(work);
+                    work = placement::WorkFolder::create(&cache)?;
+                    work.take_file(&downloaded.path, &name)?;
+                }
+                // A transport archive goes before publication. A native one
+                // has moved into the work folder without changing its bytes.
                 drop(downloaded);
                 Ok::<_, Failure>(work)
             })

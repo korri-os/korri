@@ -771,8 +771,12 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   name, and the downloaded prefix matches the system's existing
   `content.evidence.bytes`. It uses discovery's byte-evidence matcher over
   the first 512 downloaded bytes. Extension or name evidence alone cannot
-  suppress extraction. There is no engine-specific Core rule or new field.
-  The native runner interprets this content under the existing game boundary;
+  select native content. The sandboxed archive reader still validates and
+  temporarily extracts every entry under its existing safety and resource
+  rules. korrid discards those extracted files and publishes the original
+  container bytes. Invalid entries fail acquisition, even for native content.
+  There is no engine-specific Core rule or new field. The native runner
+  interprets this content under the existing game boundary;
   preserving a native container does not make arbitrary code safe to run.
 - **Unpacking.** For other downloads the first bytes decide: zip
   (`50 4b 03 04`, `50 4b 05 06`, `50 4b 07 08`), 7z (`37 7a bc af 27 1c`) or

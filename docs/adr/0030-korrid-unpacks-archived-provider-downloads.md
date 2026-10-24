@@ -98,8 +98,13 @@ A download remains intact when its filename matches the claimed system's
 extensions, is not a `.zip`, `.7z` or `.rar` transport name, and its downloaded
 prefix matches that system's existing `content.evidence.bytes`. This uses
 discovery's existing byte-evidence matcher. Extension or name evidence alone
-never suppresses extraction. No engine name, new declaration field or
-provider transformation enters Core.
+never selects the native-container path. No engine name, new declaration field or
+provider transformation enters Core. The sandboxed archive reader still
+validates and temporarily extracts the native container under this ADR's
+path, entry, memory and free-space rules. Invalid entries fail acquisition.
+korrid deletes the temporary extracted files and publishes the untouched
+container instead. This costs a bounded extraction pass; it does not execute
+any downloaded code.
 
 All other archive-magic downloads retain this ADR's extraction policy,
 including archives disguised under an extension without matching byte
@@ -190,11 +195,13 @@ Other facts from the same evidence:
 
 - **In:** store downloads (ADR 0016) that are a single ROM, a disc image with
   its cue file, a CHD, or a multi-disc set with an `.m3u`, either plain or in
-  a zip, 7z or rar archive.
+  a zip, 7z or rar archive. The native-container amendment above also covers
+  byte-identified native cartridges whose format uses an archive container.
 - **Not in this ADR:** declared artifacts (see "Later"), application archives
   (see "Out of scope"), and archives in a person's sources. Discovery is
-  unchanged: an archive in a source is still not a game, and korrid never
-  writes into a person's source (ADR 0013).
+  unchanged: a transport archive in a source is still not a game. Native
+  content follows the system's existing content rules. korrid never writes
+  into a person's source (ADR 0013).
 - The first consumers are the private `@simonwjackson` provider plugins.
   ADR 0016 owner decision 2 still lists Korri's own providers. This ADR adds
   no ROM-site provider to Korri.
@@ -662,7 +669,7 @@ content inside. The rest of ADR 0016 Q1 stays.
 | Formats zip, 7z, rar | Owner answer Q1b, legacy `ARTIFACT_MAGIC` | The three magic rows come back. `gz`, `tar` and `png` stay out. |
 | Pure-Rust extractor in the sandbox unit | Owner answer 1 (second round), ADR 0012 unpack-program contract, `unit.rs` `unit_arguments` | korrid's own binary is the program. No C or C++ reader. |
 | Unit name `korri-acquire-<plugin short>-<provider name>.service` | `unit::name`, `placement::provider_cache`, ADR 0016 artifact-key and provider-name rule | Same rule as artifacts, applied to the provider cache path. |
-| Archive is transport, never a release | ADR 0005 identity rule, ADR 0013 "hashes of its main content file" | Amends ADR 0005 "Archives are not supported in the first version" for store downloads. Discovery of sources still refuses archives. |
+| A transport archive is never a release | ADR 0005 identity rule, ADR 0013 "hashes of its main content file" | Amends ADR 0005 for store downloads. The native-container amendment preserves byte-identified native content; ordinary transport archives still unpack. |
 | Identification of the work folder | `identify_with_rules`, `ContentRules`, `TraversalBudget` (discovery v2) | New caller. The default layout is appended after the system's layouts. Exactly one unit and no attention finding are required. |
 | Release identity kinds | `ContentIdentity` and `LibraryIdentity` `Hash`, `Parts`, `Chd` | `record_acquired` writes all three. |
 | Ready folder name | ADR 0016 row "The version segment is discovery's content hash (ADR 0005)", `ContentIdentity::value` | The release key's hex without its prefix, so a CHD gets its 40-digit SHA-1. |
