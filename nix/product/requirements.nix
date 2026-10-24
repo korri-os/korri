@@ -27,7 +27,7 @@ let
     publishers = {
       "@korri" = {
         publicKey = "korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=";
-        cacheUrl = "https://github.com/korri-os/plugins/releases/download/cache/";
+        cacheUrl = "https://korri-os.github.io/plugins/";
       };
     };
   };
