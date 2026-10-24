@@ -42,6 +42,30 @@ fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
     .is_err());
 }
 #[test]
+fn linux_viewer_argv_unbrackets_ipv6_without_changing_the_control_url() {
+    let files = MoonlightFiles {
+        executable: "/nix/store/viewer/bin/moonlight".into(),
+        mapping: "/nix/store/viewer/mapping".into(),
+        bootstrap: "/nix/store/viewer/bootstrap".into(),
+    };
+    for (address, host, port) in [
+        ("[::1]:47989", "::1", "47989"),
+        ("[2001:db8::1]:49217", "2001:db8::1", "49217"),
+        ("192.0.2.1:47989", "192.0.2.1", "47989"),
+        ("sunshine:80", "sunshine", "80"),
+        ("sunshine", "sunshine", "47989"),
+    ] {
+        let args =
+            stream_args(&files, Path::new("/keys"), address, (640, 480), "x11", &[]).unwrap();
+        assert_eq!(args.last().map(String::as_str), Some(host));
+        assert!(args.windows(2).any(|pair| pair == ["-port", port]));
+    }
+    assert_eq!(
+        server_url("[::1]:47989").unwrap().as_str(),
+        "http://[::1]:47989/serverinfo"
+    );
+}
+#[test]
 fn linux_viewer_boundaries_refuse_inexact_launch_and_address_injection() {
     assert!(validate_launch("0123456789abcdef0123456789abcdef").is_ok());
     for id in ["", "latest", "../game", "0123456789abcdef0123456789abcdeF"] {

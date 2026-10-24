@@ -289,11 +289,12 @@ fn stream_args(
         "-port".into(),
         peer.port_or_known_default().unwrap_or(47989).to_string(),
     ]);
-    args.push(
-        peer.host_str()
-            .ok_or_else(|| error("missing Moonlight host"))?
-            .into(),
-    );
+    // moonlight-common-c passes this host to getaddrinfo, not a URL parser.
+    args.push(match peer.host() {
+        Some(url::Host::Ipv6(address)) => address.to_string(),
+        Some(host) => host.to_string(),
+        None => return Err(error("missing Moonlight host")),
+    });
     Ok(args)
 }
 
