@@ -21,6 +21,12 @@ import tempfile
 
 NAME = re.compile(r"korri-plugin-[0-9a-f]{64}")
 FIELDS = {"id", "package", "provenance", "approval", "desired", "previous"}
+# The host owns these state-root entries. plugin-host/src/storage.rs names them
+# SOURCES_DIR and STAGING_DIR. The migration never reads or writes them, and a
+# real device always has at least an empty sources directory, so refusing them
+# would refuse every device. Each must still be a real directory, never a
+# symlink, and any other entry keeps its refusal.
+HOST_DIRS = {"sources", "staging"}
 
 
 def regular(path):
@@ -45,6 +51,9 @@ def receipts(root):
         if folder.name == "graph-update.json":
             raise ValueError("unfinished graph update; recover before migration")
         if not NAME.fullmatch(folder.name):
+            if folder.name in HOST_DIRS:
+                directory(folder)
+                continue
             if folder.name != "lock":
                 raise ValueError(f"unexpected plugin state entry: {folder.name}")
             continue

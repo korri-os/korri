@@ -271,5 +271,27 @@ class ReceiptCutoverTest(unittest.TestCase):
         self.assertEqual(self.snapshot(), self.original)
 
 
+    def test_host_owned_directories_are_permitted_and_unknown_entries_still_refuse(self):
+        # A real device always has the host's own sources directory, empty at
+        # first. Refusing it would refuse every device.
+        sources = self.state / "sources"
+        sources.mkdir()
+        self.assertEqual(len(self.prepare()), 3)
+        # The host's own entry must be a real directory, never a symlink.
+        sources.rmdir()
+        sources.symlink_to(self.root)
+        self.assertIn("expected directory", self.prepare(succeeds=False).stderr)
+        sources.unlink()
+        # Any other entry keeps its refusal.
+        unknown = self.state / "unexpected"
+        unknown.mkdir()
+        self.assertIn(
+            "unexpected plugin state entry: unexpected",
+            self.prepare(succeeds=False).stderr,
+        )
+        unknown.rmdir()
+        self.assertEqual(self.snapshot(), self.original)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
