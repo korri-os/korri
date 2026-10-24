@@ -219,7 +219,10 @@ the operation that turns a selected runner and target into a launch plan; a
 native runner is admitted only when it carries that handler. Module evaluation
 and invocation share one deadline, memory limit, and output budget. A handler
 must return JSON synchronously; a promise, function, non-finite number, or
-undefined is rejected.
+undefined is rejected. Safe integral JavaScript Numbers serialize as JSON
+integers, including values produced by `Number(...)`. Fractions and values
+outside JavaScript's safe integer range stay floating-point numbers; they do
+not become valid integer fields such as `ArtifactFile.sizeBytes`.
 The evaluator performs no effects. `launcher/plugin_launch.rs` defines the
 Rust/Typeshare `PluginLaunchInput` and `PluginLaunchOutput` treaties. Input
 contains the selected full launcher/kind/runtime IDs, program and core file paths,

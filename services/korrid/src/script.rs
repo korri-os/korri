@@ -463,9 +463,16 @@ fn json_data_from_js<'js>(
             let number: f64 = value
                 .get()
                 .map_err(|error| format!("plugin result not inspectable at {path}: {error}"))?;
-            let number = serde_json::Number::from_f64(number).ok_or_else(|| {
-                format!("plugin result is not JSON data at {path}: non-finite number")
-            })?;
+            // JS Number has no integer wire subtype. QuickJS may store even
+            // Number(4207) as Float; preserve exact integers for typed consumers
+            // such as ArtifactFile.sizeBytes, without rounding unsafe numbers.
+            let number = if number.abs() <= 9_007_199_254_740_991.0 && number.fract() == 0.0 {
+                serde_json::Number::from(number as i64)
+            } else {
+                serde_json::Number::from_f64(number).ok_or_else(|| {
+                    format!("plugin result is not JSON data at {path}: non-finite number")
+                })?
+            };
             Ok(serde_json::Value::Number(number))
         }
         Type::String => {
@@ -637,6 +644,34 @@ mod tests {
     fn plugin_computes_rather_than_merely_parses() {
         let json = eval_plugin_ts("const items: number[] = [1, 2, 3]; export const name = 'clock'; export const systems = {total: items.reduce((sum, n) => sum + n, 0)}").unwrap();
         assert_eq!(json, "{\"name\":\"clock\",\"systems\":{\"total\":6}}");
+    }
+
+    #[test]
+    fn js_number_byte_counts_reach_the_existing_integer_wire_field() {
+        let source = r#"export const name = 'catalog'; export const handlers = {
+            'claims.search': input => ({name: 'space_rescue.pyxapp', sizeBytes: Number(input.size)})
+        };"#;
+        let output = call_plugin_operation_ts(source, "claims.search", r#"{"size":4207}"#).unwrap();
+        let file: crate::acquisition::claims::ArtifactFile =
+            serde_json::from_str(&output).expect("a safe integer JS Number is an integer byte count");
+        assert_eq!(file.size_bytes, Some(4207));
+        for input in [r#"{"size":4207.5}"#, r#"{"size":-1}"#, r#"{"size":9007199254740992}"#] {
+            let output = call_plugin_operation_ts(source, "claims.search", input).unwrap();
+            assert!(serde_json::from_str::<crate::acquisition::claims::ArtifactFile>(&output).is_err(), "accepted {output}");
+        }
+    }
+
+    #[test]
+    fn numeric_output_preserves_safe_integer_limits_and_fractions() {
+        let source = "export const name = 'catalog'; export const handlers = {'claims.search': () => ({positive: Number.MAX_SAFE_INTEGER, negative: -Number.MAX_SAFE_INTEGER, zero: -0.0, fraction: 0.25, unsafe: Number.MAX_SAFE_INTEGER + 1})};";
+        let output = call_plugin_operation_ts(source, "claims.search", "{}").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(value["positive"].as_u64(), Some(9_007_199_254_740_991));
+        assert_eq!(value["negative"].as_i64(), Some(-9_007_199_254_740_991));
+        assert_eq!(value["zero"].as_u64(), Some(0));
+        assert_eq!(value["fraction"].as_f64(), Some(0.25));
+        assert!(value["fraction"].is_f64());
+        assert!(value["unsafe"].is_f64());
     }
 
     #[test]
