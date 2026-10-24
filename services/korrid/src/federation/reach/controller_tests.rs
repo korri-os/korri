@@ -163,3 +163,127 @@ async fn reach_absent_native_candidate_allows_relay_discovery() {
 async fn reach_unsigned_native_response_still_stops_relay_discovery() {
     assert!(!publishes_offer(NativePath::UnsignedResponse).await);
 }
+
+async fn relay_only_endpoint_with_key(key: iroh::SecretKey) -> Endpoint {
+    Builder::empty()
+        .crypto_provider(iroh::tls::default_provider())
+        .secret_key(key)
+        .alpns(vec![ALPN.to_vec()])
+        .relay_mode(RelayMode::Custom(iroh::RelayMap::empty()))
+        .portmapper_config(iroh::endpoint::PortmapperConfig::Disabled)
+        .clear_ip_transports()
+        .bind()
+        .await
+        .unwrap()
+}
+
+async fn signed_call_after_relay_metadata(already_dialing: bool) -> Result<(), UpstreamError> {
+    let devices = Devices::new();
+    let key = iroh::SecretKey::generate();
+    let endpoint = relay_only_endpoint_with_key(key.clone()).await;
+    let peer_endpoint = relay_only_endpoint_with_key(iroh::SecretKey::generate()).await;
+    let peer = devices.cb.public_key().unwrap();
+    let access = relay::Membership {
+        directory: devices.da.clone(),
+        bindings: Arc::new(RwLock::new(BTreeMap::from([(
+            peer_endpoint.id(),
+            peer.clone(),
+        )]))),
+        local: endpoint.id(),
+    };
+    let mut relay_config =
+        iroh_relay::server::RelayConfig::new("127.0.0.1:0".parse::<SocketAddr>().unwrap());
+    relay_config.access = Arc::new(access);
+    let mut config = iroh_relay::server::ServerConfig::default();
+    config.relay = Some(relay_config);
+    let server = iroh_relay::server::Server::spawn(config).await.unwrap();
+    let address = server.http_addr().unwrap();
+    let router = devices.router();
+    let serving_endpoint = peer_endpoint.clone();
+    let local_id = endpoint.id();
+    let serving = tokio::spawn(async move {
+        let dial = connect_iroh(&serving_endpoint, local_id, Vec::new(), vec![address]);
+        tokio::pin!(dial);
+        let incoming = tokio::select! {
+            connection = async { serving_endpoint.accept().await.unwrap().await.unwrap() } => connection,
+            result = &mut dial => result.unwrap(),
+        };
+        tunnel::serve(incoming, router).await;
+    });
+    let mut controller = Controller {
+        directory: devices.da.clone(),
+        credentials: devices.ca.clone(),
+        config: None,
+        key,
+        peer_router: axum::Router::new(),
+        relay_port: 0,
+        endpoint: Some(endpoint.clone()),
+        tasks: JoinSet::new(),
+        relay_task: None,
+        bindings: Arc::new(RwLock::new(BTreeMap::new())),
+        dialing: Arc::new(Mutex::new(BTreeSet::new())),
+        relay_addresses: Arc::new(RwLock::new(Vec::new())),
+        pending: BTreeMap::new(),
+        processed: BTreeMap::new(),
+        retry: BTreeMap::new(),
+        relaying: BTreeMap::new(),
+    };
+    if already_dialing {
+        // Receiving an offer starts this production dial without relay metadata.
+        controller.dial(
+            peer.clone(),
+            peer_endpoint.id().to_string(),
+            Vec::new(),
+            Vec::new(),
+        );
+        assert!(controller.dialing.lock().unwrap().contains(&peer));
+    }
+    // Model the existing answer handler's current metadata and follow-up dial.
+    // Both fixtures differ ONLY in whether an offer already started a dial.
+    controller
+        .relaying
+        .insert(peer.clone(), (unix_time() + SIGNAL_LIFETIME, vec![address]));
+    controller.dial(
+        peer.clone(),
+        peer_endpoint.id().to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    timeout(Duration::from_secs(15), async {
+        while let Some(result) = controller.tasks.join_next().await {
+            result.unwrap();
+        }
+    })
+    .await
+    .expect("bounded production dial did not finish");
+    let result = crate::upstream_native::NativeClient::new_secure_candidates(
+        Vec::new(),
+        peer,
+        devices.ca.clone(),
+    )
+    .with_directory(devices.da.clone())
+    .with_timeout(Duration::from_secs(1))
+    .session_status()
+    .await
+    .map(|_| ());
+    serving.abort();
+    server.shutdown().await.unwrap();
+    endpoint.close().await;
+    peer_endpoint.close().await;
+    result
+}
+
+#[tokio::test]
+async fn reach_relay_metadata_before_dial_permits_a_signed_call() {
+    let result = signed_call_after_relay_metadata(false).await;
+    assert!(result.is_ok(), "{result:?}");
+}
+
+#[tokio::test]
+async fn reach_relay_metadata_during_dial_permits_a_signed_call() {
+    let result = signed_call_after_relay_metadata(true).await;
+    assert!(
+        result.is_ok(),
+        "current relay metadata was ignored by the in-flight dial: {result:?}"
+    );
+}
