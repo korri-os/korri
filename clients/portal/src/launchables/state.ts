@@ -558,7 +558,10 @@ export const LaunchablesState = {
       const pending = status._tag === "Ok" ? status.payload.pendingLaunches?.find(pending => pending.session.launchId === state.launchId) : undefined
       if (!isAuthoritativeSessionStatus(status)) {
         const failure = status._tag === "Ok" ? status.payload.observationFailure : status.payload
-        return failure?.code === "HostRecoveryBlocked" ? LaunchablesState.startupProblem(state, failure.message) : state
+        // A launch failure is useful feedback, not identity-scoped proof of
+        // absence. Keep ownership until exact Cancel or healthy observation.
+        return failure?.code === "HostRecoveryBlocked" || failure?.code === "HostLaunchFailed"
+          ? LaunchablesState.startupProblem(state, failure.message) : state
       }
       if (active?.launchId === state.launchId) {
         const entries: PortalEntry[] = state.entries.filter(entry => entry.kind !== "now-playing")

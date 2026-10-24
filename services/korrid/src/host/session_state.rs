@@ -2512,9 +2512,13 @@ impl HostSessionControl {
                 ActiveState::Completed { launch_id } | ActiveState::Failed { launch_id, .. }
                     if launch_id == expected_launch_id =>
                 {
-                    Err(HostSessionStop::Completed {
+                    let launch_id = launch_id.clone();
+                    // Failed already proved native and journal cleanup. Exact
+                    // End dismisses that retained failure, not any replacement.
+                    *state = ActiveState::Completed {
                         launch_id: launch_id.clone(),
-                    })
+                    };
+                    Err(HostSessionStop::Completed { launch_id })
                 }
                 ActiveState::Completed { .. }
                 | ActiveState::Failed { .. }
@@ -2553,6 +2557,11 @@ impl HostSessionControl {
                 | ActiveState::Failed {
                     launch_id: active, ..
                 } if active == &launch_id => {
+                    // Status may have collected this exact failed unit while
+                    // the stop helper ran. Its End ACK must retire failure too.
+                    *state = ActiveState::Completed {
+                        launch_id: launch_id.clone(),
+                    };
                     return HostSessionStop::Completed { launch_id };
                 }
                 ActiveState::Running {
@@ -2945,6 +2954,7 @@ mod tests {
     #[derive(Default)]
     struct BackendState {
         units: BTreeMap<String, LaunchUnitState>,
+        failed_units: BTreeMap<String, String>,
         stopped: Vec<String>,
         frozen: Vec<String>,
         thawed: Vec<String>,
@@ -3035,10 +3045,14 @@ mod tests {
         }
 
         fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError> {
-            Ok(self
-                .state
-                .lock()
-                .unwrap()
+            let state = self.state.lock().unwrap();
+            if let Some(message) = state.failed_units.get(launch_id) {
+                return Err(LaunchUnitError::new(
+                    LaunchUnitErrorKind::UnitFailed,
+                    message.clone(),
+                ));
+            }
+            Ok(state
                 .units
                 .get(launch_id)
                 .copied()
@@ -3101,6 +3115,7 @@ mod tests {
                     "stop helper timed out while the unit is deactivating",
                 ));
             }
+            state.failed_units.remove(launch_id);
             state
                 .units
                 .insert(launch_id.into(), LaunchUnitState::Completed);
@@ -6811,6 +6826,131 @@ mod tests {
         fs::remove_file(root.path().join("play-log")).unwrap();
         assert_eq!(control.status(), HostSessionStatus::NoActive);
         assert_eq!(stats(&control, "wario").play_count, 1);
+    }
+
+    #[test]
+    fn exact_stop_retires_retained_native_failure_before_acknowledging_completion() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let control = control(root.path(), backend.clone());
+        let id = prepare(&control, "one").launch_id;
+        let message = "game unit failed with signal 6".to_owned();
+        backend
+            .state
+            .lock()
+            .unwrap()
+            .failed_units
+            .insert(id.clone(), message.clone());
+        let failed = HostSessionStatus::Failed {
+            launch_id: id.clone(),
+            message,
+        };
+        assert_eq!(control.status(), failed);
+        assert!(backend.live_launch_ids().unwrap().is_empty());
+        assert!(read_active(&control.identity_root).unwrap().is_none());
+        // An arbitrary cancel is not authority to dismiss this failure.
+        assert_eq!(control.stop("unrelated"), HostSessionStop::NoActive);
+        assert_eq!(control.status(), failed);
+        let ended = HostSessionStop::Completed {
+            launch_id: id.clone(),
+        };
+        assert_eq!(control.stop(&id), ended);
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::Completed {
+                launch_id: id.clone()
+            }
+        );
+        assert_eq!(control.stop(&id), ended);
+        let replacement = prepare(&control, "two").launch_id;
+        assert_eq!(
+            control.stop(&id),
+            HostSessionStop::StaleIdentity {
+                active_launch_id: Some(replacement.clone())
+            }
+        );
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::Running {
+                launch_id: replacement,
+                game_id: Some("two".into())
+            }
+        );
+    }
+
+    #[test]
+    fn late_exact_stop_retires_failure_observed_while_its_helper_was_running() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let control = control(root.path(), backend.clone());
+        let id = prepare(&control, "one").launch_id;
+        backend.state.lock().unwrap().block_stop = true;
+        let wait_for_stops = |count| {
+            for _ in 0..10000 {
+                if backend.state.lock().unwrap().stopped.len() >= count {
+                    return true;
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+            false
+        };
+        thread::scope(|threads| {
+            let stopping = threads.spawn(|| control.stop(&id));
+            if !wait_for_stops(1) {
+                backend.release_stop();
+                panic!("exact stop helper did not start");
+            }
+            backend
+                .state
+                .lock()
+                .unwrap()
+                .failed_units
+                .insert(id.clone(), "game failed".into());
+            let observing = threads.spawn(|| control.status());
+            // Status holds the transition lock while its failed-unit cleanup
+            // blocks. The original stop must reconcile that terminal result.
+            let cleaning_failure = wait_for_stops(2);
+            backend.release_stop();
+            assert!(cleaning_failure, "failed-unit cleanup did not start");
+            assert!(matches!(
+                observing.join().unwrap(),
+                HostSessionStatus::Failed { .. }
+            ));
+            assert_eq!(
+                stopping.join().unwrap(),
+                HostSessionStop::Completed {
+                    launch_id: id.clone()
+                }
+            );
+        });
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::Completed { launch_id: id }
+        );
+    }
+
+    #[test]
+    fn old_exact_stop_does_not_retire_a_replacements_retained_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let control = control(root.path(), backend.clone());
+        let old = prepare(&control, "one").launch_id;
+        control.stop(&old);
+        let replacement = prepare(&control, "two").launch_id;
+        let message = "replacement failed".to_owned();
+        backend
+            .state
+            .lock()
+            .unwrap()
+            .failed_units
+            .insert(replacement.clone(), message.clone());
+        let failed = HostSessionStatus::Failed {
+            launch_id: replacement,
+            message,
+        };
+        assert_eq!(control.status(), failed);
+        assert_eq!(control.stop(&old), HostSessionStop::NoActive);
+        assert_eq!(control.status(), failed);
     }
 
     #[test]

@@ -504,6 +504,21 @@ describe("owned local startup observation", () => {
     expect(handedOff._tag).toBe("Ready")
     expect(LaunchablesState.withSessionStatus(handedOff, observed())._tag).toBe("Ready")
   })
+  test.each([false, true])("reports a failed host launch without treating it as idle (cancelling=%s)", cancelling => {
+    const initial = reserved()
+    const state = cancelling ? LaunchablesState.cancelStartup(initial) : initial
+    const failure: SessionStatusOutcome = { _tag: "Err", payload: {
+      code: "HostLaunchFailed", message: "game unit failed with signal 6",
+    } }
+    const observed = LaunchablesState.withSessionStatus(state, failure)
+    expect(observed).toMatchObject({
+      _tag: "Starting", launchId: reservation.launchId, cancelling,
+      entries: state._tag === "Starting" ? state.entries : [],
+      notice: { _tag: "Launch", message: failure.payload.message, subject: { id: game.id, title: game.title } },
+      cancelRetryAvailable: true,
+    })
+    expect(LaunchablesState.beginStartup(observed, game)).toBe(observed)
+  })
   test("observed exact exit retires a still-unacknowledged start", () => {
     const pending = LaunchablesState.withSessionStatus(reserved(), observed())
     expect(pending._tag).toBe("Starting")

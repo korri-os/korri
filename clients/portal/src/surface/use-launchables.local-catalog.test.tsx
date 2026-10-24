@@ -184,6 +184,44 @@ describe("source-local catalog orchestration", () => {
     expect(config.calls.native).toEqual([])
   })
 
+  test("an acknowledged launch reports native failure and exact cancellation returns to browsing", async () => {
+    const failure: SessionStatusOutcome = { _tag: "Err", payload: {
+      code: "HostLaunchFailed", message: "game unit failed with signal 6",
+    } }
+    const cancel = deferred<Awaited<ReturnType<KorridClient["sessionCancel"]>>>()
+    const cancellations: Parameters<KorridClient["sessionCancel"]>[] = []
+    const config = fixture({
+      async sessionStart(...args) {
+        config.calls.starts.push(args)
+        config.setStatus({ _tag: "Ok", payload: { active: { ...active, initialHandoff: InitialHandoff.Waiting } } })
+        return prepared
+      },
+      sessionCancel(...args) { cancellations.push(args); return cancel.promise },
+    })
+    const harness = await mount(config)
+    await invoke(() => harness.current().confirmEntry(harness.entry("game")))
+    expect(harness.current().state._tag).toBe("Starting")
+    config.setStatus(failure)
+    await invoke(() => window.dispatchEvent(new Event("focus")))
+    expect(surfaceModelFrom(harness.current().state).status).toMatchObject({
+      _tag: "Busy", detail: failure.payload.message,
+      actions: [{ id: "cancel-launch", enabled: true }],
+    })
+    expect(hasSession(harness.current())).toBe(true)
+    await invoke(() => harness.current().confirmEntry(harness.entry("game")))
+    expect(config.calls.starts).toHaveLength(1)
+    await invoke(() => harness.current().cancelLaunch())
+    expect(harness.current().state).toMatchObject({ _tag: "Starting", cancelling: true })
+    expect(cancellations).toEqual([[{ expectedLaunchId: active.launchId }]])
+    // The native producer retires only this exact retained failure at Ended.
+    config.setStatus(completed)
+    await invoke(() => cancel.resolve({ _tag: "Ok", payload: { phase: SessionEndPhase.Ended } }))
+    await waitFor(() => harness.current().state._tag === "Ready")
+    await invoke(() => window.dispatchEvent(new Event("focus")))
+    expect(hasSession(harness.current())).toBe(false)
+    expect(surfaceModelFrom(harness.current().state).status._tag).toBe("Browsing")
+  })
+
   test.each(["SessionCompleted", "NoActiveSession"])("exact stop reconciles %s without the ended banner", async code => {
     const ended = code === "SessionCompleted" ? completed : idle
     const config = fixture({ async sessionEnd(...args) {
