@@ -1041,6 +1041,8 @@ mod queue_tests;
 mod rpc_tests;
 
 #[cfg(test)]
+mod fantasy_live_tests;
+#[cfg(test)]
 mod game_download_tests;
 #[cfg(test)]
 mod http_fixture;

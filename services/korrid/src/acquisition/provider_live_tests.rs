@@ -26,7 +26,7 @@ struct Publisher {
     namespace: String,
 }
 
-fn package(variable: &str, id: &str) -> EnabledPackage {
+pub(super) fn package(variable: &str, id: &str) -> EnabledPackage {
     let path =
         PathBuf::from(std::env::var_os(variable).unwrap_or_else(|| panic!("set {variable}")));
     assert_eq!(path.parent().unwrap(), std::path::Path::new("/nix/store"));
