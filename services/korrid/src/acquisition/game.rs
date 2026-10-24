@@ -695,7 +695,18 @@ impl Pipeline {
                 }
             }) => downloaded.map_err(download_failed)?,
         };
-        let format = archive::format(&downloaded.lead);
+        // A native content format can itself use an archive container. Keep
+        // it only with positive plugin-owned byte evidence and a non-transport
+        // system filename. Extension/name guesses never suppress extraction.
+        let native_container = !archive::archive_name(&name)
+            && system_name(&name, &rules)
+            && identify::evidence_level(&name, &downloaded.lead, &rules, &[], &|_| Vec::new())
+                == identify::EvidenceLevel::Bytes;
+        let format = if native_container {
+            None
+        } else {
+            archive::format(&downloaded.lead)
+        };
         if format.is_none() && !system_name(&name, &rules) {
             // A name that says archive, or has no extension, with bytes in
             // no archive format: discovery could never identify it.

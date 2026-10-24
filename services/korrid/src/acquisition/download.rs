@@ -83,7 +83,7 @@ pub(super) struct TextResponse {
 pub(super) struct DownloadedGame {
     pub path: PathBuf,
     pub bytes: u64,
-    /// The first bytes, up to 512: they decide whether it is an archive.
+    /// The first bytes, up to 512: native byte evidence or transport archive.
     pub lead: Vec<u8>,
 }
 impl Drop for DownloadedGame {

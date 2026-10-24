@@ -765,9 +765,18 @@ ADR 0012/0013's cache grammar, readiness, content-hash identity and
   (romhustler gives `"Zool"`); any other extension fails before the
   download. A name with no extension and bytes that are not an archive is
   "not a game for this system".
-- **Unpacking.** After the download the first bytes decide: zip
+- **Native containers.** A native cartridge can itself use ZIP, such as
+  Pyxel's `.pyxapp`. korrid keeps its complete bytes when its filename matches
+  the claimed system's extensions, is not a `.zip`, `.7z` or `.rar` transport
+  name, and the downloaded prefix matches the system's existing
+  `content.evidence.bytes`. It uses discovery's byte-evidence matcher over
+  the first 512 downloaded bytes. Extension or name evidence alone cannot
+  suppress extraction. There is no engine-specific Core rule or new field.
+  The native runner interprets this content under the existing game boundary;
+  preserving a native container does not make arbitrary code safe to run.
+- **Unpacking.** For other downloads the first bytes decide: zip
   (`50 4b 03 04`, `50 4b 05 06`, `50 4b 07 08`), 7z (`37 7a bc af 27 1c`) or
-  rar (`52 61 72 21 1a 07`) is an archive whatever its name. The job becomes
+  rar (`52 61 72 21 1a 07`) is transport whatever its name. The job becomes
   `Unpacking` and korrid runs its own pure-Rust reader (`korrid
   unpack-archive <work-dir> <file>`) in the ADR 0012 sandbox unit
   `korri-acquire-<plugin short>-<provider name>.service`. The reader checks

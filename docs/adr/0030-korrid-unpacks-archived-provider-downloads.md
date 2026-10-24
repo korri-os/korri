@@ -79,10 +79,35 @@ unpacked by korrid's own Rust reader in a sandboxed unit. The reader refuses
 unsafe entries before it writes anything. korrid then identifies what is
 inside with the rules discovery already has: the system's content rules and
 header rules, and ADR 0005's multi-file identities. korrid adds no new rule to
-find "the game file". The archive is never a release. The release is what
+find "the game file". The transport archive is never a release. The release is what
 discovery would find if the same files were in a source, so a download and a
 copy in a source join one game. Disk use is bounded by free space, memory by
 `MemAvailable`, and entries by discovery's existing traversal budget.
+
+## Native content containers
+
+The five-runner slice requested on 2026-10-24 exposes a case outside the
+transport examples above. Pyxel 2.9.9 consumes `.pyxapp` as a native cartridge.
+Its producer writes a ZIP containing `.pyxapp_startup_script`, Python modules
+and assets. Extracting that cartridge before discovery loses the selected
+content file and its identity. The official `30sec_of_daylight.pyxapp`
+contains multiple modules, so choosing one extracted `.py` is not equivalent.
+The producer and consumer are `python/pyxel/cli.py` at upstream tag `v2.9.9`.
+
+A download remains intact when its filename matches the claimed system's
+extensions, is not a `.zip`, `.7z` or `.rar` transport name, and its downloaded
+prefix matches that system's existing `content.evidence.bytes`. This uses
+discovery's existing byte-evidence matcher. Extension or name evidence alone
+never suppresses extraction. No engine name, new declaration field or
+provider transformation enters Core.
+
+All other archive-magic downloads retain this ADR's extraction policy,
+including archives disguised under an extension without matching byte
+evidence. A ZIP containing a native cartridge is still transport; its inner
+cartridge is content. The native container's complete bytes form its release
+identity, as they do for a local copy. The native runner owns interpreting its
+format. This distinction grants no code-execution permission or security
+assurance; Python games still run under the existing native-game boundary.
 
 ## Changes on main since the first draft
 

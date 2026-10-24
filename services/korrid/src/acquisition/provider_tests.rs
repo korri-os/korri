@@ -100,8 +100,10 @@ export const systems = {{
   md: {{ id: "md", title: "Mega Drive", content: {{ extensions: ["md", "gen", "smd", "bin"] }} }},
   sat: {{ id: "sat", title: "Saturn", content: {{ extensions: ["cue", "bin"],
     layout: ["{{title}} (Disc {{disc}}).{{ext}}"] }} }},
+  nativecart: {{ id: "nativecart", title: "Native container", content: {{ extensions: ["cartz"],
+    evidence: {{ bytes: [{{ offset: 0, hex: "504b0304" }}] }} }} }},
 }};
-export const runners = {{ run: {{ id: "@test:core/run", program: "run", systems: ["gba", "nes", "psx", "md", "sat"] }} }};
+export const runners = {{ run: {{ id: "@test:core/run", program: "run", systems: ["gba", "nes", "psx", "md", "sat", "nativecart"] }} }};
 export const handlers = {{ "launch.prepare": (input: any) => ({{ command: input.program, args: [input.contentPath] }}) }};
 {artifacts}
 "#
@@ -1360,6 +1362,81 @@ fn failed_with(status: &AcquireJobStatus, copy: &str) {
 
 const NOT_A_GAME: &str = "The downloaded file is not a game for this system.";
 const UNPACK: &str = "The downloaded files could not be unpacked.";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_byte_identified_native_container_keeps_its_bytes_and_routes_as_one_file() {
+    let world = world();
+    // A native application package owns its startup marker and module layout.
+    // Extracting it would leave no .cartz file for discovery or the runner.
+    let cart = zip(&[
+        ("game/.startup", b"src/main.py"),
+        ("game/src/main.py", b"print('original test fixture')"),
+        ("game/src/module.py", b"VALUE = 1"),
+    ]);
+    world
+        .offer("native", "nativecart", "/files/game.cartz", cart.clone())
+        .await;
+    let game = imported(&world.get("native").await);
+    let route = world.route(&game).unwrap();
+    assert_eq!(route.file_name().unwrap(), "game.cartz");
+    assert_eq!(fs::read(&route).unwrap(), cart);
+    assert_eq!(names(route.parent().unwrap()), ["game.cartz"]);
+    assert_eq!(
+        world.snapshot().library[&game].releases[0]
+            .identity
+            .as_ref()
+            .unwrap()
+            .value(),
+        format!("sha256:{}", sha_hex(&cart))
+    );
+
+    // A transport ZIP still unpacks, even when its lead matches the system's
+    // byte evidence. The selected content is the inner native package.
+    world
+        .offer(
+            "transport",
+            "nativecart",
+            "/files/package.zip",
+            zip(&[("game.cartz", &cart)]),
+        )
+        .await;
+    assert_eq!(imported(&world.get("transport").await), game);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_native_filename_with_nonmatching_byte_evidence_still_unpacks_transport() {
+    let world = world();
+    let cart = zip(&[("game/main.txt", b"original native content")]);
+    world
+        .offer(
+            "different-container",
+            "nativecart",
+            "/files/transport.cartz",
+            seven_z(&[("actual.cartz", &cart)]),
+        )
+        .await;
+    let game = imported(&world.get("different-container").await);
+    let route = world.route(&game).unwrap();
+    assert_eq!(route.file_name().unwrap(), "actual.cartz");
+    assert_eq!(fs::read(route).unwrap(), cart);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn archive_magic_still_wins_over_an_extension_without_byte_evidence() {
+    let world = world();
+    world
+        .offer(
+            "disguised",
+            "gba",
+            "/files/disguised.gba",
+            zip(&[("actual.gba", ROM)]),
+        )
+        .await;
+    let game = imported(&world.get("disguised").await);
+    let route = world.route(&game).unwrap();
+    assert_eq!(route.file_name().unwrap(), "actual.gba");
+    assert_eq!(fs::read(route).unwrap(), ROM);
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_zipped_rom_is_unpacked_identified_and_routed_and_joins_the_plain_copy() {
