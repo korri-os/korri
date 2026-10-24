@@ -103,6 +103,8 @@ struct Pending {
     token: crate::federation::WorkToken,
 }
 
+type RelayAnswers = Arc<RwLock<BTreeMap<String, (u64, Vec<SocketAddr>)>>>;
+
 struct Controller {
     directory: FederationDirectory,
     credentials: PeerCredentials,
@@ -119,7 +121,7 @@ struct Controller {
     pending: BTreeMap<String, Pending>,
     processed: BTreeMap<(String, String), u64>,
     retry: BTreeMap<String, (Instant, u32)>,
-    relaying: Arc<RwLock<BTreeMap<String, (u64, Vec<SocketAddr>)>>>,
+    relaying: RelayAnswers,
 }
 impl Drop for Controller {
     fn drop(&mut self) {

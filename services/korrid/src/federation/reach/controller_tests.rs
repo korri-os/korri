@@ -332,13 +332,28 @@ async fn reach_relay_answer_without_current_membership_is_not_used_at_fallback()
 
 #[tokio::test]
 async fn reach_direct_connection_does_not_read_relay_answers() {
-    let (a, b, outgoing, incoming) = crate::federation::reach::tests::pair().await;
-    let connection = connect_iroh(&a, b.id(), endpoint_addresses(&b), || {
-        panic!("relay lookup ran before direct methods succeeded")
-    })
-    .await
-    .unwrap();
-    assert_eq!(connection.remote_id(), b.id());
+    let endpoint = || async {
+        Builder::empty()
+            .crypto_provider(iroh::tls::default_provider())
+            .alpns(vec![ALPN.to_vec()])
+            .relay_mode(RelayMode::Custom(iroh::RelayMap::empty()))
+            .portmapper_config(iroh::endpoint::PortmapperConfig::Disabled)
+            .clear_ip_transports()
+            .bind_addr("127.0.0.1:0")
+            .unwrap()
+            .bind()
+            .await
+            .unwrap()
+    };
+    let (a, b) = (endpoint().await, endpoint().await);
+    let (outgoing, incoming) = tokio::join!(
+        connect_iroh(&a, b.id(), endpoint_addresses(&b), || {
+            panic!("relay lookup ran before direct methods succeeded")
+        }),
+        async { b.accept().await.unwrap().await.unwrap() }
+    );
+    let outgoing = outgoing.unwrap();
+    assert_eq!(outgoing.remote_id(), b.id());
     outgoing.close(0u32.into(), b"test complete");
     incoming.close(0u32.into(), b"test complete");
     a.close().await;
