@@ -93,7 +93,7 @@ async fn publishes_offer(path: NativePath) -> bool {
         pending: BTreeMap::new(),
         processed: BTreeMap::new(),
         retry: BTreeMap::new(),
-        relaying: BTreeMap::new(),
+        relaying: Arc::new(RwLock::new(BTreeMap::new())),
     };
     let mut snapshot = devices.da.snapshot().unwrap().remove(0);
     // Use the existing endpoint producer's shape. No public relay or STUN
@@ -177,7 +177,17 @@ async fn relay_only_endpoint_with_key(key: iroh::SecretKey) -> Endpoint {
         .unwrap()
 }
 
-async fn signed_call_after_relay_metadata(already_dialing: bool) -> Result<(), UpstreamError> {
+#[derive(Clone, Copy)]
+enum RelayMetadata {
+    Current,
+    ExpiresDuringDirect,
+    Nonmember,
+}
+
+async fn signed_call_after_relay_metadata(
+    already_dialing: bool,
+    metadata: RelayMetadata,
+) -> Result<(), UpstreamError> {
     let devices = Devices::new();
     let key = iroh::SecretKey::generate();
     let endpoint = relay_only_endpoint_with_key(key.clone()).await;
@@ -202,7 +212,7 @@ async fn signed_call_after_relay_metadata(already_dialing: bool) -> Result<(), U
     let serving_endpoint = peer_endpoint.clone();
     let local_id = endpoint.id();
     let serving = tokio::spawn(async move {
-        let dial = connect_iroh(&serving_endpoint, local_id, Vec::new(), vec![address]);
+        let dial = connect_iroh(&serving_endpoint, local_id, Vec::new(), || vec![address]);
         tokio::pin!(dial);
         let incoming = tokio::select! {
             connection = async { serving_endpoint.accept().await.unwrap().await.unwrap() } => connection,
@@ -226,7 +236,7 @@ async fn signed_call_after_relay_metadata(already_dialing: bool) -> Result<(), U
         pending: BTreeMap::new(),
         processed: BTreeMap::new(),
         retry: BTreeMap::new(),
-        relaying: BTreeMap::new(),
+        relaying: Arc::new(RwLock::new(BTreeMap::new())),
     };
     if already_dialing {
         // Receiving an offer starts this production dial without relay metadata.
@@ -237,12 +247,26 @@ async fn signed_call_after_relay_metadata(already_dialing: bool) -> Result<(), U
             Vec::new(),
         );
         assert!(controller.dialing.lock().unwrap().contains(&peer));
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
     // Model the existing answer handler's current metadata and follow-up dial.
     // Both fixtures differ ONLY in whether an offer already started a dial.
-    controller
-        .relaying
-        .insert(peer.clone(), (unix_time() + SIGNAL_LIFETIME, vec![address]));
+    controller.relaying.write().unwrap().insert(
+        if matches!(metadata, RelayMetadata::Nonmember) {
+            "ff".repeat(32)
+        } else {
+            peer.clone()
+        },
+        (
+            unix_time()
+                + if matches!(metadata, RelayMetadata::ExpiresDuringDirect) {
+                    2
+                } else {
+                    SIGNAL_LIFETIME
+                },
+            vec![address],
+        ),
+    );
     controller.dial(
         peer.clone(),
         peer_endpoint.id().to_string(),
@@ -275,15 +299,48 @@ async fn signed_call_after_relay_metadata(already_dialing: bool) -> Result<(), U
 
 #[tokio::test]
 async fn reach_relay_metadata_before_dial_permits_a_signed_call() {
-    let result = signed_call_after_relay_metadata(false).await;
+    let result = signed_call_after_relay_metadata(false, RelayMetadata::Current).await;
     assert!(result.is_ok(), "{result:?}");
 }
 
 #[tokio::test]
 async fn reach_relay_metadata_during_dial_permits_a_signed_call() {
-    let result = signed_call_after_relay_metadata(true).await;
+    let result = signed_call_after_relay_metadata(true, RelayMetadata::Current).await;
     assert!(
         result.is_ok(),
         "current relay metadata was ignored by the in-flight dial: {result:?}"
     );
+}
+
+#[tokio::test]
+async fn reach_relay_answer_expiring_during_direct_is_not_used_at_fallback() {
+    let result = signed_call_after_relay_metadata(false, RelayMetadata::ExpiresDuringDirect).await;
+    assert!(
+        matches!(result, Err(UpstreamError::Unreachable(_))),
+        "{result:?}"
+    );
+}
+
+#[tokio::test]
+async fn reach_relay_answer_without_current_membership_is_not_used_at_fallback() {
+    let result = signed_call_after_relay_metadata(false, RelayMetadata::Nonmember).await;
+    assert!(
+        matches!(result, Err(UpstreamError::Unreachable(_))),
+        "{result:?}"
+    );
+}
+
+#[tokio::test]
+async fn reach_direct_connection_does_not_read_relay_answers() {
+    let (a, b, outgoing, incoming) = crate::federation::reach::tests::pair().await;
+    let connection = connect_iroh(&a, b.id(), endpoint_addresses(&b), || {
+        panic!("relay lookup ran before direct methods succeeded")
+    })
+    .await
+    .unwrap();
+    assert_eq!(connection.remote_id(), b.id());
+    outgoing.close(0u32.into(), b"test complete");
+    incoming.close(0u32.into(), b"test complete");
+    a.close().await;
+    b.close().await;
 }

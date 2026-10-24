@@ -91,7 +91,7 @@ pub(crate) fn start(
         pending: BTreeMap::new(),
         processed: BTreeMap::new(),
         retry: BTreeMap::new(),
-        relaying: BTreeMap::new(),
+        relaying: Arc::new(RwLock::new(BTreeMap::new())),
     };
     let task = runtime.spawn(controller.run());
     Some(ReachLifetime(Arc::new(Lifetime { task, routes })))
@@ -119,7 +119,7 @@ struct Controller {
     pending: BTreeMap<String, Pending>,
     processed: BTreeMap<(String, String), u64>,
     retry: BTreeMap<String, (Instant, u32)>,
-    relaying: BTreeMap<String, (u64, Vec<SocketAddr>)>,
+    relaying: Arc<RwLock<BTreeMap<String, (u64, Vec<SocketAddr>)>>>,
 }
 impl Drop for Controller {
     fn drop(&mut self) {
@@ -174,7 +174,7 @@ impl Controller {
         self.pending.clear();
         self.retry.clear();
         self.processed.clear();
-        self.relaying.clear();
+        self.relaying.write().expect("relay answers").clear();
         self.bindings.write().expect("reach bindings").clear();
         self.relay_addresses
             .write()
@@ -386,7 +386,10 @@ impl Controller {
                 handle_signalling_failure(&self.directory, device, &pending.token).await;
             }
             self.pending.retain(|_, pending| pending.expires_at > now);
-            self.relaying.retain(|_, (expires, _)| *expires > now);
+            self.relaying
+                .write()
+                .expect("relay answers")
+                .retain(|_, (expires, _)| *expires > now);
             if let Ok(received) = signal.receive(now).await {
                 for command in received.commands {
                     // Relay reads can wait several seconds. Bind against the
@@ -494,7 +497,7 @@ impl Controller {
                             self.pending.remove(&sender_device_public_key);
                             // A current answer is the only source of relay URLs.
                             // Each URL names the actual embedded TCP listener.
-                            self.relaying.insert(
+                            self.relaying.write().expect("relay answers").insert(
                                 sender_device_public_key.clone(),
                                 (answer.expires_at, answer.relay_addresses.clone()),
                             );
@@ -558,6 +561,8 @@ impl Controller {
             // Refresh current relay eligibility even on an existing
             // connection. A 60-second answer is not a durable record.
             self.relaying
+                .read()
+                .expect("relay answers")
                 .get(&device)
                 .is_some_and(|(expires, _)| *expires > now.saturating_add(30))
         } else {
@@ -665,21 +670,8 @@ impl Controller {
         device: String,
         endpoint_id: String,
         addresses: Vec<SocketAddr>,
-        mut relays: Vec<SocketAddr>,
+        relays: Vec<SocketAddr>,
     ) {
-        // The answer names actual TCP listeners, not assumed UDP mappings.
-        // The directory rechecks relay membership before using this signal.
-        if let Ok(peers) = self.directory.snapshot() {
-            for (relay_device, (expires, addresses)) in &self.relaying {
-                if *expires > unix_time()
-                    && peers.iter().any(|p| p.device_public_key == *relay_device)
-                {
-                    relays.extend(addresses);
-                }
-            }
-        }
-        relays.sort();
-        relays.dedup();
         let Some(endpoint) = self.endpoint.clone() else {
             return;
         };
@@ -712,12 +704,33 @@ impl Controller {
             return;
         };
         let (directory, routes) = (self.directory.clone(), self.directory.reach.clone());
+        let relay_answers = self.relaying.clone();
         self.tasks.spawn(async move {
             let _guard = guard;
             let Ok(id) = endpoint_id.parse::<EndpointId>() else {
                 return;
             };
-            let result = connect_iroh(&endpoint, id, addresses, relays).await;
+            let result = connect_iroh(&endpoint, id, addresses, || {
+                // A signed answer can arrive while the direct phase is active.
+                // Read the SAME answer table at fallback, not a start-time copy.
+                // Recheck expiry and current membership before using a listener.
+                let mut relays = relays;
+                if let Ok(peers) = directory.snapshot() {
+                    for (device, (expires, addresses)) in
+                        relay_answers.read().expect("relay answers").iter()
+                    {
+                        if *expires > unix_time()
+                            && peers.iter().any(|peer| peer.device_public_key == *device)
+                        {
+                            relays.extend(addresses);
+                        }
+                    }
+                }
+                relays.sort();
+                relays.dedup();
+                relays
+            })
+            .await;
             match result {
                 Ok(connection) => {
                     if !routes
@@ -862,7 +875,7 @@ pub(super) async fn connect_iroh(
     endpoint: &Endpoint,
     id: EndpointId,
     addresses: Vec<SocketAddr>,
-    relays: Vec<SocketAddr>,
+    relays: impl FnOnce() -> Vec<SocketAddr>,
 ) -> io::Result<Connection> {
     let mut address = EndpointAddr::new(id);
     for direct in addresses {
@@ -881,7 +894,7 @@ pub(super) async fn connect_iroh(
         return Ok(connection);
     }
     tokio::time::sleep(Duration::from_secs(5).saturating_sub(started.elapsed())).await;
-    for relay in relays.into_iter().take(8) {
+    for relay in relays().into_iter().take(8) {
         let url: iroh::RelayUrl = format!("http://{relay}")
             .parse()
             .map_err(io::Error::other)?;

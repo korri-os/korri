@@ -149,9 +149,9 @@ async fn reach_direct_failure_waits_five_seconds_before_the_member_relay() {
     // device-signed signal, as the production controller does.
     let start = tokio::time::Instant::now();
     let (outgoing, incoming) = tokio::join!(
-        controller::connect_iroh(&a, b.id(), Vec::new(), vec![address]),
+        controller::connect_iroh(&a, b.id(), Vec::new(), || vec![address]),
         async {
-            let dial = controller::connect_iroh(&b, a.id(), Vec::new(), vec![address]);
+            let dial = controller::connect_iroh(&b, a.id(), Vec::new(), || vec![address]);
             tokio::pin!(dial);
             tokio::select! {
                 connection = async {b.accept().await.unwrap().await.unwrap()} => connection,
