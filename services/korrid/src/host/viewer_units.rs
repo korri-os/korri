@@ -142,6 +142,35 @@ mod tests {
             .any(|arg| arg.contains("server-0123456789abcdef")));
     }
     #[test]
+    fn linux_viewer_pin_argument_is_an_absolute_native_credential_path() {
+        let backend = SystemdLaunchUnitBackend::new(
+            "/nix/store/systemd/bin/systemd-run".into(),
+            "/nix/store/systemd/bin/systemctl".into(),
+            1001,
+            1002,
+        )
+        .unwrap()
+        .for_stream_viewer();
+        let launch = "0123456789abcdef0123456789abcdef";
+        let command = vec!["/nix/store/viewer/bin/moonlight".into()];
+        let environment = BTreeMap::new();
+        let sandbox = LaunchSandbox::new(&command, &environment);
+        let certificate = "-----BEGIN CERTIFICATE-----\nY2VydA==\n-----END CERTIFICATE-----\n";
+        let args = backend
+            .viewer_arguments(launch, &command, &environment, &sandbox, Some(certificate))
+            .unwrap();
+        let pin = args
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--setenv=KORRI_MOONLIGHT_SERVER_CERTIFICATE="))
+            .expect("pinned viewer must receive the native credential path");
+        assert!(
+            Path::new(pin).is_absolute(),
+            "transient Environment values do not expand unit specifiers: {pin}"
+        );
+        assert!(!pin.contains('%'), "unexpanded unit specifier in pin path");
+    }
+
+    #[test]
     fn linux_viewer_bootstrap_timeout_stops_the_exact_named_sandbox_unit() {
         use std::os::unix::fs::PermissionsExt;
         let root = tempfile::tempdir().unwrap();
