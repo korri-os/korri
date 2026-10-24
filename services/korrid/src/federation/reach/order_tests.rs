@@ -83,15 +83,59 @@ async fn reach_candidate_race_precedes_iroh_and_injected_failure_uses_it() {
 #[tokio::test]
 async fn reach_direct_failure_waits_five_seconds_before_the_member_relay() {
     let devices = Devices::new();
-    let (a, b) = (endpoint().await, endpoint().await);
+    async fn relay_only_endpoint() -> Endpoint {
+        Builder::empty()
+            .crypto_provider(iroh::tls::default_provider())
+            .alpns(vec![ALPN.to_vec()])
+            .relay_mode(iroh::RelayMode::Custom(iroh::RelayMap::empty()))
+            .portmapper_config(PortmapperConfig::Disabled)
+            .clear_ip_transports()
+            .bind()
+            .await
+            .unwrap()
+    }
+    let (a, b) = (relay_only_endpoint().await, relay_only_endpoint().await);
+    assert!(controller::endpoint_addresses(&a).is_empty());
+    assert!(controller::endpoint_addresses(&b).is_empty());
+    // A third owned federation device carries the traffic, not either peer.
+    let relay_root = tempfile::tempdir().unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(relay_root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    let credentials = PeerCredentials::from_identity(owned(relay_root.path(), &devices.owner));
+    let directory = FederationDirectory::open(
+        relay_root.path(),
+        credentials,
+        Authorization::load(relay_root.path()).unwrap(),
+        Arc::new(unix_time),
+    )
+    .unwrap();
+    directory
+        .apply_membership(
+            &directory.begin_work().unwrap(),
+            &[
+                devices
+                    .ca
+                    .identity_snapshot()
+                    .unwrap()
+                    .owner_statement_json()
+                    .unwrap(),
+                devices
+                    .cb
+                    .identity_snapshot()
+                    .unwrap()
+                    .owner_statement_json()
+                    .unwrap(),
+            ],
+        )
+        .unwrap();
     let bindings = Arc::new(RwLock::new(BTreeMap::from([
         (a.id(), devices.ca.public_key().unwrap()),
         (b.id(), devices.cb.public_key().unwrap()),
     ])));
     let access = relay::Membership {
-        directory: devices._db.clone(),
+        directory,
         bindings,
-        local: b.id(),
+        local: iroh::SecretKey::generate().public(),
     };
     let mut config = iroh_relay::server::ServerConfig::default();
     let mut relay_config = iroh_relay::server::RelayConfig::new(
@@ -132,15 +176,28 @@ async fn reach_direct_failure_waits_five_seconds_before_the_member_relay() {
         key,
         devices.ca.clone(),
     )
-    .with_directory(devices.da.clone());
+    .with_directory(devices.da.clone())
+    .with_timeout(Duration::from_secs(1));
+    assert!(!outgoing.paths().is_empty());
+    assert!(outgoing.paths().iter().all(|path| path.is_relay()));
     timeout(Duration::from_secs(5), client.session_status())
         .await
         .expect("signed peer call timed out over the member relay")
         .expect("signed peer call failed over the member relay");
+    assert!(outgoing.paths().iter().all(|path| path.is_relay()));
+    // Remove only the relay. The SAME signed call must fail; both endpoints
+    // and the authenticated peer router remain alive, with no IP transport.
+    server.shutdown().await.unwrap();
+    let result = timeout(Duration::from_secs(5), client.session_status())
+        .await
+        .unwrap();
+    assert!(
+        matches!(result, Err(crate::upstreams::UpstreamError::Unreachable(_))),
+        "{result:?}"
+    );
     serving.abort();
     outgoing.close(0u32.into(), b"test complete");
     incoming.close(0u32.into(), b"test complete");
-    server.shutdown().await.unwrap();
     a.close().await;
     b.close().await;
 }

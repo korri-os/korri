@@ -602,7 +602,15 @@ impl Controller {
                 !matches!(error, crate::upstreams::UpstreamError::Unreachable(_))
             }) {
                 set_operation_failed(&self.directory, &device, &token);
-                return;
+                // A verified application refusal still refuses this operation.
+                // It must not suppress the independent reach offer that learns
+                // this member's relay listener. Invalid or unsigned replies do.
+                if !matches!(
+                    native.as_ref(),
+                    Err(crate::upstreams::UpstreamError::Tagged { .. })
+                ) {
+                    return;
+                }
             }
             if native.is_ok() {
                 let _ = self
