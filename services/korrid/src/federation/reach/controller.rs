@@ -13,6 +13,7 @@ use crate::{
         WebSocketRelayTransport,
     },
 };
+use futures::StreamExt;
 use iroh::{
     endpoint::{Builder, Connection},
     Endpoint, EndpointAddr, EndpointId, RelayMode, TransportAddr,
@@ -435,124 +436,127 @@ impl Controller {
         stun: &StunList,
         now: u64,
     ) {
-        if let Ok(received) = signal.receive(now).await {
-            for command in received.commands {
-                // Relay reads can wait several seconds. Bind against the
-                // current clock, not the timestamp before that I/O.
-                let now = unix_time();
-                match command {
-                    CoordinationCommand::ReachOffer {
-                        sender_device_public_key,
-                        offer,
-                    } => {
-                        if self.processed.len() >= 4096
-                            || self.processed.contains_key(&(
-                                sender_device_public_key.clone(),
-                                offer.request_id.clone(),
-                            ))
-                        {
-                            continue;
-                        }
-                        if bind_offer(
-                            &self.directory,
-                            &self.bindings,
-                            &sender_device_public_key,
-                            &offer,
-                            now,
-                        )
-                        .is_err()
-                        {
-                            continue;
-                        }
-                        let Ok(endpoint) = self.ensure_endpoint(stun).await else {
-                            continue;
-                        };
-                        let direct = endpoint_addresses(&endpoint);
-                        let relay_addresses = self
-                            .relay_addresses
-                            .read()
-                            .expect("relay addresses")
-                            .clone();
-                        let answer = Answer {
-                            endpoint_id: self.key.public().to_string(),
-                            direct_addresses: direct,
-                            expires_at: now + SIGNAL_LIFETIME,
-                            request_id: offer.request_id.clone(),
-                            can_relay_now: !relay_addresses.is_empty(),
-                            relay_addresses,
-                        };
-                        let command = CoordinationCommand::ReachAnswer {
-                            sender_device_public_key: self
-                                .credentials
-                                .public_key()
-                                .unwrap_or_default(),
-                            answer,
-                        };
-                        if signal
-                            .queue_command(&sender_device_public_key, command, now)
-                            .await
-                            .is_ok_and(|p| p.accepted())
-                        {
-                            self.processed.insert(
-                                (sender_device_public_key.clone(), offer.request_id.clone()),
-                                offer.expires_at,
+        if let Ok(mut batches) = signal.receive_batches(now) {
+            while let Some(received) = batches.next().await {
+                for command in received.commands {
+                    // Relay reads can wait several seconds. Bind against the
+                    // current clock, not the timestamp before that I/O.
+                    let now = unix_time();
+                    match command {
+                        CoordinationCommand::ReachOffer {
+                            sender_device_public_key,
+                            offer,
+                        } => {
+                            if self.processed.len() >= 4096
+                                || self.processed.contains_key(&(
+                                    sender_device_public_key.clone(),
+                                    offer.request_id.clone(),
+                                ))
+                            {
+                                continue;
+                            }
+                            if bind_offer(
+                                &self.directory,
+                                &self.bindings,
+                                &sender_device_public_key,
+                                &offer,
+                                now,
+                            )
+                            .is_err()
+                            {
+                                continue;
+                            }
+                            let Ok(endpoint) = self.ensure_endpoint(stun).await else {
+                                continue;
+                            };
+                            let direct = endpoint_addresses(&endpoint);
+                            let relay_addresses = self
+                                .relay_addresses
+                                .read()
+                                .expect("relay addresses")
+                                .clone();
+                            let answer = Answer {
+                                endpoint_id: self.key.public().to_string(),
+                                direct_addresses: direct,
+                                expires_at: now + SIGNAL_LIFETIME,
+                                request_id: offer.request_id.clone(),
+                                can_relay_now: !relay_addresses.is_empty(),
+                                relay_addresses,
+                            };
+                            let command = CoordinationCommand::ReachAnswer {
+                                sender_device_public_key: self
+                                    .credentials
+                                    .public_key()
+                                    .unwrap_or_default(),
+                                answer,
+                            };
+                            if signal
+                                .queue_command(&sender_device_public_key, command, now)
+                                .await
+                                .is_ok_and(|p| p.accepted())
+                            {
+                                self.processed.insert(
+                                    (sender_device_public_key.clone(), offer.request_id.clone()),
+                                    offer.expires_at,
+                                );
+                            }
+                            self.dial(
+                                sender_device_public_key,
+                                offer.endpoint_id,
+                                offer.direct_addresses,
+                                Vec::new(),
                             );
                         }
-                        self.dial(
+                        CoordinationCommand::ReachAnswer {
                             sender_device_public_key,
-                            offer.endpoint_id,
-                            offer.direct_addresses,
-                            Vec::new(),
-                        );
+                            answer,
+                        } => {
+                            if self
+                                .pending
+                                .get(&sender_device_public_key)
+                                .is_none_or(|pending| {
+                                    pending.request_id != answer.request_id
+                                        || pending.expires_at <= now
+                                })
+                            {
+                                continue;
+                            }
+                            if answer.validate(now).is_err() {
+                                continue;
+                            }
+                            let offer = Offer {
+                                endpoint_id: answer.endpoint_id.clone(),
+                                direct_addresses: answer.direct_addresses.clone(),
+                                expires_at: answer.expires_at,
+                                request_id: answer.request_id.clone(),
+                            };
+                            if bind_offer(
+                                &self.directory,
+                                &self.bindings,
+                                &sender_device_public_key,
+                                &offer,
+                                now,
+                            )
+                            .is_err()
+                            {
+                                continue;
+                            }
+                            self.pending.remove(&sender_device_public_key);
+                            // A current answer is the only source of relay URLs.
+                            // Each URL names the actual embedded TCP listener.
+                            self.relaying.write().expect("relay answers").insert(
+                                sender_device_public_key.clone(),
+                                (answer.expires_at, answer.relay_addresses.clone()),
+                            );
+                            self.dial(
+                                sender_device_public_key,
+                                answer.endpoint_id,
+                                answer.direct_addresses,
+                                Vec::new(),
+                            );
+                        }
+                        _ => {}
                     }
-                    CoordinationCommand::ReachAnswer {
-                        sender_device_public_key,
-                        answer,
-                    } => {
-                        if self
-                            .pending
-                            .get(&sender_device_public_key)
-                            .is_none_or(|pending| {
-                                pending.request_id != answer.request_id || pending.expires_at <= now
-                            })
-                        {
-                            continue;
-                        }
-                        if answer.validate(now).is_err() {
-                            continue;
-                        }
-                        let offer = Offer {
-                            endpoint_id: answer.endpoint_id.clone(),
-                            direct_addresses: answer.direct_addresses.clone(),
-                            expires_at: answer.expires_at,
-                            request_id: answer.request_id.clone(),
-                        };
-                        if bind_offer(
-                            &self.directory,
-                            &self.bindings,
-                            &sender_device_public_key,
-                            &offer,
-                            now,
-                        )
-                        .is_err()
-                        {
-                            continue;
-                        }
-                        self.pending.remove(&sender_device_public_key);
-                        // A current answer is the only source of relay URLs.
-                        // Each URL names the actual embedded TCP listener.
-                        self.relaying.write().expect("relay answers").insert(
-                            sender_device_public_key.clone(),
-                            (answer.expires_at, answer.relay_addresses.clone()),
-                        );
-                        self.dial(
-                            sender_device_public_key,
-                            answer.endpoint_id,
-                            answer.direct_addresses,
-                            Vec::new(),
-                        );
-                    }
-                    _ => {}
                 }
             }
         }

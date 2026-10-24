@@ -167,3 +167,74 @@ async fn live_relay_delivers_signed_reach_exchange_before_pending_expiry() {
 async fn unavailable_configured_relay_does_not_expire_working_signed_reach_exchange() {
     reach_exchange(true).await;
 }
+
+#[tokio::test]
+async fn completed_batches_keep_cross_relay_dedup_and_aggregate_receive_semantics() {
+    let relays = RelayList::configured(vec![
+        "wss://first.invalid".into(),
+        "wss://second.invalid".into(),
+    ])
+    .unwrap();
+    let network = Arc::new(InProcessRelayNetwork::new(&relays));
+    let owner = nostr::key::Keys::generate();
+    let (a_root, b_root) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let a = tests::owned_identity(a_root.path(), &owner, 1000);
+    let b = tests::owned_identity(b_root.path(), &owner, 1000);
+    let (a_key, b_key) = (
+        a.device_public_key().unwrap().to_owned(),
+        b.device_public_key().unwrap().to_owned(),
+    );
+    let sender = CoordinatedRelays::new(relays.clone(), a, network.clone()).unwrap();
+    let receiver = CoordinatedRelays::new(relays.clone(), b, network.clone()).unwrap();
+    assert!(sender
+        .queue_command(
+            &b_key,
+            CoordinationCommand::ReachOffer {
+                sender_device_public_key: a_key,
+                offer: Offer {
+                    endpoint_id: iroh::SecretKey::generate().public().to_string(),
+                    direct_addresses: Vec::new(),
+                    expires_at: 1060,
+                    request_id: "ab".repeat(32)
+                },
+            },
+            1000
+        )
+        .await
+        .unwrap()
+        .accepted());
+    let batches = receiver
+        .receive_batches(1000)
+        .unwrap()
+        .collect::<Vec<_>>()
+        .await;
+    assert_eq!(batches.len(), 2);
+    assert_eq!(
+        batches.iter().map(|b| b.commands.len()).sum::<usize>(),
+        1,
+        "one authenticated event appeared on both relays and must be admitted only once"
+    );
+    assert!(batches
+        .iter()
+        .all(|b| !b.all_relay_reads_failed && b.rejected_events == 0));
+    // The non-reach aggregate contract still waits for all relays and returns
+    // the same deduplicated signed evidence, rather than first-success records.
+    let aggregate = receiver.receive(1000).await.unwrap();
+    assert_eq!(aggregate.commands.len(), 1);
+    assert!(!aggregate.all_relay_reads_failed);
+    for url in relays.as_slice() {
+        network.set_available(url, false);
+    }
+    let batches = receiver
+        .receive_batches(1000)
+        .unwrap()
+        .collect::<Vec<_>>()
+        .await;
+    assert_eq!(batches.len(), 2);
+    assert!(!batches[0].all_relay_reads_failed);
+    assert!(batches[1].all_relay_reads_failed);
+    assert_eq!(batches.iter().map(|b| b.rejected_events).sum::<usize>(), 2);
+    let aggregate = receiver.receive(1000).await.unwrap();
+    assert!(aggregate.all_relay_reads_failed);
+    assert_eq!(aggregate.rejected_events, 2);
+}

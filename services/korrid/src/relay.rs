@@ -445,6 +445,45 @@ where
         })
     }
 
+    /// Reach admits a completed batch without waiting for unavailable relays.
+    /// Deduplication and the total decode bound span this entire read cycle.
+    /// Only the final batch can report that every configured read failed.
+    pub(crate) fn receive_batches(
+        &self,
+        now: u64,
+    ) -> Result<futures::stream::BoxStream<'_, CoordinationSnapshot>, RelayError> {
+        let decoder = CoordinationDecoder::new(&self.identity, now)?;
+        let filter = decoder.filter();
+        let auth: Arc<dyn RelayAuthSigner> = Arc::new(DeviceAuthSigner(self.identity.clone()));
+        let count = self.relays.as_slice().len();
+        let reads = self
+            .relays
+            .as_slice()
+            .iter()
+            .map(|relay| {
+                let filter = filter.clone();
+                let auth = auth.clone();
+                async move { self.transport.read(relay, &filter, auth).await }
+            })
+            .collect::<futures::stream::FuturesUnordered<_>>();
+        Ok(futures::stream::unfold(
+            (reads, decoder, 0, 0),
+            move |(mut reads, mut decoder, mut completed, mut failures)| async move {
+                let result = reads.next().await?;
+                completed += 1;
+                let failed = usize::from(result.is_err());
+                failures += failed;
+                let batch = decoder.decode(
+                    result.unwrap_or_default(),
+                    failed,
+                    completed == count && failures == count,
+                );
+                Some((batch, (reads, decoder, completed, failures)))
+            },
+        )
+        .boxed())
+    }
+
     pub fn relay_list(&self) -> &RelayList {
         &self.relays
     }
@@ -903,80 +942,113 @@ where
 
     fn receive<'a>(&'a self, now: u64) -> BoxFuture<'a, Result<CoordinationSnapshot, RelayError>> {
         Box::pin(async move {
-            let own_key = self
-                .identity
+            let mut decoder = CoordinationDecoder::new(&self.identity, now)?;
+            let (events, failed_reads) = self.read_all(&decoder.filter()).await;
+            Ok(decoder.decode(
+                events,
+                failed_reads,
+                failed_reads == self.relays.as_slice().len(),
+            ))
+        })
+    }
+}
+
+struct CoordinationDecoder<'a> {
+    identity: &'a DeviceIdentity,
+    own_key: String,
+    now: u64,
+    seen: BTreeSet<String>,
+    remaining: usize,
+}
+impl<'a> CoordinationDecoder<'a> {
+    fn new(identity: &'a DeviceIdentity, now: u64) -> Result<Self, RelayError> {
+        Ok(Self {
+            identity,
+            own_key: identity
                 .device_public_key()
                 .ok_or(RelayError::Identity)?
-                .to_owned();
-            let filter = RelayFilter {
-                kinds: vec![ENDPOINT_EVENT_KIND, GIFT_WRAP_EVENT_KIND],
-                recipient_public_key: Some(own_key.clone()),
-                author_public_key: None,
-                since: None,
-                limit: MAX_READ_EVENTS,
-            };
-            let (events, failed_reads) = self.read_all(&filter).await;
-            let mut seen = BTreeSet::new();
-            let mut endpoints: BTreeMap<String, EndpointEvidence> = BTreeMap::new();
-            let mut commands = Vec::new();
-            let mut rejected = failed_reads;
-            for delivered in events.into_iter().take(MAX_READ_EVENTS) {
-                let verified = match DeviceIdentity::verify_encrypted_event(&delivered.event_json) {
-                    Ok(event) if seen.insert(event.id.clone()) => event,
-                    Ok(_) => continue,
-                    Err(_) => {
-                        rejected += 1;
-                        continue;
-                    }
-                };
-                if event_expired(&verified.tags, now) {
+                .to_owned(),
+            now,
+            seen: BTreeSet::new(),
+            remaining: MAX_READ_EVENTS,
+        })
+    }
+    fn filter(&self) -> RelayFilter {
+        RelayFilter {
+            kinds: vec![ENDPOINT_EVENT_KIND, GIFT_WRAP_EVENT_KIND],
+            recipient_public_key: Some(self.own_key.clone()),
+            author_public_key: None,
+            since: None,
+            limit: MAX_READ_EVENTS,
+        }
+    }
+    fn decode(
+        &mut self,
+        events: Vec<RelayEvent>,
+        failed_reads: usize,
+        all_relay_reads_failed: bool,
+    ) -> CoordinationSnapshot {
+        let now = self.now;
+        let mut endpoints: BTreeMap<String, EndpointEvidence> = BTreeMap::new();
+        let mut commands = Vec::new();
+        let mut rejected = failed_reads;
+        for delivered in events.into_iter().take(self.remaining) {
+            self.remaining -= 1;
+            let verified = match DeviceIdentity::verify_encrypted_event(&delivered.event_json) {
+                Ok(event) if self.seen.insert(event.id.clone()) => event,
+                Ok(_) => continue,
+                Err(_) => {
                     rejected += 1;
                     continue;
                 }
-                match verified.kind {
-                    ENDPOINT_EVENT_KIND => {
-                        match decode_endpoint(
-                            &self.identity,
-                            &delivered.event_json,
-                            &verified.author,
-                            &own_key,
-                            now,
-                        ) {
-                            Ok(endpoint) => {
-                                let replace = endpoints
-                                    .get(&endpoint.device_public_key)
-                                    .map(|current| endpoint_is_newer(&endpoint, &current.record))
-                                    .unwrap_or(true);
-                                if replace {
-                                    endpoints.insert(
-                                        endpoint.device_public_key.clone(),
-                                        EndpointEvidence {
-                                            record: endpoint,
-                                            event_json: delivered.event_json.clone(),
-                                        },
-                                    );
-                                }
-                            }
-                            Err(_) => rejected += 1,
-                        }
-                    }
-                    GIFT_WRAP_EVENT_KIND => {
-                        match decode_command(&self.identity, &delivered.event_json, now) {
-                            Ok(command) => commands.push(command),
-                            Err(_) => rejected += 1,
-                        }
-                    }
-                    _ => rejected += 1,
-                }
+            };
+            if event_expired(&verified.tags, now) {
+                rejected += 1;
+                continue;
             }
-            commands.sort_by_key(command_order);
-            Ok(CoordinationSnapshot {
-                all_relay_reads_failed: failed_reads == self.relays.as_slice().len(),
-                endpoints: endpoints.into_values().collect(),
-                commands,
-                rejected_events: rejected,
-            })
-        })
+            match verified.kind {
+                ENDPOINT_EVENT_KIND => {
+                    match decode_endpoint(
+                        self.identity,
+                        &delivered.event_json,
+                        &verified.author,
+                        &self.own_key,
+                        now,
+                    ) {
+                        Ok(endpoint) => {
+                            let replace = endpoints
+                                .get(&endpoint.device_public_key)
+                                .map(|current| endpoint_is_newer(&endpoint, &current.record))
+                                .unwrap_or(true);
+                            if replace {
+                                endpoints.insert(
+                                    endpoint.device_public_key.clone(),
+                                    EndpointEvidence {
+                                        record: endpoint,
+                                        event_json: delivered.event_json.clone(),
+                                    },
+                                );
+                            }
+                        }
+                        Err(_) => rejected += 1,
+                    }
+                }
+                GIFT_WRAP_EVENT_KIND => {
+                    match decode_command(self.identity, &delivered.event_json, now) {
+                        Ok(command) => commands.push(command),
+                        Err(_) => rejected += 1,
+                    }
+                }
+                _ => rejected += 1,
+            }
+        }
+        commands.sort_by_key(command_order);
+        CoordinationSnapshot {
+            all_relay_reads_failed,
+            endpoints: endpoints.into_values().collect(),
+            commands,
+            rejected_events: rejected,
+        }
     }
 }
 
