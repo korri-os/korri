@@ -1531,14 +1531,16 @@ impl RelayTransport for WebSocketRelayTransport {
                 .and_then(serde_json::Value::as_str)
                 .ok_or_else(|| RelayError::InvalidEvent("event id is missing".into()))?
                 .to_owned();
-            let mut socket = self.connect(relay).await?;
-            socket
-                .send(Message::Text(
-                    serde_json::json!(["EVENT", event]).to_string().into(),
-                ))
-                .await
-                .map_err(|error| RelayError::Unavailable(error.to_string()))?;
             timeout(OPERATION_TIMEOUT, async {
+                // Connection retries and initial send consume the same bounded
+                // operation budget as authentication and acknowledgement.
+                let mut socket = self.connect(relay).await?;
+                socket
+                    .send(Message::Text(
+                        serde_json::json!(["EVENT", event]).to_string().into(),
+                    ))
+                    .await
+                    .map_err(|error| RelayError::Unavailable(error.to_string()))?;
                 enum Authentication {
                     Unchallenged,
                     Pending(String),
@@ -1657,14 +1659,16 @@ impl RelayTransport for WebSocketRelayTransport {
             {
                 return Err(RelayError::Protocol("subscription bound is invalid".into()));
             }
-            let mut socket = self.connect(relay).await?;
-            let subscription = "korri-coordination";
-            let request = relay_request(subscription, filter);
-            socket
-                .send(Message::Text(request.clone().into()))
-                .await
-                .map_err(|error| RelayError::Unavailable(error.to_string()))?;
             timeout(OPERATION_TIMEOUT, async {
+                // A dead configured relay must not add a separate connection
+                // retry budget before this subscription's operation budget.
+                let mut socket = self.connect(relay).await?;
+                let subscription = "korri-coordination";
+                let request = relay_request(subscription, filter);
+                socket
+                    .send(Message::Text(request.clone().into()))
+                    .await
+                    .map_err(|error| RelayError::Unavailable(error.to_string()))?;
                 let mut bytes = 0usize;
                 let mut events = Vec::new();
                 let mut seen = BTreeSet::new();

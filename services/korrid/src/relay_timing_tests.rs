@@ -109,6 +109,7 @@ async fn reach_exchange(include_unavailable: bool) {
         offer.validate(now()).is_ok(),
         "offer expired before answer construction"
     );
+    let offer_received_at = start.elapsed();
     let answer = Answer {
         endpoint_id: iroh::SecretKey::generate().public().to_string(),
         direct_addresses: Vec::new(),
@@ -129,6 +130,7 @@ async fn reach_exchange(include_unavailable: bool) {
         .await
         .unwrap()
         .accepted());
+    let answer_published_at = start.elapsed();
     let received = a.receive(now()).await.unwrap();
     let answer = received
         .commands
@@ -147,6 +149,8 @@ async fn reach_exchange(include_unavailable: bool) {
         "answer does not match the pending offer"
     );
     accepting.abort();
+    println!("signed reach timeline unavailable={include_unavailable} offer_publish_ms={} offer_receive_ms={} answer_publish_ms={} answer_receive_ms={}",
+        offer_publication.as_millis(), offer_received_at.as_millis(), answer_published_at.as_millis(), start.elapsed().as_millis());
     // The production reach controller rejects a matching answer when the
     // ORIGINAL pending offer has expired, even if the answer itself is fresh.
     assert!(now() < pending_expires,
