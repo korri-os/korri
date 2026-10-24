@@ -463,6 +463,7 @@ assert lib.hasInfix "subject.user == \"korrid\"" polkit;
 assert lib.hasInfix ''subject.user == "korrid" &&
       (action.id == "org.freedesktop.NetworkManager.wifi.scan" ||
        action.id == "org.freedesktop.NetworkManager.network-control" ||
+       action.id == "org.freedesktop.NetworkManager.checkpoint-rollback" ||
        action.id == "org.freedesktop.NetworkManager.settings.modify.system")'' polkit;
 assert !(builtins.elem "networkmanager" (enabled.config.users.users.korrid.extraGroups or [ ]));
 assert !(builtins.elem "/run/dbus" service.serviceConfig.InaccessiblePaths);

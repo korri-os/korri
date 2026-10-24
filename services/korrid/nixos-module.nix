@@ -914,10 +914,12 @@ in
 
     security.polkit.enable = true;
     security.polkit.extraConfig = ''
+      // Nearby links need checkpoint rollback for crash-safe restoration.
       polkit.addRule(function(action, subject) {
         if (subject.user == "korrid" &&
             (action.id == "org.freedesktop.NetworkManager.wifi.scan" ||
              action.id == "org.freedesktop.NetworkManager.network-control" ||
+             action.id == "org.freedesktop.NetworkManager.checkpoint-rollback" ||
              action.id == "org.freedesktop.NetworkManager.settings.modify.system")) {
           return polkit.Result.YES;
         }
