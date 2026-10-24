@@ -359,3 +359,173 @@ async fn reach_direct_connection_does_not_read_relay_answers() {
     a.close().await;
     b.close().await;
 }
+
+// Both branches are real transports: actual signed/encrypted in-process events,
+// and a local WebSocket server which accepts TCP but never completes its upgrade.
+struct ReachReceiveTransports {
+    live: Arc<InProcessRelayNetwork>,
+    websocket: WebSocketRelayTransport,
+    unavailable: String,
+    live_completed: std::sync::atomic::AtomicU64,
+    unavailable_completed: std::sync::atomic::AtomicU64,
+}
+impl crate::relay::RelayTransport for ReachReceiveTransports {
+    fn publish<'a>(
+        &'a self,
+        relay: &'a str,
+        event: &'a str,
+        auth: Arc<dyn crate::relay::RelayAuthSigner>,
+    ) -> futures::future::BoxFuture<'a, Result<(), crate::relay::RelayError>> {
+        crate::relay::RelayTransport::publish(self.live.as_ref(), relay, event, auth)
+    }
+    fn read<'a>(
+        &'a self,
+        relay: &'a str,
+        filter: &'a crate::relay::RelayFilter,
+        auth: Arc<dyn crate::relay::RelayAuthSigner>,
+    ) -> futures::future::BoxFuture<
+        'a,
+        Result<Vec<crate::relay::RelayEvent>, crate::relay::RelayError>,
+    > {
+        use std::sync::atomic::Ordering;
+        Box::pin(async move {
+            if relay == self.unavailable {
+                let result =
+                    crate::relay::RelayTransport::read(&self.websocket, relay, filter, auth).await;
+                self.unavailable_completed
+                    .store(unix_time(), Ordering::SeqCst);
+                result
+            } else {
+                let result =
+                    crate::relay::RelayTransport::read(self.live.as_ref(), relay, filter, auth)
+                        .await;
+                self.live_completed.store(unix_time(), Ordering::SeqCst);
+                result
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn reach_admits_matching_live_batch_before_slow_relay_expires_pending_offer() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    let devices = Devices::new();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let unavailable = format!("ws://{address}");
+    let accepting = tokio::spawn(async move {
+        let mut connections = Vec::new();
+        loop {
+            connections.push(listener.accept().await.unwrap().0);
+        }
+    });
+    let relays =
+        RelayList::configured(vec![unavailable.clone(), "wss://live.invalid".into()]).unwrap();
+    let network = Arc::new(InProcessRelayNetwork::new(&relays));
+    let transport = Arc::new(ReachReceiveTransports {
+        live: network.clone(),
+        websocket: WebSocketRelayTransport::new(),
+        unavailable,
+        live_completed: AtomicU64::new(0),
+        unavailable_completed: AtomicU64::new(0),
+    });
+    let signal = CoordinatedRelays::new(
+        relays,
+        devices.ca.identity_snapshot().unwrap(),
+        transport.clone(),
+    )
+    .unwrap();
+    let sender = CoordinatedRelays::new(
+        RelayList::configured(vec!["wss://live.invalid".into()]).unwrap(),
+        devices.cb.identity_snapshot().unwrap(),
+        network,
+    )
+    .unwrap();
+    let peer = devices.cb.public_key().unwrap();
+    let key = iroh::SecretKey::generate();
+    let endpoint = relay_only_endpoint_with_key(key.clone()).await;
+    let remote = iroh::SecretKey::generate().public();
+    let request_id = "ab".repeat(32);
+    let now = unix_time();
+    let answer = Answer {
+        endpoint_id: remote.to_string(),
+        direct_addresses: Vec::new(),
+        expires_at: now + SIGNAL_LIFETIME,
+        request_id: request_id.clone(),
+        can_relay_now: true,
+        relay_addresses: vec!["192.0.2.1:443".parse().unwrap()],
+    };
+    assert!(sender
+        .queue_command(
+            &devices.ca.public_key().unwrap(),
+            CoordinationCommand::ReachAnswer {
+                sender_device_public_key: peer.clone(),
+                answer: answer.clone(),
+            },
+            now
+        )
+        .await
+        .unwrap()
+        .accepted());
+    // The pending offer is near the end of its unchanged 60-second lifetime.
+    // Do not pause Tokio: the controller uses the real Unix clock at admission.
+    let pending_expires = unix_time() + 2;
+    let token = devices.da.begin_peer_work(&peer).unwrap();
+    let mut controller = Controller {
+        directory: devices.da.clone(),
+        credentials: devices.ca.clone(),
+        config: None,
+        key,
+        peer_router: axum::Router::new(),
+        relay_port: 0,
+        endpoint: Some(endpoint.clone()),
+        tasks: JoinSet::new(),
+        relay_task: None,
+        bindings: Arc::new(RwLock::new(BTreeMap::new())),
+        // An existing active dial is a valid receive state. Keep this test at
+        // admission; never attempt the documentation-only relay address.
+        dialing: Arc::new(Mutex::new(BTreeSet::from([peer.clone()]))),
+        relay_addresses: Arc::new(RwLock::new(Vec::new())),
+        pending: BTreeMap::from([(
+            peer.clone(),
+            Pending {
+                request_id,
+                expires_at: pending_expires,
+                token,
+            },
+        )]),
+        processed: BTreeMap::new(),
+        retry: BTreeMap::new(),
+        relaying: Arc::new(RwLock::new(BTreeMap::new())),
+    };
+    controller
+        .receive_reach(&signal, &StunList(Vec::new()), unix_time())
+        .await;
+    let admitted = controller.relaying.read().unwrap().get(&peer).cloned();
+    controller.tasks.abort_all();
+    while controller.tasks.join_next().await.is_some() {}
+    accepting.abort();
+    endpoint.close().await;
+    assert!(
+        transport.live_completed.load(Ordering::SeqCst) < pending_expires,
+        "live batch did not finish before original pending expiry"
+    );
+    assert!(
+        transport.unavailable_completed.load(Ordering::SeqCst) >= pending_expires,
+        "unavailable branch did not cross the original pending expiry"
+    );
+    assert!(
+        answer.validate(unix_time()).is_ok(),
+        "answer itself expired"
+    );
+    assert_eq!(
+        admitted,
+        Some((answer.expires_at, answer.relay_addresses)),
+        "timely signed matching answer was withheld until original pending offer expired"
+    );
+    assert!(!controller.pending.contains_key(&peer));
+    assert_eq!(
+        controller.bindings.read().unwrap().get(&remote),
+        Some(&peer)
+    );
+}
