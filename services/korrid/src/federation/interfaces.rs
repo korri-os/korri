@@ -1,5 +1,6 @@
 //! Linux interface addresses are live transport evidence, never configuration.
 use super::coordinator::DiscoveryControl;
+mod routes;
 use std::{
     collections::BTreeSet,
     ffi::CStr,
@@ -31,7 +32,7 @@ pub fn endpoints_or_query_only(
     })
 }
 
-// Process-local evidence from getifaddrs and Linux's native proc route tables;
+// Process-local evidence from getifaddrs and Linux's native route dump;
 // not a persisted or announcement shape.
 #[derive(Clone, Debug)]
 pub struct InterfaceAddress {
@@ -106,16 +107,7 @@ fn priority(ip: IpAddr) -> u8 {
 }
 
 pub fn interface_addresses() -> io::Result<Vec<InterfaceAddress>> {
-    fn table(path: &str) -> io::Result<String> {
-        match std::fs::read_to_string(path) {
-            Ok(table) => Ok(table),
-            // A kernel with no IPv6 support has no IPv6 route table.
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(String::new()),
-            Err(error) => Err(error),
-        }
-    }
-    let defaults =
-        default_route_interfaces(&table("/proc/net/route")?, &table("/proc/net/ipv6_route")?);
+    let defaults = default_route_interfaces()?;
     struct Addresses(*mut libc::ifaddrs);
     impl Drop for Addresses {
         fn drop(&mut self) {
@@ -169,34 +161,24 @@ pub fn interface_addresses() -> io::Result<Vec<InterfaceAddress>> {
     Ok(addresses)
 }
 
-// Linux /proc/net/route: iface,destination,gateway,flags,...,mask.
-// Linux /proc/net/ipv6_route: destination,prefix,source,prefix,gateway,...,flags,iface.
-fn default_route_interfaces(ipv4: &str, ipv6: &str) -> BTreeSet<String> {
-    let up = |flags: &str| {
-        u32::from_str_radix(flags, 16).is_ok_and(|flags| flags & 1 != 0 && flags & 0x200 == 0)
-    };
-    let mut interfaces = BTreeSet::new();
-    for line in ipv4.lines() {
-        let fields: Vec<_> = line.split_whitespace().collect();
-        if fields.len() >= 8 && fields[1] == "00000000" && fields[7] == "00000000" && up(fields[3])
-        {
-            interfaces.insert(fields[0].to_owned());
-        }
-    }
-    for line in ipv6.lines() {
-        let fields: Vec<_> = line.split_whitespace().collect();
-        if fields.len() == 10
-            && fields[0] == "00000000000000000000000000000000"
-            && fields[1] == "00"
-            && up(fields[8])
-        {
-            interfaces.insert(fields[9].to_owned());
-        }
-    }
-    interfaces
+pub(crate) fn default_route_interfaces() -> io::Result<BTreeSet<String>> {
+    routes::default_route_indices()?
+        .into_iter()
+        .map(|index| {
+            let mut name = [0 as libc::c_char; libc::IF_NAMESIZE];
+            // SAFETY: name has the IF_NAMESIZE bytes required by if_indextoname.
+            if unsafe { libc::if_indextoname(index, name.as_mut_ptr()) }.is_null() {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: successful if_indextoname writes a null-terminated name.
+            Ok(unsafe { CStr::from_ptr(name.as_ptr()) }
+                .to_string_lossy()
+                .into_owned())
+        })
+        .collect()
 }
 
-/// A cheap one-second getifaddrs poll avoids a netlink dependency and never
+/// A one-second address and route poll never
 /// contacts relays unless the advertised set changes. Failed reads retain the
 /// last observation; the publication provider independently refuses stale data.
 pub async fn watch_endpoints(
@@ -315,15 +297,6 @@ mod tests {
         assert_eq!(
             derive_endpoints("[fd00::1]:80".parse().unwrap(), addresses),
             ["http://[fd00::1]:80"]
-        );
-    }
-    #[test]
-    fn default_routes_use_both_linux_tables_and_ignore_reject_down_and_specific_routes() {
-        let v4 = "Iface Destination Gateway Flags RefCnt Use Metric Mask\neth0 00000000 0101A8C0 0003 0 0 100 00000000\ndocker0 00000000 00000000 0001 0 0 0 00FFFFFF\ndown0 00000000 00000000 0000 0 0 0 00000000\nreject0 00000000 00000000 0201 0 0 0 00000000\n";
-        let v6 = "00000000000000000000000000000000 00 00000000000000000000000000000000 00 fe800000000000000000000000000001 00000064 00000001 00000000 00000003 wlan0\n00000000000000000000000000000000 00 00000000000000000000000000000000 00 00000000000000000000000000000000 ffffffff 00000001 00000000 00200200 lo\n";
-        assert_eq!(
-            default_route_interfaces(v4, v6),
-            BTreeSet::from(["eth0".into(), "wlan0".into()])
         );
     }
     #[test]

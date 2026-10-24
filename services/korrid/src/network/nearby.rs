@@ -355,8 +355,8 @@ pub async fn run(resources: FederationResources, mut stopped: oneshot::Receiver<
     let mut backoff = Backoff::default();
     let mut refresh_at = Instant::now();
     loop {
-        let kernel_has_default_route = crate::federation::interfaces::interface_addresses()
-            .map(|addresses| addresses.iter().any(|address| address.has_default_route))
+        let kernel_has_default_route = crate::federation::interfaces::default_route_interfaces()
+            .map(|interfaces| !interfaces.is_empty())
             .unwrap_or(true);
         tokio::select! {
             _ = &mut stopped => break,

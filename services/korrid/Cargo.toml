@@ -29,6 +29,9 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 rand = "0.9"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 libc = "0.2"
+netlink-packet-core = "0.9"
+netlink-packet-route = "0.33"
+netlink-sys = "0.9"
 korri-input-contract = { path = "../../contracts/input" }
 # Tungstenite logs complete messages/close frames at trace/debug. A browser
 # capability must stay private even when an embedding host enables trace logs.
