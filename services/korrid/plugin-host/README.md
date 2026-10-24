@@ -140,7 +140,7 @@ Run the focused real-store command above on a build machine with those signed ou
 sudo korri-plugin install "$CACHE_URL" @korri:tailscale --release "$COMMIT"
 ```
 
-`COMMIT` must be the full lowercase 40-character publishing commit. `CACHE_URL` must be the publisher-bound, exact `https://github.com/OWNER/REPO/releases/download/CACHE_TAG/` metadata cache URL (the final slash is optional only if the binding omits it). This command resolves and **inspects only**. It prints the exact package, permissions and approval digest, then the existing `install CACHE PACKAGE APPROVAL` command. Review the report before running that command. Installation still leaves the plugin disabled; enable it separately. There is no implicit approval, prompt default, mutable pointer or new catalog.
+`COMMIT` must be the full lowercase 40-character publishing commit. `CACHE_URL` must be the publisher-bound, exact `https://OWNER.github.io/REPO/` metadata cache URL (the final slash is optional only if the binding omits it). This command resolves and **inspects only**. It prints the exact package, permissions and approval digest, then the existing `install CACHE PACKAGE APPROVAL` command. Review the report before running that command. Installation still leaves the plugin disabled; enable it separately. There is no implicit approval, prompt default, mutable pointer or new catalog.
 
 The lookup is grounded in the approved authoring brief's Versions section and the actual `korri-os/plugins` `PUBLICATION.md` / `nix/github-cache.py` producer (`batch_files`, `build`, `publish`):
 

@@ -51,6 +51,9 @@ in
           jq -e '.id == "@korri:sunshine" and .desired.state == "Enabled" and .previous == null' receipt.json
           touch "$out"
         '';
+    korri-plugin-cache-cutover = import ../../../nix/cache/migrate-plugin-receipts-check.nix {
+      inherit pkgs hostPackage mkPlugin;
+    };
     korri-plugin-image-seed = import ./image-seed-check.nix {
       inherit
         pkgs

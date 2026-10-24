@@ -25,7 +25,7 @@ fn validate_revision(revision: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The Versions brief fixes build-<rev12>; github-cache.py fixes this URL shape.
+/// Pages serves metadata; exact-commit evidence remains in build-<rev12> releases.
 /// Custom batch tags remain available through the exact-path raw-cache route.
 pub fn batch_url(cache: &str, revision: &str) -> Result<SourceUrl, String> {
     validate_revision(revision)?;
@@ -43,31 +43,33 @@ pub fn batch_url(cache: &str, revision: &str) -> Result<SourceUrl, String> {
             && s.bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
     };
-    if url.host_str() != Some("github.com")
-        || url.port().is_some()
+    let owner = url
+        .host_str()
+        .and_then(|host| host.strip_suffix(".github.io"))
+        .filter(|owner| {
+            !owner.is_empty()
+                && owner.len() <= 39
+                && !owner.starts_with('-')
+                && !owner.ends_with('-')
+                && owner
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        })
+        .ok_or("cache must use an exact GitHub Pages project URL")?;
+    if url.port().is_some()
         || url.query().is_some()
-        || parts.len() != 6
+        || parts.len() != 2
         || !parts[0].is_empty()
         || !repo_component(parts[1])
-        || !repo_component(parts[2])
-        || parts[3] != "releases"
-        || parts[4] != "download"
-        || parts[5].is_empty()
-        || parts[5].len() > 64
-        || !parts[5].as_bytes()[0].is_ascii_alphanumeric()
-        || !parts[5]
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b))
-        || parts[5] == format!("build-{}", &revision[..12])
         || cache != url.as_str()
         || url.path().ends_with("//")
     {
-        return Err("cache must be an exact GitHub Releases metadata cache URL, distinct from the selected batch".into());
+        return Err("cache must use an exact GitHub Pages project URL".into());
     }
     SourceUrl::parse(&format!(
         "https://github.com/{}/{}/releases/download/build-{}/",
+        owner,
         parts[1],
-        parts[2],
         &revision[..12]
     ))
 }
