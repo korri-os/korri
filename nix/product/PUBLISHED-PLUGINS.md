@@ -21,7 +21,7 @@ The pins come from the immutable publisher batches `build-9514b1b382d3` and
 declaration IDs of the selected packages. Path names and lists alone establish
 no identity or trust.
 
-Both architecture maps contain 32 outputs. The initial 24 outputs came from source
+Both architecture maps contain 33 outputs. The initial 24 outputs came from source
 `9514b1b382d3b963674628308d6a5770987a4bc0`: the first batch republished 23
 selected plugins for the discovery v2 plugin contract (system content rules,
 groups and `controls`; no `discovery` export), which the current host requires.
@@ -82,6 +82,14 @@ and found in its batch's `paths-SYSTEM.txt`; both `revision.txt` assets match
 that source. Each Starter pack manifest requires the new FAKE-08 and the
 existing exact Solarus and ZQuest Classic pins of its architecture. The matching
 `offline-metadata-SYSTEM.tar.gz` archives are pinned with their SHA-256 hashes.
+Batch `build-e40a4300533b-stream-play` (source
+`e40a4300533baf714ff4de71f5e4da6bbc562b96`) adds Moonlight and replaces Sunshine
+on both architectures for stream play. The public `revision.txt` matches that
+source, and each `paths-SYSTEM.txt` contains exactly the two selected outputs.
+Current host seed reports identify them as `@korri:moonlight` and
+`@korri:sunshine`. The matching offline metadata archives are pinned by SHA-256.
+Every other plugin pin stays unchanged. This pin does not establish
+physical-device acceptance.
 Each pinned path is grounded in its batch's `paths-SYSTEM.txt` and
 `revision.txt`. The new Starter pack pins were checked against those public
 release assets directly. Earlier batches remain published even when their
