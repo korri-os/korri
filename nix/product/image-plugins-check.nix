@@ -55,6 +55,10 @@ assert lib.all (
     published.korri-plugin-zquest-classic
   ]
 ) names;
+# Stream play's removable viewer ships on every product image.
+assert lib.all (
+  name: lib.elem (toString published.korri-plugin-moonlight) (map toString selected.${name})
+) names;
 assert recoveryWithoutDefaults;
 # Gamescope wraps every launch by default on product images, and only where
 # the image seeds its plugin; recovery images seed no plugin and no modifier.

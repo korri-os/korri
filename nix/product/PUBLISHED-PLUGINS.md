@@ -106,8 +106,9 @@ registration, then imports only the pinned local proofs. Recursive Nix
 verification checks contents and signatures with the bound full public key.
 It uses no remote substituter and changes no build-host signature database.
 
-All seven product devices ship Starter pack Disabled and its FAKE-08, Solarus
-and ZQuest Classic runners Enabled:
+All seven product devices preinstall Moonlight as a removable stream viewer.
+They ship Starter pack Disabled and its FAKE-08, Solarus and ZQuest Classic
+runners Enabled:
 `rg353m`, `rgds`, `r36tmax`, `rpminiv2`, `odin2portal`, `rg35xxsp` and `rg35xxpro`.
 Their product images register offline proofs before plugin recovery.
 The pack retains its games, original cartridges, credits, notices and

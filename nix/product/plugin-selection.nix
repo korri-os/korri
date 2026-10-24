@@ -19,6 +19,8 @@ let
     # Installed, it wraps nothing until its device modifier is enabled
     # (ADR 0009).
     "gamescope"
+    # Owner decision 2026-10-23: stream play's viewer is preinstalled and removable.
+    "moonlight"
     "retroarch"
     "nestopia"
     "snes9x"
