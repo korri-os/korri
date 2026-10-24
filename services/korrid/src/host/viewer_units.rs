@@ -20,10 +20,12 @@ impl SystemdLaunchUnitBackend {
         }
         let mut env = environment.clone();
         if certificate.is_some() {
-            // systemd expands %d to this unit's CREDENTIALS_DIRECTORY.
+            // Transient Environment assignments keep %d literal. These units
+            // use the system manager, whose credential directory names the unit.
+            let unit = Self::unit_name(launch)?;
             env.insert(
                 "KORRI_MOONLIGHT_SERVER_CERTIFICATE".into(),
-                format!("%d/{PIN}"),
+                format!("/run/credentials/{unit}/{PIN}"),
             );
         }
         let mut args = self.launch_arguments_in_sandbox(launch, command, &env, sandbox)?;
@@ -125,12 +127,15 @@ mod tests {
         assert!(backend
             .viewer_arguments(launch, &command, &env, &sandbox, Some(cert))
             .is_err());
-        let args = backend
-            .for_stream_viewer()
+        let viewer = backend.for_stream_viewer();
+        assert!(viewer
+            .viewer_arguments(launch, &command, &env, &sandbox, Some("not a certificate"))
+            .is_err());
+        let args = viewer
             .viewer_arguments(launch, &command, &env, &sandbox, Some(cert))
             .unwrap();
         assert!(args.iter().any(
-            |arg| arg == "--setenv=KORRI_MOONLIGHT_SERVER_CERTIFICATE=%d/moonlight-server.pem"
+            |arg| arg == "--setenv=KORRI_MOONLIGHT_SERVER_CERTIFICATE=/run/credentials/korri-game-0123456789abcdef0123456789abcdef.service/moonlight-server.pem"
         ));
         assert!(args.iter().any(|arg| arg
             == &format!(
@@ -140,6 +145,11 @@ mod tests {
         assert!(!args
             .iter()
             .any(|arg| arg.contains("server-0123456789abcdef")));
+        let bootstrap = viewer
+            .viewer_arguments(launch, &command, &env, &sandbox, None)
+            .unwrap();
+        assert!(!bootstrap.iter().any(|arg| arg.contains("SetCredential=")
+            || arg.contains("KORRI_MOONLIGHT_SERVER_CERTIFICATE=")));
     }
     #[test]
     fn linux_viewer_pin_argument_is_an_absolute_native_credential_path() {
@@ -153,21 +163,57 @@ mod tests {
         .for_stream_viewer();
         let launch = "0123456789abcdef0123456789abcdef";
         let command = vec!["/nix/store/viewer/bin/moonlight".into()];
-        let environment = BTreeMap::new();
+        let environment = BTreeMap::from([(
+            "KORRI_MOONLIGHT_SERVER_CERTIFICATE".into(),
+            "/ignored-caller-pin.pem".into(),
+        )]);
         let sandbox = LaunchSandbox::new(&command, &environment);
         let certificate = "-----BEGIN CERTIFICATE-----\nY2VydA==\n-----END CERTIFICATE-----\n";
         let args = backend
             .viewer_arguments(launch, &command, &environment, &sandbox, Some(certificate))
             .unwrap();
+        let unit = args
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--unit="))
+            .unwrap();
         let pin = args
             .iter()
             .find_map(|arg| arg.strip_prefix("--setenv=KORRI_MOONLIGHT_SERVER_CERTIFICATE="))
             .expect("pinned viewer must receive the native credential path");
+        assert_eq!(
+            Path::new(pin),
+            Path::new("/run/credentials").join(unit).join(PIN)
+        );
         assert!(
             Path::new(pin).is_absolute(),
             "transient Environment values do not expand unit specifiers: {pin}"
         );
         assert!(!pin.contains('%'), "unexpanded unit specifier in pin path");
+        let other_args = backend
+            .viewer_arguments(
+                &"f".repeat(32),
+                &command,
+                &environment,
+                &sandbox,
+                Some(certificate),
+            )
+            .unwrap();
+        let other_unit = other_args
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--unit="))
+            .unwrap();
+        let other_pin = other_args
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--setenv=KORRI_MOONLIGHT_SERVER_CERTIFICATE="))
+            .unwrap();
+        assert_eq!(
+            Path::new(other_pin),
+            Path::new("/run/credentials").join(other_unit).join(PIN)
+        );
+        assert_ne!(
+            pin, other_pin,
+            "a viewer must not use another unit's credential"
+        );
     }
 
     #[test]
