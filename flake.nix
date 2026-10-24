@@ -294,6 +294,7 @@
             };
             korri-product-usb-gadget = import ./nix/product/usb-gadget-check.nix { inherit pkgs; };
             korri-product-udev-coldplug = import ./nix/product/udev-coldplug-check.nix { inherit pkgs; };
+            rg353m-mpp = rg353m.mppCheck pkgs;
             rg353m-audio = rg353m.audioCheck pkgs;
             rg353m-diagnostics = rg353m.diagnosticsCheck pkgs;
             rg353m-registry = rg353m.registryCheck pkgs;

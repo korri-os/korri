@@ -49,6 +49,7 @@ rec {
     import ./diagnostics-check.nix {
       inherit pkgs configuration;
     };
+  mppCheck = pkgs: import ./mpp-check.nix { inherit pkgs configuration; };
   audioCheck =
     pkgs:
     import ./audio-check.nix {

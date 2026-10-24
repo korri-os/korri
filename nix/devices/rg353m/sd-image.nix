@@ -16,6 +16,7 @@ in
     ./audio.nix
     ./bluetooth.nix
     ./gpu.nix
+    ./rk-mpp-service.nix
     ./firmware.nix
     ./nixpkgs-registry.nix
   ];
@@ -59,8 +60,8 @@ in
     ];
     # The product's mainline Linux 7.2 (shared with the RG DS). It contains the
     # RG353P device tree and the RK3566 storage, display, RK817 audio, and
-    # RTL8821CS WiFi drivers. Until 2026-09-30 this was linuxPackages_latest
-    # (6.18.2); 7.2 is not yet booted on this board.
+    # RTL8821CS WiFi drivers. The external RKMPP encoder module uses
+    # this kernel's build tree; the device has booted 7.2.
     kernelPackages = pkgs.linuxPackagesFor (pkgs.callPackage ../../product/kernel/mainline-7.2.nix { });
     # The stock ST7703 driver draws nothing on the rg353v-panel-v2 glass. Ship
     # the corrected driver as an out-of-tree module in updates/, which depmod
