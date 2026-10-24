@@ -360,7 +360,7 @@ fn private_module_records_do_not_call_poisoned_prototype_setters() {
     let graph = snapshot("import load from './load.cjs'; export const name = 'records'; export const handlers = {'launch.prepare': function () { Object.defineProperty(Object.prototype, 'exports', { set() { throw new Error('poisoned'); } }); return load(); }}", &[("load.cjs", "module.exports = () => require('./value.json');"), ("value.json", r#"{"value":7}"#)]);
     assert_eq!(
         script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null").unwrap(),
-        r#"{"value":7.0}"#
+        r#"{"value":7}"#
     );
 }
 
