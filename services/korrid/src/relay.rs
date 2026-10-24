@@ -1835,6 +1835,10 @@ impl RelayInformation {
 }
 
 #[cfg(test)]
+#[path = "relay_timing_tests.rs"]
+mod timing_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::identity::{Nip46ConnectionIdentity, OwnerStatementStatus};
@@ -1846,7 +1850,11 @@ mod tests {
     use std::fs;
     use tokio_tungstenite::{accept_async, tungstenite::Message};
 
-    fn owned_identity(root: &std::path::Path, owner: &Keys, created_at: u64) -> DeviceIdentity {
+    pub(super) fn owned_identity(
+        root: &std::path::Path,
+        owner: &Keys,
+        created_at: u64,
+    ) -> DeviceIdentity {
         let mut identity = DeviceIdentity::load_or_create(root).unwrap();
         let device = identity.device_public_key().unwrap().to_owned();
         let statement = EventBuilder::new(Kind::Custom(30_078), "")
