@@ -281,6 +281,18 @@ impl FederationDirectory {
 
     /// Static configuration supplies no owner statement. It still must not
     /// override terminal revocations held by the shared secure-RPC authority.
+    /// Read the live authority without opening or creating identity storage.
+    pub fn identity_state(&self) -> Result<IdentityState, FederationError> {
+        self.credentials
+            .with_identity(|identity| match identity.state() {
+                IdentityState::Invalid { .. } => IdentityState::Invalid {
+                    reason: "Device identity is invalid.".into(),
+                },
+                state => state.clone(),
+            })
+            .map_err(|_| FederationError::Identity)
+    }
+
     pub fn peer_is_revoked(&self, device: &str) -> Result<bool, FederationError> {
         self.credentials
             .with_identity(|identity| {

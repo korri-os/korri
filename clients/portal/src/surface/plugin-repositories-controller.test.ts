@@ -345,6 +345,6 @@ describe("plugin repositories controller", () => {
     h.controller.change(toggleSettingId("@ada:crt"), "true")
     expect(calls.map(call => call[0])).toEqual(["addPluginRepository"])
     expect(h.controller.change("device-name", "usu")).toBe(false)
-    expect(h.controller.run("game-folder-rescan")).toBe(false)
+    expect(h.controller.run("library-folder-rescan")).toBe(false)
   })
 })

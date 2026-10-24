@@ -16,7 +16,7 @@ function createRunnerChooser(korrid: Parameters<typeof createController>[0], onA
       if (result._tag === "Ok") onAcknowledged()
       return result
     },
-    returnSession: session => { void korrid.sessionThaw(session.launchId) },
+    returnSession: session => { void korrid.sessionResume(session.launchId) },
     reload: onAcknowledged,
   })
   return {
@@ -64,7 +64,7 @@ describe("runner chooser", () => {
     expect(await korrid.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
     expect(acknowledged).toBe(0)
   })
-  for (const path of ["open", "conflict", "stop"] as const) {
+  for (const path of ["open", "conflict", "end"] as const) {
     it(`${path} reports Ok observationFailure instead of silently retaining its panel state`, async () => {
       const failure: RpcFailure = { code: "HostSessionBusy", message: "Native session authority is busy" }
       let blocked = false
@@ -75,8 +75,8 @@ describe("runner chooser", () => {
       const pending = await korrid.sessionReserve({ gameId: "wl4" })
       if (pending._tag !== "Ok") throw new Error("reserve failed")
       const starts = spyOn(korrid, "sessionStart")
-      const stops = spyOn(korrid, "sessionStop")
-      const thaws = spyOn(korrid, "sessionThaw")
+      const stops = spyOn(korrid, "sessionEnd")
+      const thaws = spyOn(korrid, "sessionResume")
       const chooser = createRunnerChooser(korrid, () => {})
       if (path === "open") {
         blocked = true
@@ -86,17 +86,17 @@ describe("runner chooser", () => {
         await chooser.open("wl4", "Wario Land 4", "inspect")
         if (path === "conflict") blocked = true
         await chooser.act("launch:0")
-        if (path === "stop") {
+        if (path === "end") {
           expect(chooser.getSnapshot()._tag).toBe("Conflict")
           blocked = true
-          await chooser.act("stop")
+          await chooser.act("end")
         }
       }
       expect(chooser.getSnapshot()).toMatchObject({ _tag: "Error", message: failure.message })
       expect(starts).toHaveBeenCalledTimes(path === "open" ? 0 : 1)
-      expect(stops).toHaveBeenCalledTimes(path === "stop" ? 1 : 0)
+      expect(stops).toHaveBeenCalledTimes(path === "end" ? 1 : 0)
       expect(thaws).not.toHaveBeenCalled()
-      if (path === "stop") expect(stops).toHaveBeenCalledWith("existing")
+      if (path === "end") expect(stops).toHaveBeenCalledWith("existing")
       blocked = false
       await chooser.act("reload")
       expect(chooser.getSnapshot()._tag).toBe("Stale")
@@ -177,7 +177,7 @@ describe("runner chooser", () => {
     await chooser.open("wl4", "Wario Land 4", "inspect")
     await chooser.act("launch:1")
     expect(chooser.getSnapshot()._tag).toBe("Conflict")
-    await chooser.act("stop")
+    await chooser.act("end")
     expect(chooser.getSnapshot()._tag).toBe("Stale")
     expect(await korrid.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
     await chooser.act("launch:1")
@@ -192,9 +192,9 @@ describe("runner chooser", () => {
     const chooser = createRunnerChooser(korrid, () => {})
     await chooser.open("wl4", "Wario Land 4", "inspect")
     await chooser.act("launch:1")
-    await korrid.sessionStop("existing")
+    await korrid.sessionEnd("existing")
     await korrid.launchSelectedGame("wl4", "retroarch/mgba")
-    await chooser.act("stop")
+    await chooser.act("end")
     expect(chooser.getSnapshot()._tag).toBe("Error")
     expect(await korrid.sessionStatus()).toEqual({
       _tag: "Ok",

@@ -83,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .spawn();
     let control = discovery.control();
-    let (router, _, _) =
+    let (router, _, _, _) =
         korrid::host_routers_with_federation(&config, None::<PathBuf>, &private, resources, None);
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     fs::write(root.join("ready.tmp"), format!("{port} {device_key}\n"))?;

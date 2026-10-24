@@ -163,6 +163,62 @@ mod tests {
         browser
     }
 
+    #[tokio::test]
+    async fn cli_socket_excludes_a_live_private_input_route_while_control_keeps_it() {
+        let (coordinator, receiver) =
+            test_support::coordinator_with_native(None, |_| test_support::reply());
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(&config, "label = \"Person socket\"\n").unwrap();
+        let private = root.path().join("private");
+        let resources = crate::FederationResources::open(&private).unwrap();
+        let mut runtime = super::super::HostRuntime::from_paths_with_backend(
+            &config,
+            None,
+            private.clone(),
+            Arc::new(super::super::systemd_unit::InMemoryLaunchUnitBackend::default()),
+        );
+        runtime.input_coordinator = Some(coordinator.clone());
+        let (_, control, cli) =
+            crate::secure_host_routers_with_federation(runtime, &private, resources, None, None);
+        let control_path = root.path().join("control.sock");
+        let cli_path = root.path().join("cli.sock");
+        let control_listener = tokio::net::UnixListener::bind(&control_path).unwrap();
+        let cli_listener = tokio::net::UnixListener::bind(&cli_path).unwrap();
+        let control_server = tokio::spawn(async move {
+            axum::serve(control_listener, control).await.unwrap();
+        });
+        let cli_server = tokio::spawn(async move {
+            axum::serve(cli_listener, cli).await.unwrap();
+        });
+        let (mut inputd, response) = client_async(
+            "ws://localhost/",
+            tokio::net::UnixStream::connect(&control_path)
+                .await
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::SWITCHING_PROTOCOLS);
+        let denied = client_async(
+            "ws://localhost/",
+            tokio::net::UnixStream::connect(&cli_path).await.unwrap(),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(denied, tokio_tungstenite::tungstenite::Error::Http(response) if response.status() == StatusCode::NOT_FOUND)
+        );
+        inputd.close(None).await.unwrap();
+        drop(inputd);
+        control_server.abort();
+        cli_server.abort();
+        let _ = control_server.await;
+        let _ = cli_server.await;
+        coordinator.fence();
+        receiver.join().unwrap();
+    }
+
     /// Crosses the real Unix WS -> seqpacket coordinator -> native WS path.
     /// The root receiver replies are configured test outcomes, not a uinput
     /// kernel implementation. Receiver/kernel behavior needs the separate VM.

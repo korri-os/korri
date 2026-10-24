@@ -3,13 +3,13 @@ import type {
   CatalogSnapshotOutcome,
   LocalGamesListOutcome,
   SessionStatusOutcome,
-  SessionStopOutcome,
+  SessionEndOutcome,
 } from "@contracts/generated/korrid"
 import {
   FocusOwnership,
   InitialHandoff,
   PendingLaunchPhase,
-  SessionStopPhase,
+  SessionEndPhase,
 } from "@contracts/generated/korrid"
 import { entryKey, entryLabel, isLocalCatalogSession, LaunchablesState } from "./state"
 import type { LaunchablesState as State, PortalEntry } from "./state"
@@ -387,9 +387,9 @@ describe("LaunchablesState now playing", () => {
 
   it("stop Ok enters an input-locked stopping case until status is idle", () => {
     const withBanner = LaunchablesState.fromSources(gamesOk, sessionActive)
-    const ok: SessionStopOutcome = {
+    const ok: SessionEndOutcome = {
       _tag: "Ok",
-      payload: { phase: SessionStopPhase.Stopped },
+      payload: { phase: SessionEndPhase.Ended },
     }
     const stopRequested = LaunchablesState.beginStopping(
       withBanner,
@@ -433,13 +433,13 @@ describe("LaunchablesState now playing", () => {
       LaunchablesState.beginStopping(withBanner, nowPlayingEntry(withBanner)),
       {
       _tag: "Ok",
-      payload: { phase: SessionStopPhase.Pending },
+      payload: { phase: SessionEndPhase.Pending },
       },
     )
     const timedOut = LaunchablesState.stopTimedOut(stopping)
     expect(timedOut).toMatchObject({
       _tag: "Ready",
-      notice: { _tag: "Stop", message: "StopPending: session is still stopping" },
+      notice: { _tag: "Stop", message: "The session is still ending." },
     })
   })
 })

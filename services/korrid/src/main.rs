@@ -1,5 +1,12 @@
 use axum::{serve::Listener, Router};
-use std::{ffi::OsString, io, net::SocketAddr, os::fd::FromRawFd, path::PathBuf, time::Duration};
+use std::{
+    ffi::OsString,
+    io,
+    net::SocketAddr,
+    os::fd::{AsRawFd, FromRawFd},
+    path::PathBuf,
+    time::Duration,
+};
 use tokio::sync::oneshot;
 
 const MAX_TRANSIENT_ACCEPT_RETRIES: u8 = 4;
@@ -96,12 +103,44 @@ fn is_transient_accept_error(error: &io::Error) -> bool {
 
 struct AuthorizedUnixListener {
     listener: tokio::net::UnixListener,
-    expected: ExpectedControlPeer,
+    expected: LocalPeer,
     terminal_error: Option<oneshot::Sender<io::Error>>,
     error_budget: AcceptErrorBudget,
 }
 
+#[derive(Clone, Copy)]
+enum LocalPeer {
+    Control(ExpectedControlPeer),
+    Cli(u32),
+}
+
+impl LocalPeer {
+    fn permits(self, credentials: io::Result<(u32, u32)>) -> bool {
+        match self {
+            Self::Control(expected) => authorize_peer_credentials(expected, credentials),
+            Self::Cli(person_uid) => {
+                matches!(credentials, Ok((uid, _)) if uid == 0 || uid == person_uid)
+            }
+        }
+    }
+}
+
 impl AuthorizedUnixListener {
+    fn cli(
+        listener: tokio::net::UnixListener,
+        person_uid: u32,
+    ) -> (Self, oneshot::Receiver<io::Error>) {
+        let (mut listener, failure) = Self::new(
+            listener,
+            ExpectedControlPeer {
+                uid: person_uid,
+                primary_gid: 0,
+            },
+        );
+        listener.expected = LocalPeer::Cli(person_uid);
+        (listener, failure)
+    }
+
     fn new(
         listener: tokio::net::UnixListener,
         expected: ExpectedControlPeer,
@@ -110,7 +149,7 @@ impl AuthorizedUnixListener {
         (
             Self {
                 listener,
-                expected,
+                expected: LocalPeer::Control(expected),
                 terminal_error: Some(terminal_error),
                 error_budget: AcceptErrorBudget::default(),
             },
@@ -128,7 +167,7 @@ impl Listener for AuthorizedUnixListener {
             match self.listener.accept().await {
                 Ok((stream, address)) => {
                     self.error_budget.accepted();
-                    if authorize_peer_credentials(self.expected, unix_peer_credentials(&stream)) {
+                    if self.expected.permits(unix_peer_credentials(&stream)) {
                         return (stream, address);
                     }
                 }
@@ -446,13 +485,30 @@ fn validate_socket_activation(
         .ok_or_else(|| "LISTEN_PID is required with LISTEN_FDS".to_owned())?
         .parse()
         .map_err(|_| "LISTEN_PID must be a number".to_owned())?;
-    if pid != current_pid || count != 1 {
-        return Err("korrid requires exactly one inherited listener for its current PID".into());
+    if pid != current_pid || !(1..=2).contains(&count) {
+        return Err(
+            "korrid requires one or two named inherited listeners for its current PID".into(),
+        );
     }
     Ok(true)
 }
 
-fn inherited_control_listener() -> Result<Option<std::os::unix::net::UnixListener>, String> {
+fn listener_names(names: &str, count: usize) -> Result<Vec<&str>, String> {
+    let names: Vec<_> = names.split(':').collect();
+    if names.len() != count
+        || names
+            .iter()
+            .any(|name| !matches!(*name, "korrid-control" | "korrid-cli"))
+        || (names.len() == 2 && names[0] == names[1])
+    {
+        return Err(
+            "inherited listeners must have distinct korrid-control or korrid-cli identities".into(),
+        );
+    }
+    Ok(names)
+}
+
+fn inherited_listeners() -> Result<Vec<(String, std::os::unix::net::UnixListener)>, String> {
     let listen_pid = std::env::var("LISTEN_PID").ok();
     let listen_fds = std::env::var("LISTEN_FDS").ok();
     if !validate_socket_activation(
@@ -460,15 +516,45 @@ fn inherited_control_listener() -> Result<Option<std::os::unix::net::UnixListene
         listen_fds.as_deref(),
         std::process::id(),
     )? {
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    // systemd's socket-activation treaty assigns the first inherited descriptor
-    // to fd 3. Ownership transfers to this listener exactly once.
-    let listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(3) };
+    let count = listen_fds
+        .unwrap()
+        .parse::<usize>()
+        .map_err(|_| "invalid listener count")?;
+    let names = std::env::var("LISTEN_FDNAMES")
+        .map_err(|_| "LISTEN_FDNAMES must identify each listener")?;
+    let names = listener_names(&names, count)?;
+    let mut listeners = Vec::new();
+    for (index, name) in names.into_iter().enumerate() {
+        // Descriptor numbers follow the systemd activation treaty. Their
+        // authority follows their names, never their order.
+        let listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(3 + index as i32) };
+        if listener
+            .local_addr()
+            .map_err(|_| "inherited listener is not a Unix socket")?
+            .as_pathname()
+            .is_none()
+        {
+            return Err("inherited listener must have a filesystem address".into());
+        }
+        prepare_inherited_listener(&listener)?;
+        listeners.push((name.to_owned(), listener));
+    }
+    Ok(listeners)
+}
+
+fn prepare_inherited_listener(listener: &std::os::unix::net::UnixListener) -> Result<(), String> {
+    // systemd passes activation FDs without CLOEXEC. Do not leak either local
+    // authority to subprocesses, even before their mount sandbox is installed.
+    let fd = listener.as_raw_fd();
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } < 0 {
+        return Err("could not protect inherited listener from subprocesses".into());
+    }
     listener
         .set_nonblocking(true)
-        .map_err(|error| format!("could not configure inherited listener: {error}"))?;
-    Ok(Some(listener))
+        .map_err(|_| "could not configure inherited listener".into())
 }
 
 #[tokio::main]
@@ -569,7 +655,7 @@ async fn main() {
             Ok(output) => println!("{output}"),
             Err(error) => {
                 eprintln!("korrid catalog: {error}");
-                std::process::exit(1);
+                std::process::exit(if error.starts_with("usage:") { 2 } else { 1 });
             }
         }
         return;
@@ -582,10 +668,14 @@ async fn main() {
             Ok(output) => println!("{output}"),
             Err(error) => {
                 eprintln!("korrid identity: {error}");
-                std::process::exit(1);
+                std::process::exit(if error.starts_with("usage:") { 2 } else { 1 });
             }
         }
         return;
+    }
+    if !arguments.is_empty() {
+        eprintln!("usage: korrid [internal-command]\nRun korri --help for person commands. Run korrid with no arguments to start the daemon.");
+        std::process::exit(2);
     }
     let private_state_root = private_state_root();
     let signer_socket = std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET")
@@ -679,10 +769,11 @@ async fn main() {
         )
     };
     let wake = discovery.as_ref().map(|(control, _)| control.clone());
-    let (lan_router, local_control_router, host_runtime) = match mode {
+    let (lan_router, local_control_router, cli_router, host_runtime) = match mode {
         Mode::Brain => (
             brain_router(resources, wake)
                 .layer(axum::middleware::from_fn(korrid::require_loopback)),
+            None,
             None,
             None,
         ),
@@ -691,14 +782,14 @@ async fn main() {
             let credentials = std::env::var_os("CREDENTIALS_DIRECTORY").map(PathBuf::from);
             let portal = host_portal_access(origin.as_deref(), credentials.as_deref())
                 .unwrap_or_else(|error| panic!("invalid portal access: {error}"));
-            let (lan, local, runtime) = korrid::host_routers_with_federation(
+            let (lan, local, cli, runtime) = korrid::host_routers_with_federation(
                 host_config_path(),
                 Some(host_storage_root()),
                 private_state_root.clone(),
                 resources,
                 portal,
             );
-            (lan, Some(local), Some(runtime))
+            (lan, Some(local), Some(cli), Some(runtime))
         }
     };
     // Install both signal handlers before spawning discovery. Either serving
@@ -707,27 +798,48 @@ async fn main() {
         .expect("install SIGTERM handler");
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
         .expect("install SIGINT handler");
-    let local = local_control_router.and_then(|router| {
-        inherited_control_listener()
-            .unwrap_or_else(|error| panic!("{error}"))
-            .map(|listener| {
-                let listener = tokio::net::UnixListener::from_std(listener)
-                    .expect("adopt inherited local control listener");
-                let expected = ExpectedControlPeer::from_environment()
-                    .unwrap_or_else(|error| panic!("invalid local control peer identity: {error}"));
-                let (listener, failure) = AuthorizedUnixListener::new(listener, expected);
-                (router, listener, failure)
-            })
-    });
-    let serving = async move {
-        if let Some((router, listener, failure)) = local {
-            serve_host_surfaces(lan_listener, lan_router, listener, failure, router).await
+    let mut control = None;
+    let mut cli = None;
+    for (name, listener) in inherited_listeners().unwrap_or_else(|error| panic!("{error}")) {
+        let listener = tokio::net::UnixListener::from_std(listener).expect("adopt local listener");
+        if name == "korrid-control" {
+            let expected = ExpectedControlPeer::from_environment()
+                .unwrap_or_else(|error| panic!("invalid local control identity: {error}"));
+            let (listener, failure) = AuthorizedUnixListener::new(listener, expected);
+            let router = local_control_router
+                .clone()
+                .expect("control socket requires host mode");
+            control = Some((router, listener, failure));
         } else {
-            (
-                "LAN",
-                korrid::peer_listener::serve(lan_listener, lan_router).await,
-            )
+            let uid = required_unprivileged_id("KORRID_CLI_PEER_UID")
+                .unwrap_or_else(|error| panic!("{error}"));
+            let (listener, failure) = AuthorizedUnixListener::cli(listener, uid);
+            let router = cli_router.clone().expect("CLI socket requires host mode");
+            cli = Some((router, listener, failure));
         }
+    }
+    let serving = async move {
+        let existing = async move {
+            if let Some((router, listener, failure)) = control {
+                serve_host_surfaces(lan_listener, lan_router, listener, failure, router).await
+            } else {
+                (
+                    "LAN",
+                    korrid::peer_listener::serve(lan_listener, lan_router).await,
+                )
+            }
+        };
+        let person = async move {
+            if let Some((router, listener, failure)) = cli {
+                (
+                    "local CLI",
+                    serve_local_control(listener, failure, router).await,
+                )
+            } else {
+                std::future::pending().await
+            }
+        };
+        tokio::select! { result = existing => result, result = person => result }
     };
     let shutdown = async move {
         tokio::select! {
@@ -1030,15 +1142,54 @@ mod tests {
     }
 
     #[test]
-    fn socket_activation_accepts_only_one_listener_for_the_current_process() {
+    fn socket_activation_accepts_named_listeners_for_the_current_process() {
         assert_eq!(validate_socket_activation(None, None, 42), Ok(false));
         assert_eq!(
             validate_socket_activation(Some("42"), Some("1"), 42),
             Ok(true)
         );
         assert!(validate_socket_activation(Some("41"), Some("1"), 42).is_err());
-        assert!(validate_socket_activation(Some("42"), Some("2"), 42).is_err());
+        assert_eq!(
+            validate_socket_activation(Some("42"), Some("2"), 42),
+            Ok(true)
+        );
+        assert!(validate_socket_activation(Some("42"), Some("3"), 42).is_err());
+        assert_eq!(
+            listener_names("korrid-cli:korrid-control", 2).unwrap(),
+            vec!["korrid-cli", "korrid-control"]
+        );
+        assert_eq!(
+            listener_names("korrid-control:korrid-cli", 2).unwrap(),
+            vec!["korrid-control", "korrid-cli"]
+        );
+        assert!(listener_names("korrid-cli:korrid-cli", 2).is_err());
+        assert!(listener_names("unknown", 1).is_err());
+        assert!(listener_names("", 1).is_err());
+        assert!(listener_names("korrid-control", 2).is_err());
         assert!(validate_socket_activation(None, Some("1"), 42).is_err());
+    }
+
+    #[test]
+    fn inherited_listener_authority_cannot_leak_through_exec() {
+        let root = tempfile::tempdir().unwrap();
+        let listener =
+            std::os::unix::net::UnixListener::bind(root.path().join("activation.sock")).unwrap();
+        let fd = listener.as_raw_fd();
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+        assert_eq!(
+            unsafe { libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) },
+            0
+        );
+        prepare_inherited_listener(&listener).unwrap();
+        assert_ne!(
+            unsafe { libc::fcntl(fd, libc::F_GETFD) } & libc::FD_CLOEXEC,
+            0
+        );
+        assert!(std::process::Command::new("test")
+            .args(["!", "-e", &format!("/proc/self/fd/{fd}")])
+            .status()
+            .unwrap()
+            .success());
     }
 
     #[test]
@@ -1094,7 +1245,7 @@ mod tests {
                 StatusCode::OK,
             ),
             (
-                serde_json::json!({"_tag":"app.session.stop","payload":{}}),
+                serde_json::json!({"_tag":"app.session.end","payload":{}}),
                 StatusCode::OK,
             ),
             (
@@ -1110,7 +1261,7 @@ mod tests {
                 StatusCode::FORBIDDEN,
             ),
             (
-                serde_json::json!({"_tag":"app.discovery.rescan","payload":{}}),
+                serde_json::json!({"_tag":"app.library.folders.rescan","payload":{}}),
                 StatusCode::FORBIDDEN,
             ),
         ] {
@@ -1178,6 +1329,60 @@ mod tests {
             expected,
             Err(io::Error::other("SO_PEERCRED unavailable")),
         ));
+    }
+
+    #[test]
+    fn cli_peer_accepts_only_root_and_person_uid_and_fails_closed() {
+        let cli = LocalPeer::Cli(1001);
+        assert!(cli.permits(Ok((0, 0))));
+        assert!(cli.permits(Ok((1001, 1002))));
+        assert!(cli.permits(Ok((1001, 9000))));
+        assert!(!cli.permits(Ok((1003, 1002))));
+        assert!(!cli.permits(Err(io::Error::other("SO_PEERCRED unavailable"))));
+        // Root and the person still do not gain inputd authority.
+        let control = LocalPeer::Control(ExpectedControlPeer {
+            uid: 977,
+            primary_gid: 977,
+        });
+        assert!(!control.permits(Ok((0, 0))));
+        assert!(!control.permits(Ok((1001, 1002))));
+    }
+
+    #[tokio::test]
+    async fn cli_listener_checks_real_kernel_credentials_before_serving() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for allowed in [true, false] {
+            let root = tempfile::tempdir().unwrap();
+            let path = root.path().join("cli.sock");
+            let socket = tokio::net::UnixListener::bind(&path).unwrap();
+            let uid = unsafe { libc::geteuid() };
+            // A root runner cannot impersonate a denied UID without changing
+            // process identity; the explicit denied-UID matrix above still runs.
+            if uid == 0 && !allowed {
+                continue;
+            }
+            let expected = if allowed { uid } else { uid + 1 };
+            let (listener, failure) = AuthorizedUnixListener::cli(socket, expected);
+            let server = tokio::spawn(serve_local_control(
+                listener,
+                failure,
+                Router::new().route("/rpc", axum::routing::get(|| async { "allowed" })),
+            ));
+            let mut stream = tokio::net::UnixStream::connect(&path).await.unwrap();
+            stream
+                .write_all(b"GET /rpc HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+                .await
+                .unwrap();
+            let mut bytes = Vec::new();
+            let result = stream.read_to_end(&mut bytes).await;
+            if allowed {
+                result.unwrap();
+                assert!(String::from_utf8_lossy(&bytes).contains("allowed"));
+            } else {
+                assert!(!String::from_utf8_lossy(&bytes).contains("200 OK"));
+            }
+            server.abort();
+        }
     }
 
     #[test]

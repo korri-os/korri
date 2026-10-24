@@ -26,7 +26,7 @@ test("offers only a Disabled installed pack and enables before rescanning, once"
   const host = createStarterPackOnboarding({ ...base,
     async pluginRepositories() { calls.push(["repositories"]); return base.pluginRepositories() },
     async setPluginEnabled(id, enabled) { calls.push(["enable", id, enabled]); await enable.promise; return base.setPluginEnabled(id, enabled) },
-    async rescanDiscovery() { calls.push(["rescan"]); await rescan.promise; return base.rescanDiscovery() },
+    async rescanLibraryFolders() { calls.push(["rescan"]); await rescan.promise; return base.rescanLibraryFolders() },
   })
   expect(host.snapshot()).toBeUndefined()
   host.setNeeded(false)
@@ -88,10 +88,10 @@ test("every refusal and thrown install or rescan failure gives finished copy and
         if (refusing && failure === "enable-refused") return { _tag: "Err", payload: { code: "PluginNeedsReview", message: "host detail" } }
         return base.setPluginEnabled(id, enabled)
       },
-      async rescanDiscovery() {
+      async rescanLibraryFolders() {
         if (refusing && failure === "rescan-threw") throw new Error("host detail")
         if (refusing && failure === "rescan-refused") return { _tag: "Err", payload: { code: "DiscoveryFailed", message: "host detail" } }
-        return base.rescanDiscovery()
+        return base.rescanLibraryFolders()
       },
     })
     host.setNeeded(true)
@@ -116,8 +116,8 @@ test("finishing setup hides late replies but an accepted install still rescans",
   const host = createStarterPackOnboarding({ ...base,
     async pluginRepositories() { await read.promise; return base.pluginRepositories() },
     async setPluginEnabled(id, value) { await enabled.promise; return base.setPluginEnabled(id, value) },
-    async rescanDiscovery() { rescans++; return base.rescanDiscovery() },
-    async discoverySnapshot() { discoveries++; return base.discoverySnapshot() },
+    async rescanLibraryFolders() { rescans++; return base.rescanLibraryFolders() },
+    async libraryFoldersSnapshot() { discoveries++; return base.libraryFoldersSnapshot() },
   }, { pollIntervalMs: 1, onInstalled: () => { completed = true } })
   host.setNeeded(true)
   host.setNeeded(false)
@@ -141,7 +141,7 @@ test("Installing lasts until discovery finishes, not just until the rescan is ac
   const finish = gate()
   let reads = 0
   const host = createStarterPackOnboarding({ ...base,
-    async discoverySnapshot() { reads++; await finish.promise; return base.discoverySnapshot() },
+    async libraryFoldersSnapshot() { reads++; await finish.promise; return base.libraryFoldersSnapshot() },
   })
   host.setNeeded(true)
   await settle(() => host.snapshot()?._tag === "Offered")
@@ -161,7 +161,7 @@ test("a discovery Problem fails installation and Retry does not enable the pack 
   let rescans = 0
   const host = createStarterPackOnboarding({ ...base,
     async setPluginEnabled(id, value) { enables++; return base.setPluginEnabled(id, value) },
-    async rescanDiscovery() { rescans++; return base.rescanDiscovery() },
+    async rescanLibraryFolders() { rescans++; return base.rescanLibraryFolders() },
   })
   host.setNeeded(true)
   await settle(() => host.snapshot()?._tag === "Offered")
@@ -183,7 +183,7 @@ test("the discovery deadline bounds a scan that never finishes and Retry only re
   let enables = 0
   const host = createStarterPackOnboarding({ ...base,
     async setPluginEnabled(id, value) { enables++; return base.setPluginEnabled(id, value) },
-    async discoverySnapshot() { reads++; return base.discoverySnapshot() },
+    async libraryFoldersSnapshot() { reads++; return base.libraryFoldersSnapshot() },
   }, { pollIntervalMs: 1, discoveryTimeoutMs: 20 })
   host.setNeeded(true)
   await settle(() => host.snapshot()?._tag === "Offered")
@@ -202,7 +202,7 @@ test("a stuck discovery snapshot is bounded and its late reply cannot change Fai
   const reply = gate()
   let reads = 0
   const host = createStarterPackOnboarding({ ...base,
-    async discoverySnapshot() { reads++; await reply.promise; return base.discoverySnapshot() },
+    async libraryFoldersSnapshot() { reads++; await reply.promise; return base.libraryFoldersSnapshot() },
   }, { pollIntervalMs: 1, discoveryTimeoutMs: 15 })
   host.setNeeded(true)
   await settle(() => host.snapshot()?._tag === "Offered")
@@ -219,7 +219,7 @@ test("unmount stops polling without publishing late model updates", async () => 
   let reads = 0
   let completed = false
   const host = createStarterPackOnboarding({ ...base,
-    async discoverySnapshot() { reads++; return base.discoverySnapshot() },
+    async libraryFoldersSnapshot() { reads++; return base.libraryFoldersSnapshot() },
   }, { pollIntervalMs: 1, discoveryTimeoutMs: 50, onInstalled: () => { completed = true } })
   const stop = host.start()
   host.setNeeded(true)
@@ -242,8 +242,8 @@ test("unmount during enable still dispatches the accepted rescan but starts no p
   let reads = 0
   const host = createStarterPackOnboarding({ ...base,
     async setPluginEnabled(id, value) { await enabled.promise; return base.setPluginEnabled(id, value) },
-    async rescanDiscovery() { rescans++; return base.rescanDiscovery() },
-    async discoverySnapshot() { reads++; return base.discoverySnapshot() },
+    async rescanLibraryFolders() { rescans++; return base.rescanLibraryFolders() },
+    async libraryFoldersSnapshot() { reads++; return base.libraryFoldersSnapshot() },
   })
   const stop = host.start()
   host.setNeeded(true)

@@ -4,10 +4,10 @@ use crate::{
     MoonlightCertificateAttested, MoonlightCertificateProvisionOutcome,
     MoonlightCertificateProvisionRequest, MoonlightCertificateProvisioned,
     MoonlightCertificateRevokeOutcome, MoonlightCertificateRevokeRequest,
-    MoonlightCertificateRevoked, RpcFailure, RpcRequest, RpcResponse, SessionFreezeOutcome,
-    SessionFreezeRequest, SessionFreezeResult, SessionPrepareRequest, SessionStatusOutcome,
-    SessionStatusRequest, SessionStopOutcome, SessionStopPhase, SessionStopRequest,
-    SessionThawRequest, SourceStatus, SourceStatusOutcome, SourceStatusRequest,
+    MoonlightCertificateRevoked, RpcFailure, RpcRequest, RpcResponse, SessionEndOutcome,
+    SessionEndPhase, SessionEndRequest, SessionLeaveRequest, SessionPrepareRequest,
+    SessionResumeRequest, SessionStatusOutcome, SessionStatusRequest, SessionTransitionOutcome,
+    SessionTransitionResult, SourceStatus, SourceStatusOutcome, SourceStatusRequest,
 };
 use std::{sync::Arc, time::Duration};
 
@@ -394,21 +394,21 @@ impl NativeClient {
         force: bool,
     ) -> Result<UpstreamSessionStop, UpstreamError> {
         match self
-            .call(RpcRequest::SessionStop(SessionStopRequest {
+            .call(RpcRequest::SessionEnd(SessionEndRequest {
                 force: force.then_some(true),
                 expected_launch_id: Some(expected_launch_id.into()),
             }))
             .await?
         {
-            RpcResponse::SessionStop(SessionStopOutcome::Ok(result)) => match result.phase {
-                SessionStopPhase::Stopped => Ok(UpstreamSessionStop::Stopped {
+            RpcResponse::SessionEnd(SessionEndOutcome::Ok(result)) => match result.phase {
+                SessionEndPhase::Ended => Ok(UpstreamSessionStop::Stopped {
                     launch_id: Some(expected_launch_id.into()),
                 }),
-                SessionStopPhase::Pending => Ok(UpstreamSessionStop::StopPending {
+                SessionEndPhase::Pending => Ok(UpstreamSessionStop::StopPending {
                     launch_id: Some(expected_launch_id.into()),
                 }),
             },
-            RpcResponse::SessionStop(SessionStopOutcome::Err(failure)) => {
+            RpcResponse::SessionEnd(SessionEndOutcome::Err(failure)) => {
                 Err(Self::tagged_failure(failure))
             }
             response => Err(UpstreamError::Wire(format!(
@@ -420,15 +420,15 @@ impl NativeClient {
     pub async fn session_freeze(
         &self,
         expected_launch_id: &str,
-    ) -> Result<SessionFreezeResult, UpstreamError> {
+    ) -> Result<SessionTransitionResult, UpstreamError> {
         match self
-            .call(RpcRequest::SessionFreeze(SessionFreezeRequest {
+            .call(RpcRequest::SessionLeave(SessionLeaveRequest {
                 expected_launch_id: Some(expected_launch_id.into()),
             }))
             .await?
         {
-            RpcResponse::SessionFreeze(SessionFreezeOutcome::Ok(result)) => Ok(result),
-            RpcResponse::SessionFreeze(SessionFreezeOutcome::Err(failure)) => {
+            RpcResponse::SessionLeave(SessionTransitionOutcome::Ok(result)) => Ok(result),
+            RpcResponse::SessionLeave(SessionTransitionOutcome::Err(failure)) => {
                 Err(Self::tagged_failure(failure))
             }
             response => Err(UpstreamError::Wire(format!(
@@ -440,15 +440,15 @@ impl NativeClient {
     pub async fn session_thaw(
         &self,
         expected_launch_id: &str,
-    ) -> Result<SessionFreezeResult, UpstreamError> {
+    ) -> Result<SessionTransitionResult, UpstreamError> {
         match self
-            .call(RpcRequest::SessionThaw(SessionThawRequest {
+            .call(RpcRequest::SessionResume(SessionResumeRequest {
                 expected_launch_id: Some(expected_launch_id.into()),
             }))
             .await?
         {
-            RpcResponse::SessionThaw(SessionFreezeOutcome::Ok(result)) => Ok(result),
-            RpcResponse::SessionThaw(SessionFreezeOutcome::Err(failure)) => {
+            RpcResponse::SessionResume(SessionTransitionOutcome::Ok(result)) => Ok(result),
+            RpcResponse::SessionResume(SessionTransitionOutcome::Err(failure)) => {
                 Err(Self::tagged_failure(failure))
             }
             response => Err(UpstreamError::Wire(format!(
@@ -480,7 +480,7 @@ impl NativeClient {
         }
     }
 
-    async fn call(&self, request: RpcRequest) -> Result<RpcResponse, UpstreamError> {
+    pub(crate) async fn call(&self, request: RpcRequest) -> Result<RpcResponse, UpstreamError> {
         #[cfg(test)]
         if self.credentials.is_none() {
             return self.send_request(&request).await;
@@ -552,6 +552,7 @@ impl NativeClient {
             RpcRequest::CatalogSnapshot(_)
                 | RpcRequest::SessionStatus(_)
                 | RpcRequest::SourceStatus(_)
+                | RpcRequest::SettingsSnapshot(_)
         );
         let mut candidates = self
             .candidate_origins()
@@ -721,6 +722,16 @@ fn checked_response(
     response: RpcResponse,
 ) -> Result<RpcResponse, UpstreamError> {
     let failure = match (request, &response) {
+        (RpcRequest::SettingsSnapshot(_), RpcResponse::SettingsSnapshot(outcome)) => {
+            match outcome {
+                crate::SettingsSnapshotOutcome::Ok(_) => None,
+                crate::SettingsSnapshotOutcome::Err(e) => Some(e),
+            }
+        }
+        (RpcRequest::SettingsUpdate(_), RpcResponse::SettingsUpdate(outcome)) => match outcome {
+            crate::SettingsUpdateOutcome::Ok(_) => None,
+            crate::SettingsUpdateOutcome::Err(e) => Some(e),
+        },
         (RpcRequest::CatalogSnapshot(_), RpcResponse::CatalogSnapshot(outcome)) => match outcome {
             CatalogSnapshotOutcome::Ok(_) => None,
             CatalogSnapshotOutcome::Err(e) => Some(e),
@@ -742,14 +753,14 @@ fn checked_response(
             SelectedGameLaunchOutcome::Ok(_) => None,
             SelectedGameLaunchOutcome::Err(e) => Some(e),
         },
-        (RpcRequest::SessionStop(_), RpcResponse::SessionStop(outcome)) => match outcome {
-            SessionStopOutcome::Ok(_) => None,
-            SessionStopOutcome::Err(e) => Some(e),
+        (RpcRequest::SessionEnd(_), RpcResponse::SessionEnd(outcome)) => match outcome {
+            SessionEndOutcome::Ok(_) => None,
+            SessionEndOutcome::Err(e) => Some(e),
         },
-        (RpcRequest::SessionFreeze(_), RpcResponse::SessionFreeze(outcome))
-        | (RpcRequest::SessionThaw(_), RpcResponse::SessionThaw(outcome)) => match outcome {
-            SessionFreezeOutcome::Ok(_) => None,
-            SessionFreezeOutcome::Err(e) => Some(e),
+        (RpcRequest::SessionLeave(_), RpcResponse::SessionLeave(outcome))
+        | (RpcRequest::SessionResume(_), RpcResponse::SessionResume(outcome)) => match outcome {
+            SessionTransitionOutcome::Ok(_) => None,
+            SessionTransitionOutcome::Err(e) => Some(e),
         },
         (
             RpcRequest::MoonlightCertificateAttest(_),
@@ -773,9 +784,24 @@ fn checked_response(
             MoonlightCertificateRevokeOutcome::Err(e) => Some(e),
         },
         _ => {
-            return Err(UpstreamError::Wire(
-                "peer returned a different operation tag".into(),
-            ))
+            // The local CLI can forward any request already allowed by the
+            // peer policy. Validate the shared wire envelope, not a copied
+            // table of every area's domain response.
+            let expected = serde_json::to_value(request)
+                .map_err(|_| UpstreamError::Wire("request encoding failed".into()))?;
+            let actual = serde_json::to_value(&response)
+                .map_err(|_| UpstreamError::Wire("response encoding failed".into()))?;
+            if expected["_tag"] != actual["_tag"] {
+                return Err(UpstreamError::Wire(
+                    "peer returned a different operation tag".into(),
+                ));
+            }
+            if actual["outcome"]["_tag"] == "Err" {
+                let failure = serde_json::from_value(actual["outcome"]["payload"].clone())
+                    .map_err(|_| UpstreamError::Wire("invalid peer failure".into()))?;
+                return Err(NativeClient::tagged_failure(failure));
+            }
+            return Ok(response);
         }
     };
     if let Some(failure) = failure {
@@ -960,7 +986,7 @@ command = ["neverball"]
         let wrong = NativeClient::new(
             serve_response(
                 axum::http::StatusCode::OK,
-                r#"{"_tag":"app.session.thaw","outcome":{"_tag":"Ok","payload":{"launchId":"x","state":"running","changed":true}}}"#,
+                r#"{"_tag":"app.session.resume","outcome":{"_tag":"Ok","payload":{"launchId":"x","state":"running","changed":true}}}"#,
             )
             .await,
         );
@@ -971,7 +997,7 @@ command = ["neverball"]
         let wrong = NativeClient::new(
             serve_response(
                 axum::http::StatusCode::OK,
-                r#"{"_tag":"app.session.freeze","outcome":{"_tag":"Ok","payload":{"launchId":"x","state":"frozen","changed":true}}}"#,
+                r#"{"_tag":"app.session.leave","outcome":{"_tag":"Ok","payload":{"launchId":"x","state":"frozen","changed":true}}}"#,
             )
             .await,
         );
@@ -983,7 +1009,7 @@ command = ["neverball"]
         let replaced = NativeClient::new(
             serve_response(
                 axum::http::StatusCode::OK,
-                r#"{"_tag":"app.session.thaw","outcome":{"_tag":"Err","payload":{"code":"SelectedRemoteSessionReplaced","message":"replacement"}}}"#,
+                r#"{"_tag":"app.session.resume","outcome":{"_tag":"Err","payload":{"code":"SelectedRemoteSessionReplaced","message":"replacement"}}}"#,
             )
             .await,
         );

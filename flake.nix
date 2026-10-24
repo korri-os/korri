@@ -110,6 +110,10 @@
           sunshinePlugin = publishedPlugins.korri-plugin-sunshine;
           hostModule = nixosModules.korri-plugin-host;
         };
+        cli = import ./clients/cli {
+          inherit pkgs crane proseql;
+          buildIdentity = self.rev or self.dirtyRev or null;
+        };
         korridPackage = import ./services/korrid/package.nix {
           inherit pkgs proseql crane;
         };
@@ -140,7 +144,10 @@
         };
       in
       {
-        apps = tasks // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (inputplumber.apps // pluginHost.apps);
+        apps =
+          tasks
+          // cli.apps
+          // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (inputplumber.apps // pluginHost.apps);
         devShells.default = import ./devshell.nix {
           inherit pkgs;
           hooksInstall = tasks.hooks-install.program;
@@ -152,6 +159,7 @@
         lib = import ./services/korrid/plugin-host/interface.nix;
         packages = {
           korrid = korridPackage;
+          korri = cli.package;
           korri-limitsd = import ./services/limitsd/package.nix { inherit pkgs crane; };
           korri-portal = import ./clients/portal/nix/package.nix { inherit pkgs; };
           default = self.packages.${system}.korrid;

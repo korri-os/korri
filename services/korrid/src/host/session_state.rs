@@ -3885,7 +3885,7 @@ mod tests {
             "--property=BindReadOnlyPaths=/tmp/.X11-unix/X0".into(),
             "--property=ProtectKernelModules=yes".into(),
             "--property=ProtectControlGroups=yes".into(),
-            "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-browser /run/korrid-control/control.sock /run/korrid-control -/home/korri/.config/sunshine /run/korri-compositor -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight".into(),
+            "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-browser /run/korrid-control/control.sock /run/korrid-control /run/korrid-cli/cli.sock /run/korrid-cli -/home/korri/.config/sunshine /run/korri-compositor -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight".into(),
             "--property=RestrictSUIDSGID=yes".into(),
         ] {
             assert!(
@@ -6288,7 +6288,7 @@ mod tests {
             )
             .unwrap();
         assert!(launch.contains(
-            &"--property=InaccessiblePaths=/srv/korri-test/private-recovery /run/korrid /run/korrid-browser /run/korri-test/control/device.sock /run/korri-test/control -/home/gameplay/.config/sunshine /run/korri-test/compositor-control -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight".into()
+            &"--property=InaccessiblePaths=/srv/korri-test/private-recovery /run/korrid /run/korrid-browser /run/korri-test/control/device.sock /run/korri-test/control /run/korrid-cli/cli.sock /run/korrid-cli -/home/gameplay/.config/sunshine /run/korri-test/compositor-control -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight".into()
         ));
     }
 

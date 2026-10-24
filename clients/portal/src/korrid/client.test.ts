@@ -10,7 +10,7 @@ import {
 } from "@contracts/generated/korrid"
 import {
   callKorrid,
-  createDiscoverySnapshotPoller,
+  createLibraryFoldersSnapshotPoller,
   createHttpKorridClient,
   createInMemoryKorridClient,
 } from "./client"
@@ -30,16 +30,16 @@ describe("callKorrid", () => {
       async fetch(request) {
         body = await request.json()
         return Response.json({
-          _tag: "app.session.stop",
-          outcome: { _tag: "Ok", payload: { phase: "stopped" } },
+          _tag: "app.session.end",
+          outcome: { _tag: "Ok", payload: { phase: "ended" } },
         })
       },
     })
     try {
       const client = createHttpKorridClient(server.url.origin, "capability")
-      await client.sessionStop("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+      await client.sessionEnd("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
       expect(body).toEqual({
-        _tag: "app.session.stop",
+        _tag: "app.session.end",
         payload: { expectedLaunchId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
       })
     } finally {
@@ -51,7 +51,7 @@ describe("callKorrid", () => {
     for (const active of [undefined, { launchId: "current", gameId: "neverball" }]) {
       const client = createInMemoryKorridClient({ activeSession: active })
       const before = await client.sessionStatus()
-      expect(await client.sessionStop()).toMatchObject({
+      expect(await client.sessionEnd()).toMatchObject({
         _tag: "Err", payload: { code: "ExpectedLaunchIdRequired" },
       })
       expect(await client.sessionStatus()).toEqual(before)
@@ -61,11 +61,11 @@ describe("callKorrid", () => {
   it("does not stop a replacement in-memory session using an old launch identity", async () => {
     const active = { launchId: "current", gameId: "neverball" }
     const client = createInMemoryKorridClient({ activeSession: active })
-    expect(await client.sessionStop("old")).toMatchObject({
+    expect(await client.sessionEnd("old")).toMatchObject({
       _tag: "Err", payload: { code: "StaleLaunchIdentity" },
     })
     expect(await client.sessionStatus()).toEqual({ _tag: "Ok", payload: { active } })
-    expect(await client.sessionStop("current")).toMatchObject({ _tag: "Ok" })
+    expect(await client.sessionEnd("current")).toMatchObject({ _tag: "Ok" })
     expect(await client.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
   })
 
@@ -73,7 +73,7 @@ describe("callKorrid", () => {
     const active = { launchId: "launch-1", gameId: "one", phase: "running", focusOwnership: FocusOwnership.Launch }
     const client = createInMemoryKorridClient({ activeSession: active })
 
-    expect(await client.sessionFreeze("launch-1")).toMatchObject({ _tag: "Ok" })
+    expect(await client.sessionLeave("launch-1")).toMatchObject({ _tag: "Ok" })
     expect(await client.sessionStatus()).toEqual({
       _tag: "Ok",
       payload: {
@@ -82,7 +82,7 @@ describe("callKorrid", () => {
       },
     })
 
-    expect(await client.sessionThaw("launch-1")).toMatchObject({ _tag: "Ok" })
+    expect(await client.sessionResume("launch-1")).toMatchObject({ _tag: "Ok" })
     expect(await client.sessionStatus()).toEqual({
       _tag: "Ok",
       payload: { active },
@@ -144,8 +144,8 @@ describe("callKorrid", () => {
       body = JSON.parse(String(init?.body))
       return new Response(
         JSON.stringify({
-          _tag: "app.session.stop",
-          outcome: { _tag: "Ok", payload: { phase: "stopped" } },
+          _tag: "app.session.end",
+          outcome: { _tag: "Ok", payload: { phase: "ended" } },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       )
@@ -154,10 +154,10 @@ describe("callKorrid", () => {
     await createHttpKorridClient(
       "http://127.0.0.1:43117",
       "capability",
-    ).sessionStop("launch-1")
+    ).sessionEnd("launch-1")
 
     expect(body).toEqual({
-      _tag: "app.session.stop",
+      _tag: "app.session.end",
       payload: { expectedLaunchId: "launch-1" },
     })
   })
@@ -167,7 +167,7 @@ describe("callKorrid", () => {
     globalThis.fetch = (async (_input, init) => {
       const body = JSON.parse(String(init?.body))
       bodies.push(body)
-      const state = body._tag === "app.session.freeze" ? "frozen" : "running"
+      const state = body._tag === "app.session.leave" ? "frozen" : "running"
       return new Response(
         JSON.stringify({
           _tag: body._tag,
@@ -181,12 +181,12 @@ describe("callKorrid", () => {
     }) as typeof fetch
 
     const client = createHttpKorridClient("http://127.0.0.1:43117", "capability")
-    const frozen = await client.sessionFreeze("launch-1")
-    const thawed = await client.sessionThaw("launch-1")
+    const frozen = await client.sessionLeave("launch-1")
+    const thawed = await client.sessionResume("launch-1")
 
     expect(bodies).toEqual([
-      { _tag: "app.session.freeze", payload: { expectedLaunchId: "launch-1" } },
-      { _tag: "app.session.thaw", payload: { expectedLaunchId: "launch-1" } },
+      { _tag: "app.session.leave", payload: { expectedLaunchId: "launch-1" } },
+      { _tag: "app.session.resume", payload: { expectedLaunchId: "launch-1" } },
     ])
     expect(frozen).toEqual({
       _tag: "Ok",
@@ -243,8 +243,8 @@ describe("callKorrid", () => {
       throw new Error("connection refused")
     }) as unknown as typeof fetch
     const client = createHttpKorridClient("http://127.0.0.1:43117", "capability")
-    expect((await client.sessionFreeze("launch-1"))._tag).toBe("Err")
-    expect((await client.sessionThaw("launch-1"))._tag).toBe("Err")
+    expect((await client.sessionLeave("launch-1"))._tag).toBe("Err")
+    expect((await client.sessionResume("launch-1"))._tag).toBe("Err")
   })
 
   it("asks for one peer's source status by device key", async () => {
@@ -419,13 +419,13 @@ describe("discovery", () => {
       body = JSON.parse(String(init?.body))
       return new Response(
         JSON.stringify({
-          _tag: "app.discovery.pair",
+          _tag: "app.library.folders.add",
           outcome: {
             _tag: "Ok",
             payload: {
               generation: "g1",
               state: { _tag: "Scanning", payload: {} },
-              sources: [],
+              folders: [],
               attention: 0,
               diagnostics: [],
             },
@@ -438,14 +438,14 @@ describe("discovery", () => {
     const outcome = await createHttpKorridClient(
       "http://127.0.0.1:43117",
       "capability",
-    ).pairDiscoverySource("receipt-1", "gba")
+    ).addLibraryFolder("receipt-1", "gba")
 
     expect(outcome).toMatchObject({
       _tag: "Ok",
       payload: { state: { _tag: "Scanning" } },
     })
     expect(body).toEqual({
-      _tag: "app.discovery.pair",
+      _tag: "app.library.folders.add",
       payload: { receipt: "receipt-1", system: "gba" },
     })
   })
@@ -455,14 +455,14 @@ describe("discovery", () => {
     globalThis.fetch = (async (_input, init) => {
       const body = JSON.parse(String(init?.body))
       bodies.push(body)
-      return new Response(JSON.stringify({ _tag: body._tag, outcome: { _tag: "Ok", payload: { generation: "g2", state: { _tag: "Idle", payload: {} }, sources: [], attention: 0, diagnostics: [] } } }))
+      return new Response(JSON.stringify({ _tag: body._tag, outcome: { _tag: "Ok", payload: { generation: "g2", state: { _tag: "Idle", payload: {} }, folders: [], attention: 0, diagnostics: [] } } }))
     }) as typeof fetch
     const client = createHttpKorridClient("http://127.0.0.1:43117", "capability")
-    await client.changeDiscoverySource("gb", "gbc")
-    await client.unpairDiscoverySource("gb")
+    await client.changeLibraryFolder("gb", "gbc")
+    await client.removeLibraryFolder("gb")
     expect(bodies).toEqual([
-      { _tag: "app.discovery.change", payload: { source: "gb", system: "gbc" } },
-      { _tag: "app.discovery.unpair", payload: { source: "gb" } },
+      { _tag: "app.library.folders.change", payload: { folder: "gb", system: "gbc" } },
+      { _tag: "app.library.folders.remove", payload: { folder: "gb" } },
     ])
   })
 
@@ -471,20 +471,20 @@ describe("discovery", () => {
       discoveryReceipts: ["receipt-1"],
     })
 
-    expect(await client.discoverySnapshot()).toMatchObject({
+    expect(await client.libraryFoldersSnapshot()).toMatchObject({
       _tag: "Ok",
       payload: { generation: "in-memory-0", state: { _tag: "Idle" } },
     })
-    expect(await client.pairDiscoverySource("receipt-1", "gba")).toMatchObject({
+    expect(await client.addLibraryFolder("receipt-1", "gba")).toMatchObject({
       _tag: "Ok",
       payload: { state: { _tag: "Scanning" } },
     })
-    expect(await client.pairDiscoverySource("receipt-1", "gba")).toMatchObject({
+    expect(await client.addLibraryFolder("receipt-1", "gba")).toMatchObject({
       _tag: "Err",
       payload: { code: "FolderSelectionReceiptUnknown" },
     })
     await new Promise(resolve => setTimeout(resolve, 1))
-    expect(await client.discoverySnapshot()).toMatchObject({
+    expect(await client.libraryFoldersSnapshot()).toMatchObject({
       _tag: "Ok",
       payload: { state: { _tag: "Idle" } },
     })
@@ -492,10 +492,10 @@ describe("discovery", () => {
 
   it("browser memory changes and unpairs one paired source", async () => {
     const client = createInMemoryKorridClient({ discoveryReceipts: ["source-1"] })
-    await client.pairDiscoverySource("source-1", "gb")
-    expect(await client.changeDiscoverySource("source-1", "gbc")).toMatchObject({ _tag: "Ok", payload: { sources: [{ id: "source-1", system: "gbc" }] } })
-    expect(await client.unpairDiscoverySource("source-1")).toMatchObject({ _tag: "Ok", payload: { sources: [] } })
-    expect(await client.unpairDiscoverySource("source-1")).toMatchObject({ _tag: "Err", payload: { code: "UnknownSource" } })
+    await client.addLibraryFolder("source-1", "gb")
+    expect(await client.changeLibraryFolder("source-1", "gbc")).toMatchObject({ _tag: "Ok", payload: { folders: [{ id: "source-1", system: "gbc" }] } })
+    expect(await client.removeLibraryFolder("source-1")).toMatchObject({ _tag: "Ok", payload: { folders: [] } })
+    expect(await client.removeLibraryFolder("source-1")).toMatchObject({ _tag: "Err", payload: { code: "UnknownLibraryFolder" } })
   })
 
   it("polling publishes changed generations once and never overlaps requests", async () => {
@@ -503,9 +503,9 @@ describe("discovery", () => {
     let active = 0
     let maxActive = 0
     const published: string[] = []
-    const poller = createDiscoverySnapshotPoller(
+    const poller = createLibraryFoldersSnapshotPoller(
       {
-        async discoverySnapshot() {
+        async libraryFoldersSnapshot() {
           active += 1
           maxActive = Math.max(maxActive, active)
           await new Promise(resolve => setTimeout(resolve, 5))
@@ -515,7 +515,7 @@ describe("discovery", () => {
             payload: {
               generation: `g${generation}`,
               state: { _tag: "Idle", payload: {} },
-              sources: [],
+              folders: [],
               attention: 0,
               diagnostics: [],
             },
@@ -537,9 +537,9 @@ describe("discovery", () => {
   it("does not publish an in-flight polling result after disposal", async () => {
     let release: (() => void) | undefined
     const published: string[] = []
-    const poller = createDiscoverySnapshotPoller(
+    const poller = createLibraryFoldersSnapshotPoller(
       {
-        async discoverySnapshot() {
+        async libraryFoldersSnapshot() {
           await new Promise<void>(resolve => {
             release = resolve
           })
@@ -548,7 +548,7 @@ describe("discovery", () => {
             payload: {
               generation: "late",
               state: { _tag: "Idle", payload: {} },
-              sources: [],
+              folders: [],
               attention: 0,
               diagnostics: [],
             },

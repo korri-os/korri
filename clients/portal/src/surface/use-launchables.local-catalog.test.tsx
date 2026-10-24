@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import type { ActiveSession, Game, SelectedGameLaunchOutcome, SessionStatusOutcome } from "@contracts/generated/korrid"
-import { FocusOwnership, InitialHandoff, PendingLaunchPhase, SessionFreezerState, SessionStopPhase } from "@contracts/generated/korrid"
+import { FocusOwnership, InitialHandoff, PendingLaunchPhase, SessionFreezerState, SessionEndPhase } from "@contracts/generated/korrid"
 import { createInMemoryKorridClient, type KorridClient } from "../korrid/client"
 import type { PortalEntry } from "../launchables/state"
 import { surfaceModelFrom } from "./surface-model"
@@ -61,7 +61,7 @@ function fixture(overrides: Partial<KorridClient> = {}, initial = idle, catalog 
   let status = initial
   const calls: {
     starts: Parameters<KorridClient["sessionStart"]>[]
-    stops: Parameters<KorridClient["sessionStop"]>[]
+    stops: Parameters<KorridClient["sessionEnd"]>[]
     native: string[]
     statusReads: number
     catalogReads: number
@@ -77,7 +77,7 @@ function fixture(overrides: Partial<KorridClient> = {}, initial = idle, catalog 
       return base.catalogSnapshot()
     },
     async sessionReserve({ gameId }) { return { _tag: "Ok", payload: { gameId, launchId: active.launchId } } },
-    async sessionCancel() { status = idle; return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } } },
+    async sessionCancel() { status = idle; return { _tag: "Ok", payload: { phase: SessionEndPhase.Ended } } },
     async sessionStart(...args) {
       calls.starts.push(args)
       status = running
@@ -85,15 +85,15 @@ function fixture(overrides: Partial<KorridClient> = {}, initial = idle, catalog 
     },
     /* Confirming the banner resumes the exact launch through korrid. It does
      * not reserve or start the game again, so it must not appear in calls.starts. */
-    async sessionThaw(expectedLaunchId) {
+    async sessionResume(expectedLaunchId) {
       calls.resumes.push(expectedLaunchId)
       return { _tag: "Ok", payload: { launchId: expectedLaunchId, state: SessionFreezerState.Running, changed: true } }
     },
     async sessionStatus() { calls.statusReads += 1; return status },
-    async sessionStop(...args) {
+    async sessionEnd(...args) {
       calls.stops.push(args)
       status = completed
-      return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
+      return { _tag: "Ok", payload: { phase: SessionEndPhase.Ended } }
     },
     ...overrides,
   }
@@ -186,14 +186,14 @@ describe("source-local catalog orchestration", () => {
 
   test.each(["SessionCompleted", "NoActiveSession"])("exact stop reconciles %s without the ended banner", async code => {
     const ended = code === "SessionCompleted" ? completed : idle
-    const config = fixture({ async sessionStop(...args) {
+    const config = fixture({ async sessionEnd(...args) {
       config.calls.stops.push(args)
       config.setStatus(ended)
-      return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
+      return { _tag: "Ok", payload: { phase: SessionEndPhase.Ended } }
     } }, running)
     const harness = await mount(config)
     const entry = harness.entry("now-playing")
-    await invoke(() => { harness.current().stopSession(entry); harness.current().stopSession(entry) })
+    await invoke(() => { harness.current().endSession(entry); harness.current().endSession(entry) })
     await waitFor(() => harness.current().state._tag === "Ready" && !hasSession(harness.current()))
     expect(config.calls.stops).toEqual([[active.launchId]])
     expect(harness.current().state).toMatchObject({ notice: null })
@@ -202,10 +202,10 @@ describe("source-local catalog orchestration", () => {
   })
 
   test("a reload observing NoActiveSession resolves a pending stop and ignores its late ACK", async () => {
-    const stop = deferred<Awaited<ReturnType<KorridClient["sessionStop"]>>>()
-    const config = fixture({ sessionStop: () => stop.promise }, running)
+    const stop = deferred<Awaited<ReturnType<KorridClient["sessionEnd"]>>>()
+    const config = fixture({ sessionEnd: () => stop.promise }, running)
     const harness = await mount(config)
-    await invoke(() => harness.current().stopSession(harness.entry("now-playing")))
+    await invoke(() => harness.current().endSession(harness.entry("now-playing")))
     expect(harness.current().state._tag).toBe("Stopping")
     config.setStatus(idle)
     await invoke(() => harness.current().reload())
@@ -217,11 +217,11 @@ describe("source-local catalog orchestration", () => {
   })
 
   test("retains the session and reports an exact-stop failure", async () => {
-    const config = fixture({ async sessionStop() {
+    const config = fixture({ async sessionEnd() {
       return { _tag: "Err", payload: { code: "StopFailed", message: "unit did not stop" } }
     } }, running)
     const harness = await mount(config)
-    await invoke(() => harness.current().stopSession(harness.entry("now-playing")))
+    await invoke(() => harness.current().endSession(harness.entry("now-playing")))
     expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { message: "StopFailed: unit did not stop" } })
     expect(hasSession(harness.current())).toBe(true)
   })
@@ -505,10 +505,10 @@ describe("source-local catalog orchestration", () => {
 
   test("an old status read cannot finish a newer exact stop", async () => {
     const oldRead = deferred<SessionStatusOutcome>()
-    const stopping = deferred<Awaited<ReturnType<KorridClient["sessionStop"]>>>()
+    const stopping = deferred<Awaited<ReturnType<KorridClient["sessionEnd"]>>>()
     let reads = 0
     const config = fixture({
-      sessionStop: () => stopping.promise,
+      sessionEnd: () => stopping.promise,
       sessionStatus() {
         reads += 1
         return reads === 2 ? oldRead.promise : Promise.resolve(running)
@@ -516,7 +516,7 @@ describe("source-local catalog orchestration", () => {
     }, running)
     const harness = await mount(config)
     await waitFor(() => reads === 2)
-    await invoke(() => harness.current().stopSession(harness.entry("now-playing")))
+    await invoke(() => harness.current().endSession(harness.entry("now-playing")))
     await invoke(() => oldRead.resolve(completed))
     expect(harness.current().state._tag).toBe("Stopping")
     await invoke(() => stopping.resolve({ _tag: "Err", payload: { code: "StopFailed", message: "still active" } }))

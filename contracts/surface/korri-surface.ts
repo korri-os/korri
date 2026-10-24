@@ -17,6 +17,9 @@
  *   - Commands are fire-and-forget. Korri publishes the consequence as a new
  *     model; the surface never awaits a result or holds Korri's state.
  *
+ * Product language: see ../../CONTEXT.md. Its words guide surface authors;
+ * each independently authored surface owns its own text.
+ *
  * This file imports nothing. It is the whole contract.
  */
 
@@ -115,7 +118,7 @@ export interface SurfaceGame {
 }
 
 /**
- * A non-game thing the user can do (open settings, cancel a launch, stop
+ * A non-game thing the user can do (open settings, cancel a launch, end
  * the running game). Korri owns which of these exist and whether they apply;
  * the surface only renders and reports selection.
  */
@@ -853,7 +856,7 @@ export interface SurfaceHost {
     controlId: string,
     value?: SurfaceGameplayControlValue,
   ): void
-  /** Ask to return from the gameplay overlay. The host binds this to the
+  /** Ask to resume from the gameplay overlay. The host binds this to the
    * exact live launch; the surface never closes or thaws a session itself. */
   dismissGameplayOverlay(): void
   /** Try the failed thing again. Only meaningful while `Problem.canRetry`. */

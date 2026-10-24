@@ -7,12 +7,12 @@ import {
   PendingLaunchPhase,
   SecretSettingStatus,
   SessionFreezerState,
-  SessionStopPhase,
+  SessionEndPhase,
   type ActiveSession,
   type Game,
   type SelectedGameLaunchOutcome,
   type SessionStatusOutcome,
-  type SessionStopOutcome,
+  type SessionEndOutcome,
 } from "@contracts/generated/korrid"
 import { createHttpKorridClient, createInMemoryKorridClient, type KorridClient } from "../korrid/client"
 import type { PortalEntry } from "../launchables/state"
@@ -81,18 +81,18 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
     async sessionReserve({ gameId }) { return { _tag: "Ok", payload: { gameId, launchId: active.launchId } } },
     sessionPrepare: unavailable,
     async sessionStart() { return prepared },
-    async sessionCancel() { return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } } },
-    async sessionStop() { return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } } },
+    async sessionCancel() { return { _tag: "Ok", payload: { phase: SessionEndPhase.Ended } } },
+    async sessionEnd() { return { _tag: "Ok", payload: { phase: SessionEndPhase.Ended } } },
     /* korrid serves local games and folder discovery on Linux, so a load
      * reads both. Neither has content in this fixture. */
     async localGames() { return { _tag: "Ok", payload: { games: [] } } },
-    async discoverySnapshot() {
+    async libraryFoldersSnapshot() {
       return {
         _tag: "Ok",
         payload: {
           generation: "d1",
           state: { _tag: "Idle", payload: {} },
-          sources: [],
+          folders: [],
           attention: 0,
           diagnostics: [],
         },
@@ -108,15 +108,15 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
     switchIdentityFromBackup: unavailable,
     switchIdentityToNip46: unavailable,
     deleteRetiredIdentity: unavailable,
-    pairDiscoverySource: unavailable,
-    changeDiscoverySource: unavailable,
-    unpairDiscoverySource: unavailable,
-    rescanDiscovery: unavailable,
+    addLibraryFolder: unavailable,
+    changeLibraryFolder: unavailable,
+    removeLibraryFolder: unavailable,
+    rescanLibraryFolders: unavailable,
     gameRoutes: unavailable,
     setLaunch: unavailable,
     launchSelectedGame: unavailable,
-    sessionFreeze: unavailable,
-    sessionThaw: unavailable,
+    sessionLeave: unavailable,
+    sessionResume: unavailable,
     sessionControls: unavailable,
     invokeSessionControl: unavailable,
     sourceStatus: unavailable,
@@ -177,7 +177,7 @@ describe("Linux catalog execution without a native bridge", () => {
       discovery: {
         generation: "d1",
         state: { _tag: "Idle", payload: {} },
-        sources: [],
+        folders: [],
         attention: 0,
         diagnostics: [],
       },
@@ -186,21 +186,21 @@ describe("Linux catalog execution without a native bridge", () => {
       .map(item => item.id)).toEqual([
       "device-name",
       "person-name", "host.preferences.playerCount", "steamgriddb-credential", "local-games",
-      "game-discovery-status", "game-folder-rescan", "korrid-version",
+      "game-discovery-status", "library-folder-rescan", "korrid-version",
     ])
   })
 
   it("unpairs a discovery source through the existing device action", async () => {
     const calls: string[] = []
     const harness = await mount(linuxClient({
-      async unpairDiscoverySource(source) {
+      async removeLibraryFolder(source) {
         calls.push(source)
-        return { _tag: "Ok", payload: { generation: "d2", state: { _tag: "Idle", payload: {} }, sources: [], attention: 0, diagnostics: [] } }
+        return { _tag: "Ok", payload: { generation: "d2", state: { _tag: "Idle", payload: {} }, folders: [], attention: 0, diagnostics: [] } }
       },
     }))
-    await invoke(() => harness.current().runDeviceAction("game-folder-remove:gba"))
+    await invoke(() => harness.current().runDeviceAction("library-folder-remove:gba"))
     expect(calls).toEqual(["gba"])
-    expect(harness.current().facts.discovery?.sources).toEqual([])
+    expect(harness.current().facts.discovery?.folders).toEqual([])
   })
 
   it.each([undefined, game.host])("starts once per frame and refreshes the session (host: %s)", async host => {
@@ -249,7 +249,7 @@ describe("Linux catalog execution without a native bridge", () => {
     const harness = await mount(linuxClient({
       async sessionStatus() { return { _tag: "Ok", payload: { active } } },
       sessionStart: async () => { throw new Error("resume must not prepare") },
-      async sessionThaw(expectedLaunchId) {
+      async sessionResume(expectedLaunchId) {
         thawed.push(expectedLaunchId)
         return {
           _tag: "Ok",
@@ -273,7 +273,7 @@ describe("Linux catalog execution without a native bridge", () => {
   it("reports a refused resume without claiming the game returned", async () => {
     const harness = await mount(linuxClient({
       async sessionStatus() { return { _tag: "Ok", payload: { active } } },
-      async sessionThaw() {
+      async sessionResume() {
         return { _tag: "Err", payload: { code: "HostFocusFailed", message: "compositor refused focus" } }
       },
     }))
@@ -288,7 +288,7 @@ describe("Linux catalog execution without a native bridge", () => {
   it("refuses to resume a session that was replaced while the player chose", async () => {
     const harness = await mount(linuxClient({
       async sessionStatus() { return { _tag: "Ok", payload: { active } } },
-      async sessionThaw() {
+      async sessionResume() {
         return { _tag: "Err", payload: { code: "StaleLaunchIdentity", message: "old launch" } }
       },
     }))
@@ -299,25 +299,25 @@ describe("Linux catalog execution without a native bridge", () => {
   })
 
   it("stops exactly the displayed launch once, then confirms idle", async () => {
-    const pending = deferred<SessionStopOutcome>()
+    const pending = deferred<SessionEndOutcome>()
     const calls: (string | undefined)[] = []
     let status: SessionStatusOutcome = { _tag: "Ok", payload: { active } }
     const harness = await mount(linuxClient({
       async sessionStatus() { return status },
-      sessionStop(expectedLaunchId) {
+      sessionEnd(expectedLaunchId) {
         calls.push(expectedLaunchId)
         return pending.promise
       },
     }))
     const displayed = entry(harness.current(), "now-playing")
     await invoke(() => {
-      harness.current().stopSession(displayed)
-      harness.current().stopSession(displayed)
+      harness.current().endSession(displayed)
+      harness.current().endSession(displayed)
     })
     expect(calls).toEqual([active.launchId])
     expect(harness.current().state._tag).toBe("Stopping")
     status = idle
-    await invoke(() => pending.resolve({ _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }))
+    await invoke(() => pending.resolve({ _tag: "Ok", payload: { phase: SessionEndPhase.Ended } }))
     expect(harness.current().state).toEqual({
       _tag: "Ready", entries: [{ kind: "game", game }], notice: null,
     })
@@ -375,7 +375,7 @@ describe("Linux catalog execution without a native bridge", () => {
     const harness = await mount(linuxClient({
       sessionStart() { status = preparing; return ++calls === 1 ? first.promise : second.promise },
       async sessionStatus() { return status },
-      async sessionCancel() { status = idle; return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } } },
+      async sessionCancel() { status = idle; return { _tag: "Ok", payload: { phase: SessionEndPhase.Ended } } },
     }))
     await invoke(() => harness.current().confirmEntry(entry(harness.current(), "game")))
     await invoke(() => harness.current().cancelLaunch())
@@ -403,30 +403,30 @@ describe("Linux catalog execution without a native bridge", () => {
   })
 
   it("does not poll a stop response after unmount", async () => {
-    const pending = deferred<SessionStopOutcome>()
+    const pending = deferred<SessionEndOutcome>()
     let reads = 0
     const harness = await mount(linuxClient({
       async sessionStatus() {
         reads += 1
         return { _tag: "Ok", payload: { active } }
       },
-      sessionStop() { return pending.promise },
+      sessionEnd() { return pending.promise },
     }))
-    await invoke(() => harness.current().stopSession(entry(harness.current(), "now-playing")))
+    await invoke(() => harness.current().endSession(entry(harness.current(), "now-playing")))
     const readsBeforeUnmount = reads
     await harness.unmount()
-    await invoke(() => pending.resolve({ _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }))
+    await invoke(() => pending.resolve({ _tag: "Ok", payload: { phase: SessionEndPhase.Ended } }))
     expect(reads).toBe(readsBeforeUnmount)
   })
 
   it("ignores a late stop ACK after a reload observes a replacement session", async () => {
-    const pending = deferred<SessionStopOutcome>()
+    const pending = deferred<SessionEndOutcome>()
     let status: SessionStatusOutcome = { _tag: "Ok", payload: { active } }
     const harness = await mount(linuxClient({
       async sessionStatus() { return status },
-      sessionStop() { return pending.promise },
+      sessionEnd() { return pending.promise },
     }))
-    await invoke(() => harness.current().stopSession(entry(harness.current(), "now-playing")))
+    await invoke(() => harness.current().endSession(entry(harness.current(), "now-playing")))
     const replacement = { ...active, launchId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
     status = { _tag: "Ok", payload: { active: replacement } }
     await invoke(() => harness.current().reload())

@@ -88,7 +88,7 @@ async fn daemon_pending_projection_preserves_all_owned_reservations_and_hides_fo
     assert_eq!(denied["outcome"]["payload"]["code"], "AuthorizationDenied");
     assert_eq!(
         cancel(&app, &a).await["outcome"]["payload"]["phase"],
-        "stopped"
+        "ended"
     );
     assert_eq!(
         pending_ids(&status(&app).await),
@@ -96,7 +96,7 @@ async fn daemon_pending_projection_preserves_all_owned_reservations_and_hides_fo
     );
     assert_eq!(
         cancel(&app, &b).await["outcome"]["payload"]["phase"],
-        "stopped"
+        "ended"
     );
     assert_eq!(
         status(&app).await["outcome"]["payload"]["code"],
@@ -407,7 +407,7 @@ async fn daemon_pending_projection_preserves_genuine_observation_failure_and_hom
     assert_handoff(&app, &a, "observed").await;
     assert_eq!(
         cancel(&app, &b).await["outcome"]["payload"]["phase"],
-        "stopped"
+        "ended"
     );
     assert_overlay(&app, &a).await;
 }
@@ -456,7 +456,7 @@ async fn daemon_busy_pending_projection_does_not_clear_home_during_a_failed_retu
     assert_handoff(&app, &a, "observed").await;
     assert_eq!(
         cancel(&app, &b).await["outcome"]["payload"]["phase"],
-        "stopped"
+        "ended"
     );
     assert_overlay(&app, &a).await;
 }

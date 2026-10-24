@@ -909,6 +909,36 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
+    /// The name uses the same revision-checked writer as brain mode. Player
+    /// count retains its stronger idle-session transaction below.
+    pub async fn update_settings(
+        &self,
+        request: crate::SettingsUpdateRequest,
+    ) -> Result<crate::SettingsSnapshot, RpcFailure> {
+        if request.setting_id != crate::config::settings::DEVICE_NAME_SETTING_ID {
+            return self.update_player_count(request).await;
+        }
+        let change = crate::config::settings::parse_change(&request.setting_id, request.value)
+            .map_err(crate::settings_failure)?;
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let readable = crate::config::settings::update_with_registry_source(
+                runtime.route_root()?,
+                &runtime.private_state_root,
+                &runtime.route_write_lock,
+                &request.expected_revision,
+                change,
+                &runtime.settings_registry_source(),
+            )
+            .map_err(crate::settings_failure)?;
+            let sensitive = crate::config::settings::read_sensitive(&runtime.private_state_root)
+                .map_err(crate::settings_failure)?;
+            Ok(crate::settings_snapshot(readable, sensitive))
+        })
+        .await
+        .map_err(host_worker_failure)?
+    }
+
     /// Commit runtime and file under the same idle transition lock. An
     /// uncertain acknowledgement or failed compensation fences new launches.
     pub async fn update_player_count(
@@ -1451,7 +1481,7 @@ impl HostRuntime {
         tokio::task::spawn_blocking(move || {
             let outcome = runtime.control()?.stop(&expected_launch_id);
             #[cfg(test)]
-            runtime.session_rpc_probe("app.session.stop");
+            runtime.session_rpc_probe("app.session.end");
             Ok(outcome)
         })
         .await
@@ -1470,7 +1500,7 @@ impl HostRuntime {
                 .control()?
                 .observe_stop(&expected_launch_id, observe);
             #[cfg(test)]
-            runtime.session_rpc_probe("app.session.stop");
+            runtime.session_rpc_probe("app.session.end");
             Ok(outcome)
         })
         .await
@@ -1486,7 +1516,7 @@ impl HostRuntime {
         tokio::task::spawn_blocking(move || {
             let outcome = runtime.control()?.freeze(&expected_launch_id);
             #[cfg(test)]
-            runtime.session_rpc_probe("app.session.freeze");
+            runtime.session_rpc_probe("app.session.leave");
             Ok(outcome)
         })
         .await
@@ -1505,7 +1535,7 @@ impl HostRuntime {
                 .control()?
                 .observe_freeze(&expected_launch_id, observe);
             #[cfg(test)]
-            runtime.session_rpc_probe("app.session.freeze");
+            runtime.session_rpc_probe("app.session.leave");
             Ok(outcome)
         })
         .await
@@ -1521,7 +1551,7 @@ impl HostRuntime {
         tokio::task::spawn_blocking(move || {
             let outcome = runtime.control()?.thaw(&expected_launch_id);
             #[cfg(test)]
-            runtime.session_rpc_probe("app.session.thaw");
+            runtime.session_rpc_probe("app.session.resume");
             Ok(outcome)
         })
         .await
@@ -1540,7 +1570,7 @@ impl HostRuntime {
                 .control()?
                 .observe_thaw(&expected_launch_id, observe);
             #[cfg(test)]
-            runtime.session_rpc_probe("app.session.thaw");
+            runtime.session_rpc_probe("app.session.resume");
             Ok(outcome)
         })
         .await
@@ -2156,7 +2186,7 @@ esac
         let prepared = fixture.prepare().await;
         assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
         fs::write(fixture.root.path().join("fail-after-query"), "").unwrap();
-        let request = serde_json::json!({"_tag": "app.session.freeze", "payload": {"expectedLaunchId": prepared["outcome"]["payload"]["session"]["launchId"]}});
+        let request = serde_json::json!({"_tag": "app.session.leave", "payload": {"expectedLaunchId": prepared["outcome"]["payload"]["session"]["launchId"]}});
         fixture.rpc(&request.to_string()).await;
         let failed = fixture.status().await;
         assert_eq!(

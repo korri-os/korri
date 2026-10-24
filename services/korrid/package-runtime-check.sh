@@ -100,7 +100,18 @@ KORRID_RELAYS='["ws://127.0.0.1:43998"]' \
 KORRID_STREAM_PRIVATE_STATE_ROOT="$root/sunshine" \
 KORRID_SYSTEMCTL="$root/systemctl" \
 KORRID_SYSTEMD_RUN="$root/systemd-run" \
-  "$binary" >"$root/stdout" 2>"$root/stderr" &
+KORRID_CONTROL_PEER_UID="$(id -u)" \
+KORRID_CONTROL_PEER_GID="$(id -g)" \
+KORRID_CLI_PEER_UID="$(id -u)" \
+  "$socket_activate" --now --fdname=korrid-cli:korrid-control \
+    -l "$root/cli.sock" -l "$root/control.sock" \
+    -E HOME -E KORRID_MODE -E KORRID_ADDRESS -E KORRID_HOST_CONFIG \
+    -E KORRID_STORAGE_ROOT -E KORRID_PRIVATE_STATE_ROOT \
+    -E KORRID_LOCAL_SIGNER_SOCKET -E KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE \
+    -E KORRID_RELAYS -E KORRID_STREAM_PRIVATE_STATE_ROOT \
+    -E KORRID_SYSTEMCTL -E KORRID_SYSTEMD_RUN \
+    -E KORRID_CONTROL_PEER_UID -E KORRID_CONTROL_PEER_GID -E KORRID_CLI_PEER_UID \
+    "$binary" >"$root/stdout" 2>"$root/stderr" &
 pid=$!
 
 healthy=false
@@ -125,6 +136,20 @@ plaintext_status="$("$curl_bin" --silent --output /dev/null --write-out '%{http_
   -H 'content-type: application/json' \
   -d '{"_tag":"app.catalog.snapshot","payload":{}}')"
 [[ "$plaintext_status" == 426 ]]
+# CLI is deliberately fd 3 here, before inputd. Listener names, not positions,
+# must select authority. Setup is local-person-only and remains denied to inputd.
+"$curl_bin" --fail --silent --unix-socket "$root/cli.sock" \
+  http://localhost/rpc -H 'content-type: application/json' \
+  -d '{"_tag":"system.onboarding.status","payload":{}}' \
+  | "$jq_bin" -e '._tag == "system.onboarding.status" and .outcome._tag == "Ok"' >/dev/null
+control_status="$("$curl_bin" --silent --output /dev/null --write-out '%{http_code}' \
+  --unix-socket "$root/control.sock" http://localhost/rpc \
+  -H 'content-type: application/json' \
+  -d '{"_tag":"system.onboarding.status","payload":{}}')"
+[[ "$control_status" == 403 ]]
+cli_input_status="$("$curl_bin" --silent --output /dev/null --write-out '%{http_code}' \
+  --unix-socket "$root/cli.sock" http://localhost/)"
+[[ "$cli_input_status" == 404 ]]
 [[ "$(stat -c '%a' "$root/private")" == 700 ]]
 [[ -d "$root/private/identity" ]]
 [[ "$(stat -c '%a' "$root/private/identity")" == 700 ]]
@@ -139,4 +164,4 @@ plaintext_status="$("$curl_bin" --silent --output /dev/null --write-out '%{http_
 [[ ! -e "$root/home/.local/state/korri/identity" ]]
 [[ ! -e "$root/relay-connections" ]]
 
-printf 'korrid package runtime check passed with a local-only automatic owner (peer-rpc: HTTP 400; rpc: HTTP 426; relay connections: 0)\n'
+printf 'korrid package runtime check passed with a local-only automatic owner (peer-rpc: HTTP 400; rpc: HTTP 426; named CLI: allowed; inputd setup: denied; CLI input: absent; relay connections: 0)\n'

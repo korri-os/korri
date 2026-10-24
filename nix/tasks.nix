@@ -10,6 +10,20 @@ let
   rustToolchain = pkgs.rust-bin.stable.latest.default;
 
   definitions = {
+    cli-check = {
+      description = "Check the person CLI types, lint, and real-process tests.";
+      runtimeInputs = [ pkgs.nix pkgs.git ];
+      script = ''
+        exec bash "$KORRI_ROOT/clients/cli/check.sh" "$@"
+      '';
+    };
+    cli-daemon-check = {
+      description = "Check focused person-socket authority, sandbox, forwarding, and daemon usage behavior.";
+      runtimeInputs = [ pkgs.nix pkgs.git ];
+      script = ''
+        exec bash "$KORRI_ROOT/clients/cli/daemon-check.sh"
+      '';
+    };
     stream-cadence = {
       description = "Measure distinct Sunshine frames against the discovered display ceiling; compare receive-clock windows.";
       usageSuffix = " -- <run --device ssh-target | compare old.json new.json>";

@@ -5,7 +5,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 import {
   SecretSettingStatus,
-  type DiscoverySnapshot,
+  type LibraryFoldersSnapshot,
   type SettingsSnapshot,
 } from "@contracts/generated/korrid"
 import { pluginSettingGroups, type PluginFacts } from "./plugin-repositories"
@@ -16,7 +16,7 @@ export interface DeviceFacts {
   readonly version?: string
   readonly settings?: SettingsSnapshot
   readonly localGameCount?: number
-  readonly discovery?: DiscoverySnapshot
+  readonly discovery?: LibraryFoldersSnapshot
   /** Absent until Korri has read setup progress. */
   readonly onboardingNeeded?: boolean
   /** Plugin repositories and the approval path. Absent before the portal
@@ -52,7 +52,7 @@ const playerCounts = Array.from({ length: 255 }, (_, index) => {
 const secretStatusLabel = (status: SecretSettingStatus): string =>
   status === SecretSettingStatus.Configured ? "Configured" : "Not configured"
 
-const discoveryStateLabel = (snapshot: DiscoverySnapshot | undefined): string => {
+const discoveryStateLabel = (snapshot: LibraryFoldersSnapshot | undefined): string => {
   if (snapshot === undefined) return "Not set up"
   switch (snapshot.state._tag) {
     case "Scanning":
@@ -69,7 +69,7 @@ const discoveryStateLabel = (snapshot: DiscoverySnapshot | undefined): string =>
 }
 
 /** One folder's state as korrid reports it, never a fixed word. */
-const folderStatusLabel = (status: DiscoverySnapshot["sources"][number]["status"]): string => {
+const folderStatusLabel = (status: LibraryFoldersSnapshot["folders"][number]["status"]): string => {
   switch (status._tag) {
     case "Ready":
       return "Registered"
@@ -135,9 +135,9 @@ export function settingsFrom(
         ? undefined
         : {
             id: "host.preferences.playerCount",
-            label: "Player seats",
+            label: "Seats",
             value: String(facts.settings.playerCount),
-            description: "Shared by physical and remote controllers. Stop the game before changing.",
+            description: "Shared by physical and remote controllers. End the session before changing.",
             ...(canEdit("host.preferences.playerCount") ? {
               interaction: { kind: "choice" as const, choices: playerCounts, selected: String(facts.settings.playerCount) },
             } : {}),
@@ -189,27 +189,27 @@ export function settingsFrom(
       facts.discovery === undefined
         ? undefined
         : {
-            id: "game-folder-rescan",
-            label: "Rescan game folders",
-            value: countLabel(facts.discovery.sources.length, "folder"),
+            id: "library-folder-rescan",
+            label: "Rescan library folders",
+            value: countLabel(facts.discovery.folders.length, "folder"),
             interaction: {
               kind: "action" as const,
-              actionId: "game-folder-rescan",
+              actionId: "library-folder-rescan",
             },
           },
-      ...(facts.discovery?.sources.map(location => ({
-        id: `game-folder:${location.id}`,
+      ...(facts.discovery?.folders.map(location => ({
+        id: `library-folder:${location.id}`,
         label: location.label,
         value: folderStatusLabel(location.status),
         interaction: {
           kind: "action" as const,
-          actionId: `game-folder-remove:${location.id}`,
+          actionId: `library-folder-remove:${location.id}`,
           destructive: true,
           confirmation: {
-            title: "Remove game folder?",
+            title: "Remove library folder?",
             message:
               "Korri will remove games it added from this folder. Edited or hand-authored games stay.",
-            confirmLabel: "Remove folder",
+            confirmLabel: "Remove library folder",
           },
         },
       })) ?? []),

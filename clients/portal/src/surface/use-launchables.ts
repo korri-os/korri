@@ -15,7 +15,7 @@ import type {
   SurfaceNetwork,
 } from "@contracts/surface/korri-surface"
 import type {
-  DiscoverySnapshot,
+  LibraryFoldersSnapshot,
   IdentityDataDisposition,
   LocalGame,
   LocalGamesListOutcome,
@@ -23,10 +23,10 @@ import type {
   ActiveSession,
   LaunchWarning,
 } from "@contracts/generated/korrid"
-import { SessionStopPhase } from "@contracts/generated/korrid"
+import { SessionEndPhase } from "@contracts/generated/korrid"
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import {
-  createDiscoverySnapshotPoller,
+  createLibraryFoldersSnapshotPoller,
   type KorridClient,
   type SessionStartResult,
 } from "../korrid/client"
@@ -58,7 +58,7 @@ const STOP_POLL_DEADLINE_MS = 8000
 const DISCOVERY_POLL_INTERVAL_MS = 750
 const LOCAL_SESSION_POLL_INTERVAL_MS = 500
 
-const discoveryActive = (snapshot: DiscoverySnapshot | undefined): boolean =>
+const discoveryActive = (snapshot: LibraryFoldersSnapshot | undefined): boolean =>
   snapshot?.state._tag === "Scanning" || snapshot?.state._tag === "Enriching"
 
 export interface Launchables {
@@ -99,9 +99,9 @@ export interface Launchables {
   startCatalogLaunch(gameId: string, runnerId?: string): Promise<SessionStartResult | undefined>
   cancelLaunch(): void
   cancelPendingLaunch(launchId: string): void
-  returnCatalogSession(session: ActiveSession): void
+  resumeCatalogSession(session: ActiveSession): void
   /** Ask the host to stop the running session and wait for it to be gone. */
-  stopSession(entry: PortalEntry): void
+  endSession(entry: PortalEntry): void
   /** Clear the current notice without re-reading anything. */
   dismissNotice(): void
   /** Re-read every source. */
@@ -157,7 +157,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
   const reloadRef = useRef<() => void>(() => {})
   const discoveryWasActive = useRef(false)
   const discoveryPoller = useRef(
-    createDiscoverySnapshotPoller(korrid, snapshot => {
+    createLibraryFoldersSnapshotPoller(korrid, snapshot => {
       setFacts(current => ({ ...current, discovery: snapshot }))
     }),
   )
@@ -268,7 +268,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
         // Identity, not content: it names the software the user is running.
         korrid.health(),
         korrid.settingsSnapshot(),
-        korrid.discoverySnapshot(),
+        korrid.libraryFoldersSnapshot(),
         korrid.identityStatus(),
       ])
     if (
@@ -424,7 +424,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
 
   useEffect(() => {
     const previous = discoveryPoller.current
-    const next = createDiscoverySnapshotPoller(korrid, snapshot => {
+    const next = createLibraryFoldersSnapshotPoller(korrid, snapshot => {
       setFacts(current => ({ ...current, discovery: snapshot }))
     })
     discoveryPoller.current = next
@@ -465,7 +465,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
         networkOnboarding.restartOnboarding()
         return
       }
-      if (actionId === "game-folder-rescan") {
+      if (actionId === "library-folder-rescan") {
         if (
           discoveryActive(factsRef.current.discovery) ||
           (settingsStatusRef.current._tag === "Saving" &&
@@ -474,7 +474,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
           return
         }
         publishSettingsStatus({ _tag: "Saving", settingId: actionId })
-        void korrid.rescanDiscovery().then(result => {
+        void korrid.rescanLibraryFolders().then(result => {
           if (!mountedRef.current) return
           if (result._tag === "Err") {
             settingsProblem(actionId, result.payload.message)
@@ -485,9 +485,9 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
         })
         return
       }
-      if (actionId.startsWith("game-folder-remove:")) {
-        const source = actionId.slice("game-folder-remove:".length)
-        const settingId = `game-folder:${source}`
+      if (actionId.startsWith("library-folder-remove:")) {
+        const source = actionId.slice("library-folder-remove:".length)
+        const settingId = `library-folder:${source}`
         if (
           settingsStatusRef.current._tag === "Saving" &&
           settingsStatusRef.current.settingId === settingId
@@ -495,7 +495,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
           return
         }
         publishSettingsStatus({ _tag: "Saving", settingId })
-        void korrid.unpairDiscoverySource(source).then(result => {
+        void korrid.removeLibraryFolder(source).then(result => {
           if (!mountedRef.current) return
           if (result._tag === "Err") {
             settingsProblem(settingId, result.payload.message)
@@ -686,7 +686,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
     owned.cancelInFlight = false
     ++loadSeq.current // A status read issued before the cancel ACK cannot resurrect it.
     if (outcome._tag === "Ok") {
-      if (outcome.payload.phase === SessionStopPhase.Stopped) {
+      if (outcome.payload.phase === SessionEndPhase.Ended) {
         const now = stateRef.current
         if (now._tag === "Starting") {
           startupRef.current = undefined
@@ -875,7 +875,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
         // instead of resuming whatever runs now.
         const resuming = LaunchablesState.beginReturn(current, entry.session)
         publish(resuming)
-        void korrid.sessionThaw(entry.session.launchId).then(outcome => {
+        void korrid.sessionResume(entry.session.launchId).then(outcome => {
           if (!mountedRef.current || operation !== actionSeq.current) return
           if (outcome._tag === "Ok") {
             // A resume says nothing about an unrelated failure, such as a
@@ -936,7 +936,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
     [korrid, load, noticeOnReady, publish, sessionStatusWithTimeout, startCatalogLaunch],
   )
 
-  const stopSession = useCallback(
+  const endSession = useCallback(
     (entry: PortalEntry) => {
       const current = stateRef.current
       if (!mountedRef.current || current._tag !== "Ready" || entry.kind !== "now-playing") return
@@ -945,9 +945,9 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
       // cannot be issued twice.
       const stopRequested = LaunchablesState.beginStopping(current, entry)
       publish(stopRequested)
-      // SessionStopRequest.expectedLaunchId already exists in the Rust treaty.
+      // SessionEndRequest.expectedLaunchId already exists in the Rust treaty.
       // Capture the displayed session, never infer a newer target after an await.
-      void korrid.sessionStop(entry.session.launchId).then(outcome => {
+      void korrid.sessionEnd(entry.session.launchId).then(outcome => {
         if (!mountedRef.current || operation !== actionSeq.current) return
         const stopping = LaunchablesState.withStopOutcome(
           stopRequested,
@@ -1025,7 +1025,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
     } else if (current.notice !== null) publish({ ...current, notice: null })
   }, [publish, networkOnboarding])
 
-  const returnCatalogSession = useCallback((session: ActiveSession) => {
+  const resumeCatalogSession = useCallback((session: ActiveSession) => {
     const current = stateRef.current
     if (current._tag !== "Ready") return
     // The chooser obtained an authoritative exact-session snapshot.
@@ -1067,8 +1067,8 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
     startCatalogLaunch,
     cancelLaunch,
     cancelPendingLaunch,
-    returnCatalogSession,
-    stopSession,
+    resumeCatalogSession,
+    endSession,
     dismissNotice,
     reload,
     refresh,

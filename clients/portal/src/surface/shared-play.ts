@@ -91,7 +91,7 @@ export function createSharedPlay(korrid: KorridClient, context: {
     // Cancel cannot cancel a far session. Once the daemon's request settles,
     // Leave retires only this device's exact viewer and retains the far seats.
     if (outcome._tag === "Ok" && active.cancelled) {
-      const left = await korrid.sessionFreeze(outcome.payload.launchId)
+      const left = await korrid.sessionLeave(outcome.payload.launchId)
       if (left._tag === "Err") { operation = undefined; problem(left.payload.message); return }
     }
     operation = undefined
@@ -104,7 +104,7 @@ export function createSharedPlay(korrid: KorridClient, context: {
   const leave = async (launchId: string) => {
     operation = { cancelled: false }
     busy("Leaving stream")
-    const outcome = await korrid.sessionFreeze(launchId)
+    const outcome = await korrid.sessionLeave(launchId)
     operation = undefined
     if (disposed) return
     if (outcome._tag === "Err") { problem(outcome.payload.message); return }

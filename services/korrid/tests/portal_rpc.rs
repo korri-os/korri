@@ -155,7 +155,7 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
             "system.health",
             "app.local-games.list",
             "system.settings.snapshot",
-            "app.discovery.snapshot",
+            "app.library.folders.snapshot",
             "app.session.status",
         ] {
             let response = portal.rpc(Some(TOKEN), Some(ORIGIN), method).await;
@@ -173,14 +173,14 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
             json!({"_tag":"app.session.prepare","payload":{"gameId":"g","host":" "}}),
             json!({"_tag":"app.session.controls","payload":{"launchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}),
             json!({"_tag":"app.session.control.invoke","payload":{"launchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","controlId":"@korri:mgba/open-menu"}}),
-            json!({"_tag":"app.session.stop","payload":{}}),
-            json!({"_tag":"app.session.freeze","payload":{}}),
-            json!({"_tag":"app.session.thaw","payload":{}}),
+            json!({"_tag":"app.session.end","payload":{}}),
+            json!({"_tag":"app.session.leave","payload":{}}),
+            json!({"_tag":"app.session.resume","payload":{}}),
             json!({"_tag":"app.source.status","payload":{"devicePublicKey":"k"}}),
-            json!({"_tag":"app.discovery.pair","payload":{"receipt":"r","system":"gba"}}),
-            json!({"_tag":"app.discovery.change","payload":{"source":"gba","system":"gba"}}),
-            json!({"_tag":"app.discovery.unpair","payload":{"source":"gba"}}),
-            json!({"_tag":"app.discovery.rescan","payload":{}}),
+            json!({"_tag":"app.library.folders.add","payload":{"receipt":"r","system":"gba"}}),
+            json!({"_tag":"app.library.folders.change","payload":{"folder":"gba","system":"gba"}}),
+            json!({"_tag":"app.library.folders.remove","payload":{"folder":"gba"}}),
+            json!({"_tag":"app.library.folders.rescan","payload":{}}),
             json!({"_tag":"system.settings.update","payload":{"expectedRevision":"r","settingId":"s","value":"v"}}),
             json!({"_tag":"system.settings.steamgriddbCredential.set","payload":{"token":"t"}}),
             json!({"_tag":"system.settings.steamgriddbCredential.clear","payload":{}}),
@@ -194,9 +194,9 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
                 || matches!(
                     method.as_str(),
                     "app.session.control.invoke"
-                        | "app.session.stop"
-                        | "app.session.freeze"
-                        | "app.session.thaw"
+                        | "app.session.end"
+                        | "app.session.leave"
+                        | "app.session.resume"
                 );
             let allowed = read || (permission == PortalPermission::LocalSessions && local_session);
             let response = portal.request(Some(TOKEN), Some(ORIGIN), body).await;
@@ -228,7 +228,7 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
                     );
                 } else if matches!(
                     method.as_str(),
-                    "app.session.stop" | "app.session.freeze" | "app.session.thaw"
+                    "app.session.end" | "app.session.leave" | "app.session.resume"
                 ) {
                     assert_eq!(
                         body["outcome"]["payload"]["code"],
@@ -289,7 +289,7 @@ async fn shared_portal_rpc_local_sessions_still_require_credentials_and_the_exac
     let portal = RunningPortal::start(true).await;
     for body in [
         json!({"_tag":"app.session.prepare","payload":{"gameId":"g"}}),
-        json!({"_tag":"app.session.stop","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}),
+        json!({"_tag":"app.session.end","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}),
     ] {
         for token in [None, Some("incorrect")] {
             assert_eq!(
@@ -417,7 +417,7 @@ async fn shared_portal_rpc_browser_permission_does_not_change_private_control_au
         .build()
         .unwrap()
         .post("http://localhost/rpc")
-        .json(&json!({"_tag":"app.session.stop","payload":{}}))
+        .json(&json!({"_tag":"app.session.end","payload":{}}))
         .send()
         .await
         .unwrap();

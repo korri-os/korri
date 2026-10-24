@@ -315,13 +315,13 @@ describe("game actions", () => {
     expect(gameActionsForEntry(hostGame)).toEqual([])
     expect(gameActionsForEntry(nowPlaying).map(action => action.id)).toEqual([
       "resume",
-      "stop",
+      "end",
     ])
   })
 
   test("stopping is marked destructive", () => {
     const stop = gameActionsForEntry(nowPlaying).find(
-      action => action.id === "stop",
+      action => action.id === "end",
     )
     expect(stop?.destructive).toBe(true)
   })

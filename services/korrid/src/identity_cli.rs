@@ -1,3 +1,8 @@
+//! Hidden boot and offline operator tools. Person operations live in `korri`.
+//! The old offline reset remains pending an exclusive-maintenance replacement;
+//! it is not the (currently unavailable) `korri identity reset` implementation.
+//! Its caller must exclude all writers and preserve service-owned state.
+
 use crate::identity::{DeviceIdentity, IdentityState, OwnerStatementStatus};
 use std::{
     ffi::OsString,

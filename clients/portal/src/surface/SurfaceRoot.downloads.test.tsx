@@ -199,7 +199,7 @@ test("Remove download is not offered while the game runs, and a refusal korrid m
   const live = await view.korrid.sessionStatus()
   const launchId = live._tag === "Ok" ? live.payload.active?.launchId : undefined
   expect(launchId).toBeDefined()
-  expect(await view.korrid.sessionStop(launchId)).toMatchObject({ _tag: "Ok" })
+  expect(await view.korrid.sessionEnd(launchId)).toMatchObject({ _tag: "Ok" })
   await waitFor(() => view.actions("game:mm").includes("remove-download"))
   view.korrid.acquisitionRemove = async () => ({ _tag: "Err", payload: { code: "ActiveSessionConflict", message: "session 7f3a is active" } })
   await invoke(() => view.host().runGameAction("game:mm", "remove-download"))

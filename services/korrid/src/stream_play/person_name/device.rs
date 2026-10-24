@@ -111,14 +111,15 @@ impl PersonNames {
 }
 
 fn can_write(state: &AppState, context: &authorization::AuthorizationContext) -> bool {
-    matches!(context, authorization::AuthorizationContext::LocalBrowser)
-        && state.portal_access.as_ref().is_some_and(|access| {
-            access.permits(&RpcRequest::SettingsUpdate(SettingsUpdateRequest {
-                setting_id: SETTING_ID.into(),
-                expected_revision: String::new(),
-                value: String::new(),
+    matches!(context, authorization::AuthorizationContext::LocalCli)
+        || (matches!(context, authorization::AuthorizationContext::LocalBrowser)
+            && state.portal_access.as_ref().is_some_and(|access| {
+                access.permits(&RpcRequest::SettingsUpdate(SettingsUpdateRequest {
+                    setting_id: SETTING_ID.into(),
+                    expected_revision: String::new(),
+                    value: String::new(),
+                }))
             }))
-        })
 }
 
 pub(crate) async fn enrich(
@@ -265,3 +266,7 @@ pub(crate) fn spawn_publish(state: AppState) {
         }
     });
 }
+
+#[cfg(test)]
+#[path = "device_tests.rs"]
+mod tests;

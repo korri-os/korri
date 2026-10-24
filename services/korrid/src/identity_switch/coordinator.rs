@@ -72,11 +72,36 @@ impl IdentitySwitchCoordinator {
     }
 
     pub async fn signer_status(&self) -> Result<(bool, Vec<String>), String> {
+        self.status_snapshot()
+            .await
+            .map(|(_, active, retired)| (active, retired))
+    }
+
+    pub async fn status_snapshot(&self) -> Result<(IdentityState, bool, Vec<String>), String> {
+        let unavailable = || "Device identity is unavailable. Try again.".to_owned();
+        let identity = self
+            .federation
+            .directory
+            .identity_state()
+            .map_err(|_| unavailable())?;
+        let identity = status_identity(identity)?;
         let (active, retired) = self.signer.status().await?;
-        let identity = DeviceIdentity::load_or_create(&self.private_state_root)
-            .map_err(|error| error.to_string())?;
-        let owner = owned_statement(&identity)?.owner_public_key;
-        Ok((active.as_deref() == Some(owner.as_str()), retired))
+        if self
+            .federation
+            .directory
+            .identity_state()
+            .map_err(|_| unavailable())?
+            != identity
+        {
+            return Err(unavailable());
+        }
+        let available = match &identity {
+            IdentityState::Owned {
+                owner_public_key, ..
+            } => active.as_deref() == Some(owner_public_key),
+            _ => false,
+        };
+        Ok((identity, available, retired))
     }
 
     pub async fn switch(
@@ -537,4 +562,36 @@ fn signer_socket_from_environment() -> Result<PathBuf, String> {
     std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET")
         .map(PathBuf::from)
         .ok_or_else(|| "KORRID_LOCAL_SIGNER_SOCKET must be set".to_owned())
+}
+
+fn status_identity(identity: IdentityState) -> Result<IdentityState, String> {
+    match identity {
+        IdentityState::Invalid { .. } => Err("Device identity is unavailable. Try again.".into()),
+        identity => Ok(identity),
+    }
+}
+
+#[cfg(test)]
+mod status_identity_tests {
+    use super::*;
+    #[test]
+    fn owned_and_unowned_status_reuse_the_existing_identity_and_invalid_reason_is_private() {
+        let unowned = IdentityState::Unowned {
+            device_public_key: "device".into(),
+        };
+        let owned = IdentityState::Owned {
+            device_public_key: "device".into(),
+            owner_public_key: "owner".into(),
+            event_id: "event".into(),
+            created_at: 1,
+        };
+        for identity in [unowned, owned] {
+            assert_eq!(status_identity(identity.clone()).unwrap(), identity);
+        }
+        let error = status_identity(IdentityState::Invalid {
+            reason: "private storage path or sensitive diagnostic".into(),
+        })
+        .unwrap_err();
+        assert_eq!(error, "Device identity is unavailable. Try again.");
+    }
 }

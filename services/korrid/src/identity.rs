@@ -22,6 +22,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
 };
+use typeshare::typeshare;
 use zeroize::Zeroizing;
 
 #[cfg(test)]
@@ -40,7 +41,8 @@ const MAX_ENCRYPTED_PLAINTEXT_BYTES: usize = 4 * 1024 * 1024;
 pub(crate) const MAX_ENCRYPTED_PAYLOAD_BYTES: usize = 6 * 1024 * 1024;
 static IDENTITY_STORAGE: OnceLock<Mutex<()>> = OnceLock::new();
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[typeshare(serialized_as = "IdentityStateWire")]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, Serialize)]
 #[serde(tag = "_tag", rename_all_fields = "camelCase")]
 pub enum IdentityState {
     Unowned {
@@ -50,12 +52,14 @@ pub enum IdentityState {
         device_public_key: String,
         owner_public_key: String,
         event_id: String,
+        #[typeshare(serialized_as = "number")]
         created_at: u64,
     },
     Revoked {
         device_public_key: String,
         owner_public_key: String,
         event_id: String,
+        #[typeshare(serialized_as = "number")]
         created_at: u64,
     },
     Invalid {

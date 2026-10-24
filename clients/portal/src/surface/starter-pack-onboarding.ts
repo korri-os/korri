@@ -1,4 +1,4 @@
-import type { DiscoverySnapshotOutcome } from "@contracts/generated/korrid"
+import type { LibraryFoldersSnapshotOutcome } from "@contracts/generated/korrid"
 import type { SurfaceStarterPack } from "@contracts/surface/korri-surface"
 import type { KorridClient } from "../korrid/client"
 
@@ -32,7 +32,7 @@ export function createStarterPackOnboarding(korrid: KorridClient, options: Start
     _tag: "Failed", message: FAILURE,
     actions: [{ id: INSTALL_ACTION, label: "Retry", enabled: true }],
   })
-  const waitForDiscovery = async (initial: DiscoverySnapshotOutcome) => {
+  const waitForDiscovery = async (initial: LibraryFoldersSnapshotOutcome) => {
     if (!mounted) return
     let pollTimer: ReturnType<typeof setTimeout> | undefined
     let cancel!: () => void
@@ -53,7 +53,7 @@ export function createStarterPackOnboarding(korrid: KorridClient, options: Start
           new Promise<void>(resolve => { pollTimer = setTimeout(resolve, options.pollIntervalMs ?? 250) }),
           cancelled,
         ])
-        outcome = await Promise.race([korrid.discoverySnapshot(), cancelled])
+        outcome = await Promise.race([korrid.libraryFoldersSnapshot(), cancelled])
       }
     } finally {
       clearTimeout(deadline)
@@ -81,7 +81,7 @@ export function createStarterPackOnboarding(korrid: KorridClient, options: Start
         packEnabled = true
       }
       // Finishing setup hides this operation, but never cancels its effects.
-      const rescanned = await korrid.rescanDiscovery()
+      const rescanned = await korrid.rescanLibraryFolders()
       await waitForDiscovery(rescanned)
       if (mounted) options.onInstalled?.()
       if (visible()) publish({ _tag: "Installed" })

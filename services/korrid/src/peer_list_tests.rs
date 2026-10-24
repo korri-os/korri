@@ -96,12 +96,16 @@ impl PeerListFixture {
     }
 
     fn endpoint(&self, index: usize, label: &str) {
+        self.endpoint_at(index, label, "http://127.0.0.1:9");
+    }
+
+    fn endpoint_at(&self, index: usize, label: &str, origin: &str) {
         let recipient = self.resources.credentials.public_key().unwrap();
         let record = relay::EndpointRecord {
             device_public_key: self.peers[index].public_key().unwrap(),
             owner_public_key: self.owner.public_key().to_hex(),
             generation: 1,
-            candidates: vec!["http://127.0.0.1:9".into()],
+            candidates: vec![origin.into()],
             issued_at: NOW,
             expires_at: NOW + 600,
             label: Some(label.into()),
@@ -255,8 +259,13 @@ async fn peer_list_encrypted_owner_only_and_local_unix_control() {
         f.root.path().to_owned(),
         Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
     );
-    let (peer, local) =
-        secure_host_routers_with_federation(runtime, f.root.path(), f.resources.clone(), None, None);
+    let (peer, local, _) = secure_host_routers_with_federation(
+        runtime,
+        f.root.path(),
+        f.resources.clone(),
+        None,
+        None,
+    );
     let (status, expected) = list_local(local, None).await;
     assert_eq!(status, StatusCode::OK);
     let other_root = tempfile::tempdir().unwrap();
@@ -452,6 +461,153 @@ async fn peer_list_directory_failure_is_sanitized() {
         value["outcome"],
         serde_json::json!({"_tag":"Err","payload":{"code":"PeerListUnavailable","message":"peer directory unavailable"}})
     );
+}
+
+async fn cli_forward_response(router: Router, key: &str, request: RpcRequest) -> RpcResponse {
+    let request = cli::ForwardRequest {
+        device_public_key: key.into(),
+        request,
+    };
+    let response = router
+        .oneshot(
+            Request::post("/forward")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&request).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap()
+}
+
+fn cli_fixture_runtime(config_root: &Path, private: &Path) -> host::HostRuntime {
+    fs::create_dir_all(config_root).unwrap();
+    let path = config_root.join("host.toml");
+    fs::write(&path, "label = \"CLI forwarding\"\n").unwrap();
+    host::HostRuntime::from_paths_with_backend(
+        &path,
+        Some(config_root.to_owned()),
+        private.to_owned(),
+        Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+    )
+    .with_route_registry(
+        config_root.to_owned(),
+        plugin::PluginRegistry::new(vec![], vec![]).unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn cli_forwarding_uses_signed_native_transport_and_revision_safe_owner_settings() {
+    let f = PeerListFixture::new();
+    f.roster();
+    let target_root = f._peer_roots[0].path();
+    fs::set_permissions(target_root, fs::Permissions::from_mode(0o700)).unwrap();
+    let target_library = tempfile::tempdir().unwrap();
+    let target_resources = FederationResources::open(target_root).unwrap();
+    let target = secure_host_routers_with_federation(
+        cli_fixture_runtime(target_library.path(), target_root),
+        target_root,
+        target_resources,
+        None,
+        None,
+    )
+    .0;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, target).await.unwrap();
+    });
+    f.endpoint_at(0, "Twin", &origin);
+    f.endpoint(1, "Twin");
+    let local = secure_host_routers_with_federation(
+        cli_fixture_runtime(f.readable.path(), f.root.path()),
+        f.root.path(),
+        f.resources.clone(),
+        None,
+        None,
+    )
+    .2;
+    let key = f.peers[0].public_key().unwrap();
+    let response = cli_forward_response(
+        local.clone(),
+        &key,
+        RpcRequest::SettingsSnapshot(SettingsSnapshotRequest {}),
+    )
+    .await;
+    let RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Ok(snapshot)) = response else {
+        panic!("{response:?}");
+    };
+    assert_eq!(
+        snapshot.editable_setting_ids,
+        vec![config::settings::DEVICE_NAME_SETTING_ID]
+    );
+    let count = SettingsUpdateRequest {
+        expected_revision: snapshot.revision.clone(),
+        setting_id: config::settings::PLAYER_COUNT_SETTING_ID.into(),
+        value: "6".into(),
+    };
+    let response =
+        cli_forward_response(local.clone(), &key, RpcRequest::SettingsUpdate(count)).await;
+    assert!(
+        matches!(response, RpcResponse::SettingsUpdate(SettingsUpdateOutcome::Err(error)) if error.code == "OperationUnsupported")
+    );
+    let update = SettingsUpdateRequest {
+        expected_revision: snapshot.revision,
+        setting_id: config::settings::DEVICE_NAME_SETTING_ID.into(),
+        value: "Renamed peer".into(),
+    };
+    let response = cli_forward_response(
+        local.clone(),
+        &key,
+        RpcRequest::SettingsUpdate(update.clone()),
+    )
+    .await;
+    assert!(
+        matches!(response, RpcResponse::SettingsUpdate(SettingsUpdateOutcome::Ok(snapshot)) if snapshot.device_name.as_deref() == Some("Renamed peer"))
+    );
+    let response =
+        cli_forward_response(local.clone(), &key, RpcRequest::SettingsUpdate(update)).await;
+    assert!(
+        matches!(response, RpcResponse::SettingsUpdate(SettingsUpdateOutcome::Err(error)) if error.code == "SettingsConflict")
+    );
+    let revoked = owner_revocation(&f.owner, &key, NOW + 2);
+    f.resources
+        .directory
+        .apply_membership(&f.resources.directory.begin_work().unwrap(), &[revoked])
+        .unwrap();
+    let response = cli_forward_response(
+        local.clone(),
+        &key,
+        RpcRequest::SettingsSnapshot(SettingsSnapshotRequest {}),
+    )
+    .await;
+    assert!(
+        matches!(response, RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Err(error)) if error.code == "OwnerDeviceRequired")
+    );
+    let other_root = tempfile::tempdir().unwrap();
+    let other =
+        peer_rpc::test_owned_credentials(other_root.path(), &"51".repeat(32), &"52".repeat(32));
+    let evidence = other
+        .identity_snapshot()
+        .unwrap()
+        .owner_statement_json()
+        .unwrap();
+    assert!(f
+        .resources
+        .directory
+        .apply_membership(&f.resources.directory.begin_work().unwrap(), &[evidence])
+        .is_err());
+    let response = cli_forward_response(
+        local,
+        &other.public_key().unwrap(),
+        RpcRequest::SettingsSnapshot(SettingsSnapshotRequest {}),
+    )
+    .await;
+    assert!(
+        matches!(response, RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Err(error)) if error.code == "OwnerDeviceRequired")
+    );
+    server.abort();
 }
 
 #[tokio::test]

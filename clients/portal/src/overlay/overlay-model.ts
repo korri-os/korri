@@ -6,14 +6,14 @@ import type {
   SurfaceGameplayOverlayPresentation,
 } from "@contracts/surface/korri-surface"
 
-export const OVERLAY_RETURN_CONTROL_ID = "overlay:return"
+export const OVERLAY_RESUME_CONTROL_ID = "overlay:resume"
 export const OVERLAY_END_CONTROL_ID = "overlay:end"
 export const OVERLAY_OPEN_KORRI_CONTROL_ID = "overlay:open-korri"
 
 const CORE_CONTROLS: readonly SurfaceGameplayControl[] = [
   {
-    id: OVERLAY_RETURN_CONTROL_ID,
-    label: "Return",
+    id: OVERLAY_RESUME_CONTROL_ID,
+    label: "Resume",
     enabled: true,
     destructive: false,
     dismissOnSuccess: true,
@@ -21,7 +21,7 @@ const CORE_CONTROLS: readonly SurfaceGameplayControl[] = [
   },
   {
     id: OVERLAY_END_CONTROL_ID,
-    label: "End game",
+    label: "End",
     description: "Unsaved progress will be lost.",
     enabled: true,
     destructive: true,

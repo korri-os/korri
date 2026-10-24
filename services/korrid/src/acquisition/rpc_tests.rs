@@ -345,7 +345,7 @@ async fn game_acquisition_methods_decode_and_need_a_device_library() {
         ),
         ("app.acquisition.acquire-status", json!({"jobId":"x"})),
         ("app.acquisition.acquire-cancel", json!({"jobId":"x"})),
-        ("app.discovery.snapshot", json!({})),
+        ("app.library.folders.snapshot", json!({})),
         ("app.attention.list", json!({})),
     ] {
         let response = app

@@ -25,6 +25,8 @@ export type FinalDownloadMethod = "POST";
 
 export type FinalDownloadTag = "FinalDownload";
 
+export type IdentityState = { _tag: "Unowned"; devicePublicKey: string } | { _tag: "Owned"; devicePublicKey: string; ownerPublicKey: string; eventId: string; createdAt: number } | { _tag: "Revoked"; devicePublicKey: string; ownerPublicKey: string; eventId: string; createdAt: number } | { _tag: "Invalid"; reason: string };
+
 /** Opaque JSON is decoded against the runner schema or the authored place schema. */
 export type LaunchJsonValue = unknown;
 
@@ -224,6 +226,7 @@ export interface AttentionIgnoreRequest {
 export interface AttentionItem {
 	id: string;
 	kind: string;
+	/** Scan origin: a library folder or a declared game's account root. */
 	source: string;
 	path?: string;
 	candidates: string[];
@@ -296,65 +299,6 @@ export interface CatalogSnapshotRequest {
 export interface DetailsRequest {
 	providerId: string;
 	id: string;
-}
-
-export interface DiscoveryChangeRequest {
-	source: string;
-	system: string;
-}
-
-export interface DiscoveryDiagnostic {
-	code: string;
-	message: string;
-	locationId?: string;
-}
-
-export interface DiscoveryPairRequest {
-	receipt: string;
-	system: string;
-}
-
-export interface DiscoveryRescanRequest {
-}
-
-export type DiscoveryState =
-	| { _tag: "Idle", payload: {
-}}
-	| { _tag: "Scanning", payload: {
-}}
-	| { _tag: "Enriching", payload: {
-}}
-	| { _tag: "Problem", payload: {
-}};
-
-export type DiscoverySourceStatus =
-	| { _tag: "Ready", payload: {
-}}
-	| { _tag: "Overlap", payload: {
-}}
-	| { _tag: "SystemUnavailable", payload: {
-}};
-
-export interface DiscoverySource {
-	id: string;
-	label: string;
-	system: string;
-	status: DiscoverySourceStatus;
-}
-
-export interface DiscoverySnapshot {
-	generation: string;
-	state: DiscoveryState;
-	sources: DiscoverySource[];
-	attention: number;
-	diagnostics: DiscoveryDiagnostic[];
-}
-
-export interface DiscoverySnapshotRequest {
-}
-
-export interface DiscoveryUnpairRequest {
-	source: string;
 }
 
 export interface DownloadChoice {
@@ -485,6 +429,7 @@ export interface IdentityRetiredExportRequest {
 }
 
 export interface IdentityStatus {
+	identity: IdentityState;
 	localBackupAvailable: boolean;
 	retiredPublicKeys: string[];
 }
@@ -774,6 +719,65 @@ export interface LaunchSnapshot {
 	notices: LaunchNotice[];
 	routeLayers: LaunchSettingsRouteLayers;
 	revisions: RunnerChoiceRevisions;
+}
+
+export type LibraryFolderStatus =
+	| { _tag: "Ready", payload: {
+}}
+	| { _tag: "Overlap", payload: {
+}}
+	| { _tag: "SystemUnavailable", payload: {
+}};
+
+export interface LibraryFolder {
+	id: string;
+	label: string;
+	system: string;
+	status: LibraryFolderStatus;
+}
+
+export interface LibraryFolderAddRequest {
+	receipt: string;
+	system: string;
+}
+
+export interface LibraryFolderChangeRequest {
+	folder: string;
+	system: string;
+}
+
+export interface LibraryFolderDiagnostic {
+	code: string;
+	message: string;
+	locationId?: string;
+}
+
+export interface LibraryFolderRemoveRequest {
+	folder: string;
+}
+
+export interface LibraryFoldersRescanRequest {
+}
+
+export type LibraryFoldersState =
+	| { _tag: "Idle", payload: {
+}}
+	| { _tag: "Scanning", payload: {
+}}
+	| { _tag: "Enriching", payload: {
+}}
+	| { _tag: "Problem", payload: {
+}};
+
+export interface LibraryFoldersSnapshot {
+	generation: string;
+	state: LibraryFoldersState;
+	folders: LibraryFolder[];
+	attention: number;
+	diagnostics: LibraryFolderDiagnostic[];
+}
+
+export interface LibraryFoldersSnapshotRequest {
 }
 
 export interface LocalGame {
@@ -1519,22 +1523,24 @@ export interface SessionControlsRequest {
 	launchId: string;
 }
 
-export interface SessionFreezeRequest {
-	/** Required by every host surface for an exact freeze. */
+export interface SessionEndRequest {
+	force?: boolean;
+	/** Required by every host surface to end an exact live session. */
 	expectedLaunchId?: string;
 }
 
-export enum SessionFreezerState {
-	Frozen = "frozen",
-	Running = "running",
+export enum SessionEndPhase {
+	Ended = "ended",
+	Pending = "pending",
 }
 
-export interface SessionFreezeResult {
-	launchId: string;
-	/** Freezer state of the exact launch after the request. */
-	state: SessionFreezerState;
-	/** False when the launch was already in the requested state. */
-	changed: boolean;
+export interface SessionEndResult {
+	phase: SessionEndPhase;
+}
+
+export interface SessionLeaveRequest {
+	/** Required by every host surface to leave an exact live session. */
+	expectedLaunchId?: string;
 }
 
 export interface SessionPrepareRequest {
@@ -1544,6 +1550,11 @@ export interface SessionPrepareRequest {
 
 export interface SessionReserveRequest {
 	gameId: string;
+}
+
+export interface SessionResumeRequest {
+	/** Required by every host surface to resume an exact live session. */
+	expectedLaunchId?: string;
 }
 
 export interface SessionStartRequest {
@@ -1584,29 +1595,22 @@ export interface SessionStatus {
 export interface SessionStatusRequest {
 }
 
-export interface SessionStopRequest {
-	force?: boolean;
-	/** Required by every host surface for an exact stop. */
-	expectedLaunchId?: string;
-}
-
-export enum SessionStopPhase {
-	Stopped = "stopped",
-	Pending = "pending",
-}
-
-export interface SessionStopResult {
-	phase: SessionStopPhase;
-}
-
 export interface SessionStreamPlayRequest {
 	launchId: string;
 	deviceLabel: string;
 }
 
-export interface SessionThawRequest {
-	/** Required by every host surface for an exact thaw. */
-	expectedLaunchId?: string;
+export enum SessionFreezerState {
+	Frozen = "frozen",
+	Running = "running",
+}
+
+export interface SessionTransitionResult {
+	launchId: string;
+	/** Freezer state of the exact launch after the request. */
+	state: SessionFreezerState;
+	/** False when the launch was already in the requested state. */
+	changed: boolean;
 }
 
 export interface SettingsSnapshot {
@@ -1705,10 +1709,6 @@ export type DetailsOutcome =
 	| { _tag: "Ok", payload: ProviderClaimDetails }
 	| { _tag: "Err", payload: RpcFailure };
 
-export type DiscoverySnapshotOutcome =
-	| { _tag: "Ok", payload: DiscoverySnapshot }
-	| { _tag: "Err", payload: RpcFailure };
-
 export type GameRoutesOutcome =
 	| { _tag: "Ok", payload: GameRoutes }
 	| { _tag: "Err", payload: RpcFailure };
@@ -1747,6 +1747,10 @@ export type LaunchSettingsSnapshotOutcome =
 
 export type LaunchSettingsWriteOutcome =
 	| { _tag: "Ok", payload: RunnerChoiceRevisions }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type LibraryFoldersSnapshotOutcome =
+	| { _tag: "Ok", payload: LibraryFoldersSnapshot }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type LocalGamesListOutcome =
@@ -1861,21 +1865,21 @@ export type RpcRequest =
 	| { _tag: "app.session.status", payload: SessionStatusRequest }
 	| { _tag: "app.session.controls", payload: SessionControlsRequest }
 	| { _tag: "app.session.control.invoke", payload: SessionControlInvokeRequest }
-	| { _tag: "app.session.stop", payload: SessionStopRequest }
-	| { _tag: "app.session.freeze", payload: SessionFreezeRequest }
-	| { _tag: "app.session.thaw", payload: SessionThawRequest }
+	| { _tag: "app.session.end", payload: SessionEndRequest }
+	| { _tag: "app.session.leave", payload: SessionLeaveRequest }
+	| { _tag: "app.session.resume", payload: SessionResumeRequest }
 	| { _tag: "app.source.status", payload: SourceStatusRequest }
 	| { _tag: "app.peer.list", payload: PeerListRequest }
 	| { _tag: "app.local-games.list", payload: LocalGamesListRequest }
 	| { _tag: "system.health", payload: HealthRequest }
-	| { _tag: "app.discovery.snapshot", payload: DiscoverySnapshotRequest }
-	| { _tag: "app.discovery.pair", payload: DiscoveryPairRequest }
-	| { _tag: "app.discovery.change", payload: DiscoveryChangeRequest }
+	| { _tag: "app.library.folders.snapshot", payload: LibraryFoldersSnapshotRequest }
+	| { _tag: "app.library.folders.add", payload: LibraryFolderAddRequest }
+	| { _tag: "app.library.folders.change", payload: LibraryFolderChangeRequest }
 	| { _tag: "app.attention.list", payload: AttentionListRequest }
 	| { _tag: "app.attention.assign", payload: AttentionAssignRequest }
 	| { _tag: "app.attention.ignore", payload: AttentionIgnoreRequest }
-	| { _tag: "app.discovery.unpair", payload: DiscoveryUnpairRequest }
-	| { _tag: "app.discovery.rescan", payload: DiscoveryRescanRequest }
+	| { _tag: "app.library.folders.remove", payload: LibraryFolderRemoveRequest }
+	| { _tag: "app.library.folders.rescan", payload: LibraryFoldersRescanRequest }
 	| { _tag: "system.settings.snapshot", payload: SettingsSnapshotRequest }
 	| { _tag: "system.settings.update", payload: SettingsUpdateRequest }
 	| { _tag: "system.settings.steamgriddbCredential.set", payload: SteamGridDbCredentialSetRequest }
@@ -1932,7 +1936,7 @@ export type RpcResponse =
 	| { _tag: "app.session.prepare", outcome: SelectedGameLaunchOutcome }
 	| { _tag: "app.session.reserve", outcome: SessionReserveOutcome }
 	| { _tag: "app.session.start", outcome: SelectedGameLaunchOutcome }
-	| { _tag: "app.session.cancel", outcome: SessionStopOutcome }
+	| { _tag: "app.session.cancel", outcome: SessionEndOutcome }
 	| { _tag: "app.session.streamPlay", outcome: SessionStreamPlayOutcome }
 	| { _tag: "app.invites.list", outcome: InvitesListOutcome }
 	| { _tag: "app.invites.streamPlay", outcome: SessionStreamPlayOutcome }
@@ -1940,21 +1944,21 @@ export type RpcResponse =
 	| { _tag: "app.session.status", outcome: SessionStatusOutcome }
 	| { _tag: "app.session.controls", outcome: SessionControlsOutcome }
 	| { _tag: "app.session.control.invoke", outcome: SessionControlInvokeOutcome }
-	| { _tag: "app.session.stop", outcome: SessionStopOutcome }
-	| { _tag: "app.session.freeze", outcome: SessionFreezeOutcome }
-	| { _tag: "app.session.thaw", outcome: SessionFreezeOutcome }
+	| { _tag: "app.session.end", outcome: SessionEndOutcome }
+	| { _tag: "app.session.leave", outcome: SessionTransitionOutcome }
+	| { _tag: "app.session.resume", outcome: SessionTransitionOutcome }
 	| { _tag: "app.source.status", outcome: SourceStatusOutcome }
 	| { _tag: "app.peer.list", outcome: PeerListOutcome }
 	| { _tag: "app.local-games.list", outcome: LocalGamesListOutcome }
 	| { _tag: "system.health", outcome: HealthOutcome }
-	| { _tag: "app.discovery.snapshot", outcome: DiscoverySnapshotOutcome }
-	| { _tag: "app.discovery.pair", outcome: DiscoverySnapshotOutcome }
-	| { _tag: "app.discovery.change", outcome: DiscoverySnapshotOutcome }
+	| { _tag: "app.library.folders.snapshot", outcome: LibraryFoldersSnapshotOutcome }
+	| { _tag: "app.library.folders.add", outcome: LibraryFoldersSnapshotOutcome }
+	| { _tag: "app.library.folders.change", outcome: LibraryFoldersSnapshotOutcome }
 	| { _tag: "app.attention.list", outcome: AttentionOutcome }
 	| { _tag: "app.attention.assign", outcome: AttentionOutcome }
 	| { _tag: "app.attention.ignore", outcome: AttentionOutcome }
-	| { _tag: "app.discovery.unpair", outcome: DiscoverySnapshotOutcome }
-	| { _tag: "app.discovery.rescan", outcome: DiscoverySnapshotOutcome }
+	| { _tag: "app.library.folders.remove", outcome: LibraryFoldersSnapshotOutcome }
+	| { _tag: "app.library.folders.rescan", outcome: LibraryFoldersSnapshotOutcome }
 	| { _tag: "system.settings.snapshot", outcome: SettingsSnapshotOutcome }
 	| { _tag: "system.settings.update", outcome: SettingsUpdateOutcome }
 	| { _tag: "system.settings.steamgriddbCredential.set", outcome: SensitiveSettingOutcome }
@@ -2005,8 +2009,8 @@ export type SessionControlsOutcome =
 	| { _tag: "Ok", payload: SessionControls }
 	| { _tag: "Err", payload: SessionControlFailure };
 
-export type SessionFreezeOutcome =
-	| { _tag: "Ok", payload: SessionFreezeResult }
+export type SessionEndOutcome =
+	| { _tag: "Ok", payload: SessionEndResult }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type SessionReserveOutcome =
@@ -2017,12 +2021,12 @@ export type SessionStatusOutcome =
 	| { _tag: "Ok", payload: SessionStatus }
 	| { _tag: "Err", payload: RpcFailure };
 
-export type SessionStopOutcome =
-	| { _tag: "Ok", payload: SessionStopResult }
-	| { _tag: "Err", payload: RpcFailure };
-
 export type SessionStreamPlayOutcome =
 	| { _tag: "Ok", payload: ActiveSession }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type SessionTransitionOutcome =
+	| { _tag: "Ok", payload: SessionTransitionResult }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type SettingsSnapshotOutcome =

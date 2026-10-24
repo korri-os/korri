@@ -1,6 +1,6 @@
 import {
   SessionControlFailureReason,
-  SessionStopPhase,
+  SessionEndPhase,
   type SessionControlValue,
 } from "@contracts/generated/korrid"
 import type {
@@ -13,7 +13,7 @@ import {
   gameplayOverlayPresentationFrom,
   OVERLAY_END_CONTROL_ID,
   OVERLAY_OPEN_KORRI_CONTROL_ID,
-  OVERLAY_RETURN_CONTROL_ID,
+  OVERLAY_RESUME_CONTROL_ID,
 } from "./overlay-model"
 
 export interface LiveOverlayPlatform {
@@ -142,7 +142,7 @@ export function createLiveOverlayController({
     })
   }
 
-  let returnToGame: () => Promise<void>
+  let resumeGame: () => Promise<void>
   let endSession: () => Promise<void>
 
   const refresh = async () => {
@@ -175,9 +175,9 @@ export function createLiveOverlayController({
     if (active.phase === "running" || active.phase === "focus-failed") {
       actionProblemIsSticky = false
       problem(
-        "Could not return",
-        "The game is running, but Korri could not bring its window forward. Return is still available.",
-        returnToGame,
+        "Could not resume",
+        "The game is running, but Korri could not bring its window forward. Resume is still available.",
+        resumeGame,
       )
       return
     }
@@ -212,19 +212,19 @@ export function createLiveOverlayController({
     }, expectedEpoch)
   }
 
-  returnToGame = async () => {
+  resumeGame = async () => {
     retryOperation = undefined
     actionProblemIsSticky = false
     refreshGeneration += 1
     const expectedEpoch = ++epoch
-    const outcome = await korrid.sessionThaw(launchId)
+    const outcome = await korrid.sessionResume(launchId)
     if (destroyed || expectedEpoch !== epoch) return
     if (outcome._tag === "Ok") return
     if (outcome.payload.code === "HostFocusFailed") {
       problem(
-        "Could not return",
-        "The game is running, but Korri could not bring its window forward. Return is still available.",
-        returnToGame,
+        "Could not resume",
+        "The game is running, but Korri could not bring its window forward. Resume is still available.",
+        resumeGame,
       )
       return
     }
@@ -236,7 +236,7 @@ export function createLiveOverlayController({
       stale()
       return
     }
-    problem("Could not return", outcome.payload.message, returnToGame)
+    problem("Could not resume", outcome.payload.message, resumeGame)
   }
 
   endSession = async () => {
@@ -244,10 +244,10 @@ export function createLiveOverlayController({
     actionProblemIsSticky = false
     refreshGeneration += 1
     const expectedEpoch = ++epoch
-    const outcome = await korrid.sessionStop(launchId)
+    const outcome = await korrid.sessionEnd(launchId)
     if (destroyed || expectedEpoch !== epoch) return
     if (outcome._tag === "Ok") {
-      if (outcome.payload.phase === SessionStopPhase.Stopped) {
+      if (outcome.payload.phase === SessionEndPhase.Ended) {
         platform.sessionEnded()
         return
       }
@@ -328,7 +328,7 @@ export function createLiveOverlayController({
       stale()
       return
     }
-    await returnToGame()
+    await resumeGame()
   }
 
   const invoke = async (
@@ -337,8 +337,8 @@ export function createLiveOverlayController({
   ) => {
     if (destroyed) return
     switch (controlId) {
-      case OVERLAY_RETURN_CONTROL_ID:
-        await returnToGame()
+      case OVERLAY_RESUME_CONTROL_ID:
+        await resumeGame()
         return
       case OVERLAY_END_CONTROL_ID:
         await endSession()
@@ -366,7 +366,7 @@ export function createLiveOverlayController({
     },
     invoke,
     dismiss() {
-      void returnToGame()
+      void resumeGame()
     },
     destroy() {
       destroyed = true

@@ -75,7 +75,7 @@ describe("gameplayOverlayPresentationFrom", () => {
     expect(presentation.kind).toBe("gameplay-overlay")
     expect(presentation.title).toBe("Skate 3")
     expect(presentation.controls.map(control => control.id)).toEqual([
-      "overlay:return",
+      "overlay:resume",
       "overlay:end",
       "overlay:open-korri",
     ])
@@ -178,8 +178,8 @@ describe("gameplayOverlayPresentationFrom", () => {
       kind: "gameplay-overlay",
       controls: [
         {
-          id: "overlay:return",
-          label: "Return",
+          id: "overlay:resume",
+          label: "Resume",
           enabled: true,
           destructive: false,
           dismissOnSuccess: true,
@@ -187,7 +187,7 @@ describe("gameplayOverlayPresentationFrom", () => {
         },
         {
           id: "overlay:end",
-          label: "End game",
+          label: "End",
           description: "Unsaved progress will be lost.",
           enabled: true,
           destructive: true,

@@ -94,7 +94,7 @@ impl KorridClient {
         match self.status().await? {
             SessionStatus::Running { launch_id } | SessionStatus::FocusFailed { launch_id } => {
                 match self
-                    .change_freezer(&launch_id, "app.session.freeze", "freeze")
+                    .change_freezer(&launch_id, "app.session.leave", "freeze")
                     .await?
                 {
                     ExactPanelOutcome::Opened => {}
@@ -110,7 +110,7 @@ impl KorridClient {
                     // Focus can fail after a partial effect. Korrid thaws and
                     // refocuses the exact frozen launch, then restores its route.
                     return match self
-                        .change_freezer(&launch_id, "app.session.thaw", "thaw")
+                        .change_freezer(&launch_id, "app.session.resume", "thaw")
                         .await?
                     {
                         ExactPanelOutcome::Returned => Ok(ExactPanelOutcome::LeaveRefused),
@@ -120,7 +120,7 @@ impl KorridClient {
                 Ok(ExactPanelOutcome::Opened)
             }
             SessionStatus::Frozen { launch_id } => {
-                self.change_freezer(&launch_id, "app.session.thaw", "thaw")
+                self.change_freezer(&launch_id, "app.session.resume", "thaw")
                     .await
             }
             SessionStatus::Stopping { .. } => Ok(ExactPanelOutcome::AlreadyStopping),
@@ -158,7 +158,7 @@ impl KorridClient {
         };
         validate_launch_id(&launch_id)?;
         let request = serde_json::json!({
-            "_tag": "app.session.stop",
+            "_tag": "app.session.end",
             "payload": { "expectedLaunchId": launch_id }
         });
         // Mutation is intentionally attempted once. A transport failure is not
@@ -486,13 +486,13 @@ fn parse_panel_change(
 }
 
 fn parse_stop(body: &[u8]) -> Result<ExactStopOutcome, LocalControlError> {
-    let response = parse_envelope(body, "app.session.stop")?;
+    let response = parse_envelope(body, "app.session.end")?;
     match response {
         Outcome::Ok(payload) => {
             let payload: StopPayload = serde_json::from_value(payload)
                 .map_err(|error| LocalControlError::InvalidTreaty(error.to_string()))?;
             match payload.phase.as_str() {
-                "stopped" => Ok(ExactStopOutcome::Completed),
+                "ended" => Ok(ExactStopOutcome::Completed),
                 "pending" => Ok(ExactStopOutcome::AlreadyStopping),
                 phase => Err(LocalControlError::InvalidTreaty(format!(
                     "unknown stop phase {phase:?}"

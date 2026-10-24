@@ -301,7 +301,7 @@ pkgs.testers.runNixOSTest {
             print(machine.succeed("ps -eo pid,ppid,uid,stat,wchan:24,args"))
             print(machine.succeed("stat /run/freezer-test/map-game"))
             raise
-        reply = rpc("app.session.freeze", {"expectedLaunchId": launch_id})
+        reply = rpc("app.session.leave", {"expectedLaunchId": launch_id})
         assert reply["_tag"] == "Ok", reply
         assert freezer() == "running", "acknowledged Leave includes portal thaw"
         assert machine.succeed(f"systemctl show -P FreezerState {game}").strip() == "frozen"
@@ -309,13 +309,13 @@ pkgs.testers.runNixOSTest {
         # A real compositor refusal must leave the portal active, even after
         # the exact game has thawed. Restoring authority then permits Return.
         machine.succeed("chmod 0600 /run/freezer-compositor/sway.sock")
-        reply = rpc("app.session.thaw", {"expectedLaunchId": launch_id})
+        reply = rpc("app.session.resume", {"expectedLaunchId": launch_id})
         assert reply["_tag"] == "Err", reply
         assert reply["payload"]["code"] == "HostFocusFailed", reply
         assert machine.succeed(f"systemctl show -P FreezerState {game}").strip() == "running"
         assert freezer() == "running"
         machine.succeed("chmod 0666 /run/freezer-compositor/sway.sock")
-        reply = rpc("app.session.thaw", {"expectedLaunchId": launch_id})
+        reply = rpc("app.session.resume", {"expectedLaunchId": launch_id})
         assert reply["_tag"] == "Ok", reply
         assert machine.succeed(f"systemctl show -P FreezerState {game}").strip() == "running"
         machine.succeed(sway + " -t get_tree | jq -e '.. | objects | select(.window_properties?.class == \"FreezerGame\" and .focused == true)'")
@@ -334,7 +334,7 @@ pkgs.testers.runNixOSTest {
         machine.succeed("printf %s " + shlex.quote(denial) + " > /etc/polkit-1/rules.d/00-deny-portal-thaw.rules")
         machine.succeed("systemctl restart polkit.service")
         machine.fail(native("korrid", "ThawUnit", "s", kiosk))
-        reply = rpc("app.session.freeze", {"expectedLaunchId": launch_id})
+        reply = rpc("app.session.leave", {"expectedLaunchId": launch_id})
         assert reply["_tag"] == "Err", reply
         assert reply["payload"]["code"] == "HostFreezerFailed", reply
         assert machine.succeed(f"systemctl show -P FreezerState {game}").strip() == "running"

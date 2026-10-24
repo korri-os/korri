@@ -7,7 +7,7 @@ import type {
   SelectedGameLaunchOutcome,
   SessionPrepared,
   SessionStatusOutcome,
-  SessionStopOutcome,
+  SessionEndOutcome,
 } from "@contracts/generated/korrid"
 import { InitialHandoff, PendingLaunchPhase } from "@contracts/generated/korrid"
 import { foldGameCopies, type PortalGameCopy, type PortalLocalGame } from "./fold-games"
@@ -378,7 +378,7 @@ export const LaunchablesState = {
     return { ...state, choices: state.choices.map(choice => choice.launchId === launchId ? { ...choice, cancel: "sent" } : choice) }
   },
 
-  withPendingCancellationOutcome: (state: LaunchablesState, launchId: string, outcome: SessionStopOutcome): LaunchablesState => {
+  withPendingCancellationOutcome: (state: LaunchablesState, launchId: string, outcome: SessionEndOutcome): LaunchablesState => {
     const choosing = state._tag === "Choosing" && state.choices.some(choice => choice.launchId === launchId && choice.cancel === "sent")
     const single = state._tag === "Starting" && state.launchId === launchId && state.cancelling
     if (!choosing && !single) return state
@@ -646,7 +646,7 @@ export const LaunchablesState = {
   /** A successful stop request is not the same as an ended session. */
   withStopOutcome: (
     state: LaunchablesState,
-    outcome: SessionStopOutcome,
+    outcome: SessionEndOutcome,
   ): LaunchablesState => {
     if (state._tag !== "Stopping") return state
     return outcome._tag === "Ok"
@@ -686,6 +686,6 @@ export const LaunchablesState = {
 
   stopTimedOut: (state: LaunchablesState): LaunchablesState =>
     state._tag === "Stopping"
-      ? readyFrom(state, "StopPending: session is still stopping")
+      ? readyFrom(state, "The session is still ending.")
       : state,
 }

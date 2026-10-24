@@ -155,7 +155,7 @@ impl AuthorizationContext {
     /// owned. Trust reconciliation is not a person.
     pub fn person_public_key<'a>(&'a self, local_owner: Option<&'a str>) -> Option<&'a str> {
         match self {
-            Self::LocalBrowser | Self::LocalUnixControl => local_owner,
+            Self::LocalBrowser | Self::LocalCli | Self::LocalUnixControl => local_owner,
             Self::Peer(principal) => principal.person_public_key(),
             Self::TrustReconciliation => None,
         }
@@ -165,6 +165,7 @@ impl AuthorizationContext {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthorizationContext {
     LocalBrowser,
+    LocalCli,
     LocalUnixControl,
     Peer(Principal),
     TrustReconciliation,
@@ -240,12 +241,12 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
             PeerPolicy::ExplicitScope(Scope::StreamLaunch)
         }
         RpcRequest::SessionControlInvoke(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
-        RpcRequest::SessionStop(request) if request.force.unwrap_or(false) => {
+        RpcRequest::SessionEnd(request) if request.force.unwrap_or(false) => {
             PeerPolicy::OwnerDeviceOnly
         }
-        RpcRequest::SessionStop(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
-        RpcRequest::SessionFreeze(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
-        RpcRequest::SessionThaw(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::SessionEnd(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::SessionLeave(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::SessionResume(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SourceStatus(_) => PeerPolicy::CatalogOrStreamScope,
         RpcRequest::PeerList(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::GameRoutes(_)
@@ -257,15 +258,15 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::SelectedGameLaunch(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LocalGamesList(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::Health(_) => PeerPolicy::OwnerDeviceOnly,
-        RpcRequest::DiscoverySnapshot(_) => PeerPolicy::OwnerDeviceOnly,
-        RpcRequest::DiscoveryPair(_) | RpcRequest::DiscoveryChange(_) => {
+        RpcRequest::LibraryFoldersSnapshot(_) => PeerPolicy::OwnerDeviceOnly,
+        RpcRequest::LibraryFolderAdd(_) | RpcRequest::LibraryFolderChange(_) => {
             PeerPolicy::OwnerDeviceOnly
         }
         RpcRequest::AttentionList(_)
         | RpcRequest::AttentionAssign(_)
         | RpcRequest::AttentionIgnore(_) => PeerPolicy::OwnerDeviceOnly,
-        RpcRequest::DiscoveryUnpair(_) => PeerPolicy::OwnerDeviceOnly,
-        RpcRequest::DiscoveryRescan(_) => PeerPolicy::OwnerDeviceOnly,
+        RpcRequest::LibraryFolderRemove(_) => PeerPolicy::OwnerDeviceOnly,
+        RpcRequest::LibraryFoldersRescan(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SettingsSnapshot(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SettingsUpdate(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SteamGridDbCredentialSet(_) => PeerPolicy::OwnerDeviceOnly,
@@ -292,7 +293,7 @@ pub fn authorize(
     request: &RpcRequest,
 ) -> Result<(), AuthorizationDenied> {
     let allowed = match context {
-        AuthorizationContext::LocalBrowser => true,
+        AuthorizationContext::LocalBrowser | AuthorizationContext::LocalCli => true,
         AuthorizationContext::LocalUnixControl => {
             policy_for(request) != PeerPolicy::LocalPortalOnly
         }
@@ -330,18 +331,18 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::WifiConnectHidden(_)
             | RpcRequest::OnboardingFinish(_)
             | RpcRequest::OnboardingRestart(_)
-            | RpcRequest::SessionStop(_)
+            | RpcRequest::SessionEnd(_)
             | RpcRequest::SessionControlInvoke(_)
-            | RpcRequest::SessionFreeze(_)
-            | RpcRequest::SessionThaw(_)
+            | RpcRequest::SessionLeave(_)
+            | RpcRequest::SessionResume(_)
             | RpcRequest::MoonlightCertificateProvision(_)
             | RpcRequest::MoonlightCertificateRevoke(_)
-            | RpcRequest::DiscoveryPair(_)
-            | RpcRequest::DiscoveryChange(_)
+            | RpcRequest::LibraryFolderAdd(_)
+            | RpcRequest::LibraryFolderChange(_)
             | RpcRequest::AttentionAssign(_)
             | RpcRequest::AttentionIgnore(_)
-            | RpcRequest::DiscoveryUnpair(_)
-            | RpcRequest::DiscoveryRescan(_)
+            | RpcRequest::LibraryFolderRemove(_)
+            | RpcRequest::LibraryFoldersRescan(_)
             | RpcRequest::SettingsUpdate(_)
             | RpcRequest::LaunchSettingsSet(_)
             | RpcRequest::LaunchProfileSave(_)
@@ -1244,15 +1245,15 @@ mod tests {
                 stream,
             ),
             (
-                request(serde_json::json!({"_tag":"app.session.stop","payload":{}})),
+                request(serde_json::json!({"_tag":"app.session.end","payload":{}})),
                 stream,
             ),
             (
-                request(serde_json::json!({"_tag":"app.session.freeze","payload":{}})),
+                request(serde_json::json!({"_tag":"app.session.leave","payload":{}})),
                 stream,
             ),
             (
-                request(serde_json::json!({"_tag":"app.session.thaw","payload":{}})),
+                request(serde_json::json!({"_tag":"app.session.resume","payload":{}})),
                 stream,
             ),
             (
@@ -1270,24 +1271,24 @@ mod tests {
                 Owner,
             ),
             (
-                request(serde_json::json!({"_tag":"app.discovery.snapshot","payload":{}})),
+                request(serde_json::json!({"_tag":"app.library.folders.snapshot","payload":{}})),
                 Owner,
             ),
             (
                 request(
-                    serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt":"r","system":"gb"}}),
+                    serde_json::json!({"_tag":"app.library.folders.add","payload":{"receipt":"r","system":"gb"}}),
                 ),
                 Owner,
             ),
             (
                 request(
-                    serde_json::json!({"_tag":"app.discovery.unpair","payload":{"source":"gb"}}),
+                    serde_json::json!({"_tag":"app.library.folders.remove","payload":{"folder":"gb"}}),
                 ),
                 Owner,
             ),
             (
                 request(
-                    serde_json::json!({"_tag":"app.discovery.change","payload":{"source":"gb","system":"gbc"}}),
+                    serde_json::json!({"_tag":"app.library.folders.change","payload":{"folder":"gb","system":"gbc"}}),
                 ),
                 Owner,
             ),
@@ -1306,7 +1307,7 @@ mod tests {
                 Owner,
             ),
             (
-                request(serde_json::json!({"_tag":"app.discovery.rescan","payload":{}})),
+                request(serde_json::json!({"_tag":"app.library.folders.rescan","payload":{}})),
                 Owner,
             ),
             (
@@ -1369,6 +1370,10 @@ mod tests {
         assert_eq!(cases.len(), 31);
         for (request, expected) in cases {
             assert_eq!(policy_for(&request), expected);
+            assert_eq!(
+                authorize(&AuthorizationContext::LocalCli, &request),
+                authorize(&AuthorizationContext::LocalBrowser, &request)
+            );
         }
     }
 
@@ -1397,6 +1402,7 @@ mod tests {
             let request = request(serde_json::json!({"_tag":tag,"payload":payload}));
             assert_eq!(policy_for(&request), PeerPolicy::LocalPortalOnly);
             assert!(authorize(&AuthorizationContext::LocalBrowser, &request).is_ok());
+            assert!(authorize(&AuthorizationContext::LocalCli, &request).is_ok());
             for denied in [
                 &owner,
                 &AuthorizationContext::LocalUnixControl,
@@ -1520,7 +1526,7 @@ mod tests {
             request(
                 serde_json::json!({"_tag":"app.moonlight.certificate.provision","payload":{"hostUuid":"h","clientCertificate":"c"}}),
             ),
-            request(serde_json::json!({"_tag":"app.session.stop","payload":{"force":true}})),
+            request(serde_json::json!({"_tag":"app.session.end","payload":{"force":true}})),
         ];
         for request in requests {
             assert!(authorize(&owner, &request).is_ok());
@@ -1555,7 +1561,7 @@ mod tests {
                 ),
                 request(serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"g"}})),
                 request(serde_json::json!({"_tag":"app.session.status","payload":{}})),
-                request(serde_json::json!({"_tag":"app.session.stop","payload":{}})),
+                request(serde_json::json!({"_tag":"app.session.end","payload":{}})),
                 request(
                     serde_json::json!({"_tag":"app.moonlight.certificate.attest","payload":{"hostUuid":"h"}}),
                 ),
@@ -1572,7 +1578,7 @@ mod tests {
                 ),
                 request(serde_json::json!({"_tag":"system.health","payload":{}})),
                 request(serde_json::json!({"_tag":"system.settings.snapshot","payload":{}})),
-                request(serde_json::json!({"_tag":"app.session.stop","payload":{"force":true}})),
+                request(serde_json::json!({"_tag":"app.session.end","payload":{"force":true}})),
             ] {
                 assert!(authorize(attempt.context(), &request).is_err());
             }
@@ -1601,7 +1607,7 @@ mod tests {
         for denied in [
             request(serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"g"}})),
             request(serde_json::json!({"_tag":"app.session.status","payload":{}})),
-            request(serde_json::json!({"_tag":"app.session.freeze","payload":{}})),
+            request(serde_json::json!({"_tag":"app.session.leave","payload":{}})),
             request(serde_json::json!({"_tag":"system.health","payload":{}})),
         ] {
             assert!(authorize(attempt.context(), &denied).is_err());

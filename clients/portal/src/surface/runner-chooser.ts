@@ -117,11 +117,11 @@ export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunch
       _tag: "Conflict",
       ...blank(
         active
-          ? `Stop ${active.title ?? active.gameId ?? "the active session"} before switching runners. Nothing will launch automatically after stopping.`
+          ? `End ${active.title ?? active.gameId ?? "the live session"} before switching runners. Nothing will launch automatically after ending it.`
           : "The active session changed. Reload runners before launching.",
       ),
       actions: [
-        ...(active ? [action("stop", "Stop active session")] : []),
+        ...(active ? [action("end", "End live session")] : []),
         action("reload", "Reload runners"),
         cancelAction,
       ],
@@ -205,13 +205,13 @@ export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunch
       return
     }
     const operation = ++generation
-    if (id === "stop" && active) {
+    if (id === "end" && active) {
       const launchId = active.launchId
       publish({
         _tag: "Busy",
-        ...blank("Stopping the exact active session… Cancel does not undo the stop request."),
+        ...blank("Ending the exact live session… Cancel does not undo the end request."),
       })
-      const result = await korrid.sessionStop(launchId)
+      const result = await korrid.sessionEnd(launchId)
       if (!current(operation)) return
       if (result._tag === "Err") {
         problem(result.payload)
@@ -235,8 +235,8 @@ export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunch
       }
       if (current(operation))
         problem({
-          code: "StopTimeout",
-          message: "The session has not stopped. Reload before trying again.",
+          code: "EndTimeout",
+          message: "The session has not ended. Reload before trying again.",
         })
       return
     }

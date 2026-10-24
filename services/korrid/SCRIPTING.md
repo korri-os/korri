@@ -1160,7 +1160,7 @@ The existing reconciliation writer publishes provider releases and locations.
 Only locations it creates are owned in the existing `origins` journal. Missing,
 uninstalled or disabled apps lose those locations; release history stays
 unavailable. Authored locations stay authored. Startup and
-`app.discovery.rescan` use this same scan. No new persisted fields, configured
+`app.library.folders.rescan` use this same scan. No new persisted fields, configured
 sources, automatic watcher, external Steam libraries or capability model are
 added. ADR 0011 records the legacy citations, deliberate deltas and limits.
 

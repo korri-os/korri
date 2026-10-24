@@ -154,7 +154,7 @@ test("selected acknowledgement survives failed status reads and keeps polling un
   const before = reads
   await waitFor(() => reads > before)
   expect(view.current()).toMatchObject({ id: "now-playing:reserved:1:wl4", subtitle: "This device" })
-  await base.sessionStop("reserved:1:wl4")
+  await base.sessionEnd("reserved:1:wl4")
   failed = false
   await waitFor(() => view.current() === undefined)
 })
@@ -220,7 +220,7 @@ test("late acknowledgement cannot replace a newer observed active session", asyn
   })
   await view.choose()
   await invoke(() => view.host().runAction("cancel-launch"))
-  await base.sessionStop("reserved:1:wl4")
+  await base.sessionEnd("reserved:1:wl4")
   await base.launchSelectedGame("other", "retroarch/mgba")
   await invoke(() => view.host().reload())
   expect(view.current()).toMatchObject({
@@ -260,13 +260,13 @@ test.each([
   await view.choose()
   await invoke(() => view.host().runAction("cancel-launch"))
   if (observedGame === "other") {
-    await base.sessionStop("reserved:1:wl4")
+    await base.sessionEnd("reserved:1:wl4")
     await base.launchSelectedGame("other", "retroarch/mgba")
   }
   await invoke(() => view.host().reload())
   if (observedGame === "other") expect(view.current()).toMatchObject({ id: "now-playing:selected:other" })
   else expect(view.current()).toBeUndefined()
-  await base.sessionStop(`selected:${observedGame}`)
+  await base.sessionEnd(`selected:${observedGame}`)
   await invoke(() => view.host().reload())
   expect(view.current()).toBeUndefined()
   await invoke(() => release.resolve())
@@ -283,10 +283,10 @@ test("same-game Return uses exact thaw without reading routes or selecting again
   const prepares: string[] = []
   const view = await mount({
     ...base,
-    async sessionThaw(id) {
+    async sessionResume(id) {
       prepares.push(id)
       failed = true
-      return base.sessionThaw(id)
+      return base.sessionResume(id)
     },
     async sessionStatus() {
       return failed ? unavailable : base.sessionStatus()

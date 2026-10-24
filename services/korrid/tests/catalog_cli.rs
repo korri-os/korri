@@ -1,32 +1,81 @@
-use korrid::{catalog_cli, config::snapshot::ConfigSnapshotCoordinator};
-use std::{ffi::OsString, fs, path::Path};
+use axum::{
+    body::{to_bytes, Body},
+    http::{Request, StatusCode},
+    Router,
+};
+use korrid::{
+    catalog_cli,
+    config::snapshot::ConfigSnapshotCoordinator,
+    discovery::{
+        coordinator::DiscoveryRequestError, sources::PairingError, DiscoveryLifecycleCoordinator,
+        DiscoveryPhase, FolderSelectionGrantStore,
+    },
+    LibraryFoldersRescanRequest, LibraryFoldersSnapshot, LibraryFoldersSnapshotOutcome,
+    LibraryFoldersSnapshotRequest, LibraryFoldersState, RpcRequest, RpcResponse,
+};
+use std::{
+    ffi::OsString,
+    fs,
+    path::Path,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+use tower::ServiceExt;
 
-fn run(root: &Path, private: &Path, args: Vec<OsString>) -> Result<String, String> {
-    catalog_cli::run_with_registry_source(
-        &args,
-        Some(root.as_os_str()),
-        Some(private.as_os_str()),
+// The live RPCs use this same coordinator and one-use receipt store. The
+// configuration it publishes still calls the persisted collection `sources`.
+fn live_folders(root: &Path, private: &Path) -> DiscoveryLifecycleCoordinator {
+    let discovery = DiscoveryLifecycleCoordinator::new_with_registry_source(
+        root,
+        private,
+        Arc::new(Mutex::new(())),
+        FolderSelectionGrantStore::default(),
         korrid::plugin_policy::RegistrySource::Selected(
             korrid::plugin_test_fixtures::installed(root).into(),
         ),
-    )
+    );
+    settled(&discovery);
+    discovery
 }
+
+fn settled(discovery: &DiscoveryLifecycleCoordinator) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let snapshot = discovery.snapshot();
+        if !matches!(
+            snapshot.state,
+            DiscoveryPhase::Scanning | DiscoveryPhase::Enriching
+        ) {
+            assert_eq!(snapshot.state, DiscoveryPhase::Idle, "{snapshot:?}");
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "scan did not settle: {snapshot:?}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn add(discovery: &DiscoveryLifecycleCoordinator, selected: &Path, system: &str) {
+    let receipt = discovery
+        .grants()
+        .issue_approved_path(selected)
+        .unwrap()
+        .token;
+    discovery.pair(&receipt, system).unwrap();
+    settled(discovery);
+}
+
 #[test]
-fn pair_rescan_and_unpair_use_sources_and_one_library_document() {
+fn add_rescan_and_remove_use_persisted_sources_and_one_library_document() {
     let root = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
     let selected = tempfile::tempdir().unwrap();
-    fs::write(selected.path().join("Wario Land 4.gba"), b"game").unwrap();
-    run(
-        root.path(),
-        private.path(),
-        vec![
-            "pair".into(),
-            selected.path().as_os_str().into(),
-            "gba".into(),
-        ],
-    )
-    .unwrap();
+    let game = selected.path().join("Wario Land 4.gba");
+    fs::write(&game, b"game").unwrap();
+    let discovery = live_folders(root.path(), private.path());
+    add(&discovery, selected.path(), "gba");
     let state = ConfigSnapshotCoordinator::new(root.path()).reload();
     assert!(state.diagnostic.is_none());
     assert!(state.snapshot.sources.contains_key("gba"));
@@ -34,72 +83,154 @@ fn pair_rescan_and_unpair_use_sources_and_one_library_document() {
     assert!(!root.path().join("catalog/games.yaml").exists());
     assert!(!root.path().join("catalog/releases.yaml").exists());
     let before = fs::read(root.path().join("catalog/library.yaml")).unwrap();
-    run(root.path(), private.path(), vec!["rescan".into()]).unwrap();
+    discovery.rescan();
+    settled(&discovery);
     assert_eq!(
         fs::read(root.path().join("catalog/library.yaml")).unwrap(),
         before
     );
-    run(
-        root.path(),
-        private.path(),
-        vec!["unpair".into(), "gba".into()],
-    )
-    .unwrap();
+    discovery.unpair("gba").unwrap();
+    settled(&discovery);
     let state = ConfigSnapshotCoordinator::new(root.path()).reload();
     assert!(state.snapshot.library.is_empty());
     assert!(state.snapshot.sources.is_empty());
+    assert_eq!(fs::read(&game).unwrap(), b"game");
 }
+
 #[test]
-fn superseded_import_and_remove_are_not_accepted() {
+fn retired_catalog_syntax_is_rejected_without_state_changes() {
     let root = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
-    for command in ["import", "remove"] {
-        assert!(run(
-            root.path(),
-            private.path(),
-            vec![command.into(), "/tmp".into()]
+    for args in [
+        vec!["import", "/tmp"],
+        vec!["remove", "gba"],
+        vec!["pair", "/tmp", "gba"],
+        vec!["unpair", "gba"],
+        vec!["rescan"],
+    ] {
+        let args: Vec<OsString> = args.into_iter().map(OsString::from).collect();
+        assert!(catalog_cli::run(
+            &args,
+            Some(root.path().as_os_str()),
+            Some(private.path().as_os_str()),
         )
         .unwrap_err()
-        .contains("usage:"));
+        .starts_with("usage:"));
     }
-    assert!(!root.path().join("device.yaml").exists());
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    assert_eq!(fs::read_dir(private.path()).unwrap().count(), 0);
 }
+
 #[test]
-fn pairing_refuses_unknown_systems_without_making_a_source() {
+fn adding_unknown_system_refuses_without_making_a_persisted_source() {
     let root = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
     let selected = tempfile::tempdir().unwrap();
-    let error = run(
-        root.path(),
-        private.path(),
-        vec![
-            "pair".into(),
-            selected.path().as_os_str().into(),
-            "unknown".into(),
-        ],
-    )
-    .unwrap_err();
-    assert!(error.contains("unknown") || error.contains("declares"));
-    assert!(ConfigSnapshotCoordinator::new(root.path())
-        .reload()
-        .snapshot
-        .sources
-        .is_empty());
+    let discovery = live_folders(root.path(), private.path());
+    let documents = ["device.yaml", "catalog/library.yaml"];
+    let before = documents.map(|path| fs::read(root.path().join(path)).unwrap());
+    let receipt = discovery
+        .grants()
+        .issue_approved_path(selected.path())
+        .unwrap()
+        .token;
+    assert!(matches!(
+        discovery.pair(&receipt, "unknown"),
+        Err(DiscoveryRequestError::Pairing(PairingError::UnknownSystem(system))) if system == "unknown"
+    ));
+    assert_eq!(
+        documents.map(|path| fs::read(root.path().join(path)).unwrap()),
+        before
+    );
+    let state = ConfigSnapshotCoordinator::new(root.path()).reload();
+    assert!(state.diagnostic.is_none());
+    assert!(state.snapshot.sources.is_empty());
+    assert!(state.snapshot.library.is_empty());
 }
-#[test]
-fn malformed_library_fails_without_echoing_private_document_content() {
+
+async fn public_snapshot(app: Router, request: RpcRequest) -> (LibraryFoldersSnapshot, String) {
+    let response = app
+        .oneshot(
+            Request::post("/rpc")
+                .header("authorization", "Bearer catalog-contract")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&request).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = String::from_utf8(
+        to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    let snapshot = match serde_json::from_str::<RpcResponse>(&body).unwrap() {
+        RpcResponse::LibraryFoldersSnapshot(LibraryFoldersSnapshotOutcome::Ok(snapshot))
+        | RpcResponse::LibraryFoldersRescan(LibraryFoldersSnapshotOutcome::Ok(snapshot)) => {
+            snapshot
+        }
+        other => panic!("unexpected public response: {other:?}"),
+    };
+    (snapshot, body)
+}
+
+#[tokio::test]
+async fn malformed_library_reports_public_scan_failure_without_echoing_private_content() {
     let root = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("catalog")).unwrap();
     fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
-    fs::write(
-        root.path().join("catalog/library.yaml"),
-        "private-secret-token: [broken\n",
+    let broken = "private-secret-token: [broken\n";
+    let library = root.path().join("catalog/library.yaml");
+    fs::write(&library, broken).unwrap();
+    let app = korrid::router_with_capability_and_roots(
+        "catalog-contract",
+        "https://portal.example",
+        root.path(),
+        private.path().join("state"),
+    );
+    let (mut snapshot, body) = public_snapshot(
+        app.clone(),
+        RpcRequest::LibraryFoldersRescan(LibraryFoldersRescanRequest {}),
     )
-    .unwrap();
-    let error = run(root.path(), private.path(), vec!["rescan".into()]).unwrap_err();
-    assert!(!error.contains("private-secret-token"));
-    assert!(error.contains("validated"));
+    .await;
+    assert!(!body.contains("private-secret-token"), "{body}");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while matches!(
+        snapshot.state,
+        LibraryFoldersState::Scanning {} | LibraryFoldersState::Enriching {}
+    ) {
+        assert!(
+            Instant::now() < deadline,
+            "scan did not settle: {snapshot:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let (next, body) = public_snapshot(
+            app.clone(),
+            RpcRequest::LibraryFoldersSnapshot(LibraryFoldersSnapshotRequest {}),
+        )
+        .await;
+        // Inspect the actual serialized public response, not only fields kept
+        // after decoding it, so an unexpected diagnostic cannot hide a leak.
+        assert!(!body.contains("private-secret-token"), "{body}");
+        snapshot = next;
+    }
+    assert_eq!(
+        snapshot.state,
+        LibraryFoldersState::Problem {},
+        "{snapshot:?}"
+    );
+    assert!(
+        snapshot
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "LocalConfigReloadFailed"),
+        "{snapshot:?}"
+    );
+    assert_eq!(fs::read_to_string(&library).unwrap(), broken);
 }
 
 #[test]
@@ -120,22 +251,15 @@ fn only_paired_games_enter_catalog_not_build_trees_or_unpaired_folders() {
             fs::write(root.path().join(directory).join(file), bytes).unwrap();
         }
     }
-    run(root.path(), private.path(), vec!["rescan".into()]).unwrap();
+    let discovery = live_folders(root.path(), private.path());
+    discovery.rescan();
+    settled(&discovery);
     assert!(ConfigSnapshotCoordinator::new(root.path())
         .reload()
         .snapshot
         .library
         .is_empty());
-    run(
-        root.path(),
-        private.path(),
-        vec![
-            "pair".into(),
-            root.path().join("games/gba").into_os_string(),
-            "gba".into(),
-        ],
-    )
-    .unwrap();
+    add(&discovery, &root.path().join("games/gba"), "gba");
     let state = ConfigSnapshotCoordinator::new(root.path()).reload();
     assert!(state.diagnostic.is_none());
     assert_eq!(state.snapshot.library.len(), 1);

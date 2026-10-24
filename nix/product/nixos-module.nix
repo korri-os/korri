@@ -4,6 +4,7 @@
 {
   lib,
   config,
+  pkgs,
   ...
 }:
 let
@@ -57,6 +58,7 @@ in
   };
 
   config = {
+    environment.systemPackages = [ korri.packages.${pkgs.stdenv.hostPlatform.system}.korri ];
     assertions = [
       {
         assertion = config.services.korriProduct.sleep.states == [ ];

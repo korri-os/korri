@@ -31,7 +31,7 @@ const identityKorrid = () => ({
   async identityStatus() {
     return {
       _tag: "Ok" as const,
-      payload: { localBackupAvailable: true, retiredPublicKeys: [] },
+      payload: { identity: { _tag: "Unowned" as const, devicePublicKey: "device" }, localBackupAvailable: true, retiredPublicKeys: [] },
     }
   },
 })

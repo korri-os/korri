@@ -32,7 +32,7 @@ impl PortalPermission {
             | RpcRequest::SettingsSnapshot(_)
             | RpcRequest::IdentityStatus(_)
             | RpcRequest::AttentionList(_)
-            | RpcRequest::DiscoverySnapshot(_)
+            | RpcRequest::LibraryFoldersSnapshot(_)
             | RpcRequest::PeerList(_)
             | RpcRequest::AcquisitionStatus(_)
             | RpcRequest::AcquisitionProviders(_)
@@ -70,16 +70,16 @@ impl PortalPermission {
             | RpcRequest::MoonlightCertificateRevoke(_)
             | RpcRequest::SessionPrepare(_)
             | RpcRequest::SessionControlInvoke(_)
-            | RpcRequest::SessionStop(_)
-            | RpcRequest::SessionFreeze(_)
-            | RpcRequest::SessionThaw(_)
+            | RpcRequest::SessionEnd(_)
+            | RpcRequest::SessionLeave(_)
+            | RpcRequest::SessionResume(_)
             | RpcRequest::SourceStatus(_)
-            | RpcRequest::DiscoveryPair(_)
-            | RpcRequest::DiscoveryChange(_)
+            | RpcRequest::LibraryFolderAdd(_)
+            | RpcRequest::LibraryFolderChange(_)
             | RpcRequest::AttentionAssign(_)
             | RpcRequest::AttentionIgnore(_)
-            | RpcRequest::DiscoveryUnpair(_)
-            | RpcRequest::DiscoveryRescan(_)
+            | RpcRequest::LibraryFolderRemove(_)
+            | RpcRequest::LibraryFoldersRescan(_)
             | RpcRequest::SettingsUpdate(_)
             | RpcRequest::SteamGridDbCredentialSet(_)
             | RpcRequest::SteamGridDbCredentialClear(_)
@@ -118,9 +118,9 @@ impl PortalPermission {
                         RpcRequest::SavesChoose(_)
                         | RpcRequest::SavesRestore(_)
                         | RpcRequest::SavesCheck(_)
-                        | RpcRequest::SessionStop(_)
-                        | RpcRequest::SessionFreeze(_)
-                        | RpcRequest::SessionThaw(_)
+                        | RpcRequest::SessionEnd(_)
+                        | RpcRequest::SessionLeave(_)
+                        | RpcRequest::SessionResume(_)
                         | RpcRequest::SessionControlInvoke(_)
                         | RpcRequest::SelectedGameLaunch(_)
                         | RpcRequest::AcquisitionStart(_)
@@ -338,7 +338,7 @@ mod tests {
             assert!(PortalPermission::Full.permits(&request));
         }
         // Stop has no host selector; the host executor requires an exact launch ID.
-        let stop = RpcRequest::SessionStop(crate::SessionStopRequest {
+        let stop = RpcRequest::SessionEnd(crate::SessionEndRequest {
             force: Some(true),
             expected_launch_id: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
         });
@@ -347,10 +347,10 @@ mod tests {
         assert!(PortalPermission::Full.permits(&stop));
 
         for request in [
-            RpcRequest::SessionFreeze(crate::SessionFreezeRequest {
+            RpcRequest::SessionLeave(crate::SessionLeaveRequest {
                 expected_launch_id: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
             }),
-            RpcRequest::SessionThaw(crate::SessionThawRequest {
+            RpcRequest::SessionResume(crate::SessionResumeRequest {
                 expected_launch_id: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
             }),
             RpcRequest::SessionControlInvoke(crate::SessionControlInvokeRequest {
@@ -371,16 +371,16 @@ mod tests {
         assert!(PortalPermission::ReadOnly.permits(&list));
         assert!(PortalPermission::LocalSessions.permits(&list));
         for request in [
-            RpcRequest::DiscoveryPair(crate::DiscoveryPairRequest {
+            RpcRequest::LibraryFolderAdd(crate::LibraryFolderAddRequest {
                 receipt: "receipt".into(),
                 system: "gb".into(),
             }),
-            RpcRequest::DiscoveryChange(crate::DiscoveryChangeRequest {
-                source: "gb".into(),
+            RpcRequest::LibraryFolderChange(crate::LibraryFolderChangeRequest {
+                folder: "gb".into(),
                 system: "gbc".into(),
             }),
-            RpcRequest::DiscoveryUnpair(crate::DiscoveryUnpairRequest {
-                source: "gb".into(),
+            RpcRequest::LibraryFolderRemove(crate::LibraryFolderRemoveRequest {
+                folder: "gb".into(),
             }),
             RpcRequest::AttentionAssign(crate::AttentionAssignRequest {
                 item: "id".into(),
@@ -663,7 +663,7 @@ mod tests {
         );
         let frozen = rpc(
             &app,
-            "app.session.freeze",
+            "app.session.leave",
             json!({"expectedLaunchId":launch_id}),
         )
         .await;
@@ -748,7 +748,7 @@ mod tests {
         );
         let returned = rpc(
             &app,
-            "app.session.thaw",
+            "app.session.resume",
             json!({"expectedLaunchId":launch_id}),
         )
         .await;
@@ -964,7 +964,7 @@ mod tests {
                 "StaleLaunchIdentity",
             ),
         ] {
-            let rejected = rpc(&app, "app.session.stop", payload).await;
+            let rejected = rpc(&app, "app.session.end", payload).await;
             assert_eq!(rejected["outcome"]["_tag"], "Err");
             assert_eq!(rejected["outcome"]["payload"]["code"], code);
             let status = rpc(&app, "app.session.status", json!({})).await;
@@ -976,13 +976,13 @@ mod tests {
         }
         let stopped = rpc(
             &app,
-            "app.session.stop",
+            "app.session.end",
             json!({"expectedLaunchId":launch_id}),
         )
         .await;
         assert_eq!(
             stopped["outcome"],
-            json!({"_tag":"Ok","payload":{"phase":"stopped"}})
+            json!({"_tag":"Ok","payload":{"phase":"ended"}})
         );
         let status = rpc(&app, "app.session.status", json!({})).await;
         assert_eq!(status["outcome"]["_tag"], "Err");

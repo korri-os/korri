@@ -18,8 +18,8 @@ import type {
   GameRoutesOutcome,
   SelectedGameLaunchOutcome,
   CatalogSnapshotOutcome,
-  DiscoverySnapshot,
-  DiscoverySnapshotOutcome,
+  LibraryFoldersSnapshot,
+  LibraryFoldersSnapshotOutcome,
   Game,
   HealthOutcome,
   IdentityBackupOutcome,
@@ -39,9 +39,9 @@ import type {
   SessionControlValue,
   SessionControls,
   SessionControlsOutcome,
-  SessionFreezeOutcome,
+  SessionTransitionOutcome,
   SessionStatusOutcome,
-  SessionStopOutcome,
+  SessionEndOutcome,
   SensitiveSettingOutcome,
   SettingsSnapshot,
   SettingsSnapshotOutcome,
@@ -91,7 +91,7 @@ import {
   SecretSettingStatus,
   SessionControlFailureReason,
   SessionFreezerState,
-  SessionStopPhase,
+  SessionEndPhase,
   SourceCatalogState,
   SourceStreamControlState,
 } from "@contracts/generated/korrid"
@@ -144,11 +144,11 @@ export interface KorridClient extends StoreAcquisitionMethods, LaunchSettingsMet
     trustLossConfirmed: boolean,
   ): Promise<IdentitySwitchOutcome>
   deleteRetiredIdentity(publicKey: string, backupConfirmed: boolean): Promise<IdentityRetiredDeleteOutcome>
-  discoverySnapshot(): Promise<DiscoverySnapshotOutcome>
-  pairDiscoverySource(receipt: string, system: string): Promise<DiscoverySnapshotOutcome>
-  changeDiscoverySource(source: string, system: string): Promise<DiscoverySnapshotOutcome>
-  unpairDiscoverySource(source: string): Promise<DiscoverySnapshotOutcome>
-  rescanDiscovery(): Promise<DiscoverySnapshotOutcome>
+  libraryFoldersSnapshot(): Promise<LibraryFoldersSnapshotOutcome>
+  addLibraryFolder(receipt: string, system: string): Promise<LibraryFoldersSnapshotOutcome>
+  changeLibraryFolder(folder: string, system: string): Promise<LibraryFoldersSnapshotOutcome>
+  removeLibraryFolder(folder: string): Promise<LibraryFoldersSnapshotOutcome>
+  rescanLibraryFolders(): Promise<LibraryFoldersSnapshotOutcome>
   catalogSnapshot(): Promise<CatalogSnapshotOutcome>
   localGames(): Promise<LocalGamesListOutcome>
   gameRoutes(gameId: string): Promise<GameRoutesOutcome>
@@ -158,12 +158,12 @@ export interface KorridClient extends StoreAcquisitionMethods, LaunchSettingsMet
   sessionCancel(request: SessionCancelRequest): Promise<SessionCancelResult>
   sessionPrepare(gameId: string, host?: string): Promise<SelectedGameLaunchOutcome>
   sessionStatus(timeoutMs?: number): Promise<SessionStatusOutcome>
-  /** Existing SessionStopRequest field; callers must name the displayed launch. */
-  sessionStop(expectedLaunchId?: string): Promise<SessionStopOutcome>
+  /** Existing SessionEndRequest field; callers must name the displayed launch. */
+  sessionEnd(expectedLaunchId?: string): Promise<SessionEndOutcome>
   /** Freezes the exact launch on its host. Repeated calls are no-ops. */
-  sessionFreeze(expectedLaunchId: string): Promise<SessionFreezeOutcome>
+  sessionLeave(expectedLaunchId: string): Promise<SessionTransitionOutcome>
   /** Thaws the exact launch on its host. Repeated calls are no-ops. */
-  sessionThaw(expectedLaunchId: string): Promise<SessionFreezeOutcome>
+  sessionResume(expectedLaunchId: string): Promise<SessionTransitionOutcome>
   /** Lists only the gameplay controls materialized for one exact launch. */
   sessionControls(launchId: string): Promise<SessionControlsOutcome>
   /** Invokes one control from the exact launch's latest materialized list. */
@@ -513,10 +513,10 @@ export function createHttpKorridClient(
         return routeUnavailable(error)
       }
     },
-    async discoverySnapshot() {
+    async libraryFoldersSnapshot() {
       try {
         const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.discovery.snapshot",
+          _tag: "app.library.folders.snapshot",
           payload: {},
         })
         return response.outcome
@@ -524,10 +524,10 @@ export function createHttpKorridClient(
         return unreachable(error)
       }
     },
-    async pairDiscoverySource(receipt, system) {
+    async addLibraryFolder(receipt, system) {
       try {
         const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.discovery.pair",
+          _tag: "app.library.folders.add",
           payload: { receipt, system },
         })
         return response.outcome
@@ -535,32 +535,32 @@ export function createHttpKorridClient(
         return unreachable(error)
       }
     },
-    async changeDiscoverySource(source, system) {
+    async changeLibraryFolder(folder, system) {
       try {
         const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.discovery.change",
-          payload: { source, system },
+          _tag: "app.library.folders.change",
+          payload: { folder, system },
         })
         return response.outcome
       } catch (error) {
         return unreachable(error)
       }
     },
-    async unpairDiscoverySource(source) {
+    async removeLibraryFolder(folder) {
       try {
         const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.discovery.unpair",
-          payload: { source },
+          _tag: "app.library.folders.remove",
+          payload: { folder },
         })
         return response.outcome
       } catch (error) {
         return unreachable(error)
       }
     },
-    async rescanDiscovery() {
+    async rescanLibraryFolders() {
       try {
         const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.discovery.rescan",
+          _tag: "app.library.folders.rescan",
           payload: {},
         })
         return response.outcome
@@ -664,10 +664,10 @@ export function createHttpKorridClient(
         return statusUnavailable(error)
       }
     },
-    async sessionStop(expectedLaunchId) {
+    async sessionEnd(expectedLaunchId) {
       try {
         const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.session.stop",
+          _tag: "app.session.end",
           payload: { expectedLaunchId },
         })
         return response.outcome
@@ -675,10 +675,10 @@ export function createHttpKorridClient(
         return unreachable(error)
       }
     },
-    async sessionFreeze(expectedLaunchId) {
+    async sessionLeave(expectedLaunchId) {
       try {
         const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.session.freeze",
+          _tag: "app.session.leave",
           payload: { expectedLaunchId },
         })
         return response.outcome
@@ -686,10 +686,10 @@ export function createHttpKorridClient(
         return unreachable(error)
       }
     },
-    async sessionThaw(expectedLaunchId) {
+    async sessionResume(expectedLaunchId) {
       try {
         const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.session.thaw",
+          _tag: "app.session.resume",
           payload: { expectedLaunchId },
         })
         return response.outcome
@@ -1155,7 +1155,7 @@ export interface InMemoryKorridClientConfig {
   readonly sessionFocusOwnership?: () => FocusOwnership | undefined
   /** Zero gives immediate focus; absent focus remains unknown until this delay. */
   readonly sessionFocusDelayMs?: number
-  /** Pending cancellation leaves the exact session alive until sessionStop. */
+  /** Pending cancellation leaves the exact session alive until sessionEnd. */
   readonly sessionCancelPending?: boolean
   /** Browser/test observation failures can recover without replacing this client. */
   readonly sessionStatusUnavailable?: () => boolean
@@ -1166,11 +1166,11 @@ export interface InMemoryKorridClientConfig {
   readonly settings?: SettingsSnapshot
   readonly localGames?: readonly LocalGame[]
   readonly localFailures?: readonly { readonly code: string; readonly message: string }[]
-  readonly discovery?: DiscoverySnapshot
+  readonly discovery?: LibraryFoldersSnapshot
   /** In-memory scan completion, using the real discovery state treaty. */
   readonly discoveryScan?: {
     readonly delayMs?: number
-    readonly results?: readonly DiscoverySnapshot["state"][]
+    readonly results?: readonly LibraryFoldersSnapshot["state"][]
   }
   /** Snapshot fixture only; catalog games do not imply peer liveness. */
   readonly peerList?: PeerListOutcome
@@ -1316,7 +1316,7 @@ export function createInMemoryKorridClient(
   const setFreezer = (
     expectedLaunchId: string,
     state: SessionFreezerState,
-  ): SessionFreezeOutcome => {
+  ): SessionTransitionOutcome => {
     if (activeSession === undefined) {
       return {
         _tag: "Err",
@@ -1444,10 +1444,10 @@ export function createInMemoryKorridClient(
     plugins,
   }
   let settingsRevision = 0
-  let discovery: DiscoverySnapshot = config.discovery ?? {
+  let discovery: LibraryFoldersSnapshot = config.discovery ?? {
     generation: "in-memory-0",
     state: { _tag: "Idle", payload: {} },
-    sources: [],
+    folders: [],
     attention: 0,
     diagnostics: [],
   }
@@ -1456,7 +1456,7 @@ export function createInMemoryKorridClient(
   const availableDiscoveryReceipts = new Set(
     config.discoveryReceipts ?? ["in-memory-folder-receipt"],
   )
-  const nextDiscovery = (state = discovery.state): DiscoverySnapshot => {
+  const nextDiscovery = (state = discovery.state): LibraryFoldersSnapshot => {
     discoveryRevision += 1
     discovery = {
       ...discovery,
@@ -1467,8 +1467,8 @@ export function createInMemoryKorridClient(
   }
   const discoveryScanResults = structuredClone([...(config.discoveryScan?.results ?? [])])
   const scanningDiscovery = (
-    settleState: DiscoverySnapshot["state"] = discoveryScanResults.shift() ?? { _tag: "Idle", payload: {} },
-  ): DiscoverySnapshot => {
+    settleState: LibraryFoldersSnapshot["state"] = discoveryScanResults.shift() ?? { _tag: "Idle", payload: {} },
+  ): LibraryFoldersSnapshot => {
     const token = ++discoveryScanRevision
     const scanning = nextDiscovery({ _tag: "Scanning", payload: {} })
     setTimeout(() => {
@@ -1553,7 +1553,7 @@ export function createInMemoryKorridClient(
           return routeFailure("HostRecoveryBlocked", "Session inactivity cannot be verified")
         }
         if (activeSession !== undefined) {
-          return routeFailure("ActiveSessionConflict", "Stop the active session before changing playerCount")
+          return routeFailure("ActiveSessionConflict", "End the live session before changing seats")
         }
         playerCount = parsed
       }
@@ -1639,10 +1639,10 @@ export function createInMemoryKorridClient(
         payload: { code: "OperationUnsupported", message: "Identity management is unavailable in browser preview." },
       }
     },
-    async discoverySnapshot() {
+    async libraryFoldersSnapshot() {
       return { _tag: "Ok", payload: discovery }
     },
-    async pairDiscoverySource(receipt, system) {
+    async addLibraryFolder(receipt, system) {
       if (!availableDiscoveryReceipts.delete(receipt)) {
         return {
           _tag: "Err",
@@ -1652,35 +1652,35 @@ export function createInMemoryKorridClient(
           },
         }
       }
-      if (!discovery.sources.some(location => location.id === receipt)) {
+      if (!discovery.folders.some(location => location.id === receipt)) {
         discovery = {
           ...discovery,
-          sources: [
-            ...discovery.sources,
+          folders: [
+            ...discovery.folders,
             { id: receipt, label: system, system, status: { _tag: "Ready", payload: {} } },
           ],
         }
       }
       return { _tag: "Ok", payload: scanningDiscovery() }
     },
-    async changeDiscoverySource(source, system) {
-      if (!discovery.sources.some(item => item.id === source)) {
-        return { _tag: "Err", payload: { code: "UnknownSource", message: "Source is not available" } }
+    async changeLibraryFolder(folder, system) {
+      if (!discovery.folders.some(item => item.id === folder)) {
+        return { _tag: "Err", payload: { code: "UnknownLibraryFolder", message: "Library folder is not registered" } }
       }
-      discovery = { ...discovery, sources: discovery.sources.map(item => item.id === source ? { ...item, system, label: system } : item) }
+      discovery = { ...discovery, folders: discovery.folders.map(item => item.id === folder ? { ...item, system, label: system } : item) }
       return { _tag: "Ok", payload: scanningDiscovery() }
     },
-    async unpairDiscoverySource(source) {
-      if (!discovery.sources.some(item => item.id === source)) {
-        return { _tag: "Err", payload: { code: "UnknownSource", message: "Source is not available" } }
+    async removeLibraryFolder(folder) {
+      if (!discovery.folders.some(item => item.id === folder)) {
+        return { _tag: "Err", payload: { code: "UnknownLibraryFolder", message: "Library folder is not registered" } }
       }
       discovery = {
         ...discovery,
-        sources: discovery.sources.filter(location => location.id !== source),
+        folders: discovery.folders.filter(location => location.id !== folder),
       }
       return { _tag: "Ok", payload: scanningDiscovery() }
     },
-    async rescanDiscovery() {
+    async rescanLibraryFolders() {
       return { _tag: "Ok", payload: scanningDiscovery() }
     },
     async catalogSnapshot() {
@@ -1732,7 +1732,7 @@ export function createInMemoryKorridClient(
       streamPlayEnded = undefined
       if (config.routeMutationDelayMs) await new Promise(resolve => setTimeout(resolve, config.routeMutationDelayMs))
       if (routePermission === "ReadOnly") return routeFailure("PermissionDenied", "Launching requires session access")
-      if (activeSession) return routeFailure("ActiveSessionConflict", "Stop the active session before switching runners")
+      if (activeSession) return routeFailure("ActiveSessionConflict", "End the live session before switching runners")
       const route = routeRecords.find(record => record.gameId === gameId)?.routes.find(route => route.runnerId === runnerId)
       if (!route) return routeFailure("RunnerUnavailable", "Runtime is no longer installed")
       activeSession = { gameId, launchId: `selected:${gameId}` }
@@ -1800,18 +1800,18 @@ export function createInMemoryKorridClient(
       if (pending) {
         if (pending.phase === PendingLaunchPhase.Reserved || pending.phase === PendingLaunchPhase.Preparing) {
           reservations.delete(expectedLaunchId)
-          return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
+          return { _tag: "Ok", payload: { phase: SessionEndPhase.Ended } }
         }
         pending.phase = PendingLaunchPhase.Cancelling
-        if (config.sessionCancelPending || config.sessionCommitGate) return { _tag: "Ok", payload: { phase: SessionStopPhase.Pending } }
+        if (config.sessionCancelPending || config.sessionCommitGate) return { _tag: "Ok", payload: { phase: SessionEndPhase.Pending } }
         // The ordinary active cancel seam can complete immediately.
         reservations.delete(expectedLaunchId)
       }
       if (activeSession?.launchId !== expectedLaunchId) return routeFailure("StaleLaunchIdentity", "The gameplay session changed")
-      if (config.sessionCancelPending) return { _tag: "Ok", payload: { phase: SessionStopPhase.Pending } }
+      if (config.sessionCancelPending) return { _tag: "Ok", payload: { phase: SessionEndPhase.Pending } }
       activeSession = undefined
       overlayIntent = undefined
-      return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
+      return { _tag: "Ok", payload: { phase: SessionEndPhase.Ended } }
     },
     async invitesList() {
       return { _tag: "Ok", payload: { invites: activeSession === undefined ? structuredClone([...liveInvites()]) : [] } }
@@ -1907,7 +1907,7 @@ export function createInMemoryKorridClient(
         },
       }
     },
-    async sessionStop(expectedLaunchId) {
+    async sessionEnd(expectedLaunchId) {
       if (behavior === "stop-fail") {
         return {
           _tag: "Err",
@@ -1936,9 +1936,9 @@ export function createInMemoryKorridClient(
       streamPlayLaunchId = undefined
       activeSession = undefined
       overlayIntent = undefined
-      return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
+      return { _tag: "Ok", payload: { phase: SessionEndPhase.Ended } }
     },
-    async sessionFreeze(expectedLaunchId) {
+    async sessionLeave(expectedLaunchId) {
       if (streamPlayLaunchId === expectedLaunchId) {
         streamPlayLaunchId = undefined
         activeSession = undefined
@@ -1946,7 +1946,7 @@ export function createInMemoryKorridClient(
       }
       return setFreezer(expectedLaunchId, SessionFreezerState.Frozen)
     },
-    async sessionThaw(expectedLaunchId) {
+    async sessionResume(expectedLaunchId) {
       if (streamPlayLaunchId === expectedLaunchId) return routeFailure("NotSessionStarter", "Only the session starter can return to this session")
       return setFreezer(expectedLaunchId, SessionFreezerState.Running)
     },
@@ -2124,15 +2124,15 @@ export function createInMemoryKorridClient(
   }
 }
 
-export interface DiscoverySnapshotPoller {
+export interface LibraryFoldersSnapshotPoller {
   pollNow(): Promise<void>
   dispose(): void
 }
 
-export function createDiscoverySnapshotPoller(
-  client: Pick<KorridClient, "discoverySnapshot">,
-  publish: (snapshot: DiscoverySnapshot) => void,
-): DiscoverySnapshotPoller {
+export function createLibraryFoldersSnapshotPoller(
+  client: Pick<KorridClient, "libraryFoldersSnapshot">,
+  publish: (snapshot: LibraryFoldersSnapshot) => void,
+): LibraryFoldersSnapshotPoller {
   let inFlight = false
   let disposed = false
   let lastGeneration: string | undefined
@@ -2141,7 +2141,7 @@ export function createDiscoverySnapshotPoller(
       if (disposed || inFlight) return
       inFlight = true
       try {
-        const outcome = await client.discoverySnapshot()
+        const outcome = await client.libraryFoldersSnapshot()
         if (disposed) return
         if (outcome._tag === "Ok" && outcome.payload.generation !== lastGeneration) {
           lastGeneration = outcome.payload.generation

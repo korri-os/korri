@@ -1,6 +1,15 @@
 # `korri` is the person-facing CLI, and it mirrors the portal
 
-**Owner decision, 2026-10-23.** In design; no command exists yet.
+**Owner decision, 2026-10-23.** Initially in design; no command existed yet.
+
+Implementation status: `clients/cli/` now supplies the person CLI and the native
+wire uses library folders and leave/resume/end. This is not full acceptance:
+safe offline identity reset still lacks exclusive maintenance authority and
+service-owned execution. `korri identity reset` refuses without state access;
+the old offline reset remains hidden operator tooling, not a safe replacement.
+One-off cutover confirmation is still false, so migration and offline owner/grant
+helpers remain. Remote session/plugin policy widening is separate work, not
+part of this cut. See `clients/cli/README.md` for current behavior and limits.
 
 Today the only command line is the `korrid` daemon binary with `catalog`,
 `identity`, `plugin-run` and `plugin-launch` added one slice at a time. Each

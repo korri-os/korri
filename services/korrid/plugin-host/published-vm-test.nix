@@ -228,10 +228,10 @@ pkgs.testers.runNixOSTest {
         return rpc("app.local-games.list")["games"]
 
     def rescan():
-        rpc("app.discovery.rescan")
+        rpc("app.library.folders.rescan")
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
-            snapshot = rpc("app.discovery.snapshot")
+            snapshot = rpc("app.library.folders.snapshot")
             if snapshot["state"]["_tag"] not in ["Scanning", "Enriching"]:
                 assert snapshot["state"]["_tag"] == "Idle", snapshot
                 return

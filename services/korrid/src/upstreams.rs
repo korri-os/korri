@@ -10,7 +10,7 @@ use crate::{
     upstream::{UpstreamClient, UpstreamConfig, UpstreamSessionStatus, UpstreamSessionStop},
     upstream_native::{NativeClient, NATIVE_RPC_TIMEOUT},
     CatalogHostFailure, CatalogSnapshot, Game, GameSource, MoonlightCertificateProvisioned,
-    MoonlightCertificateRevoked, SessionFreezeResult, SessionPrepared, SourceStatus,
+    MoonlightCertificateRevoked, SessionPrepared, SessionTransitionResult, SourceStatus,
 };
 use futures::future::join_all;
 use serde::Deserialize;
@@ -1293,7 +1293,7 @@ impl UpstreamRegistry {
     pub async fn session_freeze(
         &self,
         expected_launch_id: Option<&str>,
-    ) -> Result<SessionFreezeResult, UpstreamError> {
+    ) -> Result<SessionTransitionResult, UpstreamError> {
         let registry = self.resolved()?;
         registry
             .session_freezer_resolved(expected_launch_id, FreezerVerb::Freeze)
@@ -1303,7 +1303,7 @@ impl UpstreamRegistry {
     pub async fn session_thaw(
         &self,
         expected_launch_id: Option<&str>,
-    ) -> Result<SessionFreezeResult, UpstreamError> {
+    ) -> Result<SessionTransitionResult, UpstreamError> {
         let registry = self.resolved()?;
         registry
             .session_freezer_resolved(expected_launch_id, FreezerVerb::Thaw)
@@ -1318,7 +1318,7 @@ impl UpstreamRegistry {
         &self,
         expected_launch_id: Option<&str>,
         verb: FreezerVerb,
-    ) -> Result<SessionFreezeResult, UpstreamError> {
+    ) -> Result<SessionTransitionResult, UpstreamError> {
         let _mutation = self.remote_prepare_mutation.lock().await;
         let selected = match self.selected() {
             Some(selected) => {
@@ -1369,7 +1369,7 @@ impl UpstreamRegistry {
                     })
                 }
             }
-            return Ok(SessionFreezeResult {
+            return Ok(SessionTransitionResult {
                 launch_id: selected.launch_id,
                 state: crate::SessionFreezerState::Frozen,
                 changed: true,
@@ -2011,9 +2011,9 @@ mod tests {
     ) -> Json<crate::RpcResponse> {
         use crate::{
             game_routes::SelectedGameLaunchOutcome, ActiveSession, RpcFailure, RpcResponse,
-            SessionFreezeOutcome, SessionFreezeResult, SessionFreezerState, SessionPrepared,
-            SessionStatus, SessionStatusOutcome, SessionStopOutcome, SessionStopPhase,
-            SessionStopResult,
+            SessionEndOutcome, SessionEndPhase, SessionEndResult, SessionFreezerState,
+            SessionPrepared, SessionStatus, SessionStatusOutcome, SessionTransitionOutcome,
+            SessionTransitionResult,
         };
         let response = match request {
             crate::RpcRequest::SessionStreamPlay(request) => {
@@ -2072,60 +2072,64 @@ mod tests {
                     },
                 ))
             }
-            crate::RpcRequest::SessionFreeze(request) => {
+            crate::RpcRequest::SessionLeave(request) => {
                 if request.expected_launch_id.as_deref() != Some(state.launch_id.as_str()) {
-                    RpcResponse::SessionFreeze(SessionFreezeOutcome::Err(RpcFailure {
+                    RpcResponse::SessionLeave(SessionTransitionOutcome::Err(RpcFailure {
                         code: "StaleLaunchIdentity".into(),
                         message: "stale".into(),
                     }))
                 } else if take_failure(&state.freeze_failures) {
-                    RpcResponse::SessionFreeze(SessionFreezeOutcome::Err(RpcFailure {
+                    RpcResponse::SessionLeave(SessionTransitionOutcome::Err(RpcFailure {
                         code: "FreezeFailed".into(),
                         message: "freeze failed".into(),
                     }))
                 } else {
                     *state.active_phase.lock().unwrap() = Some("frozen".into());
-                    RpcResponse::SessionFreeze(SessionFreezeOutcome::Ok(SessionFreezeResult {
-                        launch_id: state.launch_id.clone(),
-                        state: SessionFreezerState::Frozen,
-                        changed: true,
-                    }))
+                    RpcResponse::SessionLeave(SessionTransitionOutcome::Ok(
+                        SessionTransitionResult {
+                            launch_id: state.launch_id.clone(),
+                            state: SessionFreezerState::Frozen,
+                            changed: true,
+                        },
+                    ))
                 }
             }
-            crate::RpcRequest::SessionThaw(request) => {
+            crate::RpcRequest::SessionResume(request) => {
                 if request.expected_launch_id.as_deref() != Some(state.launch_id.as_str()) {
-                    RpcResponse::SessionThaw(SessionFreezeOutcome::Err(RpcFailure {
+                    RpcResponse::SessionResume(SessionTransitionOutcome::Err(RpcFailure {
                         code: "StaleLaunchIdentity".into(),
                         message: "stale".into(),
                     }))
                 } else if take_failure(&state.thaw_failures) {
-                    RpcResponse::SessionThaw(SessionFreezeOutcome::Err(RpcFailure {
+                    RpcResponse::SessionResume(SessionTransitionOutcome::Err(RpcFailure {
                         code: "ThawFailed".into(),
                         message: "thaw failed".into(),
                     }))
                 } else {
                     *state.active_phase.lock().unwrap() = Some("running".into());
-                    RpcResponse::SessionThaw(SessionFreezeOutcome::Ok(SessionFreezeResult {
-                        launch_id: state.launch_id.clone(),
-                        state: SessionFreezerState::Running,
-                        changed: true,
-                    }))
+                    RpcResponse::SessionResume(SessionTransitionOutcome::Ok(
+                        SessionTransitionResult {
+                            launch_id: state.launch_id.clone(),
+                            state: SessionFreezerState::Running,
+                            changed: true,
+                        },
+                    ))
                 }
             }
-            crate::RpcRequest::SessionStop(request) => {
+            crate::RpcRequest::SessionEnd(request) => {
                 if request.expected_launch_id.as_deref() != Some(state.launch_id.as_str()) {
-                    RpcResponse::SessionStop(SessionStopOutcome::Err(RpcFailure {
+                    RpcResponse::SessionEnd(SessionEndOutcome::Err(RpcFailure {
                         code: "StaleLaunchIdentity".into(),
                         message: "stale".into(),
                     }))
                 } else if state.stop_pending {
-                    RpcResponse::SessionStop(SessionStopOutcome::Ok(SessionStopResult {
-                        phase: SessionStopPhase::Pending,
+                    RpcResponse::SessionEnd(SessionEndOutcome::Ok(SessionEndResult {
+                        phase: SessionEndPhase::Pending,
                     }))
                 } else {
                     *state.active_phase.lock().unwrap() = None;
-                    RpcResponse::SessionStop(SessionStopOutcome::Ok(SessionStopResult {
-                        phase: SessionStopPhase::Stopped,
+                    RpcResponse::SessionEnd(SessionEndOutcome::Ok(SessionEndResult {
+                        phase: SessionEndPhase::Ended,
                     }))
                 }
             }

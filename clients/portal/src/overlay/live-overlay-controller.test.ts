@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   SessionControlFailureReason,
   SessionFreezerState,
-  SessionStopPhase,
+  SessionEndPhase,
   type SessionControls,
 } from "@contracts/generated/korrid"
 import type { KorridClient } from "../korrid/client"
@@ -11,7 +11,7 @@ import { createLiveOverlayController } from "./live-overlay-controller"
 import {
   OVERLAY_END_CONTROL_ID,
   OVERLAY_OPEN_KORRI_CONTROL_ID,
-  OVERLAY_RETURN_CONTROL_ID,
+  OVERLAY_RESUME_CONTROL_ID,
 } from "./overlay-model"
 
 const LAUNCH = "0123456789abcdef0123456789abcdef"
@@ -72,7 +72,7 @@ describe("live gameplay overlay controller", () => {
       kind: "gameplay-overlay",
       title: "Wario Land 4",
       controls: [
-        { id: OVERLAY_RETURN_CONTROL_ID },
+        { id: OVERLAY_RESUME_CONTROL_ID },
         { id: OVERLAY_END_CONTROL_ID },
         { id: OVERLAY_OPEN_KORRI_CONTROL_ID },
       ],
@@ -130,7 +130,7 @@ describe("live gameplay overlay controller", () => {
     if (presentation.kind === "gameplay-overlay") {
       expect(presentation.groups).toEqual([])
       expect(presentation.controls.map(control => control.id)).toEqual([
-        OVERLAY_RETURN_CONTROL_ID,
+        OVERLAY_RESUME_CONTROL_ID,
         OVERLAY_END_CONTROL_ID,
         OVERLAY_OPEN_KORRI_CONTROL_ID,
       ])
@@ -144,22 +144,22 @@ describe("live gameplay overlay controller", () => {
     const controller = createLiveOverlayController({
       launchId: LAUNCH,
       korrid: client({
-        sessionThaw: async launchId => {
+        sessionResume: async launchId => {
           calls.push(`thaw:${launchId}`)
           return { _tag: "Ok", payload: {
             launchId, state: SessionFreezerState.Running, changed: true,
           } }
         },
-        sessionStop: async launchId => {
+        sessionEnd: async launchId => {
           calls.push(`stop:${launchId}`)
-          return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
+          return { _tag: "Ok", payload: { phase: SessionEndPhase.Ended } }
         },
         sessionControls: base.sessionControls,
       }),
       platform: p.value,
     })
 
-    await controller.invoke(OVERLAY_RETURN_CONTROL_ID)
+    await controller.invoke(OVERLAY_RESUME_CONTROL_ID)
     await controller.invoke(OVERLAY_END_CONTROL_ID)
     await controller.invoke(OVERLAY_OPEN_KORRI_CONTROL_ID)
 
@@ -182,15 +182,15 @@ describe("live gameplay overlay controller", () => {
         launchId: LAUNCH,
         korrid: client({
           sessionStatus: async () => replaced,
-          sessionThaw: async () => replaced,
-          sessionStop: async () => replaced,
+          sessionResume: async () => replaced,
+          sessionEnd: async () => replaced,
         }),
         platform: p.value,
       })
 
       if (operation === "poll") await controller.refresh()
       else await controller.invoke(
-        operation === "return" ? OVERLAY_RETURN_CONTROL_ID : OVERLAY_END_CONTROL_ID,
+        operation === "return" ? OVERLAY_RESUME_CONTROL_ID : OVERLAY_END_CONTROL_ID,
       )
 
       expect(p.calls).toEqual(["changed"])
@@ -210,9 +210,9 @@ describe("live gameplay overlay controller", () => {
     const controller = createLiveOverlayController({
       launchId: LAUNCH,
       korrid: client({
-        sessionStop: async launchId => {
+        sessionEnd: async launchId => {
           calls.push(launchId ?? "missing")
-          return { _tag: "Ok", payload: { phase: SessionStopPhase.Pending } }
+          return { _tag: "Ok", payload: { phase: SessionEndPhase.Pending } }
         },
         sessionStatus: async () => completed
           ? {
@@ -249,11 +249,11 @@ describe("live gameplay overlay controller", () => {
     expect(p.calls).toEqual(["ended"])
   })
 
-  test("focus failure keeps Return and the overlay notice available", async () => {
+  test("focus failure keeps Resume and the overlay notice available", async () => {
     const controller = createLiveOverlayController({
       launchId: LAUNCH,
       korrid: client({
-        sessionThaw: async () => ({
+        sessionResume: async () => ({
           _tag: "Err",
           payload: { code: "HostFocusFailed", message: "sway refused focus" },
         }),
@@ -261,25 +261,25 @@ describe("live gameplay overlay controller", () => {
       platform: platform().value,
     })
 
-    await controller.invoke(OVERLAY_RETURN_CONTROL_ID)
+    await controller.invoke(OVERLAY_RESUME_CONTROL_ID)
 
     expect(controller.model().status).toEqual({
       _tag: "Problem",
-      kicker: "Could not return",
-      reason: "The game is running, but Korri could not bring its window forward. Return is still available.",
+      kicker: "Could not resume",
+      reason: "The game is running, but Korri could not bring its window forward. Resume is still available.",
       canRetry: true,
     })
     const presentation = controller.model().presentation
     expect(presentation.kind).toBe("gameplay-overlay")
     if (presentation.kind === "gameplay-overlay") {
       expect(presentation.controls[0]).toMatchObject({
-        id: OVERLAY_RETURN_CONTROL_ID,
+        id: OVERLAY_RESUME_CONTROL_ID,
         enabled: true,
       })
     }
   })
 
-  test("a retained focus failure mounts the notice with Return available", async () => {
+  test("a retained focus failure mounts the notice with Resume available", async () => {
     const controller = createLiveOverlayController({
       launchId: LAUNCH,
       korrid: client({
@@ -297,14 +297,14 @@ describe("live gameplay overlay controller", () => {
 
     expect(controller.model().status).toMatchObject({
       _tag: "Problem",
-      kicker: "Could not return",
+      kicker: "Could not resume",
       canRetry: true,
     })
     const presentation = controller.model().presentation
     expect(presentation.kind).toBe("gameplay-overlay")
     if (presentation.kind === "gameplay-overlay") {
       expect(presentation.controls[0]).toMatchObject({
-        id: OVERLAY_RETURN_CONTROL_ID,
+        id: OVERLAY_RESUME_CONTROL_ID,
         enabled: true,
       })
     }
@@ -316,7 +316,7 @@ describe("live gameplay overlay controller", () => {
     const controller = createLiveOverlayController({
       launchId: LAUNCH,
       korrid: client({
-        sessionThaw: async launchId => {
+        sessionResume: async launchId => {
           calls.push(launchId)
           attempt += 1
           return attempt === 1
@@ -329,7 +329,7 @@ describe("live gameplay overlay controller", () => {
       platform: platform().value,
     })
 
-    await controller.invoke(OVERLAY_RETURN_CONTROL_ID)
+    await controller.invoke(OVERLAY_RESUME_CONTROL_ID)
     await controller.retry()
 
     expect(calls).toEqual([LAUNCH, LAUNCH])
@@ -408,7 +408,7 @@ describe("live gameplay overlay controller", () => {
                 active: { launchId: LAUNCH, gameId: "wario", phase: "frozen" },
               },
             },
-        sessionThaw: async launchId => {
+        sessionResume: async launchId => {
           calls.push(launchId)
           return {
             _tag: "Ok",

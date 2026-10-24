@@ -9,10 +9,10 @@ import type {
   HealthOutcome,
   LocalGame,
   LocalGamesListOutcome,
-  SessionFreezeOutcome,
+  SessionTransitionOutcome,
   SelectedGameLaunchOutcome,
   SessionStatusOutcome,
-  SessionStopOutcome,
+  SessionEndOutcome,
   SettingsSnapshotOutcome,
   SettingsUpdateOutcome,
   SourceStatusOutcome,
@@ -20,7 +20,7 @@ import type {
 import {
   SecretSettingStatus,
   SessionFreezerState,
-  SessionStopPhase,
+  SessionEndPhase,
   SourceCatalogState,
   SourceStreamControlState,
 } from "@contracts/generated/korrid"
@@ -156,29 +156,29 @@ function buildKorrid(sources: Sources, calls: Calls): KorridClient {
         payload: { status: SecretSettingStatus.NotConfigured },
       }
     },
-    async discoverySnapshot() {
+    async libraryFoldersSnapshot() {
       return {
         _tag: "Ok" as const,
         payload: {
           generation: "discovery-0",
           state: { _tag: "Idle" as const, payload: {} },
-          sources: [],
+          folders: [],
           attention: 0,
           diagnostics: [],
         },
       }
     },
-    async pairDiscoverySource() {
-      return this.discoverySnapshot()
+    async addLibraryFolder() {
+      return this.libraryFoldersSnapshot()
     },
-    async changeDiscoverySource() {
+    async changeLibraryFolder() {
       throw new Error("unavailable")
     },
-    async unpairDiscoverySource() {
-      return this.discoverySnapshot()
+    async removeLibraryFolder() {
+      return this.libraryFoldersSnapshot()
     },
-    async rescanDiscovery() {
-      return this.discoverySnapshot()
+    async rescanLibraryFolders() {
+      return this.libraryFoldersSnapshot()
     },
     async catalogSnapshot(): Promise<CatalogSnapshotOutcome> {
       return okCatalog(sources.remoteGames)
@@ -196,10 +196,10 @@ function buildKorrid(sources: Sources, calls: Calls): KorridClient {
     async sessionStatus(): Promise<SessionStatusOutcome> {
       return { _tag: "Ok", payload: {} }
     },
-    async sessionStop(): Promise<SessionStopOutcome> {
-      return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
+    async sessionEnd(): Promise<SessionEndOutcome> {
+      return { _tag: "Ok", payload: { phase: SessionEndPhase.Ended } }
     },
-    async sessionFreeze(expectedLaunchId): Promise<SessionFreezeOutcome> {
+    async sessionLeave(expectedLaunchId): Promise<SessionTransitionOutcome> {
       return {
         _tag: "Ok",
         payload: {
@@ -209,7 +209,7 @@ function buildKorrid(sources: Sources, calls: Calls): KorridClient {
         },
       }
     },
-    async sessionThaw(expectedLaunchId): Promise<SessionFreezeOutcome> {
+    async sessionResume(expectedLaunchId): Promise<SessionTransitionOutcome> {
       return {
         _tag: "Ok",
         payload: {
@@ -430,13 +430,13 @@ describe("SurfaceRoot", () => {
     if (seats?.kind !== "choice") throw new Error("Missing seat choices")
     expect(seats.choices.map(choice => choice.value)).toContain("1")
     expect(seats.choices.map(choice => choice.value)).toContain("255")
-    const count = buttonNamed("Player seats◀ 4 ▶", view.container)
+    const count = buttonNamed("Seats◀ 4 ▶", view.container)
     await act(async () => { count.focus() })
     await confirm(view)
-    await waitFor(() => expect(buttonNamed("Player seats◀ 5 ▶", view.container)).toBeDefined(), "first count step")
-    await act(async () => { buttonNamed("Player seats◀ 5 ▶", view.container).focus() })
+    await waitFor(() => expect(buttonNamed("Seats◀ 5 ▶", view.container)).toBeDefined(), "first count step")
+    await act(async () => { buttonNamed("Seats◀ 5 ▶", view.container).focus() })
     await confirm(view)
-    await waitFor(() => expect(buttonNamed("Player seats◀ 6 ▶", view.container)).toBeDefined(), "applied count")
+    await waitFor(() => expect(buttonNamed("Seats◀ 6 ▶", view.container)).toBeDefined(), "applied count")
     expect(mutations).toEqual(["setting", "setting"])
   })
 })

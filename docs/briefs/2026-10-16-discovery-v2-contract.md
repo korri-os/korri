@@ -252,7 +252,12 @@ pub struct AttentionItem { pub id: String, pub kind: String, pub source: String,
 
 `AttentionItem.id` is the first 16 hex characters of SHA-256 over `kind\nsource\npath`. `change` keeps the folder and replaces the system: it behaves as `unpair` then `pair` of the same root. Errors: `NotOwner`, `SourceOverlap`, `PluginData`, `UnknownSystem`, `UnknownSource`, `UnknownItem`, `NotACandidate`, plus the existing receipt errors. The portal client (`clients/portal/src/korrid/client.ts`, `surface/use-launchables.ts`) moves to `sources` and `unpair`; it adds no pairing screen (Pico screens are later).
 
-CLI (offline, daemon stopped, same environment variables as today): `korrid catalog pair <directory> <system>`, `korrid catalog unpair <source>`, `korrid catalog rescan`, `korrid catalog migrate [--apply] [--plan <file>]`.
+Historical CLI contract (2026-10-16): offline `korrid catalog pair <directory> <system>`, `korrid catalog unpair <source>`, `korrid catalog rescan`, `korrid catalog migrate [--apply] [--plan <file>]`.
+
+Superseded by ADR 0031: use live `korri library folders add`, `remove` and
+`rescan` with korrid running. Only `korrid catalog migrate` remains a hidden
+offline operator helper. See `services/korrid/CATALOG-IMPORT.md`. The persisted
+schema in this brief is unchanged by that wire/command terminology cut.
 
 ## 7. Migration (`korrid catalog migrate`)
 

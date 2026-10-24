@@ -93,7 +93,7 @@ test("finishing setup mid-install still rescans and refreshes the library after 
   let libraryReads = 0
   const client = { ...base,
     async setPluginEnabled(id: string, value: boolean) { await enabled; return base.setPluginEnabled(id, value) },
-    async rescanDiscovery() { rescans++; return base.rescanDiscovery() },
+    async rescanLibraryFolders() { rescans++; return base.rescanLibraryFolders() },
     async localGames() { libraryReads++; return base.localGames() },
   }
   let model: SurfaceModel | undefined
@@ -123,7 +123,7 @@ test("SurfaceRoot unmount cleans up an active Starter pack discovery wait", asyn
   const base = createInMemoryKorridClient({ discoveryScan: { results: [{ _tag: "Enriching", payload: {} }] } })
   let reads = 0
   const client = { ...base,
-    async discoverySnapshot() { reads++; return base.discoverySnapshot() },
+    async libraryFoldersSnapshot() { reads++; return base.libraryFoldersSnapshot() },
   }
   let model: SurfaceModel | undefined
   let host: SurfaceHost | undefined

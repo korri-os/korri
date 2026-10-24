@@ -100,6 +100,7 @@ let
       enable = true;
       privateStateRoot = "/srv/korri-test/recovery";
       controlSocket = "/run/korri-test/control/device.sock";
+      cliSocket = "/run/korri-test/cli/person.sock";
       compositorControlDirectory = "/run/korri-test/compositor-control";
       certificateControlDirectory = "/run/korri-test/certificate-control";
     };
@@ -286,6 +287,8 @@ assert
     KORRID_CERTIFICATE_CONTROL_DIRECTORY = "/run/korri-certificate-control";
     KORRID_COMPOSITOR_CONTROL_DIRECTORY = "/run/korri-compositor";
     KORRID_CONTROL_DIRECTORY = "/run/korrid-control";
+    KORRID_CLI_SOCKET = "/run/korrid-cli/cli.sock";
+    KORRID_CLI_PEER_UID = "1000";
     KORRID_CONTROL_PEER_GID = "977";
     KORRID_CONTROL_PEER_UID = "977";
     KORRID_CONTROL_SOCKET = "/run/korrid-control/control.sock";
@@ -407,6 +410,21 @@ assert signerSocket.socketConfig.SocketGroup == "korrid";
 assert signerSocket.socketConfig.SocketMode == "0660";
 assert signerSocket.socketConfig.Service == "korri-local-signer.service";
 assert socket.socketConfig.ListenStream == "/run/korrid-control/control.sock";
+assert socket.socketConfig.FileDescriptorName == "korrid-control";
+assert enabled.config.systemd.sockets.korrid-cli.socketConfig == {
+  ListenStream = "/run/korrid-cli/cli.sock";
+  FileDescriptorName = "korrid-cli";
+  SocketUser = "root";
+  SocketGroup = "korri";
+  SocketMode = "0660";
+  DirectoryMode = "0750";
+  RemoveOnStop = true;
+  Service = "korrid.service";
+};
+assert builtins.elem "korrid-cli.socket" service.requires;
+assert builtins.elem "d /run/korrid-cli 0750 root korri -" tmpfiles;
+assert customService.environment.KORRID_CLI_SOCKET == "/run/korri-test/cli/person.sock";
+assert customPaths.config.systemd.sockets.korrid-cli.socketConfig.ListenStream == "/run/korri-test/cli/person.sock";
 assert socket.socketConfig.SocketUser == "root";
 assert socket.socketConfig.SocketGroup == "korri-control";
 assert socket.socketConfig.SocketMode == "0660";

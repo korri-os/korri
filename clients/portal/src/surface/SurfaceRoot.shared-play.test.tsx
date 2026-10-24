@@ -46,7 +46,7 @@ test("the portal maps invite actions to RPCs and intercepts Back while Paused, e
   const far: ActiveSession = { ...invite.session, phase: "frozen" }
   const client = createInMemoryKorridClient({ games: [], invites: [invite], streamSession: () => far })
   const play = spyOn(client, "invitesStreamPlay")
-  const leave = spyOn(client, "sessionFreeze")
+  const leave = spyOn(client, "sessionLeave")
   const first = await mount(client)
   await waitFor(() => first.model().invites?.length === 1)
   expect(first.model().invites?.[0]?.personName).toBe("Simon")

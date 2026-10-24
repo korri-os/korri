@@ -64,7 +64,7 @@ describe("device player count", () => {
       activeSession: { launchId: "current", gameId: "neverball", phase: "frozen" },
     })
     const before = await snapshot(client)
-    expect((await client.sessionStop("current"))._tag).toBe("Ok")
+    expect((await client.sessionEnd("current"))._tag).toBe("Ok")
     expect(await client.updateSetting(before.revision, SETTING, "6")).toMatchObject({
       _tag: "Ok", payload: { playerCount: 6 },
     })

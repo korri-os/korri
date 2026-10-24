@@ -209,7 +209,7 @@ for (const selected of [false, true]) {
         await invoke(() => view.host().reload())
         expect(view.model().status._tag).toBe("Busy")
         if (resolution === "handoff") focus = FocusOwnership.Launch
-        else await implementation.sessionStop("reserved:1:wl4")
+        else await implementation.sessionEnd("reserved:1:wl4")
         await waitFor(() => view.model().status._tag !== "Busy")
         expect(view.currentId()).toBe(resolution === "handoff" ? "reserved:1:wl4" : undefined)
       }
@@ -411,7 +411,7 @@ for (const selected of [false, true]) {
     const oldId = view.currentId()!
     holdNext = true
     await waitFor(() => captured)
-    await invoke(() => view.host().runGameAction(`now-playing:${oldId}`, "stop"))
+    await invoke(() => view.host().runGameAction(`now-playing:${oldId}`, "end"))
     await waitFor(() => view.currentId() === undefined && view.model().status._tag === "Browsing")
     focus = FocusOwnership.Other
     await view.launch()
@@ -427,8 +427,8 @@ for (const selected of [false, true]) {
       const implementation = createInMemoryKorridClient({ ...seed(selected), sessionFocusOwnership: () => focus })
       const delayed = gate()
       let thawed = false
-      const client: KorridClient = { ...implementation, async sessionThaw(id) {
-        const result = await implementation.sessionThaw(id)
+      const client: KorridClient = { ...implementation, async sessionResume(id) {
+        const result = await implementation.sessionResume(id)
         thawed = true
         await delayed.promise
         return result
@@ -438,12 +438,12 @@ for (const selected of [false, true]) {
       await invoke(() => view.host().launchGame("game:wl4"))
       await waitFor(() => view.currentId() !== undefined && view.model().status._tag === "Browsing")
       const oldId = view.currentId()!
-      await implementation.sessionFreeze(oldId)
+      await implementation.sessionLeave(oldId)
       await invoke(() => view.host().reload())
       await invoke(() => view.host().runGameAction(`now-playing:${oldId}`, "resume"))
       await waitFor(() => thawed)
       expect(view.model().status._tag).toBe("Busy")
-      await implementation.sessionStop(oldId)
+      await implementation.sessionEnd(oldId)
       await waitFor(() => view.currentId() === undefined && view.model().status._tag === "Browsing")
       if (replace) { focus = FocusOwnership.Other; await view.launch() }
       const expectedId = view.currentId()
@@ -486,14 +486,14 @@ for (const selected of [false, true]) {
       sessionObservationFailure: () => failure })
     const starts = spyOn(implementation, "sessionStart")
     const reserves = spyOn(implementation, "sessionReserve")
-    const returns = spyOn(implementation, "sessionThaw")
-    const ends = spyOn(implementation, "sessionStop")
+    const returns = spyOn(implementation, "sessionResume")
+    const ends = spyOn(implementation, "sessionEnd")
     const routes = spyOn(implementation, "gameRoutes")
     const view = await mount(implementation)
     await invoke(() => view.host().launchGame("game:wl4"))
     await waitFor(() => view.model().status._tag === "Browsing" && view.currentId() !== undefined)
     const id = view.currentId()!
-    await implementation.sessionFreeze(id)
+    await implementation.sessionLeave(id)
     await invoke(() => view.host().reload())
     const pending = await implementation.sessionReserve({ gameId: "other" })
     if (pending._tag !== "Ok") throw new Error("reserve failed")
@@ -521,7 +521,7 @@ for (const selected of [false, true]) {
     expect(returns).toHaveBeenCalledWith(id)
     expect(view.currentId()).toBe(id)
     expect(view.model().status._tag).toBe("Problem")
-    await invoke(() => view.host().runGameAction(`now-playing:${id}`, "stop"))
+    await invoke(() => view.host().runGameAction(`now-playing:${id}`, "end"))
     expect(ends).toHaveBeenCalledWith(id)
     expect(view.model().status._tag).toBe("Problem")
     failure = undefined

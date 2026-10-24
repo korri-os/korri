@@ -79,7 +79,7 @@ test("manual recovery HTTP Cancel targets one of two owned reservations and pres
     expect(await client.sessionStatus()).toMatchObject({ _tag: "Ok", payload: { pendingLaunches: [
       { session: first.payload, phase: PendingLaunchPhase.Reserved }, { session: second.payload, phase: PendingLaunchPhase.Reserved },
     ] } })
-    expect(await client.sessionCancel({ expectedLaunchId: first.payload.launchId })).toMatchObject({ _tag: "Ok", payload: { phase: "stopped" } })
+    expect(await client.sessionCancel({ expectedLaunchId: first.payload.launchId })).toMatchObject({ _tag: "Ok", payload: { phase: "ended" } })
     expect(await client.sessionStatus()).toEqual({ _tag: "Ok", payload: { pendingLaunches: [{ session: second.payload, phase: PendingLaunchPhase.Reserved }] } })
     expect(requests.filter(rpc => rpc._tag === "app.session.cancel")).toEqual([
       { _tag: "app.session.cancel", payload: { expectedLaunchId: first.payload.launchId } },

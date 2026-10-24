@@ -2,7 +2,7 @@
 use crate::{
     authorization::AuthorizationContext, host::HostRuntime, RpcFailure, RpcRequest, RpcResponse,
     SessionControlFailure, SessionControlFailureReason, SessionControlInvokeOutcome,
-    SessionControlsOutcome, SessionFreezeOutcome, SessionStopOutcome,
+    SessionControlsOutcome, SessionEndOutcome, SessionTransitionOutcome,
 };
 
 pub(crate) async fn refusal(
@@ -14,9 +14,9 @@ pub(crate) async fn refusal(
         return None;
     };
     let expected = match request {
-        RpcRequest::SessionStop(r) => r.expected_launch_id.as_deref(),
-        RpcRequest::SessionFreeze(r) => r.expected_launch_id.as_deref(),
-        RpcRequest::SessionThaw(r) => r.expected_launch_id.as_deref(),
+        RpcRequest::SessionEnd(r) => r.expected_launch_id.as_deref(),
+        RpcRequest::SessionLeave(r) => r.expected_launch_id.as_deref(),
+        RpcRequest::SessionResume(r) => r.expected_launch_id.as_deref(),
         RpcRequest::SessionControls(r) => Some(r.launch_id.as_str()),
         RpcRequest::SessionControlInvoke(r) => Some(r.launch_id.as_str()),
         _ => return None,
@@ -35,9 +35,9 @@ pub(crate) fn brain_refusal(
     if !matches!(authorization, AuthorizationContext::Peer(_))
         || !matches!(
             request,
-            RpcRequest::SessionStop(_)
-                | RpcRequest::SessionFreeze(_)
-                | RpcRequest::SessionThaw(_)
+            RpcRequest::SessionEnd(_)
+                | RpcRequest::SessionLeave(_)
+                | RpcRequest::SessionResume(_)
                 | RpcRequest::SessionControls(_)
                 | RpcRequest::SessionControlInvoke(_)
         )
@@ -64,11 +64,13 @@ fn refused_response(request: &RpcRequest, failure: RpcFailure) -> RpcResponse {
         message: failure.message.clone(),
     };
     match request {
-        RpcRequest::SessionStop(_) => RpcResponse::SessionStop(SessionStopOutcome::Err(failure)),
-        RpcRequest::SessionFreeze(_) => {
-            RpcResponse::SessionFreeze(SessionFreezeOutcome::Err(failure))
+        RpcRequest::SessionEnd(_) => RpcResponse::SessionEnd(SessionEndOutcome::Err(failure)),
+        RpcRequest::SessionLeave(_) => {
+            RpcResponse::SessionLeave(SessionTransitionOutcome::Err(failure))
         }
-        RpcRequest::SessionThaw(_) => RpcResponse::SessionThaw(SessionFreezeOutcome::Err(failure)),
+        RpcRequest::SessionResume(_) => {
+            RpcResponse::SessionResume(SessionTransitionOutcome::Err(failure))
+        }
         RpcRequest::SessionControls(_) => {
             RpcResponse::SessionControls(SessionControlsOutcome::Err(control_failure()))
         }
@@ -98,10 +100,10 @@ mod tests {
     async fn every_peer_control_is_refused_unless_the_peer_started_the_session() {
         for starter in [None, Some("starter")] {
             for (tag, extra) in [
-                ("app.session.stop", json!({})),
-                ("app.session.stop", json!({"force":true})),
-                ("app.session.freeze", json!({})),
-                ("app.session.thaw", json!({})),
+                ("app.session.end", json!({})),
+                ("app.session.end", json!({"force":true})),
+                ("app.session.leave", json!({})),
+                ("app.session.resume", json!({})),
                 ("app.session.controls", json!({})),
                 ("app.session.control.invoke", json!({"controlId":"control"})),
             ] {
@@ -201,9 +203,9 @@ mod tests {
             None,
         );
         for tag in [
-            "app.session.stop",
-            "app.session.freeze",
-            "app.session.thaw",
+            "app.session.end",
+            "app.session.leave",
+            "app.session.resume",
             "app.session.controls",
             "app.session.control.invoke",
         ] {
@@ -238,7 +240,7 @@ mod tests {
             crate::host::control::HostSessionStatus::Running { .. }
                 | crate::host::control::HostSessionStatus::FocusFailed { .. }
         ));
-        for tag in ["app.session.freeze", "app.session.thaw", "app.session.stop"] {
+        for tag in ["app.session.leave", "app.session.resume", "app.session.end"] {
             let request =
                 serde_json::from_value(json!({"_tag":tag,"payload":{"expectedLaunchId":launch}}))
                     .unwrap();

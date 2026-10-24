@@ -33,7 +33,7 @@ test("the dev client retains the holder on Leave and denies session controls to 
   expect(await client.sessionControls("exact")).toMatchObject({ _tag: "Err", payload: { reason: SessionControlFailureReason.NotSessionStarter } })
   expect(await client.invokeSessionControl("exact", "plugin-control")).toMatchObject({ _tag: "Err", payload: { reason: SessionControlFailureReason.NotSessionStarter } })
   expect(await client.invitesList()).toEqual({ _tag: "Ok", payload: { invites: [] } })
-  await client.sessionStop("exact")
+  await client.sessionEnd("exact")
   expect(far?.phase).toBe("running")
   await client.invitesStreamPlay("opaque")
   far = undefined

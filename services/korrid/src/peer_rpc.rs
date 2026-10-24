@@ -1365,7 +1365,7 @@ mod tests {
         let encoded = credentials
             .encode_request_with_tokens(
                 &host_key,
-                RpcRequest::SessionStop(crate::SessionStopRequest {
+                RpcRequest::SessionEnd(crate::SessionEndRequest {
                     force: None,
                     expected_launch_id: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
                 }),

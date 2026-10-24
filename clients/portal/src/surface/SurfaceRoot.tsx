@@ -277,7 +277,7 @@ export function SurfaceRoot({
       const title = entry?.kind === "game" ? entry.game.title : id
       return gatedStart({ id, surfaceId, title, runnerId })
     },
-    returnSession: session => launchablesRef.current.returnCatalogSession(session),
+    returnSession: session => launchablesRef.current.resumeCatalogSession(session),
     reload: () => launchablesRef.current.reload(),
   }), [gatedStart, korrid, launch])
   runnerRef.current = runner
@@ -348,7 +348,7 @@ export function SurfaceRoot({
     dismissIdentityStatus,
     runDeviceAction,
     confirmEntry,
-    stopSession,
+    endSession,
     dismissNotice,
     reload,
   } = launchables
@@ -558,7 +558,7 @@ export function SurfaceRoot({
           id: "runners", label: "Runners on this device", enabled: current._tag === "Ready" && current.unavailableSessionStatus === undefined,
         }] : []), ...(korridId !== undefined ? [{
           id: LAUNCH_SETTINGS_ACTION_ID, label: "Launch settings", enabled: current._tag === "Ready",
-        }] : []), ...(history ? [{ id: SAVE_HISTORY_ACTION_ID, label: "Save history", enabled: true }] : [])]
+        }] : []), ...(history ? [{ id: SAVE_HISTORY_ACTION_ID, label: "Saves", enabled: true }] : [])]
       },
       runGameAction: (gameId, actionId) => {
         const current = launchablesRef.current.getState()
@@ -600,7 +600,7 @@ export function SurfaceRoot({
           else downloads.remove(subject.ref)
           return
         }
-        if (actionId === "stop") stopSession(entry)
+        if (actionId === "end") endSession(entry)
         else confirmEntry(entry)
       },
       // The browsing root never publishes gameplay-overlay controls. U5 owns
@@ -649,7 +649,7 @@ export function SurfaceRoot({
       dismissIdentityStatus,
       reload,
       runDeviceAction,
-      stopSession,
+      endSession,
     ],
   )
 

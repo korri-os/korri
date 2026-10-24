@@ -108,7 +108,8 @@ pub enum UpstreamSessionStatus {
     HostUnavailable {},
 }
 
-/// Legacy `app.session.stop` union, thinned to the variants korrid maps.
+/// Aka's external Effect-RPC `app.session.stop` union. This is not the native
+/// korrid product wire; its producer has not switched protocols.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "_tag")]
 pub enum UpstreamSessionStop {

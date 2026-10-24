@@ -103,7 +103,7 @@ async fn input_transition_failed_start_retains_this_daemons_handoff_history() {
     assert!(live["outcome"]["payload"].get("pendingLaunches").is_none());
     assert_eq!(
         cancel(&app, &id).await["outcome"]["payload"]["phase"],
-        "stopped"
+        "ended"
     );
     assert_eq!(
         status(&app).await["outcome"]["payload"]["code"],

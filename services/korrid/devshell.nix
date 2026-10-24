@@ -17,6 +17,7 @@ pkgs.mkShell {
     curl
     git
     jq
+    python3 # CLI real-terminal input tests; not a target runtime dependency.
     openssh
     systemd
     unzip

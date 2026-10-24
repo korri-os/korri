@@ -48,7 +48,7 @@ async fn host_metadata_reports_only_supported_and_authorized_handlers() {
     config::settings::set_steamgriddb_credential(&fixture.root.path().join("private"), SECRET)
         .unwrap();
     for (permission, ids) in [
-        (PortalPermission::Full, vec![COUNT]),
+        (PortalPermission::Full, vec![NAME, COUNT]),
         (PortalPermission::LocalSessions, vec![COUNT]),
         (PortalPermission::ReadOnly, vec![]),
     ] {
@@ -66,6 +66,20 @@ async fn host_metadata_reports_only_supported_and_authorized_handlers() {
             assert_eq!(status, StatusCode::OK);
             assert_eq!(result["outcome"]["_tag"], "Ok", "{result}");
             assert_ids(&result["outcome"]["payload"], &ids);
+        }
+        let current = snapshot(&app).await;
+        let bytes = fixture.bytes();
+        let rename = update(current["revision"].as_str().unwrap(), NAME, "Host name");
+        let (status, result) =
+            request(&app, rename, Some(&format!("Bearer {TOKEN}")), Some(ORIGIN)).await;
+        if permission == PortalPermission::Full {
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(result["outcome"]["_tag"], "Ok", "{result}");
+            assert_eq!(result["outcome"]["payload"]["deviceName"], "Host name");
+            assert_ids(&result["outcome"]["payload"], &ids);
+        } else {
+            assert_eq!(status, StatusCode::FORBIDDEN);
+            assert_eq!(fixture.bytes(), bytes);
         }
     }
     // The field is mandatory, including when the list is empty.

@@ -16,7 +16,7 @@ fn failure(error: SaveError) -> RpcFailure {
         .into(),
         message: match error {
             SaveError::Split => "Saves split between two devices. Choose one before launch.",
-            SaveError::InUse => "Stop this game before changing its saves.",
+            SaveError::InUse => "End this session before changing its saves.",
             SaveError::Missing => "This snapshot's content is not available on this device.",
             _ => "Save history could not be read or updated.",
         }

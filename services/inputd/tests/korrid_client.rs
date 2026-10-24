@@ -137,13 +137,13 @@ async fn exact_panel_freezes_running_and_thaws_frozen_without_retargeting() {
     for (phase, tag, state, expected) in [
         (
             "running",
-            "app.session.freeze",
+            "app.session.leave",
             "frozen",
             ExactPanelOutcome::Opened,
         ),
         (
             "frozen",
-            "app.session.thaw",
+            "app.session.resume",
             "running",
             ExactPanelOutcome::Returned,
         ),
@@ -206,12 +206,12 @@ async fn refused_portal_focus_rolls_back_to_the_exact_running_launch() {
         drop(status);
         let (mut freeze, _) = listener.accept().await.unwrap();
         let request = request_body(&mut freeze).await;
-        assert_eq!(request["_tag"], "app.session.freeze");
+        assert_eq!(request["_tag"], "app.session.leave");
         assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
         reply(
             &mut freeze,
             &serde_json::json!({
-                "_tag": "app.session.freeze",
+                "_tag": "app.session.leave",
                 "outcome": { "_tag": "Ok", "payload": {
                     "launchId": LAUNCH_ID, "state": "frozen", "changed": true
                 }}
@@ -222,12 +222,12 @@ async fn refused_portal_focus_rolls_back_to_the_exact_running_launch() {
         drop(freeze);
         let (mut rollback, _) = listener.accept().await.unwrap();
         let request = request_body(&mut rollback).await;
-        assert_eq!(request["_tag"], "app.session.thaw");
+        assert_eq!(request["_tag"], "app.session.resume");
         assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
         reply(
             &mut rollback,
             &serde_json::json!({
-                "_tag": "app.session.thaw",
+                "_tag": "app.session.resume",
                 "outcome": { "_tag": "Ok", "payload": {
                     "launchId": LAUNCH_ID, "state": "running", "changed": false
                 }}
@@ -263,12 +263,12 @@ async fn failed_leave_rollback_without_proven_game_focus_stays_portal_owned() {
 
         let (mut freeze, _) = listener.accept().await.unwrap();
         let request = request_body(&mut freeze).await;
-        assert_eq!(request["_tag"], "app.session.freeze");
+        assert_eq!(request["_tag"], "app.session.leave");
         assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
         reply(
             &mut freeze,
             &serde_json::json!({
-                "_tag": "app.session.freeze",
+                "_tag": "app.session.leave",
                 "outcome": { "_tag": "Ok", "payload": {
                     "launchId": LAUNCH_ID, "state": "frozen", "changed": true
                 }}
@@ -280,11 +280,11 @@ async fn failed_leave_rollback_without_proven_game_focus_stays_portal_owned() {
 
         let (mut thaw, _) = listener.accept().await.unwrap();
         let request = request_body(&mut thaw).await;
-        assert_eq!(request["_tag"], "app.session.thaw");
+        assert_eq!(request["_tag"], "app.session.resume");
         assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
         reply(
             &mut thaw,
-            r#"{"_tag":"app.session.thaw","outcome":{"_tag":"Err","payload":{"code":"HostFocusFailed","message":"no unique exact-launch window could be focused"}}}"#,
+            r#"{"_tag":"app.session.resume","outcome":{"_tag":"Err","payload":{"code":"HostFocusFailed","message":"no unique exact-launch window could be focused"}}}"#,
         )
         .await;
     });
@@ -312,11 +312,11 @@ async fn replacement_before_exact_freeze_never_enters_portal_or_retargets() {
         drop(status);
         let (mut freeze, _) = listener.accept().await.unwrap();
         let request = request_body(&mut freeze).await;
-        assert_eq!(request["_tag"], "app.session.freeze");
+        assert_eq!(request["_tag"], "app.session.leave");
         assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
         reply(
             &mut freeze,
-            r#"{"_tag":"app.session.freeze","outcome":{"_tag":"Err","payload":{"code":"SelectedRemoteSessionReplaced","message":"launch was replaced"}}}"#,
+            r#"{"_tag":"app.session.leave","outcome":{"_tag":"Err","payload":{"code":"SelectedRemoteSessionReplaced","message":"launch was replaced"}}}"#,
         )
         .await;
         assert!(
@@ -357,7 +357,7 @@ async fn home_on_recovered_focus_failure_refreezes_exact_launch_and_recreates_in
         drop(status);
         let (mut thaw, _) = listener.accept().await.unwrap();
         observed.lock().await.push(request_body(&mut thaw).await);
-        reply(&mut thaw, r#"{"_tag":"app.session.thaw","outcome":{"_tag":"Err","payload":{"code":"HostFocusFailed","message":"focus refused"}}}"#).await;
+        reply(&mut thaw, r#"{"_tag":"app.session.resume","outcome":{"_tag":"Err","payload":{"code":"HostFocusFailed","message":"focus refused"}}}"#).await;
         drop(thaw);
         let (mut status, _) = listener.accept().await.unwrap();
         observed.lock().await.push(request_body(&mut status).await);
@@ -370,7 +370,7 @@ async fn home_on_recovered_focus_failure_refreezes_exact_launch_and_recreates_in
         reply(
             &mut freeze,
             &serde_json::json!({
-                "_tag": "app.session.freeze",
+                "_tag": "app.session.leave",
                 "outcome": { "_tag": "Ok", "payload": {
                     "launchId": LAUNCH_ID, "state": "frozen", "changed": true
                 }}
@@ -398,9 +398,9 @@ async fn home_on_recovered_focus_failure_refreezes_exact_launch_and_recreates_in
             .collect::<Vec<_>>(),
         [
             "app.session.status",
-            "app.session.thaw",
+            "app.session.resume",
             "app.session.status",
-            "app.session.freeze",
+            "app.session.leave",
         ]
     );
 }
@@ -416,8 +416,8 @@ async fn rapid_home_presses_serialize_status_and_freezer_mutations() {
     let server = tokio::spawn(async move {
         let mut first_status_seen_tx = Some(first_status_seen_tx);
         for (index, (phase, tag, state)) in [
-            ("running", "app.session.freeze", "frozen"),
-            ("frozen", "app.session.thaw", "running"),
+            ("running", "app.session.leave", "frozen"),
+            ("frozen", "app.session.resume", "running"),
         ]
         .into_iter()
         .enumerate()
@@ -468,9 +468,9 @@ async fn rapid_home_presses_serialize_status_and_freezer_mutations() {
         tags,
         [
             "app.session.status",
-            "app.session.freeze",
+            "app.session.leave",
             "app.session.status",
-            "app.session.thaw",
+            "app.session.resume",
         ]
     );
 }
@@ -492,12 +492,12 @@ async fn rapid_home_serializes_the_delayed_portal_focus_before_game_return() {
         drop(status);
         let (mut freeze, _) = listener.accept().await.unwrap();
         let request = request_body(&mut freeze).await;
-        assert_eq!(request["_tag"], "app.session.freeze");
+        assert_eq!(request["_tag"], "app.session.leave");
         server_events.lock().await.push("freeze");
         reply(
             &mut freeze,
             &serde_json::json!({
-                "_tag": "app.session.freeze",
+                "_tag": "app.session.leave",
                 "outcome": { "_tag": "Ok", "payload": {
                     "launchId": LAUNCH_ID, "state": "frozen", "changed": true
                 }}
@@ -524,7 +524,7 @@ async fn rapid_home_serializes_the_delayed_portal_focus_before_game_return() {
         reply(
             &mut thaw,
             &serde_json::json!({
-                "_tag": "app.session.thaw",
+                "_tag": "app.session.resume",
                 "outcome": { "_tag": "Ok", "payload": {
                     "launchId": LAUNCH_ID, "state": "running", "changed": true
                 }}
@@ -589,7 +589,7 @@ async fn exact_stop_uses_the_observed_launch_id_and_mutates_once() {
         observed.lock().await.push(request_body(&mut stop).await);
         reply(
             &mut stop,
-            r#"{"_tag":"app.session.stop","outcome":{"_tag":"Ok","payload":{"phase":"stopped"}}}"#,
+            r#"{"_tag":"app.session.end","outcome":{"_tag":"Ok","payload":{"phase":"ended"}}}"#,
         )
         .await;
     });
@@ -604,7 +604,7 @@ async fn exact_stop_uses_the_observed_launch_id_and_mutates_once() {
     server.await.unwrap();
     let requests = requests.lock().await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[1]["_tag"], "app.session.stop");
+    assert_eq!(requests[1]["_tag"], "app.session.end");
     assert_eq!(requests[1]["payload"]["expectedLaunchId"], LAUNCH_ID);
 }
 
@@ -671,15 +671,15 @@ async fn terminal_and_recovery_statuses_never_send_a_stop() {
 async fn stop_outcomes_distinguish_stale_and_already_stopping() {
     for (stop_body, expected) in [
         (
-            r#"{"_tag":"app.session.stop","outcome":{"_tag":"Err","payload":{"code":"StaleLaunchIdentity","message":"stale"}}}"#,
+            r#"{"_tag":"app.session.end","outcome":{"_tag":"Err","payload":{"code":"StaleLaunchIdentity","message":"stale"}}}"#,
             ExactStopOutcome::StaleIdentity,
         ),
         (
-            r#"{"_tag":"app.session.stop","outcome":{"_tag":"Err","payload":{"code":"SelectedRemoteSessionReplaced","message":"replaced"}}}"#,
+            r#"{"_tag":"app.session.end","outcome":{"_tag":"Err","payload":{"code":"SelectedRemoteSessionReplaced","message":"replaced"}}}"#,
             ExactStopOutcome::StaleIdentity,
         ),
         (
-            r#"{"_tag":"app.session.stop","outcome":{"_tag":"Ok","payload":{"phase":"pending"}}}"#,
+            r#"{"_tag":"app.session.end","outcome":{"_tag":"Ok","payload":{"phase":"pending"}}}"#,
             ExactStopOutcome::AlreadyStopping,
         ),
     ] {

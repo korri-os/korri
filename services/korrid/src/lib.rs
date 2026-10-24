@@ -34,6 +34,7 @@ use typeshare::typeshare;
 pub mod authorization;
 pub mod catalog_cli;
 pub mod catalog_migrate;
+pub mod cli;
 pub mod config;
 pub mod discovery;
 pub mod enrichment;
@@ -646,10 +647,10 @@ pub struct SessionStatus {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SessionStopRequest {
+pub struct SessionEndRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub force: Option<bool>,
-    /** Required by every host surface for an exact stop. */
+    /** Required by every host surface to end an exact live session. */
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_launch_id: Option<String>,
 }
@@ -657,22 +658,22 @@ pub struct SessionStopRequest {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum SessionStopPhase {
-    Stopped,
+pub enum SessionEndPhase {
+    Ended,
     Pending,
 }
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SessionStopResult {
-    pub phase: SessionStopPhase,
+pub struct SessionEndResult {
+    pub phase: SessionEndPhase,
 }
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SessionFreezeRequest {
-    /** Required by every host surface for an exact freeze. */
+pub struct SessionLeaveRequest {
+    /** Required by every host surface to leave an exact live session. */
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_launch_id: Option<String>,
 }
@@ -680,8 +681,8 @@ pub struct SessionFreezeRequest {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SessionThawRequest {
-    /** Required by every host surface for an exact thaw. */
+pub struct SessionResumeRequest {
+    /** Required by every host surface to resume an exact live session. */
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_launch_id: Option<String>,
 }
@@ -697,7 +698,7 @@ pub enum SessionFreezerState {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SessionFreezeResult {
+pub struct SessionTransitionResult {
     pub launch_id: String,
     /** Freezer state of the exact launch after the request. */
     pub state: SessionFreezerState,
@@ -798,12 +799,12 @@ pub struct HealthRequest {}
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DiscoverySnapshotRequest {}
+pub struct LibraryFoldersSnapshotRequest {}
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DiscoveryPairRequest {
+pub struct LibraryFolderAddRequest {
     pub receipt: String,
     pub system: String,
 }
@@ -811,15 +812,15 @@ pub struct DiscoveryPairRequest {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DiscoveryUnpairRequest {
-    pub source: String,
+pub struct LibraryFolderRemoveRequest {
+    pub folder: String,
 }
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DiscoveryChangeRequest {
-    pub source: String,
+pub struct LibraryFolderChangeRequest {
+    pub folder: String,
     pub system: String,
 }
 
@@ -848,6 +849,7 @@ pub struct AttentionIgnoreRequest {
 pub struct AttentionItem {
     pub id: String,
     pub kind: String,
+    /// Scan origin: a library folder or a declared game's account root.
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
@@ -871,12 +873,12 @@ pub enum AttentionOutcome {
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DiscoveryRescanRequest {}
+pub struct LibraryFoldersRescanRequest {}
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
-pub enum DiscoveryState {
+pub enum LibraryFoldersState {
     Idle {},
     Scanning {},
     Enriching {},
@@ -886,17 +888,17 @@ pub enum DiscoveryState {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DiscoverySource {
+pub struct LibraryFolder {
     pub id: String,
     pub label: String,
     pub system: String,
-    pub status: DiscoverySourceStatus,
+    pub status: LibraryFolderStatus,
 }
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
-pub enum DiscoverySourceStatus {
+pub enum LibraryFolderStatus {
     Ready {},
     Overlap {},
     SystemUnavailable {},
@@ -905,7 +907,7 @@ pub enum DiscoverySourceStatus {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DiscoveryDiagnostic {
+pub struct LibraryFolderDiagnostic {
     pub code: String,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -915,19 +917,19 @@ pub struct DiscoveryDiagnostic {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DiscoverySnapshot {
+pub struct LibraryFoldersSnapshot {
     pub generation: String,
-    pub state: DiscoveryState,
-    pub sources: Vec<DiscoverySource>,
+    pub state: LibraryFoldersState,
+    pub folders: Vec<LibraryFolder>,
     pub attention: u32,
-    pub diagnostics: Vec<DiscoveryDiagnostic>,
+    pub diagnostics: Vec<LibraryFolderDiagnostic>,
 }
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
-pub enum DiscoverySnapshotOutcome {
-    Ok(DiscoverySnapshot),
+pub enum LibraryFoldersSnapshotOutcome {
+    Ok(LibraryFoldersSnapshot),
     Err(RpcFailure),
 }
 
@@ -1054,16 +1056,16 @@ pub enum SessionStatusOutcome {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
-pub enum SessionStopOutcome {
-    Ok(SessionStopResult),
+pub enum SessionEndOutcome {
+    Ok(SessionEndResult),
     Err(RpcFailure),
 }
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
-pub enum SessionFreezeOutcome {
-    Ok(SessionFreezeResult),
+pub enum SessionTransitionOutcome {
+    Ok(SessionTransitionResult),
     Err(RpcFailure),
 }
 
@@ -1116,6 +1118,7 @@ pub struct IdentityStatusRequest {}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityStatus {
+    pub identity: identity::IdentityState,
     pub local_backup_available: bool,
     pub retired_public_keys: Vec<String>,
 }
@@ -1365,12 +1368,12 @@ pub enum RpcRequest {
     SessionControls(SessionControlsRequest),
     #[serde(rename = "app.session.control.invoke")]
     SessionControlInvoke(SessionControlInvokeRequest),
-    #[serde(rename = "app.session.stop")]
-    SessionStop(SessionStopRequest),
-    #[serde(rename = "app.session.freeze")]
-    SessionFreeze(SessionFreezeRequest),
-    #[serde(rename = "app.session.thaw")]
-    SessionThaw(SessionThawRequest),
+    #[serde(rename = "app.session.end")]
+    SessionEnd(SessionEndRequest),
+    #[serde(rename = "app.session.leave")]
+    SessionLeave(SessionLeaveRequest),
+    #[serde(rename = "app.session.resume")]
+    SessionResume(SessionResumeRequest),
     #[serde(rename = "app.source.status")]
     SourceStatus(SourceStatusRequest),
     #[serde(rename = "app.peer.list")]
@@ -1379,22 +1382,22 @@ pub enum RpcRequest {
     LocalGamesList(LocalGamesListRequest),
     #[serde(rename = "system.health")]
     Health(HealthRequest),
-    #[serde(rename = "app.discovery.snapshot")]
-    DiscoverySnapshot(DiscoverySnapshotRequest),
-    #[serde(rename = "app.discovery.pair")]
-    DiscoveryPair(DiscoveryPairRequest),
-    #[serde(rename = "app.discovery.change")]
-    DiscoveryChange(DiscoveryChangeRequest),
+    #[serde(rename = "app.library.folders.snapshot")]
+    LibraryFoldersSnapshot(LibraryFoldersSnapshotRequest),
+    #[serde(rename = "app.library.folders.add")]
+    LibraryFolderAdd(LibraryFolderAddRequest),
+    #[serde(rename = "app.library.folders.change")]
+    LibraryFolderChange(LibraryFolderChangeRequest),
     #[serde(rename = "app.attention.list")]
     AttentionList(AttentionListRequest),
     #[serde(rename = "app.attention.assign")]
     AttentionAssign(AttentionAssignRequest),
     #[serde(rename = "app.attention.ignore")]
     AttentionIgnore(AttentionIgnoreRequest),
-    #[serde(rename = "app.discovery.unpair")]
-    DiscoveryUnpair(DiscoveryUnpairRequest),
-    #[serde(rename = "app.discovery.rescan")]
-    DiscoveryRescan(DiscoveryRescanRequest),
+    #[serde(rename = "app.library.folders.remove")]
+    LibraryFolderRemove(LibraryFolderRemoveRequest),
+    #[serde(rename = "app.library.folders.rescan")]
+    LibraryFoldersRescan(LibraryFoldersRescanRequest),
     #[serde(rename = "system.settings.snapshot")]
     SettingsSnapshot(SettingsSnapshotRequest),
     #[serde(rename = "system.settings.update")]
@@ -1521,7 +1524,7 @@ pub enum RpcResponse {
     #[serde(rename = "app.session.start")]
     SessionStart(game_routes::SelectedGameLaunchOutcome),
     #[serde(rename = "app.session.cancel")]
-    SessionCancel(SessionStopOutcome),
+    SessionCancel(SessionEndOutcome),
     #[serde(rename = "app.session.streamPlay")]
     SessionStreamPlay(SessionStreamPlayOutcome),
     #[serde(rename = "app.invites.list")]
@@ -1536,12 +1539,12 @@ pub enum RpcResponse {
     SessionControls(SessionControlsOutcome),
     #[serde(rename = "app.session.control.invoke")]
     SessionControlInvoke(SessionControlInvokeOutcome),
-    #[serde(rename = "app.session.stop")]
-    SessionStop(SessionStopOutcome),
-    #[serde(rename = "app.session.freeze")]
-    SessionFreeze(SessionFreezeOutcome),
-    #[serde(rename = "app.session.thaw")]
-    SessionThaw(SessionFreezeOutcome),
+    #[serde(rename = "app.session.end")]
+    SessionEnd(SessionEndOutcome),
+    #[serde(rename = "app.session.leave")]
+    SessionLeave(SessionTransitionOutcome),
+    #[serde(rename = "app.session.resume")]
+    SessionResume(SessionTransitionOutcome),
     #[serde(rename = "app.source.status")]
     SourceStatus(SourceStatusOutcome),
     #[serde(rename = "app.peer.list")]
@@ -1550,22 +1553,22 @@ pub enum RpcResponse {
     LocalGamesList(LocalGamesListOutcome),
     #[serde(rename = "system.health")]
     Health(HealthOutcome),
-    #[serde(rename = "app.discovery.snapshot")]
-    DiscoverySnapshot(DiscoverySnapshotOutcome),
-    #[serde(rename = "app.discovery.pair")]
-    DiscoveryPair(DiscoverySnapshotOutcome),
-    #[serde(rename = "app.discovery.change")]
-    DiscoveryChange(DiscoverySnapshotOutcome),
+    #[serde(rename = "app.library.folders.snapshot")]
+    LibraryFoldersSnapshot(LibraryFoldersSnapshotOutcome),
+    #[serde(rename = "app.library.folders.add")]
+    LibraryFolderAdd(LibraryFoldersSnapshotOutcome),
+    #[serde(rename = "app.library.folders.change")]
+    LibraryFolderChange(LibraryFoldersSnapshotOutcome),
     #[serde(rename = "app.attention.list")]
     AttentionList(AttentionOutcome),
     #[serde(rename = "app.attention.assign")]
     AttentionAssign(AttentionOutcome),
     #[serde(rename = "app.attention.ignore")]
     AttentionIgnore(AttentionOutcome),
-    #[serde(rename = "app.discovery.unpair")]
-    DiscoveryUnpair(DiscoverySnapshotOutcome),
-    #[serde(rename = "app.discovery.rescan")]
-    DiscoveryRescan(DiscoverySnapshotOutcome),
+    #[serde(rename = "app.library.folders.remove")]
+    LibraryFolderRemove(LibraryFoldersSnapshotOutcome),
+    #[serde(rename = "app.library.folders.rescan")]
+    LibraryFoldersRescan(LibraryFoldersSnapshotOutcome),
     #[serde(rename = "system.settings.snapshot")]
     SettingsSnapshot(SettingsSnapshotOutcome),
     #[serde(rename = "system.settings.update")]
@@ -1733,8 +1736,8 @@ impl AppState {
             ServerMode::Host(host) => host.private_state_root(),
         }
     }
-    fn record_overlay_intent(&self, outcome: &SessionFreezeOutcome) {
-        if let SessionFreezeOutcome::Ok(result) = outcome {
+    fn record_overlay_intent(&self, outcome: &SessionTransitionOutcome) {
+        if let SessionTransitionOutcome::Ok(result) = outcome {
             *self
                 .overlay_intent
                 .lock()
@@ -1755,27 +1758,27 @@ impl AppState {
     fn reconcile_freeze_overlay_intent(
         &self,
         expected: Option<&str>,
-        outcome: &SessionFreezeOutcome,
+        outcome: &SessionTransitionOutcome,
     ) {
         match outcome {
-            SessionFreezeOutcome::Ok(_) if self.rpc_surface == RpcSurface::LocalControl => {
+            SessionTransitionOutcome::Ok(_) if self.rpc_surface == RpcSurface::LocalControl => {
                 self.record_overlay_intent(outcome);
             }
-            SessionFreezeOutcome::Err(failure)
+            SessionTransitionOutcome::Err(failure)
                 if is_terminal_session_identity_code(&failure.code) =>
             {
                 if let Some(expected) = expected {
                     self.clear_overlay_intent(Some(expected));
                 }
             }
-            SessionFreezeOutcome::Ok(_) | SessionFreezeOutcome::Err(_) => {}
+            SessionTransitionOutcome::Ok(_) | SessionTransitionOutcome::Err(_) => {}
         }
     }
 
     fn reconcile_thaw_overlay_intent(
         &self,
         expected: Option<&str>,
-        outcome: &SessionFreezeOutcome,
+        outcome: &SessionTransitionOutcome,
     ) {
         if thaw_invalidates_overlay_intent(outcome) {
             if let Some(expected) = expected {
@@ -1818,24 +1821,24 @@ fn is_terminal_session_identity_code(code: &str) -> bool {
     )
 }
 
-fn thaw_invalidates_overlay_intent(outcome: &SessionFreezeOutcome) -> bool {
-    matches!(outcome, SessionFreezeOutcome::Ok(_))
+fn thaw_invalidates_overlay_intent(outcome: &SessionTransitionOutcome) -> bool {
+    matches!(outcome, SessionTransitionOutcome::Ok(_))
         || matches!(
             outcome,
-            SessionFreezeOutcome::Err(failure)
+            SessionTransitionOutcome::Err(failure)
                 if is_terminal_session_identity_code(&failure.code)
         )
 }
 
-fn stop_invalidates_overlay_intent(outcome: &SessionStopOutcome) -> bool {
+fn stop_invalidates_overlay_intent(outcome: &SessionEndOutcome) -> bool {
     matches!(
         outcome,
-        SessionStopOutcome::Ok(SessionStopResult {
-            phase: SessionStopPhase::Stopped
+        SessionEndOutcome::Ok(SessionEndResult {
+            phase: SessionEndPhase::Ended
         })
     ) || matches!(
         outcome,
-        SessionStopOutcome::Err(failure)
+        SessionEndOutcome::Err(failure)
             if is_terminal_session_identity_code(&failure.code)
     )
 }
@@ -1843,7 +1846,7 @@ fn stop_invalidates_overlay_intent(outcome: &SessionStopOutcome) -> bool {
 fn reconcile_stop_overlay_intent(
     overlay_intent: &Mutex<Option<String>>,
     expected_launch_id: Option<&str>,
-    outcome: &SessionStopOutcome,
+    outcome: &SessionEndOutcome,
 ) {
     if !stop_invalidates_overlay_intent(outcome) {
         return;
@@ -1987,42 +1990,42 @@ fn session_status_outcome(
 /// Pure mapping from the legacy stop union to the korrid-shaped outcome.
 fn session_stop_outcome(
     result: Result<upstream::UpstreamSessionStop, upstreams::UpstreamError>,
-) -> SessionStopOutcome {
+) -> SessionEndOutcome {
     match result {
         Ok(upstream::UpstreamSessionStop::Stopped { .. }) => {
-            SessionStopOutcome::Ok(SessionStopResult {
-                phase: SessionStopPhase::Stopped,
+            SessionEndOutcome::Ok(SessionEndResult {
+                phase: SessionEndPhase::Ended,
             })
         }
         Ok(upstream::UpstreamSessionStop::StopPending { .. }) => {
-            SessionStopOutcome::Ok(SessionStopResult {
-                phase: SessionStopPhase::Pending,
+            SessionEndOutcome::Ok(SessionEndResult {
+                phase: SessionEndPhase::Pending,
             })
         }
         Ok(upstream::UpstreamSessionStop::NothingToStop {}) => {
-            SessionStopOutcome::Ok(SessionStopResult {
-                phase: SessionStopPhase::Stopped,
+            SessionEndOutcome::Ok(SessionEndResult {
+                phase: SessionEndPhase::Ended,
             })
         }
         Ok(upstream::UpstreamSessionStop::ConfirmationRequired { action }) => {
-            SessionStopOutcome::Err(RpcFailure {
+            SessionEndOutcome::Err(RpcFailure {
                 code: "ConfirmationRequired".into(),
                 message: action.unwrap_or_else(|| "session stop requires confirmation".into()),
             })
         }
         Ok(upstream::UpstreamSessionStop::SessiondNotConfigured {}) => {
-            SessionStopOutcome::Err(RpcFailure {
+            SessionEndOutcome::Err(RpcFailure {
                 code: "SessiondNotConfigured".into(),
                 message: "host session daemon is not configured".into(),
             })
         }
         Ok(upstream::UpstreamSessionStop::HostUnavailable {}) => {
-            SessionStopOutcome::Err(RpcFailure {
+            SessionEndOutcome::Err(RpcFailure {
                 code: "HostUnavailable".into(),
                 message: "host is unavailable".into(),
             })
         }
-        Err(error) => SessionStopOutcome::Err(upstream_failure(error)),
+        Err(error) => SessionEndOutcome::Err(upstream_failure(error)),
     }
 }
 
@@ -2177,84 +2180,84 @@ fn unavailable_remote_session_control(
 
 fn host_session_stop_outcome(
     result: Result<host::control::HostSessionStop, RpcFailure>,
-) -> SessionStopOutcome {
+) -> SessionEndOutcome {
     use host::control::HostSessionStop;
     match result {
-        Ok(HostSessionStop::Completed { .. }) => SessionStopOutcome::Ok(SessionStopResult {
-            phase: SessionStopPhase::Stopped,
+        Ok(HostSessionStop::Completed { .. }) => SessionEndOutcome::Ok(SessionEndResult {
+            phase: SessionEndPhase::Ended,
         }),
-        Ok(HostSessionStop::AlreadyStopping { .. }) => SessionStopOutcome::Ok(SessionStopResult {
-            phase: SessionStopPhase::Pending,
+        Ok(HostSessionStop::AlreadyStopping { .. }) => SessionEndOutcome::Ok(SessionEndResult {
+            phase: SessionEndPhase::Pending,
         }),
-        Ok(HostSessionStop::NoActive) => SessionStopOutcome::Err(RpcFailure {
+        Ok(HostSessionStop::NoActive) => SessionEndOutcome::Err(RpcFailure {
             code: "NoActiveSession".into(),
             message: "no host launch is active".into(),
         }),
-        Ok(HostSessionStop::StaleIdentity { .. }) => SessionStopOutcome::Err(RpcFailure {
+        Ok(HostSessionStop::StaleIdentity { .. }) => SessionEndOutcome::Err(RpcFailure {
             code: "StaleLaunchIdentity".into(),
             message: "expectedLaunchId does not identify the active host launch".into(),
         }),
-        Ok(HostSessionStop::RecoveryBlocked) => SessionStopOutcome::Err(RpcFailure {
+        Ok(HostSessionStop::RecoveryBlocked) => SessionEndOutcome::Err(RpcFailure {
             code: "HostRecoveryBlocked".into(),
             message: "host recovery identity requires administrator resolution".into(),
         }),
-        Err(failure) => SessionStopOutcome::Err(failure),
+        Err(failure) => SessionEndOutcome::Err(failure),
     }
 }
 
 fn host_session_freeze_outcome(
     result: Result<host::control::HostSessionFreezeChange, RpcFailure>,
     state: SessionFreezerState,
-) -> SessionFreezeOutcome {
+) -> SessionTransitionOutcome {
     use host::control::HostSessionFreezeChange;
     match result {
         Ok(HostSessionFreezeChange::Changed { launch_id }) => {
-            SessionFreezeOutcome::Ok(SessionFreezeResult {
+            SessionTransitionOutcome::Ok(SessionTransitionResult {
                 launch_id,
                 state,
                 changed: true,
             })
         }
         Ok(HostSessionFreezeChange::Unchanged { launch_id }) => {
-            SessionFreezeOutcome::Ok(SessionFreezeResult {
+            SessionTransitionOutcome::Ok(SessionTransitionResult {
                 launch_id,
                 state,
                 changed: false,
             })
         }
-        Ok(HostSessionFreezeChange::NoActive) => SessionFreezeOutcome::Err(RpcFailure {
+        Ok(HostSessionFreezeChange::NoActive) => SessionTransitionOutcome::Err(RpcFailure {
             code: "NoActiveSession".into(),
             message: "no host launch is active".into(),
         }),
         Ok(HostSessionFreezeChange::StaleIdentity { .. }) => {
-            SessionFreezeOutcome::Err(RpcFailure {
+            SessionTransitionOutcome::Err(RpcFailure {
                 code: "StaleLaunchIdentity".into(),
                 message: "expectedLaunchId does not identify the active host launch".into(),
             })
         }
-        Ok(HostSessionFreezeChange::Stopping { .. }) => SessionFreezeOutcome::Err(RpcFailure {
+        Ok(HostSessionFreezeChange::Stopping { .. }) => SessionTransitionOutcome::Err(RpcFailure {
             code: "SessionStopping".into(),
             message: "the host launch is stopping".into(),
         }),
         // The game is running but could not come forward. A separate code lets
         // the portal show the exact focus failure and offer Return again.
         Ok(HostSessionFreezeChange::FocusFailed { message, .. }) => {
-            SessionFreezeOutcome::Err(RpcFailure {
+            SessionTransitionOutcome::Err(RpcFailure {
                 code: "HostFocusFailed".into(),
                 message,
             })
         }
         Ok(HostSessionFreezeChange::HelperFailed { message, .. }) => {
-            SessionFreezeOutcome::Err(RpcFailure {
+            SessionTransitionOutcome::Err(RpcFailure {
                 code: "HostFreezerFailed".into(),
                 message,
             })
         }
-        Ok(HostSessionFreezeChange::RecoveryBlocked) => SessionFreezeOutcome::Err(RpcFailure {
+        Ok(HostSessionFreezeChange::RecoveryBlocked) => SessionTransitionOutcome::Err(RpcFailure {
             code: "HostRecoveryBlocked".into(),
             message: "host recovery identity requires administrator resolution".into(),
         }),
-        Err(failure) => SessionFreezeOutcome::Err(failure),
+        Err(failure) => SessionTransitionOutcome::Err(failure),
     }
 }
 
@@ -2268,11 +2271,11 @@ fn source_status_outcome(
 }
 
 fn session_freeze_outcome(
-    result: Result<SessionFreezeResult, upstreams::UpstreamError>,
-) -> SessionFreezeOutcome {
+    result: Result<SessionTransitionResult, upstreams::UpstreamError>,
+) -> SessionTransitionOutcome {
     match result {
-        Ok(result) => SessionFreezeOutcome::Ok(result),
-        Err(error) => SessionFreezeOutcome::Err(upstream_failure(error)),
+        Ok(result) => SessionTransitionOutcome::Ok(result),
+        Err(error) => SessionTransitionOutcome::Err(upstream_failure(error)),
     }
 }
 
@@ -2319,6 +2322,7 @@ fn caller_is_owner(
 ) -> bool {
     match authorization {
         authorization::AuthorizationContext::LocalBrowser
+        | authorization::AuthorizationContext::LocalCli
         | authorization::AuthorizationContext::LocalUnixControl => true,
         authorization::AuthorizationContext::Peer(principal) => match principal {
             authorization::Principal::OwnerDevice {
@@ -2424,6 +2428,9 @@ fn local_launch_caller<'a>(
     state: &'a AppState,
     context: &authorization::AuthorizationContext,
 ) -> Result<&'a str, RpcFailure> {
+    if matches!(context, authorization::AuthorizationContext::LocalCli) {
+        return Ok("local-cli");
+    }
     if state.rpc_surface == RpcSurface::Lan
         && matches!(context, authorization::AuthorizationContext::LocalBrowser)
     {
@@ -3020,8 +3027,8 @@ async fn dispatch(
                     )
                     .await,
                 ),
-                (Err(failure), _) => SessionStopOutcome::Err(failure),
-                _ => SessionStopOutcome::Err(installed_routes_unsupported()),
+                (Err(failure), _) => SessionEndOutcome::Err(failure),
+                _ => SessionEndOutcome::Err(installed_routes_unsupported()),
             };
             reconcile_stop_overlay_intent(
                 &state.overlay_intent,
@@ -3154,7 +3161,7 @@ async fn dispatch(
                 ),
             })
         }
-        RpcRequest::SessionStop(request) => {
+        RpcRequest::SessionEnd(request) => {
             let outcome = match (&state.mode, state.rpc_surface) {
                 (ServerMode::Brain(brain), RpcSurface::Lan) => session_stop_outcome(
                     brain
@@ -3191,9 +3198,9 @@ async fn dispatch(
                             .await
                             .unwrap_or_else(|failure| host_session_stop_outcome(Err(failure)))
                         }
-                        Err(failure) => SessionStopOutcome::Err(failure),
+                        Err(failure) => SessionEndOutcome::Err(failure),
                     };
-                    return Ok(RpcResponse::SessionStop(outcome));
+                    return Ok(RpcResponse::SessionEnd(outcome));
                 }
                 (ServerMode::Brain(brain), RpcSurface::LocalControl) => session_stop_outcome(
                     brain
@@ -3210,9 +3217,9 @@ async fn dispatch(
                 request.expected_launch_id.as_deref(),
                 &outcome,
             );
-            RpcResponse::SessionStop(outcome)
+            RpcResponse::SessionEnd(outcome)
         }
-        RpcRequest::SessionFreeze(request) => {
+        RpcRequest::SessionLeave(request) => {
             let outcome = match (&state.mode, state.rpc_surface) {
                 (ServerMode::Brain(brain), RpcSurface::Lan) => session_freeze_outcome(
                     brain
@@ -3247,9 +3254,9 @@ async fn dispatch(
                                     )
                                 })
                             }
-                            Err(failure) => SessionFreezeOutcome::Err(failure),
+                            Err(failure) => SessionTransitionOutcome::Err(failure),
                         };
-                    return Ok(RpcResponse::SessionFreeze(outcome));
+                    return Ok(RpcResponse::SessionLeave(outcome));
                 }
                 (ServerMode::Brain(brain), RpcSurface::LocalControl) => session_freeze_outcome(
                     brain
@@ -3259,9 +3266,9 @@ async fn dispatch(
                 ),
             };
             state.reconcile_freeze_overlay_intent(request.expected_launch_id.as_deref(), &outcome);
-            RpcResponse::SessionFreeze(outcome)
+            RpcResponse::SessionLeave(outcome)
         }
-        RpcRequest::SessionThaw(request) => {
+        RpcRequest::SessionResume(request) => {
             let outcome = match (&state.mode, state.rpc_surface) {
                 (ServerMode::Brain(brain), RpcSurface::Lan) => session_freeze_outcome(
                     brain
@@ -3295,9 +3302,9 @@ async fn dispatch(
                                     )
                                 })
                             }
-                            Err(failure) => SessionFreezeOutcome::Err(failure),
+                            Err(failure) => SessionTransitionOutcome::Err(failure),
                         };
-                    return Ok(RpcResponse::SessionThaw(outcome));
+                    return Ok(RpcResponse::SessionResume(outcome));
                 }
                 (ServerMode::Brain(brain), RpcSurface::LocalControl) => session_freeze_outcome(
                     brain
@@ -3307,7 +3314,7 @@ async fn dispatch(
                 ),
             };
             state.reconcile_thaw_overlay_intent(request.expected_launch_id.as_deref(), &outcome);
-            RpcResponse::SessionThaw(outcome)
+            RpcResponse::SessionResume(outcome)
         }
         RpcRequest::SourceStatus(request) => {
             let outcome = match (&state.mode, state.rpc_surface) {
@@ -3372,29 +3379,29 @@ async fn dispatch(
         RpcRequest::Health(_) => RpcResponse::Health(HealthOutcome::Ok(Health {
             version: VERSION.into(),
         })),
-        RpcRequest::DiscoverySnapshot(_) => {
-            RpcResponse::DiscoverySnapshot(match state.local_library() {
-                Some(library) => {
-                    DiscoverySnapshotOutcome::Ok(discovery_snapshot(library.discovery.snapshot()))
-                }
-                None => DiscoverySnapshotOutcome::Err(library_unavailable("discovery")),
+        RpcRequest::LibraryFoldersSnapshot(_) => {
+            RpcResponse::LibraryFoldersSnapshot(match state.local_library() {
+                Some(library) => LibraryFoldersSnapshotOutcome::Ok(discovery_snapshot(
+                    library.discovery.snapshot(),
+                )),
+                None => LibraryFoldersSnapshotOutcome::Err(library_unavailable("discovery")),
             })
         }
-        RpcRequest::DiscoveryPair(request) => {
-            RpcResponse::DiscoveryPair(discovery_mutation(state, authorization, |discovery| {
+        RpcRequest::LibraryFolderAdd(request) => {
+            RpcResponse::LibraryFolderAdd(discovery_mutation(state, authorization, |discovery| {
                 discovery.pair(&request.receipt, &request.system)
             }))
         }
-        RpcRequest::DiscoveryChange(request) => {
-            RpcResponse::DiscoveryChange(discovery_mutation(state, authorization, |discovery| {
-                discovery.change(&request.source, &request.system)
-            }))
-        }
-        RpcRequest::DiscoveryUnpair(request) => {
-            RpcResponse::DiscoveryUnpair(discovery_mutation(state, authorization, |discovery| {
-                discovery.unpair(&request.source)
-            }))
-        }
+        RpcRequest::LibraryFolderChange(request) => RpcResponse::LibraryFolderChange(
+            discovery_mutation(state, authorization, |discovery| {
+                discovery.change(&request.folder, &request.system)
+            }),
+        ),
+        RpcRequest::LibraryFolderRemove(request) => RpcResponse::LibraryFolderRemove(
+            discovery_mutation(state, authorization, |discovery| {
+                discovery.unpair(&request.folder)
+            }),
+        ),
         RpcRequest::AttentionList(_) => {
             RpcResponse::AttentionList(attention_operation(state, |discovery| {
                 discovery.attention()
@@ -3410,12 +3417,12 @@ async fn dispatch(
                 discovery.ignore(&request.item)
             }))
         }
-        RpcRequest::DiscoveryRescan(_) => {
-            RpcResponse::DiscoveryRescan(match state.local_library() {
-                Some(library) => {
-                    DiscoverySnapshotOutcome::Ok(discovery_snapshot(library.discovery.rescan()))
-                }
-                None => DiscoverySnapshotOutcome::Err(library_unavailable("discovery")),
+        RpcRequest::LibraryFoldersRescan(_) => {
+            RpcResponse::LibraryFoldersRescan(match state.local_library() {
+                Some(library) => LibraryFoldersSnapshotOutcome::Ok(discovery_snapshot(
+                    library.discovery.rescan(),
+                )),
+                None => LibraryFoldersSnapshotOutcome::Err(library_unavailable("discovery")),
             })
         }
         RpcRequest::SettingsSnapshot(_) => match &state.mode {
@@ -3431,13 +3438,7 @@ async fn dispatch(
                 .map(SettingsSnapshotOutcome::Ok)
                 .unwrap_or_else(|error| SettingsSnapshotOutcome::Err(settings_failure(error))),
             ),
-            ServerMode::Host(host)
-                if state.portal_access.is_some()
-                    && matches!(
-                        authorization,
-                        authorization::AuthorizationContext::LocalBrowser
-                    ) =>
-            {
+            ServerMode::Host(host) if cli::settings_caller_allowed(state, authorization) => {
                 RpcResponse::SettingsSnapshot(
                     host.settings_snapshot()
                         .await
@@ -3500,14 +3501,10 @@ async fn dispatch(
                 )
             }
             ServerMode::Host(host)
-                if state.portal_access.is_some()
-                    && matches!(
-                        authorization,
-                        authorization::AuthorizationContext::LocalBrowser
-                    ) =>
+                if cli::settings_write_allowed(state, authorization, &request.setting_id) =>
             {
                 RpcResponse::SettingsUpdate(
-                    host.update_player_count(request)
+                    host.update_settings(request)
                         .await
                         .map(SettingsUpdateOutcome::Ok)
                         .unwrap_or_else(SettingsUpdateOutcome::Err),
@@ -3583,10 +3580,11 @@ async fn dispatch(
         RpcRequest::IdentityStatus(_) => {
             let outcome = match &state.identity_switch {
                 Some(coordinator) => coordinator
-                    .signer_status()
+                    .status_snapshot()
                     .await
-                    .map(|(local_backup_available, retired_public_keys)| {
+                    .map(|(identity, local_backup_available, retired_public_keys)| {
                         IdentityStatusOutcome::Ok(IdentityStatus {
+                            identity,
                             local_backup_available,
                             retired_public_keys,
                         })
@@ -3703,10 +3701,11 @@ async fn dispatch(
                 Some(coordinator) => match coordinator.delete_retired_key(request.public_key).await
                 {
                     Ok(()) => coordinator
-                        .signer_status()
+                        .status_snapshot()
                         .await
-                        .map(|(local_backup_available, retired_public_keys)| {
+                        .map(|(identity, local_backup_available, retired_public_keys)| {
                             IdentityRetiredDeleteOutcome::Ok(IdentityStatus {
+                                identity,
                                 local_backup_available,
                                 retired_public_keys,
                             })
@@ -3848,11 +3847,15 @@ fn editable_setting_ids(
     };
     let mut ids = Vec::new();
     match &state.mode {
-        ServerMode::Host(_)
-            if state.portal_access.is_some()
-                && matches!(context, AuthorizationContext::LocalBrowser) =>
-        {
-            if permitted(&setting_update(PLAYER_COUNT_SETTING_ID)) {
+        ServerMode::Host(_) if cli::settings_caller_allowed(state, context) => {
+            if permitted(&setting_update(DEVICE_NAME_SETTING_ID))
+                && cli::settings_write_allowed(state, context, DEVICE_NAME_SETTING_ID)
+            {
+                ids.push(DEVICE_NAME_SETTING_ID.into());
+            }
+            if permitted(&setting_update(PLAYER_COUNT_SETTING_ID))
+                && cli::settings_write_allowed(state, context, PLAYER_COUNT_SETTING_ID)
+            {
                 ids.push(PLAYER_COUNT_SETTING_ID.into());
             }
         }
@@ -3882,7 +3885,8 @@ fn editable_setting_ids(
 fn local_settings_required() -> RpcFailure {
     RpcFailure {
         code: "OperationUnsupported".into(),
-        message: "host settings require the local portal capability".into(),
+        message: "This setting requires local authority. Use SSH or local access on that device."
+            .into(),
     }
 }
 
@@ -3919,27 +3923,27 @@ fn job_outcome(
     }
 }
 
-fn discovery_snapshot(snapshot: discovery::DiscoverySnapshot) -> DiscoverySnapshot {
-    DiscoverySnapshot {
+fn discovery_snapshot(snapshot: discovery::DiscoverySnapshot) -> LibraryFoldersSnapshot {
+    LibraryFoldersSnapshot {
         generation: snapshot.generation,
         state: match snapshot.state {
-            discovery::DiscoveryPhase::Idle => DiscoveryState::Idle {},
-            discovery::DiscoveryPhase::Scanning => DiscoveryState::Scanning {},
-            discovery::DiscoveryPhase::Enriching => DiscoveryState::Enriching {},
-            discovery::DiscoveryPhase::Problem => DiscoveryState::Problem {},
+            discovery::DiscoveryPhase::Idle => LibraryFoldersState::Idle {},
+            discovery::DiscoveryPhase::Scanning => LibraryFoldersState::Scanning {},
+            discovery::DiscoveryPhase::Enriching => LibraryFoldersState::Enriching {},
+            discovery::DiscoveryPhase::Problem => LibraryFoldersState::Problem {},
         },
-        sources: snapshot
+        folders: snapshot
             .sources
             .into_iter()
-            .map(|source| DiscoverySource {
+            .map(|source| LibraryFolder {
                 id: source.id,
                 label: source.label,
                 system: source.system,
                 status: match source.status {
-                    discovery::DiscoverySourceStatus::Ready => DiscoverySourceStatus::Ready {},
-                    discovery::DiscoverySourceStatus::Overlap => DiscoverySourceStatus::Overlap {},
+                    discovery::DiscoverySourceStatus::Ready => LibraryFolderStatus::Ready {},
+                    discovery::DiscoverySourceStatus::Overlap => LibraryFolderStatus::Overlap {},
                     discovery::DiscoverySourceStatus::SystemUnavailable => {
-                        DiscoverySourceStatus::SystemUnavailable {}
+                        LibraryFolderStatus::SystemUnavailable {}
                     }
                 },
             })
@@ -3948,7 +3952,7 @@ fn discovery_snapshot(snapshot: discovery::DiscoverySnapshot) -> DiscoverySnapsh
         diagnostics: snapshot
             .diagnostics
             .into_iter()
-            .map(|diagnostic| DiscoveryDiagnostic {
+            .map(|diagnostic| LibraryFolderDiagnostic {
                 code: diagnostic.code,
                 message: diagnostic.message,
                 location_id: diagnostic.location_id,
@@ -3966,7 +3970,7 @@ fn discovery_mutation(
         discovery::DiscoverySnapshot,
         discovery::coordinator::DiscoveryRequestError,
     >,
-) -> DiscoverySnapshotOutcome {
+) -> LibraryFoldersSnapshotOutcome {
     match state.local_library() {
         Some(library) => {
             match require_discovery_owner(caller_is_owner(
@@ -3975,14 +3979,14 @@ fn discovery_mutation(
             )) {
                 Ok(()) => operation(library.discovery)
                     .map(discovery_snapshot)
-                    .map(DiscoverySnapshotOutcome::Ok)
+                    .map(LibraryFoldersSnapshotOutcome::Ok)
                     .unwrap_or_else(|error| {
-                        DiscoverySnapshotOutcome::Err(discovery_request_failure(error))
+                        LibraryFoldersSnapshotOutcome::Err(discovery_request_failure(error))
                     }),
-                Err(error) => DiscoverySnapshotOutcome::Err(error),
+                Err(error) => LibraryFoldersSnapshotOutcome::Err(error),
             }
         }
-        None => DiscoverySnapshotOutcome::Err(library_unavailable("discovery")),
+        None => LibraryFoldersSnapshotOutcome::Err(library_unavailable("discovery")),
     }
 }
 
@@ -3992,7 +3996,7 @@ fn require_discovery_owner(is_owner: bool) -> Result<(), RpcFailure> {
     } else {
         Err(RpcFailure {
             code: "NotOwner".into(),
-            message: "only the device owner can change sources".into(),
+            message: "only the device owner can change library folders".into(),
         })
     }
 }
@@ -4034,14 +4038,14 @@ fn discovery_request_failure(error: discovery::coordinator::DiscoveryRequestErro
         E::Receipt(error) => folder_selection_failure(error),
         E::Pairing(error) | E::Discovery(discovery::DiscoveryError::Pairing(error)) => RpcFailure {
             code: match error {
-                P::SourceOverlap(_) => "SourceOverlap",
+                P::SourceOverlap(_) => "LibraryFolderOverlap",
                 P::PluginData => "PluginData",
                 P::UnknownSystem(_) => "UnknownSystem",
-                P::UnknownSource(_) => "UnknownSource",
+                P::UnknownSource(_) => "UnknownLibraryFolder",
                 P::InvalidPath(_) => "FolderSelectionInvalid",
             }
             .into(),
-            message: "source pairing could not be changed".into(),
+            message: "library folder could not be changed".into(),
         },
         E::UnknownItem => RpcFailure {
             code: "UnknownItem".into(),
@@ -4447,7 +4451,7 @@ pub fn host_routers_with_storage_and_private(
     let private_state_root = private_state_root.into();
     let resources =
         FederationResources::open(&private_state_root).expect("open federation authority");
-    let (lan, local, _) = host_routers_with_federation(
+    let (lan, local, _, _) = host_routers_with_federation(
         config_path,
         storage_root,
         private_state_root,
@@ -4481,7 +4485,7 @@ pub fn host_routers_with_federation(
     private_state_root: impl Into<PathBuf>,
     resources: FederationResources,
     portal_access: Option<PortalAccess>,
-) -> (Router, Router, host::HostRuntime) {
+) -> (Router, Router, Router, host::HostRuntime) {
     let private_state_root = private_state_root.into();
     let native = portal_access.clone().map(|access| {
         portal_input::router(
@@ -4508,7 +4512,7 @@ pub fn host_routers_with_federation(
     );
     // A device that freezes its portal keeps observing its own session, so a
     // game that ends while the portal cannot poll still thaws it.
-    let (lan, local) = secure_host_routers_with_federation(
+    let (lan, local, cli) = secure_host_routers_with_federation(
         runtime.clone(),
         &private_state_root,
         resources,
@@ -4516,7 +4520,7 @@ pub fn host_routers_with_federation(
         native_router,
     );
     runtime.spawn_portal_watch();
-    (lan, local, runtime)
+    (lan, local, cli, runtime)
 }
 
 #[cfg(test)]
@@ -4668,7 +4672,7 @@ fn secure_host_routers_with_federation(
     resources: FederationResources,
     portal_access: Option<PortalAccess>,
     native_router: Option<Router>,
-) -> (Router, Router) {
+) -> (Router, Router, Router) {
     let private_input = runtime.private_input_router();
     let (mut lan, mut local) = app_states(runtime.clone());
     let peers = stream_play::device::registry(&runtime, &resources);
@@ -4707,6 +4711,7 @@ fn secure_host_routers_with_federation(
         Some(native) => router.merge(native),
         None => router,
     });
+    let cli = cli::router(lan.clone(), resources.clone());
     let peer = peer_rpc::PeerRpcServer::with_shared_authority(
         lan,
         private_state_root,
@@ -4719,7 +4724,7 @@ fn secure_host_routers_with_federation(
         Some(input) => local.merge(input),
         None => local,
     };
-    (peer.router(portal), local)
+    (peer.router(portal), local, cli)
 }
 
 /// Generate an unguessable capability for one server lifetime.
@@ -5661,8 +5666,8 @@ mod tests {
         reconcile_stop_overlay_intent(
             &unrelated,
             Some("b"),
-            &SessionStopOutcome::Ok(SessionStopResult {
-                phase: SessionStopPhase::Stopped,
+            &SessionEndOutcome::Ok(SessionEndResult {
+                phase: SessionEndPhase::Ended,
             }),
         );
         assert_eq!(unrelated.lock().unwrap().as_deref(), Some("a"));
@@ -5734,13 +5739,13 @@ mod tests {
     #[test]
     fn failed_exact_focus_keeps_overlay_intent_but_successful_return_clears_it() {
         assert!(!thaw_invalidates_overlay_intent(
-            &SessionFreezeOutcome::Err(RpcFailure {
+            &SessionTransitionOutcome::Err(RpcFailure {
                 code: "HostFocusFailed".into(),
                 message: "no unique exact-launch window could be focused".into(),
             },)
         ));
         assert!(!thaw_invalidates_overlay_intent(
-            &SessionFreezeOutcome::Err(RpcFailure {
+            &SessionTransitionOutcome::Err(RpcFailure {
                 code: "HostFreezerFailed".into(),
                 message: "thaw refused".into(),
             },)
@@ -5748,13 +5753,13 @@ mod tests {
         assert!(thaw_invalidates_overlay_intent(&session_freeze_outcome(
             Err(upstreams::UpstreamError::SelectedRemoteSessionReplaced,)
         )));
-        assert!(thaw_invalidates_overlay_intent(&SessionFreezeOutcome::Ok(
-            SessionFreezeResult {
+        assert!(thaw_invalidates_overlay_intent(
+            &SessionTransitionOutcome::Ok(SessionTransitionResult {
                 launch_id: "a".into(),
                 state: SessionFreezerState::Running,
                 changed: true,
-            },
-        )));
+            },)
+        ));
     }
 
     #[test]
@@ -5901,7 +5906,7 @@ mod tests {
             serde_json::json!({ "launchId": "l1" })
         );
         assert_eq!(
-            serde_json::to_value(SessionStopRequest {
+            serde_json::to_value(SessionEndRequest {
                 force: None,
                 expected_launch_id: None,
             })
@@ -6001,7 +6006,7 @@ mod tests {
         loop {
             let body = rpc_body_authorized(
                 app.clone(),
-                r#"{"_tag":"app.discovery.snapshot","payload":{}}"#,
+                r#"{"_tag":"app.library.folders.snapshot","payload":{}}"#,
                 Some("right-token"),
             )
             .await;
@@ -6024,17 +6029,20 @@ mod tests {
         std::fs::write(&config, "label = \"test\"\n").unwrap();
         let app = host_router(&config);
         for (tag, payload) in [
-            ("app.discovery.snapshot", serde_json::json!({})),
+            ("app.library.folders.snapshot", serde_json::json!({})),
             (
-                "app.discovery.pair",
+                "app.library.folders.add",
                 serde_json::json!({"receipt":"opaque", "system":"gb"}),
             ),
             (
-                "app.discovery.change",
-                serde_json::json!({"source":"gb", "system":"gbc"}),
+                "app.library.folders.change",
+                serde_json::json!({"folder":"gb", "system":"gbc"}),
             ),
-            ("app.discovery.unpair", serde_json::json!({"source":"gb"})),
-            ("app.discovery.rescan", serde_json::json!({})),
+            (
+                "app.library.folders.remove",
+                serde_json::json!({"folder":"gb"}),
+            ),
+            ("app.library.folders.rescan", serde_json::json!({})),
             ("app.attention.list", serde_json::json!({})),
             (
                 "app.attention.assign",
@@ -6075,16 +6083,16 @@ mod tests {
             None,
         );
         for request in [
-            RpcRequest::DiscoveryPair(DiscoveryPairRequest {
+            RpcRequest::LibraryFolderAdd(LibraryFolderAddRequest {
                 receipt: receipt.clone(),
                 system: "gba".into(),
             }),
-            RpcRequest::DiscoveryChange(DiscoveryChangeRequest {
-                source: "gba".into(),
+            RpcRequest::LibraryFolderChange(LibraryFolderChangeRequest {
+                folder: "gba".into(),
                 system: "gb".into(),
             }),
-            RpcRequest::DiscoveryUnpair(DiscoveryUnpairRequest {
-                source: "gba".into(),
+            RpcRequest::LibraryFolderRemove(LibraryFolderRemoveRequest {
+                folder: "gba".into(),
             }),
         ] {
             let response = dispatch(
@@ -6103,17 +6111,20 @@ mod tests {
     #[test]
     fn discovery_rpc_round_trips_and_rejects_removed_calls() {
         for (tag, payload) in [
-            ("app.discovery.snapshot", serde_json::json!({})),
+            ("app.library.folders.snapshot", serde_json::json!({})),
             (
-                "app.discovery.pair",
+                "app.library.folders.add",
                 serde_json::json!({"receipt":"opaque", "system":"gb"}),
             ),
             (
-                "app.discovery.change",
-                serde_json::json!({"source":"gb", "system":"gbc"}),
+                "app.library.folders.change",
+                serde_json::json!({"folder":"gb", "system":"gbc"}),
             ),
-            ("app.discovery.unpair", serde_json::json!({"source":"gb"})),
-            ("app.discovery.rescan", serde_json::json!({})),
+            (
+                "app.library.folders.remove",
+                serde_json::json!({"folder":"gb"}),
+            ),
+            ("app.library.folders.rescan", serde_json::json!({})),
             ("app.attention.list", serde_json::json!({})),
             (
                 "app.attention.assign",
@@ -6134,22 +6145,23 @@ mod tests {
             )
             .is_err());
         }
-        let response =
-            RpcResponse::DiscoverySnapshot(DiscoverySnapshotOutcome::Ok(DiscoverySnapshot {
+        let response = RpcResponse::LibraryFoldersSnapshot(LibraryFoldersSnapshotOutcome::Ok(
+            LibraryFoldersSnapshot {
                 generation: "g1".into(),
-                state: DiscoveryState::Idle {},
-                sources: vec![DiscoverySource {
+                state: LibraryFoldersState::Idle {},
+                folders: vec![LibraryFolder {
                     id: "gb".into(),
                     label: "Game Boy".into(),
                     system: "gb".into(),
-                    status: DiscoverySourceStatus::Ready {},
+                    status: LibraryFolderStatus::Ready {},
                 }],
                 attention: 1,
                 diagnostics: vec![],
-            }));
+            },
+        ));
         let wire = serde_json::to_value(response).unwrap();
         assert_eq!(
-            wire["outcome"]["payload"]["sources"][0]["status"]["_tag"],
+            wire["outcome"]["payload"]["folders"][0]["status"]["_tag"],
             "Ready"
         );
         assert_eq!(wire["outcome"]["payload"]["attention"], 1);
@@ -6189,7 +6201,7 @@ mod tests {
 
         let body = rpc_body_authorized(
             app.clone(),
-            &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
+            &serde_json::json!({"_tag":"app.library.folders.add","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
             Some("right-token"),
         )
         .await;
@@ -6199,7 +6211,7 @@ mod tests {
         let idle = wait_for_discovery_idle(app.clone()).await;
         assert_eq!(idle["outcome"]["payload"]["state"]["_tag"], "Idle");
         assert_eq!(
-            idle["outcome"]["payload"]["sources"]
+            idle["outcome"]["payload"]["folders"]
                 .as_array()
                 .unwrap()
                 .len(),
@@ -6232,7 +6244,7 @@ mod tests {
         let app = discovery_test_router(readable.path(), private.path(), grants);
         rpc_body_authorized(
             app.clone(),
-            &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
+            &serde_json::json!({"_tag":"app.library.folders.add","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
             Some("right-token"),
         )
         .await;
@@ -6305,7 +6317,7 @@ mod tests {
         ] {
             let body = rpc_body_authorized(
                 app.clone(),
-                &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
+                &serde_json::json!({"_tag":"app.library.folders.add","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
                 Some("right-token"),
             )
             .await;
@@ -6317,7 +6329,7 @@ mod tests {
         let restarted_app = discovery_test_router(readable.path(), private.path(), restarted);
         let body = rpc_body_authorized(
             restarted_app,
-            &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": replay,"system":"gba"}}).to_string(),
+            &serde_json::json!({"_tag":"app.library.folders.add","payload":{"receipt": replay,"system":"gba"}}).to_string(),
             Some("right-token"),
         )
         .await;
@@ -6360,7 +6372,7 @@ mod tests {
         );
         let idle = wait_for_discovery_idle(app.clone()).await;
         assert_eq!(idle["outcome"]["payload"]["state"]["_tag"], "Idle");
-        assert!(idle["outcome"]["payload"]["sources"]
+        assert!(idle["outcome"]["payload"]["folders"]
             .as_array()
             .unwrap()
             .is_empty());
@@ -6377,7 +6389,7 @@ mod tests {
         .unwrap();
         rpc_body_authorized(
             app.clone(),
-            r#"{"_tag":"app.discovery.rescan","payload":{}}"#,
+            r#"{"_tag":"app.library.folders.rescan","payload":{}}"#,
             Some("right-token"),
         )
         .await;
@@ -6393,7 +6405,7 @@ mod tests {
         std::fs::remove_file(steamapps.join("appmanifest_401710.acf")).unwrap();
         rpc_body_authorized(
             app.clone(),
-            r#"{"_tag":"app.discovery.rescan","payload":{}}"#,
+            r#"{"_tag":"app.library.folders.rescan","payload":{}}"#,
             Some("right-token"),
         )
         .await;
@@ -6425,13 +6437,13 @@ mod tests {
         let app = discovery_test_router(readable.path(), private.path(), grants);
         rpc_body_authorized(
             app.clone(),
-            &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
+            &serde_json::json!({"_tag":"app.library.folders.add","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
             Some("right-token"),
         )
         .await;
         let during = rpc_body_authorized(
             app.clone(),
-            r#"{"_tag":"app.discovery.rescan","payload":{}}"#,
+            r#"{"_tag":"app.library.folders.rescan","payload":{}}"#,
             Some("right-token"),
         )
         .await;
@@ -6460,7 +6472,7 @@ mod tests {
         let app = discovery_test_router(readable.path(), private.path(), grants);
         rpc_body_authorized(
             app.clone(),
-            &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": good_receipt,"system":"gba"}}).to_string(),
+            &serde_json::json!({"_tag":"app.library.folders.add","payload":{"receipt": good_receipt,"system":"gba"}}).to_string(),
             Some("right-token"),
         )
         .await;
@@ -6468,7 +6480,7 @@ mod tests {
         drop(bad);
         let refused = rpc_body_authorized(
             app.clone(),
-            &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": bad_receipt,"system":"gba"}}).to_string(),
+            &serde_json::json!({"_tag":"app.library.folders.add","payload":{"receipt": bad_receipt,"system":"gba"}}).to_string(),
             Some("right-token"),
         )
         .await;
@@ -6615,7 +6627,7 @@ command = ["sh", "-c", "sleep 1"]
 
         let stale = rpc_body_authorized(
             brain.clone(),
-            r#"{"_tag":"app.session.stop","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
+            r#"{"_tag":"app.session.end","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
             Some("right-token"),
         )
         .await;
@@ -6634,7 +6646,7 @@ command = ["sh", "-c", "sleep 1"]
         let stopped = rpc_body_authorized(
             brain,
             &serde_json::json!({
-                "_tag": "app.session.stop",
+                "_tag": "app.session.end",
                 "payload": { "expectedLaunchId": launch_id }
             })
             .to_string(),
@@ -6801,7 +6813,7 @@ command = ["game-two"]
         let frozen_a = rpc_body(
             local.clone(),
             &serde_json::json!({
-                "_tag":"app.session.freeze",
+                "_tag":"app.session.leave",
                 "payload":{"expectedLaunchId":launch_a.clone()}
             })
             .to_string(),
@@ -6811,13 +6823,13 @@ command = ["game-two"]
         let stopped_a = rpc_body(
             local,
             &serde_json::json!({
-                "_tag":"app.session.stop",
+                "_tag":"app.session.end",
                 "payload":{"expectedLaunchId":launch_a}
             })
             .to_string(),
         )
         .await;
-        assert_eq!(stopped_a["outcome"]["payload"]["phase"], "stopped");
+        assert_eq!(stopped_a["outcome"]["payload"]["phase"], "ended");
 
         let prepared_b = rpc_body(
             lan.clone(),
@@ -6832,7 +6844,7 @@ command = ["game-two"]
         let frozen_b = rpc_body(
             lan.clone(),
             &serde_json::json!({
-                "_tag":"app.session.freeze",
+                "_tag":"app.session.leave",
                 "payload":{"expectedLaunchId":launch_b.clone()}
             })
             .to_string(),
@@ -6885,7 +6897,7 @@ command = ["game-one"]
 
         let stale = tcp_rpc_body(
             tcp_address,
-            r#"{"_tag":"app.session.freeze","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
+            r#"{"_tag":"app.session.leave","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
         )
         .await;
         assert_eq!(stale["outcome"]["payload"]["code"], "StaleLaunchIdentity");
@@ -6894,13 +6906,13 @@ command = ["game-one"]
         let frozen = tcp_rpc_body(
             tcp_address,
             &serde_json::json!({
-                "_tag": "app.session.freeze",
+                "_tag": "app.session.leave",
                 "payload": { "expectedLaunchId": launch_id }
             })
             .to_string(),
         )
         .await;
-        assert_eq!(frozen["_tag"], "app.session.freeze");
+        assert_eq!(frozen["_tag"], "app.session.leave");
         assert_eq!(frozen["outcome"]["_tag"], "Ok");
         assert_eq!(frozen["outcome"]["payload"]["launchId"], launch_id);
         assert_eq!(frozen["outcome"]["payload"]["state"], "frozen");
@@ -6918,7 +6930,7 @@ command = ["game-one"]
         let again = unix_rpc_body(
             socket_path.clone(),
             &serde_json::json!({
-                "_tag": "app.session.freeze",
+                "_tag": "app.session.leave",
                 "payload": { "expectedLaunchId": launch_id }
             })
             .to_string(),
@@ -6940,13 +6952,13 @@ command = ["game-one"]
         let thawed = unix_rpc_body(
             socket_path.clone(),
             &serde_json::json!({
-                "_tag": "app.session.thaw",
+                "_tag": "app.session.resume",
                 "payload": { "expectedLaunchId": launch_id }
             })
             .to_string(),
         )
         .await;
-        assert_eq!(thawed["_tag"], "app.session.thaw");
+        assert_eq!(thawed["_tag"], "app.session.resume");
         assert_eq!(thawed["outcome"]["_tag"], "Err");
         assert_eq!(thawed["outcome"]["payload"]["code"], "HostFocusFailed");
         assert_eq!(
@@ -6968,7 +6980,7 @@ command = ["game-one"]
         let refrozen = tcp_rpc_body(
             tcp_address,
             &serde_json::json!({
-                "_tag": "app.session.freeze",
+                "_tag": "app.session.leave",
                 "payload": { "expectedLaunchId": launch_id }
             })
             .to_string(),
@@ -6978,17 +6990,17 @@ command = ["game-one"]
         let stopped = unix_rpc_body(
             socket_path,
             &serde_json::json!({
-                "_tag": "app.session.stop",
+                "_tag": "app.session.end",
                 "payload": { "expectedLaunchId": launch_id }
             })
             .to_string(),
         )
         .await;
-        assert_eq!(stopped["outcome"]["payload"]["phase"], "stopped");
+        assert_eq!(stopped["outcome"]["payload"]["phase"], "ended");
         let gone = tcp_rpc_body(
             tcp_address,
             &serde_json::json!({
-                "_tag": "app.session.thaw",
+                "_tag": "app.session.resume",
                 "payload": { "expectedLaunchId": launch_id }
             })
             .to_string(),
@@ -7053,7 +7065,7 @@ command = ["game-two"]
         assert_eq!(status["outcome"]["payload"]["active"]["phase"], "running");
 
         let lan_stop =
-            tcp_rpc_body(tcp_address, r#"{"_tag":"app.session.stop","payload":{}}"#).await;
+            tcp_rpc_body(tcp_address, r#"{"_tag":"app.session.end","payload":{}}"#).await;
         assert_eq!(
             lan_stop["outcome"]["payload"]["code"],
             "ExpectedLaunchIdRequired"
@@ -7072,7 +7084,7 @@ command = ["game-two"]
 
         let missing_identity = unix_rpc_body(
             socket_path.clone(),
-            r#"{"_tag":"app.session.stop","payload":{}}"#,
+            r#"{"_tag":"app.session.end","payload":{}}"#,
         )
         .await;
         assert_eq!(
@@ -7081,7 +7093,7 @@ command = ["game-two"]
         );
         let stale = unix_rpc_body(
             socket_path.clone(),
-            r#"{"_tag":"app.session.stop","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
+            r#"{"_tag":"app.session.end","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
         )
         .await;
         assert_eq!(stale["outcome"]["payload"]["code"], "StaleLaunchIdentity");
@@ -7089,13 +7101,13 @@ command = ["game-two"]
         let stopped = unix_rpc_body(
             socket_path.clone(),
             &serde_json::json!({
-                "_tag": "app.session.stop",
+                "_tag": "app.session.end",
                 "payload": { "expectedLaunchId": first }
             })
             .to_string(),
         )
         .await;
-        assert_eq!(stopped["outcome"]["payload"]["phase"], "stopped");
+        assert_eq!(stopped["outcome"]["payload"]["phase"], "ended");
         let replacement = tcp_rpc_body(
             tcp_address,
             r#"{"_tag":"app.session.prepare","payload":{"gameId":"two"}}"#,
@@ -7108,7 +7120,7 @@ command = ["game-two"]
         let old_stop = unix_rpc_body(
             socket_path,
             &serde_json::json!({
-                "_tag": "app.session.stop",
+                "_tag": "app.session.end",
                 "payload": { "expectedLaunchId": first }
             })
             .to_string(),
@@ -7365,8 +7377,8 @@ command = ["game-two"]
         }));
         assert!(matches!(
             stopped,
-            SessionStopOutcome::Ok(SessionStopResult {
-                phase: SessionStopPhase::Stopped
+            SessionEndOutcome::Ok(SessionEndResult {
+                phase: SessionEndPhase::Ended
             })
         ));
 
@@ -7375,16 +7387,16 @@ command = ["game-two"]
         }));
         assert!(matches!(
             pending,
-            SessionStopOutcome::Ok(SessionStopResult {
-                phase: SessionStopPhase::Pending
+            SessionEndOutcome::Ok(SessionEndResult {
+                phase: SessionEndPhase::Pending
             })
         ));
 
         let nothing = session_stop_outcome(Ok(upstream::UpstreamSessionStop::NothingToStop {}));
         assert!(matches!(
             nothing,
-            SessionStopOutcome::Ok(SessionStopResult {
-                phase: SessionStopPhase::Stopped
+            SessionEndOutcome::Ok(SessionEndResult {
+                phase: SessionEndPhase::Ended
             })
         ));
 
@@ -7392,7 +7404,7 @@ command = ["game-two"]
             session_stop_outcome(Ok(upstream::UpstreamSessionStop::ConfirmationRequired {
                 action: Some("stop-session".into()),
             }));
-        let SessionStopOutcome::Err(failure) = confirmation else {
+        let SessionEndOutcome::Err(failure) = confirmation else {
             panic!("expected Err");
         };
         assert_eq!(failure.code, "ConfirmationRequired");

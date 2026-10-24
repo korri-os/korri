@@ -312,7 +312,7 @@ describe("plugin ids", () => {
     expect(pluginActionFrom(inspectActionId(target))).toEqual({ _tag: "Inspect", target })
     expect(pluginActionFrom(reviewActionId(target))).toEqual({ _tag: "Review", target })
     expect(pluginActionFrom(removeRepositoryActionId(target.sourceUrl))).toEqual({ _tag: "Remove", url: target.sourceUrl })
-    expect(pluginActionFrom("game-folder-rescan")).toBeUndefined()
+    expect(pluginActionFrom("library-folder-rescan")).toBeUndefined()
     expect(pluginActionFrom("plugin-review:%E0%A4%A")).toBeUndefined()
   })
 

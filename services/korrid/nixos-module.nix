@@ -21,6 +21,8 @@ let
   signerGroup = "korri-local-signer";
   controlGroup = "korri-control";
   controlDirectory = builtins.dirOf cfg.controlSocket;
+  cliDirectory = builtins.dirOf cfg.cliSocket;
+  personGroup = config.users.users.${cfg.runtimeUser}.group;
   signerSocketDirectory = builtins.dirOf cfg.localSignerSocket;
   signerPublicDirectory = "${signerSocketDirectory}/public";
   signerPublicKeyFile = "${signerPublicDirectory}/person.pub";
@@ -282,6 +284,11 @@ in
       default = null;
       description = "Optional streaming-plugin certificate-control directory hidden from every game unit.";
     };
+    cliSocket = lib.mkOption {
+      type = lib.types.str;
+      default = "/run/korrid-cli/cli.sock";
+      description = "Person RPC socket; the runtime account and root are checked by kernel peer credentials.";
+    };
     controlSocket = lib.mkOption {
       type = lib.types.str;
       default = "/run/korrid-control/control.sock";
@@ -423,6 +430,15 @@ in
         message = "korrid controlSocket and its directory must be normalized absolute paths.";
       }
       {
+        assertion =
+          validAbsolutePath cfg.cliSocket
+          && validAbsolutePath cliDirectory
+          && cliDirectory != controlDirectory
+          && !lib.hasPrefix "${controlDirectory}/" cliDirectory
+          && !lib.hasPrefix "${cliDirectory}/" controlDirectory;
+        message = "korrid cliSocket must have its own normalized absolute directory, separate from inputd control.";
+      }
+      {
         assertion = validAbsolutePath cfg.compositorControlDirectory;
         message = "korrid compositorControlDirectory must be a normalized absolute path.";
       }
@@ -488,9 +504,11 @@ in
     };
 
     environment.systemPackages = [ cfg.package ];
+    environment.variables.KORRI_CLI_SOCKET = cfg.cliSocket;
 
     systemd.tmpfiles.rules = [
       "d ${controlDirectory} 0750 root ${controlGroup} -"
+      "d ${cliDirectory} 0750 root ${personGroup} -"
       "d ${signerSocketDirectory} 0751 root ${serviceGroup} -"
       "d ${signerPublicDirectory} 2750 ${signerUser} ${serviceGroup} -"
       "d ${cfg.privateStateRoot} 0700 ${serviceUser} ${serviceGroup} -"
@@ -517,8 +535,30 @@ in
       ];
       socketConfig = {
         ListenStream = cfg.controlSocket;
+        FileDescriptorName = "korrid-control";
         SocketUser = "root";
         SocketGroup = controlGroup;
+        SocketMode = "0660";
+        DirectoryMode = "0750";
+        RemoveOnStop = true;
+        Service = "korrid.service";
+      };
+    };
+
+    systemd.sockets.korrid-cli = {
+      description = "Korri person RPC socket";
+      wantedBy = [ "sockets.target" ];
+      before = [ "korrid.service" ];
+      requires = [ "systemd-tmpfiles-setup.service" ];
+      after = [
+        "systemd-tmpfiles-setup.service"
+        "systemd-tmpfiles-resetup.service"
+      ];
+      socketConfig = {
+        ListenStream = cfg.cliSocket;
+        FileDescriptorName = "korrid-cli";
+        SocketUser = "root";
+        SocketGroup = personGroup;
         SocketMode = "0660";
         DirectoryMode = "0750";
         RemoveOnStop = true;
@@ -735,6 +775,7 @@ in
       wantedBy = [ "multi-user.target" ];
       requires = [
         "korrid-control.socket"
+        "korrid-cli.socket"
         "korrid-identity.service"
         "korri-local-signer.service"
       ]
@@ -742,6 +783,7 @@ in
       after = [
         "network.target"
         "korrid-control.socket"
+        "korrid-cli.socket"
         "korrid-identity.service"
         "korri-local-signer.service"
         "korri-input-source-guard.service"
@@ -761,6 +803,8 @@ in
         KORRID_LOCAL_SIGNER_SOCKET = cfg.localSignerSocket;
         KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE = signerPublicKeyFile;
         KORRID_CONTROL_SOCKET = cfg.controlSocket;
+        KORRID_CLI_SOCKET = cfg.cliSocket;
+        KORRID_CLI_PEER_UID = toString cfg.runtimeUid;
         KORRID_CONTROL_DIRECTORY = controlDirectory;
         KORRID_COMPOSITOR_CONTROL_DIRECTORY = cfg.compositorControlDirectory;
         KORRID_CONTROL_PEER_UID = toString cfg.inputdUid;

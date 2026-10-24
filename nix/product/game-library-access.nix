@@ -44,10 +44,10 @@ in
     "z ${root} 0710 korrid korrid -"
     "a+ ${root}/roms - - - - u:${user}:--x"
     # Paired discovery sources (one folder per system or group, written by
-    # `korrid catalog migrate` and `pair`). The game reads and traverses the
+    # `korrid catalog migrate` and live `korri library folders add`). The game reads and traverses the
     # whole tree; new folders and files inherit that access.
     "d ${root}/games 0710 korrid korrid -"
-    # The explicit mask matters: `korrid catalog migrate` and `pair` create
+    # The explicit mask matters: migration and live library-folder addition create
     # folders 0700, whose ACL mask is empty, and tmpfiles keeps that mask, so
     # the named entry alone stays ineffective (the RG353M Wario Land 4 folder,
     # 2026-10-20). The game user gets read and traverse, never write.

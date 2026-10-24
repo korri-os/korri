@@ -179,7 +179,6 @@ async fn host_count_invalid_values_and_unrelated_settings_leave_bytes_unchanged(
         assert_eq!(fixture.bytes(), bytes);
     }
     for (setting, value) in [
-        ("device-name", "changed"),
         ("@korri:mgba", "false"),
         ("host.preferences.playerCount.extra", "8"),
     ] {
@@ -219,7 +218,7 @@ async fn host_count_rejects_running_frozen_and_focus_failed_without_mutation() {
         if phase == "frozen" {
             let frozen = rpc(
                 &app,
-                json!({"_tag":"app.session.freeze","payload":{"expectedLaunchId":launch}}),
+                json!({"_tag":"app.session.leave","payload":{"expectedLaunchId":launch}}),
             )
             .await;
             assert_eq!(frozen["outcome"]["_tag"], "Ok", "{frozen}");
@@ -227,7 +226,7 @@ async fn host_count_rejects_running_frozen_and_focus_failed_without_mutation() {
         if phase == "focus-failed" {
             let thawed = rpc(
                 &app,
-                json!({"_tag":"app.session.thaw","payload":{"expectedLaunchId":launch}}),
+                json!({"_tag":"app.session.resume","payload":{"expectedLaunchId":launch}}),
             )
             .await;
             assert_eq!(thawed["outcome"]["_tag"], "Err", "{thawed}");
@@ -249,7 +248,7 @@ async fn host_count_rejects_running_frozen_and_focus_failed_without_mutation() {
     }
     let stopped = rpc(
         &app,
-        json!({"_tag":"app.session.stop","payload":{"expectedLaunchId":launch}}),
+        json!({"_tag":"app.session.end","payload":{"expectedLaunchId":launch}}),
     )
     .await;
     assert_eq!(stopped["outcome"]["_tag"], "Ok", "{stopped}");
@@ -401,6 +400,7 @@ async fn host_count_does_not_expand_peer_lan_or_private_control_authority() {
     let (lan, _) = app_states(fixture.runtime.clone());
     for body in [
         update(revision, COUNT, "6"),
+        update(revision, config::settings::DEVICE_NAME_SETTING_ID, "forged"),
         json!({"_tag":"system.settings.snapshot","payload":{}}),
     ] {
         let (status, denied) = request(&private, body.clone(), None, None).await;

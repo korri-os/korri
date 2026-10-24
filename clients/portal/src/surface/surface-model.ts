@@ -284,8 +284,8 @@ export function gameActionsForEntry(
 ): readonly SurfaceAction[] {
   if (entry?.kind === "now-playing") {
     return [
-      { id: "resume", label: "Continue playing", enabled: true },
-      { id: "stop", label: "Stop", enabled: true, destructive: true },
+      { id: "resume", label: "Resume", enabled: true },
+      { id: "end", label: "End", enabled: true, destructive: true },
     ]
   }
   return download === undefined ? [] : downloadActions(download)
@@ -360,7 +360,7 @@ function statusFrom(state: LaunchablesState): SurfaceStatus {
     case "Stopping":
       return {
         _tag: "Busy",
-        kicker: "Stopping session…",
+        kicker: "Ending session…",
         detail: "Waiting for the host to finish",
       }
     case "Recovery":

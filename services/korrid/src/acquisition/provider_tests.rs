@@ -1077,7 +1077,7 @@ async fn the_device_finds_downloads_and_launches_a_store_game_over_its_rpc() {
                 let launch_id = &payload["session"]["launchId"];
                 let stopped = world
                     .call(
-                        "app.session.stop",
+                        "app.session.end",
                         serde_json::json!({"expectedLaunchId":launch_id}),
                     )
                     .await;
@@ -1105,7 +1105,7 @@ async fn the_device_pairs_and_rescans_its_library_and_launches_what_it_found() {
         .token;
     let paired = world
         .call(
-            "app.discovery.pair",
+            "app.library.folders.add",
             serde_json::json!({"receipt": receipt, "system": "gba"}),
         )
         .await;
@@ -1114,7 +1114,7 @@ async fn the_device_pairs_and_rescans_its_library_and_launches_what_it_found() {
         tokio::time::timeout(Duration::from_secs(20), async {
             loop {
                 let snapshot = world
-                    .call("app.discovery.snapshot", serde_json::json!({}))
+                    .call("app.library.folders.snapshot", serde_json::json!({}))
                     .await;
                 if snapshot["outcome"]["payload"]["state"]["_tag"] == "Idle" {
                     break snapshot;
@@ -1127,7 +1127,7 @@ async fn the_device_pairs_and_rescans_its_library_and_launches_what_it_found() {
     };
     let snapshot = idle().await;
     assert_eq!(
-        snapshot["outcome"]["payload"]["sources"][0]["system"], "gba",
+        snapshot["outcome"]["payload"]["folders"][0]["system"], "gba",
         "{snapshot}"
     );
     let key = format!("sha256:{}", sha_hex(&rom));
@@ -1145,7 +1145,7 @@ async fn the_device_pairs_and_rescans_its_library_and_launches_what_it_found() {
     let launched = world.launch(game_id).await;
     assert_eq!(launched["outcome"]["_tag"], "Ok", "{launched}");
     let rescan = world
-        .call("app.discovery.rescan", serde_json::json!({}))
+        .call("app.library.folders.rescan", serde_json::json!({}))
         .await;
     assert_eq!(rescan["outcome"]["_tag"], "Ok", "{rescan}");
     idle().await;
@@ -1283,7 +1283,7 @@ async fn acquired_headered_and_headerless_dumps_join_the_discovered_release() {
         .token;
     let paired = world
         .call(
-            "app.discovery.pair",
+            "app.library.folders.add",
             serde_json::json!({"receipt": receipt, "system": "nes"}),
         )
         .await;

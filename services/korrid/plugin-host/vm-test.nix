@@ -1112,9 +1112,9 @@ pkgs.testers.runNixOSTest {
     assert empty["payload"]["games"] == [], empty
 
     def rescan_and_wait():
-        assert brain_rpc("app.discovery.rescan")["outcome"]["_tag"] == "Ok"
-        machine.wait_until_succeeds(brain_command("app.discovery.snapshot") + " | jq -e '.outcome.payload.state._tag | . != \"Scanning\" and . != \"Enriching\"'", timeout=30)
-        snapshot = brain_rpc("app.discovery.snapshot")["outcome"]["payload"]
+        assert brain_rpc("app.library.folders.rescan")["outcome"]["_tag"] == "Ok"
+        machine.wait_until_succeeds(brain_command("app.library.folders.snapshot") + " | jq -e '.outcome.payload.state._tag | . != \"Scanning\" and . != \"Enriching\"'", timeout=30)
+        snapshot = brain_rpc("app.library.folders.snapshot")["outcome"]["payload"]
         assert snapshot["state"]["_tag"] == "Idle", snapshot
 
     # Install the fixture before cutting all non-loopback networking. Enable,

@@ -169,7 +169,7 @@ describe("settingsFrom", () => {
           generation: "discovery-1",
           state: { _tag: "Idle", payload: {} },
           attention: 0,
-          sources: [
+          folders: [
             { id: "loc-a", label: "GBA", system: "gba", status: { _tag: "Ready", payload: {} } },
             { id: "loc-b", label: "More games", system: "gba", status: { _tag: "Ready", payload: {} } },
           ],
@@ -186,15 +186,15 @@ describe("settingsFrom", () => {
     expect(games?.items.map(item => [item.label, item.value])).toEqual([
       ["On this device", "1 game"],
       ["Folder scan", "Ready"],
-      ["Rescan game folders", "2 folders"],
+      ["Rescan library folders", "2 folders"],
       ["GBA", "Registered"],
       ["More games", "Registered"],
     ])
     expect(games?.items[3]?.interaction).toMatchObject({
       kind: "action",
-      actionId: "game-folder-remove:loc-a",
+      actionId: "library-folder-remove:loc-a",
       destructive: true,
-      confirmation: { confirmLabel: "Remove folder" },
+      confirmation: { confirmLabel: "Remove library folder" },
     })
   })
 
@@ -205,7 +205,7 @@ describe("settingsFrom", () => {
           generation: "discovery-1",
           state: { _tag: "Idle", payload: {} },
           attention: 0,
-          sources: [
+          folders: [
             { id: "loc-a", label: "GBA", system: "gba", status: { _tag: "Overlap", payload: {} } },
             { id: "loc-b", label: "SNES", system: "snes", status: { _tag: "SystemUnavailable", payload: {} } },
           ],
@@ -214,7 +214,7 @@ describe("settingsFrom", () => {
       },
       "Games",
     )
-    expect(games?.items.filter(item => item.id.startsWith("game-folder:")).map(item => [item.label, item.value])).toEqual([
+    expect(games?.items.filter(item => item.id.startsWith("library-folder:")).map(item => [item.label, item.value])).toEqual([
       ["GBA", "Overlaps another folder"],
       ["SNES", "System unavailable"],
     ])
@@ -228,7 +228,7 @@ describe("settingsFrom", () => {
             generation: "discovery-1",
             state: { _tag: "Scanning", payload: {} },
             attention: 0,
-            sources: [],
+            folders: [],
             diagnostics: [],
           },
         },
@@ -243,7 +243,7 @@ describe("settingsFrom", () => {
             generation: "discovery-2",
             state: { _tag: "Problem", payload: {} },
             attention: 0,
-            sources: [],
+            folders: [],
             diagnostics: [{ code: "Folder", message: "Folder is unavailable" }],
           },
         },

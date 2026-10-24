@@ -164,7 +164,7 @@ class IdleGuardTests(unittest.TestCase):
 
     def test_wrong_rpc_and_missing_reply_are_not_idle(self):
         response = self.status_error("SessionCompleted")
-        response["_tag"] = "app.session.stop"
+        response["_tag"] = "app.session.end"
         self.assertFalse(self.accepts(response))
         self.assertFalse(self.accepts({}))
 

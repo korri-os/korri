@@ -153,7 +153,7 @@ async fn reserved_selected_and_stored_routes_keep_exact_identity_overrides_and_w
         );
         assert_eq!(
             cancel(&app, launch_id).await["outcome"]["payload"]["phase"],
-            "stopped"
+            "ended"
         );
     }
     assert_eq!(backend.launch_count(), 2);
@@ -171,7 +171,7 @@ async fn reserve_cancel_before_start_cannot_spawn_or_write_the_journal() {
         .exists());
     let cancelled = cancel(&app, &id).await;
     assert_eq!(
-        cancelled["outcome"]["payload"]["phase"], "stopped",
+        cancelled["outcome"]["payload"]["phase"], "ended",
         "{cancelled}"
     );
     let late = start(&app, &id).await;
@@ -197,7 +197,7 @@ async fn cancel_live_exact_launch_and_stale_cancel_never_end_a_replacement() {
     assert_eq!(launched["outcome"]["payload"]["warnings"], json!([]));
     assert_eq!(
         cancel(&app, &a).await["outcome"]["payload"]["phase"],
-        "stopped"
+        "ended"
     );
     let b = reserve(&app).await;
     assert_eq!(start(&app, &b).await["outcome"]["_tag"], "Ok");
@@ -273,7 +273,7 @@ async fn cancel_does_not_wait_for_delayed_route_preparation_and_late_start_canno
         tokio::time::timeout(Duration::from_secs(2), start(&app, &replacement)).await;
     // Release even when an assertion fails, so a regression cannot hang shutdown.
     gate.release();
-    assert_eq!(cancellation["outcome"]["payload"]["phase"], "stopped");
+    assert_eq!(cancellation["outcome"]["payload"]["phase"], "ended");
     assert_eq!(replacement_start.unwrap()["outcome"]["_tag"], "Ok");
     assert_eq!(
         starting.await.unwrap()["outcome"]["payload"]["code"],
@@ -314,7 +314,7 @@ async fn cancel_during_launch_effects_reports_pending_then_ends_only_that_launch
     );
     assert_eq!(
         cancel(&app, &id).await["outcome"]["payload"]["phase"],
-        "stopped"
+        "ended"
     );
     let replacement = reserve(&app).await;
     assert_eq!(start(&app, &replacement).await["outcome"]["_tag"], "Ok");
@@ -451,7 +451,7 @@ async fn identity_and_focus_snapshot_hold_the_transition_lock_against_exact_stop
     );
     assert_eq!(
         stopping.await.unwrap()["outcome"]["payload"]["phase"],
-        "stopped"
+        "ended"
     );
     let replacement = reserve(&app).await;
     assert_eq!(start(&app, &replacement).await["outcome"]["_tag"], "Ok");
@@ -556,7 +556,7 @@ async fn late_stop_helper_preserves_replacement(fails: bool, method: &'static st
     assert_eq!(status["outcome"]["payload"]["active"]["phase"], "running");
     assert_eq!(std::fs::read(&journal_path).unwrap(), journal);
     // The replacement's native unit still accepts exact control.
-    let frozen = rpc(&app, "app.session.freeze", json!({"expectedLaunchId":b})).await;
+    let frozen = rpc(&app, "app.session.leave", json!({"expectedLaunchId":b})).await;
     assert_eq!(frozen["outcome"]["_tag"], "Ok", "{frozen}");
     assert_eq!(backend.launch_count(), 2);
 }
@@ -591,12 +591,7 @@ async fn home_accepted_before_delayed_successful_start_reply_remains_authorized(
     let starting_id = id.clone();
     let starting = tokio::spawn(async move { start(&starting_app, &starting_id).await });
     gate.entered().await;
-    let home = rpc(
-        &native,
-        "app.session.freeze",
-        json!({"expectedLaunchId":id}),
-    )
-    .await;
+    let home = rpc(&native, "app.session.leave", json!({"expectedLaunchId":id})).await;
     let before = rpc(&app, "app.session.status", json!({})).await;
     gate.release();
     let started = starting.await.unwrap();

@@ -44,10 +44,10 @@ fn focusable_compositor() -> Arc<Compositor> {
     })
 }
 async fn freeze(app: &Router, id: &str) -> Value {
-    rpc(app, "app.session.freeze", json!({"expectedLaunchId":id})).await
+    rpc(app, "app.session.leave", json!({"expectedLaunchId":id})).await
 }
 async fn thaw(app: &Router, id: &str) -> Value {
-    rpc(app, "app.session.thaw", json!({"expectedLaunchId":id})).await
+    rpc(app, "app.session.resume", json!({"expectedLaunchId":id})).await
 }
 async fn assert_overlay(app: &Router, id: &str) {
     let status = rpc(app, "app.session.status", json!({})).await;
@@ -83,7 +83,7 @@ async fn held_status_preserves_newer_home(replacement: bool, completed: bool) {
         if !completed {
             assert_eq!(
                 cancel(&app, &a).await["outcome"]["payload"]["phase"],
-                "stopped"
+                "ended"
             );
         }
         let b = reserve(&app).await;
@@ -166,7 +166,7 @@ async fn metadata_delayed_successful_return_preserves_newer_same_launch_home() {
     let _release = GateRelease(gate.clone());
     let runtime = runtime.with_compositor(focusable_compositor(), vec!["chromium-browser".into()]);
     let (app, native) = native_routers(
-        delay_session_reply(runtime, "app.session.thaw", &gate),
+        delay_session_reply(runtime, "app.session.resume", &gate),
         root.path(),
     );
     let id = reserve(&app).await;
@@ -191,7 +191,7 @@ async fn metadata_delayed_native_home_cannot_overwrite_replacement_home() {
     let gate = Arc::new(RouteGate::default());
     let _release = GateRelease(gate.clone());
     let (app, native) = native_routers(
-        delay_session_reply(runtime, "app.session.freeze", &gate),
+        delay_session_reply(runtime, "app.session.leave", &gate),
         root.path(),
     );
     let a = reserve(&app).await;
@@ -202,7 +202,7 @@ async fn metadata_delayed_native_home_cannot_overwrite_replacement_home() {
     gate.entered().await;
     assert_eq!(
         cancel(&app, &a).await["outcome"]["payload"]["phase"],
-        "stopped"
+        "ended"
     );
     let b = reserve(&app).await;
     assert_eq!(start(&app, &b).await["outcome"]["_tag"], "Ok");
@@ -221,7 +221,7 @@ async fn metadata_delayed_native_home_cannot_restore_intent_after_return_and_ful
     let _release = GateRelease(gate.clone());
     let runtime = runtime.with_compositor(focusable_compositor(), vec!["chromium-browser".into()]);
     let (app, native) = native_routers(
-        delay_session_reply(runtime, "app.session.freeze", &gate),
+        delay_session_reply(runtime, "app.session.leave", &gate),
         root.path(),
     );
     let id = reserve(&app).await;
@@ -273,7 +273,7 @@ async fn held_recovered_status_preserves_newer_control(replacement: bool) {
     let b = if replacement {
         assert_eq!(
             cancel(&app, &a).await["outcome"]["payload"]["phase"],
-            "stopped"
+            "ended"
         );
         let b = reserve(&app).await;
         assert_eq!(start(&app, &b).await["outcome"]["_tag"], "Ok");
@@ -349,27 +349,27 @@ async fn delayed_terminal_control_preserves_newly_started_exact_home(method: &'s
 
 #[tokio::test]
 async fn metadata_delayed_terminal_freeze_keeps_new_home_for_newly_active_reserved_identity() {
-    delayed_terminal_control_preserves_newly_started_exact_home("app.session.freeze").await;
+    delayed_terminal_control_preserves_newly_started_exact_home("app.session.leave").await;
 }
 
 #[tokio::test]
 async fn metadata_delayed_terminal_thaw_keeps_new_home_for_newly_active_reserved_identity() {
-    delayed_terminal_control_preserves_newly_started_exact_home("app.session.thaw").await;
+    delayed_terminal_control_preserves_newly_started_exact_home("app.session.resume").await;
 }
 
 #[tokio::test]
 async fn metadata_delayed_terminal_stop_keeps_new_home_for_newly_active_reserved_identity() {
-    delayed_terminal_control_preserves_newly_started_exact_home("app.session.stop").await;
+    delayed_terminal_control_preserves_newly_started_exact_home("app.session.end").await;
 }
 
 #[tokio::test]
 async fn metadata_late_successful_stop_helper_preserves_replacement() {
-    late_stop_helper_preserves_replacement(false, "app.session.stop").await;
+    late_stop_helper_preserves_replacement(false, "app.session.end").await;
 }
 
 #[tokio::test]
 async fn metadata_late_failed_stop_helper_preserves_replacement() {
-    late_stop_helper_preserves_replacement(true, "app.session.stop").await;
+    late_stop_helper_preserves_replacement(true, "app.session.end").await;
 }
 
 #[tokio::test]
