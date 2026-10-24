@@ -33,13 +33,13 @@ use std::{
 };
 use tokio::time::timeout;
 
-struct Devices {
+pub(super) struct Devices {
     _a: tempfile::TempDir,
-    b: tempfile::TempDir,
+    pub(super) b: tempfile::TempDir,
     owner: Keys,
-    ca: PeerCredentials,
-    cb: PeerCredentials,
-    da: FederationDirectory,
+    pub(super) ca: PeerCredentials,
+    pub(super) cb: PeerCredentials,
+    pub(super) da: FederationDirectory,
     _db: FederationDirectory,
 }
 fn owned(root: &std::path::Path, owner: &Keys) -> DeviceIdentity {
@@ -59,7 +59,7 @@ fn owned(root: &std::path::Path, owner: &Keys) -> DeviceIdentity {
     identity
 }
 impl Devices {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         use std::os::unix::fs::PermissionsExt;
         for root in [&a, &b] {
@@ -105,7 +105,7 @@ impl Devices {
             _db: db,
         }
     }
-    fn router(&self) -> axum::Router {
+    pub(super) fn router(&self) -> axum::Router {
         let config = self.b.path().join("host.toml");
         std::fs::write(&config, "label = \"Home PC\"\n[[games]]\nid = \"game\"\ntitle = \"Game\"\ncommand = [\"game\"]\n").unwrap();
         let runtime = crate::host::HostRuntime::from_paths_with_backend(

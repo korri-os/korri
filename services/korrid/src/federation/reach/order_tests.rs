@@ -119,6 +119,25 @@ async fn reach_direct_failure_waits_five_seconds_before_the_member_relay() {
     assert!(start.elapsed() >= Duration::from_secs(5));
     assert!(start.elapsed() < Duration::from_secs(15));
     assert_eq!(outgoing.remote_id(), b.id());
+    let serving = tokio::spawn(tunnel::serve(incoming.clone(), devices.router()));
+    let key = devices.cb.public_key().unwrap();
+    devices.da.reach.live.write().unwrap().insert(
+        key.clone(),
+        LiveRoute {
+            connection: outgoing.clone(),
+        },
+    );
+    let client = crate::upstream_native::NativeClient::new_secure_candidates(
+        Vec::new(),
+        key,
+        devices.ca.clone(),
+    )
+    .with_directory(devices.da.clone());
+    timeout(Duration::from_secs(5), client.session_status())
+        .await
+        .expect("signed peer call timed out over the member relay")
+        .expect("signed peer call failed over the member relay");
+    serving.abort();
     outgoing.close(0u32.into(), b"test complete");
     incoming.close(0u32.into(), b"test complete");
     server.shutdown().await.unwrap();

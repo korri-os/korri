@@ -30,6 +30,10 @@ use tokio::{
     time::{timeout, Instant},
 };
 
+#[cfg(test)]
+#[path = "controller_tests.rs"]
+mod tests;
+
 /// Routers own this guard. The task owns no copy of it. Dropping the last
 /// router cancels its endpoint, relay, connections and forwarding tasks.
 #[derive(Clone)]
@@ -535,108 +539,117 @@ impl Controller {
                     keep
                 });
             for peer in peers.into_iter().take(1024) {
-                let device = peer.device_public_key.clone();
-                let live = self.directory.reach.connection(&device).is_some();
-                let wait = if live {
-                    // Refresh current relay eligibility even on an existing
-                    // connection. A 60-second answer is not a durable record.
-                    self.relaying
-                        .get(&device)
-                        .is_some_and(|(expires, _)| *expires > now.saturating_add(30))
-                } else {
-                    self.retry
-                        .get(&device)
-                        .is_some_and(|(at, _)| *at > Instant::now())
-                };
-                if self.pending.contains_key(&device) || wait {
-                    continue;
-                }
-                let Ok(token) = self.directory.begin_peer_work(&device) else {
-                    continue;
-                };
-                let failures = if live {
-                    0
-                } else {
-                    self.retry.get(&device).map_or(0, |(_, n)| *n)
-                };
-                self.retry.insert(
-                    device.clone(),
-                    (
-                        Instant::now() + retry_delay(failures),
-                        failures.saturating_add(1),
-                    ),
-                );
-                let mut candidates = peer
-                    .current_endpoint
-                    .or(peer.remembered_endpoint)
-                    .map(|e| e.candidates)
-                    .unwrap_or_default();
-                super::nearby_seam::prepend(&device, &mut candidates);
-                // Existing LAN/VPN race first. Do not send HTTP to every route.
-                // A successful signed read clears the error.
-                if let Ok(index) = connect::select_origin(&candidates).await {
-                    let client = crate::upstream_native::NativeClient::new_secure(
-                        candidates[index].clone(),
-                        device.clone(),
-                        self.credentials.clone(),
-                    );
-                    let native = client.session_status().await;
-                    if native.as_ref().is_err_and(|error| {
-                        !matches!(error, crate::upstreams::UpstreamError::Unreachable(_))
-                    }) {
-                        set_operation_failed(&self.directory, &device, &token);
-                        continue;
-                    }
-                    if native.is_ok() {
-                        let _ = self
-                            .directory
-                            .set_peer_state(&token, &device, PeerState::Ready);
-                        self.retry.insert(
-                            device.clone(),
-                            (Instant::now() + Duration::from_secs(30), 0),
-                        );
-                        if self.endpoint.is_none() {
-                            continue;
-                        }
-                        // Ready consumes this token. A missing optional
-                        // relay answer must not make a native-reachable peer fail.
-                    }
-                }
-                let Ok(endpoint) = self.ensure_endpoint(&stun).await else {
-                    set_failed(&self.directory, &device, &token);
-                    continue;
-                };
-                let request_id = hex::encode(rand::random::<[u8; 32]>());
-                let now = unix_time();
-                let offer = Offer {
-                    endpoint_id: self.key.public().to_string(),
-                    direct_addresses: endpoint_addresses(&endpoint),
-                    expires_at: now + SIGNAL_LIFETIME,
-                    request_id: request_id.clone(),
-                };
-                self.pending.insert(
-                    device.clone(),
-                    Pending {
-                        request_id,
-                        expires_at: offer.expires_at,
-                        token: token.clone(),
-                    },
-                );
-                let command = CoordinationCommand::ReachOffer {
-                    sender_device_public_key: self.credentials.public_key().unwrap_or_default(),
-                    offer,
-                };
-                if !signal
-                    .queue_command(&device, command, now)
-                    .await
-                    .is_ok_and(|p| p.accepted())
-                {
-                    self.pending.remove(&device);
-                    handle_signalling_failure(&self.directory, &device, &token).await;
-                }
+                self.offer_peer(peer, &signal, &stun, now).await;
             }
             while self.tasks.try_join_next().is_some() {}
             tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+    async fn offer_peer(
+        &mut self,
+        peer: crate::federation::PeerSnapshot,
+        signal: &impl RelayCoordinator,
+        stun: &StunList,
+        now: u64,
+    ) {
+        let device = peer.device_public_key.clone();
+        let live = self.directory.reach.connection(&device).is_some();
+        let wait = if live {
+            // Refresh current relay eligibility even on an existing
+            // connection. A 60-second answer is not a durable record.
+            self.relaying
+                .get(&device)
+                .is_some_and(|(expires, _)| *expires > now.saturating_add(30))
+        } else {
+            self.retry
+                .get(&device)
+                .is_some_and(|(at, _)| *at > Instant::now())
+        };
+        if self.pending.contains_key(&device) || wait {
+            return;
+        }
+        let Ok(token) = self.directory.begin_peer_work(&device) else {
+            return;
+        };
+        let failures = if live {
+            0
+        } else {
+            self.retry.get(&device).map_or(0, |(_, n)| *n)
+        };
+        self.retry.insert(
+            device.clone(),
+            (
+                Instant::now() + retry_delay(failures),
+                failures.saturating_add(1),
+            ),
+        );
+        let mut candidates = peer
+            .current_endpoint
+            .or(peer.remembered_endpoint)
+            .map(|e| e.candidates)
+            .unwrap_or_default();
+        super::nearby_seam::prepend(&device, &mut candidates);
+        // Existing LAN/VPN race first. Do not send HTTP to every route.
+        // A successful signed read clears the error.
+        if let Ok(index) = connect::select_origin(&candidates).await {
+            let client = crate::upstream_native::NativeClient::new_secure(
+                candidates[index].clone(),
+                device.clone(),
+                self.credentials.clone(),
+            );
+            let native = client.session_status().await;
+            if native.as_ref().is_err_and(|error| {
+                !matches!(error, crate::upstreams::UpstreamError::Unreachable(_))
+            }) {
+                set_operation_failed(&self.directory, &device, &token);
+                return;
+            }
+            if native.is_ok() {
+                let _ = self
+                    .directory
+                    .set_peer_state(&token, &device, PeerState::Ready);
+                self.retry.insert(
+                    device.clone(),
+                    (Instant::now() + Duration::from_secs(30), 0),
+                );
+                if self.endpoint.is_none() {
+                    return;
+                }
+                // Ready consumes this token. A missing optional
+                // relay answer must not make a native-reachable peer fail.
+            }
+        }
+        let Ok(endpoint) = self.ensure_endpoint(stun).await else {
+            set_failed(&self.directory, &device, &token);
+            return;
+        };
+        let request_id = hex::encode(rand::random::<[u8; 32]>());
+        let now = unix_time();
+        let offer = Offer {
+            endpoint_id: self.key.public().to_string(),
+            direct_addresses: endpoint_addresses(&endpoint),
+            expires_at: now + SIGNAL_LIFETIME,
+            request_id: request_id.clone(),
+        };
+        self.pending.insert(
+            device.clone(),
+            Pending {
+                request_id,
+                expires_at: offer.expires_at,
+                token: token.clone(),
+            },
+        );
+        let command = CoordinationCommand::ReachOffer {
+            sender_device_public_key: self.credentials.public_key().unwrap_or_default(),
+            offer,
+        };
+        if !signal
+            .queue_command(&device, command, now)
+            .await
+            .is_ok_and(|p| p.accepted())
+        {
+            self.pending.remove(&device);
+            handle_signalling_failure(&self.directory, &device, &token).await;
         }
     }
     fn dial(
