@@ -881,7 +881,7 @@ in
           "AF_UNIX"
           "AF_INET"
           "AF_INET6"
-          # glibc getifaddrs uses route netlink for live peer candidates.
+          # Netlink supplies interface addresses and route and interface change notifications.
           "AF_NETLINK"
         ];
         PrivateTmp = true;
