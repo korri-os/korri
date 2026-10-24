@@ -14,7 +14,7 @@ fn required(name: &str) -> String {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "live source; coordinator supplies pinned packages, reviewed content, native probe and Xvfb"]
+#[ignore = "live source; coordinator supplies pinned packages, reviewed content and prebuilt native probe"]
 async fn public_fantasy_source_search_acquire_route_and_native_launch() {
     const PERSON: &str = "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9";
     let provider_id = required("KORRI_LIVE_FANTASY_PROVIDER_ID");
@@ -26,7 +26,6 @@ async fn public_fantasy_source_search_acquire_route_and_native_launch() {
     let probe = PathBuf::from(required("KORRI_LIVE_FANTASY_NATIVE_PROBE"));
     let korrid = PathBuf::from(required("KORRI_LIVE_KORRID"));
     assert!(probe.is_file() && korrid.is_file());
-    assert!(std::env::var_os("DISPLAY").is_some(), "run under Xvfb");
     let provider = package("KORRI_LIVE_FANTASY_PROVIDER_PACKAGE", &provider_id);
     let runner = package("KORRI_LIVE_FANTASY_RUNNER_PACKAGE", &runner_plugin);
     let runner_package = runner.package.clone();
@@ -153,10 +152,13 @@ async fn public_fantasy_source_search_acquire_route_and_native_launch() {
         serde_json::from_str(&launch.command[3]).unwrap();
     assert_eq!(input.content_path.as_deref(), content.to_str());
     crate::launcher::plugin_launch::evaluate_snapshot(&runner_source, &input).unwrap();
-    // Match the existing Bitsy native-probe interface. The publisher probe
-    // invokes real plugin-run and its native runtime, not an in-memory backend.
-    let output = std::process::Command::new("python3")
-        .arg(probe)
+    // The prebuilt publisher probe owns its graphics environment and invokes
+    // real plugin-run and its native runtime, not an in-memory backend.
+    let output = std::process::Command::new(probe)
+        .env(
+            "KORRI_NATIVE_PROBE_INPUT",
+            serde_json::to_string(&input).unwrap(),
+        )
         .arg(runner_package)
         .arg(if cfg!(target_arch = "aarch64") {
             "aarch64-linux"
