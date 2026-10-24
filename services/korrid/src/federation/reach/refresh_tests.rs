@@ -205,3 +205,63 @@ async fn reach_successful_background_refresh_clears_a_stalled_request_on_the_sam
     a.close().await;
     b.close().await;
 }
+
+#[tokio::test]
+async fn reach_stream_player_owns_a_forward_without_controlling_the_holder() {
+    let devices = Devices::new();
+    let (a, b, outgoing, incoming) = pair().await;
+    let task = tokio::spawn(tunnel::serve(incoming, devices.router()));
+    let key = devices.cb.public_key().unwrap();
+    devices.da.reach.live.write().unwrap().insert(
+        key.clone(),
+        LiveRoute {
+            connection: outgoing,
+        },
+    );
+    *devices.da.reach.bindings.write().unwrap() = Some(tunnel::Bindings {
+        address: "::1".parse().unwrap(),
+        tcp: [0; 3],
+        udp: [0; 5],
+    });
+    let client = crate::upstream_native::NativeClient::new_secure_candidates(
+        Vec::new(),
+        key.clone(),
+        devices.ca.clone(),
+    )
+    .with_directory(devices.da.clone());
+    let prepared = client.prepare_stream("game").await.unwrap();
+    let viewer = Arc::new(TestLinuxStreamViewer::default());
+    let registry = crate::upstreams::UpstreamRegistry::new_secure(Vec::new(), devices.ca.clone())
+        .with_federation(devices.da.clone())
+        .with_linux_viewer(viewer.clone());
+    registry
+        .stream_play(&key, &prepared.session.launch_id, "A")
+        .await
+        .unwrap();
+    let address = devices
+        .da
+        .stream_address(&key)
+        .expect("stream player holds the selected lease");
+    assert!(tokio::net::TcpStream::connect(&address).await.is_ok());
+    assert!(viewer
+        .calls()
+        .iter()
+        .any(|call| call.action == LinuxViewerAction::Start
+            && call.moonlight_address.as_deref() == Some(address.as_str())));
+    registry
+        .session_stop(Some(&prepared.session.launch_id), false)
+        .await
+        .unwrap();
+    assert!(devices.da.stream_address(&key).is_none());
+    let status = client.session_status().await.unwrap();
+    assert!(
+        matches!(status, crate::upstream::UpstreamSessionStatus::SessionStatus {active:Some(active)} if active.launch_id==prepared.session.launch_id)
+    );
+    client
+        .session_stop(&prepared.session.launch_id, false)
+        .await
+        .unwrap();
+    task.abort();
+    a.close().await;
+    b.close().await;
+}
