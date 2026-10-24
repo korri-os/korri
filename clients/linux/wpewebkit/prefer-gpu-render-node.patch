@@ -10,25 +10,27 @@
  
  namespace WebCore {
  
-@@ -57,20 +60,47 @@
+@@ -57,20 +60,50 @@
      if (m_mainDevice.device.isNull())
          return nullptr;
  
 -    if (nodeType == NodeType::Render) {
-+    // Korri: display-only KMS controllers (Allwinner H700 sun4i-drm) have no
-+    // render node, and their primary node needs group video. Use a GPU render
-+    // node (panfrost renderD128) instead of failing or needing that group.
++    // Korri: on display-only KMS controllers (Allwinner H700 sun4i-drm) the
++    // compositor's device has no render node and its primary node needs group
++    // video. Use a GPU render node (panfrost renderD128) instead. Never create
++    // a GBM device off the main thread: GBMDevice::create asserts it.
 +    auto renderNode = [this]() -> RefPtr<GBMDevice> {
          if (m_mainDevice.gbmRenderNode)
              return *m_mainDevice.gbmRenderNode;
 -
-+        // GBMDevice::create asserts the main thread; never create elsewhere.
 +        if (!isMainThread())
 +            return nullptr;
          if (!m_mainDevice.device.renderNode.isNull()) {
              m_mainDevice.gbmRenderNode = GBMDevice::create(m_mainDevice.device.renderNode);
-             return *m_mainDevice.gbmRenderNode;
-         }
+-            return *m_mainDevice.gbmRenderNode;
++            if (*m_mainDevice.gbmRenderNode)
++                return *m_mainDevice.gbmRenderNode;
++        }
 +        m_mainDevice.gbmRenderNode = RefPtr<GBMDevice> { };
 +        std::array<drmDevicePtr, 32> devices { };
 +        int count = drmGetDevices2(0, devices.data(), devices.size());
@@ -39,7 +41,7 @@
 +                m_mainDevice.gbmRenderNode = WTF::move(device);
 +                break;
 +            }
-+        }
+         }
 +        if (count > 0)
 +            drmFreeDevices(devices.data(), count);
 +        return *m_mainDevice.gbmRenderNode;
@@ -51,13 +53,45 @@
          // Fallback to primary node.
      }
  
-     if (!m_mainDevice.gbmPrimaryNode)
+-    if (!m_mainDevice.gbmPrimaryNode)
++    if (!m_mainDevice.gbmPrimaryNode) {
++        if (!isMainThread())
++            return renderNode();
          m_mainDevice.gbmPrimaryNode = GBMDevice::create(m_mainDevice.device.primaryNode);
 -    return *m_mainDevice.gbmPrimaryNode;
++    }
 +    if (*m_mainDevice.gbmPrimaryNode || nodeType == NodeType::Render)
 +        return *m_mainDevice.gbmPrimaryNode;
-+    // Korri: an unopenable primary node falls back to the GPU render node.
 +    return renderNode();
  }
  
  RefPtr<GBMDevice> DRMDeviceManager::gbmDevice(const DRMDevice& device, NodeType nodeType) const
+@@ -79,7 +112,13 @@
+     if (device.primaryNode == m_mainDevice.device.primaryNode)
+         return mainGBMDevice(nodeType);
+ 
+-    return GBMDevice::create(nodeType == NodeType::Render && !device.renderNode.isNull() ? device.renderNode : device.primaryNode);
++    // Korri: a scanout tranche can name the display-only controller. If its
++    // node cannot be opened (or this is not the main thread), use the GPU.
++    if (isMainThread()) {
++        if (auto gbm = GBMDevice::create(nodeType == NodeType::Render && !device.renderNode.isNull() ? device.renderNode : device.primaryNode))
++            return gbm;
++    }
++    return mainGBMDevice(NodeType::Render);
+ }
+ 
+ } // namespace WebCore
+--- a/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/AcceleratedSurface.cpp
++++ b/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/AcceleratedSurface.cpp
+@@ -317,6 +317,11 @@
+         bo = gbm_bo_create(gbmDevice->device(), size.width(), size.height(), bufferFormat.fourcc, flags);
+     }
+ 
++    // Korri: a GPU render node may refuse scanout buffers; render into a
++    // plain buffer that the compositor composites instead.
++    if (!bo && (flags & GBM_BO_USE_SCANOUT))
++        bo = gbm_bo_create(gbmDevice->device(), size.width(), size.height(), bufferFormat.fourcc, GBM_BO_USE_RENDERING);
++
+     if (!bo) {
+         WTFLogAlways("Failed to create GBM buffer of size %dx%d: %s", size.width(), size.height(), safeStrerror(errno).data());
+         return nullptr;
