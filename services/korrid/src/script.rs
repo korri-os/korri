@@ -652,12 +652,19 @@ mod tests {
             'claims.search': input => ({name: 'space_rescue.pyxapp', sizeBytes: Number(input.size)})
         };"#;
         let output = call_plugin_operation_ts(source, "claims.search", r#"{"size":4207}"#).unwrap();
-        let file: crate::acquisition::claims::ArtifactFile =
-            serde_json::from_str(&output).expect("a safe integer JS Number is an integer byte count");
+        let file: crate::acquisition::claims::ArtifactFile = serde_json::from_str(&output)
+            .expect("a safe integer JS Number is an integer byte count");
         assert_eq!(file.size_bytes, Some(4207));
-        for input in [r#"{"size":4207.5}"#, r#"{"size":-1}"#, r#"{"size":9007199254740992}"#] {
+        for input in [
+            r#"{"size":4207.5}"#,
+            r#"{"size":-1}"#,
+            r#"{"size":9007199254740992}"#,
+        ] {
             let output = call_plugin_operation_ts(source, "claims.search", input).unwrap();
-            assert!(serde_json::from_str::<crate::acquisition::claims::ArtifactFile>(&output).is_err(), "accepted {output}");
+            assert!(
+                serde_json::from_str::<crate::acquisition::claims::ArtifactFile>(&output).is_err(),
+                "accepted {output}"
+            );
         }
     }
 
