@@ -17,7 +17,7 @@ use url::Url;
 const NIP46_EVENT_KIND: u16 = 24_133;
 const OWNER_EVENT_KIND: u16 = 30_078;
 const REQUESTED_PERMISSIONS: &str = "sign_event:30078";
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const POLL_DELAY: Duration = Duration::from_millis(50);
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_CONNECTION_BYTES: usize = 64 * 1024;

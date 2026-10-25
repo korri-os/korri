@@ -77,6 +77,18 @@ producer's 64-character limit fail before RPC. Names, including spaces, are not
 trimmed. `--json` preserves the final existing response, and identity operations
 remain local. This command changes no person key or device ownership.
 
+### Remote signer waits
+
+Identity switches wait for korrid's NIP-46 deadline instead of the ordinary
+30-second HTTP deadline. The wait derives from `remote_signer::REQUEST_TIMEOUT`
+(currently 120 seconds), plus 30 seconds per exchange for relay publication,
+transport and storage. A local-backup switch allows one remote exchange for the
+old owner's revocation (150 seconds). A NIP-46 switch allows three serial
+exchanges: connect, new binding, old-owner revocation (450 seconds). Person-name
+writes also allow one exchange. Other requests keep the 30-second default.
+The cost is a longer wait for a stalled signer; Ctrl-C can still interrupt the
+CLI. This changes no server deadline, permission or recovery behavior.
+
 ### Hidden daemon tools and unresolved recovery
 
 `korrid` with no arguments remains the daemon. Unknown words and daemon help
