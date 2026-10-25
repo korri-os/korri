@@ -1,4 +1,4 @@
-import type { SurfaceDisplay } from "../pico-surface-display"
+import type { SurfaceDisplay } from "@contracts/surface/korri-surface"
 
 /** The Anbernic RG DS as the host states it: two 640 × 480 touch displays,
  * the main one above. */

@@ -22,7 +22,6 @@ import { PicoInviteNotices } from "./ui/organisms/PicoInviteNotices"
 import { PicoDisplays } from "./ui/templates/PicoDisplays"
 import { type PicoDisplayPlan, picoDisplayPlan } from "./pico-display-plan"
 import { picoShowcaseFrom } from "./pico-showcase-view"
-import type { PicoSurfaceModel } from "./pico-surface-display"
 import { picoDetailViewFromGame } from "./pico-detail-view"
 import { picoInvitesFrom } from "./pico-invite-view"
 import { performPicoRequest, subscribePicoHostButtons } from "./pico-host"
@@ -76,7 +75,7 @@ export function PicoSurface({
   initialView,
   font,
 }: {
-  readonly model: PicoSurfaceModel
+  readonly model: SurfaceModel
   readonly host: SurfaceHost
   readonly initialView?: PicoInitialView
   /** Show this face whatever is stored, as a preview or a test does.

@@ -1,4 +1,4 @@
-import type { SurfaceDisplay } from "./pico-surface-display"
+import type { SurfaceDisplay } from "@contracts/surface/korri-surface"
 
 /**
  * Where Pico draws when the host gives it more than one display.

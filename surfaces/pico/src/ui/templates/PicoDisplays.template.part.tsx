@@ -1,11 +1,10 @@
-import type { SurfaceModel } from "@contracts/surface/korri-surface"
+import type { SurfaceDisplay, SurfaceModel } from "@contracts/surface/korri-surface"
 import { PicoShowcase } from "../../pages/PicoShowcase"
 import { PicoSurface } from "../../PicoSurface"
 import { rgdsDisplays, sideBySideDisplays } from "../../fixtures/displays"
 import { createFixtureHost, fixtureModel } from "../../fixtures/fixture-host"
 import { fixtureInvites } from "../../fixtures/named-states"
 import type { PicoInitialView } from "../../pico-initial-view"
-import type { SurfaceDisplay } from "../../pico-surface-display"
 import { PicoNotice } from "../molecules/PicoNotice"
 import { PicoDisplays } from "./PicoDisplays"
 

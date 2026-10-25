@@ -151,7 +151,6 @@ src/
   pico-wifi-view.ts   network -> rows, signal bars (PICO_SIGNAL_BAR_ABOVE)
   pico-display-plan.ts  displays -> which one shows and which one chooses
   pico-showcase-view.ts what the catalog shows -> what the main display shows
-  pico-surface-display.ts  the treaty's SurfaceDisplay, until it lands there
   ui/atoms|molecules|organisms|templates
   pages/
 ```
@@ -249,9 +248,8 @@ covers both. The showcase is a pure function of what the catalog shows
 With no `displays`, or one, Pico draws one screen exactly as before. The
 gameplay overlay is always one screen: the host gives it one display.
 
-Until the treaty in `contracts/surface/` carries `SurfaceDisplay`,
-`src/pico-surface-display.ts` holds a byte-for-byte copy. Delete it when the
-treaty lands, and import from the treaty.
+`SurfaceDisplay` and `SurfaceModel.displays` come from the treaty in
+`contracts/surface/korri-surface.ts`, like every other fact Pico reads.
 
 Caliper's `rgds` device (640 × 960) shows both RG DS displays at once
 (`ui/templates/PicoDisplays.template.part.tsx`); `rgds-side` puts them side
