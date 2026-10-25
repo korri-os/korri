@@ -1,6 +1,6 @@
 import "./ZoneOptionGroup.css"
 import type { SurfaceSettingItem, SurfaceSettingsStatus } from "@contracts/surface/korri-surface"
-import { type ReactNode, useRef } from "react"
+import { Fragment, type ReactNode, useRef } from "react"
 import { useZoneFit } from "../../use-zone-fit"
 import { useZoneStairClip } from "../../use-zone-stair-clip"
 import { useZoneStickyHold } from "../../use-zone-sticky-hold"
@@ -19,6 +19,8 @@ export interface ZoneOptionGroupRow extends SurfaceSettingItem {
   readonly verbatimValue?: boolean
   /** The description is Zone's own word (CONNECTING), set in caps. */
   readonly descriptionCaps?: boolean
+  /** Korri's name for the run of rows this one opens ("Moonlight · Video"), drawn small over it. */
+  readonly caption?: string
 }
 
 /**
@@ -83,7 +85,14 @@ export function ZoneOptionGroup({
       </h2>
       <div className="zone-option-group-rows">
         {rows.map((row) => (
+          <Fragment key={row.id}>
+          {row.caption === undefined ? null : (
+            <p className="zone-option-group-caption">
+              <ZoneCaps ink="hud" korri size="caps-1">{row.caption}</ZoneCaps>
+            </p>
+          )}
           <ZoneOptionRow
+            captioned={row.caption !== undefined}
             description={row.description}
             deviceOnly={row.scope === "device"}
             source={row.source}
@@ -91,7 +100,6 @@ export function ZoneOptionGroup({
             disabled={row.disabled}
             focused={row.id === focusedId}
             interaction={row.interaction}
-            key={row.id}
             label={row.label}
             onFocus={onFocus === undefined ? undefined : () => onFocus(row.id)}
             onPress={onPress === undefined ? undefined : () => onPress(row.id)}
@@ -103,6 +111,7 @@ export function ZoneOptionGroup({
             verbatimLabel={row.verbatimLabel}
             verbatimValue={row.verbatimValue}
           />
+          </Fragment>
         ))}
       </div>
     </section>

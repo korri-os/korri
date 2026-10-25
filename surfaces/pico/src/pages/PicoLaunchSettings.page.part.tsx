@@ -18,7 +18,7 @@ import { usePicoProgram } from "../use-pico-program"
 import { PicoLaunchSettings } from "./PicoLaunchSettings"
 
 export const name = "Launch Settings"
-export const note = "A game's launch settings: a spine per layer, a tab per runner scope, each value's source and scope"
+export const note = "A game's launch settings: a spine per layer, a tab per runner scope, a captioned group per plugin section, each value's source and scope"
 
 /* The surface's navigation program against the fixture host, as on the
  * device: the spine, the scope, the keyboard, the list and the delete
@@ -110,7 +110,7 @@ export function ReadyOverridden() {
 export function ReadyInherited() {
   return <Launch model={open(launch.ready)} opening={on(launch.ready, "game:wario")} />
 }
-/** mGBA's settings on the Game: a number, an enum, and Add setting. */
+/** mGBA's settings on the Game, a captioned group per section: a number, its Default row, an enum, Add setting. */
 export function RunnerSettings() {
   return <Launch model={open(launch.ready)} opening={on(launch.ready, "game:wario", "mGBA")} />
 }
@@ -123,7 +123,7 @@ export function AddSetting() {
   return (
     <Launch
       model={open(launch.ready)}
-      opening={[...on(launch.ready, "game:wario", "mGBA"), { _tag: "OpenedPicker", settingId: launchRowId(MGBA_GAME, "add-setting") }]}
+      opening={[...on(launch.ready, "game:wario", "mGBA"), { _tag: "OpenedPicker", settingId: launchRowId(MGBA_GAME, "add-setting:video") }]}
     />
   )
 }
@@ -132,7 +132,7 @@ export function NumberEditor() {
   return (
     <Launch
       model={open(launch.ready)}
-      opening={[...on(launch.ready, "game:wario", "mGBA"), { _tag: "OpenedEditor", settingId: launchRowId(MGBA_GAME, "setting:frameskip") }]}
+      opening={[...on(launch.ready, "game:wario", "mGBA"), { _tag: "OpenedEditor", settingId: launchRowId(MGBA_GAME, "setting:video.frameskip") }]}
     />
   )
 }
@@ -216,9 +216,25 @@ export function StringEmptied() {
   return (
     <Launch
       model={open(launch.ready)}
-      opening={[...on(launch.ready, "device", "mGBA"), { _tag: "OpenedEditor", settingId: launchRowId("device/runner:retroarch/mgba", "setting:lang") }, { _tag: "ClearedText" }]}
+      opening={[...on(launch.ready, "device", "mGBA"), { _tag: "OpenedEditor", settingId: launchRowId("device/runner:retroarch/mgba", "setting:locale.language") }, { _tag: "ClearedText" }]}
     />
   )
+}
+/** Colour correction cleared on the Game: DEFAULT lit, and mGBA's own default as its source. */
+export function ClearedToDefault() {
+  return <Launch cursor="Colour correction" model={open(launch.ready)} opening={on(launch.ready, "game:wario", "mGBA")} />
+}
+/** The Device for mGBA sets an FPS limit korrid does not apply: a note, and the row says why. */
+export function SkippedValue() {
+  return <Launch cursor="FPS limit" model={open(launch.skipped)} opening={on(launch.skipped, "device", "mGBA")} />
+}
+/** Moonlight's own tab: its settings by section, each row applying when this device streams the game. */
+export function Moonlight() {
+  return <Launch cursor="Codec" model={open(launch.ready)} opening={on(launch.ready, "device", "Moonlight")} />
+}
+/** Sunshine's sections on the Device: its bitrate cap and encoder, device-only. */
+export function Sunshine() {
+  return <Launch cursor="Max bitrate (kbps)" model={open(launch.ready)} />
 }
 /** Battery saver not picked: Gamescope inherits On from the Device, and says so. */
 export function GamescopeInherited() {

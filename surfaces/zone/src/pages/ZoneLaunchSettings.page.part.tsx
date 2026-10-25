@@ -8,7 +8,7 @@ import { ZoneGround } from "../ui/organisms/ZoneGround"
 import { ZoneLaunchSettings } from "./ZoneLaunchSettings"
 
 export const name = "Launch settings"
-export const note = "A game's launch settings: a runner scope strip, a group per layer, each value's source, DEVICE-ONLY"
+export const note = "A game's launch settings: a runner scope strip, a group per layer, each plugin section captioned, each value's source, DEVICE-ONLY"
 
 export const composition = {
   default: [
@@ -82,18 +82,34 @@ export default function Ready() {
 export function Overridden() {
   return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[focus(launchRowId("device/runner:retroarch/mgba", "cpu.min"))]} />
 }
-/** mGBA's settings on the Game: a number, an enum and ADD SETTING. */
+/** mGBA's settings on the Game, a captioned run per section: a number, its DEFAULT row, an enum, ADD SETTING. */
 export function RunnerSettings() {
-  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[focus(launchRowId(MGBA, "setting:frameskip"))]} />
+  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[focus(launchRowId(MGBA, "setting:video.frameskip"))]} />
+}
+/** Colour correction cleared on the Game: DEFAULT, and mGBA's own default as its source. */
+export function ClearedToDefault() {
+  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[focus(launchRowId(MGBA, "setting:video.color-correction"))]} />
+}
+/** The Device for mGBA sets an FPS limit korrid does not apply: Korri's note, and the row says why. */
+export function SkippedValue() {
+  return <Live editor={launch.skipped} scope={scopeOf(launch.skipped, "mGBA")} script={[focus(launchRowId("device/runner:retroarch/mgba", "setting:video.fps-limit"))]} />
+}
+/** Moonlight's own scope: its settings by section, each row applying when this device streams the game. */
+export function Moonlight() {
+  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "Moonlight")} script={[focus(launchRowId("device/runner:@korri:moonlight/moonlight", "setting:video.codec"))]} />
+}
+/** Sunshine's sections on the Device: its bitrate cap and encoder, device-only. */
+export function Sunshine() {
+  return <Live editor={launch.ready} script={[focus(launchRowId("device/any", "service:@korri:sunshine/sunshine:setting:video.max-bitrate-kbps"))]} />
 }
 /** ADD SETTING with its candidate moved one step: A adds it. */
 export function AddSetting() {
-  const row = launchRowId(MGBA, "add-setting")
+  const row = launchRowId(MGBA, "add-setting:video")
   return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[focus(row), { _tag: "SteppedRow", rowId: row, direction: 1 }]} />
 }
 /** Frameskip on the keyboard, with INHERIT beside it. */
 export function NumberEditor() {
-  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[{ _tag: "PressedRow", rowId: launchRowId(MGBA, "setting:frameskip") }]} />
+  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[{ _tag: "PressedRow", rowId: launchRowId(MGBA, "setting:video.frameskip") }]} />
 }
 /** gpSP is not the runner in use: its rows say so. */
 export function NotInForce() {
@@ -168,7 +184,7 @@ export function HooksNotInForce() {
 }
 /** mGBA's Language on the Device: a string, its INHERIT LANGUAGE row under it. */
 export function StringSetting() {
-  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[focus(launchRowId("device/runner:retroarch/mgba", "setting:lang"))]} />
+  return <Live editor={launch.ready} scope={scopeOf(launch.ready, "mGBA")} script={[focus(launchRowId("device/runner:retroarch/mgba", "setting:locale.language"))]} />
 }
 /** Battery saver not picked: Gamescope inherits On from the Device, and says so. */
 export function GamescopeInherited() {
@@ -195,6 +211,16 @@ export function Narrow() {
   return (
     <ZonePartFrame shape="narrow-tall">
       <Live editor={launch.ready} share={0.36} />
+    </ZonePartFrame>
+  )
+}
+/** The plugins' own long titles ("Sunshine streaming host · Video") in a narrow column: the captions wrap. */
+export function LongCaptions() {
+  const long = (title: string) => title.replace(/^Sunshine ·/, "Sunshine streaming host ·").replace(/^Moonlight ·/, "Moonlight stream viewer ·")
+  const editor = { ...launch.ready, places: launch.ready.places.map(place => ({ ...place, groups: place.groups.map(group => ({ ...group, title: long(group.title) })) })) }
+  return (
+    <ZonePartFrame shape="narrow-tall">
+      <Live editor={editor} scope={scopeOf(editor, "Moonlight")} share={0.36} script={[focus(launchRowId("device/runner:@korri:moonlight/moonlight", "setting:video.fps"))]} />
     </ZonePartFrame>
   )
 }

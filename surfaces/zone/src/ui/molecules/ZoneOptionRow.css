@@ -398,3 +398,9 @@
   height: calc(calc(var(--zone-type-note) * var(--zone-px)) * var(--zone-tag-row-height));
   --zone-tag-type: calc(var(--zone-type-note) * var(--zone-px));
 }
+
+/* A row under a caption (a plugin's section) brings the caption into view
+ * with it when it scrolls itself into view. */
+.zone-option-row[data-captioned] {
+  scroll-margin-top: calc(calc(var(--zone-caps-1) + var(--zone-option-row-space)) * var(--zone-px));
+}

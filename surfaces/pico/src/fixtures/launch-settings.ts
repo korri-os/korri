@@ -1,9 +1,12 @@
 /**
  * Launch settings as the portal publishes them (clients/portal/src/surface/
  * launch-settings-model.ts), for Wario Land 4 on an RG353M with two installed
- * runners of one family (mGBA and gpSP, RetroArch). A place is a layer
- * (Device, System gba, Game, Release usa, each Profile) for a runner scope
- * (any runner, Family retroarch, mGBA, gpSP). Ids, labels, sources and notes
+ * runners of one family (mGBA and gpSP, RetroArch), Moonlight (a runner
+ * that only views streams, never the game's runner) and Sunshine (a launch
+ * service). A place is a layer (Device, System gba, Game, Release usa, each
+ * Profile) for a runner scope (any runner, Family retroarch, mGBA, gpSP,
+ * Moonlight). A plugin's settings come one group per section ("Moonlight ·
+ * Video"), each with its own Add setting row. Ids, labels, sources and notes
  * are the portal's own copy; the values are made up.
  */
 import type {
@@ -27,13 +30,15 @@ const UNKNOWN: Steps = { cpu: GUESSED, gpu: GUESSED, guessed: true }
 const NO_GPU: Steps = { cpu: CPU, gpu: [], guessed: false, noGpu: true }
 
 interface Layer { readonly id: string; readonly title: string; readonly file: "device.yaml" | "library.yaml" }
-interface Scope { readonly key: string; readonly kind: "any" | "family" | "runner"; readonly label: string; readonly runner?: string }
+interface Scope { readonly key: string; readonly kind: "any" | "family" | "runner"; readonly label: string; readonly runner?: string; readonly stream?: true }
 
 const ANY: Scope = { key: "any", kind: "any", label: "Any runner" }
 const FAMILY: Scope = { key: "family:retroarch", kind: "family", label: "Family retroarch" }
 const MGBA: Scope = { key: "runner:retroarch/mgba", kind: "runner", label: "mGBA", runner: "mGBA" }
 const GPSP: Scope = { key: "runner:retroarch/gpsp", kind: "runner", label: "gpSP", runner: "gpSP" }
-const SCOPES = [ANY, FAMILY, MGBA, GPSP]
+/** Moonlight: its settings apply when this device streams the game. */
+const MOONLIGHT: Scope = { key: "runner:@korri:moonlight/moonlight", kind: "runner", label: "Moonlight", runner: "Moonlight", stream: true }
+const SCOPES = [ANY, FAMILY, MGBA, GPSP, MOONLIGHT]
 
 const DEVICE: Layer = { id: "device", title: "Device", file: "device.yaml" }
 const SYSTEM: Layer = { id: "system:gba", title: "System gba", file: "device.yaml" }
@@ -79,11 +84,14 @@ interface World {
   readonly gpspFacts?: string
   /** The Game place names this runner, which is not installed. */
   readonly missingRunner?: string
+  /** The Device for mGBA sets an FPS limit above mGBA's maximum: korrid skips it. */
+  readonly skipped?: boolean
 }
 
 const CPU_MAX_FROM_PROFILE = "Profile Battery saver"
 
 function inForce(world: World, place: string, scope: Scope, value: string, from: string, fromPlace: string): string {
+  if (scope.stream === true) return STREAMS_GAME
   // The cascade's runner-scoped places count only for the runner in use.
   if (scope.runner !== undefined && scope.runner !== world.inUse) {
     return world.inUse === undefined ? "Applies once a runner is chosen" : `Not in force: ${world.inUse} runs this game`
@@ -143,7 +151,8 @@ function limitGroups(world: World, layer: Layer, scope: Scope): SurfaceSettingGr
 }
 
 /** Gamescope, on for the device with a width set there and off in the
- * profile Battery saver; MangoHud, which describes no settings. */
+ * profile Battery saver, its settings by section; MangoHud, which describes
+ * no settings. */
 function modifierGroups(world: World, layer: Layer, scope: Scope): SurfaceSettingGroup[] {
   const place = placeId(layer, scope)
   const id = (path: string) => launchRowId(place, path)
@@ -157,19 +166,6 @@ function modifierGroups(world: World, layer: Layer, scope: Scope): SurfaceSettin
     choices: [INHERIT, { value: "true", label: "On" }, { value: "false", label: "Off" }],
     selected,
   })
-  const width: SurfaceSettingItem[] = place === "device/any" ? [{
-    id: id("modifier:korri/gamescope:setting:output-width"),
-    label: "Output width",
-    value: "1280",
-    source: "from Device",
-    scope: "device",
-    interaction: { kind: "number", value: 1280, min: 320, max: 7680, step: 1, clearable: true },
-  }] : []
-  const unset = [
-    ...(width.length === 0 ? [{ value: "output-width", label: "Output width" }] : []),
-    { value: "output-height", label: "Output height" },
-    { value: "filter", label: "Upscale filter" },
-  ]
   return [
     {
       title: "Modifier Gamescope",
@@ -183,16 +179,9 @@ function modifierGroups(world: World, layer: Layer, scope: Scope): SurfaceSettin
           scope: "device",
           interaction: onOff(own === "On" ? "true" : own === "Off" ? "false" : "inherit"),
         },
-        ...width,
-        {
-          id: id("modifier:korri/gamescope:add-setting"),
-          label: "Add Gamescope setting",
-          value: "Choose a setting",
-          description: `${unset.length} more settings Gamescope offers.`,
-          interaction: { kind: "choice", choices: unset, selected: "" },
-        },
       ],
     },
+    ...sectionGroups(id, GAMESCOPE, place === "device/any" ? { "video.output.width": { value: 1280, source: "from Device" } } : {}),
     {
       title: "Modifier MangoHud",
       items: [{
@@ -231,83 +220,279 @@ function runnerGroup(world: World, layer: Layer): SurfaceSettingGroup {
   }
 }
 
-/** mGBA's settings.describe, as the portal turns it into rows. */
-const MGBA_SETTINGS = [
-  { key: "frameskip", title: "Frameskip" },
-  { key: "color", title: "Colour correction" },
-  { key: "gb.solar", title: "Solar sensor" },
-  { key: "lang", title: "Language" },
+// ---- Plugin settings: one group per section, as the portal publishes them ----
+
+const DEFAULT = { value: "default", label: "Default" }
+const KEEP = [INHERIT, DEFAULT]
+const STREAMS_GAME = "Applies when this device streams the game"
+const STREAMS_A_GAME = "Applies when this device streams a game"
+
+/** One leaf of a plugin's settings, by its dotted setting path. */
+interface Leaf {
+  readonly path: string
+  readonly label: string
+  readonly kind: "number" | "choice" | "toggle" | "text"
+  readonly choices?: readonly string[]
+  readonly min?: number
+  readonly max?: number
+  readonly description?: string
+  readonly device?: boolean
+}
+interface Section { readonly key: string; readonly title: string; readonly leaves: readonly Leaf[] }
+
+/** Whose settings a run of groups holds, and how its rows are named. */
+interface Owner {
+  readonly title: string
+  readonly sections: readonly Section[]
+  readonly rowPath: (path: string) => string
+  readonly addPath: (section: string) => string
+  /** Every row stays on this device (a modifier's, a service's, Moonlight's). */
+  readonly device: boolean
+}
+
+/** A value one place sets: its JSON value, or `null` for Default (a Cleared setting). */
+interface Own { readonly value: unknown; readonly source: string }
+
+const valueWords = (value: unknown) => value === true ? "On" : value === false ? "Off" : String(value)
+
+function leafRows(rowId: (path: string) => string, owner: Owner, leaf: Leaf, own: Own): SurfaceSettingItem[] {
+  const id = rowId(owner.rowPath(leaf.path))
+  const cleared = own.value === null
+  const scope = owner.device || leaf.device === true ? "device" as const : "shared" as const
+  const base = {
+    id,
+    label: leaf.label,
+    ...(leaf.description === undefined ? {} : { description: leaf.description }),
+    source: own.source,
+    scope,
+  }
+  const defaultRow = (): SurfaceSettingItem => ({
+    id: rowId(`default:${owner.rowPath(leaf.path)}`),
+    label: `Default ${leaf.label}`,
+    value: "Use",
+    description: `${owner.title}'s own default holds here, whatever less specific places set.`,
+    interaction: { kind: "action", actionId: rowId(`default:${owner.rowPath(leaf.path)}`) },
+  })
+  switch (leaf.kind) {
+    case "choice":
+    case "toggle": {
+      const choices = leaf.kind === "toggle"
+        ? [{ value: "true", label: "On" }, { value: "false", label: "Off" }]
+        : (leaf.choices ?? []).map(choice => ({ value: JSON.stringify(choice), label: choice }))
+      const selected = cleared ? "default" : leaf.kind === "toggle" ? String(own.value) : JSON.stringify(own.value)
+      return [{ ...base, value: cleared ? "Default" : valueWords(own.value), interaction: { kind: "choice", choices: [...KEEP, ...choices], selected } }]
+    }
+    case "number":
+      return [
+        {
+          ...base,
+          value: cleared ? "Default" : String(own.value),
+          interaction: {
+            kind: "number",
+            ...(typeof own.value === "number" ? { value: own.value } : {}),
+            ...(leaf.min === undefined ? {} : { min: leaf.min }),
+            ...(leaf.max === undefined ? {} : { max: leaf.max }),
+            step: 1,
+            clearable: true,
+          },
+        },
+        ...(cleared ? [] : [defaultRow()]),
+      ]
+    case "text": {
+      // A string: its raw text is its value, and Inherit and Default are rows of their own.
+      const clear = rowId(`clear:${owner.rowPath(leaf.path)}`)
+      return [
+        {
+          ...base,
+          ...(typeof own.value === "string" && own.value !== "" ? { value: own.value } : {}),
+          interaction: { kind: "text", placeholder: cleared ? "Default" : "Empty", allowEmpty: true },
+        },
+        {
+          id: clear,
+          label: `Inherit ${leaf.label}`,
+          value: "Clear",
+          description: "Takes the value set here away, so the value in force comes from elsewhere.",
+          interaction: { kind: "action", actionId: clear },
+        },
+        ...(cleared ? [] : [defaultRow()]),
+      ]
+    }
+  }
+}
+
+/** One plugin's settings on one place: a group per section, its own values, then its Add setting row. */
+function sectionGroups(rowId: (path: string) => string, owner: Owner, own: Readonly<Record<string, Own>>): SurfaceSettingGroup[] {
+  return owner.sections.map(section => {
+    const set = section.leaves.filter(leaf => own[leaf.path] !== undefined)
+    const unset = section.leaves.filter(leaf => own[leaf.path] === undefined)
+    const items = set.flatMap(leaf => leafRows(rowId, owner, leaf, own[leaf.path] as Own))
+    if (unset.length > 0) {
+      items.push({
+        id: rowId(owner.addPath(section.key)),
+        label: "Add setting",
+        value: "Choose a setting",
+        description: `${unset.length} more ${unset.length === 1 ? "setting" : "settings"} ${owner.title} offers here.`,
+        interaction: { kind: "choice", choices: unset.map(leaf => ({ value: leaf.path, label: leaf.label })), selected: "" },
+      })
+    }
+    return { title: `${owner.title} · ${section.title}`, items }
+  })
+}
+
+/** mGBA's and gpSP's settings.describe, by section. */
+const MGBA_SECTIONS: readonly Section[] = [
+  {
+    key: "video",
+    title: "Video",
+    leaves: [
+      { path: "video.frameskip", label: "Frameskip", kind: "number", min: 0, max: 10, description: "Frames skipped between drawn ones." },
+      { path: "video.color-correction", label: "Colour correction", kind: "toggle" },
+      { path: "video.fps-limit", label: "FPS limit", kind: "number", min: 0, max: 240 },
+    ],
+  },
+  { key: "input", title: "Input", leaves: [{ path: "input.solar.level", label: "Solar sensor level", kind: "choice", choices: ["off", "low", "high"] }] },
+  { key: "locale", title: "Language", leaves: [{ path: "locale.language", label: "Language", kind: "text", device: true }] },
+]
+const GPSP_SECTIONS: readonly Section[] = [{ key: "bios", title: "BIOS", leaves: [{ path: "bios.enable", label: "Use BIOS", kind: "toggle" }] }]
+
+/** Moonlight's settings, after docs/briefs/2026-10-25-settings-vocabulary.md. */
+const MOONLIGHT_SECTIONS: readonly Section[] = [
+  {
+    key: "video",
+    title: "Video",
+    leaves: [
+      { path: "video.resolution.width", label: "Resolution width", kind: "number", min: 320, max: 7680 },
+      { path: "video.resolution.height", label: "Resolution height", kind: "number", min: 240, max: 4320 },
+      { path: "video.fps", label: "FPS", kind: "number", min: 10, max: 240 },
+      { path: "video.bitrate-kbps", label: "Bitrate (kbps)", kind: "number", min: 500, max: 150000 },
+      { path: "video.codec", label: "Codec", kind: "choice", choices: ["auto", "h264", "h265", "av1"] },
+      { path: "video.hdr.enable", label: "HDR", kind: "toggle" },
+    ],
+  },
+  {
+    key: "audio",
+    title: "Audio",
+    leaves: [
+      { path: "audio.channels", label: "Channels", kind: "choice", choices: ["stereo", "5.1", "7.1"] },
+      { path: "audio.play-on-host", label: "Play on host", kind: "toggle" },
+    ],
+  },
+  { key: "input", title: "Input", leaves: [{ path: "input.mouse-emulation", label: "Mouse emulation", kind: "toggle" }] },
+  {
+    key: "network",
+    title: "Network",
+    leaves: [
+      { path: "network.remote-optimizations", label: "Remote optimizations", kind: "choice", choices: ["auto", "on", "off"] },
+      { path: "network.packet-size-bytes", label: "Packet size (bytes)", kind: "number", min: 256, max: 65536 },
+    ],
+  },
+  { key: "logging", title: "Logging", leaves: [{ path: "logging.level", label: "Level", kind: "choice", choices: ["info", "verbose", "debug"] }] },
 ]
 
-function settingsGroup(world: World, layer: Layer, scope: Scope): SurfaceSettingGroup | undefined {
-  if (scope.kind === "any") return undefined
+/** Some of Sunshine's settings, after the same brief. */
+const SUNSHINE_SECTIONS: readonly Section[] = [
+  {
+    key: "video",
+    title: "Video",
+    leaves: [
+      { path: "video.max-bitrate-kbps", label: "Max bitrate (kbps)", kind: "number", min: 0, max: 150000 },
+      { path: "video.minimum-fps", label: "Minimum FPS", kind: "number", min: 0, max: 240 },
+      { path: "video.encoder.name", label: "Encoder", kind: "choice", choices: ["v4l2m2m", "rkmpp", "software"] },
+    ],
+  },
+  {
+    key: "input",
+    title: "Input",
+    leaves: [
+      { path: "input.gamepad", label: "Gamepad", kind: "choice", choices: ["auto", "ds5", "switch", "xone"] },
+      { path: "input.mouse", label: "Mouse", kind: "toggle" },
+    ],
+  },
+  { key: "network", title: "Network", leaves: [{ path: "network.lan-encryption", label: "LAN encryption", kind: "choice", choices: ["off", "supported", "required"] }] },
+]
+
+const GAMESCOPE_SECTIONS: readonly Section[] = [
+  {
+    key: "video",
+    title: "Video",
+    leaves: [
+      { path: "video.output.width", label: "Output width", kind: "number", min: 320, max: 7680 },
+      { path: "video.output.height", label: "Output height", kind: "number", min: 240, max: 4320 },
+      { path: "video.scaling.filter", label: "Scaling filter", kind: "choice", choices: ["linear", "nearest", "fsr", "nis"] },
+    ],
+  },
+  { key: "window", title: "Window", leaves: [{ path: "window.borderless", label: "Borderless", kind: "toggle" }] },
+]
+
+const runnerOwner = (title: string, sections: readonly Section[], device = false): Owner => ({
+  title,
+  sections,
+  rowPath: path => `setting:${path}`,
+  addPath: section => `add-setting:${section}`,
+  device,
+})
+const SUNSHINE_ID = "@korri:sunshine/sunshine"
+const SUNSHINE: Owner = {
+  title: "Sunshine",
+  sections: SUNSHINE_SECTIONS,
+  rowPath: path => `service:${SUNSHINE_ID}:setting:${path}`,
+  addPath: section => `service:${SUNSHINE_ID}:add-setting:${section}`,
+  device: true,
+}
+const GAMESCOPE: Owner = {
+  title: "Gamescope",
+  sections: GAMESCOPE_SECTIONS,
+  rowPath: path => `modifier:korri/gamescope:setting:${path}`,
+  addPath: section => `modifier:korri/gamescope:add-setting:${section}`,
+  device: true,
+}
+
+/**
+ * A runner place's settings, by section: mGBA's on the Game (a number, an
+ * enum and a cleared Colour correction) and on the Device (a string, a
+ * switch the Game clears, and, in the `skipped` world, an FPS limit korrid
+ * does not apply); Moonlight's on the Device (30 FPS, its codec cleared to
+ * Moonlight's default) and the Game (a resolution).
+ */
+function runnerSettingGroups(world: World, layer: Layer, scope: Scope): SurfaceSettingGroup[] {
+  if (scope.kind === "any") return []
   const place = placeId(layer, scope)
   const id = (path: string) => launchRowId(place, path)
-  const offered = scope.label === "gpSP" ? [{ key: "bios", title: "Use BIOS" }] : scope.kind === "family" ? [...MGBA_SETTINGS, { key: "bios", title: "Use BIOS" }] : MGBA_SETTINGS
-  const items: SurfaceSettingItem[] = []
-  const set = new Set<string>()
-  if (layer.id === "game:wario" && scope === MGBA) {
-    set.add("frameskip")
-    set.add("gb.solar")
-    items.push({
-      id: id("setting:frameskip"),
-      label: "Frameskip",
-      value: "2",
-      description: "Frames skipped between drawn ones.",
-      source: inForce(world, place, scope, "2", "Game for mGBA", place),
-      scope: "shared",
-      interaction: { kind: "number", value: 2, min: 0, max: 10, step: 1, clearable: true },
-    }, {
-      id: id("setting:gb.solar"),
-      label: "Solar sensor",
-      value: "high",
-      source: inForce(world, place, scope, "high", "Game for mGBA", place),
-      scope: "shared",
-      interaction: {
-        kind: "choice",
-        choices: [INHERIT, { value: "\"off\"", label: "off" }, { value: "\"low\"", label: "low" }, { value: "\"high\"", label: "high" }],
-        selected: "\"high\"",
-      },
-    })
+  if (scope === MOONLIGHT) {
+    const own: Record<string, Own> = place === "device/runner:@korri:moonlight/moonlight"
+      ? { "video.fps": { value: 30, source: STREAMS_GAME }, "video.codec": { value: null, source: "h264 from Moonlight (default)" } }
+      : place === "game:wario/runner:@korri:moonlight/moonlight"
+        ? { "video.resolution.width": { value: 854, source: STREAMS_GAME }, "video.resolution.height": { value: 480, source: STREAMS_GAME } }
+        : {}
+    return sectionGroups(id, runnerOwner("Moonlight", MOONLIGHT_SECTIONS, true), own)
   }
-  if (layer.id === "device" && scope === MGBA) {
-    // A string: its raw text is its value, and Inherit is a row of its own.
-    set.add("lang")
-    items.push({
-      id: id("setting:lang"),
-      label: "Language",
-      value: "de",
-      source: inForce(world, place, scope, "de", "Device for mGBA", place),
-      scope: "device",
-      interaction: { kind: "text", placeholder: "Empty", allowEmpty: true },
-    }, {
-      id: id("clear:setting:lang"),
-      label: "Inherit Language",
-      value: "Clear",
-      description: "Takes the value set here away, so the value in force comes from elsewhere.",
-      interaction: { kind: "action", actionId: id("clear:setting:lang") },
-    })
-    set.add("color")
-    items.push({
-      id: id("setting:color"),
-      label: "Colour correction",
-      value: "On",
-      source: inForce(world, place, scope, "On", "Device for mGBA", place),
-      scope: "shared",
-      interaction: { kind: "choice", choices: [INHERIT, { value: "true", label: "On" }, { value: "false", label: "Off" }], selected: "true" },
-    })
-  }
-  const unset = offered.filter(setting => !set.has(setting.key))
-  if (unset.length > 0) {
-    items.push({
-      id: id("add-setting"),
-      label: "Add setting",
-      value: "Choose a setting",
-      description: `${unset.length} more ${unset.length === 1 ? "setting" : "settings"} this runner offers.`,
-      interaction: { kind: "choice", choices: unset.map(setting => ({ value: setting.key, label: setting.title })), selected: "" },
-    })
-  }
-  return { title: "Runner settings", items }
+  const sections = scope === GPSP ? GPSP_SECTIONS : scope.kind === "family" ? [...MGBA_SECTIONS, ...GPSP_SECTIONS] : MGBA_SECTIONS
+  const title = scope.kind === "family" ? "Family retroarch" : scope.label
+  const here = (value: string) => inForce(world, place, scope, value, placeTitle(layer, scope), place)
+  const colour = inForce(world, place, scope, "Off", "mGBA (default)", "")
+  const own: Record<string, Own> = place === "game:wario/runner:retroarch/mgba"
+    ? {
+        "video.frameskip": { value: 2, source: here("2") },
+        "video.color-correction": { value: null, source: colour },
+        "input.solar.level": { value: "high", source: here("high") },
+      }
+    : place === "device/runner:retroarch/mgba"
+      ? {
+          "video.color-correction": { value: true, source: colour },
+          ...(world.skipped === true ? { "video.fps-limit": { value: 300, source: "Not applied: 300 is above the maximum of 240" } } : {}),
+          "locale.language": { value: "de", source: here("de") },
+        }
+      : {}
+  return sectionGroups(id, runnerOwner(title, sections), own)
+}
+
+/** Sunshine on every place: the Device sets its bitrate cap and encoder. */
+function sunshineGroups(layer: Layer, scope: Scope, rowId?: (path: string) => string): SurfaceSettingGroup[] {
+  const place = placeId(layer, scope)
+  const own: Record<string, Own> = place === "device/any"
+    ? { "video.max-bitrate-kbps": { value: 3000, source: "from Device" }, "video.encoder.name": { value: "v4l2m2m", source: "from Device" } }
+    : {}
+  return sectionGroups(rowId ?? (path => launchRowId(place, path)), SUNSHINE, own)
 }
 
 /**
@@ -357,7 +542,7 @@ function fileGroup(world: World, layer: Layer, scope: Scope): SurfaceSettingGrou
 
 /** What the runner plugin itself sets, from korrid's dry run. */
 function runnerFactsGroup(world: World, layer: Layer, scope: Scope): SurfaceSettingGroup | undefined {
-  if (scope.kind !== "runner") return undefined
+  if (scope.kind !== "runner" || scope.stream === true) return undefined
   const place = placeId(layer, scope)
   if (scope === GPSP && world.gpspFacts !== undefined) {
     return {
@@ -450,9 +635,10 @@ function placesOf(world: World): readonly SurfaceLaunchSettingsPlace[] {
     const profile = world.profiles.find(candidate => `profile:${candidate.id}` === layer.id)
     const groups = [
       scope === ANY ? runnerGroup(world, layer) : undefined,
-      settingsGroup(world, layer, scope),
+      ...runnerSettingGroups(world, layer, scope),
       ...limitGroups(world, layer, scope),
       ...modifierGroups(world, layer, scope),
+      ...sunshineGroups(layer, scope),
       layer === GAME && scope === ANY ? profilePickGroup(world) : undefined,
       profile !== undefined && scope === ANY ? profileOwnGroup(world, profile) : undefined,
       fileGroup(world, layer, scope),
@@ -511,6 +697,8 @@ export const launchSettingsFixtures = {
   runnerUnavailable: ready({ ...READY, missingRunner: "retroarch/vba-m" }, [
     "Game names runner retroarch/vba-m, which isn't installed. Korri skips it and its runner settings there and uses mGBA.",
   ]),
+  /** The Device for mGBA sets an FPS limit korrid skips: the row and a note say why. */
+  skipped: ready({ ...READY, skipped: true }, ["FPS limit (mGBA) isn't applied: 300 is above the maximum of 240."]),
   factsUnavailable: ready({ ...READY, gpspFacts: "launch.prepare timed out after 2 s." }, [
     "gpSP facts are unavailable: launch.prepare timed out after 2 s.",
   ]),
@@ -546,16 +734,26 @@ export function launchScopeIndex(launch: SurfaceLaunchSettings, layerId: string,
   return Math.max(0, launch.places.filter(place => place.layer.id === layerId).findIndex(place => place.scope.label === label))
 }
 
-/** Device settings' Launch settings group, as the portal publishes it with RG353M facts. */
-export const deviceLaunchGroup: SurfaceSettingGroup = {
-  title: "Launch settings",
-  items: (() => {
-    const [cpu, gpu] = limitGroups({ ...READY, profiles: [], selected: undefined, inUse: undefined }, DEVICE, ANY)
-    const items = [...(cpu?.items ?? []), ...(gpu?.items ?? [])].map(item => ({ ...item, id: item.id.replace("launch:set:device/any#", "launch-device:") }))
-    const governor = items.find(item => item.label === "CPU governor")
-    return [...items.filter(item => item !== governor), ...(governor === undefined ? [] : [governor])]
-  })(),
-}
+/**
+ * Device settings' launch groups, as the portal publishes them with RG353M
+ * facts: Launch settings (the clock limits), then Moonlight's settings from
+ * its Device place, then Sunshine's from the Device.
+ */
+export const deviceLaunchGroups: readonly SurfaceSettingGroup[] = (() => {
+  const [cpu, gpu] = limitGroups({ ...READY, profiles: [], selected: undefined, inUse: undefined }, DEVICE, ANY)
+  const items = [...(cpu?.items ?? []), ...(gpu?.items ?? [])].map(item => ({ ...item, id: item.id.replace("launch:set:device/any#", "launch-device:") }))
+  const governor = items.find(item => item.label === "CPU governor")
+  const deviceRow = (place: string) => (path: string) => `launch-device:set:${place}#${path}`
+  const moonlight = sectionGroups(deviceRow("device/runner:@korri:moonlight/moonlight"), runnerOwner("Moonlight", MOONLIGHT_SECTIONS, true), {
+    "video.fps": { value: 30, source: STREAMS_A_GAME },
+    "video.codec": { value: null, source: "h264 from Moonlight (default)" },
+  })
+  return [
+    { title: "Launch settings", items: [...items.filter(item => item !== governor), ...(governor === undefined ? [] : [governor])] },
+    ...moonlight,
+    ...sunshineGroups(DEVICE, ANY, deviceRow("device/any")),
+  ]
+})()
 
 /** A model with the editor open over the catalog. */
 export const withLaunchSettings = (model: SurfaceModel, launch: SurfaceLaunchSettings, savingId?: string): SurfaceModel => ({

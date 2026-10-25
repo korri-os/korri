@@ -169,14 +169,14 @@ describe("launch settings: places by runner scope", () => {
     const state = zoneSurfaceStart(ready, "blend")
     const stepped = update(state, { _tag: "Launch", message: { _tag: "SteppedRow", rowId: ZONE_LAUNCH_SCOPE_ROW, direction: -1 } }, ready)
     expect(stepped.requests).toEqual([])
-    expect(stepped.model.launchScope).toBe(3)
+    expect(stepped.model.launchScope).toBe(4)
     expect(stepped.model.launch.focused).toBe(ZONE_LAUNCH_SCOPE_ROW)
     expect(update(stepped.model, { _tag: "Launch", message: { _tag: "PressedRow", rowId: ZONE_LAUNCH_SCOPE_ROW } }, ready).model.launchScope).toBe(0)
   })
 
   test("a number steps within its range on left and right, and DONE sends only a number that fits", () => {
     let state = toMgba(zoneSurfaceStart(ready, "blend"))
-    const frameskip = launchRowId(MGBA, "setting:frameskip")
+    const frameskip = launchRowId(MGBA, "setting:video.frameskip")
     expect(update(state, { _tag: "Launch", message: { _tag: "SteppedRow", rowId: frameskip, direction: 1 } }, ready).requests)
       .toEqual([{ _tag: "ChangeSetting", settingId: frameskip, value: "3" }])
     state = update(state, { _tag: "Launch", message: { _tag: "PressedRow", rowId: frameskip } }, ready).model
@@ -192,12 +192,12 @@ describe("launch settings: places by runner scope", () => {
 
   test("ADD SETTING moves a candidate on Zone's side; A sends the one shown", () => {
     let state = toMgba(zoneSurfaceStart(ready, "blend"))
-    const add = launchRowId(MGBA, "add-setting")
+    const add = launchRowId("device/runner:retroarch/mgba", "add-setting:video")
     const moved = update(state, { _tag: "Launch", message: { _tag: "SteppedRow", rowId: add, direction: 1 } }, ready)
     expect(moved.requests).toEqual([])
     state = moved.model
     expect(update(state, { _tag: "Launch", message: { _tag: "PressedRow", rowId: add } }, ready).requests)
-      .toEqual([{ _tag: "ChangeSetting", settingId: add, value: "lang" }])
+      .toEqual([{ _tag: "ChangeSetting", settingId: add, value: "video.fps-limit" }])
   })
 
   test("rows only files set are read-only, with their source, and say where to change them when focused", () => {
@@ -237,11 +237,12 @@ describe("launch settings: modifiers", () => {
     expect(screen.getAllByText("Off from Profile Battery saver").length).toBeGreaterThan(0)
   })
 
-  test("a modifier with no schema has its row and no ADD SETTING", () => {
+  test("a modifier with no schema has its row alone; one with a schema has a captioned run per section", () => {
     render(<ZoneSurface host={createFixtureHost()} model={ready} />)
     expect(screen.getAllByText(byWords("MangoHud")).length).toBeGreaterThan(0)
-    expect(screen.queryByText(byWords("Add MangoHud setting"))).toBeNull()
-    expect(screen.getAllByText(byWords("Add Gamescope setting")).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/^MangoHud ·/)).toBeNull()
+    expect(screen.getAllByText("Gamescope · Video").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Gamescope · Window").length).toBeGreaterThan(0)
   })
 })
 
@@ -267,15 +268,68 @@ test("a string setting edits from its raw text, sends an empty one as typed, and
   for (let index = 0; index < scope; index++) {
     state = update(state, { _tag: "Launch", message: { _tag: "SteppedRow", rowId: ZONE_LAUNCH_SCOPE_ROW, direction: 1 } }, ready).model
   }
-  const lang = launchRowId("device/runner:retroarch/mgba", "setting:lang")
+  const lang = launchRowId("device/runner:retroarch/mgba", "setting:locale.language")
   state = update(state, { _tag: "Launch", message: { _tag: "PressedRow", rowId: lang } }, ready).model
   expect(state.launch.keyboard?.draft).toBe("de")
   for (let index = 0; index < 2; index++) state = update(state, { _tag: "Launch", message: { _tag: "PressedKey", key: { kind: "delete" } } }, ready).model
   expect(update(state, { _tag: "Launch", message: { _tag: "PressedKey", key: { kind: "done" } } }, ready).requests)
     .toEqual([{ _tag: "ChangeSetting", settingId: lang, value: "" }])
-  const clear = launchRowId("device/runner:retroarch/mgba", "clear:setting:lang")
+  const clear = launchRowId("device/runner:retroarch/mgba", "clear:setting:locale.language")
   const fresh = update(zoneSurfaceStart(ready, "blend"), { _tag: "Launch", message: { _tag: "PressedRow", rowId: ZONE_LAUNCH_SCOPE_ROW } }, ready).model
   const atMgba = update(fresh, { _tag: "Launch", message: { _tag: "PressedRow", rowId: ZONE_LAUNCH_SCOPE_ROW } }, ready).model
   expect(update(atMgba, { _tag: "Launch", message: { _tag: "PressedRow", rowId: clear } }, ready).requests)
     .toEqual([{ _tag: "RunAction", actionId: clear }])
+})
+
+describe("launch settings: plugin settings by section", () => {
+  const scopeOf = (label: string) => launchScopes(launch.ready).findIndex(scope => scope.label === label)
+  const rowsOf = (scope: number, layer: string) => launchPlan(launch.ready, { _tag: "Idle" }, scope).slices.settings
+    .find(group => group.title === layer)?.items ?? []
+
+  test("a caption names each plugin section over its first row, and the group after one; others stay uncaptioned", () => {
+    const MGBA = "game:wario/runner:retroarch/mgba"
+    const plan = launchPlan(launch.ready, { _tag: "Idle" }, scopeOf("mGBA"))
+    expect(plan.captions.get(launchRowId(MGBA, "setting:video.frameskip"))).toBe("mGBA · Video")
+    expect(plan.captions.get(launchRowId(MGBA, "setting:input.solar.level"))).toBe("mGBA · Input")
+    expect(plan.captions.get(launchRowId(MGBA, `service:@korri:sunshine/sunshine:add-setting:video`))).toBe("Sunshine · Video")
+    // CPU follows mGBA's last section, so it says it is not part of it; GPU follows CPU and needs no word.
+    expect(plan.captions.get(launchRowId(MGBA, "cpu.min"))).toBe("CPU")
+    expect(plan.captions.get(launchRowId(MGBA, "gpu.min"))).toBeUndefined()
+    expect(plan.captions.get(launchRowId(MGBA, "modifier:korri/mangohud:enabled"))).toBe("Modifier MangoHud")
+    // The place for any runner opens on its Runner choice: no caption.
+    const any = launchPlan(launch.ready, { _tag: "Idle" }, scopeOf("Any runner"))
+    expect(any.captions.get(launchRowId("game:wario/any", "runner"))).toBeUndefined()
+  })
+
+  test("Default steps like any choice and goes to Korri; a number's Default is an action", () => {
+    let state = zoneSurfaceStart(ready, "blend")
+    for (let index = 0; index < scopeOf("mGBA"); index++) {
+      state = update(state, { _tag: "Launch", message: { _tag: "SteppedRow", rowId: ZONE_LAUNCH_SCOPE_ROW, direction: 1 } }, ready).model
+    }
+    // Colour correction is On on the Device for mGBA: one step back is Default.
+    const colour = launchRowId("device/runner:retroarch/mgba", "setting:video.color-correction")
+    expect(update(state, { _tag: "Launch", message: { _tag: "SteppedRow", rowId: colour, direction: -1 } }, ready).requests)
+      .toEqual([{ _tag: "ChangeSetting", settingId: colour, value: "default" }])
+    const reset = launchRowId("game:wario/runner:retroarch/mgba", "default:setting:video.frameskip")
+    expect(update(state, { _tag: "Launch", message: { _tag: "PressedRow", rowId: reset } }, ready).requests)
+      .toEqual([{ _tag: "RunAction", actionId: reset }])
+  })
+
+  test("Moonlight is a runner scope of its own whose rows apply when this device streams", () => {
+    const rows = rowsOf(scopeOf("Moonlight"), "Device")
+    expect(rows.find(item => item.label === "Codec")).toMatchObject({ value: "Default", source: "h264 from Moonlight (default)", scope: "device" })
+    expect(rows.find(item => item.label === "FPS")?.source).toBe("Applies when this device streams the game")
+    expect(rows.find(item => item.label === "CPU min")?.source).toBe("Applies when this device streams the game")
+    const runner = rowsOf(scopeOf("Any runner"), "Game").find(item => item.label === "Runner")?.interaction
+    expect(runner?.kind === "choice" && runner.choices.map(choice => choice.label)).toEqual(["Inherit", "mGBA", "gpSP"])
+  })
+
+  test("a value korrid skips says so on its row, and Korri's note stands above the rows", () => {
+    const skipped = withLaunchSettings(fixtureModel, launch.skipped)
+    render(<ZoneSurface host={createFixtureHost()} model={skipped} />)
+    expect(screen.getByText("FPS limit (mGBA) isn't applied: 300 is above the maximum of 240.")).toBeTruthy()
+    const row = launchPlan(launch.skipped, { _tag: "Idle" }, scopeOf("mGBA")).slices.settings
+      .find(group => group.title === "Device")?.items.find(item => item.label === "FPS limit")
+    expect(row?.source).toBe("Not applied: 300 is above the maximum of 240")
+  })
 })

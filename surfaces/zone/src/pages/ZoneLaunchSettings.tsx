@@ -208,7 +208,10 @@ export function ZoneLaunchSettings({
                     onFocus={onRowFocus}
                     onPress={onRowPress}
                     onStep={onRowStep}
-                    rows={group.rows.map(row => ({ ...shownRow(row.item), verbatimValue: true }))}
+                    rows={group.rows.map(row => {
+                      const caption = launchView.captions.get(row.id)
+                      return { ...shownRow(row.item), verbatimValue: true, ...(caption === undefined ? {} : { caption }) }
+                    })}
                     status={group.status}
                     title={group.title}
                   />

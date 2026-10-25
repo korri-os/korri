@@ -238,22 +238,23 @@ describe("places: layer by runner scope", () => {
     const host = createFixtureHost()
     render(<PicoSurface host={host} model={ready} />)
     const scopes = screen.getByRole("tablist", { name: "Runner" })
-    expect(within(scopes).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["ANY RUNNER", "FAMILY RETROARCH", "MGBA", "GPSP"])
+    expect(within(scopes).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["ANY RUNNER", "FAMILY RETROARCH", "MGBA", "GPSP", "MOONLIGHT"])
     fireEvent.click(within(scopes).getByRole("tab", { name: "MGBA" }))
     expect(screen.getAllByText("from Device for mGBA").length).toBeGreaterThan(0)
     fireEvent.click(screen.getAllByRole("tab", { name: "GAME" })[0]!)
     expect(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "MGBA" }).getAttribute("aria-selected")).toBe("true")
-    expect(screen.getByRole("button", { name: /Frameskip/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: /^Frameskip/ })).toBeTruthy()
   })
 
-  test("Add setting opens the runner's settings to choose from, and sends the one chosen", () => {
+  test("Add setting opens its section's settings to choose from, and sends the one chosen", () => {
+    const add = launchRowId(MGBA, "add-setting:video")
     const opened = story(ready, { _tag: "ChoseSettingsGroup", group: game }, { _tag: "ChoseLaunchScope", scope: mgba },
-      { _tag: "OpenedPicker", settingId: launchRowId(MGBA, "add-setting") })
-    expect(opened.nav.launch?.question).toEqual({ _tag: "PickingChoice", settingId: launchRowId(MGBA, "add-setting") })
+      { _tag: "OpenedPicker", settingId: add })
+    expect(opened.nav.launch?.question).toEqual({ _tag: "PickingChoice", settingId: add })
     // Only a value Korri offers goes to Korri.
-    expect(update(opened.nav, { _tag: "PickedChoice", value: "bios" }, ready).requests).toEqual([])
-    const picked = update(opened.nav, { _tag: "PickedChoice", value: "lang" }, ready)
-    expect(picked.requests).toEqual([{ _tag: "ChangeSetting", settingId: launchRowId(MGBA, "add-setting"), value: "lang" }])
+    expect(update(opened.nav, { _tag: "PickedChoice", value: "bios.enable" }, ready).requests).toEqual([])
+    const picked = update(opened.nav, { _tag: "PickedChoice", value: "video.fps-limit" }, ready)
+    expect(picked.requests).toEqual([{ _tag: "ChangeSetting", settingId: add, value: "video.fps-limit" }])
     expect(picked.model.launch?.question._tag).toBe("None")
     expect(update(opened.nav, { _tag: "PressedBack" }, ready).model.launch?.question._tag).toBe("None")
 
@@ -261,17 +262,18 @@ describe("places: layer by runner scope", () => {
     render(<PicoSurface host={host} model={ready} />)
     fireEvent.click(screen.getAllByRole("tab", { name: "GAME" })[0]!)
     fireEvent.click(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "MGBA" }))
-    fireEvent.click(screen.getByRole("button", { name: /Add setting/ }))
+    // The Video section's own Add setting: the first of the place's.
+    expect(screen.getByText("MGBA · VIDEO")).toBeTruthy()
+    fireEvent.click(screen.getAllByRole("button", { name: /Add setting/ })[0]!)
     const dialog = screen.getByRole("dialog", { name: "Add setting" })
-    expect(within(dialog).getAllByRole("button").map(button => button.textContent)).toEqual(["Colour correction", "Language", "CANCEL"])
-    expect(document.activeElement?.textContent).toBe("Colour correction")
-    fireEvent.click(within(dialog).getByRole("button", { name: "Language" }))
-    expect(host.calls).toEqual([`setting:${launchRowId(MGBA, "add-setting")}:lang`])
+    expect(within(dialog).getAllByRole("button").map(button => button.textContent)).toEqual(["FPS limit", "CANCEL"])
+    fireEvent.click(within(dialog).getByRole("button", { name: "FPS limit" }))
+    expect(host.calls).toEqual([`setting:${add}:video.fps-limit`])
     expect(screen.queryByRole("dialog")).toBeNull()
   })
 
   test("a number opens the keyboard holding its value, saves only within range, and INHERIT clears it", () => {
-    const frameskip = launchRowId(MGBA, "setting:frameskip")
+    const frameskip = launchRowId(MGBA, "setting:video.frameskip")
     const base = [{ _tag: "ChoseSettingsGroup", group: game }, { _tag: "ChoseLaunchScope", scope: mgba }, { _tag: "OpenedEditor", settingId: frameskip }] as PicoMessage[]
     const opened = story(ready, ...base)
     expect(opened.nav.launch?.question).toMatchObject({ _tag: "EditingText", draft: { text: "2" } })
@@ -339,12 +341,13 @@ describe("launch modifiers", () => {
     expect(row?.textContent).toContain("from Profile Battery saver")
   })
 
-  test("a modifier with no schema has its on/off row and no Add setting", () => {
+  test("a modifier's settings are a captioned group per section; one with no schema has its on/off row alone", () => {
     render(<PicoSurface host={createFixtureHost()} model={ready} />)
     fireEvent.click(screen.getAllByRole("tab")[game]!)
     expect(screen.getByRole("button", { name: /^MangoHud/ })).toBeTruthy()
-    expect(screen.queryByRole("button", { name: /Add MangoHud setting/ })).toBeNull()
-    expect(screen.getByRole("button", { name: /Add Gamescope setting/ })).toBeTruthy()
+    expect(screen.queryByText(/^MANGOHUD ·/)).toBeNull()
+    expect(screen.getByText("GAMESCOPE · VIDEO")).toBeTruthy()
+    expect(screen.getByText("GAMESCOPE · WINDOW")).toBeTruthy()
   })
 })
 
@@ -369,7 +372,7 @@ test("Back closes Add setting's list and returns the cursor to the row that open
   render(<PicoSurface host={host} model={ready} />)
   fireEvent.click(screen.getAllByRole("tab")[launchLayerIndex(launch.ready, "game:wario")]!)
   fireEvent.click(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "MGBA" }))
-  const opener = screen.getByRole("button", { name: /Add setting/ })
+  const opener = screen.getAllByRole("button", { name: /Add setting/ })[0]!
   opener.focus()
   fireEvent.click(opener)
   expect(screen.getByRole("dialog", { name: "Add setting" })).toBeTruthy()
@@ -378,12 +381,12 @@ test("Back closes Add setting's list and returns the cursor to the row that open
   expect(screen.getByRole("dialog", { name: "Add setting" })).toBeTruthy()
   act(() => host.press("back"))
   expect(screen.queryByRole("dialog")).toBeNull()
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: /Add setting/ }))
+  expect(document.activeElement).toBe(screen.getAllByRole("button", { name: /Add setting/ })[0] ?? null)
   expect(host.calls).toEqual([])
 })
 
 describe("string settings", () => {
-  const LANG = launchRowId("device/runner:retroarch/mgba", "setting:lang")
+  const LANG = launchRowId("device/runner:retroarch/mgba", "setting:locale.language")
   const toMgba = [{ _tag: "ChoseLaunchScope", scope: launchScopeIndex(launch.ready, "device", "mGBA") }] as PicoMessage[]
 
   test("the editor starts from the raw text, and an emptied string saves as a value", () => {
@@ -400,6 +403,55 @@ describe("string settings", () => {
     render(<PicoSurface host={host} model={ready} />)
     fireEvent.click(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "MGBA" }))
     fireEvent.click(screen.getByRole("button", { name: /Inherit Language/ }))
-    expect(host.calls).toEqual([`action:${launchRowId("device/runner:retroarch/mgba", "clear:setting:lang")}`])
+    expect(host.calls).toEqual([`action:${launchRowId("device/runner:retroarch/mgba", "clear:setting:locale.language")}`])
+  })
+})
+
+describe("plugin settings by section", () => {
+  const game = launchLayerIndex(launch.ready, "game:wario")
+  const device = launchLayerIndex(launch.ready, "device")
+
+  test("Default is a choice of every choice row, and a number's Default is a row that runs Korri's action", () => {
+    const host = createFixtureHost()
+    render(<PicoSurface host={host} model={ready} />)
+    fireEvent.click(screen.getAllByRole("tab")[game]!)
+    fireEvent.click(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "MGBA" }))
+    // Colour correction is cleared on the Game: Default, with mGBA's own default as its source.
+    const colour = screen.getByRole("button", { name: /^Colour correction/ }).closest("li")
+    if (colour === null) throw new Error("no Colour correction row")
+    expect(within(colour).getByText("DEFAULT").closest("[data-lit]")?.getAttribute("data-lit")).toBe("true")
+    expect(colour.textContent).toContain("Off from mGBA (default)")
+    fireEvent.click(screen.getByRole("button", { name: /^Default Frameskip/ }))
+    expect(host.calls).toEqual([`action:${launchRowId("game:wario/runner:retroarch/mgba", "default:setting:video.frameskip")}`])
+  })
+
+  test("Moonlight is its own tab, its rows apply when this device streams, and it is no Runner choice", () => {
+    render(<PicoSurface host={createFixtureHost()} model={ready} />)
+    fireEvent.click(screen.getAllByRole("tab")[device]!)
+    fireEvent.click(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "MOONLIGHT" }))
+    expect(screen.getByText("MOONLIGHT · VIDEO")).toBeTruthy()
+    expect(screen.getByText("MOONLIGHT · AUDIO")).toBeTruthy()
+    const codec = screen.getByRole("button", { name: /^Codec/ }).closest("li")
+    expect(codec?.textContent).toContain("h264 from Moonlight (default)")
+    expect(screen.getByRole("button", { name: /^FPS/ }).closest("li")?.textContent).toContain("Applies when this device streams the game")
+    const runner = launch.ready.places.find(place => place.id === "game:wario/any")?.groups.find(group => group.title === "Runner")?.items[0]?.interaction
+    expect(runner?.kind === "choice" && runner.choices.map(choice => choice.label)).toEqual(["Inherit", "mGBA", "gpSP"])
+  })
+
+  test("Sunshine's sections stand on every place, device-only", () => {
+    render(<PicoSurface host={createFixtureHost()} model={ready} />)
+    expect(screen.getByText("SUNSHINE · VIDEO")).toBeTruthy()
+    const bitrate = screen.getByRole("button", { name: /^Max bitrate/ }).closest("li")
+    expect(bitrate?.textContent).toContain("from Device")
+    expect(bitrate?.textContent).toContain("DEVICE-ONLY")
+    fireEvent.click(screen.getAllByRole("tab")[game]!)
+    expect(screen.getByText("SUNSHINE · INPUT")).toBeTruthy()
+  })
+
+  test("a value korrid skips says so on its row and in a note", () => {
+    render(<PicoSurface host={createFixtureHost()} model={withLaunchSettings(fixtureModel, launch.skipped)} />)
+    expect(screen.getByText("FPS limit (mGBA) isn't applied: 300 is above the maximum of 240.")).toBeTruthy()
+    fireEvent.click(within(screen.getByRole("tablist", { name: "Runner" })).getByRole("tab", { name: "MGBA" }))
+    expect(screen.getByRole("button", { name: /^FPS limit/ }).closest("li")?.textContent).toContain("Not applied: 300 is above the maximum of 240")
   })
 })

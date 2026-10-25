@@ -98,3 +98,15 @@
   padding: 0 calc(var(--zone-drop-focus) * var(--zone-px)) calc(var(--zone-drop-focus) * var(--zone-px));
   scroll-padding-block: calc(var(--zone-option-cell) * var(--zone-px));
 }
+
+/* A plugin section's name over the first of its rows (MOONLIGHT · VIDEO):
+ * caps-1 in the HUD's yellow, its words where the rows' words start. It
+ * hangs close over the row it opens, so the gap to the row before it is
+ * what tells one section from the next. Never focused, never pressed. */
+.zone-option-group-caption {
+  min-width: 0;
+  margin: 0 0 calc(var(--zone-option-row-space) * var(--zone-px) * -0.5);
+  padding-inline: calc(var(--zone-option-text-inset) * var(--zone-px));
+  line-height: 1;
+  overflow-wrap: break-word;
+}

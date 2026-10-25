@@ -14,7 +14,13 @@
  *
  * Korri's own groups inside a place (RUNNER, CPU, FROM FILES) are not drawn:
  * the labels already say which is which ("CPU min", "Environment PATH"),
- * and a row only a file sets says so under it.
+ * and a row only a file sets says so under it. A plugin's settings are the
+ * exception: Korri gives each section of a plugin's settings a group of its
+ * own, titled "<plugin> · <section>" ("Moonlight · Video"), whose rows ("FPS",
+ * "Add setting") do not name their plugin. Its title stands as a caption
+ * over its first row (`captions`), and so does the title of the group that
+ * follows one ("CPU", "Modifier MangoHud"), so no row reads as part of the
+ * plugin section above it.
  */
 import type { SurfaceAction, SurfaceLaunchSettings, SurfaceModel } from "@contracts/surface/korri-surface"
 import type { ZoneOptionsSlices } from "./options"
@@ -44,7 +50,12 @@ export interface ZoneLaunchPlan {
   readonly actions: readonly SurfaceAction[]
   /** The action that closes the editor, for B. */
   readonly closeActionId?: string
+  /** A plugin section's title, by the id of the group's first row, drawn over it. */
+  readonly captions: ReadonlyMap<string, string>
 }
+
+/** A group of one plugin's section of settings, which Korri titles "<plugin> · <section>". */
+const pluginSection = (title: string) => title.includes(" · ")
 
 /** Zone's own RUNNER SCOPE row: which runner scope shows. Never sent to Korri. */
 export const ZONE_LAUNCH_SCOPE_ROW = "zone:launch-scope"
@@ -105,6 +116,12 @@ export function launchPlan(
     scope: shown,
     actions: launch.actions,
     ...(close === undefined ? {} : { closeActionId: close.id }),
+    captions: new Map(places.flatMap(place => place.groups.flatMap((group, index) => {
+      const first = group.items[0]
+      const previous = place.groups[index - 1]
+      const captioned = pluginSection(group.title) || (previous !== undefined && pluginSection(previous.title))
+      return first !== undefined && captioned ? [[first.id, group.title] as const] : []
+    }))),
   }
 }
 

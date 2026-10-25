@@ -83,6 +83,7 @@ export function ZoneOptionRow({
   verbatimLabel = false,
   verbatimValue = false,
   flanked = false,
+  captioned = false,
   source,
   deviceOnly = false,
   onPress,
@@ -108,6 +109,8 @@ export function ZoneOptionRow({
   readonly verbatimValue?: boolean
   /** The focused value wears the red triangles whatever its kind (GAME OPTS.' RUN); left and right still step only a choice. */
   readonly flanked?: boolean
+  /** A caption stands over the row (a plugin's section): scrolled into view, the row brings it too. */
+  readonly captioned?: boolean
   /** Where a layered value in force comes from, in Korri's words. Always shown. */
   readonly source?: string
   /** Korri says the value stays on this device. */
@@ -145,6 +148,7 @@ export function ZoneOptionRow({
       data-focused={focused || undefined}
       data-interaction={kind}
       data-saving={saving || undefined}
+      data-captioned={captioned || undefined}
       ref={row}
     >
       <button
