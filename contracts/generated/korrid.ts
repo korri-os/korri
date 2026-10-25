@@ -662,6 +662,7 @@ export interface LaunchRunnerSnapshot {
 	family?: string;
 	title: string;
 	selected: boolean;
+	choosable: boolean;
 	schema: LaunchJsonValue;
 	revision: string;
 	prepare: LaunchRunnerFacts;
@@ -681,6 +682,10 @@ export type LaunchPath =
 	id: string;
 	key: string;
 }}
+	| { _tag: "ServiceSetting", payload: {
+	id: string;
+	key: string;
+}}
 	| { _tag: "Setting", payload: {
 	key: string;
 }};
@@ -689,6 +694,7 @@ export interface LaunchSetRequest {
 	place: LaunchPlace;
 	path: LaunchPath;
 	value?: LaunchJsonValue;
+	clear?: boolean;
 	expectedRevision: string;
 }
 
@@ -697,6 +703,10 @@ export interface LaunchSettingsSnapshotRequest {
 }
 
 export type LaunchNotice =
+	| { _tag: "SettingSkipped", payload: {
+	path: LaunchPath;
+	message: string;
+}}
 	| { _tag: "RunnerUnavailable", payload: {
 	runnerId: string;
 	place: LaunchPlace;

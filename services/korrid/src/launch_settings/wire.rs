@@ -63,6 +63,7 @@ pub enum LaunchPath {
     GpuMax,
     ModifierEnabled { id: String },
     ModifierSetting { id: String, key: String },
+    ServiceSetting { id: String, key: String },
     Setting { key: String },
 }
 #[typeshare]
@@ -74,6 +75,8 @@ pub struct LaunchSetRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[typeshare(serialized_as = "Option<LaunchJsonValue>")]
     pub value: Option<serde_json::Value>,
+    #[serde(default)]
+    pub clear: bool,
     pub expected_revision: String,
 }
 #[typeshare]
@@ -127,6 +130,7 @@ pub struct LaunchModifierValues {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum LaunchNotice {
+    SettingSkipped { path: LaunchPath, message: String },
     RunnerUnavailable {
         #[serde(rename = "runnerId")]
         runner_id: String,
@@ -188,6 +192,7 @@ pub struct LaunchRunnerSnapshot {
     pub family: Option<String>,
     pub title: String,
     pub selected: bool,
+    pub choosable: bool,
     #[typeshare(serialized_as = "LaunchJsonValue")]
     pub schema: serde_json::Value,
     pub revision: String,

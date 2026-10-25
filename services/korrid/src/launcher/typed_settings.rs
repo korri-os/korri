@@ -120,7 +120,7 @@ pub fn describe(
     runner_id: &str,
     build: &str,
 ) -> Result<SettingsDescription, String> {
-    let input = serde_json::json!({"runnerId":runner_id}).to_string();
+    let input = serde_json::json!({"id":runner_id}).to_string();
     let result =
         match script::call_plugin_operation_snapshot(snapshot, script::SETTINGS_DESCRIBE, &input) {
             Ok(result) => result,
