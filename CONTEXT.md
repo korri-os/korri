@@ -137,6 +137,16 @@ _Avoid_: standby, fake suspend, idle
 Suspend to RAM. The frozen live session is still there on wake, with no time limit.
 _Avoid_: S3, mem, real suspend
 
+### Displays
+
+**Display**:
+A physical output that shows pictures, such as a built-in panel, a connected TV or a monitor. Every display belongs to exactly one device, and a device can have any number of them.
+_Avoid_: screen, panel, output, monitor
+
+**Display arrangement**:
+Where a device's displays sit relative to each other, such as one above the other or side by side. Built-in displays have a fixed arrangement that the device declares; a person arranges the displays they connect.
+_Avoid_: layout, display setup, topology
+
 ### Content and discovery
 
 **System**:
