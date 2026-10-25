@@ -200,6 +200,25 @@ A new system can still run old application selections. Record them before the
 update and use the existing selectors only as separate approved operations; use
 the RG DS-specific `services.korriBundle.initialPackage`, not a generic bundle.
 
+This step is required, not optional. On the first real update (2026-10-25,
+[acceptance record](../../../docs/acceptance/rgds-system-update-2026-10-25.md)),
+the new system booted with the old bundle still selected. korrid crash-looped
+with `korrid requires exactly one inherited listener for its current PID` until
+the bundle was switched. Record the old bundle before the update, then select
+the new one after the reboot, from the same pinned checkout:
+
+```sh
+ssh -o BatchMode=yes -p 2222 root@10.42.1.1 \
+  readlink -f /nix/var/nix/gcroots/korri-bundle/active
+bundle=$(nix eval --raw .#nixosConfigurations.rgds.config.services.korriBundle.initialPackage.outPath)
+ssh -o BatchMode=yes -p 2222 root@10.42.1.1 \
+  "/run/current-system/sw/bin/korri-bundle-select switch '$bundle' /run/current-system/sw/bin/systemctl"
+```
+
+Then check that `/proc/$(systemctl show korrid -p MainPID --value)/exe` is the
+bundle's `bin/korrid`. For a runtime rollback, switch back to the recorded old
+bundle before `--rollback`.
+
 `rgds-update-check` uses tiny real Nix store systems and the actual pinned
 extlinux generator. It compares every rendered and staged pathname/byte against
 an independently rendered two-system fixture, verifies real Nix profile roots
