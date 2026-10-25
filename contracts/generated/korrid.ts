@@ -30,7 +30,7 @@ export type IdentityState = { _tag: "Unowned"; devicePublicKey: string } | { _ta
 /** Opaque JSON is decoded against the runner schema or the authored place schema. */
 export type LaunchJsonValue = unknown;
 
-export type LaunchSettingValue = boolean | number | string;
+export type LaunchSettingValue = boolean | number | string | null | { [name: string]: LaunchSettingValue };
 
 /**
  * Transient delivery barriers grounded in the host's freezer transitions.
@@ -718,6 +718,7 @@ export type LaunchNotice =
 	| { _tag: "SettingSkipped", payload: {
 	path: LaunchPath;
 	message: string;
+	runnerId?: string;
 }}
 	| { _tag: "RunnerUnavailable", payload: {
 	runnerId: string;

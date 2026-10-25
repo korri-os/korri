@@ -133,6 +133,8 @@ pub enum LaunchNotice {
     SettingSkipped {
         path: LaunchPath,
         message: String,
+        #[serde(rename = "runnerId", default, skip_serializing_if = "Option::is_none")]
+        runner_id: Option<String>,
     },
     RunnerUnavailable {
         #[serde(rename = "runnerId")]
