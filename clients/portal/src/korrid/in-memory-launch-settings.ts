@@ -422,7 +422,9 @@ export function createInMemoryLaunchSettings(
       if (owner === undefined || path.payload === undefined || !("key" in path.payload)) return []
       const leaf = schemaLeaves(owner.schema).get(path.payload.key)
       const message = leaf === undefined ? `${owner.title} has no setting ${path.payload.key}` : misfit(leaf, resolved.value)
-      return message === undefined ? [] : [{ _tag: "SettingSkipped", payload: { path, message } }]
+      if (message === undefined) return []
+      // A runner setting's skip names its runner; a modifier's or a service's names none.
+      return [{ _tag: "SettingSkipped", payload: { path, message, ...(path._tag === "Setting" && runner !== undefined ? { runnerId: runner.id } : {}) } }]
     })
 
   /**
@@ -486,10 +488,16 @@ export function createInMemoryLaunchSettings(
     const routeLayers = (gameId === undefined ? undefined : config.games?.[gameId]?.routeLayers)
       ?? (gameId !== undefined && inUse === undefined && runners.filter(runner => choosable(runner.id)).length > 1 ? { _tag: "NeedsRunnerChoice" as const } : { _tag: "Present" as const })
     const resolved = resolve(gameId, inUse)
+    const streams = streamRunners.map(runnerId => ({ runnerId, values: resolveStream(gameId, runnerId) }))
+    // A stream runner's own settings are checked against its schema too.
+    const streamSkips = streams.flatMap(({ runnerId, values }) => {
+      const runner = config.runners?.[runnerId]
+      return skippedOf(values, { id: runnerId, ...(runner === undefined ? {} : { runner }) })
+    })
     return {
       places,
       resolved: { values: resolved.values },
-      runnerResolved: streamRunners.map(runnerId => ({ runnerId, values: resolveStream(gameId, runnerId) })),
+      runnerResolved: streams,
       runners: runners.map((runner): LaunchRunnerSnapshot => ({
         id: runner.id,
         ...(runner.family === undefined ? {} : { family: runner.family }),
@@ -517,7 +525,7 @@ export function createInMemoryLaunchSettings(
       })),
       ...(pick === undefined ? {} : { selectedProfile: pick }),
       ...(config.deviceFacts === undefined ? {} : { deviceFacts: structuredClone(config.deviceFacts) }),
-      notices: [...choice.notices, ...resolved.skipped],
+      notices: [...choice.notices, ...resolved.skipped, ...streamSkips],
       routeLayers,
       revisions: revisions(),
     }

@@ -171,8 +171,8 @@ describe("in-memory launch settings, korrid's rules", () => {
       })
       expect(result.resolved.values["settings.video.fps"]?.value).toBe(90)
       expect(result.notices).toEqual([
-        { _tag: "SettingSkipped", payload: { path: setting("video.fps"), message: "90 is above the maximum of 60" } },
-        { _tag: "SettingSkipped", payload: { path: setting("video.sharp"), message: "mGBA has no setting video.sharp" } },
+        { _tag: "SettingSkipped", payload: { path: setting("video.fps"), message: "90 is above the maximum of 60", runnerId: "retroarch/mgba" } },
+        { _tag: "SettingSkipped", payload: { path: setting("video.sharp"), message: "mGBA has no setting video.sharp", runnerId: "retroarch/mgba" } },
       ])
     })
   })

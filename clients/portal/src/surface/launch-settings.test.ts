@@ -733,19 +733,6 @@ describe("Default: a cleared setting", () => {
   })
 })
 
-describe("settings korrid skips", () => {
-  it("say on their rows and in a note that the value is not applied, and why", async () => {
-    const launch = await opened({ ...base, bodies: { ...chosen, "device/runner:retroarch/mgba": { settings: { video: { frameskip: 30 } } } } })
-    const editor = launch.getSnapshot().editor
-    if (editor._tag !== "Ready") throw new Error(editor._tag)
-    expect(row(editor, "device/runner:retroarch/mgba", "Frameskip")).toMatchObject({ value: "30", source: "Not applied: 30 is above the maximum of 10" })
-    expect(row(editor, "game:wario/any", "Frameskip")).toBeUndefined()
-    launch.change(LAUNCH_ID.set(MGBA, "add-setting:video"), "video.frameskip")
-    expect(row(launch.getSnapshot().editor, MGBA, "Frameskip")?.source).toBe("30 from Device for mGBA isn't applied: 30 is above the maximum of 10")
-    expect(editor.notes).toEqual(["Frameskip (mGBA) isn't applied: 30 is above the maximum of 10."])
-  })
-})
-
 const MOONLIGHT = "@korri:moonlight/moonlight"
 const MOONLIGHT_SCHEMA = {
   type: "object",
@@ -767,6 +754,56 @@ const withMoonlight: InMemoryLaunchSettingsConfig = {
     [`game:wario/runner:${MOONLIGHT}`]: { settings: { audio: { channels: "stereo" } } },
   },
 }
+
+describe("settings korrid skips", () => {
+  // mGBA and Moonlight share the path video.fps; each skip names its runner.
+  const shared: InMemoryLaunchSettingsConfig = {
+    ...base,
+    runners: {
+      ...runners,
+      "retroarch/mgba": { ...runners["retroarch/mgba"]!, schema: { properties: { video: section("Video", { fps: { type: "integer", title: "FPS", maximum: 60 } }) } } },
+      [MOONLIGHT]: { title: "Moonlight", schema: MOONLIGHT_SCHEMA, choosable: false },
+    },
+  }
+
+  it("show the selected runner's skip on its rows only, not on Moonlight's same path", async () => {
+    const launch = await opened({
+      ...shared,
+      bodies: { ...chosen, "device/runner:retroarch/mgba": { settings: { video: { fps: 90 } } }, [`device/runner:${MOONLIGHT}`]: { settings: { video: { fps: 30 } } } },
+    })
+    const editor = launch.getSnapshot().editor
+    if (editor._tag !== "Ready") throw new Error(editor._tag)
+    expect(row(editor, "device/runner:retroarch/mgba", "FPS")?.source).toBe("Not applied: 90 is above the maximum of 60")
+    expect(row(editor, `device/runner:${MOONLIGHT}`, "FPS")?.source).toBe("from Device for Moonlight")
+    expect(editor.notes).toEqual(["FPS (mGBA) isn't applied: 90 is above the maximum of 60."])
+  })
+
+  it("show Moonlight's skip on Moonlight's rows when korrid names Moonlight, and not on the selected runner's", async () => {
+    const launch = await opened({
+      ...shared,
+      bodies: { ...chosen, "device/runner:retroarch/mgba": { settings: { video: { fps: 50 } } }, [`device/runner:${MOONLIGHT}`]: { settings: { video: { fps: 500 } } } },
+    })
+    const editor = launch.getSnapshot().editor
+    if (editor._tag !== "Ready") throw new Error(editor._tag)
+    expect(row(editor, `device/runner:${MOONLIGHT}`, "FPS")?.source).toBe("Not applied: 500 is above the maximum of 240")
+    expect(row(editor, "device/runner:retroarch/mgba", "FPS")?.source).toBe("from Device for mGBA")
+    expect(editor.notes).toEqual(["FPS (Moonlight) isn't applied: 500 is above the maximum of 240."])
+    // A Game row that inherits the Device's value says it is not applied, and why.
+    launch.change(LAUNCH_ID.set(`game:wario/runner:${MOONLIGHT}`, "add-setting:video"), "video.fps")
+    expect(row(launch.getSnapshot().editor, `game:wario/runner:${MOONLIGHT}`, "FPS")?.source).toBe("500 from Device for Moonlight isn't applied: 500 is above the maximum of 240")
+  })
+
+  it("say on their rows and in a note that the value is not applied, and why", async () => {
+    const launch = await opened({ ...base, bodies: { ...chosen, "device/runner:retroarch/mgba": { settings: { video: { frameskip: 30 } } } } })
+    const editor = launch.getSnapshot().editor
+    if (editor._tag !== "Ready") throw new Error(editor._tag)
+    expect(row(editor, "device/runner:retroarch/mgba", "Frameskip")).toMatchObject({ value: "30", source: "Not applied: 30 is above the maximum of 10" })
+    expect(row(editor, "game:wario/any", "Frameskip")).toBeUndefined()
+    launch.change(LAUNCH_ID.set(MGBA, "add-setting:video"), "video.frameskip")
+    expect(row(launch.getSnapshot().editor, MGBA, "Frameskip")?.source).toBe("30 from Device for mGBA isn't applied: 30 is above the maximum of 10")
+    expect(editor.notes).toEqual(["Frameskip (mGBA) isn't applied: 30 is above the maximum of 10."])
+  })
+})
 
 describe("Moonlight, a runner that only views streams", () => {
   it("is its own scope with groups by section on a game page, its values from korrid's stream fold, and never a Runner choice", async () => {

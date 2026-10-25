@@ -317,8 +317,10 @@ interface Context {
   readonly resolved: (path: LaunchPath) => LaunchSourcedValue | undefined
   /** A list kind in force (arguments, hooks), with each place's part. */
   readonly list: (kind: ListKind) => LaunchSourcedValue | undefined
-  /** Why korrid does not apply the value in force at a path, when it says so. */
-  readonly skipped: (path: LaunchPath) => string | undefined
+  /** Why korrid does not apply the value in force at a path, when it says
+   * so. A runner setting's skip names its runner: the selected one unless
+   * `runnerId` says otherwise (Moonlight). */
+  readonly skipped: (path: LaunchPath, runnerId?: string) => string | undefined
   /** The value in force at a path for a runner that only views streams
    * (Moonlight), as korrid resolves it for the stream viewer. */
   readonly streamResolved: (runnerId: string, path: LaunchPath) => LaunchSourcedValue | undefined
@@ -330,13 +332,16 @@ function contextOf(snapshot: LaunchSnapshot, gameId?: string): Context {
     [entry.runnerId, new Map(Object.values(entry.values).map(value => [valuePathKey(value.path), value]))] as const))
   const selected = snapshot.runners.find(runner => runner.selected && runner.choosable)
   const byPath = new Map(Object.values(snapshot.resolved.values).map(value => [valuePathKey(value.path), value]))
+  // A runner setting's skip is the selected runner's unless it names another.
+  const skipKey = (path: LaunchPath, runnerId: string | undefined) =>
+    `${path._tag === "Setting" ? runnerId ?? selected?.id ?? "" : ""}\u0000${editablePathKey(path)}`
   const skipped = new Map(snapshot.notices.flatMap(notice => notice._tag === "SettingSkipped"
-    ? [[editablePathKey(notice.payload.path), notice.payload.message] as const]
+    ? [[skipKey(notice.payload.path, notice.payload.runnerId), notice.payload.message] as const]
     : []))
   return {
     resolved: path => byPath.get(valuePathKey(editable(path))),
     list: kind => byPath.get(valuePathKey({ _tag: kind })),
-    skipped: path => skipped.get(editablePathKey(path)),
+    skipped: (path, runnerId) => skipped.get(skipKey(path, runnerId)),
     streamResolved: (runnerId, path) => streams.get(runnerId)?.get(valuePathKey(editable(path))),
     snapshot,
     devicePage: gameId === undefined,
@@ -842,19 +847,30 @@ function settingSource(context: Context, owner: Owner, path: string, leaf: Leaf 
   const stream = streamRunner(context, scope) && scope._tag === "Runner"
   if (stream && writePath._tag === "Setting") {
     const resolved = context.streamResolved(scope.id, writePath)
-    const source = resolved?.source
-    if (resolved === undefined || source === undefined || resolved.value === null) return own.cleared ? fallback() : streamLine(context)
-    const here = source._tag === "Place" && samePlace(source.payload, owner.place)
-    return here ? `from ${sourceTitle(context, source)}` : `${valueText(resolved.value)} from ${sourceTitle(context, source)}`
+    return inForceText(context, owner.place, resolved, context.skipped(writePath, scope.id), own, () => own.cleared ? fallback() : streamLine(context))
   }
   const waiting = notInForceScope(context, scope)
   if (waiting !== undefined) return waiting
-  const resolved = context.resolved(writePath)
+  return inForceText(context, owner.place, context.resolved(writePath), context.skipped(writePath), own, () => own.cleared ? fallback() : undefined)
+}
+
+/**
+ * A setting's value in force from one place's row: where it comes from, and
+ * when korrid skips it, that it is not applied and why. `none` speaks when
+ * nothing is in force.
+ */
+function inForceText(
+  context: Context,
+  place: LaunchPlace,
+  resolved: LaunchSourcedValue | undefined,
+  skipped: string | undefined,
+  own: { readonly set: boolean; readonly cleared: boolean },
+  none: () => string | undefined,
+): string | undefined {
   const source = resolved?.source
-  const skipped = context.skipped(writePath)
-  const here = source?._tag === "Place" && samePlace(source.payload, owner.place)
+  const here = source?._tag === "Place" && samePlace(source.payload, place)
   if (skipped !== undefined && (here || (source === undefined && own.set && !own.cleared))) return `Not applied: ${skipped.replace(/\.$/, "")}`
-  if (resolved === undefined || source === undefined || resolved.value === null) return own.cleared ? fallback() : undefined
+  if (resolved === undefined || source === undefined || resolved.value === null) return none()
   const title = sourceTitle(context, source)
   const value = valueText(resolved.value)
   if (skipped !== undefined) return `${value} from ${title} isn't applied: ${skipped.replace(/\.$/, "")}`
@@ -1302,7 +1318,7 @@ export function launchNotesFrom(snapshot: LaunchSnapshot, gameId?: string): read
     return [`${place} names runner ${notice.payload.runnerId}, which isn't installed. Korri skips it and its runner settings there${inUse === undefined ? "." : ` and uses ${inUse}.`}`]
   })
   const skipped = snapshot.notices.flatMap(notice => notice._tag === "SettingSkipped"
-    ? [`${skippedName(context, notice.payload.path)} isn't applied: ${notice.payload.message.replace(/\.$/, "")}.`]
+    ? [`${skippedName(context, notice.payload.path, notice.payload.runnerId)} isn't applied: ${notice.payload.message.replace(/\.$/, "")}.`]
     : [])
   const facts = snapshot.runners.flatMap(runner => runner.prepare._tag === "Unavailable"
     ? [`${context.runnerTitles.get(runner.id) ?? runner.title} facts are unavailable: ${runner.prepare.payload.replace(/\.$/, "")}.`]
@@ -1311,14 +1327,14 @@ export function launchNotesFrom(snapshot: LaunchSnapshot, gameId?: string): read
 }
 
 /** A skipped setting in words: its label and its plugin, "FPS (Moonlight)". */
-function skippedName(context: Context, path: LaunchPath): string {
+function skippedName(context: Context, path: LaunchPath, runnerId?: string): string {
   const named = (title: string, schema: unknown, key: string) => {
     const leaf = sectionsOf(schema).flatMap(section => section.leaves).find(candidate => candidate.path === key)
     return `${leaf?.label ?? key} (${title})`
   }
   switch (path._tag) {
     case "Setting": {
-      const runner = context.selected
+      const runner = runnerId === undefined ? context.selected : context.snapshot.runners.find(candidate => candidate.id === runnerId)
       return runner === undefined ? path.payload.key : named(context.runnerTitles.get(runner.id) ?? runner.title, runner.schema, path.payload.key)
     }
     case "ModifierSetting":
