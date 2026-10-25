@@ -937,12 +937,20 @@ impl HostSessionControl {
             .unwrap_or_default();
         let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
         let excluded: Vec<_> = self.never_focus.iter().map(String::as_str).collect();
+        let portal_pids = self
+            .portal
+            .as_ref()
+            .ok_or("portal unit unavailable")?
+            .unit
+            .window_pids()
+            .map_err(|error| error.message)?;
         let rectangles = super::display_placement::place_surface(
             compositor.as_ref(),
             &displays,
             scope,
             placement.as_ref(),
             &pids,
+            &portal_pids,
             &excluded,
         )?;
         let mut occupied = placement.map(|p| p.outputs).unwrap_or_default();
@@ -3214,6 +3222,95 @@ mod tests {
             control.recovery_helper_error.lock().unwrap().as_deref(),
             Some("systemd enumeration unavailable")
         );
+    }
+
+    #[test]
+    fn all_displays_place_the_kiosk_unit_window_with_its_real_chromium_app_id() {
+        const CHILD: &str = "KORRI_PORTAL_IDENTITY_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let result = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "host::session_state::tests::all_displays_place_the_kiosk_unit_window_with_its_real_chromium_app_id", "--nocapture"])
+                .env(CHILD, "1")
+                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
+                .output().unwrap();
+            assert!(
+                result.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(String::from_utf8_lossy(&result.stdout).contains("running 1 test"));
+            return;
+        }
+        use super::super::systemd_unit::{SystemdLaunchUnitBackend, SystemdPortalUnit};
+        let root = tempfile::tempdir().unwrap();
+        let systemctl = root.path().join("systemctl");
+        fs::write(
+            &systemctl,
+            format!(
+                r#"#!/bin/sh
+printf '%s\n' "$*" >> '{}'
+case "$*" in
+  *--property=MainPID*) printf 'ControlGroup=\nMainPID=2603\n';;
+  *) printf 'LoadState=loaded\nActiveState=inactive\nFreezerState=running\n';;
+esac
+"#,
+                root.path().join("unit-queries").display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&systemctl, fs::Permissions::from_mode(0o755)).unwrap();
+        let portal = SystemdPortalUnit::new(
+            SystemdLaunchUnitBackend::new(systemctl.clone(), systemctl, 1000, 1000).unwrap(),
+            "korri-chromium-kiosk.service",
+        )
+        .unwrap();
+        let swaymsg = root.path().join("swaymsg");
+        let tree = r#"{"nodes":[{"id":10,"pid":2603,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","fullscreen_mode":1}]}"#;
+        fs::write(root.path().join("tree"), tree).unwrap();
+        fs::write(
+            &swaymsg,
+            format!(
+                r#"#!/bin/sh
+cd '{}' || exit 1
+for argument do command="$argument"; done
+case "$command" in get_tree) cat tree; exit;; esac
+printf '%s\n' "$command" >> commands
+printf '[{{"success":true}}]'
+"#,
+                root.path().display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&swaymsg, fs::Permissions::from_mode(0o755)).unwrap();
+        let compositor = Arc::new(
+            super::super::compositor_focus::SwaymsgCompositorControl::new(
+                swaymsg,
+                root.path().join("socket"),
+                Duration::from_secs(1),
+            )
+            .unwrap(),
+        );
+        let control =
+            HostSessionControl::new(root.path(), Arc::new(DeterministicBackend::default()))
+                .with_portal(Arc::new(portal))
+                .with_compositor(compositor, vec!["chromium-browser".into()]);
+        let displays = control
+            .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
+                displays: super::super::display_placement::SurfaceDisplayScope::All,
+                overlay: false,
+                launch_id: None,
+            })
+            .unwrap();
+        assert_eq!(displays.len(), 2);
+        let commands = fs::read_to_string(root.path().join("commands")).unwrap();
+        assert!(commands.contains("output DSI-2 power on\n"));
+        assert!(commands.contains("output DSI-1 power on\n"));
+        assert!(commands.contains("[con_id=10] fullscreen enable global\n"));
+        let queries = fs::read_to_string(root.path().join("unit-queries")).unwrap();
+        assert!(queries.contains(
+            "show korri-chromium-kiosk.service --property=ControlGroup --property=MainPID"
+        ));
     }
 
     #[test]

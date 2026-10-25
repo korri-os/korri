@@ -174,18 +174,18 @@ struct WindowProperties {
     class: Option<String>,
 }
 
-pub(super) fn portal_node(tree: &str, identities: &[&str]) -> Result<i64, String> {
-    fn visit(node: &TreeNode, identities: &[&str], ids: &mut Vec<i64>) {
-        if is_excluded(node, identities) {
+pub(super) fn portal_node(tree: &str, portal_pids: &BTreeSet<i32>) -> Result<i64, String> {
+    fn visit(node: &TreeNode, portal_pids: &BTreeSet<i32>, ids: &mut Vec<i64>) {
+        if node.pid.is_some_and(|pid| portal_pids.contains(&pid)) {
             ids.push(node.id);
         }
         for child in node.nodes.iter().chain(node.floating_nodes.iter()) {
-            visit(child, identities, ids);
+            visit(child, portal_pids, ids);
         }
     }
     let root: TreeNode = serde_json::from_str(tree).map_err(|e| e.to_string())?;
     let mut ids = Vec::new();
-    visit(&root, identities, &mut ids);
+    visit(&root, portal_pids, &mut ids);
     if ids.len() != 1 {
         return Err("no unique portal window".into());
     }

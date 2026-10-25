@@ -210,6 +210,13 @@ pub(super) const PORTAL_UNIT_ENV: &str = "KORRID_PORTAL_UNIT";
 /// game. A frozen portal can neither paint nor take input, so every thaw
 /// request must leave it running.
 pub trait PortalUnit: Send + Sync {
+    /// Processes owned by the configured kiosk unit, not window decorations.
+    fn window_pids(&self) -> Result<BTreeSet<i32>, LaunchUnitError> {
+        Err(LaunchUnitError::new(
+            LaunchUnitErrorKind::Failed,
+            "portal process identity unavailable",
+        ))
+    }
     fn freeze(&self) -> Result<(), LaunchUnitError>;
     /// Leaves the unit running. A unit that is not frozen, including one
     /// that is inactive or not loaded, needs no thaw and succeeds.
@@ -276,6 +283,68 @@ impl SystemdPortalUnit {
 }
 
 impl PortalUnit for SystemdPortalUnit {
+    fn window_pids(&self) -> Result<BTreeSet<i32>, LaunchUnitError> {
+        // ControlGroup and MainPID come from the same exact service already
+        // used for kiosk freeze/thaw. Chromium's app_id is not stable identity.
+        let output = self.helper.require_success(
+            &self.helper.systemctl,
+            &[
+                "--system".into(),
+                "--no-ask-password".into(),
+                "show".into(),
+                self.unit.clone(),
+                "--property=ControlGroup".into(),
+                "--property=MainPID".into(),
+            ],
+        )?;
+        let malformed = || {
+            LaunchUnitError::new(
+                LaunchUnitErrorKind::Protocol,
+                "invalid portal unit process properties",
+            )
+        };
+        let text = std::str::from_utf8(&output.stdout).map_err(|_| malformed())?;
+        let mut properties = BTreeMap::new();
+        for line in text.trim().lines() {
+            let (key, value) = line.split_once('=').ok_or_else(malformed)?;
+            if properties.insert(key, value).is_some() {
+                return Err(malformed());
+            }
+        }
+        if properties.len() != 2 {
+            return Err(malformed());
+        }
+        let group = *properties.get("ControlGroup").ok_or_else(malformed)?;
+        let main = properties
+            .get("MainPID")
+            .ok_or_else(malformed)?
+            .parse::<u32>()
+            .map_err(|_| malformed())?;
+        let main = i32::try_from(main).map_err(|_| malformed())?;
+        let mut pids = if group.is_empty() {
+            BTreeSet::new()
+        } else {
+            let relative = std::path::Path::new(group)
+                .strip_prefix("/")
+                .map_err(|_| malformed())?;
+            if relative.as_os_str().is_empty()
+                || relative
+                    .components()
+                    .any(|c| !matches!(c, std::path::Component::Normal(_)))
+            {
+                return Err(malformed());
+            }
+            read_unit_pids(
+                std::path::Path::new("/sys/fs/cgroup"),
+                relative.to_str().ok_or_else(malformed)?,
+            )?
+        };
+        if main > 0 {
+            pids.insert(main);
+        }
+        Ok(pids)
+    }
+
     fn freeze(&self) -> Result<(), LaunchUnitError> {
         self.call("FreezeUnit")
     }
