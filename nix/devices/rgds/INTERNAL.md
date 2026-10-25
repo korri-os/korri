@@ -83,6 +83,6 @@ old SD boot proves a recovery route, not safe root selection with duplicate
 labels. The USB getty starts after root mounts and cannot diagnose an initrd
 failure. [USB-CONSOLE.md](USB-CONSOLE.md) records the earlier console repair.
 
-System updates are separate from raw image recovery; see UPDATE.md (work in progress).
+System updates are separate from raw image recovery; see [UPDATE.md](UPDATE.md).
 Android was not backed up. Removing the SD returns to the eMMC Korri system,
 not stock Android. No tested Android restore procedure is recorded here.
