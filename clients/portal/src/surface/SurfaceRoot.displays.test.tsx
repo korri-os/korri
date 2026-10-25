@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
-import type { SurfaceModel } from "@contracts/surface/korri-surface"
+import type { SurfaceHost, SurfaceModel } from "@contracts/surface/korri-surface"
 import { createInputBus } from "../input/bus"
 import { createInMemoryKorridClient } from "../korrid/client"
 import { SurfaceRoot } from "./SurfaceRoot"
@@ -63,4 +63,26 @@ test("the overlay host configures its exact launch and publishes only opted-in f
       render(props) { model = props.model; return null },
     }} />))
   expect(requests).toHaveLength(2)
+})
+
+test("returning to the retained catalog after a game exits restores its display placement", async () => {
+  const client = createInMemoryKorridClient({ displays, activeSession: { launchId: "running", gameId: "game" } })
+  const requests: string[] = []
+  const original = client.surfaceDisplays
+  client.surfaceDisplays = async scope => { requests.push(scope); return original(scope) }
+  let host: SurfaceHost | undefined
+  let model: SurfaceModel | undefined
+  const container = document.createElement("div")
+  document.body.append(container)
+  root = createRoot(container)
+  await act(async () => root!.render(<SurfaceRoot bus={createInputBus()} korrid={client} surface={{
+    id: "observer", title: "Observer", displays: "all", presentations: ["catalog"],
+    render(props) { model = props.model; host = props.host; return null },
+  }} />))
+  for (let i = 0; i < 100 && !(model?.catalog._tag === "Ready" && model.catalog.games.some(game => game.id === "now-playing:running")); i++) {
+    await act(async () => { await Bun.sleep(5) })
+  }
+  await act(async () => { await client.sessionEnd("running"); host!.reload() })
+  for (let i = 0; i < 100 && requests.length < 2; i++) await act(async () => { await Bun.sleep(5) })
+  expect(requests).toEqual(["all", "all"])
 })

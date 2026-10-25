@@ -671,5 +671,19 @@ export function SurfaceRoot({
   )
 
   const surfaceModel = useSurfaceDisplays(model, surface, korrid)
+  const gameUsingDisplays = state._tag !== "Loading" && (
+    state._tag === "Preparing" || state._tag === "Starting" || state._tag === "Launching" || state._tag === "Stopping" ||
+    state.entries.some(entry => entry.kind === "now-playing")
+  )
+  const restoreCatalogDisplays = useRef(false)
+  useEffect(() => {
+    if (gameUsingDisplays) { restoreCatalogDisplays.current = true; return }
+    // The catalog stays mounted while a game owns the displays. Restore its
+    // viewport only after authoritative absence, never on a failed observation.
+    if (restoreCatalogDisplays.current && state._tag === "Ready" && state.unavailableSessionStatus === undefined) {
+      restoreCatalogDisplays.current = false
+      void korrid.surfaceDisplays(surface.displays ?? "main")
+    }
+  }, [gameUsingDisplays, korrid, state, surface.displays])
   return surface.render({ model: surfaceModel, host })
 }
