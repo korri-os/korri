@@ -374,6 +374,17 @@ impl Controller {
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
+            // Only members send or answer reach signals. A device with no other
+            // member, such as a local-only automatic owner, has nobody to reach
+            // and must not contact the public relays.
+            if self
+                .directory
+                .snapshot()
+                .is_ok_and(|peers| peers.is_empty())
+            {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            }
             let Ok(signal) =
                 CoordinatedRelays::new(relays, identity, Arc::new(WebSocketRelayTransport::new()))
             else {
