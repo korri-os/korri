@@ -259,9 +259,14 @@ impl NearbyLink {
                 .public_key()
                 .map_err(|_| NetworkFailure::unavailable())?;
             // A default route blocks AP creation, not scans or connections.
-            // A VPN can install a route outside NM.
+            // A VPN can install a route outside NM. At boot, NM can still be
+            // bringing up home Wi-Fi; an AP then would take the radio from it.
             let can_start = local.as_str() < peer
                 && !kernel_has_default_route
+                && matches!(
+                    tokio::time::timeout(CALL_TIMEOUT, nm::still_settling(&self.bus)).await,
+                    Ok(Ok(false))
+                )
                 && matches!(
                     tokio::time::timeout(CALL_TIMEOUT, nm::has_default_route(&self.bus)).await,
                     Ok(Ok(false))

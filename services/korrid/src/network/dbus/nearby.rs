@@ -27,6 +27,23 @@ pub(in crate::network) async fn has_default_route(bus: &Connection) -> zbus::Res
     Ok(false)
 }
 
+/// NetworkManager's global `NM_STATE_CONNECTING`.
+const NM_STATE_CONNECTING: u32 = 40;
+
+/// Whether NetworkManager may still bring up a home connection. `Startup` stays
+/// true until NM has tried every connection it can activate at boot. During that
+/// window a missing default route says nothing about the home network.
+pub(in crate::network) fn home_network_settling(startup: bool, state: u32) -> bool {
+    startup || state == NM_STATE_CONNECTING
+}
+
+pub(in crate::network) async fn still_settling(bus: &Connection) -> zbus::Result<bool> {
+    let manager = proxy(bus, ROOT, NM).await?;
+    let startup: bool = manager.get_property("Startup").await?;
+    let state: u32 = manager.get_property("State").await?;
+    Ok(home_network_settling(startup, state))
+}
+
 pub(in crate::network) async fn scan_for(
     bus: &Connection,
     ssid: &str,

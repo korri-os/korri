@@ -42,7 +42,10 @@ routes. The derived SSID identifies the nearby peer's network.
 
 If the scan finds no network, only the device with the lower public key can
 start an AP. Starting also requires both NetworkManager and the existing
-Linux route reader to report no IPv4 or IPv6 default route. A failed route
+Linux route reader to report no IPv4 or IPv6 default route. NetworkManager
+must also have finished its startup connection attempts and must not be
+connecting: at boot, a missing route only means home Wi-Fi is not up yet.
+A failed route
 read blocks AP creation. It does not block scanning or connecting. Devices
 cannot read each other's power state. Power does not select the starter.
 

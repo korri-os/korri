@@ -32,6 +32,8 @@ pub(in crate::network) struct State {
     clock: AtomicU32,
     deadline: AtomicU32,
     pub(in crate::network) default_route: AtomicBool,
+    /// NetworkManager's `Startup`: still activating boot connections.
+    pub(in crate::network) starting: AtomicBool,
 }
 const NEARBY_PROFILE: &str = "/nearby_profile";
 const CHECKPOINT: &str = "/checkpoint";
@@ -55,6 +57,15 @@ impl Manager {
     #[zbus(property)]
     fn active_connections(&self) -> Vec<OwnedObjectPath> {
         vec![path(ACTIVE_PATH)]
+    }
+    #[zbus(property)]
+    fn startup(&self) -> bool {
+        self.0.starting.load(Ordering::SeqCst)
+    }
+    /// `NM_STATE_CONNECTED_LOCAL`: up, no default route.
+    #[zbus(property)]
+    fn state(&self) -> u32 {
+        50
     }
     #[zbus(property)]
     fn checkpoints(&self) -> Vec<OwnedObjectPath> {

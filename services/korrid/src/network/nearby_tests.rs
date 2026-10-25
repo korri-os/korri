@@ -228,6 +228,16 @@ async fn nearby_trigger_starts_lower_key_without_default_route() {
             },
         )
         .unwrap();
+    // At boot NM is still bringing up home Wi-Fi: no AP may take the radio.
+    state.starting.store(true, Ordering::SeqCst);
+    link.tick(&mut backoff, &mut refresh_at, false)
+        .await
+        .unwrap();
+    assert!(!state.calls.lock().unwrap().contains(&"NearbyAP"));
+    assert!(link.link.is_none());
+    state.starting.store(false, Ordering::SeqCst);
+    backoff = Backoff::default();
+    state.scan_requests.store(0, Ordering::SeqCst);
     link.tick(&mut backoff, &mut refresh_at, false)
         .await
         .unwrap();
@@ -452,4 +462,16 @@ async fn nearby_trigger_scans_once_with_either_default_route_and_no_visible_netw
             "backoff blocks another scan"
         );
     }
+}
+
+#[test]
+fn nearby_ap_waits_while_networkmanager_may_still_bring_up_home_wifi() {
+    // Odin booted, saw no default route before NM joined home Wi-Fi, and started
+    // an AP that then held the radio. NM's Startup flag and CONNECTING state
+    // both mean a missing route is not yet evidence of no home network.
+    assert!(nm::home_network_settling(true, 70));
+    assert!(nm::home_network_settling(false, 40));
+    assert!(nm::home_network_settling(true, 20));
+    assert!(!nm::home_network_settling(false, 20));
+    assert!(!nm::home_network_settling(false, 70));
 }
