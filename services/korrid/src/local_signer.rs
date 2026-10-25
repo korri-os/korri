@@ -1756,10 +1756,12 @@ mod tests {
         }
         let expected_device = std::env::var("KORRI_SIGNER_RACE_DEVICE").unwrap();
         let signer = LocalPersonSigner::load_or_create(&root, &expected_device).unwrap();
-        println!(
-            "automatic-owner-public-key={}",
-            signer.keys.public_key().to_hex()
-        );
+        // Result bytes must not share libtest's human-readable stdout.
+        fs::write(
+            std::env::var_os("KORRI_SIGNER_RACE_RESULT").unwrap(),
+            signer.keys.public_key().to_hex(),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1771,8 +1773,9 @@ mod tests {
         let device = tempfile::tempdir().unwrap();
         let expected_device = device_public_key(device.path());
         let mut children = (0..8)
-            .map(|_| {
-                Command::new(&executable)
+            .map(|index| {
+                let result = root.path().join(format!("result-{index}"));
+                let child = Command::new(&executable)
                     .args([
                         "--exact",
                         "local_signer::tests::concurrent_key_creation_process_helper",
@@ -1780,29 +1783,25 @@ mod tests {
                     ])
                     .env("KORRI_SIGNER_RACE_ROOT", root.path())
                     .env("KORRI_SIGNER_RACE_DEVICE", &expected_device)
+                    .env("KORRI_SIGNER_RACE_RESULT", &result)
                     .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
                     .spawn()
-                    .unwrap()
+                    .unwrap();
+                (child, result)
             })
             .collect::<Vec<_>>();
         fs::write(root.path().join("go"), b"").unwrap();
 
         let mut owners = Vec::new();
-        for child in children.drain(..) {
+        for (child, result) in children.drain(..) {
             let output = child.wait_with_output().unwrap();
             assert!(
                 output.status.success(),
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            let stdout = String::from_utf8(output.stdout).unwrap();
-            owners.push(
-                stdout
-                    .lines()
-                    .find_map(|line| line.strip_prefix("automatic-owner-public-key="))
-                    .unwrap()
-                    .to_owned(),
-            );
+            owners.push(fs::read_to_string(result).unwrap());
         }
         assert!(owners.iter().all(|owner| owner == &owners[0]));
         let final_record =
