@@ -20,4 +20,8 @@ in
 assert upstream.version == "1.12";
 assert upstream.src.outputHash == "sha256-OcF7jOOHhFPhM5APn5riy8S5jsEr9jALCVh9nBtD7Nk=";
 assert upstreamWlroots.version == "0.20.2";
-pkgs.sway.override { sway-unwrapped = patched; }
+(pkgs.sway.override { sway-unwrapped = patched; }).overrideAttrs (old: {
+  passthru = (old.passthru or { }) // {
+    inherit wlroots;
+  };
+})
