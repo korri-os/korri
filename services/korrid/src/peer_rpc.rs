@@ -458,8 +458,18 @@ impl PeerRpcServer {
         })
     }
 
-    async fn handle(&self, event_json: &str, now: u64) -> Result<String, PeerRpcError> {
+    async fn handle(
+        &self,
+        event_json: &str,
+        now: u64,
+        admission: Option<&AdmissionPermit>,
+    ) -> Result<String, PeerRpcError> {
         let authenticated = self.authenticate(event_json, now, false).await?;
+        // Admission bounds buffered unauthenticated bodies and verification.
+        // An authenticated request's own work must not hold a permit.
+        if let Some(admission) = admission {
+            admission.release();
+        }
         let AuthenticatedPeerRequest {
             envelope,
             author,
@@ -552,13 +562,24 @@ impl PeerRpcServer {
     }
 }
 
-async fn peer_rpc(State(state): State<PeerRpcServer>, body: Bytes) -> Response {
+async fn peer_rpc(
+    State(state): State<PeerRpcServer>,
+    admission: Option<axum::Extension<AdmissionPermit>>,
+    body: Bytes,
+) -> Response {
     let event_json = match std::str::from_utf8(&body) {
         Ok(value) => value,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
     let now = (state.clock)();
-    match state.handle(event_json, now).await {
+    match state
+        .handle(
+            event_json,
+            now,
+            admission.as_ref().map(|admission| &admission.0),
+        )
+        .await
+    {
         Ok(response) => (
             StatusCode::OK,
             [(axum::http::header::CONTENT_TYPE, "application/json")],
@@ -577,7 +598,9 @@ async fn peer_rpc(State(state): State<PeerRpcServer>, body: Bytes) -> Response {
 
 // Admission precedes body extraction and signature verification. Four permits
 // bound buffered unauthenticated bodies to 24 MiB and verify/decrypt concurrency
-// to four. Streaming authenticated responses do not have a body-read deadline.
+// to four. /peer-rpc releases its permit once the request authenticates, so slow
+// authenticated work cannot starve admission for every other owner device.
+// Streaming authenticated responses do not have a body-read deadline.
 #[derive(Clone)]
 struct PeerRequestLimits {
     permits: Arc<tokio::sync::Semaphore>,
@@ -588,10 +611,13 @@ async fn limit_peer_request(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    let Ok(_permit) = limits.permits.try_acquire_owned() else {
+    let Ok(permit) = limits.permits.try_acquire_owned() else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
-    let (parts, body) = request.into_parts();
+    // Held until the handler releases it or the request completes.
+    let admission = AdmissionPermit(Arc::new(Mutex::new(Some(permit))));
+    let (mut parts, body) = request.into_parts();
+    parts.extensions.insert(admission.clone());
     let bytes = match tokio::time::timeout(
         limits.body_timeout,
         axum::body::to_bytes(body, MAX_PEER_EVENT_BYTES),
@@ -607,6 +633,18 @@ async fn limit_peer_request(
         axum::body::Body::from(bytes),
     ))
     .await
+}
+
+/// One admission permit, shared between the limiter and the request handler.
+#[derive(Clone)]
+struct AdmissionPermit(Arc<Mutex<Option<tokio::sync::OwnedSemaphorePermit>>>);
+
+impl AdmissionPermit {
+    fn release(&self) {
+        if let Ok(mut permit) = self.0.lock() {
+            permit.take();
+        }
+    }
 }
 
 async fn reject_plaintext() -> StatusCode {
@@ -867,6 +905,64 @@ mod tests {
             MAX_PEER_EVENT_BYTES,
             crate::identity::MAX_ENCRYPTED_PAYLOAD_BYTES
         );
+    }
+
+    #[tokio::test]
+    async fn released_admission_lets_other_peers_in_while_slow_work_continues() {
+        use axum::{body::Body, http::Request};
+        use std::time::Duration;
+        use tower::ServiceExt;
+        let permits = Arc::new(tokio::sync::Semaphore::new(1));
+        let limits = PeerRequestLimits {
+            permits: permits.clone(),
+            body_timeout: Duration::from_millis(200),
+        };
+        let (finish, finished) = tokio::sync::oneshot::channel::<()>();
+        let finished = Arc::new(tokio::sync::Mutex::new(Some(finished)));
+        let (released_tx, released) = tokio::sync::oneshot::channel::<()>();
+        let released_tx = Arc::new(Mutex::new(Some(released_tx)));
+        let app = Router::new()
+            .route(
+                "/peer-rpc",
+                axum::routing::post(
+                    move |axum::Extension(admission): axum::Extension<AdmissionPermit>| {
+                        let finished = finished.clone();
+                        let released_tx = released_tx.clone();
+                        async move {
+                            // Authenticated work: release, then keep running.
+                            admission.release();
+                            if let Some(sender) = released_tx.lock().unwrap().take() {
+                                let _ = sender.send(());
+                            }
+                            let pending = finished.lock().await.take();
+                            if let Some(pending) = pending {
+                                let _ = pending.await;
+                            }
+                            StatusCode::OK
+                        }
+                    },
+                ),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                limits,
+                limit_peer_request,
+            ));
+        let request = || {
+            Request::builder()
+                .method("POST")
+                .uri("/peer-rpc")
+                .body(Body::empty())
+                .unwrap()
+        };
+        let slow = tokio::spawn(app.clone().oneshot(request()));
+        released.await.unwrap();
+        assert_eq!(permits.available_permits(), 1);
+        assert_eq!(
+            app.clone().oneshot(request()).await.unwrap().status(),
+            StatusCode::OK
+        );
+        finish.send(()).unwrap();
+        assert_eq!(slow.await.unwrap().unwrap().status(), StatusCode::OK);
     }
 
     const NOW: u64 = 1_700_000_000;
