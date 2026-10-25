@@ -465,6 +465,7 @@ pub(crate) struct InMemoryLaunchUnitBackend {
     window_pids: Mutex<BTreeMap<String, BTreeSet<i32>>>,
     thawed: Mutex<Vec<String>>,
     launch_probe: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    hook_probe: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     stop_behavior: Mutex<StopBehavior>,
     state_unavailable: std::sync::atomic::AtomicBool,
     launch_state: Mutex<Option<LaunchUnitState>>,
@@ -474,6 +475,10 @@ pub(crate) struct InMemoryLaunchUnitBackend {
 impl InMemoryLaunchUnitBackend {
     pub(crate) fn set_launch_probe(&self, probe: Arc<dyn Fn() + Send + Sync>) {
         *self.launch_probe.lock().unwrap() = Some(probe);
+    }
+
+    pub(crate) fn set_hook_probe(&self, probe: Arc<dyn Fn() + Send + Sync>) {
+        *self.hook_probe.lock().unwrap() = Some(probe);
     }
 
     pub(crate) fn configure_stop(
@@ -530,6 +535,27 @@ impl InMemoryLaunchUnitBackend {
 
 #[cfg(test)]
 impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
+    fn run_hook(
+        &self,
+        _: &str,
+        _: usize,
+        _: &[String],
+        _: &str,
+        _: Duration,
+        _: &BTreeMap<String, String>,
+        _: &LaunchSandbox,
+    ) -> Result<(), LaunchUnitError> {
+        if let Some(probe) = self.hook_probe.lock().unwrap().clone() {
+            probe();
+            Ok(())
+        } else {
+            Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Failed,
+                "hook execution unavailable",
+            ))
+        }
+    }
+
     fn window_pids(&self, launch_id: &str) -> Result<BTreeSet<i32>, LaunchUnitError> {
         Ok(self
             .window_pids

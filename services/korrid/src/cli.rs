@@ -71,7 +71,7 @@ async fn forward(
     Json(request): Json<ForwardRequest>,
 ) -> Result<Json<RpcResponse>, StatusCode> {
     // A local-only operation must never be sent off-device, even to its owner.
-    // The receiving peer still checks its unchanged policy independently.
+    // The receiving peer still checks its policy independently.
     if matches!(
         authorization::policy_for(&request.request),
         PeerPolicy::LocalOnly | PeerPolicy::LocalPortalOnly
@@ -178,3 +178,7 @@ pub(crate) fn settings_write_allowed(
 #[cfg(test)]
 #[path = "cli_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "cli_remote_tests.rs"]
+mod remote_tests;

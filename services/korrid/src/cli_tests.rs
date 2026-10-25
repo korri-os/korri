@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tower::ServiceExt;
 
 #[test]
-fn cli_has_browser_authority_without_changing_inputd_or_peers() {
+fn cli_has_browser_authority_without_changing_inputd() {
     for request in [
         RpcRequest::IdentityStatus(IdentityStatusRequest {}),
         RpcRequest::NetworkStatus(network::NetworkStatusRequest {}),

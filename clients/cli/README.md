@@ -159,7 +159,7 @@ existing effects remain through `plugins on` and `library folders rescan`.
 System launch-setting inspection does not require game context; see
 [the current wire limits](PLAY-LIBRARY.md#settings-and-current-producer-limits).
 Address/free-space facts and power RPCs are deferred.
-Remote session/plugin administration is not widened by this CLI.
+Same-owner remote play and plugin administration use the boundaries below.
 
 ## Add an area
 
@@ -187,7 +187,7 @@ name or ID, `/` to reset the filter, or `q` to cancel. No default is selected;
 an exact ID takes precedence even when it is numeric or `q`. Piped or JSON
 use stops with all matches and requires an exact ID/key. PeerList supplies verified owner membership;
 korrid checks signed membership and revocations again before forwarding.
-Forwarding uses the existing signed NativeClient transport and unchanged peer
+Forwarding uses the existing signed NativeClient transport and the explicit peer
 policy. Local-only methods still refuse forwarding and direct the person to
 SSH or local access. `--device` selects the device performing an operation,
 not a game's streaming route. Device rename takes one settings revision and
@@ -221,9 +221,98 @@ systemd capabilities; it is not a passing negative connection proof.
 | Verified same-owner peer | Newly supported | Still denied |
 | Other, unknown, guest, or household peer | Still denied | Still denied |
 
-The peer policy table itself is unchanged. Host settings snapshots now work for
-verified same-owner peers so rename can obtain the target's revision. Host peer
+Host settings snapshots work for verified same-owner peers so rename can obtain the target's revision. Host peer
 metadata advertises only `device-name`, not player count or credentials.
+
+## Remote play and plugin permission delta
+
+`--device` selects the device performing an operation, not a streaming route.
+The CLI sends every request to its own korrid. That korrid verifies current
+same-owner membership and forwards using the existing signed native peer
+transport. The receiving korrid verifies evidence and revocations independently.
+Ambiguous names stop before forwarding when piped; unavailable or unauthorized
+peers never fall back to this device.
+
+### Play
+
+Host game listing now uses the same installed-library producer as Brain game
+listing, including its diagnostics. Catalog/runner/settings preflight,
+`SelectedGameLaunch`, session status and leave/resume/end already have
+sufficient peer authority. No session permission
+row widens. `SavesCheck` remains local-only: remote play retains its refusal as
+an existing native `SavesCheck` Err, then sends the selected launch. JSON returns
+`[SavesCheck Err, SelectedGameLaunch outcome]`. Exit 1 reports the failed save
+observation even when the launch was accepted. Human output names the selected
+device and says both that the launch was accepted and that this device did not
+confirm its saves. Do not interpret that result as a clean preflight or retry it
+as though no launch happened.
+
+For a runner that declares save locations, the selected device checks its
+stored save history under the native launch transition lock. A known stored
+split refuses launch before hooks or the launch unit start. A runner with no
+declared save locations can launch because it cannot restore or capture that
+save history. This does not pull remote saves or confirm an unreachable peer's
+save state. Use local saves commands on the selected device to inspect or resolve
+that state. Local play keeps its current blocking preflight unchanged.
+
+Controls pin the observed launch ID before confirmation. The selected device
+checks that exact ID and its immutable starting-device journal. Another owner
+device cannot adopt the session, and peers cannot adopt a locally started
+session. Resume still needs real compositor focus proof. Selected launch now
+uses the existing durable security-mutation replay journal, as plugin mutations
+and exact-session controls already do.
+
+### Plugins
+
+The minimum widening covers the seven existing admin operations: installed and
+repository listing, repository add/remove, catalog, inspect, install-disabled,
+and enable/disable. It exposes no raw-cache install, update, source switch,
+remove/purge, restore, package build or publisher-trust mutation.
+
+Run `plugins review` and `plugins install --approval DIGEST` with the same
+`--device`. Both inspect the selected device's package and execution policy.
+Install re-inspects there and requires that exact digest. Enable re-derives the
+installed report and checks the stored approved digest there. A stale digest
+cannot install or enable a plugin. `--yes` never supplies that approval. There
+is no second manifest, approval store, or copied signing credential.
+
+The root plugin host retains its lock, publisher signatures, immutable package
+and dependency checks, native-artifact policy, receipts and no-build-on-target
+path. The security cost is explicit: compromise of a verified same-owner device
+now permits these plugin administration calls on its peers, including activation
+of previously approved native artifacts. Repository registration is not plugin
+approval. Removing a repository retains installed plugins and their state.
+
+| Caller | Selected launch/status/exact controls | Seven plugin admin operations | Saves check/choose/restore, identity, Wi-Fi, onboarding |
+| --- | --- | --- | --- |
+| Full browser / local person CLI | Unchanged | Unchanged | Unchanged, local only |
+| LocalSessions / ReadOnly browser | Existing session/read permissions | Still installed/repository listing only | Existing local permissions |
+| Verified same-owner peer | Existing authority; starter and exact ID required for controls | Newly supported; root host checks unchanged | Still denied |
+| Guest / household peer | Existing scoped stream authority only; no selected launch widening | Still denied | Still denied |
+| Unknown, other-owner or revoked peer | Still denied | Still denied | Still denied |
+| inputd LocalUnixControl | Unchanged | Still denied | Unchanged |
+| Trust reconciliation | Unchanged | Still denied | Unchanged |
+
+### Host-only process proof
+
+`cli::remote_tests` launches independent korrid runtime processes with real
+person sockets and signed native peer RPC. Launch units use the existing
+in-memory backend, so these tests never operate a physical device. The plugin
+proof also starts a plugin-host process and uses its real credential-checked
+admin handler, approval checks, receipts and enablement logic. Its configured
+artifact reports and native effects use the host's existing test runtime; this
+is not proof of a physical device, repository network or new publisher policy.
+Run the focused process proof in `nix develop .#korrid`:
+
+```sh
+cargo build --manifest-path clients/cli/Cargo.toml --bin korri
+export KORRI_REMOTE_CLI_BINARY="$CARGO_TARGET_DIR/debug/korri"
+cargo test --manifest-path services/korrid/Cargo.toml --lib cli::remote_tests::remote_process
+cargo test --manifest-path services/korrid/Cargo.toml --lib cli::remote_tests::remote_process_cli_play_keeps_save_refusal_and_resolves_target_library -- --ignored --exact
+cargo test --manifest-path services/korrid/plugin-host/Cargo.toml --lib remote_admin_process --no-run --message-format=json > /tmp/plugin-host-test-build.jsonl
+export KORRI_REMOTE_PLUGIN_HOST_TEST_BINARY="$(jq -r 'select(.reason == "compiler-artifact" and .target.kind == ["lib"] and .executable != null) | .executable' /tmp/plugin-host-test-build.jsonl)"
+cargo test --manifest-path services/korrid/Cargo.toml --lib cli::remote_tests::remote_process_plugin_approval_and_admin_boundary -- --ignored --exact
+```
 
 ## Product wire cut
 

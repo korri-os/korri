@@ -314,6 +314,21 @@ impl Host {
         self.graph_update_pending()?;
         validate_id(id)?;
         crate::catalog::validate_release_version(release)?;
+        // The configured test runtime supplies reports instead of downloading
+        // packages. Admin-socket process tests still use the real Host approval,
+        // receipt, enablement and lifecycle boundaries below.
+        #[cfg(test)]
+        if let Some(runtime) = self
+            .test_runtime
+            .as_ref()
+            .filter(|runtime| !runtime.real_packages)
+        {
+            let reports = runtime.reports.borrow();
+            return reports.values().find(|report| matches!(&report.provenance,
+                Provenance::Repository { source_url, plugin_id, release_version, .. }
+                    if source_url == source.as_str() && plugin_id == id && release_version == release
+            )).cloned().ok_or_else(|| "repository fixture release not found".into());
+        }
         let catalog = self.catalog(config, source)?;
         let record = catalog.record(id, release, current_platform())?;
         self.state.cleanup_staging()?;
@@ -5205,6 +5220,45 @@ mod tests {
             .borrow()
             .iter()
             .any(|event| event.starts_with("start:")));
+    }
+
+    /// Launched explicitly by korrid's two-process remote administration test.
+    /// Artifacts and native effects use Host's configured test runtime; the
+    /// socket credentials, admin handler, approvals and receipts are real.
+    #[test]
+    #[ignore = "subprocess helper for korrid remote administration proof"]
+    fn remote_admin_process() {
+        use crate::admin::*;
+        let root = PathBuf::from(std::env::var_os("KORRI_REMOTE_PLUGIN_ROOT").expect("test root"));
+        let selected =
+            repository_report("@test:clock", "clock-v1", "https://catalog.example/", "v1");
+        let runtime = runtime(std::slice::from_ref(&selected));
+        let host = Host::for_test(
+            &root,
+            PathBuf::from("/unavailable-nix"),
+            permitted_policy(),
+            runtime.clone(),
+        )
+        .unwrap();
+        let config = admin_configuration(Some("https://catalog.example/"));
+        let listener = std::os::unix::net::UnixListener::bind(root.join("admin.sock")).unwrap();
+        for stream in listener.incoming() {
+            let stream = stream.unwrap();
+            serve_connection(stream, unsafe { libc::geteuid() }, |request| {
+                use std::io::Write;
+                let mut audit = fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(root.join("requests.jsonl"))
+                    .unwrap();
+                writeln!(audit, "{}", serde_json::to_string(&request).unwrap()).unwrap();
+                if root.join("stale-policy").exists() {
+                    change_policy(&runtime, &selected, "changed-policy-approval");
+                }
+                handle(&host, &config, request)
+            })
+            .unwrap();
+        }
     }
 
     fn admin_configuration(official: Option<&str>) -> Configuration {

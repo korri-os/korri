@@ -174,6 +174,8 @@ pub enum AuthorizationContext {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeerPolicy {
     LocalPortalOnly,
+    /// Person surfaces and verified owner devices, never inputd or reconciliation.
+    LocalPortalOrOwnerDevice,
     LocalOnly,
     OwnerDeviceOnly,
     ExplicitScope(Scope),
@@ -277,14 +279,15 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::IdentityNip46Switch(_)
         | RpcRequest::IdentityRetiredExport(_)
         | RpcRequest::IdentityRetiredDelete(_) => PeerPolicy::LocalOnly,
-        // Root plugin administration belongs to the person at this device.
+        // ADR 0031: root plugin administration also accepts verified owner
+        // devices. The root host still owns signatures and exact approvals.
         RpcRequest::PluginRepositories(_)
         | RpcRequest::PluginRepositoryAdd(_)
         | RpcRequest::PluginRepositoryRemove(_)
         | RpcRequest::PluginCatalog(_)
         | RpcRequest::PluginInspect(_)
         | RpcRequest::PluginInstall(_)
-        | RpcRequest::PluginSetEnabled(_) => PeerPolicy::LocalPortalOnly,
+        | RpcRequest::PluginSetEnabled(_) => PeerPolicy::LocalPortalOrOwnerDevice,
     }
 }
 
@@ -294,12 +297,15 @@ pub fn authorize(
 ) -> Result<(), AuthorizationDenied> {
     let allowed = match context {
         AuthorizationContext::LocalBrowser | AuthorizationContext::LocalCli => true,
-        AuthorizationContext::LocalUnixControl => {
-            policy_for(request) != PeerPolicy::LocalPortalOnly
-        }
+        AuthorizationContext::LocalUnixControl => !matches!(
+            policy_for(request),
+            PeerPolicy::LocalPortalOnly | PeerPolicy::LocalPortalOrOwnerDevice
+        ),
         AuthorizationContext::TrustReconciliation => !matches!(
             policy_for(request),
-            PeerPolicy::LocalOnly | PeerPolicy::LocalPortalOnly
+            PeerPolicy::LocalOnly
+                | PeerPolicy::LocalPortalOnly
+                | PeerPolicy::LocalPortalOrOwnerDevice
         ),
         AuthorizationContext::Peer(Principal::OwnerDevice { .. }) => !matches!(
             policy_for(request),
@@ -310,6 +316,7 @@ pub fn authorize(
             match policy_for(request) {
                 PeerPolicy::LocalOnly
                 | PeerPolicy::LocalPortalOnly
+                | PeerPolicy::LocalPortalOrOwnerDevice
                 | PeerPolicy::OwnerDeviceOnly => false,
                 PeerPolicy::ExplicitScope(scope) => principal.has_scope(scope),
                 PeerPolicy::CatalogOrStreamScope => {
@@ -331,6 +338,7 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::WifiConnectHidden(_)
             | RpcRequest::OnboardingFinish(_)
             | RpcRequest::OnboardingRestart(_)
+            | RpcRequest::SelectedGameLaunch(_)
             | RpcRequest::SessionEnd(_)
             | RpcRequest::SessionControlInvoke(_)
             | RpcRequest::SessionLeave(_)
@@ -1430,6 +1438,84 @@ mod tests {
                     .unwrap();
                 assert!(
                     authorize(attempt.context(), &request).is_err(),
+                    "{tag}: {tier}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn plugin_administration_widens_only_to_verified_same_owner_devices() {
+        let root = tempfile::tempdir().unwrap();
+        let authority = Authorization::load(root.path()).unwrap();
+        let owner = Keys::parse(OWNER).unwrap();
+        let other = Keys::parse(OTHER_OWNER).unwrap();
+        let owned = owner_statement(&owner, DEVICE, "owned", NOW);
+        let foreign = owner_statement(&other, DEVICE, "owned", NOW);
+        let revoked = owner_statement(&owner, DEVICE, "revoked", NOW + 1);
+        let allowed = authority
+            .attempt(&local(), DEVICE, Some(&owned), None, &[], NOW)
+            .unwrap();
+        for (tag, payload) in [
+            ("system.plugins.repositories", serde_json::json!({})),
+            (
+                "system.plugins.repository.add",
+                serde_json::json!({"url":"https://example.com"}),
+            ),
+            (
+                "system.plugins.repository.remove",
+                serde_json::json!({"url":"https://example.com"}),
+            ),
+            (
+                "system.plugins.catalog",
+                serde_json::json!({"url":"https://example.com"}),
+            ),
+            (
+                "system.plugins.inspect",
+                serde_json::json!({"url":"https://example.com", "pluginId":"@test:a", "releaseVersion":"1"}),
+            ),
+            (
+                "system.plugins.install",
+                serde_json::json!({"url":"https://example.com", "pluginId":"@test:a", "releaseVersion":"1", "approval":"digest"}),
+            ),
+            (
+                "system.plugins.setEnabled",
+                serde_json::json!({"id":"@test:a", "enabled":true}),
+            ),
+        ] {
+            let request = request(serde_json::json!({"_tag":tag,"payload":payload}));
+            assert_eq!(policy_for(&request), PeerPolicy::LocalPortalOrOwnerDevice);
+            for context in [
+                allowed.context(),
+                &AuthorizationContext::LocalBrowser,
+                &AuthorizationContext::LocalCli,
+            ] {
+                assert!(authorize(context, &request).is_ok(), "{tag}");
+            }
+            for context in [
+                AuthorizationContext::LocalUnixControl,
+                AuthorizationContext::TrustReconciliation,
+            ] {
+                assert!(authorize(&context, &request).is_err(), "{tag}");
+            }
+            for statement in [&foreign, &revoked] {
+                let denied = authority
+                    .attempt(&local(), DEVICE, Some(statement), None, &[], NOW)
+                    .unwrap();
+                assert!(authorize(denied.context(), &request).is_err(), "{tag}");
+            }
+            for tier in ["guest", "household"] {
+                let pass = pass(
+                    &owner,
+                    tier,
+                    &[STREAM_LAUNCH_SCOPE, CATALOG_READ_SCOPE],
+                    NOW + 60,
+                );
+                let denied = authority
+                    .attempt(&local(), DEVICE, Some(&foreign), Some(&pass), &[], NOW)
+                    .unwrap();
+                assert!(
+                    authorize(denied.context(), &request).is_err(),
                     "{tag}: {tier}"
                 );
             }
