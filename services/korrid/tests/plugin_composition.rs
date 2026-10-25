@@ -137,6 +137,101 @@ fn cli(command: &[String]) -> Command {
     process
 }
 #[test]
+fn plugin_prepare_prints_the_core_handoff_without_declared_effects() {
+    let root = tempfile::tempdir().unwrap();
+    let (command, input, _) = setup(root.path(), "{enabled: true}");
+    let expected = korrid::launcher::plugin_launch::prepare_command(&command).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_korrid"))
+        .env_clear()
+        .arg("plugin-prepare")
+        .args(&command[2..])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let record: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        record,
+        serde_json::from_str::<serde_json::Value>(&expected[5]).unwrap()
+    );
+    assert!(!Path::new(&input.account_root).exists());
+
+    // The emitted record is accepted by the actual launch entry point.
+    let launched = Command::new(env!("CARGO_BIN_EXE_korrid"))
+        .env_clear()
+        .arg("plugin-launch")
+        .args(&command[2..5])
+        .arg(String::from_utf8(output.stdout).unwrap().trim())
+        .output()
+        .unwrap();
+    assert!(
+        launched.status.success(),
+        "{}",
+        String::from_utf8_lossy(&launched.stderr)
+    );
+    assert!(Path::new(&input.account_root).join("game-ran").exists());
+}
+
+#[test]
+fn plugin_prepare_rejects_invalid_input_and_sandbox_effects() {
+    let root = tempfile::tempdir().unwrap();
+    let (command, input, _) = setup(root.path(), "{enabled: true}");
+    for args in [
+        vec![],
+        command[2..5].to_vec(),
+        vec![
+            command[2].clone(),
+            "{}".into(),
+            command[4].clone(),
+            command[5].clone(),
+        ],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_korrid"))
+            .env_clear()
+            .arg("plugin-prepare")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(!Path::new(&input.account_root).exists());
+    }
+    fs::write(
+        &command[2],
+        RUNNER.replace("command: input.program", "command: process.env.PROGRAM"),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_korrid"))
+        .env_clear()
+        .arg("plugin-prepare")
+        .args(&command[2..])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("process"));
+    assert!(!Path::new(&input.account_root).exists());
+}
+
+#[test]
+fn plugin_prepare_refuses_non_utf8_arguments() {
+    use std::os::unix::ffi::OsStringExt;
+    let output = Command::new(env!("CARGO_BIN_EXE_korrid"))
+        .env_clear()
+        .arg("plugin-prepare")
+        .arg(std::ffi::OsString::from_vec(vec![0xff]))
+        .args(["{}", "{}", "release"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("UTF-8"));
+}
+
+#[test]
 fn plugin_run_prepares_and_executes_a_fixture_through_the_public_cli() {
     let root = tempfile::tempdir().unwrap();
     let (command, input, _) = setup(root.path(), "{enabled: true}");

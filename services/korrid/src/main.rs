@@ -562,6 +562,37 @@ async fn main() {
     let arguments: Vec<OsString> = std::env::args_os().skip(1).collect();
     if arguments
         .first()
+        .is_some_and(|argument| argument == "plugin-prepare")
+    {
+        let result = (|| -> Result<String, String> {
+            if arguments.len() != 5 {
+                return Err(
+                    "usage: korrid plugin-prepare SOURCE INPUT_JSON COMPOSITION_JSON RELEASE_ID"
+                        .into(),
+                );
+            }
+            let mut command = vec!["korrid".to_owned()];
+            for argument in &arguments {
+                command.push(
+                    argument
+                        .to_str()
+                        .ok_or("plugin-prepare arguments must be UTF-8")?
+                        .to_owned(),
+                );
+            }
+            Ok(korrid::launcher::plugin_launch::prepare_command(&command)?[5].clone())
+        })();
+        match result {
+            Ok(record) => println!("{record}"),
+            Err(error) => {
+                eprintln!("korrid plugin-prepare: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    if arguments
+        .first()
         .is_some_and(|argument| argument == "plugin-run")
     {
         const USAGE: &str =
