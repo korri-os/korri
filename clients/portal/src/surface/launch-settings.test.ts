@@ -1023,6 +1023,7 @@ describe("korrid's snapshot as it is: a rejected value and plugin defaults by pa
   const GAMESCOPE = "@korri:gamescope/gamescope"
   const at = (layer: LaunchPlace["layer"], scope: LaunchPlace["scope"]): LaunchPlace => ({ layer, scope })
   const DEVICE_MOON = at({ _tag: "Device" }, { _tag: "Runner", id: MOON })
+  const samePlaceId = (a: LaunchPlace, b: LaunchPlace) => JSON.stringify(a) === JSON.stringify(b)
   const GAME_MOON = at({ _tag: "Game", id: "wario" }, { _tag: "Runner", id: MOON })
   const place = (where: LaunchPlace, title: string, body: unknown, kinds: string[]): LaunchPlaceSnapshot => ({ place: where, title, body, editableKinds: kinds })
   const codec = (value: unknown, pluginId: string): LaunchSourcedValue => ({
@@ -1079,6 +1080,48 @@ describe("korrid's snapshot as it is: a rejected value and plugin defaults by pa
     expect(at_("device/runner:@korri:moonlight/moonlight", "Codec")).toMatchObject({ value: "vp9", source: "Not applied: \"vp9\" is not one of auto, h264, h265, av1" })
     expect(at_("game:wario/runner:@korri:moonlight/moonlight", "Codec")).toMatchObject({ value: "Not set here", source: "h264 from Moonlight (default)" })
     expect(launchEditorFrom(snapshot, "wario").notes).toEqual(["Codec (Moonlight) isn't applied: \"vp9\" is not one of auto, h264, h265, av1."])
+  })
+
+  // korrid reports a malformed leaf it meets while folding, even when a more specific valid value wins.
+  const MALFORMED = "setting values must be scalars, nested objects or null"
+  const twoPlaces = (device: unknown, game: unknown, message: string): LaunchSnapshot => ({
+    ...snapshot,
+    places: snapshot.places.map(entry => samePlaceId(entry.place, DEVICE_MOON)
+      ? { ...entry, body: { settings: { video: { codec: device } } } }
+      : samePlaceId(entry.place, GAME_MOON) ? { ...entry, body: { settings: { video: { codec: game } } } } : entry),
+    runnerResolved: [{ runnerId: MOON, values: { "settings.video.codec": { ...codec(game, "@korri:moonlight"), source: { _tag: "Place", payload: GAME_MOON } } } }],
+    notices: [{ _tag: "SettingSkipped", payload: { path: { _tag: "Setting", payload: { key: "video.codec" } }, message, runnerId: MOON } }],
+  })
+  const rowsOf = (built: LaunchSnapshot) => {
+    const editor = launchEditorFrom(built, "wario")
+    return {
+      notes: editor.notes,
+      row: (placeId: string, label: string) => editor.places.find(entry => entry.id === placeId)?.groups.flatMap(group => group.items).find(item => item.label === label),
+    }
+  }
+
+  it("never marks the valid value in force as rejected; the malformed less specific value carries the skip", () => {
+    const { row, notes } = rowsOf(twoPlaces([1, 2], "h265", MALFORMED))
+    expect(row("game:wario/runner:@korri:moonlight/moonlight", "Codec")).toMatchObject({ value: "h265", source: "from Game for Moonlight" })
+    expect(row("device/runner:@korri:moonlight/moonlight", "Codec")?.source).toBe(`Not applied: ${MALFORMED}`)
+    expect(notes).toEqual([`Codec (Moonlight) isn't applied: ${MALFORMED}.`])
+  })
+
+  it("keeps a skip it cannot lay on a place in the notes only", () => {
+    // Both places hold values the schema takes: no row can be named.
+    const { row, notes } = rowsOf(twoPlaces("h264", "h265", "rejected by the plugin"))
+    expect(row("device/runner:@korri:moonlight/moonlight", "Codec")?.source).toBe("h265 from Game for Moonlight")
+    expect(row("game:wario/runner:@korri:moonlight/moonlight", "Codec")?.source).toBe("from Game for Moonlight")
+    expect(notes).toEqual(["Codec (Moonlight) isn't applied: rejected by the plugin."])
+  })
+
+  it("still reads a single rejected value as before: on its place, with the default in force elsewhere", () => {
+    const { row } = rowsOf(snapshot)
+    expect(row("device/runner:@korri:moonlight/moonlight", "Codec")?.source).toBe("Not applied: \"vp9\" is not one of auto, h264, h265, av1")
+    // A place that sets nothing names what holds, with its own source.
+    const pending = launchEditorFrom(snapshot, "wario", new Map([["game:wario/runner:@korri:moonlight/moonlight", [{ _tag: "Runner" as const, key: "video.codec" }]]]))
+    expect(pending.places.find(entry => entry.id === "game:wario/runner:@korri:moonlight/moonlight")?.groups.flatMap(group => group.items).find(item => item.label === "Codec")?.source)
+      .toBe("h264 from Moonlight (default)")
   })
 
   it("names a plugin default by the title of the contribution in its package, and by the package id only when none matches", () => {

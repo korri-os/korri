@@ -968,21 +968,48 @@ const profileInForce = (context: Context, place: LaunchPlace) =>
   place.layer._tag !== "Profile" || place.layer.id.profileId === context.snapshot.selectedProfile
 
 /**
- * Whether this place set the value korrid rejected at a path: the most
- * specific place in force that sets it. A more specific place that clears
- * it leaves no value to reject. This only finds who wrote the value; the
- * value in force is korrid's.
+ * Whether an authored value is one the schema takes at its leaf: a finite
+ * scalar of the leaf's type, in its choices and limits. A value at a path
+ * the schema does not describe, an array or an object, never is.
  */
-function rejectedHere(context: Context, owner: Owner, path: string): boolean {
-  let author: { readonly rank: number; readonly place: LaunchPlace; readonly value: unknown } | undefined
+function takes(leaf: Leaf | undefined, value: unknown): boolean {
+  if (leaf === undefined) return false
+  if (typeof value === "number" && !Number.isFinite(value)) return false
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return false
+  if (leaf.enum !== undefined) return leaf.enum.some(choice => choiceValue(choice) === choiceValue(value))
+  switch (leaf.type) {
+    case "boolean": if (typeof value !== "boolean") return false; break
+    case "integer": if (!Number.isInteger(value)) return false; break
+    case "number": if (typeof value !== "number") return false; break
+    case "string": if (typeof value !== "string") return false; break
+  }
+  if (typeof value === "number" && leaf.minimum !== undefined && value < leaf.minimum) return false
+  if (typeof value === "number" && leaf.maximum !== undefined && value > leaf.maximum) return false
+  return true
+}
+
+/**
+ * Whether this place wrote the value a skip at a path names. korrid reports
+ * a malformed value it meets while folding even when a more specific value
+ * wins, so the skip is laid on the most specific place in force whose value
+ * at the path the schema does not take, and never on the place whose value
+ * is in force. When no place can be named, the skip stays in the notes only.
+ * The value in force is korrid's; this only finds who wrote the bad one.
+ */
+function rejectedHere(context: Context, owner: Owner, path: string, resolved: LaunchSourcedValue | undefined): boolean {
+  const source = resolved?.source
+  if (source?._tag === "Place" && samePlace(source.payload, owner.place)) return false
+  const leaf = leafAt(owner.sections, path)
+  let author: { readonly rank: number; readonly place: LaunchPlace } | undefined
   for (const entry of context.places) {
     if (!owner.appliesAt(entry.place)) continue
     const leaves = ownLeaves(owner.authored(record(entry.body) ?? {}))
-    if (!leaves.has(path)) continue
+    const value = leaves.get(path)
+    if (!leaves.has(path) || value === null || takes(leaf, value)) continue
     const rank = mergeRank(entry.place)
-    if (author === undefined || rank > author.rank) author = { rank, place: entry.place, value: leaves.get(path) }
+    if (author === undefined || rank > author.rank) author = { rank, place: entry.place }
   }
-  return author !== undefined && author.value !== null && samePlace(author.place, owner.place)
+  return author !== undefined && samePlace(author.place, owner.place)
 }
 
 /**
@@ -999,17 +1026,20 @@ function settingSource(context: Context, owner: Owner, path: string, leaf: Leaf 
   const stream = streamRunner(context, scope) && scope._tag === "Runner"
   // korrid skips a value it rejects and puts what holds instead in force: the
   // place that set the rejected value says so; every other row names what holds.
-  const rejected = (skip: string | undefined) => skip !== undefined && own.set && !own.cleared && rejectedHere(context, owner, path) ? skip : undefined
+  const rejected = (skip: string | undefined, resolved: LaunchSourcedValue | undefined) =>
+    skip !== undefined && own.set && !own.cleared && rejectedHere(context, owner, path, resolved) ? skip : undefined
   if (stream && writePath._tag === "Setting") {
-    const skip = rejected(context.skipped(writePath, scope.id))
+    const resolved = context.streamResolved(scope.id, writePath)
+    const skip = rejected(context.skipped(writePath, scope.id), resolved)
     if (skip !== undefined) return `Not applied: ${skip.replace(/\.$/, "")}`
-    return inForceText(context, owner, context.streamResolved(scope.id, writePath), () => own.cleared ? fallback() : streamLine(context))
+    return inForceText(context, owner, resolved, () => own.cleared ? fallback() : streamLine(context))
   }
   const waiting = notInForceScope(context, scope)
   if (waiting !== undefined) return waiting
-  const skip = rejected(context.skipped(writePath))
+  const resolved = context.resolved(writePath)
+  const skip = rejected(context.skipped(writePath), resolved)
   if (skip !== undefined) return `Not applied: ${skip.replace(/\.$/, "")}`
-  return inForceText(context, owner, context.resolved(writePath), () => own.cleared ? fallback() : undefined)
+  return inForceText(context, owner, resolved, () => own.cleared ? fallback() : undefined)
 }
 
 /** A setting's value in force from one place's row: where it comes from. `none` speaks when nothing is in force. */
