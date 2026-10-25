@@ -29,8 +29,14 @@ program's language.
   cut, together with the engine change. Gamescope gains `settings.describe`
   in the same cut, so its settings appear in the editor.
 - `null` on a setting path clears every value that less specific places set
-  for that path. The plugin never sees `null`; it sees the path as not set.
-  Only a leaf can be cleared, not a whole section.
+  for that path. The plugin's declared default (ADR 0028's base layer) still
+  applies; the plugin never sees `null`. Only a leaf can be cleared, not a
+  whole section. The editor labels this choice "Default".
+- The editor shows one setting group per section, such as "Moonlight ·
+  Video", each with its own "Add setting" row.
+- RetroArch and Gamescope share `video.scaling.scaler`; RetroArch's
+  `integerScale` becomes `scaler: integer` and its `scale` becomes
+  `video.scaling.factor`.
 - An unknown setting or a bad value never stops a launch. korrid skips it,
   keeps it in the file, and shows a launch warning that names the path. This
   replaces Gamescope's refusal (`gamescope-setting`, `gamescope-setting-pair`).

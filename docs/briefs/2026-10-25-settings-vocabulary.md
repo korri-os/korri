@@ -411,13 +411,15 @@ inferred and not checked per SoC (`nvenc_*` ×8, `qsv_*` ×3, `amd_*` ×7,
 
 ## Open items
 
-1. **Scaling.** RetroArch has `video.scale` and `video.integer-scale`;
-   Gamescope has `video.scaling.scaler: integer`. They describe the same idea
-   in two forms. This draft leaves both until one form is chosen.
-2. **Where Sunshine's settings sit in a place.** Settled that they are
-   launch settings (ADR 0038); the key in the place body is open.
+None. Settled 2026-10-25:
 
-Settled 2026-10-25:
+- Scaling: one form, `video.scaling.scaler` (ADR 0037). In the RetroArch
+  block above, `video.scale` reads `video.scaling.factor` and
+  `video.integer-scale: true` reads `video.scaling.scaler: integer`;
+  RetroArch accepts `auto` and `integer` and warns on the rest.
+- Sunshine: launch settings under the place-body kind `services`, restarted
+  only when its resolved settings change (ADR 0038). The Sunshine block above
+  sits at `services.'@korri:sunshine/sunshine'.settings`.
 
 - Nested storage: leaf paths (ADR 0037).
 - RetroArch logging: `logging.level` accepts `info` and `verbose` (legacy

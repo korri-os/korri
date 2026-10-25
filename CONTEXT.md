@@ -226,8 +226,12 @@ The dotted name of one setting value inside its sections, such as `video.fps`. T
 _Avoid_: key (alone), option, flag
 
 **Cleared setting**:
-A setting path that a place sets to nothing, so values from less specific places no longer apply and the plugin behaves as if no place had set it.
+A setting path that a place sets to nothing, so values from less specific places no longer apply and the plugin's own default holds, as if no place had set it.
 _Avoid_: reset, unset, tombstone
+
+**Launch service**:
+A program that runs beside the game on the same device, such as the streaming host, whose settings are launch settings and take effect before the game starts.
+_Avoid_: daemon, companion, sidecar
 
 **Hook**:
 A command that runs on the device just before a game starts or just after its session ends, as the game's user and inside the game's sandbox.

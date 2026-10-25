@@ -9,13 +9,22 @@ setting, so a device, system, game or profile can set them, and korrid
 applies them by restarting Sunshine before the game starts, when no viewer is
 connected yet.
 
+Sunshine's settings sit under a new place-body kind, `services`, keyed by the
+service id: `services: {'@korri:sunshine/sunshine': {settings: …}}`. It has
+the storage shape of a modifier but no `enabled` switch and no
+`launch.compose` call. korrid restarts Sunshine only when the resolved
+settings differ from the ones it last applied.
+
 ## Considered options
 
 - **One set per device, applied only when no session runs.** Rejected: it
   needs a new section outside launch settings and allows no per-game values.
+- **Sunshine as a modifier.** Rejected: a modifier wraps the game's command,
+  and its `enabled` switch would need a meaning nobody has decided.
+- **Restart before every launch.** Rejected: every launch would pay the
+  restart.
 
 ## Consequences
 
 - A launch on a device with Sunshine can take a few seconds longer.
-- Where Sunshine's settings sit in a launch-settings place is decided
-  separately (open in `docs/briefs/2026-10-25-settings-vocabulary.md`).
+- ADR 0028's list of place-body kinds gains `services`.
