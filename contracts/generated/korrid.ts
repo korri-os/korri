@@ -653,6 +653,11 @@ export interface LaunchRouteContributor {
 	id: string;
 }
 
+export interface LaunchRunnerResolved {
+	runnerId: string;
+	values: Record<string, LaunchSourcedValue>;
+}
+
 export type LaunchRunnerFacts =
 	| { _tag: "Ready", payload: LaunchPrepareFacts }
 	| { _tag: "Unavailable", payload: string };
@@ -729,6 +734,7 @@ export interface LaunchSnapshot {
 	places: LaunchPlaceSnapshot[];
 	resolved: LaunchResolvedSnapshot;
 	runners: LaunchRunnerSnapshot[];
+	runnerResolved: LaunchRunnerResolved[];
 	modifiers: LaunchModifierSnapshot[];
 	services: LaunchServiceSnapshot[];
 	profiles: LaunchProfileSnapshot[];

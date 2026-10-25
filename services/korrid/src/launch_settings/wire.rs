@@ -130,7 +130,10 @@ pub struct LaunchModifierValues {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum LaunchNotice {
-    SettingSkipped { path: LaunchPath, message: String },
+    SettingSkipped {
+        path: LaunchPath,
+        message: String,
+    },
     RunnerUnavailable {
         #[serde(rename = "runnerId")]
         runner_id: String,
@@ -213,6 +216,7 @@ pub struct LaunchSnapshot {
     pub places: Vec<LaunchPlaceSnapshot>,
     pub resolved: LaunchResolvedSnapshot,
     pub runners: Vec<LaunchRunnerSnapshot>,
+    pub runner_resolved: Vec<LaunchRunnerResolved>,
     pub modifiers: Vec<LaunchModifierSnapshot>,
     pub services: Vec<LaunchServiceSnapshot>,
     pub profiles: Vec<LaunchProfileSnapshot>,
@@ -279,4 +283,12 @@ pub struct LaunchServiceSnapshot {
     pub schema: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revision: Option<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchRunnerResolved {
+    pub runner_id: String,
+    pub values: HashMap<String, LaunchSourcedValue>,
 }
