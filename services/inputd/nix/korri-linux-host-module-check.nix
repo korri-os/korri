@@ -72,8 +72,16 @@ let
       backend = "drm";
       drmDevice = "/dev/dri/card0";
       renderDevice = "/dev/dri/renderD128";
-      outputName = "DSI-1";
-      mode = "640x480@60Hz";
+      mainDisplay = "DSI-1";
+      displays = [
+        {
+          name = "DSI-1";
+          mode = "640x480@60Hz";
+          x = 0;
+          y = 0;
+          touch = null;
+        }
+      ];
       renderer = "gles2";
       localInput.enable = true;
     };

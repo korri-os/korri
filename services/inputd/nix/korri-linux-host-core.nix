@@ -13,7 +13,10 @@ let
   runtimeHome = config.users.users.${cfg.runtimeUser}.home or "/home/${cfg.runtimeUser}";
   runtimeDir = "/run/user/${toString cfg.runtimeUid}";
   compositorWorkspace = "korri:game:active";
-  compositorMode = builtins.match "^([1-9][0-9]*)x([1-9][0-9]*)@([1-9][0-9]*)Hz$" cfg.compositor.mode;
+  mainDisplay = lib.findFirst (
+    d: d.name == cfg.compositor.mainDisplay
+  ) (throw "main display missing") cfg.compositor.displays;
+  compositorMode = builtins.match "^([1-9][0-9]*)x([1-9][0-9]*)@([1-9][0-9]*)Hz$" mainDisplay.mode;
   compositorWidth = builtins.elemAt compositorMode 0;
   compositorHeight = builtins.elemAt compositorMode 1;
   compositorRefreshRate = builtins.elemAt compositorMode 2;
@@ -108,9 +111,17 @@ let
         id: ''input "${id}" events enabled''
       ) cfg.compositor.allowedInputIdentifiers}
     ''}
-    output ${cfg.compositor.outputName} mode ${cfg.compositor.mode}
-    output ${cfg.compositor.outputName} bg #000000 solid_color
-    workspace "${compositorWorkspace}" output ${cfg.compositor.outputName}
+    ${lib.removeSuffix "\n" (
+      lib.concatMapStringsSep "\n" (display: ''
+        output ${display.name} mode ${display.mode}
+        output ${display.name} bg #000000 solid_color${
+          lib.optionalString (
+            builtins.length cfg.compositor.displays > 1
+          ) "\noutput ${display.name} position ${toString display.x} ${toString display.y}"
+        }
+      '') cfg.compositor.displays
+    )}
+    workspace "${compositorWorkspace}" output ${cfg.compositor.mainDisplay}
     workspace "${compositorWorkspace}"
     ${cfg.compositor.extraConfig}
   '';
@@ -325,13 +336,31 @@ in
         default = null;
       };
       renderDevice = lib.mkOption { type = lib.types.str; };
-      outputName = lib.mkOption {
+      mainDisplay = lib.mkOption {
         type = lib.types.strMatching "^[A-Za-z0-9._-]+$";
         default = "HEADLESS-1";
       };
-      mode = lib.mkOption {
-        type = lib.types.strMatching "^[1-9][0-9]*x[1-9][0-9]*@[1-9][0-9]*Hz$";
-        default = "1920x1080@60Hz";
+      displays = lib.mkOption {
+        default = [
+          {
+            name = "HEADLESS-1";
+            mode = "1920x1080@60Hz";
+            x = 0;
+            y = 0;
+            touch = null;
+          }
+        ];
+        type = lib.types.listOf (
+          lib.types.submodule {
+            options = {
+              name = lib.mkOption { type = lib.types.strMatching "^[A-Za-z0-9._-]+$"; };
+              mode = lib.mkOption { type = lib.types.strMatching "^[1-9][0-9]*x[1-9][0-9]*@[1-9][0-9]*Hz$"; };
+              x = lib.mkOption { type = lib.types.int; };
+              y = lib.mkOption { type = lib.types.int; };
+              touch = lib.mkOption { type = lib.types.nullOr lib.types.str; };
+            };
+          }
+        );
       };
       extraConfig = lib.mkOption {
         type = lib.types.lines;
@@ -525,6 +554,25 @@ in
     });
 
     # Existing published socket, not a second compositor configuration.
+    systemd.services.korrid.environment.KORRID_DISPLAYS = builtins.toJSON (
+      map (
+        display:
+        let
+          mode = builtins.match "^([0-9]+)x([0-9]+)@.*$" display.mode;
+        in
+        {
+          inherit (display)
+            name
+            x
+            y
+            touch
+            ;
+          main = display.name == cfg.compositor.mainDisplay;
+          width = lib.toInt (builtins.elemAt mode 0);
+          height = lib.toInt (builtins.elemAt mode 1);
+        }
+      ) cfg.compositor.displays
+    );
     systemd.services.korrid.environment.KORRID_COMPOSITOR_WAYLAND_SOCKET =
       "${runtimeDir}/${waylandDisplay}";
 
@@ -562,7 +610,7 @@ in
         SWAYSOCK = compositorControlSocket;
         KORRI_WAYLAND_DISPLAY = waylandDisplay;
         KORRI_SWAY_CONFIG = swayConfig;
-        KORRI_COMPOSITOR_OUTPUT_NAME = cfg.compositor.outputName;
+        KORRI_COMPOSITOR_OUTPUT_NAME = cfg.compositor.mainDisplay;
         KORRI_COMPOSITOR_OUTPUT_WIDTH = compositorWidth;
         KORRI_COMPOSITOR_OUTPUT_HEIGHT = compositorHeight;
         WLR_RENDERER = cfg.compositor.renderer;

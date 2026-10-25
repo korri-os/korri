@@ -1020,8 +1020,8 @@ assert
   rg353m.services.korriLinuxHost.compositor.drmDevice
   == "/dev/dri/by-path/platform-display-subsystem-card";
 assert rg353m.services.korriLinuxHost.compositor.renderDevice == "/dev/dri/renderD128";
-assert rg353m.services.korriLinuxHost.compositor.outputName == "DSI-1";
-assert rg353m.services.korriLinuxHost.compositor.mode == "640x480@60Hz";
+assert rg353m.services.korriLinuxHost.compositor.mainDisplay == "DSI-1";
+assert (builtins.head rg353m.services.korriLinuxHost.compositor.displays).mode == "640x480@60Hz";
 assert rg353m.services.korriLinuxHost.compositor.localInput.enable;
 assert
   map lib.getName rg353m.services.korriLinuxInput.provider.extraDataPackages == [

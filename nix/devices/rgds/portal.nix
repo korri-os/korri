@@ -54,8 +54,16 @@ in
       localInput.enable = true;
       drmDevice = "/dev/dri/by-path/platform-display-subsystem-card";
       renderDevice = "/dev/dri/renderD128";
-      outputName = "DSI-1";
-      mode = "640x480@60Hz";
+      mainDisplay = "DSI-1";
+      displays = [
+        {
+          name = "DSI-1";
+          mode = "640x480@60Hz";
+          x = 0;
+          y = 0;
+          touch = null;
+        }
+      ];
       renderer = "gles2";
     };
   };

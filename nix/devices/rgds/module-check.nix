@@ -65,8 +65,8 @@ assert
   c.services.korriLinuxHost.compositor.drmDevice
   == "/dev/dri/by-path/platform-display-subsystem-card";
 assert c.services.korriLinuxHost.compositor.renderDevice == "/dev/dri/renderD128";
-assert c.services.korriLinuxHost.compositor.outputName == "DSI-1";
-assert c.services.korriLinuxHost.compositor.mode == "640x480@60Hz";
+assert c.services.korriLinuxHost.compositor.mainDisplay == "DSI-1";
+assert (builtins.head c.services.korriLinuxHost.compositor.displays).mode == "640x480@60Hz";
 assert c.services.korriLinuxHost.compositor.renderer == "gles2";
 assert builtins.match "/dev/dri/card[0-9]+" c.services.korriLinuxHost.compositor.drmDevice == null;
 assert c.services.korri.compositor.kiosk.extraChromiumArgs == [ "--disable-gpu" ];

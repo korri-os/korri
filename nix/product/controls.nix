@@ -130,7 +130,7 @@ in
       XDG_RUNTIME_DIR = runtimeDir;
       WAYLAND_DISPLAY = "korri-wayland";
       SWAYSOCK = "/run/korri-compositor/sway-ipc.sock";
-      KORRI_DISPLAY_OUTPUT = host.compositor.outputName;
+      KORRI_DISPLAY_OUTPUT = host.compositor.mainDisplay;
     };
     serviceConfig = {
       User = host.runtimeUser;

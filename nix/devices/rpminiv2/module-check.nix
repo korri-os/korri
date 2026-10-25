@@ -295,8 +295,8 @@ assert c.services.korriLinuxHost.compositor.localInput.enable;
 assert c.services.korriLinuxHost.compositor.backend == "drm";
 assert c.services.korriLinuxHost.compositor.drmDevice == "/dev/dri/card0";
 assert c.services.korriLinuxHost.compositor.renderDevice == "/dev/dri/renderD128";
-assert c.services.korriLinuxHost.compositor.outputName == "DSI-1";
-assert c.services.korriLinuxHost.compositor.mode == "1080x1240@60Hz";
+assert c.services.korriLinuxHost.compositor.mainDisplay == "DSI-1";
+assert (builtins.head c.services.korriLinuxHost.compositor.displays).mode == "1080x1240@60Hz";
 assert c.services.korriLinuxHost.compositor.renderer == "gles2";
 assert lib.hasInfix "output DSI-1 transform 90 scale 1"
   c.services.korriLinuxHost.compositor.extraConfig;

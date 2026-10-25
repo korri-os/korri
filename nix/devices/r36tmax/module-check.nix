@@ -99,8 +99,8 @@ assert
 assert
   c.services.korriLinuxHost.compositor.renderDevice
   == "/dev/dri/by-path/platform-ff400000.gpu-render";
-assert c.services.korriLinuxHost.compositor.outputName == "DSI-1";
-assert c.services.korriLinuxHost.compositor.mode == "720x720@61Hz";
+assert c.services.korriLinuxHost.compositor.mainDisplay == "DSI-1";
+assert (builtins.head c.services.korriLinuxHost.compositor.displays).mode == "720x720@61Hz";
 assert c.services.korriLinuxHost.compositor.renderer == "gles2";
 assert !c.services.korriLinuxHost.compositor.localInput.enable;
 # The shared product admits only reviewed plugin-created virtual inputs, even
