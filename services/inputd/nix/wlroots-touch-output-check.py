@@ -1,51 +1,42 @@
-"""Compile the patched init function itself against controlled libinput facts."""
+"""Guest-only fixture: real uinput devices, udev properties and compiled wlroots.
+
+Never run this fixture on a host: the NixOS VM check owns its input devices.
+No library functions or private implementation details are replaced.
+"""
+import contextlib
 import os
 from pathlib import Path
 import subprocess
 import sys
 
-source = Path(sys.argv[1]).read_text()
-start = source.index("void init_device_touch(")
-end = source.index("\n}", start) + 2
-function = source[start:end]
-header = r'''
-#include <assert.h>
-#include <stdlib.h>
-#include <string.h>
-#define WLR_ERROR 1
-struct libinput_device { const char *name; const char *output; };
-struct wlr_touch { char *output_name; double width_mm, height_mm; };
-struct wlr_libinput_input_device { struct libinput_device *handle; struct wlr_touch touch; };
-static const int libinput_touch_impl = 0;
-static const char *get_libinput_device_name(struct libinput_device *d) { return d->name; }
-static const char *libinput_device_get_output_name(struct libinput_device *d) { return d->output; }
-static void wlr_touch_init(struct wlr_touch *t, const int *impl, const char *name) {
-    (void)impl; (void)name; memset(t, 0, sizeof(*t));
+from evdev import AbsInfo, UInput, ecodes as e
+
+assert os.environ.get("KORRI_TOUCH_TEST_VM") == "1", "requires the isolated NixOS test guest"
+axes = {
+    e.EV_KEY: [e.BTN_TOUCH],
+    e.EV_ABS: [
+        (e.ABS_X, AbsInfo(0, 0, 639, 0, 0, 20)),
+        (e.ABS_Y, AbsInfo(0, 0, 479, 0, 0, 20)),
+        (e.ABS_MT_SLOT, AbsInfo(0, 0, 9, 0, 0, 0)),
+        (e.ABS_MT_TRACKING_ID, AbsInfo(0, 0, 65535, 0, 0, 0)),
+        (e.ABS_MT_POSITION_X, AbsInfo(0, 0, 639, 0, 0, 20)),
+        (e.ABS_MT_POSITION_Y, AbsInfo(0, 0, 479, 0, 0, 20)),
+    ],
 }
-static void libinput_device_get_size(struct libinput_device *d, double *w, double *h) {
-    (void)d; *w = 100; *h = 75;
-}
-static void wlr_log(int level, const char *message) { (void)level; (void)message; }
-'''
-main = r'''
-int main(void) {
-    const char *outputs[] = {NULL, "", "DSI-2", "DSI-1"};
-    for (unsigned i = 0; i < sizeof(outputs)/sizeof(outputs[0]); ++i) {
-        struct libinput_device input = {"Goodix Capacitive TouchScreen", outputs[i]};
-        struct wlr_libinput_input_device dev = {.handle = &input};
-        init_device_touch(&dev);
-        assert(dev.touch.width_mm == 100 && dev.touch.height_mm == 75);
-        if (outputs[i] == NULL || outputs[i][0] == '\0') {
-            assert(dev.touch.output_name == NULL);
-        } else {
-            assert(strcmp(dev.touch.output_name, outputs[i]) == 0);
-            assert(dev.touch.output_name != outputs[i]);
-        }
-        free(dev.touch.output_name);
-    }
-    return 0;
-}
-'''
-Path("touch-output-test.c").write_text(header + function + main)
-subprocess.run([os.environ.get("CC", "cc"), "-Wall", "-Wextra", "-Werror", "touch-output-test.c", "-o", "touch-output-test"], check=True)
-subprocess.run(["./touch-output-test"], check=True)
+with contextlib.ExitStack() as stack:
+    devices = [stack.enter_context(UInput(
+        axes, name="Korri Goodix fixture", vendor=1046, product=911,
+        phys=f"korri-touch-test/{position}", input_props=[e.INPUT_PROP_DIRECT],
+    )) for position in ("top", "bottom", "unmapped")]
+    subprocess.run(["udevadm", "settle"], check=True)
+    arguments = []
+    for device, output in zip(devices, ("DSI-2", "DSI-1", "-")):
+        node = device.device.path
+        properties = subprocess.check_output(["udevadm", "info", "--query=property", node], text=True).splitlines()
+        assert "ID_INPUT_TOUCHSCREEN=1" in properties, properties
+        if output != "-":
+            assert f"WL_OUTPUT={output}" in properties, properties
+        else:
+            assert not any(p.startswith("WL_OUTPUT=") for p in properties), properties
+        arguments.extend((Path(node).name, output))
+    subprocess.run([sys.argv[1], *arguments], check=True, timeout=15)

@@ -2,6 +2,12 @@
   pkgs,
   sway ? import ./sway-activity.nix { inherit pkgs; },
 }:
+let
+  touchOutput = import ./wlroots-touch-output-check.nix {
+    inherit pkgs;
+    wlroots = sway.wlroots;
+  };
+in
 pkgs.runCommand "sway-controller-activity-check"
   {
     nativeBuildInputs = [
@@ -12,18 +18,14 @@ pkgs.runCommand "sway-controller-activity-check"
       sway
       pkgs.swayidle
       pkgs.wev
-      pkgs.patch
       pkgs.coreutils
       pkgs.dbus
     ];
     buildInputs = [ pkgs.wayland ];
+    passthru.touchOutput = touchOutput;
   }
   ''
-    mkdir -p backend/libinput
-    cp ${pkgs.wlroots_0_20.src}/backend/libinput/touch.c backend/libinput/touch.c
-    chmod u+w backend/libinput/touch.c
-    patch -p1 < ${./wlroots-libinput-touch-output.patch}
-    python3 ${./wlroots-touch-output-check.py} backend/libinput/touch.c
+    test -e ${touchOutput}
     protocol=${pkgs.wlr-protocols}/share/wlr-protocols/unstable/wlr-virtual-pointer-unstable-v1.xml
     wayland-scanner client-header "$protocol" virtual-pointer.h
     wayland-scanner private-code "$protocol" virtual-pointer.c
