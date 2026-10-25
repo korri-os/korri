@@ -441,23 +441,6 @@ mod tests {
         assert!(choose(Some(&system()), &r, &displays()).is_err());
     }
     #[test]
-    fn idle_resume_restores_the_current_content_without_waking_empty_display() {
-        let dir = tempfile::tempdir().unwrap();
-        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
-        let ds = displays();
-        let mut single_pane_runner = runner();
-        single_pane_runner.layouts.clear();
-        let occupied = choose(None, &single_pane_runner, &ds).unwrap().outputs;
-        apply(&control, &power_commands(&ds, &[])).unwrap();
-        std::fs::write(dir.path().join("commands"), "").unwrap();
-        apply(&control, &power_commands(&ds, &occupied)).unwrap();
-        let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
-        assert!(commands.contains("output DSI-2 power on"));
-        assert!(commands.contains("output DSI-1 power off"));
-        assert!(!commands.contains("output DSI-1 power on"));
-    }
-
-    #[test]
     fn surface_opt_in_uses_viewport_rectangles_and_overlay_uses_one_display() {
         let ds = displays();
         assert_eq!(
@@ -484,7 +467,24 @@ mod tests {
         let program = directory.join("swaymsg");
         std::fs::write(directory.join("tree"),r#"{"nodes":[{"id":10,"pid":100,"app_id":"portal"},{"id":20,"pid":200,"app_id":"game"}]}"#).unwrap();
         std::fs::write(directory.join("reply"), reply).unwrap();
-        std::fs::write(&program, format!("#!/bin/sh\ncd '{}' || exit 1\nprintf '%s\\n' \"$@\" >> commands\ncase \"$*\" in *get_tree*) cat tree;; *) cat reply;; esac\n",directory.display())).unwrap();
+        std::fs::write(
+            &program,
+            format!(
+                r#"#!/bin/sh
+cd '{}' || exit 1
+for argument do command="$argument"; done
+case "$command" in get_tree) cat tree; exit;; esac
+printf '%s\n' "$command" >> commands
+if test -f reject && test "$command" = "$(cat reject)"; then
+    printf '[{{"success":false,"error":"refused"}}]'
+else
+    cat reply
+fi
+"#,
+                directory.display()
+            ),
+        )
+        .unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
         super::super::compositor_focus::SwaymsgCompositorControl::new(
             program,
@@ -539,7 +539,12 @@ mod tests {
     #[test]
     fn missing_window_and_command_rejection_are_errors_with_main_display_recovery() {
         let dir = tempfile::tempdir().unwrap();
-        let control = sway_program(dir.path(), r#"[{"success":false,"error":"refused"}]"#);
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        std::fs::write(
+            dir.path().join("reject"),
+            "[con_id=20] fullscreen enable global",
+        )
+        .unwrap();
         let ds = displays();
         let p = choose(Some(&system()), &runner(), &ds).unwrap();
         assert!(
@@ -552,7 +557,21 @@ mod tests {
             "refused"
         );
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
-        assert_eq!(commands.matches("output DSI-2 power on").count(), 2);
+        assert_eq!(
+            commands.lines().collect::<Vec<_>>(),
+            vec![
+                "output DSI-2 power on",
+                "output DSI-1 power on",
+                "[con_id=20] fullscreen disable",
+                "[con_id=20] move container to output DSI-2",
+                "[con_id=20] fullscreen enable global",
+                "output DSI-2 power on",
+                "output DSI-1 power off",
+                "[con_id=20] fullscreen disable",
+                "[con_id=20] move container to output DSI-2",
+                "[con_id=20] fullscreen enable",
+            ]
+        );
     }
 
     #[test]

@@ -3217,6 +3217,78 @@ mod tests {
     }
 
     #[test]
+    fn idle_resume_restores_only_the_single_pane_game_display() {
+        const CHILD: &str = "KORRI_DISPLAY_WAKE_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let result=std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact","host::session_state::tests::idle_resume_restores_only_the_single_pane_game_display","--nocapture"])
+                .env(CHILD,"1")
+                .env("KORRID_DISPLAYS",r#"[{"name":"DSI-2","main":true,"x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
+                .output().unwrap();
+            assert!(
+                result.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let program = root.path().join("swaymsg");
+        let tree = compositor_tree_with_focus(200, 3);
+        fs::write(root.path().join("tree"), tree).unwrap();
+        fs::write(
+            &program,
+            format!(
+                r#"#!/bin/sh
+cd '{}' || exit 1
+for argument do command="$argument"; done
+case "$command" in get_tree) cat tree; exit;; esac
+printf '%s\n' "$command" >> commands
+printf '[{{"success":true}}]'
+"#,
+                root.path().display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+        let compositor = Arc::new(
+            super::super::compositor_focus::SwaymsgCompositorControl::new(
+                program,
+                root.path().join("socket"),
+                Duration::from_secs(1),
+            )
+            .unwrap(),
+        );
+        let backend = Arc::new(DeterministicBackend::default());
+        let control = HostSessionControl::new(root.path(), backend.clone())
+            .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.into()]);
+        // Prepare a real session with no runner layouts, then observe its exact
+        // process/window through the normal public session-control path.
+        let prepared = prepare(&control, "one");
+        backend.set_pids(&prepared.launch_id, &[200]);
+        assert!(matches!(
+            control.status(),
+            HostSessionStatus::Running { .. }
+        ));
+        let placed = fs::read_to_string(root.path().join("commands")).unwrap();
+        assert!(placed.contains("[con_id=3] fullscreen enable\n"));
+        assert!(placed.contains("output DSI-1 power off\n"));
+        fs::write(root.path().join("commands"), "").unwrap();
+        compositor.command("output * power off").unwrap();
+        control.wake_displays().unwrap();
+        let restored = fs::read_to_string(root.path().join("commands")).unwrap();
+        assert_eq!(
+            restored.lines().collect::<Vec<_>>(),
+            vec![
+                "output * power off",
+                "output DSI-2 power on",
+                "output DSI-1 power off"
+            ]
+        );
+    }
+
+    #[test]
     fn idle_mutation_rejects_live_units_stopping_and_uncertain_recovery() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
