@@ -44,7 +44,10 @@ check_mounts() {
   [[ ! -e /nix-path-registration ]] || fail 'first-boot registration is incomplete; repair separately'
   for path in /boot /boot/extlinux /boot/nixos /nix/store /nix/var/nix/profiles; do
     [[ -d $path && ! -L $path ]] || fail "missing or symlink directory: $path"
-    [[ $(findmnt -T "$path" -n -o TARGET) == / ]] || fail "not on the root filesystem: $path"
+    # Compare filesystem identity, not mount targets: NixOS mounts /nix/store
+    # as a read-only bind of the same root filesystem (observed on the RG DS:
+    # SOURCE /dev/mmcblk0p2[/nix/store], same st_dev as /).
+    [[ $(stat -c %d "$path") == "$(stat -c %d /)" ]] || fail "not on the root filesystem: $path"
   done
   # Reject mounts below the two directories that will be written, but leave the
   # unrelated (normally unmounted) /boot/firmware alone.
