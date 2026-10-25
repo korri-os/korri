@@ -24,7 +24,6 @@ import type {
   LaunchDeviceFacts,
   LaunchLayer,
   LaunchContribution,
-  LaunchModifierSnapshot,
   LaunchNotice,
   LaunchPath,
   LaunchPlace,
@@ -452,7 +451,7 @@ export function createInMemoryLaunchSettings(
     const routeLayers = (gameId === undefined ? undefined : config.games?.[gameId]?.routeLayers)
       ?? (gameId !== undefined && inUse === undefined && runners.filter(runner => choosable(runner.id)).length > 1 ? { _tag: "NeedsRunnerChoice" as const } : { _tag: "Present" as const })
     const resolved = resolve(gameId, inUse)
-    const snapshot: LaunchSnapshot & { readonly services: readonly LaunchModifierSnapshot[] } = {
+    return {
       places,
       resolved: { values: resolved.values },
       runners: runners.map((runner): LaunchRunnerSnapshot => ({
@@ -486,7 +485,6 @@ export function createInMemoryLaunchSettings(
       routeLayers,
       revisions: revisions(),
     }
-    return snapshot
   }
 
   const setLaunch = async ({ place, path, value, clear: cleared = false, expectedRevision }: LaunchSetRequest): Promise<LaunchSettingsWriteOutcome> => {

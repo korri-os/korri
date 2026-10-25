@@ -28,6 +28,7 @@ import type {
   LaunchPlaceSnapshot,
   LaunchRunnerScope,
   LaunchRunnerSnapshot,
+  LaunchServiceSnapshot,
   LaunchSnapshot,
   LaunchSource,
   LaunchSourcedValue,
@@ -301,12 +302,6 @@ export function valueText(value: unknown): string {
   return JSON.stringify(value)
 }
 
-/** A launch service korrid lists: the shape of a modifier, with no switch. */
-export type LaunchServiceSnapshot = LaunchModifierSnapshot
-
-/** The launch services a snapshot lists. */
-export const servicesOf = (snapshot: LaunchSnapshot): readonly LaunchServiceSnapshot[] =>
-  (snapshot as LaunchSnapshot & { readonly services?: readonly LaunchServiceSnapshot[] }).services ?? []
 
 interface Context {
   readonly snapshot: LaunchSnapshot
@@ -364,7 +359,7 @@ function sourceTitle(context: Context, source: LaunchSource): string {
 function pluginTitle(context: Context, pluginId: string): string {
   const runner = context.snapshot.runners.find(candidate => candidate.id === pluginId)
   if (runner !== undefined) return context.runnerTitles.get(runner.id) ?? runner.title
-  return [...context.snapshot.modifiers, ...servicesOf(context.snapshot)].find(candidate => candidate.id === pluginId)?.title ?? pluginId
+  return [...context.snapshot.modifiers, ...context.snapshot.services].find(candidate => candidate.id === pluginId)?.title ?? pluginId
 }
 
 /** A runner korrid never offers as a game's runner (Moonlight): its
@@ -996,7 +991,7 @@ interface Plugin { readonly id: string; readonly title: string; readonly schema?
  * Plugins a place body names under one kind (modifiers, services): every
  * installed one korrid lists, then any a place names that it does not list.
  */
-function pluginsOf(context: Context, listed: readonly LaunchModifierSnapshot[], kind: "modifiers" | "services"): readonly Plugin[] {
+function pluginsOf(context: Context, listed: readonly (LaunchModifierSnapshot | LaunchServiceSnapshot)[], kind: "modifiers" | "services"): readonly Plugin[] {
   const known = listed.map(plugin => ({ id: plugin.id, title: plugin.title, ...(plugin.schema === undefined ? {} : { schema: plugin.schema }), listed: true }))
   const named = new Set<string>()
   for (const place of context.places) for (const id of Object.keys(record(record(place.body)?.[kind]) ?? {})) named.add(id)
@@ -1057,7 +1052,7 @@ function modifierGroups(context: Context, rows: Rows, placeId: string, place: La
  */
 function serviceGroups(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly PendingSetting[], rowId: (path: string) => string): SurfaceSettingGroup[] {
   const own = record(body.services) ?? {}
-  return pluginsOf(context, servicesOf(context.snapshot), "services").flatMap(service => settingGroups(context, rows, {
+  return pluginsOf(context, context.snapshot.services, "services").flatMap(service => settingGroups(context, rows, {
     placeId,
     place,
     title: service.title,
@@ -1309,7 +1304,7 @@ function skippedName(context: Context, path: LaunchPath): string {
     case "ModifierSetting":
     case "ServiceSetting": {
       const { id, key } = path.payload
-      const plugin = [...context.snapshot.modifiers, ...servicesOf(context.snapshot)].find(candidate => candidate.id === id)
+      const plugin = [...context.snapshot.modifiers, ...context.snapshot.services].find(candidate => candidate.id === id)
       return named(plugin?.title ?? id, plugin?.schema, key)
     }
     default:
