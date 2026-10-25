@@ -133,6 +133,18 @@ function liveGameIdsOf(state: LaunchablesState): string {
     .join("\n")
 }
 
+/**
+ * The launchable form of a game on this device. A host korrid lists its own
+ * library twice: as local games and as catalog games with `source.isLocal`.
+ * Folding prefers the local copy for display, but only the catalog copy has a
+ * launch path, so Play uses it.
+ */
+function launchableOnThisDevice(entry: PortalEntry): PortalEntry {
+  if (entry.kind !== "local-game") return entry
+  const copy = entry.alternatives?.find(copy => copy.kind === "remote" && copy.game.source.isLocal)
+  return copy?.kind === "remote" ? { kind: "game", game: copy.game } : entry
+}
+
 function localRunnerEntry(entry: PortalEntry | undefined): Extract<PortalEntry, { kind: "game" }> | undefined {
   if (entry?.kind === "game" && entry.game.source.isLocal && entry.game.supportsRunnerSelection) return entry
   if (entry?.kind !== "game" && entry?.kind !== "local-game") return undefined
@@ -476,7 +488,8 @@ export function SurfaceRoot({
         if (runner.getSnapshot()._tag !== "Closed" || launch.isOpen() || saves.getStatus() !== undefined || acquisition.getStatus() !== undefined || current._tag !== "Ready") return
         const entry = entryForId(current, id)
         if (!entry) return
-        const confirm = (chosen: PortalEntry) => {
+        const confirm = (picked: PortalEntry) => {
+          const chosen = launchableOnThisDevice(picked)
           if (chosen.kind !== "game" || !chosen.game.source.isLocal) {
             confirmEntry(chosen)
             return
