@@ -660,3 +660,30 @@ async fn two_file_progress(declare_first_size: bool) {
         second
     );
 }
+
+/// script.rs is also compiled into korri-plugin-host, which has no
+/// acquisition module, so this cross-module wire check lives here.
+#[test]
+fn js_number_byte_counts_reach_the_existing_integer_wire_field() {
+    let source = r#"export const name = 'catalog'; export const handlers = {
+        'claims.search': input => ({name: 'space_rescue.pyxapp', sizeBytes: Number(input.size)})
+    };"#;
+    let output =
+        crate::script::call_plugin_operation_ts(source, "claims.search", r#"{"size":4207}"#)
+            .unwrap();
+    let file: claims::ArtifactFile =
+        serde_json::from_str(&output).expect("a safe integer JS Number is an integer byte count");
+    assert_eq!(file.size_bytes, Some(4207));
+    for input in [
+        r#"{"size":4207.5}"#,
+        r#"{"size":-1}"#,
+        r#"{"size":9007199254740992}"#,
+    ] {
+        let output =
+            crate::script::call_plugin_operation_ts(source, "claims.search", input).unwrap();
+        assert!(
+            serde_json::from_str::<claims::ArtifactFile>(&output).is_err(),
+            "accepted {output}"
+        );
+    }
+}

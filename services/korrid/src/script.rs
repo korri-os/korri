@@ -647,28 +647,6 @@ mod tests {
     }
 
     #[test]
-    fn js_number_byte_counts_reach_the_existing_integer_wire_field() {
-        let source = r#"export const name = 'catalog'; export const handlers = {
-            'claims.search': input => ({name: 'space_rescue.pyxapp', sizeBytes: Number(input.size)})
-        };"#;
-        let output = call_plugin_operation_ts(source, "claims.search", r#"{"size":4207}"#).unwrap();
-        let file: crate::acquisition::claims::ArtifactFile = serde_json::from_str(&output)
-            .expect("a safe integer JS Number is an integer byte count");
-        assert_eq!(file.size_bytes, Some(4207));
-        for input in [
-            r#"{"size":4207.5}"#,
-            r#"{"size":-1}"#,
-            r#"{"size":9007199254740992}"#,
-        ] {
-            let output = call_plugin_operation_ts(source, "claims.search", input).unwrap();
-            assert!(
-                serde_json::from_str::<crate::acquisition::claims::ArtifactFile>(&output).is_err(),
-                "accepted {output}"
-            );
-        }
-    }
-
-    #[test]
     fn numeric_output_preserves_safe_integer_limits_and_fractions() {
         let source = "export const name = 'catalog'; export const handlers = {'claims.search': () => ({positive: Number.MAX_SAFE_INTEGER, negative: -Number.MAX_SAFE_INTEGER, zero: -0.0, fraction: 0.25, unsafe: Number.MAX_SAFE_INTEGER + 1})};";
         let output = call_plugin_operation_ts(source, "claims.search", "{}").unwrap();
