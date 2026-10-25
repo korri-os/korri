@@ -76,6 +76,8 @@ impl LaunchUnitError {
     }
 }
 
+pub(super) const PLACEMENT_ENV: &str = "KORRI_LIVE_PLACEMENT";
+
 pub(super) const RUNNER_ID_ENV: &str = "KORRI_LIVE_RUNNER_ID";
 
 /// Mount-driving launch facts are resolved once from the game unit's baseline.
@@ -184,6 +186,12 @@ pub trait LaunchUnitBackend: Send + Sync {
     /// Runner identity retained by the live transient unit. This is runtime
     /// discovery, not part of the durable active-session journal.
     fn runner_id(&self, _launch_id: &str) -> Result<Option<String>, LaunchUnitError> {
+        Ok(None)
+    }
+    fn placement(
+        &self,
+        _launch_id: &str,
+    ) -> Result<Option<super::display_placement::Placement>, LaunchUnitError> {
         Ok(None)
     }
     /// Processes of this launch, used to recognize its compositor windows.
@@ -480,6 +488,7 @@ type LaunchServiceProbe = Arc<dyn Fn() -> Result<(), LaunchUnitError> + Send + S
 pub(crate) struct InMemoryLaunchUnitBackend {
     units: Mutex<BTreeMap<String, LaunchUnitState>>,
     runners: Mutex<BTreeMap<String, String>>,
+    placements: Mutex<BTreeMap<String, super::display_placement::Placement>>,
     window_pids: Mutex<BTreeMap<String, BTreeSet<i32>>>,
     thawed: Mutex<Vec<String>>,
     frozen: Mutex<Vec<String>>,
@@ -619,6 +628,14 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
                 .unwrap()
                 .unwrap_or(LaunchUnitState::Running),
         );
+        if let Some(encoded) = environment.get(PLACEMENT_ENV) {
+            let placement = serde_json::from_str(encoded)
+                .map_err(|e| LaunchUnitError::new(LaunchUnitErrorKind::Protocol, e.to_string()))?;
+            self.placements
+                .lock()
+                .unwrap()
+                .insert(launch_id.into(), placement);
+        }
         if let Some(runner_id) = environment.get(RUNNER_ID_ENV) {
             self.runners
                 .lock()
@@ -711,6 +728,13 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
                 "unit is not active",
             )),
         }
+    }
+
+    fn placement(
+        &self,
+        launch_id: &str,
+    ) -> Result<Option<super::display_placement::Placement>, LaunchUnitError> {
+        Ok(self.placements.lock().unwrap().get(launch_id).cloned())
     }
 
     fn runner_id(&self, launch_id: &str) -> Result<Option<String>, LaunchUnitError> {
@@ -2242,6 +2266,34 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         Self::parse_runner_id(stdout.trim())
     }
 
+    fn placement(
+        &self,
+        launch_id: &str,
+    ) -> Result<Option<super::display_placement::Placement>, LaunchUnitError> {
+        let output =
+            self.require_success(&self.systemctl, &Self::runner_id_arguments(launch_id)?)?;
+        let value = std::str::from_utf8(&output.stdout)
+            .map_err(|e| LaunchUnitError::new(LaunchUnitErrorKind::Protocol, e.to_string()))?;
+        let serialized = value.trim().strip_prefix("Environment=").ok_or_else(|| {
+            LaunchUnitError::new(LaunchUnitErrorKind::Protocol, "missing Environment")
+        })?;
+        let mut placement = None;
+        for assignment in Self::parse_systemd_environment(serialized)? {
+            if let Some(value) = assignment.strip_prefix(&format!("{PLACEMENT_ENV}=")) {
+                if placement.is_some() {
+                    return Err(LaunchUnitError::new(
+                        LaunchUnitErrorKind::Protocol,
+                        "duplicate placement",
+                    ));
+                }
+                placement = Some(serde_json::from_str(value).map_err(|e| {
+                    LaunchUnitError::new(LaunchUnitErrorKind::Protocol, e.to_string())
+                })?);
+            }
+        }
+        Ok(placement)
+    }
+
     /// Stops the unit. systemd 259 refuses `stop` on a frozen unit
     /// ("Cannot perform operation on frozen unit"), so a unit observed
     /// frozen or in a freezer transition is thawed first. A thaw failure is
@@ -2852,6 +2904,44 @@ mod startup_diagnostic_tests {
                 "korrid traversed the game runtime directory"
             );
         }
+    }
+
+    #[test]
+    fn placement_recovers_from_exact_live_unit_environment_after_restart() {
+        let root = tempfile::tempdir().unwrap();
+        let helper = root.path().join("systemctl");
+        let plan = super::super::display_placement::Placement {
+            layout: Some("Top/Bottom".into()),
+            global: true,
+            width: 640,
+            height: 960,
+            outputs: vec!["DSI-2".into(), "DSI-1".into()],
+        };
+        let assignment = format!("{PLACEMENT_ENV}={}", serde_json::to_string(&plan).unwrap());
+        let environment = format!(
+            "Environment={}\n",
+            serde_json::to_string(&assignment).unwrap()
+        );
+        fs::write(root.path().join("reply"), environment).unwrap();
+        fs::write(
+            &helper,
+            format!("#!/bin/sh\ncat '{}'\n", root.path().join("reply").display()),
+        )
+        .unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        let backend = SystemdLaunchUnitBackend::new(
+            helper.clone(),
+            helper,
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+        )
+        .unwrap();
+        assert_eq!(
+            backend
+                .placement("0123456789abcdef0123456789abcdef")
+                .unwrap(),
+            Some(plan)
+        );
     }
 
     #[test]

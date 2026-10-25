@@ -40,6 +40,8 @@ pub struct PluginLaunchInput {
     pub netplay: Option<crate::netplay::PluginLaunchNetplay>,
     pub runner_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub family_id: Option<String>,
     pub program: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -201,6 +203,8 @@ pub struct LaunchComposition {
     pub netplay_config_source: Option<std::path::PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sunshine_args: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<crate::host::display_placement::Placement>,
     pub modifiers: Vec<ResolvedLaunchModifier>,
     #[serde(default)]
     pub env: std::collections::BTreeMap<String, Option<String>>,

@@ -68,6 +68,8 @@ impl PortalPermission {
             | RpcRequest::MoonlightCertificateAttest(_)
             | RpcRequest::MoonlightCertificateProvision(_)
             | RpcRequest::MoonlightCertificateRevoke(_)
+            | RpcRequest::DisplayWake(_)
+            | RpcRequest::SurfaceDisplays(_)
             | RpcRequest::SessionPrepare(_)
             | RpcRequest::SessionControlInvoke(_)
             | RpcRequest::SessionEnd(_)
@@ -108,7 +110,7 @@ impl PortalPermission {
                         RpcRequest::SessionPrepare(request) => request.host.as_deref().is_none_or(|host| {
                             !host.trim().is_empty() && host.len() <= 256 && !host.chars().any(char::is_control)
                         }),
-                        RpcRequest::InvitesNetplay(_) | RpcRequest::InvitesStreamPlay(_) | RpcRequest::InvitesDismiss(_) => true,
+                        RpcRequest::SurfaceDisplays(_) | RpcRequest::InvitesNetplay(_) | RpcRequest::InvitesStreamPlay(_) | RpcRequest::InvitesDismiss(_) => true,
                         RpcRequest::SettingsUpdate(request) => {
                             request.setting_id == crate::config::settings::PLAYER_COUNT_SETTING_ID
                                 || request.setting_id == crate::stream_play::person_name::SETTING_ID

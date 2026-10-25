@@ -1,4 +1,5 @@
 pub(crate) mod compositor_focus;
+pub mod display_placement;
 pub(crate) mod launch_diagnostics;
 #[cfg(test)]
 pub(crate) use compositor_focus::CompositorControl;
@@ -1398,6 +1399,30 @@ impl HostRuntime {
         })
         .await
         .map_err(host_worker_failure)?
+    }
+
+    pub(crate) async fn wake_displays(&self) -> Result<(), String> {
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || {
+            runtime.control().map_err(|e| e.message)?.wake_displays()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
+    pub(crate) async fn surface_displays(
+        &self,
+        request: display_placement::SurfaceDisplaysRequest,
+    ) -> Result<Vec<display_placement::SurfaceDisplay>, String> {
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || {
+            runtime
+                .control()
+                .map_err(|e| e.message)?
+                .surface_displays(request)
+        })
+        .await
+        .map_err(|e| e.to_string())?
     }
 
     fn control(&self) -> Result<&HostSessionControl, RpcFailure> {

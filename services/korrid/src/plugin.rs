@@ -39,6 +39,10 @@ pub struct SystemRecord {
     /// What one game of this system looks like (ADR 0001, contract section 1).
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub content: Option<ContentRecord>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub panes: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub arrangement: Option<String>,
 }
 
 /// `systems.<id>.content`: extensions, ordered layouts, evidence and header
@@ -250,6 +254,45 @@ pub struct RunnerRecord {
     pub program: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub core: Option<String>,
+    #[serde(default)]
+    pub layouts: BTreeMap<String, RunnerLayout>,
+}
+
+/// ADR 0039: fractions of the runner's window, supplied by its declaration.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PaneRect {
+    pub x: Fraction,
+    pub y: Fraction,
+    pub width: Fraction,
+    pub height: Fraction,
+}
+
+/// Finite unit interval; rejecting NaN also makes equality total.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fraction(f64);
+impl Fraction {
+    pub fn value(self) -> f64 {
+        self.0
+    }
+}
+impl Eq for Fraction {}
+impl<'de> Deserialize<'de> for Fraction {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = f64::deserialize(deserializer)?;
+        if value.is_finite() && (0.0..=1.0).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(serde::de::Error::custom("pane fraction must be in 0..1"))
+        }
+    }
+}
+impl Eq for PaneRect {}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RunnerLayout {
+    pub panes: BTreeMap<String, PaneRect>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -1144,6 +1187,24 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 record_id: local_id.clone(),
                 reason: format!("record id {} does not match its local key", system.id),
             });
+        }
+        if let Some(panes) = &system.panes {
+            let unique: BTreeSet<_> = panes.iter().collect();
+            if panes.is_empty() || unique.len() != panes.len() || panes.iter().any(|p| p.is_empty())
+            {
+                return Err(invalid_contribution(
+                    "system",
+                    local_id,
+                    "panes must be nonempty unique names",
+                ));
+            }
+        }
+        if system.arrangement.is_some() && system.panes.is_none() {
+            return Err(invalid_contribution(
+                "system",
+                local_id,
+                "arrangement requires panes",
+            ));
         }
         if let Some(content) = &system.content {
             validate_content(local_id, content)?;

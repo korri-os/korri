@@ -321,7 +321,10 @@ assert c.services.korriLinuxInput.inputd.actions.controller-activity.command == 
   "seat * idle_notify"
 ];
 assert !(recovery.systemd.services ? korri-display-idle);
-assert idle.environment.KORRI_DISPLAY_OUTPUT == "DSI-1";
+assert !(idle.environment ? KORRI_DISPLAY_OUTPUT);
+assert lib.hasInfix ''output "*" power off'' idle.serviceConfig.ExecStart.text;
+assert !(lib.hasInfix ''output "*" power on'' idle.serviceConfig.ExecStart.text);
+assert lib.hasInfix "korri-display-wake" idle.serviceConfig.ExecStart.text;
 assert idle.serviceConfig.User == c.services.korriLinuxHost.runtimeUser;
 assert idle.serviceConfig.Group == c.services.korriLinuxHost.runtimeGroup;
 assert
