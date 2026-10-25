@@ -262,6 +262,10 @@
               productModule = nixosModules.korri-product;
               configurations = self.nixosConfigurations;
             };
+            one-display-unchanged = import ./nix/product/one-display-unchanged-check.nix {
+              inherit pkgs;
+              korri = self;
+            };
             korri-product-module = import ./nix/product/module-check.nix {
               inherit pkgs nixpkgs;
               korri = self;
