@@ -266,7 +266,7 @@ impl CaptureRuntime {
             let classifier = SysfsSourceClassifier::system();
             let discovered = discover_physical_sources(dbus.connection(), &devices, &classifier)
                 .await
-                .map_err(|_| io::Error::other("physical discovery failed"))?;
+                .map_err(|error| io::Error::other(format!("physical discovery failed: {error}")))?;
             if self.owner.as_deref() != Some(discovered.owner.as_str()) {
                 return Err(io::Error::other("physical owner changed during discovery"));
             }
@@ -279,7 +279,9 @@ impl CaptureRuntime {
             let rediscovered =
                 discover_physical_sources(dbus.connection(), &after_open, &classifier)
                     .await
-                    .map_err(|_| io::Error::other("physical rediscovery failed after open"))?;
+                    .map_err(|error| {
+                        io::Error::other(format!("physical rediscovery failed after open: {error}"))
+                    })?;
             validate_after_open(
                 &discovered,
                 &rediscovered,
