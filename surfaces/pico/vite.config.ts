@@ -23,6 +23,22 @@ export default defineConfig({
       cssWidth: 720,
       cssHeight: 720,
       viewportNote: "From nix/devices/r36tmax/portal.nix: 720 x 720 DSI-1, scale 1. Millimetres assume a 4 in diagonal, which HARDWARE.md does not record.",
+    }, {
+      id: "rgds",
+      name: "RG DS",
+      widthMm: 81,
+      heightMm: 122,
+      cssWidth: 640,
+      cssHeight: 960,
+      viewportNote: "Both RG DS displays as one window: two 640 x 480 touch panels, the main one above. Millimetres inferred from two 4 in 4:3 panels with no hinge gap.",
+    }, {
+      id: "rgds-side",
+      name: "RG DS SIDE BY SIDE",
+      widthMm: 162,
+      heightMm: 61,
+      cssWidth: 1280,
+      cssHeight: 480,
+      viewportNote: "Not a real device: the RG DS displays side by side, to check that the split follows the rectangles.",
     }],
   })],
   // Vite answers 403 for host names it does not know. These are this machine's tailnet names.

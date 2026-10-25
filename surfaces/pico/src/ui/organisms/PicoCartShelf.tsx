@@ -28,6 +28,9 @@ import { PicoGameStage } from "./PicoGameStage"
  *
  * With `claimFocus`, the shelf puts the cursor on the chosen cart when it
  * appears, for an owner returning the player to the cart they left.
+ *
+ * With `stage="elsewhere"` another display shows the chosen cart, so the
+ * shelf is the rack alone, and its carts grow into the room the stage left.
  */
 export function PicoCartShelf({
   games,
@@ -36,6 +39,7 @@ export function PicoCartShelf({
   onOpen,
   claimFocus = false,
   onFocusClaimed,
+  stage = "here",
 }: {
   readonly games: readonly PicoShelfGame[]
   readonly selectedId: string | undefined
@@ -44,6 +48,8 @@ export function PicoCartShelf({
   /** Put the cursor on the chosen cart when this shelf appears. */
   readonly claimFocus?: boolean
   readonly onFocusClaimed?: () => void
+  /** Where the chosen cart's stage stands: on this screen, or on another display. */
+  readonly stage?: "here" | "elsewhere"
 }) {
   const rackRef = useRef<HTMLUListElement>(null)
   /* Whether the cursor is on this shelf already, and whether the next focus
@@ -110,8 +116,8 @@ export function PicoCartShelf({
   if (focused === undefined) return null
 
   return (
-    <section className="pico-cart-shelf">
-      <div className="pico-cart-shelf-stage">
+    <section className="pico-cart-shelf" data-stage={stage === "elsewhere" ? stage : undefined}>
+      {stage === "elsewhere" ? null : <div className="pico-cart-shelf-stage">
         <PicoGameStage
           artUrl={focused.artUrl}
           download={picoDownloadLabel(focused)}
@@ -126,7 +132,7 @@ export function PicoCartShelf({
             <PicoTally position={focusedIndex + 1} total={games.length} />
           </span>
         </PicoGameStage>
-      </div>
+      </div>}
       <ul
         aria-label="Shelf"
         className="pico-cart-shelf-rack"

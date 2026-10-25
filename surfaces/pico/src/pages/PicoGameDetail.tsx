@@ -19,6 +19,9 @@ const QUIET_HINTS = [{ hintKey: "b", label: "BACK" }] as const
  * The header reads "library › the game": Back leads to the library, and the
  * game is where you are. A launch location question and a destructive
  * action's confirmation both take the whole body while they are asked.
+ *
+ * With `stage="elsewhere"` another display shows the game (PicoShowcase), and
+ * this screen keeps the header, the deck and the questions.
  */
 export function PicoGameDetail({
   game,
@@ -31,6 +34,7 @@ export function PicoGameDetail({
   onCancelAction,
   onChooseLocation,
   clockLabel,
+  stage = "here",
 }: {
   readonly game: PicoDetailView
   readonly actions: readonly SurfaceAction[]
@@ -42,6 +46,8 @@ export function PicoGameDetail({
   readonly onCancelAction: () => void
   readonly onChooseLocation: (locationId: string) => void
   readonly clockLabel?: string
+  /** Where the game's stage stands: on this screen, or on another display. */
+  readonly stage?: "here" | "elsewhere"
 }) {
   return (
     <PicoScreenShell
@@ -56,6 +62,7 @@ export function PicoGameDetail({
           game={game}
           onPlay={onPlay}
           onRunAction={onRunAction}
+          stage={stage}
         />
       ) : (
         <PicoLocationPicker

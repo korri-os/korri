@@ -272,3 +272,9 @@
 	width: min(calc(var(--pico-px) * 12), 8cqh);
 	background: var(--pico-ink-quiet);
 }
+
+/* The words and the slot stand on another display: Korri's actions wait in
+ * the middle of this one. A list longer than the room starts at the top. */
+.pico-launch-stage[data-stage="elsewhere"] {
+	justify-content: safe center;
+}

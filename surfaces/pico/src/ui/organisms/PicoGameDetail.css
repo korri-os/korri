@@ -38,3 +38,18 @@
 	min-width: 0;
 	color: var(--pico-ink);
 }
+
+/* The deck: the game stands on another display, and its controls take this
+ * one, in the stage's own column spacing. A long list of Korri's actions
+ * starts at the top and scrolls; the host's focus brings a row into view. */
+.pico-game-detail-deck {
+	display: grid;
+	align-content: safe center;
+	justify-items: start;
+	gap: calc(var(--pico-u) * 3);
+	height: 100%;
+	padding: var(--pico-u) calc(var(--pico-u) * 2) var(--pico-drop);
+	overflow-y: auto;
+	scrollbar-width: none;
+	font-size: var(--pico-text-sm);
+}

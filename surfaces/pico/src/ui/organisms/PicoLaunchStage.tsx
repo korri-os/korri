@@ -38,6 +38,10 @@ export type PicoMeterMode = "clock" | "progress" | "indeterminate"
  * small pause mark under the words; a game this device does not hold has no
  * cart, and the pause mark itself stands in the slot instead, large. The
  * words and the actions are Korri's.
+ *
+ * With `stage="elsewhere"` another display shows the words, the meter and the
+ * slot, so this screen keeps only Korri's actions, and nothing at all when
+ * Korri offers none.
  */
 export function PicoLaunchStage({
   kicker,
@@ -47,6 +51,7 @@ export function PicoLaunchStage({
   progress,
   actions,
   phase = "starting",
+  stage = "here",
 }: {
   readonly kicker: string
   readonly detail?: string
@@ -63,6 +68,8 @@ export function PicoLaunchStage({
     readonly onPress: () => void
   }[]
   readonly phase?: "starting" | "running" | "paused"
+  /** Where the words, the meter and the slot stand: here, or on another display. */
+  readonly stage?: "here" | "elsewhere"
 }) {
   const mode: PicoMeterMode = progress === undefined ? "clock" : progress.total === undefined ? "indeterminate" : "progress"
   const lit = progress?.total === undefined ? undefined : picoMeterCells({ done: progress.done, total: progress.total })
@@ -87,9 +94,16 @@ export function PicoLaunchStage({
     const above = rows.slice(0, lastRow.current).reverse().map(enabled).find(button => button !== null)
     ;(below ?? above)?.focus()
   })
+  const here = stage === "here"
+  if (!here && (actions === undefined || actions.length === 0)) return null
   return (
-    <section aria-live="polite" className="pico-launch-stage" data-phase={phase}>
-      <div className="pico-launch-stage-words">
+    <section
+      aria-live={here ? "polite" : undefined}
+      className="pico-launch-stage"
+      data-phase={phase}
+      data-stage={here ? undefined : stage}
+    >
+      {here ? <div className="pico-launch-stage-words">
         <h1 className="pico-launch-stage-kicker">{kicker}</h1>
         {phase === "paused" ? (
           cart === undefined ? null : (
@@ -128,8 +142,8 @@ export function PicoLaunchStage({
         {detail === undefined ? null : (
           <p className="pico-launch-stage-detail">{detail}</p>
         )}
-      </div>
-      <div className="pico-launch-stage-slot">
+      </div> : null}
+      {here ? <div className="pico-launch-stage-slot">
         {cart === undefined && phase === "paused" ? (
           <span aria-hidden className="pico-launch-stage-held">
             <i className="pico-launch-stage-held-bar" />
@@ -142,7 +156,7 @@ export function PicoLaunchStage({
           </span>
         )}
         <span aria-hidden className="pico-launch-stage-mouth" />
-      </div>
+      </div> : null}
       {actions === undefined || actions.length === 0 ? null : (
         <ul
           className="pico-launch-stage-actions"

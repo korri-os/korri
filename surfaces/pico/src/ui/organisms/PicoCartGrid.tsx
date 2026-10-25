@@ -9,13 +9,18 @@ import { PicoCart } from "../molecules/PicoCart"
  * says games sharing a section arrive consecutively and the surface groups on
  * the change — a row per section is the most direct reading of that, and it is
  * what legacy's shelf grid drew.
+ *
+ * With `onSelect`, a cart the cursor lands on is reported, so a stage on
+ * another display can follow it as it follows the shelf.
  */
 export function PicoCartGrid({
   collections,
   onOpen,
+  onSelect,
 }: {
   readonly collections: readonly PicoCollection[]
   readonly onOpen: (gameId: string) => void
+  readonly onSelect?: (gameId: string) => void
 }) {
   return (
     <ul aria-label="Library by collection" className="pico-cart-grid">
@@ -29,6 +34,7 @@ export function PicoCartGrid({
                   artUrl={game.artUrl}
                   id={game.id}
                   onActivate={() => onOpen(game.id)}
+                  {...(onSelect === undefined ? {} : { onFocus: () => onSelect(game.id) })}
                   placement="side"
                   resumable={game.resumable}
                   subtitle={game.subtitle}

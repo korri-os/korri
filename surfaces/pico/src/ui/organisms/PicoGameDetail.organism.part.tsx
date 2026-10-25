@@ -23,6 +23,12 @@ export function WithLongProfile() {
   return <PicoGameDetail actions={createFixtureHost().gameActions(longTitleGame.id)} game={picoDetailViewFromGame({ ...longTitleGame, activeProfile: "Superextraordinarilyuncompromisingprofile" })} onPlay={() => undefined} onRunAction={() => undefined} />
 }
 
+/** The game stands on another display; this one is the deck. */
+export function StageElsewhere() {
+  const game = fixtureGame("hollow")
+  return <PicoGameDetail actions={createFixtureHost().gameActions(game.id)} game={picoDetailViewFromGame(game)} onPlay={() => undefined} onRunAction={() => undefined} stage="elsewhere" />
+}
+
 export const name = "Game Detail"
 export const note = "Only what Korri stated: never-played says so, resumable says CONTINUE"
 

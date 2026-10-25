@@ -34,3 +34,9 @@ export default function PicoGameHeroPart() {
     />
   )
 }
+
+/* The pick stands on the showing display; this display keeps OPEN. */
+export function StageElsewhere() {
+  const pick = picoHeroPick(fixtureShelfGames([longTitleGame]))!
+  return <PicoGameHero game={pick.game} reason={pick.reason} stage="elsewhere" stats={picoDetailViewFromGame(longTitleGame).stats} onOpen={() => undefined} />
+}

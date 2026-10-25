@@ -6,3 +6,10 @@
 .pico-game-hero-open {
 	display: flex;
 }
+
+/* The game stands on another display: OPEN waits in the middle of the room
+ * the stage left. */
+.pico-game-hero[data-stage="elsewhere"] {
+	display: grid;
+	place-items: center;
+}

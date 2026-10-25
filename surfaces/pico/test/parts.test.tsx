@@ -35,6 +35,8 @@ const TEXTLESS = new Set([
   "ui/atoms/PicoPaletteBar.atom.part.tsx",
   "ui/atoms/PicoPixelDisc.atom.part.tsx",
   "ui/molecules/PicoCart.molecule.part.tsx",
+  // The showing display with nothing to show: a slot and the palette.
+  "ui/molecules/PicoEmptySlot.molecule.part.tsx",
   // A meter, a padlock and signal bars are shapes named by aria-label, like
   // the disc above. Verified by eye in Caliper.
   "ui/atoms/PicoBusyMeter.atom.part.tsx",

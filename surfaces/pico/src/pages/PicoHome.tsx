@@ -99,6 +99,10 @@ function shelfReadout(games: readonly PicoShelfGame[]): string {
  * Failure copy is Korri's own, passed through untouched: the surface cannot
  * tell a missing file from an unreachable host, and guessing would put a wrong
  * explanation in front of the user.
+ *
+ * With `stage="elsewhere"` another display shows the chosen game or the launch
+ * under way (PicoShowcase), so home draws only what is chosen and pressed:
+ * the rack, the grid, OPEN, Korri's actions, the notices and the floor.
  */
 export function PicoHome({
   view,
@@ -118,6 +122,7 @@ export function PicoHome({
   onInviteAction,
   onLostInviteFocus,
   clockLabel,
+  stage = "here",
 }: {
   readonly view: PicoScreenView
   readonly mode: PicoHomeMode
@@ -143,6 +148,8 @@ export function PicoHome({
   /** The cursor was in PLAYING NOW and its last row went. */
   readonly onLostInviteFocus?: () => void
   readonly clockLabel?: string
+  /** Where the game's stage stands: on this screen, or on another display. */
+  readonly stage?: "here" | "elsewhere"
 }) {
   const asking = placing !== undefined && view._tag === "Shelf"
   const aim = menu?.aim
@@ -217,6 +224,7 @@ export function PicoHome({
                 onOpen={onOpenGame}
                 onSelect={onSelectGame}
                 selectedId={selectedGameId}
+                stage={stage}
               />
             ) : null}
 
@@ -230,6 +238,7 @@ export function PicoHome({
                       game={pick.game}
                       onOpen={() => onOpenGame(pick.game.id)}
                       reason={pick.reason}
+                      stage={stage}
                       stats={picoStatsFor(pick.game)}
                     />
                   )
@@ -245,6 +254,8 @@ export function PicoHome({
               <PicoCartGrid
                 collections={picoCollectionsFrom(view.games)}
                 onOpen={onOpenGame}
+                /* The stage elsewhere follows the cursor; here the grid has none. */
+                {...(stage === "elsewhere" ? { onSelect: onSelectGame } : {})}
               />
             ) : null}
 
@@ -297,6 +308,7 @@ export function PicoHome({
           detail={view.detail}
           kicker={view.kicker}
           progress={view.progress}
+          stage={stage}
           actions={view.actions?.map(action => ({
             id: action.id,
             label: action.label,
@@ -313,6 +325,7 @@ export function PicoHome({
           gameTitle={view.gameTitle}
           kicker={view.kicker}
           phase="running"
+          stage={stage}
         />
       ) : null}
 
@@ -351,6 +364,7 @@ export function PicoHome({
           detail={view.detail}
           kicker={view.kicker}
           phase="paused"
+          stage={stage}
         />
       ) : null}
 
