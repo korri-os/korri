@@ -72,17 +72,16 @@ impl Invites {
 
 pub(crate) fn spawn_watch(state: AppState) {
     tokio::spawn(async move {
-        let mut ticks = tokio::time::interval(Duration::from_millis(100));
+        // Invite discovery needs only its 2.5-second refresh cadence. The
+        // independent portal watch owns prompt exit/focus detection; list
+        // and join still check idle state on demand.
+        let mut ticks = tokio::time::interval(Duration::from_millis(2500));
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut was_idle = false;
-        let mut next = tokio::time::Instant::now();
         loop {
             ticks.tick().await;
-            let is_idle = idle(&state).await;
-            if is_idle && (!was_idle || tokio::time::Instant::now() >= next) {
-                next = tokio::time::Instant::now() + Duration::from_millis(2500);
+            if idle(&state).await {
                 state.invites.refresh(&state).await;
-            } else if !is_idle {
+            } else {
                 state
                     .invites
                     .cache
@@ -90,7 +89,6 @@ pub(crate) fn spawn_watch(state: AppState) {
                     .expect("invites mutex poisoned")
                     .clear();
             }
-            was_idle = is_idle;
         }
     });
 }

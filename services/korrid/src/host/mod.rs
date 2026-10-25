@@ -1970,6 +1970,7 @@ case "$3" in
         fi
         ;;
     show)
+        printf 'show\n' >> '{queries}'
         cat '{properties}'
         if test -e '{fail_after_query}'; then
             printf 'LoadState=loaded\nActiveState=failed\nFreezerState=running\nExecMainCode=1\nExecMainStatus=1\n' > '{properties}'
@@ -1984,6 +1985,7 @@ esac
 "#,
                 launch_refused = root.path().join("launch-refused").display(),
                 properties = properties.display(),
+                queries = root.path().join("unit-queries").display(),
                 fail_after_query = root.path().join("fail-after-query").display(),
                 reset_refused = root.path().join("reset-refused").display(),
             )).unwrap();
@@ -2079,6 +2081,23 @@ esac
             self.rpc(r#"{"_tag":"app.session.status","payload":{}}"#)
                 .await
         }
+    }
+
+    #[tokio::test]
+    async fn invites_watcher_limits_game_unit_queries_to_refresh_cadence() {
+        let fixture = GameUnitFixture::new();
+        fixture.runtime.prepare("one", None).await.unwrap();
+        let queries = fixture.root.path().join("unit-queries");
+        fs::write(&queries, "").unwrap();
+        let (state, _) = crate::app_states(fixture.runtime.clone());
+        crate::invites::device::spawn_watch(state);
+
+        // Exercise the real watcher and bounded systemctl subprocess seam.
+        // A running game needs no invite discovery. Two observations cover
+        // the immediate tick and the existing 2.5-second refresh cadence.
+        tokio::time::sleep(Duration::from_millis(2700)).await;
+        let count = fs::read_to_string(queries).unwrap().lines().count();
+        assert_eq!(count, 2, "invite watcher ran {count} systemctl show calls");
     }
 
     #[tokio::test]
