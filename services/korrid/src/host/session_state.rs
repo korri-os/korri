@@ -1478,6 +1478,35 @@ impl HostSessionControl {
                 None,
             )
         });
+        // The validated prepared plan is final. Hooks receive the command and
+        // environment, never mutable plan authority. A known save split must
+        // refuse before a before-hook can perform an effect. This observation
+        // does not capture initial saves or publish an automatic history join;
+        // the existing post-capture reconcile remains authoritative below.
+        if prepared_plan
+            .as_ref()
+            .is_some_and(|(_, prepared)| !prepared.plan.save_locations.is_empty())
+        {
+            let person = person_public_key.ok_or_else(|| {
+                failure(
+                    "SaveIdentityUnavailable",
+                    "save history requires a person identity",
+                )
+            })?;
+            let store = crate::saves::store::NativeSaveStore::new(
+                self.identity_root.parent().expect("private state root"),
+            );
+            if store
+                .reconciliation_status(person, game_id)
+                .map_err(|error| failure("SavesUnavailable", error.to_string()))?
+                == crate::saves::types::SaveMark::Split
+            {
+                return Err(failure(
+                    "SavesSplit",
+                    "Saves split between two devices. Choose one before launch.",
+                ));
+            }
+        }
         if let (Some(hooks), Some(environment)) = (hooks, &hook_environment) {
             super::hooks::before(
                 self.backend.as_ref(),

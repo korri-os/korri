@@ -135,6 +135,31 @@ fn publish(path: &Path, input: &mut dyn Read, expected: Option<&str>) -> Result<
     result
 }
 
+enum HistoryDecision {
+    Unchanged,
+    Split,
+    Join {
+        heads: Vec<SnapshotRecord>,
+        joined: SnapshotRecord,
+    },
+}
+
+/// Pure ancestry/progress decision shared by observation and reconciliation.
+fn history_decision(records: Vec<SnapshotRecord>) -> Result<HistoryDecision, SaveError> {
+    let ids = head_ids(&records)?;
+    if ids.len() <= 1 {
+        return Ok(HistoryDecision::Unchanged);
+    }
+    let heads: Vec<_> = records
+        .into_iter()
+        .filter(|record| ids.contains(&snapshot_id(record).expect("validated record")))
+        .collect();
+    Ok(match super::history::automatic_join(&heads)? {
+        None => HistoryDecision::Split,
+        Some(joined) => HistoryDecision::Join { heads, joined },
+    })
+}
+
 #[derive(Clone, Debug)]
 pub struct NativeSaveStore {
     root: PathBuf,
@@ -145,20 +170,24 @@ impl NativeSaveStore {
             root: private_state_root.join("saves"),
         }
     }
+    /// Observe the same history decision as reconcile without publishing a join.
+    pub(crate) fn reconciliation_status(
+        &self,
+        person: &str,
+        game: &str,
+    ) -> Result<SaveMark, SaveError> {
+        let _guard = lock()?;
+        Ok(match history_decision(self.read_records(person, game)?)? {
+            HistoryDecision::Split => SaveMark::Split,
+            HistoryDecision::Unchanged | HistoryDecision::Join { .. } => SaveMark::NotChecked,
+        })
+    }
     pub fn reconcile(&self, person: &str, game: &str) -> Result<SaveMark, SaveError> {
         let _guard = lock()?;
-        let records = self.read_records(person, game)?;
-        let ids = head_ids(&records)?;
-        if ids.len() <= 1 {
-            return Ok(SaveMark::NotChecked);
-        }
-        let heads: Vec<_> = records
-            .into_iter()
-            .filter(|r| ids.contains(&snapshot_id(r).expect("validated record")))
-            .collect();
-        match super::history::automatic_join(&heads)? {
-            None => Ok(SaveMark::Split),
-            Some(joined) => {
+        match history_decision(self.read_records(person, game)?)? {
+            HistoryDecision::Unchanged => Ok(SaveMark::NotChecked),
+            HistoryDecision::Split => Ok(SaveMark::Split),
+            HistoryDecision::Join { heads, joined } => {
                 // Never claim continuation until every side's content is durable.
                 for head in &heads {
                     if !self.record_complete(head)? {
@@ -1165,5 +1194,86 @@ fn runtime_directory(path: &Path, users: &Path) -> Result<(), SaveError> {
                 .map_err(io)
         }
         Err(e) => Err(io(e)),
+    }
+}
+
+#[cfg(test)]
+mod observation_tests {
+    use super::*;
+    use crate::saves::SaveRepository;
+    fn files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        fn walk(root: &Path, path: &Path, result: &mut BTreeMap<PathBuf, Vec<u8>>) {
+            for entry in fs::read_dir(path).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    walk(root, &path, result);
+                } else {
+                    result.insert(
+                        path.strip_prefix(root).unwrap().into(),
+                        fs::read(path).unwrap(),
+                    );
+                }
+            }
+        }
+        let mut result = BTreeMap::new();
+        walk(root, root, &mut result);
+        result
+    }
+    #[test]
+    fn observation_matches_reconciliation_without_changing_record_bytes() {
+        let person = "11".repeat(32);
+        for case in ["single", "join", "split"] {
+            let root = tempfile::tempdir().unwrap();
+            let store = NativeSaveStore::new(root.path());
+            for index in 0..if case == "single" { 1 } else { 2 } {
+                let content = if case == "split" && index == 1 {
+                    b"b"
+                } else {
+                    b"a"
+                };
+                let hash = super::super::record::hash(content);
+                let record = SnapshotRecord {
+                    parents: vec![],
+                    game_id: "game".into(),
+                    release_id: None,
+                    runner_id: "runner".into(),
+                    device: format!("{:02x}", index + 17).repeat(32),
+                    ended_at: "2026-10-21T00:00:00.000Z".into(),
+                    duration_seconds: 1,
+                    interrupted: false,
+                    locations: vec![SnapshotLocation {
+                        key: "saves".into(),
+                        kind: SaveKind::Save,
+                        files: vec![SaveFile {
+                            path: "game.srm".into(),
+                            sha256: hash.clone(),
+                            bytes: 1,
+                        }],
+                    }],
+                };
+                store.put_record(&person, &record).unwrap();
+                store
+                    .put_object(&person, &hash, &mut content.as_slice())
+                    .unwrap();
+            }
+            let before = files(root.path());
+            let observed = store.reconciliation_status(&person, "game").unwrap();
+            assert_eq!(files(root.path()), before, "{case}");
+            assert_eq!(
+                observed,
+                store.reconcile(&person, "game").unwrap(),
+                "{case}"
+            );
+            assert_eq!(
+                store.records(&person, "game").unwrap().len(),
+                if case == "join" {
+                    3
+                } else if case == "single" {
+                    1
+                } else {
+                    2
+                }
+            );
+        }
     }
 }

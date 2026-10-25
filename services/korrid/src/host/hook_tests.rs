@@ -636,3 +636,91 @@ fn layer_changes_and_unsets_do_not_change_the_game_sandbox_for_hooks_or_restart(
         }
     }
 }
+
+#[tokio::test]
+async fn stored_split_refuses_before_hooks_only_for_a_save_bearing_plan() {
+    use crate::saves::{record::hash, store::NativeSaveStore, types::*, SaveRepository};
+    const GAME: &str = crate::plugin_test_fixtures::GBA_ID;
+    for (saves, split) in [(true, true), (true, false), (false, true)] {
+        let root = tempfile::tempdir().unwrap();
+        crate::plugin_test_fixtures::write_gba_library(root.path());
+        std::fs::create_dir(root.path().join("roms")).unwrap();
+        std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
+        let registry = crate::plugin_test_fixtures::installed(root.path());
+        if saves {
+            let source = root.path().join("plugin-mgba/retroarch.ts");
+            let mut source = std::fs::OpenOptions::new()
+                .append(true)
+                .open(source)
+                .unwrap();
+            writeln!(source, "handlers[\"launch.prepare\"] = input => ({{command: input.program, args: [], saveLocations: [{{key: 'saves', kind: 'save', path: input.saveRoot + '/saves'}}]}});").unwrap();
+        }
+        let device = root.path().join("device.yaml");
+        let mut value: serde_yaml::Value =
+            serde_yaml::from_slice(&std::fs::read(&device).unwrap()).unwrap();
+        value["host"]["hooks"] = serde_yaml::from_str("before: [{run: before}]").unwrap();
+        std::fs::write(device, serde_yaml::to_string(&value).unwrap()).unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(&config, "label = 'test'\n").unwrap();
+        let backend = Arc::new(RecordingBackend::default());
+        let private = root.path().join("private");
+        let runtime = super::HostRuntime::from_paths_with_backend(
+            &config,
+            None,
+            private.clone(),
+            backend.clone(),
+        )
+        .with_route_registry(root.path().into(), registry);
+        runtime.claim_save_owner();
+        let person = runtime.owner_public_key().unwrap();
+        if split {
+            let store = NativeSaveStore::new(&private);
+            for content in [b"a", b"b"] {
+                let digest = hash(content);
+                let record = SnapshotRecord {
+                    parents: vec![],
+                    game_id: GAME.into(),
+                    release_id: None,
+                    runner_id: "@korri:mgba/mgba".into(),
+                    device: "11".repeat(32),
+                    ended_at: "2026-10-21T00:00:00.000Z".into(),
+                    duration_seconds: 1,
+                    interrupted: false,
+                    locations: vec![SnapshotLocation {
+                        key: "saves".into(),
+                        kind: SaveKind::Save,
+                        files: vec![SaveFile {
+                            path: "game.srm".into(),
+                            sha256: digest.clone(),
+                            bytes: 1,
+                        }],
+                    }],
+                };
+                store.put_record(&person, &record).unwrap();
+                store
+                    .put_object(&person, &digest, &mut content.as_slice())
+                    .unwrap();
+            }
+        }
+        let launch = runtime
+            .prepare_selected(
+                crate::game_routes::SelectedGameLaunchRequest {
+                    game_id: GAME.into(),
+                    runner_id: "@korri:mgba/mgba".into(),
+                    launch: None,
+                },
+                Some(&person),
+            )
+            .await;
+        if saves && split {
+            assert_eq!(launch.unwrap_err().code, "SavesSplit");
+            assert!(
+                backend.events.lock().unwrap().is_empty(),
+                "no hook or game effect may precede refusal"
+            );
+        } else {
+            launch.unwrap();
+            assert_eq!(*backend.events.lock().unwrap(), vec!["before", "game"]);
+        }
+    }
+}
