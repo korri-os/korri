@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Sent over SSH by run.py. No build, activation, block write or bootloader install.
 set -euo pipefail
+UPDATE_PROFILE_SUFFIX=rpminiv2
+UPDATE_CONFIG_NAME=grub.cfg
+UPDATE_SPACE_NAME=ESP
 
 fail() { echo "Mini V2 update refused: $*" >&2; return 1; }
 
@@ -36,61 +39,11 @@ check_mounts() {
   done
 }
 
-check_space() {
-  local available
-  available=$(df --output=avail --block-size=1 "$1" | tail -n 1)
-  [[ $available -ge $2 ]] || fail "ESP needs $2 bytes; only $available available"
-}
-
-# Each rename stays on one filesystem. sync also covers FAT metadata before
-# the profile changes. An interruption cannot truncate the active grub.cfg.
-atomic_copy() {
-  local source=$1 dest=$2 temp
-  [[ ! -L $dest ]] || fail "symlink destination: $dest"
-  temp=$(mktemp "${dest}.XXXXXX")
-  cp -- "$source" "$temp"
-  sync "$temp"
-  mv -T -- "$temp" "$dest"
-  sync "$(dirname "$dest")"
-}
-
-copy_payload() {
-  local source=$1 dest=$2
-  if [[ -e $dest || -L $dest ]]; then
-    if [[ -f $dest && ! -L $dest ]] && cmp -s -- "$source" "$dest"; then return; fi
-    fail "existing payload differs: $dest"
-  else
-    atomic_copy "$source" "$dest"
-  fi
-}
-
-rollback() {
-  local cfg=$1 profile=$2 previous
-  [[ -f $cfg.previous && ! -L $cfg.previous ]] || fail 'no previous grub.cfg'
-  previous=$(readlink -f "$profile-rpminiv2-previous")
-  [[ -d $previous ]] || fail 'previous system is missing'
-  # Backup and its GC-rooted profile must describe the same first entry.
-  [[ $(sed -n '/ init=/{s/.* init=\([^ ]*\)\/init.*/\1/;p;q;}' "$cfg.previous") == "$previous" ]] || fail 'backup/profile mismatch'
-  atomic_copy "$cfg.previous" "$cfg"
-  nix-env -p "$profile" --set "$previous"
-  sync
-}
-
-commit_update() {
-  local cfg=$1 profile=$2 candidate=$3 system=$4 previous
-  previous=$(readlink -f "$profile")
-  # A Nix profile roots the fallback closure even when old generations are GC'd.
-  nix-env -p "$profile-rpminiv2-previous" --set "$previous"
-  atomic_copy "$cfg" "$cfg.previous"
-  sync
-  # If setting the profile fails after the boot-file commit, repair both sides.
-  atomic_copy "$candidate" "$cfg"
-  if ! nix-env -p "$profile" --set "$system"; then
-    rollback "$cfg" "$profile"
-    fail 'profile update failed; restored previous selection'
-  fi
-  sync
-}
+# The SSH runner prepends the shared functions; offline tests source this file.
+if ! declare -F atomic_copy >/dev/null; then
+  # shellcheck source=nix/devices/system-update/target.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/../../system-update/target.sh"
+fi
 
 status() {
   printf 'current=%s\n' "$(readlink -f /run/current-system)"

@@ -170,6 +170,7 @@
           // {
             rg353m-inputplumber-data = rg353m.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             rgds-inputplumber-data = rgds.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
+            rgds-update-renderer = import ./nix/devices/rgds/update/renderer.nix { inherit pkgs; };
             rpminiv2-inputplumber-data = rpminiv2.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             h700-inputplumber-data = h700.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
@@ -305,6 +306,7 @@
             };
             rgds = rgds.moduleCheck pkgs;
             rgds-mpp = rgds.mppCheck pkgs;
+            rgds-update-firmware = import ./nix/devices/rgds/update/fixtures.nix { inherit pkgs; };
             h700 = import ./nix/devices/h700/module-check.nix {
               inherit pkgs;
               korri = self;

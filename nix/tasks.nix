@@ -133,11 +133,42 @@ let
         pkgs.shellcheck
       ];
       script = ''
-        shellcheck "$KORRI_ROOT/nix/devices/rpminiv2/update/target.sh"
+        shellcheck -x -P "$KORRI_ROOT" "$KORRI_ROOT/nix/devices/rpminiv2/update/target.sh"
         cd "$KORRI_ROOT"
         RP_MINIV2_TEST_FIRMWARE="$(nix build --no-link --print-out-paths .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2-update-firmware)"
         export RP_MINIV2_TEST_FIRMWARE
         exec python3 "$KORRI_ROOT/nix/devices/rpminiv2/update/update.test.py"
+      '';
+    };
+    rgds-update = {
+      description = "Build/sign on Zao and stage an RG DS eMMC-root update, inspect status, or restore its previous boot selection. Does not reboot.";
+      usageSuffix = " -- [--status | --rollback] [--expected-system STORE_PATH]";
+      runtimeInputs = [
+        pkgs.python3
+        pkgs.nix
+        pkgs.openssh
+      ];
+      script = ''
+        exec python3 "$KORRI_ROOT/nix/devices/rgds/update/run.py" "$@"
+      '';
+    };
+    rgds-update-check = {
+      description = "Test RG DS production extlinux rendering, root identity, staging, retention and exact rollback offline.";
+      runtimeInputs = [
+        pkgs.python3
+        pkgs.nix
+        pkgs.util-linux
+        pkgs.shellcheck
+      ];
+      script = ''
+        cd "$KORRI_ROOT"
+        shellcheck nix/devices/system-update/target.sh nix/devices/rgds/update/target.sh
+        RGDS_TEST_FIRMWARE="$(nix build --no-link --print-out-paths \
+          --option extra-substituters https://korri-os.github.io/nix-cache/ \
+          --option extra-trusted-public-keys korri-cache-ci-1:iH8gsPMtGrreeuXt2kt6M2ca+y4u/dO+T2km6AUuI8c= \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.rgds-update-firmware)"
+        export RGDS_TEST_FIRMWARE
+        exec python3 "$KORRI_ROOT/nix/devices/rgds/update/update.test.py"
       '';
     };
     rpminiv2-input-iterate = {

@@ -1,45 +1,25 @@
 #!/usr/bin/env python3
 """Build, sign and stage an internal-UFS Mini V2 system from Zao. Never reboot."""
 
-import argparse
-import base64
 import hashlib
 import io
 import os
 from pathlib import Path
 import re
-import shlex
-import socket
-import stat
 import subprocess
+import sys
 import tarfile
-import tempfile
 
 HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("KORRI_ROOT", HERE.parents[3]))
-SSH_OPTIONS = [
-    "-o",
-    "BatchMode=yes",
-    "-o",
-    "ConnectTimeout=10",
-    "-o",
-    "ServerAliveInterval=5",
-    "-o",
-    "ServerAliveCountMax=3",
-    "-o",
-    "StrictHostKeyChecking=yes",
-    "-p",
-    "2222",
-]
 TARGET = "root@10.42.3.1"
 SYSTEM = r"/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-nixos-system-rpminiv2-sd-card-[A-Za-z0-9+._=-]+"
 PAYLOAD = r"/EFI/nixos/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._=-]+"
-ZAO_KEY = "korri-cache-zao-1:thKjQnMnPl8AqTuZWJTn+ej9BORTPqzleGue4ZfJ2u4="
-
-
-def require(condition, message):
-    if not condition:
-        raise ValueError(message)
+DEVICE = "rpminiv2"
+CONFIG_NAME = "grub"
+# Both devices use the existing SSH/signing/profile transaction, not a new trust path.
+sys.path.insert(0, str(HERE.parents[1] / "system-update"))
+from runner import UpdateDevice, build, main, require  # noqa: E402
 
 
 def parse_grub(text):
@@ -104,46 +84,6 @@ def updated_grub(new, previous, current):
     return header + entries[0]["text"] + "\n" + fallback
 
 
-def remote(action, *args, archive=None):
-    source = base64.b64encode((HERE / "target.sh").read_bytes()).decode()
-    command = 'bash -c "$(printf %s ' + shlex.quote(source) + ' | base64 -d)" -- '
-    command += shlex.join([action, *args])
-    result = subprocess.run(
-        ["ssh", *SSH_OPTIONS, TARGET, command],
-        input=archive,
-        stdout=subprocess.PIPE,
-        check=False,
-    )
-    require(
-        result.returncode == 0,
-        f"remote {action} failed (exit {result.returncode}); see SSH stderr",
-    )
-    return result.stdout.decode()
-
-
-def display(output):
-    # Transport the exact config for checksum/race checks, not as user output.
-    print(
-        "\n".join(
-            line for line in output.splitlines() if not line.startswith("grub_base64=")
-        )
-    )
-
-
-def inspect():
-    output = remote("status")
-    fields = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
-    for key in ("current", "profile", "grub_sha256", "grub_base64"):
-        require(key in fields, "missing status field: " + key)
-    require(re.fullmatch(SYSTEM, fields["current"]), "unexpected booted system")
-    text = base64.b64decode(fields["grub_base64"], validate=True).decode()
-    require(
-        hashlib.sha256(text.encode()).hexdigest() == fields["grub_sha256"],
-        "GRUB status checksum mismatch",
-    )
-    return output, fields, text
-
-
 def archive_payload(firmware, grub):
     """Only regular, generated payloads, never device or symlink archive entries."""
     files = {"grub.cfg": grub.encode()}
@@ -170,133 +110,31 @@ def archive_payload(firmware, grub):
     return stream.getvalue(), required
 
 
-def build(attribute, out_link):
-    return Path(
-        subprocess.check_output(
-            [
-                "nix",
-                "build",
-                "--out-link",
-                str(out_link),
-                "--print-out-paths",
-                ".#" + attribute,
-            ],
-            cwd=ROOT,
-            text=True,
-        ).strip()
+def prepare(system: Path, temp: Path, previous: str, current: str) -> tuple[bytes, int]:
+    firmware = build(
+        UPDATE,
+        "nixosConfigurations.rpminiv2.config.system.build.rpminiv2Firmware",
+        temp / "firmware",
     )
+    new = (firmware / "boot/grub/grub.cfg").read_text()
+    require(parse_grub(new)[1][0]["system"] == str(system), "firmware/system mismatch")
+    return archive_payload(firmware, updated_grub(new, previous, current))
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    actions = parser.add_mutually_exclusive_group()
-    actions.add_argument(
-        "--status",
-        action="store_true",
-        help="read mount identity, booted/profile systems and GRUB selection",
-    )
-    actions.add_argument(
-        "--rollback",
-        action="store_true",
-        help="restore the on-device previous config and profile; does not reboot",
-    )
-    parser.add_argument(
-        "--expected-system",
-        help="approved current /run/current-system path; required for writes",
-    )
-    args = parser.parse_args()
-    if not args.status:
-        require(
-            args.expected_system and re.fullmatch(SYSTEM, args.expected_system),
-            "writes require --expected-system STORE_PATH",
-        )
-    output, before, previous = inspect()
-    if args.status:
-        display(output)
-        return
-    require(
-        before["current"] == args.expected_system,
-        "booted system does not match --expected-system",
-    )
-    if args.rollback:
-        display(remote("rollback", before["current"], before["grub_sha256"]))
-        return
-    require(
-        socket.gethostname().split(".")[0] == "zao", "sign and deploy from Zao only"
-    )
-    require(
-        before["profile"] == before["current"],
-        "profile differs from booted system; reboot or recover first",
-    )
-    key = Path.home() / ".config/korri/cache-key.secret"
-    info = key.stat()
-    require(
-        stat.S_ISREG(info.st_mode)
-        and info.st_uid == os.getuid()
-        and not info.st_mode & 0o077,
-        "signing key must be private and owned by this user",
-    )
-    with key.open("rb") as secret:
-        public = subprocess.check_output(
-            ["nix", "key", "convert-secret-to-public"],
-            stdin=secret,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        ).strip()
-    require(public == ZAO_KEY, "unexpected signing identity")
-    with tempfile.TemporaryDirectory(prefix="rpminiv2-update-") as temp:
-        # These links keep both results alive until staging has completed.
-        system = build(
-            "nixosConfigurations.rpminiv2.config.system.build.toplevel",
-            Path(temp) / "system",
-        )
-        firmware = build(
-            "nixosConfigurations.rpminiv2.config.system.build.rpminiv2Firmware",
-            Path(temp) / "firmware",
-        )
-        new = (firmware / "boot/grub/grub.cfg").read_text()
-        require(
-            parse_grub(new)[1][0]["system"] == str(system), "firmware/system mismatch"
-        )
-        grub = updated_grub(new, previous, before["current"])
-        archive, required = archive_payload(firmware, grub)
-        # A fresh read catches another worker changing boot state during builds.
-        _, now, _ = inspect()
-        require(now == before, "device changed during build; inspect again")
-        subprocess.run(
-            [
-                "nix",
-                "store",
-                "sign",
-                "--recursive",
-                "--key-file",
-                str(key),
-                str(system),
-            ],
-            check=True,
-        )
-        # The remote store retains require-sigs. Neither this copy nor the SSH
-        # script evaluates a flake, realises a derivation or dispatches a build.
-        subprocess.run(
-            ["nix", "copy", "--to", "ssh-ng://" + TARGET, str(system)],
-            check=True,
-            env={**os.environ, "NIX_SSHOPTS": shlex.join(SSH_OPTIONS)},
-        )
-        display(
-            remote(
-                "update",
-                before["current"],
-                before["grub_sha256"],
-                str(system),
-                str(required),
-                archive=archive,
-            )
-        )
-        print("New system:", system)
+UPDATE = UpdateDevice(
+    description=__doc__,
+    HERE=HERE,
+    ROOT=ROOT,
+    DEVICE=DEVICE,
+    TARGET=TARGET,
+    SYSTEM=SYSTEM,
+    CONFIG_NAME=CONFIG_NAME,
+    prepare=prepare,
+)
 
 
 if __name__ == "__main__":
     try:
-        main()
+        main(UPDATE)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         raise SystemExit("Mini V2 update failed: " + str(error)) from error
