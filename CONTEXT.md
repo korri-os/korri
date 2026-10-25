@@ -147,6 +147,14 @@ _Avoid_: screen, panel, output, monitor
 Where a device's displays sit relative to each other, such as one above the other or side by side. Built-in displays have a fixed arrangement that the device declares; a person arranges the displays they connect.
 _Avoid_: layout, display setup, topology
 
+**Main display**:
+The display that shows content with a single pane, the portal and Korri's own notices when nothing says otherwise. A device declares it; a device with one display has it as its main display.
+_Avoid_: primary screen, default output
+
+**Pane**:
+One image that a game or surface produces, such as the upper or lower picture of a Nintendo DS game. A game has one pane unless its system has more; each pane is shown on one display.
+_Avoid_: view, screen, picture, feed
+
 ### Content and discovery
 
 **System**:
