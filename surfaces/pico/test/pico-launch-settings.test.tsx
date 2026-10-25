@@ -433,7 +433,9 @@ describe("plugin settings by section", () => {
     expect(screen.getByText("MOONLIGHT · AUDIO")).toBeTruthy()
     const codec = screen.getByRole("button", { name: /^Codec/ }).closest("li")
     expect(codec?.textContent).toContain("h264 from Moonlight (default)")
-    expect(screen.getByRole("button", { name: /^FPS/ }).closest("li")?.textContent).toContain("Applies when this device streams the game")
+    const fps = screen.getByRole("button", { name: /^FPS/ }).closest("li")?.textContent
+    expect(fps).toContain("from Device for Moonlight")
+    expect(fps).toContain("Applies when this device streams the game.")
     const runner = launch.ready.places.find(place => place.id === "game:wario/any")?.groups.find(group => group.title === "Runner")?.items[0]?.interaction
     expect(runner?.kind === "choice" && runner.choices.map(choice => choice.label)).toEqual(["Inherit", "mGBA", "gpSP"])
   })

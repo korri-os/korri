@@ -769,7 +769,7 @@ const withMoonlight: InMemoryLaunchSettingsConfig = {
 }
 
 describe("Moonlight, a runner that only views streams", () => {
-  it("is its own scope with groups by section on a game page, and never a Runner choice", async () => {
+  it("is its own scope with groups by section on a game page, its values from korrid's stream fold, and never a Runner choice", async () => {
     const launch = await opened(withMoonlight)
     const editor = launch.getSnapshot().editor
     if (editor._tag !== "Ready") throw new Error(editor._tag)
@@ -778,13 +778,22 @@ describe("Moonlight, a runner that only views streams", () => {
     expect(titles(editor, GAME).slice(0, 2)).toEqual(["Moonlight · Video", "Moonlight · Audio"])
     const runner = row(editor, "game:wario/any", "Runner")?.interaction
     expect(runner?.kind === "choice" && runner.choices.map(choice => choice.label)).toEqual(["Inherit", "mGBA", "gpSP"])
-    expect(row(editor, GAME, "Channels")).toMatchObject({ value: "stereo", source: "Applies when this device streams the game", scope: "device" })
+    expect(row(editor, GAME, "Channels")).toMatchObject({ value: "stereo", source: "from Game for Moonlight", scope: "device", description: "Applies when this device streams the game." })
     // Its other rows say the same, never "Not in force: mGBA runs this game".
     expect(row(editor, GAME, "CPU max")?.source).toBe("Applies when this device streams the game")
     // The Device's cleared codec names Moonlight's default; HDR reads from its section.
     const DEVICE = `device/runner:${MOONLIGHT}`
     expect(row(editor, DEVICE, "Codec")).toMatchObject({ value: "Default", source: "h264 from Moonlight (default)" })
-    expect(row(editor, DEVICE, "FPS")).toMatchObject({ value: "30", source: "Applies when this device streams the game" })
+    expect(row(editor, DEVICE, "FPS")).toMatchObject({ value: "30", source: "from Device for Moonlight" })
+    // The Game inherits the Device's 30 through runnerResolved, never through resolved.values.
+    launch.change(LAUNCH_ID.set(GAME, "add-setting:video"), "video.fps")
+    expect(row(launch.getSnapshot().editor, GAME, "FPS")).toMatchObject({ value: "Not set here", source: "30 from Device for Moonlight" })
+    expect(row(launch.getSnapshot().editor, GAME, "Codec")).toBeUndefined()
+    launch.change(LAUNCH_ID.set(GAME, "add-setting:video"), "video.codec")
+    expect(row(launch.getSnapshot().editor, GAME, "Codec")?.source).toBe("h264 from Moonlight (default)")
+    // A leaf no place sets and with no default says when it applies.
+    launch.change(LAUNCH_ID.set(GAME, "add-setting:video"), "video.hdr.enable")
+    expect(row(launch.getSnapshot().editor, GAME, "HDR")?.source).toBe("Applies when this device streams the game")
     expect(groupOf(editor, DEVICE, "Moonlight · Video")?.items.at(-1)?.interaction).toMatchObject({ choices: [{ value: "video.hdr.enable", label: "HDR" }] })
     // Moonlight never runs the game, so it never asks for a choice either.
     expect(editor.notes).toEqual([])
@@ -800,7 +809,7 @@ describe("Moonlight, a runner that only views streams", () => {
     const video = groups()[1]
     const DEVICE = `device/runner:${MOONLIGHT}`
     expect(video?.items.map(item => [item.label, item.value, item.source])).toEqual([
-      ["FPS", "30", "Applies when this device streams a game"],
+      ["FPS", "30", "from Device for Moonlight"],
       ["Default FPS", "Use", undefined],
       ["Codec", "Default", "h264 from Moonlight (default)"],
       ["Add setting", "Choose a setting", undefined],

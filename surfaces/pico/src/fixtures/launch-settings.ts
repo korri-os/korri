@@ -248,6 +248,8 @@ interface Owner {
   readonly addPath: (section: string) => string
   /** Every row stays on this device (a modifier's, a service's, Moonlight's). */
   readonly device: boolean
+  /** Said before each row's description: when a stream runner's settings apply. */
+  readonly note?: string
 }
 
 /** A value one place sets: its JSON value, or `null` for Default (a Cleared setting). */
@@ -259,10 +261,11 @@ function leafRows(rowId: (path: string) => string, owner: Owner, leaf: Leaf, own
   const id = rowId(owner.rowPath(leaf.path))
   const cleared = own.value === null
   const scope = owner.device || leaf.device === true ? "device" as const : "shared" as const
+  const description = [owner.note, leaf.description].filter(part => part !== undefined).join(" ")
   const base = {
     id,
     label: leaf.label,
-    ...(leaf.description === undefined ? {} : { description: leaf.description }),
+    ...(description === "" ? {} : { description }),
     source: own.source,
     scope,
   }
@@ -424,12 +427,13 @@ const GAMESCOPE_SECTIONS: readonly Section[] = [
   { key: "window", title: "Window", leaves: [{ path: "window.borderless", label: "Borderless", kind: "toggle" }] },
 ]
 
-const runnerOwner = (title: string, sections: readonly Section[], device = false): Owner => ({
+const runnerOwner = (title: string, sections: readonly Section[], device = false, note?: string): Owner => ({
   title,
   sections,
   rowPath: path => `setting:${path}`,
   addPath: section => `add-setting:${section}`,
   device,
+  ...(note === undefined ? {} : { note }),
 })
 const SUNSHINE_ID = "@korri:sunshine/sunshine"
 const SUNSHINE: Owner = {
@@ -452,7 +456,8 @@ const GAMESCOPE: Owner = {
  * enum and a cleared Colour correction) and on the Device (a string, a
  * switch the Game clears, and, in the `skipped` world, an FPS limit korrid
  * does not apply); Moonlight's on the Device (30 FPS, its codec cleared to
- * Moonlight's default) and the Game (a resolution).
+ * Moonlight's default) and the Game (a resolution), sourced from korrid's
+ * fold for the stream viewer, each row saying when it applies.
  */
 function runnerSettingGroups(world: World, layer: Layer, scope: Scope): SurfaceSettingGroup[] {
   if (scope.kind === "any") return []
@@ -460,11 +465,11 @@ function runnerSettingGroups(world: World, layer: Layer, scope: Scope): SurfaceS
   const id = (path: string) => launchRowId(place, path)
   if (scope === MOONLIGHT) {
     const own: Record<string, Own> = place === "device/runner:@korri:moonlight/moonlight"
-      ? { "video.fps": { value: 30, source: STREAMS_GAME }, "video.codec": { value: null, source: "h264 from Moonlight (default)" } }
+      ? { "video.fps": { value: 30, source: "from Device for Moonlight" }, "video.codec": { value: null, source: "h264 from Moonlight (default)" } }
       : place === "game:wario/runner:@korri:moonlight/moonlight"
-        ? { "video.resolution.width": { value: 854, source: STREAMS_GAME }, "video.resolution.height": { value: 480, source: STREAMS_GAME } }
+        ? { "video.resolution.width": { value: 854, source: "from Game for Moonlight" }, "video.resolution.height": { value: 480, source: "from Game for Moonlight" } }
         : {}
-    return sectionGroups(id, runnerOwner("Moonlight", MOONLIGHT_SECTIONS, true), own)
+    return sectionGroups(id, runnerOwner("Moonlight", MOONLIGHT_SECTIONS, true, `${STREAMS_GAME}.`), own)
   }
   const sections = scope === GPSP ? GPSP_SECTIONS : scope.kind === "family" ? [...MGBA_SECTIONS, ...GPSP_SECTIONS] : MGBA_SECTIONS
   const title = scope.kind === "family" ? "Family retroarch" : scope.label
@@ -744,8 +749,8 @@ export const deviceLaunchGroups: readonly SurfaceSettingGroup[] = (() => {
   const items = [...(cpu?.items ?? []), ...(gpu?.items ?? [])].map(item => ({ ...item, id: item.id.replace("launch:set:device/any#", "launch-device:") }))
   const governor = items.find(item => item.label === "CPU governor")
   const deviceRow = (place: string) => (path: string) => `launch-device:set:${place}#${path}`
-  const moonlight = sectionGroups(deviceRow("device/runner:@korri:moonlight/moonlight"), runnerOwner("Moonlight", MOONLIGHT_SECTIONS, true), {
-    "video.fps": { value: 30, source: STREAMS_A_GAME },
+  const moonlight = sectionGroups(deviceRow("device/runner:@korri:moonlight/moonlight"), runnerOwner("Moonlight", MOONLIGHT_SECTIONS, true, `${STREAMS_A_GAME}.`), {
+    "video.fps": { value: 30, source: "from Device for Moonlight" },
     "video.codec": { value: null, source: "h264 from Moonlight (default)" },
   })
   return [

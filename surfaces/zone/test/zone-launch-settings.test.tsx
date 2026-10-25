@@ -318,7 +318,7 @@ describe("launch settings: plugin settings by section", () => {
   test("Moonlight is a runner scope of its own whose rows apply when this device streams", () => {
     const rows = rowsOf(scopeOf("Moonlight"), "Device")
     expect(rows.find(item => item.label === "Codec")).toMatchObject({ value: "Default", source: "h264 from Moonlight (default)", scope: "device" })
-    expect(rows.find(item => item.label === "FPS")?.source).toBe("Applies when this device streams the game")
+    expect(rows.find(item => item.label === "FPS")).toMatchObject({ source: "from Device for Moonlight", description: "Applies when this device streams the game." })
     expect(rows.find(item => item.label === "CPU min")?.source).toBe("Applies when this device streams the game")
     const runner = rowsOf(scopeOf("Any runner"), "Game").find(item => item.label === "Runner")?.interaction
     expect(runner?.kind === "choice" && runner.choices.map(choice => choice.label)).toEqual(["Inherit", "mGBA", "gpSP"])

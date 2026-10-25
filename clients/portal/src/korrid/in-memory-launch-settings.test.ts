@@ -193,4 +193,29 @@ describe("in-memory launch settings, korrid's rules", () => {
     expect(device.payload.places.map(entry => entry.title)).toEqual(["Device", "Device for Moonlight"])
     expect((await brain.methods.setLaunch({ place: place("game:wario/any"), path: { _tag: "Runner" }, value: "@korri:moonlight/moonlight", expectedRevision: "games-1" }))._tag).toBe("Err")
   })
+
+  it("resolves a stream runner as the stream viewer does: defaults, Device, then the game's system, game and picked profile", async () => {
+    const MOONLIGHT = "@korri:moonlight/moonlight"
+    const brain = createInMemoryLaunchSettings({
+      games: { wario: { systemId: "gba", releaseId: "usa", runners: ["retroarch/mgba"] } },
+      runners: { ...runners, [MOONLIGHT]: { title: "Moonlight", choosable: false, schema: { properties: { video: { type: "object", properties: { codec: { type: "string", default: "h264" }, fps: { type: "integer" } } } } } } },
+      bodies: {
+        [`device/runner:${MOONLIGHT}`]: { settings: { video: { fps: 30, codec: "h265" } } },
+        [`game:wario/runner:${MOONLIGHT}`]: { settings: { video: { codec: null } } },
+        [`release:usa/runner:${MOONLIGHT}`]: { settings: { video: { fps: 60 } } },
+      },
+    })
+    const stream = async (gameId?: string) => {
+      const result = await brain.methods.launchSettingsSnapshot(gameId)
+      if (result._tag === "Err") throw new Error(result.payload.message)
+      const resolved = (result.payload as typeof result.payload & { runnerResolved: { runnerId: string; values: Record<string, { value: unknown; source?: unknown }> }[] }).runnerResolved
+      expect(result.payload.resolved.values["settings.video.fps"]).toBeUndefined()
+      return resolved.find(entry => entry.runnerId === MOONLIGHT)?.values ?? {}
+    }
+    const game = await stream("wario")
+    expect(game["settings.video.fps"]).toMatchObject({ value: 30, source: { _tag: "Place", payload: place(`device/runner:${MOONLIGHT}`) } })
+    expect(game["settings.video.codec"]).toMatchObject({ value: "h264", source: { _tag: "PluginDefault", payload: { pluginId: MOONLIGHT } } })
+    const device = await stream()
+    expect(device["settings.video.codec"]?.value).toBe("h265")
+  })
 })

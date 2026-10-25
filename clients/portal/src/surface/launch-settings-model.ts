@@ -319,9 +319,25 @@ interface Context {
   readonly list: (kind: ListKind) => LaunchSourcedValue | undefined
   /** Why korrid does not apply the value in force at a path, when it says so. */
   readonly skipped: (path: LaunchPath) => string | undefined
+  /** The value in force at a path for a runner that only views streams
+   * (Moonlight), as korrid resolves it for the stream viewer. */
+  readonly streamResolved: (runnerId: string, path: LaunchPath) => LaunchSourcedValue | undefined
 }
 
+/** What korrid resolves for one runner that only views streams: the Device's
+ * cells, and on a game page the game's system, game and selected-profile cells. */
+interface LaunchRunnerResolved {
+  readonly runnerId: string
+  readonly values: Readonly<Record<string, LaunchSourcedValue>>
+}
+
+/** The values korrid resolves for each runner that only views streams. */
+const runnerResolvedOf = (snapshot: LaunchSnapshot): readonly LaunchRunnerResolved[] =>
+  (snapshot as LaunchSnapshot & { readonly runnerResolved?: readonly LaunchRunnerResolved[] }).runnerResolved ?? []
+
 function contextOf(snapshot: LaunchSnapshot, gameId?: string): Context {
+  const streams = new Map(runnerResolvedOf(snapshot).map(entry =>
+    [entry.runnerId, new Map(Object.values(entry.values).map(value => [valuePathKey(value.path), value]))] as const))
   const selected = snapshot.runners.find(runner => runner.selected && runner.choosable)
   const byPath = new Map(Object.values(snapshot.resolved.values).map(value => [valuePathKey(value.path), value]))
   const skipped = new Map(snapshot.notices.flatMap(notice => notice._tag === "SettingSkipped"
@@ -331,6 +347,7 @@ function contextOf(snapshot: LaunchSnapshot, gameId?: string): Context {
     resolved: path => byPath.get(valuePathKey(editable(path))),
     list: kind => byPath.get(valuePathKey({ _tag: kind })),
     skipped: path => skipped.get(editablePathKey(path)),
+    streamResolved: (runnerId, path) => streams.get(runnerId)?.get(valuePathKey(editable(path))),
     snapshot,
     devicePage: gameId === undefined,
     places: orderedPlaces(snapshot, gameId),
@@ -828,10 +845,20 @@ interface Owner {
  */
 function settingSource(context: Context, owner: Owner, path: string, leaf: Leaf | undefined, own: { readonly set: boolean; readonly cleared: boolean }): string | undefined {
   const fallback = () => owner.defaultOf(leaf) ?? `${owner.title} decides`
-  if (streamRunner(context, owner.place.scope)) return own.cleared ? fallback() : streamLine(context)
-  const waiting = notInForceScope(context, owner.place.scope)
-  if (waiting !== undefined) return waiting
+  const scope = owner.place.scope
   const writePath = owner.pathOf(path)
+  // A runner that only views streams has values of its own in force, korrid's
+  // fold for the stream viewer; nothing at all says when it would apply.
+  const stream = streamRunner(context, scope) && scope._tag === "Runner"
+  if (stream && writePath._tag === "Setting") {
+    const resolved = context.streamResolved(scope.id, writePath)
+    const source = resolved?.source
+    if (resolved === undefined || source === undefined || resolved.value === null) return own.cleared ? fallback() : streamLine(context)
+    const here = source._tag === "Place" && samePlace(source.payload, owner.place)
+    return here ? `from ${sourceTitle(context, source)}` : `${valueText(resolved.value)} from ${sourceTitle(context, source)}`
+  }
+  const waiting = notInForceScope(context, scope)
+  if (waiting !== undefined) return waiting
   const resolved = context.resolved(writePath)
   const source = resolved?.source
   const skipped = context.skipped(writePath)
@@ -866,7 +893,10 @@ function settingRows(context: Context, rows: Rows, owner: Owner, path: string, l
     : text
       ? typeof value === "string" && value !== "" && set ? { value } : {}
       : { value: set ? valueText(value) : "Not set here" }
-  const description = leaf?.description ?? (leaf === undefined ? owner.missing : undefined)
+  const said = leaf?.description ?? (leaf === undefined ? owner.missing : undefined)
+  // A stream runner's own settings say when they apply; its source line names where the value comes from.
+  const streams = owner.pathOf(path)._tag === "Setting" && streamRunner(context, owner.place.scope) ? `${streamLine(context)}.` : undefined
+  const description = streams === undefined ? said : said === undefined ? streams : `${streams} ${said}`
   const row: SurfaceSettingItem = {
     id,
     label,

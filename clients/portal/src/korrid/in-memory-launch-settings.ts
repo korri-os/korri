@@ -425,6 +425,41 @@ export function createInMemoryLaunchSettings(
       return message === undefined ? [] : [{ _tag: "SettingSkipped", payload: { path, message } }]
     })
 
+  /**
+   * A stream runner's settings as the stream viewer resolves them: its
+   * schema defaults, then its Device cells, then on a game page the game's
+   * system, game and selected-profile cells, later wins; `null` clears.
+   */
+  const resolveStream = (gameId: string | undefined, runnerId: string): Record<string, LaunchSourcedValue> => {
+    const values: Record<string, LaunchSourcedValue> = {}
+    const runner = config.runners?.[runnerId]
+    const path = (key: string): LaunchValuePath => ({ _tag: "Editable", payload: { _tag: "Setting", payload: { key } } })
+    const defaults = new Map<string, LaunchSourcedValue>()
+    for (const [key, leaf] of schemaLeaves(runner?.schema)) {
+      if (!("default" in leaf)) continue
+      const value: LaunchSourcedValue = { path: path(key), value: leaf.default, source: { _tag: "PluginDefault", payload: { pluginId: runnerId } }, adjusted: false }
+      defaults.set(key, value)
+      values[`settings.${key}`] = value
+    }
+    const layers = layersOf(gameId, "selected").map(entry => entry.layer).filter(layer => layer._tag !== "Release")
+    for (const layer of layers) {
+      const scopes: LaunchRunnerScope[] = [
+        ...(runner?.family === undefined ? [] : [{ _tag: "Family" as const, id: runner.family }]),
+        { _tag: "Runner", id: runnerId },
+      ]
+      for (const scope of scopes) {
+        const place: LaunchPlace = { layer, scope }
+        for (const [key, value] of valueLeaves(body(place).settings)) {
+          const fallback = defaults.get(key)
+          if (value !== null) values[`settings.${key}`] = { path: path(key), value, source: { _tag: "Place", payload: place }, adjusted: false }
+          else if (fallback === undefined) delete values[`settings.${key}`]
+          else values[`settings.${key}`] = fallback
+        }
+      }
+    }
+    return values
+  }
+
   const placeTitle = (layerTitle: string, scope: LaunchRunnerScope, runners: readonly { id: string; title: string }[]) =>
     scope._tag === "Any" ? layerTitle
       : scope._tag === "Family" ? `${layerTitle} for family ${scope.id}`
@@ -451,9 +486,11 @@ export function createInMemoryLaunchSettings(
     const routeLayers = (gameId === undefined ? undefined : config.games?.[gameId]?.routeLayers)
       ?? (gameId !== undefined && inUse === undefined && runners.filter(runner => choosable(runner.id)).length > 1 ? { _tag: "NeedsRunnerChoice" as const } : { _tag: "Present" as const })
     const resolved = resolve(gameId, inUse)
-    return {
+    // runnerResolved: the engine's next wire addition; typed here until it is generated.
+    const result: LaunchSnapshot & { readonly runnerResolved: readonly { readonly runnerId: string; readonly values: Record<string, LaunchSourcedValue> }[] } = {
       places,
       resolved: { values: resolved.values },
+      runnerResolved: streamRunners.map(runnerId => ({ runnerId, values: resolveStream(gameId, runnerId) })),
       runners: runners.map((runner): LaunchRunnerSnapshot => ({
         id: runner.id,
         ...(runner.family === undefined ? {} : { family: runner.family }),
@@ -485,6 +522,7 @@ export function createInMemoryLaunchSettings(
       routeLayers,
       revisions: revisions(),
     }
+    return result
   }
 
   const setLaunch = async ({ place, path, value, clear: cleared = false, expectedRevision }: LaunchSetRequest): Promise<LaunchSettingsWriteOutcome> => {
