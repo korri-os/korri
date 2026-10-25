@@ -11,6 +11,22 @@ use crate::RpcFailure;
 use std::path::PathBuf;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+/// These seven requests await the root admin socket. Its transfer/stall
+/// bounds, not an RPC total deadline, determine when the operation finishes.
+/// Shared by the person client and native peer transport.
+pub fn is_admin_request(request: &crate::RpcRequest) -> bool {
+    matches!(
+        request,
+        crate::RpcRequest::PluginRepositories(_)
+            | crate::RpcRequest::PluginRepositoryAdd(_)
+            | crate::RpcRequest::PluginRepositoryRemove(_)
+            | crate::RpcRequest::PluginCatalog(_)
+            | crate::RpcRequest::PluginInspect(_)
+            | crate::RpcRequest::PluginInstall(_)
+            | crate::RpcRequest::PluginSetEnabled(_)
+    )
+}
+
 /// Set by korrid's NixOS module only when the device runs the plugin host.
 pub const SOCKET_ENV: &str = "KORRID_PLUGIN_ADMIN_SOCKET";
 

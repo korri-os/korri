@@ -5,7 +5,10 @@ use std::{io::Read, path::Path, time::Duration};
 const RESPONSE_LIMIT: u64 = 8 * 1024 * 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
-fn signer_wait(request: &RpcRequest) -> Option<Duration> {
+fn request_wait(request: &RpcRequest, default: Duration) -> Option<Duration> {
+    if korrid::plugin_repositories::is_admin_request(request) {
+        return None;
+    }
     let requests = match request {
         // coordinator::switch signs the old owner's revocation. That owner
         // may use NIP-46 even when the replacement is a local backup.
@@ -13,7 +16,7 @@ fn signer_wait(request: &RpcRequest) -> Option<Duration> {
         // connect + sign the new binding + revoke the old binding are serial.
         RpcRequest::IdentityNip46Switch(_) => 3,
         RpcRequest::SettingsUpdate(request) if request.setting_id == "person-name" => 1,
-        _ => return None,
+        _ => return Some(default),
     };
     // send_request's 120 s deadline starts AFTER publishing. Keep the existing
     // 30 s transport/storage allowance for each exchange as well as that wait.
@@ -22,6 +25,7 @@ fn signer_wait(request: &RpcRequest) -> Option<Duration> {
 
 pub struct Client {
     http: reqwest::blocking::Client,
+    default_timeout: Duration,
 }
 
 impl Client {
@@ -30,7 +34,8 @@ impl Client {
             .unix_socket(socket)
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
-            .timeout(DEFAULT_TIMEOUT)
+            .timeout(None)
+            .connect_timeout(DEFAULT_TIMEOUT)
             .build()
             .map_err(|_| {
                 CliError::failure(
@@ -39,7 +44,10 @@ impl Client {
                     "Check the installed Korri version.",
                 )
             })?;
-        Ok(Self { http })
+        Ok(Self {
+            http,
+            default_timeout: DEFAULT_TIMEOUT,
+        })
     }
 
     /// Issue a one-use receipt on this device only. Never forward selected paths.
@@ -48,6 +56,7 @@ impl Client {
             .http
             .post("http://localhost/folder-selection")
             .json(path)
+            .timeout(self.default_timeout)
             .send()
             .map_err(|_| CliError::unreachable())?;
         let status = response.status();
@@ -113,11 +122,14 @@ impl Client {
         let mut pending = self
             .http
             .post(format!("http://localhost{route}"))
-            .json(body);
-        if let Some(wait) = signer_wait(request) {
-            pending = pending.timeout(wait);
-        }
-        let response = pending.send().map_err(|_| CliError::unreachable())?;
+            .json(body)
+            .build()
+            .map_err(|_| CliError::unreachable())?;
+        *pending.timeout_mut() = request_wait(request, self.default_timeout);
+        let response = self
+            .http
+            .execute(pending)
+            .map_err(|_| CliError::unreachable())?;
         if response.status() == reqwest::StatusCode::FORBIDDEN {
             return Err(CliError::failure(
                 "AuthorizationDenied",
@@ -229,18 +241,22 @@ with socketserver.UnixStreamServer(socket_path, Handler) as server:
                 .read_line(&mut ready)
                 .unwrap();
             assert_eq!(ready, "ready\n");
-            // Inject a shorter reqwest default, not a new production setting or
-            // alternate timeout policy. The request override stays unchanged.
+            // Scale the existing client default, not the request policy or a
+            // production setting. The same selector receives this default.
             let http = reqwest::blocking::Client::builder()
                 .unix_socket(socket)
                 .no_proxy()
-                .timeout(Duration::from_millis(30))
+                .timeout(None)
+                .connect_timeout(DEFAULT_TIMEOUT)
                 .build()
                 .unwrap();
             Self {
                 child,
                 _root: root,
-                client: Client { http },
+                client: Client {
+                    http,
+                    default_timeout: Duration::from_millis(30),
+                },
             }
         }
     }
@@ -282,7 +298,7 @@ with socketserver.UnixStreamServer(socket_path, Handler) as server:
         ];
         for ((request, expected), exchanges) in requests.into_iter().zip([1, 3]) {
             assert_eq!(
-                signer_wait(&request),
+                request_wait(&request, DEFAULT_TIMEOUT),
                 Some(
                     (korrid::remote_signer::REQUEST_TIMEOUT + Duration::from_secs(30)) * exchanges
                 )
@@ -306,7 +322,7 @@ with socketserver.UnixStreamServer(socket_path, Handler) as server:
             value: "Person".into(),
         });
         assert_eq!(
-            signer_wait(&request),
+            request_wait(&request, DEFAULT_TIMEOUT),
             Some(REQUEST_TIMEOUT + DEFAULT_TIMEOUT)
         );
         let actual = server.client.request(&request).unwrap();
@@ -317,27 +333,78 @@ with socketserver.UnixStreamServer(socket_path, Handler) as server:
     }
 
     #[test]
-    fn ordinary_request_still_uses_the_http_default_timeout() {
+    fn ordinary_request_still_uses_the_default_timeout() {
         assert_eq!(DEFAULT_TIMEOUT, Duration::from_secs(30));
-        assert!(signer_wait(&RpcRequest::Health(HealthRequest {})).is_none());
         assert!(
-            signer_wait(&RpcRequest::SettingsUpdate(SettingsUpdateRequest {
-                expected_revision: "current".into(),
-                setting_id: "device-name".into(),
-                value: "Device".into(),
-            }))
-            .is_none()
+            request_wait(&RpcRequest::Health(HealthRequest {}), DEFAULT_TIMEOUT)
+                == Some(DEFAULT_TIMEOUT)
         );
-        let server = DelayedServer::start(&RpcResponse::Health(HealthOutcome::Ok(Health {
-            version: "test".into(),
-        })));
-        assert_eq!(
-            server
-                .client
-                .request(&RpcRequest::Health(HealthRequest {}))
-                .unwrap_err()
-                .exit,
-            4
+        assert!(
+            request_wait(
+                &RpcRequest::SettingsUpdate(SettingsUpdateRequest {
+                    expected_revision: "current".into(),
+                    setting_id: "device-name".into(),
+                    value: "Device".into(),
+                }),
+                DEFAULT_TIMEOUT
+            ) == Some(DEFAULT_TIMEOUT)
         );
+        for device in [None, Some("peer")] {
+            let server = DelayedServer::start(&RpcResponse::Health(HealthOutcome::Ok(Health {
+                version: "test".into(),
+            })));
+            assert_eq!(
+                server
+                    .client
+                    .request_on(device, &RpcRequest::Health(HealthRequest {}))
+                    .unwrap_err()
+                    .exit,
+                4
+            );
+        }
+    }
+
+    #[test]
+    fn plugin_admin_waits_past_the_default_locally_and_when_forwarded() {
+        for (tag, payload) in [
+            ("system.plugins.repositories", serde_json::json!({})),
+            (
+                "system.plugins.repository.add",
+                serde_json::json!({"url":"https://example.com"}),
+            ),
+            (
+                "system.plugins.repository.remove",
+                serde_json::json!({"url":"https://example.com"}),
+            ),
+            (
+                "system.plugins.catalog",
+                serde_json::json!({"url":"https://example.com"}),
+            ),
+            (
+                "system.plugins.inspect",
+                serde_json::json!({"url":"https://example.com","pluginId":"@test:a","releaseVersion":"v1"}),
+            ),
+            (
+                "system.plugins.install",
+                serde_json::json!({"url":"https://example.com","pluginId":"@test:a","releaseVersion":"v1","approval":"reviewed"}),
+            ),
+            (
+                "system.plugins.setEnabled",
+                serde_json::json!({"id":"@test:a","enabled":true}),
+            ),
+        ] {
+            let request: RpcRequest =
+                serde_json::from_value(serde_json::json!({"_tag":tag,"payload":payload})).unwrap();
+            assert_eq!(request_wait(&request, DEFAULT_TIMEOUT), None);
+            let expected = korrid::cli::failure_response(&request, signer_failure()).unwrap();
+            for device in [None, Some("peer")] {
+                let server = DelayedServer::start(&expected);
+                let result = server.client.request_on(device, &request).unwrap();
+                assert_eq!(
+                    serde_json::to_value(result).unwrap(),
+                    serde_json::to_value(&expected).unwrap()
+                );
+            }
+        }
     }
 }

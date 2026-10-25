@@ -64,7 +64,6 @@ impl NativeClient {
         credentials: PeerCredentials,
     ) -> Self {
         let http = reqwest::Client::builder()
-            .timeout(NATIVE_RPC_TIMEOUT)
             .connect_timeout(crate::federation::connect::CONNECT_TIMEOUT)
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
@@ -674,13 +673,11 @@ impl NativeClient {
             if remaining.is_zero() {
                 break;
             }
-            // A connected slow link gets the remaining aggregate budget, not a
-            // fraction based on how many unrelated routes were advertised.
-            let attempt = tokio::time::timeout(
-                remaining,
-                self.attempt(&url, request.clone(), None, answered),
-            )
-            .await;
+            // Ordinary calls get the remaining aggregate budget, not a
+            // fraction per advertised route. Admin calls use the host's bounds.
+            let attempt = self
+                .attempt_with_wait(&url, request.clone(), None, answered, remaining)
+                .await;
             match attempt {
                 Ok(Ok(response)) => return checked_response(request, response),
                 Ok(Err(failure)) => {
@@ -708,11 +705,15 @@ impl NativeClient {
             {
                 if let Ok(connection) = directory.reach_connection(key).await {
                     self.ensure_not_revoked()?;
-                    return match tokio::time::timeout(
-                        self.operation_timeout,
-                        self.attempt("/peer-rpc", request.clone(), Some(&connection), answered),
-                    )
-                    .await
+                    return match self
+                        .attempt_with_wait(
+                            "/peer-rpc",
+                            request.clone(),
+                            Some(&connection),
+                            answered,
+                            self.operation_timeout,
+                        )
+                        .await
                     {
                         Ok(Ok(response)) => checked_response(request, response),
                         Ok(Err(failure)) => Err(failure.error),
@@ -726,6 +727,28 @@ impl NativeClient {
         Err(last_error)
     }
 
+    async fn attempt_with_wait(
+        &self,
+        rpc_url: &str,
+        request: RpcRequest,
+        connection: Option<&iroh::endpoint::Connection>,
+        answered: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Result<RpcResponse, AttemptFailure>, tokio::time::error::Elapsed> {
+        // PluginAdminSocket owns transfer/stall bounds and has no total
+        // deadline. Candidate selection/connection above remain bounded, and
+        // the existing before_send rule still forbids mutation retries.
+        if crate::plugin_repositories::is_admin_request(&request) {
+            Ok(self.attempt(rpc_url, request, connection, answered).await)
+        } else {
+            tokio::time::timeout(
+                timeout,
+                self.attempt(rpc_url, request, connection, answered),
+            )
+            .await
+        }
+    }
+
     async fn attempt(
         &self,
         rpc_url: &str,
@@ -733,6 +756,7 @@ impl NativeClient {
         connection: Option<&iroh::endpoint::Connection>,
         answered: &AtomicBool,
     ) -> Result<RpcResponse, AttemptFailure> {
+        let admin_wait = crate::plugin_repositories::is_admin_request(&request);
         let credentials = self
             .credentials
             .as_ref()
@@ -768,18 +792,20 @@ impl NativeClient {
                 error: UpstreamError::Unreachable("peer transport failed".into()),
             })?
         } else {
-            crate::federation::reach::http::Response::Tcp(
-                self.http
-                    .post(rpc_url)
-                    .header(reqwest::header::CONTENT_TYPE, "application/json")
-                    .body(encoded.event_json.clone())
-                    .send()
-                    .await
-                    .map_err(|error| AttemptFailure {
-                        before_send: error.is_connect(),
-                        error: UpstreamError::Unreachable("peer transport failed".into()),
-                    })?,
-            )
+            let mut pending = self
+                .http
+                .post(rpc_url)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(encoded.event_json.clone());
+            if !admin_wait {
+                pending = pending.timeout(self.operation_timeout);
+            }
+            crate::federation::reach::http::Response::Tcp(pending.send().await.map_err(
+                |error| AttemptFailure {
+                    before_send: error.is_connect(),
+                    error: UpstreamError::Unreachable("peer transport failed".into()),
+                },
+            )?)
         };
         // HTTP headers prove that a method answered, even if the body is
         // invalid, unauthenticated, or later times out. A subsequent route

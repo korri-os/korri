@@ -1047,3 +1047,54 @@ fn remote_process_local_save_bearing_launch_without_split_keeps_hooks() {
     );
 }
 
+#[test]
+#[ignore = "requires KORRI_REMOTE_PLUGIN_HOST_TEST_BINARY; tests scaled native wait"]
+fn remote_process_slow_plugin_peer_outlasts_only_the_plugin_wait() {
+    let binary =
+        std::env::var_os("KORRI_REMOTE_PLUGIN_HOST_TEST_BINARY").expect("plugin-host test binary");
+    let plugin = tempfile::tempdir().unwrap();
+    let mut admin = Process(
+        Command::new(binary)
+            .args([
+                "--exact",
+                "host::tests::remote_admin_process",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("KORRI_REMOTE_PLUGIN_ROOT", plugin.path())
+            .spawn()
+            .unwrap(),
+    );
+    wait(&plugin.path().join("admin.sock"), &mut admin);
+    let target = tempfile::tempdir().unwrap();
+    let credentials = resources(&target.path().join("private"), &"7a".repeat(32), OWNER);
+    let key = credentials.public_key().unwrap();
+    fs::write(target.path().join("slow-peer"), "").unwrap();
+    let _target = launch_process(target.path(), &[], Some(&plugin.path().join("admin.sock")));
+    let origin = fs::read_to_string(target.path().join("ready")).unwrap();
+    let caller = tempfile::tempdir().unwrap();
+    let credentials = peer_rpc::test_owned_credentials(caller.path(), &"7b".repeat(32), OWNER);
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let client = upstream_native::NativeClient::new_secure(origin, key, credentials)
+                .with_timeout(Duration::from_millis(50));
+            let reply = client
+                .call(RpcRequest::PluginRepositories(
+                    plugin_admin::PluginRepositoriesRequest {},
+                ))
+                .await
+                .unwrap();
+            assert!(matches!(
+                reply,
+                RpcResponse::PluginRepositories(PluginRepositoriesOutcome::Ok(_))
+            ));
+            let reply = client.call(RpcRequest::Health(HealthRequest {})).await;
+            assert!(
+                matches!(reply, Err(upstreams::UpstreamError::Unreachable(_))),
+                "{reply:?}"
+            );
+        });
+}

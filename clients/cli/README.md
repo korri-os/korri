@@ -90,7 +90,8 @@ Identity switches wait for korrid's NIP-46 deadline instead of the ordinary
 transport and storage. A local-backup switch allows one remote exchange for the
 old owner's revocation (150 seconds). A NIP-46 switch allows three serial
 exchanges: connect, new binding, old-owner revocation (450 seconds). Person-name
-writes also allow one exchange. Other requests keep the 30-second default.
+writes also allow one exchange. Other non-plugin requests keep the 30-second
+default; plugin waits follow the root host contract below.
 The cost is a longer wait for a stalled signer; Ctrl-C can still interrupt the
 CLI. This changes no server deadline, permission or recovery behavior.
 
@@ -276,6 +277,15 @@ installed report and checks the stored approved digest there. A stale digest
 cannot install or enable a plugin. `--yes` never supplies that approval. There
 is no second manifest, approval store, or copied signing credential.
 
+The seven plugin calls have no total response deadline, locally or through a
+peer. The root host bounds catalog transfers and detects stalled archives;
+remote install waits as long as the target's active download does. Connection
+and candidate selection remain bounded. Other native calls keep their 5-second
+limit, and other ordinary CLI calls keep 30 seconds. Ctrl-C stops the CLI wait,
+not remote work already accepted by the target. Inspect the selected device's
+plugin state before retrying an interrupted operation. Mutations are never
+retried automatically after send.
+
 The root plugin host retains its lock, publisher signatures, immutable package
 and dependency checks, native-artifact policy, receipts and no-build-on-target
 path. The security cost is explicit: compromise of a verified same-owner device
@@ -312,6 +322,7 @@ cargo test --manifest-path services/korrid/Cargo.toml --lib cli::remote_tests::r
 cargo test --manifest-path services/korrid/plugin-host/Cargo.toml --lib remote_admin_process --no-run --message-format=json > /tmp/plugin-host-test-build.jsonl
 export KORRI_REMOTE_PLUGIN_HOST_TEST_BINARY="$(jq -r 'select(.reason == "compiler-artifact" and .target.kind == ["lib"] and .executable != null) | .executable' /tmp/plugin-host-test-build.jsonl)"
 cargo test --manifest-path services/korrid/Cargo.toml --lib cli::remote_tests::remote_process_plugin_approval_and_admin_boundary -- --ignored --exact
+cargo test --manifest-path services/korrid/Cargo.toml --lib cli::remote_tests::remote_process_slow_plugin_peer_outlasts_only_the_plugin_wait -- --ignored --exact
 ```
 
 ## Product wire cut
