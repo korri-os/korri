@@ -9,7 +9,7 @@
  */
 import { afterEach, describe, expect, test } from "bun:test"
 import { cleanup, fireEvent, render, within } from "@testing-library/react"
-import type { SurfaceModel } from "@contracts/surface/korri-surface"
+import type { SurfaceDisplay, SurfaceModel } from "@contracts/surface/korri-surface"
 import { rgdsDisplays, sideBySideDisplays } from "../src/fixtures/displays"
 import { createFixtureHost, fixtureModel, fixtureOverlay } from "../src/fixtures/fixture-host"
 import { fixtureInvites } from "../src/fixtures/named-states"
@@ -17,7 +17,6 @@ import { onboardingModel } from "../src/fixtures/onboarding"
 import { picoDisplayPlan } from "../src/pico-display-plan"
 import type { PicoInitialView } from "../src/pico-initial-view"
 import { picoShowcaseFrom } from "../src/pico-showcase-view"
-import type { SurfaceDisplay } from "../src/pico-surface-display"
 import { PicoSurface } from "../src/PicoSurface"
 import { initialNavigation } from "../src/state/navigation"
 import { shownScreen } from "../src/state/shown"
@@ -163,7 +162,7 @@ function controls(root: ParentNode): string[] {
     .map(element => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "")
 }
 
-function surface(model: SurfaceModel & { readonly displays?: readonly SurfaceDisplay[] }, initialView?: PicoInitialView) {
+function surface(model: SurfaceModel, initialView?: PicoInitialView) {
   const { container } = render(
     <PicoSurface font="tiny5" host={createFixtureHost()} initialView={initialView} model={model} />,
   )
