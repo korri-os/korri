@@ -65,8 +65,37 @@ assert
   c.services.korriLinuxHost.compositor.drmDevice
   == "/dev/dri/by-path/platform-display-subsystem-card";
 assert c.services.korriLinuxHost.compositor.renderDevice == "/dev/dri/renderD128";
-assert c.services.korriLinuxHost.compositor.mainDisplay == "DSI-1";
+assert c.services.korriLinuxHost.compositor.mainDisplay == "DSI-2";
 assert (builtins.head c.services.korriLinuxHost.compositor.displays).mode == "640x480@60Hz";
+assert
+  map (d: {
+    inherit (d)
+      name
+      x
+      y
+      touch
+      ;
+  }) c.services.korriLinuxHost.compositor.displays == [
+    {
+      name = "DSI-2";
+      x = 0;
+      y = 0;
+      touch = "/i2c@fe5c0000/touchscreen@14";
+    }
+    {
+      name = "DSI-1";
+      x = 0;
+      y = 480;
+      touch = "/i2c@fe5e0000/touchscreen@14";
+    }
+  ];
+assert
+  lib.filter (line: lib.hasInfix "ENV{WL_OUTPUT}=" line) (
+    lib.splitString "\n" c.services.udev.extraRules
+  ) == [
+    ''SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/fe5c0000.i2c/i2c-*/*-0014/input/input*/event*", ENV{WL_OUTPUT}="DSI-2"''
+    ''SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/fe5e0000.i2c/i2c-*/*-0014/input/input*/event*", ENV{WL_OUTPUT}="DSI-1"''
+  ];
 assert c.services.korriLinuxHost.compositor.renderer == "gles2";
 assert builtins.match "/dev/dri/card[0-9]+" c.services.korriLinuxHost.compositor.drmDevice == null;
 assert c.services.korri.compositor.kiosk.extraChromiumArgs == [ "--disable-gpu" ];
