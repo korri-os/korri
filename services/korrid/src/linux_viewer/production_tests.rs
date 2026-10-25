@@ -15,7 +15,7 @@ fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
         Path::new("/home/korri/.config/moonlight"),
         "192.0.2.1:47989",
         (1920, 1080),
-        "x11",
+        "v4l2m2m",
         &seats,
     )
     .unwrap();
@@ -23,6 +23,17 @@ fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
     assert!(args.windows(2).any(|v| v == ["-codec", "h264"]));
     assert!(args.windows(2).any(|v| v == ["-fps", "60"]));
     assert_eq!(args.iter().filter(|v| *v == "-input").count(), 2);
+    // Moonlight's SDL system (what `x11` resolves to) exits on `-input`.
+    let sdl = stream_args(
+        &files,
+        Path::new("/home/korri/.config/moonlight"),
+        "192.0.2.1:47989",
+        (640, 480),
+        "x11",
+        &seats,
+    )
+    .unwrap();
+    assert!(!sdl.iter().any(|v| v == "-input" || v == "-viewonly"));
     assert!(!args
         .iter()
         .any(|v| v == "pair" || v == "-quitappafter" || v == "-viewonly"));
@@ -303,10 +314,16 @@ esac
             .environment
             .contains_key("KORRI_MOONLIGHT_SERVER_CERTIFICATE"));
         assert_eq!(launches[0].id, launch);
-        assert!(launches[0]
-            .command
-            .windows(2)
-            .any(|args| args == ["-input", "/dev/input/event12"]));
+        // Occupied broker seats make the viewer interactive. Only evdev
+        // platforms name them; the SDL `x11` system reads every controller.
+        assert!(!launches[0].command.iter().any(|arg| arg == "-viewonly"));
+        assert_eq!(
+            launches[0]
+                .command
+                .windows(2)
+                .any(|args| args == ["-input", "/dev/input/event12"]),
+            platform() != "x11"
+        );
         assert!(launches[0]
             .command
             .windows(2)

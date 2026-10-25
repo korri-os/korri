@@ -282,7 +282,12 @@ fn stream_args(
                 "occupied seat callback returned an invalid or duplicate event path",
             ));
         }
-        args.extend(["-input".into(), seat.display().to_string()]);
+        // Moonlight resolves `x11` to its SDL system when SDL is built in, and
+        // its SDL system exits on any `-input`: SDL reads every controller
+        // itself. Only the evdev systems (such as v4l2m2m) take explicit seats.
+        if platform != "x11" {
+            args.extend(["-input".into(), seat.display().to_string()]);
+        }
     }
     let peer = server_url(address)?;
     args.extend([
