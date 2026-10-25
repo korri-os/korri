@@ -324,19 +324,9 @@ interface Context {
   readonly streamResolved: (runnerId: string, path: LaunchPath) => LaunchSourcedValue | undefined
 }
 
-/** What korrid resolves for one runner that only views streams: the Device's
- * cells, and on a game page the game's system, game and selected-profile cells. */
-interface LaunchRunnerResolved {
-  readonly runnerId: string
-  readonly values: Readonly<Record<string, LaunchSourcedValue>>
-}
-
-/** The values korrid resolves for each runner that only views streams. */
-const runnerResolvedOf = (snapshot: LaunchSnapshot): readonly LaunchRunnerResolved[] =>
-  (snapshot as LaunchSnapshot & { readonly runnerResolved?: readonly LaunchRunnerResolved[] }).runnerResolved ?? []
 
 function contextOf(snapshot: LaunchSnapshot, gameId?: string): Context {
-  const streams = new Map(runnerResolvedOf(snapshot).map(entry =>
+  const streams = new Map(snapshot.runnerResolved.map(entry =>
     [entry.runnerId, new Map(Object.values(entry.values).map(value => [valuePathKey(value.path), value]))] as const))
   const selected = snapshot.runners.find(runner => runner.selected && runner.choosable)
   const byPath = new Map(Object.values(snapshot.resolved.values).map(value => [valuePathKey(value.path), value]))

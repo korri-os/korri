@@ -486,8 +486,7 @@ export function createInMemoryLaunchSettings(
     const routeLayers = (gameId === undefined ? undefined : config.games?.[gameId]?.routeLayers)
       ?? (gameId !== undefined && inUse === undefined && runners.filter(runner => choosable(runner.id)).length > 1 ? { _tag: "NeedsRunnerChoice" as const } : { _tag: "Present" as const })
     const resolved = resolve(gameId, inUse)
-    // runnerResolved: the engine's next wire addition; typed here until it is generated.
-    const result: LaunchSnapshot & { readonly runnerResolved: readonly { readonly runnerId: string; readonly values: Record<string, LaunchSourcedValue> }[] } = {
+    return {
       places,
       resolved: { values: resolved.values },
       runnerResolved: streamRunners.map(runnerId => ({ runnerId, values: resolveStream(gameId, runnerId) })),
@@ -522,7 +521,6 @@ export function createInMemoryLaunchSettings(
       routeLayers,
       revisions: revisions(),
     }
-    return result
   }
 
   const setLaunch = async ({ place, path, value, clear: cleared = false, expectedRevision }: LaunchSetRequest): Promise<LaunchSettingsWriteOutcome> => {

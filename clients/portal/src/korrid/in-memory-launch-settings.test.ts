@@ -208,7 +208,7 @@ describe("in-memory launch settings, korrid's rules", () => {
     const stream = async (gameId?: string) => {
       const result = await brain.methods.launchSettingsSnapshot(gameId)
       if (result._tag === "Err") throw new Error(result.payload.message)
-      const resolved = (result.payload as typeof result.payload & { runnerResolved: { runnerId: string; values: Record<string, { value: unknown; source?: unknown }> }[] }).runnerResolved
+      const resolved = result.payload.runnerResolved
       expect(result.payload.resolved.values["settings.video.fps"]).toBeUndefined()
       return resolved.find(entry => entry.runnerId === MOONLIGHT)?.values ?? {}
     }
