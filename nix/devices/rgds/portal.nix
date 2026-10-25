@@ -8,6 +8,7 @@
 {
   config,
   korri,
+  lib,
   pkgs,
   ...
 }:
@@ -54,19 +55,42 @@ in
       localInput.enable = true;
       drmDevice = "/dev/dri/by-path/platform-display-subsystem-card";
       renderDevice = "/dev/dri/renderD128";
-      mainDisplay = "DSI-1";
+      mainDisplay = "DSI-2";
+      # Linux v7.2 rk3568-anbernic-rg-ds.dts: i2c3 touch1 -> panel1
+      # (top); i2c5 touch0 -> panel0 (bottom). Controller addresses come
+      # from rk356x-base.dtsi. These are OF hardware paths, not input names.
+      # wlroots consumes libinput's WL_OUTPUT; the device's udev rules below
+      # select by hardware path because both controllers share an input name.
       displays = [
+        {
+          name = "DSI-2";
+          mode = "640x480@60Hz";
+          x = 0;
+          y = 0;
+          touch = "/i2c@fe5c0000/touchscreen@14";
+        }
         {
           name = "DSI-1";
           mode = "640x480@60Hz";
           x = 0;
-          y = 0;
-          touch = null;
+          y = 480;
+          touch = "/i2c@fe5e0000/touchscreen@14";
         }
       ];
       renderer = "gles2";
     };
   };
+
+  # libinput 1.31.3 src/udev-seat.c reads WL_OUTPUT per device. A carried
+  # wlroots patch passes it to Sway's existing touch output mapping. Match
+  # controller address AND I2C device address, never the repeated Goodix name.
+  services.udev.extraRules = lib.concatMapStringsSep "\n" (
+    display:
+    let
+      controller = builtins.head (builtins.match "^/i2c@([^/]+)/touchscreen@14$" display.touch);
+    in
+    ''SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", DEVPATH=="*/${controller}.i2c/i2c-*/*-0014/input/input*/event*", ENV{WL_OUTPUT}="${display.name}"''
+  ) config.services.korriLinuxHost.compositor.displays;
 
   # Recorded limit: Chromium's GPU path has not been accepted on the RG DS.
   # Keep software rendering local to this device rather than product policy.

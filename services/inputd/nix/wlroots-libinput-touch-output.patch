@@ -1,0 +1,39 @@
+Honor libinput's per-device WL_OUTPUT mapping for identical touch controllers.
+
+Linux's RG DS has two Goodix touch devices with the same vendor, product and
+name. libinput's udev backend already reads the established WL_OUTPUT property:
+https://gitlab.freedesktop.org/libinput/libinput/-/blob/1.31.3/src/udev-seat.c#L139
+Expose that name through wlr_touch.output_name so Sway's existing default
+mapping uses it. The returned libinput string is borrowed; wlr_touch_finish
+owns and frees its copy. Without WL_OUTPUT this is a no-op.
+
+Upstream review (2026-10-25): wlroots MR searches for
+libinput_device_get_output_name and WL_OUTPUT touch found no matching change.
+https://gitlab.freedesktop.org/wlroots/wlroots/-/merge_requests?scope=all&state=all&search=libinput_device_get_output_name
+Drop this patch when upstream wlroots carries equivalent support.
+
+--- a/backend/libinput/touch.c
++++ b/backend/libinput/touch.c
+@@ -1,5 +1,8 @@
+ #include <assert.h>
+ #include <libinput.h>
++#include <stdlib.h>
++#include <string.h>
++#include <wlr/util/log.h>
+ #include <wlr/interfaces/wlr_touch.h>
+ #include "backend/libinput.h"
+ 
+@@ -12,6 +15,14 @@
+ 	wlr_touch_init(wlr_touch, &libinput_touch_impl, name);
+ 
++	const char *output = libinput_device_get_output_name(dev->handle);
++	if (output != NULL && output[0] != '\0') {
++		wlr_touch->output_name = strdup(output);
++		if (wlr_touch->output_name == NULL) {
++			wlr_log(WLR_ERROR, "Failed to allocate touch output name");
++		}
++	}
++
+ 	libinput_device_get_size(dev->handle, &wlr_touch->width_mm,
+ 		&wlr_touch->height_mm);
+ }
