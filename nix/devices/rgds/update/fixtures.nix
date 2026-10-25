@@ -13,10 +13,17 @@ let
   kernel = version: file "linux-test-${version}" "Image";
   initrd = version: file "initrd-test-${version}" "initrd";
   dtbs = version: file "dtbs-test-${version}" "rockchip/rk3568-anbernic-rg-ds.dtb";
-  system =
-    version:
-    pkgs.runCommand "nixos-system-rgds-sd-card-${version}" { } ''
+  # Every product generation carries the development specialisation
+  # (nix/product/boot.nix), which the real generator renders as its own entry.
+  bootSystem =
+    name: version: specialisations:
+    pkgs.runCommand "nixos-system-rgds-${name}sd-card-${version}" { } ''
       mkdir -p "$out/specialisation"
+      ${lib.concatStrings (
+        lib.mapAttrsToList (spec: path: ''
+          ln -s ${path} "$out/specialisation/${spec}"
+        '') specialisations
+      )}
       echo init > "$out/init"
       chmod +x "$out/init"
       ln -s ${kernel version}/Image "$out/kernel"
@@ -25,6 +32,7 @@ let
       echo ${version} > "$out/nixos-version"
       echo 'quiet console=ttyS2,1500000n8' > "$out/kernel-params"
     '';
+  system = version: bootSystem "" version { development = bootSystem "development-" version { }; };
   old = system "old";
   new = system "new";
 in

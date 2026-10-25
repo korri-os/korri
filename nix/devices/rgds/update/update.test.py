@@ -81,15 +81,26 @@ class ExtlinuxTests(unittest.TestCase):
                 }
 
             self.assertEqual(files(tree), files(expected))
+            entries = update.parse_extlinux(
+                (tree / "extlinux/extlinux.conf").read_text()
+            )[1]
+            old_development = (old / "specialisation/development").resolve()
+            # The real generator adds the previous generation's development
+            # specialisation (nix/product/boot.nix) after both defaults.
             self.assertEqual(
+                [(e["label"], e["system"]) for e in entries],
                 [
-                    e["system"]
-                    for e in update.parse_extlinux(
-                        (tree / "extlinux/extlinux.conf").read_text()
-                    )[1]
+                    ("nixos-default", str(new)),
+                    ("nixos-1-default", str(old)),
+                    ("nixos-1-development", str(old_development)),
                 ],
-                [str(new), str(old)],
             )
+            update.check_specialisations(entries, str(old))
+            with self.assertRaises(ValueError):
+                update.check_specialisations(entries, str(new))
+            forged = [*entries[:2], {**entries[2], "system": str(new)}]
+            with self.assertRaises(ValueError):
+                update.check_specialisations(forged, str(old))
             archive, required = update.archive_payload(tree)
             stage = root / "stage"
             stage.mkdir()

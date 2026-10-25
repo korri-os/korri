@@ -22,6 +22,9 @@ DEVICE = "rgds"
 CONFIG_NAME = "extlinux"
 TARGET = "root@10.42.1.1"
 SYSTEM = r"/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-nixos-system-rgds-sd-card-[A-Za-z0-9+._=-]+"
+# A specialisation's system carries its tag before "sd-card"; the product
+# ships the development specialisation on every generation (product/boot.nix).
+SPECIALISATION_SYSTEM = r"/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-nixos-system-rgds-[a-z0-9]+-sd-card-[A-Za-z0-9+._=-]+"
 PAYLOAD = r"[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._=-]+"
 BUILD_OPTIONS = [
     "--option",
@@ -35,9 +38,40 @@ DTB = "rockchip/rk3568-anbernic-rg-ds.dtb"
 
 
 class BootEntry(TypedDict):
-    # Derived only from the native APPEND init= and LINUX/INITRD/FDT directives.
+    # Derived only from the native LABEL, APPEND init= and LINUX/INITRD/FDT
+    # directives.
+    label: str
     system: str
     paths: list[str]
+
+
+def default_entries(entries: list[BootEntry]) -> list[BootEntry]:
+    """The generator's default entry and each generation's default entry."""
+    return [
+        e
+        for e in entries
+        if e["label"] == "nixos-default"
+        or re.fullmatch(r"nixos-\d+-default", e["label"])
+    ]
+
+
+def check_specialisations(entries: list[BootEntry], previous: str) -> None:
+    """Non-default entries must be the previous system's own specialisations.
+
+    The pinned generator renders one entry per specialisation of each generation
+    (`addEntry $link "${generation}-${specialisation}"`), never for the new default.
+    """
+    for entry in entries:
+        if entry in default_entries(entries):
+            continue
+        match = re.fullmatch(r"nixos-1-([a-z0-9]+)", entry["label"])
+        if match is None:
+            raise ValueError("unexpected boot entry label")
+        target = Path(previous) / "specialisation" / match.group(1)
+        require(
+            target.is_symlink() and str(target.resolve()) == entry["system"],
+            "boot entry is not a specialisation of the previous system",
+        )
 
 
 def parse_extlinux(text: str) -> tuple[dict[str, str], list[BootEntry]]:
@@ -91,8 +125,11 @@ def parse_extlinux(text: str) -> tuple[dict[str, str], list[BootEntry]]:
             len(init) == 1 and init[0].endswith("/init"), "expected one system init"
         )
         system = init[0][:-5]
-        require(re.fullmatch(SYSTEM, system), "unsafe RG DS system path")
-        result.append({"system": system, "paths": paths})
+        require(
+            re.fullmatch(SYSTEM, system) or re.fullmatch(SPECIALISATION_SYSTEM, system),
+            "unsafe RG DS system path",
+        )
+        result.append({"label": entry["LABEL"], "system": system, "paths": paths})
     return header, result
 
 
@@ -143,7 +180,15 @@ def render(
 def archive_payload(tree: Path) -> tuple[bytes, int]:
     text = (tree / "extlinux/extlinux.conf").read_text()
     _, entries = parse_extlinux(text)
-    require(len(entries) == 2, "expected new and previous entries only")
+    defaults = default_entries(entries)
+    require(
+        len(defaults) == 2 and entries[: len(defaults)] == defaults,
+        "expected new and previous default entries first",
+    )
+    require(
+        all(re.fullmatch(SYSTEM, e["system"]) for e in defaults),
+        "default entries must boot a default RG DS system",
+    )
     files = {"extlinux.conf": text.encode()}
     for path in sorted((tree / "nixos").rglob("*")):
         require(not path.is_symlink(), "symlink in generated tree")
@@ -241,9 +286,10 @@ def prepare(system: Path, temp: Path, previous: str, current: str) -> tuple[byte
         header == parse_extlinux(previous)[0], "extlinux handoff differs from image"
     )
     require(
-        [e["system"] for e in entries] == [str(system), current],
+        [e["system"] for e in default_entries(entries)] == [str(system), current],
         "boot tree/system mismatch",
     )
+    check_specialisations(entries, current)
     return archive_payload(tree)
 
 
