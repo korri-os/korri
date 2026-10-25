@@ -18,9 +18,23 @@ let
   crossPkgs = (import nixpkgs { system = "x86_64-linux"; }).pkgsCross.aarch64-multiplatform;
   kernelCross = crossPkgs.callPackage ../../product/kernel/mainline-7.2.nix { };
 in
-{
+rec {
   inherit configuration;
   sdImage = configuration.config.system.build.sdImage;
+  # With a system on eMMC, an SD sharing either filesystem label can make
+  # stage-1 or /boot/firmware select the wrong disk. Match the RG353M rescue
+  # labels and keep the full product composition, not a separate runtime.
+  rescueConfiguration = configuration.extendModules {
+    modules = [
+      {
+        image.baseName = nixpkgs.lib.mkForce "nixos-rgds-rescue";
+        sdImage.rootVolumeLabel = nixpkgs.lib.mkForce "KORRI_RESCUE";
+        sdImage.firmwarePartitionName = nixpkgs.lib.mkForce "KORRI_RBOOT";
+      }
+    ];
+  };
+  rescueSdImage = rescueConfiguration.config.system.build.sdImage;
+  rescueCheck = pkgs: import ./rescue-check.nix { inherit pkgs configuration rescueConfiguration; };
   kernel = configuration.config.boot.kernelPackages.kernel;
   uboot = configuration.pkgs.callPackage ./uboot.nix { };
   inherit kernelCross;

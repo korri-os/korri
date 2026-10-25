@@ -260,13 +260,15 @@ def main():
     parser.add_argument(
         "uboot", type=Path, help="matching u-boot-rockchip.bin regular file"
     )
+    parser.add_argument("--root-label", default="NIXOS_RGDS")
+    parser.add_argument("--firmware-label", default="NIXOS_BOOT")
     args = parser.parse_args()
     try:
         with regular_file(args.image) as image, regular_file(args.uboot) as uboot:
             firmware, root = partitions(image)
             compare_uboot(image, uboot)
-            filesystem(image, firmware, "vfat", "NIXOS_BOOT")
-            filesystem(image, root, "ext4", "NIXOS_RGDS")
+            filesystem(image, firmware, "vfat", args.firmware_label)
+            filesystem(image, root, "ext4", args.root_label)
             with tempfile.TemporaryDirectory(prefix="rgds-verify-") as directory:
                 extracted = Path(directory) / "root.ext4"
                 extract_root(image, root, extracted)

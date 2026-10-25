@@ -89,13 +89,14 @@ class ImageAcceptance(unittest.TestCase):
         copy_sparse(self.root, self.image, ROOT_START)
         copy_sparse(self.uboot, self.image, 64 * 512)
 
-    def verify(self, image=None, uboot=None):
+    def verify(self, image=None, uboot=None, extra_args=()):
         return subprocess.run(
             [
                 sys.executable,
                 str(VERIFY),
                 str(image or self.image),
                 str(uboot or self.uboot),
+                *extra_args,
             ],
             capture_output=True,
             text=True,
@@ -130,6 +131,27 @@ class ImageAcceptance(unittest.TestCase):
                 (p.stat().st_size, p.stat().st_mtime_ns)
                 for p in (self.image, self.uboot)
             ],
+        )
+
+    def test_rescue_labels_are_checked_explicitly(self):
+        run("e2label", str(self.root), "KORRI_RESCUE")
+        run("fatlabel", str(self.fat), "KORRI_RBOOT")
+        copy_sparse(self.root, self.image, ROOT_START)
+        copy_sparse(self.fat, self.image, FAT_START)
+        # A normal-image check must not accept a differently labelled root.
+        self.reject("filesystem label NIXOS_BOOT")
+        result = self.verify(
+            extra_args=(
+                "--root-label",
+                "KORRI_RESCUE",
+                "--firmware-label",
+                "KORRI_RBOOT",
+            )
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.reject(
+            "filesystem label NIXOS_RGDS",
+            extra_args=("--firmware-label", "KORRI_RBOOT"),
         )
 
     def test_bad_embedded_uboot_is_rejected(self):

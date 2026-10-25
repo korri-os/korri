@@ -104,7 +104,9 @@ in
       dd if=${uboot}/u-boot-rockchip.bin of="$img" bs=512 \
         seek=${toString ubootStartSector} conv=notrunc
       ${pkgs.python3}/bin/python3 ${./verify-image.py} \
-        "$img" ${uboot}/u-boot-rockchip.bin
+        "$img" ${uboot}/u-boot-rockchip.bin \
+        --root-label ${lib.escapeShellArg config.sdImage.rootVolumeLabel} \
+        --firmware-label ${lib.escapeShellArg config.sdImage.firmwarePartitionName}
     '';
   };
 }

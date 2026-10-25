@@ -86,6 +86,7 @@
         rg353m = rg353m.configuration;
         rg353m-rescue = rg353m.rescueConfiguration;
         rgds = rgds.configuration;
+        rgds-rescue = rgds.rescueConfiguration;
         rpminiv2 = rpminiv2.configuration;
         r36tmax = r36tmax.configuration;
         odin2portal = odin2portal.configuration;
@@ -187,6 +188,7 @@
           rg353m-rescue-sd-image = rg353m.rescueSdImage;
           rg353m-uboot = rg353m.uboot;
           rgds-sd-image = rgds.sdImage;
+          rgds-rescue-sd-image = rgds.rescueSdImage;
           rgds-kernel = rgds.kernel;
           rgds-uboot = rgds.uboot;
           rpminiv2-sd-image = rpminiv2.sdImage;
@@ -308,6 +310,7 @@
             rgds-mpp = rgds.mppCheck pkgs;
             rgds-update-firmware = import ./nix/devices/rgds/update/fixtures.nix { inherit pkgs; };
             rgds-bluetooth = rgds.bluetoothCheck pkgs;
+            rgds-rescue = rgds.rescueCheck pkgs;
             h700 = import ./nix/devices/h700/module-check.nix {
               inherit pkgs;
               korri = self;

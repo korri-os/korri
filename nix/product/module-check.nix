@@ -763,6 +763,7 @@ assert lib.all
   ];
 assert check.validate "rg353m" korri.nixosConfigurations.rg353m == [ ];
 assert check.validate "rg353m-rescue" korri.nixosConfigurations.rg353m-rescue == [ ];
+assert check.validate "rgds-rescue" korri.nixosConfigurations.rgds-rescue == [ ];
 assert
   check.validateModule "missing-module" withoutProductModule == [
     (check.missingModuleFailure "missing-module")
