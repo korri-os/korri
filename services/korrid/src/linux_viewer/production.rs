@@ -389,7 +389,9 @@ impl ProductionLinuxStreamViewer {
         if portal && portal_ids.is_empty() {
             return Err(error("portal compositor identity is not configured"));
         }
-        let deadline = Instant::now() + Duration::from_secs(10);
+        // Moonlight draws its window only after the stream connects. On an
+        // RG35XX Pro over Wi-Fi that took about 10 s from unit start.
+        let deadline = Instant::now() + Duration::from_secs(30);
         loop {
             if self.units.state(launch).map_err(unit_error)? != LaunchUnitState::Running {
                 return Err(error("cannot focus a viewer that is not running"));
