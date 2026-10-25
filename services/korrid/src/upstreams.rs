@@ -889,11 +889,16 @@ impl UpstreamRegistry {
                 RegisteredClient::Legacy(_) => None,
             })
             .collect();
-        let results = join_all(
-            native
-                .iter()
-                .map(|client| client.moonlight_certificate_attest(host_uuid)),
-        )
+        // One slow or unreachable owner device must not spend the whole
+        // broker budget: bound each attest by the native operation timeout.
+        let results = join_all(native.iter().map(|client| async move {
+            timeout(
+                NATIVE_RPC_TIMEOUT,
+                client.moonlight_certificate_attest(host_uuid),
+            )
+            .await
+            .unwrap_or(Err(UpstreamError::MoonlightCertificatePeerUnavailable))
+        }))
         .await;
         // Most owner devices run no Sunshine host, and any of them may be
         // offline. Their attest failures say they do not own this UUID; they
