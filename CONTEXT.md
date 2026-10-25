@@ -225,6 +225,10 @@ _Avoid_: category, group, namespace
 The dotted name of one setting value inside its sections, such as `video.fps`. The most specific place that sets a path wins for that path alone.
 _Avoid_: key (alone), option, flag
 
+**Cleared setting**:
+A setting path that a place sets to nothing, so values from less specific places no longer apply and the plugin behaves as if no place had set it.
+_Avoid_: reset, unset, tombstone
+
 **Hook**:
 A command that runs on the device just before a game starts or just after its session ends, as the game's user and inside the game's sandbox.
 _Avoid_: script, trigger, callback

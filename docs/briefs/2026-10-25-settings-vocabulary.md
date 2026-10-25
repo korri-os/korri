@@ -1,6 +1,7 @@
 # One settings vocabulary for runner, modifier and service plugins
 
-**Status: draft for owner review, 2026-10-25.** Nothing here is implemented.
+**Status: rules R1 to R8 accepted by the owner, 2026-10-25 (ADR 0037).**
+The open items at the end are still open. Nothing here is implemented.
 The cascade still stores flat scalar settings (`LaunchSettingValue`), so every
 nested shape below needs the nested-settings change that the RetroArch README
 already names as unresolved ("Supplying and persisting nested policy through
@@ -413,13 +414,17 @@ inferred and not checked per SoC (`nvenc_*` ×8, `qsv_*` ×3, `amd_*` ×7,
 1. **Scaling.** RetroArch has `video.scale` and `video.integer-scale`;
    Gamescope has `video.scaling.scaler: integer`. They describe the same idea
    in two forms. This draft leaves both until one form is chosen.
-2. **Nested settings in the cascade.** The fold, the editor's rows and the
-   wire type need nesting before any section above can be stored.
-3. **RetroArch logging.** Legacy has `verbose` (a command-line flag, not
-   ported) and `verbosity` (`log_verbosity`). Merging them into
-   `logging.level` needs the legacy argv renderer checked first.
-4. **`*-in-content-dir`.** These move saves out of Korri's managed save
-   locations. They are probably Korri-owned like the save directories.
-5. **Updater URLs.** `buildbot-url` and `buildbot-assets-url` choose where
-   RetroArch downloads from. They may belong with the other Korri-owned
-   network exposure.
+2. **Where Sunshine's settings sit in a place.** Settled that they are
+   launch settings (ADR 0038); the key in the place body is open.
+
+Settled 2026-10-25:
+
+- Nested storage: leaf paths (ADR 0037).
+- RetroArch logging: `logging.level` accepts `info` and `verbose` (legacy
+  `verbose` adds `-v`, `verbosity` sets `log_verbosity`; both mean
+  `verbose`); `logging.core-level` is `debug | info | warning | error`
+  (`libretro_log_level` 0..3).
+- `saves.*-in-content-dir` and `updater.buildbot-url`,
+  `updater.buildbot-assets-url` are Korri-owned (R8).
+- The cut goes to the RG35XX SP, RG35XX Pro, AYN Odin 2 Portal and Retroid
+  Pocket Mini V2.

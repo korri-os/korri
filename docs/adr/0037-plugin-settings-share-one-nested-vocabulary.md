@@ -28,6 +28,14 @@ program's language.
 - RetroArch, Gamescope, Moonlight and Sunshine move to the vocabulary in one
   cut, together with the engine change. Gamescope gains `settings.describe`
   in the same cut, so its settings appear in the editor.
+- `null` on a setting path clears every value that less specific places set
+  for that path. The plugin never sees `null`; it sees the path as not set.
+  Only a leaf can be cleared, not a whole section.
+- An unknown setting or a bad value never stops a launch. korrid skips it,
+  keeps it in the file, and shows a launch warning that names the path. This
+  replaces Gamescope's refusal (`gamescope-setting`, `gamescope-setting-pair`).
+- Moonlight's settings can be set on the Device page and on game pages.
+  Moonlight is never offered as a game's local runner.
 
 ## Considered options
 
