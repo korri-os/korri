@@ -311,6 +311,8 @@
             rgds-update-firmware = import ./nix/devices/rgds/update/fixtures.nix { inherit pkgs; };
             rgds-bluetooth = rgds.bluetoothCheck pkgs;
             rgds-rescue = rgds.rescueCheck pkgs;
+            rgds-firmware = rgds.firmwareCheck pkgs;
+            rgds-registry = rgds.registryCheck pkgs;
             h700 = import ./nix/devices/h700/module-check.nix {
               inherit pkgs;
               korri = self;

@@ -135,7 +135,9 @@ Production images omit `glmark2`, `mesa-demos`, `vulkan-tools`, and the RG353M
 browser benchmark helpers. The layout check guards the package selections and
 retained graphics/seat/kiosk configuration. Benchmark removal does not remove
 Chromium, graphics drivers, or recovery kernels. RG353M firmware now follows the
-[board/accessory family policy](../devices/rg353m/FIRMWARE.md); Odin firmware is unchanged.
+[board/accessory family policy](../devices/rg353m/FIRMWARE.md). RG DS reuses
+that policy and the on-demand pinned Nixpkgs source approach; see its
+[coverage and limits](../devices/rgds/FIRMWARE.md). Odin firmware is unchanged.
 
 RG353M private candidates measured these comparable `zstd -19 -T2` image sizes,
 using the same kernel and SSH settings at each step:

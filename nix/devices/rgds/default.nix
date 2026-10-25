@@ -47,6 +47,8 @@ rec {
     };
   moduleCheck = pkgs: import ./module-check.nix { inherit pkgs configuration; };
   bluetoothCheck = pkgs: import ./bluetooth-check.nix { inherit pkgs configuration; };
+  firmwareCheck = pkgs: import ./firmware-check.nix { inherit pkgs configuration; };
+  registryCheck = pkgs: import ./nixpkgs-registry-check.nix { inherit pkgs configuration; };
   inputplumberData =
     pkgs: inputplumber: import ./inputplumber-data.nix { inherit pkgs inputplumber; };
   # Exercise the same shrinker as NixOS stage-1 against built ARM modules.

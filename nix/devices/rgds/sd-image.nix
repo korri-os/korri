@@ -13,6 +13,8 @@ in
   imports = [
     (import ../../formats/sd-card.nix { gpt = false; })
     ./rk-mpp-service.nix
+    ./firmware.nix
+    ./nixpkgs-registry.nix
   ];
   nixpkgs.hostPlatform = "aarch64-linux";
   # No suspend or light-sleep path has been verified on this board.
@@ -67,7 +69,6 @@ in
       name = "rockchip/rk3568-anbernic-rg-ds.dtb";
     };
     graphics.enable = true;
-    enableRedistributableFirmware = true;
   };
   environment.systemPackages = [
     pkgs.evtest

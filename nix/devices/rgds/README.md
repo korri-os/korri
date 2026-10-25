@@ -20,6 +20,7 @@ this tree are not proof that a new image has passed hardware acceptance.
 | Bluetooth | The RG DS DTS declares `realtek,rtl8821cs-bt` on UART1 with RTS/CTS and wake/enable GPIOs. The shared kernel's generated config lacked `BT_HCIUART_3WIRE` and `BT_HCIUART_RTL`. The device reuses `../rg353m/bluetooth.nix` to select both and enable BlueZ. Controller discovery and pairing remain unverified. |
 | DS games | The runtime-installed `@korri:melonds` played Tetris DS. The RG DS image now selects the existing `ds` plugin group, which contains melonDS. This does not select any other DS emulator. |
 | Streaming encoder | Before this tree, Sunshine found no encoder on the RG DS (`Unable to find display or encoder during startup`). The image now imports the shared Rockchip RKVENC/MPP support from `../rockchip/` with an `anbernic,rg-ds` overlay. Encoding is unproven on hardware: the modules cannot unload, so the runtime test was stopped. See [the acceptance record](../../../docs/acceptance/rgds-rkmpp-kernel-2026-10-25.md). |
+| Image size | The image uses the RG353M's [board/accessory firmware family policy](FIRMWARE.md) and fetches the pinned Nixpkgs source on demand. Measured on 2026-10-25: 9,471,602,688 bytes decompressed (was 11,402,866,688) and 2,408,679,517 bytes zstd (was 3,315,888,280). Firmware outside the retained families is no longer present. |
 | USB | The DTS makes `usb_host0_xhci` a peripheral. The shared configfs gadget provides serial and USB networking at `10.42.1.1`. A udev rule starts the native getty when `ttyGS0` appears. [USB-CONSOLE.md](USB-CONSOLE.md) records the earlier startup repair. |
 | Access | Physical recovery consoles grant root. The image includes the key-only SSH plugin; root authorization remains device-owned. No personal keys or Wi-Fi secrets ship in the image. |
 | Builds | Devices consume prebuilt artifacts. Never compile or dispatch builds from the handheld. ARM builds use the configured fuji/yari builders. |
@@ -42,6 +43,10 @@ extra-trusted-public-keys = korri-cache-ci-1:iH8gsPMtGrreeuXt2kt6M2ca+y4u/dO+T2k
 nix build --no-link .#checks.x86_64-linux.rgds
 nix build --no-link .#checks.x86_64-linux.rgds-bluetooth
 nix build --no-link .#checks.x86_64-linux.rgds-rescue
+nix build --no-link .#checks.x86_64-linux.rgds-mpp
+nix build --no-link .#checks.aarch64-linux.rgds-firmware
+nix build --no-link .#checks.aarch64-linux.rgds-registry
+nix run .#rgds-update-check
 nix build --no-link .#checks.x86_64-linux.korri-product-image-plugins
 nix build --no-link .#checks.x86_64-linux.korri-product-module
 
