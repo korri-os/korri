@@ -10,9 +10,23 @@ import sys
 import time
 
 choice, executable, *arguments = sys.argv[1:]
+label = os.environ.get("KORRI_PICKER_LABEL", "game")
+mode = os.environ.get("KORRI_PICKER_MODE", "terminal")
+expect_prompt = os.environ.get("KORRI_PICKER_NO_PROMPT") != "1"
+input_read, input_write = os.pipe()
+output_read, output_write = os.pipe()
 pid, terminal = pty.fork()
 if pid == 0:
+    if mode == "stdin-pipe":
+        os.dup2(input_read, 0)
+    elif mode == "stdout-pipe":
+        os.dup2(output_write, 1)
+    for descriptor in (input_read, input_write, output_read, output_write):
+        os.close(descriptor)
     os.execv(executable, [executable, *arguments])
+os.close(input_read)
+os.close(input_write)
+os.close(output_write)
 
 transcript = bytearray()
 answered = False
@@ -31,7 +45,9 @@ try:
         if not chunk:
             break
         transcript.extend(chunk)
-        if not answered and b"Choose game" in transcript:
+        if not answered and f"Choose {label}".encode() in transcript:
+            if not expect_prompt:
+                raise RuntimeError("CLI prompted when explicit input was required")
             os.write(terminal, choice.encode() + b"\n")
             answered = True
     else:
@@ -40,7 +56,9 @@ try:
 finally:
     os.close(terminal)
     _, status = os.waitpid(pid, 0)
+    transcript.extend(os.read(output_read, 65536))
+    os.close(output_read)
 sys.stdout.buffer.write(transcript)
-if not answered:
-    raise RuntimeError("CLI did not ask for an explicit game selection")
+if expect_prompt and not answered:
+    raise RuntimeError(f"CLI did not ask for an explicit {label} selection")
 sys.exit(os.waitstatus_to_exitcode(status))

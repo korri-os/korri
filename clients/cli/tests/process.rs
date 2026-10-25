@@ -76,6 +76,7 @@ type RecordedCalls = Arc<Mutex<Vec<(Option<String>, RpcRequest)>>>;
 struct RpcState {
     calls: RecordedCalls,
     attention_failure: bool,
+    ambiguous_device: bool,
 }
 
 fn settings(revision: &str, name: &str) -> SettingsSnapshot {
@@ -132,7 +133,12 @@ async fn respond(state: RpcState, device: Option<String>, request: RpcRequest) -
         RpcRequest::PeerList(_) => RpcResponse::PeerList(PeerListOutcome::Ok(PeerList {
             peers: vec![PeerListEntry {
                 device_public_key: "44".repeat(32),
-                label: "Other".into(),
+                label: if state.ambiguous_device {
+                    "Current"
+                } else {
+                    "Other"
+                }
+                .into(),
                 state: PeerListState::Ready,
                 updated_at: 1u32.into(),
                 last_error: None,
@@ -168,6 +174,9 @@ struct RpcServer {
 }
 impl RpcServer {
     fn start(attention_failure: bool) -> Self {
+        Self::configured(attention_failure, false)
+    }
+    fn configured(attention_failure: bool, ambiguous_device: bool) -> Self {
         let root = tempfile::tempdir().unwrap();
         let socket = root.path().join("cli.sock");
         let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
@@ -175,6 +184,7 @@ impl RpcServer {
         let state = RpcState {
             calls: Arc::new(Mutex::new(vec![])),
             attention_failure,
+            ambiguous_device,
         };
         let serving = state.clone();
         let (shutdown, stopped) = tokio::sync::oneshot::channel();
@@ -263,4 +273,93 @@ fn rename_uses_selected_device_revision_and_prints_only_the_final_response() {
     assert_eq!(calls.len(), 5);
     assert_eq!(calls[3].0, Some("44".repeat(32)));
     assert_eq!(calls[4].0, Some("44".repeat(32)));
+}
+
+#[test]
+fn device_picker_requires_explicit_selection_and_both_terminals() {
+    for (answer, mode, json, selected) in [
+        ("1", "terminal", false, Some(None)),
+        ("2", "terminal", false, Some(Some("44".repeat(32)))),
+        ("/4444\n1", "terminal", false, Some(Some("44".repeat(32)))),
+        ("q", "terminal", false, None),
+        ("", "terminal", true, None),
+        ("", "stdin-pipe", false, None),
+        ("", "stdout-pipe", false, None),
+    ] {
+        let server = RpcServer::configured(false, true);
+        let mut command = Command::new("python3");
+        command
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/play-library-terminal.py"
+            ))
+            .arg(answer)
+            .arg(env!("CARGO_BIN_EXE_korri"))
+            .args([
+                "--device",
+                "CURRENT",
+                "devices",
+                "rename",
+                "Chosen name",
+                "--socket",
+            ])
+            .arg(server.root.path().join("cli.sock"))
+            .env("KORRI_PICKER_LABEL", "device")
+            .env("KORRI_PICKER_MODE", mode);
+        if json {
+            command.arg("--json");
+        }
+        let prompts = !json && mode == "terminal";
+        if !prompts {
+            command.env("KORRI_PICKER_NO_PROMPT", "1");
+        }
+        let output = command.output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(if selected.is_some() { 0 } else { 1 }),
+            "{answer}/{mode}/{json}: {} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let calls = server.state.calls.lock().unwrap();
+        assert_eq!(calls.len(), if selected.is_some() { 5 } else { 3 });
+        if let Some(selected) = selected {
+            assert_eq!(calls[3].0, selected);
+            assert_eq!(calls[4].0, selected);
+            assert!(
+                matches!(&calls[4].1, RpcRequest::SettingsUpdate(r) if r.value == "Chosen name")
+            );
+        } else if !prompts {
+            let text = String::from_utf8(output.stdout).unwrap();
+            assert!(text.contains("ambiguous"));
+            assert!(text.contains(&"11".repeat(32)));
+            assert!(text.contains(&"44".repeat(32)));
+            assert!(!text.contains("Choose device"));
+            if json {
+                assert!(text.contains("DeviceAmbiguous"));
+            }
+        }
+    }
+}
+
+#[test]
+fn device_picker_piped_ambiguity_lists_matches_without_effects() {
+    let server = RpcServer::configured(false, true);
+    let output = server.run(&["--device", "Current", "devices", "rename", "New", "--json"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    let failure: RpcFailure = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure.code, "DeviceAmbiguous");
+    assert!(failure.message.contains(&"11".repeat(32)));
+    assert!(failure.message.contains(&"44".repeat(32)));
+    assert_eq!(server.state.calls.lock().unwrap().len(), 3);
+}
+
+#[test]
+fn internal_plugin_prepare_never_appears_in_person_help() {
+    let output = binary().arg("--help").output().unwrap();
+    assert!(output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("plugin-prepare"));
+    let output = binary().arg("plugin-prepare").output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
 }

@@ -5,7 +5,7 @@ use crate::{
     output::{self, Output},
     prompt,
 };
-use clap::{Arg, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use korrid::{acquisition::*, *};
 pub struct Get;
 pub struct Downloads;
@@ -157,13 +157,25 @@ fn job_output(response: RpcResponse) -> Output {
 impl Module for Downloads {
     fn command(&self) -> Command {
         Command::new("downloads").about("Inspect game artifacts and provider jobs without mixing their IDs").subcommand_required(true)
- .subcommand(Command::new("status").arg(Arg::new("job").long("job").conflicts_with("game")).arg(Arg::new("game").long("game")))
+ .subcommand(Command::new("status").arg(Arg::new("job").long("job").conflicts_with("game")).arg(Arg::new("game").long("game"))
+     .arg(Arg::new("runner").long("runner").requires("game").help("Inspect artifacts for this exact runner route")))
+ .subcommand(Command::new("start").about("Start declared artifact downloads; never a provider job")
+     .arg(Arg::new("artifact").long("artifact").required(true).action(ArgAction::Append)
+         .value_parser(clap::builder::NonEmptyStringValueParser::new()).value_name("ARTIFACT_ID")
+         .help("Exact artifact ID from downloads status; repeat for more artifacts")))
  .subcommand(Command::new("cancel").arg(Arg::new("job").long("job").required_unless_present("artifact").conflicts_with("artifact")).arg(Arg::new("artifact").long("artifact").help("Declared artifact ID, not a provider job ID")))
  .subcommand(Command::new("remove").about("Remove downloaded game content, never saves; provider job records cannot be removed").arg(required("game")))
     }
     fn run(&self, args: &ArgMatches, context: &Context) -> Result<Output, CliError> {
         let (action, args) = args.subcommand().expect("required subcommand");
         let request = match action {
+            "start" => RpcRequest::AcquisitionStart(AcquisitionStartRequest {
+                artifact_ids: args
+                    .get_many::<String>("artifact")
+                    .expect("required artifacts")
+                    .cloned()
+                    .collect(),
+            }),
             "status" => {
                 if let Some(job) = args.get_one::<String>("job") {
                     RpcRequest::AcquisitionAcquireStatus(AcquireStatusRequest {
@@ -182,7 +194,7 @@ impl Module for Downloads {
                     };
                     RpcRequest::AcquisitionStatus(AcquisitionStatusRequest {
                         game_id,
-                        runner_id: None,
+                        runner_id: args.get_one::<String>("runner").cloned(),
                     })
                 }
             }

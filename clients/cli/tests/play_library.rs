@@ -921,6 +921,70 @@ fn play_library_terminal_picker_requires_an_exact_game_id() {
 }
 
 #[test]
+fn play_library_terminal_picker_numbers_filters_and_cancel_never_guess() {
+    for (answer, selected, ids) in [
+        ("2", Some("b"), ["a", "b"]),
+        ("/B\n1", Some("b"), ["a", "b"]),
+        ("99\n2", Some("b"), ["a", "b"]),
+        ("/no-match\n/\n2", Some("b"), ["a", "b"]),
+        ("q", None, ["a", "b"]),
+        ("2", Some("2"), ["2", "b"]),
+        ("q", Some("q"), ["q", "b"]),
+    ] {
+        let mut responses = vec![RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(
+            LocalGames {
+                games: ids
+                    .map(|id| launcher::LocalGame {
+                        id: id.into(),
+                        title: "Same".into(),
+                        system: "sys".into(),
+                        identity: None,
+                        cover_asset_id: None,
+                        play_stats: None,
+                    })
+                    .to_vec(),
+                failures: None,
+            },
+        ))];
+        if selected.is_some() {
+            responses.push(RpcResponse::GameRoutes(
+                game_routes::GameRoutesOutcome::Err(RpcFailure {
+                    code: "RouteUnavailable".into(),
+                    message: "No launch route".into(),
+                }),
+            ));
+        }
+        let server = Server::start(responses);
+        let output = Command::new("python3")
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/play-library-terminal.py"
+            ))
+            .arg(answer)
+            .arg(env!("CARGO_BIN_EXE_korri"))
+            .arg("--socket")
+            .arg(server.root.path().join("cli.sock"))
+            .args(["play", "Same"])
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{answer}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let calls = server.calls.lock().unwrap();
+        if let Some(id) = selected {
+            assert_eq!(calls.len(), 2);
+            assert!(matches!(&calls[1], RpcRequest::GameRoutes(r) if r.game_id == id));
+        } else {
+            assert_eq!(calls.len(), 1);
+            assert!(String::from_utf8_lossy(&output.stdout).contains("Selection was cancelled"));
+        }
+    }
+}
+
+#[test]
 fn play_library_inherit_clears_only_the_authored_value_with_exact_revision() {
     use launch_settings::*;
     for args in [
@@ -1238,5 +1302,75 @@ fn play_library_profile_rename_refuses_blank_title_and_unknown_profile_without_w
         );
         assert!(output.stdout.is_empty());
         assert_eq!(server.calls.lock().unwrap().len(), expected_reads);
+    }
+}
+
+#[test]
+fn parity_downloads_start_uses_exact_artifact_ids_and_native_result() {
+    let response = RpcResponse::AcquisitionStart(acquisition::AcquisitionOutcome::Ok(
+        acquisition::AcquisitionSnapshot { artifacts: vec![] },
+    ));
+    let server = Server::start(vec![response.clone()]);
+    let output = server.run(&[
+        "downloads",
+        "start",
+        "--artifact",
+        "runner/program",
+        "--artifact",
+        "game/rom",
+        "--json",
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap(),
+        serde_json::to_value(response).unwrap()
+    );
+    let calls = server.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(
+        matches!(&calls[0], RpcRequest::AcquisitionStart(r) if r.artifact_ids == ["runner/program", "game/rom"])
+    );
+}
+
+#[test]
+fn parity_downloads_runner_status_and_invalid_inputs_have_no_start_effects() {
+    let server = Server::start(vec![
+        games(),
+        RpcResponse::AcquisitionStatus(acquisition::AcquisitionOutcome::Ok(
+            acquisition::AcquisitionSnapshot { artifacts: vec![] },
+        )),
+    ]);
+    let output = server.run(&[
+        "downloads",
+        "status",
+        "--game",
+        "game",
+        "--runner",
+        "runner/id",
+        "--json",
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let calls = server.calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert!(
+        matches!(&calls[1], RpcRequest::AcquisitionStatus(r) if r.game_id.as_deref() == Some("game") && r.runner_id.as_deref() == Some("runner/id"))
+    );
+    drop(calls);
+    for args in [
+        vec!["downloads", "start"],
+        vec!["downloads", "start", "--artifact", ""],
+        vec!["downloads", "status", "--runner", "runner/id"],
+    ] {
+        let output = server.run(&args);
+        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(server.calls.lock().unwrap().len(), 2);
     }
 }

@@ -97,7 +97,11 @@ fn rename(context: &Context, args: &ArgMatches) -> Result<Output, CliError> {
                 ));
             }
             (
-                target::resolve(&target::read(&context.client)?, first)?,
+                target::resolve(
+                    &target::read(&context.client)?,
+                    first,
+                    args.get_flag("json"),
+                )?,
                 name,
             )
         }

@@ -286,12 +286,7 @@ pub(crate) fn choose(
             "Several {label} matches: {listing}. Supply an exact ID."
         )));
     }
-    let selected = prompt::read(&format!("Choose {label} by exact ID: {listing}"))?;
-    choices
-        .iter()
-        .find(|(id, _)| id == &selected)
-        .map(|(id, _)| id.clone())
-        .ok_or_else(|| CliError::usage("Choose one of the listed exact IDs."))
+    prompt::select(label, choices)
 }
 
 pub(crate) fn game(

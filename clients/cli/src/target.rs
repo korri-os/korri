@@ -44,7 +44,11 @@ pub fn key(identity: &IdentityState) -> Option<&str> {
 
 /// None selects this device. PeerList contains only verified owner devices;
 /// korrid independently checks the live evidence again before forwarding.
-pub fn resolve(facts: &TargetFacts, selector: &str) -> Result<Option<String>, CliError> {
+pub fn resolve(
+    facts: &TargetFacts,
+    selector: &str,
+    json: bool,
+) -> Result<Option<String>, CliError> {
     let local_key = key(&facts.identity);
     if local_key == Some(selector) {
         return Ok(None);
@@ -78,18 +82,47 @@ pub fn resolve(facts: &TargetFacts, selector: &str) -> Result<Option<String>, Cl
             "No verified owner device matches that name or key.",
             "Run korri devices list. Use SSH or local access for another owner's device.",
         )),
-        _ => Err(CliError::failure(
-            "DeviceAmbiguous",
-            format!(
-                "The device name is ambiguous: {}",
-                matches
+        _ => {
+            use std::io::IsTerminal;
+            if !json
+                && crate::prompt::interactive(
+                    std::io::stdin().is_terminal(),
+                    std::io::stdout().is_terminal(),
+                )
+            {
+                let choices = matches
                     .iter()
-                    .map(|(key, name, _)| format!("{} ({key})", crate::output::text(name)))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            "Use an exact device key from korri devices list.",
-        )),
+                    .map(|(key, name, local)| {
+                        (
+                            (*key).to_owned(),
+                            if *local {
+                                format!("{name} (current)")
+                            } else {
+                                (*name).to_owned()
+                            },
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let chosen = crate::prompt::select("device", &choices)?;
+                return Ok(if local_key == Some(chosen.as_str()) {
+                    None
+                } else {
+                    Some(chosen)
+                });
+            }
+            Err(CliError::failure(
+                "DeviceAmbiguous",
+                format!(
+                    "The device name is ambiguous: {}",
+                    matches
+                        .iter()
+                        .map(|(key, name, _)| format!("{} ({key})", crate::output::text(name)))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                "Use an exact device key from korri devices list.",
+            ))
+        }
     }
 }
 
@@ -129,25 +162,28 @@ mod tests {
     #[test]
     fn exact_keys_work_but_duplicate_labels_never_guess() {
         let facts = facts();
-        assert_eq!(resolve(&facts, "local").unwrap(), None);
-        assert_eq!(resolve(&facts, "peer").unwrap(), Some("peer".into()));
+        assert_eq!(resolve(&facts, "local", false).unwrap(), None);
+        assert_eq!(resolve(&facts, "peer", false).unwrap(), Some("peer".into()));
         assert_eq!(
-            resolve(&facts, "HANDHELD").unwrap_err().failure.code,
+            resolve(&facts, "HANDHELD", true).unwrap_err().failure.code,
             "DeviceAmbiguous"
         );
         assert_eq!(
-            resolve(&facts, "unknown").unwrap_err().failure.code,
+            resolve(&facts, "unknown", false).unwrap_err().failure.code,
             "DeviceNotFound"
         );
         let mut facts = facts;
         facts.name = Some("Current".into());
-        assert_eq!(resolve(&facts, "HANDHELD").unwrap(), Some("peer".into()));
+        assert_eq!(
+            resolve(&facts, "HANDHELD", true).unwrap(),
+            Some("peer".into())
+        );
         facts.peers.push(PeerListEntry {
             device_public_key: "second".into(),
             ..facts.peers[0].clone()
         });
         assert_eq!(
-            resolve(&facts, "HANDHELD").unwrap_err().failure.code,
+            resolve(&facts, "HANDHELD", true).unwrap_err().failure.code,
             "DeviceAmbiguous"
         );
     }
@@ -158,7 +194,7 @@ mod tests {
             reason: "invalid".into(),
         };
         assert_eq!(
-            resolve(&facts, "local").unwrap_err().failure.code,
+            resolve(&facts, "local", false).unwrap_err().failure.code,
             "DeviceNotFound"
         );
     }

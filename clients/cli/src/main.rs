@@ -86,7 +86,9 @@ fn run(matches: &clap::ArgMatches) -> Result<u8, CliError> {
     let client = Client::new(&socket)?;
     let selector = matches.get_one::<String>("device");
     let device = selector
-        .map(|selector| target::read(&client).and_then(|facts| target::resolve(&facts, selector)))
+        .map(|selector| {
+            target::read(&client).and_then(|facts| target::resolve(&facts, selector, json))
+        })
         .transpose()?
         .flatten();
     let context = Context {
