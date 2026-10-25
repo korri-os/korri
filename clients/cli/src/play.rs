@@ -96,10 +96,20 @@ impl Module for Play {
                 &assignments,
             )?)
         };
-        let check = context.rpc(&RpcRequest::SavesCheck(SaveCheckRequest {
+        let check_request = RpcRequest::SavesCheck(SaveCheckRequest {
             game_id: game_id.clone(),
             runner_id: Some(runner_id.clone()),
-        }))?;
+        });
+        let check = match context.rpc(&check_request) {
+            Ok(response) => response,
+            // Remote preflight is intentionally refused: save administration is
+            // local-only. Preserve that failed observation, not a launch lock.
+            Err(error) if context.device.is_some() => {
+                korrid::cli::failure_response(&check_request, error.failure)
+                    .map_err(|_| CliError::usage("Could not encode the failed save check."))?
+            }
+            Err(error) => return Err(error),
+        };
         let mut warnings = vec![];
         match &check {
             RpcResponse::SavesCheck(SaveCheckOutcome::Ok(check)) => {
@@ -123,7 +133,15 @@ impl Module for Play {
                     );
                 }
             }
-            _ => warnings.push(output::unknown("Save check", &check)),
+            _ => {
+                warnings.push(output::unknown("Save check", &check));
+                if let Some(device) = &context.device {
+                    warnings.push(format!(
+                        "The save check could not run on device {}. This device did not confirm the save state.",
+                        output::text(device)
+                    ));
+                }
+            }
         }
         let request = RpcRequest::SelectedGameLaunch(SelectedGameLaunchRequest {
             game_id,
@@ -138,7 +156,12 @@ impl Module for Play {
         let human = match &response {
             RpcResponse::SelectedGameLaunch(SelectedGameLaunchOutcome::Ok(result)) => {
                 let mut lines = vec![format!(
-                    "Launch accepted: {}. Gameplay readiness is not yet observed.",
+                    "Launch accepted{}: {}. Gameplay readiness is not yet observed.",
+                    context
+                        .device
+                        .as_ref()
+                        .map(|device| format!(" on device {}", output::text(device)))
+                        .unwrap_or_default(),
                     output::text(&result.session.launch_id)
                 )];
 

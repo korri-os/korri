@@ -48,6 +48,14 @@ impl Server {
                                 },
                             ),
                         )
+                        .route("/forward", post(|State(state): State<Service>, Json(request): Json<korrid::cli::ForwardRequest>| async move {
+                            assert_eq!(request.device_public_key, "22".repeat(32));
+                            state.calls.lock().unwrap().push(request.request.clone());
+                            if matches!(request.request, RpcRequest::SavesCheck(_)) {
+                                return Err(axum::http::StatusCode::FORBIDDEN);
+                            }
+                            Ok(Json(state.responses.lock().unwrap().pop_front().expect("configured forwarded response")))
+                        }))
                         .route("/folder-selection", post(|State(state): State<Service>, Json(path): Json<std::path::PathBuf>| async move { Json(state.grants.issue_approved_path(path).unwrap().token) }))
                         .with_state(state);
                     axum::serve(tokio::net::UnixListener::from_std(listener).unwrap(), app)
@@ -1306,6 +1314,167 @@ fn play_library_profile_rename_refuses_blank_title_and_unknown_profile_without_w
 }
 
 #[test]
+fn play_library_remote_refused_save_preflight_stays_visible_and_does_not_lock_launch() {
+    use game_routes::*;
+    for json in [false, true] {
+        let mut responses = target_responses();
+        responses.extend([
+            games(),
+            route_response(),
+            snapshot_response(test_snapshot()),
+            RpcResponse::SelectedGameLaunch(SelectedGameLaunchOutcome::Ok(SelectedGameLaunch {
+                session: SessionPrepared {
+                    game_id: "game".into(),
+                    launch_id: "remote-launch".into(),
+                },
+                warnings: vec![],
+            })),
+        ]);
+        let server = Server::start(responses);
+        let mut args = vec!["--device", "There", "play", "game"];
+        if json {
+            args.push("--json");
+        }
+        let output = server.run(&args);
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+        if json {
+            let responses: Vec<RpcResponse> = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(responses.len(), 2);
+            assert!(matches!(
+                &responses[0],
+                RpcResponse::SavesCheck(saves::types::SaveCheckOutcome::Err(_))
+            ));
+            assert!(
+                matches!(&responses[1], RpcResponse::SelectedGameLaunch(SelectedGameLaunchOutcome::Ok(result)) if result.session.launch_id == "remote-launch")
+            );
+        } else {
+            let human = String::from_utf8(output.stdout).unwrap();
+            assert!(
+                human.contains(&format!(
+                    "Launch accepted on device {}: remote-launch",
+                    "22".repeat(32)
+                )),
+                "{human}"
+            );
+            assert!(
+                human.contains("save check could not run on device"),
+                "{human}"
+            );
+            assert!(human.contains("did not confirm the save state"), "{human}");
+        }
+        let calls = server.calls.lock().unwrap();
+        assert_eq!(calls.len(), 8);
+        assert!(matches!(&calls[6], RpcRequest::SavesCheck(_)));
+        assert!(matches!(&calls[7], RpcRequest::SelectedGameLaunch(_)));
+    }
+}
+
+fn target_responses() -> Vec<RpcResponse> {
+    vec![
+        RpcResponse::IdentityStatus(IdentityStatusOutcome::Ok(IdentityStatus {
+            identity: identity::IdentityState::Unowned {
+                device_public_key: "11".repeat(32),
+            },
+            local_backup_available: false,
+            retired_public_keys: vec![],
+        })),
+        RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Ok(SettingsSnapshot {
+            revision: "revision".into(),
+            device_name: Some("Here".into()),
+            person_name: None,
+            player_count: 1,
+            editable_setting_ids: vec![],
+            plugins: vec![],
+            steam_grid_db_credential: config::settings::SecretSettingStatus::NotConfigured,
+        })),
+        RpcResponse::PeerList(PeerListOutcome::Ok(PeerList {
+            peers: vec![PeerListEntry {
+                device_public_key: "22".repeat(32),
+                label: "There".into(),
+                state: PeerListState::Ready,
+                updated_at: 1u32.into(),
+                last_error: None,
+            }],
+        })),
+    ]
+}
+
+#[test]
+fn play_library_remote_plugin_install_requires_selected_device_review_not_yes() {
+    use plugin_admin::*;
+    for (approval, installed) in [
+        (None, false),
+        (Some("stale"), false),
+        (Some("reviewed"), true),
+    ] {
+        let mut responses = target_responses();
+        if approval.is_some() {
+            responses.push(RpcResponse::PluginInspect(PluginInspectOutcome::Ok(
+                PluginInspection {
+                    id: "@test:clock".into(),
+                    title: None,
+                    approval: "reviewed".into(),
+                    warning: "native authority".into(),
+                    ports: PluginPorts {
+                        allowed_tcp_ports: vec![],
+                        allowed_udp_ports: vec![],
+                    },
+                    native_units: vec![],
+                    brings: vec![],
+                },
+            )));
+        }
+        if installed {
+            responses.push(RpcResponse::PluginInstall(PluginChangeOutcome::Ok(
+                PluginChangeApplied {},
+            )));
+        }
+        let server = Server::start(responses);
+        let mut args = vec![
+            "--device",
+            "There",
+            "plugins",
+            "install",
+            "https://catalog.example/",
+            "@test:clock",
+            "v1",
+            "--yes",
+            "--json",
+        ];
+        if let Some(approval) = approval {
+            args.extend(["--approval", approval]);
+        }
+        let output = server.run(&args);
+        assert_eq!(
+            output.status.code(),
+            Some(if installed {
+                0
+            } else if approval.is_none() {
+                2
+            } else {
+                1
+            }),
+            "{output:?}"
+        );
+        let calls = server.calls.lock().unwrap();
+        assert_eq!(
+            calls.len(),
+            3 + usize::from(approval.is_some()) + usize::from(installed)
+        );
+        if installed {
+            assert!(
+                matches!(calls.last().unwrap(), RpcRequest::PluginInstall(request) if request.approval == "reviewed")
+            );
+        } else {
+            assert!(!calls
+                .iter()
+                .any(|request| matches!(request, RpcRequest::PluginInstall(_))));
+        }
+    }
+}
+
+#[test]
 fn parity_downloads_start_uses_exact_artifact_ids_and_native_result() {
     let response = RpcResponse::AcquisitionStart(acquisition::AcquisitionOutcome::Ok(
         acquisition::AcquisitionSnapshot { artifacts: vec![] },
@@ -1372,5 +1541,27 @@ fn parity_downloads_runner_status_and_invalid_inputs_have_no_start_effects() {
         let output = server.run(&args);
         assert_eq!(output.status.code(), Some(2));
         assert_eq!(server.calls.lock().unwrap().len(), 2);
+    }
+}
+
+#[test]
+fn play_library_remote_ambiguous_device_never_launches_or_installs() {
+    for command in [vec!["play", "game"], vec!["plugins", "on", "@test:clock"]] {
+        let mut responses = target_responses();
+        if let RpcResponse::PeerList(PeerListOutcome::Ok(list)) = &mut responses[2] {
+            list.peers.push(PeerListEntry {
+                device_public_key: "33".repeat(32),
+                ..list.peers[0].clone()
+            });
+        }
+        let server = Server::start(responses);
+        let mut args = vec!["--device", "There", "--json"];
+        args.extend(command);
+        let output = server.run(&args);
+        assert_eq!(output.status.code(), Some(1));
+        let error: RpcFailure = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error.code, "DeviceAmbiguous");
+        assert_eq!(server.calls.lock().unwrap().len(), 3);
+        assert!(output.stdout.is_empty());
     }
 }
