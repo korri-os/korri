@@ -895,15 +895,24 @@ impl UpstreamRegistry {
                 .map(|client| client.moonlight_certificate_attest(host_uuid)),
         )
         .await;
+        // Most owner devices run no Sunshine host, and any of them may be
+        // offline. Their attest failures say they do not own this UUID; they
+        // must not hide the one peer that does. Report a failure only when no
+        // peer matched.
         let mut matched = Vec::new();
+        let mut first_failure = None;
         for (client, result) in native.into_iter().zip(results) {
             client.ensure_not_revoked()?;
-            if result?.matched {
-                matched.push(client);
+            match result {
+                Ok(attested) if attested.matched => matched.push(client),
+                Ok(_) => {}
+                Err(error) => {
+                    first_failure.get_or_insert(error);
+                }
             }
         }
         match matched.len() {
-            0 => Err(UpstreamError::MoonlightHostNotFound),
+            0 => Err(first_failure.unwrap_or(UpstreamError::MoonlightHostNotFound)),
             1 => Ok(matched.remove(0)),
             _ => Err(UpstreamError::MoonlightHostAmbiguous),
         }

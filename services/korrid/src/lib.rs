@@ -7495,6 +7495,34 @@ command = ["game-two"]
         }
     }
 
+    /// An owner device with no usable Sunshine certificate control.
+    struct FailingMoonlightCertificates;
+
+    impl host::moonlight_certificate::MoonlightCertificateAdapter for FailingMoonlightCertificates {
+        fn available(&self) -> bool {
+            false
+        }
+
+        fn attest(&self, _host_uuid: &str) -> Result<bool, RpcFailure> {
+            Err(RpcFailure {
+                code: "StreamCertificateControlFailed".into(),
+                message: "Stream certificate control request failed".into(),
+            })
+        }
+
+        fn provision(
+            &self,
+            _host_uuid: &str,
+            _client_certificate: &str,
+        ) -> Result<MoonlightCertificateProvisioned, RpcFailure> {
+            panic!("a peer without certificate control must never be provisioned")
+        }
+
+        fn revoke(&self, _host_uuid: &str, _client_certificate: &str) -> Result<bool, RpcFailure> {
+            panic!("a peer without certificate control must never be revoked")
+        }
+    }
+
     #[derive(Default)]
     struct ChangingMoonlightCertificates {
         calls: Mutex<Vec<String>>,
@@ -8343,5 +8371,57 @@ command = ["game-two"]
                     .all(|call| call.starts_with("attest:")));
             }
         }
+    }
+
+    #[tokio::test]
+    async fn brain_provisions_the_one_matching_peer_beside_peers_without_certificate_control() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
+        crate::config::test_fixtures::write(root.path().join("catalog/library.yaml"), "{}\n")
+            .unwrap();
+        let failing_config = root.path().join("failing.toml");
+        std::fs::write(&failing_config, "label = \"failing\"\n").unwrap();
+        let failing_url = serve_router(
+            host_routers_with_certificate_adapter(
+                &failing_config,
+                Arc::new(FailingMoonlightCertificates),
+            )
+            .0,
+        )
+        .await;
+        let host_config = root.path().join("host.toml");
+        std::fs::write(&host_config, "label = \"host\"\n").unwrap();
+        let host = RecordingMoonlightCertificates::matching("sunshine-host");
+        let host_url =
+            serve_router(host_routers_with_certificate_adapter(&host_config, host.clone()).0).await;
+        std::fs::write(
+            root.path().join("upstreams.json"),
+            serde_json::json!([
+                {"label":"failing","kind":"native","baseUrl":failing_url},
+                {"label":"host","kind":"native","baseUrl":host_url}
+            ])
+            .to_string(),
+        )
+        .unwrap();
+        let brain = router_with_capability_and_local_root(
+            "right-token",
+            "https://portal.example",
+            root.path(),
+        );
+        let body = rpc_body_authorized(
+            brain,
+            &serde_json::json!({
+                "_tag": "app.moonlight.certificate.provision",
+                "payload": {"hostUuid": "sunshine-host", "clientCertificate": TEST_CLIENT_PEM}
+            })
+            .to_string(),
+            Some("right-token"),
+        )
+        .await;
+        assert_eq!(body["outcome"]["_tag"], "Ok", "{body}");
+        assert_eq!(
+            host.calls(),
+            ["attest:sunshine-host", "provision:sunshine-host"]
+        );
     }
 }
