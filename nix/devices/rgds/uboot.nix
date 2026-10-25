@@ -13,8 +13,12 @@ buildUBoot {
     hash = "sha256-sMb/PMIpz2PmnpGzcTZELuJcxucFNjjSThAMkJstG4k=";
   };
   defconfig = "anbernic-rg-ds-rk3568_defconfig";
-  BL31 = rkbin.BL31_RK3568;
-  ROCKCHIP_TPL = rkbin.TPL_RK3568;
+  # buildUBoot exports only `env` to the builder; top-level blob paths never
+  # reach binman, which then fakes them and fails.
+  env = {
+    BL31 = rkbin.BL31_RK3568;
+    ROCKCHIP_TPL = rkbin.TPL_RK3568;
+  };
   filesToInstall = [
     "idbloader.img"
     "u-boot.itb"

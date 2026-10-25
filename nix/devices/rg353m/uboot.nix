@@ -6,10 +6,14 @@
 
 buildUBoot {
   defconfig = "anbernic-rgxx3-rk3566_defconfig";
-  BL31 = rkbin.BL31_RK3568;
-  # RG353M uses the RK3568 DDR training blob in upstream U-Boot and in the
-  # legacy ROCKNIX image that booted this device.
-  ROCKCHIP_TPL = rkbin.TPL_RK3568;
+  # buildUBoot exports only `env` to the builder; top-level blob paths never
+  # reach binman, which then fakes them and fails.
+  env = {
+    BL31 = rkbin.BL31_RK3568;
+    # RG353M uses the RK3568 DDR training blob in upstream U-Boot and in the
+    # legacy ROCKNIX image that booted this device.
+    ROCKCHIP_TPL = rkbin.TPL_RK3568;
+  };
 
   filesToInstall = [
     "idbloader.img"
