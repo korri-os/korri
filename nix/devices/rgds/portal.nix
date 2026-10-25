@@ -15,11 +15,23 @@ let
   system = pkgs.stdenv.hostPlatform.system;
 in
 {
+  # Linux 7.2's RG DS DTS declares realtek,rtl8821cs-bt on UART1, like the
+  # RG353M. Reuse its hci_uart protocol selections and BlueZ enablement.
+  imports = [ ../rg353m/bluetooth.nix ];
+
   # This package contains the controller profile observed for this board. The
   # product module owns InputPlumber and inputd themselves.
   services.korriLinuxInput.provider.extraDataPackages = [
     korri.packages.${system}.rgds-inputplumber-data
   ];
+
+  # RTL8821CS deep power saving caused pairing failures and dropped links on
+  # the RG353M; the RG DS also logged a Deep Power mode firmware-ack failure.
+  networking.networkmanager.wifi.powersave = false;
+
+  # Linux 7.2 rk356x-base.dtsi names gpu@fde60000; Panfrost registers devfreq
+  # with that device's name. Share this node between the governor and limits.
+  services.korri.clockGovernor.gpuDevfreqNodes = [ "fde60000.gpu" ];
 
   # The two Goodix touch controllers. This load used to sit in the removed
   # device gadget module.
