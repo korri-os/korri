@@ -59,6 +59,15 @@ assert lib.all (
 assert lib.all (
   name: lib.elem (toString published.korri-plugin-moonlight) (map toString selected.${name})
 ) names;
+# The RG DS played Tetris DS through the runtime-installed melonDS plugin.
+# Seed a receipt for the same runner, as on the other DS-capable defaults.
+assert lib.all
+  (name: lib.elem (toString published.korri-plugin-melonds) (map toString selected.${name}))
+  [
+    "rgds"
+    "rpminiv2"
+    "odin2portal"
+  ];
 assert recoveryWithoutDefaults;
 # Gamescope wraps every launch by default on product images, and only where
 # the image seeds its plugin; recovery images seed no plugin and no modifier.
@@ -67,14 +76,19 @@ assert lib.all (
   devices.${name}.configuration.config.systemd.services.korrid.environment.KORRID_INITIAL_MODIFIERS
   == builtins.toJSON { "@korri:gamescope/gamescope".enabled = true; }
 ) names;
-assert lib.all (
-  name:
-  !(lib.hasAttrByPath [ "korrid" "environment" "KORRID_INITIAL_MODIFIERS" ]
-    devices.${name}.consoleConfiguration.config.systemd.services)
-) [
-  "r36tmax"
-  "rpminiv2"
-];
+assert lib.all
+  (
+    name:
+    !(lib.hasAttrByPath [
+      "korrid"
+      "environment"
+      "KORRID_INITIAL_MODIFIERS"
+    ] devices.${name}.consoleConfiguration.config.systemd.services)
+  )
+  [
+    "r36tmax"
+    "rpminiv2"
+  ];
 assert !(lib.elem (toString published.korri-plugin-sunshine) (map toString selected.r36tmax));
 # Key-only SSH ships on every device (owner decision, 2026-09-30).
 assert lib.all

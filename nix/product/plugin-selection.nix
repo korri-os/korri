@@ -68,7 +68,7 @@ let
 in
 {
   rg353m = shared ++ n64AndDreamcast ++ streamingHost ++ ssh;
-  rgds = shared ++ n64AndDreamcast ++ streamingHost ++ ssh;
+  rgds = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
   r36tmax = shared ++ ssh;
   rpminiv2 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh ++ steam;
   odin2portal = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
