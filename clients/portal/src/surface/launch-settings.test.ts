@@ -8,19 +8,23 @@ import { cpuSteps, gpuSteps, governors, LAUNCH_ID } from "./launch-settings-mode
 const settle = () => new Promise(resolve => setTimeout(resolve, 0))
 const written = async () => { await settle(); await settle(); await settle() }
 
+const section = (title: string, properties: Record<string, unknown>) => ({ type: "object", title, additionalProperties: false, properties })
 const MGBA_SCHEMA = {
   type: "object",
+  additionalProperties: false,
   properties: {
-    frameskip: { type: "integer", title: "Frameskip", description: "Frames skipped between drawn ones.", minimum: 0, maximum: 10, default: 0 },
-    color: { type: "boolean", title: "Colour correction" },
-    // A key with a dot: never split.
-    "gb.solar": { type: "string", title: "Solar sensor", enum: ["off", "low", "high"] },
-    lang: { type: "string", title: "Language", "x-korri-scope": "device" },
+    video: section("Video", {
+      frameskip: { type: "integer", title: "Frameskip", description: "Frames skipped between drawn ones.", minimum: 0, maximum: 10, default: 0 },
+      "color-correction": { type: "boolean", title: "Colour correction" },
+    }),
+    // A leaf two objects down: labelled from both titles.
+    input: section("Input", { solar: section("Solar sensor", { level: { type: "string", title: "Level", enum: ["off", "low", "high"] } }) }),
+    locale: section("Language", { language: { type: "string", title: "Language", "x-korri-scope": "device" } }),
   },
 }
 const runners: InMemoryLaunchSettingsConfig["runners"] = {
   "retroarch/mgba": { title: "mGBA", family: "retroarch", schema: MGBA_SCHEMA, prepare: { _tag: "Ready", payload: { env: { MGBA_AUDIO: "pulse" }, args: ["-f"] } } },
-  "retroarch/gpsp": { title: "gpSP", family: "retroarch", schema: { type: "object", properties: { bios: { type: "boolean", title: "Use BIOS" } } } },
+  "retroarch/gpsp": { title: "gpSP", family: "retroarch", schema: { type: "object", properties: { bios: section("BIOS", { enable: { type: "boolean", title: "Use BIOS" } }) } } },
 }
 const games: InMemoryLaunchSettingsConfig["games"] = { wario: { systemId: "gba", releaseId: "usa", runners: ["retroarch/mgba", "retroarch/gpsp"] } }
 const chosen = { "game:wario/any": { runner: "retroarch/mgba" } }
@@ -34,6 +38,10 @@ function rows(editor: SurfaceLaunchSettings, placeId: string): SurfaceSettingIte
 }
 const row = (editor: SurfaceLaunchSettings, placeId: string, label: string) =>
   rows(editor, placeId).find(item => item.label === label)
+const groupOf = (editor: SurfaceLaunchSettings, placeId: string, title: string) =>
+  editor._tag === "Closed" ? undefined : editor.places.find(place => place.id === placeId)?.groups.find(candidate => candidate.title === title)
+const titles = (editor: SurfaceLaunchSettings, placeId: string) =>
+  editor._tag === "Closed" ? [] : editor.places.find(place => place.id === placeId)?.groups.map(group => group.title) ?? []
 
 async function opened(config: InMemoryLaunchSettingsConfig, chooseRunners?: () => void) {
   const launch = createLaunchSettings(createInMemoryKorridClient({ launchSettings: config }))
@@ -76,7 +84,7 @@ describe("device launch settings", () => {
   it("publish a Launch settings group with source, device-only mark and next-launch note", async () => {
     const launch = createLaunchSettings(createInMemoryKorridClient({ launchSettings: { deviceFacts: RG353M_LAUNCH_FACTS } }))
     await launch.refreshDevice()
-    const group = launch.getSnapshot().deviceGroup
+    const group = launch.getSnapshot().deviceGroups?.[0]
     expect(group?.title).toBe("Launch settings")
     expect(group?.items.map(item => item.label)).toEqual(["CPU min", "CPU max", "GPU min", "GPU max", "CPU governor"])
     expect(group?.items[1]).toMatchObject({ value: "Inherit", source: "100 % (1.80 GHz) from Device (default)", scope: "device" })
@@ -87,7 +95,7 @@ describe("device launch settings", () => {
     expect(launch.getSnapshot().status).toEqual({ _tag: "Saving", settingId: LAUNCH_ID.device("cpu.max") })
     await written()
     expect(launch.getSnapshot().status).toBeUndefined()
-    expect(launch.getSnapshot().deviceGroup?.items[1]).toMatchObject({ value: "45 % (0.82 GHz)", source: "from Device" })
+    expect(launch.getSnapshot().deviceGroups?.[0]?.items[1]).toMatchObject({ value: "45 % (0.82 GHz)", source: "from Device" })
   })
 
   it("show one read-only GPU line on a device without a devfreq GPU", async () => {
@@ -95,7 +103,7 @@ describe("device launch settings", () => {
       launchSettings: { deviceFacts: { ...RG353M_LAUNCH_FACTS, gpuDevfreq: [] } },
     }))
     await launch.refreshDevice()
-    const items = launch.getSnapshot().deviceGroup?.items ?? []
+    const items = launch.getSnapshot().deviceGroups?.[0]?.items ?? []
     expect(items.map(item => item.label)).toEqual(["CPU min", "CPU max", "GPU limits aren't available on this device", "CPU governor"])
     expect(items[2]?.interaction).toBeUndefined()
   })
@@ -103,8 +111,8 @@ describe("device launch settings", () => {
   it("mark steps unknown when the device states no facts", async () => {
     const launch = createLaunchSettings(createInMemoryKorridClient())
     await launch.refreshDevice()
-    expect(launch.getSnapshot().deviceGroup?.items[0]?.description).toBe("Applies at next launch. Sets the device's clock limits. Clock steps unknown.")
-    expect(launch.getSnapshot().deviceGroup?.items[4]?.description).toBe("Applies at next launch. Governors unknown.")
+    expect(launch.getSnapshot().deviceGroups?.[0]?.items[0]?.description).toBe("Applies at next launch. Sets the device's clock limits. Clock steps unknown.")
+    expect(launch.getSnapshot().deviceGroups?.[0]?.items[4]?.description).toBe("Applies at next launch. Governors unknown.")
   })
 
   it("keep the group after a failed read, with Korri's message and Retry", async () => {
@@ -120,7 +128,7 @@ describe("device launch settings", () => {
     }
     const launch = createLaunchSettings(korrid)
     await launch.refreshDevice()
-    expect(launch.getSnapshot().deviceGroup?.items).toEqual([{
+    expect(launch.getSnapshot().deviceGroups?.[0]?.items).toEqual([{
       id: LAUNCH_ID.deviceRetry,
       label: "Launch settings could not be read",
       description: "Korri could not read launch settings.",
@@ -129,7 +137,7 @@ describe("device launch settings", () => {
     fail = false
     expect(launch.act(LAUNCH_ID.deviceRetry)).toBe(true)
     await written()
-    expect(launch.getSnapshot().deviceGroup?.items.map(item => item.label)).toEqual(["CPU min", "CPU max", "GPU min", "GPU max", "CPU governor"])
+    expect(launch.getSnapshot().deviceGroups?.[0]?.items.map(item => item.label)).toEqual(["CPU min", "CPU max", "GPU min", "GPU max", "CPU governor"])
   })
 })
 
@@ -190,61 +198,77 @@ describe("game launch settings editor", () => {
     expect(row(launch.getSnapshot().editor, MGBA, "CPU min")?.source).toBe("Not in force: gpSP runs this game")
   })
 
-  it("adds a runner setting from the schema, writes only once it has a value, and never splits a dotted key", async () => {
+  it("groups a runner's settings by section, each with its own Add setting row", async () => {
     const launch = await opened(base)
-    const add = row(launch.getSnapshot().editor, MGBA, "Add setting")
-    expect(add?.interaction).toEqual({
-      kind: "choice",
-      selected: "",
-      choices: [
-        { value: "frameskip", label: "Frameskip" },
-        { value: "color", label: "Colour correction" },
-        { value: "gb.solar", label: "Solar sensor" },
-        { value: "lang", label: "Language" },
-      ],
-    })
-    launch.change(LAUNCH_ID.set(MGBA, "add-setting"), "frameskip")
+    const editor = launch.getSnapshot().editor
+    expect(titles(editor, MGBA).slice(0, 3)).toEqual(["mGBA · Video", "mGBA · Input", "mGBA · Language"])
+    expect(groupOf(editor, MGBA, "mGBA · Video")?.items).toEqual([{
+      id: LAUNCH_ID.set(MGBA, "add-setting:video"),
+      label: "Add setting",
+      value: "Choose a setting",
+      description: "2 more settings mGBA offers here.",
+      interaction: { kind: "choice", selected: "", choices: [{ value: "video.frameskip", label: "Frameskip" }, { value: "video.color-correction", label: "Colour correction" }] },
+    }])
+    // A deeper leaf reads from its titles; its value is its dotted path.
+    expect(groupOf(editor, MGBA, "mGBA · Input")?.items[0]?.interaction).toMatchObject({ choices: [{ value: "input.solar.level", label: "Solar sensor level" }] })
+    // The place for any runner holds no runner settings.
+    expect(titles(editor, "game:wario/any").some(title => title.startsWith("mGBA"))).toBe(false)
+  })
+
+  it("adds a runner setting from its section, writes it nested by path once it has a value", async () => {
+    const korrid = createInMemoryKorridClient({ launchSettings: base })
+    const sent: unknown[] = []
+    const launch = createLaunchSettings({ ...korrid, setLaunch: request => { sent.push(request); return korrid.setLaunch(request) } })
+    launch.open("wario", "Wario Land 4")
+    await settle()
+    launch.change(LAUNCH_ID.set(MGBA, "add-setting:video"), "video.frameskip")
     expect(launch.getSnapshot().status).toBeUndefined()
     const pending = row(launch.getSnapshot().editor, MGBA, "Frameskip")
     expect(pending).toMatchObject({ value: "Not set here", source: "0 from mGBA (default)", scope: "shared", description: "Frames skipped between drawn ones." })
     expect(pending?.interaction).toEqual({ kind: "number", min: 0, max: 10, step: 1, clearable: true })
-    const left = row(launch.getSnapshot().editor, MGBA, "Add setting")?.interaction
-    expect(left?.kind === "choice" && left.choices).toHaveLength(3)
+    expect(groupOf(launch.getSnapshot().editor, MGBA, "mGBA · Video")?.items.map(item => item.label)).toEqual(["Frameskip", "Default Frameskip", "Add setting"])
 
     // Out of the schema's range: refused on the row, nothing written.
-    launch.change(LAUNCH_ID.set(MGBA, "setting:frameskip"), "12")
-    expect(launch.getSnapshot().status).toEqual({ _tag: "Problem", settingId: LAUNCH_ID.set(MGBA, "setting:frameskip"), message: "That value isn't allowed here." })
+    const frameskip = LAUNCH_ID.set(MGBA, "setting:video.frameskip")
+    launch.change(frameskip, "12")
+    expect(launch.getSnapshot().status).toEqual({ _tag: "Problem", settingId: frameskip, message: "That value isn't allowed here." })
     launch.dismissProblem()
-    launch.change(LAUNCH_ID.set(MGBA, "setting:frameskip"), "2")
+    launch.change(frameskip, "2")
     await written()
+    expect(sent.at(-1)).toMatchObject({ path: { _tag: "Setting", payload: { key: "video.frameskip" } }, value: 2 })
+    expect(sent.at(-1)).not.toHaveProperty("clear")
     expect(row(launch.getSnapshot().editor, MGBA, "Frameskip")).toMatchObject({ value: "2", source: "from Game for mGBA" })
-    expect(row(launch.getSnapshot().editor, MGBA, "Frameskip")?.interaction).toMatchObject({ kind: "number", value: 2 })
+    const snapshot = await korrid.launchSettingsSnapshot("wario")
+    expect(snapshot._tag === "Ok" && snapshot.payload.places.find(place => place.title === "Game for mGBA")?.body).toEqual({ settings: { video: { frameskip: 2 } } })
 
-    launch.change(LAUNCH_ID.set(MGBA, "add-setting"), "gb.solar")
-    launch.change(LAUNCH_ID.set(MGBA, "setting:gb.solar"), JSON.stringify("high"))
+    launch.change(LAUNCH_ID.set(MGBA, "add-setting:input"), "input.solar.level")
+    launch.change(LAUNCH_ID.set(MGBA, "setting:input.solar.level"), JSON.stringify("high"))
     await written()
-    expect(row(launch.getSnapshot().editor, MGBA, "Solar sensor")).toMatchObject({ value: "high", source: "from Game for mGBA" })
+    expect(row(launch.getSnapshot().editor, MGBA, "Solar sensor level")).toMatchObject({ value: "high", source: "from Game for mGBA" })
 
-    launch.change(LAUNCH_ID.set(MGBA, "add-setting"), "lang")
+    launch.change(LAUNCH_ID.set(MGBA, "add-setting:locale"), "locale.language")
     expect(row(launch.getSnapshot().editor, MGBA, "Language")?.scope).toBe("device")
-    launch.change(LAUNCH_ID.set(MGBA, "add-setting"), "color")
+    launch.change(LAUNCH_ID.set(MGBA, "add-setting:video"), "video.color-correction")
     // Inherit on a setting never written takes it away again.
-    launch.change(LAUNCH_ID.set(MGBA, "setting:color"), "inherit")
+    launch.change(LAUNCH_ID.set(MGBA, "setting:video.color-correction"), "inherit")
     expect(launch.getSnapshot().status).toBeUndefined()
     expect(row(launch.getSnapshot().editor, MGBA, "Colour correction")).toBeUndefined()
-    expect(row(launch.getSnapshot().editor, MGBA, "Language")?.interaction).toMatchObject({ kind: "text", placeholder: "Not set here" })
 
-    // Clearing a written number removes it.
-    launch.change(LAUNCH_ID.set(MGBA, "setting:frameskip"), "")
+    // Clearing a written number takes it away; its empty sections go too.
+    launch.change(frameskip, "")
     await written()
     expect(row(launch.getSnapshot().editor, MGBA, "Frameskip")).toBeUndefined()
+    const after = await korrid.launchSettingsSnapshot("wario")
+    expect(after._tag === "Ok" && after.payload.places.find(place => place.title === "Game for mGBA")?.body).toEqual({ settings: { input: { solar: { level: "high" } } } })
   })
 
-  it("offers a family place every installed runner's settings in that family", async () => {
+  it("offers a family place every installed runner's settings in that family, by section", async () => {
     const launch = await opened(base)
-    const add = row(launch.getSnapshot().editor, "game:wario/family:retroarch", "Add setting")?.interaction
-    expect(add?.kind === "choice" && add.choices.map(choice => choice.value)).toEqual(["frameskip", "color", "gb.solar", "lang", "bios"])
-    expect(row(launch.getSnapshot().editor, "game:wario/any", "Add setting")).toBeUndefined()
+    const editor = launch.getSnapshot().editor
+    const FAMILY = "game:wario/family:retroarch"
+    expect(titles(editor, FAMILY).slice(0, 4)).toEqual(["Family retroarch · Video", "Family retroarch · Input", "Family retroarch · Language", "Family retroarch · BIOS"])
+    expect(groupOf(editor, FAMILY, "Family retroarch · BIOS")?.items[0]?.interaction).toMatchObject({ choices: [{ value: "bios.enable", label: "Use BIOS" }] })
+    expect(row(editor, "game:wario/any", "Add setting")).toBeUndefined()
   })
 
   it("shows file-only values read-only, with source and device-only scope", async () => {
@@ -512,8 +536,11 @@ describe("launch modifiers", () => {
       schema: {
         type: "object",
         properties: {
-          "output.width": { type: "integer", title: "Output width", minimum: 320, maximum: 7680 },
-          filter: { type: "string", title: "Upscale filter", enum: ["linear", "fsr"] },
+          video: section("Video", {
+            output: section("Output", { width: { type: "integer", title: "Width", minimum: 320, maximum: 7680 } }),
+            scaling: section("Scaling", { filter: { type: "string", title: "Filter", enum: ["linear", "fsr"] } }),
+          }),
+          window: section("Window", { borderless: { type: "boolean", title: "Borderless" } }),
         },
       },
     },
@@ -524,28 +551,30 @@ describe("launch modifiers", () => {
     modifiers,
     bodies: {
       ...chosen,
-      "device/any": { modifiers: { "korri/gamescope": { enabled: true, settings: { "output.width": 1280 } } } },
+      "device/any": { modifiers: { "korri/gamescope": { enabled: true, settings: { video: { output: { width: 1280 } } } } } },
       "profile:quiet/any": { modifiers: { "korri/gamescope": { enabled: false } } },
       "game:wario/any": { runner: "retroarch/mgba", modifiers: { "korri/vkbasalt": { enabled: true } } },
     },
     profiles: { wario: [{ id: "quiet", title: "Quiet" }] },
   }
-  const group = (editor: SurfaceLaunchSettings, placeId: string, title: string) =>
-    editor._tag === "Closed" ? undefined : editor.places.find(place => place.id === placeId)?.groups.find(candidate => candidate.title === title)
+  const group = groupOf
 
-  it("lists every installed modifier on every place, inherited with its source", async () => {
+  it("lists every installed modifier on every place, inherited with its source, its settings by section", async () => {
     const launch = await opened(withModifiers)
     const editor = launch.getSnapshot().editor
-    const gamescope = group(editor, "game:wario/runner:retroarch/mgba", "Modifier Gamescope")
+    const gamescope = group(editor, MGBA, "Modifier Gamescope")
+    expect(gamescope?.items).toHaveLength(1)
     expect(gamescope?.items[0]).toMatchObject({ label: "Gamescope", value: "Inherit", source: "On from Device", scope: "device" })
     expect(gamescope?.items[0]?.interaction).toEqual({
       kind: "choice",
       selected: "inherit",
       choices: [{ value: "inherit", label: "Inherit" }, { value: "true", label: "On" }, { value: "false", label: "Off" }],
     })
-    expect(gamescope?.items.map(item => item.label)).toEqual(["Gamescope", "Add Gamescope setting"])
-    const device = group(editor, "device/any", "Modifier Gamescope")
-    expect(device?.items.map(item => [item.label, item.value])).toEqual([["Gamescope", "On"], ["Output width", "1280"], ["Add Gamescope setting", "Choose a setting"]])
+    expect(titles(editor, MGBA).filter(title => title.includes("Gamescope"))).toEqual(["Modifier Gamescope", "Gamescope · Video", "Gamescope · Window"])
+    expect(group(editor, MGBA, "Gamescope · Video")?.items.map(item => item.label)).toEqual(["Add setting"])
+    expect(group(editor, "device/any", "Gamescope · Video")?.items.map(item => [item.label, item.value])).toEqual([
+      ["Output width", "1280"], ["Default Output width", "Use"], ["Add setting", "Choose a setting"],
+    ])
   })
 
   it("shows a profile turning a modifier off, and the off in force once the profile is picked", async () => {
@@ -557,7 +586,9 @@ describe("launch modifiers", () => {
 
   it("gives a modifier with no schema its on/off row and nothing else", async () => {
     const launch = await opened(withModifiers)
-    expect(group(launch.getSnapshot().editor, "game:wario/any", "Modifier MangoHud")?.items.map(item => item.label)).toEqual(["MangoHud"])
+    const editor = launch.getSnapshot().editor
+    expect(group(editor, "game:wario/any", "Modifier MangoHud")?.items.map(item => item.label)).toEqual(["MangoHud"])
+    expect(titles(editor, "game:wario/any").filter(title => title.startsWith("MangoHud"))).toEqual([])
   })
 
   it("names a modifier a place sets that isn't installed", async () => {
@@ -568,14 +599,14 @@ describe("launch modifiers", () => {
     })
   })
 
-  it("turns a modifier on, adds a setting from its schema, writes it once it has a value, and never splits a dotted key", async () => {
+  it("turns a modifier on, adds a setting from its section, writes it once it has a value", async () => {
     const launch = await opened(withModifiers)
     const place = "game:wario/any"
     launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:enabled"), "false")
     await written()
     expect(group(launch.getSnapshot().editor, place, "Modifier Gamescope")?.items[0]).toMatchObject({ value: "Off", source: "from Game" })
-    launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:add-setting"), "output.width")
-    const pending = LAUNCH_ID.set(place, "modifier:korri/gamescope:setting:output.width")
+    launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:add-setting:video"), "video.output.width")
+    const pending = LAUNCH_ID.set(place, "modifier:korri/gamescope:setting:video.output.width")
     expect(row(launch.getSnapshot().editor, place, "Output width")).toMatchObject({ value: "Not set here", source: "1280 from Device", scope: "device" })
     expect(row(launch.getSnapshot().editor, place, "Output width")?.interaction).toEqual({ kind: "number", min: 320, max: 7680, step: 1, clearable: true })
     launch.change(pending, "100")
@@ -585,23 +616,26 @@ describe("launch modifiers", () => {
     await written()
     expect(row(launch.getSnapshot().editor, place, "Output width")).toMatchObject({ value: "1920", source: "from Game" })
     // A runner setting and a modifier's are pending apart.
-    launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:add-setting"), "filter")
-    launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:setting:filter"), "inherit")
-    expect(row(launch.getSnapshot().editor, place, "Upscale filter")).toBeUndefined()
+    launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:add-setting:video"), "video.scaling.filter")
+    expect(row(launch.getSnapshot().editor, place, "Scaling filter")).toMatchObject({ value: "Not set here" })
+    launch.change(LAUNCH_ID.set(place, "modifier:korri/gamescope:setting:video.scaling.filter"), "inherit")
+    expect(row(launch.getSnapshot().editor, place, "Scaling filter")).toBeUndefined()
   })
 })
 
 describe("string settings", () => {
-  const LANG = "setting:lang"
+  const LANG = "setting:locale.language"
+  const ADD = LAUNCH_ID.set(MGBA, "add-setting:locale")
 
   it("hold their raw text, take an empty string as a value, and go back to Inherit through their own row", async () => {
     const launch = await opened(base)
-    launch.change(LAUNCH_ID.set(MGBA, "add-setting"), "lang")
+    launch.change(ADD, "locale.language")
     // Pending: no value, the placeholder says so, and the editor starts empty.
     expect(row(launch.getSnapshot().editor, MGBA, "Language")).toMatchObject({ scope: "device" })
     expect(row(launch.getSnapshot().editor, MGBA, "Language")?.value).toBeUndefined()
     expect(row(launch.getSnapshot().editor, MGBA, "Language")?.interaction).toEqual({ kind: "text", placeholder: "Not set here", allowEmpty: true })
     expect(row(launch.getSnapshot().editor, MGBA, "Inherit Language")?.interaction).toEqual({ kind: "action", actionId: LAUNCH_ID.set(MGBA, `clear:${LANG}`) })
+    expect(row(launch.getSnapshot().editor, MGBA, "Default Language")?.interaction).toEqual({ kind: "action", actionId: LAUNCH_ID.set(MGBA, `default:${LANG}`) })
 
     launch.change(LAUNCH_ID.set(MGBA, LANG), "de")
     await written()
@@ -615,12 +649,12 @@ describe("string settings", () => {
     expect(empty?.interaction).toMatchObject({ placeholder: "Empty" })
     expect(empty?.source).toBe("from Game for mGBA")
 
-    // Inherit clears it: the row goes, Add setting offers it again.
+    // Inherit takes it away: the row goes, Add setting offers it again.
     expect(launch.act(LAUNCH_ID.set(MGBA, `clear:${LANG}`))).toBe(true)
     await written()
     expect(row(launch.getSnapshot().editor, MGBA, "Language")).toBeUndefined()
-    const add = row(launch.getSnapshot().editor, MGBA, "Add setting")?.interaction
-    expect(add?.kind === "choice" && add.choices.some(choice => choice.value === "lang")).toBe(true)
+    const add = groupOf(launch.getSnapshot().editor, MGBA, "mGBA · Language")?.items[0]?.interaction
+    expect(add?.kind === "choice" && add.choices.some(choice => choice.value === "locale.language")).toBe(true)
   })
 
   it("withdraws a pending string through Inherit without writing", async () => {
@@ -630,7 +664,7 @@ describe("string settings", () => {
     const launch = createLaunchSettings(counted)
     launch.open("wario", "Wario Land 4")
     await settle()
-    launch.change(LAUNCH_ID.set(MGBA, "add-setting"), "lang")
+    launch.change(ADD, "locale.language")
     launch.act(LAUNCH_ID.set(MGBA, `clear:${LANG}`))
     expect(row(launch.getSnapshot().editor, MGBA, "Language")).toBeUndefined()
     expect(writes).toBe(0)
@@ -639,12 +673,210 @@ describe("string settings", () => {
   it("does the same for a modifier's string setting", async () => {
     const launch = await opened({
       ...base,
-      modifiers: { "korri/gamescope": { title: "Gamescope", schema: { properties: { backend: { type: "string", title: "Backend" } } } } },
-      bodies: { ...chosen, "device/any": { modifiers: { "korri/gamescope": { settings: { backend: "wayland" } } } } },
+      modifiers: { "korri/gamescope": { title: "Gamescope", schema: { properties: { backend: section("Backend", { name: { type: "string", title: "Backend" } }) } } } },
+      bodies: { ...chosen, "device/any": { modifiers: { "korri/gamescope": { settings: { backend: { name: "wayland" } } } } } },
     })
     expect(row(launch.getSnapshot().editor, "device/any", "Backend")).toMatchObject({ value: "wayland" })
-    launch.act(LAUNCH_ID.set("device/any", "clear:modifier:korri/gamescope:setting:backend"))
+    launch.act(LAUNCH_ID.set("device/any", "clear:modifier:korri/gamescope:setting:backend.name"))
     await written()
     expect(row(launch.getSnapshot().editor, "device/any", "Backend")).toBeUndefined()
+  })
+})
+
+describe("Default: a cleared setting", () => {
+  it("offers Default on every choice row, writes clear: true, and shows Default with the plugin's default as its source", async () => {
+    const korrid = createInMemoryKorridClient({ launchSettings: { ...base, bodies: { ...chosen, "device/runner:retroarch/mgba": { settings: { video: { frameskip: 4, "color-correction": true } } } } } })
+    const sent: unknown[] = []
+    const launch = createLaunchSettings({ ...korrid, setLaunch: request => { sent.push(request); return korrid.setLaunch(request) } })
+    launch.open("wario", "Wario Land 4")
+    await settle()
+    const DEVICE_MGBA = "device/runner:retroarch/mgba"
+    const color = row(launch.getSnapshot().editor, DEVICE_MGBA, "Colour correction")
+    expect(color?.interaction).toEqual({
+      kind: "choice",
+      selected: "true",
+      choices: [{ value: "inherit", label: "Inherit" }, { value: "default", label: "Default" }, { value: "true", label: "On" }, { value: "false", label: "Off" }],
+    })
+    launch.change(LAUNCH_ID.set(DEVICE_MGBA, "setting:video.color-correction"), "default")
+    await written()
+    expect(sent.at(-1)).toEqual({ place: { layer: { _tag: "Device" }, scope: { _tag: "Runner", id: "retroarch/mgba" } }, path: { _tag: "Setting", payload: { key: "video.color-correction" } }, clear: true, expectedRevision: "device-1" })
+    // No default in mGBA's schema: mGBA decides.
+    expect(row(launch.getSnapshot().editor, DEVICE_MGBA, "Colour correction")).toMatchObject({ value: "Default", source: "mGBA decides" })
+    expect(row(launch.getSnapshot().editor, DEVICE_MGBA, "Colour correction")?.interaction).toMatchObject({ selected: "default" })
+
+    // A number's Default is a row of its own; the Game inherits the default.
+    expect(launch.act(LAUNCH_ID.set(DEVICE_MGBA, "default:setting:video.frameskip"))).toBe(true)
+    await written()
+    expect(sent.at(-1)).toMatchObject({ path: { _tag: "Setting", payload: { key: "video.frameskip" } }, clear: true })
+    expect(sent.at(-1)).not.toHaveProperty("value")
+    const frameskip = row(launch.getSnapshot().editor, DEVICE_MGBA, "Frameskip")
+    expect(frameskip).toMatchObject({ value: "Default", source: "0 from mGBA (default)" })
+    expect(frameskip?.interaction).toEqual({ kind: "number", min: 0, max: 10, step: 1, clearable: true })
+    expect(row(launch.getSnapshot().editor, DEVICE_MGBA, "Default Frameskip")).toBeUndefined()
+    const snapshot = await korrid.launchSettingsSnapshot("wario")
+    expect(snapshot._tag === "Ok" && snapshot.payload.places.find(place => place.title === "Device for mGBA")?.body).toEqual({ settings: { video: { frameskip: null, "color-correction": null } } })
+
+    // Inherit from Default takes the place's value away: no value, no clear.
+    launch.change(LAUNCH_ID.set(DEVICE_MGBA, "setting:video.frameskip"), "")
+    await written()
+    expect(sent.at(-1)).toEqual({ place: { layer: { _tag: "Device" }, scope: { _tag: "Runner", id: "retroarch/mgba" } }, path: { _tag: "Setting", payload: { key: "video.frameskip" } }, expectedRevision: "device-3" })
+  })
+
+  it("clears what less specific places set, so a more specific row names the plugin's default", async () => {
+    const launch = await opened({
+      ...base,
+      bodies: { ...chosen, "device/runner:retroarch/mgba": { settings: { video: { frameskip: 4 } } }, "game:wario/runner:retroarch/mgba": { settings: { video: { frameskip: null } } } },
+    })
+    const editor = launch.getSnapshot().editor
+    expect(row(editor, "device/runner:retroarch/mgba", "Frameskip")).toMatchObject({ value: "4", source: "0 from mGBA (default)" })
+    expect(row(editor, MGBA, "Frameskip")).toMatchObject({ value: "Default", source: "0 from mGBA (default)" })
+  })
+})
+
+describe("settings korrid skips", () => {
+  it("say on their rows and in a note that the value is not applied, and why", async () => {
+    const launch = await opened({ ...base, bodies: { ...chosen, "device/runner:retroarch/mgba": { settings: { video: { frameskip: 30 } } } } })
+    const editor = launch.getSnapshot().editor
+    if (editor._tag !== "Ready") throw new Error(editor._tag)
+    expect(row(editor, "device/runner:retroarch/mgba", "Frameskip")).toMatchObject({ value: "30", source: "Not applied: 30 is above the maximum of 10" })
+    expect(row(editor, "game:wario/any", "Frameskip")).toBeUndefined()
+    launch.change(LAUNCH_ID.set(MGBA, "add-setting:video"), "video.frameskip")
+    expect(row(launch.getSnapshot().editor, MGBA, "Frameskip")?.source).toBe("30 from Device for mGBA isn't applied: 30 is above the maximum of 10")
+    expect(editor.notes).toEqual(["Frameskip (mGBA) isn't applied: 30 is above the maximum of 10."])
+  })
+})
+
+const MOONLIGHT = "@korri:moonlight/moonlight"
+const MOONLIGHT_SCHEMA = {
+  type: "object",
+  properties: {
+    video: section("Video", {
+      fps: { type: "integer", title: "FPS", minimum: 10, maximum: 240 },
+      codec: { type: "string", title: "Codec", enum: ["auto", "h264", "h265", "av1"], default: "h264" },
+      hdr: section("HDR", { enable: { type: "boolean", title: "Enable" } }),
+    }),
+    audio: section("Audio", { channels: { type: "string", title: "Channels", enum: ["stereo", "5.1", "7.1"] } }),
+  },
+}
+const withMoonlight: InMemoryLaunchSettingsConfig = {
+  ...base,
+  runners: { ...runners, [MOONLIGHT]: { title: "Moonlight", schema: MOONLIGHT_SCHEMA, choosable: false } },
+  bodies: {
+    ...chosen,
+    [`device/runner:${MOONLIGHT}`]: { settings: { video: { fps: 30, codec: null } } },
+    [`game:wario/runner:${MOONLIGHT}`]: { settings: { audio: { channels: "stereo" } } },
+  },
+}
+
+describe("Moonlight, a runner that only views streams", () => {
+  it("is its own scope with groups by section on a game page, and never a Runner choice", async () => {
+    const launch = await opened(withMoonlight)
+    const editor = launch.getSnapshot().editor
+    if (editor._tag !== "Ready") throw new Error(editor._tag)
+    const GAME = `game:wario/runner:${MOONLIGHT}`
+    expect(editor.places.filter(place => place.layer.id === "game:wario").map(place => place.scope.label)).toEqual(["Any runner", "Family retroarch", "mGBA", "gpSP", "Moonlight"])
+    expect(titles(editor, GAME).slice(0, 2)).toEqual(["Moonlight · Video", "Moonlight · Audio"])
+    const runner = row(editor, "game:wario/any", "Runner")?.interaction
+    expect(runner?.kind === "choice" && runner.choices.map(choice => choice.label)).toEqual(["Inherit", "mGBA", "gpSP"])
+    expect(row(editor, GAME, "Channels")).toMatchObject({ value: "stereo", source: "Applies when this device streams the game", scope: "device" })
+    // Its other rows say the same, never "Not in force: mGBA runs this game".
+    expect(row(editor, GAME, "CPU max")?.source).toBe("Applies when this device streams the game")
+    // The Device's cleared codec names Moonlight's default; HDR reads from its section.
+    const DEVICE = `device/runner:${MOONLIGHT}`
+    expect(row(editor, DEVICE, "Codec")).toMatchObject({ value: "Default", source: "h264 from Moonlight (default)" })
+    expect(row(editor, DEVICE, "FPS")).toMatchObject({ value: "30", source: "Applies when this device streams the game" })
+    expect(groupOf(editor, DEVICE, "Moonlight · Video")?.items.at(-1)?.interaction).toMatchObject({ choices: [{ value: "video.hdr.enable", label: "HDR" }] })
+    // Moonlight never runs the game, so it never asks for a choice either.
+    expect(editor.notes).toEqual([])
+  })
+
+  it("is offered on the Device settings page, with Add setting and Default", async () => {
+    const korrid = createInMemoryKorridClient({ launchSettings: withMoonlight })
+    const sent: unknown[] = []
+    const launch = createLaunchSettings({ ...korrid, setLaunch: request => { sent.push(request); return korrid.setLaunch(request) } })
+    await launch.refreshDevice()
+    const groups = () => launch.getSnapshot().deviceGroups ?? []
+    expect(groups().map(group => group.title)).toEqual(["Launch settings", "Moonlight · Video", "Moonlight · Audio"])
+    const video = groups()[1]
+    const DEVICE = `device/runner:${MOONLIGHT}`
+    expect(video?.items.map(item => [item.label, item.value, item.source])).toEqual([
+      ["FPS", "30", "Applies when this device streams a game"],
+      ["Default FPS", "Use", undefined],
+      ["Codec", "Default", "h264 from Moonlight (default)"],
+      ["Add setting", "Choose a setting", undefined],
+    ])
+    expect(video?.items[0]?.id).toBe(LAUNCH_ID.deviceSet(DEVICE, "setting:video.fps"))
+
+    // Add setting shows the row with nothing written; a choice writes it.
+    expect(launch.change(LAUNCH_ID.deviceSet(DEVICE, "add-setting:audio"), "audio.channels")).toBe(true)
+    expect(sent).toEqual([])
+    expect(groups()[2]?.items.map(item => item.label)).toEqual(["Channels"])
+    launch.change(LAUNCH_ID.deviceSet(DEVICE, "setting:audio.channels"), JSON.stringify("5.1"))
+    await written()
+    expect(sent.at(-1)).toMatchObject({ path: { _tag: "Setting", payload: { key: "audio.channels" } }, value: "5.1" })
+    expect(groups()[2]?.items[0]).toMatchObject({ label: "Channels", value: "5.1" })
+
+    // Default on a number writes a Cleared setting.
+    expect(launch.act(LAUNCH_ID.deviceSet(DEVICE, "default:setting:video.fps"))).toBe(true)
+    await written()
+    expect(sent.at(-1)).toMatchObject({ path: { _tag: "Setting", payload: { key: "video.fps" } }, clear: true })
+    expect(groups()[1]?.items[0]).toMatchObject({ label: "FPS", value: "Default", source: "Moonlight decides" })
+  })
+
+  it("is refused as a game's runner", async () => {
+    const launch = await opened(withMoonlight)
+    launch.change(LAUNCH_ID.set("game:wario/any", "runner"), MOONLIGHT)
+    await written()
+    expect(launch.getSnapshot().editor).toMatchObject({ _tag: "Error", message: "@korri:moonlight/moonlight runs no game; it views streams." })
+  })
+})
+
+describe("Sunshine, a launch service", () => {
+  const SUNSHINE = "@korri:sunshine/sunshine"
+  const withSunshine: InMemoryLaunchSettingsConfig = {
+    ...base,
+    services: {
+      [SUNSHINE]: {
+        title: "Sunshine",
+        schema: {
+          type: "object",
+          properties: {
+            video: section("Video", { "max-bitrate-kbps": { type: "integer", title: "Max bitrate (kbps)", minimum: 0 } }),
+            input: section("Input", { gamepad: { type: "string", title: "Gamepad", enum: ["auto", "ds5"], default: "auto" } }),
+          },
+        },
+      },
+    },
+    bodies: { ...chosen, "device/any": { services: { [SUNSHINE]: { settings: { video: { "max-bitrate-kbps": 3000 } } } } } },
+  }
+
+  it("has groups by section on every place, device-only, and writes a ServiceSetting", async () => {
+    const korrid = createInMemoryKorridClient({ launchSettings: withSunshine })
+    const sent: unknown[] = []
+    const launch = createLaunchSettings({ ...korrid, setLaunch: request => { sent.push(request); return korrid.setLaunch(request) } })
+    launch.open("wario", "Wario Land 4")
+    await settle()
+    const editor = launch.getSnapshot().editor
+    for (const place of ["device/any", "game:wario/any", MGBA]) expect(titles(editor, place).filter(title => title.startsWith("Sunshine"))).toEqual(["Sunshine · Video", "Sunshine · Input"])
+    expect(row(editor, "device/any", "Max bitrate (kbps)")).toMatchObject({ value: "3000", source: "from Device", scope: "device" })
+    launch.change(LAUNCH_ID.set(MGBA, `service:${SUNSHINE}:add-setting:video`), "video.max-bitrate-kbps")
+    expect(row(launch.getSnapshot().editor, MGBA, "Max bitrate (kbps)")).toMatchObject({ value: "Not set here", source: "3000 from Device", scope: "device" })
+    launch.change(LAUNCH_ID.set(MGBA, `service:${SUNSHINE}:setting:video.max-bitrate-kbps`), "8000")
+    await written()
+    expect(sent.at(-1)).toMatchObject({ path: { _tag: "ServiceSetting", payload: { id: SUNSHINE, key: "video.max-bitrate-kbps" } }, value: 8000 })
+    expect(row(launch.getSnapshot().editor, "game:wario/any", "Max bitrate (kbps)")).toBeUndefined()
+    expect(groupOf(launch.getSnapshot().editor, "game:wario/any", "Sunshine · Video")?.items[0]?.label).toBe("Add setting")
+
+    launch.change(LAUNCH_ID.set("game:wario/any", `service:${SUNSHINE}:add-setting:input`), "input.gamepad")
+    launch.change(LAUNCH_ID.set("game:wario/any", `service:${SUNSHINE}:setting:input.gamepad`), "default")
+    await written()
+    expect(sent.at(-1)).toMatchObject({ path: { _tag: "ServiceSetting", payload: { id: SUNSHINE, key: "input.gamepad" } }, clear: true })
+    expect(row(launch.getSnapshot().editor, "game:wario/any", "Gamepad")).toMatchObject({ value: "Default", source: "auto from Sunshine (default)" })
+  })
+
+  it("shows on the Device settings page", async () => {
+    const launch = createLaunchSettings(createInMemoryKorridClient({ launchSettings: withSunshine }))
+    await launch.refreshDevice()
+    expect(launch.getSnapshot().deviceGroups?.map(group => group.title)).toEqual(["Launch settings", "Sunshine · Video", "Sunshine · Input"])
   })
 })

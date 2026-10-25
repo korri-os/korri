@@ -375,10 +375,10 @@ export function SurfaceRoot({
     return () => starterPackOnboarding.setNeeded(false)
   }, [starterPackOnboarding, onboardingNeeded])
 
-  const launchGroup = launchState.deviceGroup
+  const launchGroups = launchState.deviceGroups
   const settings = useMemo(
-    () => settingsFrom({ ...facts, onboardingNeeded, ...(launchGroup === undefined ? {} : { launchSettings: launchGroup }) }),
-    [facts, onboardingNeeded, launchGroup],
+    () => settingsFrom({ ...facts, onboardingNeeded, ...(launchGroups === undefined ? {} : { launchSettings: launchGroups }) }),
+    [facts, onboardingNeeded, launchGroups],
   )
   // Setup run again: `heard` counts input since setup began, so pads heard
   // during the first run must not pass the second one unproven.

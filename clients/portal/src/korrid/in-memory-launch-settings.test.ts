@@ -1,6 +1,6 @@
 /** The in-memory brain answers as korrid does (ADR 0028, services/korrid/src/launch_settings). */
 import { describe, expect, it } from "bun:test"
-import type { LaunchPlace } from "@contracts/generated/korrid"
+import type { LaunchPath, LaunchPlace } from "@contracts/generated/korrid"
 import { createInMemoryLaunchSettings, type InMemoryLaunchSettingsConfig } from "./in-memory-launch-settings"
 
 const runners: InMemoryLaunchSettingsConfig["runners"] = {
@@ -81,10 +81,10 @@ describe("in-memory launch settings, korrid's rules", () => {
   it("lists a place for each layer and every installed runner, with editable kinds", async () => {
     const result = await snapshot({ bodies: { "game:wario/any": { runner: "retroarch/mgba" } } })
     expect(result.places.filter(entry => entry.place.layer._tag === "Game").map(entry => [entry.title, entry.editableKinds])).toEqual([
-      ["Game", ["runner", "cpu", "gpu", "modifiers"]],
-      ["Game for family retroarch", ["cpu", "gpu", "modifiers", "settings"]],
-      ["Game for mGBA", ["cpu", "gpu", "modifiers", "settings"]],
-      ["Game for gpSP", ["cpu", "gpu", "modifiers", "settings"]],
+      ["Game", ["runner", "cpu", "gpu", "modifiers", "services"]],
+      ["Game for family retroarch", ["cpu", "gpu", "modifiers", "settings", "services"]],
+      ["Game for mGBA", ["cpu", "gpu", "modifiers", "settings", "services"]],
+      ["Game for gpSP", ["cpu", "gpu", "modifiers", "settings", "services"]],
     ])
   })
 
@@ -121,5 +121,76 @@ describe("in-memory launch settings, korrid's rules", () => {
       { source: { _tag: "Place", payload: place("device/any") }, value: [{ run: "lights off" }], routine: "lights" },
       { source: { _tag: "Place", payload: place("device/any") }, value: [{ run: "sync" }] },
     ])
+  })
+
+  describe("nested settings (ADR 0037)", () => {
+    const nested: InMemoryLaunchSettingsConfig["runners"] = {
+      "retroarch/mgba": {
+        title: "mGBA",
+        family: "retroarch",
+        schema: { properties: { video: { type: "object", properties: { fps: { type: "integer", minimum: 1, maximum: 60, default: 60 }, smooth: { type: "boolean" } } } } },
+      },
+    }
+    const setting = (key: string): LaunchPath => ({ _tag: "Setting", payload: { key } })
+
+    it("folds one leaf at a time; null clears less specific places and the plugin default holds", async () => {
+      const result = await snapshot({
+        runners: nested,
+        bodies: {
+          "game:wario/any": { runner: "retroarch/mgba" },
+          "device/runner:retroarch/mgba": { settings: { video: { fps: 30, smooth: true } } },
+          "game:wario/runner:retroarch/mgba": { settings: { video: { fps: null, smooth: null } } },
+        },
+      })
+      expect(result.resolved.values["settings.video.fps"]).toEqual({ path: { _tag: "Editable", payload: setting("video.fps") }, value: 60, source: { _tag: "PluginDefault", payload: { pluginId: "retroarch/mgba" } }, adjusted: false })
+      expect(result.resolved.values["settings.video.smooth"]).toBeUndefined()
+    })
+
+    it("writes a leaf by its dotted path, clears it to null, and takes it away with its empty sections", async () => {
+      const brain = createInMemoryLaunchSettings({ games, runners: nested })
+      const at = place("game:wario/runner:retroarch/mgba")
+      const bodyOf = async () => {
+        const result = await brain.methods.launchSettingsSnapshot("wario")
+        return result._tag === "Ok" ? result.payload.places.find(entry => entry.title === "Game for mGBA")?.body : undefined
+      }
+      expect((await brain.methods.setLaunch({ place: at, path: setting("video.fps"), value: 30, expectedRevision: "games-1" }))._tag).toBe("Ok")
+      expect(await bodyOf()).toEqual({ settings: { video: { fps: 30 } } })
+      expect((await brain.methods.setLaunch({ place: at, path: setting("video.fps"), clear: true, expectedRevision: "games-2" }))._tag).toBe("Ok")
+      expect(await bodyOf()).toEqual({ settings: { video: { fps: null } } })
+      // clear with a value, and a clear of a whole section, are refused.
+      expect((await brain.methods.setLaunch({ place: at, path: setting("video.fps"), value: 30, clear: true, expectedRevision: "games-3" }))._tag).toBe("Err")
+      expect((await brain.methods.setLaunch({ place: at, path: setting("video"), clear: true, expectedRevision: "games-3" }))._tag).toBe("Err")
+      expect((await brain.methods.setLaunch({ place: at, path: setting("video.fps"), expectedRevision: "games-3" }))._tag).toBe("Ok")
+      expect(await bodyOf()).toEqual({ settings: {} })
+    })
+
+    it("keeps a value the schema does not take and names it in a SettingSkipped notice", async () => {
+      const result = await snapshot({
+        runners: nested,
+        bodies: { "game:wario/any": { runner: "retroarch/mgba" }, "device/runner:retroarch/mgba": { settings: { video: { fps: 90, sharp: true } } } },
+      })
+      expect(result.resolved.values["settings.video.fps"]?.value).toBe(90)
+      expect(result.notices).toEqual([
+        { _tag: "SettingSkipped", payload: { path: setting("video.fps"), message: "90 is above the maximum of 60" } },
+        { _tag: "SettingSkipped", payload: { path: setting("video.sharp"), message: "mGBA has no setting video.sharp" } },
+      ])
+    })
+  })
+
+  it("lists a stream runner on every snapshot, never chosen, and a launch service's settings for every place", async () => {
+    const brain = createInMemoryLaunchSettings({
+      games: { wario: { systemId: "gba", runners: ["retroarch/mgba"] } },
+      runners: { ...runners, "@korri:moonlight/moonlight": { title: "Moonlight", choosable: false } },
+      services: { "korri/sunshine": { title: "Sunshine", schema: { properties: { video: { type: "object", properties: { "max-bitrate-kbps": { type: "integer" } } } } } } },
+      bodies: { "game:wario/any": { services: { "korri/sunshine": { settings: { video: { "max-bitrate-kbps": 3000 } } } } } },
+    })
+    const game = await brain.methods.launchSettingsSnapshot("wario")
+    if (game._tag === "Err") throw new Error(game.payload.message)
+    expect(game.payload.runners.map(runner => [runner.id, runner.selected, runner.choosable])).toEqual([["retroarch/mgba", true, true], ["@korri:moonlight/moonlight", false, false]])
+    expect(game.payload.resolved.values["services.korri/sunshine.settings.video.max-bitrate-kbps"]).toMatchObject({ path: { _tag: "Editable", payload: { _tag: "ServiceSetting", payload: { id: "korri/sunshine", key: "video.max-bitrate-kbps" } } }, value: 3000 })
+    const device = await brain.methods.launchSettingsSnapshot()
+    if (device._tag === "Err") throw new Error(device.payload.message)
+    expect(device.payload.places.map(entry => entry.title)).toEqual(["Device", "Device for Moonlight"])
+    expect((await brain.methods.setLaunch({ place: place("game:wario/any"), path: { _tag: "Runner" }, value: "@korri:moonlight/moonlight", expectedRevision: "games-1" }))._tag).toBe("Err")
   })
 })

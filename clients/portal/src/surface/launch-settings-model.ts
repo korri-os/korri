@@ -12,10 +12,17 @@
  * Each row the person may change is published with a write: the place and
  * the typed `set` path it names, and how its choice becomes a JSON value.
  * The controller looks a changed row up by id; nothing parses an id.
+ *
+ * Plugin settings (a runner's, a modifier's, a launch service's) are nested
+ * in sections (ADR 0037). Each top-level section of a plugin's schema is one
+ * group, "Moonlight · Video", with its own Add setting row; a row names one
+ * leaf by its dotted setting path. Every such row offers Default, which
+ * writes a Cleared setting: the plugin's own default holds there.
  */
 import type {
   LaunchDeviceFacts,
   LaunchLayer,
+  LaunchModifierSnapshot,
   LaunchPath,
   LaunchPlace,
   LaunchPlaceSnapshot,
@@ -48,6 +55,8 @@ export const LAUNCH_ID = {
   device: (setting: LimitKey) => `launch-device:${setting}`,
   /** An editor row: one value on one place. */
   set: (placeId: string, path: string) => `launch:set:${placeId}#${path}`,
+  /** A Device-settings row of one place's plugin settings (Moonlight, Sunshine). */
+  deviceSet: (placeId: string, path: string) => `launch-device:set:${placeId}#${path}`,
   pick: "launch:profile:pick",
   create: "launch:profile:new",
   rename: (profileId: string) => `launch:profile:rename:${profileId}`,
@@ -62,7 +71,11 @@ export const LAUNCH_ID = {
 } as const
 
 /** The `editableKinds` strings korrid uses, in one place. */
-export const KIND = { runner: "runner", cpu: "cpu", gpu: "gpu", modifiers: "modifiers", settings: "settings" } as const
+export const KIND = { runner: "runner", cpu: "cpu", gpu: "gpu", modifiers: "modifiers", settings: "settings", services: "services" } as const
+
+/** Choice value for a Cleared setting: the plugin's default holds here.
+ * Never a JSON-encoded value (those are quoted, or numbers and booleans). */
+export const DEFAULT = "default"
 
 /**
  * A resolved value's path as one comparable string. korrid names each value
@@ -85,22 +98,26 @@ const LIMIT_PATH: Record<LimitKey, LaunchPath> = {
   "cpu.governor": { _tag: "CpuGovernor" },
 }
 
-/** What a changed row writes. `encode` turns the surface's text into the
- * value to send: `undefined` clears, `null` refuses the text. */
+/** What a changed row writes. `encode` turns the surface's text into what
+ * to send: no value takes this place's value away (Inherit), `clear` writes
+ * a Cleared setting (Default), and `null` refuses the text. */
 export interface LaunchWrite {
   readonly place: LaunchPlace
   readonly path: LaunchPath
-  readonly encode: (text: string) => { readonly value?: unknown } | null
+  readonly encode: (text: string) => LaunchEncoded | null
 }
+export type LaunchEncoded = { readonly value?: unknown; readonly clear?: true }
 
-/** A setting added with Add setting and not yet given a value: a runner's
- * or a modifier's, so the two never meet. */
+/** A setting added with Add setting and not yet given a value: a runner's,
+ * a modifier's or a launch service's, so they never meet. `key` is its
+ * dotted setting path. */
 export type PendingSetting =
   | { readonly _tag: "Runner"; readonly key: string }
   | { readonly _tag: "Modifier"; readonly id: string; readonly key: string }
+  | { readonly _tag: "Service"; readonly id: string; readonly key: string }
 
 export const samePending = (a: PendingSetting, b: PendingSetting): boolean =>
-  a.key === b.key && (a._tag === "Runner" ? b._tag === "Runner" : b._tag === "Modifier" && a.id === b.id)
+  a.key === b.key && a._tag === b._tag && (a._tag === "Runner" || (b._tag !== "Runner" && a.id === b.id))
 
 /** A row's change that adds a pending setting rather than writing. */
 export interface LaunchAdd {
@@ -119,6 +136,9 @@ export interface LaunchEditor {
   readonly pending: ReadonlyMap<string, { readonly placeId: string; readonly setting: PendingSetting }>
   /** Inherit rows of string settings, by row id: the setting row each clears. */
   readonly clears: ReadonlyMap<string, string>
+  /** Default rows of number and string settings, by row id: the setting row
+   * each writes a Cleared setting for. */
+  readonly defaults: ReadonlyMap<string, string>
 }
 
 // --- places ----------------------------------------------------------------
@@ -266,6 +286,7 @@ export function governors(facts: LaunchDeviceFacts | undefined): readonly string
 // --- words -----------------------------------------------------------------
 
 const INHERIT_CHOICE: SurfaceSettingChoice = { value: INHERIT, label: "Inherit" }
+const DEFAULT_CHOICE: SurfaceSettingChoice = { value: DEFAULT, label: "Default" }
 const NO_FLOOR: SurfaceSettingChoice = { value: "0", label: "0 % (no floor)" }
 const NEXT_LAUNCH = "Applies at next launch."
 const MAX_PROFILE_TITLE = 40
@@ -280,8 +301,17 @@ export function valueText(value: unknown): string {
   return JSON.stringify(value)
 }
 
+/** A launch service korrid lists: the shape of a modifier, with no switch. */
+export type LaunchServiceSnapshot = LaunchModifierSnapshot
+
+/** The launch services a snapshot lists. */
+export const servicesOf = (snapshot: LaunchSnapshot): readonly LaunchServiceSnapshot[] =>
+  (snapshot as LaunchSnapshot & { readonly services?: readonly LaunchServiceSnapshot[] }).services ?? []
+
 interface Context {
   readonly snapshot: LaunchSnapshot
+  /** No game: the Device settings page reads this snapshot. */
+  readonly devicePage: boolean
   readonly places: readonly LaunchPlaceSnapshot[]
   readonly cpu: Steps
   readonly gpu: Steps
@@ -292,15 +322,22 @@ interface Context {
   readonly resolved: (path: LaunchPath) => LaunchSourcedValue | undefined
   /** A list kind in force (arguments, hooks), with each place's part. */
   readonly list: (kind: ListKind) => LaunchSourcedValue | undefined
+  /** Why korrid does not apply the value in force at a path, when it says so. */
+  readonly skipped: (path: LaunchPath) => string | undefined
 }
 
 function contextOf(snapshot: LaunchSnapshot, gameId?: string): Context {
-  const selected = snapshot.runners.find(runner => runner.selected)
+  const selected = snapshot.runners.find(runner => runner.selected && runner.choosable)
   const byPath = new Map(Object.values(snapshot.resolved.values).map(value => [valuePathKey(value.path), value]))
+  const skipped = new Map(snapshot.notices.flatMap(notice => notice._tag === "SettingSkipped"
+    ? [[editablePathKey(notice.payload.path), notice.payload.message] as const]
+    : []))
   return {
     resolved: path => byPath.get(valuePathKey(editable(path))),
     list: kind => byPath.get(valuePathKey({ _tag: kind })),
+    skipped: path => skipped.get(editablePathKey(path)),
     snapshot,
+    devicePage: gameId === undefined,
     places: orderedPlaces(snapshot, gameId),
     cpu: cpuSteps(snapshot.deviceFacts),
     gpu: gpuSteps(snapshot.deviceFacts),
@@ -316,14 +353,27 @@ function sourceTitle(context: Context, source: LaunchSource): string {
       const place = context.places.find(candidate => samePlace(candidate.place, source.payload))
       return place === undefined ? layerTitle(context, source.payload.layer) : placeTitle(context, place)
     }
-    case "PluginDefault": {
-      const runner = context.snapshot.runners.find(candidate => candidate.id === source.payload.pluginId)
-      return `${runner === undefined ? source.payload.pluginId : context.runnerTitles.get(runner.id) ?? runner.title} (default)`
-    }
+    case "PluginDefault":
+      return `${pluginTitle(context, source.payload.pluginId)} (default)`
     case "DeviceDefault":
       return "Device (default)"
   }
 }
+
+/** A plugin's title by its id: a runner's, a modifier's or a service's. */
+function pluginTitle(context: Context, pluginId: string): string {
+  const runner = context.snapshot.runners.find(candidate => candidate.id === pluginId)
+  if (runner !== undefined) return context.runnerTitles.get(runner.id) ?? runner.title
+  return [...context.snapshot.modifiers, ...servicesOf(context.snapshot)].find(candidate => candidate.id === pluginId)?.title ?? pluginId
+}
+
+/** A runner korrid never offers as a game's runner (Moonlight): its
+ * settings apply when this device streams a game from another device. */
+const streamRunner = (context: Context, scope: LaunchRunnerScope): boolean =>
+  scope._tag === "Runner" && context.snapshot.runners.some(runner => runner.id === scope.id && !runner.choosable)
+
+const streamLine = (context: Context) =>
+  context.devicePage ? "Applies when this device streams a game" : "Applies when this device streams the game"
 
 /** Whether a place's scope applies to the runner this game launches with. */
 function applies(context: Context, scope: LaunchRunnerScope): boolean {
@@ -332,6 +382,14 @@ function applies(context: Context, scope: LaunchRunnerScope): boolean {
     case "Family": return context.selected?.family === scope.id
     case "Runner": return context.selected?.id === scope.id
   }
+}
+
+/** When a place's values would apply, said instead of a source while they do not. */
+function notInForceScope(context: Context, scope: LaunchRunnerScope): string | undefined {
+  if (streamRunner(context, scope)) return streamLine(context)
+  if (applies(context, scope)) return undefined
+  const name = context.selected === undefined ? undefined : context.runnerTitles.get(context.selected.id) ?? context.selected.title
+  return name === undefined ? "Applies once a runner is chosen" : `Not in force: ${name} runs this game`
 }
 
 /**
@@ -345,10 +403,8 @@ function sourceText(
   resolved: LaunchSourcedValue | undefined,
   show: (value: unknown) => string,
 ): string | undefined {
-  if (!applies(context, here.scope)) {
-    const name = context.selected === undefined ? undefined : context.runnerTitles.get(context.selected.id) ?? context.selected.title
-    return name === undefined ? "Applies once a runner is chosen" : `Not in force: ${name} runs this game`
-  }
+  const waiting = notInForceScope(context, here.scope)
+  if (waiting !== undefined) return waiting
   // A list kind has no one source: its contributions name theirs.
   const source = resolved?.source
   if (resolved === undefined || source === undefined) return undefined
@@ -395,7 +451,10 @@ interface Rows {
   readonly adds: Map<string, LaunchAdd>
   readonly pending: Map<string, { readonly placeId: string; readonly setting: PendingSetting }>
   readonly clears: Map<string, string>
+  readonly defaults: Map<string, string>
 }
+
+const emptyRows = (): Rows => ({ writes: new Map(), adds: new Map(), pending: new Map(), clears: new Map(), defaults: new Map() })
 
 const percentOf = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined
@@ -501,13 +560,16 @@ function limitGroups(context: Context, rows: Rows, place: LaunchPlace, body: Jso
   return groups
 }
 
-/** The runner choice, on places that may hold one. */
+/** The runner choice, on places that may hold one. A runner korrid never
+ * offers for a game (Moonlight) is no choice here. */
 function runnerGroup(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json): SurfaceSettingGroup {
   const own = typeof body.runner === "string" ? body.runner : undefined
   const id = LAUNCH_ID.set(placeId, "runner")
-  const installed = context.snapshot.runners.map(runner => ({ value: runner.id, label: context.runnerTitles.get(runner.id) ?? runner.title }))
+  const installed = context.snapshot.runners.filter(runner => runner.choosable).map(runner => ({ value: runner.id, label: context.runnerTitles.get(runner.id) ?? runner.title }))
   const missing = own !== undefined && !installed.some(choice => choice.value === own)
-  const choices = [INHERIT_CHOICE, ...installed, ...(missing ? [{ value: own, label: `${own} (not installed)` }] : [])]
+  const streamer = own === undefined ? undefined : context.snapshot.runners.find(runner => runner.id === own && !runner.choosable)
+  const missingLabel = streamer === undefined ? `${own} (not installed)` : `${context.runnerTitles.get(streamer.id) ?? streamer.title} (streams only)`
+  const choices = [INHERIT_CHOICE, ...installed, ...(missing ? [{ value: own, label: missingLabel }] : [])]
   rows.writes.set(id, { place, path: { _tag: "Runner" }, encode: text => text === INHERIT ? {} : { value: text } })
   const source = sourceText(context, place, context.resolved({ _tag: "Runner" }), value =>
     typeof value === "string" ? context.runnerTitles.get(value) ?? value : valueText(value))
@@ -517,7 +579,9 @@ function runnerGroup(context: Context, rows: Rows, placeId: string, place: Launc
       id,
       label: "Runner",
       value: choices.find(choice => choice.value === (own ?? INHERIT))?.label ?? "Inherit",
-      description: missing
+      description: streamer !== undefined
+        ? "This runner only views streams; it runs no game. Korri skips it here."
+        : missing
         ? "This runner isn't installed. Korri skips it and its runner settings here."
         : "The most specific place that names an installed runner wins.",
       ...(source === undefined ? {} : { source }),
@@ -527,75 +591,186 @@ function runnerGroup(context: Context, rows: Rows, placeId: string, place: Launc
   }
 }
 
-// --- runner settings -------------------------------------------------------
+// --- plugin settings -------------------------------------------------------
 
-interface Property {
+/** One setting a plugin's schema describes: a leaf, named by its dotted path. */
+interface Leaf {
+  readonly path: string
+  /** The row's label, from the schema's titles of the leaf and the objects
+   * between it and its section ("HDR", "Resolution width"). */
+  readonly label: string
   readonly type?: string
-  readonly title?: string
   readonly description?: string
   readonly enum?: readonly unknown[]
   readonly minimum?: number
   readonly maximum?: number
+  /** The plugin's own default, when its schema states one. */
+  readonly default?: { readonly value: unknown }
   readonly device: boolean
 }
 
-function propertiesOf(schema: unknown): ReadonlyMap<string, Property> {
-  const properties = record(record(schema)?.properties) ?? {}
-  return new Map(Object.entries(properties).flatMap(([key, raw]) => {
-    const property = record(raw)
-    if (property === undefined) return []
-    const type = Array.isArray(property.type) ? property.type.find(item => item !== "null") : property.type
-    return [[key, {
-      ...(typeof type === "string" ? { type } : {}),
-      ...(typeof property.title === "string" ? { title: property.title } : {}),
-      ...(typeof property.description === "string" ? { description: property.description } : {}),
-      ...(Array.isArray(property.enum) ? { enum: property.enum } : {}),
-      ...(typeof property.minimum === "number" ? { minimum: property.minimum } : {}),
-      ...(typeof property.maximum === "number" ? { maximum: property.maximum } : {}),
-      device: property["x-korri-scope"] === "device",
-    } satisfies Property]]
-  }))
+/** A top-level section of a plugin's schema; `key` "" holds leaves outside any section. */
+interface Section {
+  readonly key: string
+  readonly title: string
+  readonly leaves: readonly Leaf[]
 }
 
-/** The settings a runner place may set: its runner's schema, or for a family
- * place every installed runner of the family (the first to name a key wins). */
-function schemaFor(context: Context, scope: LaunchRunnerScope): ReadonlyMap<string, Property> {
-  if (scope._tag === "Any") return new Map()
-  const runners = context.snapshot.runners.filter(runner => scope._tag === "Runner" ? runner.id === scope.id : runner.family === scope.id)
-  const merged = new Map<string, Property>()
-  for (const runner of runners) {
-    for (const [key, property] of propertiesOf(runner.schema)) if (!merged.has(key)) merged.set(key, property)
+/** Short words a schema key spells in capitals when it has no title. */
+const ACRONYMS = new Set(["fps", "hdr", "sdr", "ip", "qp", "fec", "av1", "hevc", "ds4", "ds5", "vk", "cpu", "gpu", "id", "url"])
+
+/** A key as words, when its schema gives no title: "max-nits" is "Max nits". */
+function humanize(key: string): string {
+  const words = key.split(/[-_]/).filter(word => word !== "").map(word => ACRONYMS.has(word) ? word.toUpperCase() : word)
+  const text = words.join(" ")
+  return text === "" ? key : `${text.charAt(0).toUpperCase()}${text.slice(1)}`
+}
+
+/** A title inside a label: "Max nits" reads "max nits" after "HDR"; "SDR nits" keeps its capitals. */
+const inner = (title: string) => /^[A-Z][a-z]/.test(title) ? `${title.charAt(0).toLowerCase()}${title.slice(1)}` : title
+
+/**
+ * A leaf's label from its own title and the titles of the objects between
+ * it and its section. An `enable` leaf is named by its feature ("HDR"); a
+ * leaf whose title already names its object keeps its title alone.
+ */
+function leafLabel(objects: readonly string[], key: string, title: string | undefined): string {
+  const own = title ?? humanize(key)
+  if (objects.length === 0) return own
+  if (key === "enable" && (title === undefined || /^enabled?$/i.test(title))) return [objects[0] ?? "", ...objects.slice(1).map(inner)].join(" ")
+  const named = objects.filter(object => !own.toLowerCase().includes(object.toLowerCase()))
+  const [first, ...rest] = [...named, own]
+  return [first ?? own, ...rest.map(inner)].join(" ")
+}
+
+const typeOf = (node: Json): string | undefined => {
+  const type = Array.isArray(node.type) ? node.type.find(item => item !== "null") : node.type
+  return typeof type === "string" ? type : undefined
+}
+const isObjectNode = (node: Json) => typeOf(node) === "object" || (node.type === undefined && record(node.properties) !== undefined)
+const titleOf = (node: Json, key: string) => typeof node.title === "string" ? node.title : humanize(key)
+
+function leafOf(node: Json, segments: readonly string[], objects: readonly string[]): Leaf {
+  const key = segments[segments.length - 1] ?? ""
+  const type = typeOf(node)
+  return {
+    path: segments.join("."),
+    label: leafLabel(objects, key, typeof node.title === "string" ? node.title : undefined),
+    ...(type === undefined ? {} : { type }),
+    ...(typeof node.description === "string" ? { description: node.description } : {}),
+    ...(Array.isArray(node.enum) ? { enum: node.enum } : {}),
+    ...(typeof node.minimum === "number" ? { minimum: node.minimum } : {}),
+    ...(typeof node.maximum === "number" ? { maximum: node.maximum } : {}),
+    ...("default" in node ? { default: { value: node.default } } : {}),
+    device: node["x-korri-scope"] === "device",
   }
-  return merged
+}
+
+/** Every leaf under an object, in schema order. A name never holds a dot;
+ * one that does is skipped, as korrid skips it. */
+function leavesOf(node: Json, segments: readonly string[], objects: readonly string[]): Leaf[] {
+  return Object.entries(record(node.properties) ?? {}).flatMap(([key, raw]) => {
+    const child = record(raw)
+    if (child === undefined || key.includes(".") || key === "") return []
+    return isObjectNode(child)
+      ? leavesOf(child, [...segments, key], [...objects, titleOf(child, key)])
+      : [leafOf(child, [...segments, key], objects)]
+  })
+}
+
+/** A plugin's nested settings.describe schema as sections of leaves, in schema order. */
+export function sectionsOf(schema: unknown): readonly Section[] {
+  const loose: Leaf[] = []
+  const sections: Section[] = []
+  for (const [key, raw] of Object.entries(record(record(schema)?.properties) ?? {})) {
+    const node = record(raw)
+    if (node === undefined || key.includes(".") || key === "") continue
+    if (isObjectNode(node)) sections.push({ key, title: titleOf(node, key), leaves: leavesOf(node, [key], []) })
+    else loose.push(leafOf(node, [key], []))
+  }
+  return loose.length === 0 ? sections : [{ key: "", title: "", leaves: loose }, ...sections]
+}
+
+/** Several schemas as one: a section by its key, a leaf by its path, the first to name one wins. */
+function mergeSections(all: readonly (readonly Section[])[]): readonly Section[] {
+  const merged = new Map<string, { title: string; leaves: Map<string, Leaf> }>()
+  for (const sections of all) {
+    for (const section of sections) {
+      const entry = merged.get(section.key) ?? { title: section.title, leaves: new Map<string, Leaf>() }
+      for (const leaf of section.leaves) if (!entry.leaves.has(leaf.path)) entry.leaves.set(leaf.path, leaf)
+      merged.set(section.key, entry)
+    }
+  }
+  return [...merged].map(([key, entry]) => ({ key, title: entry.title, leaves: [...entry.leaves.values()] }))
+}
+
+/**
+ * A place's own nested settings as leaves by dotted path, in file order. A
+ * `null` leaf is a Cleared setting. A name with a dot is skipped, as korrid
+ * skips it.
+ */
+function ownLeaves(settings: unknown, prefix: readonly string[] = []): Map<string, unknown> {
+  const leaves = new Map<string, unknown>()
+  for (const [key, value] of Object.entries(record(settings) ?? {})) {
+    if (key.includes(".") || key === "") continue
+    const nested = record(value)
+    if (nested !== undefined) for (const [path, leaf] of ownLeaves(nested, [...prefix, key])) leaves.set(path, leaf)
+    else leaves.set([...prefix, key].join("."), value)
+  }
+  return leaves
+}
+
+/** The section a dotted path belongs to: its first name, or "" for a loose leaf. */
+const sectionKeyOf = (path: string) => path.includes(".") ? path.slice(0, path.indexOf(".")) : ""
+
+/** The settings a runner place may set: its runner's schema, or for a family
+ * place every installed runner of the family (the first to name a leaf wins). */
+function schemaFor(context: Context, scope: LaunchRunnerScope): readonly Section[] {
+  if (scope._tag === "Any") return []
+  const runners = context.snapshot.runners.filter(runner => scope._tag === "Runner" ? runner.id === scope.id : runner.family === scope.id)
+  return mergeSections(runners.map(runner => sectionsOf(runner.schema)))
 }
 
 const choiceValue = (value: unknown) => JSON.stringify(value)
+/** What every plugin setting's choice offers first. */
+const KEEP_CHOICES: readonly SurfaceSettingChoice[] = [INHERIT_CHOICE, DEFAULT_CHOICE]
 
-/** How one value is changed, from its schema property or else its own type. */
-function valueInteraction(property: Property | undefined, own: unknown): {
+/**
+ * How one value is changed, from its schema leaf or else its own type. A
+ * choice offers Inherit and Default before its values; a number or a string
+ * gets its Default from a row of its own (settingRows).
+ */
+function valueInteraction(leaf: Leaf | undefined, own: unknown, cleared: boolean): {
   readonly interaction: SurfaceSettingInteraction
-  readonly encode: (text: string) => { readonly value?: unknown } | null
+  readonly encode: (text: string) => LaunchEncoded | null
 } {
-  if (property?.enum !== undefined && property.enum.length > 0) {
-    const choices = property.enum.map(value => ({ value: choiceValue(value), label: valueText(value) }))
+  const keep = (text: string): LaunchEncoded | undefined => text === INHERIT ? {} : text === DEFAULT ? { clear: true } : undefined
+  const selectedOf = (value: string) => cleared ? DEFAULT : own === undefined ? INHERIT : value
+  if (leaf?.enum !== undefined && leaf.enum.length > 0) {
+    const values = leaf.enum
     return {
-      interaction: { kind: "choice", choices: [INHERIT_CHOICE, ...choices], selected: own === undefined ? INHERIT : choiceValue(own) },
+      interaction: {
+        kind: "choice",
+        choices: [...KEEP_CHOICES, ...values.map(value => ({ value: choiceValue(value), label: valueText(value) }))],
+        selected: selectedOf(choiceValue(own)),
+      },
       encode: text => {
-        if (text === INHERIT) return {}
-        const found = property.enum?.find(value => choiceValue(value) === text)
+        const kept = keep(text)
+        if (kept !== undefined) return kept
+        const found = values.find(value => choiceValue(value) === text)
         return found === undefined ? null : { value: found }
       },
     }
   }
-  const type = property?.type ?? (typeof own === "boolean" ? "boolean" : typeof own === "number" ? "number" : "string")
+  const type = leaf?.type ?? (typeof own === "boolean" ? "boolean" : typeof own === "number" ? "number" : "string")
   if (type === "boolean") {
     return {
       interaction: {
         kind: "choice",
-        choices: [INHERIT_CHOICE, { value: "true", label: "On" }, { value: "false", label: "Off" }],
-        selected: own === true ? "true" : own === false ? "false" : INHERIT,
+        choices: [...KEEP_CHOICES, { value: "true", label: "On" }, { value: "false", label: "Off" }],
+        selected: selectedOf(own === true ? "true" : "false"),
       },
-      encode: text => text === INHERIT ? {} : text === "true" ? { value: true } : text === "false" ? { value: false } : null,
+      encode: text => keep(text) ?? (text === "true" ? { value: true } : text === "false" ? { value: false } : null),
     }
   }
   if (type === "number" || type === "integer") {
@@ -604,8 +779,8 @@ function valueInteraction(property: Property | undefined, own: unknown): {
       interaction: {
         kind: "number",
         ...(typeof own === "number" ? { value: own } : {}),
-        ...(property?.minimum === undefined ? {} : { min: property.minimum }),
-        ...(property?.maximum === undefined ? {} : { max: property.maximum }),
+        ...(leaf?.minimum === undefined ? {} : { min: leaf.minimum }),
+        ...(leaf?.maximum === undefined ? {} : { max: leaf.maximum }),
         ...(integer ? { step: 1 } : {}),
         clearable: true,
       },
@@ -613,151 +788,233 @@ function valueInteraction(property: Property | undefined, own: unknown): {
         if (text.trim() === "") return {}
         const number = Number(text)
         if (!Number.isFinite(number) || (integer && !Number.isInteger(number))) return null
-        if (property?.minimum !== undefined && number < property.minimum) return null
-        if (property?.maximum !== undefined && number > property.maximum) return null
+        if (leaf?.minimum !== undefined && number < leaf.minimum) return null
+        if (leaf?.maximum !== undefined && number > leaf.maximum) return null
         return { value: number }
       },
     }
   }
   // A string: what is typed is the value, an empty one too. Its Inherit is
-  // a row of its own (settingItems), because "" is a value here.
+  // a row of its own (settingRows), because "" is a value here.
   return {
-    interaction: { kind: "text", placeholder: property?.title ?? "Value", allowEmpty: true },
+    interaction: { kind: "text", placeholder: leaf?.label ?? "Value", allowEmpty: true },
     encode: text => ({ value: text }),
   }
 }
 
+/** Whose settings a run of groups holds, and how its rows name, write and add them. */
+interface Owner {
+  readonly placeId: string
+  readonly place: LaunchPlace
+  /** The plugin's title, the first half of each group's title. */
+  readonly title: string
+  readonly sections: readonly Section[]
+  /** This place's own nested settings for this plugin. */
+  readonly own: unknown
+  /** Paths added with Add setting and not yet given a value. */
+  readonly added: readonly string[]
+  readonly pathOf: (key: string) => LaunchPath
+  /** A row's id from its path within the place, such as "setting:video.fps". */
+  readonly rowId: (path: string) => string
+  readonly rowPath: (key: string) => string
+  readonly addPath: (section: string) => string
+  readonly pendingOf: (key: string) => PendingSetting
+  readonly scopeOf: (leaf: Leaf | undefined) => "device" | "shared"
+  /** Said on a value the schema no longer describes. */
+  readonly missing: string
+  /** The plugin's default when korrid did not resolve the path (Moonlight on a game page). */
+  readonly defaultOf: (leaf: Leaf | undefined) => string | undefined
+}
+
 /**
- * A place's settings of one owner (its runner, or one modifier): those set
- * here, then those added with Add setting and not yet given a value. A
- * string's row holds its raw text as its value (absent when empty or not
- * set, the placeholder then saying which), and an Inherit row follows it,
- * because an empty string is a value of its own.
+ * Where a setting's value in force comes from, from one place's row. A
+ * Cleared setting names the plugin's default; a value korrid skips says it
+ * is not applied and why.
  */
-function settingItems(
-  context: Context,
-  rows: Rows,
-  options: {
-    readonly placeId: string
-    readonly place: LaunchPlace
-    readonly own: Json
-    readonly added: readonly string[]
-    readonly schema: ReadonlyMap<string, Property>
-    readonly pathOf: (key: string) => LaunchPath
-    readonly rowPath: (key: string) => string
-    readonly pendingOf: (key: string) => PendingSetting
-    readonly scopeOf: (property: Property | undefined) => "device" | "shared"
-    readonly missing?: string
-  },
-): { readonly items: readonly SurfaceSettingItem[]; readonly keys: readonly string[] } {
-  const { placeId, place, own, schema } = options
-  const keys = [...Object.keys(own), ...options.added.filter(key => !(key in own))]
-  const items = keys.flatMap((key): SurfaceSettingItem[] => {
-    const property = schema.get(key)
-    const set = key in own
-    const value = own[key]
-    const id = LAUNCH_ID.set(placeId, options.rowPath(key))
-    const { interaction, encode } = valueInteraction(property, set ? value : undefined)
-    rows.writes.set(id, { place, path: options.pathOf(key), encode })
-    if (!set) rows.pending.set(id, { placeId, setting: options.pendingOf(key) })
-    const source = sourceText(context, place, context.resolved(options.pathOf(key)), valueText)
-    const label = property?.title ?? key
-    const text = interaction.kind === "text"
-    const shown: Pick<SurfaceSettingItem, "value"> = text
+function settingSource(context: Context, owner: Owner, path: string, leaf: Leaf | undefined, own: { readonly set: boolean; readonly cleared: boolean }): string | undefined {
+  const fallback = () => owner.defaultOf(leaf) ?? `${owner.title} decides`
+  if (streamRunner(context, owner.place.scope)) return own.cleared ? fallback() : streamLine(context)
+  const waiting = notInForceScope(context, owner.place.scope)
+  if (waiting !== undefined) return waiting
+  const writePath = owner.pathOf(path)
+  const resolved = context.resolved(writePath)
+  const source = resolved?.source
+  const skipped = context.skipped(writePath)
+  const here = source?._tag === "Place" && samePlace(source.payload, owner.place)
+  if (skipped !== undefined && (here || (source === undefined && own.set && !own.cleared))) return `Not applied: ${skipped.replace(/\.$/, "")}`
+  if (resolved === undefined || source === undefined || resolved.value === null) return own.cleared ? fallback() : undefined
+  const title = sourceTitle(context, source)
+  const value = valueText(resolved.value)
+  if (skipped !== undefined) return `${value} from ${title} isn't applied: ${skipped.replace(/\.$/, "")}`
+  if (resolved.adjusted) return `${value} from ${title}, adjusted`
+  return here ? `from ${title}` : `${value} from ${title}`
+}
+
+/**
+ * One setting's rows on one place: the setting, then for a string its
+ * Inherit row (an empty string is a value of its own), then for a number or
+ * a string a Default row, unless the place already clears it.
+ */
+function settingRows(context: Context, rows: Rows, owner: Owner, path: string, leaf: Leaf | undefined, own: ReadonlyMap<string, unknown>): SurfaceSettingItem[] {
+  const set = own.has(path)
+  const value = own.get(path)
+  const cleared = set && value === null
+  const id = owner.rowId(owner.rowPath(path))
+  const { interaction, encode } = valueInteraction(leaf, set && !cleared ? value : undefined, cleared)
+  rows.writes.set(id, { place: owner.place, path: owner.pathOf(path), encode })
+  if (!set) rows.pending.set(id, { placeId: owner.placeId, setting: owner.pendingOf(path) })
+  const source = settingSource(context, owner, path, leaf, { set, cleared })
+  const label = leaf?.label ?? humanize(path.slice(path.lastIndexOf(".") + 1))
+  const text = interaction.kind === "text"
+  const shown: Pick<SurfaceSettingItem, "value"> = cleared
+    ? text ? {} : { value: "Default" }
+    : text
       ? typeof value === "string" && value !== "" && set ? { value } : {}
       : { value: set ? valueText(value) : "Not set here" }
-    const row: SurfaceSettingItem = {
-      id,
-      label,
-      ...shown,
-      ...(property?.description === undefined
-        ? property === undefined && options.missing !== undefined ? { description: options.missing } : {}
-        : { description: property.description }),
-      ...(source === undefined ? {} : { source }),
-      scope: options.scopeOf(property),
-      // The label for an empty string stays out of its value: the editor starts from the raw text.
-      interaction: text && interaction.kind === "text"
-        ? { ...interaction, placeholder: set ? "Empty" : "Not set here" }
-        : interaction,
-    }
-    if (!text) return [row]
-    const clear = LAUNCH_ID.set(placeId, `clear:${options.rowPath(key)}`)
+  const description = leaf?.description ?? (leaf === undefined ? owner.missing : undefined)
+  const row: SurfaceSettingItem = {
+    id,
+    label,
+    ...shown,
+    ...(description === undefined ? {} : { description }),
+    ...(source === undefined ? {} : { source }),
+    scope: owner.scopeOf(leaf),
+    // The label for an empty string stays out of its value: the editor starts from the raw text.
+    interaction: text && interaction.kind === "text"
+      ? { ...interaction, placeholder: cleared ? "Default" : set ? "Empty" : "Not set here" }
+      : interaction,
+  }
+  const extra: SurfaceSettingItem[] = []
+  if (text) {
+    const clear = owner.rowId(`clear:${owner.rowPath(path)}`)
     rows.clears.set(clear, id)
-    return [row, {
+    extra.push({
       id: clear,
       label: `Inherit ${label}`,
       value: "Clear",
       description: "Takes the value set here away, so the value in force comes from elsewhere.",
       interaction: { kind: "action", actionId: clear },
-    }]
-  })
-  return { items, keys }
-}
-
-function settingsGroup(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly PendingSetting[]): SurfaceSettingGroup | undefined {
-  const schema = schemaFor(context, place.scope)
-  const { items: setRows, keys } = settingItems(context, rows, {
-    placeId,
-    place,
-    own: record(body.settings) ?? {},
-    added: pending.flatMap(setting => setting._tag === "Runner" ? [setting.key] : []),
-    schema,
-    pathOf: key => ({ _tag: "Setting", payload: { key } }),
-    rowPath: key => `setting:${key}`,
-    pendingOf: key => ({ _tag: "Runner", key }),
-    scopeOf: property => property?.device === true ? "device" : "shared",
-    missing: "This runner no longer describes this setting.",
-  })
-  const items = [...setRows]
-  const unset = [...schema].filter(([key]) => !keys.includes(key))
-  if (unset.length > 0) {
-    const id = LAUNCH_ID.set(placeId, "add-setting")
-    rows.adds.set(id, { placeId, pendingOf: key => ({ _tag: "Runner", key }) })
-    items.push({
-      id,
-      label: "Add setting",
-      value: "Choose a setting",
-      description: `${unset.length} more ${unset.length === 1 ? "setting" : "settings"} this runner offers.`,
-      interaction: {
-        kind: "choice",
-        choices: unset.map(([key, property]) => ({ value: key, label: property.title ?? key })),
-        selected: "",
-      },
     })
   }
-  return items.length === 0 ? undefined : { title: "Runner settings", items }
+  if (interaction.kind !== "choice" && !cleared) {
+    const reset = owner.rowId(`default:${owner.rowPath(path)}`)
+    rows.defaults.set(reset, id)
+    extra.push({
+      id: reset,
+      label: `Default ${label}`,
+      value: "Use",
+      description: `${owner.title}'s own default holds here, whatever less specific places set.`,
+      interaction: { kind: "action", actionId: reset },
+    })
+  }
+  return [row, ...extra]
+}
+
+/**
+ * One plugin's settings on one place: a group per section of its schema,
+ * "Moonlight · Video", each holding the leaves set here, then those added
+ * with Add setting and not yet given a value, then its own Add setting row
+ * for the leaves left. Leaves set here that the schema does not describe
+ * follow in their own sections.
+ */
+function settingGroups(context: Context, rows: Rows, owner: Owner): SurfaceSettingGroup[] {
+  const own = ownLeaves(owner.own)
+  const described = new Map(owner.sections.flatMap(section => section.leaves.map(leaf => [leaf.path, leaf] as const)))
+  const extraKeys = [...new Set([...own.keys(), ...owner.added].filter(path => !described.has(path)).map(sectionKeyOf))]
+    .filter(key => !owner.sections.some(section => section.key === key))
+  const sections: readonly Section[] = [...owner.sections, ...extraKeys.map(key => ({ key, title: key === "" ? "" : humanize(key), leaves: [] }))]
+  return sections.flatMap((section): SurfaceSettingGroup[] => {
+    const inSection = (path: string) => sectionKeyOf(path) === section.key
+    const ownHere = [
+      ...section.leaves.filter(leaf => own.has(leaf.path)).map(leaf => leaf.path),
+      ...[...own.keys()].filter(path => inSection(path) && !described.has(path)),
+    ]
+    const addedHere = owner.added.filter(path => inSection(path) && !own.has(path))
+    const shown = [...ownHere, ...addedHere]
+    const items = shown.flatMap(path => settingRows(context, rows, owner, path, described.get(path), own))
+    const unset = section.leaves.filter(leaf => !shown.includes(leaf.path))
+    if (unset.length > 0) {
+      const id = owner.rowId(owner.addPath(section.key))
+      rows.adds.set(id, { placeId: owner.placeId, pendingOf: owner.pendingOf })
+      items.push({
+        id,
+        label: "Add setting",
+        value: "Choose a setting",
+        description: `${unset.length} more ${unset.length === 1 ? "setting" : "settings"} ${owner.title} offers here.`,
+        interaction: { kind: "choice", choices: unset.map(leaf => ({ value: leaf.path, label: leaf.label })), selected: "" },
+      })
+    }
+    if (items.length === 0) return []
+    return [{ title: section.key === "" ? owner.title : `${owner.title} · ${section.title}`, items }]
+  })
+}
+
+/** "h264 from Moonlight (default)", from a schema's default. */
+const schemaDefault = (title: string) => (leaf: Leaf | undefined) =>
+  leaf?.default === undefined ? undefined : `${valueText(leaf.default.value)} from ${title} (default)`
+
+/** The title a runner place's groups carry: its runner, or its family. */
+function runnerOwnerTitle(context: Context, scope: LaunchRunnerScope): string {
+  if (scope._tag === "Runner") return context.runnerTitles.get(scope.id) ?? scope.id
+  return scopeLabel(context, scope)
+}
+
+/** A runner place's settings: one group per section of its runner's schema. */
+function runnerSettingGroups(
+  context: Context,
+  rows: Rows,
+  placeId: string,
+  place: LaunchPlace,
+  body: Json,
+  pending: readonly PendingSetting[],
+  rowId: (path: string) => string,
+): SurfaceSettingGroup[] {
+  const title = runnerOwnerTitle(context, place.scope)
+  return settingGroups(context, rows, {
+    placeId,
+    place,
+    title,
+    sections: schemaFor(context, place.scope),
+    own: body.settings,
+    added: pending.flatMap(setting => setting._tag === "Runner" ? [setting.key] : []),
+    pathOf: key => ({ _tag: "Setting", payload: { key } }),
+    rowId,
+    rowPath: key => `setting:${key}`,
+    addPath: section => `add-setting:${section}`,
+    pendingOf: key => ({ _tag: "Runner", key }),
+    scopeOf: leaf => leaf?.device === true || streamRunner(context, place.scope) ? "device" : "shared",
+    missing: "This runner no longer describes this setting.",
+    defaultOf: schemaDefault(title),
+  })
 }
 
 const ON_OFF = [INHERIT_CHOICE, { value: "true", label: "On" }, { value: "false", label: "Off" }]
 
+interface Plugin { readonly id: string; readonly title: string; readonly schema?: unknown; readonly listed: boolean }
+
 /**
- * The modifiers a place can turn on or off: every installed, enabled one
- * korrid lists, then any a place names that it does not list.
+ * Plugins a place body names under one kind (modifiers, services): every
+ * installed one korrid lists, then any a place names that it does not list.
  */
-function modifiersOf(context: Context): readonly { readonly id: string; readonly title: string; readonly schema?: unknown; readonly listed: boolean }[] {
-  const listed = context.snapshot.modifiers.map(modifier => ({
-    id: modifier.id,
-    title: modifier.title,
-    ...(modifier.schema === undefined ? {} : { schema: modifier.schema }),
-    listed: true,
-  }))
+function pluginsOf(context: Context, listed: readonly LaunchModifierSnapshot[], kind: "modifiers" | "services"): readonly Plugin[] {
+  const known = listed.map(plugin => ({ id: plugin.id, title: plugin.title, ...(plugin.schema === undefined ? {} : { schema: plugin.schema }), listed: true }))
   const named = new Set<string>()
-  for (const place of context.places) for (const id of Object.keys(record(record(place.body)?.modifiers) ?? {})) named.add(id)
-  const unlisted = [...named].filter(id => !listed.some(modifier => modifier.id === id)).sort()
-  return [...listed, ...unlisted.map(id => ({ id, title: id, listed: false }))]
+  for (const place of context.places) for (const id of Object.keys(record(record(place.body)?.[kind]) ?? {})) named.add(id)
+  const unlisted = [...named].filter(id => !known.some(plugin => plugin.id === id)).sort()
+  return [...known, ...unlisted.map(id => ({ id, title: id, listed: false }))]
 }
 
 /**
- * One group per modifier: on, off or Inherit, then its settings as runner
- * settings are (what is set here, then Add setting from its schema). A
- * modifier with no schema has no settings to show.
+ * Per modifier: its on, off or Inherit row in a group of its own, then its
+ * settings as a runner's are, one group per section. A modifier with no
+ * schema has no settings to show.
  */
-function modifierGroups(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly PendingSetting[]): SurfaceSettingGroup[] {
+function modifierGroups(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly PendingSetting[], rowId: (path: string) => string): SurfaceSettingGroup[] {
   const own = record(body.modifiers) ?? {}
-  return modifiersOf(context).map((modifier): SurfaceSettingGroup => {
+  return pluginsOf(context, context.snapshot.modifiers, "modifiers").flatMap((modifier): SurfaceSettingGroup[] => {
     const authored = record(own[modifier.id]) ?? {}
     const enabled = typeof authored.enabled === "boolean" ? authored.enabled : undefined
-    const id = LAUNCH_ID.set(placeId, `modifier:${modifier.id}:enabled`)
+    const id = rowId(`modifier:${modifier.id}:enabled`)
     rows.writes.set(id, {
       place,
       path: { _tag: "ModifierEnabled", payload: { id: modifier.id } },
@@ -773,31 +1030,49 @@ function modifierGroups(context: Context, rows: Rows, placeId: string, place: La
       scope: "device",
       interaction: { kind: "choice", choices: ON_OFF, selected: enabled === undefined ? INHERIT : String(enabled) },
     }
-    const schema = modifier.schema === undefined ? new Map<string, Property>() : propertiesOf(modifier.schema)
-    const pendingOf = (key: string): PendingSetting => ({ _tag: "Modifier", id: modifier.id, key })
-    const { items: settingRows, keys } = settingItems(context, rows, {
+    const settings = settingGroups(context, rows, {
       placeId,
       place,
-      own: record(authored.settings) ?? {},
+      title: modifier.title,
+      sections: modifier.schema === undefined ? [] : sectionsOf(modifier.schema),
+      own: authored.settings,
       added: pending.flatMap(setting => setting._tag === "Modifier" && setting.id === modifier.id ? [setting.key] : []),
-      schema,
       pathOf: key => ({ _tag: "ModifierSetting", payload: { id: modifier.id, key } }),
+      rowId,
       rowPath: key => `modifier:${modifier.id}:setting:${key}`,
-      pendingOf,
+      addPath: section => `modifier:${modifier.id}:add-setting:${section}`,
+      pendingOf: key => ({ _tag: "Modifier", id: modifier.id, key }),
       scopeOf: () => "device",
+      missing: "This modifier no longer describes this setting.",
+      defaultOf: schemaDefault(modifier.title),
     })
-    const unset = [...schema].filter(([key]) => !keys.includes(key))
-    const addId = LAUNCH_ID.set(placeId, `modifier:${modifier.id}:add-setting`)
-    if (unset.length > 0) rows.adds.set(addId, { placeId, pendingOf })
-    const addRow: SurfaceSettingItem[] = unset.length === 0 ? [] : [{
-      id: addId,
-      label: `Add ${modifier.title} setting`,
-      value: "Choose a setting",
-      description: `${unset.length} more ${unset.length === 1 ? "setting" : "settings"} ${modifier.title} offers.`,
-      interaction: { kind: "choice", choices: unset.map(([key, property]) => ({ value: key, label: property.title ?? key })), selected: "" },
-    }]
-    return { title: `Modifier ${modifier.title}`, items: [enabledRow, ...settingRows, ...addRow] }
+    return [{ title: `Modifier ${modifier.title}`, items: [enabledRow] }, ...settings]
   })
+}
+
+/**
+ * Launch services (Sunshine): their settings, one group per section, on
+ * every place. They stay on this device, as modifier settings do, and take
+ * effect before the game starts.
+ */
+function serviceGroups(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly PendingSetting[], rowId: (path: string) => string): SurfaceSettingGroup[] {
+  const own = record(body.services) ?? {}
+  return pluginsOf(context, servicesOf(context.snapshot), "services").flatMap(service => settingGroups(context, rows, {
+    placeId,
+    place,
+    title: service.title,
+    sections: service.schema === undefined ? [] : sectionsOf(service.schema),
+    own: record(own[service.id])?.settings,
+    added: pending.flatMap(setting => setting._tag === "Service" && setting.id === service.id ? [setting.key] : []),
+    pathOf: key => ({ _tag: "ServiceSetting", payload: { id: service.id, key } }),
+    rowId,
+    rowPath: key => `service:${service.id}:setting:${key}`,
+    addPath: section => `service:${service.id}:add-setting:${section}`,
+    pendingOf: key => ({ _tag: "Service", id: service.id, key }),
+    scopeOf: () => "device",
+    missing: service.listed ? "This service no longer describes this setting." : "This service isn't installed on this device.",
+    defaultOf: schemaDefault(service.title),
+  }))
 }
 
 /** Why a place's list parts are not in force, in the person's words. */
@@ -1006,14 +1281,40 @@ export function launchNotesFrom(snapshot: LaunchSnapshot, gameId?: string): read
       ? [`System and release settings aren't available: ${snapshot.routeLayers.message.replace(/\.$/, "")}. ${partial}`]
       : []
   const inUse = context.selected === undefined ? undefined : context.runnerTitles.get(context.selected.id) ?? context.selected.title
-  const unavailable = snapshot.notices.map(notice => {
+  const unavailable = snapshot.notices.flatMap(notice => {
+    if (notice._tag !== "RunnerUnavailable") return []
     const place = sourceTitle(context, { _tag: "Place", payload: notice.payload.place })
-    return `${place} names runner ${notice.payload.runnerId}, which isn't installed. Korri skips it and its runner settings there${inUse === undefined ? "." : ` and uses ${inUse}.`}`
+    return [`${place} names runner ${notice.payload.runnerId}, which isn't installed. Korri skips it and its runner settings there${inUse === undefined ? "." : ` and uses ${inUse}.`}`]
   })
+  const skipped = snapshot.notices.flatMap(notice => notice._tag === "SettingSkipped"
+    ? [`${skippedName(context, notice.payload.path)} isn't applied: ${notice.payload.message.replace(/\.$/, "")}.`]
+    : [])
   const facts = snapshot.runners.flatMap(runner => runner.prepare._tag === "Unavailable"
     ? [`${context.runnerTitles.get(runner.id) ?? runner.title} facts are unavailable: ${runner.prepare.payload.replace(/\.$/, "")}.`]
     : [])
-  return [...route, ...unavailable, ...facts]
+  return [...route, ...unavailable, ...skipped, ...facts]
+}
+
+/** A skipped setting in words: its label and its plugin, "FPS (Moonlight)". */
+function skippedName(context: Context, path: LaunchPath): string {
+  const named = (title: string, schema: unknown, key: string) => {
+    const leaf = sectionsOf(schema).flatMap(section => section.leaves).find(candidate => candidate.path === key)
+    return `${leaf?.label ?? key} (${title})`
+  }
+  switch (path._tag) {
+    case "Setting": {
+      const runner = context.selected
+      return runner === undefined ? path.payload.key : named(context.runnerTitles.get(runner.id) ?? runner.title, runner.schema, path.payload.key)
+    }
+    case "ModifierSetting":
+    case "ServiceSetting": {
+      const { id, key } = path.payload
+      const plugin = [...context.snapshot.modifiers, ...servicesOf(context.snapshot)].find(candidate => candidate.id === id)
+      return named(plugin?.title ?? id, plugin?.schema, key)
+    }
+    default:
+      return path._tag
+  }
 }
 
 /**
@@ -1027,19 +1328,22 @@ export function launchEditorFrom(
   pending: ReadonlyMap<string, readonly PendingSetting[]> = new Map(),
 ): LaunchEditor {
   const context = contextOf(snapshot, gameId)
-  const rows: Rows = { writes: new Map(), adds: new Map(), pending: new Map(), clears: new Map() }
+  const rows = emptyRows()
   const places = context.places.map((entry): SurfaceLaunchSettingsPlace => {
     const { place } = entry
     const placeId = placeIdOf(place)
     const body = record(entry.body) ?? {}
     const kinds = entry.editableKinds
     const any = place.scope._tag === "Any"
+    const added = pending.get(placeId) ?? []
+    const rowId = (path: string) => LAUNCH_ID.set(placeId, path)
     const groups: (SurfaceSettingGroup | undefined)[] = [
       // What a place is for first: the runner choice, or the runner's settings.
       any && kinds.includes(KIND.runner) ? runnerGroup(context, rows, placeId, place, body) : undefined,
-      kinds.includes(KIND.settings) ? settingsGroup(context, rows, placeId, place, body, pending.get(placeId) ?? []) : undefined,
+      ...(kinds.includes(KIND.settings) ? runnerSettingGroups(context, rows, placeId, place, body, added, rowId) : []),
       ...limitGroups(context, rows, place, body, kinds, key => LAUNCH_ID.set(placeId, key)),
-      ...(kinds.includes(KIND.modifiers) ? modifierGroups(context, rows, placeId, place, body, pending.get(placeId) ?? []) : []),
+      ...(kinds.includes(KIND.modifiers) ? modifierGroups(context, rows, placeId, place, body, added, rowId) : []),
+      ...(kinds.includes(KIND.services) ? serviceGroups(context, rows, placeId, place, body, added, rowId) : []),
       place.layer._tag === "Game" && any ? profileRows(context, "pick") : undefined,
       place.layer._tag === "Profile" && any ? profileRows(context, "own", place.layer.id.profileId) : undefined,
       fileGroup(context, entry, placeId),
@@ -1053,22 +1357,41 @@ export function launchEditorFrom(
       groups: groups.filter((group): group is SurfaceSettingGroup => group !== undefined),
     }
   })
-  return { places, notes: launchNotesFrom(snapshot, gameId), writes: rows.writes, adds: rows.adds, pending: rows.pending, clears: rows.clears }
+  return { places, notes: launchNotesFrom(snapshot, gameId), ...rows }
 }
 
-/** Device settings' "Launch settings" group, from a snapshot without a game. */
-export function deviceLaunchGroup(snapshot: LaunchSnapshot): { readonly group: SurfaceSettingGroup; readonly writes: ReadonlyMap<string, LaunchWrite> } {
+/** Device settings' launch groups and how each of their rows writes. */
+export interface DeviceLaunch extends Omit<LaunchEditor, "places" | "notes"> {
+  readonly groups: readonly SurfaceSettingGroup[]
+}
+
+/**
+ * Device settings' launch groups, from a snapshot without a game: "Launch
+ * settings" (the device's clock limits), then the settings of each runner
+ * korrid never offers for a game (Moonlight) from its Device place, then
+ * each launch service's (Sunshine) from the Device place for any runner.
+ * Each plugin has a group per section, with Add setting rows as in a game's
+ * editor; `pending` holds the settings added and not yet set, by place id.
+ */
+export function deviceLaunchFrom(snapshot: LaunchSnapshot, pending: ReadonlyMap<string, readonly PendingSetting[]> = new Map()): DeviceLaunch {
   const context = contextOf(snapshot)
-  const rows: Rows = { writes: new Map(), adds: new Map(), pending: new Map(), clears: new Map() }
+  const rows = emptyRows()
   const entry = context.places.find(place => place.place.layer._tag === "Device" && place.place.scope._tag === "Any")
   const place: LaunchPlace = entry?.place ?? { layer: { _tag: "Device" }, scope: { _tag: "Any" } }
-  const groups = limitGroups(context, rows, place, record(entry?.body) ?? {}, [KIND.cpu, KIND.gpu], LAUNCH_ID.device)
-  const items = groups.flatMap(group => group.items)
+  const limits = limitGroups(context, rows, place, record(entry?.body) ?? {}, [KIND.cpu, KIND.gpu], LAUNCH_ID.device)
+  const items = limits.flatMap(group => group.items)
   const governor = items.find(item => item.id === LAUNCH_ID.device("cpu.governor"))
-  return {
-    group: { title: "Launch settings", items: [...items.filter(item => item !== governor), ...(governor === undefined ? [] : [governor])] },
-    writes: rows.writes,
-  }
+  const launch: SurfaceSettingGroup = { title: "Launch settings", items: [...items.filter(item => item !== governor), ...(governor === undefined ? [] : [governor])] }
+  const streams = context.places.filter(candidate => candidate.place.layer._tag === "Device" && streamRunner(context, candidate.place.scope) && candidate.editableKinds.includes(KIND.settings))
+    .flatMap(candidate => {
+      const placeId = placeIdOf(candidate.place)
+      return runnerSettingGroups(context, rows, placeId, candidate.place, record(candidate.body) ?? {}, pending.get(placeId) ?? [], path => LAUNCH_ID.deviceSet(placeId, path))
+    })
+  const services = entry === undefined || !entry.editableKinds.includes(KIND.services) ? [] : (() => {
+    const placeId = placeIdOf(entry.place)
+    return serviceGroups(context, rows, placeId, entry.place, record(entry.body) ?? {}, pending.get(placeId) ?? [], path => LAUNCH_ID.deviceSet(placeId, path))
+  })()
+  return { groups: [launch, ...streams, ...services], ...rows }
 }
 
 /** The profile a pick chooses: its id, or `null` for "No profile". */

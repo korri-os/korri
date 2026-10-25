@@ -29,7 +29,8 @@ import type {
 import type { KorridClient } from "../korrid/client"
 import {
   activeProfileOf,
-  deviceLaunchGroup,
+  type DeviceLaunch,
+  deviceLaunchFrom,
   LAUNCH_ID,
   type LaunchEditor,
   launchEditorFrom,
@@ -42,7 +43,7 @@ import {
 
 export const LAUNCH_SETTINGS_ACTION_ID = "launch-settings"
 
-/** Device settings' group when its read failed: Korri's message and Retry. */
+/** Device settings' launch group when its read failed: Korri's message and Retry. */
 const deviceErrorGroup = (message: string): SurfaceSettingGroup => ({
   title: "Launch settings",
   items: [{
@@ -62,8 +63,10 @@ const INVALID = "That value isn't allowed here."
 
 export interface LaunchSettingsSnapshotState {
   readonly editor: SurfaceLaunchSettings
-  /** Absent until the device's values have been read, and when they cannot be. */
-  readonly deviceGroup?: SurfaceSettingGroup
+  /** Device settings' launch groups: "Launch settings", then Moonlight's and
+   * Sunshine's settings by section. Absent until the device's values have
+   * been read; one group with Retry when they cannot be. */
+  readonly deviceGroups?: readonly SurfaceSettingGroup[]
   /** A launch write in progress or its problem; absent when there is none. */
   readonly status?: SurfaceSettingsStatus
   /** The profile each read game's next launch uses, by korrid game id. A
@@ -84,7 +87,9 @@ export function createLaunchSettings(korrid: KorridClient) {
   let snapshot: LaunchSnapshot | undefined
   let editor: LaunchEditor | undefined
   let deviceSnapshot: LaunchSnapshot | undefined
-  let deviceWrites: ReadonlyMap<string, LaunchWrite> = new Map()
+  let device: DeviceLaunch | undefined
+  /** Device-page settings added with Add setting and not yet given a value, by place id. */
+  let devicePending = new Map<string, readonly PendingSetting[]>()
   /** Settings added with Add setting and not yet given a value, by place id. */
   let pending = new Map<string, readonly PendingSetting[]>()
   /** Games whose profile is being read for their page, so it is read once. */
@@ -104,12 +109,21 @@ export function createLaunchSettings(korrid: KorridClient) {
     activeProfiles.set(id, active)
     publish({ activeProfiles })
   }
+  /** A setting once written is a place's own row: it is no longer pending. */
+  const stillPending = (built: { readonly pending: LaunchEditor["pending"] } | undefined) => {
+    const still = new Map<string, PendingSetting[]>()
+    for (const { placeId, setting } of built?.pending.values() ?? []) still.set(placeId, [...still.get(placeId) ?? [], setting])
+    return still
+  }
   const build = () => {
     editor = snapshot === undefined ? undefined : launchEditorFrom(snapshot, gameId, pending)
-    // A setting once written is a place's own row: it is no longer pending.
-    const still = new Map<string, PendingSetting[]>()
-    for (const { placeId, setting } of editor?.pending.values() ?? []) still.set(placeId, [...still.get(placeId) ?? [], setting])
-    pending = still
+    pending = stillPending(editor)
+  }
+  const buildDevice = () => {
+    if (deviceSnapshot === undefined) return
+    device = deviceLaunchFrom(deviceSnapshot, devicePending)
+    devicePending = stillPending(device)
+    publish({ deviceGroups: device.groups })
   }
   const content = () => ({
     gameTitle,
@@ -142,14 +156,12 @@ export function createLaunchSettings(korrid: KorridClient) {
     if (result._tag === "Err") {
       // The group stays, saying what went wrong, with Retry (the contract's Error).
       deviceSnapshot = undefined
-      deviceWrites = new Map()
-      publish({ deviceGroup: deviceErrorGroup(result.payload.message) })
+      device = undefined
+      publish({ deviceGroups: [deviceErrorGroup(result.payload.message)] })
       return
     }
     deviceSnapshot = result.payload
-    const device = deviceLaunchGroup(result.payload)
-    deviceWrites = device.writes
-    publish({ deviceGroup: device.group })
+    buildDevice()
   }
 
   const read = async (keep: boolean) => {
@@ -209,19 +221,28 @@ export function createLaunchSettings(korrid: KorridClient) {
       place: target.place,
       path: target.path,
       ...(encoded.value === undefined ? {} : { value: encoded.value }),
+      ...(encoded.clear === true ? { clear: true } : {}),
       expectedRevision: record.revisions[revisionOf(target.place.layer)],
     })
   }
 
-  const changeDevice = (settingId: string, text: string) => {
+  /** A write with no text: Inherit (take this place's value away) or Default (clear it). */
+  const sendBare = (target: LaunchWrite, record: LaunchSnapshot, clear: boolean) => korrid.setLaunch({
+    place: target.place,
+    path: target.path,
+    ...(clear ? { clear: true } : {}),
+    expectedRevision: record.revisions[revisionOf(target.place.layer)],
+  })
+
+  /** One write from Device settings; the device's values are read again after. */
+  const writeDevice = (settingId: string, send: (record: LaunchSnapshot) => Promise<LaunchSettingsWriteOutcome> | undefined) => {
     const record = deviceSnapshot
-    const target = deviceWrites.get(settingId)
     if (busy) return
-    if (record === undefined || target === undefined) {
+    if (record === undefined) {
       publish({ status: { _tag: "Problem", settingId, message: "Launch settings are not available." } })
       return
     }
-    const request = setFrom(settingId, target, text, record)
+    const request = send(record)
     if (request === undefined) return
     busy = true
     publish({ status: { _tag: "Saving", settingId } })
@@ -244,6 +265,48 @@ export function createLaunchSettings(korrid: KorridClient) {
       publish({ status: undefined })
       void refreshDevice()
     })
+  }
+
+  /** A pending setting on Device settings set back to Inherit goes, with nothing written. */
+  const withdrawDevice = (settingId: string): boolean => {
+    const added = device?.pending.get(settingId)
+    if (added === undefined) return false
+    devicePending = new Map(devicePending).set(added.placeId, (devicePending.get(added.placeId) ?? []).filter(setting => !samePending(setting, added.setting)))
+    buildDevice()
+    return true
+  }
+
+  const changeDevice = (settingId: string, text: string) => {
+    const adding = device?.adds.get(settingId)
+    if (adding !== undefined) {
+      if (text === "") return
+      const setting = adding.pendingOf(text)
+      const settings = devicePending.get(adding.placeId) ?? []
+      if (settings.some(candidate => samePending(candidate, setting))) return
+      devicePending = new Map(devicePending).set(adding.placeId, [...settings, setting])
+      buildDevice()
+      return
+    }
+    const target = device?.writes.get(settingId)
+    if (target === undefined) {
+      publish({ status: { _tag: "Problem", settingId, message: "Launch settings are not available." } })
+      return
+    }
+    const encoded = target.encode(text)
+    if (encoded !== null && encoded.value === undefined && encoded.clear !== true && withdrawDevice(settingId)) return
+    writeDevice(settingId, record => setFrom(settingId, target, text, record))
+  }
+
+  /** Inherit and Default rows of Device settings. False: not one of them. */
+  const actDevice = (actionId: string): boolean => {
+    const cleared = device?.clears.get(actionId)
+    const reset = device?.defaults.get(actionId)
+    const settingId = cleared ?? reset
+    if (settingId === undefined) return false
+    if (cleared !== undefined && withdrawDevice(cleared)) return true
+    const target = device?.writes.get(settingId)
+    if (target !== undefined) writeDevice(actionId, record => sendBare(target, record, reset !== undefined))
+    return true
   }
 
   /** Add setting: show the chosen setting on its place, with nothing written. */
@@ -274,7 +337,7 @@ export function createLaunchSettings(korrid: KorridClient) {
     const target = editor?.writes.get(settingId)
     if (target !== undefined) {
       const encoded = target.encode(value)
-      if (encoded !== null && encoded.value === undefined && withdraw(settingId)) return true
+      if (encoded !== null && encoded.value === undefined && encoded.clear !== true && withdraw(settingId)) return true
       write(settingId, record => setFrom(settingId, target, value, record))
       return true
     }
@@ -321,6 +384,7 @@ export function createLaunchSettings(korrid: KorridClient) {
       void refreshDevice()
       return true
     }
+    if (actionId.startsWith("launch-device:")) return actDevice(actionId)
     if (actionId === LAUNCH_ID.cancel) {
       cancel()
       return true
@@ -343,18 +407,19 @@ export function createLaunchSettings(korrid: KorridClient) {
       }
       return true
     }
-    // Inherit on a string setting: a pending one goes, a written one is cleared.
+    // Inherit on a string setting: a pending one goes, a written one is taken away.
     const cleared = editor?.clears.get(actionId)
     if (cleared !== undefined) {
       if (withdraw(cleared)) return true
       const target = editor?.writes.get(cleared)
-      if (target !== undefined) {
-        write(actionId, record => korrid.setLaunch({
-          place: target.place,
-          path: target.path,
-          expectedRevision: record.revisions[revisionOf(target.place.layer)],
-        }))
-      }
+      if (target !== undefined) write(actionId, record => sendBare(target, record, false))
+      return true
+    }
+    // Default on a number or a string setting: a Cleared setting on this place.
+    const reset = editor?.defaults.get(actionId)
+    if (reset !== undefined) {
+      const target = editor?.writes.get(reset)
+      if (target !== undefined) write(actionId, record => sendBare(target, record, true))
       return true
     }
     if (!actionId.startsWith("launch:profile:remove:")) return false
