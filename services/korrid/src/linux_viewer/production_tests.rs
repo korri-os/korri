@@ -418,5 +418,8 @@ fn linux_viewer_bitrate_follows_moonlight_defaults_for_size_and_rate() {
         bootstrap: "/nix/store/viewer/bootstrap".into(),
     };
     let args = stream_args(&files, Path::new("/keys"), "host", (640, 480), "x11", &[]).unwrap();
-    assert!(args.windows(2).any(|v| v == ["-bitrate", "3000"]));
+    // Twice Moonlight's default, for handheld hardware encoders.
+    assert!(args.windows(2).any(|v| v == ["-bitrate", "6000"]));
+    // The holder keeps its own sound.
+    assert!(args.iter().any(|v| v == "-localaudio"));
 }

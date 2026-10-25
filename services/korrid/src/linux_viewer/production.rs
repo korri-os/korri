@@ -234,6 +234,15 @@ fn platform_from_path(path: &Path, report: impl FnOnce(&std::io::Error)) -> &'st
 /// Frame rate every Korri stream requests.
 const STREAM_FPS: u64 = 60;
 
+/// Multiple of Moonlight's default bitrate that a Korri stream requests.
+/// Moonlight's table assumes desktop-class encoders. At 3 Mbit/s the RG35XX
+/// SP's cedrus H.264 encoder looked visibly soft at 640x480 (2026-10-25).
+const HANDHELD_ENCODER_BITRATE_FACTOR: u64 = 2;
+
+fn stream_bitrate_kbps(width: u64, height: u64, fps: u64) -> u64 {
+    default_bitrate_kbps(width, height, fps) * HANDHELD_ENCODER_BITRATE_FACTOR
+}
+
 /// Moonlight's own default bitrate for a resolution and frame rate, in kbps.
 /// A port of `StreamingPreferences::getDefaultBitrate` (moonlight-qt,
 /// app/settings/streamingpreferences.cpp, 4:2:0): linear interpolation over
@@ -288,7 +297,7 @@ fn stream_args(
         "-fps".into(),
         STREAM_FPS.to_string(),
         "-bitrate".into(),
-        default_bitrate_kbps(size.0, size.1, STREAM_FPS).to_string(),
+        stream_bitrate_kbps(size.0, size.1, STREAM_FPS).to_string(),
         "-codec".into(),
         "h264".into(),
         "-platform".into(),
@@ -299,6 +308,8 @@ fn stream_args(
         keydir.display().to_string(),
         "-windowed".into(),
         "-autowindowresize".into(),
+        // The holder keeps playing; its own speaker must keep its sound.
+        "-localaudio".into(),
     ];
     if seats.is_empty() {
         args.push("-viewonly".into());
