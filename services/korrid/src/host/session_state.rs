@@ -1418,6 +1418,8 @@ impl HostSessionControl {
         let prepared_command = crate::launcher::plugin_launch::prepare_command(configured_command?)
             .map_err(|message| failure("LocalRouteUnavailable", message))?;
         let configured_command = prepared_command.as_slice();
+        let sunshine_args = crate::launcher::plugin_launch::sunshine_args(configured_command)
+            .map_err(|message| failure("LocalRouteUnavailable", message))?;
         if let Some(person) = person_public_key {
             self.play_log
                 .validate_key(&PlayHistoryKey {
@@ -1692,6 +1694,16 @@ impl HostSessionControl {
                 ActiveState::RecoveryBlocked
             };
             return Err(super::launch_reservation::cancelled());
+        }
+        if let Some(args) = sunshine_args {
+            if let Err(error) = self.backend.apply_sunshine_settings(&args) {
+                warnings.push(crate::launcher::typed_settings::LaunchWarning {
+                    setting: "services.@korri:sunshine/sunshine".into(),
+                    runner_id: crate::launch_settings::resolution::SUNSHINE.into(),
+                    build: String::new(),
+                    message: error.message,
+                });
+            }
         }
         if let Err(error) = self.backend.launch(
             &launch_id,
@@ -7165,6 +7177,78 @@ mod launch_settings_lifecycle_tests {
         });
         (Client { socket }, handle)
     }
+    #[test]
+    fn sunshine_restart_precedes_game_and_failure_is_a_launch_warning() {
+        for fails in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let backend = Arc::new(InMemoryLaunchUnitBackend::default());
+            let service_events = events.clone();
+            backend.set_service_probe(Arc::new(move || {
+                service_events.lock().unwrap().push("service");
+                if fails {
+                    Err(LaunchUnitError {
+                        kind: LaunchUnitErrorKind::Failed,
+                        message: "restart failed".into(),
+                    })
+                } else {
+                    Ok(())
+                }
+            }));
+            let launch_events = events.clone();
+            backend.set_launch_probe(Arc::new(move || {
+                launch_events.lock().unwrap().push("game");
+            }));
+            let control = HostSessionControl::new(root.path(), backend);
+            let input = json!({"runnerId":"@test:runner/main","program":"game","accountRoot":root.path().join("users").join("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),"saveRoot":root.path().join("saves"),"cacheRoot":root.path(),"files":{},"artifacts":{}});
+            let handoff = json!({"plan":{"command":"game","args":[]},"runnerArgv":["game"]});
+            let command = vec![
+                "korrid".into(),
+                "plugin-launch".into(),
+                "unused-source".into(),
+                input.to_string(),
+                json!({"modifiers":[],"sunshineArgs":["max_bitrate=3000"]}).to_string(),
+                handoff.to_string(),
+            ];
+            let launch = control
+                .prepare_with_limits(
+                    "game",
+                    Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),
+                    Ok(&command),
+                    &BTreeMap::new(),
+                    None,
+                    Vec::new(),
+                    None,
+                )
+                .unwrap();
+            assert_eq!(*events.lock().unwrap(), ["service", "game"]);
+            assert_eq!(launch.warnings.len(), usize::from(fails));
+            if fails {
+                assert_eq!(launch.warnings[0].message, "restart failed");
+            }
+            assert!(matches!(
+                control.status(),
+                HostSessionStatus::Running { .. }
+            ));
+            control
+                .prepare_with_limits(
+                    "game",
+                    Some("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"),
+                    Ok(&command),
+                    &BTreeMap::new(),
+                    None,
+                    Vec::new(),
+                    None,
+                )
+                .unwrap();
+            assert_eq!(
+                *events.lock().unwrap(),
+                ["service", "game"],
+                "resume does not restart Sunshine"
+            );
+        }
+    }
+
     #[test]
     fn launch_settings_new_unit_applies_once_resume_does_not_reapply_and_stop_restores() {
         let root = tempfile::tempdir().unwrap();

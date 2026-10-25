@@ -334,6 +334,7 @@ fn snapshot_dry_run_and_schema_defaults_do_not_change_launch_input_and_set_valid
     let private = tempfile::tempdir().unwrap();
     let lock = std::sync::Mutex::new(());
     let mut request = LaunchSetRequest {
+        clear: false,
         place: LaunchPlace {
             layer: LaunchLayer::Game(game.route.playable_id.clone()),
             scope: LaunchRunnerScope::Family("@korri:retroarch".into()),
@@ -363,4 +364,170 @@ fn snapshot_dry_run_and_schema_defaults_do_not_change_launch_input_and_set_valid
         Some(&game.registry),
     )
     .unwrap();
+}
+
+#[test]
+fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_operations() {
+    use crate::launch_settings::{
+        self as ls, LaunchLayer, LaunchNotice, LaunchPath, LaunchPlace, LaunchRunnerScope,
+        LaunchSetRequest, LaunchSource,
+    };
+    use serde_json::json;
+    let game = DiscoveredGame::new();
+    let package = game
+        .registry
+        .installed_package(&game.route.runner_id)
+        .unwrap();
+    let source = include_str!("../../examples/libretro-core.plugin.ts").replace("export { handlers } from \"./retroarch\"", r#"export const handlers = {
+        'settings.describe': input => { if (input.id !== '@korri:mgba/mgba') throw Error('id expected'); return {revision:'nested-v1',schema:{type:'object',additionalProperties:false,properties:{video:{type:'object',additionalProperties:false,properties:{fps:{type:'integer',default:60},codec:{type:'string',default:'h264'},'no-default':{type:'boolean'}}}}}}; },
+        'settings.validate': input => { if(input.revision !== 'nested-v1') throw Error('revision expected'); return {valid: input.values.video?.fps !== 999,diagnostics:input.values.video?.fps===999 ? [{code:'bad-fps',severity:'error',path:['video','fps'],message:'fps is not supported'}] : []}; },
+        'launch.prepare': input => ({command:input.program,args:[JSON.stringify(input.overrides.settings)],env:{}})
+    }"#);
+    fs::write(package.package.join("plugin.ts"), source).unwrap();
+    let path = game.root.path().join("device.yaml");
+    let mut device: serde_json::Value =
+        serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    device["host"] = json!({"families":{"@korri:retroarch":{"settings":{"video":{"fps":30,"codec":"h265","no-default":true}}}}});
+    fs::write(&path, serde_yaml::to_string(&device).unwrap()).unwrap();
+    let private = tempfile::tempdir().unwrap();
+    let lock = std::sync::Mutex::new(());
+    let client = ls::helper::Client {
+        socket: game.root.path().join("absent.sock"),
+    };
+    let mut request = LaunchSetRequest {
+        clear: false,
+        place: LaunchPlace {
+            layer: LaunchLayer::Game(game.route.playable_id.clone()),
+            scope: LaunchRunnerScope::Runner(game.route.runner_id.clone()),
+        },
+        path: LaunchPath::Setting {
+            key: "video.fps".into(),
+        },
+        value: Some(json!(45)),
+        expected_revision: crate::config::settings::runner_choice_revisions(game.root.path())
+            .unwrap()
+            .games,
+    };
+    let write = |request: &mut LaunchSetRequest| {
+        let revisions = ls::set_with_registry(
+            game.root.path(),
+            private.path(),
+            &lock,
+            request,
+            &client,
+            Some(&game.registry),
+        )
+        .unwrap();
+        request.expected_revision = revisions.games;
+    };
+    write(&mut request);
+    let document: serde_json::Value = serde_yaml::from_str(
+        &fs::read_to_string(game.root.path().join("catalog/library.yaml")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        document["library"][&game.route.playable_id]["runners"][&game.route.runner_id]["settings"]
+            ["video"]["fps"],
+        45
+    );
+    assert!(
+        document["library"][&game.route.playable_id]["runners"][&game.route.runner_id]["settings"]
+            .get("video.fps")
+            .is_none()
+    );
+    request.clear = true;
+    request.value = None;
+    write(&mut request);
+    let snapshot = ls::snapshot(
+        game.root.path(),
+        Some(&game.registry),
+        Some(&game.route.playable_id),
+        &client,
+    )
+    .unwrap();
+    assert_eq!(snapshot.resolved.values["settings.video.fps"].value, 60);
+    assert!(matches!(
+        snapshot.resolved.values["settings.video.fps"].source,
+        Some(LaunchSource::PluginDefault { .. })
+    ));
+    request.path = LaunchPath::Setting {
+        key: "video.no-default".into(),
+    };
+    write(&mut request);
+    let snapshot = ls::snapshot(
+        game.root.path(),
+        Some(&game.registry),
+        Some(&game.route.playable_id),
+        &client,
+    )
+    .unwrap();
+    assert!(!snapshot
+        .resolved
+        .values
+        .contains_key("settings.video.no-default"));
+    request.path = LaunchPath::Setting {
+        key: "video.fps".into(),
+    };
+    request.clear = false;
+    write(&mut request);
+    let snapshot = ls::snapshot(
+        game.root.path(),
+        Some(&game.registry),
+        Some(&game.route.playable_id),
+        &client,
+    )
+    .unwrap();
+    assert_eq!(snapshot.resolved.values["settings.video.fps"].value, 30);
+    request.value = Some(json!(999));
+    write(&mut request);
+    let snapshot = ls::snapshot(
+        game.root.path(),
+        Some(&game.registry),
+        Some(&game.route.playable_id),
+        &client,
+    )
+    .unwrap();
+    assert!(snapshot.notices.iter().any(|n|matches!(n,LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},message,runner_id:Some(id)} if key=="video.fps" && message=="fps is not supported" && id==&game.route.runner_id)));
+    let config = crate::config::settings::runner_choice_snapshot(game.root.path())
+        .unwrap()
+        .0;
+    let spec = launch_route(
+        game.root.path(),
+        &config,
+        &game.registry,
+        &game.route,
+        None,
+        None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
+    assert!(spec.warnings.iter().any(|w| w.setting == "video.fps"));
+    let plan = crate::launcher::plugin_launch::prepared_plan(&spec.command).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&plan.args[0]).unwrap(),
+        json!({"video":{"codec":"h265"}})
+    );
+    request.clear = true;
+    assert!(ls::set_with_registry(
+        game.root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&game.registry)
+    )
+    .is_err());
+    request.value = None;
+    request.path = LaunchPath::Setting {
+        key: "video".into(),
+    };
+    assert!(ls::set_with_registry(
+        game.root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&game.registry)
+    )
+    .is_err());
 }

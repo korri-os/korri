@@ -97,16 +97,17 @@ fn family_then_system_then_runner_then_game_then_override_is_explainable() {
 #[test]
 fn the_runner_reports_unsupported_settings_and_korrid_names_the_build() {
     use korrid::{launcher::typed_settings::validate, script::source::SourceSnapshot};
-    let settings =
+    let mut settings =
         serde_json::from_value(serde_json::json!({"supported":true,"wrong":false})).unwrap();
     let source = "export const name = 'core'; export const handlers = {'settings.validate': (input) => ({valid: true, diagnostics: [{code: 'settings-revision', severity: 'info', message: 'chosen for another build'}, ...Object.keys(input.values).filter((key) => key !== 'supported').map((key) => ({code: 'setting-unverified', severity: 'warning', path: [key], message: `1.22.2 does not accept ${key}`}))]})}";
     let warnings = validate(
         &SourceSnapshot::plugin(source).unwrap(),
-        &settings,
+        &mut settings,
         "@korri:mgba/mgba",
         "/nix/store/exact-build",
     )
-    .unwrap();
+    .unwrap()
+    .warnings;
     // One warning, because the runner accepted the other key. The info-level
     // diagnostic is not a warning and is not shown as one.
     assert_eq!(warnings.len(), 1);
@@ -120,11 +121,12 @@ fn the_runner_reports_unsupported_settings_and_korrid_names_the_build() {
     let quiet = SourceSnapshot::plugin("export const name = 'core';").unwrap();
     assert!(validate(
         &quiet,
-        &settings,
+        &mut settings,
         "@korri:mgba/mgba",
         "/nix/store/exact-build"
     )
     .unwrap()
+    .warnings
     .is_empty());
 
     // A handler that fails is an error, never a silent empty answer.
@@ -134,7 +136,7 @@ fn the_runner_reports_unsupported_settings_and_korrid_names_the_build() {
     .unwrap();
     assert!(validate(
         &broken,
-        &settings,
+        &mut settings,
         "@korri:mgba/mgba",
         "/nix/store/exact-build"
     )

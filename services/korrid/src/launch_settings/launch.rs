@@ -21,6 +21,8 @@ pub struct ResolvedLaunch {
     /// Only authored settings are passed to the runner, not schema defaults.
     pub runner: RunnerConfig,
     pub modifiers: ModifierConfigs,
+    pub services: crate::config::modifiers::ServiceConfigs,
+    pub notices: Vec<LaunchNotice>,
     pub env: BTreeMap<String, Option<String>>,
     pub args: LaunchArgs,
     pub cwd: Option<String>,
@@ -328,6 +330,53 @@ fn contribute(
         });
 }
 
+fn fold_settings(
+    target: &mut HashMap<String, crate::config::cascade::LaunchSettingValue>,
+    authored: &HashMap<String, crate::config::cascade::LaunchSettingValue>,
+    prefix: &str,
+    values: &mut HashMap<String, LaunchSourcedValue>,
+    place: &LaunchPlace,
+    notices: &mut Vec<LaunchNotice>,
+    path: impl Fn(String) -> LaunchPath,
+) {
+    use crate::config::cascade::{leaves, set_leaf, LaunchSettingValue};
+    let (leaves, skipped) = leaves(authored);
+    for key in skipped {
+        notices.push(LaunchNotice::SettingSkipped {
+            runner_id: None,
+            path: path(key),
+            message: "setting names must not contain dots or be empty".into(),
+        });
+    }
+    for (key, value) in leaves {
+        let name = format!("{prefix}.{key}");
+        if matches!(value, LaunchSettingValue::Cleared) {
+            if matches!(
+                crate::config::cascade::leaf(target, &key),
+                Some(LaunchSettingValue::Section(_))
+            ) {
+                notices.push(LaunchNotice::SettingSkipped {
+                    runner_id: None,
+                    path: path(key),
+                    message: "only a setting leaf can be cleared".into(),
+                });
+                continue;
+            }
+            set_leaf(target, &key, None);
+            values.remove(&name);
+        } else {
+            set_leaf(target, &key, Some(value.clone()));
+            put(
+                values,
+                &name,
+                LaunchValuePath::Editable(path(key)),
+                value,
+                place,
+            );
+        }
+    }
+}
+
 pub fn resolve_launch(
     snapshot: &ConfigSnapshot,
     route: &ResolvedRoute,
@@ -338,6 +387,8 @@ pub fn resolve_launch(
     let cells = cells(snapshot, route, launch.as_ref());
     let mut runner = RunnerConfig::default();
     let mut modifiers = ModifierConfigs::default();
+    let mut services = crate::config::modifiers::ServiceConfigs::default();
+    let mut notices = Vec::new();
     let mut env = BTreeMap::new();
     let mut args = LaunchArgs::default();
     let mut cwd = None;
@@ -356,16 +407,15 @@ pub fn resolve_launch(
             );
         }
         if let Some(v) = cell.settings {
-            for (key, value) in &v.settings {
-                runner.settings.insert(key.clone(), value.clone());
-                put(
-                    &mut values,
-                    &format!("settings.{key}"),
-                    LaunchValuePath::Editable(LaunchPath::Setting { key: key.clone() }),
-                    value,
-                    p,
-                );
-            }
+            fold_settings(
+                &mut runner.settings,
+                &v.settings,
+                "settings",
+                &mut values,
+                p,
+                &mut notices,
+                |key| LaunchPath::Setting { key },
+            );
             if let Some(v) = &v.config {
                 let target = runner.config.get_or_insert_with(Default::default);
                 if v.prepend.is_some() {
@@ -392,19 +442,18 @@ pub fn resolve_launch(
                     p,
                 );
             }
-            for (key, value) in &record.settings {
-                target.settings.insert(key.clone(), value.clone());
-                put(
-                    &mut values,
-                    &format!("modifiers.{id}.settings.{key}"),
-                    LaunchValuePath::Editable(LaunchPath::ModifierSetting {
-                        id: id.clone(),
-                        key: key.clone(),
-                    }),
-                    value,
-                    p,
-                );
-            }
+            fold_settings(
+                &mut target.settings,
+                &record.settings,
+                &format!("modifiers.{id}.settings"),
+                &mut values,
+                p,
+                &mut notices,
+                |key| LaunchPath::ModifierSetting {
+                    id: id.clone(),
+                    key,
+                },
+            );
             if let Some(v) = record.config.as_ref().and_then(|v| v.append.as_ref()) {
                 target.config.get_or_insert_with(Default::default).append = Some(v.clone());
                 put(
@@ -415,6 +464,21 @@ pub fn resolve_launch(
                     p,
                 );
             }
+        }
+        for (id, record) in &v.services {
+            let target = services.entry(id.clone()).or_default();
+            fold_settings(
+                &mut target.settings,
+                &record.settings,
+                &format!("services.{id}.settings"),
+                &mut values,
+                p,
+                &mut notices,
+                |key| LaunchPath::ServiceSetting {
+                    id: id.clone(),
+                    key,
+                },
+            );
         }
         for (key, value) in &v.env {
             env.insert(key.clone(), value.clone());
@@ -565,9 +629,21 @@ pub fn resolve_launch(
         gpu,
         governor,
     };
+    for notice in &mut notices {
+        if let LaunchNotice::SettingSkipped {
+            path: LaunchPath::Setting { .. },
+            runner_id,
+            ..
+        } = notice
+        {
+            *runner_id = Some(route.runner_id.clone());
+        }
+    }
     Ok(ResolvedLaunch {
         runner,
         modifiers,
+        services,
+        notices,
         env,
         args,
         cwd,

@@ -833,6 +833,7 @@ fn snapshot_lists_installed_modifiers_without_authored_values_and_validates_opti
         .all(|v| v.body.get("modifiers").is_none()));
     let lock = std::sync::Mutex::new(());
     let mut request = LaunchSetRequest {
+        clear: false,
         place: LaunchPlace {
             layer: LaunchLayer::Profile {
                 game_id: readable::GBA_ID.into(),
@@ -905,4 +906,260 @@ fn snapshot_lists_installed_modifiers_without_authored_values_and_validates_opti
         .unwrap()
         .modifiers
         .is_empty());
+}
+
+#[test]
+fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_render() {
+    use korrid::launch_settings::{
+        self as ls, LaunchLayer, LaunchPath, LaunchPlace, LaunchRunnerScope, LaunchSetRequest,
+        LaunchSource,
+    };
+    use serde_json::json;
+    let root = tempfile::tempdir().unwrap();
+    let sunshine = "@korri:sunshine/sunshine";
+    let moonlight = "@korri:moonlight/moonlight";
+    readable::install(root.path(), &json!({"host":{"services":{sunshine:{"settings":{"video":{"max-bitrate-kbps":3000}}}},"runners":{moonlight:{"settings":{"video":{"fps":30}}}}}}).to_string(), &readable::gba_library());
+    let library_path = root.path().join("catalog/library.yaml");
+    let mut library: serde_json::Value =
+        serde_yaml::from_str(&fs::read_to_string(&library_path).unwrap()).unwrap();
+    library["library"][readable::GBA_ID]["runners"] =
+        json!({moonlight:{"settings":{"video":{"fps":45}}}});
+    library["library"][readable::GBA_ID]["profiles"] =
+        json!({"quiet":{"title":"Quiet","runners":{moonlight:{"settings":{"video":{"fps":90}}}}}});
+    library["library"][readable::GBA_ID]["profile"] = json!("quiet");
+    fs::write(library_path, serde_yaml::to_string(&library).unwrap()).unwrap();
+    let mut document: serde_json::Value =
+        serde_yaml::from_str(&fs::read_to_string(root.path().join("device.yaml")).unwrap())
+            .unwrap();
+    let locations: serde_json::Value =
+        serde_yaml::from_str(&readable::gba_locations("roms", "wl4.gba", false)).unwrap();
+    document["locations"] = locations["locations"].clone();
+    fs::write(
+        root.path().join("device.yaml"),
+        serde_yaml::to_string(&document).unwrap(),
+    )
+    .unwrap();
+    fs::create_dir(root.path().join("roms")).unwrap();
+    fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
+    let schema = r#"{type:'object',additionalProperties:false,properties:{video:{type:'object',additionalProperties:false,properties:{'max-bitrate-kbps':{type:'integer'},codec:{type:'string',default:'h264'},fps:{type:'integer'}}}}}"#;
+    let sun = package(
+        root.path(),
+        "@korri:sunshine",
+        &format!(
+            r#"export const name='sunshine'; export const title='Sunshine';export const handlers={{'settings.describe':input=>{{if(input.id !== '@korri:sunshine/sunshine')throw Error('wrong id');return {{schema:{schema},revision:'sun-v1'}};}},'settings.validate':input=>({{valid:true,diagnostics:[]}}),'settings.render':input=>({{args:['max_bitrate='+input.settings.video['max-bitrate-kbps']]}})}};"#
+        ),
+        None,
+    );
+    let moon = package(
+        root.path(),
+        "@korri:moonlight",
+        &format!(
+            r#"export const name='moonlight';export const runners={{moonlight:{{id:'@korri:moonlight/moonlight',program:'program'}}}};export const handlers={{'settings.describe':()=>({{schema:{schema},revision:'moon-v1'}}),'settings.validate':input=>({{valid:input.values.video?.fps!==999,diagnostics:input.values.video?.fps===999?[{{severity:'error',code:'fps',path:['video','fps'],message:'unsupported fps'}}]:[]}}),'settings.render':input=>({{args:['-fps',String(input.settings.video.fps),'-width',String(input.display.width)]}})}};"#
+        ),
+        None,
+    );
+    let runner = package(root.path(), "@korri:mgba", RUNNER, None);
+    let registry = PluginRegistry::from_installed(vec![sun, moon, runner]).unwrap();
+    let client = ls::helper::Client {
+        socket: root.path().join("absent.sock"),
+    };
+    for game in [None, Some(readable::GBA_ID)] {
+        let snapshot = ls::snapshot(root.path(), Some(&registry), game, &client).unwrap();
+        assert!(
+            !snapshot
+                .runners
+                .iter()
+                .find(|r| r.id == moonlight)
+                .unwrap()
+                .choosable
+        );
+        let projection = snapshot
+            .runner_resolved
+            .iter()
+            .find(|r| r.runner_id == moonlight)
+            .unwrap();
+        assert_eq!(
+            projection.values["settings.video.fps"].value,
+            if game.is_some() { 90 } else { 30 }
+        );
+        assert!(
+            matches!(projection.values["settings.video.codec"].source,Some(LaunchSource::PluginDefault {ref plugin_id}) if plugin_id=="@korri:moonlight")
+        );
+        assert!(!snapshot.resolved.values.contains_key("settings.video.fps"));
+        assert_eq!(snapshot.services.len(), 1);
+        assert_eq!(snapshot.services[0].id, sunshine);
+        assert_eq!(snapshot.services[0].revision.as_deref(), Some("sun-v1"));
+        assert!(snapshot
+            .places
+            .iter()
+            .all(|p| p.editable_kinds.contains(&"services".into())));
+        assert!(snapshot
+            .places
+            .iter()
+            .any(|p| matches!(&p.place.scope,LaunchRunnerScope::Runner(id) if id==moonlight)));
+        assert!(matches!(
+            snapshot.resolved.values[&format!("services.{sunshine}.settings.video.codec")].source,
+            Some(LaunchSource::PluginDefault { .. })
+        ));
+        assert_eq!(
+            snapshot.resolved.values
+                [&format!("services.{sunshine}.settings.video.max-bitrate-kbps")]
+                .value,
+            3000
+        );
+    }
+    let private = tempfile::tempdir().unwrap();
+    let lock = std::sync::Mutex::new(());
+    let mut request = LaunchSetRequest {
+        clear: false,
+        place: LaunchPlace {
+            layer: LaunchLayer::Game(readable::GBA_ID.into()),
+            scope: LaunchRunnerScope::Any,
+        },
+        path: LaunchPath::Runner,
+        value: Some(json!(moonlight)),
+        expected_revision: korrid::config::settings::runner_choice_revisions(root.path())
+            .unwrap()
+            .games,
+    };
+    assert!(ls::set_with_registry(
+        root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&registry)
+    )
+    .unwrap_err()
+    .to_string()
+    .contains("cannot be chosen"));
+    request.path = LaunchPath::ServiceSetting {
+        id: sunshine.into(),
+        key: "video.max-bitrate-kbps".into(),
+    };
+    request.value = Some(json!(5000));
+    let revisions = ls::set_with_registry(
+        root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&registry),
+    )
+    .unwrap();
+    request.expected_revision = revisions.games;
+    let config = korrid::config::settings::runner_choice_snapshot(root.path())
+        .unwrap()
+        .0;
+    let route = korrid::config::resolver::resolve_linux_route(
+        root.path(),
+        &config,
+        &registry,
+        readable::GBA_ID,
+        None,
+    )
+    .unwrap();
+    let launch = launch_route(
+        root.path(),
+        &config,
+        &registry,
+        &route,
+        None,
+        None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
+    let composition: LaunchComposition = serde_json::from_str(&launch.command[4]).unwrap();
+    assert_eq!(composition.sunshine_args.unwrap(), ["max_bitrate=5000"]);
+    request.value = None;
+    request.clear = true;
+    let revisions = ls::set_with_registry(
+        root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&registry),
+    )
+    .unwrap();
+    request.expected_revision = revisions.games;
+    let snapshot = ls::snapshot(
+        root.path(),
+        Some(&registry),
+        Some(readable::GBA_ID),
+        &client,
+    )
+    .unwrap();
+    assert!(!snapshot.resolved.values.contains_key(&format!(
+        "services.{sunshine}.settings.video.max-bitrate-kbps"
+    )));
+    request.clear = false;
+    ls::set_with_registry(
+        root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&registry),
+    )
+    .unwrap();
+    let snapshot = ls::snapshot(
+        root.path(),
+        Some(&registry),
+        Some(readable::GBA_ID),
+        &client,
+    )
+    .unwrap();
+    assert_eq!(
+        snapshot.resolved.values[&format!("services.{sunshine}.settings.video.max-bitrate-kbps")]
+            .value,
+        3000
+    );
+    assert!(korrid::config::resolver::resolve_linux_route(
+        root.path(),
+        &config,
+        &registry,
+        readable::GBA_ID,
+        Some(moonlight)
+    )
+    .is_err());
+    let library_path = root.path().join("catalog/library.yaml");
+    let mut library: serde_json::Value =
+        serde_yaml::from_str(&fs::read_to_string(&library_path).unwrap()).unwrap();
+    library["library"][readable::GBA_ID]["profiles"]["quiet"]["runners"][moonlight]["settings"]
+        ["video"]["fps"] = json!(999);
+    fs::write(library_path, serde_yaml::to_string(&library).unwrap()).unwrap();
+    let snapshot = ls::snapshot(
+        root.path(),
+        Some(&registry),
+        Some(readable::GBA_ID),
+        &client,
+    )
+    .unwrap();
+    let projection = snapshot
+        .runner_resolved
+        .iter()
+        .find(|r| r.runner_id == moonlight)
+        .unwrap();
+    assert!(!projection.values.contains_key("settings.video.fps"));
+    assert!(snapshot.notices.iter().any(|n|matches!(n,ls::LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},runner_id:Some(id),message} if id==moonlight && key=="video.fps" && message=="unsupported fps")));
+}
+
+#[test]
+fn compose_validation_drops_error_paths_but_keeps_other_nested_leaves() {
+    let root = tempfile::tempdir().unwrap();
+    let runner = package(root.path(), "@korri:mgba", RUNNER, None);
+    let modifier = package(
+        root.path(),
+        "@test:nested",
+        r#"export const name='nested';export const modifiers={main:{id:'@test:nested/main'}};export const handlers={'settings.describe':()=>({revision:'one',schema:{}}),'settings.validate':input=>({valid:false,diagnostics:[{severity:'error',code:'bad',path:['video','fps'],message:'bad fps'}]}),'launch.compose':input=>({...input.plan,args:[JSON.stringify(input.settings)]})};"#,
+        None,
+    );
+    let input:PluginLaunchInput=serde_json::from_value(serde_json::json!({"runnerId":"@korri:mgba/mgba","program":"/bin/sh","accountRoot":"/account","saveRoot":"/account/saves/game","cacheRoot":"/cache","files":{},"artifacts":{}})).unwrap();
+    let composition:LaunchComposition=serde_json::from_value(serde_json::json!({"modifiers":[{"modifierId":"@test:nested/main","manifest":modifier.package.join("manifest.json"),"entry":"plugin.ts","settings":{"video":{"fps":999,"codec":"h264"}},"config":{}}]})).unwrap();
+    let plan = prepare(&runner.package.join("plugin.ts"), &input, &composition).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&plan.args[0]).unwrap(),
+        serde_json::json!({"video":{"codec":"h264"}})
+    );
 }

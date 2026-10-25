@@ -4,7 +4,8 @@
 //! certificate through the broker, and uses exact-launch systemd and focus.
 
 mod production;
-pub use production::{production_viewer, CertificateProvision, LocalSeats};
+pub(crate) use production::render_settings;
+pub use production::{production_viewer, CertificateProvision, LocalSeats, ViewerSettings};
 
 use futures::future::BoxFuture;
 

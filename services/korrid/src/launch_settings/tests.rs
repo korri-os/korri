@@ -45,6 +45,7 @@ fn req(
     revision: String,
 ) -> LaunchSetRequest {
     LaunchSetRequest {
+        clear: false,
         place,
         path,
         value,
@@ -398,7 +399,7 @@ fn setters_write_every_layer_and_runner_place_to_the_correct_document() {
 #[test]
 fn override_and_set_wire_refuse_every_file_only_kind_and_removed_rpc() {
     for key in [
-        "env", "args", "cwd", "hooks", "routines", "config", "runner", "unknown",
+        "env", "args", "cwd", "hooks", "routines", "config", "runner", "services", "unknown",
     ] {
         assert!(
             serde_json::from_value::<LaunchOverride>(json!({key:{}})).is_err(),
@@ -676,6 +677,7 @@ fn launch_settings_pending_publication_blocks_every_mutation_without_rewriting_f
             private.path(),
             &lock,
             &LaunchSetRequest {
+                clear: false,
                 place: any(LaunchLayer::Game("game".into())),
                 path: LaunchPath::CpuMax,
                 value: Some(json!(50)),
@@ -928,4 +930,35 @@ fn system_places_without_game_match_the_existing_system_write_boundary() {
         .unwrap();
     assert_eq!(place.body["cpu"]["max"], 70);
     assert_eq!(after.resolved.values["cpu.max"].value, 95);
+}
+
+#[test]
+fn nested_settings_fold_per_leaf_clear_lower_values_and_skip_dotted_names() {
+    let device = json!({"host":{"families":{FAMILY:{"settings":{"video":{"fps":60,"codec":"h264","resolution":{"width":640,"height":480}}}}},"runners":{RUNNER:{"settings":{"video":{"fps":30,"bad.name":4}}}},"services":{resolution::SUNSHINE:{"settings":{"video":{"max-bitrate-kbps":3000}}}}},"systems":{"gba":{"runners":{RUNNER:{"settings":{"video":{"codec":null}}}},"services":{resolution::SUNSHINE:{"settings":{"logging":{"level":"info"}}}}}}});
+    let library = json!({"library":{"game":{"releases":[{"id":"gba","system":"gba","identity":{"kind":"provider","value":"@korri:content/one"}}],"runners":{RUNNER:{"settings":{"video":{"fps":null,"resolution":{"width":854}}}}},"profiles":{"quiet":{"title":"Quiet","services":{resolution::SUNSHINE:{"settings":{"video":{"max-bitrate-kbps":5000}}}}}},"profile":"quiet"}}});
+    let snapshot = decode_config_documents(&device.to_string(), &library.to_string()).unwrap();
+    let resolved = resolve_launch(&snapshot, &route(), None, None).unwrap();
+    assert_eq!(
+        serde_json::to_value(resolved.runner.settings).unwrap(),
+        json!({"video":{"resolution":{"width":854,"height":480}}})
+    );
+    assert!(!resolved.values.values.contains_key("settings.video.fps"));
+    assert!(!resolved.values.values.contains_key("settings.video.codec"));
+    assert_eq!(
+        serde_json::to_value(&resolved.services[resolution::SUNSHINE].settings).unwrap(),
+        json!({"video":{"max-bitrate-kbps":5000},"logging":{"level":"info"}})
+    );
+    assert!(
+        matches!(&resolved.notices[0], LaunchNotice::SettingSkipped {path: LaunchPath::Setting {key}, ..} if key=="video.bad.name")
+    );
+    let mut override_body: crate::config::place::PlaceBody =
+        serde_json::from_value(json!({"runners":{RUNNER:{"settings":{"video":null}}}})).unwrap();
+    let mut config = snapshot;
+    config.library.get_mut("game").unwrap().runners = std::mem::take(&mut override_body.runners);
+    let resolved = resolve_launch(&config, &route(), None, None).unwrap();
+    assert!(resolved.notices.iter().any(|n|matches!(n,LaunchNotice::SettingSkipped {message,..} if message.contains("only a setting leaf"))));
+    assert_eq!(
+        serde_json::to_value(resolved.runner.settings).unwrap()["video"]["fps"],
+        30
+    );
 }

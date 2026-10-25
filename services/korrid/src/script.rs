@@ -46,6 +46,9 @@ pub const SETTINGS_DESCRIBE: &str = "settings.describe";
 /// What this build cannot apply from the authored values.
 pub const SETTINGS_VALIDATE: &str = "settings.validate";
 
+/// Render arguments for a runner or launch service without a launch plan.
+pub const SETTINGS_RENDER: &str = "settings.render";
+
 /// Whether the runner can start this target now, and what is missing if not.
 /// The runner owns its runtime, so only the runner can answer this.
 pub const RUNTIME_RESOLVE: &str = "runtime.resolve";
@@ -278,7 +281,7 @@ fn evaluate_module(
                     runner
                         .get("program")
                         .and_then(serde_json::Value::as_str)
-                        .is_some()
+                        .is_some() && ["systems", "releases"].iter().any(|kind| runner.get(kind).and_then(serde_json::Value::as_array).is_some_and(|v| !v.is_empty()))
                 })
             })
         {

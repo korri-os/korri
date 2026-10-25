@@ -125,6 +125,8 @@ pub struct ResolvedLaunchModifier {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LaunchComposition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sunshine_args: Option<Vec<String>>,
     pub modifiers: Vec<ResolvedLaunchModifier>,
     #[serde(default)]
     pub env: std::collections::BTreeMap<String, Option<String>>,
@@ -147,7 +149,11 @@ pub fn evaluate_snapshot(
     source: &crate::script::source::SourceSnapshot,
     input: &PluginLaunchInput,
 ) -> Result<PluginLaunchOutput, String> {
-    let encoded = serde_json::to_string(input).map_err(|e| e.to_string())?;
+    let mut input = input.clone();
+    if let Some(overrides) = &mut input.overrides {
+        super::typed_settings::validate(source, &mut overrides.settings, &input.runner_id, "")?;
+    }
+    let encoded = serde_json::to_string(&input).map_err(|e| e.to_string())?;
     let result = crate::script::call_plugin_operation_snapshot(
         source,
         crate::script::LAUNCH_PREPARE,
@@ -353,12 +359,19 @@ fn prepare_with_diagnostics(
                     ));
                 }
             }
+            let mut settings = modifier.settings.clone();
+            super::typed_settings::validate(
+                &snapshot,
+                &mut settings,
+                &modifier.modifier_id,
+                &modifier.manifest.display().to_string(),
+            )?;
             let request = PluginComposeInput {
                 modifier_id: modifier.modifier_id.clone(),
                 runner_id: input.runner_id.clone(),
                 family_id: input.family_id.clone(),
                 plan: plan.clone(),
-                settings: modifier.settings.clone(),
+                settings,
                 config: modifier.config.clone(),
                 files: manifest.files,
                 display: composition.display.clone(),
@@ -393,6 +406,16 @@ fn prepare_with_diagnostics(
         runner_argv,
         release_id: None,
     })
+}
+
+pub(crate) fn sunshine_args(command: &[String]) -> Result<Option<Vec<String>>, String> {
+    if command.get(1).map(String::as_str) != Some("plugin-launch") {
+        return Ok(None);
+    }
+    let composition: LaunchComposition =
+        serde_json::from_str(command.get(4).ok_or("missing launch composition")?)
+            .map_err(|e| e.to_string())?;
+    Ok(composition.sunshine_args)
 }
 
 /// Resolve existing ancestors too, because launch declarations precede mkdir.

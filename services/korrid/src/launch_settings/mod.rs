@@ -12,6 +12,7 @@ pub use wire::*;
 pub(crate) mod launch;
 pub use launch::{resolve_launch, ResolvedHooks, ResolvedLaunch};
 pub use resolution::snapshot;
+pub(crate) use store::requires_registry;
 pub use store::{remove_profile, save_profile, select_profile, set, set_with_registry};
 
 #[typeshare]

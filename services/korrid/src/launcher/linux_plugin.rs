@@ -146,21 +146,43 @@ fn inspect_route(
                     .into(),
             )),
         };
-    let resolved = crate::launch_settings::resolve_launch(snapshot, route, launch.as_ref(), None)
-        .map_err(|e| error(e.to_string()))?;
-    let folded = &resolved.runner;
+    let mut resolved =
+        crate::launch_settings::resolve_launch(snapshot, route, launch.as_ref(), None)
+            .map_err(|e| error(e.to_string()))?;
+    let folded = &mut resolved.runner;
     let build = package.package.display().to_string();
-    // Ask the runner what it cannot apply before starting anything. The values
-    // are still handed to launch.prepare exactly as they were authored.
+    // Ask before starting anything. Only error paths are removed; the authored
+    // file remains unchanged and every diagnostic keeps its setting path.
     let source = crate::script::source::SourceSnapshot::package_plugin(
         &package.package,
         &package.entry,
         &package.sources,
     )
     .map_err(error)?;
-    let warnings =
-        super::typed_settings::validate(&source, &folded.settings, &route.runner_id, &build)
-            .map_err(error)?;
+    let mut warnings =
+        super::typed_settings::validate(&source, &mut folded.settings, &route.runner_id, &build)
+            .map_err(error)?
+            .warnings;
+    warnings.extend(resolved.notices.iter().filter_map(|notice| match notice {
+        crate::launch_settings::LaunchNotice::SettingSkipped { path, message, .. } => {
+            let (setting, id) = match path {
+                crate::launch_settings::LaunchPath::Setting { key } => (key, &route.runner_id),
+                crate::launch_settings::LaunchPath::ModifierSetting { id, key }
+                | crate::launch_settings::LaunchPath::ServiceSetting { id, key } => (key, id),
+                _ => return None,
+            };
+            Some(super::typed_settings::LaunchWarning {
+                setting: setting.clone(),
+                runner_id: id.clone(),
+                build: registry
+                    .installed_package(id)
+                    .map(|p| p.package.display().to_string())
+                    .unwrap_or_default(),
+                message: message.clone(),
+            })
+        }
+        _ => None,
+    }));
     let mut composition = LaunchComposition {
         display,
         env: resolved.env.clone(),
@@ -168,7 +190,7 @@ fn inspect_route(
         cwd: resolved.cwd.clone(),
         ..Default::default()
     };
-    for (id, record) in resolved.modifiers.iter() {
+    for (id, record) in resolved.modifiers.iter_mut() {
         if record.enabled != Some(true) {
             continue;
         }
@@ -178,6 +200,22 @@ fn inspect_route(
         let modifier_package = registry
             .installed_package(id)
             .map_err(|cause| error(cause.to_string()))?;
+        let modifier_source = crate::script::source::SourceSnapshot::package_plugin(
+            &modifier_package.package,
+            &modifier_package.entry,
+            &modifier_package.sources,
+        )
+        .map_err(error)?;
+        warnings.extend(
+            super::typed_settings::validate(
+                &modifier_source,
+                &mut record.settings,
+                id,
+                &modifier_package.package.display().to_string(),
+            )
+            .map_err(error)?
+            .warnings,
+        );
         composition.modifiers.push(ResolvedLaunchModifier {
             modifier_id: id.clone(),
             manifest: modifier_package.package.join("manifest.json"),
@@ -185,6 +223,30 @@ fn inspect_route(
             settings: record.settings.clone(),
             config: record.config.clone().unwrap_or_default(),
         });
+    }
+    let service_id = crate::launch_settings::resolution::SUNSHINE;
+    if let Ok(package) = registry.installed_package(service_id) {
+        let service_source = crate::script::source::SourceSnapshot::package_plugin(
+            &package.package,
+            &package.entry,
+            &package.sources,
+        )
+        .map_err(error)?;
+        let settings = resolved
+            .services
+            .get(service_id)
+            .map(|s| s.settings.clone())
+            .unwrap_or_default();
+        let (args, service_warnings) = super::typed_settings::render(
+            &service_source,
+            service_id,
+            &settings,
+            None,
+            &package.package.display().to_string(),
+        )
+        .map_err(error)?;
+        warnings.extend(service_warnings);
+        composition.sunshine_args = Some(args);
     }
     let Some(person) = person else {
         return Ok(RouteInspection::Unowned(warnings));

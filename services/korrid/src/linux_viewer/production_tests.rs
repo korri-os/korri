@@ -14,21 +14,21 @@ fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
         &files,
         Path::new("/home/korri/.config/moonlight"),
         "192.0.2.1:47989",
-        (1920, 1080),
+        &["-codec".into(), "h264".into()],
         "v4l2m2m",
         &seats,
     )
     .unwrap();
     assert!(args.windows(2).any(|v| v == ["-app", "Korri Stream"]));
     assert!(args.windows(2).any(|v| v == ["-codec", "h264"]));
-    assert!(args.windows(2).any(|v| v == ["-fps", "60"]));
+    assert!(!args.iter().any(|v| v == "-fps" || v == "-bitrate"));
     assert_eq!(args.iter().filter(|v| *v == "-input").count(), 2);
     // Moonlight's SDL system (what `x11` resolves to) exits on `-input`.
     let sdl = stream_args(
         &files,
         Path::new("/home/korri/.config/moonlight"),
         "192.0.2.1:47989",
-        (640, 480),
+        &[],
         "x11",
         &seats,
     )
@@ -38,7 +38,7 @@ fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
         .iter()
         .any(|v| v == "pair" || v == "-quitappafter" || v == "-viewonly"));
     assert!(
-        stream_args(&files, Path::new("/keys"), "host", (640, 480), "x11", &[])
+        stream_args(&files, Path::new("/keys"), "host", &[], "x11", &[])
             .unwrap()
             .contains(&"-viewonly".into())
     );
@@ -46,7 +46,7 @@ fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
         &files,
         Path::new("/keys"),
         "host",
-        (640, 480),
+        &[],
         "x11",
         &["/dev/input/../secret".into()]
     )
@@ -66,8 +66,7 @@ fn linux_viewer_argv_unbrackets_ipv6_without_changing_the_control_url() {
         ("sunshine:80", "sunshine", "80"),
         ("sunshine", "sunshine", "47989"),
     ] {
-        let args =
-            stream_args(&files, Path::new("/keys"), address, (640, 480), "x11", &[]).unwrap();
+        let args = stream_args(&files, Path::new("/keys"), address, &[], "x11", &[]).unwrap();
         assert_eq!(args.last().map(String::as_str), Some(host));
         assert!(args.windows(2).any(|pair| pair == ["-port", port]));
     }
@@ -256,6 +255,16 @@ esac
     let record = provisioned.clone();
     let units = Arc::new(ViewerUnits::default());
     let viewer = ProductionLinuxStreamViewer {
+        settings: Arc::new(|display| {
+            Ok(vec![
+                "-width".into(),
+                display.width.to_string(),
+                "-height".into(),
+                display.height.to_string(),
+                "-codec".into(),
+                "h264".into(),
+            ])
+        }),
         provision: Arc::new(move |uuid, cert| {
             let record = record.clone();
             Box::pin(async move {
@@ -394,32 +403,103 @@ fn linux_viewer_reads_sysfs_device_tree_and_reports_read_failures() {
 }
 
 #[test]
-fn linux_viewer_bitrate_follows_moonlight_defaults_for_size_and_rate() {
-    // Expected values follow moonlight-qt getDefaultBitrate for 4:2:0.
-    for (width, height, fps, kbps) in [
-        (640, 480, 60, 3000),
-        (640, 360, 60, 2000),
-        (320, 240, 60, 2000),
-        (1280, 720, 30, 5000),
-        (1280, 720, 60, 10000),
-        (1920, 1080, 60, 20000),
-        (1920, 1080, 120, 28000),
-        (7680, 4320, 60, 80000),
-    ] {
-        assert_eq!(
-            default_bitrate_kbps(width, height, fps),
-            kbps,
-            "{width}x{height}@{fps}"
-        );
-    }
-    let files = MoonlightFiles {
-        executable: "/nix/store/viewer/bin/moonlight".into(),
-        mapping: "/nix/store/viewer/mapping".into(),
-        bootstrap: "/nix/store/viewer/bootstrap".into(),
+fn linux_viewer_drops_plugin_invariant_flags_and_preserves_native_settings() {
+    let rendered: Vec<String> = [
+        "-app",
+        "Other",
+        "-port=123",
+        "-keydir",
+        "/keys",
+        "-mapping",
+        "/map",
+        "-platform",
+        "drm",
+        "-input",
+        "/dev/input/event1",
+        "-viewonly",
+        "-windowed",
+        "-autowindowresize",
+        "-width",
+        "854",
+        "-height",
+        "480",
+        "-codec",
+        "h264",
+        "stream",
+        "other-host",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    let (args, warnings) = plugin_args(&rendered);
+    assert_eq!(args, ["-width", "854", "-height", "480", "-codec", "h264"]);
+    assert_eq!(warnings.len(), 11);
+    assert!(!args.iter().any(|v| v == "-fps" || v == "-bitrate"));
+}
+
+#[test]
+fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_profile() {
+    use serde_json::json;
+    const ID: &str = "@korri:moonlight/moonlight";
+    let root = tempfile::tempdir().unwrap();
+    let package = root.path().join("plugin");
+    std::fs::create_dir(&package).unwrap();
+    let source = r#"export const name='moonlight';export const runners={moonlight:{id:'@korri:moonlight/moonlight',program:'program'}};export const handlers={
+      'settings.describe':()=>({revision:'v1',schema:{}}),
+      'settings.validate': input=>({valid:false,diagnostics:input.values.video?.codec==='bad'?[{severity:'error',code:'codec',path:['video','codec'],message:'unsupported codec'}]:[]}),
+      'settings.render':input=>({args:[JSON.stringify(input.settings),String(input.display.width)]})
+    };"#;
+    std::fs::write(package.join("plugin.ts"), source).unwrap();
+    let registry = crate::plugin::PluginRegistry::from_installed(vec![
+        crate::plugin_installation::EnabledPackage {
+            id: "@korri:moonlight".into(),
+            package,
+            files: BTreeMap::from([("program".into(), "/bin/sh".into())]),
+            entry: "plugin.ts".into(),
+            sources: vec!["plugin.ts".into()],
+            requires: vec![],
+            hosts: vec![],
+        },
+    ])
+    .unwrap();
+    let device = json!({"host":{"runners":{ID:{"settings":{"video":{"fps":30,"codec":"h264"}}}}},"systems":{"gba":{"runners":{ID:{"settings":{"video":{"fps":45}}}}}}});
+    let library = json!({"library":{"game":{"releases":[{"id":"one","system":"gba","identity":{"kind":"provider","value":"@korri:content/one"},"runners":{ID:{"settings":{"video":{"fps":5}}}}}],"runners":{ID:{"settings":{"video":{"codec":"h265"}}}},"profiles":{"quiet":{"title":"Quiet","runners":{ID:{"settings":{"video":{"fps":90}}}}},"unselected":{"title":"Unselected","runners":{ID:{"settings":{"video":{"fps":120}}}}}},"profile":"quiet"}}});
+    std::fs::create_dir(root.path().join("catalog")).unwrap();
+    std::fs::write(root.path().join("device.yaml"), device.to_string()).unwrap();
+    std::fs::write(
+        root.path().join("catalog/library.yaml"),
+        library.to_string(),
+    )
+    .unwrap();
+    let display = crate::launcher::plugin_launch::PluginDisplay {
+        width: 854,
+        height: 480,
     };
-    let args = stream_args(&files, Path::new("/keys"), "host", (640, 480), "x11", &[]).unwrap();
-    // Twice Moonlight's default, for handheld hardware encoders.
-    assert!(args.windows(2).any(|v| v == ["-bitrate", "6000"]));
-    // The holder keeps its own sound.
-    assert!(args.iter().any(|v| v == "-localaudio"));
+    let args = render_settings(root.path(), &registry, Some("game"), display.clone()).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&args[0]).unwrap(),
+        json!({"video":{"fps":90,"codec":"h265"}})
+    );
+    assert_eq!(args[1], "854");
+    let args = render_settings(
+        root.path(),
+        &registry,
+        Some("not-in-local-library"),
+        display.clone(),
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&args[0]).unwrap(),
+        json!({"video":{"fps":30,"codec":"h264"}})
+    );
+    let snapshot = crate::script::source::SourceSnapshot::plugin(source).unwrap();
+    let settings = serde_json::from_value(json!({"video":{"fps":60,"codec":"bad"}})).unwrap();
+    let (args, warnings) =
+        crate::launcher::typed_settings::render(&snapshot, ID, &settings, Some(display), "build")
+            .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&args[0]).unwrap(),
+        json!({"video":{"fps":60}})
+    );
+    assert_eq!(warnings[0].setting, "video.codec");
 }

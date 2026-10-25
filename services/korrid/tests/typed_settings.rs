@@ -216,19 +216,21 @@ fn the_runner_describes_its_own_schema_and_validates_against_it() {
         .get("config_save_on_exit")
         .is_none());
 
-    let settings = serde_json::from_value(serde_json::json!({
-        "video_vsync": false,
-        "video_driver": 7,
-        "absent_key": true,
-    }))
-    .unwrap();
+    let settings: std::collections::HashMap<String, korrid::config::cascade::LaunchSettingValue> =
+        serde_json::from_value(serde_json::json!({
+            "video_vsync": false,
+            "video_driver": 7,
+            "absent_key": true,
+        }))
+        .unwrap();
     let warnings = validate(
         &source,
-        &settings,
+        &mut settings.clone(),
         "@korri:mgba/mgba",
         "/nix/store/exact-build",
     )
-    .unwrap();
+    .unwrap()
+    .warnings;
     let reported: Vec<&str> = warnings
         .iter()
         .map(|warning| warning.setting.as_str())
@@ -335,11 +337,12 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
     );
     let warnings = validate(
         &source,
-        &input.overrides.as_ref().unwrap().settings,
+        &mut input.overrides.as_ref().unwrap().settings.clone(),
         &input.runner_id,
         &build,
     )
-    .unwrap();
+    .unwrap()
+    .warnings;
     assert_eq!(warnings.len(), 2);
     assert!(warnings
         .iter()
@@ -376,7 +379,14 @@ fn plugin_settings_scope_mark_defaults_shared_and_only_accepts_device() {
         .iter()
         .all(|d| d.runner_id == "@test:runner/main" && d.message.contains("x-korri-scope")));
     // Diagnostics still reach launch warnings even without settings.validate.
-    let warnings = validate(&source, &Default::default(), "@test:runner/main", "build").unwrap();
+    let warnings = validate(
+        &source,
+        &mut Default::default(),
+        "@test:runner/main",
+        "build",
+    )
+    .unwrap()
+    .warnings;
     assert_eq!(warnings.len(), 3);
 }
 

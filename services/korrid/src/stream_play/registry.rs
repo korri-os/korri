@@ -16,6 +16,13 @@ pub(super) enum Participation {
 }
 
 impl UpstreamRegistry {
+    pub(crate) fn stream_play_game_id(&self) -> Option<String> {
+        match self.selected()?.participation {
+            Participation::StreamPlayer { game_id, .. } => game_id,
+            _ => None,
+        }
+    }
+
     pub(crate) fn stream_play_launch_id(&self) -> Option<String> {
         let selected = self.selected()?;
         matches!(selected.participation, Participation::StreamPlayer { .. })

@@ -24,6 +24,7 @@ fn snapshot_distinguishes_clear_from_an_authored_value_equal_to_device_default()
     );
     let lock = Mutex::new(());
     let mut request = LaunchSetRequest {
+        clear: false,
         place: LaunchPlace {
             layer: LaunchLayer::Device,
             scope: LaunchRunnerScope::Any,

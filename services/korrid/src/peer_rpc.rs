@@ -1421,6 +1421,7 @@ mod tests {
             .encode_request_with_tokens(
                 &host_key,
                 RpcRequest::LaunchSettingsSet(crate::launch_settings::LaunchSetRequest {
+                    clear: false,
                     place: crate::launch_settings::LaunchPlace {
                         layer: crate::launch_settings::LaunchLayer::Game("neverball".into()),
                         scope: crate::launch_settings::LaunchRunnerScope::Any,

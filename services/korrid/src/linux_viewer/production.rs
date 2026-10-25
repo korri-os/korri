@@ -33,10 +33,12 @@ pub type LocalSeats =
 pub fn production_viewer(
     provision: CertificateProvision,
     local_seats: LocalSeats,
+    settings: ViewerSettings,
 ) -> Arc<dyn LinuxStreamViewer> {
     let viewer = ProductionLinuxStreamViewer {
         provision,
         local_seats,
+        settings,
         resolve_files: Arc::new(installed_files),
         units: Arc::new(SystemdLaunchUnitBackend::default().for_stream_viewer()),
         swaymsg: std::env::var_os("KORRID_SWAYMSG")
@@ -61,6 +63,7 @@ pub fn production_viewer(
 struct ProductionLinuxStreamViewer {
     provision: CertificateProvision,
     local_seats: LocalSeats,
+    settings: ViewerSettings,
     resolve_files: Arc<dyn Fn() -> Result<MoonlightFiles, LinuxViewerError> + Send + Sync>,
     units: Arc<dyn LaunchUnitBackend>,
     swaymsg: PathBuf,
@@ -231,57 +234,111 @@ fn platform_from_path(path: &Path, report: impl FnOnce(&std::io::Error)) -> &'st
     }
 }
 
-/// Frame rate every Korri stream requests.
-const STREAM_FPS: u64 = 60;
+pub type ViewerSettings = Arc<
+    dyn Fn(crate::launcher::plugin_launch::PluginDisplay) -> Result<Vec<String>, LinuxViewerError>
+        + Send
+        + Sync,
+>;
 
-/// Multiple of Moonlight's default bitrate that a Korri stream requests.
-/// Moonlight's table assumes desktop-class encoders. At 3 Mbit/s the RG35XX
-/// SP's cedrus H.264 encoder looked visibly soft at 640x480 (2026-10-25).
-const HANDHELD_ENCODER_BITRATE_FACTOR: u64 = 2;
-
-fn stream_bitrate_kbps(width: u64, height: u64, fps: u64) -> u64 {
-    default_bitrate_kbps(width, height, fps) * HANDHELD_ENCODER_BITRATE_FACTOR
+pub(crate) fn render_settings(
+    root: &Path,
+    registry: &crate::plugin::PluginRegistry,
+    game_id: Option<&str>,
+    display: crate::launcher::plugin_launch::PluginDisplay,
+) -> Result<Vec<String>, LinuxViewerError> {
+    const ID: &str = "@korri:moonlight/moonlight";
+    let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root).map_err(error)?;
+    let route = crate::launch_settings::resolution::runner_settings_context(
+        &snapshot, registry, ID, game_id,
+    );
+    let resolved =
+        crate::launch_settings::resolve_launch(&snapshot, &route, None, None).map_err(error)?;
+    for notice in &resolved.notices {
+        log::warn!("Moonlight settings: {notice:?}");
+    }
+    let package = registry.installed_package(ID).map_err(error)?;
+    let source = crate::script::source::SourceSnapshot::package_plugin(
+        &package.package,
+        &package.entry,
+        &package.sources,
+    )
+    .map_err(error)?;
+    let (args, warnings) = crate::launcher::typed_settings::render(
+        &source,
+        ID,
+        &resolved.runner.settings,
+        Some(display),
+        &package.package.display().to_string(),
+    )
+    .map_err(error)?;
+    for warning in warnings {
+        log::warn!("Moonlight setting {}: {}", warning.setting, warning.message);
+    }
+    Ok(args)
 }
 
-/// Moonlight's own default bitrate for a resolution and frame rate, in kbps.
-/// A port of `StreamingPreferences::getDefaultBitrate` (moonlight-qt,
-/// app/settings/streamingpreferences.cpp, 4:2:0): linear interpolation over
-/// the Shield resolution table, scaled by fps / 30, with sub-linear growth
-/// above 60 fps. 640x480 at 60 fps gives 3000 kbps.
-fn default_bitrate_kbps(width: u64, height: u64, fps: u64) -> u64 {
-    const TABLE: [(f64, f64); 6] = [
-        (640.0 * 360.0, 1.0),
-        (854.0 * 480.0, 2.0),
-        (1280.0 * 720.0, 5.0),
-        (1920.0 * 1080.0, 10.0),
-        (2560.0 * 1440.0, 20.0),
-        (3840.0 * 2160.0, 40.0),
-    ];
-    let fps = fps as f64;
-    let frame_rate_factor = if fps <= 60.0 {
-        fps
-    } else {
-        (fps / 60.0).sqrt() * 60.0
-    } / 30.0;
-    let pixels = (width * height) as f64;
-    let resolution_factor = match TABLE.iter().position(|(limit, _)| pixels <= *limit) {
-        Some(0) => TABLE[0].1,
-        Some(index) => {
-            let (low_pixels, low_factor) = TABLE[index - 1];
-            let (high_pixels, high_factor) = TABLE[index];
-            (pixels - low_pixels) / (high_pixels - low_pixels) * (high_factor - low_factor)
-                + low_factor
+/// Plugins can add presentation options, never change Korri's route or input.
+fn plugin_args(args: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut accepted = Vec::new();
+    let mut warnings = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        let flag = arg.split('=').next().unwrap_or(arg);
+        let owned = matches!(
+            flag,
+            "stream"
+                | "-app"
+                | "-keydir"
+                | "-mapping"
+                | "-platform"
+                | "-input"
+                | "-viewonly"
+                | "-port"
+                | "-windowed"
+                | "-autowindowresize"
+                | "-noautowindowresize"
+                | "--"
+        );
+        let takes_value = matches!(
+            flag,
+            "-app" | "-keydir" | "-mapping" | "-platform" | "-input" | "-port"
+        );
+        if owned || !arg.starts_with('-') {
+            warnings.push(format!(
+                "dropped plugin argument {flag}: Korri owns the stream route and input"
+            ));
+            index += 1;
+            if takes_value
+                && !arg.contains('=')
+                && args.get(index).is_some_and(|v| !v.starts_with('-'))
+            {
+                index += 1;
+            }
+            if flag == "--" {
+                break;
+            }
+            continue;
         }
-        None => TABLE[TABLE.len() - 1].1,
-    };
-    (resolution_factor * frame_rate_factor).round() as u64 * 1000
+        accepted.push(arg.clone());
+        index += 1;
+        if !arg.contains('=')
+            && args
+                .get(index)
+                .is_some_and(|v| !v.starts_with('-') || v.parse::<f64>().is_ok())
+        {
+            accepted.push(args[index].clone());
+            index += 1;
+        }
+    }
+    (accepted, warnings)
 }
 
 fn stream_args(
     files: &MoonlightFiles,
     keydir: &Path,
     address: &str,
-    size: (u64, u64),
+    rendered: &[String],
     platform: &str,
     seats: &[PathBuf],
 ) -> Result<Vec<String>, LinuxViewerError> {
@@ -290,16 +347,6 @@ fn stream_args(
         "stream".into(),
         "-app".into(),
         "Korri Stream".into(),
-        "-width".into(),
-        size.0.to_string(),
-        "-height".into(),
-        size.1.to_string(),
-        "-fps".into(),
-        STREAM_FPS.to_string(),
-        "-bitrate".into(),
-        stream_bitrate_kbps(size.0, size.1, STREAM_FPS).to_string(),
-        "-codec".into(),
-        "h264".into(),
         "-platform".into(),
         platform.into(),
         "-mapping".into(),
@@ -308,8 +355,6 @@ fn stream_args(
         keydir.display().to_string(),
         "-windowed".into(),
         "-autowindowresize".into(),
-        // The holder keeps playing; its own speaker must keep its sound.
-        "-localaudio".into(),
     ];
     if seats.is_empty() {
         args.push("-viewonly".into());
@@ -348,6 +393,11 @@ fn stream_args(
         Some(host) => host.to_string(),
         None => return Err(error("missing Moonlight host")),
     });
+    let (rendered, warnings) = plugin_args(rendered);
+    for warning in warnings {
+        log::warn!("Moonlight {warning}");
+    }
+    args.extend(rendered);
     Ok(args)
 }
 
@@ -571,11 +621,23 @@ impl LinuxStreamViewer for ProductionLinuxStreamViewer {
             if seats.is_empty() {
                 log::info!("Moonlight starts watch-only: no occupied local controller seats");
             }
-            let command = stream_args(&files, &self.keydir, address, size, platform(), &seats)?;
             let this = self.clone();
             let launch = launch.to_owned();
+            let address = address.to_owned();
             tokio::task::spawn_blocking(move || {
                 let _guard = guard;
+                let rendered = (this.settings)(crate::launcher::plugin_launch::PluginDisplay {
+                    width: size.0 as u32,
+                    height: size.1 as u32,
+                })?;
+                let command = stream_args(
+                    &files,
+                    &this.keydir,
+                    &address,
+                    &rendered,
+                    platform(),
+                    &seats,
+                )?;
                 let environment = BTreeMap::from([
                     ("KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT".into(), "1".into()),
                     ("DISPLAY".into(), ":0".into()),

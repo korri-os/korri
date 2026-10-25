@@ -507,6 +507,7 @@ in
     environment.variables.KORRI_CLI_SOCKET = cfg.cliSocket;
 
     systemd.tmpfiles.rules = [
+      "d /run/korri-launch-services 0755 korrid korrid -"
       "d ${controlDirectory} 0750 root ${controlGroup} -"
       "d ${cliDirectory} 0750 root ${personGroup} -"
       "d ${signerSocketDirectory} 0751 root ${serviceGroup} -"
@@ -901,6 +902,7 @@ in
         ReadWritePaths = [
           cfg.privateStateRoot
           cfg.storageRoot
+          "/run/korri-launch-services"
         ]
         ++ lib.optional cfg.browser.enable "/run/korrid-browser";
         InaccessiblePaths = [
@@ -921,6 +923,15 @@ in
              action.id == "org.freedesktop.NetworkManager.network-control" ||
              action.id == "org.freedesktop.NetworkManager.checkpoint-rollback" ||
              action.id == "org.freedesktop.NetworkManager.settings.modify.system")) {
+          return polkit.Result.YES;
+        }
+      });
+      // The launch-settings cut permits only this launch service restart.
+      polkit.addRule(function(action, subject) {
+        if (subject.user == "korrid" &&
+            action.id == "org.freedesktop.systemd1.manage-units" &&
+            action.lookup("verb") == "restart" &&
+            action.lookup("unit") == "korri-sunshine.service") {
           return polkit.Result.YES;
         }
       });

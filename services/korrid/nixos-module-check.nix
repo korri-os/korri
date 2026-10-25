@@ -423,6 +423,8 @@ assert enabled.config.systemd.sockets.korrid-cli.socketConfig == {
 };
 assert builtins.elem "korrid-cli.socket" service.requires;
 assert builtins.elem "d /run/korrid-cli 0750 root korri -" tmpfiles;
+assert builtins.elem "d /run/korri-launch-services 0755 korrid korrid -" tmpfiles;
+assert builtins.elem "/run/korri-launch-services" service.serviceConfig.ReadWritePaths;
 assert customService.environment.KORRID_CLI_SOCKET == "/run/korri-test/cli/person.sock";
 assert customPaths.config.systemd.sockets.korrid-cli.socketConfig.ListenStream == "/run/korri-test/cli/person.sock";
 assert socket.socketConfig.SocketUser == "root";
@@ -468,6 +470,8 @@ assert lib.hasInfix ''subject.user == "korrid" &&
 assert !(builtins.elem "networkmanager" (enabled.config.users.users.korrid.extraGroups or [ ]));
 assert !(builtins.elem "/run/dbus" service.serviceConfig.InaccessiblePaths);
 assert !(lib.hasInfix "subject.system_unit" polkit);
+assert lib.hasInfix ''action.lookup("verb") == "restart"'' polkit;
+assert lib.hasInfix ''action.lookup("unit") == "korri-sunshine.service"'' polkit;
 assert lib.hasInfix ''/^korri-acquire-[a-z0-9][a-z0-9._-]*-[a-z0-9][a-z0-9._-]*\.service$/'' polkit;
 assert lib.hasInfix ''/^korri-game-[0-9a-f]{32}\.service$/'' polkit;
 assert lib.hasInfix ''/^korri-hook-[0-9a-f]{32}-[0-9]{1,3}\.service$/'' polkit;

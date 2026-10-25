@@ -53,50 +53,94 @@ struct SettingsValidation {
     diagnostics: Vec<SettingsDiagnostic>,
 }
 
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ValidateInput<'a> {
-    runner_id: &'a str,
-    values: &'a HashMap<String, LaunchSettingValue>,
+#[derive(Default)]
+pub struct SettingsCheck {
+    pub warnings: Vec<LaunchWarning>,
+    pub skipped: Vec<(String, String)>,
 }
 
-/// Ask the runner about the authored values. A runner that implements no
-/// `settings.validate` handler reports nothing, which is not an error: the
-/// values still reach `launch.prepare`, which is the operation that decides
-/// what it can render.
+/// Validate the resolved nested tree and remove only error paths. Warnings do
+/// not discard values. The authored file remains unchanged.
 pub fn validate(
     snapshot: &script::source::SourceSnapshot,
-    settings: &HashMap<String, LaunchSettingValue>,
-    runner_id: &str,
+    settings: &mut HashMap<String, LaunchSettingValue>,
+    id: &str,
     build: &str,
-) -> Result<Vec<LaunchWarning>, String> {
-    let mut warnings = describe(snapshot, runner_id, build)?.diagnostics;
-    let input = serde_json::to_string(&ValidateInput {
-        runner_id,
-        values: settings,
-    })
-    .map_err(|error| error.to_string())?;
+) -> Result<SettingsCheck, String> {
+    let description = describe(snapshot, id, build)?;
+    let mut check = SettingsCheck {
+        warnings: description.diagnostics,
+        ..Default::default()
+    };
+    let input = serde_json::json!({"values":settings,"revision":description.revision}).to_string();
     let result =
         match script::call_plugin_operation_snapshot(snapshot, script::SETTINGS_VALIDATE, &input) {
             Ok(result) => result,
-            Err(failure) if failure.is_unimplemented() => return Ok(warnings),
+            Err(failure) if failure.is_unimplemented() => return Ok(check),
             Err(failure) => return Err(failure.to_string()),
         };
     let validation: SettingsValidation = serde_json::from_str(&result)
         .map_err(|error| format!("invalid settings.validate result: {error}"))?;
-    warnings.extend(
-        validation
-            .diagnostics
-            .into_iter()
-            .filter(|diagnostic| diagnostic.severity != DiagnosticSeverity::Info)
-            .map(|diagnostic| LaunchWarning {
-                setting: diagnostic.path.first().cloned().unwrap_or_default(),
-                runner_id: runner_id.to_owned(),
-                build: build.to_owned(),
+    for diagnostic in validation.diagnostics {
+        let path = diagnostic.path.join(".");
+        if diagnostic.severity == DiagnosticSeverity::Error {
+            check
+                .skipped
+                .push((path.clone(), diagnostic.message.clone()));
+            if path.is_empty() {
+                settings.clear();
+            } else {
+                crate::config::cascade::set_leaf(settings, &path, None);
+            }
+        }
+        if diagnostic.severity != DiagnosticSeverity::Info {
+            check.warnings.push(LaunchWarning {
+                setting: path,
+                runner_id: id.into(),
+                build: build.into(),
                 message: diagnostic.message,
-            }),
-    );
-    Ok(warnings)
+            });
+        }
+    }
+    Ok(check)
+}
+
+/// Routes without a launch plan use the same validation boundary as prepare.
+pub fn render(
+    snapshot: &script::source::SourceSnapshot,
+    id: &str,
+    settings: &HashMap<String, LaunchSettingValue>,
+    display: Option<super::plugin_launch::PluginDisplay>,
+    build: &str,
+) -> Result<(Vec<String>, Vec<LaunchWarning>), String> {
+    let mut settings = settings.clone();
+    let warnings = validate(snapshot, &mut settings, id, build)?;
+    #[derive(serde::Serialize)]
+    struct RenderInput<'a> {
+        id: &'a str,
+        settings: &'a HashMap<String, LaunchSettingValue>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display: Option<super::plugin_launch::PluginDisplay>,
+    }
+    let input = serde_json::to_string(&RenderInput {
+        id,
+        settings: &settings,
+        display,
+    })
+    .map_err(|e| e.to_string())?;
+    let result = script::call_plugin_operation_snapshot(snapshot, script::SETTINGS_RENDER, &input)
+        .map_err(|e| e.to_string())?;
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Rendered {
+        args: Vec<String>,
+    }
+    let rendered: Rendered = serde_json::from_str(&result)
+        .map_err(|e| format!("invalid settings.render result: {e}"))?;
+    if rendered.args.iter().any(|v| v.contains('\0')) {
+        return Err("settings.render arguments contain NUL".into());
+    }
+    Ok((rendered.args, warnings.warnings))
 }
 
 /// Scope belongs to a setting kind, never to an authored layer (ADR 0018).
@@ -150,35 +194,63 @@ pub fn describe(
         .to_string();
     let mut scopes = HashMap::new();
     let mut diagnostics = Vec::new();
-    if let Some(properties) = value
-        .get("schema")
-        .and_then(|s| s.get("properties"))
-        .and_then(serde_json::Value::as_object)
-    {
-        for (key, property) in properties {
-            if let Some(value) = property
-                .get("default")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-            {
-                defaults.insert(key.clone(), value);
-            }
-            match property.get("x-korri-scope") {
-                None => {
-                    scopes.insert(key.clone(), SettingScope::Shared);
+    fn collect(
+        schema: &serde_json::Value,
+        prefix: &str,
+        defaults: &mut HashMap<String, LaunchSettingValue>,
+        scopes: &mut HashMap<String, SettingScope>,
+        diagnostics: &mut Vec<LaunchWarning>,
+        id: &str,
+        build: &str,
+    ) {
+        if let Some(properties) = schema
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+        {
+            for (name, property) in properties {
+                let path = if prefix.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{prefix}.{name}")
+                };
+                if property.get("type").and_then(serde_json::Value::as_str) == Some("object") {
+                    collect(property, &path, defaults, scopes, diagnostics, id, build);
+                    continue;
                 }
-                Some(serde_json::Value::String(scope)) if scope == "device" => {
-                    scopes.insert(key.clone(), SettingScope::Device);
+                if let Some(value) = property
+                    .get("default")
+                    .filter(|v| v.is_boolean() || v.is_number() || v.is_string())
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                {
+                    defaults.insert(path.clone(), value);
                 }
-                Some(_) => diagnostics.push(LaunchWarning {
-                    setting: key.clone(),
-                    runner_id: runner_id.into(),
-                    build: build.into(),
-                    message: "x-korri-scope must be \"device\" or absent for shared settings"
-                        .into(),
-                }),
+                match property.get("x-korri-scope") {
+                    None => {
+                        scopes.insert(path, SettingScope::Shared);
+                    }
+                    Some(serde_json::Value::String(scope)) if scope == "device" => {
+                        scopes.insert(path, SettingScope::Device);
+                    }
+                    Some(_) => diagnostics.push(LaunchWarning {
+                        setting: path,
+                        runner_id: id.into(),
+                        build: build.into(),
+                        message: "x-korri-scope must be \"device\" or absent for shared settings"
+                            .into(),
+                    }),
+                }
             }
         }
     }
+    collect(
+        &schema,
+        "",
+        &mut defaults,
+        &mut scopes,
+        &mut diagnostics,
+        runner_id,
+        build,
+    );
     Ok(SettingsDescription {
         schema_available: value.get("schema").is_some(),
         schema,

@@ -85,3 +85,12 @@ impl<'de> Deserialize<'de> for ModifierConfigs {
         deserializer.deserialize_map(Records)
     }
 }
+
+/// Launch services have settings, but neither a switch nor a composition plan.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ServiceConfig {
+    #[serde(default)]
+    pub settings: HashMap<String, LaunchSettingValue>,
+}
+pub type ServiceConfigs = std::collections::BTreeMap<String, ServiceConfig>;

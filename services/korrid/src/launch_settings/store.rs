@@ -70,6 +70,16 @@ fn edit(
         games: settings::revision(&games),
     })
 }
+pub(crate) fn requires_registry(request: &LaunchSetRequest) -> bool {
+    matches!(
+        request.path,
+        LaunchPath::Runner
+            | LaunchPath::Setting { .. }
+            | LaunchPath::ModifierSetting { .. }
+            | LaunchPath::ServiceSetting { .. }
+    ) && (request.value.is_some() || request.clear)
+}
+
 pub fn set(
     root: &Path,
     private: &Path,
@@ -77,11 +87,7 @@ pub fn set(
     request: &LaunchSetRequest,
     client: &helper::Client,
 ) -> Result<RunnerChoiceRevisions> {
-    let registry = if matches!(
-        request.path,
-        LaunchPath::Setting { .. } | LaunchPath::ModifierSetting { .. }
-    ) && request.value.is_some()
-    {
+    let registry = if requires_registry(request) {
         Some(
             crate::plugin_policy::RegistrySource::Installed
                 .registry()
@@ -100,6 +106,27 @@ pub fn set_with_registry(
     client: &helper::Client,
     registry: Option<&crate::plugin::PluginRegistry>,
 ) -> Result<RunnerChoiceRevisions> {
+    if request.clear && request.value.is_some() {
+        return Err(invalid("clear cannot be combined with a value"));
+    }
+    if request.clear
+        && !matches!(
+            request.path,
+            LaunchPath::Setting { .. }
+                | LaunchPath::ModifierSetting { .. }
+                | LaunchPath::ServiceSetting { .. }
+        )
+    {
+        return Err(invalid("only a setting leaf can be cleared"));
+    }
+    if let LaunchPath::Setting { key }
+    | LaunchPath::ModifierSetting { key, .. }
+    | LaunchPath::ServiceSetting { key, .. } = &request.path
+    {
+        if key.split('.').any(|v| v.is_empty()) {
+            return Err(invalid("setting path segments must not be empty"));
+        }
+    }
     let any = matches!(request.place.scope, LaunchRunnerScope::Any);
     let host = matches!(request.place.layer, LaunchLayer::Device) && any;
     if matches!(request.path, LaunchPath::Runner) && !any {
@@ -114,7 +141,11 @@ pub fn set_with_registry(
     if matches!(request.place.layer, LaunchLayer::Launch) {
         return Err(invalid("one launch is not a persisted place"));
     }
-    if let Some(value) = &request.value {
+    if let Some(value) = request
+        .value
+        .as_ref()
+        .or(request.clear.then_some(&serde_json::Value::Null))
+    {
         match &request.path {
             LaunchPath::Runner => {
                 let id = value
@@ -122,6 +153,11 @@ pub fn set_with_registry(
                     .ok_or_else(|| invalid("runner must be a string"))?;
                 if !id.starts_with('@') || schema::catalog::validate_release_key(id).is_err() {
                     return Err(invalid("runner must be a fully qualified contribution ID"));
+                }
+                if let Some(runner) = registry.and_then(|r| r.runners().get(id)) {
+                    if !super::resolution::choosable(runner) {
+                        return Err(invalid("this runner cannot be chosen for a game"));
+                    }
                 }
             }
             LaunchPath::CpuMin | LaunchPath::CpuMax | LaunchPath::GpuMin | LaunchPath::GpuMax => {
@@ -157,14 +193,20 @@ pub fn set_with_registry(
                     return Err(invalid("modifier enabled must be boolean"));
                 }
             }
-            LaunchPath::ModifierSetting { id, key } => {
-                serde_json::from_value::<schema::cascade::LaunchSettingValue>(value.clone())
-                    .map_err(|_| invalid("setting must be a scalar"))?;
-                let registry = registry
-                    .ok_or_else(|| invalid("installed modifier registry is unavailable"))?;
-                registry
-                    .enabled_modifier(id)
-                    .map_err(|e| invalid(e.to_string()))?;
+            LaunchPath::ModifierSetting { id, key } | LaunchPath::ServiceSetting { id, key } => {
+                if !request.clear && !(value.is_boolean() || value.is_number() || value.is_string())
+                {
+                    return Err(invalid("setting must be a scalar"));
+                }
+                let registry =
+                    registry.ok_or_else(|| invalid("installed plugin registry is unavailable"))?;
+                if matches!(request.path, LaunchPath::ModifierSetting { .. }) {
+                    registry
+                        .enabled_modifier(id)
+                        .map_err(|e| invalid(e.to_string()))?;
+                } else if id != super::resolution::SUNSHINE {
+                    return Err(invalid("unknown launch service"));
+                }
                 let package = registry
                     .installed_package(id)
                     .map_err(|e| invalid(e.to_string()))?;
@@ -181,20 +223,25 @@ pub fn set_with_registry(
                 )
                 .map_err(invalid)?;
                 if description.schema_available {
-                    let property = description
-                        .schema
-                        .get("properties")
-                        .and_then(|v| v.get(key))
-                        .ok_or_else(|| invalid(format!("unknown modifier setting {key}")))?;
-                    validate_property(property, value).map_err(invalid)?;
+                    let property = schema::cascade::schema_leaf(&description.schema, key)
+                        .ok_or_else(|| invalid(format!("unknown setting {key}")))?;
+                    if !request.clear {
+                        validate_property(property, value).map_err(invalid)?;
+                    }
                 }
             }
-            LaunchPath::Setting { key } => validate_setting(
-                registry.ok_or_else(|| invalid("installed runner registry is unavailable"))?,
-                &request.place.scope,
-                key,
-                value,
-            )?,
+            LaunchPath::Setting { key } => {
+                if !request.clear && !(value.is_boolean() || value.is_number() || value.is_string())
+                {
+                    return Err(invalid("setting must be a scalar"));
+                }
+                validate_setting(
+                    registry.ok_or_else(|| invalid("installed runner registry is unavailable"))?,
+                    &request.place.scope,
+                    key,
+                    value,
+                )?;
+            }
         }
     }
     let device = matches!(
@@ -268,9 +315,20 @@ pub fn set_with_registry(
                     settings::mapping_at(settings::mapping_at(record, "modifiers")?, id)?,
                     "enabled".into(),
                 ),
-                LaunchPath::ModifierSetting { id, key } => (
+                LaunchPath::ModifierSetting { id, key }
+                | LaunchPath::ServiceSetting { id, key } => (
                     settings::mapping_at(
-                        settings::mapping_at(settings::mapping_at(record, "modifiers")?, id)?,
+                        settings::mapping_at(
+                            settings::mapping_at(
+                                record,
+                                if matches!(request.path, LaunchPath::ServiceSetting { .. }) {
+                                    "services"
+                                } else {
+                                    "modifiers"
+                                },
+                            )?,
+                            id,
+                        )?,
                         "settings",
                     )?,
                     key.clone(),
@@ -279,14 +337,28 @@ pub fn set_with_registry(
                     (settings::mapping_at(record, "settings")?, key.clone())
                 }
             };
-            if let Some(value) = &request.value {
-                parent.insert(
-                    key(&leaf),
-                    serde_yaml::to_value(value).map_err(|e| invalid(e.to_string()))?,
-                );
+            let setting = matches!(
+                request.path,
+                LaunchPath::Setting { .. }
+                    | LaunchPath::ModifierSetting { .. }
+                    | LaunchPath::ServiceSetting { .. }
+            );
+            let parts: Vec<_> = if setting {
+                leaf.split('.').collect()
             } else {
-                parent.remove(key(&leaf));
-            }
+                vec![leaf.as_str()]
+            };
+            let value = if request.clear {
+                Some(Value::Null)
+            } else {
+                request
+                    .value
+                    .as_ref()
+                    .map(serde_yaml::to_value)
+                    .transpose()
+                    .map_err(|e| invalid(e.to_string()))?
+            };
+            write_leaf(parent, &parts, value)?;
             Ok(())
         },
     )?;
@@ -307,6 +379,26 @@ pub fn set_with_registry(
     }
     Ok(revisions)
 }
+fn write_leaf(parent: &mut Mapping, path: &[&str], value: Option<Value>) -> Result<()> {
+    if path.len() == 1 {
+        if let Some(value) = value {
+            parent.insert(key(path[0]), value);
+        } else {
+            parent.remove(key(path[0]));
+        }
+    } else {
+        if value.is_none() && !parent.contains_key(key(path[0])) {
+            return Ok(());
+        }
+        let section = settings::mapping_at(parent, path[0])?;
+        write_leaf(section, &path[1..], value)?;
+        if section.is_empty() {
+            parent.remove(key(path[0]));
+        }
+    }
+    Ok(())
+}
+
 fn validate_setting(
     registry: &crate::plugin::PluginRegistry,
     scope: &LaunchRunnerScope,
@@ -333,12 +425,13 @@ fn validate_setting(
                 &runner.id,
                 &package.package.display().to_string(),
             )?;
-            let property = description
-                .schema
-                .get("properties")
-                .and_then(|v| v.get(key))
+            let property = schema::cascade::schema_leaf(&description.schema, key)
                 .ok_or_else(|| format!("unknown setting {key}"))?;
-            validate_property(property, value)
+            if value.is_null() {
+                Ok(())
+            } else {
+                validate_property(property, value)
+            }
         })();
         match accepted {
             Ok(()) => return Ok(()),

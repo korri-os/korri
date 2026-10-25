@@ -1,9 +1,9 @@
-# Typeshare cannot infer Serde's untagged scalar union. Rust owns its decoder.
+# Typeshare cannot infer Serde's untagged nested settings. Rust owns its decoder.
 [typescript.type_mappings]
 # Exact internally tagged producer in identity.rs; Typeshare requires content
 # for algebraic enums, while this existing operational wire has no wrapper.
 IdentityStateWire = '{ _tag: "Unowned"; devicePublicKey: string } | { _tag: "Owned"; devicePublicKey: string; ownerPublicKey: string; eventId: string; createdAt: number } | { _tag: "Revoked"; devicePublicKey: string; ownerPublicKey: string; eventId: string; createdAt: number } | { _tag: "Invalid"; reason: string }'
-LaunchSettingScalar = "boolean | number | string"
+LaunchSettingNested = "boolean | number | string | null | { [name: string]: LaunchSettingValue }"
 # Exact legacy native-input literals and union, enforced by native_input.rs.
 NativeInputDeviceClassWire = '"gamepad" | "keyboard" | "mouse" | "touch" | "system" | "unknown"'
 NativeInputInputKindWire = '"input"'

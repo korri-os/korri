@@ -11,6 +11,7 @@ mod identity;
 mod input_coordination;
 mod input_seat;
 mod launch_reservation;
+mod launch_services;
 pub(crate) mod moonlight_certificate;
 mod occupied_seats;
 pub(crate) mod play_log;
@@ -1102,12 +1103,16 @@ impl HostRuntime {
     ) -> Result<crate::config::settings::RunnerChoiceRevisions, RpcFailure> {
         let runtime = self.clone();
         tokio::task::spawn_blocking(move || {
-            let revisions = crate::launch_settings::set(
+            let registry = crate::launch_settings::requires_registry(&request)
+                .then(|| runtime.route_registry())
+                .transpose()?;
+            let revisions = crate::launch_settings::set_with_registry(
                 runtime.route_root()?,
                 &runtime.private_state_root,
                 &runtime.route_write_lock,
                 &request,
                 &crate::launch_settings::helper::Client::default(),
+                registry.as_ref(),
             )
             .map_err(crate::game_routes::settings_failure)?;
             #[cfg(test)]
@@ -2448,6 +2453,10 @@ esac
                 Some(root.path().into()),
                 root.path().join("private"),
                 Arc::new(systemd_unit::InMemoryLaunchUnitBackend::default()),
+            )
+            .with_route_registry(
+                root.path().into(),
+                crate::plugin::PluginRegistry::from_installed(vec![]).unwrap(),
             );
             let expected = |revisions: &crate::config::settings::RunnerChoiceRevisions| match &scope
             {
@@ -2456,6 +2465,7 @@ esac
                 _ => unreachable!(),
             };
             let request = |revision, runner_id: &str| LaunchSetRequest {
+                clear: false,
                 place: LaunchPlace {
                     layer: scope.clone(),
                     scope: LaunchRunnerScope::Any,
@@ -2508,6 +2518,7 @@ esac
             };
             runtime
                 .launch_settings_set(LaunchSetRequest {
+                    clear: false,
                     place: LaunchPlace {
                         layer: other_scope,
                         scope: LaunchRunnerScope::Any,

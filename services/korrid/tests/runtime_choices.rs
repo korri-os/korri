@@ -88,11 +88,12 @@ fn set_choice(
     layer: &LaunchLayer,
     runner: Option<&str>,
 ) -> Result<korrid::config::settings::RunnerChoiceRevisions, SettingsError> {
-    launch_settings::set(
+    launch_settings::set_with_registry(
         root,
         private,
         lock,
         &LaunchSetRequest {
+            clear: false,
             place: LaunchPlace {
                 layer: layer.clone(),
                 scope: LaunchRunnerScope::Any,
@@ -104,5 +105,6 @@ fn set_choice(
         &launch_settings::helper::Client {
             socket: root.join("absent.sock"),
         },
+        Some(&korrid::plugin::PluginRegistry::from_installed(vec![]).unwrap()),
     )
 }

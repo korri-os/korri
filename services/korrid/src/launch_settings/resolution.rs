@@ -10,6 +10,58 @@ use crate::{
 };
 use std::{collections::BTreeSet, path::Path};
 
+pub(crate) const SUNSHINE: &str = "@korri:sunshine/sunshine";
+pub(crate) fn choosable(runner: &crate::plugin::RunnerRecord) -> bool {
+    !(runner.program.is_some()
+        && runner.systems.as_ref().is_none_or(Vec::is_empty)
+        && runner.releases.as_ref().is_none_or(Vec::is_empty))
+}
+
+fn checked_settings(
+    registry: &PluginRegistry,
+    id: &str,
+    settings: &mut std::collections::HashMap<String, crate::config::cascade::LaunchSettingValue>,
+    prefix: &str,
+    values: &mut LaunchResolvedSnapshot,
+    notices: &mut Vec<LaunchNotice>,
+    path: impl Fn(String) -> LaunchPath,
+) -> Result<(), SettingsError> {
+    let package = registry
+        .installed_package(id)
+        .map_err(|e| SettingsError::Invalid(e.to_string()))?;
+    let source = crate::script::source::SourceSnapshot::package_plugin(
+        &package.package,
+        &package.entry,
+        &package.sources,
+    )
+    .map_err(SettingsError::Invalid)?;
+    let check = crate::launcher::typed_settings::validate(
+        &source,
+        settings,
+        id,
+        &package.package.display().to_string(),
+    )
+    .map_err(SettingsError::Invalid)?;
+    for (key, message) in check.skipped {
+        values.values.retain(|name, _| {
+            if key.is_empty() {
+                !name.starts_with(&format!("{prefix}."))
+            } else {
+                !(name == &format!("{prefix}.{key}")
+                    || name.starts_with(&format!("{prefix}.{key}.")))
+            }
+        });
+        let path = path(key);
+        let runner_id = matches!(path, LaunchPath::Setting { .. }).then(|| id.to_owned());
+        notices.push(LaunchNotice::SettingSkipped {
+            path,
+            message,
+            runner_id,
+        });
+    }
+    Ok(())
+}
+
 pub(crate) fn context(snapshot: &ConfigSnapshot, game_id: Option<&str>) -> ResolvedRoute {
     let game = game_id.and_then(|id| snapshot.library.get(id));
     let release = game.and_then(|g| g.releases.first());
@@ -40,6 +92,46 @@ pub(crate) fn context(snapshot: &ConfigSnapshot, game_id: Option<&str>) -> Resol
         cache_target: None,
     }
 }
+/// A settings-only runner has no selected local release. Both snapshots and
+/// the viewer use the joining device's own game, system and selected profile.
+pub(crate) fn runner_settings_context(
+    snapshot: &ConfigSnapshot,
+    registry: &PluginRegistry,
+    runner_id: &str,
+    game_id: Option<&str>,
+) -> ResolvedRoute {
+    let game_id = game_id.filter(|id| snapshot.library.contains_key(*id));
+    let mut route = context(snapshot, game_id);
+    route.runner_id = runner_id.into();
+    route.release_id.clear();
+    route.family_id = registry
+        .runners()
+        .get(runner_id)
+        .and_then(|r| r.family.clone());
+    route
+}
+
+fn runner_defaults(
+    values: &mut LaunchResolvedSnapshot,
+    description: &crate::launcher::typed_settings::SettingsDescription,
+    plugin_id: &str,
+) {
+    for (key, value) in &description.defaults {
+        let name = format!("settings.{key}");
+        if !values.values.contains_key(&name) {
+            super::launch::sourced(
+                &mut values.values,
+                name,
+                LaunchValuePath::Editable(LaunchPath::Setting { key: key.clone() }),
+                serde_json::to_value(value).unwrap(),
+                LaunchSource::PluginDefault {
+                    plugin_id: plugin_id.into(),
+                },
+            );
+        }
+    }
+}
+
 pub fn snapshot(
     root: &Path,
     registry: Option<&PluginRegistry>,
@@ -93,9 +185,13 @@ pub fn snapshot_for_person(
     } else {
         route_layers
     };
-    let mut resolved = resolve_launch(&config, &route, None, facts.as_ref())?.values;
+    let mut folded = resolve_launch(&config, &route, None, facts.as_ref())?;
+    notices.append(&mut folded.notices);
+    let mut resolved = folded.values;
     let mut runners = Vec::new();
+    let mut runner_resolved = Vec::new();
     let mut modifiers = Vec::new();
+    let mut services = Vec::new();
     if let Some(registry) = registry {
         for declaration in registry
             .modifiers()
@@ -117,6 +213,20 @@ pub fn snapshot_for_person(
                 &package.package.display().to_string(),
             )
             .map_err(SettingsError::Invalid)?;
+            if let Some(record) = folded.modifiers.get_mut(&declaration.id) {
+                checked_settings(
+                    registry,
+                    &declaration.id,
+                    &mut record.settings,
+                    &format!("modifiers.{}.settings", declaration.id),
+                    &mut resolved,
+                    &mut notices,
+                    |key| LaunchPath::ModifierSetting {
+                        id: declaration.id.clone(),
+                        key,
+                    },
+                )?;
+            }
             for (key, value) in &description.defaults {
                 let name = format!("modifiers.{}.settings.{key}", declaration.id);
                 if !resolved.values.contains_key(&name) {
@@ -145,16 +255,71 @@ pub fn snapshot_for_person(
                 revision: description.schema_available.then_some(description.revision),
             });
         }
-        let ids: Vec<String> = if game_id.is_some() {
-            candidates.iter().map(|v| v.runner_id.clone()).collect()
-        } else {
-            registry
-                .runners()
-                .values()
-                .filter(|v| v.program.is_some())
-                .map(|v| v.id.clone())
-                .collect()
-        };
+        if let Ok(package) = registry.installed_package(SUNSHINE) {
+            let source = crate::script::source::SourceSnapshot::package_plugin(
+                &package.package,
+                &package.entry,
+                &package.sources,
+            )
+            .map_err(SettingsError::Invalid)?;
+            let description = crate::launcher::typed_settings::describe(
+                &source,
+                SUNSHINE,
+                &package.package.display().to_string(),
+            )
+            .map_err(SettingsError::Invalid)?;
+            if let Some(record) = folded.services.get_mut(SUNSHINE) {
+                checked_settings(
+                    registry,
+                    SUNSHINE,
+                    &mut record.settings,
+                    &format!("services.{SUNSHINE}.settings"),
+                    &mut resolved,
+                    &mut notices,
+                    |key| LaunchPath::ServiceSetting {
+                        id: SUNSHINE.into(),
+                        key,
+                    },
+                )?;
+            }
+            for (key, value) in &description.defaults {
+                let name = format!("services.{SUNSHINE}.settings.{key}");
+                if !resolved.values.contains_key(&name) {
+                    super::launch::sourced(
+                        &mut resolved.values,
+                        name,
+                        LaunchValuePath::Editable(LaunchPath::ServiceSetting {
+                            id: SUNSHINE.into(),
+                            key: key.clone(),
+                        }),
+                        serde_json::to_value(value).unwrap(),
+                        LaunchSource::PluginDefault {
+                            plugin_id: package.id.clone(),
+                        },
+                    );
+                }
+            }
+            services.push(LaunchServiceSnapshot {
+                id: SUNSHINE.into(),
+                title: registry
+                    .plugin_title("@korri:sunshine")
+                    .unwrap_or("Sunshine")
+                    .into(),
+                schema: description.schema_available.then_some(description.schema),
+                revision: description.schema_available.then_some(description.revision),
+            });
+        }
+        let ids: BTreeSet<String> = registry
+            .runners()
+            .values()
+            .filter(|v| {
+                v.program.is_some()
+                    && (game_id.is_none()
+                        || !choosable(v)
+                        || candidates.iter().any(|c| c.runner_id == v.id))
+            })
+            .map(|v| v.id.clone())
+            .collect();
         for id in ids {
             let declaration = &registry.runners()[&id];
             let package = registry
@@ -190,23 +355,55 @@ pub fn snapshot_for_person(
                     cwd: plan.cwd,
                 })
             })();
+            if !choosable(declaration) {
+                let settings_route = runner_settings_context(&config, registry, &id, game_id);
+                let mut settings_only =
+                    resolve_launch(&config, &settings_route, None, facts.as_ref())?;
+                notices.extend(settings_only.notices.into_iter().filter(|n| {
+                    matches!(
+                        n,
+                        LaunchNotice::SettingSkipped {
+                            path: LaunchPath::Setting { .. },
+                            ..
+                        }
+                    )
+                }));
+                settings_only
+                    .values
+                    .values
+                    .retain(|name, _| name.starts_with("settings."));
+                checked_settings(
+                    registry,
+                    &id,
+                    &mut settings_only.runner.settings,
+                    "settings",
+                    &mut settings_only.values,
+                    &mut notices,
+                    |key| LaunchPath::Setting { key },
+                )?;
+                if let Ok(description) = &description {
+                    runner_defaults(&mut settings_only.values, description, &package.id);
+                }
+                runner_resolved.push(LaunchRunnerResolved {
+                    runner_id: id.clone(),
+                    values: settings_only.values.values,
+                });
+            }
             if selected.as_deref() == Some(&id) {
+                checked_settings(
+                    registry,
+                    &id,
+                    &mut folded.runner.settings,
+                    "settings",
+                    &mut resolved,
+                    &mut notices,
+                    |key| LaunchPath::Setting { key },
+                )?;
                 let source = LaunchSource::PluginDefault {
                     plugin_id: package.id.clone(),
                 };
                 if let Ok(description) = &description {
-                    for (key, value) in &description.defaults {
-                        let name = format!("settings.{key}");
-                        if !resolved.values.contains_key(&name) {
-                            super::launch::sourced(
-                                &mut resolved.values,
-                                name,
-                                LaunchValuePath::Editable(LaunchPath::Setting { key: key.clone() }),
-                                serde_json::to_value(value).unwrap(),
-                                source.clone(),
-                            );
-                        }
-                    }
+                    runner_defaults(&mut resolved, description, &package.id);
                 }
                 if let Ok(prepare) = &prepare {
                     for (key, value) in &prepare.env {
@@ -246,6 +443,7 @@ pub fn snapshot_for_person(
                     .unwrap_or(&id)
                     .into(),
                 selected: selected.as_deref() == Some(&id),
+                choosable: choosable(declaration),
                 schema,
                 revision,
                 prepare: match prepare {
@@ -332,7 +530,12 @@ pub fn snapshot_for_person(
                     .map(|v| serde_json::to_value(v).unwrap())
                     .unwrap_or_else(|| serde_json::json!({})),
             };
-            let mut kinds = vec!["cpu".into(), "gpu".into(), "modifiers".into()];
+            let mut kinds = vec![
+                "cpu".into(),
+                "gpu".into(),
+                "modifiers".into(),
+                "services".into(),
+            ];
             if matches!(scope, LaunchRunnerScope::Any) {
                 kinds.push("runner".into());
             } else {
@@ -390,7 +593,9 @@ pub fn snapshot_for_person(
         places,
         resolved,
         runners,
+        runner_resolved,
         modifiers,
+        services,
         profiles: game
             .map(|g| {
                 g.profiles

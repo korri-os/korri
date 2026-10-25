@@ -52,9 +52,25 @@ pub(crate) fn registry(
         let input = input.clone();
         Box::pin(async move { input.occupied_local_seats().map_err(LinuxViewerError::new) })
     });
+    let settings_host = host.clone();
+    let settings_registry = registry.clone();
+    let settings: crate::linux_viewer::ViewerSettings = Arc::new(move |display| {
+        let root = settings_host
+            .route_root()
+            .map_err(|e| LinuxViewerError::new(e.message))?;
+        let plugins = settings_host
+            .route_registry()
+            .map_err(|e| LinuxViewerError::new(e.message))?;
+        crate::linux_viewer::render_settings(
+            root,
+            &plugins,
+            settings_registry.stream_play_game_id().as_deref(),
+            display,
+        )
+    });
     let selection = registry.clone();
     let viewer = host.viewer_with_local_input(
-        production_viewer(provision, local_seats),
+        production_viewer(provision, local_seats, settings),
         Arc::new(move || selection.has_selected_session()),
     );
     registry.with_linux_viewer(viewer)

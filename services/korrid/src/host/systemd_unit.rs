@@ -102,6 +102,13 @@ impl LaunchSandbox {
 }
 
 pub trait LaunchUnitBackend: Send + Sync {
+    fn apply_sunshine_settings(&self, _args: &[String]) -> Result<(), LaunchUnitError> {
+        Err(LaunchUnitError::new(
+            LaunchUnitErrorKind::Failed,
+            "launch service settings are unavailable",
+        ))
+    }
+
     fn launch(
         &self,
         launch_id: &str,
@@ -458,6 +465,9 @@ impl Default for StopBehavior {
 }
 
 #[cfg(test)]
+type LaunchServiceProbe = Arc<dyn Fn() -> Result<(), LaunchUnitError> + Send + Sync>;
+
+#[cfg(test)]
 #[derive(Default)]
 pub(crate) struct InMemoryLaunchUnitBackend {
     units: Mutex<BTreeMap<String, LaunchUnitState>>,
@@ -466,6 +476,7 @@ pub(crate) struct InMemoryLaunchUnitBackend {
     thawed: Mutex<Vec<String>>,
     launch_probe: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     hook_probe: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    service_probe: Mutex<Option<LaunchServiceProbe>>,
     stop_behavior: Mutex<StopBehavior>,
     state_unavailable: std::sync::atomic::AtomicBool,
     launch_state: Mutex<Option<LaunchUnitState>>,
@@ -473,6 +484,10 @@ pub(crate) struct InMemoryLaunchUnitBackend {
 
 #[cfg(test)]
 impl InMemoryLaunchUnitBackend {
+    pub(crate) fn set_service_probe(&self, probe: LaunchServiceProbe) {
+        *self.service_probe.lock().unwrap() = Some(probe);
+    }
+
     pub(crate) fn set_launch_probe(&self, probe: Arc<dyn Fn() + Send + Sync>) {
         *self.launch_probe.lock().unwrap() = Some(probe);
     }
@@ -535,6 +550,14 @@ impl InMemoryLaunchUnitBackend {
 
 #[cfg(test)]
 impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
+    fn apply_sunshine_settings(&self, _args: &[String]) -> Result<(), LaunchUnitError> {
+        self.service_probe
+            .lock()
+            .unwrap()
+            .as_ref()
+            .expect("configured launch service")()
+    }
+
     fn run_hook(
         &self,
         _: &str,
@@ -1876,6 +1899,13 @@ impl SystemdLaunchUnitBackend {
 }
 
 impl LaunchUnitBackend for SystemdLaunchUnitBackend {
+    fn apply_sunshine_settings(&self, args: &[String]) -> Result<(), LaunchUnitError> {
+        self.apply_sunshine_at(
+            Path::new("/run/korri-launch-services/korri-sunshine.args"),
+            args,
+        )
+    }
+
     fn launch_viewer(
         &self,
         launch: &str,

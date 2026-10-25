@@ -29,6 +29,8 @@ pub struct PlaceValues {
     #[serde(default, skip_serializing_if = "modifiers_empty")]
     pub modifiers: ModifierConfigs,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub services: super::modifiers::ServiceConfigs,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, Option<String>>,
     #[serde(
         default,
@@ -85,7 +87,16 @@ pub(crate) fn validate_document_shape(yaml: &str) -> Result<(), String> {
         let Some(map) = value.as_mapping() else {
             return Ok(());
         };
-        const VALUES: &[&str] = &["cpu", "gpu", "modifiers", "env", "cwd", "args", "hooks"];
+        const VALUES: &[&str] = &[
+            "cpu",
+            "gpu",
+            "modifiers",
+            "services",
+            "env",
+            "cwd",
+            "args",
+            "hooks",
+        ];
         const ANY: &[&str] = &["runner", "families", "runners"];
         for key in map.keys() {
             let key = key.as_str().ok_or("record keys must be strings")?;
