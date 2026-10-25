@@ -1,9 +1,10 @@
 import { describe, expect, it } from "bun:test"
+import type { LaunchPlace, LaunchPlaceSnapshot, LaunchSnapshot, LaunchSourcedValue } from "@contracts/generated/korrid"
 import type { SurfaceLaunchSettings, SurfaceSettingItem } from "@contracts/surface/korri-surface"
 import { createInMemoryKorridClient } from "../korrid/client"
 import { type InMemoryLaunchSettingsConfig, RG353M_LAUNCH_FACTS } from "../korrid/in-memory-launch-settings"
 import { createLaunchSettings } from "./launch-settings"
-import { cpuSteps, gpuSteps, governors, LAUNCH_ID } from "./launch-settings-model"
+import { cpuSteps, gpuSteps, governors, LAUNCH_ID, launchEditorFrom } from "./launch-settings-model"
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0))
 const written = async () => { await settle(); await settle(); await settle() }
@@ -788,9 +789,9 @@ describe("settings korrid skips", () => {
     expect(row(editor, `device/runner:${MOONLIGHT}`, "FPS")?.source).toBe("Not applied: 500 is above the maximum of 240")
     expect(row(editor, "device/runner:retroarch/mgba", "FPS")?.source).toBe("from Device for mGBA")
     expect(editor.notes).toEqual(["FPS (Moonlight) isn't applied: 500 is above the maximum of 240."])
-    // A Game row that inherits the Device's value says it is not applied, and why.
+    // A Game row names what is in force instead: nothing, so it says when it applies.
     launch.change(LAUNCH_ID.set(`game:wario/runner:${MOONLIGHT}`, "add-setting:video"), "video.fps")
-    expect(row(launch.getSnapshot().editor, `game:wario/runner:${MOONLIGHT}`, "FPS")?.source).toBe("500 from Device for Moonlight isn't applied: 500 is above the maximum of 240")
+    expect(row(launch.getSnapshot().editor, `game:wario/runner:${MOONLIGHT}`, "FPS")?.source).toBe("Applies when this device streams the game")
   })
 
   it("say on their rows and in a note that the value is not applied, and why", async () => {
@@ -800,7 +801,8 @@ describe("settings korrid skips", () => {
     expect(row(editor, "device/runner:retroarch/mgba", "Frameskip")).toMatchObject({ value: "30", source: "Not applied: 30 is above the maximum of 10" })
     expect(row(editor, "game:wario/any", "Frameskip")).toBeUndefined()
     launch.change(LAUNCH_ID.set(MGBA, "add-setting:video"), "video.frameskip")
-    expect(row(launch.getSnapshot().editor, MGBA, "Frameskip")?.source).toBe("30 from Device for mGBA isn't applied: 30 is above the maximum of 10")
+    // The Game names what holds instead, with its own source and no word of the skip.
+    expect(row(launch.getSnapshot().editor, MGBA, "Frameskip")?.source).toBe("0 from mGBA (default)")
     expect(editor.notes).toEqual(["Frameskip (mGBA) isn't applied: 30 is above the maximum of 10."])
   })
 })
@@ -924,5 +926,164 @@ describe("Sunshine, a launch service", () => {
     const launch = createLaunchSettings(createInMemoryKorridClient({ launchSettings: withSunshine }))
     await launch.refreshDevice()
     expect(launch.getSnapshot().deviceGroups?.map(group => group.title)).toEqual(["Launch settings", "Sunshine · Video", "Sunshine · Input"])
+  })
+})
+
+describe("RetroArch's input ports: keys matched by a pattern", () => {
+  // RetroArch's real shape (korri-plugins plugins/retroarch/policy.ts, titledSchema):
+  // input.ports holds one closed object per positive decimal key.
+  const RETROARCH_SCHEMA = {
+    type: "object",
+    title: "RetroArch",
+    properties: {
+      input: {
+        type: "object",
+        title: "Input",
+        additionalProperties: false,
+        properties: {
+          "max-users": { type: "integer", title: "Max users", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+          ports: {
+            type: "object",
+            title: "Ports",
+            additionalProperties: false,
+            patternProperties: {
+              "^[1-9][0-9]*$": {
+                type: "object",
+                title: "Input port",
+                additionalProperties: false,
+                properties: {
+                  "libretro-device": { type: "integer", title: "Libretro device", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+                  "joypad-index": { type: "integer", title: "Joypad index", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+                  "analog-dpad-mode": { type: "string", title: "Analog dpad mode", enum: ["none", "left-analog", "right-analog", "left-analog-forced", "right-analog-forced"] },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  }
+  const withPorts = (bodies: InMemoryLaunchSettingsConfig["bodies"] = {}): InMemoryLaunchSettingsConfig => ({
+    ...base,
+    runners: { ...runners, "retroarch/mgba": { ...runners["retroarch/mgba"]!, schema: RETROARCH_SCHEMA } },
+    bodies: { ...chosen, ...bodies },
+  })
+  const choicesOf = (item: SurfaceSettingItem | undefined) => item?.interaction?.kind === "choice" ? item.interaction.choices : []
+
+  it("offers port 1's settings when no port is set, each named by its port", async () => {
+    const launch = await opened(withPorts())
+    const add = groupOf(launch.getSnapshot().editor, MGBA, "mGBA · Input")?.items.at(-1)
+    expect(choicesOf(add)).toEqual([
+      { value: "input.max-users", label: "Max users" },
+      { value: "input.ports.1.libretro-device", label: "Input port 1 libretro device" },
+      { value: "input.ports.1.joypad-index", label: "Input port 1 joypad index" },
+      { value: "input.ports.1.analog-dpad-mode", label: "Input port 1 analog dpad mode" },
+    ])
+  })
+
+  it("gives an authored port leaf its schema, and offers that port's other leaves and the next free port's", async () => {
+    const launch = await opened(withPorts({ "device/runner:retroarch/mgba": { settings: { input: { ports: { "1": { "joypad-index": 0 } } } } } }))
+    const DEVICE = "device/runner:retroarch/mgba"
+    const editor = launch.getSnapshot().editor
+    expect(row(editor, DEVICE, "Input port 1 joypad index")).toMatchObject({ value: "0", source: "from Device for mGBA" })
+    expect(row(editor, DEVICE, "Input port 1 joypad index")?.interaction).toMatchObject({ kind: "number", min: 0, step: 1 })
+    expect(row(editor, DEVICE, "Input port 1 joypad index")?.description).toBeUndefined()
+    expect(choicesOf(groupOf(editor, DEVICE, "mGBA · Input")?.items.at(-1)).map(choice => choice.value)).toEqual([
+      "input.max-users",
+      "input.ports.1.libretro-device",
+      "input.ports.1.analog-dpad-mode",
+      "input.ports.2.libretro-device",
+      "input.ports.2.joypad-index",
+      "input.ports.2.analog-dpad-mode",
+    ])
+  })
+
+  it("adds a leaf of the next port and writes it under that port's key", async () => {
+    const korrid = createInMemoryKorridClient({ launchSettings: withPorts({ "device/runner:retroarch/mgba": { settings: { input: { ports: { "1": { "joypad-index": 0 } } } } } }) })
+    const sent: unknown[] = []
+    const launch = createLaunchSettings({ ...korrid, setLaunch: request => { sent.push(request); return korrid.setLaunch(request) } })
+    launch.open("wario", "Wario Land 4")
+    await settle()
+    const DEVICE = "device/runner:retroarch/mgba"
+    launch.change(LAUNCH_ID.set(DEVICE, "add-setting:input"), "input.ports.2.analog-dpad-mode")
+    expect(row(launch.getSnapshot().editor, DEVICE, "Input port 2 analog dpad mode")?.interaction).toMatchObject({ kind: "choice" })
+    // With port 2 in use, port 3 is the next one offered.
+    expect(choicesOf(groupOf(launch.getSnapshot().editor, DEVICE, "mGBA · Input")?.items.at(-1)).some(choice => choice.value === "input.ports.3.joypad-index")).toBe(true)
+    launch.change(LAUNCH_ID.set(DEVICE, "setting:input.ports.2.analog-dpad-mode"), JSON.stringify("left-analog"))
+    await written()
+    expect(sent.at(-1)).toMatchObject({ path: { _tag: "Setting", payload: { key: "input.ports.2.analog-dpad-mode" } }, value: "left-analog" })
+    const snapshot = await korrid.launchSettingsSnapshot("wario")
+    expect(snapshot._tag === "Ok" && snapshot.payload.places.find(place => place.title === "Device for mGBA")?.body)
+      .toEqual({ settings: { input: { ports: { "1": { "joypad-index": 0 }, "2": { "analog-dpad-mode": "left-analog" } } } } })
+  })
+})
+
+describe("korrid's snapshot as it is: a rejected value and plugin defaults by package", () => {
+  const MOON = "@korri:moonlight/moonlight"
+  const GAMESCOPE = "@korri:gamescope/gamescope"
+  const at = (layer: LaunchPlace["layer"], scope: LaunchPlace["scope"]): LaunchPlace => ({ layer, scope })
+  const DEVICE_MOON = at({ _tag: "Device" }, { _tag: "Runner", id: MOON })
+  const GAME_MOON = at({ _tag: "Game", id: "wario" }, { _tag: "Runner", id: MOON })
+  const place = (where: LaunchPlace, title: string, body: unknown, kinds: string[]): LaunchPlaceSnapshot => ({ place: where, title, body, editableKinds: kinds })
+  const codec = (value: unknown, pluginId: string): LaunchSourcedValue => ({
+    path: { _tag: "Editable", payload: { _tag: "Setting", payload: { key: "video.codec" } } },
+    value,
+    source: { _tag: "PluginDefault", payload: { pluginId } },
+    adjusted: false,
+  })
+  // Moonlight's video.codec is "vp9" on the Device: korrid rejects it, leaves it
+  // out of runnerResolved and puts its package's default h264 in force.
+  const snapshot: LaunchSnapshot = {
+    places: [
+      place(at({ _tag: "Device" }, { _tag: "Any" }), "Device", { modifiers: { [GAMESCOPE]: { enabled: true } } }, ["runner", "cpu", "gpu", "modifiers", "services"]),
+      place(DEVICE_MOON, "Device for Moonlight", { settings: { video: { codec: "vp9" } } }, ["cpu", "gpu", "modifiers", "settings", "services"]),
+      place(at({ _tag: "Game", id: "wario" }, { _tag: "Any" }), "Game", {}, ["runner", "cpu", "gpu", "modifiers", "services"]),
+      place(GAME_MOON, "Game for Moonlight", {}, ["cpu", "gpu", "modifiers", "settings", "services"]),
+    ],
+    resolved: {
+      values: {
+        "modifiers.@korri:gamescope/gamescope.settings.video.fps-limit": {
+          path: { _tag: "Editable", payload: { _tag: "ModifierSetting", payload: { id: GAMESCOPE, key: "video.fps-limit" } } },
+          value: 60,
+          source: { _tag: "PluginDefault", payload: { pluginId: "@korri:gamescope" } },
+          adjusted: false,
+        },
+        "modifiers.@korri:gamescope/gamescope.settings.video.nested.fps": {
+          path: { _tag: "Editable", payload: { _tag: "ModifierSetting", payload: { id: GAMESCOPE, key: "video.nested.fps" } } },
+          value: 30,
+          source: { _tag: "PluginDefault", payload: { pluginId: "@korri:unknown" } },
+          adjusted: false,
+        },
+      },
+    },
+    runners: [{ id: MOON, title: "Moonlight", selected: false, choosable: false, schema: MOONLIGHT_SCHEMA, revision: "r1", prepare: { _tag: "Ready", payload: { env: {}, args: [] } } }],
+    runnerResolved: [{ runnerId: MOON, values: { "settings.video.codec": codec("h264", "@korri:moonlight") } }],
+    modifiers: [{
+      id: GAMESCOPE,
+      title: "Gamescope",
+      schema: { type: "object", properties: { video: section("Video", { "fps-limit": { type: "integer", title: "FPS limit", default: 60 }, nested: section("Nested", { fps: { type: "integer", title: "FPS" } }) }) } },
+    }],
+    services: [],
+    profiles: [],
+    notices: [{ _tag: "SettingSkipped", payload: { path: { _tag: "Setting", payload: { key: "video.codec" } }, message: "\"vp9\" is not one of auto, h264, h265, av1.", runnerId: MOON } }],
+    routeLayers: { _tag: "Present" },
+    revisions: { device: "device-1", games: "games-1" },
+  }
+  const editorRows = (pending: ReadonlyMap<string, readonly ({ _tag: "Runner"; key: string } | { _tag: "Modifier"; id: string; key: string })[]> = new Map()) => {
+    const editor = launchEditorFrom(snapshot, "wario", pending)
+    return (placeId: string, label: string) => editor.places.find(entry => entry.id === placeId)?.groups.flatMap(group => group.items).find(item => item.label === label)
+  }
+
+  it("reports the rejected value on the place that set it, and the value in force with its own source elsewhere", () => {
+    const at_ = editorRows(new Map([["game:wario/runner:@korri:moonlight/moonlight", [{ _tag: "Runner", key: "video.codec" }]]]))
+    expect(at_("device/runner:@korri:moonlight/moonlight", "Codec")).toMatchObject({ value: "vp9", source: "Not applied: \"vp9\" is not one of auto, h264, h265, av1" })
+    expect(at_("game:wario/runner:@korri:moonlight/moonlight", "Codec")).toMatchObject({ value: "Not set here", source: "h264 from Moonlight (default)" })
+    expect(launchEditorFrom(snapshot, "wario").notes).toEqual(["Codec (Moonlight) isn't applied: \"vp9\" is not one of auto, h264, h265, av1."])
+  })
+
+  it("names a plugin default by the title of the contribution in its package, and by the package id only when none matches", () => {
+    const at_ = editorRows(new Map([["game:wario/any", [{ _tag: "Modifier", id: GAMESCOPE, key: "video.fps-limit" }, { _tag: "Modifier", id: GAMESCOPE, key: "video.nested.fps" }]]]))
+    expect(at_("game:wario/any", "FPS limit")?.source).toBe("60 from Gamescope (default)")
+    expect(at_("game:wario/any", "Nested FPS")?.source).toBe("30 from @korri:unknown (default)")
   })
 })

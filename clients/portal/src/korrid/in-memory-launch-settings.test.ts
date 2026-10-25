@@ -52,7 +52,7 @@ describe("in-memory launch settings, korrid's rules", () => {
 
   it("resolves runner settings for the selected runner only, over the plugin's default", async () => {
     const result = await snapshot({ bodies: { "game:wario/any": { runner: "retroarch/mgba" }, "device/runner:retroarch/gpsp": { settings: { bios: true } } } })
-    expect(result.resolved.values["settings.frameskip"]).toEqual({ path: { _tag: "Editable", payload: { _tag: "Setting", payload: { key: "frameskip" } } }, value: 0, source: { _tag: "PluginDefault", payload: { pluginId: "retroarch/mgba" } }, adjusted: false })
+    expect(result.resolved.values["settings.frameskip"]).toEqual({ path: { _tag: "Editable", payload: { _tag: "Setting", payload: { key: "frameskip" } } }, value: 0, source: { _tag: "PluginDefault", payload: { pluginId: "retroarch" } }, adjusted: false })
     expect(result.resolved.values["settings.bios"]).toBeUndefined()
   })
 
@@ -142,7 +142,7 @@ describe("in-memory launch settings, korrid's rules", () => {
           "game:wario/runner:retroarch/mgba": { settings: { video: { fps: null, smooth: null } } },
         },
       })
-      expect(result.resolved.values["settings.video.fps"]).toEqual({ path: { _tag: "Editable", payload: setting("video.fps") }, value: 60, source: { _tag: "PluginDefault", payload: { pluginId: "retroarch/mgba" } }, adjusted: false })
+      expect(result.resolved.values["settings.video.fps"]).toEqual({ path: { _tag: "Editable", payload: setting("video.fps") }, value: 60, source: { _tag: "PluginDefault", payload: { pluginId: "retroarch" } }, adjusted: false })
       expect(result.resolved.values["settings.video.smooth"]).toBeUndefined()
     })
 
@@ -164,12 +164,13 @@ describe("in-memory launch settings, korrid's rules", () => {
       expect(await bodyOf()).toEqual({ settings: {} })
     })
 
-    it("keeps a value the schema does not take and names it in a SettingSkipped notice", async () => {
+    it("skips a value the schema does not take, names it in a SettingSkipped notice, and the plugin default holds", async () => {
       const result = await snapshot({
         runners: nested,
         bodies: { "game:wario/any": { runner: "retroarch/mgba" }, "device/runner:retroarch/mgba": { settings: { video: { fps: 90, sharp: true } } } },
       })
-      expect(result.resolved.values["settings.video.fps"]?.value).toBe(90)
+      expect(result.resolved.values["settings.video.fps"]).toMatchObject({ value: 60, source: { _tag: "PluginDefault", payload: { pluginId: "retroarch" } } })
+      expect(result.resolved.values["settings.video.sharp"]).toBeUndefined()
       expect(result.notices).toEqual([
         { _tag: "SettingSkipped", payload: { path: setting("video.fps"), message: "90 is above the maximum of 60", runnerId: "retroarch/mgba" } },
         { _tag: "SettingSkipped", payload: { path: setting("video.sharp"), message: "mGBA has no setting video.sharp", runnerId: "retroarch/mgba" } },
@@ -214,7 +215,7 @@ describe("in-memory launch settings, korrid's rules", () => {
     }
     const game = await stream("wario")
     expect(game["settings.video.fps"]).toMatchObject({ value: 30, source: { _tag: "Place", payload: place(`device/runner:${MOONLIGHT}`) } })
-    expect(game["settings.video.codec"]).toMatchObject({ value: "h264", source: { _tag: "PluginDefault", payload: { pluginId: MOONLIGHT } } })
+    expect(game["settings.video.codec"]).toMatchObject({ value: "h264", source: { _tag: "PluginDefault", payload: { pluginId: "@korri:moonlight" } } })
     const device = await stream()
     expect(device["settings.video.codec"]?.value).toBe("h265")
   })

@@ -130,7 +130,7 @@ const RUNNER_KINDS = ["cpu", "gpu", "modifiers", "settings", "services"]
 type Json = Record<string, unknown>
 const record = (value: unknown): Json | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? value as Json : undefined
-const isObjectNode = (node: Json) => node.type === "object" || (node.type === undefined && record(node.properties) !== undefined)
+const isObjectNode = (node: Json) => node.type === "object" || (node.type === undefined && (record(node.properties) !== undefined || record(node.patternProperties) !== undefined))
 
 /** A nested schema's leaves by dotted path. */
 function schemaLeaves(schema: unknown, prefix: readonly string[] = []): Map<string, Json> {
@@ -143,6 +143,26 @@ function schemaLeaves(schema: unknown, prefix: readonly string[] = []): Map<stri
   }
   return leaves
 }
+
+/** One leaf of a nested schema by its dotted path, through named keys and pattern-matched ones (`patternProperties`). */
+function schemaLeafAt(schema: unknown, path: string): Json | undefined {
+  let node = record(schema)
+  for (const segment of path.split(".")) {
+    if (node === undefined || !isObjectNode(node)) return undefined
+    const named = record(record(node.properties)?.[segment])
+    node = named ?? Object.entries(record(node.patternProperties) ?? {}).flatMap(([pattern, child]) => {
+      try {
+        return new RegExp(pattern).test(segment) ? [record(child)] : []
+      } catch {
+        return []
+      }
+    })[0]
+  }
+  return node === undefined || isObjectNode(node) ? undefined : node
+}
+
+/** The package a contribution id belongs to: korrid names plugin defaults by package ("@korri:moonlight"). */
+const packageOf = (id: string) => id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : id
 
 /** A nested settings object's leaves by dotted path; a name with a dot is skipped. */
 function valueLeaves(settings: unknown, prefix: readonly string[] = []): Map<string, unknown> {
@@ -324,7 +344,7 @@ export function createInMemoryLaunchSettings(
     const seedDefaults = (prefix: string, pluginId: string, schema: unknown, pathOf: (key: string) => LaunchPath) => {
       for (const [key, leaf] of schemaLeaves(schema)) {
         if (!("default" in leaf)) continue
-        const value: LaunchSourcedValue = { path: editable(pathOf(key)), value: leaf.default, source: { _tag: "PluginDefault", payload: { pluginId } }, adjusted: false }
+        const value: LaunchSourcedValue = { path: editable(pathOf(key)), value: leaf.default, source: { _tag: "PluginDefault", payload: { pluginId: packageOf(pluginId) } }, adjusted: false }
         pluginDefaults.set(`${prefix}${key}`, value)
         values[`${prefix}${key}`] = value
       }
@@ -409,20 +429,24 @@ export function createInMemoryLaunchSettings(
 
   /**
    * Warn and skip: each plugin setting in force that its plugin's schema
-   * does not describe or does not take. The value stays in force here, as
-   * it stays in the file; korrid leaves it out of what the plugin receives.
+   * does not describe or does not take. As korrid does, the value leaves
+   * what is in force (it stays in the file) and the plugin's default, when
+   * its schema states one, holds instead.
    */
   const skippedOf = (values: Record<string, LaunchSourcedValue>, runner: { id: string; runner?: InMemoryLaunchRunner } | undefined): LaunchNotice[] =>
-    Object.values(values).flatMap((resolved): LaunchNotice[] => {
+    Object.entries(values).flatMap(([name, resolved]): LaunchNotice[] => {
       if (resolved.path._tag !== "Editable" || resolved.source?._tag !== "Place") return []
       const path = resolved.path.payload
-      const owner = path._tag === "Setting" ? { title: runner?.runner?.title ?? runner?.id ?? "", schema: runner?.runner?.schema }
-        : path._tag === "ModifierSetting" ? config.modifiers?.[path.payload.id]
-          : path._tag === "ServiceSetting" ? config.services?.[path.payload.id] : undefined
-      if (owner === undefined || path.payload === undefined || !("key" in path.payload)) return []
-      const leaf = schemaLeaves(owner.schema).get(path.payload.key)
+      const owner = path._tag === "Setting" ? { id: runner?.id ?? "", title: runner?.runner?.title ?? runner?.id ?? "", schema: runner?.runner?.schema }
+        : path._tag === "ModifierSetting" ? { id: path.payload.id, ...config.modifiers?.[path.payload.id] }
+          : path._tag === "ServiceSetting" ? { id: path.payload.id, ...config.services?.[path.payload.id] } : undefined
+      if (owner === undefined || owner.title === undefined || path.payload === undefined || !("key" in path.payload)) return []
+      const leaf = schemaLeafAt(owner.schema, path.payload.key)
       const message = leaf === undefined ? `${owner.title} has no setting ${path.payload.key}` : misfit(leaf, resolved.value)
       if (message === undefined) return []
+      if (leaf !== undefined && "default" in leaf) {
+        values[name] = { path: resolved.path, value: leaf.default, source: { _tag: "PluginDefault", payload: { pluginId: packageOf(owner.id) } }, adjusted: false }
+      } else delete values[name]
       // A runner setting's skip names its runner; a modifier's or a service's names none.
       return [{ _tag: "SettingSkipped", payload: { path, message, ...(path._tag === "Setting" && runner !== undefined ? { runnerId: runner.id } : {}) } }]
     })
@@ -439,7 +463,7 @@ export function createInMemoryLaunchSettings(
     const defaults = new Map<string, LaunchSourcedValue>()
     for (const [key, leaf] of schemaLeaves(runner?.schema)) {
       if (!("default" in leaf)) continue
-      const value: LaunchSourcedValue = { path: path(key), value: leaf.default, source: { _tag: "PluginDefault", payload: { pluginId: runnerId } }, adjusted: false }
+      const value: LaunchSourcedValue = { path: path(key), value: leaf.default, source: { _tag: "PluginDefault", payload: { pluginId: packageOf(runnerId) } }, adjusted: false }
       defaults.set(key, value)
       values[`settings.${key}`] = value
     }
@@ -613,7 +637,7 @@ export function createInMemoryLaunchSettings(
         if (path._tag !== "Setting" && schemas[0] === undefined) return failure("InvalidSetting", `No installed plugin ${path.payload.id}.`)
         const segments = path.payload.key.split(".")
         if (segments.some(segment => segment === "")) return failure("InvalidSetting", `${path.payload.key} is not a setting path.`)
-        const leaf = schemas.map(plugin => schemaLeaves(plugin?.schema).get(path.payload.key)).find(found => found !== undefined)
+        const leaf = schemas.map(plugin => schemaLeafAt(plugin?.schema, path.payload.key)).find(found => found !== undefined)
         if (leaf === undefined) return failure("InvalidSetting", `No installed plugin here has a setting ${path.payload.key}.`)
         if (!clear && !cleared && misfit(leaf, value) !== undefined) {
           return failure("InvalidSetting", `That value doesn't fit ${String(leaf.title ?? path.payload.key)}.`)

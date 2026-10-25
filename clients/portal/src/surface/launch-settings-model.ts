@@ -354,24 +354,36 @@ function contextOf(snapshot: LaunchSnapshot, gameId?: string): Context {
   }
 }
 
-function sourceTitle(context: Context, source: LaunchSource): string {
+function sourceTitle(context: Context, source: LaunchSource, prefer?: string): string {
   switch (source._tag) {
     case "Place": {
       const place = context.places.find(candidate => samePlace(candidate.place, source.payload))
       return place === undefined ? layerTitle(context, source.payload.layer) : placeTitle(context, place)
     }
     case "PluginDefault":
-      return `${pluginTitle(context, source.payload.pluginId)} (default)`
+      return `${pluginTitle(context, source.payload.pluginId, prefer)} (default)`
     case "DeviceDefault":
       return "Device (default)"
   }
 }
 
-/** A plugin's title by its id: a runner's, a modifier's or a service's. */
-function pluginTitle(context: Context, pluginId: string): string {
-  const runner = context.snapshot.runners.find(candidate => candidate.id === pluginId)
-  if (runner !== undefined) return context.runnerTitles.get(runner.id) ?? runner.title
-  return [...context.snapshot.modifiers, ...context.snapshot.services].find(candidate => candidate.id === pluginId)?.title ?? pluginId
+/**
+ * A plugin's title by its id. korrid names a plugin default by its package
+ * ("@korri:moonlight"), and a contribution's id starts with its package's
+ * ("@korri:moonlight/moonlight"): the title is the contribution's, the one
+ * a row is about (`prefer`) first, then the selected runner, then any. The
+ * id stands only when no contribution matches.
+ */
+function pluginTitle(context: Context, pluginId: string, prefer?: string): string {
+  const titled = [
+    ...context.snapshot.runners.map(runner => ({ id: runner.id, title: context.runnerTitles.get(runner.id) ?? runner.title })),
+    ...context.snapshot.modifiers,
+    ...context.snapshot.services,
+  ]
+  const ofPackage = (id: string) => id === pluginId || id.startsWith(`${pluginId}/`)
+  const exact = titled.find(candidate => candidate.id === pluginId)
+  const preferred = [prefer, context.selected?.id].flatMap(id => id !== undefined && ofPackage(id) ? titled.filter(candidate => candidate.id === id) : [])[0]
+  return (exact ?? preferred ?? titled.find(candidate => ofPackage(candidate.id)))?.title ?? pluginId
 }
 
 /** A runner korrid never offers as a game's runner (Moonlight): its
@@ -616,11 +628,28 @@ interface Leaf {
   readonly device: boolean
 }
 
+/**
+ * An object of a schema whose keys are not named but matched
+ * (`patternProperties`), such as RetroArch's `input.ports`, keyed by port
+ * number. Its leaves exist once per key a place uses.
+ */
+interface Pattern {
+  /** The path to the object whose keys match. */
+  readonly prefix: readonly string[]
+  /** The titles of the objects above it inside its section. */
+  readonly objects: readonly string[]
+  readonly regex: RegExp
+  /** What one key's object is called ("Input port"); the key follows it. */
+  readonly title: string
+  readonly node: Json
+}
+
 /** A top-level section of a plugin's schema; `key` "" holds leaves outside any section. */
 interface Section {
   readonly key: string
   readonly title: string
   readonly leaves: readonly Leaf[]
+  readonly patterns: readonly Pattern[]
 }
 
 /** Short words a schema key spells in capitals when it has no title. */
@@ -654,7 +683,8 @@ const typeOf = (node: Json): string | undefined => {
   const type = Array.isArray(node.type) ? node.type.find(item => item !== "null") : node.type
   return typeof type === "string" ? type : undefined
 }
-const isObjectNode = (node: Json) => typeOf(node) === "object" || (node.type === undefined && record(node.properties) !== undefined)
+const isObjectNode = (node: Json) =>
+  typeOf(node) === "object" || (node.type === undefined && (record(node.properties) !== undefined || record(node.patternProperties) !== undefined))
 const titleOf = (node: Json, key: string) => typeof node.title === "string" ? node.title : humanize(key)
 
 function leafOf(node: Json, segments: readonly string[], objects: readonly string[]): Leaf {
@@ -673,16 +703,92 @@ function leafOf(node: Json, segments: readonly string[], objects: readonly strin
   }
 }
 
-/** Every leaf under an object, in schema order. A name never holds a dot;
- * one that does is skipped, as korrid skips it. */
-function leavesOf(node: Json, segments: readonly string[], objects: readonly string[]): Leaf[] {
-  return Object.entries(record(node.properties) ?? {}).flatMap(([key, raw]) => {
+/**
+ * Every leaf under an object, in schema order, and every object under it
+ * whose keys match a pattern. A name never holds a dot; one that does is
+ * skipped, as korrid skips it.
+ */
+function leavesOf(node: Json, segments: readonly string[], objects: readonly string[]): { readonly leaves: Leaf[]; readonly patterns: Pattern[] } {
+  const leaves: Leaf[] = []
+  const patterns: Pattern[] = []
+  for (const [key, raw] of Object.entries(record(node.properties) ?? {})) {
     const child = record(raw)
-    if (child === undefined || key.includes(".") || key === "") return []
-    return isObjectNode(child)
-      ? leavesOf(child, [...segments, key], [...objects, titleOf(child, key)])
-      : [leafOf(child, [...segments, key], objects)]
-  })
+    if (child === undefined || key.includes(".") || key === "") continue
+    if (isObjectNode(child)) {
+      const nested = leavesOf(child, [...segments, key], [...objects, titleOf(child, key)])
+      leaves.push(...nested.leaves)
+      patterns.push(...nested.patterns)
+    } else leaves.push(leafOf(child, [...segments, key], objects))
+  }
+  for (const [pattern, raw] of Object.entries(record(node.patternProperties) ?? {})) {
+    const child = record(raw)
+    let regex: RegExp
+    try {
+      regex = new RegExp(pattern)
+    } catch {
+      continue
+    }
+    if (child === undefined) continue
+    // The object's own title gives way to its keys' title: "Input port 1", not "Ports input port 1".
+    const own = titleOf(node, segments[segments.length - 1] ?? "")
+    patterns.push({ prefix: segments, objects: objects.slice(0, -1), regex, title: typeof child.title === "string" ? child.title : own, node: child })
+  }
+  return { leaves, patterns }
+}
+
+/** The leaves of one key of a pattern object: "input.ports.1.joypad-index", labelled "Input port 1 joypad index". */
+function patternKeyLeaves(pattern: Pattern, key: string): readonly Leaf[] {
+  const segments = [...pattern.prefix, key]
+  const title = `${pattern.title} ${key}`
+  if (isObjectNode(pattern.node)) return leavesOf(pattern.node, segments, [...pattern.objects, title]).leaves
+  return [{ ...leafOf(pattern.node, segments, pattern.objects), label: title }]
+}
+
+/** The keys of a pattern object that dotted paths use, in the order met. */
+function patternKeys(pattern: Pattern, paths: Iterable<string>): string[] {
+  const keys: string[] = []
+  for (const path of paths) {
+    const segments = path.split(".")
+    if (segments.length <= pattern.prefix.length || pattern.prefix.some((segment, index) => segments[index] !== segment)) continue
+    const key = segments[pattern.prefix.length] ?? ""
+    if (pattern.regex.test(key) && !keys.includes(key)) keys.push(key)
+  }
+  return keys
+}
+
+/** The smallest whole number from 1 the pattern takes and `used` lacks: the next port. None when the pattern takes no number. */
+function nextFreeKey(pattern: Pattern, used: readonly string[]): string | undefined {
+  for (let number = 1; number <= 999; number++) {
+    const key = String(number)
+    if (!used.includes(key) && pattern.regex.test(key)) return key
+  }
+  return undefined
+}
+
+/**
+ * A section's leaves for one place: its named leaves, then each pattern
+ * object's leaves once per key in `paths` (set here or added), and once for
+ * its next free whole-number key, so Add setting offers the next port.
+ */
+function sectionLeaves(section: Section, paths: readonly string[]): readonly Leaf[] {
+  return [
+    ...section.leaves,
+    ...section.patterns.flatMap(pattern => {
+      const used = patternKeys(pattern, paths)
+      const next = nextFreeKey(pattern, used)
+      return [...used, ...(next === undefined ? [] : [next])].flatMap(key => patternKeyLeaves(pattern, key))
+    }),
+  ]
+}
+
+/** One leaf of a schema by its dotted path, a pattern object's leaves included. */
+function leafAt(sections: readonly Section[], path: string): Leaf | undefined {
+  for (const section of sections) {
+    const leaf = section.leaves.find(candidate => candidate.path === path)
+      ?? section.patterns.flatMap(pattern => patternKeys(pattern, [path]).flatMap(key => patternKeyLeaves(pattern, key))).find(candidate => candidate.path === path)
+    if (leaf !== undefined) return leaf
+  }
+  return undefined
 }
 
 /** A plugin's nested settings.describe schema as sections of leaves, in schema order. */
@@ -692,23 +798,27 @@ export function sectionsOf(schema: unknown): readonly Section[] {
   for (const [key, raw] of Object.entries(record(record(schema)?.properties) ?? {})) {
     const node = record(raw)
     if (node === undefined || key.includes(".") || key === "") continue
-    if (isObjectNode(node)) sections.push({ key, title: titleOf(node, key), leaves: leavesOf(node, [key], []) })
+    if (isObjectNode(node)) sections.push({ key, title: titleOf(node, key), ...leavesOf(node, [key], []) })
     else loose.push(leafOf(node, [key], []))
   }
-  return loose.length === 0 ? sections : [{ key: "", title: "", leaves: loose }, ...sections]
+  return loose.length === 0 ? sections : [{ key: "", title: "", leaves: loose, patterns: [] }, ...sections]
 }
 
 /** Several schemas as one: a section by its key, a leaf by its path, the first to name one wins. */
 function mergeSections(all: readonly (readonly Section[])[]): readonly Section[] {
-  const merged = new Map<string, { title: string; leaves: Map<string, Leaf> }>()
+  const merged = new Map<string, { title: string; leaves: Map<string, Leaf>; patterns: Map<string, Pattern> }>()
   for (const sections of all) {
     for (const section of sections) {
-      const entry = merged.get(section.key) ?? { title: section.title, leaves: new Map<string, Leaf>() }
+      const entry = merged.get(section.key) ?? { title: section.title, leaves: new Map<string, Leaf>(), patterns: new Map<string, Pattern>() }
       for (const leaf of section.leaves) if (!entry.leaves.has(leaf.path)) entry.leaves.set(leaf.path, leaf)
+      for (const pattern of section.patterns) {
+        const key = `${pattern.prefix.join(".")}\u0000${pattern.regex.source}`
+        if (!entry.patterns.has(key)) entry.patterns.set(key, pattern)
+      }
       merged.set(section.key, entry)
     }
   }
-  return [...merged].map(([key, entry]) => ({ key, title: entry.title, leaves: [...entry.leaves.values()] }))
+  return [...merged].map(([key, entry]) => ({ key, title: entry.title, leaves: [...entry.leaves.values()], patterns: [...entry.patterns.values()] }))
 }
 
 /**
@@ -831,6 +941,48 @@ interface Owner {
   readonly missing: string
   /** The plugin's default when korrid did not resolve the path (Moonlight on a game page). */
   readonly defaultOf: (leaf: Leaf | undefined) => string | undefined
+  /** The contribution whose settings these are: a PluginDefault naming its package reads as its title. */
+  readonly pluginId?: string
+  /** This plugin's nested settings in any place's body. */
+  readonly authored: (body: Json) => unknown
+  /** Whether a place's values reach the value in force for this plugin. */
+  readonly appliesAt: (place: LaunchPlace) => boolean
+}
+
+/** A place in ADR 0028's merge order, later wins: Device and System for any
+ * runner, then their family and runner places, then each later layer's. */
+function mergeRank(place: LaunchPlace): number {
+  const scope = SCOPE_RANK[place.scope._tag]
+  switch (place.layer._tag) {
+    case "Device": return scope === 0 ? 0 : 1 + scope
+    case "System": return scope === 0 ? 1 : 3 + scope
+    case "Game": return 10 + scope
+    case "Release": return 13 + scope
+    case "Profile": return 16 + scope
+    case "Launch": return 19 + scope
+  }
+}
+
+/** A profile's places count only while the profile is picked. */
+const profileInForce = (context: Context, place: LaunchPlace) =>
+  place.layer._tag !== "Profile" || place.layer.id.profileId === context.snapshot.selectedProfile
+
+/**
+ * Whether this place set the value korrid rejected at a path: the most
+ * specific place in force that sets it. A more specific place that clears
+ * it leaves no value to reject. This only finds who wrote the value; the
+ * value in force is korrid's.
+ */
+function rejectedHere(context: Context, owner: Owner, path: string): boolean {
+  let author: { readonly rank: number; readonly place: LaunchPlace; readonly value: unknown } | undefined
+  for (const entry of context.places) {
+    if (!owner.appliesAt(entry.place)) continue
+    const leaves = ownLeaves(owner.authored(record(entry.body) ?? {}))
+    if (!leaves.has(path)) continue
+    const rank = mergeRank(entry.place)
+    if (author === undefined || rank > author.rank) author = { rank, place: entry.place, value: leaves.get(path) }
+  }
+  return author !== undefined && author.value !== null && samePlace(author.place, owner.place)
 }
 
 /**
@@ -845,35 +997,28 @@ function settingSource(context: Context, owner: Owner, path: string, leaf: Leaf 
   // A runner that only views streams has values of its own in force, korrid's
   // fold for the stream viewer; nothing at all says when it would apply.
   const stream = streamRunner(context, scope) && scope._tag === "Runner"
+  // korrid skips a value it rejects and puts what holds instead in force: the
+  // place that set the rejected value says so; every other row names what holds.
+  const rejected = (skip: string | undefined) => skip !== undefined && own.set && !own.cleared && rejectedHere(context, owner, path) ? skip : undefined
   if (stream && writePath._tag === "Setting") {
-    const resolved = context.streamResolved(scope.id, writePath)
-    return inForceText(context, owner.place, resolved, context.skipped(writePath, scope.id), own, () => own.cleared ? fallback() : streamLine(context))
+    const skip = rejected(context.skipped(writePath, scope.id))
+    if (skip !== undefined) return `Not applied: ${skip.replace(/\.$/, "")}`
+    return inForceText(context, owner, context.streamResolved(scope.id, writePath), () => own.cleared ? fallback() : streamLine(context))
   }
   const waiting = notInForceScope(context, scope)
   if (waiting !== undefined) return waiting
-  return inForceText(context, owner.place, context.resolved(writePath), context.skipped(writePath), own, () => own.cleared ? fallback() : undefined)
+  const skip = rejected(context.skipped(writePath))
+  if (skip !== undefined) return `Not applied: ${skip.replace(/\.$/, "")}`
+  return inForceText(context, owner, context.resolved(writePath), () => own.cleared ? fallback() : undefined)
 }
 
-/**
- * A setting's value in force from one place's row: where it comes from, and
- * when korrid skips it, that it is not applied and why. `none` speaks when
- * nothing is in force.
- */
-function inForceText(
-  context: Context,
-  place: LaunchPlace,
-  resolved: LaunchSourcedValue | undefined,
-  skipped: string | undefined,
-  own: { readonly set: boolean; readonly cleared: boolean },
-  none: () => string | undefined,
-): string | undefined {
+/** A setting's value in force from one place's row: where it comes from. `none` speaks when nothing is in force. */
+function inForceText(context: Context, owner: Owner, resolved: LaunchSourcedValue | undefined, none: () => string | undefined): string | undefined {
   const source = resolved?.source
-  const here = source?._tag === "Place" && samePlace(source.payload, place)
-  if (skipped !== undefined && (here || (source === undefined && own.set && !own.cleared))) return `Not applied: ${skipped.replace(/\.$/, "")}`
   if (resolved === undefined || source === undefined || resolved.value === null) return none()
-  const title = sourceTitle(context, source)
+  const here = source._tag === "Place" && samePlace(source.payload, owner.place)
+  const title = sourceTitle(context, source, owner.pluginId)
   const value = valueText(resolved.value)
-  if (skipped !== undefined) return `${value} from ${title} isn't applied: ${skipped.replace(/\.$/, "")}`
   if (resolved.adjusted) return `${value} from ${title}, adjusted`
   return here ? `from ${title}` : `${value} from ${title}`
 }
@@ -950,10 +1095,13 @@ function settingRows(context: Context, rows: Rows, owner: Owner, path: string, l
  */
 function settingGroups(context: Context, rows: Rows, owner: Owner): SurfaceSettingGroup[] {
   const own = ownLeaves(owner.own)
-  const described = new Map(owner.sections.flatMap(section => section.leaves.map(leaf => [leaf.path, leaf] as const)))
-  const extraKeys = [...new Set([...own.keys(), ...owner.added].filter(path => !described.has(path)).map(sectionKeyOf))]
-    .filter(key => !owner.sections.some(section => section.key === key))
-  const sections: readonly Section[] = [...owner.sections, ...extraKeys.map(key => ({ key, title: key === "" ? "" : humanize(key), leaves: [] }))]
+  // A pattern object's leaves exist for the keys set or added here, and its next free key.
+  const used = [...own.keys(), ...owner.added]
+  const expanded = owner.sections.map(section => ({ ...section, leaves: sectionLeaves(section, used) }))
+  const described = new Map(expanded.flatMap(section => section.leaves.map(leaf => [leaf.path, leaf] as const)))
+  const extraKeys = [...new Set(used.filter(path => !described.has(path)).map(sectionKeyOf))]
+    .filter(key => !expanded.some(section => section.key === key))
+  const sections: readonly Section[] = [...expanded, ...extraKeys.map(key => ({ key, title: key === "" ? "" : humanize(key), leaves: [], patterns: [] }))]
   return sections.flatMap((section): SurfaceSettingGroup[] => {
     const inSection = (path: string) => sectionKeyOf(path) === section.key
     const ownHere = [
@@ -1001,7 +1149,23 @@ function runnerSettingGroups(
   rowId: (path: string) => string,
 ): SurfaceSettingGroup[] {
   const title = runnerOwnerTitle(context, place.scope)
+  const scope = place.scope
+  const stream = scope._tag === "Runner" && streamRunner(context, scope) ? context.snapshot.runners.find(runner => runner.id === scope.id) : undefined
+  // Moonlight's values come from the stream viewer's places: the Device's,
+  // then the game's system, game and picked profile; the selected runner's
+  // from every place in force for it.
+  const appliesAt = (candidate: LaunchPlace): boolean => {
+    if (!profileInForce(context, candidate)) return false
+    if (stream === undefined) return applies(context, candidate.scope)
+    const forStream = (candidate.scope._tag === "Runner" && candidate.scope.id === stream.id)
+      || (candidate.scope._tag === "Family" && candidate.scope.id === stream.family)
+    return forStream && candidate.layer._tag !== "Release" && candidate.layer._tag !== "Launch"
+  }
+  const pluginId = scope._tag === "Runner" ? scope.id : context.selected?.family === scope.id ? context.selected?.id : undefined
   return settingGroups(context, rows, {
+    ...(pluginId === undefined ? {} : { pluginId }),
+    authored: candidate => candidate.settings,
+    appliesAt,
     placeId,
     place,
     title,
@@ -1062,6 +1226,9 @@ function modifierGroups(context: Context, rows: Rows, placeId: string, place: La
       interaction: { kind: "choice", choices: ON_OFF, selected: enabled === undefined ? INHERIT : String(enabled) },
     }
     const settings = settingGroups(context, rows, {
+      pluginId: modifier.id,
+      authored: candidate => record(record(candidate.modifiers)?.[modifier.id])?.settings,
+      appliesAt: candidate => profileInForce(context, candidate) && applies(context, candidate.scope),
       placeId,
       place,
       title: modifier.title,
@@ -1089,6 +1256,9 @@ function modifierGroups(context: Context, rows: Rows, placeId: string, place: La
 function serviceGroups(context: Context, rows: Rows, placeId: string, place: LaunchPlace, body: Json, pending: readonly PendingSetting[], rowId: (path: string) => string): SurfaceSettingGroup[] {
   const own = record(body.services) ?? {}
   return pluginsOf(context, context.snapshot.services, "services").flatMap(service => settingGroups(context, rows, {
+    pluginId: service.id,
+    authored: candidate => record(record(candidate.services)?.[service.id])?.settings,
+    appliesAt: candidate => profileInForce(context, candidate) && applies(context, candidate.scope),
     placeId,
     place,
     title: service.title,
@@ -1329,7 +1499,7 @@ export function launchNotesFrom(snapshot: LaunchSnapshot, gameId?: string): read
 /** A skipped setting in words: its label and its plugin, "FPS (Moonlight)". */
 function skippedName(context: Context, path: LaunchPath, runnerId?: string): string {
   const named = (title: string, schema: unknown, key: string) => {
-    const leaf = sectionsOf(schema).flatMap(section => section.leaves).find(candidate => candidate.path === key)
+    const leaf = leafAt(sectionsOf(schema), key)
     return `${leaf?.label ?? key} (${title})`
   }
   switch (path._tag) {
