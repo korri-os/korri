@@ -64,3 +64,23 @@
 		gap: calc(var(--pico-px) * 3);
 	}
 }
+
+/* The stage stands on another display: the rack is the whole shelf. It sits
+ * in the middle of the room the stage left, and its carts grow into it, so a
+ * finger has a bigger cart to touch: the rack alone needs far less height
+ * than a stage and a rack, so its threshold is its own. */
+.pico-cart-shelf[data-stage="elsewhere"] {
+	grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.pico-cart-shelf[data-stage="elsewhere"] .pico-cart-shelf-rack {
+	grid-row: 2;
+}
+
+@container pico-shelf (height >= 18em) {
+	.pico-cart-shelf[data-stage="elsewhere"] .pico-cart-shelf-rack {
+		--pico-shelf-art-w: calc(var(--pico-px) * 40);
+		--pico-shelf-art-h: calc(var(--pico-px) * 72);
+		gap: calc(var(--pico-px) * 6);
+	}
+}

@@ -1,0 +1,11 @@
+/* A region stands on its display's rectangle inside the window that spans
+ * every display. A class and an attribute, so it outranks the screen's own
+ * full-size box.
+ * Until the rectangle is written it fills nothing, rather than the window. */
+.pico-displays-region[data-pico-display] {
+	position: absolute;
+	top: var(--pico-display-y, 0);
+	left: var(--pico-display-x, 0);
+	width: var(--pico-display-w, 0);
+	height: var(--pico-display-h, 0);
+}

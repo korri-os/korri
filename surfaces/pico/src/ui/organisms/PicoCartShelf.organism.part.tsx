@@ -32,6 +32,12 @@ export function ThirdCartChosen() {
   return <PicoCartShelf games={games} onOpen={() => undefined} onSelect={() => undefined} selectedId={games[2]?.id} />
 }
 
+// The chosen cart stands on another display; this one is the rack alone.
+export function StageElsewhere() {
+  const games = view._tag === "Shelf" ? view.games : []
+  return <PicoCartShelf games={games} onOpen={() => undefined} onSelect={() => undefined} selectedId={games[2]?.id} stage="elsewhere" />
+}
+
 export const name = "Cart Shelf"
 export const note = "Carts take their art's height on one baseline; focus moves the stage"
 

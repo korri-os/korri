@@ -4,7 +4,7 @@ import type {
   SurfaceHost,
   SurfaceModel,
 } from "@contracts/surface/korri-surface"
-import { useCallback, useEffect, useRef } from "react"
+import { type ReactNode, useCallback, useEffect, useRef } from "react"
 import { PicoGameDetail } from "./pages/PicoGameDetail"
 import { PicoRunnerPicker } from "./pages/PicoRunnerPicker"
 import { PicoLaunchSettings } from "./pages/PicoLaunchSettings"
@@ -15,9 +15,14 @@ import { PicoLibrary } from "./pages/PicoLibrary"
 import { PicoOnboarding, type PicoOnboardingActions } from "./pages/PicoOnboarding"
 import { PicoOverlay } from "./pages/PicoOverlay"
 import { PicoSettings, type PicoSettingsEditing } from "./pages/PicoSettings"
+import { PicoShowcase } from "./pages/PicoShowcase"
 import { PicoStore } from "./pages/PicoStore"
 import { PicoIdentityDialog } from "./ui/organisms/PicoIdentityDialog"
 import { PicoInviteNotices } from "./ui/organisms/PicoInviteNotices"
+import { PicoDisplays } from "./ui/templates/PicoDisplays"
+import { type PicoDisplayPlan, picoDisplayPlan } from "./pico-display-plan"
+import { picoShowcaseFrom } from "./pico-showcase-view"
+import type { PicoSurfaceModel } from "./pico-surface-display"
 import { picoDetailViewFromGame } from "./pico-detail-view"
 import { picoInvitesFrom } from "./pico-invite-view"
 import { performPicoRequest, subscribePicoHostButtons } from "./pico-host"
@@ -57,6 +62,13 @@ import { usePicoProgram } from "./use-pico-program"
  * one component holding both would have to guard every hook against the other.
  * While Korri publishes `onboarding`, the catalog presentation is first-boot
  * setup instead of home; home appears once Korri drops it.
+ *
+ * When the host gives Pico every display (`displays`, two or more), setup and
+ * the catalog split across two of them (src/pico-display-plan.ts): the main
+ * display shows the chosen game or the launch under way (PicoShowcase), and
+ * the other holds every screen as before, less the stage it no longer needs.
+ * With no `displays`, or one, Pico draws one screen exactly as it always has.
+ * The gameplay overlay is always one screen: the host gives it one display.
  */
 export function PicoSurface({
   model,
@@ -64,7 +76,7 @@ export function PicoSurface({
   initialView,
   font,
 }: {
-  readonly model: SurfaceModel
+  readonly model: PicoSurfaceModel
   readonly host: SurfaceHost
   readonly initialView?: PicoInitialView
   /** Show this face whatever is stored, as a preview or a test does.
@@ -82,6 +94,7 @@ export function PicoSurface({
   )
   const choose = useCallback((next: PicoFontId) => dispatchFont({ _tag: "ChoseFont", font: next }), [dispatchFont])
   const shown = font ?? chosen
+  const plan = model.presentation.kind === "gameplay-overlay" ? undefined : picoDisplayPlan(model.displays)
   // `pico-theme` carries the palette and knobs; `pico-screen` is the size
   // container the virtual pixel is measured against. Both on the root, so the
   // pixel derives from exactly the box the host gave Pico. `data-pico-font`
@@ -91,9 +104,9 @@ export function PicoSurface({
       {model.presentation.kind === "gameplay-overlay" ? (
         <PicoOverlaySurface host={host} model={model} presentation={model.presentation} />
       ) : model.onboarding !== undefined ? (
-        <PicoOnboardingSurface host={host} model={model} />
+        <PicoOnboardingSurface font={shown} host={host} model={model} plan={plan} />
       ) : (
-        <PicoCatalogSurface font={shown} host={host} initialView={initialView} model={model} onFont={choose} />
+        <PicoCatalogSurface font={shown} host={host} initialView={initialView} model={model} onFont={choose} plan={plan} />
       )}
     </div>
   )
@@ -149,9 +162,13 @@ function PicoOverlaySurface({
 function PicoOnboardingSurface({
   model,
   host,
+  font,
+  plan,
 }: {
   readonly model: SurfaceModel
   readonly host: SurfaceHost
+  readonly font: PicoFontId
+  readonly plan: PicoDisplayPlan | undefined
 }) {
   const { nav, dispatch } = usePicoOnboarding(model, host)
   const screen = picoOnboardingScreen(nav, model)
@@ -203,7 +220,8 @@ function PicoOnboardingSurface({
     onStarterPack: actionId => dispatch({ _tag: "ChoseStarterPackAction", actionId }),
     onFinish: () => dispatch({ _tag: "Finished" }),
   }
-  return (
+  /* Setup asks and explains; the display that shows has nothing to show yet. */
+  return split(plan, font, <PicoShowcase view={{ _tag: "Idle" }} />, (
     <PicoOnboarding
       actions={actions}
       cursor={picoSetupCursor(nav.step, screen)}
@@ -211,7 +229,16 @@ function PicoOnboardingSurface({
       screen={screen}
       track={picoSetupTrack(nav, model)}
     />
-  )
+  ))
+}
+
+/**
+ * One screen as it has always been drawn, or, with a plan, `choosing` on the
+ * display for choosing and `showing` on the main display.
+ */
+function split(plan: PicoDisplayPlan | undefined, font: PicoFontId, showing: ReactNode, choosing: ReactNode) {
+  if (plan === undefined) return choosing
+  return <PicoDisplays choose={plan.choose} choosing={choosing} font={font} show={plan.show} showing={showing} />
 }
 
 function PicoCatalogSurface({
@@ -220,12 +247,14 @@ function PicoCatalogSurface({
   initialView,
   font,
   onFont,
+  plan,
 }: {
   readonly model: SurfaceModel
   readonly host: SurfaceHost
   readonly initialView?: PicoInitialView
   readonly font: PicoFontId
   readonly onFont: (font: PicoFontId) => void
+  readonly plan: PicoDisplayPlan | undefined
 }) {
   const { nav, dispatch, attractShowingNow } = usePicoNavigation(model, host, onFont, initialView)
   const screen = shownScreen(nav, model)
@@ -241,6 +270,10 @@ function PicoCatalogSurface({
   const runner = model.runnerChoice
   const launch = runnerOpen(model) ? undefined : picoLaunchViewFromModel(model)
   const covered = runnerOpen(model) || launchOpen(model)
+  /* With a display that shows, every stage stands there and this screen keeps
+   * what is chosen and pressed. */
+  const stage = plan === undefined ? "here" : "elsewhere"
+  const attracting = attractShowing(nav, model)
   /* Set when a pointer press woke the screen, so the click that ends the same
    * press is swallowed too. DOM mechanics, not navigation. */
   const suppressWakeClick = useRef(false)
@@ -259,7 +292,7 @@ function PicoCatalogSurface({
     return waking
   }
 
-  return (
+  const choosing = (
     <>
       <div
         className="pico-catalog-surface"
@@ -290,7 +323,7 @@ function PicoCatalogSurface({
         }}
       >
         {renderScreen(screen)}
-        {attractShowing(nav, model) ? (
+        {attracting ? (
           <PicoAttract games={screen._tag === "Home" && screen.view._tag === "Shelf" ? screen.view.games : []} />
         ) : null}
         <PicoIdentityDialog
@@ -319,10 +352,34 @@ function PicoCatalogSurface({
         {launch === undefined ? null : renderLaunch(launch, nav.launch?.question ?? { _tag: "None" }, nav.launch?.group ?? 0, nav.launch?.scope ?? 0)}
       </div>
       {/* Invites, announced over every screen of the catalog, its questions
-        * and the covers above it. Nothing in it takes focus or a pointer. */}
-      <PicoInviteNotices notices={notices} />
+        * and the covers above it. Nothing in it takes focus or a pointer.
+        * With a display that shows, they stand there instead, where Korri's
+        * notices belong and no control can be under them. */}
+      {plan === undefined ? <PicoInviteNotices notices={notices} /> : null}
     </>
   )
+
+  /* The main display holds no control, but a press there is still a press:
+   * it wakes attract, which covers both displays, and keeps the screen awake.
+   * The invite notices stand here, over the showcase and attract. */
+  const showing = plan === undefined ? null : (
+    <div
+      className="pico-catalog-show"
+      /* Nothing here takes the click that ends the press, so there is no
+       * click to swallow. */
+      onPointerDownCapture={event => {
+        press(event)
+      }}
+    >
+      <PicoShowcase view={picoShowcaseFrom(screen)} />
+      {attracting ? (
+        <PicoAttract games={screen._tag === "Home" && screen.view._tag === "Shelf" ? screen.view.games : []} />
+      ) : null}
+      <PicoInviteNotices notices={notices} />
+    </div>
+  )
+
+  return split(plan, font, showing, choosing)
 
   function renderLaunch(launchView: PicoLaunchView, question: SettingsQuestion, group: number, scope: number) {
     return (
@@ -441,6 +498,7 @@ function PicoCatalogSurface({
             onPlay={() => dispatch({ _tag: "PressedPlay" })}
             onRunAction={action => dispatch({ _tag: "PressedGameAction", action })}
             placing={question._tag === "ChoosingLocation" ? question.game : undefined}
+            stage={stage}
           />
         )
       }
@@ -474,6 +532,7 @@ function PicoCatalogSurface({
             onSelectGame={gameId => dispatch({ _tag: "SelectedCart", gameId })}
             returnToCart={shown.home.focusOnReturn === "Cart"}
             selectedGameId={shown.home.selectedGameId}
+            stage={stage}
             view={shown.view}
           />
         )

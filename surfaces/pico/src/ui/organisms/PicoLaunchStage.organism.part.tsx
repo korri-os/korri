@@ -56,6 +56,19 @@ export function WithCancel() {
   )
 }
 
+/** The words and the slot stand on another display: Cancel alone stays here. */
+export function WithCancelElsewhere() {
+  return (
+    <PicoLaunchStage
+      actions={[{ id: "cancel", label: "Cancel", disabled: false, onPress: () => {} }]}
+      cart={view._tag === "Busy" ? view.cart : undefined}
+      detail="Opening your session"
+      kicker="Starting Hollow…"
+      stage="elsewhere"
+    />
+  )
+}
+
 /** The download before a first launch: a real bar from Korri's bytes, and Cancel. */
 export function Downloading10() {
   return (

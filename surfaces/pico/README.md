@@ -68,7 +68,11 @@ Three measurements are not state, so they are written to the DOM after
 layout and CSS reads them: whether a text field's start is cut (`data-cut`),
 a cover's shape once its art has loaded (`data-ratio`), and the corner the
 invite notices stand in to keep the focused control in sight
-(`data-corner`). Focus and the click that
+(`data-corner`). A fourth fact is the host's, not Pico's: each display's
+rectangle, written to its region as `--pico-display-x`, `-y`, `-w` and `-h`
+(`PicoDisplays`). It is the one place Pico sets a style property from
+script, because a rectangle is data the host states, not a design decision
+a stylesheet could make. Focus and the click that
 woke attract are refs. This is where Elm would use a port or a custom element.
 
 Secrets typed into the editor or the identity dialog sit in the model while
@@ -145,6 +149,9 @@ src/
   pico-onboarding-view.ts  setup state + model -> the setup screen, the step
                       track and where the cursor starts
   pico-wifi-view.ts   network -> rows, signal bars (PICO_SIGNAL_BAR_ABOVE)
+  pico-display-plan.ts  displays -> which one shows and which one chooses
+  pico-showcase-view.ts what the catalog shows -> what the main display shows
+  pico-surface-display.ts  the treaty's SurfaceDisplay, until it lands there
   ui/atoms|molecules|organisms|templates
   pages/
 ```
@@ -217,6 +224,38 @@ files into the glyph tables; run them only to take a new upstream version.
   small face, so they scale with the pixel and with the face's rows. The ladder checked is 1920×1080,
   1280×720, 1240×1080, 720×720, 640×480, 480×800, 1280×300 and 320×240. Every threshold is a
   guess until measured on the real panels.
+
+## Two displays
+
+A host that gives Pico every display (`SurfaceModel.displays`, two or more)
+gets one window across them, with each display's rectangle inside it. Pico
+then draws two whole screens, each at its own rectangle, with its own
+virtual pixel (`PicoDisplays`):
+
+| Display | Draws |
+|---|---|
+| Main (`main: true`, else the first) | `PicoShowcase`: the chosen cart on the shelf or in the grid, the hero's pick, or the open game, on the same stage the shelf uses; a launch starting, running or paused, without its actions; the invite notices. Otherwise an empty slot. No control. |
+| The other (a touch display first, then the largest) | Every screen as on one display, less the stage: the rack with larger carts, the grid, OPEN, a game's Play and actions, Korri's launch actions, every notice and question, Find, the store, Settings, setup, attract, and the header and floor. |
+
+`src/pico-display-plan.ts` picks the two from the rectangles and the flags
+only, so displays side by side split the same way as displays one above the
+other. Any further display stays dark. Every control stays on the display for
+choosing, in the order one display has it, so the host's focus never needs
+the main display. A press on the main display still wakes attract, which
+covers both. The showcase is a pure function of what the catalog shows
+(`src/pico-showcase-view.ts`); the components that carry a stage take
+`stage="elsewhere"` and draw only their controls.
+
+With no `displays`, or one, Pico draws one screen exactly as before. The
+gameplay overlay is always one screen: the host gives it one display.
+
+Until the treaty in `contracts/surface/` carries `SurfaceDisplay`,
+`src/pico-surface-display.ts` holds a byte-for-byte copy. Delete it when the
+treaty lands, and import from the treaty.
+
+Caliper's `rgds` device (640 × 960) shows both RG DS displays at once
+(`ui/templates/PicoDisplays.template.part.tsx`); `rgds-side` puts them side
+by side.
 
 ## Supported UI
 
@@ -367,7 +406,7 @@ bun install
 bun run caliper   # then open http://localhost:5173/__caliper/
 ```
 
-Caliper finds everything else from the source: the 85 `*.part.tsx` files, the
+Caliper finds everything else from the source: the 90 `*.part.tsx` files, the
 entry (`package.json` `exports["."]`), stylesheets and the wrapper
 (`<div className="pico-theme pico-screen">` in `src/PicoSurface.tsx`). Its Setup
 panel shows where each came from.
@@ -388,8 +427,8 @@ meaningful alternate inputs of the same real component. Caliper lists these
 states under the part; **All states** shows them together. Fixtures use the
 existing surface treaty and component props, with no backend or request swapping.
 
-The audit covers all 85 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
-so their default examples are their only states. A second export would duplicate
+The audit covers all 90 parts. `PicoPaletteBar`, `PicoPixelDisc` and
+`PicoEmptySlot` have no inputs, so their default examples are their only states. A second export would duplicate
 the same output. Other parts include alternate inputs such as missing artwork,
 long content, disabled actions, loading, errors, and empty collections where
 those cases belong to the component's contract.

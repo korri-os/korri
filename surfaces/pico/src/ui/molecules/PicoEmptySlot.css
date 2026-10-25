@@ -1,0 +1,24 @@
+/* Centred in whatever room it is given. The mouth is as wide as a cart slot
+ * reads on a handheld, and never wider than its room; the palette hangs over
+ * it at half its width, like the label edge of a cart about to go in. */
+.pico-empty-slot {
+	display: grid;
+	justify-items: center;
+	align-content: center;
+	gap: calc(var(--pico-u) * 3);
+	width: 100%;
+	height: 100%;
+}
+
+.pico-empty-slot-label {
+	display: block;
+	width: min(36%, calc(var(--pico-px) * 100));
+}
+
+.pico-empty-slot-mouth {
+	display: block;
+	width: min(72%, calc(var(--pico-px) * 200));
+	height: calc(var(--pico-px) * 14);
+	background: var(--pico-floor);
+	border-top: calc(var(--pico-px) * 3) solid var(--pico-floor-edge);
+}

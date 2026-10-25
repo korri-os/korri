@@ -14,3 +14,10 @@
 .pico-catalog-covers {
 	display: contents;
 }
+
+/* The main display's layer when Pico has two: the showcase, and attract over
+ * it. Like the catalog's, it exists to hear a press. */
+.pico-catalog-show {
+	position: relative;
+	height: 100%;
+}

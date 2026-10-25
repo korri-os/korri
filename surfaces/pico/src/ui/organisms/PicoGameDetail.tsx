@@ -21,18 +21,48 @@ import { PicoGameStage } from "./PicoGameStage"
  * A download running in the background draws its bar above Play. The bar is
  * a few virtual pixels tall, so it stays on a screen too short for the chip
  * that words it, and its label carries the same words.
+ *
+ * With `stage="elsewhere"` another display shows the game, so this screen is
+ * the deck: the bar, Play and Korri's actions, in the same order.
  */
 export function PicoGameDetail({
   game,
   actions,
   onPlay,
   onRunAction,
+  stage = "here",
 }: {
   readonly game: PicoDetailView
   readonly actions: readonly SurfaceAction[]
   readonly onPlay: () => void
   readonly onRunAction: (action: SurfaceAction) => void
+  /** Where the game's stage stands: on this screen, or on another display. */
+  readonly stage?: "here" | "elsewhere"
 }) {
+  const controls = (
+    <>
+      {game.downloadProgress === undefined ? null : (
+        <PicoDownloadBar label={game.download ?? "DOWNLOADING"} progress={game.downloadProgress} />
+      )}
+      <div className="pico-game-detail-actions">
+        <PicoButton label={`▶ ${game.primaryLabel}`} onPress={onPlay} />
+        {game.profile === undefined ? null : (
+          <p className="pico-game-detail-profile">
+            <span className="pico-game-detail-profile-caption">PROFILE</span>
+            <span className="pico-game-detail-profile-name">{game.profile}</span>
+          </p>
+        )}
+      </div>
+      <PicoGameActions actions={actions} onRun={onRunAction} />
+    </>
+  )
+  if (stage === "elsewhere") {
+    return (
+      <div className="pico-game-detail" data-stage={stage}>
+        <div className="pico-game-detail-deck">{controls}</div>
+      </div>
+    )
+  }
   return (
     <div className="pico-game-detail">
       <PicoGameStage
@@ -44,19 +74,7 @@ export function PicoGameDetail({
         subtitle={game.subtitle}
         title={game.title}
       >
-        {game.downloadProgress === undefined ? null : (
-          <PicoDownloadBar label={game.download ?? "DOWNLOADING"} progress={game.downloadProgress} />
-        )}
-        <div className="pico-game-detail-actions">
-          <PicoButton label={`▶ ${game.primaryLabel}`} onPress={onPlay} />
-          {game.profile === undefined ? null : (
-            <p className="pico-game-detail-profile">
-              <span className="pico-game-detail-profile-caption">PROFILE</span>
-              <span className="pico-game-detail-profile-name">{game.profile}</span>
-            </p>
-          )}
-        </div>
-        <PicoGameActions actions={actions} onRun={onRunAction} />
+        {controls}
       </PicoGameStage>
     </div>
   )

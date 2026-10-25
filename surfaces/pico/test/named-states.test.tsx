@@ -12,10 +12,11 @@ function partsIn(directory: string): string[] {
   })
 }
 
-// These two ornaments have no inputs. A second export would repeat the same state.
+// These ornaments have no inputs. A second export would repeat the same state.
 const singleStateParts = new Set([
   "ui/atoms/PicoPaletteBar.atom.part.tsx",
   "ui/atoms/PicoPixelDisc.atom.part.tsx",
+  "ui/molecules/PicoEmptySlot.molecule.part.tsx",
 ])
 
 // These inputs intentionally unmount the real component. Keep the exceptions
