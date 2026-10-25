@@ -668,6 +668,13 @@ export interface LaunchRunnerSnapshot {
 	prepare: LaunchRunnerFacts;
 }
 
+export interface LaunchServiceSnapshot {
+	id: string;
+	title: string;
+	schema?: LaunchJsonValue;
+	revision?: string;
+}
+
 export type LaunchPath =
 	| { _tag: "Runner", payload?: undefined }
 	| { _tag: "CpuMin", payload?: undefined }
@@ -723,6 +730,7 @@ export interface LaunchSnapshot {
 	resolved: LaunchResolvedSnapshot;
 	runners: LaunchRunnerSnapshot[];
 	modifiers: LaunchModifierSnapshot[];
+	services: LaunchServiceSnapshot[];
 	profiles: LaunchProfileSnapshot[];
 	selectedProfile?: string;
 	deviceFacts?: LaunchDeviceFacts;

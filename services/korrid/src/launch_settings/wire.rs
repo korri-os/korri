@@ -214,6 +214,7 @@ pub struct LaunchSnapshot {
     pub resolved: LaunchResolvedSnapshot,
     pub runners: Vec<LaunchRunnerSnapshot>,
     pub modifiers: Vec<LaunchModifierSnapshot>,
+    pub services: Vec<LaunchServiceSnapshot>,
     pub profiles: Vec<LaunchProfileSnapshot>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_profile: Option<String>,
@@ -265,4 +266,17 @@ pub struct LaunchContribution {
     pub value: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routine: Option<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchServiceSnapshot {
+    pub id: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[typeshare(serialized_as = "Option<LaunchJsonValue>")]
+    pub schema: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
 }
