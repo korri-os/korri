@@ -18,8 +18,16 @@
       # active at 720x720. Its 50 MHz / 1080 / 764 timing rounds to 61 Hz,
       # matching the retained generic DSI description's default mode.
       drmDevice = "/dev/dri/by-path/platform-display-subsystem-card";
-      outputName = "DSI-1";
-      mode = "720x720@61Hz";
+      mainDisplay = "DSI-1";
+      displays = [
+        {
+          name = "DSI-1";
+          mode = "720x720@61Hz";
+          x = 0;
+          y = 0;
+          touch = null;
+        }
+      ];
       # Derived from the survey's ff400000.gpu platform device and the enabled
       # DTS node, not an observed render link. Device acceptance must verify it.
       renderDevice = "/dev/dri/by-path/platform-ff400000.gpu-render";

@@ -63,8 +63,8 @@ let
     assert lib.elem (toString inputData) (
       map toString c.services.korriLinuxInput.provider.extraDataPackages
     );
-    assert c.services.korriLinuxHost.compositor.outputName == "DSI-1";
-    assert c.services.korriLinuxHost.compositor.mode == "640x480@60Hz";
+    assert c.services.korriLinuxHost.compositor.mainDisplay == "DSI-1";
+    assert (builtins.head c.services.korriLinuxHost.compositor.displays).mode == "640x480@60Hz";
     true;
   gadgets = map (name: configurations.${name}.configuration.config.services.korriProduct.usbGadget) [
     "rg35xxsp"

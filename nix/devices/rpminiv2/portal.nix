@@ -69,8 +69,16 @@ in
       # and render-node timing remain part of the physical product acceptance.
       drmDevice = "/dev/dri/card0";
       renderDevice = "/dev/dri/renderD128";
-      outputName = "DSI-1";
-      mode = "1080x1240@60Hz";
+      mainDisplay = "DSI-1";
+      displays = [
+        {
+          name = "DSI-1";
+          mode = "1080x1240@60Hz";
+          x = 0;
+          y = 0;
+          touch = null;
+        }
+      ];
       renderer = "gles2";
       localInput.enable = true;
       # Hardware-verified rotation for this portrait-native 1080x1240 panel
