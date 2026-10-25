@@ -32,6 +32,7 @@ import type { KorridClient, SessionStartResult } from "../korrid/client"
 import type { LaunchWarning } from "@contracts/generated/korrid"
 import { settingsFrom } from "./settings-model"
 import type { PortalSurface } from "./surface-registry"
+import { useSurfaceDisplays } from "./surface-displays"
 import {
   DOWNLOAD_ACTION_IDS,
   entryForId,
@@ -669,5 +670,6 @@ export function SurfaceRoot({
     ],
   )
 
-  return surface.render({ model, host })
+  const surfaceModel = useSurfaceDisplays(model, surface, korrid)
+  return surface.render({ model: surfaceModel, host })
 }

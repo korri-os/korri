@@ -5,6 +5,7 @@
  * generated treaty; the shared operation tag correlates each request
  * with its response without a hand-maintained map.
  */
+import { SurfaceDisplayScope } from "@contracts/generated/korrid"
 import type {
   ActiveSession,
   Invite,
@@ -23,6 +24,8 @@ import type {
   LibraryFoldersSnapshotOutcome,
   Game,
   HealthOutcome,
+  SurfaceDisplaysOutcome,
+  SurfaceDisplay,
   IdentityBackupOutcome,
   IdentityDataDisposition,
   IdentityRetiredDeleteOutcome,
@@ -125,6 +128,7 @@ export interface KorridClient extends StoreAcquisitionMethods, LaunchSettingsMet
   finishOnboarding(): Promise<OnboardingStatusOutcome>
   /** Put the device back into first-boot setup. Nothing else is cleared. */
   restartOnboarding(): Promise<OnboardingStatusOutcome>
+  surfaceDisplays(displays: "main" | "all", overlay?: boolean, launchId?: string): Promise<SurfaceDisplaysOutcome>
   health(): Promise<HealthOutcome>
   settingsSnapshot(): Promise<SettingsSnapshotOutcome>
   updateSetting(
@@ -405,6 +409,10 @@ export function createHttpKorridClient(
     async restartOnboarding() {
       try { return (await callKorrid(baseUrl, capability, { _tag: "system.onboarding.restart", payload: {} })).outcome }
       catch { return onboardingUnavailable() }
+    },
+    async surfaceDisplays(displays, overlay = false, launchId) {
+      try { return (await callKorrid(baseUrl, capability, { _tag: "app.surface.displays", payload: { displays: displays === "all" ? SurfaceDisplayScope.All : SurfaceDisplayScope.Main, overlay, ...(launchId === undefined ? {} : { launchId }) } })).outcome }
+      catch (error) { return unreachable(error) }
     },
     async health() {
       try {
@@ -1115,6 +1123,7 @@ export interface InMemoryArtifact {
 }
 
 export interface InMemoryKorridClientConfig {
+  readonly displays?: readonly SurfaceDisplay[]
   /** Same-owner live sessions, already cached by the daemon, with the
    * netplay route this device has for each. */
   readonly invites?: readonly Invite[] | (() => readonly Invite[])
@@ -1546,6 +1555,13 @@ export function createInMemoryKorridClient(
     async onboardingStatus() { return { _tag: "Ok", payload: { needed: onboardingNeeded } } },
     async finishOnboarding() { onboardingNeeded = false; return { _tag: "Ok", payload: { needed: false } } },
     async restartOnboarding() { onboardingNeeded = true; return { _tag: "Ok", payload: { needed: true } } },
+    async surfaceDisplays(displays) {
+      const facts = config.displays ?? []
+      const selected = displays === "all" ? facts : facts.filter(display => display.main)
+      const x = selected.length === 0 ? 0 : Math.min(...selected.map(display => display.x))
+      const y = selected.length === 0 ? 0 : Math.min(...selected.map(display => display.y))
+      return { _tag: "Ok", payload: selected.map(display => ({ ...display, x: display.x - x, y: display.y - y })) }
+    },
     async health() {
       return { _tag: "Ok", payload: { version: "korrid-in-memory" } }
     },

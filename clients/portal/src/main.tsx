@@ -129,6 +129,8 @@ async function mountPortal() {
     document.documentElement.dataset.korriGameplayOverlay = ""
     root.render(
       <OverlayRoot
+        launchId={active.launchId}
+        korrid={korrid}
         bus={bus}
         controller={createLiveOverlayController({
           launchId: active.launchId,

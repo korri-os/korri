@@ -620,3 +620,22 @@ describe("sensitive settings", () => {
     )
   })
 })
+
+describe("surface displays", () => {
+  it("sends the surface opt-in and exact overlay launch over localhost HTTP", async () => {
+    const requests: unknown[] = []
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+      requests.push(await request.json())
+      return Response.json({ _tag: "app.surface.displays", outcome: { _tag: "Ok", payload: [] } })
+    } })
+    try {
+      const client = createHttpKorridClient(server.url.origin, "capability")
+      expect(await client.surfaceDisplays("main")).toEqual({ _tag: "Ok", payload: [] })
+      await client.surfaceDisplays("all", true, "exact-launch")
+      expect(requests).toEqual([
+        { _tag: "app.surface.displays", payload: { displays: "main", overlay: false } },
+        { _tag: "app.surface.displays", payload: { displays: "all", overlay: true, launchId: "exact-launch" } },
+      ])
+    } finally { server.stop(true) }
+  })
+})

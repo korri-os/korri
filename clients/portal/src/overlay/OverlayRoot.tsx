@@ -3,11 +3,15 @@ import type {
   SurfaceInputAction,
 } from "@contracts/surface/korri-surface"
 import { useEffect, useMemo, useSyncExternalStore } from "react"
+import { useSurfaceDisplays } from "../surface/surface-displays"
+import type { KorridClient } from "../korrid/client"
 import type { InputBus } from "../input/bus"
 import type { PortalSurface } from "../surface/surface-registry"
 import type { OverlayController } from "./in-memory-overlay-controller"
 
 export interface OverlayRootProps {
+  readonly launchId?: string
+  readonly korrid?: Pick<KorridClient, "surfaceDisplays">
   readonly bus: InputBus
   readonly controller: OverlayController
   readonly surface: PortalSurface
@@ -16,6 +20,8 @@ export interface OverlayRootProps {
 /** Dedicated portal composition: one controller-backed model, one treaty host,
  * and the surface's own entry. The portal never reaches into a surface's sheet. */
 export function OverlayRoot({
+  launchId,
+  korrid,
   bus,
   controller,
   surface,
@@ -76,5 +82,6 @@ export function OverlayRoot({
     [bus, controller],
   )
 
-  return surface.render({ model, host })
+  const surfaceModel = useSurfaceDisplays(model, surface, korrid, launchId, controller)
+  return surface.render({ model: surfaceModel, host })
 }

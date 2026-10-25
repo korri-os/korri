@@ -29,6 +29,8 @@ export type PortalPresentation = "catalog" | "gameplay-overlay"
 export interface PortalSurface {
   readonly id: string
   readonly title: string
+  /** Absent means main display only. */
+  readonly displays?: "main" | "all"
   readonly presentations: readonly PortalPresentation[]
   readonly render: (props: {
     readonly model: SurfaceModel
@@ -43,18 +45,21 @@ export interface PortalSurface {
 export const PORTAL_SURFACES: readonly PortalSurface[] = [
   {
     id: "pico",
+    displays: "all",
     title: "Pico",
     presentations: ["catalog", "gameplay-overlay"],
     render: ({ model, host }) => <PicoSurface host={host} model={model} />,
   },
   {
     id: "zone",
+    displays: "main",
     title: "Zone",
     presentations: ["catalog", "gameplay-overlay"],
     render: ({ model, host }) => <ZoneSurface host={host} model={model} />,
   },
   {
     id: "boxbuster",
+    displays: "main",
     title: "Boxbuster",
     presentations: ["catalog"],
     render: ({ model, host }) => (

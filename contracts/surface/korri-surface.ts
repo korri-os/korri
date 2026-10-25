@@ -795,7 +795,20 @@ export interface SurfaceInvite {
 }
 
 /** Everything Korri publishes to the surface. Replaced wholesale on change. */
+/** One display a surface draws on, in CSS pixels of the surface's viewport. */
+export interface SurfaceDisplay {
+  readonly id: string
+  readonly main: boolean
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+  readonly touch: boolean
+}
+
 export interface SurfaceModel {
+  /** Present only for a surface registered with displays: "all". */
+  readonly displays?: readonly SurfaceDisplay[]
   readonly presentation: SurfacePresentation
   readonly catalog: SurfaceCatalog
   readonly status: SurfaceStatus

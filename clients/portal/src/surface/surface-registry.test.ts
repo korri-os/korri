@@ -69,3 +69,9 @@ describe("the surface registry", () => {
     expect(portalSurfaceFor("catalog").id).toBe(DEFAULT_SURFACE_ID)
   })
 })
+
+test("only Pico opts into all displays", () => {
+  expect(portalSurfaceById("pico")?.displays).toBe("all")
+  expect(portalSurfaceById("zone")?.displays).toBe("main")
+  expect(portalSurfaceById("boxbuster")?.displays).toBe("main")
+})
