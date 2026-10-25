@@ -25,6 +25,12 @@ in
   uboot = configuration.pkgs.callPackage ./uboot.nix { };
   inherit kernelCross;
   ubootCross = crossPkgs.callPackage ./uboot.nix { };
+  mppCheck =
+    pkgs:
+    import ../rockchip/mpp-check.nix {
+      inherit pkgs configuration;
+      device = "rgds";
+    };
   moduleCheck = pkgs: import ./module-check.nix { inherit pkgs configuration; };
   inputplumberData =
     pkgs: inputplumber: import ./inputplumber-data.nix { inherit pkgs inputplumber; };

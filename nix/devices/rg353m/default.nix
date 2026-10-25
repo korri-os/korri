@@ -49,7 +49,12 @@ rec {
     import ./diagnostics-check.nix {
       inherit pkgs configuration;
     };
-  mppCheck = pkgs: import ./mpp-check.nix { inherit pkgs configuration; };
+  mppCheck =
+    pkgs:
+    import ../rockchip/mpp-check.nix {
+      inherit pkgs configuration;
+      device = "rg353m";
+    };
   audioCheck =
     pkgs:
     import ./audio-check.nix {

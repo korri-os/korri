@@ -304,6 +304,7 @@
               korri = self;
             };
             rgds = rgds.moduleCheck pkgs;
+            rgds-mpp = rgds.mppCheck pkgs;
             h700 = import ./nix/devices/h700/module-check.nix {
               inherit pkgs;
               korri = self;

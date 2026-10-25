@@ -11,7 +11,7 @@ stdenv.mkDerivation {
   pname = "rk-mpp-service-r36tmax";
   inherit (kernel) version;
 
-  src = ../../rg353m/rk-mpp-service/src;
+  src = ../../rockchip/rk-mpp-service/src;
 
   nativeBuildInputs = kernel.moduleBuildDependencies ++ [
     dtc

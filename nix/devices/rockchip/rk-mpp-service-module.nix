@@ -7,6 +7,7 @@
   kernel,
   dtc,
   python3,
+  overlay ? ./rk-mpp-service-overlay.dts,
   ...
 }:
 
@@ -26,7 +27,7 @@ stdenv.mkDerivation {
 
     dtc -@ -I dts -O dtb \
       -o rk-mpp-service-overlay.dtbo \
-      ${./rk-mpp-service-overlay.dts}
+      ${overlay}
 
     python3 - <<'PY'
     from pathlib import Path
@@ -58,7 +59,7 @@ stdenv.mkDerivation {
   '';
 
   meta = {
-    description = "Rockchip MPP RKVENC-v1 service for the RG353M";
+    description = "Rockchip MPP RKVENC-v1 service for RK3566/RK3568";
     license = with lib.licenses; [
       gpl2Plus
       mit

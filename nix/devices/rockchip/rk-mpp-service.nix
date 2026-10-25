@@ -1,5 +1,9 @@
-# Device kernel support for the RK3566 RKVENC H.264 encoder. The Sunshine
+# Device kernel support for the RK356x RKVENC H.264 encoder. The Sunshine
 # plugin supplies MPP userspace; the device owns the driver and its binding.
+{
+  device,
+  overlay ? ./rk-mpp-service-overlay.dts,
+}:
 {
   config,
   lib,
@@ -7,7 +11,7 @@
 }:
 {
   boot.extraModulePackages = [
-    (config.boot.kernelPackages.callPackage ./rk-mpp-service-module.nix { })
+    (config.boot.kernelPackages.callPackage ./rk-mpp-service-module.nix { inherit overlay; })
   ];
   # MPP 1.1.0 prefers a DMA heap over its vendor DRM allocator. Mainline's
   # Panfrost render node cannot serve that allocator's Rockchip GEM ioctl.
@@ -18,8 +22,8 @@
 
   hardware.deviceTree.overlays = lib.mkAfter [
     {
-      name = "rg353m-rkvenc-mpp";
-      dtsFile = ./rk-mpp-service-overlay.dts;
+      name = "${device}-rkvenc-mpp";
+      dtsFile = overlay;
     }
   ];
 

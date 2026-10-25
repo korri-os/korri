@@ -6,7 +6,7 @@
 `cc40cae9824fe8ff75d241fa8fa3272f9e1a67b5b7e819a5fb05b757b8034772`.
 
 The module derivation composes this file with Korri's existing common files and
-UAPI header in `nix/devices/rg353m/rk-mpp-service/src/`, rather than keeping a
+UAPI header in `nix/devices/rockchip/rk-mpp-service/src/`, rather than keeping a
 second copy of them. Those files were already adapted for mainline DMA/IOMMU
 APIs while porting RK3566 RKVENC; the same adaptations apply here.
 

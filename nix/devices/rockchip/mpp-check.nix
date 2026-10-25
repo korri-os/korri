@@ -1,8 +1,12 @@
-# Check the modules and merged DTB selected by the actual RG353M image.
-{ pkgs, configuration }:
+# Check the modules and merged DTB selected by the actual device image.
+{
+  pkgs,
+  configuration,
+  device,
+}:
 let
   inherit (pkgs) lib;
-  config = configuration.config;
+  inherit (configuration) config;
   kernel = config.boot.kernelPackages.kernel;
   selected = lib.findFirst (
     p: lib.getName p == "rk-mpp-service-rkvenc"
@@ -10,16 +14,20 @@ let
   modules = "${selected}/lib/modules/${kernel.modDirVersion}/updates";
   dtb = "${config.hardware.deviceTree.package}/${config.hardware.deviceTree.name}";
 in
-assert lib.assertMsg (selected != null) "RG353M image must contain its RKMPP encoder kernel module";
+assert lib.assertMsg (
+  selected != null
+) "${device} image must contain its RKMPP encoder kernel module";
 assert builtins.elem "rk_vcodec" config.boot.kernelModules;
 assert lib.assertMsg (builtins.elem "system_heap" config.boot.kernelModules)
-  "RG353M RKMPP needs a loaded system DMA heap for buffer allocation";
-assert lib.any (overlay: overlay.name == "rg353m-rkvenc-mpp") config.hardware.deviceTree.overlays;
+  "${device} RKMPP needs a loaded system DMA heap for buffer allocation";
+assert lib.any (
+  overlay: overlay.name == "${device}-rkvenc-mpp"
+) config.hardware.deviceTree.overlays;
 assert lib.hasInfix ''KERNEL=="mpp_service", GROUP="video", MODE="0660"''
   config.services.udev.extraRules;
 assert lib.hasInfix ''SUBSYSTEM=="dma_heap", KERNEL=="system", GROUP="video", MODE="0660"''
   config.services.udev.extraRules;
-pkgs.runCommand "rg353m-mpp-check"
+pkgs.runCommand "${device}-mpp-check"
   {
     nativeBuildInputs = [
       pkgs.kmod
@@ -44,5 +52,5 @@ pkgs.runCommand "rg353m-mpp-check"
     test "$(fdtget -t x ${dtb} /rkvenc@fdf40000 reg)" = '0 fdf40000 0 400'
     test "$(fdtget -t x ${dtb} /rkvenc@fdf40000 iommus)" = "$(fdtget -t x ${dtb} /iommu@fdf40f00 phandle)"
     test "$(fdtget ${dtb} /iommu@fdf40f00 status)" = okay
-    cp ${dtb} "$out/rk3566-anbernic-rg353p.dtb"
+    cp ${dtb} "$out/$(basename ${dtb})"
   ''

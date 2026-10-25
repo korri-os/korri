@@ -16,7 +16,7 @@ in
     ./audio.nix
     ./bluetooth.nix
     ./gpu.nix
-    ./rk-mpp-service.nix
+    (import ../rockchip/rk-mpp-service.nix { device = "rg353m"; })
     ./firmware.nix
     ./nixpkgs-registry.nix
   ];

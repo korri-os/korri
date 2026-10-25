@@ -12,6 +12,7 @@ in
 {
   imports = [
     (import ../../formats/sd-card.nix { gpt = false; })
+    ./rk-mpp-service.nix
   ];
   nixpkgs.hostPlatform = "aarch64-linux";
   # No suspend or light-sleep path has been verified on this board.
