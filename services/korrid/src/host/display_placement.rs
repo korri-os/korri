@@ -296,6 +296,7 @@ pub(crate) fn place_surface(
     scope: SurfaceDisplayScope,
     game: Option<&Placement>,
     pids: &std::collections::BTreeSet<i32>,
+    portal_pids: &std::collections::BTreeSet<i32>,
     identities: &[&str],
 ) -> Result<Vec<SurfaceDisplay>, String> {
     use super::compositor_focus::{select_focus_target, FocusTarget};
@@ -304,7 +305,7 @@ pub(crate) fn place_surface(
         return Ok(rectangles);
     }
     let tree = control.tree()?;
-    let portal = super::compositor_focus::portal_node(&tree, identities)?;
+    let portal = super::compositor_focus::portal_node(&tree, portal_pids)?;
     let mut occupied = game.map(|p| p.outputs.clone()).unwrap_or_default();
     occupied.extend(rectangles.iter().map(|d| d.id.clone()));
     apply(control, &power_commands(displays, &occupied))?;
@@ -511,6 +512,7 @@ fi
             SurfaceDisplayScope::All,
             Some(&p),
             &pids,
+            &[100].into_iter().collect(),
             &["portal"],
         )
         .unwrap();
@@ -526,6 +528,7 @@ fi
             SurfaceDisplayScope::All,
             Some(&single),
             &pids,
+            &[100].into_iter().collect(),
             &["portal"],
         )
         .unwrap();
@@ -534,6 +537,33 @@ fi
         place_game(&control, &ds, &single, &pids, &["portal"]).unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands.contains("output DSI-1 power off"));
+    }
+
+    #[test]
+    fn surface_placement_refuses_zero_or_multiple_windows_owned_by_the_kiosk_unit() {
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        let portal_pids = [2603].into_iter().collect();
+        for tree in [
+            r#"{"nodes":[{"id":10,"pid":999,"app_id":"chromium-browser"}]}"#,
+            r#"{"nodes":[{"id":10,"pid":2603,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default"},{"id":11,"pid":2603,"app_id":"second-window"}]}"#,
+        ] {
+            std::fs::write(dir.path().join("tree"), tree).unwrap();
+            assert_eq!(
+                place_surface(
+                    &control,
+                    &displays(),
+                    SurfaceDisplayScope::All,
+                    None,
+                    &std::collections::BTreeSet::new(),
+                    &portal_pids,
+                    &["chromium-browser"]
+                )
+                .unwrap_err(),
+                "no unique portal window"
+            );
+            assert!(!dir.path().join("commands").exists());
+        }
     }
 
     #[test]
