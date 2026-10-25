@@ -17,6 +17,42 @@ pub(crate) fn choosable(runner: &crate::plugin::RunnerRecord) -> bool {
         && runner.releases.as_ref().is_none_or(Vec::is_empty))
 }
 
+enum SettingsOwner<'a> {
+    Runner,
+    Modifier(&'a str),
+    Service(&'a str),
+}
+
+fn authored_paths(
+    config: &ConfigSnapshot,
+    route: &ResolvedRoute,
+    owner: SettingsOwner<'_>,
+) -> Vec<String> {
+    let mut paths = BTreeSet::new();
+    for cell in super::launch::cells(config, route, None) {
+        let settings = match &owner {
+            SettingsOwner::Runner => cell.settings.map(|record| &record.settings),
+            SettingsOwner::Modifier(id) => cell
+                .values
+                .modifiers
+                .get(*id)
+                .map(|record| &record.settings),
+            SettingsOwner::Service(id) => {
+                cell.values.services.get(*id).map(|record| &record.settings)
+            }
+        };
+        if let Some(settings) = settings {
+            paths.extend(
+                crate::config::cascade::leaves(settings)
+                    .0
+                    .into_iter()
+                    .map(|(path, _)| path),
+            );
+        }
+    }
+    paths.into_iter().collect()
+}
+
 fn checked_settings(
     registry: &PluginRegistry,
     id: &str,
@@ -207,12 +243,17 @@ pub fn snapshot_for_person(
                 &package.sources,
             )
             .map_err(SettingsError::Invalid)?;
-            let description = crate::launcher::typed_settings::describe(
+            let mut description = crate::launcher::typed_settings::describe(
                 &source,
                 &declaration.id,
                 &package.package.display().to_string(),
             )
             .map_err(SettingsError::Invalid)?;
+            description.include_paths(
+                &authored_paths(&config, &route, SettingsOwner::Modifier(&declaration.id)),
+                &declaration.id,
+                &package.package.display().to_string(),
+            );
             if let Some(record) = folded.modifiers.get_mut(&declaration.id) {
                 checked_settings(
                     registry,
@@ -262,12 +303,17 @@ pub fn snapshot_for_person(
                 &package.sources,
             )
             .map_err(SettingsError::Invalid)?;
-            let description = crate::launcher::typed_settings::describe(
+            let mut description = crate::launcher::typed_settings::describe(
                 &source,
                 SUNSHINE,
                 &package.package.display().to_string(),
             )
             .map_err(SettingsError::Invalid)?;
+            description.include_paths(
+                &authored_paths(&config, &route, SettingsOwner::Service(SUNSHINE)),
+                SUNSHINE,
+                &package.package.display().to_string(),
+            );
             if let Some(record) = folded.services.get_mut(SUNSHINE) {
                 checked_settings(
                     registry,
@@ -325,7 +371,7 @@ pub fn snapshot_for_person(
             let package = registry
                 .installed_package(&id)
                 .map_err(|e| SettingsError::Invalid(e.to_string()))?;
-            let description = (|| {
+            let mut description = (|| {
                 let source = crate::script::source::SourceSnapshot::package_plugin(
                     &package.package,
                     &package.entry,
@@ -357,6 +403,13 @@ pub fn snapshot_for_person(
             })();
             if !choosable(declaration) {
                 let settings_route = runner_settings_context(&config, registry, &id, game_id);
+                if let Ok(description) = &mut description {
+                    description.include_paths(
+                        &authored_paths(&config, &settings_route, SettingsOwner::Runner),
+                        &id,
+                        &package.package.display().to_string(),
+                    );
+                }
                 let mut settings_only =
                     resolve_launch(&config, &settings_route, None, facts.as_ref())?;
                 notices.extend(settings_only.notices.into_iter().filter(|n| {
@@ -390,6 +443,13 @@ pub fn snapshot_for_person(
                 });
             }
             if selected.as_deref() == Some(&id) {
+                if let Ok(description) = &mut description {
+                    description.include_paths(
+                        &authored_paths(&config, &route, SettingsOwner::Runner),
+                        &id,
+                        &package.package.display().to_string(),
+                    );
+                }
                 checked_settings(
                     registry,
                     &id,

@@ -148,10 +148,33 @@ pub fn set_leaf(
     }
 }
 
+/// A literal property wins over the first matching pattern, as RetroArch's
+/// validator does. JSON Schema patterns match substrings unless anchored.
+pub fn schema_child<'a>(
+    schema: &'a serde_json::Value,
+    name: &str,
+) -> Option<&'a serde_json::Value> {
+    schema
+        .get("properties")
+        .and_then(|properties| properties.get(name))
+        .or_else(|| {
+            schema
+                .get("patternProperties")?
+                .as_object()?
+                .iter()
+                .find_map(|(pattern, property)| {
+                    regex::Regex::new(pattern)
+                        .ok()
+                        .filter(|pattern| pattern.is_match(name))
+                        .map(|_| property)
+                })
+        })
+}
+
 pub fn schema_leaf<'a>(schema: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
     let mut property = schema;
     for segment in path.split('.') {
-        property = property.get("properties")?.get(segment)?;
+        property = schema_child(property, segment)?;
     }
     (property.get("type").and_then(serde_json::Value::as_str) != Some("object")).then_some(property)
 }

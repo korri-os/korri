@@ -572,3 +572,203 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
     )
     .is_err());
 }
+
+#[test]
+fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_paths() {
+    use crate::launch_settings::{
+        self as ls, LaunchLayer, LaunchNotice, LaunchPath, LaunchPlace, LaunchRunnerScope,
+        LaunchSetRequest,
+    };
+    use serde_json::json;
+    let game = DiscoveredGame::new();
+    let package = game
+        .registry
+        .installed_package(&game.route.runner_id)
+        .unwrap();
+    // Exact ports shape and leaf constraints from RetroArch's policy.ts:
+    // ports(section({...})), with the numeric-key pattern owned by that plugin.
+    let schema = json!({"type":"object","additionalProperties":false,"properties":{"input":{"type":"object","additionalProperties":false,"properties":{"ports":{"type":"object","additionalProperties":false,"patternProperties":{"^[1-9][0-9]*$":{"type":"object","additionalProperties":false,"properties":{"libretro-device":{"type":"integer","minimum":0,"maximum":9007199254740991_u64},"joypad-index":{"type":"integer","minimum":0,"maximum":9007199254740991_u64},"analog-dpad-mode":{"type":"string","enum":["none","left-analog","right-analog","left-analog-forced","right-analog-forced"]}}}}}}}}});
+    let handlers = format!(
+        r#"export const handlers = {{
+      'settings.describe':()=>({{schema:{schema},revision:'ports-v1'}}),
+      'settings.validate':input=>({{valid:true,diagnostics:input.values.input?.ports?.['2']?.['joypad-index']===-1?[{{code:'port-index',severity:'error',path:['input','ports','2','joypad-index'],message:'invalid joypad index'}}]:[]}}),
+      'launch.prepare':input=>({{command:input.program,args:[JSON.stringify(input.overrides.settings)],env:{{}}}})
+    }}"#
+    );
+    let source = include_str!("../../examples/libretro-core.plugin.ts")
+        .replace("export { handlers } from \"./retroarch\"", &handlers);
+    fs::write(package.package.join("plugin.ts"), source).unwrap();
+    let private = tempfile::tempdir().unwrap();
+    let lock = std::sync::Mutex::new(());
+    let client = ls::helper::Client {
+        socket: game.root.path().join("absent.sock"),
+    };
+    let mut request = LaunchSetRequest {
+        clear: false,
+        place: LaunchPlace {
+            layer: LaunchLayer::Game(game.route.playable_id.clone()),
+            scope: LaunchRunnerScope::Runner(game.route.runner_id.clone()),
+        },
+        path: LaunchPath::Setting { key: String::new() },
+        value: None,
+        expected_revision: crate::config::settings::runner_choice_revisions(game.root.path())
+            .unwrap()
+            .games,
+    };
+    for scope in [
+        LaunchRunnerScope::Runner(game.route.runner_id.clone()),
+        LaunchRunnerScope::Family("@korri:retroarch".into()),
+    ] {
+        request.place.scope = scope;
+        for (port, leaf, value) in [
+            ("1", "libretro-device", json!(1)),
+            ("2", "joypad-index", json!(0)),
+            ("12", "analog-dpad-mode", json!("left-analog")),
+        ] {
+            let key = format!("input.ports.{port}.{leaf}");
+            request.path = LaunchPath::Setting { key };
+            request.clear = false;
+            request.value = Some(value.clone());
+            request.expected_revision = ls::set_with_registry(
+                game.root.path(),
+                private.path(),
+                &lock,
+                &request,
+                &client,
+                Some(&game.registry),
+            )
+            .unwrap()
+            .games;
+            let document: serde_json::Value = serde_yaml::from_str(
+                &fs::read_to_string(game.root.path().join("catalog/library.yaml")).unwrap(),
+            )
+            .unwrap();
+            let (kind, id) = match &request.place.scope {
+                LaunchRunnerScope::Runner(id) => ("runners", id),
+                LaunchRunnerScope::Family(id) => ("families", id),
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                document["library"][&game.route.playable_id][kind][id]["settings"]["input"]
+                    ["ports"][port][leaf],
+                value
+            );
+            request.clear = true;
+            request.value = None;
+            request.expected_revision = ls::set_with_registry(
+                game.root.path(),
+                private.path(),
+                &lock,
+                &request,
+                &client,
+                Some(&game.registry),
+            )
+            .unwrap()
+            .games;
+            let document: serde_json::Value = serde_yaml::from_str(
+                &fs::read_to_string(game.root.path().join("catalog/library.yaml")).unwrap(),
+            )
+            .unwrap();
+            assert!(
+                document["library"][&game.route.playable_id][kind][id]["settings"]["input"]
+                    ["ports"][port][leaf]
+                    .is_null()
+            );
+            request.clear = false;
+            request.expected_revision = ls::set_with_registry(
+                game.root.path(),
+                private.path(),
+                &lock,
+                &request,
+                &client,
+                Some(&game.registry),
+            )
+            .unwrap()
+            .games;
+        }
+    }
+    request.clear = false;
+    for key in [
+        "input.ports.0.joypad-index",
+        "input.ports.invalid.joypad-index",
+        "input.ports.2.unknown",
+    ] {
+        request.path = LaunchPath::Setting { key: key.into() };
+        request.value = Some(json!(0));
+        assert!(
+            ls::set_with_registry(
+                game.root.path(),
+                private.path(),
+                &lock,
+                &request,
+                &client,
+                Some(&game.registry)
+            )
+            .is_err(),
+            "{key}"
+        );
+    }
+    // An externally authored bad value still skips only the concrete port leaf.
+    let path = game.root.path().join("device.yaml");
+    let mut device: serde_json::Value =
+        serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    device["host"] = json!({"runners":{game.route.runner_id.clone():{"settings":{"input":{"ports":{"2":{"joypad-index":-1,"libretro-device":1}}}}}}});
+    fs::write(&path, serde_yaml::to_string(&device).unwrap()).unwrap();
+    let snapshot = ls::snapshot(
+        game.root.path(),
+        Some(&game.registry),
+        Some(&game.route.playable_id),
+        &client,
+    )
+    .unwrap();
+    assert!(snapshot.notices.iter().any(|notice|matches!(notice,LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},runner_id:Some(id),..} if key=="input.ports.2.joypad-index" && id==&game.route.runner_id)));
+    assert_eq!(
+        snapshot.resolved.values["settings.input.ports.2.libretro-device"].value,
+        1
+    );
+    assert!(!snapshot
+        .resolved
+        .values
+        .contains_key("settings.input.ports.2.joypad-index"));
+    // A pattern default applies only after an authored key instantiates the
+    // pattern, even if that key's only authored leaf is cleared.
+    let mut default_schema = schema.clone();
+    default_schema["properties"]["input"]["properties"]["ports"]["patternProperties"]
+        ["^[1-9][0-9]*$"]["properties"]["joypad-index"]["default"] = json!(0);
+    let source = fs::read_to_string(package.package.join("plugin.ts"))
+        .unwrap()
+        .replace(&schema.to_string(), &default_schema.to_string());
+    fs::write(package.package.join("plugin.ts"), source).unwrap();
+    request.place.scope = LaunchRunnerScope::Runner(game.route.runner_id.clone());
+    request.path = LaunchPath::Setting {
+        key: "input.ports.3.joypad-index".into(),
+    };
+    request.clear = true;
+    request.value = None;
+    ls::set_with_registry(
+        game.root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&game.registry),
+    )
+    .unwrap();
+    let snapshot = ls::snapshot(
+        game.root.path(),
+        Some(&game.registry),
+        Some(&game.route.playable_id),
+        &client,
+    )
+    .unwrap();
+    let value = &snapshot.resolved.values["settings.input.ports.3.joypad-index"];
+    assert_eq!(value.value, 0);
+    assert!(matches!(
+        value.source,
+        Some(ls::LaunchSource::PluginDefault { .. })
+    ));
+    assert!(!snapshot
+        .resolved
+        .values
+        .contains_key("settings.input.ports.4.joypad-index"));
+}

@@ -1293,6 +1293,49 @@ export interface PluginSetting {
 	enabled: boolean;
 }
 
+/** Named plugin settings operations share the nested settings vocabulary. */
+export interface PluginSettingsDescribeInput {
+	id: string;
+}
+
+export interface PluginSettingsDescribeOutput {
+	schema: LaunchJsonValue;
+	revision: string;
+}
+
+export enum PluginSettingsDiagnosticSeverity {
+	Error = "error",
+	Warning = "warning",
+	Info = "info",
+}
+
+export interface PluginSettingsDiagnostic {
+	code: string;
+	severity: PluginSettingsDiagnosticSeverity;
+	message: string;
+	path?: string[];
+}
+
+export interface PluginSettingsRenderInput {
+	id: string;
+	settings: Record<string, LaunchSettingValue>;
+	display?: PluginDisplay;
+}
+
+export interface PluginSettingsRenderOutput {
+	args: string[];
+}
+
+export interface PluginSettingsValidateInput {
+	values: Record<string, LaunchSettingValue>;
+	revision: string;
+}
+
+export interface PluginSettingsValidateOutput {
+	valid: boolean;
+	diagnostics?: PluginSettingsDiagnostic[];
+}
+
 export interface ProviderClaim {
 	_tag: ProviderClaimTag;
 	providerId: string;

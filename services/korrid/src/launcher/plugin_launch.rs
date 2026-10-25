@@ -111,6 +111,75 @@ pub struct PluginComposeInput {
     pub display: Option<PluginDisplay>,
 }
 
+/// Named plugin settings operations share the nested settings vocabulary.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginSettingsDescribeInput {
+    pub id: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginSettingsDescribeOutput {
+    #[typeshare(serialized_as = "LaunchJsonValue")]
+    pub schema: serde_json::Value,
+    pub revision: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginSettingsValidateInput {
+    pub values: HashMap<String, crate::config::cascade::LaunchSettingValue>,
+    pub revision: String,
+}
+
+#[typeshare]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PluginSettingsDiagnosticSeverity {
+    Error,
+    Warning,
+    Info,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PluginSettingsDiagnostic {
+    pub code: String,
+    pub severity: PluginSettingsDiagnosticSeverity,
+    pub message: String,
+    #[serde(default)]
+    pub path: Vec<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PluginSettingsValidateOutput {
+    pub valid: bool,
+    #[serde(default)]
+    pub diagnostics: Vec<PluginSettingsDiagnostic>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginSettingsRenderInput {
+    pub id: String,
+    pub settings: HashMap<String, crate::config::cascade::LaunchSettingValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<PluginDisplay>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginSettingsRenderOutput {
+    pub args: Vec<String>,
+}
+
 /// Private CLI handoff, not a plugin declaration or persisted configuration.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

@@ -368,7 +368,7 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
 #[test]
 fn plugin_settings_scope_mark_defaults_shared_and_only_accepts_device() {
     use korrid::launcher::typed_settings::{describe, SettingScope};
-    let source = SourceSnapshot::plugin("export const name = 'scope'; export const handlers = {'settings.describe': () => ({schema:{properties:{video:{type:'string'}, clock:{type:'number','x-korri-scope':'device'},bad:{'x-korri-scope':'shared'},number:{'x-korri-scope':1},nil:{'x-korri-scope':null}}}})};").unwrap();
+    let source = SourceSnapshot::plugin("export const name = 'scope'; export const handlers = {'settings.describe': () => ({revision:'scope-v1',schema:{properties:{video:{type:'string'}, clock:{type:'number','x-korri-scope':'device'},bad:{'x-korri-scope':'shared'},number:{'x-korri-scope':1},nil:{'x-korri-scope':null}}}})};").unwrap();
     let result = describe(&source, "@test:runner/main", "build").unwrap();
     assert_eq!(result.scopes["video"], SettingScope::Shared);
     assert_eq!(result.scopes["clock"], SettingScope::Device);
@@ -403,4 +403,126 @@ fn schema_defaults_are_display_only_and_keep_the_runner_revision() {
     assert_eq!(description.scopes["scale"], SettingScope::Shared);
     assert_eq!(description.scopes["clock"], SettingScope::Device);
     assert_eq!(description.schema["properties"]["scale"]["default"], 2);
+}
+
+#[test]
+fn patterned_setting_defaults_use_concrete_paths_and_literal_properties_win() {
+    use korrid::{
+        config::cascade::schema_leaf,
+        launcher::typed_settings::{describe, SettingScope},
+    };
+    use serde_json::json;
+    let schema = json!({"type":"object","properties":{"input":{"type":"object","properties":{"ports":{"type":"object","properties":{"2":{"type":"object","properties":{"joypad-index":{"type":"integer","default":7}}}},"patternProperties":{"^[1-9][0-9]*$":{"type":"object","properties":{"joypad-index":{"type":"integer","default":0,"x-korri-scope":"device"},"analog-dpad-mode":{"type":"string","default":"none"}}}}}}}}});
+    let source=SourceSnapshot::plugin(&format!("export const name='ports';export const handlers={{'settings.describe':()=>({{schema:{schema},revision:'ports-v1'}})}};")).unwrap();
+    let mut description = describe(&source, "@test:runner/main", "build").unwrap();
+    assert_eq!(
+        description.defaults.len(),
+        1,
+        "a pattern does not invent a port number"
+    );
+    assert_eq!(
+        description.defaults["input.ports.2.joypad-index"],
+        serde_json::from_value(json!(7)).unwrap()
+    );
+    description.include_paths(
+        &[
+            "input.ports.2.joypad-index".into(),
+            "input.ports.12.joypad-index".into(),
+        ],
+        "@test:runner/main",
+        "build",
+    );
+    assert_eq!(
+        serde_json::to_value(&description.defaults).unwrap(),
+        json!({"input.ports.2.joypad-index":7,"input.ports.12.joypad-index":0,"input.ports.12.analog-dpad-mode":"none"})
+    );
+    assert_eq!(
+        description.scopes["input.ports.2.joypad-index"],
+        SettingScope::Shared
+    );
+    assert_eq!(
+        description.scopes["input.ports.12.joypad-index"],
+        SettingScope::Device
+    );
+    assert_eq!(
+        schema_leaf(&schema, "input.ports.2.joypad-index").unwrap()["default"],
+        7
+    );
+    assert!(
+        schema_leaf(&schema, "input.ports.2.analog-dpad-mode").is_none(),
+        "a literal object replaces the matching pattern object"
+    );
+    assert!(schema_leaf(&schema, "input.ports.0.joypad-index").is_none());
+    assert!(schema_leaf(&schema, "input.ports.invalid.joypad-index").is_none());
+    let unanchored = json!({"patternProperties":{"[0-9]+":{"type":"string"}}});
+    assert!(
+        schema_leaf(&unanchored, "port12").is_some(),
+        "JSON Schema regexes are not implicitly anchored"
+    );
+}
+
+#[test]
+fn settings_operation_treaties_keep_named_inputs_outputs_and_nested_values() {
+    use korrid::launcher::plugin_launch::{
+        PluginSettingsDescribeInput, PluginSettingsDescribeOutput, PluginSettingsDiagnostic,
+        PluginSettingsDiagnosticSeverity, PluginSettingsRenderInput, PluginSettingsRenderOutput,
+        PluginSettingsValidateInput, PluginSettingsValidateOutput,
+    };
+    use serde_json::{from_value, json, to_value};
+    let settings = from_value(json!({"input":{"ports":{"2":{"joypad-index":1}}}})).unwrap();
+    let input = PluginSettingsRenderInput {
+        id: "@korri:retroarch/runner".into(),
+        settings,
+        display: None,
+    };
+    assert_eq!(
+        to_value(&input).unwrap(),
+        json!({"id":"@korri:retroarch/runner","settings":{"input":{"ports":{"2":{"joypad-index":1}}}}})
+    );
+    assert_eq!(
+        to_value(PluginSettingsRenderOutput {
+            args: vec!["-localaudio".into()]
+        })
+        .unwrap(),
+        json!({"args":["-localaudio"]})
+    );
+    assert_eq!(
+        to_value(PluginSettingsDescribeInput {
+            id: input.id.clone()
+        })
+        .unwrap(),
+        json!({"id":input.id})
+    );
+    let description = PluginSettingsDescribeOutput {
+        schema: json!({"type":"object","additionalProperties":false}),
+        revision: "one".into(),
+    };
+    assert_eq!(to_value(&description).unwrap()["revision"], "one");
+    assert!(from_value::<PluginSettingsDescribeOutput>(json!({"schema":{}})).is_err());
+    let validation = PluginSettingsValidateInput {
+        values: input.settings,
+        revision: description.revision,
+    };
+    assert_eq!(
+        to_value(validation).unwrap()["values"]["input"]["ports"]["2"]["joypad-index"],
+        1
+    );
+    let output = PluginSettingsValidateOutput {
+        valid: false,
+        diagnostics: vec![PluginSettingsDiagnostic {
+            code: "index".into(),
+            severity: PluginSettingsDiagnosticSeverity::Error,
+            message: "bad index".into(),
+            path: vec![
+                "input".into(),
+                "ports".into(),
+                "2".into(),
+                "joypad-index".into(),
+            ],
+        }],
+    };
+    assert_eq!(
+        to_value(output).unwrap()["diagnostics"][0],
+        json!({"code":"index","severity":"error","message":"bad index","path":["input","ports","2","joypad-index"]})
+    );
 }
