@@ -140,7 +140,7 @@ enum HistoryDecision {
     Split,
     Join {
         heads: Vec<SnapshotRecord>,
-        joined: SnapshotRecord,
+        joined: Box<SnapshotRecord>,
     },
 }
 
@@ -156,7 +156,10 @@ fn history_decision(records: Vec<SnapshotRecord>) -> Result<HistoryDecision, Sav
         .collect();
     Ok(match super::history::automatic_join(&heads)? {
         None => HistoryDecision::Split,
-        Some(joined) => HistoryDecision::Join { heads, joined },
+        Some(joined) => HistoryDecision::Join {
+            heads,
+            joined: Box::new(joined),
+        },
     })
 }
 
