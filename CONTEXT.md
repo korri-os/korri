@@ -217,6 +217,14 @@ _Avoid_: config, policy, cascade
 Which runners a launch setting applies to: any runner, one runner family, or one runner.
 _Avoid_: runner layer, runner override
 
+**Setting section**:
+A named group of a plugin's settings, such as `video` or `input`. A shared section means the same thing in every plugin; a plugin has its own section only for something no other plugin has.
+_Avoid_: category, group, namespace
+
+**Setting path**:
+The dotted name of one setting value inside its sections, such as `video.fps`. The most specific place that sets a path wins for that path alone.
+_Avoid_: key (alone), option, flag
+
 **Hook**:
 A command that runs on the device just before a game starts or just after its session ends, as the game's user and inside the game's sandbox.
 _Avoid_: script, trigger, callback
