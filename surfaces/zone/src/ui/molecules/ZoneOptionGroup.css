@@ -109,4 +109,5 @@
   padding-inline: calc(var(--zone-option-text-inset) * var(--zone-px));
   line-height: 1;
   overflow-wrap: break-word;
+  hyphens: auto;
 }
