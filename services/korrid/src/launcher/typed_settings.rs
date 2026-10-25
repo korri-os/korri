@@ -72,6 +72,37 @@ pub fn validate(
         warnings: description.diagnostics,
         ..Default::default()
     };
+    // Private handoffs can also be inspected directly, without a place fold.
+    // Keep the no-invalid-leaves/no-null guarantee at the plugin boundary.
+    let (leaves, invalid_names) = crate::config::cascade::leaves(settings);
+    let mut nested = HashMap::new();
+    for (path, value) in leaves {
+        match value {
+            LaunchSettingValue::Invalid(_) => {
+                let message = "setting values must be scalars, nested objects or null".to_owned();
+                check.skipped.push((path.clone(), message.clone()));
+                check.warnings.push(LaunchWarning {
+                    setting: path,
+                    runner_id: id.into(),
+                    build: build.into(),
+                    message,
+                });
+            }
+            LaunchSettingValue::Cleared => {}
+            value => crate::config::cascade::set_leaf(&mut nested, &path, Some(value)),
+        }
+    }
+    for path in invalid_names {
+        let message = "setting names must not contain dots or be empty".to_owned();
+        check.skipped.push((path.clone(), message.clone()));
+        check.warnings.push(LaunchWarning {
+            setting: path,
+            runner_id: id.into(),
+            build: build.into(),
+            message,
+        });
+    }
+    *settings = nested;
     let input = serde_json::json!({"values":settings,"revision":description.revision}).to_string();
     let result =
         match script::call_plugin_operation_snapshot(snapshot, script::SETTINGS_VALIDATE, &input) {

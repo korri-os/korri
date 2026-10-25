@@ -389,6 +389,32 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
         serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     device["host"] = json!({"families":{"@korri:retroarch":{"settings":{"video":{"fps":30,"codec":"h265","no-default":true}}}}});
     fs::write(&path, serde_yaml::to_string(&device).unwrap()).unwrap();
+    device["host"]["families"]["@korri:retroarch"]["settings"]["video"]["array-leaf"] =
+        json!([1, 2]);
+    fs::write(&path, serde_yaml::to_string(&device).unwrap()).unwrap();
+    let array_config = crate::config::settings::runner_choice_snapshot(game.root.path())
+        .unwrap()
+        .0;
+    let array_launch = launch_route(
+        game.root.path(),
+        &array_config,
+        &game.registry,
+        &game.route,
+        None,
+        None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
+    assert!(array_launch
+        .warnings
+        .iter()
+        .any(|w| w.setting == "video.array-leaf"));
+    let array_plan = crate::launcher::plugin_launch::prepared_plan(&array_launch.command).unwrap();
+    assert!(
+        serde_json::from_str::<serde_json::Value>(&array_plan.args[0]).unwrap()["video"]
+            .get("array-leaf")
+            .is_none()
+    );
     let private = tempfile::tempdir().unwrap();
     let lock = std::sync::Mutex::new(());
     let client = ls::helper::Client {
@@ -445,6 +471,7 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
         &client,
     )
     .unwrap();
+    assert!(snapshot.notices.iter().any(|n|matches!(n,LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},runner_id:Some(id),..} if key=="video.array-leaf" && id==&game.route.runner_id)));
     assert_eq!(snapshot.resolved.values["settings.video.fps"].value, 60);
     assert!(matches!(
         snapshot.resolved.values["settings.video.fps"].source,
@@ -521,6 +548,20 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
     request.path = LaunchPath::Setting {
         key: "video".into(),
     };
+    assert!(ls::set_with_registry(
+        game.root.path(),
+        private.path(),
+        &lock,
+        &request,
+        &client,
+        Some(&game.registry)
+    )
+    .is_err());
+    request.clear = false;
+    request.path = LaunchPath::Setting {
+        key: "video.fps".into(),
+    };
+    request.value = Some(json!([1, 2]));
     assert!(ls::set_with_registry(
         game.root.path(),
         private.path(),

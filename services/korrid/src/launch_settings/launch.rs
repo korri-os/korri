@@ -350,6 +350,14 @@ fn fold_settings(
     }
     for (key, value) in leaves {
         let name = format!("{prefix}.{key}");
+        if matches!(value, LaunchSettingValue::Invalid(_)) {
+            notices.push(LaunchNotice::SettingSkipped {
+                runner_id: None,
+                path: path(key),
+                message: "setting values must be scalars, nested objects or null".into(),
+            });
+            continue;
+        }
         if matches!(value, LaunchSettingValue::Cleared) {
             if matches!(
                 crate::config::cascade::leaf(target, &key),

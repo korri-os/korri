@@ -7,7 +7,7 @@ use typeshare::typeshare;
 use crate::launcher::plugin_launch::LaunchConfigOverrides;
 
 #[typeshare(serialized_as = "LaunchSettingNested")]
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum LaunchSettingValue {
     Boolean(bool),
@@ -15,6 +15,58 @@ pub enum LaunchSettingValue {
     String(String),
     Section(HashMap<String, LaunchSettingValue>),
     Cleared,
+    /// Invalid authored data is retained for place inspection, but never folded
+    /// into plugin input. This is not a setting kind on the treaty.
+    Invalid(#[serde(serialize_with = "serialize_invalid")] serde_yaml::Value),
+}
+
+// Custom YAML tags remain file syntax errors in the outer flattened-record
+// decoder. Tolerant settings decoding covers JSON-Schema values, not YAML tags.
+impl<'de> Deserialize<'de> for LaunchSettingValue {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        fn decode(value: serde_yaml::Value) -> LaunchSettingValue {
+            use serde_yaml::Value as Y;
+            match value {
+                Y::Null => LaunchSettingValue::Cleared,
+                Y::Bool(value) => LaunchSettingValue::Boolean(value),
+                Y::String(value) => LaunchSettingValue::String(value),
+                Y::Number(value) => {
+                    let number = value
+                        .as_i64()
+                        .map(serde_json::Number::from)
+                        .or_else(|| value.as_u64().map(serde_json::Number::from))
+                        .or_else(|| value.as_f64().and_then(serde_json::Number::from_f64));
+                    number
+                        .map(LaunchSettingValue::Number)
+                        .unwrap_or_else(|| LaunchSettingValue::Invalid(Y::Number(value)))
+                }
+                Y::Mapping(map) if map.keys().all(|key| key.as_str().is_some()) => {
+                    LaunchSettingValue::Section(
+                        map.into_iter()
+                            .map(|(key, value)| (key.as_str().unwrap().to_owned(), decode(value)))
+                            .collect(),
+                    )
+                }
+                value => LaunchSettingValue::Invalid(value),
+            }
+        }
+        Ok(decode(serde_yaml::Value::deserialize(deserializer)?))
+    }
+}
+
+fn serialize_invalid<S: serde::Serializer>(
+    value: &serde_yaml::Value,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    // Place inspection is JSON. Non-JSON YAML stays inspectable as authored text;
+    // the original document remains untouched, and no invalid leaf reaches a plugin.
+    let json = serde_json::to_value(value).ok().filter(|v| !v.is_null());
+    match json {
+        Some(value) => value.serialize(serializer),
+        None => serde_yaml::to_string(value)
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer),
+    }
 }
 
 #[typeshare]

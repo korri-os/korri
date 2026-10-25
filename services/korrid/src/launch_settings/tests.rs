@@ -962,3 +962,24 @@ fn nested_settings_fold_per_leaf_clear_lower_values_and_skip_dotted_names() {
         30
     );
 }
+
+#[test]
+fn invalid_yaml_setting_leaves_load_and_never_reach_plugins_in_any_place_kind() {
+    for value in ["[1, 2]", ".nan", "{[bad, key]: value}"] {
+        let service = resolution::SUNSHINE;
+        let device = format!("host:\n  runners:\n    '{RUNNER}':\n      settings:\n        video:\n          bad: {value}\n          fps: 30\n      modifiers:\n        '@korri:test/wrapper':\n          settings:\n            video:\n              bad: {value}\n  services:\n    '{service}':\n      settings:\n        video:\n          bad: {value}\n");
+        let config = decode_config_documents(&device, LIBRARY).unwrap();
+        let resolved = resolve_launch(&config, &route(), None, None).unwrap();
+        assert_eq!(resolved.notices.len(), 3, "{value}");
+        assert!(resolved.notices.iter().all(|n|matches!(n,LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},runner_id:Some(id),..} if key=="video.bad" && id==RUNNER) || matches!(n,LaunchNotice::SettingSkipped {path:LaunchPath::ModifierSetting {key,..} | LaunchPath::ServiceSetting {key,..}, runner_id:None,..} if key=="video.bad")));
+        assert_eq!(
+            serde_json::to_value(&resolved.runner.settings).unwrap(),
+            json!({"video":{"fps":30}})
+        );
+        assert!(resolved.modifiers["@korri:test/wrapper"]
+            .settings
+            .is_empty());
+        assert!(resolved.services[resolution::SUNSHINE].settings.is_empty());
+        serde_json::to_value(&config).unwrap();
+    }
+}
