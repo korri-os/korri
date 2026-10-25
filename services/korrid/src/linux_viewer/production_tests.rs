@@ -503,3 +503,29 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
     );
     assert_eq!(warnings[0].setting, "video.codec");
 }
+
+#[test]
+fn linux_viewer_passes_plugin_audio_and_bitrate_unchanged_without_host_defaults() {
+    let files = MoonlightFiles {
+        executable: "/nix/store/viewer/bin/moonlight".into(),
+        mapping: "/nix/store/viewer/mapping".into(),
+        bootstrap: "/nix/store/viewer/bootstrap".into(),
+    };
+    let rendered = vec!["-localaudio".into(), "-bitrate".into(), "6173".into()];
+    let args = stream_args(&files, Path::new("/keys"), "host", &rendered, "x11", &[]).unwrap();
+    assert!(args.ends_with(&rendered));
+    assert_eq!(args.iter().filter(|arg| *arg == "-localaudio").count(), 1);
+    assert_eq!(args.iter().filter(|arg| *arg == "-bitrate").count(), 1);
+
+    let defaults = stream_args(&files, Path::new("/keys"), "host", &[], "x11", &[]).unwrap();
+    for flag in [
+        "-localaudio",
+        "-bitrate",
+        "-fps",
+        "-width",
+        "-height",
+        "-codec",
+    ] {
+        assert!(!defaults.iter().any(|arg| arg == flag), "{flag}");
+    }
+}
