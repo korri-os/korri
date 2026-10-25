@@ -111,6 +111,39 @@ recreates them. Known stopped units alone are not proof. The functioning old
 or a reduced contract is approved. It has none of those new safety guarantees;
 this documentation is not permission to run it.
 
+The existing native writers are `korrid.service`, `korrid-identity.service` and
+`korri-local-signer-device-credential.service` (its `identity status` helper can
+create the device key). The signer also has its own service. Activation includes
+`korrid-cli.socket`, `korrid-control.socket` and `korri-local-signer.socket`.
+`nixos-module.nix` supplies their accounts and `KORRID_PRIVATE_STATE_ROOT`.
+Stopping those units does not prevent another start. Runtime masks are below
+NixOS's `/etc/systemd/system` units in systemd's search path. Even a mask that
+blocks a named unit does not fence the shipped standalone `korrid identity`
+writers running as the service account. `IDENTITY_STORAGE` is a process-local
+mutex, not an interprocess fence. No reset is attempted on that evidence.
+
+The negative VM test is `services/korrid/identity-reset-vm-test.nix`. It uses the
+real module and binaries. Root and person-account attempts, with and without
+`--yes`, preserve state hashes, owners and modes. The identity service starts
+despite runtime masks, and the standalone service-account writer can create a
+different device key. The test restores the original state and verifies the
+original identity after restart. This is not successful-reset acceptance proof.
+Blocking all writers, interrupted reset recovery, safe post-reset restart and
+retirement of the hidden reset remain unresolved.
+
+`DeviceIdentity::reset` removes the whole `identity` directory, including the
+device key, owner binding, NIP-46 connection credentials, person-name record and
+identity-local authorization evidence. It creates a new unowned device key.
+It does not reset the separate local person signer or reconcile an existing
+`identity-switch` journal. Boot refreshes the signer's device credential from
+`identity status`; automatic owner binding may then use the local signer.
+A pending switch journal can instead reject the replacement identity as
+inconsistent. A configured `ownerBindingFile` still binds the old device key;
+boot's import rejects it after a raw reset. A raw reset is therefore not a
+substitute for the live identity switch's authorization and journal recovery.
+No games, saves or unrelated person data should be deleted to work around these
+limits.
+
 Physical controller testing remains portal-only; `controllers seats` changes
 the configured count. Setup does not duplicate the optional starter-pack offer;
 existing effects remain through `plugins on` and `library folders rescan`.
