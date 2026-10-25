@@ -8,7 +8,7 @@ The cost is that a CLI build also compiles the daemon's library dependencies.
 ## Commands and checks
 
 - `nix run .#korri -- --help`
-- `nix run .#cli-check` — CLI format, clippy, and unit/real-process tests.
+- `nix run .#cli-check` — portal setting parity guard, CLI format, clippy, and unit/real-process tests.
 - `nix run .#cli-daemon-check` — focused socket, authorization, forwarding,
   sandbox, settings, and daemon-argument tests. This is not the full korrid gate.
 - `nix build .#checks.x86_64-linux.korrid-linux-device-module --no-link`
@@ -26,6 +26,11 @@ are `devices`, `library`, `launch-settings`, `downloads`, `controllers`,
 `plugins`, `wifi`, `saves`, `identity`, `setup` and `metadata`. Session actions
 are `play`, `leave`, `resume` and `end`. Provider acquisition is `get`.
 [Play and library details](PLAY-LIBRARY.md) include launch-setting constraints.
+[Portal parity audit](PARITY.md) maps the actual portal settings and actions,
+including remaining gaps and recorded exceptions. Download a selected route's
+required artifacts with `downloads status --game GAME --runner RUNNER`, then
+`downloads start --artifact ID` (repeat `--artifact` for more IDs). These are
+declared artifacts, never provider job IDs. Start does not also launch a game.
 
 ```sh
 korri status --json
@@ -99,8 +104,12 @@ Boot still uses hidden `korrid identity status`, `owner-binding-request` and
 `import`. Hidden operator tools retained until cutover is confirmed are
 `catalog migrate`, `identity replace-test-owner-offline` and
 `identity reconcile-stale-grants-offline`. Internal plugin-run, plugin-launch
-and archive helpers remain. This cut does not implement the missing
-plugin-prepare entry point (#223).
+and archive helpers remain. Hidden
+`korrid plugin-prepare SOURCE INPUT_JSON COMPOSITION_JSON RELEASE_ID` prints
+Core's existing `PreparedLaunch` JSON record after effect-free preparation and
+composition. It performs no declared effects and never appears in `korri` help.
+External plugin checks can pass that exact record to `korrid plugin-launch`
+instead of rebuilding Core's private handoff format.
 
 **Unresolved acceptance blocker:** safe offline `korri identity reset` is not
 implemented. It returns `IdentityRecoveryUnavailable` without state access,
@@ -149,7 +158,7 @@ the configured count. Setup does not duplicate the optional starter-pack offer;
 existing effects remain through `plugins on` and `library folders rescan`.
 System launch-setting inspection does not require game context; see
 [the current wire limits](PLAY-LIBRARY.md#settings-and-current-producer-limits).
-Richer terminal pickers, address/free-space facts and power RPCs are deferred.
+Address/free-space facts and power RPCs are deferred.
 Remote session/plugin administration is not widened by this CLI.
 
 ## Add an area
@@ -171,8 +180,12 @@ Remote session/plugin administration is not widened by this CLI.
    Use a real Unix HTTP server with typed, configured responses. Test the
    daemon handler separately when an area adds a new RPC effect.
 
-`target` resolves exact keys or case-insensitive names. Ambiguous labels always
-stop, including on a terminal. PeerList supplies verified owner membership;
+`target` resolves exact keys or case-insensitive names. Ambiguous device names
+and game titles show a numbered picker only when stdin and stdout are both
+terminals, without `--json`. Enter a number or exact ID, `/text` to filter by
+name or ID, `/` to reset the filter, or `q` to cancel. No default is selected;
+an exact ID takes precedence even when it is numeric or `q`. Piped or JSON
+use stops with all matches and requires an exact ID/key. PeerList supplies verified owner membership;
 korrid checks signed membership and revocations again before forwarding.
 Forwarding uses the existing signed NativeClient transport and unchanged peer
 policy. Local-only methods still refuse forwarding and direct the person to
