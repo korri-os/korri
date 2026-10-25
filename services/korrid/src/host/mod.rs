@@ -867,6 +867,37 @@ impl HostRuntime {
         plugin_policy::installed_registry().map_err(|error| dynamic_failure(error.to_string()))
     }
 
+    pub(crate) async fn local_games(&self) -> Result<crate::LocalGames, RpcFailure> {
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let root = runtime.route_root()?;
+            let registry = runtime.route_registry()?;
+            let state = ConfigSnapshotCoordinator::new(root).reload();
+            let catalog = crate::launcher::local_games_with_cover_assets(
+                root,
+                Some(&runtime.private_state_root),
+                &state,
+                &registry,
+            );
+            let mut failures = Vec::new();
+            if let Some(diagnostic) = &state.diagnostic {
+                failures.push(crate::snapshot_diagnostic_failure(diagnostic));
+            }
+            failures.extend(
+                catalog
+                    .diagnostics
+                    .iter()
+                    .map(crate::route_diagnostic_failure),
+            );
+            Ok(crate::LocalGames {
+                games: catalog.games,
+                failures: (!failures.is_empty()).then_some(failures),
+            })
+        })
+        .await
+        .map_err(host_worker_failure)?
+    }
+
     pub async fn game_routes(
         &self,
         game_id: String,

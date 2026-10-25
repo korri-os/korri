@@ -588,3 +588,21 @@ async fn system_places_without_game_can_be_inspected_and_written_through_rpc() {
         library_before
     );
 }
+
+#[tokio::test]
+async fn local_games_uses_the_installed_library_and_preserves_route_failures() {
+    let root = tempfile::tempdir().unwrap();
+    let app = library(root.path(), false);
+    let response = rpc(&app, "app.local-games.list", json!({})).await;
+    assert_eq!(response["_tag"], "Ok", "{response}");
+    assert_eq!(response["payload"]["games"][0]["id"], GAME);
+    assert!(response["payload"]["failures"].is_null());
+    fs::remove_file(root.path().join("roms/wl4.gba")).unwrap();
+    let response = rpc(&app, "app.local-games.list", json!({})).await;
+    assert_eq!(response["_tag"], "Ok", "{response}");
+    assert!(response["payload"]["games"].as_array().unwrap().is_empty());
+    assert!(!response["payload"]["failures"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}

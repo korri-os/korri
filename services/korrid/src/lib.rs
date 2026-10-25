@@ -3369,12 +3369,12 @@ async fn dispatch(
                     failures: (!failures.is_empty()).then_some(failures),
                 }))
             }
-            ServerMode::Host(_) => {
-                RpcResponse::LocalGamesList(LocalGamesListOutcome::Err(RpcFailure {
-                    code: "OperationUnsupported".into(),
-                    message: "local games are available only from the brain server".into(),
-                }))
-            }
+            ServerMode::Host(host) => RpcResponse::LocalGamesList(
+                host.local_games()
+                    .await
+                    .map(LocalGamesListOutcome::Ok)
+                    .unwrap_or_else(LocalGamesListOutcome::Err),
+            ),
         },
         RpcRequest::Health(_) => RpcResponse::Health(HealthOutcome::Ok(Health {
             version: VERSION.into(),
