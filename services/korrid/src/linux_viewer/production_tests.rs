@@ -341,6 +341,11 @@ esac
             launches[0].environment["KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT"],
             "1"
         );
+        // Gamepad events must reach Moonlight without X11 window focus.
+        assert_eq!(
+            launches[0].environment["SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS"],
+            "1"
+        );
     }
     units
         .refuse_stop

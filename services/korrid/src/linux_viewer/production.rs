@@ -640,6 +640,10 @@ impl LinuxStreamViewer for ProductionLinuxStreamViewer {
                 )?;
                 let environment = BTreeMap::from([
                     ("KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT".into(), "1".into()),
+                    // SDL drops gamepad events while its window lacks X11
+                    // focus. Under Xwayland the viewer can hold compositor
+                    // focus without it, which left joiners with no controls.
+                    ("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS".into(), "1".into()),
                     ("DISPLAY".into(), ":0".into()),
                     ("HOME".into(), "/home/korri".into()),
                     (
