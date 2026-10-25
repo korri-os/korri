@@ -25,6 +25,8 @@ fn package(root: &Path, name: &str, exports: &str, files: &[&str]) -> EnabledPac
 
 const CALLBACK: &str =
     "export const handlers = {'launch.prepare': function () { throw new Error('admission must not call launch'); }}";
+const RENDER_CALLBACK: &str =
+    "export const handlers = {'settings.render': function () { throw new Error('admission must not call render'); }}";
 
 #[test]
 fn native_runner_owns_program_and_core_in_one_package() {
@@ -51,25 +53,31 @@ fn native_runner_owns_program_and_core_in_one_package() {
 
 #[test]
 fn native_runners_require_a_callable_launch_prepare_handler_without_invocation() {
-    let declaration = "export const runners = {main: {id:'@test:kind/main', program:'program'}};";
-    for callback in [
-        "",
-        "export const handlers = {};",
-        "export const handlers = {'launch.prepare': 42};",
-        CALLBACK,
+    for selector in [
+        "systems:['gba']",
+        "releases:['sha256:0000000000000000000000000000000000000000000000000000000000000000']",
     ] {
-        let root = tempfile::tempdir().unwrap();
-        let runner = package(
-            root.path(),
-            "kind",
-            &format!("{declaration} {callback}"),
-            &["program"],
-        );
-        let result = PluginRegistry::from_installed(vec![runner]);
-        if callback == CALLBACK {
-            assert!(result.is_ok(), "callback must not run: {result:?}");
-        } else {
-            assert!(result.unwrap_err().to_string().contains("launch"));
+        let declaration=format!("export const runners = {{main: {{id:'@test:kind/main', program:'program', {selector}}}}};");
+        for callback in [
+            "",
+            "export const handlers = {};",
+            "export const handlers = {'launch.prepare': 42};",
+            RENDER_CALLBACK,
+            CALLBACK,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let runner = package(
+                root.path(),
+                "kind",
+                &format!("{declaration} {callback}"),
+                &["program"],
+            );
+            let result = PluginRegistry::from_installed(vec![runner]);
+            if callback == CALLBACK {
+                assert!(result.is_ok(), "callback must not run: {result:?}");
+            } else {
+                assert!(result.unwrap_err().to_string().contains("launch"));
+            }
         }
     }
 }
@@ -84,4 +92,61 @@ fn command_runners_do_not_require_a_native_launch_callback() {
         &[],
     );
     PluginRegistry::from_installed(vec![command]).unwrap();
+}
+
+#[test]
+fn settings_only_native_runners_require_callable_render_without_invocation() {
+    for selectors in ["", ", systems:[]"] {
+        let declaration=format!("export const runners = {{main: {{id:'@test:viewer/main', program:'program'{selectors}}}}};");
+        for callback in [
+            "",
+            "export const handlers = {};",
+            "export const handlers = {'settings.render': 42};",
+            "export const handlers = {'settings.render': {}};",
+            CALLBACK,
+            RENDER_CALLBACK,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let runner = package(
+                root.path(),
+                "viewer",
+                &format!("{declaration} {callback}"),
+                &["program"],
+            );
+            let result = PluginRegistry::from_installed(vec![runner]);
+            if callback == RENDER_CALLBACK {
+                assert!(result.is_ok(), "render callback must not run: {result:?}");
+            } else {
+                assert!(result.unwrap_err().to_string().contains("settings.render"));
+            }
+        }
+    }
+}
+
+#[test]
+fn a_package_with_local_and_settings_only_runners_requires_both_callbacks() {
+    let declaration="export const runners = {local:{id:'@test:mixed/local',program:'program',systems:['gba']},viewer:{id:'@test:mixed/viewer',program:'program'}};";
+    let both="export const handlers = {'launch.prepare':()=>{throw Error('launch must not run')},'settings.render':()=>{throw Error('render must not run')}};";
+    for (callback, missing) in [
+        (CALLBACK, Some("settings.render")),
+        (RENDER_CALLBACK, Some("launch.prepare")),
+        (both, None),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let runner = package(
+            root.path(),
+            "mixed",
+            &format!("{declaration} {callback}"),
+            &["program"],
+        );
+        let result = PluginRegistry::from_installed(vec![runner]);
+        if let Some(missing) = missing {
+            assert!(result.unwrap_err().to_string().contains(missing));
+        } else {
+            assert!(
+                result.is_ok(),
+                "neither callback may run during admission: {result:?}"
+            );
+        }
+    }
 }

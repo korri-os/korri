@@ -271,23 +271,34 @@ fn evaluate_module(
         // Capture declaration bytes before queued mutation, then complete all
         // initialization work before inspecting the callable or invoking it.
         completion.drain(&ctx, &rejections)?;
-        // A native kind owns the module callback. Inspect the export only;
-        // admission must never invoke it or impose policy on its output.
-        if declaration
+        // Local runners prepare a launch plan; settings-only runners render
+        // arguments. Admission inspects the required callable, never invokes it.
+        if let Some(runners) = declaration
             .get("runners")
             .and_then(serde_json::Value::as_object)
-            .is_some_and(|runners| {
-                runners.values().any(|runner| {
-                    runner
-                        .get("program")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some() && ["systems", "releases"].iter().any(|kind| runner.get(kind).and_then(serde_json::Value::as_array).is_some_and(|v| !v.is_empty()))
-                })
-            })
         {
-            handler(&exports, LAUNCH_PREPARE).map_err(|_| {
-                "native runner kind has no callable launch.prepare handler".to_owned()
-            })?;
+            for runner in runners.values().filter(|runner| {
+                runner
+                    .get("program")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some()
+            }) {
+                let local = ["systems", "releases"].iter().any(|kind| {
+                    runner
+                        .get(kind)
+                        .and_then(serde_json::Value::as_array)
+                        .is_some_and(|values| !values.is_empty())
+                });
+                if local {
+                    handler(&exports, LAUNCH_PREPARE).map_err(|_| {
+                        "native runner kind has no callable launch.prepare handler".to_owned()
+                    })?;
+                } else {
+                    handler(&exports, SETTINGS_RENDER).map_err(|_| {
+                        "native runner kind has no callable settings.render handler".to_owned()
+                    })?;
+                }
+            }
         }
         if declaration
             .get("discovery")
