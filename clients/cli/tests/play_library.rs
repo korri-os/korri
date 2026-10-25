@@ -1159,3 +1159,84 @@ fn play_library_remote_folder_selection_requires_ssh_and_never_issues_receipt() 
     assert!(output.stdout.is_empty());
     assert_eq!(server.calls.lock().unwrap().len(), 3);
 }
+
+#[test]
+fn play_library_profile_rename_uses_exact_id_trimmed_title_and_observed_revision() {
+    use launch_settings::*;
+    for conflict in [false, true] {
+        let mut snapshot = test_snapshot();
+        snapshot.profiles.push(LaunchProfileSnapshot {
+            id: "none".into(),
+            title: "Old title".into(),
+            body: serde_json::json!({"cpu":{"max":40}}),
+        });
+        snapshot.selected_profile = Some("none".into());
+        let response = RpcResponse::LaunchProfileSave(if conflict {
+            LaunchSettingsWriteOutcome::Err(RpcFailure {
+                code: "SettingsConflict".into(),
+                message: "Changed since snapshot".into(),
+            })
+        } else {
+            LaunchSettingsWriteOutcome::Ok(snapshot.revisions.clone())
+        });
+        let server = Server::start(vec![games(), snapshot_response(snapshot), response.clone()]);
+        let output = server.run(&[
+            "launch-settings",
+            "profiles",
+            "rename",
+            "none",
+            "  Quiet evening  ",
+            "--game",
+            "game",
+            "--json",
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(if conflict { 1 } else { 0 }),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap(),
+            serde_json::to_value(&response).unwrap()
+        );
+        let calls = server.calls.lock().unwrap();
+        assert_eq!(calls.len(), 3);
+        assert!(
+            matches!(&calls[2], RpcRequest::LaunchProfileSave(r) if r.game_id == "game" && r.profile_id.as_deref() == Some("none") && r.title == "Quiet evening" && r.expected_revision == "games-revision")
+        );
+    }
+}
+
+#[test]
+fn play_library_profile_rename_refuses_blank_title_and_unknown_profile_without_write() {
+    for (id, title, expected_reads) in [
+        ("existing", " \t ", 0),
+        ("existing", "This title is longer than forty characters!", 0),
+        ("missing", "Title", 2),
+    ] {
+        let server = Server::start(if expected_reads == 0 {
+            vec![]
+        } else {
+            vec![games(), snapshot_response(test_snapshot())]
+        });
+        let output = server.run(&[
+            "launch-settings",
+            "profiles",
+            "rename",
+            id,
+            title,
+            "--game",
+            "game",
+            "--json",
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stdout.is_empty());
+        assert_eq!(server.calls.lock().unwrap().len(), expected_reads);
+    }
+}

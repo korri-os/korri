@@ -57,6 +57,12 @@ impl Module for LaunchSettings {
                             .arg(Arg::new("game").long("game").required(true)),
                     )
                     .subcommand(
+                        Command::new("rename")
+                            .arg(required("id").help("Exact profile ID"))
+                            .arg(required("title"))
+                            .arg(Arg::new("game").long("game").required(true)),
+                    )
+                    .subcommand(
                         Command::new("delete")
                             .arg(required("id"))
                             .arg(Arg::new("game").long("game").required(true)),
@@ -85,6 +91,20 @@ impl Module for LaunchSettings {
         if profiles {
             (action, args) = args.subcommand().expect("required subcommand");
         }
+        let rename_title = if profiles && action == "rename" {
+            let title = value(args, "title").trim().to_owned();
+            if title.is_empty() {
+                return Err(CliError::usage("A profile needs a name."));
+            }
+            // Match MAX_PROFILE_TITLE and the portal text control's UTF-16 limit
+            // in clients/portal/src/surface/launch-settings-model.ts.
+            if title.encode_utf16().count() > 40 {
+                return Err(CliError::usage("A profile name must fit in 40 characters."));
+            }
+            Some(title)
+        } else {
+            None
+        };
         if action == "set" {
             let assignment = value(args, "assignment");
             if args.get_flag("inherit") {
@@ -183,6 +203,18 @@ impl Module for LaunchSettings {
                     title: value(args, "title"),
                     expected_revision,
                 }),
+                "rename" => {
+                    let id = value(args, "id");
+                    if !snapshot.profiles.iter().any(|p| p.id == id) {
+                        return Err(CliError::usage("Unknown profile ID. List profiles first."));
+                    }
+                    RpcRequest::LaunchProfileSave(LaunchProfileSaveRequest {
+                        game_id,
+                        profile_id: Some(id),
+                        title: rename_title.expect("validated rename title"),
+                        expected_revision,
+                    })
+                }
                 "delete" => {
                     let id = value(args, "id");
                     if !snapshot.profiles.iter().any(|p| p.id == id) {

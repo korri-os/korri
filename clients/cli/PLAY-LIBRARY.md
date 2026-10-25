@@ -24,6 +24,7 @@ A refused remote operation needs SSH or local access, not another endpoint.
 - `korri launch-settings set <key> --inherit`
 - `korri launch-settings runner --inherit`
 - `korri launch-settings profiles list|new <title>|delete <id>|use <id> --game <game>`
+- `korri launch-settings profiles rename <id> <title> --game <game>`
 - `korri launch-settings profiles use --none --game <game>`
 
 Titles match without case; exact game IDs take precedence. Multiple matches
@@ -77,6 +78,12 @@ value. It cannot be combined with an explicit assigned value or runner.
 Literal strings such as `inherit`, `null` and empty strings remain values.
 Write replies contain revisions only. The acknowledgement names the place and
 scope and gives a matching show command; it never invents an inherited winner.
+
+Profile rename takes an exact profile ID from the snapshot, trims the name and
+requires a nonempty name within the portal's 40-character text-control limit.
+It uses the existing profile-save call with that ID and the observed games
+revision. It neither selects the profile nor replaces its settings. A conflict
+stops without retry.
 
 Editable keys follow `LaunchPath`: CPU/GPU minimum and maximum percentages,
 Device/Any CPU governor when advertised, runner setting names,
