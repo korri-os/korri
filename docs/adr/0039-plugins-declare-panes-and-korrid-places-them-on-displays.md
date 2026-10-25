@@ -57,3 +57,7 @@ holds no emulator knowledge.
   display for choosing and acting (list, menu, buttons, touch).
 - The first device case is the RG DS: two 640×480 touch displays, one above the
   other, with the top display as the main display.
+- Streaming a multi-pane game must feel native on the receiving device: each
+  pane on its matching display, touch reaching the lower pane (owner
+  requirement, using a 3DS game as the bar). Stream play carries one picture
+  today; this is tracked as issue #262.
