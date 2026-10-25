@@ -54,16 +54,23 @@ Remote folder addition is not supported; use SSH or local access (#227).
 layer; Device is the default. Release and profile require their game context.
 `--runner` and `--family` choose a runner scope; Any is the default.
 
-The current snapshot producer cannot inspect a system independently. Therefore
-`--system <system-id>` requires `--game <game>` as inspection context. System
-remains the write layer, not Game. The snapshot must expose that exact System
-and runner scope. Similarly, only the release exposed by the existing resolved
-snapshot can be edited. No representative game or release is chosen by the CLI.
+`--system <system-id>` does not require `--game`. Without game context, the
+snapshot exposes the System places already accepted by the write producer:
+configured systems and systems referenced by library releases. It does not pick
+a representative game or create an unknown system. System remains the write
+layer when optional `--game` supplies resolution context. The snapshot must
+expose the exact System and runner scope; runner scopes still depend on the
+producer's available registry. Similarly, only the release exposed by the
+existing resolved snapshot can be edited.
 
 Show includes effective values and origins, authored places, plugin schemas and
 read-only launch facts. Its effective values describe the producer's currently
 resolved route and selected profile. Layer/scope flags inspect an authored place;
-they do not request hypothetical resolution for an unselected runner/profile. Writes pass the observed device or games revision once.
+they do not request hypothetical resolution for an unselected runner/profile.
+Without `--game`, effective values use Device context, including when inspecting
+a System authored place. The output labels that context; the authored System
+body is included separately in the unchanged snapshot. Writes pass the observed
+device or games revision once.
 A conflict is final; read the settings again before deciding to retry.
 `--inherit` clears the authored override using the existing optional write
 value. It cannot be combined with an explicit assigned value or runner.

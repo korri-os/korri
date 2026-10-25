@@ -546,19 +546,8 @@ fn play_library_folder_add_uses_local_receipt_but_prints_only_final_pair_respons
     );
 }
 #[test]
-fn play_library_system_layer_needs_explicit_game_context_and_never_falls_back() {
+fn play_library_system_layer_without_game_uses_observed_place_and_never_falls_back() {
     use launch_settings::*;
-    let server = Server::start(vec![]);
-    let output = server.run(&[
-        "launch-settings",
-        "set",
-        "cpu.max=70",
-        "--system",
-        "sys",
-        "--json",
-    ]);
-    assert_eq!(output.status.code(), Some(2));
-    assert!(server.calls.lock().unwrap().is_empty());
     for system in ["sys", "wrong"] {
         let mut snapshot = test_snapshot();
         snapshot.places.push(LaunchPlaceSnapshot {
@@ -567,40 +556,79 @@ fn play_library_system_layer_needs_explicit_game_context_and_never_falls_back() 
                 scope: LaunchRunnerScope::Any,
             },
             title: "System".into(),
-            body: serde_json::json!({}),
+            body: serde_json::json!({"cpu":{"max":85}}),
             editable_kinds: vec!["cpu".into()],
         });
         let response = RpcResponse::LaunchSettingsSet(LaunchSettingsWriteOutcome::Ok(
             snapshot.revisions.clone(),
         ));
-        let server = Server::start(vec![games(), snapshot_response(snapshot), response]);
+        let server = Server::start(vec![snapshot_response(snapshot), response]);
         let output = server.run(&[
             "launch-settings",
             "set",
             "cpu.max=70",
             "--system",
             system,
-            "--game",
-            "game",
             "--json",
         ]);
         let calls = server.calls.lock().unwrap();
+        assert!(matches!(&calls[0], RpcRequest::LaunchSettingsSnapshot(r) if r.game_id.is_none()));
         if system == "sys" {
             assert!(
                 output.status.success(),
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            assert_eq!(calls.len(), 3);
+            assert_eq!(calls.len(), 2);
             assert!(
-                matches!(&calls[2],RpcRequest::LaunchSettingsSet(r) if r.expected_revision=="device-revision" && r.place.layer==LaunchLayer::System("sys".into()))
+                matches!(&calls[1],RpcRequest::LaunchSettingsSet(r) if r.expected_revision=="device-revision" && r.place.layer==LaunchLayer::System("sys".into()))
             );
         } else {
             assert_eq!(output.status.code(), Some(2));
-            assert_eq!(calls.len(), 2);
+            assert_eq!(calls.len(), 1);
         }
     }
 }
+#[test]
+fn play_library_system_show_without_game_labels_device_resolution() {
+    use launch_settings::*;
+    let mut snapshot = test_snapshot();
+    snapshot.places.push(LaunchPlaceSnapshot {
+        place: LaunchPlace {
+            layer: LaunchLayer::System("sys".into()),
+            scope: LaunchRunnerScope::Any,
+        },
+        title: "System".into(),
+        body: serde_json::json!({"cpu":{"max":85}}),
+        editable_kinds: vec!["cpu".into()],
+    });
+    let response = snapshot_response(snapshot);
+    for json in [false, true] {
+        let server = Server::start(vec![response.clone()]);
+        let mut args = vec!["launch-settings", "show", "--system", "sys"];
+        if json {
+            args.push("--json");
+        }
+        let output = server.run(&args);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(server.calls.lock().unwrap().len(), 1);
+        if json {
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap(),
+                serde_json::to_value(&response).unwrap()
+            );
+        } else {
+            let human = String::from_utf8(output.stdout).unwrap();
+            assert!(human.contains("Device context"), "{human}");
+            assert!(human.contains("85"), "{human}");
+        }
+    }
+}
+
 #[test]
 fn play_library_provider_acquire_keeps_claim_identity_and_gets_details_first() {
     use acquisition::claims::*;

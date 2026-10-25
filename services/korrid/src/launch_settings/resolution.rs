@@ -352,6 +352,28 @@ pub fn snapshot_for_person(
     for (layer, title, body) in layers.into_iter().flatten() {
         append(layer, title, body);
     }
+    if game_id.is_none() {
+        // Match the existing System write boundary in store::set: authored
+        // systems and systems referenced by releases, without choosing a game.
+        let systems: BTreeSet<_> = config
+            .systems
+            .keys()
+            .chain(
+                config
+                    .library
+                    .values()
+                    .flat_map(|g| &g.releases)
+                    .filter_map(|r| r.system.as_ref().map(|s| &s.0)),
+            )
+            .collect();
+        for id in systems {
+            append(
+                LaunchLayer::System(id.clone()),
+                id.clone(),
+                config.systems.get(id).map(|v| &v.place).unwrap_or(&empty),
+            );
+        }
+    }
     if let Some((id, g)) = game_id.zip(game) {
         for (pid, p) in &g.profiles {
             append(

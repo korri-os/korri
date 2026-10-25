@@ -147,7 +147,7 @@ limits.
 Physical controller testing remains portal-only; `controllers seats` changes
 the configured count. Setup does not duplicate the optional starter-pack offer;
 existing effects remain through `plugins on` and `library folders rescan`.
-System launch-setting inspection requires explicit game context; see
+System launch-setting inspection does not require game context; see
 [the current wire limits](PLAY-LIBRARY.md#settings-and-current-producer-limits).
 Richer terminal pickers, address/free-space facts and power RPCs are deferred.
 Remote session/plugin administration is not widened by this CLI.
@@ -246,6 +246,22 @@ and free-space facts have no current RPC producer. Address is shown as unknown;
 free space is deferred. Remote status preserves local-only authorization
 refusals as failed sections. Devices list itself is local because its current
 identity is local-only.
+
+Address/free-storage and power schemas remain unresolved, not merely unwired.
+Legacy's `product/apps/portal/api/device/status.rpc.ts` produces battery/network
+state, but no address or storage measurement. Current interface enumeration
+(`services/korrid/src/federation/interfaces.rs`) supplies transport candidates;
+acquisition's `space.rs` measures the filesystem of an open download folder.
+Neither chooses a person's status address or storage volume. A real status case
+must decide which interfaces/addresses and which mounted filesystem(s) to report.
+
+Legacy's Pico `PowerMenu.tsx` and `Panic.tsx` are static pages, not action
+contracts. Legacy inputd's `power-suspend` command is an input action, not a
+shared portal RPC. Current portal settings and `contracts/surface/` provide no
+power action IDs or call payloads. A real portal power action contract must
+define the calls and what Restart Korri restarts. No power command or host/device
+effect is added before that decision; any implementation needs VM systemd/logind
+proof.
 
 IdentityStatus now embeds the existing IdentityState, read from live authority
 without opening or creating identity storage. Invalid identity diagnostics use

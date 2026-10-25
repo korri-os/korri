@@ -542,3 +542,49 @@ async fn launch_settings_snapshot_explains_missing_route_layers_and_resolves_onl
         );
     }
 }
+
+#[tokio::test]
+async fn system_places_without_game_can_be_inspected_and_written_through_rpc() {
+    let root = tempfile::tempdir().unwrap();
+    let app = library(root.path(), true);
+    let before = rpc(&app, "app.launch-settings.snapshot", json!({})).await;
+    assert_eq!(before["_tag"], "Ok", "{before}");
+    let place = json!({"layer":{"_tag":"System","id":"gba"},"scope":{"_tag":"Any"}});
+    let systems: Vec<_> = before["payload"]["places"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["place"] == place)
+        .collect();
+    assert_eq!(systems.len(), 1, "{before}");
+    let library_before = fs::read(root.path().join("catalog/library.yaml")).unwrap();
+    let written = rpc(
+        &app,
+        "app.launch-settings.set",
+        json!({
+            "place":place,
+            "path":{"_tag":"CpuMax"},
+            "value":70,
+            "expectedRevision":before["payload"]["revisions"]["device"]
+        }),
+    )
+    .await;
+    assert_eq!(written["_tag"], "Ok", "{written}");
+    let after = rpc(&app, "app.launch-settings.snapshot", json!({})).await;
+    assert_eq!(after["_tag"], "Ok", "{after}");
+    let system = after["payload"]["places"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["place"] == place)
+        .unwrap();
+    assert_eq!(system["body"]["cpu"]["max"], 70);
+    assert_eq!(
+        before["payload"]["resolved"], after["payload"]["resolved"],
+        "System inspection must not select a game or change Device resolution"
+    );
+    assert_eq!(
+        fs::read(root.path().join("catalog/library.yaml")).unwrap(),
+        library_before
+    );
+}

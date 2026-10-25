@@ -12,7 +12,7 @@ use std::collections::HashMap;
 pub struct LaunchSettings;
 fn flags(command: Command) -> Command {
     command
-        .arg(Arg::new("system").long("system").requires("game").conflicts_with_all(["release", "profile"]).help("System write layer; --game supplies its inspection context, not the write layer"))
+        .arg(Arg::new("system").long("system").conflicts_with_all(["release", "profile"]).help("System write layer; optional --game supplies resolution context, not the write layer"))
         .arg(Arg::new("game").long("game"))
         .arg(
             Arg::new("release")
@@ -144,7 +144,11 @@ impl Module for LaunchSettings {
                     "Place: {}",
                     serde_json::to_string(&place).expect("place serializes")
                 ),
-                "Effective values (resolved game context, with origins):".into(),
+                if game_id.is_some() {
+                    "Effective values (resolved game context, with origins):".into()
+                } else {
+                    "Effective values (Device context, with origins; authored place below):".into()
+                },
             ];
             let mut values = snapshot.resolved.values.iter().collect::<Vec<_>>();
             values.sort_by_key(|(key, _)| *key);
@@ -316,7 +320,7 @@ fn selected_place(args: &ArgMatches, game_id: Option<String>) -> LaunchPlace {
 }
 fn require_place(snapshot: &LaunchSnapshot, place: &LaunchPlace) -> Result<(), CliError> {
     if snapshot.places.iter().filter(|p| p.place == *place).count() != 1 {
-        return Err(CliError::usage("The snapshot does not expose this exact layer and runner scope. For --system, supply --game with a game whose resolved route belongs to that system. No setting was changed."));
+        return Err(CliError::usage("The snapshot does not expose this exact layer and runner scope. Check the system ID and available runner scopes; optional --game must resolve to that system. No setting was changed."));
     }
     Ok(())
 }

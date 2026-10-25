@@ -873,3 +873,59 @@ fn concatenated_values_preserve_each_place_and_routine_part_without_an_overall_s
     assert!(resolved.values.values["cpu.max"].source.is_some());
     assert!(resolved.values.values["cpu.max"].contributions.is_none());
 }
+
+#[test]
+fn system_places_without_game_match_the_existing_system_write_boundary() {
+    let root = root();
+    let private = tempfile::tempdir().unwrap();
+    // gba is both authored and referenced; nes is only authored; snes is only referenced.
+    fs::write(
+        root.path().join("device.yaml"),
+        DEVICE.replace("systems: {gba:", "systems: {nes: {gpu: {max: 80}}, gba:"),
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("catalog/library.yaml"),
+        format!("{LIBRARY}  other:\n    releases: [{{id: snes, system: snes}}]\n"),
+    )
+    .unwrap();
+    let client = unavailable(root.path());
+    let before = snapshot(root.path(), None, None, &client).unwrap();
+    let systems: Vec<_> = before
+        .places
+        .iter()
+        .filter_map(|p| match &p.place.layer {
+            LaunchLayer::System(id) => Some((id.as_str(), &p.body)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(systems.len(), 3);
+    assert_eq!(systems[0].0, "gba");
+    assert_eq!(systems[0].1["cpu"]["max"], 85);
+    assert_eq!(systems[1].0, "nes");
+    assert_eq!(systems[1].1["gpu"]["max"], 80);
+    assert_eq!(systems[2].0, "snes");
+    assert!(systems[2].1.get("cpu").is_none());
+    assert!(before
+        .places
+        .iter()
+        .all(|p| matches!(p.place.layer, LaunchLayer::Device | LaunchLayer::System(_))));
+    // No representative game or hypothetical system route changes resolution.
+    assert_eq!(before.resolved.values["cpu.max"].value, 95);
+    let lock = Mutex::new(());
+    let change = req(
+        any(LaunchLayer::System("snes".into())),
+        LaunchPath::CpuMax,
+        Some(json!(70)),
+        before.revisions.device,
+    );
+    set(root.path(), private.path(), &lock, &change, &client).unwrap();
+    let after = snapshot(root.path(), None, None, &client).unwrap();
+    let place = after
+        .places
+        .iter()
+        .find(|p| p.place == change.place)
+        .unwrap();
+    assert_eq!(place.body["cpu"]["max"], 70);
+    assert_eq!(after.resolved.values["cpu.max"].value, 95);
+}
