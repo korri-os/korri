@@ -299,8 +299,10 @@ describe("two displays", () => {
 
   test("invite notices stand on the main display, where no control is under them", () => {
     const { show, choose, container } = surface({ ...fixtureModel, invites: fixtureInvites, displays: rgdsDisplays })
-    const notices = container.querySelector(".pico-invite-notices")
-    expect(notices === null || show!.contains(notices)).toBe(true)
+    const notices = container.querySelector<HTMLElement>(".pico-invite-notices")
+    expect(notices).not.toBeNull()
+    expect(within(notices!).getByText(fixtureInvites[0]!.gameTitle)).toBeTruthy()
+    expect(show!.contains(notices)).toBe(true)
     expect(choose!.querySelector(".pico-invite-notices")).toBeNull()
     // The actionable list stays with the controls.
     expect(within(choose!).getAllByRole("button", { name: /Play on stream/ }).length).toBeGreaterThan(0)
