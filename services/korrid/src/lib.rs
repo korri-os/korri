@@ -1275,6 +1275,10 @@ pub enum PluginChangeOutcome {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum RpcRequest {
+    #[serde(rename = "app.displays.wake")]
+    DisplayWake(host::display_placement::DisplayWakeRequest),
+    #[serde(rename = "app.surface.displays")]
+    SurfaceDisplays(host::display_placement::SurfaceDisplaysRequest),
     #[serde(rename = "app.launch-settings.snapshot")]
     LaunchSettingsSnapshot(launch_settings::LaunchSettingsSnapshotRequest),
     #[serde(rename = "app.launch-settings.set")]
@@ -1455,6 +1459,10 @@ pub enum RpcRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "outcome")]
 pub enum RpcResponse {
+    #[serde(rename = "app.displays.wake")]
+    DisplayWake(host::display_placement::DisplayWakeOutcome),
+    #[serde(rename = "app.surface.displays")]
+    SurfaceDisplays(host::display_placement::SurfaceDisplaysOutcome),
     #[serde(rename = "app.launch-settings.snapshot")]
     LaunchSettingsSnapshot(launch_settings::LaunchSettingsSnapshotOutcome),
     #[serde(rename = "app.launch-settings.set")]
@@ -3422,6 +3430,44 @@ async fn dispatch(
                     .unwrap_or_else(LocalGamesListOutcome::Err),
             ),
         },
+        RpcRequest::DisplayWake(_) => {
+            use host::display_placement::DisplayWakeOutcome;
+            let result = match &state.mode {
+                ServerMode::Host(host) => host.wake_displays().await,
+                _ => Err("display power requires a local host".into()),
+            };
+            RpcResponse::DisplayWake(match result {
+                Ok(()) => DisplayWakeOutcome::Ok,
+                Err(message) => {
+                    eprintln!("korrid: PlacementFailed {{ reason: {message} }}");
+                    DisplayWakeOutcome::Err(RpcFailure {
+                        code: "PlacementFailed".into(),
+                        message,
+                    })
+                }
+            })
+        }
+        RpcRequest::SurfaceDisplays(request) => {
+            use host::display_placement::{
+                configured_displays, surface_rectangles, SurfaceDisplaysOutcome,
+            };
+            let result = match &state.mode {
+                ServerMode::Host(host) => host.surface_displays(request).await,
+                ServerMode::Brain(_) => {
+                    configured_displays().map(|d| surface_rectangles(&d, request.displays, None))
+                }
+            };
+            RpcResponse::SurfaceDisplays(match result {
+                Ok(displays) => SurfaceDisplaysOutcome::Ok(displays),
+                Err(message) => {
+                    eprintln!("korrid: PlacementFailed {{ reason: {message} }}");
+                    SurfaceDisplaysOutcome::Err(RpcFailure {
+                        code: "PlacementFailed".into(),
+                        message,
+                    })
+                }
+            })
+        }
         RpcRequest::Health(_) => RpcResponse::Health(HealthOutcome::Ok(Health {
             version: VERSION.into(),
         })),

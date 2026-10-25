@@ -1,10 +1,7 @@
-//! Choose which compositor window belongs to one exact launch.
+//! Recognize windows of one exact launch and execute bounded Sway operations.
 //!
-//! korrid owns session lifecycle truth, so it must also decide what "resume"
-//! means before anything moves a window. This module is only that decision: it
-//! reads a Sway tree snapshot and the processes of the exact launch, and names
-//! the window to focus. It never talks to the compositor, spawns helpers, or
-//! guesses between several equally plausible windows.
+//! Process ownership, never window titles, chooses the game. Ambiguous or
+//! unreadable compositor facts cannot authorize focus or placement.
 
 use serde::Deserialize;
 use std::{
@@ -23,7 +20,13 @@ const MAX_TREE_BYTES: u64 = 4 * 1024 * 1024;
 /// behind a trait means session tests never depend on a live compositor.
 pub(crate) trait CompositorControl: Send + Sync + std::fmt::Debug {
     fn tree(&self) -> Result<String, String>;
+    fn outputs(&self) -> Result<String, String> {
+        Err("output observation unavailable".into())
+    }
     fn focus(&self, node_id: i64) -> Result<(), String>;
+    fn command(&self, _command: &str) -> Result<(), String> {
+        Err("compositor placement unavailable".into())
+    }
 }
 
 /// Talks to Sway through the same `swaymsg -s <socket>` shape the Linux host
@@ -47,7 +50,7 @@ impl SwaymsgCompositorControl {
         })
     }
 
-    fn run(&self, arguments: &[&str]) -> Result<String, String> {
+    pub(super) fn run(&self, arguments: &[&str]) -> Result<String, String> {
         let mut child = Command::new(&self.swaymsg)
             .arg("-s")
             .arg(&self.socket)
@@ -109,6 +112,28 @@ impl SwaymsgCompositorControl {
 }
 
 impl CompositorControl for SwaymsgCompositorControl {
+    fn outputs(&self) -> Result<String, String> {
+        self.run(&["-r", "-t", "get_outputs"])
+    }
+    fn command(&self, command: &str) -> Result<(), String> {
+        let answer = self.run(&["-r", "--", command])?;
+        #[derive(Deserialize)]
+        struct Reply {
+            success: bool,
+            error: Option<String>,
+        }
+        let replies: Vec<Reply> = serde_json::from_str(&answer).map_err(|e| e.to_string())?;
+        if replies.is_empty() {
+            return Err("empty sway command reply".into());
+        }
+        for reply in replies {
+            if !reply.success {
+                return Err(reply.error.unwrap_or_else(|| "sway command refused".into()));
+            }
+        }
+        Ok(())
+    }
+
     fn tree(&self) -> Result<String, String> {
         // `-r` keeps the reply compact, as every other Sway call in this repo
         // does; pretty-printed trees waste the read budget.
@@ -147,6 +172,24 @@ struct TreeNode {
 struct WindowProperties {
     #[serde(default)]
     class: Option<String>,
+}
+
+pub(super) fn portal_node(tree: &str, identities: &[&str]) -> Result<i64, String> {
+    fn visit(node: &TreeNode, identities: &[&str], ids: &mut Vec<i64>) {
+        if is_excluded(node, identities) {
+            ids.push(node.id);
+        }
+        for child in node.nodes.iter().chain(node.floating_nodes.iter()) {
+            visit(child, identities, ids);
+        }
+    }
+    let root: TreeNode = serde_json::from_str(tree).map_err(|e| e.to_string())?;
+    let mut ids = Vec::new();
+    visit(&root, identities, &mut ids);
+    if ids.len() != 1 {
+        return Err("no unique portal window".into());
+    }
+    Ok(ids[0])
 }
 
 /// One window that the exact launch owns.
@@ -620,7 +663,9 @@ pub(crate) fn launch_display() -> Option<crate::launcher::plugin_launch::PluginD
     display_from_outputs(&control.run(&["-r", "-t", "get_outputs"]).ok()?)
 }
 
-fn display_from_outputs(json: &str) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
+pub(super) fn display_from_outputs(
+    json: &str,
+) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
     #[derive(Deserialize)]
     struct Output {
         active: bool,

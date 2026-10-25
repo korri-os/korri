@@ -3,7 +3,7 @@
 # (portal.nix, 2daf0930c) so no device can ship without them.
 #
 # A device supplies only hardware facts: its InputPlumber data decides whether
-# volume keys reach inputd, and compositor.outputName names the panel.
+# volume keys reach inputd, and compositor.displays names its displays.
 {
   config,
   lib,
@@ -13,14 +13,21 @@
 let
   host = config.services.korriLinuxHost;
   runtimeDir = "/run/user/${toString host.runtimeUid}";
-  # swayidle runs each command through sh -c, which expands the panel name from
-  # the unit environment. The product check compares ExecStart exactly and
-  # treats unit environment as device data.
+  # Idle can blank every display. Wake asks korrid for its current placement;
+  # a display with no content must remain off, including after idle.
+  displayWake = pkgs.writeShellScript "korri-display-wake" ''
+    set -euo pipefail
+    ${pkgs.curl}/bin/curl --silent --show-error --fail --max-time 10 \
+      --unix-socket ${lib.escapeShellArg config.services.korridLinuxDevice.cliSocket} \
+      --header 'content-type: application/json' \
+      --data '{"_tag":"app.displays.wake","payload":{}}' http://localhost/rpc \
+      | ${pkgs.jq}/bin/jq --exit-status '.outcome._tag == "Ok"' >/dev/null
+  '';
   displayIdle = pkgs.writeShellScript "korri-display-idle" ''
     exec ${pkgs.swayidle}/bin/swayidle -w \
-      timeout 300 '${pkgs.sway}/bin/swaymsg output "$KORRI_DISPLAY_OUTPUT" power off' \
-      resume '${pkgs.sway}/bin/swaymsg output "$KORRI_DISPLAY_OUTPUT" power on' \
-      before-sleep '${pkgs.sway}/bin/swaymsg output "$KORRI_DISPLAY_OUTPUT" power off'
+      timeout 300 '${pkgs.sway}/bin/swaymsg output "*" power off' \
+      resume '${displayWake}' \
+      before-sleep '${pkgs.sway}/bin/swaymsg output "*" power off'
   '';
   volume = step: {
     command = [
@@ -130,7 +137,6 @@ in
       XDG_RUNTIME_DIR = runtimeDir;
       WAYLAND_DISPLAY = "korri-wayland";
       SWAYSOCK = "/run/korri-compositor/sway-ipc.sock";
-      KORRI_DISPLAY_OUTPUT = host.compositor.mainDisplay;
     };
     serviceConfig = {
       User = host.runtimeUser;

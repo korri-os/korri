@@ -269,6 +269,8 @@ pub struct HostSessionControl {
     /// Required to prove that an exact launch owns focus before Game input can
     /// return. Absence is a product-path focus failure, never implicit success.
     compositor: Option<Arc<dyn CompositorControl>>,
+    placement_applied: Arc<Mutex<Option<String>>>,
+    display_content: Arc<Mutex<Vec<String>>>,
     /// Surfaces that must never be focused as a game, such as the kiosk hub.
     never_focus: Vec<String>,
     /// Frozen only while a running exact launch has observed compositor focus.
@@ -336,6 +338,8 @@ impl HostSessionControl {
             recovered_overlay_intent: Arc::new(Mutex::new(None)),
             initial_handoff: Arc::new(Mutex::new(None)),
             compositor: None,
+            placement_applied: Arc::new(Mutex::new(None)),
+            display_content: Arc::new(Mutex::new(Vec::new())),
             never_focus: Vec::new(),
             portal: None,
             native_input: None,
@@ -596,10 +600,20 @@ impl HostSessionControl {
             .backend
             .window_pids(launch_id)
             .map_err(|error| error.message)?;
+        let waiting = self
+            .initial_handoff
+            .lock()
+            .expect("initial handoff mutex poisoned")
+            .as_ref()
+            .is_some_and(|(id, phase)| id == launch_id && *phase == InitialHandoff::Waiting);
+        if waiting {
+            self.ensure_display_placement(launch_id, false);
+        }
         let tree = compositor.tree()?;
         let excluded: Vec<&str> = self.never_focus.iter().map(String::as_str).collect();
         let ownership = focused_ownership(&tree, &pids, &excluded)?;
         if ownership == FocusOwnership::Launch {
+            self.ensure_display_placement(launch_id, false);
             self.record_initial_handoff(launch_id);
         }
         Ok(ownership)
@@ -786,6 +800,166 @@ impl HostSessionControl {
         observe(status, ownership, handoff, recovered)
     }
 
+    pub(crate) fn wake_displays(&self) -> Result<(), String> {
+        // Serialize with placement, without StateGuard's session reconciliation.
+        // Waking displays must not focus, thaw, or route a session.
+        let _state = self
+            .state
+            .lock()
+            .map_err(|_| "session state mutex poisoned")?;
+        let displays = super::display_placement::configured_displays()?;
+        if displays.is_empty() {
+            return Err("display facts unavailable".into());
+        }
+        let occupied = if displays.len() == 1 {
+            vec![displays[0].name.clone()]
+        } else {
+            let content = self
+                .display_content
+                .lock()
+                .expect("display content mutex poisoned")
+                .clone();
+            if content.is_empty() {
+                return Err("no current display placement to restore".into());
+            }
+            content
+        };
+        let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
+        super::display_placement::apply(
+            compositor.as_ref(),
+            &super::display_placement::power_commands(&displays, &occupied),
+        )
+    }
+
+    fn launch_placement(
+        &self,
+        launch_id: &str,
+        displays: &[super::display_placement::Display],
+    ) -> Result<super::display_placement::Placement, String> {
+        if let Some(plan) = self.backend.placement(launch_id).map_err(|e| e.message)? {
+            return Ok(plan);
+        }
+        let main = displays.iter().find(|d| d.main).ok_or("no main display")?;
+        Ok(super::display_placement::Placement {
+            layout: None,
+            global: false,
+            width: main.width,
+            height: main.height,
+            outputs: vec![main.name.clone()],
+        })
+    }
+
+    fn ensure_display_placement(&self, launch_id: &str, force: bool) {
+        let mut applied = self
+            .placement_applied
+            .lock()
+            .expect("placement mutex poisoned");
+        if !force && applied.as_deref() == Some(launch_id) {
+            return;
+        }
+        let result: Result<(), String> = (|| {
+            let displays = super::display_placement::configured_displays()?;
+            if displays.len() <= 1 {
+                return Ok(());
+            }
+            let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
+            let pids = self.backend.window_pids(launch_id).map_err(|e| e.message)?;
+            let placement = self.launch_placement(launch_id, &displays)?;
+            let excluded: Vec<_> = self.never_focus.iter().map(String::as_str).collect();
+            *self
+                .display_content
+                .lock()
+                .expect("display content mutex poisoned") = displays
+                .iter()
+                .filter(|d| d.main)
+                .map(|d| d.name.clone())
+                .collect();
+            super::display_placement::place_game(
+                compositor.as_ref(),
+                &displays,
+                &placement,
+                &pids,
+                &excluded,
+            )?;
+            *self
+                .display_content
+                .lock()
+                .expect("display content mutex poisoned") = placement.outputs.clone();
+            Ok(())
+        })();
+        match result {
+            Ok(()) => *applied = Some(launch_id.into()),
+            Err(reason) => {
+                eprintln!("korrid: PlacementFailed {{ launch_id: {launch_id}, reason: {reason} }}")
+            }
+        }
+    }
+
+    pub(crate) fn surface_displays(
+        &self,
+        request: super::display_placement::SurfaceDisplaysRequest,
+    ) -> Result<Vec<super::display_placement::SurfaceDisplay>, String> {
+        let scope = request.displays;
+        let mut displays = super::display_placement::configured_displays()?;
+        if displays.len() <= 1 {
+            if let (Some(display), Some(control)) = (displays.first_mut(), self.compositor.as_ref())
+            {
+                let logical = super::compositor_focus::display_from_outputs(&control.outputs()?)
+                    .ok_or("main display geometry unavailable")?;
+                display.width = logical.width;
+                display.height = logical.height;
+            }
+            return Ok(super::display_placement::surface_rectangles(
+                &displays, scope, None,
+            ));
+        }
+        let state = self.lock_state();
+        let launch_id = match &*state {
+            ActiveState::Running { launch_id, .. }
+            | ActiveState::Frozen { launch_id, .. }
+            | ActiveState::FocusFailed { launch_id, .. } => Some(launch_id.as_str()),
+            _ => None,
+        };
+        let launch_id = if request.overlay {
+            if launch_id != request.launch_id.as_deref() || launch_id.is_none() {
+                return Err("overlay launch changed before display placement".into());
+            }
+            launch_id
+        } else {
+            None
+        };
+        let placement = launch_id
+            .map(|id| self.launch_placement(id, &displays))
+            .transpose()?;
+        let pids = launch_id
+            .map(|id| self.backend.window_pids(id).map_err(|e| e.message))
+            .transpose()?
+            .unwrap_or_default();
+        let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
+        let excluded: Vec<_> = self.never_focus.iter().map(String::as_str).collect();
+        let rectangles = super::display_placement::place_surface(
+            compositor.as_ref(),
+            &displays,
+            scope,
+            placement.as_ref(),
+            &pids,
+            &excluded,
+        )?;
+        let mut occupied = placement.map(|p| p.outputs).unwrap_or_default();
+        occupied.extend(rectangles.iter().map(|d| d.id.clone()));
+        *self
+            .display_content
+            .lock()
+            .expect("display content mutex poisoned") = occupied;
+        if let Some(id) = launch_id {
+            *self
+                .placement_applied
+                .lock()
+                .expect("placement mutex poisoned") = Some(id.into());
+        }
+        Ok(rectangles)
+    }
+
     /// Raise the window of the exact launch that was just resumed. A missing
     /// compositor is distinct from a successful focus and fails closed.
     fn focus_launch(&self, launch_id: &str) -> Option<FocusOutcome> {
@@ -795,6 +969,7 @@ impl HostSessionControl {
             Err(error) => return Some(FocusOutcome::Failed(error.message)),
         };
         let excluded: Vec<&str> = self.never_focus.iter().map(String::as_str).collect();
+        self.ensure_display_placement(launch_id, true);
         let outcome = focus_launch_window(compositor.as_ref(), &pids, &excluded);
         // Focused is returned only after the compositor tree proves exact
         // ownership, never from the focus command's acknowledgement alone.
@@ -1716,6 +1891,23 @@ impl HostSessionControl {
             }
         };
         let mut launch_environment = environment.clone();
+        if configured_command
+            .get(1)
+            .is_some_and(|v| v == "plugin-launch")
+        {
+            if let Some(encoded) = configured_command.get(4) {
+                let composition: crate::launcher::plugin_launch::LaunchComposition =
+                    serde_json::from_str(encoded)
+                        .map_err(|e| failure("PlacementFailed", e.to_string()))?;
+                if let Some(placement) = composition.placement {
+                    launch_environment.insert(
+                        super::systemd_unit::PLACEMENT_ENV.into(),
+                        serde_json::to_string(&placement)
+                            .map_err(|e| failure("PlacementFailed", e.to_string()))?,
+                    );
+                }
+            }
+        }
         if let Some(runner_id) = runner_id {
             launch_environment.insert(RUNNER_ID_ENV.into(), runner_id.into());
         }

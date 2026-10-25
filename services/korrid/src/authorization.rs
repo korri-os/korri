@@ -262,6 +262,8 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::LaunchProfileSelect(_)
         | RpcRequest::SelectedGameLaunch(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LocalGamesList(_) => PeerPolicy::OwnerDeviceOnly,
+        RpcRequest::DisplayWake(_) => PeerPolicy::LocalOnly,
+        RpcRequest::SurfaceDisplays(_) => PeerPolicy::LocalPortalOnly,
         RpcRequest::Health(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LibraryFoldersSnapshot(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LibraryFolderAdd(_) | RpcRequest::LibraryFolderChange(_) => {
@@ -1211,6 +1213,23 @@ mod tests {
 
     fn request(json: serde_json::Value) -> RpcRequest {
         serde_json::from_value(json).unwrap()
+    }
+
+    #[test]
+    fn display_placement_is_person_local_and_idle_wake_cannot_be_forwarded() {
+        let surface =
+            RpcRequest::SurfaceDisplays(crate::host::display_placement::SurfaceDisplaysRequest {
+                displays: crate::host::display_placement::SurfaceDisplayScope::All,
+                overlay: false,
+                launch_id: None,
+            });
+        assert_eq!(policy_for(&surface), PeerPolicy::LocalPortalOnly);
+        assert!(authorize(&AuthorizationContext::LocalUnixControl, &surface).is_err());
+        assert!(authorize(&AuthorizationContext::LocalCli, &surface).is_ok());
+        let wake = RpcRequest::DisplayWake(crate::host::display_placement::DisplayWakeRequest {});
+        assert_eq!(policy_for(&wake), PeerPolicy::LocalOnly);
+        assert!(authorize(&AuthorizationContext::LocalUnixControl, &wake).is_ok());
+        assert!(authorize(&AuthorizationContext::TrustReconciliation, &wake).is_err());
     }
 
     #[test]

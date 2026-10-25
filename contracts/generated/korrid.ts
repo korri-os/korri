@@ -325,6 +325,9 @@ export interface DetailsRequest {
 	id: string;
 }
 
+export interface DisplayWakeRequest {
+}
+
 export interface DownloadChoice {
 	id: string;
 	fileName?: string;
@@ -1236,6 +1239,7 @@ export interface PluginLaunchOverrides {
 export interface PluginLaunchInput {
 	netplay?: PluginLaunchNetplay;
 	runnerId: string;
+	layout?: string;
 	familyId?: string;
 	program: string;
 	corePath?: string;
@@ -1792,6 +1796,27 @@ export interface SteamGridDbCredentialSetRequest {
 	token: string;
 }
 
+export interface SurfaceDisplay {
+	id: string;
+	main: boolean;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	touch: boolean;
+}
+
+export enum SurfaceDisplayScope {
+	Main = "main",
+	All = "all",
+}
+
+export interface SurfaceDisplaysRequest {
+	displays: SurfaceDisplayScope;
+	overlay: boolean;
+	launchId?: string;
+}
+
 export interface WifiConnectHiddenRequest {
 	ssid: string;
 	password?: string;
@@ -1831,6 +1856,10 @@ export type CatalogSnapshotOutcome =
 
 export type DetailsOutcome =
 	| { _tag: "Ok", payload: ProviderClaimDetails }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type DisplayWakeOutcome =
+	| { _tag: "Ok", payload?: undefined }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type GameRoutesOutcome =
@@ -1944,6 +1973,8 @@ export enum PluginRepositoryRemoveResult {
 }
 
 export type RpcRequest =
+	| { _tag: "app.displays.wake", payload: DisplayWakeRequest }
+	| { _tag: "app.surface.displays", payload: SurfaceDisplaysRequest }
 	| { _tag: "app.launch-settings.snapshot", payload: LaunchSettingsSnapshotRequest }
 	| { _tag: "app.launch-settings.set", payload: LaunchSetRequest }
 	| { _tag: "app.launch-settings.profile.save", payload: LaunchProfileSaveRequest }
@@ -2025,6 +2056,8 @@ export type RpcRequest =
 	| { _tag: "system.plugins.setEnabled", payload: PluginSetEnabledRequest };
 
 export type RpcResponse =
+	| { _tag: "app.displays.wake", outcome: DisplayWakeOutcome }
+	| { _tag: "app.surface.displays", outcome: SurfaceDisplaysOutcome }
 	| { _tag: "app.launch-settings.snapshot", outcome: LaunchSettingsSnapshotOutcome }
 	| { _tag: "app.launch-settings.set", outcome: LaunchSettingsWriteOutcome }
 	| { _tag: "app.launch-settings.profile.save", outcome: LaunchSettingsWriteOutcome }
@@ -2171,6 +2204,10 @@ export type SettingsUpdateOutcome =
 
 export type SourceStatusOutcome =
 	| { _tag: "Ok", payload: SourceStatus }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type SurfaceDisplaysOutcome =
+	| { _tag: "Ok", payload: SurfaceDisplay[] }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type WifiAttempt =

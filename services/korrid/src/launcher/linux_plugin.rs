@@ -183,7 +183,35 @@ fn inspect_route(
         }
         _ => None,
     }));
+    let displays = crate::host::display_placement::configured_displays().map_err(error)?;
+    let placement = if displays.is_empty() {
+        None
+    } else {
+        Some(
+            crate::host::display_placement::choose(
+                registry
+                    .systems()
+                    .values()
+                    .find(|system| system.id == route.system_id),
+                registry
+                    .runners()
+                    .get(&route.runner_id)
+                    .ok_or_else(|| error("runner declaration missing".into()))?,
+                &displays,
+            )
+            .map_err(error)?,
+        )
+    };
+    let display = placement
+        .as_ref()
+        .filter(|_| displays.len() > 1)
+        .map(|p| PluginDisplay {
+            width: p.width,
+            height: p.height,
+        })
+        .or(display);
     let mut composition = LaunchComposition {
+        placement: placement.clone(),
         display,
         env: resolved.env.clone(),
         args: resolved.args.clone(),
@@ -255,6 +283,7 @@ fn inspect_route(
     let settings = folded.settings.clone();
     let input = PluginLaunchInput {
         netplay: None,
+        layout: placement.and_then(|p| p.layout),
         runner_id: route.runner_id.clone(),
         family_id: route.family_id.clone(),
         program: native.program.clone(),
