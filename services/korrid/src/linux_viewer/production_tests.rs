@@ -392,3 +392,31 @@ fn linux_viewer_reads_sysfs_device_tree_and_reports_read_failures() {
     );
     assert!(reason.is_some_and(|reason| !reason.is_empty()));
 }
+
+#[test]
+fn linux_viewer_bitrate_follows_moonlight_defaults_for_size_and_rate() {
+    // Expected values follow moonlight-qt getDefaultBitrate for 4:2:0.
+    for (width, height, fps, kbps) in [
+        (640, 480, 60, 3000),
+        (640, 360, 60, 2000),
+        (320, 240, 60, 2000),
+        (1280, 720, 30, 5000),
+        (1280, 720, 60, 10000),
+        (1920, 1080, 60, 20000),
+        (1920, 1080, 120, 28000),
+        (7680, 4320, 60, 80000),
+    ] {
+        assert_eq!(
+            default_bitrate_kbps(width, height, fps),
+            kbps,
+            "{width}x{height}@{fps}"
+        );
+    }
+    let files = MoonlightFiles {
+        executable: "/nix/store/viewer/bin/moonlight".into(),
+        mapping: "/nix/store/viewer/mapping".into(),
+        bootstrap: "/nix/store/viewer/bootstrap".into(),
+    };
+    let args = stream_args(&files, Path::new("/keys"), "host", (640, 480), "x11", &[]).unwrap();
+    assert!(args.windows(2).any(|v| v == ["-bitrate", "3000"]));
+}

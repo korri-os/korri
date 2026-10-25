@@ -231,6 +231,43 @@ fn platform_from_path(path: &Path, report: impl FnOnce(&std::io::Error)) -> &'st
     }
 }
 
+/// Frame rate every Korri stream requests.
+const STREAM_FPS: u64 = 60;
+
+/// Moonlight's own default bitrate for a resolution and frame rate, in kbps.
+/// A port of `StreamingPreferences::getDefaultBitrate` (moonlight-qt,
+/// app/settings/streamingpreferences.cpp, 4:2:0): linear interpolation over
+/// the Shield resolution table, scaled by fps / 30, with sub-linear growth
+/// above 60 fps. 640x480 at 60 fps gives 3000 kbps.
+fn default_bitrate_kbps(width: u64, height: u64, fps: u64) -> u64 {
+    const TABLE: [(f64, f64); 6] = [
+        (640.0 * 360.0, 1.0),
+        (854.0 * 480.0, 2.0),
+        (1280.0 * 720.0, 5.0),
+        (1920.0 * 1080.0, 10.0),
+        (2560.0 * 1440.0, 20.0),
+        (3840.0 * 2160.0, 40.0),
+    ];
+    let fps = fps as f64;
+    let frame_rate_factor = if fps <= 60.0 {
+        fps
+    } else {
+        (fps / 60.0).sqrt() * 60.0
+    } / 30.0;
+    let pixels = (width * height) as f64;
+    let resolution_factor = match TABLE.iter().position(|(limit, _)| pixels <= *limit) {
+        Some(0) => TABLE[0].1,
+        Some(index) => {
+            let (low_pixels, low_factor) = TABLE[index - 1];
+            let (high_pixels, high_factor) = TABLE[index];
+            (pixels - low_pixels) / (high_pixels - low_pixels) * (high_factor - low_factor)
+                + low_factor
+        }
+        None => TABLE[TABLE.len() - 1].1,
+    };
+    (resolution_factor * frame_rate_factor).round() as u64 * 1000
+}
+
 fn stream_args(
     files: &MoonlightFiles,
     keydir: &Path,
@@ -249,9 +286,9 @@ fn stream_args(
         "-height".into(),
         size.1.to_string(),
         "-fps".into(),
-        "60".into(),
+        STREAM_FPS.to_string(),
         "-bitrate".into(),
-        "20000".into(),
+        default_bitrate_kbps(size.0, size.1, STREAM_FPS).to_string(),
         "-codec".into(),
         "h264".into(),
         "-platform".into(),
