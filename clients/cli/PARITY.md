@@ -44,7 +44,7 @@ publish and route plugin rows.
 | Inherit / `launch:set:PLACE#clear:PATH` | `launch-settings set KEY --inherit [layer] [scope]` | Clears override; empty strings stay values |
 | `launch:profile:pick` | `launch-settings profiles use ID --game GAME`; `use --none --game GAME` | Exact profile ID, including no-profile choice |
 | `launch:profile:new` | `launch-settings profiles new TITLE --game GAME` | Same profile creation |
-| `launch:profile:rename:ID` | **Gap: needs `launch-settings profiles rename` (added by the producers branch)** | Existing `LaunchProfileSave` supports `profileId`; excluded `launch_settings.rs` owns the fix |
+| `launch:profile:rename:ID` | `launch-settings profiles rename ID TITLE --game GAME` | Same `LaunchProfileSave` with `profileId`, trimmed title, 40-character limit and observed revision |
 | `launch:profile:remove:ID` | `launch-settings profiles delete ID --game GAME --yes` | Same revision and exact ID |
 | `launch:reload`, `launch:retry`, `launch-device:retry` | `launch-settings show [--game GAME]`; explicitly repeat a failed command | No automatic conflict retry |
 | `launch:runner` | `play GAME --runner ID`; `launch-settings runner ID --game GAME` | One-launch choice vs persisted choice |
@@ -108,8 +108,8 @@ paths and the two surface-owned preference IDs. An unrecognized ID/path fails
 and needs a command mapping in that change.
 Its small test-local table is not a second runtime settings manifest. Negative
 tests prove new literal, constant and dynamic IDs cannot pass without review.
-The explicit profile-rename known gap must become a real mapping when the
-producers command arrives; the check refuses a stale known-gap entry.
+The check refuses a stale known-gap entry: once a gap's command exists, the
+entry must become a real mapping.
 
 This guard checks the current settings producer seams, not arbitrary new portal
 files or every action handler. Keep this action audit current during review.

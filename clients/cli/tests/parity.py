@@ -38,6 +38,7 @@ MAPPINGS = {
     "launch:profile:pick": "launch-settings profiles use ID|--none --game GAME",
     "launch:profile:new": "launch-settings profiles new TITLE --game GAME",
     "launch:profile:remove:": "launch-settings profiles delete ID --game GAME",
+    "launch:profile:rename:": "launch-settings profiles rename ID TITLE --game GAME",
     "launch:reload": "launch-settings show --game GAME",
     "launch-device:retry": "launch-settings show",
     "launch:runner": "play GAME --runner ID; launch-settings runner ID --game GAME",
@@ -45,12 +46,9 @@ MAPPINGS = {
     "launch:cancel": "no effect; exit the editor",
 }
 
-# Rename is a temporary branch-integration gap approved by the coordinator.
-# The producers branch implements it; the guard then demands a real mapping.
 # Surface-owned preferences have no shared RPC or agreed command yet. Do not
 # invent one to make this inventory green (see PARITY.md, schema unresolved).
 KNOWN_GAPS = {
-    "launch:profile:rename:": ("launch_settings.rs", "rename"),
     "pico:font": None,
     "zone:system-look": None,
 }
