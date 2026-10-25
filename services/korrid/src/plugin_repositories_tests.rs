@@ -234,7 +234,7 @@ async fn plugin_requests_fail_plainly_without_a_reachable_host() {
 }
 
 #[tokio::test]
-async fn only_a_full_local_portal_may_change_plugins() {
+async fn read_only_portal_may_list_plugins_but_cannot_administer_them() {
     let root = tempfile::tempdir().unwrap();
     let socket = root.path().join("admin.sock");
     stand_in_host(&socket, answer);
@@ -254,21 +254,166 @@ async fn only_a_full_local_portal_may_change_plugins() {
         let (status, _) = call(&app, body).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
     }
-    // No peer device, not even the owner's own, reaches root plugin authority.
-    let request = RpcRequest::PluginSetEnabled(PluginSetEnabledRequest {
-        id: "@a:b".into(),
-        enabled: true,
-    });
-    for context in [
-        AuthorizationContext::LocalUnixControl,
-        AuthorizationContext::TrustReconciliation,
-        AuthorizationContext::Peer(Principal::OwnerDevice {
-            device_public_key: "a".repeat(64),
-            owner_statement: String::new(),
-            owner_public_key: "b".repeat(64),
-        }),
+}
+
+#[test]
+fn plugin_admin_authority_requires_a_person_surface_or_verified_owner_peer() {
+    use nostr::{
+        event::{EventBuilder, FinalizeEvent, Kind, Tag},
+        key::Keys,
+        types::Timestamp,
+    };
+
+    let local_root = tempfile::tempdir().unwrap();
+    let peer_root = tempfile::tempdir().unwrap();
+    let foreign_root = tempfile::tempdir().unwrap();
+    let owner_secret = "31".repeat(32);
+    let owner = Keys::parse(&owner_secret).unwrap();
+    let local = peer_rpc::test_owned_identity(local_root.path(), &"33".repeat(32), &owner_secret);
+    let peer = peer_rpc::test_owned_identity(peer_root.path(), &"34".repeat(32), &owner_secret);
+    let foreign =
+        peer_rpc::test_owned_identity(foreign_root.path(), &"35".repeat(32), &"32".repeat(32));
+    let authority = authorization::Authorization::load(local_root.path()).unwrap();
+    let now = peer_rpc::unix_time();
+    let peer_key = peer.device_public_key().unwrap();
+    let foreign_key = foreign.device_public_key().unwrap();
+    let statement = peer.owner_statement_json().unwrap();
+    let foreign_statement = foreign.owner_statement_json().unwrap();
+    let verified_owner = authority
+        .attempt(local.state(), peer_key, Some(&statement), None, &[], now)
+        .unwrap();
+    assert!(matches!(
+        verified_owner.context(),
+        AuthorizationContext::Peer(Principal::OwnerDevice { .. })
+    ));
+    let other_owner = authority
+        .attempt(
+            local.state(),
+            foreign_key,
+            Some(&foreign_statement),
+            None,
+            &[],
+            now,
+        )
+        .unwrap();
+    assert!(matches!(
+        other_owner.context(),
+        AuthorizationContext::Peer(Principal::Unknown { .. })
+    ));
+    let unknown = authority
+        .attempt(local.state(), peer_key, None, None, &[], now)
+        .unwrap();
+
+    // These signed pass fixtures use authorization.rs's existing person-pass
+    // producer and grant both available scopes. Neither scope grants admin.
+    let pass = |tier| {
+        EventBuilder::new(Kind::Custom(authorization::PERSON_PASS_EVENT_KIND), "")
+            .tags([
+                Tag::parse(["d", &format!("org.korri.person-pass:{}", "11".repeat(32))]).unwrap(),
+                Tag::parse(["device", foreign_key]).unwrap(),
+                Tag::parse(["tier", tier]).unwrap(),
+                Tag::parse(["expires", &(now + 60).to_string()]).unwrap(),
+                Tag::parse(["scope", authorization::CATALOG_READ_SCOPE]).unwrap(),
+                Tag::parse(["scope", authorization::STREAM_LAUNCH_SCOPE]).unwrap(),
+            ])
+            .custom_created_at(Timestamp::from(now))
+            .finalize(&owner)
+            .unwrap()
+            .as_json()
+    };
+    let guest = authority
+        .attempt(
+            local.state(),
+            foreign_key,
+            Some(&foreign_statement),
+            Some(&pass("guest")),
+            &[],
+            now,
+        )
+        .unwrap();
+    let household = authority
+        .attempt(
+            local.state(),
+            foreign_key,
+            Some(&foreign_statement),
+            Some(&pass("household")),
+            &[],
+            now,
+        )
+        .unwrap();
+    assert!(matches!(
+        guest.context(),
+        AuthorizationContext::Peer(Principal::Guest { .. })
+    ));
+    assert!(matches!(
+        household.context(),
+        AuthorizationContext::Peer(Principal::Household { .. })
+    ));
+    let revoked = EventBuilder::new(Kind::Custom(identity::OWNER_EVENT_KIND), "")
+        .tags([
+            Tag::parse(["d", &format!("org.korri.device-owner:{peer_key}")]).unwrap(),
+            Tag::parse(["device", peer_key]).unwrap(),
+            Tag::parse(["status", "revoked"]).unwrap(),
+        ])
+        .custom_created_at(Timestamp::from(now))
+        .finalize(&owner)
+        .unwrap()
+        .as_json();
+    let revoked_owner = authority
+        .attempt(
+            local.state(),
+            peer_key,
+            Some(&statement),
+            None,
+            &[revoked],
+            now,
+        )
+        .unwrap();
+    assert!(matches!(
+        revoked_owner.context(),
+        AuthorizationContext::Peer(Principal::Unknown { .. })
+    ));
+
+    // ADR 0031 widens exactly the seven existing admin operations to verified
+    // same-owner peers. It grants nothing to inputd, reconciliation or passes.
+    for body in [
+        json!({"_tag":"system.plugins.repositories","payload":{}}),
+        json!({"_tag":"system.plugins.repository.add","payload":{"url":"https://a.example/"}}),
+        json!({"_tag":"system.plugins.repository.remove","payload":{"url":"https://a.example/"}}),
+        json!({"_tag":"system.plugins.catalog","payload":{"url":"https://a.example/"}}),
+        json!({"_tag":"system.plugins.inspect","payload":{"url":"https://a.example/","pluginId":"@a:b","releaseVersion":"v1"}}),
+        json!({"_tag":"system.plugins.install","payload":{"url":"https://a.example/","pluginId":"@a:b","releaseVersion":"v1","approval":"reviewed"}}),
+        json!({"_tag":"system.plugins.setEnabled","payload":{"id":"@a:b","enabled":true}}),
     ] {
-        assert!(authorization::authorize(&context, &request).is_err());
+        let request: RpcRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(
+            authorization::policy_for(&request),
+            authorization::PeerPolicy::LocalPortalOrOwnerDevice
+        );
+        assert!(plugin_repositories::is_admin_request(&request));
+        for allowed in [
+            &AuthorizationContext::LocalBrowser,
+            &AuthorizationContext::LocalCli,
+            verified_owner.context(),
+        ] {
+            assert!(
+                authorization::authorize(allowed, &request).is_ok(),
+                "{allowed:?}: {request:?}"
+            );
+        }
+        for denied in [
+            &AuthorizationContext::LocalUnixControl,
+            &AuthorizationContext::TrustReconciliation,
+            guest.context(),
+            household.context(),
+            other_owner.context(),
+            unknown.context(),
+            revoked_owner.context(),
+        ] {
+            assert!(
+                authorization::authorize(denied, &request).is_err(),
+                "{denied:?}: {request:?}"
+            );
+        }
     }
-    assert!(authorization::authorize(&AuthorizationContext::LocalBrowser, &request).is_ok());
 }
