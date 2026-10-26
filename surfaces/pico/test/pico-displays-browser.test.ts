@@ -5,48 +5,30 @@
  *
  * happy-dom does no layout and no focus scrolling, so this one runs in
  * Chromium. Set CHROMIUM to a Chromium executable; without it the test is
- * skipped, and says so. Vite serves the page from its own process, because
- * the happy-dom preload replaces the timers Vite needs in this one.
+ * skipped, and says so. Vite serves the page from its own process
+ * (test/browser/serve.ts).
  */
 import { afterAll, beforeAll, expect, test } from "bun:test"
-import { join } from "node:path"
 import { type Browser, chromium } from "playwright-core"
+import { serveBrowserPages } from "./browser/serve"
 
 const executablePath = process.env.CHROMIUM
 const run = executablePath === undefined || executablePath === "" ? test.skip : test
 
-const PICO = join(import.meta.dir, "..")
-let server: ReturnType<typeof Bun.spawn> | undefined
+let server: Awaited<ReturnType<typeof serveBrowserPages>> | undefined
 let address: string | undefined
 let browser: Browser | undefined
 
-/** Start Vite on Pico's source and read the address it prints. */
-async function serve(): Promise<string> {
-  const vite = Bun.spawn(
-    [process.execPath, join(PICO, "node_modules/vite/bin/vite.js"), "--config", "test/browser/vite.config.ts", "--port", "0"],
-    { cwd: PICO, stdout: "pipe", stderr: "inherit", env: { ...process.env, NO_COLOR: "1" } },
-  )
-  server = vite
-  const reader = (vite.stdout as ReadableStream<Uint8Array>).getReader()
-  let printed = ""
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) throw new Error(`vite stopped before it served: ${printed}`)
-    printed += new TextDecoder().decode(value)
-    const found = printed.match(/http:\/\/127\.0\.0\.1:\d+\//)
-    if (found !== null) return found[0]
-  }
-}
-
 beforeAll(async () => {
   if (executablePath === undefined || executablePath === "") return
-  address = await serve()
+  server = await serveBrowserPages()
+  address = server.address
   browser = await chromium.launch({ executablePath })
 }, 30_000)
 
 afterAll(async () => {
   await browser?.close()
-  server?.kill()
+  server?.stop()
 })
 
 interface Placement {

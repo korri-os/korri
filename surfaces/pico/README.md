@@ -72,8 +72,8 @@ invite notices stand in to keep the focused control in sight
 rectangle, written to its region as `--pico-display-x`, `-y`, `-w` and `-h`
 (`PicoDisplays`). It is the one place Pico sets a style property from
 script, because a rectangle is data the host states, not a design decision
-a stylesheet could make. Focus and the click that
-woke attract are refs. This is where Elm would use a port or a custom element.
+a stylesheet could make. Focus, the click that
+woke attract and the element focus last landed on are refs. This is where Elm would use a port or a custom element.
 
 Secrets typed into the editor or the identity dialog sit in the model while
 the dialog is open, as they would in Elm. A Wi-Fi password leaves the model
@@ -233,7 +233,7 @@ virtual pixel (`PicoDisplays`):
 
 | Display | Draws |
 |---|---|
-| Main (`main: true`, else the first) | `PicoShowcase`: the chosen cart on the shelf or in the grid, the hero's pick, or the open game, on the same stage the shelf uses; a launch starting, running or paused, without its actions; the invite notices. Otherwise an empty slot. No control. |
+| Main (`main: true`, else the first) | `PicoShowcase`: the chosen cart on the shelf or in the grid, the hero's pick, or the open game, on the same stage the shelf uses; a launch starting, running or paused, without its actions; the invite notices; attract, over the showcase. Otherwise an empty slot. No control. |
 | The other (a touch display first, then the largest) | Every screen as on one display, less the stage: the rack with larger carts, the grid, OPEN, a game's Play and actions, Korri's launch actions, every notice and question, Find, the store, Settings, setup, attract, and the header and floor. |
 
 `src/pico-display-plan.ts` picks the two from the rectangles and the flags
@@ -256,6 +256,14 @@ would scroll the root and move both pictures. So with two displays the root
 scroll containers, so focus cannot move them.
 `test/pico-displays-browser.test.ts` proves it in Chromium (set `CHROMIUM`;
 without it the test is skipped).
+
+Attract covers both displays (or the one) and says PRESS ANY BUTTON, so every
+input ends it: a direction, confirm, Back, Menu, or a tap on either display. The input
+that ends it only wakes the screen. A press is swallowed; a direction, which
+the host delivers as a focus move Pico cannot swallow, never reaches the
+control it landed on, and Pico puts the cursor back where it was before
+attract (or nowhere, if nothing had it). `test/pico-attract-browser.test.ts`
+checks each input on two displays and on one.
 
 `SurfaceDisplay` and `SurfaceModel.displays` come from the treaty in
 `contracts/surface/korri-surface.ts`, like every other fact Pico reads.

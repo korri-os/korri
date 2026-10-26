@@ -81,11 +81,13 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
 
   // A press while attract shows wakes the screen and does nothing else.
   // Picking a device up must not start a game, cycle a layout or open
-  // Settings: the first press is how the player gets the screen back.
+  // Settings: the first press is how the player gets the screen back. Attract
+  // says PRESS ANY BUTTON, so a d-pad press, which reaches Pico only as a
+  // focus move, wakes it too; the composition root puts the cursor back.
   if (isHostButton(message) || message._tag === "PressedScreen" || message._tag === "MovedFocus") {
-    const waking = message._tag !== "MovedFocus" && attractShowing(nav, korri)
+    const waking = attractShowing(nav, korri)
     const activity = nav.idle.activity + 1
-    nav = { ...nav, idle: { _tag: message._tag === "MovedFocus" ? nav.idle._tag : "Awake", activity } }
+    nav = { ...nav, idle: { _tag: "Awake", activity } }
     if (waking || !isHostButton(message)) return stay(nav)
   }
 
