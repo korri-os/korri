@@ -3162,10 +3162,9 @@ async fn dispatch(
                                 if let Some(active) = &mut status.active {
                                     active.focus_ownership = ownership;
                                     active.initial_handoff = handoff;
-                                    if let Err(failure) = observed_host.describe_active_session(active) {
+                                    if let Err(failure) = observed_host.describe_active_session_players(active) {
                                         status.observation_failure = Some(failure);
                                     }
-                                    stream_play::registration::label_players(&observer, active);
                                 }
                             }
                             let pending = observed_caller.as_deref().and_then(|caller| observed_host.pending_launches(caller, observed_person.as_deref()));
@@ -3185,6 +3184,42 @@ async fn dispatch(
                             let pending = caller.as_deref().and_then(|caller| host.pending_launches(caller, person.as_deref()));
                             with_pending_launches(host_session_status_outcome(Err(failure)), pending)
                         });
+                    // Only exact liveness, journal facts and Home correlation
+                    // run under transition authority. Presentation enrichment
+                    // may be slow, but cannot publish or reconcile an old fact.
+                    let presentation_host = host.clone();
+                    let presentation_state = state.clone();
+                    let outcome = tokio::task::spawn_blocking(move || {
+                        let mut outcome = outcome;
+                        if let SessionStatusOutcome::Ok(status) = &mut outcome {
+                            if status.observation_failure.is_none() {
+                                if let Some(active) = &mut status.active {
+                                    if let Err(failure) =
+                                        presentation_host.describe_active_session_catalog(active)
+                                    {
+                                        status.observation_failure = Some(failure);
+                                    }
+                                    stream_play::registration::label_players(
+                                        &presentation_state,
+                                        active,
+                                    );
+                                    if status.overlay.as_ref().is_some_and(|overlay| {
+                                        overlay.launch_id == active.launch_id
+                                    }) {
+                                        status.overlay = Some(active.clone());
+                                    }
+                                }
+                            }
+                        }
+                        outcome
+                    })
+                    .await
+                    .unwrap_or_else(|error| {
+                        SessionStatusOutcome::Err(RpcFailure {
+                            code: "HostControlFailed".into(),
+                            message: format!("status presentation worker failed: {error}"),
+                        })
+                    });
                     return Ok(RpcResponse::SessionStatus(outcome));
                 }
                 (ServerMode::Brain(brain), RpcSurface::LocalControl) => (
