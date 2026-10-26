@@ -1440,6 +1440,23 @@ impl HostRuntime {
             .map_err(host_worker_failure)?
     }
 
+    pub(crate) async fn session_control_status(&self) -> Result<HostSessionStatus, RpcFailure> {
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let status = runtime.control()?.control_status();
+            if let HostSessionStatus::Completed { launch_id }
+            | HostSessionStatus::Failed { launch_id, .. } = &status
+            {
+                runtime.launch_reservations.retire_completed(launch_id);
+            }
+            #[cfg(test)]
+            runtime.session_rpc_probe("app.session.status");
+            Ok(status)
+        })
+        .await
+        .map_err(host_worker_failure)?
+    }
+
     pub async fn session_status_with_recovered_overlay_intent(
         &self,
     ) -> Result<
@@ -1531,7 +1548,7 @@ impl HostRuntime {
                 let observed = runtime.clone();
                 let _ = tokio::task::spawn_blocking(move || {
                     if let Ok(control) = observed.control() {
-                        control.status();
+                        control.watcher_status();
                     }
                 })
                 .await;

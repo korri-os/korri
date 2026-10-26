@@ -1,4 +1,9 @@
-use std::{fmt, io, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    fmt, io,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use serde::Deserialize;
 
@@ -10,6 +15,9 @@ use tokio::{
 };
 
 const STATUS_REQUEST: &[u8] = br#"{"_tag":"app.session.status","payload":{}}"#;
+/// A panel mutation includes the measured 550 ms DRM enable plus exact
+/// freeze/thaw, focus and rollback. Status and stop retain their short budget.
+pub const PANEL_TRANSACTION_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_LAUNCH_ID_BYTES: usize = 128;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -60,49 +68,68 @@ impl KorridClient {
     }
 
     pub async fn status(&self) -> Result<SessionStatus, LocalControlError> {
+        self.status_observed().await.0
+    }
+
+    async fn status_observed(&self) -> (Result<SessionStatus, LocalControlError>, usize) {
         let attempts = self.limits.status_attempts.max(1);
         for attempt in 0..attempts {
             match self.request(STATUS_REQUEST).await {
-                Ok(response) => return parse_status(&response),
+                Ok(response) => return (parse_status(&response), attempt + 1),
                 Err(error) if error.retryable_read() && attempt + 1 < attempts => {
-                    tokio::time::sleep(self.limits.retry_delay).await;
+                    tokio::time::sleep(self.limits.retry_delay).await
                 }
-                Err(error) => return Err(error),
+                Err(error) => return (Err(error), attempt + 1),
             }
         }
-        unreachable!("status always returns from a positive attempt count")
+        unreachable!("positive attempt count")
     }
 
     /// Korrid acknowledges the complete Leave/Return transaction, including
     /// unit-owned focus and any exact-launch rollback. Inputd never performs
     /// a second focus effect after that acknowledgement.
     pub async fn toggle_panel_exact(&self) -> Result<ExactPanelOutcome, LocalControlError> {
+        let start = Instant::now();
         let _panel_guard = self.panel_guard.lock().await;
-        match self.status().await? {
-            SessionStatus::Running { launch_id } | SessionStatus::FocusFailed { launch_id } => {
-                match self
-                    .change_freezer(&launch_id, "app.session.leave", "freeze")
-                    .await?
-                {
-                    ExactPanelOutcome::Opened => {}
-                    // The observed launch ended or was replaced before its
-                    // exact freeze. Do not enter Portal or retarget the new
-                    // launch. Reconciliation will observe the current state.
-                    ExactPanelOutcome::NoActive | ExactPanelOutcome::AlreadyStopping => {
-                        return Ok(ExactPanelOutcome::LeaveRefused);
+        let guard_ms = start.elapsed().as_millis();
+        let status_start = Instant::now();
+        let (status, attempts) = self.status_observed().await;
+        let status_ms = status_start.elapsed().as_millis();
+        let mutation_start = Instant::now();
+        let outcome = async {
+            match status? {
+                SessionStatus::Running { launch_id } | SessionStatus::FocusFailed { launch_id } => {
+                    match self
+                        .change_freezer(&launch_id, "app.session.leave", "freeze")
+                        .await?
+                    {
+                        ExactPanelOutcome::Opened => {}
+                        // The observed launch ended or was replaced before its
+                        // exact freeze. Do not enter Portal or retarget the new
+                        // launch. Reconciliation will observe the current state.
+                        ExactPanelOutcome::NoActive | ExactPanelOutcome::AlreadyStopping => {
+                            return Ok(ExactPanelOutcome::LeaveRefused);
+                        }
+                        other => return Ok(other),
                     }
-                    other => return Ok(other),
+                    Ok(ExactPanelOutcome::Opened)
                 }
-                Ok(ExactPanelOutcome::Opened)
+                SessionStatus::Frozen { launch_id } => {
+                    self.change_freezer(&launch_id, "app.session.resume", "thaw")
+                        .await
+                }
+                SessionStatus::Stopping { .. } => Ok(ExactPanelOutcome::AlreadyStopping),
+                SessionStatus::NoActive | SessionStatus::Completed => {
+                    Ok(ExactPanelOutcome::NoActive)
+                }
+                SessionStatus::RecoveryBlocked => Ok(ExactPanelOutcome::RecoveryBlocked),
             }
-            SessionStatus::Frozen { launch_id } => {
-                self.change_freezer(&launch_id, "app.session.resume", "thaw")
-                    .await
-            }
-            SessionStatus::Stopping { .. } => Ok(ExactPanelOutcome::AlreadyStopping),
-            SessionStatus::NoActive | SessionStatus::Completed => Ok(ExactPanelOutcome::NoActive),
-            SessionStatus::RecoveryBlocked => Ok(ExactPanelOutcome::RecoveryBlocked),
         }
+        .await;
+        tracing::info!(event="inputd_panel_timing", guard_ms, status_ms, status_attempts=attempts,
+            transaction_ms=mutation_start.elapsed().as_millis(), total_ms=start.elapsed().as_millis(), outcome=?outcome,
+            "exact panel transaction timing");
+        outcome
     }
 
     async fn change_freezer(
@@ -118,7 +145,9 @@ impl KorridClient {
         });
         // Like exact stop, a freezer mutation is attempted once. A transport
         // failure cannot prove korrid did not receive it.
-        let response = self.request(request.to_string().as_bytes()).await?;
+        let response = self
+            .request_with_timeout(request.to_string().as_bytes(), PANEL_TRANSACTION_TIMEOUT)
+            .await?;
         parse_panel_change(&response, expected_tag, operation)
     }
 
@@ -144,7 +173,16 @@ impl KorridClient {
     }
 
     async fn request(&self, body: &[u8]) -> Result<Vec<u8>, LocalControlError> {
-        tokio::time::timeout(self.limits.operation_timeout, self.request_inner(body))
+        self.request_with_timeout(body, self.limits.operation_timeout)
+            .await
+    }
+
+    async fn request_with_timeout(
+        &self,
+        body: &[u8],
+        budget: Duration,
+    ) -> Result<Vec<u8>, LocalControlError> {
+        tokio::time::timeout(budget, self.request_inner(body))
             .await
             .map_err(|_| LocalControlError::TimedOut)?
     }

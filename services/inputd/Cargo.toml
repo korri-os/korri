@@ -51,6 +51,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"]
 zbus = { version = "5.18.0", default-features = false, features = ["tokio"] }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
 tempfile = "3"
 
 [[bin]]

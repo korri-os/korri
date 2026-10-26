@@ -3134,8 +3134,12 @@ async fn dispatch(
                     session_status_outcome(brain.upstream.session_status().await),
                     None,
                 ),
-                (ServerMode::Host(host), RpcSurface::Lan)
-                | (ServerMode::Host(host), RpcSurface::LocalControl) => {
+                (ServerMode::Host(host), RpcSurface::LocalControl) => {
+                    return Ok(RpcResponse::SessionStatus(state.correlate_overlay_status(
+                        host_session_status_outcome(host.session_control_status().await),
+                    )));
+                }
+                (ServerMode::Host(host), RpcSurface::Lan) => {
                     let observer = state.clone();
                     let observed_host = host.clone();
                     let caller = local_launch_caller(state, authorization)
