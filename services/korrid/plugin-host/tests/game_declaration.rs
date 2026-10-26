@@ -43,7 +43,7 @@ fn game_admission_preserves_runner_release_hashes_without_calling_launch() {
 #[test]
 fn native_runner_admission_requires_launch_but_does_not_call_it() {
     let declaration = "export const name = 'game';
-        export const runners = {game: {id:'@example:game/game', program:'game'}};";
+        export const runners = {game: {id:'@example:game/game', program:'game', systems:['gba']}};";
     for callback in ["", "export const launch = 42;"] {
         let error = Declaration::evaluate("@example", &format!("{declaration} {callback}"))
             .expect_err("native kind without a callable launch must fail admission");
@@ -52,6 +52,28 @@ fn native_runner_admission_requires_launch_but_does_not_call_it() {
     Declaration::evaluate(
         "@example",
         &format!("{declaration} export const handlers = {{'launch.prepare': function () {{ throw new Error('must not run'); }}}}"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn settings_only_runner_admission_requires_render_but_does_not_call_it() {
+    // A native runner with no systems or releases is never a local runner
+    // (ADR 0037): it renders arguments for a route without a launch plan.
+    let declaration = "export const name = 'viewer';
+        export const runners = {viewer: {id:'@example:viewer/viewer', program:'viewer'}};";
+    for callback in [
+        "",
+        "export const handlers = {'settings.render': 42};",
+        "export const handlers = {'launch.prepare': function () { throw new Error('must not run'); }};",
+    ] {
+        let error = Declaration::evaluate("@example", &format!("{declaration} {callback}"))
+            .expect_err("settings-only runner without a callable render must fail admission");
+        assert!(error.contains("settings.render"), "{error}");
+    }
+    Declaration::evaluate(
+        "@example",
+        &format!("{declaration} export const handlers = {{'settings.render': function () {{ throw new Error('must not run'); }}}}"),
     )
     .unwrap();
 }
