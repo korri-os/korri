@@ -861,3 +861,67 @@ fn occupied_local_read_excludes_unbound_remote_and_disconnected_reserved_seats()
         .occupied_local_seats
         .is_empty());
 }
+
+#[test]
+fn netplay_reserves_without_input_and_releases_only_at_exact_session_end() {
+    let mut runtime = SeatRuntime::boot(RecordingSeatBackend::default()).unwrap();
+    let launch = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned();
+    assert!(runtime
+        .coordinate(SeatRequest::ApplyCount { count: 4 }, 0)
+        .failure
+        .is_none());
+    assert!(runtime
+        .coordinate(
+            SeatRequest::BeginSession {
+                launch_id: launch.clone()
+            },
+            0
+        )
+        .failure
+        .is_none());
+    let reserve = || SeatRequest::ReserveNetplay {
+        launch_id: launch.clone(),
+        device_public_key: "33".repeat(32),
+    };
+    assert_eq!(runtime.coordinate(reserve(), 0).slot, Some(1));
+    assert_eq!(runtime.coordinate(reserve(), 1).slot, Some(1));
+    assert_eq!(
+        runtime
+            .coordinate(
+                SeatRequest::ReserveNetplay {
+                    launch_id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                    device_public_key: "33".repeat(32)
+                },
+                2
+            )
+            .failure,
+        Some(SeatFailure::Stale)
+    );
+    let local = || SeatRequest::PhysicalConnected {
+        device_id: "local".into(),
+        name: "Pad".into(),
+        state: GamepadState::neutral(),
+    };
+    assert_eq!(runtime.coordinate(local(), 2).slot, Some(2));
+    let reply = runtime.coordinate(SeatRequest::Poll, 10000);
+    assert!(reply.remote_sources.is_empty());
+    assert!(reply.remote_events.is_empty());
+    assert_eq!(runtime.coordinate(reserve(), 10001).slot, Some(1));
+    assert!(runtime
+        .coordinate(SeatRequest::EndSession { launch_id: launch }, 10002)
+        .failure
+        .is_none());
+    assert_eq!(
+        runtime
+            .coordinate(
+                SeatRequest::PhysicalConnected {
+                    device_id: "next".into(),
+                    name: "Pad".into(),
+                    state: GamepadState::neutral()
+                },
+                10003
+            )
+            .slot,
+        Some(1)
+    );
+}

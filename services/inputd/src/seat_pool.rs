@@ -143,6 +143,21 @@ impl<K: Eq, B: SeatBackend> SeatPool<K, B> {
         Ok(self.seats[index].slot)
     }
 
+    /// Reserve without connecting an input source. The claim expires only at
+    /// exact session end. Repeated reservations reclaim the same seat.
+    pub fn reserve(&mut self, session: &str, source: K) -> Result<u8, PoolError> {
+        if self.session.as_deref() != Some(session) {
+            return Err(PoolError::StaleSession);
+        }
+        if let Some(index) = self.index(&source) {
+            return Ok(self.seats[index].slot);
+        }
+        let slot = self.connect(source)?;
+        let seat = &mut self.seats[usize::from(slot - 1)];
+        seat.binding.as_mut().unwrap().connected = false;
+        Ok(slot)
+    }
+
     /// Records source loss even if neutralization fails, so subsequent writes
     /// cannot revive it. Retry disconnect (or reconnect) to neutralize that seat.
     /// Outside a session the binding is freed only after successful neutralization.

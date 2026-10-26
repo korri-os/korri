@@ -70,6 +70,13 @@ pub enum SeatRequest {
         #[serde(rename = "launchId")]
         launch_id: String,
     },
+    /// Reservation only. This device sends its input through RetroArch, not uinput.
+    ReserveNetplay {
+        #[serde(rename = "launchId")]
+        launch_id: String,
+        #[serde(rename = "devicePublicKey")]
+        device_public_key: String,
+    },
     EndSession {
         #[serde(rename = "launchId")]
         launch_id: String,

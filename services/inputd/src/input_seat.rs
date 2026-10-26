@@ -53,6 +53,7 @@ pub enum SeatResetOutcome {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum SourceKey {
     Physical(String),
+    Netplay(String),
     Remote(String, String, u8),
 }
 struct Source {
@@ -150,6 +151,23 @@ impl<B: SeatBackend> SeatRuntime<B> {
                 self.require_ready()?;
                 self.pool.begin_session(&launch_id).map_err(pool_failure)?;
                 Ok(None)
+            }
+            SeatRequest::ReserveNetplay {
+                launch_id,
+                device_public_key,
+            } => {
+                self.require_ready()?;
+                if device_public_key.len() != 64
+                    || !device_public_key
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                {
+                    return Err(SeatFailure::Invalid);
+                }
+                self.pool
+                    .reserve(&launch_id, SourceKey::Netplay(device_public_key))
+                    .map(Some)
+                    .map_err(pool_failure)
             }
             SeatRequest::EndSession { launch_id } => {
                 if self.pool.session() != Some(launch_id.as_str()) {
