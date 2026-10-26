@@ -660,6 +660,43 @@ impl HostSessionControl {
             .unwrap_or_else(|| Ok(Default::default()))
     }
 
+    /// Opacity belongs to windows proven from this exact launch's live PIDs.
+    /// Restoration does not choose a focus target: restore every owned window
+    /// if several exist, but never dim an ambiguous launch or a kiosk window.
+    fn game_opacity(&self, launch_id: &str, dim: bool) -> Result<(), String> {
+        if self.portal.is_none() {
+            return Ok(());
+        }
+        let pids = self
+            .backend
+            .window_pids(launch_id)
+            .map_err(|error| error.message)?;
+        if pids.is_empty() {
+            return Ok(());
+        }
+        let compositor = self
+            .compositor
+            .as_ref()
+            .ok_or("game compositor unavailable")?;
+        let portal_pids = self.portal_pids()?;
+        use super::compositor_focus::{select_focus_target, FocusTarget};
+        let candidates = match select_focus_target(&compositor.tree()?, &pids, &portal_pids) {
+            FocusTarget::Window(candidate) => vec![candidate],
+            FocusTarget::NoWindow => return Ok(()),
+            FocusTarget::Ambiguous(candidates) if !dim => candidates,
+            FocusTarget::Ambiguous(_) => return Err("cannot dim an ambiguous exact launch".into()),
+            FocusTarget::Unreadable(error) => return Err(error),
+        };
+        let opacity = if dim { "0.4" } else { "1" };
+        compositor.command(
+            &candidates
+                .iter()
+                .map(|candidate| format!("[con_id={}] opacity {opacity}", candidate.node_id))
+                .collect::<Vec<_>>()
+                .join("; "),
+        )
+    }
+
     fn place_overlay(&self, launch_id: &str, trace: &mut TransitionTrace) -> Result<(), String> {
         if self.portal.is_none() {
             return Ok(());
@@ -1525,15 +1562,35 @@ impl HostSessionControl {
         launch_id: String,
         game_id: Option<String>,
     ) -> Result<(), ()> {
-        // The game keeps running after a compositor refusal. Revoke only the
-        // launch-scoped streamed input seat; never use the unit freezer as an
-        // input-ownership mechanism.
+        // Ordinary focus refusal keeps the game running and revokes its
+        // streamed input seat. If opacity cannot be restored, keep the exact
+        // game paused instead of leaving it running dimmed.
+        if let Err(message) = self.game_opacity(&launch_id, false) {
+            eprintln!("korrid: game opacity restoration failed: {message}");
+            self.refreeze_after_opacity_failure(state, launch_id, game_id);
+            return Err(());
+        }
         if self.stop_seats(&launch_id).is_err() {
             *state = ActiveState::RecoveryBlocked;
             return Err(());
         }
         *state = ActiveState::FocusFailed { launch_id, game_id };
         Ok(())
+    }
+
+    /// A compositor refusal must not leave a dimmed game running or discard
+    /// the game. Keep the exact launch paused when opacity cannot be restored.
+    fn refreeze_after_opacity_failure(
+        &self,
+        state: &mut ActiveState,
+        launch_id: String,
+        game_id: Option<String>,
+    ) {
+        if self.backend.freeze(&launch_id).is_ok() && self.stop_seats(&launch_id).is_ok() {
+            *state = ActiveState::Frozen { launch_id, game_id };
+        } else {
+            *state = ActiveState::RecoveryBlocked;
+        }
     }
 
     fn seats_are_live_for(&self, launch_id: &str) -> bool {
@@ -2584,6 +2641,8 @@ impl HostSessionControl {
             .map_err(HostSessionEffectFailure::Unavailable)?;
         let restore_frozen = recorded_frozen || observed_frozen;
         if observed_frozen {
+            self.game_opacity(&launch_id, false)
+                .map_err(HostSessionEffectFailure::Unavailable)?;
             self.backend
                 .thaw(&launch_id)
                 .map_err(|error| HostSessionEffectFailure::Unavailable(error.message))?;
@@ -2849,6 +2908,16 @@ impl HostSessionControl {
                     FreezerTarget::Running => self.backend.thaw(&launch_id),
                 });
                 if let Err(error) = result {
+                    if target == FreezerTarget::Running
+                        && self.game_opacity(&launch_id, false).is_err()
+                    {
+                        self.refreeze_after_opacity_failure(
+                            &mut state,
+                            launch_id.clone(),
+                            game_id.clone(),
+                        );
+                        return HostSessionFreezeChange::RecoveryBlocked;
+                    }
                     // Re-read so a failed helper call on a unit that completed
                     // underneath us is reported as no-active. Any other failure
                     // leaves the unit and the session state untouched.
@@ -2904,7 +2973,8 @@ impl HostSessionControl {
             };
             if target == FreezerTarget::Frozen {
                 if let Err(message) = trace
-                    .time("input_route", || self.input_seats.route(None))
+                    .time("game_dim", || self.game_opacity(&launch_id, true))
+                    .and_then(|()| trace.time("input_route", || self.input_seats.route(None)))
                     .and_then(|()| trace.time("portal_thaw", || self.thaw_portal()))
                     .and_then(|()| self.place_overlay(&launch_id, &mut trace))
                 {
@@ -3021,6 +3091,7 @@ impl HostSessionControl {
             "seat_restore",
             "seat_reset",
             "game_focus",
+            "game_dim",
             "reconcile",
             "publication",
             "guard_reconcile",
@@ -3051,6 +3122,13 @@ impl HostSessionControl {
                     if launch_id == expected_launch_id =>
                 {
                     let launch_id = launch_id.clone();
+                    if let Err(message) = self.game_opacity(&launch_id, false) {
+                        eprintln!(
+                            "korrid: cannot thaw for stop before restoring game opacity: {message}"
+                        );
+                        *state = ActiveState::RecoveryBlocked;
+                        return observe(HostSessionStop::RecoveryBlocked);
+                    }
                     if self
                         .mark_hook_result(super::hooks::SessionResult::Stopped)
                         .is_err()
@@ -3475,7 +3553,7 @@ mod tests {
                 .lines()
                 .filter(|line| line.starts_with("<6>korrid: PlacementTransition"))
                 .collect();
-            assert_eq!(outcomes.len(), 12, "{stderr}");
+            assert_eq!(outcomes.len(), 22, "{stderr}");
             for line in outcomes {
                 for field in [
                     "launch_id",
@@ -3495,6 +3573,7 @@ mod tests {
                     "portal_focus",
                     "seat_reset",
                     "game_focus",
+                    "game_dim",
                     "reconcile",
                 ] {
                     assert!(line.contains(field), "{line}");
@@ -3522,6 +3601,9 @@ cd '{}' || exit 1
 for argument do command="$argument"; done
 case "$command" in get_tree) printf 'tree\n' >> reads; cat tree; exit;; esac
 printf '%s\n' "$command" >> commands
+case "$command" in *'opacity 1'*)
+ if test -f refuse-restore; then printf '[{{"success":false,"error":"opacity refused"}}]'; exit; fi;;
+esac
 case "$command" in
  *'[con_id=2] focus'*) cp portal-tree tree;;
  *'[con_id=3] focus'*) cp game-tree tree;;
@@ -3552,6 +3634,7 @@ printf '[{{"success":true}}]'
                 .with_portal(portal.clone());
             let prepared = prepare(&control, "one");
             backend.set_pids(&prepared.launch_id, &[9100]);
+            backend.state.lock().unwrap().sway_events_file = Some(root.path().join("commands"));
             assert!(matches!(
                 control.status(),
                 HostSessionStatus::Running { .. }
@@ -3583,7 +3666,20 @@ printf '[{{"success":true}}]'
                 HostSessionFreezeChange::Changed { .. }
             ));
             let first_open = fs::read_to_string(root.path().join("commands")).unwrap();
-            assert!(first_open.contains("output DSI-1 power on"), "{first_open}");
+            assert!(
+                first_open.starts_with("freeze\n[con_id=3] opacity 0.4\n"),
+                "freeze must precede immediate game dim: {first_open}"
+            );
+            assert!(
+                first_open.find("opacity 0.4").unwrap()
+                    < first_open.find("output DSI-1 power on").unwrap(),
+                "{first_open}"
+            );
+            assert!(
+                first_open.find("output DSI-1 power on").unwrap()
+                    < first_open.find("[con_id=2] focus").unwrap(),
+                "{first_open}"
+            );
             let (_, ownership, _) = control.status_with_recovered_overlay_intent();
             assert_eq!(ownership, Some(FocusOwnership::Excluded));
             let before_surface_rpc = fs::read_to_string(root.path().join("commands")).unwrap();
@@ -3618,6 +3714,10 @@ printf '[{{"success":true}}]'
                 "Return must use one placement/focus/power batch: {returned}"
             );
             assert!(
+                returned.contains("[con_id=3] opacity 1; [con_id=3] focus"),
+                "{returned}"
+            );
+            assert!(
                 returned.ends_with("[con_id=3] focus; output DSI-1 power off\n"),
                 "{returned}"
             );
@@ -3643,6 +3743,10 @@ printf '[{{"success":true}}]'
                 HostSessionFreezeChange::Changed { .. }
             ));
             let reopened = fs::read_to_string(root.path().join("commands")).unwrap();
+            assert!(
+                reopened.starts_with("freeze\n[con_id=3] opacity 0.4\n"),
+                "{reopened}"
+            );
             assert!(reopened.contains("output DSI-1 power on"), "{reopened}");
             assert!(reopened.contains("[con_id=2] move absolute position 0 px 480 px"));
             fs::write(root.path().join("commands"), "").unwrap();
@@ -3667,6 +3771,77 @@ printf '[{{"success":true}}]'
             assert_eq!(
                 backend.state(&prepared.launch_id).unwrap(),
                 LaunchUnitState::Running
+            );
+            // A refused portal readback rolls back to the same game, fully opaque.
+            fs::write(root.path().join("game-tree"), tree(3)).unwrap();
+            fs::write(root.path().join("portal-tree"), tree(3)).unwrap();
+            fs::write(root.path().join("commands"), "").unwrap();
+            assert!(matches!(
+                control.freeze(&prepared.launch_id),
+                HostSessionFreezeChange::HelperFailed { .. }
+            ));
+            let rollback = fs::read_to_string(root.path().join("commands")).unwrap();
+            assert!(
+                rollback.contains("[con_id=3] opacity 1; [con_id=3] focus"),
+                "{rollback}"
+            );
+            assert_eq!(
+                backend.state(&prepared.launch_id).unwrap(),
+                LaunchUnitState::Running
+            );
+            fs::write(root.path().join("portal-tree"), tree(2)).unwrap();
+            assert!(matches!(
+                control.freeze(&prepared.launch_id),
+                HostSessionFreezeChange::Changed { .. }
+            ));
+            fs::write(root.path().join("commands"), "").unwrap();
+            assert!(matches!(
+                control.stop(&prepared.launch_id),
+                HostSessionStop::Completed { .. }
+            ));
+            let stopped = fs::read_to_string(root.path().join("commands")).unwrap();
+            assert!(
+                stopped.starts_with("[con_id=3] opacity 1\nstop\n"),
+                "restore before stop can thaw the game: {stopped}"
+            );
+            // Graceful End restores opacity before temporarily thawing for quit.
+            let quitting = prepare(&control, "one");
+            backend.set_pids(&quitting.launch_id, &[9100]);
+            assert!(matches!(
+                control.freeze(&quitting.launch_id),
+                HostSessionFreezeChange::Changed { .. }
+            ));
+            fs::write(root.path().join("commands"), "").unwrap();
+            control
+                .invoke_running_effect(&quitting.launch_id, false, true, || {
+                    assert_eq!(
+                        backend.state(&quitting.launch_id).unwrap(),
+                        LaunchUnitState::Running
+                    );
+                    assert_eq!(
+                        fs::read_to_string(root.path().join("commands")).unwrap(),
+                        "[con_id=3] opacity 1\n"
+                    );
+                    backend.insert(&quitting.launch_id, LaunchUnitState::Completed);
+                    Ok(())
+                })
+                .unwrap();
+            // Refused opacity restoration keeps the exact game paused, not
+            // running dimmed. It must not stop the game or discard its save.
+            let next = prepare(&control, "one");
+            backend.set_pids(&next.launch_id, &[9100]);
+            assert!(matches!(
+                control.freeze(&next.launch_id),
+                HostSessionFreezeChange::Changed { .. }
+            ));
+            fs::write(root.path().join("refuse-restore"), "1").unwrap();
+            assert!(matches!(
+                control.thaw(&next.launch_id),
+                HostSessionFreezeChange::RecoveryBlocked
+            ));
+            assert_eq!(
+                backend.state(&next.launch_id).unwrap(),
+                LaunchUnitState::Frozen
             );
         }
     }
@@ -3742,7 +3917,7 @@ printf '[{{"success":true}}]'
         let commands = fs::read_to_string(root.path().join("commands")).unwrap();
         assert_eq!(commands.lines().count(), 1);
         assert!(commands
-            .ends_with("[con_id=3] fullscreen enable; [con_id=3] focus; output DSI-1 power off\n"));
+            .ends_with("[con_id=3] fullscreen enable; [con_id=3] opacity 1; [con_id=3] focus; output DSI-1 power off\n"));
         let (_, ownership, _) = control.status_with_recovered_overlay_intent();
         assert_eq!(ownership, Some(FocusOwnership::Launch));
     }
@@ -3894,7 +4069,7 @@ printf '[{{"success":true}}]'
         ));
         let placed = fs::read_to_string(root.path().join("commands")).unwrap();
         assert!(placed
-            .contains("[con_id=3] fullscreen enable; [con_id=3] focus; output DSI-1 power off\n"));
+            .contains("[con_id=3] fullscreen enable; [con_id=3] opacity 1; [con_id=3] focus; output DSI-1 power off\n"));
         assert!(placed.contains("output DSI-1 power off\n"));
         fs::write(root.path().join("commands"), "").unwrap();
         compositor.command("output * power off").unwrap();
@@ -4048,6 +4223,7 @@ printf '[{{"success":true}}]'
         window_pids_fail: bool,
         runners: BTreeMap<String, String>,
         return_events: Option<Arc<Mutex<Vec<&'static str>>>>,
+        sway_events_file: Option<PathBuf>,
     }
 
     #[derive(Default)]
@@ -4144,6 +4320,18 @@ printf '[{{"success":true}}]'
         /// unit frozen, exactly as the real helper would.
         fn stop(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
             let mut state = self.state.lock().unwrap();
+            if let Some(path) = &state.sway_events_file {
+                use std::io::Write;
+                writeln!(
+                    fs::OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open(path)
+                        .unwrap(),
+                    "stop"
+                )
+                .unwrap();
+            }
             if let Some(events) = &state.return_events {
                 events.lock().unwrap().push("stop");
             }
@@ -4222,6 +4410,18 @@ printf '[{{"success":true}}]'
                     state
                         .units
                         .insert(launch_id.into(), LaunchUnitState::Frozen);
+                    if let Some(path) = &state.sway_events_file {
+                        use std::io::Write;
+                        writeln!(
+                            fs::OpenOptions::new()
+                                .append(true)
+                                .create(true)
+                                .open(path)
+                                .unwrap(),
+                            "freeze"
+                        )
+                        .unwrap();
+                    }
                     Ok(())
                 }
                 _ => Err(LaunchUnitError::new(
@@ -5431,6 +5631,10 @@ printf '[{{"success":true}}]'
     impl CompositorControl for RecordingCompositor {
         fn tree(&self) -> Result<String, String> {
             Ok(self.tree.lock().unwrap().clone())
+        }
+
+        fn command(&self, _: &str) -> Result<(), String> {
+            Ok(())
         }
 
         fn focus(&self, node_id: i64) -> Result<(), String> {

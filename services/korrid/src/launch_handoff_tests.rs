@@ -399,6 +399,9 @@ impl host::CompositorControl for Compositor {
         }
         Ok(self.tree.lock().unwrap().to_string())
     }
+    fn command(&self, _: &str) -> Result<(), String> {
+        Ok(())
+    }
     fn focus(&self, id: i64) -> Result<(), String> {
         let mut tree = self.tree.lock().unwrap();
         let nodes = tree["nodes"].as_array_mut().ok_or("missing nodes")?;
