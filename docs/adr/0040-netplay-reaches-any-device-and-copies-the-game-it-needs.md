@@ -1,7 +1,7 @@
 # Netplay reaches any device and copies the game it needs
 
-**Owner decision, 2026-10-26.** Design in progress. The transport and saves
-are not decided.
+**Owner decision, 2026-10-26.** Design in progress. How netplay traffic is
+carried over the federation's connections is not decided.
 
 Stream play works on the RG35XX SP and Pro, but those devices limit it. On
 2026-10-26 the SP's CPU saturated while it ran the game and encoded. H.264
@@ -34,6 +34,9 @@ each device runs its own copy of the game, so no device has to encode video.
   device can play and leave. When the holder ends the session, netplay ends
   and the receiving device's game ends with it. When the receiving device
   leaves, the holder plays on.
+- Only the holder captures a save snapshot from a netplay session. The
+  receiving device starts from the holder's state and captures none, so
+  netplay never makes a split.
 
 ## Considered options
 
@@ -52,6 +55,10 @@ each device runs its own copy of the game, so no device has to encode video.
   gives the netplay host authority, and two people could act at the same time.
 - **The receiving device plays on alone when the holder goes.** Rejected: the
   session would split into two games, with saves that split too.
+- **Both devices capture snapshots.** Rejected: two snapshots from the same
+  start would make a split for the person to resolve after many sessions.
+- **The receiving device keeps a private copy of its saves.** Rejected: it adds
+  a kind of save that is outside the save history.
 - **Stream play first, then a switch to netplay in the same session.** Not
   chosen for now: it moves seats, input and the picture between routes during
   play, and nothing in Korri does that today.
@@ -60,6 +67,7 @@ each device runs its own copy of the game, so no device has to encode video.
 
 - If the holder drops off the network, the receiving device loses the game,
   although it runs the game itself.
+- A savestate the receiving person makes during netplay is lost.
 - Game content now moves between devices, and not only from providers.
 - A kept game brings that game's records to the receiving device (ADR 0027).
 - A large release, such as a disc image of several GB, can fill a small
