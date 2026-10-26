@@ -39,7 +39,9 @@ each device runs its own copy of the game, so no device has to encode video.
   an aarch64 handheld and an x86_64 PC can use netplay together.
 - When the receiving device has no core that can offer netplay for the game,
   Korri still offers netplay. If the person chooses it, Korri asks to install
-  the plugin first, with the usual permission approval.
+  the plugin first, with the usual permission approval. Korri installs the
+  newest version that the receiving device's repositories offer, then checks
+  that its core version matches the holder's.
 - A game that no runner on the receiving device can play in netplay, such as a
   large PC game, always uses stream play.
 - When both routes are possible, the person on the receiving device chooses
@@ -56,8 +58,9 @@ each device runs its own copy of the game, so no device has to encode video.
 - When the receiving device leaves, its copy ends and its seat stays reserved.
   The holder plays on. To come back, the person takes part again from the
   invite.
-- When the connection drops, korrid reconnects the receiving device
-  automatically for a short time.
+- When the connection drops, korrid tries to reconnect the receiving device
+  for about 10 seconds. After that, its copy ends, its seat stays reserved, and
+  the person can take part again from the invite.
 - The receiving device's controllers take the first free controller seat in
   the holder's session, from the same pool as stream play. korrid makes
   RetroArch's input port match that seat.
@@ -133,3 +136,5 @@ in Time*. The RG35XX Pro is on a different network, such as a phone hotspot,
 and starts without the release. The Pro receives the invite, chooses netplay,
 gets the copy, and its controller drives player 2. The SP then ends the
 session, and the Pro's game ends with it.
+
+Both devices are aarch64. A test between CPU types comes in a later slice.
