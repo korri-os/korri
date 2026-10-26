@@ -86,7 +86,7 @@ Shared play in which one device runs the game and holds the live session, and ot
 _Avoid_: remote play, guest stream, player two
 
 **Netplay**:
-Shared play in which each device runs its own copy of the game, and the copies are kept in step.
+Shared play in which each device runs its own copy of the game, and the copies are kept in step. As in stream play, the device that holds the live session controls it: it hosts netplay, and only it can end it or change it. Only the holder's saves go into the save history.
 _Avoid_: online play, linked play
 
 **Signal**:
