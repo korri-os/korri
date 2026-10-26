@@ -319,22 +319,37 @@ pub(crate) fn place_surface(
     pids: &std::collections::BTreeSet<i32>,
     portal_pids: &std::collections::BTreeSet<i32>,
 ) -> Result<Vec<SurfaceDisplay>, String> {
-    place_surface_timed(
+    let started = std::time::Instant::now();
+    let mut timings = SurfacePlacementTimings::default();
+    let result = place_surface_timed(
         control,
         displays,
         scope,
         game,
         pids,
         portal_pids,
-        &mut SurfacePlacementTimings::default(),
-    )
+        &mut timings,
+    );
+    if displays.len() > 1 && game.is_none() && scope == SurfaceDisplayScope::All {
+        let outcome = if result.is_ok() { "Changed" } else { "Failed" };
+        eprintln!("<6>korrid: PlacementTransition {{ target: Catalog, outcome: {outcome}, total_ms: {}, phases_ms: {{\"portal_tree\": {}, \"portal_power\": {}, \"portal_geometry\": {}, \"portal_settle\": {}}} }}", started.elapsed().as_millis(), timings.tree_ms, timings.power_ms, timings.geometry_ms, timings.settle_ms);
+    }
+    result
 }
+
+/// Sway 1.12's window events and get_tree expose pending container state,
+/// not the client's xdg ack/commit. Let the non-fullscreen configure settle
+/// separately before entering global fullscreen (Chromium 153 on RG DS).
+/// This bounded interval exceeds Sway's default 200 ms transaction timeout;
+/// it is not proof that an unresponsive client has committed. RG DS verified.
+const PORTAL_SETTLE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
 
 #[derive(Default)]
 pub(crate) struct SurfacePlacementTimings {
     pub tree_ms: u128,
     pub power_ms: u128,
     pub geometry_ms: u128,
+    pub settle_ms: u128,
 }
 
 pub(crate) fn place_surface_timed(
@@ -395,29 +410,23 @@ pub(crate) fn place_surface_timed(
         .map(|d| i64::from(d.y) + i64::from(d.height))
         .max()
         .unwrap_or(0);
-    if game.is_none() && scope == SurfaceDisplayScope::All {
-        // Drop fullscreen before changing floating state: enabling an already
-        // global-fullscreen con is a no-op and can retain the overlay bounds.
-        // This restores the same tiling presentation as kiosk boot.
-        commands.extend([
-            format!("[con_id={portal}] fullscreen disable"),
-            format!("[con_id={portal}] floating disable"),
-            format!("[con_id={portal}] fullscreen enable global"),
-        ]);
-    } else {
-        commands.extend([
-            format!("[con_id={portal}] fullscreen disable"),
-            format!("[con_id={portal}] floating enable"),
-            format!("[con_id={portal}] resize set width {width} px height {height} px"),
-            format!(
-                "[con_id={portal}] move absolute position {} px {} px",
-                origin.x, origin.y
-            ),
-        ]);
+    let restore_catalog = game.is_none() && scope == SurfaceDisplayScope::All;
+    // Prepare a real non-fullscreen target-size configure. Entering global
+    // fullscreen in this same IPC batch can retain Chromium's overlay geometry.
+    commands.extend([
+        format!("[con_id={portal}] fullscreen disable"),
+        format!("[con_id={portal}] floating enable"),
+        format!("[con_id={portal}] resize set width {width} px height {height} px"),
+        format!(
+            "[con_id={portal}] move absolute position {} px {} px",
+            origin.x, origin.y
+        ),
+    ]);
+    if !restore_catalog {
+        commands.push(format!("[con_id={portal}] focus"));
     }
-    commands.push(format!("[con_id={portal}] focus"));
-    // Separate measured power and geometry batches: the DRM modeset can
-    // dominate power-on, while geometry/focus needs only one IPC round trip.
+    // Measure power separately: the DRM modeset can dominate this call.
+    // Catalog activation follows a separately settled geometry batch below.
     let start = std::time::Instant::now();
     let power = control.command(&power_commands(displays, &occupied).join("; "));
     timings.power_ms = start.elapsed().as_millis();
@@ -426,6 +435,31 @@ pub(crate) fn place_surface_timed(
     let geometry = control.command(&commands.join("; "));
     timings.geometry_ms = start.elapsed().as_millis();
     geometry?;
+    if restore_catalog {
+        let start = std::time::Instant::now();
+        std::thread::sleep(PORTAL_SETTLE_INTERVAL);
+        timings.settle_ms = start.elapsed().as_millis();
+        // This read is an identity recheck, NOT a client-commit fence. Never
+        // activate a different kiosk window that appeared during the interval.
+        let start = std::time::Instant::now();
+        let tree = control.tree();
+        timings.tree_ms += start.elapsed().as_millis();
+        if super::compositor_focus::portal_node(&tree?, portal_pids)? != portal {
+            return Err("portal window changed during catalog preparation".into());
+        }
+        let start = std::time::Instant::now();
+        let activation = control.command(
+            &[
+                format!("[con_id={portal}] fullscreen disable"),
+                format!("[con_id={portal}] floating disable"),
+                format!("[con_id={portal}] fullscreen enable global"),
+                format!("[con_id={portal}] focus"),
+            ]
+            .join("; "),
+        );
+        timings.geometry_ms += start.elapsed().as_millis();
+        activation?;
+    }
     Ok(rectangles)
 }
 
@@ -538,8 +572,14 @@ mod tests {
                 r#"#!/bin/sh
 cd '{}' || exit 1
 for argument do command="$argument"; done
-case "$command" in get_tree) cat tree; exit;; esac
+case "$command" in get_tree)
+ printf 'get_tree\n' >> events
+ if test -f prepared && test -f replacement-tree; then cat replacement-tree; else cat tree; fi
+ exit;;
+esac
+printf '%s\n' "$command" >> events
 printf '%s\n' "$command" >> batches
+case "$command" in *'[con_id=10] resize set width 640 px height 960 px'*) touch prepared;; esac
 old_ifs="$IFS"
 IFS=';'
 for part in $command; do
@@ -579,7 +619,11 @@ fi
     }
 
     #[test]
-    fn catalog_restore_is_one_tiling_global_fullscreen_batch() {
+    fn catalog_restore_prepares_size_in_a_separate_call_before_global_fullscreen() {
+        assert_eq!(
+            PORTAL_SETTLE_INTERVAL,
+            std::time::Duration::from_millis(250)
+        );
         let dir = tempfile::tempdir().unwrap();
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
         place_surface(
@@ -594,10 +638,67 @@ fi
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
         assert_eq!(
             batches.lines().count(),
-            2,
-            "power plus one restore IPC: {batches}"
+            3,
+            "power plus preparation and activation IPC: {batches}"
+        );
+        assert_eq!(batches.lines().nth(1).unwrap(), "[con_id=10] fullscreen disable; [con_id=10] floating enable; [con_id=10] resize set width 640 px height 960 px; [con_id=10] move absolute position 0 px 0 px");
+        let events = std::fs::read_to_string(dir.path().join("events")).unwrap();
+        assert_eq!(
+            events.lines().nth(3),
+            Some("get_tree"),
+            "revalidate identity between preparation and activation: {events}"
         );
         assert_eq!(batches.lines().last().unwrap(), "[con_id=10] fullscreen disable; [con_id=10] floating disable; [con_id=10] fullscreen enable global; [con_id=10] focus");
+    }
+
+    #[test]
+    fn refused_catalog_preparation_never_waits_or_activates() {
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        std::fs::write(
+            dir.path().join("reject"),
+            "resize set width 640 px height 960 px",
+        )
+        .unwrap();
+        let mut timings = SurfacePlacementTimings::default();
+        assert!(place_surface_timed(
+            &control,
+            &displays(),
+            SurfaceDisplayScope::All,
+            None,
+            &Default::default(),
+            &[100].into_iter().collect(),
+            &mut timings
+        )
+        .is_err());
+        assert_eq!(timings.settle_ms, 0);
+        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+        assert_eq!(batches.lines().count(), 2, "{batches}");
+        assert!(!batches.contains("fullscreen enable global"), "{batches}");
+    }
+
+    #[test]
+    fn catalog_restore_does_not_activate_a_replaced_portal_after_preparation() {
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        std::fs::write(
+            dir.path().join("replacement-tree"),
+            r#"{"nodes":[{"id":11,"pid":100}]}"#,
+        )
+        .unwrap();
+        assert!(place_surface(
+            &control,
+            &displays(),
+            SurfaceDisplayScope::All,
+            None,
+            &Default::default(),
+            &[100].into_iter().collect()
+        )
+        .is_err());
+        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+        assert_eq!(batches.lines().count(), 2, "{batches}");
+        assert!(!batches.contains("fullscreen enable global"), "{batches}");
+        assert!(!batches.contains(" focus"), "{batches}");
     }
 
     #[test]
@@ -634,15 +735,21 @@ fi
         let dir = tempfile::tempdir().unwrap();
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
         let single = choose(None, &runner(), &displays()).unwrap();
-        place_surface(
+        let mut timings = SurfacePlacementTimings::default();
+        place_surface_timed(
             &control,
             &displays(),
             SurfaceDisplayScope::All,
             Some(&single),
             &[200].into_iter().collect(),
             &[100].into_iter().collect(),
+            &mut timings,
         )
         .unwrap();
+        assert_eq!(
+            timings.settle_ms, 0,
+            "Home's overlay does not need catalog settling"
+        );
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
         assert_eq!(batches.lines().count(), 2, "{batches}");
         assert!(batches

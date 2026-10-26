@@ -1,5 +1,11 @@
 # Catalog restore and status contention — 2026-10-26
 
+> **Correction:** e391's single-batch restore did not fix the fresh overlay →
+> End offset on RG DS. The manual repair below was not proof of that combined
+> transition. Catalog restoration is superseded by
+> [the Chromium 153 two-phase settle](2026-10-26-chromium153-catalog-settle.md).
+> The status-catalog mutex fix described below remains in force.
+
 ## Portal restoration
 
 The multi-output catalog restore now sends these operations in one geometry

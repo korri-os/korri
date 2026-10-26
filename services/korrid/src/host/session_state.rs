@@ -756,6 +756,9 @@ impl HostSessionControl {
             trace
                 .phases_ms
                 .insert("portal_geometry", placement_timings.geometry_ms);
+            trace
+                .phases_ms
+                .insert("portal_settle", placement_timings.settle_ms);
             let (placement, rectangles) = result?;
             trace.overlay_output = rectangles.first().map(|display| display.id.clone());
             let mut occupied = placement.outputs;
@@ -3107,6 +3110,7 @@ impl HostSessionControl {
             "portal_tree",
             "portal_power",
             "portal_geometry",
+            "portal_settle",
             "portal_focus",
             "seat_restore",
             "seat_reset",
