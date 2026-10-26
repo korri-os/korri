@@ -792,6 +792,7 @@ async fn panel_uses_its_bounded_modeset_budget_without_retrying_or_extending_sta
 #[tokio::test(start_paused = true)]
 async fn only_panel_mutations_get_three_seconds_and_timed_out_mutations_never_retry() {
     use korri_inputd::korrid_client::PANEL_TRANSACTION_TIMEOUT;
+    assert_eq!(PANEL_TRANSACTION_TIMEOUT, Duration::from_secs(3));
     let clock_guard = tokio::spawn(async {
         loop {
             tokio::task::yield_now().await;
