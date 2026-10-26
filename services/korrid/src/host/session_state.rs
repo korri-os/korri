@@ -2833,6 +2833,10 @@ impl HostSessionControl {
                 let _ = self.record_focus_failure(&mut state, launch_id.clone(), game_id);
                 return HostSessionFreezeChange::HelperFailed { launch_id, message };
             }
+            // The successful transition has already reconciled while holding
+            // this same lock. Guard drop remains the failure/panic safety net,
+            // not a second observation of the same focus and unit metadata.
+            state.reconcile = false;
             if already {
                 HostSessionFreezeChange::Unchanged { launch_id }
             } else {
@@ -3360,7 +3364,7 @@ mod tests {
                     r#"#!/bin/sh
 cd '{}' || exit 1
 for argument do command="$argument"; done
-case "$command" in get_tree) cat tree; exit;; esac
+case "$command" in get_tree) printf 'tree\n' >> reads; cat tree; exit;; esac
 printf '%s\n' "$command" >> commands
 case "$command" in
  *'[con_id=2] focus'*) cp portal-tree tree;;
@@ -3416,10 +3420,19 @@ printf '[{{"success":true}}]'
             let commands = fs::read_to_string(root.path().join("commands")).unwrap();
             assert!(commands
                 .ends_with("[con_id=2] move absolute position 0 px 480 px\n[con_id=2] focus\n"));
+            fs::write(root.path().join("reads"), "").unwrap();
             assert!(matches!(
                 control.thaw(&prepared.launch_id),
                 HostSessionFreezeChange::Changed { .. }
             ));
+            assert_eq!(
+                fs::read_to_string(root.path().join("reads"))
+                    .unwrap()
+                    .lines()
+                    .count(),
+                3,
+                "Return must reconcile once, not once explicitly and again on guard drop"
+            );
             let (_, ownership, _) = control.status_with_recovered_overlay_intent();
             assert_eq!(ownership, Some(FocusOwnership::Launch));
             assert!(fs::read_to_string(root.path().join("commands"))
