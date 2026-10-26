@@ -431,12 +431,18 @@ fn dispatch_actions(matched: Vec<RuntimeAction>, services: &ConfiguredServices) 
             continue;
         }
         if action.dispatch_mode == DispatchMode::ExactPanel {
+            let policy_matched_at = std::time::Instant::now();
             let client = services
                 .korrid
                 .as_ref()
                 .expect("hardened actions always configure exact local control")
                 .clone();
             tokio::spawn(async move {
+                tracing::info!(
+                    event = "inputd_panel_dispatch_timing",
+                    scheduler_queue_ms = policy_matched_at.elapsed().as_millis(),
+                    "panel task scheduled after policy match"
+                );
                 let outcome = client.toggle_panel_exact().await;
                 match outcome {
                     Ok(outcome) => {

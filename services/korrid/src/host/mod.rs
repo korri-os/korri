@@ -1624,14 +1624,16 @@ impl HostRuntime {
     pub(crate) async fn observe_session_freeze<T: Send + 'static>(
         &self,
         expected_launch_id: &str,
+        received_at: std::time::Instant,
         observe: impl FnOnce(HostSessionFreezeChange) -> T + Send + 'static,
     ) -> Result<T, RpcFailure> {
         let runtime = self.clone();
         let expected_launch_id = expected_launch_id.to_owned();
         tokio::task::spawn_blocking(move || {
-            let outcome = runtime
-                .control()?
-                .observe_freeze(&expected_launch_id, observe);
+            let outcome =
+                runtime
+                    .control()?
+                    .observe_freeze(&expected_launch_id, received_at, observe);
             #[cfg(test)]
             runtime.session_rpc_probe("app.session.leave");
             Ok(outcome)

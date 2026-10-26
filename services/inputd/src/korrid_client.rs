@@ -95,6 +95,7 @@ impl KorridClient {
         let status_start = Instant::now();
         let (status, attempts) = self.status_observed().await;
         let status_ms = status_start.elapsed().as_millis();
+        let pre_request_ms = start.elapsed().as_millis();
         let mutation_start = Instant::now();
         let outcome = async {
             match status? {
@@ -126,7 +127,7 @@ impl KorridClient {
             }
         }
         .await;
-        tracing::info!(event="inputd_panel_timing", guard_ms, status_ms, status_attempts=attempts,
+        tracing::info!(event="inputd_panel_timing", guard_ms, status_ms, pre_request_ms, status_attempts=attempts,
             transaction_ms=mutation_start.elapsed().as_millis(), total_ms=start.elapsed().as_millis(), outcome=?outcome,
             "exact panel transaction timing");
         outcome

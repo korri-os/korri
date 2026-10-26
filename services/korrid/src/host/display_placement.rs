@@ -147,6 +147,7 @@ pub(crate) fn game_commands(
     displays: &[Display],
     placement: &Placement,
     node: i64,
+    focus: bool,
 ) -> Result<Vec<String>, String> {
     let main = displays.iter().find(|d| d.main).ok_or("no main display")?;
     let power = power_commands(displays, &placement.outputs);
@@ -168,7 +169,9 @@ pub(crate) fn game_commands(
     // A globally fullscreen portal suppresses focus-on-map. Placement is a
     // handoff, so focus the exact game only after its output and fullscreen.
     commands.push(format!("[con_id={node}] opacity 1"));
-    commands.push(format!("[con_id={node}] focus"));
+    if focus {
+        commands.push(format!("[con_id={node}] focus"));
+    }
     // Focus first. DRM disable is a blocking tail of this same IPC batch,
     // never a prerequisite for the game receiving activation.
     commands.extend(
@@ -203,6 +206,7 @@ pub(crate) fn place_game(
     placement: &Placement,
     pids: &std::collections::BTreeSet<i32>,
     excluded: &std::collections::BTreeSet<i32>,
+    focus: bool,
 ) -> Result<GamePlacementStatus, String> {
     use super::compositor_focus::{select_focus_target, FocusTarget};
     let tree = control.tree()?;
@@ -213,7 +217,7 @@ pub(crate) fn place_game(
         FocusTarget::Unreadable(reason) => return Err(reason),
     };
     if let Err(reason) =
-        control.command(&game_commands(displays, placement, candidate.node_id)?.join("; "))
+        control.command(&game_commands(displays, placement, candidate.node_id, focus)?.join("; "))
     {
         // Same runner layout, restored to the main display. Never choose a
         // different layout because an effect failed.
@@ -225,7 +229,8 @@ pub(crate) fn place_game(
             height: main.height,
             outputs: vec![main.name.clone()],
         };
-        let _ = control.command(&game_commands(displays, &fallback, candidate.node_id)?.join("; "));
+        let _ = control
+            .command(&game_commands(displays, &fallback, candidate.node_id, focus)?.join("; "));
         return Err(reason);
     }
     Ok(GamePlacementStatus::Placed(candidate.node_id))
@@ -771,6 +776,7 @@ fi
             &single,
             &[200].into_iter().collect(),
             &[100].into_iter().collect(),
+            true,
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(dir.path().join("batches")).unwrap(),
@@ -784,7 +790,7 @@ fi
         let ds = displays();
         let p = choose(Some(&system()), &runner(), &ds).unwrap();
         let pids = [200].into_iter().collect();
-        place_game(&control, &ds, &p, &pids, &[100].into_iter().collect()).unwrap();
+        place_game(&control, &ds, &p, &pids, &[100].into_iter().collect(), true).unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands.contains("[con_id=20] fullscreen enable global"));
         assert!(commands.contains("output DSI-1 power on"));
@@ -807,7 +813,7 @@ fi
             commands.ends_with("[con_id=10] move absolute position 0 px 0 px\n[con_id=10] focus\n")
         );
         // Closing the overlay restores the game's global placement and focus.
-        place_game(&control, &ds, &p, &pids, &[100].into_iter().collect()).unwrap();
+        place_game(&control, &ds, &p, &pids, &[100].into_iter().collect(), true).unwrap();
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
         assert!(batches.lines().last().unwrap().ends_with(
             "[con_id=20] fullscreen enable global; [con_id=20] opacity 1; [con_id=20] focus"
@@ -827,7 +833,15 @@ fi
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands
             .ends_with("[con_id=10] move absolute position 0 px 480 px\n[con_id=10] focus\n"));
-        place_game(&control, &ds, &single, &pids, &[100].into_iter().collect()).unwrap();
+        place_game(
+            &control,
+            &ds,
+            &single,
+            &pids,
+            &[100].into_iter().collect(),
+            true,
+        )
+        .unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands.contains("output DSI-1 power off"));
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
@@ -895,7 +909,8 @@ fi
                 &ds,
                 &p,
                 &[999].into_iter().collect(),
-                &[100].into_iter().collect()
+                &[100].into_iter().collect(),
+                true
             )
             .unwrap(),
             GamePlacementStatus::AwaitingWindow
@@ -907,7 +922,8 @@ fi
                 &ds,
                 &p,
                 &[200].into_iter().collect(),
-                &[100].into_iter().collect()
+                &[100].into_iter().collect(),
+                true
             )
             .unwrap_err(),
             "refused"
