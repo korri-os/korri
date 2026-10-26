@@ -239,6 +239,27 @@ impl Drop for SessionStateGuard<'_> {
                 let _ = self.control.thaw_portal();
             }
         }
+        *self
+            .control
+            .state_owner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
+    }
+}
+
+#[derive(Clone)]
+enum AppliedDisplayPlacement {
+    Game(String),
+    Overlay {
+        launch_id: String,
+        rectangles: Vec<super::display_placement::SurfaceDisplay>,
+    },
+}
+impl AppliedDisplayPlacement {
+    fn launch_id(&self) -> &str {
+        match self {
+            Self::Game(id) | Self::Overlay { launch_id: id, .. } => id,
+        }
     }
 }
 
@@ -246,6 +267,8 @@ impl Drop for SessionStateGuard<'_> {
 #[derive(Default)]
 struct TransitionTrace {
     phases_ms: std::collections::BTreeMap<&'static str, u128>,
+    lock_holder: Option<&'static str>,
+    lock_holder_elapsed_ms: Option<u128>,
     overlay_output: Option<String>,
     focus_target: Option<i64>,
 }
@@ -276,6 +299,8 @@ pub struct HostSessionControl {
     state: Arc<Mutex<ActiveState>>,
     // Status reads already retry recovery; do not repeat the same diagnostic.
     recovery_helper_error: Arc<Mutex<Option<String>>>,
+    /// Diagnostics only; never authorizes a state transition.
+    state_owner: Arc<Mutex<Option<(&'static str, Instant)>>>,
     seat_lease: Arc<Mutex<Option<(String, Box<dyn InputSeatLease>)>>>,
     /// One startup-only exact handoff reconstructed from live compositor facts.
     /// Browser status consumes it into the server's process-local overlay intent.
@@ -286,7 +311,7 @@ pub struct HostSessionControl {
     /// Required to prove that an exact launch owns focus before Game input can
     /// return. Absence is a product-path focus failure, never implicit success.
     compositor: Option<Arc<dyn CompositorControl>>,
-    placement_applied: Arc<Mutex<Option<String>>>,
+    placement_applied: Arc<Mutex<Option<AppliedDisplayPlacement>>>,
     display_content: Arc<Mutex<Vec<String>>>,
     /// Frozen only while a running exact launch has observed compositor focus.
     /// Absent, the portal is never touched.
@@ -349,6 +374,7 @@ impl HostSessionControl {
             clock,
             state: Arc::new(Mutex::new(ActiveState::RecoveryPending)),
             recovery_helper_error: Arc::new(Mutex::new(None)),
+            state_owner: Arc::new(Mutex::new(None)),
             seat_lease: Arc::new(Mutex::new(None)),
             recovered_overlay_intent: Arc::new(Mutex::new(None)),
             initial_handoff: Arc::new(Mutex::new(None)),
@@ -424,12 +450,20 @@ impl HostSessionControl {
     }
 
     fn lock_state(&self) -> SessionStateGuard<'_> {
+        self.lock_state_named("session_operation")
+    }
+
+    fn lock_state_named(&self, operation: &'static str) -> SessionStateGuard<'_> {
         let state = self.state.lock().unwrap_or_else(|error| {
             let mut state = error.into_inner();
             *state = ActiveState::RecoveryBlocked;
             self.state.clear_poison();
             state
         });
+        *self
+            .state_owner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some((operation, Instant::now()));
         SessionStateGuard {
             control: self,
             state,
@@ -523,11 +557,27 @@ impl HostSessionControl {
 
     fn reconcile_local_portal(&self, state: &ActiveState) -> Result<(), String> {
         if self.input_seats.is_fenced() {
+            return self.reconcile_local_portal_observed(state, None);
+        }
+        let ownership = match state {
+            ActiveState::Running { launch_id, .. } => self.current_focus_ownership(launch_id).ok(),
+            _ => None,
+        };
+        self.reconcile_local_portal_observed(state, ownership)
+    }
+
+    fn reconcile_local_portal_observed(
+        &self,
+        state: &ActiveState,
+        ownership: Option<FocusOwnership>,
+    ) -> Result<(), String> {
+        if self.input_seats.is_fenced() {
             self.emergency_thaw_portal()?;
             return Err("input coordination is fenced; restart korrid after resolving the exact active session".into());
         }
-        let freeze = matches!(state, ActiveState::Running { launch_id, .. }
-            if matches!(self.current_focus_ownership(launch_id), Ok(FocusOwnership::Launch)));
+        let freeze = matches!(state, ActiveState::Running { .. })
+            && ownership == Some(FocusOwnership::Launch);
+
         let route = match state {
             ActiveState::Running { launch_id, .. } if freeze => Some(launch_id.as_str()),
             _ => None,
@@ -621,22 +671,35 @@ impl HostSessionControl {
         let portal_pids = trace.time("portal_identity", || self.portal_pids())?;
         let displays = super::display_placement::configured_displays()?;
         if displays.len() > 1 {
-            let (placement, rectangles) = trace.time("portal_placement", || {
+            let mut placement_timings =
+                super::display_placement::SurfacePlacementTimings::default();
+            let result = trace.time("portal_placement", || {
                 let placement = self.launch_placement(launch_id, &displays)?;
                 let pids = self
                     .backend
                     .window_pids(launch_id)
                     .map_err(|error| error.message)?;
-                let rectangles = super::display_placement::place_surface(
+                let rectangles = super::display_placement::place_surface_timed(
                     compositor.as_ref(),
                     &displays,
                     super::display_placement::SurfaceDisplayScope::All,
                     Some(&placement),
                     &pids,
                     &portal_pids,
+                    &mut placement_timings,
                 )?;
                 Ok::<_, String>((placement, rectangles))
-            })?;
+            });
+            trace
+                .phases_ms
+                .insert("portal_tree", placement_timings.tree_ms);
+            trace
+                .phases_ms
+                .insert("portal_power", placement_timings.power_ms);
+            trace
+                .phases_ms
+                .insert("portal_geometry", placement_timings.geometry_ms);
+            let (placement, rectangles) = result?;
             trace.overlay_output = rectangles.first().map(|display| display.id.clone());
             let mut occupied = placement.outputs;
             occupied.extend(rectangles.iter().map(|display| display.id.clone()));
@@ -647,7 +710,10 @@ impl HostSessionControl {
             *self
                 .placement_applied
                 .lock()
-                .expect("placement mutex poisoned") = Some(launch_id.into());
+                .expect("placement mutex poisoned") = Some(AppliedDisplayPlacement::Overlay {
+                launch_id: launch_id.into(),
+                rectangles,
+            });
             trace.focus_target = Some(trace.time("portal_focus", || {
                 super::compositor_focus::portal_focus_target(&compositor.tree()?, &portal_pids)
             })?);
@@ -690,12 +756,12 @@ impl HostSessionControl {
             .as_ref()
             .is_some_and(|(id, phase)| id == launch_id && *phase == InitialHandoff::Waiting);
         if waiting {
-            self.ensure_display_placement(launch_id, false, &pids, &excluded);
+            let _ = self.ensure_display_placement(launch_id, false, &pids, &excluded);
         }
         let tree = compositor.tree()?;
         let ownership = focused_ownership(&tree, &pids, &excluded)?;
         if ownership == FocusOwnership::Launch {
-            self.ensure_display_placement(launch_id, false, &pids, &excluded);
+            let _ = self.ensure_display_placement(launch_id, false, &pids, &excluded);
             self.record_initial_handoff(launch_id);
         }
         Ok(ownership)
@@ -837,7 +903,7 @@ impl HostSessionControl {
             reconcile: true,
         };
         Some(
-            self.observe_status_locked(guard, |status, ownership, handoff| {
+            self.observe_status_locked(guard, true, |status, ownership, handoff| {
                 self.observe_recovered_status(status, ownership, handoff, observe)
             }),
         )
@@ -937,19 +1003,23 @@ impl HostSessionControl {
         force: bool,
         pids: &std::collections::BTreeSet<i32>,
         excluded: &std::collections::BTreeSet<i32>,
-    ) {
+    ) -> Result<Option<i64>, String> {
         use super::display_placement::GamePlacementStatus;
         let mut applied = self
             .placement_applied
             .lock()
             .expect("placement mutex poisoned");
-        if !force && applied.as_deref() == Some(launch_id) {
-            return;
+        if !force
+            && applied
+                .as_ref()
+                .is_some_and(|value| value.launch_id() == launch_id)
+        {
+            return Ok(None);
         }
         let result: Result<GamePlacementStatus, String> = (|| {
             let displays = super::display_placement::configured_displays()?;
             if displays.len() <= 1 {
-                return Ok(GamePlacementStatus::Placed);
+                return Ok(GamePlacementStatus::AwaitingWindow);
             }
             let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
             let placement = self.launch_placement(launch_id, &displays)?;
@@ -975,13 +1045,17 @@ impl HostSessionControl {
                 .display_content
                 .lock()
                 .expect("display content mutex poisoned") = placement.outputs.clone();
-            Ok(GamePlacementStatus::Placed)
+            Ok(progress)
         })();
         match result {
-            Ok(GamePlacementStatus::Placed) => *applied = Some(launch_id.into()),
-            Ok(GamePlacementStatus::AwaitingWindow) => {}
+            Ok(GamePlacementStatus::Placed(node)) => {
+                *applied = Some(AppliedDisplayPlacement::Game(launch_id.into()));
+                Ok(Some(node))
+            }
+            Ok(GamePlacementStatus::AwaitingWindow) => Ok(None),
             Err(reason) => {
-                eprintln!("korrid: PlacementFailed {{ launch_id: {launch_id}, reason: {reason} }}")
+                eprintln!("korrid: PlacementFailed {{ launch_id: {launch_id}, reason: {reason} }}");
+                Err(reason)
             }
         }
     }
@@ -1004,7 +1078,7 @@ impl HostSessionControl {
                 &displays, scope, None,
             ));
         }
-        let state = self.lock_state();
+        let state = self.lock_state_named("surface_displays");
         let launch_id = match &*state {
             ActiveState::Running { launch_id, .. }
             | ActiveState::Frozen { launch_id, .. }
@@ -1019,6 +1093,21 @@ impl HostSessionControl {
         } else {
             None
         };
+        if request.overlay && matches!(&*state, ActiveState::Frozen { .. }) {
+            if let Some(AppliedDisplayPlacement::Overlay {
+                launch_id: placed,
+                rectangles,
+            }) = self
+                .placement_applied
+                .lock()
+                .expect("placement mutex poisoned")
+                .as_ref()
+            {
+                if Some(placed.as_str()) == launch_id {
+                    return Ok(rectangles.clone());
+                }
+            }
+        }
         let placement = launch_id
             .map(|id| self.launch_placement(id, &displays))
             .transpose()?;
@@ -1052,7 +1141,15 @@ impl HostSessionControl {
             *self
                 .placement_applied
                 .lock()
-                .expect("placement mutex poisoned") = Some(id.into());
+                .expect("placement mutex poisoned") = Some(AppliedDisplayPlacement::Overlay {
+                launch_id: id.into(),
+                rectangles: rectangles.clone(),
+            });
+        } else {
+            *self
+                .placement_applied
+                .lock()
+                .expect("placement mutex poisoned") = None;
         }
         Ok(rectangles)
     }
@@ -1069,8 +1166,18 @@ impl HostSessionControl {
             Ok(pids) => pids,
             Err(reason) => return Some(FocusOutcome::Failed(reason)),
         };
-        self.ensure_display_placement(launch_id, true, &pids, &excluded);
-        let outcome = focus_launch_window(compositor.as_ref(), &pids, &excluded);
+        let outcome = match self.ensure_display_placement(launch_id, true, &pids, &excluded) {
+            Ok(Some(node)) => match compositor
+                .tree()
+                .and_then(|tree| focused_ownership(&tree, &pids, &excluded))
+            {
+                Ok(FocusOwnership::Launch) => FocusOutcome::Focused(node),
+                Ok(_) => FocusOutcome::Failed("compositor did not confirm game focus".into()),
+                Err(reason) => FocusOutcome::Failed(reason),
+            },
+            Ok(None) => focus_launch_window(compositor.as_ref(), &pids, &excluded),
+            Err(reason) => FocusOutcome::Failed(reason),
+        };
         // Focused is returned only after the compositor tree proves exact
         // ownership, never from the focus command's acknowledgement alone.
         if matches!(outcome, FocusOutcome::Focused(_)) {
@@ -2171,6 +2278,24 @@ impl HostSessionControl {
         self.status_snapshot().0
     }
 
+    /// Inputd needs the exact live identity and freezer phase, not browser
+    /// focus, title enrichment or effects before it can stop the game.
+    pub(crate) fn control_status(&self) -> HostSessionStatus {
+        self.observe_status_locked(
+            self.lock_state_named("control_status"),
+            false,
+            |status, _, _| status,
+        )
+    }
+
+    pub(crate) fn watcher_status(&self) -> HostSessionStatus {
+        self.observe_status_locked(
+            self.lock_state_named("watcher_status"),
+            true,
+            |status, _, _| status,
+        )
+    }
+
     fn status_snapshot(&self) -> (HostSessionStatus, Option<FocusOwnership>) {
         self.observe_status(|status, ownership, _| (status, ownership))
     }
@@ -2179,12 +2304,13 @@ impl HostSessionControl {
         &self,
         observe: impl FnOnce(HostSessionStatus, Option<FocusOwnership>, Option<InitialHandoff>) -> T,
     ) -> T {
-        self.observe_status_locked(self.lock_state(), observe)
+        self.observe_status_locked(self.lock_state_named("status_poll"), true, observe)
     }
 
     fn observe_status_locked<T>(
         &self,
         mut state: SessionStateGuard<'_>,
+        inspect_focus: bool,
         observe: impl FnOnce(HostSessionStatus, Option<FocusOwnership>, Option<InitialHandoff>) -> T,
     ) -> T {
         self.refresh_recovery(&mut state);
@@ -2243,22 +2369,33 @@ impl HostSessionControl {
             }
         }
         state.reconcile = false;
-        if let Err(message) = self.reconcile_portal(&state) {
-            if let ActiveState::Running { launch_id, game_id } = &*state {
-                let (launch_id, game_id) = (launch_id.clone(), game_id.clone());
-                eprintln!("korrid: input transition failed: {message}");
-                let _ = self.record_focus_failure(&mut state, launch_id, game_id);
+        let ownership = if inspect_focus && !self.input_seats.is_fenced() {
+            match &*state {
+                ActiveState::Running { launch_id, .. }
+                | ActiveState::Frozen { launch_id, .. }
+                | ActiveState::FocusFailed { launch_id, .. }
+                | ActiveState::Stopping { launch_id, .. } => {
+                    self.current_focus_ownership(launch_id).ok()
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if inspect_focus {
+            let reconciliation = if self.peer_selection.active() {
+                self.reconcile_portal(&state)
+            } else {
+                self.reconcile_local_portal_observed(&state, ownership)
+            };
+            if let Err(message) = reconciliation {
+                if let ActiveState::Running { launch_id, game_id } = &*state {
+                    let (launch_id, game_id) = (launch_id.clone(), game_id.clone());
+                    eprintln!("korrid: input transition failed: {message}");
+                    let _ = self.record_focus_failure(&mut state, launch_id, game_id);
+                }
             }
         }
-        let ownership = match &*state {
-            ActiveState::Running { launch_id, .. }
-            | ActiveState::Frozen { launch_id, .. }
-            | ActiveState::FocusFailed { launch_id, .. }
-            | ActiveState::Stopping { launch_id, .. } => {
-                self.current_focus_ownership(launch_id).ok()
-            }
-            _ => None,
-        };
         // Correlate server metadata before releasing the exact-session lock;
         // a delayed RPC continuation must not reconcile an older snapshot.
         observe(
@@ -2604,7 +2741,15 @@ impl HostSessionControl {
     ) -> T {
         let started = Instant::now();
         let mut trace = TransitionTrace::default();
-        let mut state = trace.time("lock_wait", || self.lock_state());
+        if let Some((name, since)) = *self
+            .state_owner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+        {
+            trace.lock_holder = Some(name);
+            trace.lock_holder_elapsed_ms = Some(since.elapsed().as_millis());
+        }
+        let mut state = trace.time("lock_wait", || self.lock_state_named("panel_transition"));
         let outcome = (|| {
             trace.time("recovery", || self.refresh_recovery(&mut state));
             let (launch_id, game_id) = match &*state {
@@ -2869,6 +3014,9 @@ impl HostSessionControl {
             "portal_thaw",
             "portal_identity",
             "portal_placement",
+            "portal_tree",
+            "portal_power",
+            "portal_geometry",
             "portal_focus",
             "seat_restore",
             "seat_reset",
@@ -2879,8 +3027,8 @@ impl HostSessionControl {
         ] {
             trace.phases_ms.entry(name).or_default();
         }
-        eprintln!("<6>korrid: PlacementTransition {{ launch_id: {expected_launch_id}, target: {target:?}, outcome: {outcome_label}, powered_displays: {powered:?}, overlay_output: {:?}, focus_target: {:?}, total_ms: {}, phases_ms: {:?} }}",
-            trace.overlay_output, trace.focus_target, started.elapsed().as_millis(), trace.phases_ms);
+        eprintln!("<6>korrid: PlacementTransition {{ launch_id: {expected_launch_id}, target: {target:?}, outcome: {outcome_label}, powered_displays: {powered:?}, overlay_output: {:?}, focus_target: {:?}, total_ms: {}, lock_holder: {:?}, lock_holder_elapsed_ms: {:?}, phases_ms: {:?} }}",
+            trace.overlay_output, trace.focus_target, started.elapsed().as_millis(), trace.lock_holder, trace.lock_holder_elapsed_ms, trace.phases_ms);
         result
     }
 
@@ -3327,7 +3475,7 @@ mod tests {
                 .lines()
                 .filter(|line| line.starts_with("<6>korrid: PlacementTransition"))
                 .collect();
-            assert_eq!(outcomes.len(), 8, "{stderr}");
+            assert_eq!(outcomes.len(), 12, "{stderr}");
             for line in outcomes {
                 for field in [
                     "launch_id",
@@ -3340,6 +3488,10 @@ mod tests {
                     "unit_change",
                     "portal_thaw",
                     "portal_placement",
+                    "portal_tree",
+                    "portal_power",
+                    "portal_geometry",
+                    "lock_holder",
                     "portal_focus",
                     "seat_reset",
                     "game_focus",
@@ -3404,6 +3556,27 @@ printf '[{{"success":true}}]'
                 control.status(),
                 HostSessionStatus::Running { .. }
             ));
+            fs::write(root.path().join("reads"), "").unwrap();
+            let identity_start = portal.identity_reads();
+            assert!(matches!(
+                control.control_status(),
+                HostSessionStatus::Running { .. }
+            ));
+            assert_eq!(
+                portal.identity_reads(),
+                identity_start,
+                "inputd status must not inspect UI identity"
+            );
+            assert_eq!(fs::read_to_string(root.path().join("reads")).unwrap(), "");
+            control.status();
+            assert_eq!(
+                fs::read_to_string(root.path().join("reads"))
+                    .unwrap()
+                    .lines()
+                    .count(),
+                1,
+                "one focus snapshot must serve status reconciliation and publication"
+            );
             fs::write(root.path().join("commands"), "").unwrap();
             assert!(matches!(
                 control.freeze(&prepared.launch_id),
@@ -3413,6 +3586,7 @@ printf '[{{"success":true}}]'
             assert!(first_open.contains("output DSI-1 power on"), "{first_open}");
             let (_, ownership, _) = control.status_with_recovered_overlay_intent();
             assert_eq!(ownership, Some(FocusOwnership::Excluded));
+            let before_surface_rpc = fs::read_to_string(root.path().join("commands")).unwrap();
             let rectangles = control
                 .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
                     displays: super::super::display_placement::SurfaceDisplayScope::All,
@@ -3422,15 +3596,31 @@ printf '[{{"success":true}}]'
                 .unwrap();
             assert_eq!(rectangles.len(), 1);
             assert_eq!(rectangles[0].id, "DSI-1");
+            assert_eq!(
+                before_surface_rpc,
+                fs::read_to_string(root.path().join("commands")).unwrap(),
+                "the frontend must not re-place the overlay committed by Leave"
+            );
             let commands = fs::read_to_string(root.path().join("commands")).unwrap();
             assert!(commands
-                .ends_with("[con_id=2] move absolute position 0 px 480 px\n[con_id=2] focus\n"));
+                .ends_with("[con_id=2] move absolute position 0 px 480 px; [con_id=2] focus\n"));
             fs::write(root.path().join("reads"), "").unwrap();
+            fs::write(root.path().join("commands"), "").unwrap();
             let identity_reads = portal.identity_reads();
             assert!(matches!(
                 control.thaw(&prepared.launch_id),
                 HostSessionFreezeChange::Changed { .. }
             ));
+            let returned = fs::read_to_string(root.path().join("commands")).unwrap();
+            assert_eq!(
+                returned.lines().count(),
+                1,
+                "Return must use one placement/focus/power batch: {returned}"
+            );
+            assert!(
+                returned.ends_with("[con_id=3] focus; output DSI-1 power off\n"),
+                "{returned}"
+            );
             assert_eq!(portal.identity_reads() - identity_reads, 2,
                 "Return must share one identity snapshot between placement and focus, then observe once at reconcile");
             assert_eq!(
@@ -3463,6 +3653,21 @@ printf '[{{"success":true}}]'
             assert!(fs::read_to_string(root.path().join("commands"))
                 .unwrap()
                 .contains("output DSI-1 power off"));
+            // Command success is not focus proof. Reject a lying compositor
+            // readback instead of issuing a second focus and calling it done.
+            assert!(matches!(
+                control.freeze(&prepared.launch_id),
+                HostSessionFreezeChange::Changed { .. }
+            ));
+            fs::write(root.path().join("game-tree"), tree(2)).unwrap();
+            assert!(matches!(
+                control.thaw(&prepared.launch_id),
+                HostSessionFreezeChange::FocusFailed { .. }
+            ));
+            assert_eq!(
+                backend.state(&prepared.launch_id).unwrap(),
+                LaunchUnitState::Running
+            );
         }
     }
 
@@ -3536,7 +3741,8 @@ printf '[{{"success":true}}]'
         ));
         let commands = fs::read_to_string(root.path().join("commands")).unwrap();
         assert_eq!(commands.lines().count(), 1);
-        assert!(commands.ends_with("[con_id=3] fullscreen enable; [con_id=3] focus\n"));
+        assert!(commands
+            .ends_with("[con_id=3] fullscreen enable; [con_id=3] focus; output DSI-1 power off\n"));
         let (_, ownership, _) = control.status_with_recovered_overlay_intent();
         assert_eq!(ownership, Some(FocusOwnership::Launch));
     }
@@ -3622,9 +3828,9 @@ printf '[{{"success":true}}]'
             .unwrap();
         assert_eq!(displays.len(), 2);
         let commands = fs::read_to_string(root.path().join("commands")).unwrap();
-        assert!(commands.contains("output DSI-2 power on\n"));
+        assert!(commands.contains("output DSI-2 power on; output DSI-1 power on\n"));
         assert!(commands.contains("output DSI-1 power on\n"));
-        assert!(commands.contains("[con_id=10] fullscreen enable global\n"));
+        assert!(commands.contains("[con_id=10] fullscreen enable global; [con_id=10] focus\n"));
         let queries = fs::read_to_string(root.path().join("unit-queries")).unwrap();
         assert!(queries.contains(
             "show korri-chromium-kiosk.service --property=ControlGroup --property=MainPID"
@@ -3687,8 +3893,9 @@ printf '[{{"success":true}}]'
             HostSessionStatus::Running { .. }
         ));
         let placed = fs::read_to_string(root.path().join("commands")).unwrap();
-        assert!(placed.contains("[con_id=3] fullscreen enable; [con_id=3] focus\n"));
-        assert!(placed.contains("output DSI-1 power off;"));
+        assert!(placed
+            .contains("[con_id=3] fullscreen enable; [con_id=3] focus; output DSI-1 power off\n"));
+        assert!(placed.contains("output DSI-1 power off\n"));
         fs::write(root.path().join("commands"), "").unwrap();
         compositor.command("output * power off").unwrap();
         control.wake_displays().unwrap();

@@ -149,7 +149,12 @@ pub(crate) fn game_commands(
     node: i64,
 ) -> Result<Vec<String>, String> {
     let main = displays.iter().find(|d| d.main).ok_or("no main display")?;
-    let mut commands = power_commands(displays, &placement.outputs);
+    let power = power_commands(displays, &placement.outputs);
+    let mut commands: Vec<_> = power
+        .iter()
+        .filter(|command| !command.ends_with(" off"))
+        .cloned()
+        .collect();
     commands.push(format!("[con_id={node}] fullscreen disable"));
     commands.push(format!(
         "[con_id={node}] move container to output {}",
@@ -162,6 +167,13 @@ pub(crate) fn game_commands(
     // A globally fullscreen portal suppresses focus-on-map. Placement is a
     // handoff, so focus the exact game only after its output and fullscreen.
     commands.push(format!("[con_id={node}] focus"));
+    // Focus first. DRM disable is a blocking tail of this same IPC batch,
+    // never a prerequisite for the game receiving activation.
+    commands.extend(
+        power
+            .into_iter()
+            .filter(|command| command.ends_with(" off")),
+    );
     Ok(commands)
 }
 
@@ -180,7 +192,7 @@ pub(crate) fn apply(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GamePlacementStatus {
     AwaitingWindow,
-    Placed,
+    Placed(i64),
 }
 
 pub(crate) fn place_game(
@@ -214,7 +226,7 @@ pub(crate) fn place_game(
         let _ = control.command(&game_commands(displays, &fallback, candidate.node_id)?.join("; "));
         return Err(reason);
     }
-    Ok(GamePlacementStatus::Placed)
+    Ok(GamePlacementStatus::Placed(candidate.node_id))
 }
 
 #[typeshare::typeshare]
@@ -305,16 +317,46 @@ pub(crate) fn place_surface(
     pids: &std::collections::BTreeSet<i32>,
     portal_pids: &std::collections::BTreeSet<i32>,
 ) -> Result<Vec<SurfaceDisplay>, String> {
+    place_surface_timed(
+        control,
+        displays,
+        scope,
+        game,
+        pids,
+        portal_pids,
+        &mut SurfacePlacementTimings::default(),
+    )
+}
+
+#[derive(Default)]
+pub(crate) struct SurfacePlacementTimings {
+    pub tree_ms: u128,
+    pub power_ms: u128,
+    pub geometry_ms: u128,
+}
+
+pub(crate) fn place_surface_timed(
+    control: &dyn super::compositor_focus::CompositorControl,
+    displays: &[Display],
+    scope: SurfaceDisplayScope,
+    game: Option<&Placement>,
+    pids: &std::collections::BTreeSet<i32>,
+    portal_pids: &std::collections::BTreeSet<i32>,
+    timings: &mut SurfacePlacementTimings,
+) -> Result<Vec<SurfaceDisplay>, String> {
     use super::compositor_focus::{select_focus_target, FocusTarget};
     let rectangles = surface_rectangles(displays, scope, game);
     if displays.len() <= 1 {
         return Ok(rectangles);
     }
-    let tree = control.tree()?;
+    let start = std::time::Instant::now();
+    let tree = control.tree();
+    timings.tree_ms = start.elapsed().as_millis();
+    let tree = tree?;
     let portal = super::compositor_focus::portal_node(&tree, portal_pids)?;
     let mut occupied = game.map(|p| p.outputs.clone()).unwrap_or_default();
     occupied.extend(rectangles.iter().map(|d| d.id.clone()));
-    apply(control, &power_commands(displays, &occupied))?;
+    let mut commands = Vec::new();
     if let Some(game) = game.filter(|p| p.global) {
         let candidate = match select_focus_target(&tree, pids, portal_pids) {
             FocusTarget::Window(c) => c,
@@ -323,21 +365,18 @@ pub(crate) fn place_surface(
         let main = displays.iter().find(|d| d.main).ok_or("no main display")?;
         // A global fullscreen container hides all other containers. Preserve
         // the same game rectangle while allowing an overlay above its upper pane.
-        apply(
-            control,
-            &[
-                format!("[con_id={}] fullscreen disable", candidate.node_id),
-                format!("[con_id={}] floating enable", candidate.node_id),
-                format!(
-                    "[con_id={}] resize set width {} px height {} px",
-                    candidate.node_id, game.width, game.height
-                ),
-                format!(
-                    "[con_id={}] move absolute position {} px {} px",
-                    candidate.node_id, main.x, main.y
-                ),
-            ],
-        )?;
+        commands.extend([
+            format!("[con_id={}] fullscreen disable", candidate.node_id),
+            format!("[con_id={}] floating enable", candidate.node_id),
+            format!(
+                "[con_id={}] resize set width {} px height {} px",
+                candidate.node_id, game.width, game.height
+            ),
+            format!(
+                "[con_id={}] move absolute position {} px {} px",
+                candidate.node_id, main.x, main.y
+            ),
+        ]);
     }
     let first = rectangles.first().ok_or("surface has no display")?;
     let origin = displays
@@ -354,7 +393,7 @@ pub(crate) fn place_surface(
         .map(|d| i64::from(d.y) + i64::from(d.height))
         .max()
         .unwrap_or(0);
-    let mut commands = vec![
+    commands.extend([
         format!("[con_id={portal}] fullscreen disable"),
         format!("[con_id={portal}] floating enable"),
         format!("[con_id={portal}] resize set width {width} px height {height} px"),
@@ -362,12 +401,21 @@ pub(crate) fn place_surface(
             "[con_id={portal}] move absolute position {} px {} px",
             origin.x, origin.y
         ),
-    ];
+    ]);
     if game.is_none() && scope == SurfaceDisplayScope::All {
         commands.push(format!("[con_id={portal}] fullscreen enable global"));
     }
     commands.push(format!("[con_id={portal}] focus"));
-    apply(control, &commands)?;
+    // Separate measured power and geometry batches: the DRM modeset can
+    // dominate power-on, while geometry/focus needs only one IPC round trip.
+    let start = std::time::Instant::now();
+    let power = control.command(&power_commands(displays, &occupied).join("; "));
+    timings.power_ms = start.elapsed().as_millis();
+    power?;
+    let start = std::time::Instant::now();
+    let geometry = control.command(&commands.join("; "));
+    timings.geometry_ms = start.elapsed().as_millis();
+    geometry?;
     Ok(rectangles)
 }
 
@@ -506,6 +554,29 @@ fi
     }
 
     #[test]
+    fn overlay_geometry_and_focus_share_one_batch_after_output_power() {
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        let single = choose(None, &runner(), &displays()).unwrap();
+        place_surface(
+            &control,
+            &displays(),
+            SurfaceDisplayScope::All,
+            Some(&single),
+            &[200].into_iter().collect(),
+            &[100].into_iter().collect(),
+        )
+        .unwrap();
+        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+        assert_eq!(batches.lines().count(), 2, "{batches}");
+        assert!(batches
+            .lines()
+            .last()
+            .unwrap()
+            .ends_with("[con_id=10] move absolute position 0 px 480 px; [con_id=10] focus"));
+    }
+
+    #[test]
     fn single_display_game_placement_focuses_the_exact_window_in_the_placement_batch() {
         let dir = tempfile::tempdir().unwrap();
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
@@ -520,7 +591,7 @@ fi
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(dir.path().join("batches")).unwrap(),
-            "output DSI-2 power on; output DSI-1 power off; [con_id=20] fullscreen disable; [con_id=20] move container to output DSI-2; [con_id=20] fullscreen enable; [con_id=20] focus\n");
+            "output DSI-2 power on; [con_id=20] fullscreen disable; [con_id=20] move container to output DSI-2; [con_id=20] fullscreen enable; [con_id=20] focus; output DSI-1 power off\n");
     }
 
     #[test]
@@ -581,7 +652,7 @@ fi
             .lines()
             .last()
             .unwrap()
-            .ends_with("[con_id=20] fullscreen enable; [con_id=20] focus"));
+            .ends_with("[con_id=20] fullscreen enable; [con_id=20] focus; output DSI-1 power off"));
         // Once the game ends, the retained catalog is placed over all displays.
         place_surface(
             &control,
@@ -667,11 +738,11 @@ fi
                 "[con_id=20] fullscreen enable global",
                 "[con_id=20] focus",
                 "output DSI-2 power on",
-                "output DSI-1 power off",
                 "[con_id=20] fullscreen disable",
                 "[con_id=20] move container to output DSI-2",
                 "[con_id=20] fullscreen enable",
                 "[con_id=20] focus",
+                "output DSI-1 power off",
             ]
         );
     }

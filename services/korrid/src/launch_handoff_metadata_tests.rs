@@ -450,3 +450,58 @@ async fn pending_startup_status_public_protocol_probe() {
         "{active}"
     );
 }
+
+#[tokio::test]
+async fn native_control_status_reads_exact_liveness_without_browser_focus_work() {
+    #[derive(Debug)]
+    struct ObservedCompositor(std::sync::atomic::AtomicUsize);
+    impl host::CompositorControl for ObservedCompositor {
+        fn tree(&self) -> Result<String, String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":true}]}).to_string())
+        }
+        fn focus(&self, _: i64) -> Result<(), String> {
+            panic!("status must not refocus an observed game")
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let (runtime, backend) = runtime(root.path());
+    let compositor = Arc::new(ObservedCompositor(std::sync::atomic::AtomicUsize::new(0)));
+    let (app, native) = native_routers(runtime.with_compositor(compositor.clone()), root.path());
+    let id = reserve(&app).await;
+    assert_eq!(start(&app, &id).await["outcome"]["_tag"], "Ok");
+    backend.set_window_pids(&id, [9100].into());
+    compositor.0.store(0, Ordering::SeqCst);
+    let status = rpc(&native, "app.session.status", json!({})).await;
+    assert_eq!(
+        status["outcome"]["payload"]["active"]["launchId"], id,
+        "{status}"
+    );
+    assert_eq!(
+        status["outcome"]["payload"]["active"]["phase"], "running",
+        "{status}"
+    );
+    assert_eq!(
+        compositor.0.load(Ordering::SeqCst),
+        0,
+        "native control does not need a compositor snapshot"
+    );
+    assert_eq!(freeze(&native, &id).await["outcome"]["_tag"], "Ok");
+    let frozen = rpc(&native, "app.session.status", json!({})).await;
+    assert_eq!(
+        frozen["outcome"]["payload"]["active"]["phase"], "frozen",
+        "{frozen}"
+    );
+    assert_eq!(
+        frozen["outcome"]["payload"]["overlay"]["launchId"], id,
+        "{frozen}"
+    );
+    assert_eq!(compositor.0.load(Ordering::SeqCst), 0);
+    backend.complete_live();
+    let completed = rpc(&native, "app.session.status", json!({})).await;
+    assert_eq!(
+        completed["outcome"]["payload"]["code"], "SessionCompleted",
+        "{completed}"
+    );
+    assert_eq!(compositor.0.load(Ordering::SeqCst), 0);
+}

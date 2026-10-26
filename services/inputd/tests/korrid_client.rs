@@ -745,3 +745,116 @@ async fn failed_game_focus_during_leave_rollback_remains_portal_owned() {
     );
     server.await.unwrap();
 }
+
+#[tokio::test(start_paused = true)]
+async fn panel_uses_its_bounded_modeset_budget_without_retrying_or_extending_status() {
+    use korri_inputd::korrid_client::PANEL_TRANSACTION_TIMEOUT;
+    // Socket readiness is real I/O. Keep virtual time still until the test
+    // advances it, rather than letting idle-time advancement race the socket.
+    let clock_guard = tokio::spawn(async {
+        loop {
+            tokio::task::yield_now().await;
+        }
+    });
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("control.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (mut status, _) = listener.accept().await.unwrap();
+        let _ = request_body(&mut status).await;
+        reply(&mut status, &status_ok("running")).await;
+        drop(status);
+        let (mut leave, _) = listener.accept().await.unwrap();
+        let request = request_body(&mut leave).await;
+        assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
+        entered_tx.send(()).unwrap();
+        release_rx.await.unwrap();
+        reply(&mut leave, &serde_json::json!({"_tag":"app.session.leave", "outcome":{"_tag":"Ok", "payload":{"launchId":LAUNCH_ID,"state":"frozen","changed":true}}}).to_string()).await;
+    });
+    let operation_budget = limits(1).operation_timeout;
+    let client = KorridClient::with_limits(path, limits(1));
+    let toggle = tokio::spawn(async move { client.toggle_panel_exact().await });
+    entered_rx.await.unwrap();
+    tokio::time::advance(operation_budget + Duration::from_millis(1)).await;
+    assert!(
+        !toggle.is_finished(),
+        "a measured modeset is not a status request"
+    );
+    assert!(PANEL_TRANSACTION_TIMEOUT > operation_budget);
+    release_tx.send(()).unwrap();
+    assert_eq!(toggle.await.unwrap().unwrap(), ExactPanelOutcome::Opened);
+    server.await.unwrap();
+    clock_guard.abort();
+}
+
+#[tokio::test(start_paused = true)]
+async fn only_panel_mutations_get_three_seconds_and_timed_out_mutations_never_retry() {
+    use korri_inputd::korrid_client::PANEL_TRANSACTION_TIMEOUT;
+    let clock_guard = tokio::spawn(async {
+        loop {
+            tokio::task::yield_now().await;
+        }
+    });
+    for stalled in ["status", "stop", "panel"] {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("control.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut status, _) = listener.accept().await.unwrap();
+            let _ = request_body(&mut status).await;
+            let held = if stalled == "status" {
+                status
+            } else {
+                reply(&mut status, &status_ok("running")).await;
+                drop(status);
+                let (mut mutation, _) = listener.accept().await.unwrap();
+                let request = request_body(&mut mutation).await;
+                assert_eq!(
+                    request["_tag"],
+                    if stalled == "stop" {
+                        "app.session.end"
+                    } else {
+                        "app.session.leave"
+                    }
+                );
+                mutation
+            };
+            entered_tx.send(()).unwrap();
+            release_rx.await.unwrap();
+            drop(held);
+            listener.into_std().unwrap()
+        });
+        let client =
+            KorridClient::with_limits(path, limits(if stalled == "status" { 1 } else { 2 }));
+        let operation = tokio::spawn(async move {
+            if stalled == "stop" {
+                client.stop_active_exact().await.map(|_| ())
+            } else {
+                client.toggle_panel_exact().await.map(|_| ())
+            }
+        });
+        entered_rx.await.unwrap();
+        let budget = if stalled == "panel" {
+            PANEL_TRANSACTION_TIMEOUT
+        } else {
+            limits(1).operation_timeout
+        };
+        tokio::time::advance(budget + Duration::from_millis(1)).await;
+        assert!(
+            matches!(operation.await.unwrap(), Err(LocalControlError::TimedOut)),
+            "{stalled}"
+        );
+        release_tx.send(()).unwrap();
+        let listener = server.await.unwrap();
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+            "{stalled}: a timed-out mutation must not open a retry connection"
+        );
+    }
+    clock_guard.abort();
+}
