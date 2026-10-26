@@ -850,6 +850,7 @@ impl HostSessionControl {
     }
 
     fn ensure_display_placement(&self, launch_id: &str, force: bool) {
+        use super::display_placement::GamePlacementStatus;
         let mut applied = self
             .placement_applied
             .lock()
@@ -857,10 +858,10 @@ impl HostSessionControl {
         if !force && applied.as_deref() == Some(launch_id) {
             return;
         }
-        let result: Result<(), String> = (|| {
+        let result: Result<GamePlacementStatus, String> = (|| {
             let displays = super::display_placement::configured_displays()?;
             if displays.len() <= 1 {
-                return Ok(());
+                return Ok(GamePlacementStatus::Placed);
             }
             let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
             let pids = self.backend.window_pids(launch_id).map_err(|e| e.message)?;
@@ -874,21 +875,25 @@ impl HostSessionControl {
                 .filter(|d| d.main)
                 .map(|d| d.name.clone())
                 .collect();
-            super::display_placement::place_game(
+            let progress = super::display_placement::place_game(
                 compositor.as_ref(),
                 &displays,
                 &placement,
                 &pids,
                 &excluded,
             )?;
+            if progress == GamePlacementStatus::AwaitingWindow {
+                return Ok(progress);
+            }
             *self
                 .display_content
                 .lock()
                 .expect("display content mutex poisoned") = placement.outputs.clone();
-            Ok(())
+            Ok(GamePlacementStatus::Placed)
         })();
         match result {
-            Ok(()) => *applied = Some(launch_id.into()),
+            Ok(GamePlacementStatus::Placed) => *applied = Some(launch_id.into()),
+            Ok(GamePlacementStatus::AwaitingWindow) => {}
             Err(reason) => {
                 eprintln!("korrid: PlacementFailed {{ launch_id: {launch_id}, reason: {reason} }}")
             }
@@ -3134,94 +3139,78 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn recovery_without_a_stream_root_reaches_idle_and_initializes_input() {
-        use super::super::{input_coordination::test_support, input_seat::UnixInputSeatManager};
-        use korri_input_contract::SeatRequest;
-
-        let root = tempfile::tempdir().unwrap();
-        let journal = root.path().join("host-session");
-        fs::create_dir(&journal).unwrap();
-        fs::set_permissions(&journal, fs::Permissions::from_mode(0o700)).unwrap();
-        let helper = root.path().join("systemctl");
-        fs::write(
-            &helper,
-            "#!/bin/sh\ncase \"$3\" in list-units) exit 0;; *) exit 1;; esac\n",
-        )
-        .unwrap();
-        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
-        let backend = SystemdLaunchUnitBackend::with_protected_paths(
-            helper.clone(),
-            helper,
-            1000,
-            1000,
-            root.path().to_owned(),
-            "/run/korrid-control/control.sock".into(),
-            "/run/korrid-control".into(),
-            None,
-            "/run/korri-compositor".into(),
-        )
-        .unwrap();
-        assert!(backend.live_launch_ids().unwrap().is_empty());
-
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let seen = requests.clone();
-        let (coordinator, receiver) = test_support::coordinator(move |request| {
-            let mut reply = test_support::reply();
-            if let SeatRequest::ApplyCount { count } = &request {
-                reply.count = *count;
-            }
-            seen.lock().unwrap().push(request);
-            reply
-        });
-        let manager = Arc::new(UnixInputSeatManager::new(
-            "unused".into(),
-            Ok(coordinator.clone()),
-        ));
-        let control =
-            HostSessionControl::with_input_seats(root.path(), Arc::new(backend), manager.clone());
-        assert!(matches!(control.recover(), ActiveState::NoActive));
-        control.initialize_input(6).unwrap();
-        assert_eq!(control.status(), HostSessionStatus::NoActive);
-        assert!(manager.ready().is_ok());
-        assert!(requests
-            .lock()
-            .unwrap()
-            .contains(&SeatRequest::ApplyCount { count: 6 }));
-        drop(control);
-        drop(manager);
-        drop(coordinator);
-        receiver.join().unwrap();
-    }
-
-    #[test]
-    fn repeated_recovery_helper_errors_are_suppressed_until_recovery_finishes() {
-        let root = tempfile::tempdir().unwrap();
-        let backend = Arc::new(DeterministicBackend::default());
-        backend.state.lock().unwrap().enumeration_unavailable = true;
-        let control = HostSessionControl::new(root.path(), backend.clone());
-        let mut state = ActiveState::RecoveryPending;
-        for _ in 0..2 {
-            control.refresh_recovery(&mut state);
-            assert!(matches!(state, ActiveState::RecoveryPending));
-            assert_eq!(
-                control.recovery_helper_error.lock().unwrap().as_deref(),
-                Some("systemd enumeration unavailable")
+    fn delayed_game_window_is_pending_until_mapping_then_takes_focus() {
+        const CHILD: &str = "KORRI_DELAYED_PLACEMENT_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let result = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "host::session_state::tests::delayed_game_window_is_pending_until_mapping_then_takes_focus", "--nocapture"])
+                .env(CHILD, "1")
+                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
+                .output().unwrap();
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            assert!(
+                result.status.success(),
+                "{}\n{stderr}",
+                String::from_utf8_lossy(&result.stdout)
             );
+            assert!(String::from_utf8_lossy(&result.stdout).contains("running 1 test"));
+            assert!(!stderr.contains("PlacementFailed"), "{stderr}");
+            return;
         }
-        backend.state.lock().unwrap().enumeration_unavailable = false;
-        control.refresh_recovery(&mut state);
-        assert!(matches!(state, ActiveState::NoActive));
-        assert!(control.recovery_helper_error.lock().unwrap().is_none());
-
-        // After a successful recovery the same failure is reported again.
-        backend.state.lock().unwrap().enumeration_unavailable = true;
-        state = ActiveState::RecoveryPending;
-        control.refresh_recovery(&mut state);
-        assert!(matches!(state, ActiveState::RecoveryPending));
-        assert_eq!(
-            control.recovery_helper_error.lock().unwrap().as_deref(),
-            Some("systemd enumeration unavailable")
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("tree"), r#"{"nodes":[{"id":2,"pid":4100,"app_id":"chromium-browser","focused":true,"fullscreen_mode":2}]}"#).unwrap();
+        fs::write(
+            root.path().join("focused-tree"),
+            compositor_tree_with_focus(200, 3),
+        )
+        .unwrap();
+        let program = root.path().join("swaymsg");
+        fs::write(
+            &program,
+            format!(
+                r#"#!/bin/sh
+cd '{}' || exit 1
+for argument do command="$argument"; done
+case "$command" in get_tree) cat tree; exit;; esac
+printf '%s\n' "$command" >> commands
+case "$command" in *'[con_id=3] focus'*) cp focused-tree tree;; esac
+printf '[{{"success":true}}]'
+"#,
+                root.path().display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+        let compositor = Arc::new(
+            super::super::compositor_focus::SwaymsgCompositorControl::new(
+                program,
+                root.path().join("socket"),
+                Duration::from_secs(1),
+            )
+            .unwrap(),
         );
+        let backend = Arc::new(DeterministicBackend::default());
+        let control = HostSessionControl::new(root.path(), backend.clone())
+            .with_compositor(compositor, vec![PORTAL_APP_ID.into()]);
+        let prepared = prepare(&control, "one");
+        backend.set_pids(&prepared.launch_id, &[200]);
+        for _ in 0..10 {
+            assert!(matches!(
+                control.status(),
+                HostSessionStatus::Running { .. }
+            ));
+        }
+        assert!(!root.path().join("commands").exists());
+        fs::write(root.path().join("tree"), compositor_tree_with_focus(200, 2)).unwrap();
+        assert!(matches!(
+            control.status(),
+            HostSessionStatus::Running { .. }
+        ));
+        let commands = fs::read_to_string(root.path().join("commands")).unwrap();
+        assert_eq!(commands.lines().count(), 1);
+        assert!(commands.ends_with("[con_id=3] fullscreen enable; [con_id=3] focus\n"));
+        let (_, ownership, _) = control.status_with_recovered_overlay_intent();
+        assert_eq!(ownership, Some(FocusOwnership::Launch));
     }
 
     #[test]
@@ -3369,8 +3358,8 @@ printf '[{{"success":true}}]'
             HostSessionStatus::Running { .. }
         ));
         let placed = fs::read_to_string(root.path().join("commands")).unwrap();
-        assert!(placed.contains("[con_id=3] fullscreen enable\n"));
-        assert!(placed.contains("output DSI-1 power off\n"));
+        assert!(placed.contains("[con_id=3] fullscreen enable; [con_id=3] focus\n"));
+        assert!(placed.contains("output DSI-1 power off;"));
         fs::write(root.path().join("commands"), "").unwrap();
         compositor.command("output * power off").unwrap();
         control.wake_displays().unwrap();
@@ -8012,4 +8001,95 @@ mod launch_settings_completion_tests {
         assert_eq!(requests[0]["_tag"], "ApplySession");
         assert_eq!(requests[1]["_tag"], "EndSession");
     }
+    #[test]
+    fn recovery_without_a_stream_root_reaches_idle_and_initializes_input() {
+        use super::super::{input_coordination::test_support, input_seat::UnixInputSeatManager};
+        use korri_input_contract::SeatRequest;
+
+        let root = tempfile::tempdir().unwrap();
+        let journal = root.path().join("host-session");
+        fs::create_dir(&journal).unwrap();
+        fs::set_permissions(&journal, fs::Permissions::from_mode(0o700)).unwrap();
+        let helper = root.path().join("systemctl");
+        fs::write(
+            &helper,
+            "#!/bin/sh\ncase \"$3\" in list-units) exit 0;; *) exit 1;; esac\n",
+        )
+        .unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        let backend = SystemdLaunchUnitBackend::with_protected_paths(
+            helper.clone(),
+            helper,
+            1000,
+            1000,
+            root.path().to_owned(),
+            "/run/korrid-control/control.sock".into(),
+            "/run/korrid-control".into(),
+            None,
+            "/run/korri-compositor".into(),
+        )
+        .unwrap();
+        assert!(backend.live_launch_ids().unwrap().is_empty());
+
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let seen = requests.clone();
+        let (coordinator, receiver) = test_support::coordinator(move |request| {
+            let mut reply = test_support::reply();
+            if let SeatRequest::ApplyCount { count } = &request {
+                reply.count = *count;
+            }
+            seen.lock().unwrap().push(request);
+            reply
+        });
+        let manager = Arc::new(UnixInputSeatManager::new(
+            "unused".into(),
+            Ok(coordinator.clone()),
+        ));
+        let control =
+            HostSessionControl::with_input_seats(root.path(), Arc::new(backend), manager.clone());
+        assert!(matches!(control.recover(), ActiveState::NoActive));
+        control.initialize_input(6).unwrap();
+        assert_eq!(control.status(), HostSessionStatus::NoActive);
+        assert!(manager.ready().is_ok());
+        assert!(requests
+            .lock()
+            .unwrap()
+            .contains(&SeatRequest::ApplyCount { count: 6 }));
+        drop(control);
+        drop(manager);
+        drop(coordinator);
+        receiver.join().unwrap();
+    }
+
+    #[test]
+    fn repeated_recovery_helper_errors_are_suppressed_until_recovery_finishes() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.state.lock().unwrap().enumeration_unavailable = true;
+        let control = HostSessionControl::new(root.path(), backend.clone());
+        let mut state = ActiveState::RecoveryPending;
+        for _ in 0..2 {
+            control.refresh_recovery(&mut state);
+            assert!(matches!(state, ActiveState::RecoveryPending));
+            assert_eq!(
+                control.recovery_helper_error.lock().unwrap().as_deref(),
+                Some("systemd enumeration unavailable")
+            );
+        }
+        backend.state.lock().unwrap().enumeration_unavailable = false;
+        control.refresh_recovery(&mut state);
+        assert!(matches!(state, ActiveState::NoActive));
+        assert!(control.recovery_helper_error.lock().unwrap().is_none());
+
+        // After a successful recovery the same failure is reported again.
+        backend.state.lock().unwrap().enumeration_unavailable = true;
+        state = ActiveState::RecoveryPending;
+        control.refresh_recovery(&mut state);
+        assert!(matches!(state, ActiveState::RecoveryPending));
+        assert_eq!(
+            control.recovery_helper_error.lock().unwrap().as_deref(),
+            Some("systemd enumeration unavailable")
+        );
+    }
+
 }
