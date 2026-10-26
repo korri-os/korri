@@ -242,6 +242,23 @@ impl Drop for SessionStateGuard<'_> {
     }
 }
 
+/// One process-local observation per Home/Return, not another placement model.
+#[derive(Default)]
+struct TransitionTrace {
+    phases_ms: std::collections::BTreeMap<&'static str, u128>,
+    overlay_output: Option<String>,
+    focus_target: Option<i64>,
+}
+
+impl TransitionTrace {
+    fn time<T>(&mut self, phase: &'static str, effect: impl FnOnce() -> T) -> T {
+        let start = Instant::now();
+        let result = effect();
+        *self.phases_ms.entry(phase).or_default() += start.elapsed().as_millis();
+        result
+    }
+}
+
 #[derive(Clone)]
 pub struct HostSessionControl {
     // Authenticated call context, used only when creating a fresh journal.
@@ -593,7 +610,7 @@ impl HostSessionControl {
             .unwrap_or_else(|| Ok(Default::default()))
     }
 
-    fn focus_portal(&self) -> Result<(), String> {
+    fn place_overlay(&self, launch_id: &str, trace: &mut TransitionTrace) -> Result<(), String> {
         if self.portal.is_none() {
             return Ok(());
         }
@@ -601,7 +618,59 @@ impl HostSessionControl {
             .compositor
             .as_ref()
             .ok_or("portal compositor unavailable")?;
-        super::compositor_focus::focus_portal_window(compositor.as_ref(), &self.portal_pids()?)
+        let portal_pids = trace.time("portal_identity", || self.portal_pids())?;
+        let displays = super::display_placement::configured_displays()?;
+        if displays.len() > 1 {
+            let (placement, rectangles) = trace.time("portal_placement", || {
+                let placement = self.launch_placement(launch_id, &displays)?;
+                let pids = self
+                    .backend
+                    .window_pids(launch_id)
+                    .map_err(|error| error.message)?;
+                let rectangles = super::display_placement::place_surface(
+                    compositor.as_ref(),
+                    &displays,
+                    super::display_placement::SurfaceDisplayScope::All,
+                    Some(&placement),
+                    &pids,
+                    &portal_pids,
+                )?;
+                Ok::<_, String>((placement, rectangles))
+            })?;
+            trace.overlay_output = rectangles.first().map(|display| display.id.clone());
+            let mut occupied = placement.outputs;
+            occupied.extend(rectangles.iter().map(|display| display.id.clone()));
+            *self
+                .display_content
+                .lock()
+                .expect("display content mutex poisoned") = occupied;
+            *self
+                .placement_applied
+                .lock()
+                .expect("placement mutex poisoned") = Some(launch_id.into());
+            trace.focus_target = Some(trace.time("portal_focus", || {
+                super::compositor_focus::portal_focus_target(&compositor.tree()?, &portal_pids)
+            })?);
+        } else {
+            if let Some(display) = displays.first() {
+                let occupied = vec![display.name.clone()];
+                trace.time("portal_placement", || {
+                    super::display_placement::apply(
+                        compositor.as_ref(),
+                        &super::display_placement::power_commands(&displays, &occupied),
+                    )
+                })?;
+                trace.overlay_output = Some(display.name.clone());
+                *self
+                    .display_content
+                    .lock()
+                    .expect("display content mutex poisoned") = occupied;
+            }
+            trace.focus_target = Some(trace.time("portal_focus", || {
+                super::compositor_focus::focus_portal_window(compositor.as_ref(), &portal_pids)
+            })?);
+        }
+        Ok(())
     }
 
     fn current_focus_ownership(&self, launch_id: &str) -> Result<FocusOwnership, String> {
@@ -2529,9 +2598,11 @@ impl HostSessionControl {
         target: FreezerTarget,
         observe: impl FnOnce(HostSessionFreezeChange) -> T,
     ) -> T {
-        let mut state = self.lock_state();
+        let started = Instant::now();
+        let mut trace = TransitionTrace::default();
+        let mut state = trace.time("lock_wait", || self.lock_state());
         let outcome = (|| {
-            self.refresh_recovery(&mut state);
+            trace.time("recovery", || self.refresh_recovery(&mut state));
             let (launch_id, game_id) = match &*state {
                 ActiveState::Running { launch_id, game_id }
                 | ActiveState::Frozen { launch_id, game_id }
@@ -2569,7 +2640,7 @@ impl HostSessionControl {
             };
 
             // Query the unit so a change made outside korrid is observed first.
-            let observed = match self.backend.state(&launch_id) {
+            let observed = match trace.time("unit_read", || self.backend.state(&launch_id)) {
                 Ok(observed) => observed,
                 Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
                     return if self
@@ -2610,7 +2681,7 @@ impl HostSessionControl {
                 }
             }
             if target == FreezerTarget::Running {
-                if let Err(message) = self.input_seats.ready() {
+                if let Err(message) = trace.time("seat_ready", || self.input_seats.ready()) {
                     return HostSessionFreezeChange::HelperFailed { launch_id, message };
                 }
             }
@@ -2624,10 +2695,10 @@ impl HostSessionControl {
                     | (LaunchUnitState::Running, FreezerTarget::Running)
             );
             if !already {
-                let result = match target {
+                let result = trace.time("unit_change", || match target {
                     FreezerTarget::Frozen => self.backend.freeze(&launch_id),
                     FreezerTarget::Running => self.backend.thaw(&launch_id),
-                };
+                });
                 if let Err(error) = result {
                     // Re-read so a failed helper call on a unit that completed
                     // underneath us is reported as no-active. Any other failure
@@ -2683,11 +2754,10 @@ impl HostSessionControl {
                 },
             };
             if target == FreezerTarget::Frozen {
-                if let Err(message) = self
-                    .input_seats
-                    .route(None)
-                    .and_then(|()| self.thaw_portal())
-                    .and_then(|()| self.focus_portal())
+                if let Err(message) = trace
+                    .time("input_route", || self.input_seats.route(None))
+                    .and_then(|()| trace.time("portal_thaw", || self.thaw_portal()))
+                    .and_then(|()| self.place_overlay(&launch_id, &mut trace))
                 {
                     // Inputd keeps Game input when Leave fails. Undo the game
                     // freeze before reporting failure, including an idempotent
@@ -2721,7 +2791,7 @@ impl HostSessionControl {
             // Returning to a game restores the exact launch's streamed input-seat
             // lease before the game can take focus.
             if target == FreezerTarget::Running {
-                if let Err(message) = self.ensure_seats(&launch_id) {
+                if let Err(message) = trace.time("seat_restore", || self.ensure_seats(&launch_id)) {
                     if self
                         .record_focus_failure(&mut state, launch_id.clone(), game_id.clone())
                         .is_err()
@@ -2733,7 +2803,7 @@ impl HostSessionControl {
                         message: format!("input seats could not return to the game: {message}"),
                     };
                 }
-                if let Err(message) = self.reset_seats(&launch_id) {
+                if let Err(message) = trace.time("seat_reset", || self.reset_seats(&launch_id)) {
                     if self
                         .record_focus_failure(&mut state, launch_id.clone(), game_id.clone())
                         .is_err()
@@ -2745,7 +2815,11 @@ impl HostSessionControl {
                         message: format!("input seats could not reset for the game: {message}"),
                     };
                 }
-                if let Some(message) = Self::focus_failure(self.focus_launch(&launch_id)) {
+                let focus = trace.time("game_focus", || self.focus_launch(&launch_id));
+                if let Some(FocusOutcome::Focused(id)) = &focus {
+                    trace.focus_target = Some(*id);
+                }
+                if let Some(message) = Self::focus_failure(focus) {
                     if self
                         .record_focus_failure(&mut state, launch_id.clone(), game_id)
                         .is_err()
@@ -2755,7 +2829,7 @@ impl HostSessionControl {
                     return HostSessionFreezeChange::FocusFailed { launch_id, message };
                 }
             }
-            if let Err(message) = self.reconcile_portal(&state) {
+            if let Err(message) = trace.time("reconcile", || self.reconcile_portal(&state)) {
                 let _ = self.record_focus_failure(&mut state, launch_id.clone(), game_id);
                 return HostSessionFreezeChange::HelperFailed { launch_id, message };
             }
@@ -2767,7 +2841,39 @@ impl HostSessionControl {
         })();
         // Publish Home/Return (including terminal cleanup) in the same
         // transition as the native effect, never from its later RPC reply.
-        observe(outcome)
+        let outcome_label = format!("{outcome:?}");
+        let result = trace.time("publication", || observe(outcome));
+        let mut powered = self
+            .display_content
+            .lock()
+            .expect("display content mutex poisoned")
+            .clone();
+        powered.sort();
+        powered.dedup();
+        trace.time("guard_reconcile", || drop(state));
+        for name in [
+            "lock_wait",
+            "recovery",
+            "unit_read",
+            "seat_ready",
+            "unit_change",
+            "input_route",
+            "portal_thaw",
+            "portal_identity",
+            "portal_placement",
+            "portal_focus",
+            "seat_restore",
+            "seat_reset",
+            "game_focus",
+            "reconcile",
+            "publication",
+            "guard_reconcile",
+        ] {
+            trace.phases_ms.entry(name).or_default();
+        }
+        eprintln!("<6>korrid: PlacementTransition {{ launch_id: {expected_launch_id}, target: {target:?}, outcome: {outcome_label}, powered_displays: {powered:?}, overlay_output: {:?}, focus_target: {:?}, total_ms: {}, phases_ms: {:?} }}",
+            trace.overlay_output, trace.focus_target, started.elapsed().as_millis(), trace.phases_ms);
+        result
     }
 
     pub fn stop(&self, expected_launch_id: &str) -> HostSessionStop {
@@ -3208,6 +3314,32 @@ mod tests {
                 String::from_utf8_lossy(&result.stderr)
             );
             assert!(String::from_utf8_lossy(&result.stdout).contains("running 1 test"));
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            let outcomes: Vec<_> = stderr
+                .lines()
+                .filter(|line| line.starts_with("<6>korrid: PlacementTransition"))
+                .collect();
+            assert_eq!(outcomes.len(), 8, "{stderr}");
+            for line in outcomes {
+                for field in [
+                    "launch_id",
+                    "powered_displays",
+                    "overlay_output",
+                    "focus_target",
+                    "total_ms",
+                    "lock_wait",
+                    "unit_read",
+                    "unit_change",
+                    "portal_thaw",
+                    "portal_placement",
+                    "portal_focus",
+                    "seat_reset",
+                    "game_focus",
+                    "reconcile",
+                ] {
+                    assert!(line.contains(field), "{line}");
+                }
+            }
             return;
         }
         for identity_only in [false, true] {
@@ -3263,10 +3395,13 @@ printf '[{{"success":true}}]'
                 control.status(),
                 HostSessionStatus::Running { .. }
             ));
+            fs::write(root.path().join("commands"), "").unwrap();
             assert!(matches!(
                 control.freeze(&prepared.launch_id),
                 HostSessionFreezeChange::Changed { .. }
             ));
+            let first_open = fs::read_to_string(root.path().join("commands")).unwrap();
+            assert!(first_open.contains("output DSI-1 power on"), "{first_open}");
             let (_, ownership, _) = control.status_with_recovered_overlay_intent();
             assert_eq!(ownership, Some(FocusOwnership::Excluded));
             let rectangles = control
@@ -3287,6 +3422,26 @@ printf '[{{"success":true}}]'
             ));
             let (_, ownership, _) = control.status_with_recovered_overlay_intent();
             assert_eq!(ownership, Some(FocusOwnership::Launch));
+            assert!(fs::read_to_string(root.path().join("commands"))
+                .unwrap()
+                .contains("output DSI-1 power off"));
+            // The retained overlay does not issue another surface.displays RPC.
+            fs::write(root.path().join("commands"), "").unwrap();
+            assert!(matches!(
+                control.freeze(&prepared.launch_id),
+                HostSessionFreezeChange::Changed { .. }
+            ));
+            let reopened = fs::read_to_string(root.path().join("commands")).unwrap();
+            assert!(reopened.contains("output DSI-1 power on"), "{reopened}");
+            assert!(reopened.contains("[con_id=2] move absolute position 0 px 480 px"));
+            fs::write(root.path().join("commands"), "").unwrap();
+            assert!(matches!(
+                control.thaw(&prepared.launch_id),
+                HostSessionFreezeChange::Changed { .. }
+            ));
+            assert!(fs::read_to_string(root.path().join("commands"))
+                .unwrap()
+                .contains("output DSI-1 power off"));
         }
     }
 

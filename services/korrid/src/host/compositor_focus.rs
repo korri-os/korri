@@ -308,20 +308,27 @@ fn is_excluded(node: &TreeNode, portal_pids: &BTreeSet<i32>) -> bool {
 pub(crate) fn focus_portal_window(
     control: &dyn CompositorControl,
     pids: &BTreeSet<i32>,
-) -> Result<(), String> {
+) -> Result<i64, String> {
     let id = portal_node(&control.tree()?, pids)?;
     control.focus(id)?;
-    let tree = control.tree()?;
-    if portal_node(&tree, pids)? != id {
+    let focused = portal_focus_target(&control.tree()?, pids)?;
+    if focused != id {
         return Err("portal window changed during focus".into());
     }
-    let root: TreeNode = serde_json::from_str(&tree).map_err(|error| error.to_string())?;
+    Ok(focused)
+}
+
+/// Readback of the committed focus, also used after a placement batch that
+/// already focused the portal. Do not send another focus effect just to prove it.
+pub(crate) fn portal_focus_target(tree: &str, pids: &BTreeSet<i32>) -> Result<i64, String> {
+    let id = portal_node(tree, pids)?;
+    let root: TreeNode = serde_json::from_str(tree).map_err(|error| error.to_string())?;
     let mut focused = Vec::new();
     collect_focused(&root, &mut focused);
     if focused.len() != 1 || focused[0].id != id || !is_excluded(focused[0], pids) {
         return Err("compositor did not confirm portal focus".into());
     }
-    Ok(())
+    Ok(id)
 }
 
 /// What korrid did about bringing one launch to the front.
