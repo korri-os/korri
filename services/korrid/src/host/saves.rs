@@ -119,7 +119,27 @@ fn now() -> String {
         .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
+/// The route inputs that save reads resolve games against. Building the
+/// installed plugin registry evaluates every installed plugin, so a read that
+/// covers many games builds this once and passes it to each game.
+struct SaveRoutes<'a> {
+    root: &'a Path,
+    registry: crate::plugin::PluginRegistry,
+    snapshot: crate::config::ConfigSnapshot,
+}
+
 impl HostRuntime {
+    fn save_routes(&self) -> Result<SaveRoutes<'_>, RpcFailure> {
+        let root = self.route_root()?;
+        let registry = self.route_registry()?;
+        let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
+            .map_err(crate::game_routes::settings_failure)?;
+        Ok(SaveRoutes {
+            root,
+            registry,
+            snapshot,
+        })
+    }
     fn save_store(&self) -> NativeSaveStore {
         NativeSaveStore::new(&self.private_state_root)
     }
@@ -139,20 +159,35 @@ impl HostRuntime {
         )>,
         SaveDiagnostic,
     > {
+        self.save_declaration_in(&self.save_routes(), game, runner)
+    }
+    fn save_declaration_in(
+        &self,
+        routes: &Result<SaveRoutes<'_>, RpcFailure>,
+        game: &str,
+        runner: Option<&str>,
+    ) -> Result<
+        Option<(
+            crate::launcher::plugin_launch::PluginLaunchInput,
+            crate::launcher::plugin_launch::PreparedLaunch,
+        )>,
+        SaveDiagnostic,
+    > {
         // Declaration reads are not starts. Use the normal route/prepare
         // producer without the session's require_ready gate; missing runtime
         // inputs may still make the runner decline, and that game is deferred.
-        let root = self.route_root()?;
-        let registry = self.route_registry()?;
-        let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
-            .map_err(crate::game_routes::settings_failure)?;
+        let SaveRoutes {
+            root,
+            registry,
+            snapshot,
+        } = routes.as_ref().map_err(|error| error.clone())?;
         let route =
-            crate::config::resolver::resolve_linux_route(root, &snapshot, &registry, game, runner)
+            crate::config::resolver::resolve_linux_route(root, snapshot, registry, game, runner)
                 .map_err(|error| crate::route_diagnostic_failure(&error))?;
         let launch = crate::launcher::linux_plugin::launch_route(
             root,
-            &snapshot,
-            &registry,
+            snapshot,
+            registry,
             &route,
             None,
             None,
@@ -164,13 +199,17 @@ impl HostRuntime {
         crate::launcher::plugin_launch::declared_saves(&command)
             .map_err(|reason| declaration_diagnostic(&command, reason))
     }
-    fn save_mark(&self, game: &str) -> Result<SaveMark, RpcFailure> {
+    fn save_mark_in(
+        &self,
+        routes: &Result<SaveRoutes<'_>, RpcFailure>,
+        game: &str,
+    ) -> Result<SaveMark, RpcFailure> {
         let person = &self.launch_person()?;
         let store = self.save_store();
         if store.reconcile(person, game).map_err(failure)? == SaveMark::Split {
             return Ok(SaveMark::Split);
         }
-        if let Some(status) = self.save_support(game) {
+        if let Some(status) = self.save_support_in(routes, game) {
             return Ok(status);
         }
         Ok(
@@ -185,15 +224,23 @@ impl HostRuntime {
         )
     }
     fn save_support(&self, game: &str) -> Option<SaveMark> {
-        if let (Ok(root), Ok(registry)) = (self.route_root(), self.route_registry()) {
-            if let Ok((snapshot, _)) = crate::config::settings::runner_choice_snapshot(root) {
-                if crate::config::resolver::resolve_linux_route(
-                    root, &snapshot, &registry, game, None,
-                )
+        self.save_support_in(&self.save_routes(), game)
+    }
+    fn save_support_in(
+        &self,
+        routes: &Result<SaveRoutes<'_>, RpcFailure>,
+        game: &str,
+    ) -> Option<SaveMark> {
+        if let Ok(SaveRoutes {
+            root,
+            registry,
+            snapshot,
+        }) = routes
+        {
+            if crate::config::resolver::resolve_linux_route(root, snapshot, registry, game, None)
                 .is_ok_and(|route| route.runner_id == "@korri:steam/steam")
-                {
-                    return Some(SaveMark::SyncedBySteam);
-                }
+            {
+                return Some(SaveMark::SyncedBySteam);
             }
         }
         if self
@@ -203,7 +250,7 @@ impl HostRuntime {
         {
             return Some(SaveMark::NotSynced);
         }
-        match self.save_declaration(game, None) {
+        match self.save_declaration_in(routes, game, None) {
             Ok(Some((input, _))) if input.runner_id == "@korri:steam/steam" => {
                 return Some(SaveMark::SyncedBySteam)
             }
@@ -219,6 +266,7 @@ impl HostRuntime {
         tokio::task::spawn_blocking(move || {
             let person = &host.launch_person()?;
             let store = host.save_store();
+            let routes = host.save_routes();
             let mut games: std::collections::BTreeSet<String> = store
                 .heads(person)
                 .map_err(failure)?
@@ -231,15 +279,12 @@ impl HostRuntime {
             }
             let mut statuses = Vec::new();
             for game in games {
-                let status = host.save_mark(&game)?;
-                let heads = store
-                    .heads(person)
-                    .map_err(failure)?
-                    .games
-                    .into_iter()
-                    .find(|g| g.game_id == game)
-                    .map(|g| g.heads)
-                    .unwrap_or_default();
+                // The mark reconciles this game first, and that may change its
+                // heads, so its heads are read after the mark.
+                let status = host.save_mark_in(&routes, &game)?;
+                let heads =
+                    crate::saves::store::head_ids(&store.records(person, &game).map_err(failure)?)
+                        .map_err(failure)?;
                 statuses.push(GameSaveStatus {
                     game_id: game,
                     status,
