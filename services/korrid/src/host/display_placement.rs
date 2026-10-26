@@ -395,17 +395,25 @@ pub(crate) fn place_surface_timed(
         .map(|d| i64::from(d.y) + i64::from(d.height))
         .max()
         .unwrap_or(0);
-    commands.extend([
-        format!("[con_id={portal}] fullscreen disable"),
-        format!("[con_id={portal}] floating enable"),
-        format!("[con_id={portal}] resize set width {width} px height {height} px"),
-        format!(
-            "[con_id={portal}] move absolute position {} px {} px",
-            origin.x, origin.y
-        ),
-    ]);
     if game.is_none() && scope == SurfaceDisplayScope::All {
-        commands.push(format!("[con_id={portal}] fullscreen enable global"));
+        // Drop fullscreen before changing floating state: enabling an already
+        // global-fullscreen con is a no-op and can retain the overlay bounds.
+        // This restores the same tiling presentation as kiosk boot.
+        commands.extend([
+            format!("[con_id={portal}] fullscreen disable"),
+            format!("[con_id={portal}] floating disable"),
+            format!("[con_id={portal}] fullscreen enable global"),
+        ]);
+    } else {
+        commands.extend([
+            format!("[con_id={portal}] fullscreen disable"),
+            format!("[con_id={portal}] floating enable"),
+            format!("[con_id={portal}] resize set width {width} px height {height} px"),
+            format!(
+                "[con_id={portal}] move absolute position {} px {} px",
+                origin.x, origin.y
+            ),
+        ]);
     }
     commands.push(format!("[con_id={portal}] focus"));
     // Separate measured power and geometry batches: the DRM modeset can
@@ -534,7 +542,22 @@ case "$command" in get_tree) cat tree; exit;; esac
 printf '%s\n' "$command" >> batches
 old_ifs="$IFS"
 IFS=';'
-for part in $command; do printf '%s\n' "${{part# }}" >> commands; done
+for part in $command; do
+ part="${{part# }}"
+ printf '%s\n' "$part" >> commands
+ if test -f validate-portal-restore; then
+  mode=$(cat portal-fullscreen)
+  case "$part" in
+   '[con_id=10] fullscreen disable') mode=0;;
+   '[con_id=10] floating disable')
+    if test "$mode" != 0; then printf '[{{"success":false,"error":"floating changed while fullscreen"}}]'; exit; fi;;
+   '[con_id=10] fullscreen enable global')
+    if test "$mode" != 0; then printf '[{{"success":false,"error":"global enable on already-fullscreen con"}}]'; exit; fi
+    mode=2;;
+  esac
+  printf '%s' "$mode" > portal-fullscreen
+ fi
+done
 IFS="$old_ifs"
 if test -f reject && case "$command" in *"$(cat reject)"*) true;; *) false;; esac; then
     printf '[{{"success":false,"error":"refused"}}]'
@@ -553,6 +576,57 @@ fi
             std::time::Duration::from_secs(1),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn catalog_restore_is_one_tiling_global_fullscreen_batch() {
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        place_surface(
+            &control,
+            &displays(),
+            SurfaceDisplayScope::All,
+            None,
+            &Default::default(),
+            &[100].into_iter().collect(),
+        )
+        .unwrap();
+        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+        assert_eq!(
+            batches.lines().count(),
+            2,
+            "power plus one restore IPC: {batches}"
+        );
+        assert_eq!(batches.lines().last().unwrap(), "[con_id=10] fullscreen disable; [con_id=10] floating disable; [con_id=10] fullscreen enable global; [con_id=10] focus");
+    }
+
+    #[test]
+    fn catalog_restore_leaves_fullscreen_before_changing_floating_or_enabling_global() {
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        std::fs::write(dir.path().join("validate-portal-restore"), "").unwrap();
+        // Both boot (tiling) and the retained overlay (floating) can already
+        // carry global fullscreen. The fake rejects a no-op global re-enable.
+        for initial_mode in [2, 0, 2] {
+            std::fs::write(
+                dir.path().join("portal-fullscreen"),
+                initial_mode.to_string(),
+            )
+            .unwrap();
+            place_surface(
+                &control,
+                &displays(),
+                SurfaceDisplayScope::All,
+                None,
+                &Default::default(),
+                &[100].into_iter().collect(),
+            )
+            .unwrap();
+            assert_eq!(
+                std::fs::read_to_string(dir.path().join("portal-fullscreen")).unwrap(),
+                "2"
+            );
+        }
     }
 
     #[test]
@@ -665,6 +739,8 @@ fi
             &[100].into_iter().collect(),
         )
         .unwrap();
+        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+        assert!(batches.lines().last().unwrap().ends_with("[con_id=10] floating disable; [con_id=10] fullscreen enable global; [con_id=10] focus"), "{batches}");
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands.ends_with("[con_id=10] fullscreen enable global\n[con_id=10] focus\n"));
     }

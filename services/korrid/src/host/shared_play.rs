@@ -2,8 +2,8 @@
 use super::*;
 
 /// The title of one launch's game, as the catalog stated it when the launch was
-/// first described. Session status runs on every portal and peer poll while
-/// holding the session lock; building the catalog evaluates every installed
+/// first described. Session status runs on every portal and peer poll;
+/// catalog enrichment runs outside the session lock. Building it evaluates every installed
 /// plugin, so doing that per poll queued status reads for tens of seconds on
 /// a busy handheld. A launch's game does not change, so one lookup serves it.
 pub(super) struct ActiveTitle {
@@ -25,43 +25,74 @@ impl HostRuntime {
         &self,
         active: &mut crate::ActiveSession,
     ) -> Result<(), RpcFailure> {
+        self.describe_active_session_players(active)?;
+        self.describe_active_session_catalog(active)
+    }
+
+    /// Launch-scoped journal facts belong to the native status snapshot.
+    pub(crate) fn describe_active_session_players(
+        &self,
+        active: &mut crate::ActiveSession,
+    ) -> Result<(), RpcFailure> {
         self.control()?.describe_stream_players(active)?;
         active.netplay = self
             .describe_netplay(&active.launch_id)
             .ok()
             .map(|local| Box::new(local.facts));
-        if let Some(game_id) = active.game_id.as_deref() {
-            let person = active.person_public_key.as_deref();
-            if let Some(known) = self.active_title.lock().ok().and_then(|known| {
-                known
-                    .as_ref()
-                    .filter(|known| {
-                        known.launch_id == active.launch_id
-                            && known.game_id == game_id
-                            && known.person.as_deref() == person
-                    })
-                    .map(|known| known.title.clone())
-            }) {
-                active.title = Some(known);
-                return Ok(());
-            }
-            let catalog = self.catalog_snapshot_blocking(person)?;
-            active.title = catalog
-                .games
-                .into_iter()
-                .find(|game| game.id == game_id)
-                .map(|game| game.title);
-            // A game the catalog does not list yet is looked up again next time.
-            if let (Some(title), Ok(mut known)) = (&active.title, self.active_title.lock()) {
-                *known = Some(ActiveTitle {
-                    launch_id: active.launch_id.clone(),
-                    game_id: game_id.to_owned(),
-                    person: person.map(str::to_owned),
-                    title: title.clone(),
-                });
-            }
-        }
         Ok(())
+    }
+
+    /// Catalog loading can read plugins and per-game play logs. It must not
+    /// hold native transition authority merely to label an observed launch.
+    pub(crate) fn describe_active_session_catalog(
+        &self,
+        active: &mut crate::ActiveSession,
+    ) -> Result<(), RpcFailure> {
+        let start = std::time::Instant::now();
+        let result = (|| {
+            if let Some(game_id) = active.game_id.as_deref() {
+                #[cfg(test)]
+                self.session_rpc_probe("app.session.status.catalog");
+                let person = active.person_public_key.as_deref();
+                if let Some(known) = self.active_title.lock().ok().and_then(|known| {
+                    known
+                        .as_ref()
+                        .filter(|known| {
+                            known.launch_id == active.launch_id
+                                && known.game_id == game_id
+                                && known.person.as_deref() == person
+                        })
+                        .map(|known| known.title.clone())
+                }) {
+                    active.title = Some(known);
+                    return Ok(());
+                }
+                let catalog = self.catalog_snapshot_blocking(person)?;
+                active.title = catalog
+                    .games
+                    .into_iter()
+                    .find(|game| game.id == game_id)
+                    .map(|game| game.title);
+                // A game the catalog does not list yet is looked up again next time.
+                if let (Some(title), Ok(mut known)) = (&active.title, self.active_title.lock()) {
+                    *known = Some(ActiveTitle {
+                        launch_id: active.launch_id.clone(),
+                        game_id: game_id.to_owned(),
+                        person: person.map(str::to_owned),
+                        title: title.clone(),
+                    });
+                }
+            }
+            Ok(())
+        })();
+        if start.elapsed() >= std::time::Duration::from_millis(100) {
+            eprintln!(
+                "<6>korrid: SessionCatalogDescription {{ launch_id: {}, elapsed_ms: {} }}",
+                active.launch_id,
+                start.elapsed().as_millis()
+            );
+        }
+        result
     }
 
     pub(crate) async fn stream_play(

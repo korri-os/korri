@@ -505,3 +505,54 @@ async fn native_control_status_reads_exact_liveness_without_browser_focus_work()
     );
     assert_eq!(compositor.0.load(Ordering::SeqCst), 0);
 }
+
+#[tokio::test]
+async fn slow_status_catalog_enrichment_does_not_hold_up_exact_return_or_republish_home() {
+    let root = tempfile::tempdir().unwrap();
+    let (runtime, backend) = runtime(root.path());
+    let gate = Arc::new(RouteGate::default());
+    let _release = GateRelease(gate.clone());
+    let armed = Arc::new(AtomicBool::new(false));
+    let observed_gate = gate.clone();
+    let observed_armed = armed.clone();
+    let runtime = runtime
+        .with_compositor(focusable_compositor())
+        .with_session_rpc_probe(Arc::new(move |phase| {
+            if phase == "app.session.status.catalog" && observed_armed.swap(false, Ordering::SeqCst)
+            {
+                observed_gate.block();
+            }
+        }));
+    let (app, native) = native_routers(runtime, root.path());
+    let id = reserve(&app).await;
+    assert_eq!(start(&app, &id).await["outcome"]["_tag"], "Ok");
+    backend.set_window_pids(&id, [9100].into());
+    assert_eq!(freeze(&native, &id).await["outcome"]["_tag"], "Ok");
+    armed.store(true, Ordering::SeqCst);
+    let observing_app = app.clone();
+    let observing =
+        tokio::spawn(async move { rpc(&observing_app, "app.session.status", json!({})).await });
+    gate.entered().await;
+    // This is a deadlock bound, not a latency assertion: metadata remains
+    // blocked until after the exact transition has completed.
+    let returned = tokio::time::timeout(std::time::Duration::from_secs(2), thaw(&native, &id))
+        .await
+        .expect("catalog enrichment must not own the native transition mutex");
+    assert_eq!(returned["outcome"]["_tag"], "Ok", "{returned}");
+    gate.release();
+    let old = observing.await.unwrap();
+    assert_eq!(
+        old["outcome"]["payload"]["active"]["phase"], "frozen",
+        "{old}"
+    );
+    assert_eq!(old["outcome"]["payload"]["active"]["title"], "One", "{old}");
+    let current = rpc(&app, "app.session.status", json!({})).await;
+    assert_eq!(
+        current["outcome"]["payload"]["active"]["phase"], "running",
+        "{current}"
+    );
+    assert!(
+        current["outcome"]["payload"]["overlay"].is_null(),
+        "late metadata must not reopen Home: {current}"
+    );
+}
