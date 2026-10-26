@@ -8,4 +8,6 @@
 	left: var(--pico-display-x, 0);
 	width: var(--pico-display-w, 0);
 	height: var(--pico-display-h, 0);
+	/* Focus never scrolls a display: each is a fixed piece of glass. */
+	overflow: clip;
 }

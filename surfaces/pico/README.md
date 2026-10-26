@@ -248,6 +248,15 @@ covers both. The showcase is a pure function of what the catalog shows
 With no `displays`, or one, Pico draws one screen exactly as before. The
 gameplay overlay is always one screen: the host gives it one display.
 
+The host may grow the window to cover every display only after Pico mounts,
+as the RG DS kiosk does (640 × 480, then 640 × 960). Until then the display
+for choosing stands past the window's bottom edge, and focusing a cart there
+would scroll the root and move both pictures. So with two displays the root
+(`data-pico-displays="split"`) and both regions are `overflow: clip`: not
+scroll containers, so focus cannot move them.
+`test/pico-displays-browser.test.ts` proves it in Chromium (set `CHROMIUM`;
+without it the test is skipped).
+
 `SurfaceDisplay` and `SurfaceModel.displays` come from the treaty in
 `contracts/surface/korri-surface.ts`, like every other fact Pico reads.
 

@@ -34,6 +34,7 @@
     "oxc-resolver": "^11.24.2",
     "oxlint": "^1.87.0",
     "oxlint-tsgolint": "^7.0.2003",
+    "playwright-core": "1.59.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "^7.0.2",
