@@ -1083,6 +1083,22 @@ impl HostRuntime {
                     }
                 }
             } else {
+                // The Device page shows the settings of installed runners,
+                // modifiers and services too (ADR 0037, 0038). Without a game
+                // there is no route to fail: if the registry or a plugin's
+                // settings cannot be read, the page keeps its device values
+                // and only leaves those plugin groups out.
+                if let Ok(registry) = runtime.route_registry() {
+                    if let Ok(snapshot) = crate::launch_settings::resolution::snapshot_for_person(
+                        runtime.route_root()?,
+                        Some(&registry),
+                        None,
+                        &crate::launch_settings::helper::Client::default(),
+                        runtime.owner_public_key().as_deref(),
+                    ) {
+                        return Ok(snapshot);
+                    }
+                }
                 None
             };
             crate::launch_settings::resolution::snapshot_for_person(
@@ -2431,6 +2447,66 @@ esac
         assert_eq!(fs::read(root.path().join("device.yaml")).unwrap(), external);
         assert!(pool.fenced.load(Ordering::SeqCst));
         assert!(runtime.prepare("one", None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn device_page_snapshot_lists_installed_settings_only_runners() {
+        // Real device regression: without a game, the host passed no registry,
+        // so the Device page listed no runners, modifiers or services.
+        let root = tempfile::tempdir().unwrap();
+        crate::config::test_fixtures::gba(root.path());
+        let package = root.path().join("package-viewer");
+        fs::create_dir_all(&package).unwrap();
+        fs::write(
+            package.join("plugin.ts"),
+            "export const name = 'viewer';
+             export const runners = {viewer: {id: '@test:viewer/viewer', program: 'run'}};
+             export const handlers = {
+               'settings.describe': () => ({revision: '1', schema: {type: 'object',
+                 additionalProperties: false, properties: {video: {type: 'object',
+                 additionalProperties: false, properties: {fps: {type: 'integer', minimum: 1}}}}}}),
+               'settings.render': () => ({args: []}),
+             };",
+        )
+        .unwrap();
+        fs::write(package.join("run"), "").unwrap();
+        let registry = crate::plugin::PluginRegistry::from_installed(vec![
+            crate::plugin_installation::EnabledPackage {
+                id: "@test:viewer".into(),
+                package: package.clone(),
+                entry: "plugin.ts".into(),
+                sources: vec!["plugin.ts".into()],
+                requires: vec![],
+                hosts: vec![],
+                files: std::collections::BTreeMap::from([("run".into(), package.join("run"))]),
+            },
+        ])
+        .unwrap();
+        let config = root.path().join("host.toml");
+        fs::write(&config, "label = \"route-device\"\ngames = []\n").unwrap();
+        let runtime = HostRuntime::from_paths_with_backend(
+            &config,
+            Some(root.path().into()),
+            root.path().join("private"),
+            Arc::new(systemd_unit::InMemoryLaunchUnitBackend::default()),
+        )
+        .with_route_registry(root.path().into(), registry);
+        let snapshot = runtime
+            .launch_settings_snapshot(crate::launch_settings::LaunchSettingsSnapshotRequest {
+                game_id: None,
+            })
+            .await
+            .unwrap();
+        let viewer = snapshot
+            .runners
+            .iter()
+            .find(|runner| runner.id == "@test:viewer/viewer")
+            .expect("the Device page lists the installed settings-only runner");
+        assert!(!viewer.choosable);
+        assert!(snapshot
+            .runner_resolved
+            .iter()
+            .any(|resolved| resolved.runner_id == "@test:viewer/viewer"));
     }
 
     #[tokio::test]
