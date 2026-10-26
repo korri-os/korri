@@ -31,11 +31,10 @@ use super::input_seat::DisabledInputSeats;
 use super::input_seat::{InputSeatLease, InputSeatManager};
 use super::play_log::{PlayHistoryKey, PlayLogStore};
 #[cfg(test)]
+use super::systemd_unit::{read_unit_pids, RecordingPortalUnit, SystemdLaunchUnitBackend};
 use super::systemd_unit::{
-    read_unit_pids, LaunchUnitError, RecordingPortalUnit, SystemdLaunchUnitBackend,
-};
-use super::systemd_unit::{
-    LaunchUnitBackend, LaunchUnitErrorKind, LaunchUnitState, PortalUnit, RUNNER_ID_ENV,
+    LaunchUnitBackend, LaunchUnitError, LaunchUnitErrorKind, LaunchUnitState, PortalUnit,
+    RUNNER_ID_ENV,
 };
 
 /// Wall-clock seam. Production reads the system clock; tests supply
@@ -258,6 +257,8 @@ pub struct HostSessionControl {
     shutting_down: Arc<std::sync::atomic::AtomicBool>,
     clock: Arc<dyn WallClock>,
     state: Arc<Mutex<ActiveState>>,
+    // Status reads already retry recovery; do not repeat the same diagnostic.
+    recovery_helper_error: Arc<Mutex<Option<String>>>,
     seat_lease: Arc<Mutex<Option<(String, Box<dyn InputSeatLease>)>>>,
     /// One startup-only exact handoff reconstructed from live compositor facts.
     /// Browser status consumes it into the server's process-local overlay intent.
@@ -330,6 +331,7 @@ impl HostSessionControl {
             shutting_down: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             clock,
             state: Arc::new(Mutex::new(ActiveState::RecoveryPending)),
+            recovery_helper_error: Arc::new(Mutex::new(None)),
             seat_lease: Arc::new(Mutex::new(None)),
             recovered_overlay_intent: Arc::new(Mutex::new(None)),
             initial_handoff: Arc::new(Mutex::new(None)),
@@ -1201,6 +1203,9 @@ impl HostSessionControl {
             ActiveState::RecoveryPending | ActiveState::RecoveryBlocked
         ) {
             *state = self.recover();
+            if !matches!(state, ActiveState::RecoveryPending) {
+                *self.recovery_helper_error.lock().unwrap() = None;
+            }
         }
     }
 
@@ -2758,6 +2763,18 @@ impl HostSessionControl {
         }
     }
 
+    fn recovery_pending(&self, error: LaunchUnitError) -> ActiveState {
+        let mut last_error = self.recovery_helper_error.lock().unwrap();
+        if last_error.as_ref() != Some(&error.message) {
+            eprintln!(
+                "korrid: host session recovery helper failed: {}",
+                error.message
+            );
+            *last_error = Some(error.message);
+        }
+        ActiveState::RecoveryPending
+    }
+
     /// Rebuilds the session state from the persisted record and systemd.
     /// A record whose unit already completed is logged once here, with the
     /// observation time as the play's end.
@@ -2766,7 +2783,7 @@ impl HostSessionControl {
         let identity_root = &self.identity_root;
         let live = match backend.live_launch_ids() {
             Ok(live) => live,
-            Err(_) => return ActiveState::RecoveryPending,
+            Err(error) => return self.recovery_pending(error),
         };
         let mut persisted = read_active(identity_root);
         if persisted.is_err()
@@ -2814,7 +2831,7 @@ impl HostSessionControl {
                     Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
                         self.recover_failed_unit(record.launch_id().to_owned(), error.message)
                     }
-                    Err(_) => ActiveState::RecoveryPending,
+                    Err(error) => self.recovery_pending(error),
                 }
             }
             Ok(Some(record @ ActiveSession::Running { .. })) if live.is_empty() => {
@@ -2834,7 +2851,7 @@ impl HostSessionControl {
                     Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
                         self.recover_failed_unit(record.launch_id().to_owned(), error.message)
                     }
-                    Err(_) => ActiveState::RecoveryPending,
+                    Err(error) => self.recovery_pending(error),
                 }
             }
             _ => ActiveState::RecoveryBlocked,
@@ -2871,6 +2888,92 @@ mod tests {
     };
 
     use std::collections::BTreeSet;
+
+    #[test]
+    fn recovery_without_a_stream_root_reaches_idle_and_initializes_input() {
+        use super::super::{input_coordination::test_support, input_seat::UnixInputSeatManager};
+        use korri_input_contract::SeatRequest;
+
+        let root = tempfile::tempdir().unwrap();
+        let journal = root.path().join("host-session");
+        fs::create_dir(&journal).unwrap();
+        fs::set_permissions(&journal, fs::Permissions::from_mode(0o700)).unwrap();
+        let helper = root.path().join("systemctl");
+        fs::write(
+            &helper,
+            "#!/bin/sh\ncase \"$3\" in list-units) exit 0;; *) exit 1;; esac\n",
+        )
+        .unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        let backend = SystemdLaunchUnitBackend::with_protected_paths(
+            helper.clone(),
+            helper,
+            1000,
+            1000,
+            root.path().to_owned(),
+            "/run/korrid-control/control.sock".into(),
+            "/run/korrid-control".into(),
+            None,
+            "/run/korri-compositor".into(),
+        )
+        .unwrap();
+        assert!(backend.live_launch_ids().unwrap().is_empty());
+
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let seen = requests.clone();
+        let (coordinator, receiver) = test_support::coordinator(move |request| {
+            let mut reply = test_support::reply();
+            if let SeatRequest::ApplyCount { count } = &request {
+                reply.count = *count;
+            }
+            seen.lock().unwrap().push(request);
+            reply
+        });
+        let manager = Arc::new(UnixInputSeatManager::new(
+            "unused".into(),
+            Ok(coordinator.clone()),
+        ));
+        let control =
+            HostSessionControl::with_input_seats(root.path(), Arc::new(backend), manager.clone());
+        assert!(matches!(control.recover(), ActiveState::NoActive));
+        control.initialize_input(6).unwrap();
+        assert_eq!(control.status(), HostSessionStatus::NoActive);
+        assert!(manager.ready().is_ok());
+        assert!(requests
+            .lock()
+            .unwrap()
+            .contains(&SeatRequest::ApplyCount { count: 6 }));
+        drop(control);
+        drop(manager);
+        drop(coordinator);
+        receiver.join().unwrap();
+    }
+
+    #[test]
+    fn repeated_recovery_helper_errors_are_suppressed_until_recovery_finishes() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.state.lock().unwrap().enumeration_unavailable = true;
+        let control = HostSessionControl::new(root.path(), backend.clone());
+        let mut state = ActiveState::RecoveryPending;
+        for _ in 0..2 {
+            control.refresh_recovery(&mut state);
+            assert!(matches!(state, ActiveState::RecoveryPending));
+            assert_eq!(
+                control.recovery_helper_error.lock().unwrap().as_deref(),
+                Some("systemd enumeration unavailable")
+            );
+        }
+        backend.state.lock().unwrap().enumeration_unavailable = false;
+        control.refresh_recovery(&mut state);
+        assert!(matches!(state, ActiveState::NoActive));
+        assert!(control.recovery_helper_error.lock().unwrap().is_none());
+
+        backend.state.lock().unwrap().enumeration_unavailable = true;
+        state = ActiveState::RecoveryPending;
+        control.refresh_recovery(&mut state);
+        assert!(matches!(state, ActiveState::RecoveryPending));
+    }
 
     #[test]
     fn idle_mutation_rejects_live_units_stopping_and_uncertain_recovery() {
@@ -6332,7 +6435,7 @@ mod tests {
             PathBuf::from("/srv/korri-test/private-recovery"),
             PathBuf::from("/run/korri-test/control/device.sock"),
             PathBuf::from("/run/korri-test/control"),
-            PathBuf::from("/home/gameplay/.config/sunshine"),
+            Some(PathBuf::from("/home/gameplay/.config/sunshine")),
             PathBuf::from("/run/korri-test/compositor-control"),
         )
         .unwrap();
@@ -6384,7 +6487,7 @@ mod tests {
             PathBuf::from("relative/recovery"),
             PathBuf::from("/run/control.sock"),
             PathBuf::from("/run"),
-            PathBuf::from("/home/gameplay/.config/sunshine"),
+            Some(PathBuf::from("/home/gameplay/.config/sunshine")),
             PathBuf::from("/run/korri-compositor"),
         )
         .is_err());
@@ -6396,7 +6499,7 @@ mod tests {
             PathBuf::from("/private/recovery"),
             PathBuf::from("/run/other/control.sock"),
             PathBuf::from("/run/control"),
-            PathBuf::from("/home/gameplay/.config/sunshine"),
+            Some(PathBuf::from("/home/gameplay/.config/sunshine")),
             PathBuf::from("/run/korri-compositor"),
         )
         .is_err());
@@ -6408,7 +6511,7 @@ mod tests {
             PathBuf::from("/private/../recovery"),
             PathBuf::from("/run/control/device.sock"),
             PathBuf::from("/run/control"),
-            PathBuf::from("/home/gameplay/.config/sunshine"),
+            Some(PathBuf::from("/home/gameplay/.config/sunshine")),
             PathBuf::from("/run/korri-compositor"),
         )
         .is_err());
@@ -6420,7 +6523,7 @@ mod tests {
             PathBuf::from("/private/recovery"),
             PathBuf::from("/run/control/device.sock"),
             PathBuf::from("/run/control"),
-            PathBuf::from("/home/gameplay/.config/sunshine"),
+            Some(PathBuf::from("/home/gameplay/.config/sunshine")),
             PathBuf::from("relative/compositor-control"),
         )
         .is_err());
