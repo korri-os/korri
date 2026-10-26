@@ -271,9 +271,12 @@ fn test_snapshot() -> launch_settings::LaunchSnapshot {
             family: Some("@test/family".into()),
             title: "Runner".into(),
             selected: true,
-            schema: serde_json::json!({"properties":{"speed":{"type":"integer","minimum":1,"maximum":10},"@test/mod.option":{"type":"boolean"}}}),
+            // Settings are nested (ADR 0037): the section `@test/mod` makes the
+            // runner path `@test/mod.option` collide with the modifier's option.
+            schema: serde_json::json!({"properties":{"speed":{"type":"integer","minimum":1,"maximum":10},"@test/mod":{"type":"object","properties":{"option":{"type":"boolean"}}}}}),
             revision: "runner-rev".into(),
             prepare: LaunchRunnerFacts::Unavailable("not prepared".into()),
+            choosable: true,
         }],
         modifiers: vec![LaunchModifierSnapshot {
             id: "@test/mod".into(),
@@ -281,6 +284,8 @@ fn test_snapshot() -> launch_settings::LaunchSnapshot {
             schema: Some(serde_json::json!({"properties":{"option":{"type":"boolean"}}})),
             revision: Some("mod-rev".into()),
         }],
+        services: vec![],
+        runner_resolved: vec![],
         profiles: vec![],
         selected_profile: None,
         device_facts: None,

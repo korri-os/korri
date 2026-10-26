@@ -32,8 +32,12 @@ impl Module for LaunchSettings {
             .subcommand(flags(Command::new("show")))
             .subcommand(flags(
                 Command::new("set")
-                    .arg(required("assignment").help("KEY=VALUE, or KEY with --inherit"))
-                    .arg(inherit_flag()),
+                    .arg(
+                        required("assignment")
+                            .help("KEY=VALUE, or KEY with --inherit or --default"),
+                    )
+                    .arg(inherit_flag())
+                    .arg(default_flag()),
             ))
             .subcommand(flags(
                 Command::new("runner")
@@ -107,10 +111,10 @@ impl Module for LaunchSettings {
         };
         if action == "set" {
             let assignment = value(args, "assignment");
-            if args.get_flag("inherit") {
+            if args.get_flag("inherit") || args.get_flag("default") {
                 if assignment.is_empty() || assignment.contains('=') {
                     return Err(CliError::usage(
-                        "Use a bare key with --inherit; do not also assign a value.",
+                        "Use a bare key with --inherit or --default; do not also assign a value.",
                     ));
                 }
             } else {
@@ -247,6 +251,7 @@ impl Module for LaunchSettings {
             let place = selected_place(args, game_id);
             require_place(snapshot, &place)?;
             let inherit = args.get_flag("inherit");
+            let clear = action == "set" && args.get_flag("default");
             let (key, input) = if action == "runner" {
                 (
                     "runner".into(),
@@ -256,13 +261,25 @@ impl Module for LaunchSettings {
                         Some(value(args, "id"))
                     },
                 )
-            } else if inherit {
+            } else if inherit || clear {
                 (value(args, "assignment"), None)
             } else {
                 let (key, input) = split(&value(args, "assignment"))?;
                 (key, Some(input))
             };
             let (path, val) = setting(snapshot, &place, &key, input.as_deref())?;
+            if clear
+                && !matches!(
+                    path,
+                    LaunchPath::Setting { .. }
+                        | LaunchPath::ModifierSetting { .. }
+                        | LaunchPath::ServiceSetting { .. }
+                )
+            {
+                return Err(CliError::usage(
+                    "--default applies to plugin settings only; use --inherit for this key.",
+                ));
+            }
             let expected_revision = match place.layer {
                 LaunchLayer::Device | LaunchLayer::System(_) => snapshot.revisions.device.clone(),
                 _ => snapshot.revisions.games.clone(),
@@ -271,6 +288,9 @@ impl Module for LaunchSettings {
                 place,
                 path,
                 value: val,
+                // --default writes a cleared setting (ADR 0037): values from
+                // less specific places stop applying; the plugin default holds.
+                clear,
                 expected_revision,
             })
         };
@@ -287,6 +307,7 @@ impl Module for LaunchSettings {
                         .to_owned()
                 };
                 let action = match &change.value {
+                    None if change.clear => format!("Set {key} to the plugin default"),
                     None => format!("Cleared the {key} override"),
                     Some(value) => format!("Set {key} = {value}"),
                 };
@@ -317,6 +338,13 @@ fn inherit_flag() -> Arg {
         .long("inherit")
         .action(ArgAction::SetTrue)
         .help("Clear this authored override; keep inherited values")
+}
+fn default_flag() -> Arg {
+    Arg::new("default")
+        .long("default")
+        .action(ArgAction::SetTrue)
+        .conflicts_with("inherit")
+        .help("Stop inherited values for this plugin setting; the plugin default holds")
 }
 fn quote(value: &str) -> String {
     format!("'{}'", crate::output::text(value).replace('\'', "'\\''"))
@@ -378,6 +406,11 @@ fn runners<'a>(
             LaunchRunnerScope::Family(id) => r.family.as_ref() == Some(id),
         })
         .collect()
+}
+/// The schema of one setting leaf, or none for a section or an unknown path.
+/// korrid's own lookup, so `properties` and `patternProperties` match alike.
+fn schema_leaf<'a>(schema: &'a Value, path: &str) -> Option<&'a Value> {
+    korrid::config::cascade::schema_leaf(schema, path)
 }
 fn scalar(schema: &Value, input: &str) -> Result<Value, CliError> {
     let value = match schema["type"].as_str() {
@@ -441,9 +474,11 @@ pub(crate) fn setting(
     };
     let mut candidates: Vec<(LaunchPath, Option<Value>)> = vec![];
     let mut options: Vec<(LaunchPath, Value)> = vec![];
-    // Match whole schema keys and whole modifier IDs, never split plugin IDs on dots.
+    // Runner keys are setting paths (`video.fps`, ADR 0037). Modifier and
+    // service keys are the whole plugin ID, a dot, then the setting path; a
+    // plugin ID is matched whole and never split on its own dots.
     for runner in runners(snapshot, &place.scope) {
-        if let Some(property) = runner.schema["properties"].get(key) {
+        if let Some(property) = schema_leaf(&runner.schema, key) {
             if authorized("settings") {
                 options.push((LaunchPath::Setting { key: key.into() }, property.clone()));
             }
@@ -461,21 +496,37 @@ pub(crate) fn setting(
                 serde_json::json!({"type":"boolean"}),
             ));
         }
-        if let Some(properties) = modifier
-            .schema
-            .as_ref()
-            .and_then(|s| s["properties"].as_object())
-        {
-            for (name, property) in properties {
-                if key == format!("{}.{name}", modifier.id) {
-                    options.push((
-                        LaunchPath::ModifierSetting {
-                            id: modifier.id.clone(),
-                            key: name.clone(),
-                        },
-                        property.clone(),
-                    ));
-                }
+        if let (Some(path), Some(schema)) = (
+            key.strip_prefix(&format!("{}.", modifier.id)),
+            modifier.schema.as_ref(),
+        ) {
+            if let Some(property) = schema_leaf(schema, path) {
+                options.push((
+                    LaunchPath::ModifierSetting {
+                        id: modifier.id.clone(),
+                        key: path.into(),
+                    },
+                    property.clone(),
+                ));
+            }
+        }
+    }
+    for service in &snapshot.services {
+        if !authorized("services") {
+            continue;
+        }
+        if let (Some(path), Some(schema)) = (
+            key.strip_prefix(&format!("{}.", service.id)),
+            service.schema.as_ref(),
+        ) {
+            if let Some(property) = schema_leaf(schema, path) {
+                options.push((
+                    LaunchPath::ServiceSetting {
+                        id: service.id.clone(),
+                        key: path.into(),
+                    },
+                    property.clone(),
+                ));
             }
         }
     }

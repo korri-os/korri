@@ -41,6 +41,8 @@ MAPPINGS = {
     "launch:profile:rename:": "launch-settings profiles rename ID TITLE --game GAME",
     "launch:reload": "launch-settings show --game GAME",
     "launch-device:retry": "launch-settings show",
+    # Device-page plugin settings (Moonlight runner, Sunshine service), ADR 0037/0038.
+    "launch-device:set:": "launch-settings set [--runner ID] KEY=VALUE|KEY --inherit|KEY --default",
     "launch:runner": "play GAME --runner ID; launch-settings runner ID --game GAME",
     "launch:retry": "repeat the failed launch-settings command after inspection",
     "launch:cancel": "no effect; exit the editor",
@@ -66,10 +68,16 @@ LAUNCH_PATHS = {
     '`runner-facts:${key}`': "launch-settings show (read-only facts)",
     '"runner-facts:unavailable"': "launch-settings show",
     'key': "launch-settings set cpu.min|cpu.max|gpu.min|gpu.max|cpu.governor=VALUE",
+    # One row constructor (`rowId`) serves every plugin-setting row of a place
+    # since ADR 0037: a setting path, `clear:PATH` (--inherit), `default:PATH`
+    # (--default), a section's Add setting, a modifier's enabled switch, and
+    # Sunshine's service settings (MODIFIER_OR_SERVICE_ID.PATH).
+    'path': "launch-settings set [ID.]PATH=VALUE|[ID.]PATH --inherit|[ID.]PATH --default",
 }
 ROW_PATHS = {
     '`setting:${key}`': "launch-settings set KEY=VALUE",
     '`modifier:${modifier.id}:setting:${key}`': "launch-settings set MODIFIER.KEY=VALUE",
+    '`service:${service.id}:setting:${key}`': "launch-settings set SERVICE.KEY=VALUE",
 }
 LIMITS = {"cpu.min", "cpu.max", "gpu.min", "gpu.max", "cpu.governor"}
 
