@@ -682,6 +682,7 @@ impl HostSessionControl {
             .backend
             .window_pids(launch_id)
             .map_err(|error| error.message)?;
+        let excluded = self.portal_pids()?;
         let waiting = self
             .initial_handoff
             .lock()
@@ -689,13 +690,12 @@ impl HostSessionControl {
             .as_ref()
             .is_some_and(|(id, phase)| id == launch_id && *phase == InitialHandoff::Waiting);
         if waiting {
-            self.ensure_display_placement(launch_id, false);
+            self.ensure_display_placement(launch_id, false, &pids, &excluded);
         }
         let tree = compositor.tree()?;
-        let excluded = self.portal_pids()?;
         let ownership = focused_ownership(&tree, &pids, &excluded)?;
         if ownership == FocusOwnership::Launch {
-            self.ensure_display_placement(launch_id, false);
+            self.ensure_display_placement(launch_id, false, &pids, &excluded);
             self.record_initial_handoff(launch_id);
         }
         Ok(ownership)
@@ -931,7 +931,13 @@ impl HostSessionControl {
         })
     }
 
-    fn ensure_display_placement(&self, launch_id: &str, force: bool) {
+    fn ensure_display_placement(
+        &self,
+        launch_id: &str,
+        force: bool,
+        pids: &std::collections::BTreeSet<i32>,
+        excluded: &std::collections::BTreeSet<i32>,
+    ) {
         use super::display_placement::GamePlacementStatus;
         let mut applied = self
             .placement_applied
@@ -946,9 +952,7 @@ impl HostSessionControl {
                 return Ok(GamePlacementStatus::Placed);
             }
             let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
-            let pids = self.backend.window_pids(launch_id).map_err(|e| e.message)?;
             let placement = self.launch_placement(launch_id, &displays)?;
-            let excluded = self.portal_pids()?;
             *self
                 .display_content
                 .lock()
@@ -961,8 +965,8 @@ impl HostSessionControl {
                 compositor.as_ref(),
                 &displays,
                 &placement,
-                &pids,
-                &excluded,
+                pids,
+                excluded,
             )?;
             if progress == GamePlacementStatus::AwaitingWindow {
                 return Ok(progress);
@@ -1065,7 +1069,7 @@ impl HostSessionControl {
             Ok(pids) => pids,
             Err(reason) => return Some(FocusOutcome::Failed(reason)),
         };
-        self.ensure_display_placement(launch_id, true);
+        self.ensure_display_placement(launch_id, true, &pids, &excluded);
         let outcome = focus_launch_window(compositor.as_ref(), &pids, &excluded);
         // Focused is returned only after the compositor tree proves exact
         // ownership, never from the focus command's acknowledgement alone.
@@ -3386,13 +3390,14 @@ printf '[{{"success":true}}]'
                 .unwrap(),
             );
             let backend = Arc::new(DeterministicBackend::default());
+            let portal = Arc::new(if identity_only {
+                RecordingPortalUnit::identity_only()
+            } else {
+                RecordingPortalUnit::default()
+            });
             let control = HostSessionControl::new(root.path(), backend.clone())
                 .with_compositor(compositor)
-                .with_portal(Arc::new(if identity_only {
-                    RecordingPortalUnit::identity_only()
-                } else {
-                    RecordingPortalUnit::default()
-                }));
+                .with_portal(portal.clone());
             let prepared = prepare(&control, "one");
             backend.set_pids(&prepared.launch_id, &[9100]);
             assert!(matches!(
@@ -3421,10 +3426,13 @@ printf '[{{"success":true}}]'
             assert!(commands
                 .ends_with("[con_id=2] move absolute position 0 px 480 px\n[con_id=2] focus\n"));
             fs::write(root.path().join("reads"), "").unwrap();
+            let identity_reads = portal.identity_reads();
             assert!(matches!(
                 control.thaw(&prepared.launch_id),
                 HostSessionFreezeChange::Changed { .. }
             ));
+            assert_eq!(portal.identity_reads() - identity_reads, 2,
+                "Return must share one identity snapshot between placement and focus, then observe once at reconcile");
             assert_eq!(
                 fs::read_to_string(root.path().join("reads"))
                     .unwrap()
