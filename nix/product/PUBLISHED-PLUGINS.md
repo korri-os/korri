@@ -90,6 +90,18 @@ Current host seed reports identify them as `@korri:moonlight` and
 `@korri:sunshine`. The matching offline metadata archives are pinned by SHA-256.
 Every other plugin pin stays unchanged. This pin does not establish
 physical-device acceptance.
+Batch `build-57de061520cc-settings-vocabulary` (source
+`57de061520cc010cbc5ebe9b978f4799d159affa`, Core pin `5f4f89e2b`) replaces 26
+outputs on both architectures for the nested settings vocabulary (ADR 0037,
+ADR 0038): RetroArch, its 18 libretro cores and FAKE-08 (the shared nested
+RetroArch runner), Gamescope (`settings.describe`), Moonlight (the settings-only
+runner with `settings.render`), Sunshine (service settings), and the Starter
+pack with the Solarus and ZQuest Classic outputs it requires. Each
+`paths-SYSTEM.txt` lists exactly those 26 outputs, each evaluated from the
+source; `revision.txt` matches the source. The matching offline metadata
+archives are pinned by SHA-256. FEX, Homebrew Hub, PICO-8, Proton, RetroBrews,
+SSH and Steam keep their pins. This pin does not establish physical-device
+acceptance.
 Each pinned path is grounded in its batch's `paths-SYSTEM.txt` and
 `revision.txt`. The new Starter pack pins were checked against those public
 release assets directly. Earlier batches remain published even when their
