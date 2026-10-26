@@ -16,8 +16,11 @@ each device runs its own copy of the game, so no device has to encode video.
   So a third-party lobby or relay server, such as RetroArch's, is not used.
   korrid forwards RetroArch's netplay port through the iroh tunnel it already
   uses for a stream viewer. RetroArch itself stays unchanged.
+- The first slice is for devices with the same owner, as stream play is.
+  Household and guest access waits for #178.
 - The first slice takes one receiving device per session. Several receiving
   devices, each choosing its own route, is the goal and is in issue #275.
+- In the first slice, only the Pico surface shows the route choice.
 - Both devices need the same release, because a file release is identified by
   its content bytes. When the receiving device does not have it, Korri copies
   the release from the device that holds the session, then starts netplay.
@@ -32,6 +35,11 @@ each device runs its own copy of the game, so no device has to encode video.
 - In the first slice, a runner can offer netplay when it is a RetroArch core
   whose libretro core info states `savestate_features = "deterministic"`,
   such as Snes9x 2010. Korri keeps no hand-written list of cores.
+- Both devices must run the same core version. The CPU type may differ, so
+  an aarch64 handheld and an x86_64 PC can use netplay together.
+- When the receiving device has no core that can offer netplay for the game,
+  Korri still offers netplay. If the person chooses it, Korri asks to install
+  the plugin first, with the usual permission approval.
 - A game that no runner on the receiving device can play in netplay, such as a
   large PC game, always uses stream play.
 - When both routes are possible, the person on the receiving device chooses
@@ -43,6 +51,13 @@ each device runs its own copy of the game, so no device has to encode video.
   device can play and leave. When the holder ends the session, netplay ends
   and the receiving device's game ends with it. When the receiving device
   leaves, the holder plays on.
+- When the holder leaves the session, the receiving device waits and shows a
+  notice until the holder resumes or ends.
+- When the receiving device leaves, its copy ends and its seat stays reserved.
+  The holder plays on. To come back, the person takes part again from the
+  invite.
+- When the connection drops, korrid reconnects the receiving device
+  automatically for a short time.
 - The receiving device's controllers take the first free controller seat in
   the holder's session, from the same pool as stream play. korrid makes
   RetroArch's input port match that seat.
@@ -75,6 +90,12 @@ each device runs its own copy of the game, so no device has to encode video.
   outside Korri's seats and seat reservations.
 - **Copy the release into a library folder.** Rejected: the device may have no
   library folder for that system, and a layout rule would have to be invented.
+- **The same core version and the same CPU type.** Rejected: a PC and a
+  handheld could not use netplay together.
+- **Netplay only when the core is already installed.** Rejected: the person
+  would not learn that installing a plugin allows netplay.
+- **The receiving device's Leave pauses the holder.** Rejected: it would let
+  the receiving device control the session.
 - **Only the proof game's core.** Rejected: other cores would wait, although
   upstream states that they are safe.
 - **Every RetroArch core.** Rejected: a core without deterministic savestates
@@ -93,6 +114,10 @@ each device runs its own copy of the game, so no device has to encode video.
   of the federation adds delay.
 - If the holder drops off the network, the receiving device loses the game,
   although it runs the game itself.
+- Nothing has proved that one core version stays in step across CPU types.
+  A pair of devices can drift apart during play.
+- Taking part in netplay can include a plugin install and its permission
+  approval.
 - A core that states deterministic savestates can still drift. Only one core
   is proved by the first slice.
 - A savestate the receiving person makes during netplay is lost.
