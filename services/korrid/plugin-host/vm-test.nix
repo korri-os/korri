@@ -612,6 +612,16 @@ pkgs.testers.runNixOSTest {
             Restart = "on-failure";
           };
         };
+        # Brain mode serves only the capability-bound RPC. The owner CLI and
+        # exact-session control sockets are host-only (korrid refuses both
+        # outside host mode since 29bbba9a9), so this brain VM activates
+        # neither (#265).
+        systemd.sockets.korrid-cli.enable = lib.mkForce false;
+        systemd.sockets.korrid-control.enable = lib.mkForce false;
+        systemd.services.korrid.requires = lib.mkForce [
+          "korrid-identity.service"
+          "korri-local-signer.service"
+        ];
         systemd.services.korrid.environment = {
           KORRID_MODE = lib.mkForce "brain";
           KORRID_ADDRESS = lib.mkForce "127.0.0.1:49117";
