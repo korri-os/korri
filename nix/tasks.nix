@@ -587,6 +587,9 @@ let
     pico-check = {
       description = "Run the Pico surface unit tests, gates, typecheck, and architecture lint.";
       runtimeInputs = [ pkgs.bun ];
+      # The two-display browser test (test/pico-displays-browser.test.ts)
+      # runs in this Chromium; without CHROMIUM it is skipped.
+      env.CHROMIUM = "${pkgs.chromium}/bin/chromium";
       script = ''
         cd "$KORRI_ROOT/surfaces/pico"
         bun install --frozen-lockfile --ignore-scripts
