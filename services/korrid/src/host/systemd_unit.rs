@@ -420,6 +420,7 @@ fn valid_portal_unit(unit: &str) -> bool {
 #[cfg(test)]
 #[derive(Default)]
 pub(crate) struct RecordingPortalUnit {
+    identity_reads: std::sync::atomic::AtomicUsize,
     identity_only: bool,
     frozen: Mutex<bool>,
     requests: Mutex<Vec<&'static str>>,
@@ -431,6 +432,10 @@ pub(crate) struct RecordingPortalUnit {
 
 #[cfg(test)]
 impl RecordingPortalUnit {
+    pub(crate) fn identity_reads(&self) -> usize {
+        self.identity_reads
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
     pub(crate) fn identity_only() -> Self {
         Self {
             identity_only: true,
@@ -484,6 +489,8 @@ impl PortalUnit for RecordingPortalUnit {
         !self.identity_only
     }
     fn window_pids(&self) -> Result<BTreeSet<i32>, LaunchUnitError> {
+        self.identity_reads
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok([4100].into_iter().collect())
     }
 
