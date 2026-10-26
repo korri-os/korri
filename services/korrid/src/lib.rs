@@ -8227,8 +8227,10 @@ command = ["game-two"]
         assert_eq!(legacy_contacts.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
+    // 1a1b489b6: an attest failure from one peer means "no match" there; a
+    // failure is reported only when no peer matched.
     #[tokio::test]
-    async fn brain_fails_closed_when_an_attestation_peer_is_unavailable() {
+    async fn brain_provisions_the_live_match_beside_an_unavailable_peer() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
         crate::config::test_fixtures::write(root.path().join("catalog/library.yaml"), "{}\n")
@@ -8265,11 +8267,57 @@ command = ["game-two"]
             Some("right-token"),
         )
         .await;
+        assert_eq!(body["outcome"]["_tag"], "Ok", "{body}");
         assert_eq!(
-            body["outcome"]["payload"]["code"],
-            "MoonlightCertificatePeerUnavailable"
+            live.calls(),
+            vec!["attest:sunshine-host", "provision:sunshine-host"]
         );
-        assert_eq!(live.calls(), vec!["attest:sunshine-host"]);
+        assert!(!body.to_string().contains(&unavailable_url));
+    }
+
+    #[tokio::test]
+    async fn brain_fails_closed_when_the_only_attestation_peer_is_unavailable() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
+        crate::config::test_fixtures::write(root.path().join("catalog/library.yaml"), "{}\n")
+            .unwrap();
+        let config = root.path().join("other.toml");
+        std::fs::write(&config, "label = \"other\"\n").unwrap();
+        let other = RecordingMoonlightCertificates::matching("another-host");
+        let other_url =
+            serve_router(host_routers_with_certificate_adapter(&config, other.clone()).0).await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let unavailable_url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        std::fs::write(
+            root.path().join("upstreams.json"),
+            serde_json::json!([
+                {"label":"unavailable","kind":"native","baseUrl":unavailable_url},
+                {"label":"other","kind":"native","baseUrl":other_url}
+            ])
+            .to_string(),
+        )
+        .unwrap();
+        let brain = router_with_capability_and_local_root(
+            "right-token",
+            "https://portal.example",
+            root.path(),
+        );
+        let body = rpc_body_authorized(
+            brain,
+            &serde_json::json!({
+                "_tag": "app.moonlight.certificate.provision",
+                "payload": {"hostUuid": "sunshine-host", "clientCertificate": TEST_CLIENT_PEM}
+            })
+            .to_string(),
+            Some("right-token"),
+        )
+        .await;
+        assert_eq!(
+            body["outcome"]["payload"]["code"], "MoonlightCertificatePeerUnavailable",
+            "{body}"
+        );
+        assert_eq!(other.calls(), vec!["attest:sunshine-host"]);
         assert!(!body.to_string().contains(&unavailable_url));
     }
 
