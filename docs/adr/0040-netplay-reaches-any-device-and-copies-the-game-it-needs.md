@@ -23,6 +23,9 @@ each device runs its own copy of the game, so no device has to encode video.
 - Netplay can open during play. The device that holds the session does not
   have to start the game in a netplay mode. RetroArch can start hosting while
   a game runs, and a device that joins gets the current state.
+- In the first slice, a runner can offer netplay when it is a RetroArch core
+  whose libretro core info states `savestate_features = "deterministic"`,
+  such as Snes9x 2010. Korri keeps no hand-written list of cores.
 - A game that no runner on the receiving device can play in netplay, such as a
   large PC game, always uses stream play.
 - When both routes are possible, the person on the receiving device chooses
@@ -55,6 +58,10 @@ each device runs its own copy of the game, so no device has to encode video.
   gives the netplay host authority, and two people could act at the same time.
 - **The receiving device plays on alone when the holder goes.** Rejected: the
   session would split into two games, with saves that split too.
+- **Only the proof game's core.** Rejected: other cores would wait, although
+  upstream states that they are safe.
+- **Every RetroArch core.** Rejected: a core without deterministic savestates
+  drifts, and the person learns it only during play.
 - **Both devices capture snapshots.** Rejected: two snapshots from the same
   start would make a split for the person to resolve after many sessions.
 - **The receiving device keeps a private copy of its saves.** Rejected: it adds
@@ -67,6 +74,8 @@ each device runs its own copy of the game, so no device has to encode video.
 
 - If the holder drops off the network, the receiving device loses the game,
   although it runs the game itself.
+- A core that states deterministic savestates can still drift. Only one core
+  is proved by the first slice.
 - A savestate the receiving person makes during netplay is lost.
 - Game content now moves between devices, and not only from providers.
 - A kept game brings that game's records to the receiving device (ADR 0027).
