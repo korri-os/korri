@@ -1,7 +1,7 @@
 # Netplay reaches any device and copies the game it needs
 
 **Owner decision, 2026-10-26.** Design in progress. The transport, the
-session model, route choice and saves are not decided.
+session model and saves are not decided.
 
 Stream play works on the RG35XX SP and Pro, but those devices limit it. On
 2026-10-26 the SP's CPU saturated while it ran the game and encoded. H.264
@@ -20,6 +20,15 @@ each device runs its own copy of the game, so no device has to encode video.
   the release from the device that holds the session, then starts netplay.
 - The copied release stays in the receiving device's library, as if the person
   had added it. The person can remove it like any other game.
+- Netplay can open during play. The device that holds the session does not
+  have to start the game in a netplay mode. RetroArch can start hosting while
+  a game runs, and a device that joins gets the current state.
+- A game that no runner on the receiving device can play in netplay, such as a
+  large PC game, always uses stream play.
+- When both routes are possible, the person on the receiving device chooses
+  between stream play, which starts at once, and netplay, which may first wait
+  for the copy. This choice is a first version. The experience is to be
+  designed again after the feature works.
 
 ## Considered options
 
@@ -31,6 +40,12 @@ each device runs its own copy of the game, so no device has to encode video.
   library.
 - **Delete the copy when the session ends.** Rejected: every netplay would copy
   the game again, and a large game would delay every start.
+- **Korri chooses the route automatically.** Not chosen for now: stream play
+  starts at once and fits large games, and netplay looks better but can wait
+  for a copy. The trade-off depends on the game and the person.
+- **Stream play first, then a switch to netplay in the same session.** Not
+  chosen for now: it moves seats, input and the picture between routes during
+  play, and nothing in Korri does that today.
 
 ## Consequences
 
