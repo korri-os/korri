@@ -156,6 +156,7 @@ pub(crate) fn game_commands(
         .cloned()
         .collect();
     commands.push(format!("[con_id={node}] fullscreen disable"));
+    commands.push(format!("[con_id={node}] floating disable"));
     commands.push(format!(
         "[con_id={node}] move container to output {}",
         main.name
@@ -592,7 +593,7 @@ fi
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(dir.path().join("batches")).unwrap(),
-            "output DSI-2 power on; [con_id=20] fullscreen disable; [con_id=20] move container to output DSI-2; [con_id=20] fullscreen enable; [con_id=20] opacity 1; [con_id=20] focus; output DSI-1 power off\n");
+            "output DSI-2 power on; [con_id=20] fullscreen disable; [con_id=20] floating disable; [con_id=20] move container to output DSI-2; [con_id=20] fullscreen enable; [con_id=20] opacity 1; [con_id=20] focus; output DSI-1 power off\n");
     }
 
     #[test]
@@ -735,12 +736,14 @@ fi
                 "output DSI-2 power on",
                 "output DSI-1 power on",
                 "[con_id=20] fullscreen disable",
+                "[con_id=20] floating disable",
                 "[con_id=20] move container to output DSI-2",
                 "[con_id=20] fullscreen enable global",
                 "[con_id=20] opacity 1",
                 "[con_id=20] focus",
                 "output DSI-2 power on",
                 "[con_id=20] fullscreen disable",
+                "[con_id=20] floating disable",
                 "[con_id=20] move container to output DSI-2",
                 "[con_id=20] fullscreen enable",
                 "[con_id=20] opacity 1",
