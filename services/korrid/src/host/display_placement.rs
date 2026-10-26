@@ -159,6 +159,9 @@ pub(crate) fn game_commands(
         "[con_id={node}] fullscreen enable{}",
         if placement.global { " global" } else { "" }
     ));
+    // A globally fullscreen portal suppresses focus-on-map. Placement is a
+    // handoff, so focus the exact game only after its output and fullscreen.
+    commands.push(format!("[con_id={node}] focus"));
     Ok(commands)
 }
 
@@ -172,25 +175,32 @@ pub(crate) fn apply(
     Ok(())
 }
 
+/// A launched process may not have mapped a window yet. That is progress,
+/// not a compositor failure, and must remain retryable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GamePlacementStatus {
+    AwaitingWindow,
+    Placed,
+}
+
 pub(crate) fn place_game(
     control: &dyn super::compositor_focus::CompositorControl,
     displays: &[Display],
     placement: &Placement,
     pids: &std::collections::BTreeSet<i32>,
     excluded: &[&str],
-) -> Result<(), String> {
+) -> Result<GamePlacementStatus, String> {
     use super::compositor_focus::{select_focus_target, FocusTarget};
     let tree = control.tree()?;
     let candidate = match select_focus_target(&tree, pids, excluded) {
         FocusTarget::Window(candidate) => candidate,
-        FocusTarget::NoWindow => return Err("no window found for exact launch".into()),
+        FocusTarget::NoWindow => return Ok(GamePlacementStatus::AwaitingWindow),
         FocusTarget::Ambiguous(_) => return Err("several windows found for exact launch".into()),
         FocusTarget::Unreadable(reason) => return Err(reason),
     };
-    if let Err(reason) = apply(
-        control,
-        &game_commands(displays, placement, candidate.node_id)?,
-    ) {
+    if let Err(reason) =
+        control.command(&game_commands(displays, placement, candidate.node_id)?.join("; "))
+    {
         // Same runner layout, restored to the main display. Never choose a
         // different layout because an effect failed.
         let main = displays.iter().find(|d| d.main).ok_or("no main display")?;
@@ -201,13 +211,10 @@ pub(crate) fn place_game(
             height: main.height,
             outputs: vec![main.name.clone()],
         };
-        let _ = apply(
-            control,
-            &game_commands(displays, &fallback, candidate.node_id)?,
-        );
+        let _ = control.command(&game_commands(displays, &fallback, candidate.node_id)?.join("; "));
         return Err(reason);
     }
-    Ok(())
+    Ok(GamePlacementStatus::Placed)
 }
 
 #[typeshare::typeshare]
@@ -475,8 +482,12 @@ mod tests {
 cd '{}' || exit 1
 for argument do command="$argument"; done
 case "$command" in get_tree) cat tree; exit;; esac
-printf '%s\n' "$command" >> commands
-if test -f reject && test "$command" = "$(cat reject)"; then
+printf '%s\n' "$command" >> batches
+old_ifs="$IFS"
+IFS=';'
+for part in $command; do printf '%s\n' "${{part# }}" >> commands; done
+IFS="$old_ifs"
+if test -f reject && case "$command" in *"$(cat reject)"*) true;; *) false;; esac; then
     printf '[{{"success":false,"error":"refused"}}]'
 else
     cat reply
@@ -496,6 +507,24 @@ fi
     }
 
     #[test]
+    fn single_display_game_placement_focuses_the_exact_window_in_the_placement_batch() {
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        std::fs::write(dir.path().join("tree"), r#"{"nodes":[{"id":10,"pid":100,"app_id":"portal","focused":true,"fullscreen_mode":2},{"id":20,"pid":200,"app_id":"retroarch","focused":false}]}"#).unwrap();
+        let single = choose(None, &runner(), &displays()).unwrap();
+        place_game(
+            &control,
+            &displays(),
+            &single,
+            &[200].into_iter().collect(),
+            &["portal"],
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(dir.path().join("batches")).unwrap(),
+            "output DSI-2 power on; output DSI-1 power off; [con_id=20] fullscreen disable; [con_id=20] move container to output DSI-2; [con_id=20] fullscreen enable; [con_id=20] focus\n");
+    }
+
+    #[test]
     fn real_swaymsg_path_places_game_and_overlay_and_restores_game_power() {
         let dir = tempfile::tempdir().unwrap();
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
@@ -506,6 +535,8 @@ fi
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands.contains("[con_id=20] fullscreen enable global"));
         assert!(commands.contains("output DSI-1 power on"));
+        assert!(commands.ends_with("[con_id=20] fullscreen enable global\n[con_id=20] focus\n"));
+        std::fs::write(dir.path().join("commands"), "").unwrap();
         place_surface(
             &control,
             &ds,
@@ -518,7 +549,17 @@ fi
         .unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands.contains("[con_id=20] resize set width 640 px height 960 px"));
-        assert!(commands.contains("[con_id=10] move absolute position 0 px 0 px"));
+        assert!(
+            commands.ends_with("[con_id=10] move absolute position 0 px 0 px\n[con_id=10] focus\n")
+        );
+        // Closing the overlay restores the game's global placement and focus.
+        place_game(&control, &ds, &p, &pids, &["portal"]).unwrap();
+        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+        assert!(batches
+            .lines()
+            .last()
+            .unwrap()
+            .ends_with("[con_id=20] fullscreen enable global; [con_id=20] focus"));
         let mut r = runner();
         r.layouts.clear();
         let single = choose(None, &r, &ds).unwrap();
@@ -533,10 +574,30 @@ fi
         )
         .unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
-        assert!(commands.contains("[con_id=10] move absolute position 0 px 480 px"));
+        assert!(commands
+            .ends_with("[con_id=10] move absolute position 0 px 480 px\n[con_id=10] focus\n"));
         place_game(&control, &ds, &single, &pids, &["portal"]).unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands.contains("output DSI-1 power off"));
+        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+        assert!(batches
+            .lines()
+            .last()
+            .unwrap()
+            .ends_with("[con_id=20] fullscreen enable; [con_id=20] focus"));
+        // Once the game ends, the retained catalog is placed over all displays.
+        place_surface(
+            &control,
+            &ds,
+            SurfaceDisplayScope::All,
+            None,
+            &std::collections::BTreeSet::new(),
+            &[100].into_iter().collect(),
+            &["portal"],
+        )
+        .unwrap();
+        let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
+        assert!(commands.ends_with("[con_id=10] fullscreen enable global\n[con_id=10] focus\n"));
     }
 
     #[test]
@@ -567,7 +628,7 @@ fi
     }
 
     #[test]
-    fn missing_window_and_command_rejection_are_errors_with_main_display_recovery() {
+    fn unmapped_window_waits_and_command_rejection_recovers_on_main_display() {
         let dir = tempfile::tempdir().unwrap();
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
         std::fs::write(
@@ -577,11 +638,11 @@ fi
         .unwrap();
         let ds = displays();
         let p = choose(Some(&system()), &runner(), &ds).unwrap();
-        assert!(
-            place_game(&control, &ds, &p, &[999].into_iter().collect(), &["portal"])
-                .unwrap_err()
-                .contains("no window")
+        assert_eq!(
+            place_game(&control, &ds, &p, &[999].into_iter().collect(), &["portal"]).unwrap(),
+            GamePlacementStatus::AwaitingWindow
         );
+        assert!(!dir.path().join("commands").exists());
         assert_eq!(
             place_game(&control, &ds, &p, &[200].into_iter().collect(), &["portal"]).unwrap_err(),
             "refused"
@@ -595,11 +656,13 @@ fi
                 "[con_id=20] fullscreen disable",
                 "[con_id=20] move container to output DSI-2",
                 "[con_id=20] fullscreen enable global",
+                "[con_id=20] focus",
                 "output DSI-2 power on",
                 "output DSI-1 power off",
                 "[con_id=20] fullscreen disable",
                 "[con_id=20] move container to output DSI-2",
                 "[con_id=20] fullscreen enable",
+                "[con_id=20] focus",
             ]
         );
     }
