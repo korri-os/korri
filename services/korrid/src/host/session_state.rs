@@ -2969,10 +2969,15 @@ mod tests {
         assert!(matches!(state, ActiveState::NoActive));
         assert!(control.recovery_helper_error.lock().unwrap().is_none());
 
+        // After a successful recovery the same failure is reported again.
         backend.state.lock().unwrap().enumeration_unavailable = true;
         state = ActiveState::RecoveryPending;
         control.refresh_recovery(&mut state);
         assert!(matches!(state, ActiveState::RecoveryPending));
+        assert_eq!(
+            control.recovery_helper_error.lock().unwrap().as_deref(),
+            Some("systemd enumeration unavailable")
+        );
     }
 
     #[test]
