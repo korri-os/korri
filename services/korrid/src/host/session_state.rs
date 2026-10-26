@@ -680,7 +680,8 @@ impl HostSessionControl {
             .ok_or("game compositor unavailable")?;
         let portal_pids = self.portal_pids()?;
         use super::compositor_focus::{select_focus_target, FocusTarget};
-        let candidates = match select_focus_target(&compositor.tree()?, &pids, &portal_pids) {
+        let tree = compositor.tree()?;
+        let candidates = match select_focus_target(&tree, &pids, &portal_pids) {
             FocusTarget::Window(candidate) => vec![candidate],
             FocusTarget::NoWindow => return Ok(()),
             FocusTarget::Ambiguous(candidates) if !dim => candidates,
@@ -688,13 +689,32 @@ impl HostSessionControl {
             FocusTarget::Unreadable(error) => return Err(error),
         };
         let opacity = if dim { "0.4" } else { "1" };
-        compositor.command(
-            &candidates
-                .iter()
-                .map(|candidate| format!("[con_id={}] opacity {opacity}", candidate.node_id))
-                .collect::<Vec<_>>()
-                .join("; "),
-        )
+        let mut commands = Vec::new();
+        for candidate in candidates {
+            let node = candidate.node_id;
+            // Sway 1.12 reparents fullscreen views outside their container's
+            // opacity-bearing scene tree. Only the multi-output overlay leaves
+            // the game visible: float its committed rectangle before dimming.
+            // Keep this local workaround removable with the indicator surface.
+            if dim && super::display_placement::configured_displays()?.len() > 1 {
+                let rect = super::compositor_focus::window_rectangle(&tree, node)?;
+                commands.extend([
+                    format!("[con_id={node}] fullscreen disable"),
+                    format!("[con_id={node}] floating enable"),
+                    format!("[con_id={node}] border none"),
+                    format!(
+                        "[con_id={node}] resize set width {} px height {} px",
+                        rect.width, rect.height
+                    ),
+                    format!(
+                        "[con_id={node}] move absolute position {} px {} px",
+                        rect.x, rect.y
+                    ),
+                ]);
+            }
+            commands.push(format!("[con_id={node}] opacity {opacity}"));
+        }
+        compositor.command(&commands.join("; "))
     }
 
     fn place_overlay(&self, launch_id: &str, trace: &mut TransitionTrace) -> Result<(), String> {
@@ -3667,7 +3687,7 @@ printf '[{{"success":true}}]'
             ));
             let first_open = fs::read_to_string(root.path().join("commands")).unwrap();
             assert!(
-                first_open.starts_with("freeze\n[con_id=3] opacity 0.4\n"),
+                first_open.starts_with("freeze\n[con_id=3] fullscreen disable; [con_id=3] floating enable; [con_id=3] border none; [con_id=3] resize set width 640 px height 480 px; [con_id=3] move absolute position 0 px 0 px; [con_id=3] opacity 0.4\n"),
                 "freeze must precede immediate game dim: {first_open}"
             );
             assert!(
@@ -3713,6 +3733,7 @@ printf '[{{"success":true}}]'
                 1,
                 "Return must use one placement/focus/power batch: {returned}"
             );
+            assert!(returned.contains("[con_id=3] fullscreen disable; [con_id=3] floating disable; [con_id=3] move container to output DSI-2; [con_id=3] fullscreen enable"), "{returned}");
             assert!(
                 returned.contains("[con_id=3] opacity 1; [con_id=3] focus"),
                 "{returned}"
@@ -3744,7 +3765,7 @@ printf '[{{"success":true}}]'
             ));
             let reopened = fs::read_to_string(root.path().join("commands")).unwrap();
             assert!(
-                reopened.starts_with("freeze\n[con_id=3] opacity 0.4\n"),
+                reopened.starts_with("freeze\n[con_id=3] fullscreen disable; [con_id=3] floating enable; [con_id=3] border none; [con_id=3] resize set width 640 px height 480 px; [con_id=3] move absolute position 0 px 0 px; [con_id=3] opacity 0.4\n"),
                 "{reopened}"
             );
             assert!(reopened.contains("output DSI-1 power on"), "{reopened}");
@@ -5680,6 +5701,8 @@ printf '[{{"success":true}}]'
                  {{"id": 2, "pid": 4100, "app_id": "{PORTAL_APP_ID}",
                   "focused": {}, "nodes": [], "floating_nodes": []}},
                  {{"id": 3, "pid": {game_pid}, "app_id": null,
+                  "rect": {{"x":0,"y":0,"width":640,"height":480}},
+                  "geometry": {{"x":0,"y":0,"width":320,"height":240}},
                   "focused": {}, "nodes": [], "floating_nodes": []}}
                ], "floating_nodes": []}}"#,
             focused_id == 2,

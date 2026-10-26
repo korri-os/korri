@@ -165,9 +165,37 @@ struct TreeNode {
     #[serde(default)]
     focused: bool,
     #[serde(default)]
+    rect: Option<WindowRectangle>,
+    #[serde(default)]
     nodes: Vec<TreeNode>,
     #[serde(default)]
     floating_nodes: Vec<TreeNode>,
+}
+
+/// Sway get_tree's committed `rect`, not its initial natural `geometry`.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct WindowRectangle {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+pub(crate) fn window_rectangle(tree: &str, node_id: i64) -> Result<WindowRectangle, String> {
+    fn find(node: &TreeNode, id: i64) -> Option<&WindowRectangle> {
+        if node.id == id {
+            return node.rect.as_ref();
+        }
+        node.nodes
+            .iter()
+            .chain(node.floating_nodes.iter())
+            .find_map(|child| find(child, id))
+    }
+    let root: TreeNode = serde_json::from_str(tree).map_err(|error| error.to_string())?;
+    find(&root, node_id)
+        .filter(|rect| rect.width > 0 && rect.height > 0)
+        .cloned()
+        .ok_or_else(|| "exact launch has no committed window rectangle".into())
 }
 
 pub(crate) fn portal_node(tree: &str, portal_pids: &BTreeSet<i32>) -> Result<i64, String> {
