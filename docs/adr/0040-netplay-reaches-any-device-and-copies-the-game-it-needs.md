@@ -36,7 +36,13 @@ each device runs its own copy of the game, so no device has to encode video.
   whose libretro core info states `savestate_features = "deterministic"`,
   such as Snes9x 2010. Korri keeps no hand-written list of cores.
 - Both devices must run the same core version. The CPU type may differ, so
-  an aarch64 handheld and an x86_64 PC can use netplay together.
+  an aarch64 handheld and an x86_64 PC can use netplay together. Korri checks
+  this itself before it offers netplay, because RetroArch only warns about a
+  different core version (`netplay_handshake_pre_info` in
+  `network/netplay/netplay_frontend.c`). The version is the core's
+  `library_version`, the value RetroArch compares. The libretro plugin's build
+  reads it from each core and publishes it with the plugin, as a new field of
+  that plugin's declaration.
 - When the receiving device has no core that can offer netplay for the game,
   Korri still offers netplay. If the person chooses it, Korri asks to install
   the plugin first, with the usual permission approval. Korri installs the
@@ -95,6 +101,10 @@ each device runs its own copy of the game, so no device has to encode video.
   library folder for that system, and a layout rule would have to be invented.
 - **The same core version and the same CPU type.** Rejected: a PC and a
   handheld could not use netplay together.
+- **Compare `display_version` from the libretro core info file.** Rejected: it
+  may not change when the built core changes.
+- **Compare plugin versions.** Rejected: any plugin update would block netplay,
+  even with the same core.
 - **Netplay only when the core is already installed.** Rejected: the person
   would not learn that installing a plugin allows netplay.
 - **The receiving device's Leave pauses the holder.** Rejected: it would let
