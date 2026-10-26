@@ -24,6 +24,9 @@ pub(crate) trait CompositorControl: Send + Sync + std::fmt::Debug {
         Err("output observation unavailable".into())
     }
     fn focus(&self, node_id: i64) -> Result<(), String>;
+    fn focus_game(&self, node_id: i64) -> Result<(), String> {
+        self.focus(node_id)
+    }
     fn command(&self, _command: &str) -> Result<(), String> {
         Err("compositor placement unavailable".into())
     }
@@ -141,10 +144,13 @@ impl CompositorControl for SwaymsgCompositorControl {
     }
 
     fn focus(&self, node_id: i64) -> Result<(), String> {
-        // `--` and a literal criteria string keep the node id out of any
-        // shell parsing; node ids come from the compositor, never a game.
         self.run(&["--", &format!("[con_id={node_id}] focus")])
             .map(|_| ())
+    }
+    fn focus_game(&self, node_id: i64) -> Result<(), String> {
+        self.command(&format!(
+            "[con_id={node_id}] opacity 1; [con_id={node_id}] focus"
+        ))
     }
 }
 
@@ -359,7 +365,7 @@ pub(crate) fn focus_launch_window(
         Err(error) => return FocusOutcome::Failed(error),
     };
     match select_focus_target(&tree, launch_pids, portal_pids) {
-        FocusTarget::Window(candidate) => match control.focus(candidate.node_id) {
+        FocusTarget::Window(candidate) => match control.focus_game(candidate.node_id) {
             Ok(()) => FocusOutcome::Focused(candidate.node_id),
             Err(error) => FocusOutcome::Failed(error),
         },

@@ -166,6 +166,7 @@ pub(crate) fn game_commands(
     ));
     // A globally fullscreen portal suppresses focus-on-map. Placement is a
     // handoff, so focus the exact game only after its output and fullscreen.
+    commands.push(format!("[con_id={node}] opacity 1"));
     commands.push(format!("[con_id={node}] focus"));
     // Focus first. DRM disable is a blocking tail of this same IPC batch,
     // never a prerequisite for the game receiving activation.
@@ -591,7 +592,7 @@ fi
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(dir.path().join("batches")).unwrap(),
-            "output DSI-2 power on; [con_id=20] fullscreen disable; [con_id=20] move container to output DSI-2; [con_id=20] fullscreen enable; [con_id=20] focus; output DSI-1 power off\n");
+            "output DSI-2 power on; [con_id=20] fullscreen disable; [con_id=20] move container to output DSI-2; [con_id=20] fullscreen enable; [con_id=20] opacity 1; [con_id=20] focus; output DSI-1 power off\n");
     }
 
     #[test]
@@ -605,7 +606,9 @@ fi
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands.contains("[con_id=20] fullscreen enable global"));
         assert!(commands.contains("output DSI-1 power on"));
-        assert!(commands.ends_with("[con_id=20] fullscreen enable global\n[con_id=20] focus\n"));
+        assert!(commands.ends_with(
+            "[con_id=20] fullscreen enable global\n[con_id=20] opacity 1\n[con_id=20] focus\n"
+        ));
         std::fs::write(dir.path().join("commands"), "").unwrap();
         place_surface(
             &control,
@@ -624,11 +627,9 @@ fi
         // Closing the overlay restores the game's global placement and focus.
         place_game(&control, &ds, &p, &pids, &[100].into_iter().collect()).unwrap();
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
-        assert!(batches
-            .lines()
-            .last()
-            .unwrap()
-            .ends_with("[con_id=20] fullscreen enable global; [con_id=20] focus"));
+        assert!(batches.lines().last().unwrap().ends_with(
+            "[con_id=20] fullscreen enable global; [con_id=20] opacity 1; [con_id=20] focus"
+        ));
         let mut r = runner();
         r.layouts.clear();
         let single = choose(None, &r, &ds).unwrap();
@@ -652,7 +653,7 @@ fi
             .lines()
             .last()
             .unwrap()
-            .ends_with("[con_id=20] fullscreen enable; [con_id=20] focus; output DSI-1 power off"));
+            .ends_with("[con_id=20] fullscreen enable; [con_id=20] opacity 1; [con_id=20] focus; output DSI-1 power off"));
         // Once the game ends, the retained catalog is placed over all displays.
         place_surface(
             &control,
@@ -736,11 +737,13 @@ fi
                 "[con_id=20] fullscreen disable",
                 "[con_id=20] move container to output DSI-2",
                 "[con_id=20] fullscreen enable global",
+                "[con_id=20] opacity 1",
                 "[con_id=20] focus",
                 "output DSI-2 power on",
                 "[con_id=20] fullscreen disable",
                 "[con_id=20] move container to output DSI-2",
                 "[con_id=20] fullscreen enable",
+                "[con_id=20] opacity 1",
                 "[con_id=20] focus",
                 "output DSI-1 power off",
             ]
