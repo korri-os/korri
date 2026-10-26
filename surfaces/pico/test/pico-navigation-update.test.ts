@@ -186,11 +186,12 @@ describe("attract", () => {
     expect(woke.model.find).toBe(false)
   })
 
-  test("a focus move keeps the screen awake but does not wake it", () => {
+  test("a focus move keeps the screen awake, and wakes it from attract", () => {
     const moved = story(fixtureModel, { _tag: "MovedFocus" })
     expect(moved.nav.idle).toEqual({ _tag: "Awake", activity: 1 })
     const showing = story(fixtureModel, idle, { _tag: "MovedFocus" })
-    expect(showing.nav.idle._tag).toBe("Attracting")
+    expect(showing.nav.idle._tag).toBe("Awake")
+    expect(showing.nav.home.selectedGameId).toBeUndefined()
   })
 
   test("a late timer cannot start it over a game's own screen", () => {
