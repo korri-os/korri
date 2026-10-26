@@ -174,7 +174,7 @@ mod tests {
             root.path().join("far-private"),
             units.clone(),
         )
-        .with_compositor(Arc::new(FarFocus), vec![]);
+        .with_compositor(Arc::new(FarFocus));
         holder.claim_save_owner();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();

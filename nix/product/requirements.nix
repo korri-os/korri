@@ -18,9 +18,6 @@ let
       "wss://relay.nostr.band"
       "wss://relay.primal.net"
     ];
-    # Chromium's native Wayland app_id is its desktop-file WM class. The
-    # portal module check binds this value to the packaged Chromium desktop file.
-    browserNeverFocusAppIds = [ "chromium-browser" ];
     # Every product device opens Pico.
     surfaceId = "pico";
     korridAddress = "[::]:39217";
@@ -111,9 +108,12 @@ in
 
     (setting "korri group gid" [ "users" "groups" "korri" "gid" ] constants.runtimeAccount.gid)
     (setting "korri normal user" [ "users" "users" "korri" "isNormalUser" ] true)
-    (deviceSetting "korri uid" [ "users" "users" "korri" "uid" ] runtimeUidAt
-      constants.runtimeAccount.uid
-    )
+    (deviceSetting "korri uid" [
+      "users"
+      "users"
+      "korri"
+      "uid"
+    ] runtimeUidAt constants.runtimeAccount.uid)
     (setting "korri primary group" [
       "users"
       "users"
@@ -179,10 +179,16 @@ in
     # these host-owned service IDs. A device cannot silently change the IDs
     # while reusing the same approved plugin package.
     (settingWithTestValue "stream certificate-control uid" [
-      "services" "korriLinuxHost" "serviceIdentities" "korridUid"
+      "services"
+      "korriLinuxHost"
+      "serviceIdentities"
+      "korridUid"
     ] 976 979)
     (settingWithTestValue "stream certificate-control gid" [
-      "services" "korriLinuxHost" "serviceIdentities" "korridGid"
+      "services"
+      "korriLinuxHost"
+      "serviceIdentities"
+      "korridGid"
     ] 976 979)
     (lockedSettingWithTestValue "product relays" [
       "services"
@@ -201,12 +207,6 @@ in
       "audio"
       "enable"
     ] true)
-    (lockedSetting "product browser focus exclusion" [
-      "services"
-      "korriLinuxHost"
-      "compositor"
-      "neverFocusAppIds"
-    ] constants.browserNeverFocusAppIds)
 
     (setting "bundle selection enabled" [ "services" "korriBundle" "enable" ] true)
     (setting "input provider enabled" [

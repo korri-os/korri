@@ -40,7 +40,13 @@ in
       description = "Diagnostic marker for the shared Korri product composition; the gate verifies the complete resulting contract.";
     };
     sleep.states = lib.mkOption {
-      type = lib.types.listOf (lib.types.enum [ "light sleep" "deep sleep" "hibernation" ]);
+      type = lib.types.listOf (
+        lib.types.enum [
+          "light sleep"
+          "deep sleep"
+          "hibernation"
+        ]
+      );
       default = [ ];
       description = "Sleep states verified for this device. No state means the power button and lid shut down cleanly.";
     };
@@ -115,7 +121,6 @@ in
       # The shared portal's real Wayland app id has not been accepted on a
       # device yet. Product ownership starts with no guessed or legacy id;
       # device modules cannot carry the old browser-specific exclusion.
-      compositor.neverFocusAppIds = lib.mkForce constants.browserNeverFocusAppIds;
       # The product admits the reviewed Sunshine virtual-device identities.
       # The removable plugin still owns whether those devices can exist.
       compositor.allowedInputIdentifiers = [

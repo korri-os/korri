@@ -26,7 +26,8 @@ mod saves;
 mod session_state;
 mod shared_play;
 mod systemd_unit;
-pub(crate) use systemd_unit::configured_runtime_identity;
+pub(crate) use prepare::configured_portal;
+pub(crate) use systemd_unit::{configured_runtime_identity, PortalUnit};
 
 use crate::plugin::{
     SessionControlDeclarationInteraction, SessionControlEffect, SessionControlOwnerKind,
@@ -1539,14 +1540,10 @@ impl HostRuntime {
     }
 
     #[cfg(test)]
-    pub(crate) fn with_compositor(
-        mut self,
-        compositor: Arc<dyn CompositorControl>,
-        never_focus: Vec<String>,
-    ) -> Self {
+    pub(crate) fn with_compositor(mut self, compositor: Arc<dyn CompositorControl>) -> Self {
         self.launcher = self
             .launcher
-            .map(|launcher| launcher.with_compositor(compositor, never_focus));
+            .map(|launcher| launcher.with_compositor(compositor));
         self
     }
 

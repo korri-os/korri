@@ -270,15 +270,6 @@ in
         never changed, so a person who turned a modifier off keeps that choice.
       '';
     };
-    neverFocusAppIds = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
-      description = ''
-        Window identities korrid must never raise as a game, such as the kiosk
-        hub. The hub shares the runtime user, so process ownership alone cannot
-        tell it apart from a game.
-      '';
-    };
     certificateControlDirectory = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -452,20 +443,12 @@ in
         message = "korrid compositorControlSocket must be a normalized absolute path.";
       }
       {
-        assertion = cfg.compositorControlSocket != null || cfg.neverFocusAppIds == [ ];
-        message = "korrid neverFocusAppIds needs compositorControlSocket to have any effect.";
-      }
-      {
         # Games cannot reach the compositor because that directory is hidden
         # from every game unit. A socket outside it would undo that.
         assertion =
           cfg.compositorControlSocket == null
           || lib.hasPrefix "${cfg.compositorControlDirectory}/" cfg.compositorControlSocket;
         message = "korrid compositorControlSocket must sit inside compositorControlDirectory.";
-      }
-      {
-        assertion = !lib.any (identity: lib.hasInfix "," identity) cfg.neverFocusAppIds;
-        message = "korrid neverFocusAppIds entries must not contain a comma.";
       }
       {
         assertion = !cfg.browser.enable || lib.hasPrefix "127.0.0.1:" cfg.browser.address;
@@ -836,7 +819,6 @@ in
       // lib.optionalAttrs (cfg.compositorControlSocket != null) {
         KORRID_SWAYMSG = "${pkgs.sway}/bin/swaymsg";
         KORRID_COMPOSITOR_CONTROL_SOCKET = cfg.compositorControlSocket;
-        KORRID_NEVER_FOCUS_APP_IDS = lib.concatStringsSep "," cfg.neverFocusAppIds;
       }
       // lib.optionalAttrs cfg.browser.enable {
         KORRID_BROWSER_ADDRESS = cfg.browser.address;

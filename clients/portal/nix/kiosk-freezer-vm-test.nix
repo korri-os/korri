@@ -154,6 +154,7 @@ pkgs.testers.runNixOSTest {
             wantedBy = [ "multi-user.target" ];
             after = [ "dbus.service" ];
             environment = {
+              KORRID_PORTAL_UNIT = "korri-chromium-kiosk.service";
               KORRID_SYSTEMD_RUN = "${systemd}/bin/systemd-run";
               KORRID_RUNTIME_UID = "1000";
               KORRID_RUNTIME_GID = "100";
@@ -161,7 +162,6 @@ pkgs.testers.runNixOSTest {
               KORRID_STREAM_PRIVATE_STATE_ROOT = "/var/lib/freezer-stream";
               KORRID_SWAYMSG = "${pkgs.sway-unwrapped}/bin/swaymsg";
               KORRID_COMPOSITOR_CONTROL_SOCKET = "/run/freezer-compositor/sway.sock";
-              KORRID_NEVER_FOCUS_APP_IDS = "FreezerPortal";
             };
             serviceConfig = {
               ExecStart = "${runtime}/bin/portal-freezer-runtime --ignored --nocapture";

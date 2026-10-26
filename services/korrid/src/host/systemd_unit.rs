@@ -210,6 +210,11 @@ pub(super) const PORTAL_UNIT_ENV: &str = "KORRID_PORTAL_UNIT";
 /// game. A frozen portal can neither paint nor take input, so every thaw
 /// request must leave it running.
 pub trait PortalUnit: Send + Sync {
+    /// Identity does not grant native freezer authority.
+    fn freezer_enabled(&self) -> bool {
+        true
+    }
+
     /// Processes owned by the configured kiosk unit, not window decorations.
     fn window_pids(&self) -> Result<BTreeSet<i32>, LaunchUnitError> {
         Err(LaunchUnitError::new(
@@ -230,12 +235,14 @@ pub trait PortalUnit: Send + Sync {
 pub struct SystemdPortalUnit {
     helper: SystemdLaunchUnitBackend,
     unit: String,
+    freezer_enabled: bool,
 }
 
 impl SystemdPortalUnit {
     pub(super) fn new(
         helper: SystemdLaunchUnitBackend,
         unit: &str,
+        freezer_enabled: bool,
     ) -> Result<Self, LaunchUnitError> {
         if !valid_portal_unit(unit) {
             return Err(LaunchUnitError::new(
@@ -246,13 +253,28 @@ impl SystemdPortalUnit {
         Ok(Self {
             helper,
             unit: unit.to_owned(),
+            freezer_enabled,
         })
     }
 
     /// Reads the configured portal unit. `None` keeps the feature inert.
     pub(super) fn from_environment() -> Option<Result<Self, LaunchUnitError>> {
         let unit = std::env::var(PORTAL_UNIT_ENV).ok()?;
-        Some(Self::new(SystemdLaunchUnitBackend::default(), &unit))
+        let enabled = match std::env::var("KORRID_PORTAL_FREEZER_ENABLED").as_deref() {
+            Ok("true") => true,
+            Ok("false") | Err(std::env::VarError::NotPresent) => false,
+            _ => {
+                return Some(Err(LaunchUnitError::new(
+                    LaunchUnitErrorKind::InvalidConfiguration,
+                    "portal freezer gate must be true or false",
+                )))
+            }
+        };
+        Some(Self::new(
+            SystemdLaunchUnitBackend::default(),
+            &unit,
+            enabled,
+        ))
     }
 
     /// systemd answers a freezer call only once the freezer settles, so the
@@ -283,6 +305,9 @@ impl SystemdPortalUnit {
 }
 
 impl PortalUnit for SystemdPortalUnit {
+    fn freezer_enabled(&self) -> bool {
+        self.freezer_enabled
+    }
     fn window_pids(&self) -> Result<BTreeSet<i32>, LaunchUnitError> {
         // ControlGroup and MainPID come from the same exact service already
         // used for kiosk freeze/thaw. Chromium's app_id is not stable identity.
@@ -346,6 +371,9 @@ impl PortalUnit for SystemdPortalUnit {
     }
 
     fn freeze(&self) -> Result<(), LaunchUnitError> {
+        if !self.freezer_enabled {
+            return Ok(());
+        }
         self.call("FreezeUnit")
     }
 
@@ -353,6 +381,9 @@ impl PortalUnit for SystemdPortalUnit {
     /// first so a stopped or absent portal is not a thaw failure that korrid
     /// would retry on every status read.
     fn thaw(&self) -> Result<(), LaunchUnitError> {
+        if !self.freezer_enabled {
+            return Ok(());
+        }
         let state = self.helper.observe_state(&[
             "--system".into(),
             "--no-ask-password".into(),
@@ -389,6 +420,7 @@ fn valid_portal_unit(unit: &str) -> bool {
 #[cfg(test)]
 #[derive(Default)]
 pub(crate) struct RecordingPortalUnit {
+    identity_only: bool,
     frozen: Mutex<bool>,
     requests: Mutex<Vec<&'static str>>,
     events: Option<Arc<Mutex<Vec<&'static str>>>>,
@@ -399,6 +431,12 @@ pub(crate) struct RecordingPortalUnit {
 
 #[cfg(test)]
 impl RecordingPortalUnit {
+    pub(crate) fn identity_only() -> Self {
+        Self {
+            identity_only: true,
+            ..Self::default()
+        }
+    }
     /// A portal an earlier korrid run froze and never thawed.
     pub(crate) fn left_frozen() -> Self {
         Self {
@@ -442,7 +480,17 @@ impl RecordingPortalUnit {
 
 #[cfg(test)]
 impl PortalUnit for RecordingPortalUnit {
+    fn freezer_enabled(&self) -> bool {
+        !self.identity_only
+    }
+    fn window_pids(&self) -> Result<BTreeSet<i32>, LaunchUnitError> {
+        Ok([4100].into_iter().collect())
+    }
+
     fn freeze(&self) -> Result<(), LaunchUnitError> {
+        if self.identity_only {
+            return Ok(());
+        }
         self.record("freeze", "portal-freeze");
         if *self.refuse_freeze.lock().unwrap() {
             return Err(LaunchUnitError::new(
@@ -455,6 +503,9 @@ impl PortalUnit for RecordingPortalUnit {
     }
 
     fn thaw(&self) -> Result<(), LaunchUnitError> {
+        if self.identity_only {
+            return Ok(());
+        }
         self.record("thaw", "portal-thaw");
         let mut refused = self.refused_thaws.lock().unwrap();
         if *refused > 0 {
@@ -2585,8 +2636,18 @@ mod tests {
     }
 
     #[test]
+    fn identity_only_portal_never_calls_freezer_helpers() {
+        // This backend's helper paths are not executables. Either freezer
+        // call would fail if the disabled gate performed an effect.
+        let portal = SystemdPortalUnit::new(backend(1000), PORTAL, false).unwrap();
+        assert!(!portal.freezer_enabled());
+        portal.freeze().unwrap();
+        portal.thaw().unwrap();
+    }
+
+    #[test]
     fn portal_native_calls_need_no_unit_reference_or_extra_authority() {
-        let portal = SystemdPortalUnit::new(backend(1000), PORTAL).unwrap();
+        let portal = SystemdPortalUnit::new(backend(1000), PORTAL, true).unwrap();
         for method in ["FreezeUnit", "ThawUnit"] {
             assert_eq!(
                 portal.verb_arguments(method),
@@ -2621,7 +2682,7 @@ mod tests {
             "korri-game-0123456789abcdef0123456789abcdef.service",
         ] {
             assert_eq!(
-                SystemdPortalUnit::new(backend(1000), unit)
+                SystemdPortalUnit::new(backend(1000), unit, true)
                     .unwrap_err()
                     .kind,
                 LaunchUnitErrorKind::InvalidConfiguration,
@@ -2630,7 +2691,7 @@ mod tests {
         }
         for unit in [PORTAL, "cage@tty1.service"] {
             assert!(
-                SystemdPortalUnit::new(backend(1000), unit).is_ok(),
+                SystemdPortalUnit::new(backend(1000), unit, true).is_ok(),
                 "{unit}"
             );
         }

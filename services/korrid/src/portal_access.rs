@@ -560,7 +560,7 @@ mod tests {
         let backend = Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default());
         let compositor = Arc::new(InMemoryCompositor {
             tree: Mutex::new(json!({"id":1,"nodes":[
-                {"id":2,"pid":4100,"app_id":"chromium-browser","focused":true},
+                {"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true},
                 {"id":3,"pid":9100,"app_id":"retroarch","focused":false}
             ]})),
         });
@@ -610,7 +610,10 @@ mod tests {
         )
         .with_route_registry(root.path().into(), registry.clone())
         .with_retroarch_control_port(control_port)
-        .with_compositor(compositor.clone(), vec!["chromium-browser".into()]);
+        .with_compositor(compositor.clone())
+        .with_portal_unit(Arc::new(
+            crate::host::control::RecordingPortalUnit::identity_only(),
+        ));
         runtime.claim_save_owner();
         let person_public_key = runtime.owner_public_key().expect("verified fixture owner");
         let (app, _) = crate::secure_host_routers(
@@ -732,7 +735,7 @@ mod tests {
         )
         .with_route_registry(root.path().into(), registry)
         .with_retroarch_control_port(control_port)
-        .with_compositor(compositor.clone(), vec!["chromium-browser".into()]);
+        .with_compositor(compositor.clone());
         let (app, _) = crate::secure_host_routers(
             recovered,
             &private,

@@ -251,7 +251,11 @@ async fn daemon_initial_handoff_is_exact_latched_and_not_recreated_by_focus_loss
     let (runtime, backend) = runtime(root.path());
     let compositor = focusable_compositor();
     let (app, native) = native_routers(
-        runtime.with_compositor(compositor.clone(), vec!["chromium-browser".into()]),
+        runtime
+            .with_compositor(compositor.clone())
+            .with_portal_unit(Arc::new(
+                crate::host::control::RecordingPortalUnit::identity_only(),
+            )),
         root.path(),
     );
     let a = reserve(&app).await;
@@ -266,7 +270,7 @@ async fn daemon_initial_handoff_is_exact_latched_and_not_recreated_by_focus_loss
     assert_handoff(&app, &a, "waiting").await;
     *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":true}]});
     assert_handoff(&app, &a, "observed").await;
-    *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":false},{"id":2,"pid":4100,"app_id":"chromium-browser","focused":true}]});
+    *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":false},{"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true}]});
     let lost = assert_handoff(&app, &a, "observed").await;
     assert_eq!(
         lost["outcome"]["payload"]["active"]["focusOwnership"],
@@ -283,6 +287,9 @@ async fn daemon_initial_handoff_is_exact_latched_and_not_recreated_by_focus_loss
     assert!(unavailable["outcome"]["payload"]["active"]
         .get("focusOwnership")
         .is_none());
+    // A new Leave must prove a live kiosk window, unlike the preceding
+    // read-only observation of an unavailable compositor snapshot.
+    *compositor.tree.lock().unwrap() = focusable_compositor().tree.lock().unwrap().clone();
     assert_eq!(freeze(&native, &a).await["outcome"]["_tag"], "Ok");
     let frozen = assert_handoff(&app, &a, "observed").await;
     assert_eq!(frozen["outcome"]["payload"]["active"]["phase"], "frozen");
@@ -306,10 +313,8 @@ async fn daemon_initial_handoff_is_exact_latched_and_not_recreated_by_focus_loss
 async fn daemon_return_focus_failure_and_freeze_do_not_manufacture_an_initial_handoff() {
     let root = tempfile::tempdir().unwrap();
     let (runtime, _) = runtime(root.path());
-    let (app, native) = native_routers(
-        runtime.with_compositor(focusable_compositor(), vec!["chromium-browser".into()]),
-        root.path(),
-    );
+    let (app, native) =
+        native_routers(runtime.with_compositor(focusable_compositor()), root.path());
     let id = reserve(&app).await;
     assert_eq!(start(&app, &id).await["outcome"]["_tag"], "Ok");
     assert_eq!(freeze(&native, &id).await["outcome"]["_tag"], "Ok");
@@ -345,7 +350,7 @@ async fn daemon_reconstructed_live_units_are_not_fabricated_new_initial_startups
             root.path().join("private"),
             backend,
         )
-        .with_compositor(focusable_compositor(), vec!["chromium-browser".into()]);
+        .with_compositor(focusable_compositor());
         let app = router(
             restarted,
             root.path(),
@@ -369,10 +374,7 @@ async fn daemon_pending_projection_preserves_genuine_observation_failure_and_hom
     let (runtime, backend) = runtime(root.path());
     let compositor = focusable_compositor();
     *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":true}]});
-    let (app, native) = native_routers(
-        runtime.clone().with_compositor(compositor, vec![]),
-        root.path(),
-    );
+    let (app, native) = native_routers(runtime.clone().with_compositor(compositor), root.path());
     let foreign = router(
         runtime,
         root.path(),
@@ -418,16 +420,12 @@ async fn daemon_busy_pending_projection_does_not_clear_home_during_a_failed_retu
     let (runtime, backend) = runtime(root.path());
     let compositor = focusable_compositor();
     *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":true}]});
-    let (app, native) = native_routers(
-        runtime.with_compositor(compositor.clone(), vec!["chromium-browser".into()]),
-        root.path(),
-    );
+    let (app, native) = native_routers(runtime.with_compositor(compositor.clone()), root.path());
     let a = reserve(&app).await;
     backend.set_window_pids(&a, [9100].into());
     assert_eq!(start(&app, &a).await["outcome"]["_tag"], "Ok");
     assert_eq!(freeze(&native, &a).await["outcome"]["_tag"], "Ok");
-    *compositor.tree.lock().unwrap() =
-        json!({"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"chromium-browser","focused":true}]});
+    *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true}]});
     assert_overlay(&app, &a).await;
     let b = reserve(&app).await;
     let gate = Arc::new(RouteGate::default());
@@ -468,7 +466,11 @@ async fn daemon_observes_handoff_without_a_browser_poll_and_retains_it_after_lat
     let compositor = focusable_compositor();
     *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":true}]});
     let (app, _) = native_routers(
-        runtime.with_compositor(compositor.clone(), vec!["chromium-browser".into()]),
+        runtime
+            .with_compositor(compositor.clone())
+            .with_portal_unit(Arc::new(
+                crate::host::control::RecordingPortalUnit::identity_only(),
+            )),
         root.path(),
     );
     let id = reserve(&app).await;
@@ -476,7 +478,7 @@ async fn daemon_observes_handoff_without_a_browser_poll_and_retains_it_after_lat
     assert_eq!(start(&app, &id).await["outcome"]["_tag"], "Ok");
     // The native prepare/freezer reconciliation already observed exact focus.
     // A fresh browser sees the history even though its first poll sees loss.
-    *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":false},{"id":2,"pid":4100,"app_id":"chromium-browser","focused":true}]});
+    *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":false},{"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true}]});
     let lost = assert_handoff(&app, &id, "observed").await;
     assert_eq!(
         lost["outcome"]["payload"]["active"]["focusOwnership"],

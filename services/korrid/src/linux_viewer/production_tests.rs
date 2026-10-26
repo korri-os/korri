@@ -106,22 +106,17 @@ fn linux_viewer_helper_exercises_real_command_and_propagates_failure() {
     );
     assert!(run(Path::new("/nonexistent/helper"), &[]).is_err());
 }
-#[test]
-fn linux_viewer_portal_target_is_unique_and_includes_floating_windows() {
-    assert_eq!(
-        portal_node(
-            r#"{"floating_nodes":[{"id":4,"app_id":"chromium-browser"}]}"#,
-            &["chromium-browser"]
-        )
-        .unwrap(),
-        Some(4)
-    );
-    assert!(portal_node(
-        r#"{"nodes":[{"id":4,"app_id":"chromium-browser"},{"id":5,"app_id":"chromium-browser"}]}"#,
-        &["chromium-browser"]
-    )
-    .is_err());
-    assert_eq!(portal_node("{}", &["chromium-browser"]).unwrap(), None);
+struct ViewerPortal;
+impl crate::host::PortalUnit for ViewerPortal {
+    fn window_pids(&self) -> Result<std::collections::BTreeSet<i32>, crate::host::LaunchUnitError> {
+        Ok([4343].into_iter().collect())
+    }
+    fn freeze(&self) -> Result<(), crate::host::LaunchUnitError> {
+        Ok(())
+    }
+    fn thaw(&self) -> Result<(), crate::host::LaunchUnitError> {
+        Ok(())
+    }
 }
 
 struct RecordedLaunch {
@@ -232,7 +227,7 @@ case "$*" in
  *get_tree*)
    viewer=false; portal=false
    if [ "$(cat '{focus}')" = viewer ]; then viewer=true; else portal=true; fi
-   printf '{{"nodes":[{{"id":11,"pid":4242,"focused":%s}},{{"id":22,"pid":4343,"app_id":"chromium-browser","focused":%s}}]}}' "$viewer" "$portal" ;;
+   printf '{{"nodes":[{{"id":11,"pid":4242,"focused":%s}},{{"id":22,"pid":4343,"app_id":"chrome-_text_html,%%3Ctitle%%3EKorri%%3C_title%%3E-Default","focused":%s}}]}}' "$viewer" "$portal" ;;
  *con_id=11*) printf viewer > '{focus}'; printf '%s\n' "$*" >> '{commands}'; printf '[{{"success":true}}]' ;;
  *con_id=22*) printf portal > '{focus}'; printf '%s\n' "$*" >> '{commands}'; printf '[{{"success":true}}]' ;;
  *) exit 1 ;;
@@ -286,7 +281,7 @@ esac
         units: units.clone(),
         swaymsg: compositor,
         sway_socket: root.path().join("sway.sock"),
-        portal_ids: vec!["chromium-browser".into()],
+        portal: Some(Arc::new(ViewerPortal)),
         keydir: root.path().join("unreadable-identity"),
         operation: Arc::new(tokio::sync::Mutex::new(())),
     };

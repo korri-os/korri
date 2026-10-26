@@ -9,12 +9,23 @@ let
   defaultSystem = pkgs.stdenv.hostPlatform.system;
   # Share the independent reference evaluations across the hostile cases.
   # These are the two platforms exercised below, not candidate package sets.
-  references = lib.genAttrs (lib.unique [ defaultSystem "aarch64-linux" ]) (
-    system:
-    import ./reference.nix {
-      inherit nixpkgs korri productModule system;
-    }
-  );
+  references =
+    lib.genAttrs
+      (lib.unique [
+        defaultSystem
+        "aarch64-linux"
+      ])
+      (
+        system:
+        import ./reference.nix {
+          inherit
+            nixpkgs
+            korri
+            productModule
+            system
+            ;
+        }
+      );
   referenceForSystem = system: references.${system};
   reference = referenceForSystem defaultSystem;
   check = import ./check-lib.nix {
@@ -343,13 +354,14 @@ let
     }
   );
   clearedSystemdPackagesName = "cleared-systemd-packages";
-  clearedSystemdPackages = forceAt [
-    "systemd"
-    "packages"
-  ] [ ];
-  clearedSystemdPackageFailures = map (
-    check.systemdPackageFailure clearedSystemdPackagesName
-  ) requirements.requiredSystemdPackages;
+  clearedSystemdPackages =
+    forceAt
+      [
+        "systemd"
+        "packages"
+      ]
+      [ ];
+  clearedSystemdPackageFailures = map (check.systemdPackageFailure clearedSystemdPackagesName) requirements.requiredSystemdPackages;
 
   alternateRenderDeviceName = "alternate-render-device-hardware-fact";
   alternateRenderDevicePath = [
@@ -403,9 +415,7 @@ let
     SCRIPT
     chmod +x "$out/${sameNameRelativeExecutable}"
   '';
-  sameNameFailingCommand = "${builtins.elemAt sameNameCandidate.parts 0}${sameNameFailingPackage}/${
-    sameNameRelativeExecutable
-  }${builtins.elemAt sameNameCandidate.parts 4}";
+  sameNameFailingCommand = "${builtins.elemAt sameNameCandidate.parts 0}${sameNameFailingPackage}/${sameNameRelativeExecutable}${builtins.elemAt sameNameCandidate.parts 4}";
   sameNameFailingCase = {
     name = "same-name-failing-implementation";
     path = sameNameCandidate.class.path ++ [
@@ -510,16 +520,21 @@ let
   # systemd-user-sessions.service, which orders after network.target.
   networkWaits =
     config:
-    lib.concatMap (afterPaths config [
-      "network.target"
-      "network-online.target"
-      "systemd-user-sessions.service"
-      "plymouth-quit.service"
-    ] [ ]) [
-      "korri-compositor.service"
-      "korri-chromium-kiosk.service"
-      "korri-plugin-host.service"
-    ];
+    lib.concatMap
+      (afterPaths config
+        [
+          "network.target"
+          "network-online.target"
+          "systemd-user-sessions.service"
+          "plymouth-quit.service"
+        ]
+        [ ]
+      )
+      [
+        "korri-compositor.service"
+        "korri-chromium-kiosk.service"
+        "korri-plugin-host.service"
+      ];
   rg353mFirewallTcpPorts =
     rg353m.networking.firewall.allowedTCPPorts
     ++ lib.concatMap (interface: interface.allowedTCPPorts or [ ]) (
@@ -682,17 +697,19 @@ let
   };
   # The Linux 7.2 pin: another series fails unless the device states why.
   kernelPinHolds = config: [ config.services.korriProduct.kernel.pinHolds ];
-  unpinnedKernel = withoutReason: standalone.extendModules {
-    modules = [
-      (
-        { pkgs, ... }:
-        {
-          boot.kernelPackages = lib.mkForce pkgs.linuxPackages_6_12;
-          services.korriProduct.kernel.overrideReason = lib.mkForce withoutReason;
-        }
-      )
-    ];
-  };
+  unpinnedKernel =
+    withoutReason:
+    standalone.extendModules {
+      modules = [
+        (
+          { pkgs, ... }:
+          {
+            boot.kernelPackages = lib.mkForce pkgs.linuxPackages_6_12;
+            services.korriProduct.kernel.overrideReason = lib.mkForce withoutReason;
+          }
+        )
+      ];
+    };
 in
 assert kernelPinHolds (unpinnedKernel null).config == [ false ];
 assert kernelPinHolds (unpinnedKernel "review-test board needs 6.12").config == [ true ];
@@ -734,14 +751,30 @@ assert builtins.elem (check.nativeSystemdPackageFailure nativeName) (
 assert builtins.elem (check.nativeSystemdPackageFailure nativeName) (
   check.validate nativeName nativeUnpatched
 );
-# The imported producer remains inert without either prerequisite.
-assert lib.all (device:
-  !(device.config.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT)
-  && (device.config.systemd.services.korrid.serviceConfig.ExecStopPost or [ ]) == [ ]
-  && !(lib.hasInfix "korri-chromium-kiosk" device.config.security.polkit.extraConfig)
-  && lib.intersectLists nativeRequirements.requiredDbusPackages
-    (map toString device.config.services.dbus.packages) == [ ]
-) [ nativeUnpatched nativeWithoutKiosk ];
+# Identity is independent of the existing native freezer prerequisites.
+assert
+  nativeUnpatched.config.systemd.services.korrid.environment.KORRID_PORTAL_UNIT
+  == "korri-chromium-kiosk.service";
+assert
+  nativeUnpatched.config.systemd.services.korrid.environment.KORRID_PORTAL_FREEZER_ENABLED == "false";
+assert !(nativeWithoutKiosk.config.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT);
+assert
+  !(nativeWithoutKiosk.config.systemd.services.korrid.environment ? KORRID_PORTAL_FREEZER_ENABLED);
+# Neither case acquires freezer authority or cleanup hooks.
+assert lib.all
+  (
+    device:
+    (device.config.systemd.services.korrid.serviceConfig.ExecStopPost or [ ]) == [ ]
+    && !(lib.hasInfix "korri-chromium-kiosk" device.config.security.polkit.extraConfig)
+    &&
+      lib.intersectLists nativeRequirements.requiredDbusPackages (
+        map toString device.config.services.dbus.packages
+      ) == [ ]
+  )
+  [
+    nativeUnpatched
+    nativeWithoutKiosk
+  ];
 assert check.validate nativeName nativeWithoutKiosk != [ ];
 # The same product contract holds for every device export.
 assert check.validate "rg353m" nativeProduct == [ ];
@@ -777,9 +810,8 @@ assert lookalikeFailures != [ ];
 assert lib.assertMsg (
   failedSettingTests == [ ]
 ) "product setting negative tests failed: ${builtins.toJSON failedSettingTests}";
-assert lib.assertMsg (
-  failedUnitCases == [ ]
-) "product unit activation/implementation negative tests failed: ${builtins.toJSON failedUnitCases}";
+assert lib.assertMsg (failedUnitCases == [ ])
+  "product unit activation/implementation negative tests failed: ${builtins.toJSON failedUnitCases}";
 assert
   builtins.length disabledUnitCases
   == lib.foldl' builtins.add 0 (map builtins.length (builtins.attrValues requiredUnits));
@@ -800,25 +832,25 @@ assert lib.all unitCasePasses renderDeviceHookCases;
 assert builtins.length typeUnitCases == builtins.length implementationUnitCases;
 assert socketListenUnitCases != [ ];
 assert lib.all (case: check.unitClasses.${case.className}.kind == "socket") socketListenUnitCases;
+assert lib.all (className: builtins.any (case: case.className == className) activationUnitCases) (
+  builtins.attrNames (lib.filterAttrs (_: units: units != [ ]) requiredUnits)
+);
 assert
-  lib.all (
-    className: builtins.any (case: case.className == className) activationUnitCases
-  ) (builtins.attrNames (lib.filterAttrs (_: units: units != [ ]) requiredUnits));
-assert
-  builtins.length suppressionUnitCases
-  == lib.foldl' builtins.add 0 (
+  builtins.length suppressionUnitCases == lib.foldl' builtins.add 0 (
     map builtins.length (
-      builtins.attrValues (lib.filterAttrs (name: _: check.unitClasses.${name}.suppressible) requiredUnits)
+      builtins.attrValues (
+        lib.filterAttrs (name: _: check.unitClasses.${name}.suppressible) requiredUnits
+      )
     )
   );
 assert builtins.any (case: case.className == "systemServices") suppressionUnitCases;
 assert builtins.any (case: case.className == "systemSockets") suppressionUnitCases;
-assert check.validate clearedSystemdPackagesName clearedSystemdPackages == clearedSystemdPackageFailures;
+assert
+  check.validate clearedSystemdPackagesName clearedSystemdPackages == clearedSystemdPackageFailures;
 assert clearedSystemdPackages.config.systemd.packages == [ ];
 assert requirements.requiredSystemdPackages != [ ];
 assert valueAt alternateRenderDevicePath alternateRenderDevice.config == alternateRenderDeviceValue;
-assert
-  alternateCompositorService.environment.KORRI_RENDER_DEVICE == alternateRenderDeviceValue;
+assert alternateCompositorService.environment.KORRI_RENDER_DEVICE == alternateRenderDeviceValue;
 assert
   alternateCompositorService.environment.KORRI_RENDER_DEVICE
   != referenceCompositorService.environment.KORRI_RENDER_DEVICE;
@@ -943,21 +975,23 @@ assert lib.assertMsg (
   networkWaits rg353m == [ ]
 ) "rg353m units wait for the network: ${builtins.toJSON (networkWaits rg353m)}";
 # Coldplug replays devices and named module events only (udev-coldplug-package.nix).
-assert lib.all (
-  config:
-  let
-    exec = config.systemd.services.systemd-udev-trigger.serviceConfig.ExecStart or [ ];
-  in
-  lib.assertMsg (
-    builtins.isList exec
-    && builtins.length exec == 2
-    && builtins.elemAt exec 0 == ""
-    && lib.hasSuffix "/bin/korri-udev-coldplug" (builtins.elemAt exec 1)
-  ) "systemd-udev-trigger must run only korri-udev-coldplug: ${builtins.toJSON exec}"
-) [
-  productConfig
-  rg353m
-];
+assert lib.all
+  (
+    config:
+    let
+      exec = config.systemd.services.systemd-udev-trigger.serviceConfig.ExecStart or [ ];
+    in
+    lib.assertMsg (
+      builtins.isList exec
+      && builtins.length exec == 2
+      && builtins.elemAt exec 0 == ""
+      && lib.hasSuffix "/bin/korri-udev-coldplug" (builtins.elemAt exec 1)
+    ) "systemd-udev-trigger must run only korri-udev-coldplug: ${builtins.toJSON exec}"
+  )
+  [
+    productConfig
+    rg353m
+  ];
 assert
   productPluginRestore.serviceConfig.ExecStart
   == "${productPluginHost.package}/bin/korri-plugin restore-all";
@@ -998,7 +1032,9 @@ assert rg353m.services.korriLinuxHost.relays == requirements.constants.relays;
 # Every product device opens Pico (Phase 2 of Pico on Korri).
 assert requirements.constants.surfaceId == "pico";
 assert rg353m.services.korri.webSurfaceHost.surfaceId == "pico";
-assert rg353m.systemd.services.korri-chromium-kiosk.environment.KORRI_WEB_SURFACE_URL == "http://127.0.0.1:8099/?surface=pico";
+assert
+  rg353m.systemd.services.korri-chromium-kiosk.environment.KORRI_WEB_SURFACE_URL
+  == "http://127.0.0.1:8099/?surface=pico";
 assert rg353m.services.korridLinuxDevice.address == requirements.constants.korridAddress;
 assert builtins.elem 39217 rg353m.networking.firewall.allowedTCPPorts;
 assert
@@ -1045,13 +1081,18 @@ assert !(rg353m.users.users ? gameplay);
 assert !(rg353m.users.groups ? games);
 # Discovery creates 0700 folders; without an explicit mask the game user's
 # named read entry stays ineffective on them.
-assert builtins.elem "A+ /var/lib/korri/games - - - - u:korri:rX,d:u:korri:rX,m::rX,d:m::rX" rg353m.systemd.tmpfiles.rules;
+assert builtins.elem "A+ /var/lib/korri/games - - - - u:korri:rX,d:u:korri:rX,m::rX,d:m::rX"
+  rg353m.systemd.tmpfiles.rules;
 # Per-person save roots inherit access for both writers. No default account
 # is provisioned, and the daemon cannot start before tmpfiles applies the ACL.
 assert builtins.elem "d /var/lib/korri/users 2710 korrid korri -" rg353m.systemd.tmpfiles.rules;
 assert builtins.elem "a+ /var/lib/korri/users - - - - u:korrid:rwx" rg353m.systemd.tmpfiles.rules;
-assert lib.all (rule: !(lib.hasPrefix "A+ /var/lib/korri/users" rule)) rg353m.systemd.tmpfiles.rules;
-assert lib.all (rule: !(lib.hasInfix "/var/lib/korri/users" rule) || !(lib.hasInfix ",d:" rule)) rg353m.systemd.tmpfiles.rules;
+assert lib.all (
+  rule: !(lib.hasPrefix "A+ /var/lib/korri/users" rule)
+) rg353m.systemd.tmpfiles.rules;
+assert lib.all (
+  rule: !(lib.hasInfix "/var/lib/korri/users" rule) || !(lib.hasInfix ",d:" rule)
+) rg353m.systemd.tmpfiles.rules;
 assert lib.all (rule: !(lib.hasInfix "/users/default" rule)) rg353m.systemd.tmpfiles.rules;
 assert builtins.elem "systemd-tmpfiles-setup.service" rg353m.systemd.services.korrid.after;
 assert builtins.elem "systemd-tmpfiles-setup.service" rg353m.systemd.services.korrid.requires;

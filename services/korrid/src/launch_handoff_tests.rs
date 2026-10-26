@@ -420,7 +420,7 @@ async fn identity_and_focus_snapshot_hold_the_transition_lock_against_exact_stop
         gate: Mutex::new(None),
     });
     let app = router(
-        runtime.with_compositor(compositor.clone(), vec![]),
+        runtime.with_compositor(compositor.clone()),
         root.path(),
         TOKEN,
         PortalPermission::LocalSessions,
@@ -472,11 +472,15 @@ async fn status_observes_exact_focus_without_claiming_no_window_is_ready() {
     let compositor = Arc::new(Compositor {
         gate: Mutex::new(None),
         tree: Mutex::new(json!({"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"chromium-browser","focused":true}
+            {"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true}
         ]})),
     });
     let app = router(
-        runtime.with_compositor(compositor.clone(), vec!["chromium-browser".into()]),
+        runtime
+            .with_compositor(compositor.clone())
+            .with_portal_unit(Arc::new(
+                crate::host::control::RecordingPortalUnit::identity_only(),
+            )),
         root.path(),
         TOKEN,
         PortalPermission::LocalSessions,
@@ -491,7 +495,7 @@ async fn status_observes_exact_focus_without_claiming_no_window_is_ready() {
     assert!(active.get("focusOwnership").is_none(), "{status}");
     for (focused, expected) in [(2, "excluded"), (3, "launch"), (4, "other")] {
         *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"chromium-browser","focused":focused==2},
+            {"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":focused==2},
             {"id":3,"pid":9100,"focused":focused==3},
             {"id":4,"pid":9200,"focused":focused==4}
         ]});

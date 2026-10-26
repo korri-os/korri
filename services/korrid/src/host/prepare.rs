@@ -21,24 +21,16 @@ const COMPOSITOR_TIMEOUT: Duration = Duration::from_secs(5);
 /// Read the compositor authority korrid uses to prove an exact game returned
 /// to the front. A missing setting remains missing authority and Return fails
 /// closed in `HostSessionControl`.
-fn configured_compositor() -> Option<(Arc<dyn CompositorControl>, Vec<String>)> {
+fn configured_compositor() -> Option<Arc<dyn CompositorControl>> {
     let program = PathBuf::from(std::env::var_os("KORRID_SWAYMSG")?);
     let socket = PathBuf::from(std::env::var_os("KORRID_COMPOSITOR_CONTROL_SOCKET")?);
     let control = SwaymsgCompositorControl::new(program, socket, COMPOSITOR_TIMEOUT)?;
-    // The portal is the surface the player leaves, never a game to return to.
-    let never_focus = std::env::var("KORRID_NEVER_FOCUS_APP_IDS")
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .collect();
-    Some((Arc::new(control), never_focus))
+    Some(Arc::new(control))
 }
 
 /// Read the portal unit korrid freezes during a focused live game. A device
 /// without one, or with an invalid name, never freezes its portal.
-fn configured_portal() -> Option<Arc<dyn PortalUnit>> {
+pub(crate) fn configured_portal() -> Option<Arc<dyn PortalUnit>> {
     match SystemdPortalUnit::from_environment()? {
         Ok(portal) => Some(Arc::new(portal)),
         Err(error) => {
@@ -83,12 +75,8 @@ impl HostLauncher {
     }
 
     #[cfg(test)]
-    pub(crate) fn with_compositor(
-        mut self,
-        compositor: Arc<dyn CompositorControl>,
-        never_focus: Vec<String>,
-    ) -> Self {
-        self.control = self.control.with_compositor(compositor, never_focus);
+    pub(crate) fn with_compositor(mut self, compositor: Arc<dyn CompositorControl>) -> Self {
+        self.control = self.control.with_compositor(compositor);
         self
     }
 
@@ -131,9 +119,7 @@ impl HostLauncher {
             environment: Arc::new(config.environment.clone()),
             control: configured_compositor().into_iter().fold(
                 HostSessionControl::with_input_seats(private_state_root, backend, input_seats),
-                |control, (compositor, never_focus)| {
-                    control.with_compositor(compositor, never_focus)
-                },
+                |control, compositor| control.with_compositor(compositor),
             ),
         }
     }

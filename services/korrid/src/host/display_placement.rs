@@ -188,7 +188,7 @@ pub(crate) fn place_game(
     displays: &[Display],
     placement: &Placement,
     pids: &std::collections::BTreeSet<i32>,
-    excluded: &[&str],
+    excluded: &std::collections::BTreeSet<i32>,
 ) -> Result<GamePlacementStatus, String> {
     use super::compositor_focus::{select_focus_target, FocusTarget};
     let tree = control.tree()?;
@@ -304,7 +304,6 @@ pub(crate) fn place_surface(
     game: Option<&Placement>,
     pids: &std::collections::BTreeSet<i32>,
     portal_pids: &std::collections::BTreeSet<i32>,
-    identities: &[&str],
 ) -> Result<Vec<SurfaceDisplay>, String> {
     use super::compositor_focus::{select_focus_target, FocusTarget};
     let rectangles = surface_rectangles(displays, scope, game);
@@ -317,7 +316,7 @@ pub(crate) fn place_surface(
     occupied.extend(rectangles.iter().map(|d| d.id.clone()));
     apply(control, &power_commands(displays, &occupied))?;
     if let Some(game) = game.filter(|p| p.global) {
-        let candidate = match select_focus_target(&tree, pids, identities) {
+        let candidate = match select_focus_target(&tree, pids, portal_pids) {
             FocusTarget::Window(c) => c,
             _ => return Err("no unique game window for overlay".into()),
         };
@@ -517,7 +516,7 @@ fi
             &displays(),
             &single,
             &[200].into_iter().collect(),
-            &["portal"],
+            &[100].into_iter().collect(),
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(dir.path().join("batches")).unwrap(),
@@ -531,7 +530,7 @@ fi
         let ds = displays();
         let p = choose(Some(&system()), &runner(), &ds).unwrap();
         let pids = [200].into_iter().collect();
-        place_game(&control, &ds, &p, &pids, &["portal"]).unwrap();
+        place_game(&control, &ds, &p, &pids, &[100].into_iter().collect()).unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands.contains("[con_id=20] fullscreen enable global"));
         assert!(commands.contains("output DSI-1 power on"));
@@ -544,7 +543,6 @@ fi
             Some(&p),
             &pids,
             &[100].into_iter().collect(),
-            &["portal"],
         )
         .unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
@@ -553,7 +551,7 @@ fi
             commands.ends_with("[con_id=10] move absolute position 0 px 0 px\n[con_id=10] focus\n")
         );
         // Closing the overlay restores the game's global placement and focus.
-        place_game(&control, &ds, &p, &pids, &["portal"]).unwrap();
+        place_game(&control, &ds, &p, &pids, &[100].into_iter().collect()).unwrap();
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
         assert!(batches
             .lines()
@@ -570,13 +568,12 @@ fi
             Some(&single),
             &pids,
             &[100].into_iter().collect(),
-            &["portal"],
         )
         .unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands
             .ends_with("[con_id=10] move absolute position 0 px 480 px\n[con_id=10] focus\n"));
-        place_game(&control, &ds, &single, &pids, &["portal"]).unwrap();
+        place_game(&control, &ds, &single, &pids, &[100].into_iter().collect()).unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands.contains("output DSI-1 power off"));
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
@@ -593,7 +590,6 @@ fi
             None,
             &std::collections::BTreeSet::new(),
             &[100].into_iter().collect(),
-            &["portal"],
         )
         .unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
@@ -617,8 +613,7 @@ fi
                     SurfaceDisplayScope::All,
                     None,
                     &std::collections::BTreeSet::new(),
-                    &portal_pids,
-                    &["chromium-browser"]
+                    &portal_pids
                 )
                 .unwrap_err(),
                 "no unique portal window"
@@ -639,12 +634,26 @@ fi
         let ds = displays();
         let p = choose(Some(&system()), &runner(), &ds).unwrap();
         assert_eq!(
-            place_game(&control, &ds, &p, &[999].into_iter().collect(), &["portal"]).unwrap(),
+            place_game(
+                &control,
+                &ds,
+                &p,
+                &[999].into_iter().collect(),
+                &[100].into_iter().collect()
+            )
+            .unwrap(),
             GamePlacementStatus::AwaitingWindow
         );
         assert!(!dir.path().join("commands").exists());
         assert_eq!(
-            place_game(&control, &ds, &p, &[200].into_iter().collect(), &["portal"]).unwrap_err(),
+            place_game(
+                &control,
+                &ds,
+                &p,
+                &[200].into_iter().collect(),
+                &[100].into_iter().collect()
+            )
+            .unwrap_err(),
             "refused"
         );
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();

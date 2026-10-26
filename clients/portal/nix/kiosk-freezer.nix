@@ -19,45 +19,49 @@ in
 {
   # No kiosk, recovery, or unpatched systemd: no freezer authority or hooks.
   # nix/product/systemd/module.nix supplies this exact stop-path patch.
-  config = lib.mkIf (config.services.korri.compositor.kiosk.enable && patched) {
-    systemd.services.korrid = {
-      environment.KORRID_PORTAL_UNIT = unit;
-      # Portal calls derive busctl from this same patched native artifact.
-      environment.KORRID_SYSTEMCTL = lib.mkForce "${systemd}/bin/systemctl";
-      serviceConfig.ExecStopPost = [
-        "-${systemd}/bin/busctl --system --allow-interactive-authorization=no call org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager ThawUnit s ${unit}"
-      ];
-    };
+  config = lib.mkMerge [
+    (lib.mkIf config.services.korri.compositor.kiosk.enable {
+      systemd.services.korrid.environment.KORRID_PORTAL_FREEZER_ENABLED = lib.boolToString patched;
+    })
+    (lib.mkIf (config.services.korri.compositor.kiosk.enable && patched) {
+      systemd.services.korrid = {
+        # Portal calls derive busctl from this same patched native artifact.
+        environment.KORRID_SYSTEMCTL = lib.mkForce "${systemd}/bin/systemctl";
+        serviceConfig.ExecStopPost = [
+          "-${systemd}/bin/busctl --system --allow-interactive-authorization=no call org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager ThawUnit s ${unit}"
+        ];
+      };
 
-    # No stop-retry companion. Patched PID 1 thaws inside its first stop
-    # transaction, including restart and orderly shutdown without a live bus.
-    services.dbus.packages = [
-      (pkgs.writeTextDir "share/dbus-1/system.d/korri-portal-freezer.conf" ''
-        <!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
-          "https://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
-        <busconfig>
-          <policy user="korrid">
-            <allow send_destination="org.freedesktop.systemd1"
-                   send_interface="org.freedesktop.systemd1.Manager"
-                   send_member="FreezeUnit"/>
-            <allow send_destination="org.freedesktop.systemd1"
-                   send_interface="org.freedesktop.systemd1.Manager"
-                   send_member="ThawUnit"/>
-          </policy>
-        </busconfig>
-      '')
-    ];
-    security.polkit.enable = true;
-    security.polkit.extraConfig = ''
-      polkit.addRule(function(action, subject) {
-        if (action.id == "org.freedesktop.systemd1.manage-units" &&
-            subject.user == "korrid" &&
-            action.lookup("unit") == "${unit}" &&
-            (action.lookup("verb") == "stop" || action.lookup("verb") == "start") &&
-            action.lookup("polkit.message") == "${freezerMessage}") {
-          return polkit.Result.YES;
-        }
-      });
-    '';
-  };
+      # No stop-retry companion. Patched PID 1 thaws inside its first stop
+      # transaction, including restart and orderly shutdown without a live bus.
+      services.dbus.packages = [
+        (pkgs.writeTextDir "share/dbus-1/system.d/korri-portal-freezer.conf" ''
+          <!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+            "https://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+          <busconfig>
+            <policy user="korrid">
+              <allow send_destination="org.freedesktop.systemd1"
+                     send_interface="org.freedesktop.systemd1.Manager"
+                     send_member="FreezeUnit"/>
+              <allow send_destination="org.freedesktop.systemd1"
+                     send_interface="org.freedesktop.systemd1.Manager"
+                     send_member="ThawUnit"/>
+            </policy>
+          </busconfig>
+        '')
+      ];
+      security.polkit.enable = true;
+      security.polkit.extraConfig = ''
+        polkit.addRule(function(action, subject) {
+          if (action.id == "org.freedesktop.systemd1.manage-units" &&
+              subject.user == "korrid" &&
+              action.lookup("unit") == "${unit}" &&
+              (action.lookup("verb") == "stop" || action.lookup("verb") == "start") &&
+              action.lookup("polkit.message") == "${freezerMessage}") {
+            return polkit.Result.YES;
+          }
+        });
+      '';
+    })
+  ];
 }
