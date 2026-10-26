@@ -27,10 +27,37 @@ let
   };
   inherit (nixpkgs) lib;
   freezeSettingPaths = [
-    [ "security" "polkit" "enable" ]
-    [ "security" "polkit" "extraConfig" ]
-    [ "systemd" "services" "korrid" "environment" "KORRID_PORTAL_UNIT" ]
-    [ "systemd" "services" "korrid" "environment" "KORRID_SYSTEMCTL" ]
+    [
+      "security"
+      "polkit"
+      "enable"
+    ]
+    [
+      "security"
+      "polkit"
+      "extraConfig"
+    ]
+    [
+      "systemd"
+      "services"
+      "korrid"
+      "environment"
+      "KORRID_PORTAL_UNIT"
+    ]
+    [
+      "systemd"
+      "services"
+      "korrid"
+      "environment"
+      "KORRID_PORTAL_FREEZER_ENABLED"
+    ]
+    [
+      "systemd"
+      "services"
+      "korrid"
+      "environment"
+      "KORRID_SYSTEMCTL"
+    ]
   ];
   # The same product with upstream systemd: the freeze producer stays inert,
   # so the difference is exactly the freeze D-Bus policy.
@@ -61,9 +88,9 @@ in
   # Its D-Bus policy and exact authority come from this independent reference,
   # never from the configuration under test.
   # system-path also changes with the systemd package, so it is not freeze policy.
-  requiredDbusPackages = lib.subtractLists (
-    map toString (unfrozen.config.services.dbus.packages ++ [ product.config.system.path ])
-  ) (map toString product.config.services.dbus.packages);
+  requiredDbusPackages = lib.subtractLists (map toString (
+    unfrozen.config.services.dbus.packages ++ [ product.config.system.path ]
+  )) (map toString product.config.services.dbus.packages);
   settings = map (path: {
     name = "portal freeze ${lib.concatStringsSep "." path}";
     inherit path;

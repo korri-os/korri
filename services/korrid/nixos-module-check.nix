@@ -157,27 +157,10 @@ let
       compositorControlSocket = "/run/elsewhere/sway-ipc.sock";
     };
   };
-  focusExclusionWithoutCompositor = evaluate {
-    services.korridLinuxDevice = {
-      enable = true;
-      neverFocusAppIds = [ "chrome-kiosk" ];
-    };
-  };
-  focusExclusionWithComma = evaluate {
-    services.korridLinuxDevice = {
-      enable = true;
-      compositorControlSocket = "/run/korri-test/compositor-control/sway-ipc.sock";
-      neverFocusAppIds = [ "one,two" ];
-    };
-  };
   focusEnabled = evaluate {
     services.korridLinuxDevice = {
       enable = true;
       compositorControlSocket = "/run/korri-test/compositor-control/sway-ipc.sock";
-      neverFocusAppIds = [
-        "chrome-kiosk"
-        "other-hub"
-      ];
     };
   };
   emptyRelays = evaluate {
@@ -289,8 +272,7 @@ let
   service = enabled.config.systemd.services.korrid;
   identityService = enabled.config.systemd.services.korrid-identity;
   signerService = enabled.config.systemd.services.korri-local-signer;
-  signerCredentialService =
-    enabled.config.systemd.services.korri-local-signer-device-credential;
+  signerCredentialService = enabled.config.systemd.services.korri-local-signer-device-credential;
   signerSocket = enabled.config.systemd.sockets.korri-local-signer;
   socket = enabled.config.systemd.sockets.korrid-control;
   polkit = enabled.config.security.polkit.extraConfig;
@@ -360,11 +342,14 @@ assert service.environment.KORRID_ADDRESS == "[::]:43117";
 assert service.environment.KORRID_PRIVATE_STATE_ROOT == "/var/lib/korrid";
 # The boot identity must be injected by PID 1, not read inside the /proc sandbox.
 assert service.environment.KORRID_BOOT_ID == "%b";
-assert lib.hasInfix ''Environment="KORRID_BOOT_ID=%b"'' enabled.config.systemd.units."korrid.service".text;
+assert lib.hasInfix ''Environment="KORRID_BOOT_ID=%b"''
+  enabled.config.systemd.units."korrid.service".text;
 assert service.serviceConfig.ProcSubset == "pid";
 assert service.serviceConfig.ProtectKernelTunables;
 assert service.environment.KORRID_LOCAL_SIGNER_SOCKET == "/run/korri-local-signer/signer.sock";
-assert service.environment.KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE == "/run/korri-local-signer/public/person.pub";
+assert
+  service.environment.KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE
+  == "/run/korri-local-signer/public/person.pub";
 assert service.environment.KORRID_STREAM_PRIVATE_STATE_ROOT == "/home/korri/.config/sunshine";
 assert service.environment.KORRID_CONTROL_SOCKET == "/run/korrid-control/control.sock";
 assert service.environment.KORRID_CONTROL_DIRECTORY == "/run/korrid-control";
@@ -378,9 +363,7 @@ assert service.serviceConfig.RuntimeDirectoryPreserve == "restart";
 assert
   (focusEnabled.config.systemd.services.korrid.environment.KORRID_COMPOSITOR_CONTROL_SOCKET)
   == "/run/korri-test/compositor-control/sway-ipc.sock";
-assert
-  (focusEnabled.config.systemd.services.korrid.environment.KORRID_NEVER_FOCUS_APP_IDS)
-  == "chrome-kiosk,other-hub";
+assert !(focusEnabled.config.systemd.services.korrid.environment ? KORRID_NEVER_FOCUS_APP_IDS);
 assert
   (focusEnabled.config.systemd.services.korrid.environment.KORRID_SWAYMSG)
   == "${pkgs.sway}/bin/swaymsg";
@@ -422,26 +405,33 @@ assert builtins.elem "korri-local-signer.service" service.requires;
 assert builtins.elem "korri-local-signer.service" service.after;
 assert signerService.serviceConfig.User == "korri-local-signer";
 assert signerService.serviceConfig.Group == "korri-local-signer";
-assert signerService.environment.KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT == "/var/lib/korri-local-signer";
+assert
+  signerService.environment.KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT == "/var/lib/korri-local-signer";
 assert signerService.environment.KORRI_LOCAL_SIGNER_PEER_UID == "976";
 assert signerService.environment.KORRI_LOCAL_SIGNER_PEER_GID == "976";
-assert signerService.environment.KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE == "/run/korri-local-signer/public/person.pub";
+assert
+  signerService.environment.KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE
+  == "/run/korri-local-signer/public/person.pub";
 assert builtins.elem "korri-local-signer-device-credential.service" signerService.requires;
 assert builtins.elem "korri-local-signer-device-credential.service" signerService.after;
-assert signerService.serviceConfig.LoadCredential == "expected-device-public-key:/run/korri-local-signer/expected-device-public-key";
+assert
+  signerService.serviceConfig.LoadCredential
+  == "expected-device-public-key:/run/korri-local-signer/expected-device-public-key";
 assert signerService.serviceConfig.ExecStart == "${korridPackage}/bin/korri-local-signer";
 assert signerService.serviceConfig.StateDirectory == "korri-local-signer";
 assert signerService.serviceConfig.StateDirectoryMode == "0700";
 assert signerService.serviceConfig.RestrictAddressFamilies == [ "AF_UNIX" ];
 assert signerService.serviceConfig.PrivateNetwork;
-assert signerService.serviceConfig.ReadWritePaths == [
-  "/var/lib/korri-local-signer"
-  "/run/korri-local-signer/public"
-];
+assert
+  signerService.serviceConfig.ReadWritePaths == [
+    "/var/lib/korri-local-signer"
+    "/run/korri-local-signer/public"
+  ];
 assert signerCredentialService.serviceConfig.User == "root";
 assert signerCredentialService.serviceConfig.ReadOnlyPaths == [ "/var/lib/korrid" ];
 assert signerCredentialService.serviceConfig.ReadWritePaths == [ "/run/korri-local-signer" ];
-assert builtins.elem "/var/lib/korri-local-signer" signerCredentialService.serviceConfig.InaccessiblePaths;
+assert builtins.elem "/var/lib/korri-local-signer"
+  signerCredentialService.serviceConfig.InaccessiblePaths;
 assert builtins.elem "/var/lib/korrid" signerService.serviceConfig.InaccessiblePaths;
 assert builtins.elem "/var/lib/korri-local-signer" service.serviceConfig.InaccessiblePaths;
 assert signerSocket.socketConfig.ListenStream == "/run/korri-local-signer/signer.sock";
@@ -451,22 +441,25 @@ assert signerSocket.socketConfig.SocketMode == "0660";
 assert signerSocket.socketConfig.Service == "korri-local-signer.service";
 assert socket.socketConfig.ListenStream == "/run/korrid-control/control.sock";
 assert socket.socketConfig.FileDescriptorName == "korrid-control";
-assert enabled.config.systemd.sockets.korrid-cli.socketConfig == {
-  ListenStream = "/run/korrid-cli/cli.sock";
-  FileDescriptorName = "korrid-cli";
-  SocketUser = "root";
-  SocketGroup = "korri";
-  SocketMode = "0660";
-  DirectoryMode = "0750";
-  RemoveOnStop = true;
-  Service = "korrid.service";
-};
+assert
+  enabled.config.systemd.sockets.korrid-cli.socketConfig == {
+    ListenStream = "/run/korrid-cli/cli.sock";
+    FileDescriptorName = "korrid-cli";
+    SocketUser = "root";
+    SocketGroup = "korri";
+    SocketMode = "0660";
+    DirectoryMode = "0750";
+    RemoveOnStop = true;
+    Service = "korrid.service";
+  };
 assert builtins.elem "korrid-cli.socket" service.requires;
 assert builtins.elem "d /run/korrid-cli 0750 root korri -" tmpfiles;
 assert builtins.elem "d /run/korri-launch-services 0755 korrid korrid -" tmpfiles;
 assert builtins.elem "/run/korri-launch-services" service.serviceConfig.ReadWritePaths;
 assert customService.environment.KORRID_CLI_SOCKET == "/run/korri-test/cli/person.sock";
-assert customPaths.config.systemd.sockets.korrid-cli.socketConfig.ListenStream == "/run/korri-test/cli/person.sock";
+assert
+  customPaths.config.systemd.sockets.korrid-cli.socketConfig.ListenStream
+  == "/run/korri-test/cli/person.sock";
 assert socket.socketConfig.SocketUser == "root";
 assert socket.socketConfig.SocketGroup == "korri-control";
 assert socket.socketConfig.SocketMode == "0660";
@@ -479,8 +472,10 @@ assert builtins.elem "d /run/korri-local-signer/public 2750 korri-local-signer k
 assert builtins.elem "d /var/lib/korrid 0700 korrid korrid -" tmpfiles;
 assert builtins.elem "d /var/lib/korrid/identity 0700 korrid korrid -" tmpfiles;
 assert builtins.elem "d /run/korri-local-signer 0751 root korrid -" tmpfiles;
-assert builtins.elem "d /var/lib/korri-local-signer 0700 korri-local-signer korri-local-signer -" tmpfiles;
-assert !(builtins.elem "d /var/lib/korri-local-signer/identity 0700 korri-local-signer korri-local-signer -" tmpfiles);
+assert builtins.elem "d /var/lib/korri-local-signer 0700 korri-local-signer korri-local-signer -"
+  tmpfiles;
+assert
+  !(builtins.elem "d /var/lib/korri-local-signer/identity 0700 korri-local-signer korri-local-signer -" tmpfiles);
 assert builtins.elem "d /dev/inputplumber 0700 root root -" tmpfiles;
 assert builtins.elem "d /dev/inputplumber/sources 0700 root root -" tmpfiles;
 assert builtins.elem "systemd-tmpfiles-setup-dev.service" service.after;
@@ -502,11 +497,12 @@ assert service.serviceConfig.ProtectProc == "invisible";
 assert service.serviceConfig.ProcSubset == "pid";
 assert lib.hasInfix "action.id == \"org.freedesktop.systemd1.manage-units\"" polkit;
 assert lib.hasInfix "subject.user == \"korrid\"" polkit;
-assert lib.hasInfix ''subject.user == "korrid" &&
-      (action.id == "org.freedesktop.NetworkManager.wifi.scan" ||
-       action.id == "org.freedesktop.NetworkManager.network-control" ||
-       action.id == "org.freedesktop.NetworkManager.checkpoint-rollback" ||
-       action.id == "org.freedesktop.NetworkManager.settings.modify.system")'' polkit;
+assert lib.hasInfix ''
+  subject.user == "korrid" &&
+        (action.id == "org.freedesktop.NetworkManager.wifi.scan" ||
+         action.id == "org.freedesktop.NetworkManager.network-control" ||
+         action.id == "org.freedesktop.NetworkManager.checkpoint-rollback" ||
+         action.id == "org.freedesktop.NetworkManager.settings.modify.system")'' polkit;
 assert !(builtins.elem "networkmanager" (enabled.config.users.users.korrid.extraGroups or [ ]));
 assert !(builtins.elem "/run/dbus" service.serviceConfig.InaccessiblePaths);
 assert !(lib.hasInfix "subject.system_unit" polkit);
@@ -524,8 +520,10 @@ assert
   == ''["ws://127.0.0.1:7447"]'';
 assert builtins.elem "korri-bundle-selector.service" bundledService.requires;
 assert builtins.elem "korri-bundle-selector.service" bundledService.after;
-assert builtins.elem "korri-bundle-selector.service" bundled.config.systemd.services.korrid-identity.requires;
-assert builtins.elem "korri-bundle-selector.service" bundled.config.systemd.services.korrid-identity.after;
+assert builtins.elem "korri-bundle-selector.service"
+  bundled.config.systemd.services.korrid-identity.requires;
+assert builtins.elem "korri-bundle-selector.service"
+  bundled.config.systemd.services.korrid-identity.after;
 assert bundledService.environment.KORRI_BUNDLE_ACTIVE == "/nix/var/nix/gcroots/korri-bundle/active";
 assert
   bundled.config.systemd.services.korrid-identity.environment.KORRI_BUNDLE_ACTIVE
@@ -535,7 +533,8 @@ assert
   bundledSignerService.serviceConfig.ExecStart
   == "${inputdPackage}/bin/korri-bundle-launch local-signer";
 assert builtins.elem "korri-bundle-selector.service" bundledSignerService.requires;
-assert bundledSignerService.environment.KORRI_BUNDLE_ACTIVE == "/nix/var/nix/gcroots/korri-bundle/active";
+assert
+  bundledSignerService.environment.KORRI_BUNDLE_ACTIVE == "/nix/var/nix/gcroots/korri-bundle/active";
 assert
   bundled.config.systemd.services.korrid-identity.serviceConfig.ExecStart
   == "${inputdPackage}/bin/korri-bundle-launch korrid identity import --file ${ownerBindingStoreFile}";
@@ -577,8 +576,6 @@ assert hasFailedAssertion "no Nostr secret-key form" secretOwnerBinding;
 assert hasFailedAssertion "no Nostr secret-key form" secretFieldOwnerBinding;
 assert hasFailedAssertion "must sit inside compositorControlDirectory"
   compositorSocketOutsideHiddenDirectory;
-assert hasFailedAssertion "needs compositorControlSocket" focusExclusionWithoutCompositor;
-assert hasFailedAssertion "must not contain a comma" focusExclusionWithComma;
 assert evaluationRejected sameUid;
 assert evaluationRejected broadRuntime;
 assert evaluationRejected certificateControlRuntime;

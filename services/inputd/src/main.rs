@@ -436,20 +436,8 @@ fn dispatch_actions(matched: Vec<RuntimeAction>, services: &ConfiguredServices) 
                 .as_ref()
                 .expect("hardened actions always configure exact local control")
                 .clone();
-            let dispatcher = dispatcher.clone();
             tokio::spawn(async move {
-                let outcome = client
-                    .toggle_panel_exact_with(|| async {
-                        // HostSessionControl::set_freezer acknowledges receiver
-                        // route(None) before this exact-freeze RPC succeeds.
-                        // Its shared seats remain neutral while Portal owns input;
-                        // inputd must not inject a second routing decision.
-                        let focus = dispatcher.dispatch(action.id).await;
-                        let succeeded = portal_focus_succeeded(&focus);
-                        log_action_outcome(action.id, focus);
-                        succeeded
-                    })
-                    .await;
+                let outcome = client.toggle_panel_exact().await;
                 match outcome {
                     Ok(outcome) => {
                         log_panel_outcome(outcome);
@@ -512,10 +500,6 @@ fn log_action_outcome(action_id: korri_inputd::actions::ActionId, outcome: Actio
             "input action containment failed closed"
         ),
     }
-}
-
-fn portal_focus_succeeded(outcome: &ActionOutcome) -> bool {
-    matches!(outcome, ActionOutcome::Completed(_))
 }
 
 fn log_panel_outcome(outcome: ExactPanelOutcome) {
@@ -746,29 +730,6 @@ mod tests {
 
         fn publish(&mut self, _health: RuntimeHealth) -> std::io::Result<()> {
             Ok(())
-        }
-    }
-
-    #[test]
-    fn only_a_completed_portal_action_allows_a_frozen_leave_to_remain_in_portal() {
-        use korri_inputd::actions::ActionOutput;
-        use std::os::unix::process::ExitStatusExt;
-
-        let output = |raw| ActionOutput {
-            status: Some(std::process::ExitStatus::from_raw(raw)),
-            stdout: Vec::new(),
-            stderr: Vec::new(),
-            stdout_truncated: false,
-            stderr_truncated: false,
-        };
-        assert!(portal_focus_succeeded(&ActionOutcome::Completed(output(0))));
-        for outcome in [
-            ActionOutcome::Unconfigured,
-            ActionOutcome::Failed(output(256)),
-            ActionOutcome::TimedOut(output(256)),
-            ActionOutcome::SpawnFailed("spawn refused".into()),
-        ] {
-            assert!(!portal_focus_succeeded(&outcome));
         }
     }
 

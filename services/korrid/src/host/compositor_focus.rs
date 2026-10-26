@@ -157,10 +157,6 @@ struct TreeNode {
     #[serde(default)]
     pid: Option<i32>,
     #[serde(default)]
-    app_id: Option<String>,
-    #[serde(default)]
-    window_properties: Option<WindowProperties>,
-    #[serde(default)]
     focused: bool,
     #[serde(default)]
     nodes: Vec<TreeNode>,
@@ -168,13 +164,7 @@ struct TreeNode {
     floating_nodes: Vec<TreeNode>,
 }
 
-#[derive(Debug, Deserialize)]
-struct WindowProperties {
-    #[serde(default)]
-    class: Option<String>,
-}
-
-pub(super) fn portal_node(tree: &str, portal_pids: &BTreeSet<i32>) -> Result<i64, String> {
+pub(crate) fn portal_node(tree: &str, portal_pids: &BTreeSet<i32>) -> Result<i64, String> {
     fn visit(node: &TreeNode, portal_pids: &BTreeSet<i32>, ids: &mut Vec<i64>) {
         if node.pid.is_some_and(|pid| portal_pids.contains(&pid)) {
             ids.push(node.id);
@@ -216,30 +206,30 @@ pub(crate) enum FocusTarget {
 
 /// Select the window of one launch from a Sway tree snapshot.
 ///
-/// `launch_pids` are the processes of that exact launch unit. `excluded_ids`
-/// are surfaces korrid must never focus as a game, such as the kiosk browser.
+/// `launch_pids` are the processes of that exact launch unit. `portal_pids`
+/// are the current processes owned by the kiosk unit, never window metadata.
 pub(crate) fn select_focus_target(
     tree: &str,
     launch_pids: &BTreeSet<i32>,
-    excluded_ids: &[&str],
+    portal_pids: &BTreeSet<i32>,
 ) -> FocusTarget {
     let root: TreeNode = match serde_json::from_str(tree) {
         Ok(root) => root,
         Err(error) => return FocusTarget::Unreadable(error.to_string()),
     };
-    select_focus_target_from_root(&root, launch_pids, excluded_ids)
+    select_focus_target_from_root(&root, launch_pids, portal_pids)
 }
 
 fn select_focus_target_from_root(
     root: &TreeNode,
     launch_pids: &BTreeSet<i32>,
-    excluded_ids: &[&str],
+    portal_pids: &BTreeSet<i32>,
 ) -> FocusTarget {
     if launch_pids.is_empty() {
         return FocusTarget::NoWindow;
     }
     let mut candidates = Vec::new();
-    collect(root, launch_pids, excluded_ids, &mut candidates);
+    collect(root, launch_pids, portal_pids, &mut candidates);
     candidates.sort_by_key(|candidate| candidate.node_id);
     match candidates.len() {
         0 => FocusTarget::NoWindow,
@@ -251,13 +241,13 @@ fn select_focus_target_from_root(
 fn collect(
     node: &TreeNode,
     launch_pids: &BTreeSet<i32>,
-    excluded_ids: &[&str],
+    portal_pids: &BTreeSet<i32>,
     found: &mut Vec<FocusCandidate>,
 ) {
     if let Some(pid) = node.pid {
         // A window is only a game window when the launch itself owns the
         // process. Titles and classes are attacker-controlled decoration.
-        if launch_pids.contains(&pid) && !is_excluded(node, excluded_ids) {
+        if launch_pids.contains(&pid) && !is_excluded(node, portal_pids) {
             found.push(FocusCandidate {
                 node_id: node.id,
                 pid,
@@ -265,7 +255,7 @@ fn collect(
         }
     }
     for child in node.nodes.iter().chain(node.floating_nodes.iter()) {
-        collect(child, launch_pids, excluded_ids, found);
+        collect(child, launch_pids, portal_pids, found);
     }
 }
 
@@ -274,10 +264,10 @@ fn collect(
 pub(crate) fn focused_ownership(
     tree: &str,
     launch_pids: &BTreeSet<i32>,
-    excluded_ids: &[&str],
+    portal_pids: &BTreeSet<i32>,
 ) -> Result<FocusOwnership, String> {
     let root: TreeNode = serde_json::from_str(tree).map_err(|error| error.to_string())?;
-    let candidate = match select_focus_target_from_root(&root, launch_pids, excluded_ids) {
+    let candidate = match select_focus_target_from_root(&root, launch_pids, portal_pids) {
         FocusTarget::Window(candidate) => candidate,
         FocusTarget::NoWindow => return Err("exact launch has no compositor window".into()),
         FocusTarget::Ambiguous(_) => {
@@ -293,7 +283,7 @@ pub(crate) fn focused_ownership(
     let focused = focused[0];
     if focused.id == candidate.node_id && focused.pid == Some(candidate.pid) {
         Ok(FocusOwnership::Launch)
-    } else if is_excluded(focused, excluded_ids) {
+    } else if is_excluded(focused, portal_pids) {
         Ok(FocusOwnership::Excluded)
     } else {
         Ok(FocusOwnership::Other)
@@ -309,14 +299,29 @@ fn collect_focused<'a>(node: &'a TreeNode, found: &mut Vec<&'a TreeNode>) {
     }
 }
 
-fn is_excluded(node: &TreeNode, excluded_ids: &[&str]) -> bool {
-    let class = node
-        .window_properties
-        .as_ref()
-        .and_then(|properties| properties.class.as_deref());
-    excluded_ids
-        .iter()
-        .any(|excluded| node.app_id.as_deref() == Some(excluded) || class == Some(*excluded))
+fn is_excluded(node: &TreeNode, portal_pids: &BTreeSet<i32>) -> bool {
+    node.pid.is_some_and(|pid| portal_pids.contains(&pid))
+}
+
+/// Focus only the unique window owned by the kiosk unit, then prove it kept
+/// focus. Acknowledgement alone cannot complete Leave.
+pub(crate) fn focus_portal_window(
+    control: &dyn CompositorControl,
+    pids: &BTreeSet<i32>,
+) -> Result<(), String> {
+    let id = portal_node(&control.tree()?, pids)?;
+    control.focus(id)?;
+    let tree = control.tree()?;
+    if portal_node(&tree, pids)? != id {
+        return Err("portal window changed during focus".into());
+    }
+    let root: TreeNode = serde_json::from_str(&tree).map_err(|error| error.to_string())?;
+    let mut focused = Vec::new();
+    collect_focused(&root, &mut focused);
+    if focused.len() != 1 || focused[0].id != id || !is_excluded(focused[0], pids) {
+        return Err("compositor did not confirm portal focus".into());
+    }
+    Ok(())
 }
 
 /// What korrid did about bringing one launch to the front.
@@ -335,7 +340,7 @@ pub(crate) enum FocusOutcome {
 pub(crate) fn focus_launch_window(
     control: &dyn CompositorControl,
     launch_pids: &BTreeSet<i32>,
-    excluded_ids: &[&str],
+    portal_pids: &BTreeSet<i32>,
 ) -> FocusOutcome {
     // A launch with no processes owns no window, so the compositor is not
     // consulted at all and a compositor problem cannot fail that resume.
@@ -346,7 +351,7 @@ pub(crate) fn focus_launch_window(
         Ok(tree) => tree,
         Err(error) => return FocusOutcome::Failed(error),
     };
-    match select_focus_target(&tree, launch_pids, excluded_ids) {
+    match select_focus_target(&tree, launch_pids, portal_pids) {
         FocusTarget::Window(candidate) => match control.focus(candidate.node_id) {
             Ok(()) => FocusOutcome::Focused(candidate.node_id),
             Err(error) => FocusOutcome::Failed(error),
@@ -392,11 +397,11 @@ mod tests {
         let game_focused = r#"{"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"korri-portal","focused":false},{"id":3,"pid":9100,"focused":true}]}"#;
         let portal_focused = r#"{"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"korri-portal","focused":true},{"id":3,"pid":9100,"focused":false}]}"#;
         assert_eq!(
-            focused_ownership(game_focused, &launch, &["korri-portal"]).unwrap(),
+            focused_ownership(game_focused, &launch, &pids(&[4100])).unwrap(),
             FocusOwnership::Launch
         );
         assert_eq!(
-            focused_ownership(portal_focused, &launch, &["korri-portal"]).unwrap(),
+            focused_ownership(portal_focused, &launch, &pids(&[4100])).unwrap(),
             FocusOwnership::Excluded
         );
     }
@@ -409,27 +414,25 @@ mod tests {
             {"id":3,"pid":9100,"focused":false},
             {"id":4,"pid":9101,"focused":false}
         ]}"#;
-        assert!(focused_ownership(ambiguous_launch, &launch, &["korri-portal"]).is_err());
+        assert!(focused_ownership(ambiguous_launch, &launch, &pids(&[4100])).is_err());
 
         let multiple_focused_launch_nodes = r#"{"id":1,"nodes":[
             {"id":3,"pid":9100,"focused":true},
             {"id":4,"pid":9101,"focused":true}
         ]}"#;
-        assert!(
-            focused_ownership(multiple_focused_launch_nodes, &launch, &["korri-portal"]).is_err()
-        );
+        assert!(focused_ownership(multiple_focused_launch_nodes, &launch, &pids(&[4100])).is_err());
 
         let several_focused = r#"{"id":1,"nodes":[
             {"id":2,"pid":4100,"app_id":"korri-portal","focused":true},
             {"id":3,"pid":9100,"focused":true}
         ]}"#;
-        assert!(focused_ownership(several_focused, &pids(&[9100]), &["korri-portal"]).is_err());
+        assert!(focused_ownership(several_focused, &pids(&[9100]), &pids(&[4100])).is_err());
 
         let mismatched_pid = r#"{"id":1,"nodes":[
             {"id":2,"pid":4100,"app_id":"korri-portal","focused":true},
             {"id":3,"pid":9200,"focused":false}
         ]}"#;
-        assert!(focused_ownership(mismatched_pid, &pids(&[9100]), &["korri-portal"]).is_err());
+        assert!(focused_ownership(mismatched_pid, &pids(&[9100]), &pids(&[4100])).is_err());
     }
 
     #[test]
@@ -439,7 +442,7 @@ mod tests {
             ..ScriptedCompositor::default()
         };
         assert_eq!(
-            focus_launch_window(&compositor, &pids(&[9100]), &[PORTAL]),
+            focus_launch_window(&compositor, &pids(&[9100]), &pids(&[4100])),
             FocusOutcome::Focused(4)
         );
         assert_eq!(*compositor.focused.lock().unwrap(), vec![4]);
@@ -452,7 +455,7 @@ mod tests {
             ..ScriptedCompositor::default()
         };
         assert_eq!(
-            focus_launch_window(&compositor, &pids(&[7777]), &[PORTAL]),
+            focus_launch_window(&compositor, &pids(&[7777]), &pids(&[4100])),
             FocusOutcome::NothingToFocus
         );
         assert!(compositor.focused.lock().unwrap().is_empty());
@@ -465,7 +468,7 @@ mod tests {
             ..ScriptedCompositor::default()
         };
         assert_eq!(
-            focus_launch_window(&compositor, &pids(&[]), &[PORTAL]),
+            focus_launch_window(&compositor, &pids(&[]), &pids(&[4100])),
             FocusOutcome::NothingToFocus
         );
     }
@@ -477,7 +480,7 @@ mod tests {
             ..ScriptedCompositor::default()
         };
         assert_eq!(
-            focus_launch_window(&compositor, &pids(&[9100]), &[PORTAL]),
+            focus_launch_window(&compositor, &pids(&[9100]), &pids(&[4100])),
             FocusOutcome::Failed("socket missing".into())
         );
         assert!(compositor.focused.lock().unwrap().is_empty());
@@ -491,7 +494,7 @@ mod tests {
             ..ScriptedCompositor::default()
         };
         assert_eq!(
-            focus_launch_window(&compositor, &pids(&[9100]), &[PORTAL]),
+            focus_launch_window(&compositor, &pids(&[9100]), &pids(&[4100])),
             FocusOutcome::Failed("swaymsg failed".into())
         );
     }
@@ -524,7 +527,7 @@ mod tests {
             r#"{{
               "id": 1, "nodes": [
                 {{"id": 2, "nodes": [
-                  {{"id": 3, "pid": 4100, "app_id": "chromium-browser",
+                  {{"id": 3, "pid": 4100, "app_id": "chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default",
                     "nodes": [], "floating_nodes": []}},
                   {{"id": 4, "pid": {game_pid}, "app_id": null,
                     "window_properties": {{"class": "Neverball"}},
@@ -535,8 +538,6 @@ mod tests {
         )
     }
 
-    const PORTAL: &str = "chromium-browser";
-
     fn pids(values: &[i32]) -> BTreeSet<i32> {
         values.iter().copied().collect()
     }
@@ -544,7 +545,7 @@ mod tests {
     #[test]
     fn selects_the_window_owned_by_the_exact_launch() {
         assert_eq!(
-            select_focus_target(&tree(9100), &pids(&[9100, 9101]), &[PORTAL]),
+            select_focus_target(&tree(9100), &pids(&[9100, 9101]), &pids(&[4100])),
             FocusTarget::Window(FocusCandidate {
                 node_id: 4,
                 pid: 9100
@@ -555,7 +556,7 @@ mod tests {
     #[test]
     fn refuses_a_launch_that_owns_no_window() {
         assert_eq!(
-            select_focus_target(&tree(9100), &pids(&[7777]), &[PORTAL]),
+            select_focus_target(&tree(9100), &pids(&[7777]), &pids(&[4100])),
             FocusTarget::NoWindow
         );
     }
@@ -565,7 +566,7 @@ mod tests {
         // A shared-UID host means the browser can appear among launch
         // processes. Focusing it would hide the game behind the hub.
         assert_eq!(
-            select_focus_target(&tree(9100), &pids(&[4100]), &[PORTAL]),
+            select_focus_target(&tree(9100), &pids(&[4100]), &pids(&[4100])),
             FocusTarget::NoWindow
         );
     }
@@ -578,7 +579,7 @@ mod tests {
              "nodes": [], "floating_nodes": []}
           ], "floating_nodes": []}"#;
         assert_eq!(
-            select_focus_target(imposter, &pids(&[9100]), &[PORTAL]),
+            select_focus_target(imposter, &pids(&[9100]), &pids(&[4100])),
             FocusTarget::NoWindow
         );
     }
@@ -590,7 +591,7 @@ mod tests {
             {"id": 6, "pid": 9101, "app_id": null, "nodes": [], "floating_nodes": []}
           ], "floating_nodes": []}"#;
         assert_eq!(
-            select_focus_target(two, &pids(&[9100, 9101]), &[PORTAL]),
+            select_focus_target(two, &pids(&[9100, 9101]), &pids(&[4100])),
             FocusTarget::Ambiguous(vec![
                 FocusCandidate {
                     node_id: 6,
@@ -610,7 +611,7 @@ mod tests {
             {"id": 8, "pid": 9100, "app_id": null, "nodes": [], "floating_nodes": []}
           ]}"#;
         assert_eq!(
-            select_focus_target(floating, &pids(&[9100]), &[PORTAL]),
+            select_focus_target(floating, &pids(&[9100]), &pids(&[4100])),
             FocusTarget::Window(FocusCandidate {
                 node_id: 8,
                 pid: 9100
@@ -625,7 +626,7 @@ mod tests {
              "nodes": [], "floating_nodes": []}
           ], "floating_nodes": []}"#;
         assert_eq!(
-            select_focus_target(extended, &pids(&[9100]), &[PORTAL]),
+            select_focus_target(extended, &pids(&[9100]), &pids(&[4100])),
             FocusTarget::Window(FocusCandidate {
                 node_id: 9,
                 pid: 9100
@@ -636,7 +637,7 @@ mod tests {
     #[test]
     fn reports_an_unreadable_compositor_reply_instead_of_focusing() {
         assert!(matches!(
-            select_focus_target("not json", &pids(&[9100]), &[PORTAL]),
+            select_focus_target("not json", &pids(&[9100]), &pids(&[4100])),
             FocusTarget::Unreadable(_)
         ));
     }
@@ -644,7 +645,7 @@ mod tests {
     #[test]
     fn refuses_focus_for_a_launch_with_no_processes() {
         assert_eq!(
-            select_focus_target(&tree(9100), &pids(&[]), &[PORTAL]),
+            select_focus_target(&tree(9100), &pids(&[]), &pids(&[4100])),
             FocusTarget::NoWindow
         );
     }

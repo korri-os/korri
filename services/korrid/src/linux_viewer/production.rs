@@ -47,12 +47,7 @@ pub fn production_viewer(
         sway_socket: std::env::var_os("KORRID_COMPOSITOR_CONTROL_SOCKET")
             .map(PathBuf::from)
             .unwrap_or_default(),
-        portal_ids: std::env::var("KORRID_NEVER_FOCUS_APP_IDS")
-            .unwrap_or_default()
-            .split(',')
-            .filter(|id| !id.is_empty())
-            .map(str::to_owned)
-            .collect(),
+        portal: crate::host::configured_portal(),
         keydir: PathBuf::from("/home/korri/.config/moonlight"),
         operation: Arc::new(tokio::sync::Mutex::new(())),
     };
@@ -68,7 +63,7 @@ struct ProductionLinuxStreamViewer {
     units: Arc<dyn LaunchUnitBackend>,
     swaymsg: PathBuf,
     sway_socket: PathBuf,
-    portal_ids: Vec<String>,
+    portal: Option<Arc<dyn crate::host::PortalUnit>>,
     keydir: PathBuf,
     operation: Arc<tokio::sync::Mutex<()>>,
 }
@@ -481,16 +476,28 @@ impl ProductionLinuxStreamViewer {
         }
         let pids = self.units.window_pids(launch).map_err(unit_error)?;
         let tree = self.control()?.tree().map_err(error)?;
-        let portal_ids: Vec<_> = self.portal_ids.iter().map(String::as_str).collect();
-        match focused_ownership(&tree, &pids, &portal_ids).map_err(error)? {
+        let portal_pids = self
+            .portal
+            .as_ref()
+            .map(|unit| unit.window_pids())
+            .transpose()
+            .map_err(unit_error)?
+            .unwrap_or_default();
+        match focused_ownership(&tree, &pids, &portal_pids).map_err(error)? {
             crate::FocusOwnership::Launch => Ok(LinuxViewerStatus::Running),
             _ => Ok(LinuxViewerStatus::Backgrounded),
         }
     }
     fn focus(&self, launch: &str, portal: bool) -> Result<(), LinuxViewerError> {
         let control = self.control()?;
-        let portal_ids: Vec<_> = self.portal_ids.iter().map(String::as_str).collect();
-        if portal && portal_ids.is_empty() {
+        let portal_pids = self
+            .portal
+            .as_ref()
+            .map(|unit| unit.window_pids())
+            .transpose()
+            .map_err(unit_error)?
+            .unwrap_or_default();
+        if portal && portal_pids.is_empty() {
             return Err(error("portal compositor identity is not configured"));
         }
         // Moonlight draws its window only after the stream connects. On an
@@ -503,9 +510,12 @@ impl ProductionLinuxStreamViewer {
             let pids = self.units.window_pids(launch).map_err(unit_error)?;
             let tree = control.tree().map_err(error)?;
             let target = if portal {
-                portal_node(&tree, &portal_ids)?
+                Some(
+                    crate::host::compositor_focus::portal_node(&tree, &portal_pids)
+                        .map_err(error)?,
+                )
             } else {
-                match select_focus_target(&tree, &pids, &portal_ids) {
+                match select_focus_target(&tree, &pids, &portal_pids) {
                     FocusTarget::Window(window) => Some(window.node_id),
                     FocusTarget::NoWindow => None,
                     _ => return Err(error("viewer window is ambiguous or unreadable")),
@@ -518,7 +528,7 @@ impl ProductionLinuxStreamViewer {
                     control.focus_fullscreen(node).map_err(error)?;
                 }
                 let tree = control.tree().map_err(error)?;
-                let actual = focused_ownership(&tree, &pids, &portal_ids).map_err(error)?;
+                let actual = focused_ownership(&tree, &pids, &portal_pids).map_err(error)?;
                 let expected = if portal {
                     crate::FocusOwnership::Excluded
                 } else {
@@ -542,34 +552,6 @@ impl ProductionLinuxStreamViewer {
             stop.map_err(unit_error)?;
             Err(error("viewer stop was not confirmed"))
         }
-    }
-}
-
-fn portal_node(tree: &str, identities: &[&str]) -> Result<Option<i64>, LinuxViewerError> {
-    fn collect(node: &serde_json::Value, identities: &[&str], found: &mut Vec<i64>) {
-        if identities.iter().any(|id| {
-            node["app_id"].as_str() == Some(id)
-                || node["window_properties"]["class"].as_str() == Some(id)
-        }) {
-            if let Some(id) = node["id"].as_i64() {
-                found.push(id);
-            }
-        }
-        for key in ["nodes", "floating_nodes"] {
-            if let Some(children) = node[key].as_array() {
-                for child in children {
-                    collect(child, identities, found);
-                }
-            }
-        }
-    }
-    let root = serde_json::from_str(tree).map_err(error)?;
-    let mut found = Vec::new();
-    collect(&root, identities, &mut found);
-    match found.as_slice() {
-        [] => Ok(None),
-        [id] => Ok(Some(*id)),
-        _ => Err(error("portal window is ambiguous")),
     }
 }
 

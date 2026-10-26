@@ -50,7 +50,7 @@ async fn stream_play_local_buttons_reach_seats_only_while_the_viewer_is_focused(
     let units = Arc::new(InMemoryLaunchUnitBackend::default());
     let control = HostSessionControl::with_input_seats(root.path(), units.clone(), manager.clone())
         .with_boot_id(super::super::super::hooks::TEST_BOOT_ID)
-        .with_compositor(Arc::new(Compositor), vec![]);
+        .with_compositor(Arc::new(Compositor));
     control.initialize_input(2).unwrap();
     control
         .peer_selection

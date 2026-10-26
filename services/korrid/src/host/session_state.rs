@@ -271,8 +271,6 @@ pub struct HostSessionControl {
     compositor: Option<Arc<dyn CompositorControl>>,
     placement_applied: Arc<Mutex<Option<String>>>,
     display_content: Arc<Mutex<Vec<String>>>,
-    /// Surfaces that must never be focused as a game, such as the kiosk hub.
-    never_focus: Vec<String>,
     /// Frozen only while a running exact launch has observed compositor focus.
     /// Absent, the portal is never touched.
     portal: Option<PortalFreezer>,
@@ -340,7 +338,6 @@ impl HostSessionControl {
             compositor: None,
             placement_applied: Arc::new(Mutex::new(None)),
             display_content: Arc::new(Mutex::new(Vec::new())),
-            never_focus: Vec::new(),
             portal: None,
             native_input: None,
         }
@@ -523,6 +520,9 @@ impl HostSessionControl {
             // cgroup freezer. The same exact-launch proof selects gameplay.
             return self.input_seats.route(route);
         };
+        if !portal.unit.freezer_enabled() {
+            return self.input_seats.route(route);
+        }
         let unknown = *portal
             .applied
             .lock()
@@ -581,14 +581,27 @@ impl HostSessionControl {
 
     /// Give this session control the authority needed to prove that a resumed
     /// game returned to the front.
-    pub(crate) fn with_compositor(
-        mut self,
-        compositor: Arc<dyn CompositorControl>,
-        never_focus: Vec<String>,
-    ) -> Self {
+    pub(crate) fn with_compositor(mut self, compositor: Arc<dyn CompositorControl>) -> Self {
         self.compositor = Some(compositor);
-        self.never_focus = never_focus;
         self
+    }
+
+    fn portal_pids(&self) -> Result<std::collections::BTreeSet<i32>, String> {
+        self.portal
+            .as_ref()
+            .map(|portal| portal.unit.window_pids().map_err(|error| error.message))
+            .unwrap_or_else(|| Ok(Default::default()))
+    }
+
+    fn focus_portal(&self) -> Result<(), String> {
+        if self.portal.is_none() {
+            return Ok(());
+        }
+        let compositor = self
+            .compositor
+            .as_ref()
+            .ok_or("portal compositor unavailable")?;
+        super::compositor_focus::focus_portal_window(compositor.as_ref(), &self.portal_pids()?)
     }
 
     fn current_focus_ownership(&self, launch_id: &str) -> Result<FocusOwnership, String> {
@@ -610,7 +623,7 @@ impl HostSessionControl {
             self.ensure_display_placement(launch_id, false);
         }
         let tree = compositor.tree()?;
-        let excluded: Vec<&str> = self.never_focus.iter().map(String::as_str).collect();
+        let excluded = self.portal_pids()?;
         let ownership = focused_ownership(&tree, &pids, &excluded)?;
         if ownership == FocusOwnership::Launch {
             self.ensure_display_placement(launch_id, false);
@@ -866,7 +879,7 @@ impl HostSessionControl {
             let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
             let pids = self.backend.window_pids(launch_id).map_err(|e| e.message)?;
             let placement = self.launch_placement(launch_id, &displays)?;
-            let excluded: Vec<_> = self.never_focus.iter().map(String::as_str).collect();
+            let excluded = self.portal_pids()?;
             *self
                 .display_content
                 .lock()
@@ -941,7 +954,6 @@ impl HostSessionControl {
             .transpose()?
             .unwrap_or_default();
         let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
-        let excluded: Vec<_> = self.never_focus.iter().map(String::as_str).collect();
         let portal_pids = self
             .portal
             .as_ref()
@@ -956,7 +968,6 @@ impl HostSessionControl {
             placement.as_ref(),
             &pids,
             &portal_pids,
-            &excluded,
         )?;
         let mut occupied = placement.map(|p| p.outputs).unwrap_or_default();
         occupied.extend(rectangles.iter().map(|d| d.id.clone()));
@@ -981,7 +992,10 @@ impl HostSessionControl {
             Ok(pids) => pids,
             Err(error) => return Some(FocusOutcome::Failed(error.message)),
         };
-        let excluded: Vec<&str> = self.never_focus.iter().map(String::as_str).collect();
+        let excluded = match self.portal_pids() {
+            Ok(pids) => pids,
+            Err(reason) => return Some(FocusOutcome::Failed(reason)),
+        };
         self.ensure_display_placement(launch_id, true);
         let outcome = focus_launch_window(compositor.as_ref(), &pids, &excluded);
         // Focused is returned only after the compositor tree proves exact
@@ -2673,6 +2687,7 @@ impl HostSessionControl {
                     .input_seats
                     .route(None)
                     .and_then(|()| self.thaw_portal())
+                    .and_then(|()| self.focus_portal())
                 {
                     // Inputd keeps Game input when Leave fails. Undo the game
                     // freeze before reporting failure, including an idempotent
@@ -2698,6 +2713,7 @@ impl HostSessionControl {
                         {
                             return HostSessionFreezeChange::RecoveryBlocked;
                         }
+                        return HostSessionFreezeChange::FocusFailed { launch_id, message };
                     }
                     return HostSessionFreezeChange::HelperFailed { launch_id, message };
                 }
@@ -3139,6 +3155,142 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
+    fn failed_portal_focus_rolls_back_only_the_exact_launch_and_reports_unproven_game_focus() {
+        for rollback_focus_fails in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let backend = Arc::new(DeterministicBackend::default());
+            let compositor = Arc::new(RecordingCompositor {
+                portal_focus_fails: AtomicBool::new(true),
+                focus_fails: AtomicBool::new(rollback_focus_fails),
+                ..RecordingCompositor::default()
+            });
+            let control = portal_control(
+                root.path(),
+                backend.clone(),
+                compositor.clone(),
+                Arc::new(RecordingPortalUnit::default()),
+            );
+            let id = prepare(&control, "one").launch_id;
+            backend.set_pids(&id, &[9100]);
+            *compositor.tree.lock().unwrap() = compositor_tree(9100);
+            let outcome = control.freeze(&id);
+            if rollback_focus_fails {
+                assert!(
+                    matches!(outcome, HostSessionFreezeChange::FocusFailed { .. }),
+                    "{outcome:?}"
+                );
+            } else {
+                assert!(
+                    matches!(outcome, HostSessionFreezeChange::HelperFailed { .. }),
+                    "{outcome:?}"
+                );
+            }
+            assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
+            assert_eq!(backend.state.lock().unwrap().frozen, [id.clone()]);
+            assert_eq!(backend.state.lock().unwrap().thawed, [id]);
+            assert_eq!(*compositor.focused.lock().unwrap(), [2, 3]);
+        }
+    }
+
+    #[test]
+    fn leave_focuses_the_kiosk_unit_places_overlay_on_free_display_and_return_focuses_game() {
+        const CHILD: &str = "KORRI_UNIT_LEAVE_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let result = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "host::session_state::tests::leave_focuses_the_kiosk_unit_places_overlay_on_free_display_and_return_focuses_game", "--nocapture"])
+                .env(CHILD, "1")
+                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
+                .output().unwrap();
+            assert!(
+                result.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(String::from_utf8_lossy(&result.stdout).contains("running 1 test"));
+            return;
+        }
+        for identity_only in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let tree = |focused| {
+                compositor_tree_with_focus(9100, focused).replace(
+                    PORTAL_APP_ID,
+                    "chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default",
+                )
+            };
+            fs::write(root.path().join("tree"), tree(3)).unwrap();
+            fs::write(root.path().join("game-tree"), tree(3)).unwrap();
+            fs::write(root.path().join("portal-tree"), tree(2)).unwrap();
+            let program = root.path().join("swaymsg");
+            fs::write(
+                &program,
+                format!(
+                    r#"#!/bin/sh
+cd '{}' || exit 1
+for argument do command="$argument"; done
+case "$command" in get_tree) cat tree; exit;; esac
+printf '%s\n' "$command" >> commands
+case "$command" in
+ *'[con_id=2] focus'*) cp portal-tree tree;;
+ *'[con_id=3] focus'*) cp game-tree tree;;
+esac
+printf '[{{"success":true}}]'
+"#,
+                    root.path().display()
+                ),
+            )
+            .unwrap();
+            fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+            let compositor = Arc::new(
+                super::super::compositor_focus::SwaymsgCompositorControl::new(
+                    program,
+                    root.path().join("socket"),
+                    Duration::from_secs(1),
+                )
+                .unwrap(),
+            );
+            let backend = Arc::new(DeterministicBackend::default());
+            let control = HostSessionControl::new(root.path(), backend.clone())
+                .with_compositor(compositor)
+                .with_portal(Arc::new(if identity_only {
+                    RecordingPortalUnit::identity_only()
+                } else {
+                    RecordingPortalUnit::default()
+                }));
+            let prepared = prepare(&control, "one");
+            backend.set_pids(&prepared.launch_id, &[9100]);
+            assert!(matches!(
+                control.status(),
+                HostSessionStatus::Running { .. }
+            ));
+            assert!(matches!(
+                control.freeze(&prepared.launch_id),
+                HostSessionFreezeChange::Changed { .. }
+            ));
+            let (_, ownership, _) = control.status_with_recovered_overlay_intent();
+            assert_eq!(ownership, Some(FocusOwnership::Excluded));
+            let rectangles = control
+                .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
+                    displays: super::super::display_placement::SurfaceDisplayScope::All,
+                    overlay: true,
+                    launch_id: Some(prepared.launch_id.clone()),
+                })
+                .unwrap();
+            assert_eq!(rectangles.len(), 1);
+            assert_eq!(rectangles[0].id, "DSI-1");
+            let commands = fs::read_to_string(root.path().join("commands")).unwrap();
+            assert!(commands
+                .ends_with("[con_id=2] move absolute position 0 px 480 px\n[con_id=2] focus\n"));
+            assert!(matches!(
+                control.thaw(&prepared.launch_id),
+                HostSessionFreezeChange::Changed { .. }
+            ));
+            let (_, ownership, _) = control.status_with_recovered_overlay_intent();
+            assert_eq!(ownership, Some(FocusOwnership::Launch));
+        }
+    }
+
+    #[test]
     fn delayed_game_window_is_pending_until_mapping_then_takes_focus() {
         const CHILD: &str = "KORRI_DELAYED_PLACEMENT_TEST_CHILD";
         if std::env::var_os(CHILD).is_none() {
@@ -3158,7 +3310,7 @@ mod tests {
             return;
         }
         let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("tree"), r#"{"nodes":[{"id":2,"pid":4100,"app_id":"chromium-browser","focused":true,"fullscreen_mode":2}]}"#).unwrap();
+        fs::write(root.path().join("tree"), r#"{"nodes":[{"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true,"fullscreen_mode":2}]}"#).unwrap();
         fs::write(
             root.path().join("focused-tree"),
             compositor_tree_with_focus(200, 3),
@@ -3190,8 +3342,8 @@ printf '[{{"success":true}}]'
             .unwrap(),
         );
         let backend = Arc::new(DeterministicBackend::default());
-        let control = HostSessionControl::new(root.path(), backend.clone())
-            .with_compositor(compositor, vec![PORTAL_APP_ID.into()]);
+        let control =
+            HostSessionControl::new(root.path(), backend.clone()).with_compositor(compositor);
         let prepared = prepare(&control, "one");
         backend.set_pids(&prepared.launch_id, &[200]);
         for _ in 0..10 {
@@ -3252,6 +3404,7 @@ esac
         let portal = SystemdPortalUnit::new(
             SystemdLaunchUnitBackend::new(systemctl.clone(), systemctl, 1000, 1000).unwrap(),
             "korri-chromium-kiosk.service",
+            false,
         )
         .unwrap();
         let swaymsg = root.path().join("swaymsg");
@@ -3283,7 +3436,7 @@ printf '[{{"success":true}}]'
         let control =
             HostSessionControl::new(root.path(), Arc::new(DeterministicBackend::default()))
                 .with_portal(Arc::new(portal))
-                .with_compositor(compositor, vec!["chromium-browser".into()]);
+                .with_compositor(compositor);
         let displays = control
             .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
                 displays: super::super::display_placement::SurfaceDisplayScope::All,
@@ -3348,7 +3501,7 @@ printf '[{{"success":true}}]'
         );
         let backend = Arc::new(DeterministicBackend::default());
         let control = HostSessionControl::new(root.path(), backend.clone())
-            .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.into()]);
+            .with_compositor(compositor.clone());
         // Prepare a real session with no runner layouts, then observe its exact
         // process/window through the normal public session-control path.
         let prepared = prepare(&control, "one");
@@ -4888,6 +5041,7 @@ printf '[{{"success":true}}]'
         tree: Mutex<String>,
         focused: Mutex<Vec<i64>>,
         focus_fails: AtomicBool,
+        portal_focus_fails: AtomicBool,
         return_events: Option<Arc<Mutex<Vec<&'static str>>>>,
     }
 
@@ -4901,14 +5055,33 @@ printf '[{{"success":true}}]'
             if let Some(events) = &self.return_events {
                 events.lock().unwrap().push("focus");
             }
-            if self.focus_fails.load(Ordering::SeqCst) {
+            if self.focus_fails.load(Ordering::SeqCst)
+                || (node_id == 2 && self.portal_focus_fails.load(Ordering::SeqCst))
+            {
                 return Err("compositor refused focus".into());
+            }
+            fn focus(node: &mut serde_json::Value, id: i64) {
+                if node.get("pid").is_some() {
+                    node["focused"] = (node["id"].as_i64() == Some(id)).into();
+                }
+                for key in ["nodes", "floating_nodes"] {
+                    if let Some(children) = node[key].as_array_mut() {
+                        for child in children {
+                            focus(child, id);
+                        }
+                    }
+                }
+            }
+            let mut tree = self.tree.lock().unwrap();
+            if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&tree) {
+                focus(&mut value, node_id);
+                *tree = value.to_string();
             }
             Ok(())
         }
     }
 
-    const PORTAL_APP_ID: &str = "chromium-browser";
+    const PORTAL_APP_ID: &str = "chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default";
 
     fn compositor_tree(game_pid: i32) -> String {
         compositor_tree_with_focus(game_pid, 3)
@@ -4932,8 +5105,7 @@ printf '[{{"success":true}}]'
         backend: Arc<DeterministicBackend>,
         compositor: Arc<RecordingCompositor>,
     ) -> HostSessionControl {
-        HostSessionControl::new(root, backend)
-            .with_compositor(compositor, vec![PORTAL_APP_ID.to_string()])
+        HostSessionControl::new(root, backend).with_compositor(compositor)
     }
 
     #[test]
@@ -4947,7 +5119,8 @@ printf '[{{"success":true}}]'
         *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
         drop(control);
 
-        let recovered = resuming_control(root.path(), backend, compositor);
+        let recovered = resuming_control(root.path(), backend, compositor)
+            .with_portal(Arc::new(RecordingPortalUnit::default()));
         let (status, ownership, overlay_intent) = recovered.status_with_recovered_overlay_intent();
         assert_eq!(ownership, Some(FocusOwnership::Excluded));
         assert_eq!(
@@ -4992,7 +5165,7 @@ printf '[{{"success":true}}]'
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = r#"{"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"chromium-browser","focused":true},
+            {"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true},
             {"id":3,"pid":9100,"focused":false},
             {"id":4,"pid":9100,"focused":false}
         ]}"#
@@ -5048,7 +5221,7 @@ printf '[{{"success":true}}]'
         });
         let control =
             HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
-                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.to_string()]);
+                .with_compositor(compositor.clone());
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
@@ -5266,12 +5439,9 @@ printf '[{{"success":true}}]'
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let portal = Arc::new(RecordingPortalUnit::default());
-        let control = portal_control(
-            root.path(),
-            backend.clone(),
-            Arc::new(RecordingCompositor::default()),
-            portal.clone(),
-        );
+        let compositor = Arc::new(RecordingCompositor::default());
+        *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
+        let control = portal_control(root.path(), backend.clone(), compositor, portal.clone());
         let id = prepare(&control, "one").launch_id;
         control.freeze(&id);
 
@@ -5456,7 +5626,7 @@ printf '[{{"success":true}}]'
             ));
             let control =
                 HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
-                    .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.into()])
+                    .with_compositor(compositor.clone())
                     .with_portal(portal.clone())
                     .with_native_input(source.clone());
             control.initialize_input(4).unwrap();
@@ -5599,7 +5769,7 @@ printf '[{{"success":true}}]'
             let portal = Arc::new(RecordingPortalUnit::default());
             let control =
                 HostSessionControl::with_input_seats(root.path(), backend.clone(), pool.clone())
-                    .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.into()])
+                    .with_compositor(compositor.clone())
                     .with_portal(portal.clone());
             let id = prepare(&control, "one").launch_id;
             backend.set_pids(&id, &[9100]);
@@ -5654,7 +5824,7 @@ printf '[{{"success":true}}]'
         let compositor = Arc::new(RecordingCompositor::default());
         let control =
             HostSessionControl::with_input_seats(root.path(), backend.clone(), pool.clone())
-                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.into()]);
+                .with_compositor(compositor.clone());
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
@@ -5682,7 +5852,7 @@ printf '[{{"success":true}}]'
         let compositor = Arc::new(RecordingCompositor::default());
         let control =
             HostSessionControl::with_input_seats(root.path(), backend.clone(), pool.clone())
-                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.into()]);
+                .with_compositor(compositor.clone());
         control.initialize_input(6).unwrap();
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
@@ -6019,7 +6189,7 @@ printf '[{{"success":true}}]'
         let compositor = Arc::new(RecordingCompositor::default());
         let control =
             HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
-                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.to_string()]);
+                .with_compositor(compositor.clone());
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
@@ -6055,7 +6225,7 @@ printf '[{{"success":true}}]'
         let compositor = Arc::new(RecordingCompositor::default());
         let control =
             HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
-                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.to_string()]);
+                .with_compositor(compositor.clone());
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
@@ -6088,7 +6258,7 @@ printf '[{{"success":true}}]'
         let compositor = Arc::new(RecordingCompositor::default());
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
         let control = HostSessionControl::with_input_seats(root.path(), backend, manager.clone())
-            .with_compositor(compositor, vec![PORTAL_APP_ID.to_string()]);
+            .with_compositor(compositor);
 
         assert!(matches!(control.status(), HostSessionStatus::Frozen { .. }));
         assert!(manager.state.lock().unwrap().starts.is_empty());
@@ -6106,7 +6276,8 @@ printf '[{{"success":true}}]'
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let compositor = Arc::new(RecordingCompositor::default());
-        let control = resuming_control(root.path(), backend.clone(), compositor.clone());
+        let control = resuming_control(root.path(), backend.clone(), compositor.clone())
+            .with_portal(Arc::new(RecordingPortalUnit::default()));
         let id = prepare(&control, "one").launch_id;
         // The hub shares the runtime user, so its process can appear here.
         backend.set_pids(&id, &[4100]);
@@ -6125,7 +6296,7 @@ printf '[{{"success":true}}]'
                 message: "no unique exact-launch window could be focused".into(),
             }
         );
-        assert!(compositor.focused.lock().unwrap().is_empty());
+        assert_eq!(*compositor.focused.lock().unwrap(), [2]);
         assert_eq!(
             control.status(),
             HostSessionStatus::FocusFailed {
@@ -6182,7 +6353,7 @@ printf '[{{"success":true}}]'
         });
         let control =
             HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
-                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.to_string()]);
+                .with_compositor(compositor.clone());
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
@@ -6305,7 +6476,7 @@ printf '[{{"success":true}}]'
         let compositor = Arc::new(RecordingCompositor::default());
         let control =
             HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
-                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.to_string()]);
+                .with_compositor(compositor.clone());
         let prepared = prepare(&control, "one");
         let id = prepared.launch_id.clone();
         backend.set_pids(&id, &[9100]);
@@ -6692,7 +6863,7 @@ printf '[{{"success":true}}]'
         let compositor = Arc::new(RecordingCompositor::default());
         let session =
             HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
-                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.to_string()]);
+                .with_compositor(compositor.clone());
 
         // An operator froze the slice before prepare observed the unit. The
         // launch is real: it is recorded as frozen, seats are kept, and
@@ -7037,7 +7208,7 @@ printf '[{{"success":true}}]'
         let compositor = Arc::new(RecordingCompositor::default());
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
         let control = HostSessionControl::with_input_seats(root.path(), backend, manager.clone())
-            .with_compositor(compositor, vec![PORTAL_APP_ID.to_string()]);
+            .with_compositor(compositor);
         assert_eq!(manager.starts.load(Ordering::SeqCst), 0);
         assert_eq!(
             control.status(),
@@ -7080,7 +7251,7 @@ printf '[{{"success":true}}]'
             backend.clone(),
             Arc::new(FailingSeatManager),
         )
-        .with_compositor(compositor, vec![PORTAL_APP_ID.to_string()]);
+        .with_compositor(compositor);
 
         assert!(matches!(
             control.status(),

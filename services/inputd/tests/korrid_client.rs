@@ -192,112 +192,6 @@ async fn exact_panel_freezes_running_and_thaws_frozen_without_retargeting() {
 }
 
 #[tokio::test]
-async fn refused_portal_focus_rolls_back_to_the_exact_running_launch() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("control.sock");
-    let listener = UnixListener::bind(&path).unwrap();
-    let server = tokio::spawn(async move {
-        let (mut status, _) = listener.accept().await.unwrap();
-        assert_eq!(
-            request_body(&mut status).await["_tag"],
-            "app.session.status"
-        );
-        reply(&mut status, &status_ok("running")).await;
-        drop(status);
-        let (mut freeze, _) = listener.accept().await.unwrap();
-        let request = request_body(&mut freeze).await;
-        assert_eq!(request["_tag"], "app.session.leave");
-        assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
-        reply(
-            &mut freeze,
-            &serde_json::json!({
-                "_tag": "app.session.leave",
-                "outcome": { "_tag": "Ok", "payload": {
-                    "launchId": LAUNCH_ID, "state": "frozen", "changed": true
-                }}
-            })
-            .to_string(),
-        )
-        .await;
-        drop(freeze);
-        let (mut rollback, _) = listener.accept().await.unwrap();
-        let request = request_body(&mut rollback).await;
-        assert_eq!(request["_tag"], "app.session.resume");
-        assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
-        reply(
-            &mut rollback,
-            &serde_json::json!({
-                "_tag": "app.session.resume",
-                "outcome": { "_tag": "Ok", "payload": {
-                    "launchId": LAUNCH_ID, "state": "running", "changed": false
-                }}
-            })
-            .to_string(),
-        )
-        .await;
-    });
-
-    assert_eq!(
-        KorridClient::with_limits(path, limits(1))
-            .toggle_panel_exact_with(|| async { false })
-            .await
-            .unwrap(),
-        ExactPanelOutcome::LeaveRefused,
-    );
-    server.await.unwrap();
-}
-
-#[tokio::test]
-async fn failed_leave_rollback_without_proven_game_focus_stays_portal_owned() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("control.sock");
-    let listener = UnixListener::bind(&path).unwrap();
-    let server = tokio::spawn(async move {
-        let (mut status, _) = listener.accept().await.unwrap();
-        assert_eq!(
-            request_body(&mut status).await["_tag"],
-            "app.session.status"
-        );
-        reply(&mut status, &status_ok("running")).await;
-        drop(status);
-
-        let (mut freeze, _) = listener.accept().await.unwrap();
-        let request = request_body(&mut freeze).await;
-        assert_eq!(request["_tag"], "app.session.leave");
-        assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
-        reply(
-            &mut freeze,
-            &serde_json::json!({
-                "_tag": "app.session.leave",
-                "outcome": { "_tag": "Ok", "payload": {
-                    "launchId": LAUNCH_ID, "state": "frozen", "changed": true
-                }}
-            })
-            .to_string(),
-        )
-        .await;
-        drop(freeze);
-
-        let (mut thaw, _) = listener.accept().await.unwrap();
-        let request = request_body(&mut thaw).await;
-        assert_eq!(request["_tag"], "app.session.resume");
-        assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
-        reply(
-            &mut thaw,
-            r#"{"_tag":"app.session.resume","outcome":{"_tag":"Err","payload":{"code":"HostFocusFailed","message":"no unique exact-launch window could be focused"}}}"#,
-        )
-        .await;
-    });
-
-    let outcome = KorridClient::with_limits(path, limits(1))
-        .toggle_panel_exact_with(|| async { false })
-        .await
-        .unwrap();
-    assert_eq!(outcome, ExactPanelOutcome::FocusFailed);
-    server.await.unwrap();
-}
-
-#[tokio::test]
 async fn replacement_before_exact_freeze_never_enters_portal_or_retargets() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("control.sock");
@@ -327,19 +221,13 @@ async fn replacement_before_exact_freeze_never_enters_portal_or_retargets() {
         );
     });
 
-    let entered_portal = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let callback_flag = Arc::clone(&entered_portal);
     assert_eq!(
         KorridClient::with_limits(path, limits(1))
-            .toggle_panel_exact_with(|| async move {
-                callback_flag.store(true, std::sync::atomic::Ordering::SeqCst);
-                true
-            })
+            .toggle_panel_exact()
             .await
             .unwrap(),
-        ExactPanelOutcome::LeaveRefused,
+        ExactPanelOutcome::LeaveRefused
     );
-    assert!(!entered_portal.load(std::sync::atomic::Ordering::SeqCst));
     server.await.unwrap();
 }
 
@@ -494,6 +382,16 @@ async fn rapid_home_serializes_the_delayed_portal_focus_before_game_return() {
         let request = request_body(&mut freeze).await;
         assert_eq!(request["_tag"], "app.session.leave");
         server_events.lock().await.push("freeze");
+        server_events.lock().await.push("portal-focus-start");
+        focus_entered_tx.send(()).unwrap();
+        second_started_rx.await.unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), listener.accept())
+                .await
+                .is_err()
+        );
+        release_focus_rx.await.unwrap();
+        server_events.lock().await.push("portal-focus-end");
         reply(
             &mut freeze,
             &serde_json::json!({
@@ -506,14 +404,6 @@ async fn rapid_home_serializes_the_delayed_portal_focus_before_game_return() {
         )
         .await;
         drop(freeze);
-        second_started_rx.await.unwrap();
-        assert!(
-            tokio::time::timeout(Duration::from_millis(50), listener.accept())
-                .await
-                .is_err(),
-            "the second Home escaped while the first portal focus was pending"
-        );
-
         let (mut status, _) = listener.accept().await.unwrap();
         let _ = request_body(&mut status).await;
         reply(&mut status, &status_ok("frozen")).await;
@@ -536,19 +426,7 @@ async fn rapid_home_serializes_the_delayed_portal_focus_before_game_return() {
 
     let client = Arc::new(KorridClient::with_limits(path, limits(1)));
     let first_client = Arc::clone(&client);
-    let focus_events = Arc::clone(&events);
-    let first = tokio::spawn(async move {
-        first_client
-            .toggle_panel_exact_with(|| async move {
-                focus_events.lock().await.push("portal-focus-start");
-                focus_entered_tx.send(()).unwrap();
-                release_focus_rx.await.unwrap();
-                focus_events.lock().await.push("portal-focus-end");
-                true
-            })
-            .await
-            .unwrap()
-    });
+    let first = tokio::spawn(async move { first_client.toggle_panel_exact().await.unwrap() });
     focus_entered_rx.await.unwrap();
 
     let second_client = Arc::clone(&client);
@@ -801,5 +679,69 @@ async fn response_size_is_bounded() {
         KorridClient::with_limits(path, bounded).status().await,
         Err(LocalControlError::ResponseTooLarge)
     ));
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn refused_portal_focus_is_rolled_back_inside_leave_without_a_second_client_effect() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("control.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    let server = tokio::spawn(async move {
+        let (mut status, _) = listener.accept().await.unwrap();
+        assert_eq!(
+            request_body(&mut status).await["_tag"],
+            "app.session.status"
+        );
+        reply(&mut status, &status_ok("running")).await;
+        drop(status);
+        let (mut leave, _) = listener.accept().await.unwrap();
+        let request = request_body(&mut leave).await;
+        assert_eq!(request["_tag"], "app.session.leave");
+        assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
+        reply(&mut leave, r#"{"_tag":"app.session.leave","outcome":{"_tag":"Err","payload":{"code":"HostFreezerFailed","message":"portal focus refused; exact game restored"}}}"#).await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), listener.accept())
+                .await
+                .is_err()
+        );
+    });
+    assert_eq!(
+        KorridClient::with_limits(path, limits(1))
+            .toggle_panel_exact()
+            .await
+            .unwrap(),
+        ExactPanelOutcome::LeaveRefused
+    );
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn failed_game_focus_during_leave_rollback_remains_portal_owned() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("control.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    let server = tokio::spawn(async move {
+        let (mut status, _) = listener.accept().await.unwrap();
+        let _ = request_body(&mut status).await;
+        reply(&mut status, &status_ok("running")).await;
+        drop(status);
+        let (mut leave, _) = listener.accept().await.unwrap();
+        let request = request_body(&mut leave).await;
+        assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
+        reply(&mut leave, r#"{"_tag":"app.session.leave","outcome":{"_tag":"Err","payload":{"code":"HostFocusFailed","message":"exact game focus could not be restored"}}}"#).await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), listener.accept())
+                .await
+                .is_err()
+        );
+    });
+    assert_eq!(
+        KorridClient::with_limits(path, limits(1))
+            .toggle_panel_exact()
+            .await
+            .unwrap(),
+        ExactPanelOutcome::FocusFailed
+    );
     server.await.unwrap();
 }

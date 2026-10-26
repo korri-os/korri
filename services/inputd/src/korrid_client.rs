@@ -73,23 +73,10 @@ impl KorridClient {
         unreachable!("status always returns from a positive attempt count")
     }
 
+    /// Korrid acknowledges the complete Leave/Return transaction, including
+    /// unit-owned focus and any exact-launch rollback. Inputd never performs
+    /// a second focus effect after that acknowledgement.
     pub async fn toggle_panel_exact(&self) -> Result<ExactPanelOutcome, LocalControlError> {
-        self.toggle_panel_exact_with(|| async { true }).await
-    }
-
-    /// Runs one complete Home transaction. The guard covers the status read,
-    /// exact host transition and portal focus. HostSessionControl::set_freezer
-    /// acknowledges receiver route(None) and portal thaw before freeze succeeds.
-    /// A failed focus effect thaws and refocuses that same launch through korrid;
-    /// inputd never applies its own shared-seat route.
-    pub async fn toggle_panel_exact_with<F, Fut>(
-        &self,
-        enter_portal: F,
-    ) -> Result<ExactPanelOutcome, LocalControlError>
-    where
-        F: FnOnce() -> Fut,
-        Fut: std::future::Future<Output = bool>,
-    {
         let _panel_guard = self.panel_guard.lock().await;
         match self.status().await? {
             SessionStatus::Running { launch_id } | SessionStatus::FocusFailed { launch_id } => {
@@ -105,17 +92,6 @@ impl KorridClient {
                         return Ok(ExactPanelOutcome::LeaveRefused);
                     }
                     other => return Ok(other),
-                }
-                if !enter_portal().await {
-                    // Focus can fail after a partial effect. Korrid thaws and
-                    // refocuses the exact frozen launch, then restores its route.
-                    return match self
-                        .change_freezer(&launch_id, "app.session.resume", "thaw")
-                        .await?
-                    {
-                        ExactPanelOutcome::Returned => Ok(ExactPanelOutcome::LeaveRefused),
-                        other => Ok(other),
-                    };
                 }
                 Ok(ExactPanelOutcome::Opened)
             }
@@ -470,7 +446,8 @@ fn parse_panel_change(
             }
         }
         Outcome::Err(failure) => match failure.code.as_str() {
-            "HostFocusFailed" if operation == "thaw" => Ok(ExactPanelOutcome::FocusFailed),
+            "HostFocusFailed" => Ok(ExactPanelOutcome::FocusFailed),
+            "HostFreezerFailed" if operation == "freeze" => Ok(ExactPanelOutcome::LeaveRefused),
             "NoActiveSession"
             | "SessionCompleted"
             | "StaleLaunchIdentity"

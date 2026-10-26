@@ -366,10 +366,6 @@ in
         type = lib.types.lines;
         default = "";
       };
-      neverFocusAppIds = lib.mkOption {
-        type = lib.types.listOf lib.types.str;
-        default = [ ];
-      };
       renderer = lib.mkOption {
         type = lib.types.enum [
           "gles2"
@@ -516,7 +512,6 @@ in
         ownerBindingFile
         ;
       inherit compositorControlDirectory compositorControlSocket;
-      neverFocusAppIds = cfg.compositor.neverFocusAppIds;
     };
 
     services.pipewire = lib.mkIf cfg.audio.enable {

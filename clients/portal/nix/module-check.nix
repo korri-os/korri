@@ -105,7 +105,9 @@ assert !(nixpkgs.lib.hasInfix "korri-chromium-kiosk" disabled.security.polkit.ex
 assert !(nixpkgs.lib.hasInfix "korri-chromium-kiosk" serverOnly.security.polkit.extraConfig);
 assert (disabled.systemd.services.korrid.serviceConfig.ExecStopPost or [ ]) == [ ];
 # A shared kiosk must not acquire C3 on unpatched systemd.
-assert !(daemon.environment ? KORRID_PORTAL_UNIT);
+assert daemon.environment.KORRID_PORTAL_UNIT == "korri-chromium-kiosk.service";
+assert daemon.environment.KORRID_PORTAL_FREEZER_ENABLED == "false";
+assert (daemon.serviceConfig.ExecStopPost or [ ]) == [ ];
 assert !(enabled.systemd.services ? korri-chromium-kiosk-thaw);
 assert !(nixpkgs.lib.hasInfix "korri-chromium-kiosk" enabled.security.polkit.extraConfig);
 assert !(disabled.systemd.services ? korri-portal-initialize);
@@ -176,13 +178,7 @@ assert
   enabled.systemd.sockets.korrid-control.socketConfig
   == disabled.systemd.sockets.korrid-control.socketConfig;
 assert service.environment.KORRI_WEB_SURFACE_URL == "http://127.0.0.1:8099/";
-assert
-  enabled.services.korriLinuxInput.inputd.actions.system-panel.command == [
-    "${pkgs.sway-unwrapped}/bin/swaymsg"
-    "-s"
-    "/run/korri-compositor/sway-ipc.sock"
-    ''[app_id="chromium-browser"] focus''
-  ];
+assert !(enabled.services.korriLinuxInput.inputd.actions ? system-panel);
 # A device that names a surface opens it through the portal's own preference
 # seam; the served origin and asset root stay identical either way.
 assert
@@ -252,9 +248,6 @@ pkgs.runCommand "korri-portal-module-check" { } ''
   grep -F -- '--ozone-platform=wayland' ${service.serviceConfig.ExecStart}
   grep -F -- '--kiosk' ${service.serviceConfig.ExecStart}
   if grep -F -- '--class=' ${service.serviceConfig.ExecStart}; then exit 1; fi
-  # Chromium maps this desktop WM class to the native Wayland app_id. Keep the
-  # product's game-return exclusion tied to the package the portal launches.
-  grep -Fx 'StartupWMClass=chromium-browser' ${pkgs.chromium}/share/applications/chromium-browser.desktop
   grep -F -- '--force-prefers-reduced-motion' ${service.environment.KORRI_CHROMIUM_ARGS_FILE}
   grep -F -- '--disable-gpu' ${service.environment.KORRI_CHROMIUM_ARGS_FILE}
   if grep -E -- '--app|--no-sandbox|--remote-debugging|DBUS_SESSION_BUS_ADDRESS' ${service.serviceConfig.ExecStart}; then exit 1; fi

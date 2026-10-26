@@ -38,7 +38,7 @@ fn focusable_compositor() -> Arc<Compositor> {
     Arc::new(Compositor {
         gate: Mutex::new(None),
         tree: Mutex::new(json!({"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"chromium-browser","focused":true},
+            {"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true},
             {"id":3,"pid":9100,"focused":false}
         ]})),
     })
@@ -164,7 +164,7 @@ async fn metadata_delayed_successful_return_preserves_newer_same_launch_home() {
     let (runtime, backend) = runtime(root.path());
     let gate = Arc::new(RouteGate::default());
     let _release = GateRelease(gate.clone());
-    let runtime = runtime.with_compositor(focusable_compositor(), vec!["chromium-browser".into()]);
+    let runtime = runtime.with_compositor(focusable_compositor());
     let (app, native) = native_routers(
         delay_session_reply(runtime, "app.session.resume", &gate),
         root.path(),
@@ -219,7 +219,7 @@ async fn metadata_delayed_native_home_cannot_restore_intent_after_return_and_ful
     let (runtime, backend) = runtime(root.path());
     let gate = Arc::new(RouteGate::default());
     let _release = GateRelease(gate.clone());
-    let runtime = runtime.with_compositor(focusable_compositor(), vec!["chromium-browser".into()]);
+    let runtime = runtime.with_compositor(focusable_compositor());
     let (app, native) = native_routers(
         delay_session_reply(runtime, "app.session.leave", &gate),
         root.path(),
@@ -259,7 +259,7 @@ async fn held_recovered_status_preserves_newer_control(replacement: bool) {
         root.path().join("private"),
         backend.clone(),
     )
-    .with_compositor(focusable_compositor(), vec!["chromium-browser".into()]);
+    .with_compositor(focusable_compositor());
     let gate = Arc::new(RouteGate::default());
     let _release = GateRelease(gate.clone());
     let (app, native) = native_routers(

@@ -536,7 +536,7 @@ mod tests {
                 far_root.path().join("private"),
                 units.clone(),
             )
-            .with_compositor(Arc::new(SelectedSessionFocus), vec![]);
+            .with_compositor(Arc::new(SelectedSessionFocus));
             far.claim_save_owner();
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = listener.local_addr().unwrap();
