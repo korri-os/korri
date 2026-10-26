@@ -99,7 +99,11 @@ export function PicoSurface({
   // pixel derives from exactly the box the host gave Pico. `data-pico-font`
   // names the face shown.
   return (
-    <div className="pico-theme pico-screen" data-pico-font={shown}>
+    <div
+      className="pico-theme pico-screen"
+      data-pico-displays={plan === undefined ? undefined : "split"}
+      data-pico-font={shown}
+    >
       {model.presentation.kind === "gameplay-overlay" ? (
         <PicoOverlaySurface host={host} model={model} presentation={model.presentation} />
       ) : model.onboarding !== undefined ? (

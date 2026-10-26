@@ -21,3 +21,13 @@
 	position: relative;
 	height: 100%;
 }
+
+/* Across two displays the root is the window that spans them. Before the host
+ * grows that window to cover every display, a region can stand past its
+ * bottom edge, and focusing a control there would scroll the root and move
+ * both displays' pictures. A clipped root is not a scroll container, so focus
+ * cannot move it. The face attribute is always on the root; it lifts this
+ * rule over the screen's own `overflow: hidden` whatever the load order. */
+[data-pico-displays="split"][data-pico-font] {
+	overflow: clip;
+}
