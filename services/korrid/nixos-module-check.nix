@@ -125,6 +125,12 @@ let
       privateStateRoot = "/srv/korrid/../recovery";
     };
   };
+  invalidStreamPrivatePath = evaluate {
+    services.korridLinuxDevice = {
+      enable = true;
+      streamPrivateStateRoot = lib.mkForce "relative/sunshine";
+    };
+  };
   invalidControlPath = evaluate {
     services.korridLinuxDevice = {
       enable = true;
@@ -251,6 +257,35 @@ let
     lib.any (entry: !entry.assertion && lib.hasInfix needle entry.message) system.config.assertions;
   evaluationRejected =
     system: !(builtins.tryEval system.config.system.build.toplevel.drvPath).success;
+  # Keep the module's emitted environment within systemd_unit.rs's protected
+  # path contract, including the defaults used for absent optional variables.
+  validProtectedPath =
+    path:
+    lib.hasPrefix "/" path
+    && path != "/"
+    && !(lib.hasInfix "//" path)
+    && !(lib.hasInfix "/./" path)
+    && !(lib.hasSuffix "/." path)
+    && !(lib.hasInfix "/../" path)
+    && !(lib.hasSuffix "/.." path)
+    && builtins.match ".*[[:space:]].*" path == null;
+  protectedEnvironmentIsValid =
+    environment:
+    lib.all validProtectedPath (
+      [
+        environment.KORRID_PRIVATE_STATE_ROOT
+        environment.KORRID_CONTROL_SOCKET
+        environment.KORRID_CONTROL_DIRECTORY
+        environment.KORRID_CLI_SOCKET
+        (builtins.dirOf environment.KORRID_CLI_SOCKET)
+        environment.KORRID_COMPOSITOR_CONTROL_DIRECTORY
+        (environment.KORRID_CERTIFICATE_CONTROL_DIRECTORY or "/run/korri-certificate-control")
+      ]
+      ++ lib.optional (
+        environment ? KORRID_STREAM_PRIVATE_STATE_ROOT
+      ) environment.KORRID_STREAM_PRIVATE_STATE_ROOT
+    )
+    && builtins.dirOf environment.KORRID_CONTROL_SOCKET == environment.KORRID_CONTROL_DIRECTORY;
   service = enabled.config.systemd.services.korrid;
   identityService = enabled.config.systemd.services.korrid-identity;
   signerService = enabled.config.systemd.services.korri-local-signer;
@@ -269,10 +304,15 @@ in
 assert allAssertionsPass enabled;
 assert builtins.elem 43117 enabled.config.networking.firewall.allowedTCPPorts;
 assert allAssertionsPass pluginFree;
+assert protectedEnvironmentIsValid pluginFreeService.environment;
+assert protectedEnvironmentIsValid service.environment;
+assert protectedEnvironmentIsValid customService.environment;
 assert !(pluginFreeService.environment ? KORRID_STREAM_PRIVATE_STATE_ROOT);
 assert !(pluginFreeService.environment ? KORRID_CERTIFICATE_CONTROL_DIRECTORY);
 assert
   !(builtins.elem "/home/korri/.config/sunshine" pluginFreeService.serviceConfig.InaccessiblePaths);
+assert
+  !(builtins.elem "-/home/korri/.config/sunshine" pluginFreeService.serviceConfig.InaccessiblePaths);
 assert allAssertionsPass advertised;
 assert
   advertised.config.systemd.services.korrid.environment.KORRID_MOONLIGHT_ADDRESS == "device:47989";
@@ -447,7 +487,7 @@ assert builtins.elem "systemd-tmpfiles-setup-dev.service" service.after;
 assert builtins.elem "systemd-tmpfiles-resetup.service" service.after;
 assert builtins.elem "korri-input-source-guard.service" service.after;
 assert builtins.elem "-/dev/inputplumber/sources" service.serviceConfig.InaccessiblePaths;
-assert builtins.elem "/home/korri/.config/sunshine" service.serviceConfig.InaccessiblePaths;
+assert builtins.elem "-/home/korri/.config/sunshine" service.serviceConfig.InaccessiblePaths;
 assert enabled.config.users.groups.korri-control.gid == 977;
 assert !(builtins.elem "korri-control" enabled.config.users.users.korri.extraGroups);
 assert !(builtins.elem "korrid" enabled.config.users.users.korri.extraGroups);
@@ -517,6 +557,9 @@ assert hasFailedAssertion "korrid, or local-signer service groups" certificateCo
 assert hasFailedAssertion
   "korrid and local-signer private state roots and optional stream-host private state root must be normalized absolute paths"
   invalidPrivatePath;
+assert hasFailedAssertion
+  "korrid and local-signer private state roots and optional stream-host private state root must be normalized absolute paths"
+  invalidStreamPrivatePath;
 assert hasFailedAssertion "controlSocket and its directory must be normalized absolute paths"
   invalidControlPath;
 assert hasFailedAssertion "compositorControlDirectory must be a normalized absolute path"
@@ -540,6 +583,7 @@ assert evaluationRejected sameUid;
 assert evaluationRejected broadRuntime;
 assert evaluationRejected certificateControlRuntime;
 assert evaluationRejected invalidPrivatePath;
+assert evaluationRejected invalidStreamPrivatePath;
 assert evaluationRejected invalidControlPath;
 assert evaluationRejected invalidCompositorControlPath;
 assert evaluationRejected invalidCertificateControlPath;

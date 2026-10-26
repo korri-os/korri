@@ -392,7 +392,7 @@ struct ProtectedPaths {
     control_directory: PathBuf,
     cli_socket: PathBuf,
     cli_directory: PathBuf,
-    stream_private_state_root: PathBuf,
+    stream_private_state_root: Option<PathBuf>,
     compositor_control_directory: PathBuf,
     certificate_control_directory: PathBuf,
 }
@@ -431,7 +431,7 @@ pub struct SystemdLaunchUnitBackend {
     control_directory: PathBuf,
     cli_socket: PathBuf,
     cli_directory: PathBuf,
-    stream_private_state_root: PathBuf,
+    stream_private_state_root: Option<PathBuf>,
     compositor_control_directory: PathBuf,
     certificate_control_directory: PathBuf,
     compositor_wayland_socket: Option<PathBuf>,
@@ -737,7 +737,7 @@ impl SystemdLaunchUnitBackend {
             PathBuf::from(DEFAULT_PRIVATE_STATE_ROOT),
             PathBuf::from(DEFAULT_CONTROL_SOCKET),
             PathBuf::from(DEFAULT_CONTROL_DIRECTORY),
-            PathBuf::from("/home/korri/.config/sunshine"),
+            Some(PathBuf::from("/home/korri/.config/sunshine")),
             PathBuf::from(DEFAULT_COMPOSITOR_CONTROL_DIRECTORY),
         )
     }
@@ -751,7 +751,7 @@ impl SystemdLaunchUnitBackend {
         private_state_root: PathBuf,
         control_socket: PathBuf,
         control_directory: PathBuf,
-        stream_private_state_root: PathBuf,
+        stream_private_state_root: Option<PathBuf>,
         compositor_control_directory: PathBuf,
     ) -> Result<Self, LaunchUnitError> {
         Self::with_timeout_and_paths(
@@ -798,7 +798,7 @@ impl SystemdLaunchUnitBackend {
                     .parent()
                     .unwrap()
                     .to_owned(),
-                stream_private_state_root: PathBuf::from("/home/korri/.config/sunshine"),
+                stream_private_state_root: Some(PathBuf::from("/home/korri/.config/sunshine")),
                 compositor_control_directory: PathBuf::from(DEFAULT_COMPOSITOR_CONTROL_DIRECTORY),
                 certificate_control_directory: PathBuf::from(DEFAULT_CERTIFICATE_CONTROL_DIRECTORY),
             },
@@ -848,7 +848,6 @@ impl SystemdLaunchUnitBackend {
             ("control directory", &control_directory),
             ("CLI socket", &cli_socket),
             ("CLI directory", &cli_directory),
-            ("stream-host private state root", &stream_private_state_root),
             (
                 "compositor control directory",
                 &compositor_control_directory,
@@ -857,7 +856,13 @@ impl SystemdLaunchUnitBackend {
                 "certificate control directory",
                 &certificate_control_directory,
             ),
-        ] {
+        ]
+        .into_iter()
+        .chain(
+            stream_private_state_root
+                .as_ref()
+                .map(|path| ("stream-host private state root", path)),
+        ) {
             if !valid_protected_path(path) {
                 return Err(LaunchUnitError::new(
                     LaunchUnitErrorKind::InvalidConfiguration,
@@ -908,9 +913,8 @@ impl SystemdLaunchUnitBackend {
             configured_path("KORRID_CONTROL_DIRECTORY", DEFAULT_CONTROL_DIRECTORY);
         let cli_socket = configured_path("KORRID_CLI_SOCKET", crate::cli::DEFAULT_SOCKET);
         let cli_directory = cli_socket.parent().unwrap_or(Path::new("/")).to_owned();
-        let stream_private_state_root = std::env::var_os("KORRID_STREAM_PRIVATE_STATE_ROOT")
-            .map(PathBuf::from)
-            .unwrap_or_default();
+        let stream_private_state_root =
+            optional_path(std::env::var_os("KORRID_STREAM_PRIVATE_STATE_ROOT"));
         let compositor_control_directory = configured_path(
             "KORRID_COMPOSITOR_CONTROL_DIRECTORY",
             DEFAULT_COMPOSITOR_CONTROL_DIRECTORY,
@@ -1307,14 +1311,14 @@ impl SystemdLaunchUnitBackend {
             // installed. systemd refuses to start the unit for a missing
             // path unless it has the "-" prefix.
             format!(
-                "--property=InaccessiblePaths={} /run/korrid {} {} {} {} {} -{} {} -{} /run/user/{} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources{}",
+                "--property=InaccessiblePaths={} /run/korrid {} {} {} {} {}{} {} -{} /run/user/{} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources{}",
                 self.private_state_root.display(),
                 DEFAULT_BROWSER_RUNTIME_DIRECTORY,
                 self.control_socket.display(),
                 self.control_directory.display(),
                 self.cli_socket.display(),
                 self.cli_directory.display(),
-                self.stream_private_state_root.display(),
+                self.stream_private_state_root.as_ref().map(|path| format!(" -{}", path.display())).unwrap_or_default(),
                 self.compositor_control_directory.display(),
                 self.certificate_control_directory.display(),
                 self.runtime_uid,
@@ -2320,6 +2324,10 @@ fn configured_path(name: &str, default: &str) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(default))
 }
 
+fn optional_path(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    value.filter(|value| !value.is_empty()).map(PathBuf::from)
+}
+
 fn valid_protected_path(path: &Path) -> bool {
     let Some(value) = path.to_str() else {
         return false;
@@ -2366,6 +2374,57 @@ mod tests {
             2002,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn backend_without_a_stream_root_validates() {
+        let mut backend = backend(1000);
+        let mut expected = backend
+            .launch_arguments(LAUNCH_ID, &["/bin/game".into()], &BTreeMap::new())
+            .unwrap();
+        let hidden = expected
+            .iter_mut()
+            .find(|argument| argument.starts_with("--property=InaccessiblePaths="))
+            .unwrap();
+        *hidden = hidden.replace(" -/home/korri/.config/sunshine", "");
+        for configured in [None, Some("".into())] {
+            backend.stream_private_state_root = optional_path(configured);
+            assert_eq!(backend.stream_private_state_root, None);
+            backend.validate().unwrap();
+            assert_eq!(
+                backend
+                    .launch_arguments(LAUNCH_ID, &["/bin/game".into()], &BTreeMap::new())
+                    .unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_configured_stream_roots_are_still_rejected() {
+        let mut backend = backend(1000);
+        for configured in [
+            "relative/sunshine",
+            "/",
+            "/private/../sunshine",
+            "/private/./sunshine",
+            "/private//sunshine",
+            "/private/space path",
+            "/private/line\nbreak",
+        ] {
+            backend.stream_private_state_root = optional_path(Some(configured.into()));
+            assert_eq!(backend.stream_private_state_root, Some(configured.into()));
+            for error in [
+                backend.validate().unwrap_err(),
+                backend.live_launch_ids().unwrap_err(),
+                backend
+                    .launch_arguments(LAUNCH_ID, &["/bin/game".into()], &BTreeMap::new())
+                    .unwrap_err(),
+            ] {
+                assert_eq!(error.kind, LaunchUnitErrorKind::InvalidConfiguration);
+                assert_eq!(error.message, "stream-host private state root must be a normalized absolute path without whitespace");
+            }
+        }
     }
 
     const PORTAL: &str = "korri-chromium-kiosk.service";

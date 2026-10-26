@@ -910,7 +910,7 @@ in
           "-/dev/inputplumber/sources"
           cfg.localSignerPrivateStateRoot
         ]
-        ++ lib.optional (cfg.streamPrivateStateRoot != null) cfg.streamPrivateStateRoot;
+        ++ lib.optional (cfg.streamPrivateStateRoot != null) "-${cfg.streamPrivateStateRoot}";
       };
     };
 
