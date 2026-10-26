@@ -196,6 +196,7 @@ struct SessionStateGuard<'a> {
     control: &'a HostSessionControl,
     state: MutexGuard<'a, ActiveState>,
     reconcile: bool,
+    dim_rollback: Option<(String, Option<String>)>,
 }
 
 impl Deref for SessionStateGuard<'_> {
@@ -219,6 +220,19 @@ impl Drop for SessionStateGuard<'_> {
         self.control.retire_initial_handoff(&self.state);
         // A panic may leave a half-made transition. Thaw rather than trust it.
         if std::thread::panicking() {
+            if let Some((launch_id, _)) = self.dim_rollback.take() {
+                let restored = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    self.control.restore_game_presentation(&launch_id)
+                }));
+                if !matches!(restored, Ok(Ok(()))) {
+                    // Preserve the original panic even if a broken backend also
+                    // panics during recovery. Best effort must still pause A,
+                    // never a replacement, rather than leave A running dimmed.
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        self.control.backend.freeze(&launch_id)
+                    }));
+                }
+            }
             *self.state = ActiveState::RecoveryBlocked;
             if let Some(portal) = &self.control.portal {
                 *portal
@@ -271,6 +285,7 @@ struct TransitionTrace {
     lock_holder_elapsed_ms: Option<u128>,
     overlay_output: Option<String>,
     focus_target: Option<i64>,
+    press_to_dim_ms: Option<u128>,
 }
 
 impl TransitionTrace {
@@ -468,6 +483,7 @@ impl HostSessionControl {
             control: self,
             state,
             reconcile: true,
+            dim_rollback: None,
         }
     }
 
@@ -663,16 +679,16 @@ impl HostSessionControl {
     /// Opacity belongs to windows proven from this exact launch's live PIDs.
     /// Restoration does not choose a focus target: restore every owned window
     /// if several exist, but never dim an ambiguous launch or a kiosk window.
-    fn game_opacity(&self, launch_id: &str, dim: bool) -> Result<(), String> {
+    fn game_opacity(&self, launch_id: &str, dim: bool) -> Result<bool, String> {
         if self.portal.is_none() {
-            return Ok(());
+            return Ok(false);
         }
         let pids = self
             .backend
             .window_pids(launch_id)
             .map_err(|error| error.message)?;
         if pids.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
         let compositor = self
             .compositor
@@ -683,7 +699,7 @@ impl HostSessionControl {
         let tree = compositor.tree()?;
         let candidates = match select_focus_target(&tree, &pids, &portal_pids) {
             FocusTarget::Window(candidate) => vec![candidate],
-            FocusTarget::NoWindow => return Ok(()),
+            FocusTarget::NoWindow => return Ok(false),
             FocusTarget::Ambiguous(candidates) if !dim => candidates,
             FocusTarget::Ambiguous(_) => return Err("cannot dim an ambiguous exact launch".into()),
             FocusTarget::Unreadable(error) => return Err(error),
@@ -714,7 +730,7 @@ impl HostSessionControl {
             }
             commands.push(format!("[con_id={node}] opacity {opacity}"));
         }
-        compositor.command(&commands.join("; "))
+        compositor.command(&commands.join("; ")).map(|()| true)
     }
 
     fn place_overlay(&self, launch_id: &str, trace: &mut TransitionTrace) -> Result<(), String> {
@@ -961,6 +977,7 @@ impl HostSessionControl {
             control: self,
             state,
             reconcile: true,
+            dim_rollback: None,
         };
         Some(
             self.observe_status_locked(guard, true, |status, ownership, handoff| {
@@ -1097,6 +1114,7 @@ impl HostSessionControl {
                 &placement,
                 pids,
                 excluded,
+                true,
             )?;
             if progress == GamePlacementStatus::AwaitingWindow {
                 return Ok(progress);
@@ -1214,8 +1232,54 @@ impl HostSessionControl {
         Ok(rectangles)
     }
 
-    /// Raise the window of the exact launch that was just resumed. A missing
-    /// compositor is distinct from a successful focus and fails closed.
+    /// Restore the exact launch's fullscreen/opacity recipe on failed Leave.
+    /// Do not append a focus command when seat recovery may have failed.
+    fn restore_game_presentation(&self, launch_id: &str) -> Result<(), String> {
+        let displays = super::display_placement::configured_displays()?;
+        if displays.len() <= 1 {
+            return self.game_opacity(launch_id, false).map(|_| ());
+        }
+        let compositor = self
+            .compositor
+            .as_ref()
+            .ok_or("game compositor unavailable")?;
+        let pids = self
+            .backend
+            .window_pids(launch_id)
+            .map_err(|error| error.message)?;
+        if pids.is_empty() {
+            return Ok(());
+        }
+        let excluded = self.portal_pids()?;
+        let placement = self.launch_placement(launch_id, &displays)?;
+        match super::display_placement::place_game(
+            compositor.as_ref(),
+            &displays,
+            &placement,
+            &pids,
+            &excluded,
+            false,
+        )? {
+            super::display_placement::GamePlacementStatus::Placed(_) => {
+                *self
+                    .placement_applied
+                    .lock()
+                    .expect("placement mutex poisoned") =
+                    Some(AppliedDisplayPlacement::Game(launch_id.into()));
+                *self
+                    .display_content
+                    .lock()
+                    .expect("display content mutex poisoned") = placement.outputs;
+                Ok(())
+            }
+            super::display_placement::GamePlacementStatus::AwaitingWindow => {
+                Err("cannot prove the exact game's presentation for rollback".into())
+            }
+        }
+    }
+
+    /// Raise the window of the exact resumed launch, failing closed when
+    /// compositor ownership cannot be proven.
     fn focus_launch(&self, launch_id: &str) -> Option<FocusOutcome> {
         let compositor = self.compositor.as_ref()?;
         let pids = match self.backend.window_pids(launch_id) {
@@ -2570,15 +2634,21 @@ impl HostSessionControl {
     }
 
     pub fn freeze(&self, expected_launch_id: &str) -> HostSessionFreezeChange {
-        self.observe_freeze(expected_launch_id, |outcome| outcome)
+        self.observe_freeze(expected_launch_id, Instant::now(), |outcome| outcome)
     }
 
     pub(crate) fn observe_freeze<T>(
         &self,
         expected_launch_id: &str,
+        received_at: Instant,
         observe: impl FnOnce(HostSessionFreezeChange) -> T,
     ) -> T {
-        self.set_freezer_observed(expected_launch_id, FreezerTarget::Frozen, observe)
+        self.set_freezer_observed(
+            expected_launch_id,
+            FreezerTarget::Frozen,
+            received_at,
+            observe,
+        )
     }
 
     pub fn thaw(&self, expected_launch_id: &str) -> HostSessionFreezeChange {
@@ -2590,7 +2660,12 @@ impl HostSessionControl {
         expected_launch_id: &str,
         observe: impl FnOnce(HostSessionFreezeChange) -> T,
     ) -> T {
-        self.set_freezer_observed(expected_launch_id, FreezerTarget::Running, observe)
+        self.set_freezer_observed(
+            expected_launch_id,
+            FreezerTarget::Running,
+            Instant::now(),
+            observe,
+        )
     }
 
     pub(crate) fn invoke_running_effect<F>(
@@ -2819,9 +2894,10 @@ impl HostSessionControl {
         &self,
         expected_launch_id: &str,
         target: FreezerTarget,
+        received_at: Instant,
         observe: impl FnOnce(HostSessionFreezeChange) -> T,
     ) -> T {
-        let started = Instant::now();
+        let started = received_at;
         let mut trace = TransitionTrace::default();
         if let Some((name, since)) = *self
             .state_owner
@@ -2870,7 +2946,22 @@ impl HostSessionControl {
                 | ActiveState::FocusFailed { .. } => unreachable!(),
             };
 
-            // Query the unit so a change made outside korrid is observed first.
+            if target == FreezerTarget::Frozen {
+                // The mutex-bound launch identity plus fresh unit PIDs and the
+                // unique compositor window are sufficient to compose feedback.
+                // Dim before the slower freezer observation/change; the game
+                // can keep rendering into the same buffer during this interval.
+                state.dim_rollback = Some((launch_id.clone(), game_id.clone()));
+                match trace.time("game_dim", || self.game_opacity(&launch_id, true)) {
+                    Ok(true) => trace.press_to_dim_ms = Some(started.elapsed().as_millis()),
+                    Ok(false) => state.dim_rollback = None,
+                    Err(message) => {
+                        return HostSessionFreezeChange::HelperFailed { launch_id, message }
+                    }
+                }
+            }
+            // Observe freezer state after visual feedback, before mutating it.
+
             let observed = match trace.time("unit_read", || self.backend.state(&launch_id)) {
                 Ok(observed) => observed,
                 Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
@@ -2996,8 +3087,7 @@ impl HostSessionControl {
             };
             if target == FreezerTarget::Frozen {
                 if let Err(message) = trace
-                    .time("game_dim", || self.game_opacity(&launch_id, true))
-                    .and_then(|()| trace.time("input_route", || self.input_seats.route(None)))
+                    .time("input_route", || self.input_seats.route(None))
                     .and_then(|()| trace.time("portal_thaw", || self.thaw_portal()))
                     .and_then(|()| self.place_overlay(&launch_id, &mut trace))
                 {
@@ -3017,7 +3107,14 @@ impl HostSessionControl {
                     if self.ensure_seats(&launch_id).is_err()
                         || self.input_seats.route(Some(&launch_id)).is_err()
                         || self.reset_seats(&launch_id).is_err()
-                        || Self::focus_failure(self.focus_launch(&launch_id)).is_some()
+                        || {
+                            let failed =
+                                Self::focus_failure(self.focus_launch(&launch_id)).is_some();
+                            if !failed {
+                                state.dim_rollback = None;
+                            }
+                            failed
+                        }
                     {
                         if self
                             .record_focus_failure(&mut state, launch_id.clone(), game_id)
@@ -3085,6 +3182,42 @@ impl HostSessionControl {
                 HostSessionFreezeChange::Changed { launch_id }
             }
         })();
+        let outcome = if !matches!(
+            &outcome,
+            HostSessionFreezeChange::Changed { .. } | HostSessionFreezeChange::Unchanged { .. }
+        ) {
+            if let Some((launch_id, game_id)) = state.dim_rollback.clone() {
+                let terminal = matches!(&*state,
+                    ActiveState::Completed { launch_id: active } | ActiveState::Failed { launch_id: active, .. }
+                        if active == &launch_id);
+                // Completion already proves this unit cannot run dimmed.
+                // Other early exits restore even a partial dim, including
+                // observation/freeze and receiver failures. Never target B.
+                if !terminal
+                    && trace
+                        .time("dim_rollback", || {
+                            self.restore_game_presentation(&launch_id)
+                        })
+                        .is_err()
+                {
+                    let blocked = matches!(&*state, ActiveState::RecoveryBlocked);
+                    self.refreeze_after_opacity_failure(&mut state, launch_id, game_id);
+                    if blocked {
+                        *state = ActiveState::RecoveryBlocked;
+                    }
+                    HostSessionFreezeChange::RecoveryBlocked
+                } else {
+                    outcome
+                }
+            } else {
+                outcome
+            }
+        } else {
+            outcome
+        };
+        // A successful overlay intentionally retains its dim. Failed paths
+        // have restored presentation or paused the exact launch above.
+        state.dim_rollback = None;
         // Publish Home/Return (including terminal cleanup) in the same
         // transition as the native effect, never from its later RPC reply.
         let outcome_label = format!("{outcome:?}");
@@ -3116,14 +3249,15 @@ impl HostSessionControl {
             "seat_reset",
             "game_focus",
             "game_dim",
+            "dim_rollback",
             "reconcile",
             "publication",
             "guard_reconcile",
         ] {
             trace.phases_ms.entry(name).or_default();
         }
-        eprintln!("<6>korrid: PlacementTransition {{ launch_id: {expected_launch_id}, target: {target:?}, outcome: {outcome_label}, powered_displays: {powered:?}, overlay_output: {:?}, focus_target: {:?}, total_ms: {}, lock_holder: {:?}, lock_holder_elapsed_ms: {:?}, phases_ms: {:?} }}",
-            trace.overlay_output, trace.focus_target, started.elapsed().as_millis(), trace.lock_holder, trace.lock_holder_elapsed_ms, trace.phases_ms);
+        eprintln!("<6>korrid: PlacementTransition {{ launch_id: {expected_launch_id}, target: {target:?}, outcome: {outcome_label}, powered_displays: {powered:?}, overlay_output: {:?}, focus_target: {:?}, total_ms: {}, press_to_dim_ms: {:?}, lock_holder: {:?}, lock_holder_elapsed_ms: {:?}, phases_ms: {:?} }}",
+            trace.overlay_output, trace.focus_target, started.elapsed().as_millis(), trace.press_to_dim_ms, trace.lock_holder, trace.lock_holder_elapsed_ms, trace.phases_ms);
         result
     }
 
@@ -3577,7 +3711,7 @@ mod tests {
                 .lines()
                 .filter(|line| line.starts_with("<6>korrid: PlacementTransition"))
                 .collect();
-            assert_eq!(outcomes.len(), 22, "{stderr}");
+            assert_eq!(outcomes.len(), 34, "{stderr}");
             for line in outcomes {
                 for field in [
                     "launch_id",
@@ -3598,6 +3732,8 @@ mod tests {
                     "seat_reset",
                     "game_focus",
                     "game_dim",
+                    "press_to_dim_ms",
+                    "dim_rollback",
                     "reconcile",
                 ] {
                     assert!(line.contains(field), "{line}");
@@ -3625,6 +3761,9 @@ cd '{}' || exit 1
 for argument do command="$argument"; done
 case "$command" in get_tree) printf 'tree\n' >> reads; cat tree; exit;; esac
 printf '%s\n' "$command" >> commands
+case "$command" in *'opacity 0.4'*)
+ if test -f refuse-dim; then printf '[{{"success":false,"error":"dim refused"}}]'; exit; fi;;
+esac
 case "$command" in *'opacity 1'*)
  if test -f refuse-restore; then printf '[{{"success":false,"error":"opacity refused"}}]'; exit; fi;;
 esac
@@ -3654,7 +3793,7 @@ printf '[{{"success":true}}]'
                 RecordingPortalUnit::default()
             });
             let control = HostSessionControl::new(root.path(), backend.clone())
-                .with_compositor(compositor)
+                .with_compositor(compositor.clone())
                 .with_portal(portal.clone());
             let prepared = prepare(&control, "one");
             backend.set_pids(&prepared.launch_id, &[9100]);
@@ -3686,13 +3825,24 @@ printf '[{{"success":true}}]'
             );
             fs::write(root.path().join("commands"), "").unwrap();
             assert!(matches!(
+                control.freeze("ffffffffffffffffffffffffffffffff"),
+                HostSessionFreezeChange::StaleIdentity { .. }
+            ));
+            assert_eq!(
+                fs::read_to_string(root.path().join("commands")).unwrap(),
+                "",
+                "a stale launch must not dim its replacement"
+            );
+            backend.state.lock().unwrap().record_state_reads = true;
+            assert!(matches!(
                 control.freeze(&prepared.launch_id),
                 HostSessionFreezeChange::Changed { .. }
             ));
+            backend.state.lock().unwrap().record_state_reads = false;
             let first_open = fs::read_to_string(root.path().join("commands")).unwrap();
             assert!(
-                first_open.starts_with("freeze\n[con_id=3] fullscreen disable; [con_id=3] floating enable; [con_id=3] border none; [con_id=3] resize set width 640 px height 480 px; [con_id=3] move absolute position 0 px 0 px; [con_id=3] opacity 0.4\n"),
-                "freeze must precede immediate game dim: {first_open}"
+                first_open.starts_with("[con_id=3] fullscreen disable; [con_id=3] floating enable; [con_id=3] border none; [con_id=3] resize set width 640 px height 480 px; [con_id=3] move absolute position 0 px 0 px; [con_id=3] opacity 0.4\nunit_read\nfreeze\n"),
+                "dim must precede freeze: {first_open}"
             );
             assert!(
                 first_open.find("opacity 0.4").unwrap()
@@ -3769,7 +3919,7 @@ printf '[{{"success":true}}]'
             ));
             let reopened = fs::read_to_string(root.path().join("commands")).unwrap();
             assert!(
-                reopened.starts_with("freeze\n[con_id=3] fullscreen disable; [con_id=3] floating enable; [con_id=3] border none; [con_id=3] resize set width 640 px height 480 px; [con_id=3] move absolute position 0 px 0 px; [con_id=3] opacity 0.4\n"),
+                reopened.starts_with("[con_id=3] fullscreen disable; [con_id=3] floating enable; [con_id=3] border none; [con_id=3] resize set width 640 px height 480 px; [con_id=3] move absolute position 0 px 0 px; [con_id=3] opacity 0.4\nfreeze\n"),
                 "{reopened}"
             );
             assert!(reopened.contains("output DSI-1 power on"), "{reopened}");
@@ -3815,6 +3965,38 @@ printf '[{{"success":true}}]'
                 LaunchUnitState::Running
             );
             fs::write(root.path().join("portal-tree"), tree(2)).unwrap();
+            for reject_dim in [false, true] {
+                fs::write(root.path().join("commands"), "").unwrap();
+                let freeze_count = backend.state.lock().unwrap().frozen.len();
+                if reject_dim {
+                    fs::write(root.path().join("refuse-dim"), "1").unwrap();
+                } else {
+                    backend.state.lock().unwrap().freezer_fails = true;
+                }
+                assert!(matches!(
+                    control.freeze(&prepared.launch_id),
+                    HostSessionFreezeChange::HelperFailed { .. }
+                ));
+                if reject_dim {
+                    fs::remove_file(root.path().join("refuse-dim")).unwrap();
+                    assert_eq!(
+                        backend.state.lock().unwrap().frozen.len(),
+                        freeze_count,
+                        "refused dim must not freeze"
+                    );
+                }
+                backend.state.lock().unwrap().freezer_fails = false;
+                assert_eq!(
+                    backend.state(&prepared.launch_id).unwrap(),
+                    LaunchUnitState::Running
+                );
+                let failed = fs::read_to_string(root.path().join("commands")).unwrap();
+                assert!(failed.contains("[con_id=3] floating disable; [con_id=3] move container to output DSI-2; [con_id=3] fullscreen enable; [con_id=3] opacity 1"), "all failed Leaves restore presentation: {failed}");
+                assert!(
+                    !failed.contains("output DSI-1 power on"),
+                    "a failed pre-freeze operation must not open the panel: {failed}"
+                );
+            }
             assert!(matches!(
                 control.freeze(&prepared.launch_id),
                 HostSessionFreezeChange::Changed { .. }
@@ -3867,6 +4049,67 @@ printf '[{{"success":true}}]'
             assert_eq!(
                 backend.state(&next.launch_id).unwrap(),
                 LaunchUnitState::Frozen
+            );
+            fs::remove_file(root.path().join("refuse-restore")).unwrap();
+            assert!(matches!(
+                control.thaw(&next.launch_id),
+                HostSessionFreezeChange::Changed { .. }
+            ));
+            fs::write(root.path().join("commands"), "").unwrap();
+            backend.state.lock().unwrap().state_unavailable = true;
+            assert!(matches!(
+                control.freeze(&next.launch_id),
+                HostSessionFreezeChange::RecoveryBlocked
+            ));
+            backend.state.lock().unwrap().state_unavailable = false;
+            assert_eq!(
+                backend.state(&next.launch_id).unwrap(),
+                LaunchUnitState::Running
+            );
+            let unreadable = fs::read_to_string(root.path().join("commands")).unwrap();
+            assert!(
+                unreadable.contains("[con_id=3] fullscreen enable; [con_id=3] opacity 1"),
+                "failed post-dim observation restores the same exact window: {unreadable}"
+            );
+            // The guard also restores a dim if a worker unwinds before freeze.
+            let restarted = HostSessionControl::new(root.path(), backend.clone())
+                .with_compositor(compositor.clone())
+                .with_portal(portal.clone());
+            assert!(matches!(
+                restarted.status(),
+                HostSessionStatus::Running { .. }
+            ));
+            fs::write(root.path().join("commands"), "").unwrap();
+            backend.state.lock().unwrap().panic_on_state = true;
+            assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                || restarted.freeze(&next.launch_id)
+            ))
+            .is_err());
+            backend.state.lock().unwrap().panic_on_state = false;
+            assert_eq!(
+                backend.state(&next.launch_id).unwrap(),
+                LaunchUnitState::Running
+            );
+            let unwound = fs::read_to_string(root.path().join("commands")).unwrap();
+            assert!(
+                unwound.contains("[con_id=3] fullscreen enable; [con_id=3] opacity 1"),
+                "panic cleanup must restore presentation: {unwound}"
+            );
+            let completed = HostSessionControl::new(root.path(), backend.clone())
+                .with_compositor(compositor.clone())
+                .with_portal(portal.clone());
+            assert!(matches!(
+                completed.status(),
+                HostSessionStatus::Running { .. }
+            ));
+            backend.state.lock().unwrap().complete_on_state = true;
+            assert!(matches!(
+                completed.freeze(&next.launch_id),
+                HostSessionFreezeChange::NoActive
+            ));
+            assert_eq!(
+                backend.state(&next.launch_id).unwrap(),
+                LaunchUnitState::Completed
             );
         }
     }
@@ -4244,6 +4487,10 @@ printf '[{{"success":true}}]'
         stop_fails_when_collected: bool,
         stop_times_out: bool,
         freezer_fails: bool,
+        state_unavailable: bool,
+        panic_on_state: bool,
+        complete_on_state: bool,
+        record_state_reads: bool,
         window_pids: BTreeMap<String, BTreeSet<i32>>,
         window_pids_fail: bool,
         runners: BTreeMap<String, String>,
@@ -4325,7 +4572,37 @@ printf '[{{"success":true}}]'
         }
 
         fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError> {
-            let state = self.state.lock().unwrap();
+            let mut state = self.state.lock().unwrap();
+            if state.complete_on_state {
+                state.complete_on_state = false;
+                state
+                    .units
+                    .insert(launch_id.into(), LaunchUnitState::Completed);
+            }
+            if state.panic_on_state {
+                drop(state);
+                panic!("injected post-dim observer panic");
+            }
+            if state.record_state_reads {
+                if let Some(path) = &state.sway_events_file {
+                    use std::io::Write;
+                    writeln!(
+                        fs::OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(path)
+                            .unwrap(),
+                        "unit_read"
+                    )
+                    .unwrap();
+                }
+            }
+            if state.state_unavailable {
+                return Err(LaunchUnitError::new(
+                    LaunchUnitErrorKind::Failed,
+                    "unit observation unavailable",
+                ));
+            }
             if let Some(message) = state.failed_units.get(launch_id) {
                 return Err(LaunchUnitError::new(
                     LaunchUnitErrorKind::UnitFailed,

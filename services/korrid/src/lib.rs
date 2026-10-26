@@ -3328,17 +3328,21 @@ async fn dispatch(
                             Ok(expected) => {
                                 let observer = state.clone();
                                 let observed_id = expected.clone();
-                                host.observe_session_freeze(&expected, move |change| {
-                                    let outcome = host_session_freeze_outcome(
-                                        Ok(change),
-                                        SessionFreezerState::Frozen,
-                                    );
-                                    observer.reconcile_freeze_overlay_intent(
-                                        Some(&observed_id),
-                                        &outcome,
-                                    );
-                                    outcome
-                                })
+                                host.observe_session_freeze(
+                                    &expected,
+                                    request_arrived.into_std(),
+                                    move |change| {
+                                        let outcome = host_session_freeze_outcome(
+                                            Ok(change),
+                                            SessionFreezerState::Frozen,
+                                        );
+                                        observer.reconcile_freeze_overlay_intent(
+                                            Some(&observed_id),
+                                            &outcome,
+                                        );
+                                        outcome
+                                    },
+                                )
                                 .await
                                 .unwrap_or_else(|failure| {
                                     host_session_freeze_outcome(
