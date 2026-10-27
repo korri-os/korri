@@ -862,6 +862,15 @@ impl NativeSaveStore {
         Ok(Some(path))
     }
     fn records_at(&self, path: &Path) -> Result<Vec<SnapshotRecord>, SaveError> {
+        Ok(self
+            .records_with_ids_at(path)?
+            .into_iter()
+            .map(|(_, record)| record)
+            .collect())
+    }
+    /// Each record with its id, which `record_file` checked against the
+    /// record's own hash before the memo could hold it.
+    fn records_with_ids_at(&self, path: &Path) -> Result<Vec<(String, SnapshotRecord)>, SaveError> {
         let mut records = Vec::new();
         for entry in fs::read_dir(path).map_err(io)? {
             let entry = entry.map_err(io)?;
@@ -884,7 +893,7 @@ impl NativeSaveStore {
         // Each record's id is its validated filename hash: sort by that, not
         // by canonicalizing and hashing every record again.
         records.sort_by(|a, b| a.0.cmp(&b.0));
-        Ok(records.into_iter().map(|(_, record)| record).collect())
+        Ok(records)
     }
     /// One record, read from the file its id names, without the game's others.
     fn record_by_id(
@@ -910,6 +919,16 @@ impl NativeSaveStore {
         }
     }
     fn all_records(&self, person: &str) -> Result<Vec<Vec<SnapshotRecord>>, SaveError> {
+        Ok(self
+            .all_records_with_ids(person)?
+            .into_iter()
+            .map(|records| records.into_iter().map(|(_, record)| record).collect())
+            .collect())
+    }
+    fn all_records_with_ids(
+        &self,
+        person: &str,
+    ) -> Result<Vec<Vec<(String, SnapshotRecord)>>, SaveError> {
         let Some(path) = self.person(person, false)? else {
             return Ok(vec![]);
         };
@@ -917,7 +936,7 @@ impl NativeSaveStore {
         for entry in fs::read_dir(path).map_err(io)? {
             let entry = entry.map_err(io)?;
             directory(&entry.path(), false)?;
-            records.push(self.records_at(&entry.path())?);
+            records.push(self.records_with_ids_at(&entry.path())?);
         }
         Ok(records)
     }
@@ -1043,11 +1062,20 @@ impl SaveRepository for NativeSaveStore {
     fn heads(&self, person: &str) -> Result<SaveHeads, SaveError> {
         let _guard = lock()?;
         let mut games = Vec::new();
-        for records in self.all_records(person)? {
-            if let Some(record) = records.first() {
+        // Peers ask for heads often. Use the checked ids rather than
+        // canonicalizing and hashing every record again (head_ids).
+        for records in self.all_records_with_ids(person)? {
+            if let Some((_, record)) = records.first() {
+                let parents: BTreeSet<_> = records.iter().flat_map(|(_, r)| &r.parents).collect();
+                let mut heads: Vec<String> = records
+                    .iter()
+                    .filter(|(id, _)| !parents.contains(id))
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                heads.sort();
                 games.push(GameSaveHeads {
                     game_id: record.game_id.clone(),
-                    heads: head_ids(&records)?,
+                    heads,
                 });
             }
         }
