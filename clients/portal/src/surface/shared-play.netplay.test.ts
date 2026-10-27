@@ -4,13 +4,13 @@
  * problem, and the plugin install that comes first when the core is missing.
  */
 import { expect, spyOn, test } from "bun:test"
-import { SessionFreezerState, type Invite } from "@contracts/generated/korrid"
+import { SessionFreezerState, type Invite, type InviteNetplay, type NetplayStatus } from "@contracts/generated/korrid"
 import { createHttpKorridClient, createInMemoryKorridClient, type InMemoryPluginHostConfig } from "../korrid/client"
-import type { InviteNetplay, NetplayInvite, NetplayObservation } from "../korrid/netplay-contract"
 import { LaunchablesState } from "../launchables/state"
 import { initialPluginFacts } from "./plugin-repositories"
 import {
   createSharedPlay,
+  neededBytes,
   netplayProblem,
   netplayStatusFrom,
   newestRelease,
@@ -19,7 +19,7 @@ import {
 
 const base: Invite = { inviteId: "opaque", devicePublicKey: "far", deviceLabel: "RG35XX SP", personName: "Simon",
   session: { launchId: "exact", gameId: "turtles", title: "Turtles in Time", phase: "running" } }
-const withRoute = (netplay?: InviteNetplay): NetplayInvite => netplay === undefined ? base : { ...base, netplay }
+const withRoute = (netplay?: InviteNetplay): Invite => netplay === undefined ? base : { ...base, netplay }
 const ready = () => LaunchablesState.fromSources({ _tag: "Ok", payload: { games: [] } })
 const settle = async () => { for (let i = 0; i < 10; ++i) await new Promise(resolve => setTimeout(resolve, 0)) }
 const gate = () => {
@@ -27,7 +27,7 @@ const gate = () => {
   const closed = new Promise<void>(resolve => { open = resolve })
   return { closed, open: () => open() }
 }
-const labels = (invite: NetplayInvite) => surfaceInvitesFrom([invite], ready())[0]!.actions.map(action => [action.id, action.label])
+const labels = (invite: Invite) => surfaceInvitesFrom([invite], ready())[0]!.actions.map(action => [action.id, action.label])
 
 test("each netplay route is one action between stream play and Dismiss, with its own words", () => {
   expect(labels(withRoute({ _tag: "Ready" }))).toEqual([
@@ -47,7 +47,7 @@ test("no netplay action when korrid offers none or the reason can't be fixed her
   }
 })
 
-const observed = (phase: NetplayObservation["phase"]): NetplayObservation =>
+const observed = (phase: NetplayStatus["phase"]): NetplayStatus =>
   ({ launchId: "mine", deviceLabel: "RG35XX SP", gameTitle: "Turtles in Time", phase })
 
 test("korrid's report becomes Busy with a bar and Cancel, Paused with Leave, or Reconnecting with nothing to press", () => {
@@ -73,8 +73,11 @@ test("every problem names the game, the device and what is left; codes never rea
     reason: "RG35XX SP runs a different version of Snes9x 2010. Play on stream still works." })
   expect(netplayProblem({ code: "CopyFailed", message: "x" }, facts)).toMatchObject({ kicker: "Copy failed",
     reason: "Turtles in Time did not copy from RG35XX SP. Nothing was kept." })
-  expect(netplayProblem({ code: "NotEnoughSpace", message: "4700000000" }, facts)).toMatchObject({ kicker: "Not enough space",
+  expect(netplayProblem({ code: "NotEnoughSpace", message: "The copy needs 4700000000 bytes." }, facts)).toMatchObject({ kicker: "Not enough space",
     reason: "Turtles in Time needs 4.7 GB free on this device." })
+  // Only korrid's own wording carries a size; a bare number or other words do not.
+  expect(neededBytes("The copy needs 12345 bytes.")).toBe(12345)
+  expect(neededBytes("12345")).toBeUndefined()
   expect(netplayProblem({ code: "NotEnoughSpace", message: "no room" }, facts)).toMatchObject({
     reason: "Turtles in Time needs more free space on this device." })
   expect(netplayProblem({ code: "BrainUnreachable", message: "korrid did not answer" }, facts)).toMatchObject({
@@ -82,7 +85,7 @@ test("every problem names the game, the device and what is left; codes never rea
 })
 
 test("Play here: Connecting until korrid reports, then its report; Playing gives the screen back", async () => {
-  let report: NetplayObservation | undefined
+  let report: NetplayStatus | undefined
   const answer = gate()
   const base = createInMemoryKorridClient({ invites: [withRoute({ _tag: "Ready" })], netplaySession: () => report })
   const client = { ...base, invitesNetplay: async (id: string) => { await answer.closed; return base.invitesNetplay(id) } }
@@ -104,7 +107,7 @@ test("Play here: Connecting until korrid reports, then its report; Playing gives
 })
 
 test("Copy and play here: the bar starts at once, follows korrid's bytes, and Cancel cancels the exact launch", async () => {
-  let report: NetplayObservation | undefined
+  let report: NetplayStatus | undefined
   const answer = gate()
   const base = createInMemoryKorridClient({ invites: [withRoute({ _tag: "NeedsCopy", bytes: 4_000_000 })], netplaySession: () => report })
   const client = { ...base, invitesNetplay: async () => {
@@ -135,7 +138,7 @@ test("Copy and play here: the bar starts at once, follows korrid's bytes, and Ca
 
 test("a refused netplay is a Problem in plain words, and dismissing it brings the invite back", async () => {
   const base = createInMemoryKorridClient({ invites: [withRoute({ _tag: "NeedsCopy", bytes: 4_700_000_000 })] })
-  const client = { ...base, invitesNetplay: async () => ({ _tag: "Err" as const, payload: { code: "NotEnoughSpace", message: "4700000000" } }) }
+  const client = { ...base, invitesNetplay: async () => ({ _tag: "Err" as const, payload: { code: "NotEnoughSpace", message: "The copy needs 4700000000 bytes." } }) }
   const shared = createSharedPlay(client, { state: ready, refreshSession: async () => {} })
   const stop = shared.start()
   await settle()
@@ -149,7 +152,7 @@ test("a refused netplay is a Problem in plain words, and dismissing it brings th
 })
 
 test("the holder left: Paused with Leave, found again after a reload; Leave and Back leave the exact launch", async () => {
-  let report: NetplayObservation | undefined = observed({ _tag: "HolderLeft" })
+  let report: NetplayStatus | undefined = observed({ _tag: "HolderLeft" })
   const client = createInMemoryKorridClient({ netplaySession: () => report })
   // korrid ends this device's copy and keeps its seat.
   const leave = spyOn(client, "sessionLeave").mockImplementation(async launchId => ({ _tag: "Ok", payload: {

@@ -12,6 +12,7 @@ import type {
   InviteDismissOutcome,
   SessionStreamPlayOutcome,
   StreamPlayEnded,
+  NetplayStatus,
   PendingLaunch,
   RpcFailure,
   GameRoutes,
@@ -68,15 +69,6 @@ import type {
 } from "@contracts/generated/korrid"
 import { createInMemorySaves, type InMemorySavesConfig } from "./in-memory-saves"
 import {
-  NetplayFailureCode,
-  inviteNetplayOf,
-  netplayOutcomeOf,
-  netplayRpcRequest,
-  type InvitesNetplayOutcome,
-  type NetplayInvite,
-  type NetplayObservation,
-} from "./netplay-contract"
-import {
   createInMemoryLaunchSettings,
   type InMemoryLaunchSettingsConfig,
   type LaunchSettingsMethods,
@@ -123,7 +115,7 @@ export interface KorridClient extends StoreAcquisitionMethods, LaunchSettingsMet
   invitesStreamPlay(inviteId: string): Promise<SessionStreamPlayOutcome>
   /** Copies the release when needed, prepares netplay with the holder and
    * launches this device's copy. Progress shows in `sessionStatus`. */
-  invitesNetplay(inviteId: string): Promise<InvitesNetplayOutcome>
+  invitesNetplay(inviteId: string): Promise<SessionStreamPlayOutcome>
   invitesDismiss(inviteId: string): Promise<InviteDismissOutcome>
   networkStatus(): Promise<NetworkStatusOutcome>
   scanWifi(): Promise<NetworkStatusOutcome>
@@ -650,7 +642,7 @@ export function createHttpKorridClient(
       catch (error) { return unreachable(error) }
     },
     async invitesNetplay(inviteId) {
-      try { return netplayOutcomeOf(await callKorrid(baseUrl, capability, netplayRpcRequest(inviteId), NETPLAY_TIMEOUT_MS)) }
+      try { return (await callKorrid(baseUrl, capability, { _tag: "app.invites.netplay", payload: { inviteId } }, NETPLAY_TIMEOUT_MS)).outcome }
       catch (error) { return unreachable(error) }
     },
     async invitesDismiss(inviteId) {
@@ -1124,10 +1116,10 @@ export interface InMemoryArtifact {
 
 export interface InMemoryKorridClientConfig {
   /** Same-owner live sessions, already cached by the daemon, with the
-   * netplay route this device has for each (provisional, see netplay-contract). */
-  readonly invites?: readonly NetplayInvite[] | (() => readonly NetplayInvite[])
+   * netplay route this device has for each. */
+  readonly invites?: readonly Invite[] | (() => readonly Invite[])
   /** This device's netplay, as `sessionStatus` reports it. */
-  readonly netplaySession?: () => NetplayObservation | undefined
+  readonly netplaySession?: () => NetplayStatus | undefined
   /** Selected stream-play launch, including a portal reloaded mid-stream. */
   readonly streamPlayLaunchId?: string
   /** Far holder facts while the local viewer is selected. Undefined means End. */
@@ -1853,9 +1845,9 @@ export function createInMemoryKorridClient(
       if (activeSession !== undefined) return routeFailure("ActiveSessionConflict", "This device already has a live session")
       const invite = liveInvites().find(invite => invite.inviteId === inviteId)
       if (invite === undefined) return routeFailure("InviteUnavailable", "This invite is no longer available")
-      const netplay = inviteNetplayOf(invite)
+      const netplay = invite.netplay
       if (netplay?._tag !== "Ready" && netplay?._tag !== "NeedsCopy") {
-        return routeFailure(NetplayFailureCode.NoNetplayRoute, "This device has no netplay route for this session")
+        return routeFailure("NoNetplayRoute", "This device has no netplay route for this session")
       }
       // This device runs its own copy: a local session of the same game.
       activeSession = { launchId: `netplay:${invite.session.launchId}`, phase: "running",

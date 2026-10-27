@@ -1,14 +1,7 @@
 /** Host-owned shared-play actions. Surfaces receive opaque ids, never RPCs. */
-import type { Invite, RpcFailure, StreamPlayEnded } from "@contracts/generated/korrid"
+import type { Invite, InviteNetplay, NetplayStatus, RpcFailure, StreamPlayEnded } from "@contracts/generated/korrid"
 import type { SurfaceAction, SurfaceInvite, SurfaceStatus } from "@contracts/surface/korri-surface"
 import type { KorridClient } from "../korrid/client"
-import {
-  NetplayFailureCode,
-  inviteNetplayOf,
-  netplayObservationOf,
-  type InviteNetplay,
-  type NetplayObservation,
-} from "../korrid/netplay-contract"
 import { entryKey, type LaunchablesState } from "../launchables/state"
 import { formatBytes } from "./acquisition-gate"
 import {
@@ -31,6 +24,25 @@ const LEAVE = "stream-play:leave:"
 const NETPLAY_CANCEL = "netplay:cancel"
 const NETPLAY_INSTALL = "netplay:install"
 const NETPLAY_LEAVE = "netplay:leave:"
+
+/** `RpcFailure.code` of `app.invites.netplay`, and `InviteNetplay.Unavailable.reason`
+ * (services/korrid/src/netplay/receiver.rs, acquisition/netplay.rs). */
+export const NetplayFailureCode = {
+  NoNetplayRoute: "NoNetplayRoute",
+  CopyFailed: "CopyFailed",
+  NotEnoughSpace: "NotEnoughSpace",
+  CoreVersionMismatch: "CoreVersionMismatch",
+} as const
+
+/** korrid's NotEnoughSpace message: "The copy needs 4700000000 bytes."
+ * (services/korrid/src/acquisition/netplay.rs). */
+const NEEDED_BYTES = /^The copy needs (\d+) bytes\.$/
+
+/** The bytes a NotEnoughSpace message names, or nothing when it names none. */
+export function neededBytes(message: string | undefined): number | undefined {
+  const match = message === undefined ? null : NEEDED_BYTES.exec(message.trim())
+  return match?.[1] === undefined ? undefined : Number(match[1])
+}
 
 function gameFacts(state: LaunchablesState, gameId: string | undefined): { id?: string; coverArtUrl?: string } {
   if (state._tag === "Loading" || gameId === undefined) return {}
@@ -59,7 +71,7 @@ export function netplayLabel(netplay: InviteNetplay | undefined): string | undef
 
 export function surfaceInvitesFrom(invites: readonly Invite[], state: LaunchablesState): readonly SurfaceInvite[] {
   return invites.map(invite => {
-    const netplay = netplayLabel(inviteNetplayOf(invite))
+    const netplay = netplayLabel(invite.netplay)
     return {
       id: invite.inviteId,
       personName: invite.personName,
@@ -114,7 +126,7 @@ export function copyDetail(done: number, total: number): string {
  * What this device's netplay shows while korrid reports it. Playing shows
  * nothing: the game has the screen.
  */
-export function netplayStatusFrom(observation: NetplayObservation, gameId?: string): SurfaceStatus | undefined {
+export function netplayStatusFrom(observation: NetplayStatus, gameId?: string): SurfaceStatus | undefined {
   const device = observation.deviceLabel
   const owned = gameId === undefined ? {} : { gameId }
   const phase = observation.phase
@@ -153,7 +165,7 @@ export function netplayReason(code: string, facts: NetplayProblemFacts, message?
     case NetplayFailureCode.CopyFailed:
       return `${facts.gameTitle} did not copy from ${facts.deviceLabel}. Nothing was kept.`
     case NetplayFailureCode.NotEnoughSpace: {
-      const bytes = message !== undefined && /^\d+$/.test(message.trim()) ? Number(message.trim()) : undefined
+      const bytes = neededBytes(message)
       return bytes === undefined
         ? `${facts.gameTitle} needs more free space on this device.`
         : `${facts.gameTitle} needs ${formatBytes(bytes)} free on this device.`
@@ -222,7 +234,7 @@ export function createSharedPlay(korrid: KorridClient, context: {
   let invites: readonly Invite[] = []
   /** What korrid last reported of this device's netplay. Read at start, so a
    * reload finds a netplay in progress, then while one goes on. */
-  let observation: NetplayObservation | undefined
+  let observation: NetplayStatus | undefined
   let observed = false
   /** The game the netplay in progress belongs to, as the surface names it. */
   let netplayGameId: string | undefined
@@ -250,7 +262,7 @@ export function createSharedPlay(korrid: KorridClient, context: {
     const status = await korrid.sessionStatus()
     if (disposed) return
     observed = true
-    if (status._tag === "Ok") observation = netplayObservationOf(status.payload)
+    if (status._tag === "Ok") observation = status.payload.netplay
     if (observation === undefined && operation?.kind !== "netplay") netplayGameId = undefined
     const active = operation
     if (active?.kind === "netplay" && active.cancelled && active.cancelSent !== true && observation !== undefined) {
@@ -307,7 +319,7 @@ export function createSharedPlay(korrid: KorridClient, context: {
     operation = active
     netplayGameId = gameFacts(context.state(), invite.session.gameId).id
     override = undefined
-    const route = inviteNetplayOf(invite)
+    const route = invite.netplay
     placeholder = route?._tag === "NeedsCopy"
       ? netplayStatusFrom({ launchId: "", deviceLabel: invite.deviceLabel, phase: { _tag: "Copying", done: 0, total: route.bytes },
         ...(invite.session.title === undefined ? {} : { gameTitle: invite.session.title }) }, netplayGameId)
@@ -394,7 +406,7 @@ export function createSharedPlay(korrid: KorridClient, context: {
     if (disposed) return
     const again = invites.find(candidate => candidate.inviteId === invite.inviteId)
     if (again === undefined) { operation = undefined; await settle(); return }
-    const route = inviteNetplayOf(again)
+    const route = again.netplay
     if (route?._tag === "Unavailable") {
       operation = undefined
       show(netplayProblem({ code: route.reason, message: route.reason }, facts(again, title)))
@@ -470,7 +482,7 @@ export function createSharedPlay(korrid: KorridClient, context: {
       if (operation !== undefined || context.state()._tag !== "Ready") return true
       if (id === STREAM + invite.inviteId) void play(invite)
       else if (id === NETPLAY + invite.inviteId) {
-        const route = inviteNetplayOf(invite)
+        const route = invite.netplay
         if (route?._tag === "NeedsPlugin") void install(invite, route.pluginId, route.title)
         else if (route?._tag === "Ready" || route?._tag === "NeedsCopy") void netplay(invite)
       } else void korrid.invitesDismiss(invite.inviteId).then(async outcome => {

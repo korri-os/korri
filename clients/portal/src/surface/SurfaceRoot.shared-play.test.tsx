@@ -2,10 +2,9 @@ import { afterEach, expect, spyOn, test } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import type { SurfaceHost, SurfaceModel } from "@contracts/surface/korri-surface"
-import type { ActiveSession, Invite } from "@contracts/generated/korrid"
+import type { ActiveSession, Invite, NetplayStatus } from "@contracts/generated/korrid"
 import { createInputBus } from "../input/bus"
 import { createInMemoryKorridClient, type KorridClient } from "../korrid/client"
-import type { NetplayObservation } from "../korrid/netplay-contract"
 import { SurfaceRoot } from "./SurfaceRoot"
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -87,7 +86,7 @@ test("Ended is observed, names the game and holder, and stays hidden after dismi
 })
 
 test("the portal publishes the netplay route, shows korrid's copy progress, and Back cancels it", async () => {
-  let report: NetplayObservation | undefined
+  let report: NetplayStatus | undefined
   let release!: () => void
   const answered = new Promise<void>(resolve => { release = resolve })
   const base = createInMemoryKorridClient({ games: [], netplaySession: () => report,
