@@ -83,6 +83,7 @@ pub(super) const RUNNER_ID_ENV: &str = "KORRI_LIVE_RUNNER_ID";
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LaunchSandbox {
+    netplay_config_source: Option<PathBuf>,
     modifiers: bool,
     plugin: bool,
     pulse_audio: bool,
@@ -91,6 +92,13 @@ pub struct LaunchSandbox {
 impl LaunchSandbox {
     pub(crate) fn new(command: &[String], baseline: &BTreeMap<String, String>) -> Self {
         Self {
+            netplay_config_source: command
+                .get(4)
+                .and_then(|value| {
+                    serde_json::from_str::<crate::launcher::plugin_launch::LaunchComposition>(value)
+                        .ok()
+                })
+                .and_then(|composition| composition.netplay_config_source),
             modifiers: crate::launcher::plugin_launch::has_modifiers(command),
             plugin: command
                 .get(1)
@@ -1326,6 +1334,13 @@ impl SystemdLaunchUnitBackend {
             ),
             "--property=RestrictSUIDSGID=yes".into(),
         ];
+        if let Some(source) = &sandbox.netplay_config_source {
+            arguments.push(format!(
+                "--property=LoadCredential={}:{}",
+                crate::netplay::password::CREDENTIAL,
+                source.display()
+            ));
+        }
         if sandbox.plugin {
             let runtime = format!("korri-game-{launch_id}");
             arguments.extend([
@@ -2550,6 +2565,7 @@ mod tests {
                 .sandbox_properties(
                     LAUNCH_ID,
                     &LaunchSandbox {
+                        netplay_config_source: None,
                         modifiers,
                         plugin: false,
                         pulse_audio: false,

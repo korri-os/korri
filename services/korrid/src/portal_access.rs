@@ -15,7 +15,7 @@ pub enum PortalPermission {
 impl PortalPermission {
     fn permits(self, request: &RpcRequest) -> bool {
         let initial_read = match request {
-            RpcRequest::SessionStreamPlay(_) => false,
+            RpcRequest::SessionStreamPlay(_) | RpcRequest::SessionNetplay(_) | RpcRequest::ReleaseObject(_) => false,
             RpcRequest::SaveHeads(_)
             | RpcRequest::SaveRecords(_)
             | RpcRequest::SaveInUse(_)
@@ -40,7 +40,7 @@ impl PortalPermission {
             | RpcRequest::SessionStatus(_)
             | RpcRequest::SessionControls(_)
             | RpcRequest::PluginRepositories(_) => true,
-            RpcRequest::InvitesStreamPlay(_) | RpcRequest::InvitesDismiss(_) | RpcRequest::SavesChoose(_)
+            RpcRequest::InvitesNetplay(_) | RpcRequest::InvitesStreamPlay(_) | RpcRequest::InvitesDismiss(_) | RpcRequest::SavesChoose(_)
             | RpcRequest::SavesRestore(_)
             | RpcRequest::SavesCheck(_)
             | RpcRequest::WifiScan(_)
@@ -108,7 +108,7 @@ impl PortalPermission {
                         RpcRequest::SessionPrepare(request) => request.host.as_deref().is_none_or(|host| {
                             !host.trim().is_empty() && host.len() <= 256 && !host.chars().any(char::is_control)
                         }),
-                        RpcRequest::InvitesStreamPlay(_) | RpcRequest::InvitesDismiss(_) => true,
+                        RpcRequest::InvitesNetplay(_) | RpcRequest::InvitesStreamPlay(_) | RpcRequest::InvitesDismiss(_) => true,
                         RpcRequest::SettingsUpdate(request) => {
                             request.setting_id == crate::config::settings::PLAYER_COUNT_SETTING_ID
                                 || request.setting_id == crate::stream_play::person_name::SETTING_ID

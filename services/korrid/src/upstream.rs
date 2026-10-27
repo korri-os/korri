@@ -81,6 +81,8 @@ pub struct UpstreamPrepared {
 #[serde(rename_all = "camelCase")]
 pub struct UpstreamActiveSession {
     #[serde(default)]
+    pub netplay: Option<Box<crate::netplay::NetplaySession>>,
+    #[serde(default)]
     pub person_public_key: Option<String>,
     #[serde(default)]
     pub stream_players: Vec<crate::stream_play::StreamPlayer>,

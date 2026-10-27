@@ -183,6 +183,15 @@ impl<K: Eq, B: SeatBackend> SeatPool<K, B> {
         Ok(self.seats[index].slot)
     }
 
+    /// Includes disconnected reservations, not only connected input sources.
+    pub fn has_binding(&self, matches: impl Fn(&K) -> bool) -> bool {
+        self.seats.iter().any(|seat| {
+            seat.binding
+                .as_ref()
+                .is_some_and(|binding| matches(&binding.source))
+        })
+    }
+
     pub fn count(&self) -> u8 {
         self.seats.len() as u8
     }

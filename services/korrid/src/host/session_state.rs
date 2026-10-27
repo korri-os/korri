@@ -250,7 +250,7 @@ pub struct HostSessionControl {
     backend: Arc<dyn LaunchUnitBackend>,
     limits_client: crate::launch_settings::helper::Client,
     input_seats: Arc<dyn InputSeatManager>,
-    identity_root: PathBuf,
+    pub(super) identity_root: PathBuf,
     boot_identity: Result<String, String>,
     play_log: PlayLogStore,
     save_push: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<String>>>>,
@@ -863,6 +863,7 @@ impl HostSessionControl {
                 .parent()
                 .ok_or("private state root missing")?,
         );
+        self.remove_netplay_credential(&record);
         let (key, entry, save_snapshot) = match record {
             ActiveSession::Running {
                 person_public_key: None,
@@ -1585,7 +1586,12 @@ impl HostSessionControl {
             }
             crate::saves::access::prepare_account(root, person)
                 .map_err(|error| failure("SavesUnavailable", error.to_string()))?;
-            if !prepared.plan.save_locations.is_empty() {
+            if !input
+                .netplay
+                .as_ref()
+                .is_some_and(crate::netplay::PluginLaunchNetplay::is_client)
+                && !prepared.plan.save_locations.is_empty()
+            {
                 use crate::saves::store::NativeSaveStore;
                 let store =
                     NativeSaveStore::new(self.identity_root.parent().expect("private state root"));
@@ -1663,6 +1669,27 @@ impl HostSessionControl {
                     *runner_id = Some(input.runner_id);
                     *save_locations = Some(prepared.plan.save_locations);
                 }
+            }
+        }
+        if let Some((input, prepared)) =
+            crate::launcher::plugin_launch::declared_saves(configured_command)
+                .map_err(|message| failure("LocalRouteUnavailable", message))?
+        {
+            if let ActiveSession::Running {
+                netplay_config,
+                runner_id,
+                release_id,
+                ..
+            } = &mut active
+            {
+                *runner_id = Some(input.runner_id);
+                *release_id = prepared.release_id;
+                let composition: crate::launcher::plugin_launch::LaunchComposition =
+                    serde_json::from_str(&configured_command[4])
+                        .map_err(|_| failure("NoNetplayRoute", "Invalid launch composition."))?;
+                *netplay_config = composition
+                    .netplay_config_source
+                    .map(|path| path.display().to_string());
             }
         }
         persist_active(&self.identity_root, &active).map_err(|message| {
@@ -1853,7 +1880,7 @@ impl HostSessionControl {
         self.observe_status(|status, ownership, _| (status, ownership))
     }
 
-    fn observe_status<T>(
+    pub(super) fn observe_status<T>(
         &self,
         observe: impl FnOnce(HostSessionStatus, Option<FocusOwnership>, Option<InitialHandoff>) -> T,
     ) -> T {
@@ -1998,8 +2025,22 @@ impl HostSessionControl {
 
     /// Removes the active record for a launch that never reached the
     /// player. Nothing is logged.
+    fn remove_netplay_credential(&self, record: &ActiveSession) {
+        if let ActiveSession::Running {
+            netplay_config: Some(path),
+            ..
+        } = record
+        {
+            if let Some(root) = self.identity_root.parent() {
+                if crate::netplay::password::remove(root, std::path::Path::new(path)).is_err() {
+                    log::warn!("completed netplay credential could not be removed");
+                }
+            }
+        }
+    }
     fn discard_active(&self) -> Result<(), String> {
         if let Some(mut record) = read_active(&self.identity_root)? {
+            self.remove_netplay_credential(&record);
             crate::launch_settings::session::end(&self.limits_client, record.launch_id());
             self.input_seats.end_session(record.launch_id())?;
             if let ActiveSession::Running {
@@ -6850,6 +6891,44 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert!(!records[0].interrupted);
         assert_eq!(records[0].duration_seconds, 30);
+    }
+
+    #[test]
+    fn netplay_receiver_never_reads_or_captures_save_history() {
+        use crate::saves::{store::NativeSaveStore, SaveRepository};
+        let root = tempfile::tempdir().unwrap();
+        let save_root = root.path().join("game");
+        let folder = save_root.join("saves");
+        fs::create_dir_all(&folder).unwrap();
+        let input = serde_json::json!({"runnerId":"mgba","program":"game","accountRoot":root.path().join("users").join(PERSON),"saveRoot":save_root,"cacheRoot":root.path(),"files":{},"artifacts":{},"netplay":{"role":"client","address":"127.0.0.1","port":12345,"player":2,"passwordConfig":"/tmp/korri-netplay.cfg"}});
+        let handoff = serde_json::json!({"plan":{"command":"game","args":[],"saveLocations":[{"key":"saves","kind":"save","path":folder}]},"runnerArgv":["game"],"releaseId":"gba-release"});
+        let command = vec![
+            "korrid".into(),
+            "plugin-launch".into(),
+            "unused-source".into(),
+            input.to_string(),
+            "{\"modifiers\":[]}".into(),
+            handoff.to_string(),
+        ];
+        let backend = Arc::new(DeterministicBackend::default());
+        let clock = TestClock::at(1_700_000_000);
+        let control = control_with_clock(root.path(), backend.clone(), clock.clone());
+        let started = control
+            .prepare("gba/wario", Some(PERSON), Ok(&command), &BTreeMap::new())
+            .unwrap();
+        fs::write(folder.join("game.srm"), b"progress").unwrap();
+        let store = NativeSaveStore::new(root.path());
+        assert!(store.records(PERSON, "gba/wario").unwrap().is_empty());
+        control.freeze(&started.launch_id);
+        assert!(store.records(PERSON, "gba/wario").unwrap().is_empty());
+        clock.advance(30);
+        backend.insert(&started.launch_id, LaunchUnitState::Completed);
+        control.status();
+        let records = store.records(PERSON, "gba/wario").unwrap();
+        assert!(
+            records.is_empty(),
+            "a receiver must never publish a snapshot"
+        );
     }
 
     #[test]

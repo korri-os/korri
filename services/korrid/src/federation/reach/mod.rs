@@ -11,6 +11,7 @@ mod settings;
 pub mod signal;
 mod stun;
 mod tunnel;
+pub(crate) use tunnel::NetplayForward;
 mod viewer;
 
 // The registry uses this boundary to prepare a viewer and retain its lease.
@@ -246,6 +247,9 @@ impl FederationDirectory {
             ));
         }
         self.reach.activate(device).await
+    }
+    pub(crate) async fn netplay_forward(&self, device: &str) -> io::Result<NetplayForward> {
+        NetplayForward::open(self.reach_connection(device).await?).await
     }
     pub(crate) async fn reach_connection(&self, device: &str) -> io::Result<Connection> {
         if !self

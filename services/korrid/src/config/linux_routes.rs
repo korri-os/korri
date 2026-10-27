@@ -207,6 +207,18 @@ fn linux_route_candidates_for_runner(
             }
             // ADR 0013: no usable saved location, but an enabled plugin
             // declares this release's content file inside an artifact.
+            // A verified federation copy is already here, even when the same
+            // release also has a declaration whose artifact is not installed.
+            if !routed {
+                if let Some(path) = registry.content_rules(system_id).and_then(|rules| {
+                    crate::acquisition::placement::copied_game_content(root, key, rules)
+                }) {
+                    let flattened = format!("cache:{}", path.display());
+                    emitted.insert(runner.id.clone());
+                    candidates.push(route(None, None, None, None, Some(path), flattened));
+                    routed = true;
+                }
+            }
             if !routed {
                 if let Some(target) = artifact_target(registry, key) {
                     let flattened = format!("{}:{}", target.artifact_id, target.path);

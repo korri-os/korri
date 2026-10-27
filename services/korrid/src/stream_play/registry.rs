@@ -56,6 +56,7 @@ impl UpstreamRegistry {
                 };
                 let active = status.active?;
                 Some(crate::invites::Invite {
+                    netplay: None,
                     invite_id: String::new(),
                     device_public_key: key,
                     device_label: host.label.clone(),
@@ -228,5 +229,21 @@ impl UpstreamRegistry {
         }
         self.clear_selected_if(selected);
         Ok(UpstreamSessionStatus::SessionStatus { active: None })
+    }
+}
+
+impl UpstreamRegistry {
+    pub(crate) fn netplay_client(
+        &self,
+        device: &str,
+    ) -> Result<crate::upstream_native::NativeClient, UpstreamError> {
+        let registry = self.resolved()?;
+        let host = registry
+            .native_host_by_route_key(device)
+            .ok_or(UpstreamError::SourcePeerNotFound)?;
+        let RegisteredClient::Native(client) = &host.client else {
+            return Err(UpstreamError::SourcePeerNotFound);
+        };
+        Ok(client.clone())
     }
 }

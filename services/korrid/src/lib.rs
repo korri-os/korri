@@ -2,6 +2,7 @@
 
 pub mod acquisition;
 pub mod invites;
+pub mod netplay;
 pub mod stream_play;
 use invites::{InviteDismissOutcome, InviteRequest, InvitesListOutcome, InvitesListRequest};
 use stream_play::{
@@ -603,6 +604,9 @@ pub struct PendingLaunch {
 #[serde(rename_all = "camelCase")]
 pub struct ActiveSession {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[typeshare(serialized_as = "Option<NetplaySession>")]
+    pub netplay: Option<Box<netplay::NetplaySession>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub person_public_key: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stream_players: Vec<StreamPlayer>,
@@ -626,6 +630,8 @@ pub struct ActiveSession {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionStatus {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub netplay: Option<netplay::NetplayStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_play_launch_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1354,6 +1360,13 @@ pub enum RpcRequest {
     SessionStart(SessionStartRequest),
     #[serde(rename = "app.session.cancel")]
     SessionCancel(SessionCancelRequest),
+    #[serde(rename = "app.session.netplay")]
+    SessionNetplay(netplay::SessionNetplayRequest),
+    #[typeshare(skip)]
+    #[serde(rename = "app.releases.object")]
+    ReleaseObject(netplay::ReleaseObjectRequest),
+    #[serde(rename = "app.invites.netplay")]
+    InvitesNetplay(InviteRequest),
     #[serde(rename = "app.session.streamPlay")]
     SessionStreamPlay(SessionStreamPlayRequest),
     #[serde(rename = "app.invites.list")]
@@ -1525,6 +1538,10 @@ pub enum RpcResponse {
     SessionStart(game_routes::SelectedGameLaunchOutcome),
     #[serde(rename = "app.session.cancel")]
     SessionCancel(SessionEndOutcome),
+    #[serde(rename = "app.session.netplay")]
+    SessionNetplay(netplay::SessionNetplayOutcome),
+    #[serde(rename = "app.invites.netplay")]
+    InvitesNetplay(SessionStreamPlayOutcome),
     #[serde(rename = "app.session.streamPlay")]
     SessionStreamPlay(SessionStreamPlayOutcome),
     #[serde(rename = "app.invites.list")]
@@ -1653,6 +1670,8 @@ enum RpcSurface {
 
 #[derive(Clone)]
 struct AppState {
+    netplay_holder: Arc<netplay::holder::Holder>,
+    netplay_receiver: netplay::receiver::Receiver,
     person_names: stream_play::person_name::device::PersonNames,
     invites: invites::device::Invites,
     session_selection: Arc<tokio::sync::Mutex<()>>,
@@ -1953,9 +1972,11 @@ fn session_status_outcome(
     match result {
         Ok(upstream::UpstreamSessionStatus::SessionStatus { active }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: active.map(|active| ActiveSession {
+                    netplay: active.netplay,
                     person_public_key: active.person_public_key,
                     stream_players: active.stream_players,
                     initial_handoff: None,
@@ -2036,9 +2057,11 @@ fn host_session_status_outcome(
     match result {
         Ok(HostSessionStatus::Running { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
+                    netplay: None,
                     person_public_key: None,
                     stream_players: Vec::new(),
                     launch_id,
@@ -2056,9 +2079,11 @@ fn host_session_status_outcome(
         }
         Ok(HostSessionStatus::Frozen { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
+                    netplay: None,
                     person_public_key: None,
                     stream_players: Vec::new(),
                     launch_id,
@@ -2076,9 +2101,11 @@ fn host_session_status_outcome(
         }
         Ok(HostSessionStatus::FocusFailed { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
+                    netplay: None,
                     person_public_key: None,
                     stream_players: Vec::new(),
                     launch_id,
@@ -2096,9 +2123,11 @@ fn host_session_status_outcome(
         }
         Ok(HostSessionStatus::Stopping { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
+                    netplay: None,
                     person_public_key: None,
                     stream_players: Vec::new(),
                     launch_id,
@@ -2142,6 +2171,7 @@ fn unavailable_remote_session_controls(
 ) -> SessionControlsOutcome {
     match status {
         SessionStatusOutcome::Ok(SessionStatus {
+            netplay: None,
             stream_play_launch_id: None,
             active: Some(active),
             ..
@@ -2413,6 +2443,7 @@ fn with_pending_launches(
             let observation_failure =
                 (!is_terminal_session_identity_code(&failure.code)).then_some(failure);
             SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 pending_launches: Some(pending),
@@ -2493,6 +2524,9 @@ async fn dispatch(
 ) -> Result<RpcResponse, authorization::AuthorizationDenied> {
     let request_arrived = tokio::time::Instant::now();
     authorization::authorize(authorization, &request)?;
+    if let Some(response) = netplay::receiver::dispatch(state, authorization, &request).await {
+        return Ok(response);
+    }
     let _selection = stream_play::device::serialize_selection(state, &request).await;
     let refusal = match &state.mode {
         ServerMode::Host(host) => stream_play::rights::refusal(host, authorization, &request).await,
@@ -2505,7 +2539,9 @@ async fn dispatch(
         return Ok(response);
     }
     let mut response = match request {
-        RpcRequest::SaveObject(_) => return Err(authorization::AuthorizationDenied),
+        RpcRequest::SaveObject(_) | RpcRequest::ReleaseObject(_) => {
+            return Err(authorization::AuthorizationDenied)
+        }
         RpcRequest::SaveHeads(_) => {
             let service = state
                 .saves
@@ -3071,6 +3107,12 @@ async fn dispatch(
         RpcRequest::SessionStreamPlay(request) => RpcResponse::SessionStreamPlay(
             stream_play::registration::register(state, authorization, &request).await,
         ),
+        RpcRequest::SessionNetplay(request) => RpcResponse::SessionNetplay(
+            netplay::holder::register(state, authorization, &request).await,
+        ),
+        RpcRequest::InvitesNetplay(request) => {
+            RpcResponse::InvitesNetplay(netplay::receiver::start(state, &request).await)
+        }
         RpcRequest::InvitesList(_) => RpcResponse::InvitesList(invites::device::list(state).await),
         RpcRequest::InvitesStreamPlay(request) => {
             RpcResponse::InvitesStreamPlay(invites::device::stream_play(state, &request).await)
@@ -4353,6 +4395,8 @@ fn brain_app_state(
     let portal_access = PortalAccess::new(rpc_capability, allowed_origin, PortalPermission::Full);
     let state = AppState {
         person_names: stream_play::person_name::device::PersonNames::default(),
+        netplay_holder: Arc::new(netplay::holder::Holder::default()),
+        netplay_receiver: netplay::receiver::Receiver::default(),
         invites: invites::device::Invites::default(),
         session_selection: Arc::new(tokio::sync::Mutex::new(())),
         remote: None,
@@ -4573,6 +4617,8 @@ fn app_states_with(
     let network = network::NetworkService::default();
     let lan = AppState {
         person_names: stream_play::person_name::device::PersonNames::default(),
+        netplay_holder: Arc::new(netplay::holder::Holder::default()),
+        netplay_receiver: netplay::receiver::Receiver::default(),
         invites: invites::device::Invites::default(),
         session_selection: Arc::new(tokio::sync::Mutex::new(())),
         remote: None,
@@ -4590,6 +4636,8 @@ fn app_states_with(
     };
     let local = AppState {
         person_names: lan.person_names.clone(),
+        netplay_holder: lan.netplay_holder.clone(),
+        netplay_receiver: lan.netplay_receiver.clone(),
         invites: lan.invites.clone(),
         session_selection: lan.session_selection.clone(),
         remote: None,
@@ -5508,6 +5556,7 @@ mod tests {
     fn status_with_active_session_maps_to_ok_with_details() {
         let outcome = session_status_outcome(Ok(upstream::UpstreamSessionStatus::SessionStatus {
             active: Some(upstream::UpstreamActiveSession {
+                netplay: None,
                 person_public_key: None,
                 stream_players: Vec::new(),
                 launch_id: "l1".into(),
@@ -5549,9 +5598,11 @@ mod tests {
         let outcome = correlate_overlay_status(
             &intent,
             SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
+                    netplay: None,
                     person_public_key: None,
                     stream_players: Vec::new(),
                     launch_id: "a".into(),
@@ -5580,6 +5631,7 @@ mod tests {
     #[test]
     fn overlay_intent_never_retargets_after_a_exits_or_is_replaced_by_b() {
         let session = |launch_id: &str| ActiveSession {
+            netplay: None,
             person_public_key: None,
             stream_players: Vec::new(),
             initial_handoff: None,
@@ -5595,6 +5647,7 @@ mod tests {
         let replaced = correlate_overlay_status(
             &replaced_intent,
             SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(session("b")),
@@ -5692,9 +5745,11 @@ mod tests {
         let stopping = correlate_overlay_status(
             &intent,
             SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
+                    netplay: None,
                     person_public_key: None,
                     stream_players: Vec::new(),
                     launch_id: "a".into(),
@@ -5719,9 +5774,11 @@ mod tests {
         let frozen_again = correlate_overlay_status(
             &intent,
             SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
+                    netplay: None,
                     person_public_key: None,
                     stream_players: Vec::new(),
                     launch_id: "a".into(),
@@ -5780,6 +5837,7 @@ mod tests {
         for phase in ["frozen", "focus-failed"] {
             let intent = Mutex::new(Some("a".into()));
             let active = ActiveSession {
+                netplay: None,
                 person_public_key: None,
                 stream_players: Vec::new(),
                 initial_handoff: None,
@@ -5793,6 +5851,7 @@ mod tests {
             let outcome = correlate_overlay_status(
                 &intent,
                 SessionStatusOutcome::Ok(SessionStatus {
+                    netplay: None,
                     stream_play_launch_id: None,
                     stream_play_ended: None,
                     active: Some(active.clone()),
@@ -5815,9 +5874,11 @@ mod tests {
     fn remote_gameplay_controls_refuse_stale_identity_before_unavailable_routing() {
         let exact = unavailable_remote_session_controls(
             SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: Some(ActiveSession {
+                    netplay: None,
                     person_public_key: None,
                     stream_players: Vec::new(),
                     launch_id: "launch-a".into(),
@@ -5844,6 +5905,7 @@ mod tests {
         for stale in [
             unavailable_remote_session_controls(
                 SessionStatusOutcome::Ok(SessionStatus {
+                    netplay: None,
                     stream_play_launch_id: None,
                     stream_play_ended: None,
                     active: None,
@@ -5879,6 +5941,7 @@ mod tests {
         assert!(matches!(
             outcome,
             SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: None,
@@ -5893,6 +5956,7 @@ mod tests {
     fn absent_optional_fields_are_omitted_from_the_wire() {
         assert_eq!(
             serde_json::to_value(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: None,
@@ -5905,6 +5969,7 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(ActiveSession {
+                netplay: None,
                 person_public_key: None,
                 stream_players: Vec::new(),
                 initial_handoff: None,

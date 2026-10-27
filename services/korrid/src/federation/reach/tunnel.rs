@@ -31,6 +31,7 @@ impl Default for Bindings {
 }
 #[derive(Clone)]
 struct Targets {
+    netplay: u16,
     address: IpAddr,
     tcp: [u16; 3],
     udp: [u16; 5],
@@ -38,6 +39,7 @@ struct Targets {
 impl Default for Targets {
     fn default() -> Self {
         Self {
+            netplay: 55435,
             address: Ipv4Addr::LOCALHOST.into(),
             tcp: TCP_PORTS,
             udp: UDP_PORTS,
@@ -180,7 +182,7 @@ async fn serve_on(connection: Connection, router: axum::Router, targets: Targets
     loop {
         tokio::select! {
             result = connection.accept_bi(), if tasks.len() < 36 => {
-                let Ok((send,mut recv)) = result else {break};
+                let Ok((mut send,mut recv)) = result else {break};
                 let router = router.clone();let targets = targets.clone();
                 tasks.spawn(async move {
                     let Ok(kind) = recv.read_u8().await else {return};
@@ -191,6 +193,16 @@ async fn serve_on(connection: Connection, router: axum::Router, targets: Targets
                             let Some(index) = TCP_PORTS.iter().position(|p| *p == port) else {return};
                             if let Ok(mut tcp) = TcpStream::connect((targets.address,targets.tcp[index])).await {
                                 let _ = tokio::io::copy_bidirectional(&mut tcp,&mut tokio::io::join(recv,send)).await;
+                            }
+                        }
+                        2 => {
+                            match TcpStream::connect((Ipv4Addr::LOCALHOST, targets.netplay)).await {
+                                Ok(mut tcp) => {
+                                    if send.write_all(&[1]).await.is_ok() {
+                                        let _ = tokio::io::copy_bidirectional(&mut tcp, &mut tokio::io::join(recv, send)).await;
+                                    }
+                                }
+                                Err(_) => { let _ = send.write_all(&[0]).await; }
                             }
                         }
                         _ => {}
@@ -321,5 +333,123 @@ mod tests {
         assert!(socket2::Socket::from(v6.into_std().unwrap())
             .only_v6()
             .unwrap());
+    }
+}
+
+/// Netplay never takes the native-LAN shortcut used by a stream viewer.
+/// This listener is ephemeral and loopback-only. The lease owns every copy.
+pub(crate) struct NetplayForward {
+    connection: Connection,
+    disconnected: Arc<std::sync::atomic::AtomicBool>,
+    connected: Arc<std::sync::atomic::AtomicBool>,
+    pub(crate) address: SocketAddr,
+    tasks: JoinSet<()>,
+}
+impl NetplayForward {
+    pub(crate) fn ready(&self) -> bool {
+        self.connected.load(std::sync::atomic::Ordering::Acquire) && !self.lost()
+    }
+    pub(crate) fn lost(&self) -> bool {
+        self.connection.close_reason().is_some()
+            || self.disconnected.load(std::sync::atomic::Ordering::Acquire)
+    }
+    pub(super) async fn open(connection: Connection) -> io::Result<Self> {
+        let disconnected = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let lost = disconnected.clone();
+        let connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let ready = connected.clone();
+        let observed_connection = connection.clone();
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+        let address = listener.local_addr()?;
+        let mut tasks = JoinSet::new();
+        tasks.spawn(async move {
+            let mut copies = JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted = listener.accept(), if copies.len() < 4 => {
+                        let Ok((mut tcp, _)) = accepted else { break; };
+                        let c = connection.clone();
+                        let lost = lost.clone(); let ready = ready.clone();
+                        copies.spawn(async move {
+                            let transfer = async {
+                                let (mut send, mut recv) = c.open_bi().await.map_err(std::io::Error::other)?;
+                                send.write_all(&[2]).await?;
+                                let accepted = tokio::time::timeout(std::time::Duration::from_secs(2), recv.read_u8()).await.map_err(std::io::Error::other)??;
+                                if accepted != 1 { return Err(std::io::Error::from(std::io::ErrorKind::ConnectionRefused)); }
+                                ready.store(true, std::sync::atomic::Ordering::Release);
+                                tokio::io::copy_bidirectional(&mut tcp, &mut tokio::io::join(recv, send)).await.map(|_| ())
+                            }.await;
+                            let _ = transfer;
+                            lost.store(true, std::sync::atomic::Ordering::Release);
+                        });
+                    }
+                    _ = copies.join_next(), if !copies.is_empty() => {}
+                    _ = connection.closed() => break,
+                }
+            }
+        });
+        Ok(Self {
+            address,
+            tasks,
+            connection: observed_connection,
+            disconnected,
+            connected,
+        })
+    }
+}
+impl Drop for NetplayForward {
+    fn drop(&mut self) {
+        self.tasks.abort_all();
+    }
+}
+
+#[cfg(test)]
+mod netplay_tests {
+    use super::*;
+    use tokio::io::AsyncWriteExt;
+    #[tokio::test]
+    async fn netplay_forward_carries_tcp_bytes_and_has_only_a_loopback_listener() {
+        let (a, b, outgoing, incoming) = crate::federation::reach::tests::pair().await;
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let targets = Targets {
+            netplay: listener.local_addr().unwrap().port(),
+            ..Default::default()
+        };
+        let echo = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let (mut read, mut write) = tcp.into_split();
+            tokio::io::copy(&mut read, &mut write).await.unwrap();
+        });
+        let server = tokio::spawn(serve_on(incoming, axum::Router::new(), targets));
+        let forward = NetplayForward::open(outgoing).await.unwrap();
+        assert!(forward.address.ip().is_loopback());
+        assert_ne!(forward.address.port(), 55435);
+        assert!(!TCP_PORTS.contains(&55355));
+        assert!(!forward.ready());
+        let mut client = TcpStream::connect(forward.address).await.unwrap();
+        client.write_all(b"RetroArch netplay").await.unwrap();
+        let mut bytes = [0; 17];
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            client.read_exact(&mut bytes),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(&bytes, b"RetroArch netplay");
+        assert!(forward.ready());
+        drop(client);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while !forward.lost() {
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
+        drop(forward);
+        server.abort();
+        echo.abort();
+        a.close().await;
+        b.close().await;
     }
 }

@@ -20,6 +20,8 @@ pub struct InviteRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Invite {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub netplay: Option<crate::netplay::InviteNetplay>,
     pub invite_id: String,
     pub device_public_key: String,
     pub device_label: String,

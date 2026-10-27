@@ -15,6 +15,7 @@ pub(crate) async fn serialize_selection(
         request,
         RpcRequest::SessionPrepare(_)
             | RpcRequest::SelectedGameLaunch(_)
+            | RpcRequest::InvitesNetplay(_)
             | RpcRequest::InvitesStreamPlay(_)
     ) {
         Some(state.session_selection.clone().lock_owned().await)
@@ -211,6 +212,7 @@ pub(crate) async fn dispatch(
                 session_status_outcome(peers.session_status().await)
             } else {
                 SessionStatusOutcome::Ok(SessionStatus {
+                    netplay: None,
                     stream_play_launch_id: None,
                     active: None,
                     overlay: None,

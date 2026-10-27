@@ -26,7 +26,7 @@ pub(super) fn prepare(root: &Path, artifact: &ArtifactRecord) -> Result<PathBuf,
     create_base(root, contribution(root, artifact))
 }
 
-fn create_base(root: &Path, base: PathBuf) -> Result<PathBuf, Failure> {
+pub(super) fn create_base(root: &Path, base: PathBuf) -> Result<PathBuf, Failure> {
     // The daemon runs with umask 0077. Published runtime paths must still be
     // traversable by the game user. Never chmod an existing parent or symlink.
     let relative = base.strip_prefix(root).map_err(|_| Failure::UnsafePath)?;
@@ -381,4 +381,19 @@ pub(crate) fn ready_game_file(
         return None;
     };
     Some(ready.join(path))
+}
+
+/// ADR 0040 owner decision, 2026-10-26 (netplay q27): copied releases use
+/// cache/<release-key hex>/<original filename>. The release key names it,
+/// so a peer never becomes a provider. Keep placement policy in one place.
+pub(crate) fn copied_release_cache(root: &Path) -> PathBuf {
+    root.join("cache")
+}
+
+pub(crate) fn copied_game_content(
+    root: &Path,
+    key: &str,
+    rules: &crate::plugin::ContentRules,
+) -> Option<PathBuf> {
+    ready_game_file(&copied_release_cache(root).join(ready_name(key)?), rules)
 }

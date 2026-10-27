@@ -26,6 +26,10 @@ impl HostRuntime {
         active: &mut crate::ActiveSession,
     ) -> Result<(), RpcFailure> {
         self.control()?.describe_stream_players(active)?;
+        active.netplay = self
+            .netplay_local(&active.launch_id)
+            .ok()
+            .map(|local| Box::new(local.facts));
         if let Some(game_id) = active.game_id.as_deref() {
             let person = active.person_public_key.as_deref();
             if let Some(known) = self.active_title.lock().ok().and_then(|known| {

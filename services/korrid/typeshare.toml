@@ -50,3 +50,8 @@ AcquireJobStateWire = '{ _tag: "Queued" } | { _tag: "Resolving" } | { _tag: "Dow
 
 # Integer percent or device governor, decoded by launch_settings.
 LaunchLimitValueWire = "number | string"
+
+# ADR 0040 exact internally tagged netplay treaties, enforced by netplay.rs.
+PluginLaunchNetplayWire = '{ role: "host"; passwordConfig: string } | { role: "client"; address: string; port: number; player: number; passwordConfig: string }'
+InviteNetplayWire = '{ _tag: "Ready" } | { _tag: "NeedsCopy"; bytes: number } | { _tag: "NeedsPlugin"; pluginId: string; title: string; bytes?: number } | { _tag: "Unavailable"; reason: string }'
+NetplayPhaseWire = '{ _tag: "Copying"; done: number; total: number } | { _tag: "Connecting" } | { _tag: "Playing" } | { _tag: "HolderLeft" } | { _tag: "Reconnecting" }'

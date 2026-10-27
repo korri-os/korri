@@ -13,6 +13,7 @@ mod input_seat;
 mod launch_reservation;
 mod launch_services;
 pub(crate) mod moonlight_certificate;
+mod netplay;
 mod occupied_seats;
 pub(crate) mod play_log;
 mod prepare;
@@ -749,7 +750,7 @@ impl HostRuntime {
             limit_facts.as_ref(),
         )
         .map_err(crate::game_routes::settings_failure)?;
-        let launch = linux_plugin::launch_route(
+        let mut launch = linux_plugin::launch_route(
             root,
             &snapshot,
             &registry,
@@ -759,6 +760,7 @@ impl HostRuntime {
             &owner,
         )
         .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
+        self.netplay_launch_input(&mut launch.command, None)?;
         let limits = crate::launch_settings::session::SessionLimits {
             cpu: crate::launch_settings::LaunchPercentRange {
                 min: resolved.limits.cpu.min.value,

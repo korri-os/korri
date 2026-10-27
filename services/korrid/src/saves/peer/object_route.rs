@@ -24,20 +24,36 @@ pub(super) async fn object_route(
         Err(PeerRpcError::Time) => return StatusCode::UNAUTHORIZED.into_response(),
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
-    let RpcRequest::SaveObject(request) = authenticated.envelope.request else {
-        return StatusCode::BAD_REQUEST.into_response();
-    };
-    let Some(service) = &state.app.saves else {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
-    };
-    let file = match service.object(&authenticated.context, request.sha256).await {
-        Ok(file) => file,
-        Err(PeerSaveError::Unauthorized) => return StatusCode::FORBIDDEN.into_response(),
-        Err(PeerSaveError::Protocol) => return StatusCode::BAD_REQUEST.into_response(),
-        Err(PeerSaveError::Save(SaveError::Missing)) => {
-            return StatusCode::NOT_FOUND.into_response()
+    let release = matches!(
+        &authenticated.envelope.request,
+        RpcRequest::ReleaseObject(_)
+    );
+    let file = match authenticated.envelope.request {
+        RpcRequest::ReleaseObject(request) => match crate::netplay::holder::object(
+            &state.app,
+            &authenticated.context,
+            &request.release_key,
+        )
+        .await
+        {
+            Ok(file) => file,
+            Err(_) => return StatusCode::FORBIDDEN.into_response(),
+        },
+        RpcRequest::SaveObject(request) => {
+            let Some(service) = &state.app.saves else {
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            };
+            match service.object(&authenticated.context, request.sha256).await {
+                Ok(file) => file,
+                Err(PeerSaveError::Unauthorized) => return StatusCode::FORBIDDEN.into_response(),
+                Err(PeerSaveError::Protocol) => return StatusCode::BAD_REQUEST.into_response(),
+                Err(PeerSaveError::Save(SaveError::Missing)) => {
+                    return StatusCode::NOT_FOUND.into_response()
+                }
+                Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+            }
         }
-        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        _ => return StatusCode::BAD_REQUEST.into_response(),
     };
     let bytes = match file.metadata() {
         Ok(metadata) => metadata.len(),
@@ -63,6 +79,17 @@ pub(super) async fn object_route(
                 .into_response()
         }
     };
+    use std::os::fd::AsRawFd;
+    let release_name = release
+        .then(|| {
+            std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
+                .ok()
+                .and_then(|path| {
+                    path.file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                })
+        })
+        .flatten();
     let stream = futures::stream::try_unfold(
         (file, offset, length),
         |(mut file, offset, remaining)| async move {
@@ -96,6 +123,15 @@ pub(super) async fn object_route(
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CACHE_CONTROL, "no-store")
         .header(header::CONTENT_LENGTH, length);
+    if let Some(name) = release_name {
+        response = response.header(
+            header::CONTENT_DISPOSITION,
+            format!(
+                "attachment; filename*=UTF-8''{}",
+                crate::host::play_log::encode_uri_component(&name)
+            ),
+        );
+    }
     if partial {
         response = response.header(
             header::CONTENT_RANGE,

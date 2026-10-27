@@ -164,6 +164,10 @@ impl<B: SeatBackend> SeatRuntime<B> {
                 {
                     return Err(SeatFailure::Invalid);
                 }
+                if self.pool.session() != Some(launch_id.as_str()) {
+                    return Err(SeatFailure::Stale);
+                }
+                if self.pool.has_binding(|source| matches!(source, SourceKey::Netplay(known) if known != &device_public_key)) { return Err(SeatFailure::Active); }
                 self.pool
                     .reserve(&launch_id, SourceKey::Netplay(device_public_key))
                     .map(Some)

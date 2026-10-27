@@ -26,8 +26,10 @@ pub(crate) async fn register(
                 message: "Stream play requires this device's published label.".into(),
             });
         }
-        let mut active = host
+        let mut active = state
+            .netplay_holder
             .stream_play(
+                host,
                 &request.launch_id,
                 StreamPlayer {
                     device_public_key: device_public_key.clone(),

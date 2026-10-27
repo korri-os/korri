@@ -889,6 +889,18 @@ fn netplay_reserves_without_input_and_releases_only_at_exact_session_end() {
         runtime
             .coordinate(
                 SeatRequest::ReserveNetplay {
+                    launch_id: launch.clone(),
+                    device_public_key: "44".repeat(32)
+                },
+                1
+            )
+            .failure,
+        Some(SeatFailure::Active)
+    );
+    assert_eq!(
+        runtime
+            .coordinate(
+                SeatRequest::ReserveNetplay {
                     launch_id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
                     device_public_key: "33".repeat(32)
                 },

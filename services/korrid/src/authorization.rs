@@ -215,8 +215,11 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
             PeerPolicy::ExplicitScope(Scope::StreamLaunch)
         }
         RpcRequest::MoonlightCertificateRevoke(_) => PeerPolicy::OwnerDeviceOnly,
-        RpcRequest::SessionStreamPlay(_) => PeerPolicy::OwnerDeviceOnly,
+        RpcRequest::SessionStreamPlay(_)
+        | RpcRequest::SessionNetplay(_)
+        | RpcRequest::ReleaseObject(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::InvitesList(_)
+        | RpcRequest::InvitesNetplay(_)
         | RpcRequest::InvitesStreamPlay(_)
         | RpcRequest::InvitesDismiss(_) => PeerPolicy::LocalOnly,
         RpcRequest::SessionPrepare(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),

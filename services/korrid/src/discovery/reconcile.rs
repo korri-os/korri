@@ -413,6 +413,30 @@ impl DiscoveryCoordinator {
     /// already in the library join that game and the link moves to it;
     /// otherwise an existing link keeps its game. Returns the game id.
     pub fn record_acquired(&self, acquired: &AcquiredGame<'_>) -> Result<String, DiscoveryError> {
+        self.record_content(
+            acquired.title,
+            acquired.system,
+            acquired.identity,
+            Some((acquired.provider, acquired.claim_id)),
+        )
+    }
+    /// ADR 0040 uses the same ADR 0013 game/release records, without inventing
+    /// a provider or saved location for a peer's release.
+    pub(crate) fn record_copied_release(
+        &self,
+        title: &str,
+        system: &str,
+        identity: &crate::discovery::identify::ContentIdentity,
+    ) -> Result<String, DiscoveryError> {
+        self.record_content(title, system, identity, None)
+    }
+    fn record_content(
+        &self,
+        title: &str,
+        system: &str,
+        identity: &crate::discovery::identify::ContentIdentity,
+        provider: Option<(&str, &str)>,
+    ) -> Result<String, DiscoveryError> {
         use crate::config::{
             library::{
                 LibraryItemPayload, LibraryReleasePayload, ProviderLinkPayload, ProviderLinkRef,
@@ -430,8 +454,8 @@ impl DiscoveryCoordinator {
         let current = Documents::read(&self.readable_root)?;
         let before = current.validate()?;
         let mut after = before.clone();
-        let key = acquired.identity.value().to_owned();
-        let link_id = format!("{}/{}", acquired.provider, acquired.claim_id);
+        let key = identity.value().to_owned();
+        let link_id = provider.map(|(provider, claim)| format!("{provider}/{claim}"));
         let holds = |game: &LibraryItemPayload| {
             game.releases
                 .iter()
@@ -447,21 +471,20 @@ impl DiscoveryCoordinator {
             .or_else(|| {
                 after
                     .provider_links
-                    .get(&link_id)
+                    .get(link_id.as_ref()?)
                     .map(|link| link.playable.0.clone())
                     .filter(|id| after.library.contains_key(id))
             })
             .unwrap_or_else(|| {
-                let id = change::unique_id(&change::slug(acquired.title), |id| {
-                    after.library.contains_key(id)
-                });
+                let id =
+                    change::unique_id(&change::slug(title), |id| after.library.contains_key(id));
                 after.library.insert(
                     id.clone(),
                     LibraryItemPayload {
                         place: Default::default(),
                         profiles: Default::default(),
                         profile: None,
-                        title: Some(acquired.title.to_owned()),
+                        title: Some(title.to_owned()),
                         version_of: None,
                         relation: None,
                         contains: None,
@@ -474,31 +497,33 @@ impl DiscoveryCoordinator {
             });
         if !after.library.values().any(holds) {
             let game = after.library.get_mut(&game_id).expect("target game");
-            let id = change::unique_id(acquired.system, |id| {
+            let id = change::unique_id(system, |id| {
                 game.releases.iter().any(|release| release.id.0 == id)
             });
             game.releases.push(LibraryReleasePayload {
                 id: NonEmptyString(id),
-                system: Some(NonEmptyString(acquired.system.to_owned())),
-                identity: Some(change::library_identity(acquired.identity)),
+                system: Some(NonEmptyString(system.to_owned())),
+                identity: Some(change::library_identity(identity)),
                 display: None,
                 inheritable: InheritableLayer::default(),
             });
         }
-        after.provider_links.insert(
-            link_id,
-            ProviderLinkPayload {
-                provider: NonEmptyString(acquired.provider.to_owned()),
-                playable: NonEmptyString(game_id.clone()),
-                release: None,
-                refs: vec![ProviderLinkRef {
-                    kind: ProviderLinkRefKind::ProviderItemId,
-                    value: NonEmptyString(acquired.claim_id.to_owned()),
-                    scope: None,
-                    target_part: None,
-                }],
-            },
-        );
+        if let Some((provider, claim_id)) = provider {
+            after.provider_links.insert(
+                link_id.expect("provider link id"),
+                ProviderLinkPayload {
+                    provider: NonEmptyString(provider.to_owned()),
+                    playable: NonEmptyString(game_id.clone()),
+                    release: None,
+                    refs: vec![ProviderLinkRef {
+                        kind: ProviderLinkRefKind::ProviderItemId,
+                        value: NonEmptyString(claim_id.to_owned()),
+                        scope: None,
+                        target_part: None,
+                    }],
+                },
+            );
+        }
         if after != before {
             current.commit(
                 current.with_snapshot(&before, &after)?,

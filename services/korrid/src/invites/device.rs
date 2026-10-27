@@ -12,6 +12,9 @@ pub(crate) struct Invites {
 pub(crate) async fn idle(state: &AppState) -> bool {
     match &state.mode {
         ServerMode::Host(host) => {
+            if state.netplay_receiver.busy() {
+                return false;
+            }
             !state
                 .remote
                 .as_ref()
@@ -30,6 +33,12 @@ pub(crate) async fn idle(state: &AppState) -> bool {
 }
 
 impl Invites {
+    pub(crate) fn netplay_invite(&self, id: &str) -> Option<Invite> {
+        self.cache.lock().expect("invites mutex poisoned").get(id)
+    }
+    pub(crate) fn netplay_clear(&self) {
+        self.cache.lock().expect("invites mutex poisoned").clear();
+    }
     async fn refresh(&self, state: &AppState) {
         let _refresh = self.refresh.lock().await;
         if !idle(state).await {
@@ -52,6 +61,7 @@ impl Invites {
             _ => Vec::new(),
         };
         for invite in &mut sessions {
+            crate::netplay::receiver::project(state, invite).await;
             if let Some(person) = &invite.session.person_public_key {
                 if let Some(name) = state.person_names.name(state, person).await {
                     invite.person_name = name;

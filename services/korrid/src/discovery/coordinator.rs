@@ -479,6 +479,15 @@ impl DiscoveryLifecycleCoordinator {
         self.reconciler.record_acquired(acquired)
     }
 
+    pub(crate) fn record_copied_release(
+        &self,
+        title: &str,
+        system: &str,
+        identity: &crate::discovery::identify::ContentIdentity,
+    ) -> Result<String, DiscoveryError> {
+        self.reconciler
+            .record_copied_release(title, system, identity)
+    }
     /// The published library and device documents, read fresh.
     pub fn published(&self) -> Result<crate::config::ConfigSnapshot, DiscoveryError> {
         self.reconciler.published()

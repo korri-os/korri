@@ -232,6 +232,8 @@ pub struct ArtifactFile {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RunnerRecord {
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub netplay: Option<crate::netplay::RunnerNetplay>,
     pub id: String,
     #[serde(default)]
     pub artifacts: Vec<String>,
@@ -1243,6 +1245,17 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 record_id: local_id.clone(),
                 reason: format!("record id {} must be {expected_id}", runner.id),
             });
+        }
+        if runner.netplay.as_ref().is_some_and(|facts| {
+            [&facts.library, &facts.version].iter().any(|value| {
+                value.trim().is_empty() || value.len() > 512 || value.chars().any(char::is_control)
+            })
+        }) {
+            return Err(invalid_contribution(
+                "runner",
+                local_id,
+                "netplay library and version must be non-empty bounded text",
+            ));
         }
         if runner
             .family

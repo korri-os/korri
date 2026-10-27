@@ -28,6 +28,12 @@ const MAX_GAME_ID_BYTES: usize = 1_024;
 pub(super) enum ActiveSession {
     Running {
         #[serde(
+            rename = "netplayConfig",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        netplay_config: Option<String>,
+        #[serde(
             rename = "streamPlayers",
             default,
             skip_serializing_if = "Vec::is_empty"
@@ -96,6 +102,7 @@ impl ActiveSession {
         started_at: u64,
     ) -> Self {
         Self::Running {
+            netplay_config: None,
             stream_players: Vec::new(),
             starter_device_public_key: None,
             launch_id,

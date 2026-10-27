@@ -254,6 +254,7 @@ fn inspect_route(
     let account_root = crate::saves::account_root(root, person).map_err(error)?;
     let settings = folded.settings.clone();
     let input = PluginLaunchInput {
+        netplay: None,
         runner_id: route.runner_id.clone(),
         family_id: route.family_id.clone(),
         program: native.program.clone(),

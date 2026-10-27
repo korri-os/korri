@@ -36,6 +36,8 @@ pub struct PluginLaunchOverrides {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginLaunchInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub netplay: Option<crate::netplay::PluginLaunchNetplay>,
     pub runner_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub family_id: Option<String>,
@@ -194,6 +196,9 @@ pub struct ResolvedLaunchModifier {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LaunchComposition {
+    /// Private native credential source; never passed to a plugin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub netplay_config_source: Option<std::path::PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sunshine_args: Option<Vec<String>>,
     pub modifiers: Vec<ResolvedLaunchModifier>,
@@ -636,6 +641,9 @@ pub fn execute(
         fs::File::open(parent)
             .and_then(|file| file.sync_all())
             .map_err(|e| e.to_string())?;
+    }
+    if input.netplay.is_some() {
+        crate::netplay::password::install()?;
     }
     let mut command = Command::new(output.command);
     command.args(output.args);

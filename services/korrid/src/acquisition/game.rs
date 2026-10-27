@@ -137,6 +137,10 @@ pub(crate) fn acquired_game_dirs(
             let key = release.identity.as_ref()?.value();
             let hex = placement::ready_name(key)?;
             let rules = registry.content_rules(&release.system.as_ref()?.0)?;
+            let copied = placement::copied_release_cache(root).join(hex);
+            if placement::ready_game_file(&copied, rules).is_some() {
+                return Some((key.to_owned(), copied));
+            }
             providers
                 .iter()
                 .map(|cache| cache.join(hex))
