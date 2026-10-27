@@ -78,10 +78,29 @@ fullscreen on the Pro, with correct colour. In `ab-hw-3`, the Pro's korrid
 used 199 % CPU; see #289. Software decode presents through SDL's renderer,
 so its flip count is not a decoded-frame count.
 
+### Production stream play
+
+Both handhelds ran system `0fba3f684` (SP
+`jxcgxaw5sa4s3rxbv28p2m8pnvk9v7r3`, Pro `vaniwvjbdq68yqbyfps52q0rmwbrnp2v`,
+bundle `19cgkv6dwzw9s9mz7vzlcwdgknjgabvv`). `@korri:moonlight` was updated on
+each from the Pages cache to
+`/nix/store/84cqgpjixgcf1a96g6gpgqvvpr475xfg-korri-plugin`, by exact package
+path and approval digest. korrid launched Moonlight with
+`-platform v4l2request`, and Moonlight logged
+`decoder=v4l2request presenter=prime-gl`. Each measurement lasted 6 s.
+
+| Direction | Game | Moonlight CPU (one core) | Joiner panel flips/s | Holder panel flips/s | Joiner VE interrupts |
+| --- | --- | --- | --- | --- | --- |
+| Pro joins SP (`prod-pro-1`) | Turtles in Time | 22.3 % | 33.2 | 41.0 | 345 |
+| SP joins Pro (`rev4`) | Wario Land 4 | 30.2 % | 53.2 | 49.3 | 532 |
+
+Both viewers were fullscreen at 640x480. The SP screenshot is
+`.forgerie/stream-play/shots/reverse-rev4.png`.
+
 ## Limits
 
-- The SP was not tested as a joiner, because it had no Moonlight plugin
-  installed. It has the same decoder, kernel and GPU as the Pro.
+- A Pro viewer that died in an earlier join left the Pro unable to start games
+  until its host-session record was removed by hand (#302).
 - Stream plays still end after 20 to 70 s, when one holder status read times
   out (#288). Every run above ended that way.
 - Patch 0022 also changes the RG353M's `v4l2request` presentation from the CPU
