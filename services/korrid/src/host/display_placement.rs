@@ -337,7 +337,7 @@ pub(crate) fn place_surface(
     );
     if displays.len() > 1 && game.is_none() && scope == SurfaceDisplayScope::All {
         let outcome = if result.is_ok() { "Changed" } else { "Failed" };
-        eprintln!("<6>korrid: PlacementTransition {{ target: Catalog, outcome: {outcome}, total_ms: {}, phases_ms: {{\"portal_tree\": {}, \"portal_power\": {}, \"portal_geometry\": {}, \"portal_settle\": {}}} }}", started.elapsed().as_millis(), timings.tree_ms, timings.power_ms, timings.geometry_ms, timings.settle_ms);
+        eprintln!("<6>korrid: PlacementTransition {{ target: Catalog, outcome: {outcome}, total_ms: {}, phase1_size: {:?}, phases_ms: {{\"portal_tree\": {}, \"portal_power\": {}, \"portal_geometry\": {}, \"portal_settle\": {}}} }}", started.elapsed().as_millis(), timings.phase1_size, timings.tree_ms, timings.power_ms, timings.geometry_ms, timings.settle_ms);
     }
     result
 }
@@ -346,8 +346,14 @@ pub(crate) fn place_surface(
 /// not the client's xdg ack/commit. Let the non-fullscreen configure settle
 /// separately before entering global fullscreen (Chromium 153 on RG DS).
 /// This bounded interval exceeds Sway's default 200 ms transaction timeout;
-/// it is not proof that an unresponsive client has committed. RG DS verified.
+/// it is not proof that an unresponsive client has committed. The 900-high
+/// repair with this interval was verified near cold kiosk startup on RG DS.
 const PORTAL_SETTLE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// The owner's live RG DS probe recovered presentation with 640x900 before
+/// returning to 640x960. A genuine size change, not just fullscreen state,
+/// avoids retaining Chromium 153's same-size presentation stall.
+const PORTAL_PREPARATION_HEIGHT_MARGIN: i64 = 60;
 
 #[derive(Default)]
 pub(crate) struct SurfacePlacementTimings {
@@ -355,6 +361,7 @@ pub(crate) struct SurfacePlacementTimings {
     pub power_ms: u128,
     pub geometry_ms: u128,
     pub settle_ms: u128,
+    pub phase1_size: Option<(i64, i64)>,
 }
 
 pub(crate) fn place_surface_timed(
@@ -416,12 +423,25 @@ pub(crate) fn place_surface_timed(
         .max()
         .unwrap_or(0);
     let restore_catalog = game.is_none() && scope == SurfaceDisplayScope::All;
-    // Prepare a real non-fullscreen target-size configure. Entering global
-    // fullscreen in this same IPC batch can retain Chromium's overlay geometry.
+    let preparation_height = if restore_catalog {
+        // Force a different, positive size even when the portal is already at
+        // the full catalog extent. Cap the measured margin on tiny viewports.
+        let margin = PORTAL_PREPARATION_HEIGHT_MARGIN.min(height.saturating_sub(1));
+        if margin <= 0 {
+            return Err("catalog viewport is too short for a distinct preparation size".into());
+        }
+        let prepared = height - margin;
+        timings.phase1_size = Some((width, prepared));
+        prepared
+    } else {
+        height
+    };
+    // A separately settled non-fullscreen configure must also change size:
+    // the same-size version could stall Chromium's main-frame presentation.
     commands.extend([
         format!("[con_id={portal}] fullscreen disable"),
         format!("[con_id={portal}] floating enable"),
-        format!("[con_id={portal}] resize set width {width} px height {height} px"),
+        format!("[con_id={portal}] resize set width {width} px height {preparation_height} px"),
         format!(
             "[con_id={portal}] move absolute position {} px {} px",
             origin.x, origin.y
@@ -584,7 +604,7 @@ case "$command" in get_tree)
 esac
 printf '%s\n' "$command" >> events
 printf '%s\n' "$command" >> batches
-case "$command" in *'[con_id=10] resize set width 640 px height 960 px'*) touch prepared;; esac
+case "$command" in *'[con_id=10] resize set width 640 px height 900 px'*) touch prepared;; esac
 old_ifs="$IFS"
 IFS=';'
 for part in $command; do
@@ -646,7 +666,11 @@ fi
             3,
             "power plus preparation and activation IPC: {batches}"
         );
-        assert_eq!(batches.lines().nth(1).unwrap(), "[con_id=10] fullscreen disable; [con_id=10] floating enable; [con_id=10] resize set width 640 px height 960 px; [con_id=10] move absolute position 0 px 0 px");
+        assert_eq!(batches.lines().nth(1).unwrap(), "[con_id=10] fullscreen disable; [con_id=10] floating enable; [con_id=10] resize set width 640 px height 900 px; [con_id=10] move absolute position 0 px 0 px");
+        assert!(
+            !batches.lines().nth(1).unwrap().contains("height 960 px"),
+            "phase 1 must force a different size: {batches}"
+        );
         let events = std::fs::read_to_string(dir.path().join("events")).unwrap();
         assert_eq!(
             events.lines().nth(3),
@@ -657,12 +681,74 @@ fi
     }
 
     #[test]
+    fn catalog_preparation_changes_an_already_full_sized_portal_without_publishing_that_size() {
+        assert_eq!(PORTAL_PREPARATION_HEIGHT_MARGIN, 60);
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        std::fs::write(dir.path().join("tree"), r#"{"nodes":[{"id":10,"pid":100,"fullscreen_mode":2,"rect":{"x":0,"y":0,"width":640,"height":960}}]}"#).unwrap();
+        let mut timings = SurfacePlacementTimings::default();
+        let facts = place_surface_timed(
+            &control,
+            &displays(),
+            SurfaceDisplayScope::All,
+            None,
+            &Default::default(),
+            &[100].into_iter().collect(),
+            &mut timings,
+        )
+        .unwrap();
+        assert_eq!(timings.phase1_size, Some((640, 900)));
+        assert_eq!(
+            facts
+                .iter()
+                .map(|display| i64::from(display.y) + i64::from(display.height))
+                .max(),
+            Some(960)
+        );
+        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+        assert!(
+            batches.lines().nth(1).unwrap().contains("height 900 px"),
+            "{batches}"
+        );
+        assert!(
+            batches
+                .lines()
+                .last()
+                .unwrap()
+                .contains("fullscreen enable global"),
+            "{batches}"
+        );
+    }
+
+    #[test]
+    fn catalog_preparation_keeps_a_positive_distinct_size_on_small_viewports() {
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        let mut ds = displays();
+        ds[0].height = 1;
+        ds[1].height = 1;
+        ds[1].y = 1;
+        let mut timings = SurfacePlacementTimings::default();
+        place_surface_timed(
+            &control,
+            &ds,
+            SurfaceDisplayScope::All,
+            None,
+            &Default::default(),
+            &[100].into_iter().collect(),
+            &mut timings,
+        )
+        .unwrap();
+        assert_eq!(timings.phase1_size, Some((640, 1)));
+    }
+
+    #[test]
     fn refused_catalog_preparation_never_waits_or_activates() {
         let dir = tempfile::tempdir().unwrap();
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
         std::fs::write(
             dir.path().join("reject"),
-            "resize set width 640 px height 960 px",
+            "resize set width 640 px height 900 px",
         )
         .unwrap();
         let mut timings = SurfacePlacementTimings::default();
