@@ -72,8 +72,8 @@ invite notices stand in to keep the focused control in sight
 rectangle, written to its region as `--pico-display-x`, `-y`, `-w` and `-h`
 (`PicoDisplays`). It is the one place Pico sets a style property from
 script, because a rectangle is data the host states, not a design decision
-a stylesheet could make. Focus, the click that
-woke attract and the element focus last landed on are refs. This is where Elm would use a port or a custom element.
+a stylesheet could make. Focus and the click that
+woke attract are refs. This is where Elm would use a port or a custom element.
 
 Secrets typed into the editor or the identity dialog sit in the model while
 the dialog is open, as they would in Elm. A Wi-Fi password leaves the model
@@ -258,12 +258,14 @@ scroll containers, so focus cannot move them.
 without it the test is skipped).
 
 Attract covers both displays (or the one) and says PRESS ANY BUTTON, so every
-input ends it: a direction, confirm, Back, Menu, or a tap on either display. The input
-that ends it only wakes the screen. A press is swallowed; a direction, which
-the host delivers as a focus move Pico cannot swallow, never reaches the
-control it landed on, and Pico puts the cursor back where it was before
-attract (or nowhere, if nothing had it). `test/pico-attract-browser.test.ts`
-checks each input on two displays and on one.
+input ends it: a direction, confirm, Back, Menu, or a tap on either display.
+A press (confirm, Back, Menu, a tap) is swallowed, so it only wakes the
+screen. A direction reaches Pico as the host's focus move, which has already
+happened, so it wakes the screen and also moves the cursor one step, as on
+any screen; the chosen cart follows the cursor. Pico never undoes a focus
+move: the cursor and the chosen cart must always be the same cart.
+`test/pico-attract-browser.test.ts` checks each input on two displays and on
+one, through the portal's own input path with the CPU throttled.
 
 `SurfaceDisplay` and `SurfaceModel.displays` come from the treaty in
 `contracts/surface/korri-surface.ts`, like every other fact Pico reads.

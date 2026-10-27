@@ -280,9 +280,6 @@ function PicoCatalogSurface({
   /* Set when a pointer press woke the screen, so the click that ends the same
    * press is swallowed too. DOM mechanics, not navigation. */
   const suppressWakeClick = useRef(false)
-  /* The element the last focus event landed on. The window getting focus back
-   * refocuses it, and that is not a move. */
-  const lastFocus = useRef<EventTarget | null>(null)
 
   /**
    * The DOM half of waking attract. The press must be stopped now, before the
@@ -306,26 +303,10 @@ function PicoCatalogSurface({
         inert={covered}
         /* The host moves the cursor with focus alone, with no key press the
          * surface can see, so a focus move is activity too, and it wakes
-         * attract like any press. A move that wakes only wakes: it never
-         * reaches the control (so the shelf's choice stays), and the cursor
-         * goes back where it was before attract, or nowhere. */
-        onFocusCapture={event => {
-          const target = event.target
-          if (target === lastFocus.current) return
-          lastFocus.current = target
-          const waking = attractShowingNow()
-          dispatch({ _tag: "MovedFocus" })
-          if (!waking) return
-          event.stopPropagation()
-          const before = event.relatedTarget
-          if (before instanceof HTMLElement && before.isConnected) {
-            lastFocus.current = before
-            before.focus({ preventScroll: true })
-          } else {
-            lastFocus.current = null
-            target.blur()
-          }
-        }}
+         * attract like any press. It is never swallowed or undone: the
+         * cursor moves as on any other press, and the shelf's choice follows
+         * it, so the cursor and the chosen cart cannot disagree. */
+        onFocusCapture={() => dispatch({ _tag: "MovedFocus" })}
         onKeyDownCapture={event => {
           suppressWakeClick.current = false
           press(event)
