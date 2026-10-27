@@ -29,9 +29,10 @@ holds no emulator knowledge.
   something on it, such as a pane, the gameplay overlay or a surface.
 - The gameplay overlay appears on a display that shows no pane, or over the
   game on the main display when every display shows a pane.
-- A surface sees one display, the main display, unless it opts in. An opted-in
-  surface receives every display with its arrangement and owns all of their
-  pixels.
+- **Amended 2026-10-27:** catalog surfaces show on the main display only.
+  A request for all displays does not make one window span them. Per-display
+  surfaces need a separate design. The gameplay overlay keeps the free-display
+  placement above; game panes are unchanged.
 - A display belongs to exactly one device. The model allows panes on another
   device's display (a TV plus a handheld); building that waits for its own
   design on top of stream play.
@@ -52,12 +53,47 @@ holds no emulator knowledge.
   Only, Bottom Only), not designed ahead of it.
 - The launch input that today carries the compositor's output size
   (`PluginDisplay`, ADR 0007 `launch.compose`) carries the chosen layout.
-- The surface treaty gains an opt-in for several displays. Pico opts in first,
-  with the main display for showing (selected game, art, details) and the other
-  display for choosing and acting (list, menu, buttons, touch).
+- The treaty's multi-display request is not a spanning-window mechanism.
+  Until per-display surfaces exist, the host gives catalog surfaces only the
+  main display. Pico's two-region layout is kept but unused on devices for now;
+  its one-display layout remains active. No per-display schema is decided here.
 - The first device case is the RG DS: two 640×480 touch displays, one above the
   other, with the top display as the main display.
 - Streaming a multi-pane game must feel native on the receiving device: each
   pane on its matching display, touch reaching the lower pane (owner
   requirement, using a 3DS game as the bar). Stream play carries one picture
   today; this is tracked as issue #262.
+
+## Amended 2026-10-27 — reject spanning portal windows
+
+**Owner product decision.** Spanning one window across displays is rejected,
+not merely deferred. A device's arrangement need not form a straight rectangle:
+two displays may be stacked with a differently sized display to their right.
+The owner's example was: “it's not guaranteed that it's a straight shot.”
+A bounding viewport cannot be the mechanism for those independent displays.
+The future direction is per-display surfaces, designed separately later.
+
+RG DS Chromium153 measurements at120 seconds after cold kiosk startup:
+
+| Runtime condition | ok /6 | stalled /6 |
+|---|---:|---:|
+| Spanning baseline | 3 | 3 |
+| Spanning, then floating640×960 | 3 | 3 |
+| Spanning, then both-axis620×900 restore | 2 | 4 |
+| Spanning, then an extra restore at+1.5s | 2 | 4 |
+| Spanning, then an extra restore at+3s | 3 | 3 |
+| Main-only640×480 fullscreen, other display off | 6 | 0 |
+
+These measured recipes ran on `754b6293a` plus Pico. The late recipes were
+additional restores after the existing500ms restore, not replacement delays.
+The main-only case is a native viewport control, not proof about the old
+single-display architecture or the precise Chromium/Sway fault. See the
+[consolidated investigation](../briefs/2026-10-27-main-display-portal.md) for
+capture validation, excluded samples and clean-build acceptance status.
+
+The portal catalog now uses ordinary fullscreen on the main output and powers
+off other outputs. Its facts contain only that display regardless of requested
+scope. There is no portal global-fullscreen/bounding-rectangle path, distinct-
+size preparation or readiness reflow. The overlay on a free display, game-pane
+placement, dimming, exact PID/unit ownership, Home/Return and power arbitration
+are not replaced. An unused display remains off.

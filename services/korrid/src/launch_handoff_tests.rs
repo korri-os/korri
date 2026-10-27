@@ -14,8 +14,6 @@ use tower::ServiceExt;
 
 #[path = "launch_handoff_metadata_tests.rs"]
 mod metadata;
-#[path = "portal_readiness_tests.rs"]
-mod readiness;
 
 const TOKEN: &str = "handoff-test-capability";
 const ORIGIN: &str = "http://127.0.0.1:8099";

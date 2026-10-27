@@ -118,6 +118,8 @@ let
           lib.optionalString (
             builtins.length cfg.compositor.displays > 1
           ) "\noutput ${display.name} position ${toString display.x} ${toString display.y}"
+        }${
+          lib.optionalString (display.name != cfg.compositor.mainDisplay) "\noutput ${display.name} power off"
         }
       '') cfg.compositor.displays
     )}

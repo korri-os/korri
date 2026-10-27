@@ -112,5 +112,7 @@ and mutation-no-retry tests remain unchanged in behavior.
 
 The next check is RG DS acceptance: inspect `press_to_dim_ms`, inputd queue and
 status fields, then confirm visible feedback and all normal Home/Return/End
-cycles. The accepted two-phase catalog restore and its `portal_settle` behavior
-are unchanged. No RG DS access or deployment was performed by this child agent.
+cycles. The former spanning catalog preparation/settle has since been removed;
+see [main-display portal](2026-10-27-main-display-portal.md). The dim-before-freeze
+ordering described here remains. No RG DS access or deployment was performed
+by this child agent during that earlier change.
