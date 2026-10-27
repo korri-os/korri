@@ -41,6 +41,8 @@ class SelectionTest(unittest.TestCase):
             "surfaces/pico/src/unknown-runtime.rs",
             "surfaces/pico/unknown-runtime.json",
             "packages/view/src/index.ts",
+            "nix/cache/unknown-read-helper.py",
+            "nix/cache/identity.nix",
             "surfaces/new/src.ts",
             ".github/workflows/korri-checks.yml",
             "flake.lock",
@@ -90,6 +92,12 @@ class SelectionTest(unittest.TestCase):
                 actual = ci.affected([path])
                 self.assertEqual(actual, expected | {"policy"})
                 self.assertLessEqual(actual, full)
+
+    def test_cache_workflow_and_read_helpers_select_policy_without_compilers(self):
+        for path in ci.CACHE_POLICY_INPUTS:
+            with self.subTest(path=path):
+                self.assertEqual(ci.affected([path]), {"policy", "cache"})
+        self.assertEqual(ci.affected(["docs/ci.md"]), {"policy"})
 
     def test_known_frontend_changes_select_no_rust_compilation(self):
         rust = {"cli", "korrid", "inputd", "limitsd", "acceptance"}

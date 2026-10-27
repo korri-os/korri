@@ -39,6 +39,7 @@ jobs:
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
       policy: ${{ steps.plan.outputs.policy }}
+      cache: ${{ steps.plan.outputs.cache }}
       fmt: ${{ steps.plan.outputs.fmt }}
       treaty: ${{ steps.plan.outputs.treaty }}
       portal: ${{ steps.plan.outputs.portal }}
@@ -97,6 +98,32 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run ci-plan-check
         run: nix run .#ci-plan-check
+  cache:
+    name: Cache and delivery policy
+    needs: select
+    if: needs.select.outputs.cache == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact tested source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+      - name: Verify source identity
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+        run: |
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test cache reads and publication protocol without publishing
+        run: nix run .#korri-nix-cache-check
+      - name: Check existing delivery workflow safety and failure propagation
+        run: nix run .#rpminiv2-delivery-check
   fmt:
     name: Rust formatting
     needs: select
@@ -380,7 +407,7 @@ jobs:
   check:
     name: Host, portal, and surface
     if: always()
-    needs: [select, policy, fmt, treaty, portal, parity, cli, korrid, inputd, limitsd, pico, zone, boxbuster]
+    needs: [select, policy, cache, fmt, treaty, portal, parity, cli, korrid, inputd, limitsd, pico, zone, boxbuster]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

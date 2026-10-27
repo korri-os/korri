@@ -66,6 +66,24 @@ class TreatyDriftTest(unittest.TestCase):
 
 
 class WorkflowContractTest(unittest.TestCase):
+    def test_cache_and_existing_delivery_checks_run_once_per_full_local_check(self):
+        task = (
+            (ROOT / "nix/tasks.nix")
+            .read_text()
+            .split("    ci-full-check = {", 1)[1]
+            .split("    };", 1)[0]
+        )
+        for app in ["korri-nix-cache-check", "rpminiv2-delivery-check"]:
+            self.assertEqual(task.count(app), 1)
+        workflow = yaml.safe_load(
+            (ROOT / ".github/workflows/korri-checks.yml").read_text()
+        )
+        commands = [
+            step["run"] for step in workflow["jobs"]["cache"]["steps"] if "run" in step
+        ]
+        self.assertEqual(commands.count("nix run .#korri-nix-cache-check"), 1)
+        self.assertEqual(commands.count("nix run .#rpminiv2-delivery-check"), 1)
+
     def test_portal_typecheck_precedes_bun_tests(self):
         task = (
             (ROOT / "nix/tasks.nix")
