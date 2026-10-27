@@ -10,11 +10,89 @@ let
   rustToolchain = pkgs.rust-bin.stable.latest.default;
 
   definitions = {
+    ci-plan-check = {
+      description = "Test affected-check selection, fail-closed aggregation, treaty drift, and workflow syntax.";
+      runtimeInputs = [
+        (pkgs.python3.withPackages (ps: [
+          ps.pyyaml
+          ps.pyflakes
+        ]))
+        pkgs.git
+        pkgs.actionlint
+        pkgs.shellcheck
+        pkgs.typeshare
+        pkgs.diffutils
+        pkgs.gnused
+      ];
+      script = ''
+        cd "$KORRI_ROOT"
+        python3 .github/ci/check-plan.test.py
+        python3 .github/ci/check-orchestration.test.py
+        python3 -m pyflakes .github/ci/*.py
+        actionlint .github/workflows/korri-checks.yml .github/workflows/published-plugin-checks.yml
+        shellcheck -s bash services/korrid/check.sh services/korrid/check-in-shell.sh \
+          services/korrid/check-treaty.sh services/korrid/check-portal-setup.sh
+      '';
+    };
+    ci-full-check = {
+      description = "Run every validation lane locally, including published-plugin acceptance (x86 KVM required).";
+      runtimeInputs = [ pkgs.nix ];
+      script = ''
+        cd "$KORRI_ROOT"
+        for task in ci-plan-check korrid-fmt-check korrid-treaty-check portal-check portal-bundle \
+          cli-check cli-build-identity-check korrid-host-check inputd-check limitsd-check pico-check zone-check boxbuster-check \
+          korri-published-plugins-check; do
+          nix run ".#$task"
+        done
+      '';
+    };
+    korrid-fmt-check = {
+      description = "Check Rust formatting before compilation across the host, CLI, and input/limits services.";
+      needsProseql = true;
+      runtimeInputs = [ rustToolchain ];
+      script = ''
+        cd "$KORRI_ROOT"
+        for crate in services/korrid services/korrid/plugin-host clients/cli services/inputd services/inputd/core services/limitsd; do
+          cargo fmt --manifest-path "$crate/Cargo.toml" --check
+        done
+      '';
+    };
+    korrid-treaty-check = {
+      description = "Assert generated treaty drift without rewriting it, then check plugin declarations.";
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.typeshare
+        pkgs.gnused
+        pkgs.diffutils
+      ];
+      script = ''
+        bash "$KORRI_ROOT/services/korrid/check-treaty.sh"
+        cd "$KORRI_ROOT"
+        nix build --no-link -L .#checks.${pkgs.stdenv.hostPlatform.system}.korri-plugins-typecheck
+      '';
+    };
+    korrid-host-check = {
+      description = "Run all korrid tests, fixtures, config review and signer/RPC smoke without repeating portal/treaty lanes.";
+      needsProseql = true;
+      runtimeInputs = [ pkgs.nix ];
+      env.NIX_PATH = "nixpkgs=${pkgs.path}";
+      script = ''
+        exec bash "$KORRI_ROOT/services/korrid/check.sh" --host-only
+      '';
+    };
     cli-check = {
       description = "Check the person CLI types, lint, and real-process tests.";
       runtimeInputs = [ pkgs.nix pkgs.git ];
       script = ''
         exec bash "$KORRI_ROOT/clients/cli/check.sh" "$@"
+      '';
+    };
+    cli-build-identity-check = {
+      description = "Check reusable CLI dependencies and source-bound final binary identity.";
+      runtimeInputs = [ pkgs.nix ];
+      script = ''
+        cd "$KORRI_ROOT"
+        exec nix build --no-link .#checks.${pkgs.stdenv.hostPlatform.system}.korri-cli-build-identity
       '';
     };
     cli-daemon-check = {
@@ -543,14 +621,8 @@ let
         pkgs.coreutils
       ];
       script = ''
-        cd "$KORRI_ROOT/surfaces/pico"
-        bun install --frozen-lockfile --ignore-scripts
-        cd "$KORRI_ROOT/surfaces/zone"
-        bun install --frozen-lockfile --ignore-scripts
-        cd "$KORRI_ROOT/surfaces/boxbuster"
-        bun install --frozen-lockfile --ignore-scripts
+        bash "$KORRI_ROOT/services/korrid/check-portal-setup.sh"
         cd "$KORRI_ROOT/clients/portal"
-        bun install --frozen-lockfile --ignore-scripts
         bun run build
         test -f dist/index.html
       '';
@@ -560,16 +632,10 @@ let
       description = "Run portal unit tests and typecheck.";
       runtimeInputs = [ pkgs.bun ];
       script = ''
-        cd "$KORRI_ROOT/surfaces/pico"
-        bun install --frozen-lockfile --ignore-scripts
-        cd "$KORRI_ROOT/surfaces/zone"
-        bun install --frozen-lockfile --ignore-scripts
-        cd "$KORRI_ROOT/surfaces/boxbuster"
-        bun install --frozen-lockfile --ignore-scripts
+        bash "$KORRI_ROOT/services/korrid/check-portal-setup.sh"
         cd "$KORRI_ROOT/clients/portal"
-        bun install --frozen-lockfile --ignore-scripts
-        bun test
         bun run typecheck
+        bun test
       '';
     };
 
