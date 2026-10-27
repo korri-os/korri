@@ -40,7 +40,8 @@ let
       runtimeInputs = [ pkgs.nix ];
       script = ''
         cd "$KORRI_ROOT"
-        for task in ci-plan-check korrid-fmt-check korrid-treaty-check portal-check portal-bundle \
+        for task in ci-plan-check korri-nix-cache-check rpminiv2-delivery-check \
+          korrid-fmt-check korrid-treaty-check portal-check portal-bundle \
           cli-parity-check cli-check cli-build-identity-eval-check cli-build-identity-check korrid-host-check inputd-check limitsd-check pico-check zone-check boxbuster-check \
           korri-published-plugins-check; do
           nix run ".#$task"
@@ -171,6 +172,14 @@ let
       ];
       script = ''
         exec bash "$KORRI_ROOT/nix/product/published-plugins-check.sh"
+      '';
+    };
+    rpminiv2-delivery-check = {
+      description = "Check existing delivery workflow safety and deterministic failure propagation without publishing.";
+      runtimeInputs = [ pkgs.nix ];
+      script = ''
+        cd "$KORRI_ROOT"
+        exec nix build --no-link .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2-delivery
       '';
     };
     r36tmax-check = {
