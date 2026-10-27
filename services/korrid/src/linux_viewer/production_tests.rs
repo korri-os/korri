@@ -409,11 +409,17 @@ fn linux_viewer_reads_sysfs_device_tree_and_reports_read_failures() {
             "v4l2m2m"
         );
     }
-    std::fs::write(&path, b"anbernic,rg353p\0rockchip,rk3566\0").unwrap();
-    assert_eq!(
-        platform_from_path(&path, |_| panic!("readable hardware fact")),
-        "v4l2request"
-    );
+    for compatible in [
+        b"anbernic,rg353p\0rockchip,rk3566\0".as_slice(),
+        b"anbernic,rg35xx-pro\0allwinner,sun50i-h700\0".as_slice(),
+        b"anbernic,rg35xx-sp\0allwinner,sun50i-h700\0".as_slice(),
+    ] {
+        std::fs::write(&path, compatible).unwrap();
+        assert_eq!(
+            platform_from_path(&path, |_| panic!("readable hardware fact")),
+            "v4l2request"
+        );
+    }
     std::fs::write(&path, b"other-device\0").unwrap();
     assert_eq!(
         platform_from_path(&path, |_| panic!("readable hardware fact")),

@@ -231,9 +231,9 @@ fn platform_from_path(path: &Path, report: impl FnOnce(&std::io::Error)) -> &'st
     {
         // Qualcomm Iris/Venus: stateful V4L2 M2M decoders.
         "v4l2m2m"
-    } else if values.any(|value| value == b"rockchip,rk3566") {
-        // RK3566 Hantro G1: a stateless decoder driven through FFmpeg's
-        // V4L2 Request API hwaccel.
+    } else if values.any(|value| value == b"rockchip,rk3566" || value == b"allwinner,sun50i-h700") {
+        // RK3566 Hantro G1 and H700 Cedrus: stateless decoders driven
+        // through FFmpeg's V4L2 Request API hwaccel.
         "v4l2request"
     } else {
         "x11"
