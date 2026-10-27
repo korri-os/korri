@@ -90,6 +90,7 @@ impl Drop for Server {
 }
 fn active(failure: Option<RpcFailure>) -> RpcResponse {
     RpcResponse::SessionStatus(SessionStatusOutcome::Ok(SessionStatus {
+        netplay: None,
         stream_play_launch_id: None,
         stream_play_ended: None,
         active: Some(ActiveSession {
@@ -102,6 +103,7 @@ fn active(failure: Option<RpcFailure>) -> RpcResponse {
             phase: None,
             initial_handoff: None,
             focus_ownership: None,
+            netplay: None,
         }),
         overlay: None,
         pending_launches: None,

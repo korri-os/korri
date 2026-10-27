@@ -122,6 +122,7 @@ async fn respond(state: RpcState, device: Option<String>, request: RpcRequest) -
         }
         RpcRequest::SessionStatus(_) => {
             RpcResponse::SessionStatus(SessionStatusOutcome::Ok(SessionStatus {
+                netplay: None,
                 stream_play_launch_id: None,
                 stream_play_ended: None,
                 active: None,
