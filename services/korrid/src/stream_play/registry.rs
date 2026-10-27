@@ -191,6 +191,16 @@ impl UpstreamRegistry {
                 return Ok(status.clone());
             }
         }
+        match &result {
+            Err(error) => eprintln!(
+                "korrid: stream play {} ends: holder status read failed: {error:?}",
+                selected.launch_id
+            ),
+            Ok(_) => eprintln!(
+                "korrid: stream play {} ends: holder no longer runs it",
+                selected.launch_id
+            ),
+        }
         self.viewer
             .stop(&selected.launch_id)
             .await
