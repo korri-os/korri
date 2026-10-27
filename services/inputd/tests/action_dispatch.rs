@@ -162,7 +162,11 @@ fn commands_require_absolute_executables_and_explicit_argv() {
         Err(ActionConfigError::CommandIsNotExplicitArgv)
     ));
 
-    let executable = std::fs::canonicalize("/run/current-system/sw/bin/true").unwrap();
+    let executable = std::fs::canonicalize(
+        std::env::var_os("KORRI_TEST_TRUE")
+            .expect("immutable true fixture from the inputd dev shell"),
+    )
+    .unwrap();
     environment.insert(
         OsString::from("KORRI_INPUTD_SYSTEM_PANEL"),
         OsString::from(
@@ -192,7 +196,11 @@ fn commands_require_absolute_executables_and_explicit_argv() {
 
 #[test]
 fn immutable_executable_validation_rejects_dot_and_parent_traversal() {
-    let executable = std::fs::canonicalize("/run/current-system/sw/bin/true").unwrap();
+    let executable = std::fs::canonicalize(
+        std::env::var_os("KORRI_TEST_TRUE")
+            .expect("immutable true fixture from the inputd dev shell"),
+    )
+    .unwrap();
     let item = executable.ancestors().nth(2).unwrap();
     for traversed in [
         PathBuf::from(format!("{}/bin/./true", item.display())),
@@ -214,7 +222,11 @@ fn immutable_executable_validation_rejects_dot_and_parent_traversal() {
 
 #[test]
 fn immutable_executable_must_resolve_to_a_regular_executable_in_the_same_store_item() {
-    let executable = std::fs::canonicalize("/run/current-system/sw/bin/true").unwrap();
+    let executable = std::fs::canonicalize(
+        std::env::var_os("KORRI_TEST_TRUE")
+            .expect("immutable true fixture from the inputd dev shell"),
+    )
+    .unwrap();
     let item = executable.ancestors().nth(2).unwrap();
     let environment = BTreeMap::from([(
         OsString::from("KORRI_INPUTD_SYSTEM_PANEL"),
@@ -231,7 +243,11 @@ fn immutable_executable_must_resolve_to_a_regular_executable_in_the_same_store_i
 
 #[test]
 fn configured_action_matrix_accepts_only_currently_reachable_routes() {
-    let executable = std::fs::canonicalize("/run/current-system/sw/bin/true").unwrap();
+    let executable = std::fs::canonicalize(
+        std::env::var_os("KORRI_TEST_TRUE")
+            .expect("immutable true fixture from the inputd dev shell"),
+    )
+    .unwrap();
     let command =
         serde_json::json!({"executable": executable, "argv": [], "environment": {}}).to_string();
     let mut environment = BTreeMap::from([(
@@ -300,7 +316,11 @@ fn environment_is_an_explicit_allowlist() {
         OsString::from("SWAYSOCK"),
         OsString::from("/run/user/100/sway.sock"),
     );
-    let executable = std::fs::canonicalize("/run/current-system/sw/bin/true").unwrap();
+    let executable = std::fs::canonicalize(
+        std::env::var_os("KORRI_TEST_TRUE")
+            .expect("immutable true fixture from the inputd dev shell"),
+    )
+    .unwrap();
     let command = ActionCommand::new(&executable, [], allowed.clone()).unwrap();
 
     assert_eq!(command.environment(), &allowed);
@@ -319,7 +339,11 @@ fn environment_is_an_explicit_allowlist() {
 async fn untrusted_exec_never_begins_when_cgroup_membership_cannot_be_proven() {
     let root = tempfile::tempdir().unwrap();
     let marker = root.path().join("executed");
-    let executable = std::fs::canonicalize("/run/current-system/sw/bin/sh").unwrap();
+    let executable = std::fs::canonicalize(
+        std::env::var_os("KORRI_TEST_SHELL")
+            .expect("immutable sh fixture from the inputd dev shell"),
+    )
+    .unwrap();
     let command = ActionCommand::new(
         executable,
         [
@@ -420,7 +444,11 @@ async fn action_child_cannot_retain_or_reopen_local_control_authority() {
     );
 
     let test_executable = std::env::current_exe().unwrap();
-    let executable = std::fs::canonicalize("/run/current-system/sw/bin/sh").unwrap();
+    let executable = std::fs::canonicalize(
+        std::env::var_os("KORRI_TEST_SHELL")
+            .expect("immutable sh fixture from the inputd dev shell"),
+    )
+    .unwrap();
     let environment = BTreeMap::from([
         (
             OsString::from("KORRI_TEST_CONTROL_SOCKET"),
@@ -475,7 +503,11 @@ async fn child_fails_closed_when_group_drop_cannot_be_proven() {
     if unsafe { libc::geteuid() } == 0 {
         return;
     }
-    let executable = std::fs::canonicalize("/run/current-system/sw/bin/true").unwrap();
+    let executable = std::fs::canonicalize(
+        std::env::var_os("KORRI_TEST_TRUE")
+            .expect("immutable true fixture from the inputd dev shell"),
+    )
+    .unwrap();
     let command = ActionCommand::new(executable, [], BTreeMap::new()).unwrap();
     let mut commands = korri_inputd::actions::ActionCommands::default();
     commands.insert(ActionId::WorkspaceNext, command);

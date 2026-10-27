@@ -101,6 +101,16 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertEqual(commands.count("nix run .#korri-nix-cache-check"), 1)
         self.assertEqual(commands.count("nix run .#rpminiv2-delivery-check"), 1)
 
+    def test_zone_font_builder_receives_the_locked_native_package_source(self):
+        task = (
+            (ROOT / "nix/tasks.nix")
+            .read_text()
+            .split("    zone-check = {", 1)[1]
+            .split("    };", 1)[0]
+        )
+        self.assertIn('env.NIX_PATH = "nixpkgs=${pkgs.path}";', task)
+        self.assertIn('bun test "$@"', task)
+
     def test_portal_typecheck_precedes_bun_tests(self):
         task = (
             (ROOT / "nix/tasks.nix")

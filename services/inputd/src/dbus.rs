@@ -675,8 +675,19 @@ mod tests {
         use tokio::io::{AsyncBufReadExt, BufReader};
 
         // A private bus: this test never contacts the host's InputPlumber.
+        let config = std::env::var_os("DBUS_TEST_SESSION_CONFIG")
+            .expect("native session policy from the inputd dev shell");
+        let root = mini_v2_sysfs();
+        let private_address = format!("unix:path={}/bus", root.path().display());
         let mut daemon = tokio::process::Command::new("dbus-daemon")
-            .args(["--session", "--nofork", "--nopidfile", "--print-address=1"])
+            .arg(format!(
+                "--config-file={}",
+                std::path::Path::new(&config).display()
+            ))
+            // Native session policy can include host-local listen addresses.
+            // Override them with this fixture's private socket, never the host bus.
+            .arg(format!("--address={private_address}"))
+            .args(["--nofork", "--nopidfile", "--print-address=1"])
             .stdout(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
@@ -687,7 +698,11 @@ mod tests {
             .unwrap()
             .unwrap()
             .unwrap();
-        let root = mini_v2_sysfs();
+        assert_eq!(address.split(',').next(), Some(private_address.as_str()));
+        assert!(
+            !address.contains(';'),
+            "private bus announced multiple listeners"
+        );
         let classifier = SysfsSourceClassifier::new(root.path());
         let mini_sources = vec![
             "/dev/input/event3".into(),
