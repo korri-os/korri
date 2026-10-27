@@ -1,5 +1,12 @@
 # Distinct-size catalog preparation — 2026-10-27
 
+> **Correction after integrated device acceptance:** `5a900abeb` fixes the
+> post-game catalog restore, but a single startup restore still stalls cold
+> kiosk presentation for minutes. The successful near-cold probe was a second
+> restore after the automatic one, not proof that the first one was safe.
+> [Post-reply reflow](2026-10-27-portal-readiness-reflow.md) preserves that
+> two-restore sequence once per verified kiosk instance.
+
 ## Correction
 
 The same-size two-phase restore introduced by `ee8ee4123` repaired the observed

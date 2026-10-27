@@ -16,6 +16,7 @@ pub mod launch_settings;
 use axum::{
     extract::State,
     http::{header, HeaderMap, Method, StatusCode},
+    response::{IntoResponse, Response},
     routing::post,
     Json, Router,
 };
@@ -4244,7 +4245,7 @@ async fn rpc(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(request): Json<RpcRequest>,
-) -> Result<Json<RpcResponse>, StatusCode> {
+) -> Result<Response, StatusCode> {
     if let Some(access) = &state.portal_access {
         access.authorize(&headers, &request)?;
     }
@@ -4252,10 +4253,60 @@ async fn rpc(
         RpcSurface::Lan => authorization::AuthorizationContext::LocalBrowser,
         RpcSurface::LocalControl => authorization::AuthorizationContext::LocalUnixControl,
     };
-    dispatch(&state, &authorization, request)
+    let catalog_request = matches!(&request, RpcRequest::SurfaceDisplays(request)
+        if !request.overlay && request.displays == host::display_placement::SurfaceDisplayScope::All);
+    let result = dispatch(&state, &authorization, request)
         .await
-        .map(Json)
-        .map_err(|_| StatusCode::FORBIDDEN)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
+    let completed_catalog = catalog_request
+        && matches!(
+            &result,
+            RpcResponse::SurfaceDisplays(host::display_placement::SurfaceDisplaysOutcome::Ok(_))
+        );
+    let response = Json(result).into_response();
+    if completed_catalog && state.portal_access.is_some() {
+        if let ServerMode::Host(host) = &state.mode {
+            if let Some(plan) = host.take_catalog_readiness_restore() {
+                return Ok(catalog_reply_then_restore(response, host.clone(), plan));
+            }
+        }
+    }
+    Ok(response)
+}
+
+/// A successful mounted-portal response must finish before its startup reflow
+/// can be queued. Aborted/unconsumed bodies cancel; dispatch alone never queues
+/// work. EOF means handed to HTTP transport, not a client paint acknowledgement.
+fn catalog_reply_then_restore(
+    response: Response,
+    host: host::HostRuntime,
+    plan: host::CatalogReadinessRestore,
+) -> Response {
+    use futures::StreamExt;
+    struct Completion(Option<(host::HostRuntime, host::CatalogReadinessRestore)>);
+    impl Drop for Completion {
+        fn drop(&mut self) {
+            if let Some((_, plan)) = self.0.take() {
+                plan.cancelled("reply_not_completed");
+            }
+        }
+    }
+    let (parts, body) = response.into_parts();
+    let stream = futures::stream::unfold(
+        (body.into_data_stream(), Completion(Some((host, plan)))),
+        |(mut body, mut completion)| async move {
+            match body.next().await {
+                Some(chunk) => Some((chunk, (body, completion))),
+                None => {
+                    if let Some((host, plan)) = completion.0.take() {
+                        host.schedule_catalog_readiness_restore(plan);
+                    }
+                    None
+                }
+            }
+        },
+    );
+    Response::from_parts(parts, axum::body::Body::from_stream(stream))
 }
 
 fn default_local_storage_root() -> PathBuf {

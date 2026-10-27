@@ -199,24 +199,34 @@ pub(crate) fn window_rectangle(tree: &str, node_id: i64) -> Result<WindowRectang
 }
 
 pub(crate) fn portal_node(tree: &str, portal_pids: &BTreeSet<i32>) -> Result<i64, String> {
-    fn visit(node: &TreeNode, portal_pids: &BTreeSet<i32>, ids: &mut Vec<i64>) {
-        if node.pid.is_some_and(|pid| portal_pids.contains(&pid)) {
-            ids.push(node.id);
+    portal_window(tree, portal_pids).map(|window| window.node_id)
+}
+
+pub(crate) fn portal_window(
+    tree: &str,
+    portal_pids: &BTreeSet<i32>,
+) -> Result<FocusCandidate, String> {
+    fn visit(node: &TreeNode, portal_pids: &BTreeSet<i32>, windows: &mut Vec<FocusCandidate>) {
+        if let Some(pid) = node.pid.filter(|pid| portal_pids.contains(pid)) {
+            windows.push(FocusCandidate {
+                node_id: node.id,
+                pid,
+            });
         }
         for child in node.nodes.iter().chain(node.floating_nodes.iter()) {
-            visit(child, portal_pids, ids);
+            visit(child, portal_pids, windows);
         }
     }
     let root: TreeNode = serde_json::from_str(tree).map_err(|e| e.to_string())?;
-    let mut ids = Vec::new();
-    visit(&root, portal_pids, &mut ids);
-    if ids.len() != 1 {
+    let mut windows = Vec::new();
+    visit(&root, portal_pids, &mut windows);
+    if windows.len() != 1 {
         return Err("no unique portal window".into());
     }
-    Ok(ids[0])
+    Ok(windows.remove(0))
 }
 
-/// One window that the exact launch owns.
+/// One window that the exact unit owns.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FocusCandidate {
     pub(crate) node_id: i64,
