@@ -31,6 +31,13 @@ pub enum SaveError {
 pub trait SaveRepository: Send + Sync {
     fn heads(&self, person: &str) -> Result<SaveHeads, SaveError>;
     fn records(&self, person: &str, game: &str) -> Result<Vec<SnapshotRecord>, SaveError>;
+    /// The one record whose content id is `id`, without reading the game's others.
+    fn record(
+        &self,
+        person: &str,
+        game: &str,
+        id: &str,
+    ) -> Result<Option<SnapshotRecord>, SaveError>;
     /// Validates and canonicalizes the immutable record; returns its content id.
     fn put_record(&self, person: &str, record: &SnapshotRecord) -> Result<String, SaveError>;
     /// Returns a verified regular file, positioned at byte zero for Range reads.

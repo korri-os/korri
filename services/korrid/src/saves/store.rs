@@ -1086,6 +1086,16 @@ impl SaveRepository for NativeSaveStore {
         let _guard = lock()?;
         self.read_records(person, game)
     }
+    fn record(
+        &self,
+        person: &str,
+        game: &str,
+        id: &str,
+    ) -> Result<Option<SnapshotRecord>, SaveError> {
+        let _guard = lock()?;
+        hash_hex(id)?;
+        self.record_by_id(person, game, id)
+    }
     fn put_record(&self, person: &str, record: &SnapshotRecord) -> Result<String, SaveError> {
         let _guard = lock()?;
         self.write_record(person, record)

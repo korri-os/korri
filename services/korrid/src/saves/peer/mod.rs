@@ -261,11 +261,15 @@ impl SavePeerService {
                 records: Vec::new(),
                 confirmed: Vec::new(),
             };
-            for record in repository.records(&person, &game)? {
-                let id = snapshot_id(&record)?;
-                if request.ids.contains(&id) {
-                    if repository.complete(&person, &game, &id)? {
-                        response.confirmed.push(id);
+            // Read only the requested records, by the id their file names
+            // state and record_file checks. Reading the whole game and
+            // re-hashing every record was korrid's largest cost on an RG353M.
+            // Ascending id order matches what reading the whole game gave.
+            let ids: std::collections::BTreeSet<&String> = request.ids.iter().collect();
+            for id in ids {
+                if let Some(record) = repository.record(&person, &game, id)? {
+                    if repository.complete(&person, &game, id)? {
+                        response.confirmed.push(id.clone());
                     }
                     response.records.push(record);
                 }
