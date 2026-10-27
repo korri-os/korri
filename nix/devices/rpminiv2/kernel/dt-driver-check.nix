@@ -19,6 +19,11 @@ pkgs.runCommand "rpminiv2-dt-driver-check"
     RP_MINIV2_AUDIT_VMLINUX = "${kernel.dev}/vmlinux";
   }
   ''
+    mkdir source
+    tar -xf ${kernel.src} -C source --strip-components=1 \
+      linux-7.2/drivers/media/platform/qcom/iris
+    python3 ${./iris-gen1-crop.test.py} source \
+      --patch ${./patches/9999-media-qcom-iris-gen1-visible-encoder-resolution.patch}
     cp ${./dt-driver-audit.py} dt-driver-audit.py
     cp ${./dt-driver-audit.test.py} dt-driver-audit.test.py
     python3 dt-driver-audit.py \

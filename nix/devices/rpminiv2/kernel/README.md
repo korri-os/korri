@@ -281,3 +281,28 @@ configuration must still match the full ROCKNIX baseline plus
 `SCSI_UFS_BSG`. Keep the exact Image hash check; a kernel configuration or
 toolchain change needs a new measured pin, not a bypass. Physical acceptance
 of this product Image is separate; no device was changed for this pin update.
+
+## Gen1 encoder visible geometry (#53, 2026-10-26)
+
+`9999-media-qcom-iris-gen1-visible-encoder-resolution.patch` separates visible
+encoder dimensions from storage alignment. The default OUTPUT crop uses the
+requested size. Gen1 HFI frame sizes use that crop and the requested output
+scale size; its separate stride/plane-height property stays aligned. Explicit
+`S_SELECTION` still works. No FFmpeg crop ioctl or HEVC SPS workaround is needed.
+The real V4L2/HFI setters are compiled by `iris-gen1-crop.test.py` in the compiled
+DT/driver gate. It checks default crops, explicit selection, aligned plane
+layout, scaling, unchanged decoder/DRC handling and transport errors.
+
+A Mini OUTPUT buffer dump at 1280x720 contains all 720 visible rows correctly,
+followed by 16 zero padding rows. The old driver sends 736 as the input frame
+height and scales the padding into the image. The same fault includes 40 empty
+columns at 1240x1080. A standalone encoder probe reproduces both without
+Sunshine, KMS capture, rotation or libyuv. Evidence and Moonlight acceptance are
+in the plugins repository's `services/sunshine/mini-green-band-acceptance.md`.
+
+The off-device product build's Image is unchanged: 57,307,648 bytes, SHA-256
+`3692c7ea66cda7228d7755737318365252881e4d76ec9a7d5e0ae9508020aa3e`.
+The changed `qcom-iris.ko` has SHA-256
+`36e04d76b378ee738dcb55ac8513aa085ec4c41a1e768de456792a09d428278b`.
+The module was tested by runtime-only `rmmod`/`insmod`; no boot files or installed
+modules were replaced. A persistent system deployment remains a separate step.

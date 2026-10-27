@@ -1,0 +1,67 @@
+Subject: [PATCH] media: iris: gen1: use visible dimensions for encoder frame size
+
+The encoder's OUTPUT format reports storage dimensions aligned to 128
+columns and 32 rows. Passing those dimensions as HFI_BUFFER_INPUT frame
+size includes padding in the image. For example, a 1280x720 input has
+736 storage rows. Scaling that to a 720-row bitstream includes the 16
+unwritten rows as a green band at the bottom of the picture. A 1240-pixel
+input similarly includes 40 padding columns and is squeezed horizontally.
+
+Use the selected input crop for the encoder's input frame size, and the
+requested scale dimensions for its output frame size. The separate
+UNCOMPRESSED_PLANE_ACTUAL_INFO property still supplies the aligned strides
+and plane buffer heights. This keeps visible geometry independent of the
+memory layout, as in gen2. Decoder resolution handling is unchanged.
+
+Default the input crop to the requested visible size, not the aligned
+storage extent. Clients can still select a smaller crop explicitly;
+existing clients need no new selection ioctl.
+
+---
+--- a/drivers/media/platform/qcom/iris/iris_hfi_gen1_command.c
++++ b/drivers/media/platform/qcom/iris/iris_hfi_gen1_command.c
+@@ -791,8 +791,13 @@
+ 
+ 	if (!iris_drc_pending(inst) && !(inst->sub_state & IRIS_INST_SUB_FIRST_IPSC)) {
+ 		fs.buffer_type = HFI_BUFFER_INPUT;
+-		fs.width = inst->fmt_src->fmt.pix_mp.width;
+-		fs.height = inst->fmt_src->fmt.pix_mp.height;
++		if (inst->domain == ENCODER) {
++			fs.width = inst->crop.width;
++			fs.height = inst->crop.height;
++		} else {
++			fs.width = inst->fmt_src->fmt.pix_mp.width;
++			fs.height = inst->fmt_src->fmt.pix_mp.height;
++		}
+ 
+ 		ret = hfi_gen1_set_property(inst, ptype, &fs, sizeof(fs));
+ 		if (ret)
+@@ -803,8 +808,13 @@
+ 	else
+ 		fs.buffer_type = HFI_BUFFER_OUTPUT;
+ 
+-	fs.width = inst->fmt_dst->fmt.pix_mp.width;
+-	fs.height = inst->fmt_dst->fmt.pix_mp.height;
++	if (inst->domain == ENCODER) {
++		fs.width = inst->enc_scale_width;
++		fs.height = inst->enc_scale_height;
++	} else {
++		fs.width = inst->fmt_dst->fmt.pix_mp.width;
++		fs.height = inst->fmt_dst->fmt.pix_mp.height;
++	}
+ 
+ 	return hfi_gen1_set_property(inst, ptype, &fs, sizeof(fs));
+ }
+--- a/drivers/media/platform/qcom/iris/iris_venc.c
++++ b/drivers/media/platform/qcom/iris/iris_venc.c
+@@ -295,8 +295,8 @@
+ 	    f->fmt.pix_mp.height != inst->crop.height) {
+ 		inst->crop.top = 0;
+ 		inst->crop.left = 0;
+-		inst->crop.width = fmt->fmt.pix_mp.width;
+-		inst->crop.height = fmt->fmt.pix_mp.height;
++		inst->crop.width = f->fmt.pix_mp.width;
++		inst->crop.height = f->fmt.pix_mp.height;
+ 
+ 		iris_venc_s_fmt_output(inst, output_fmt);
+ 	}
