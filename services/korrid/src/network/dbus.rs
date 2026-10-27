@@ -16,7 +16,56 @@ type Settings = HashMap<String, HashMap<String, OwnedValue>>;
 
 pub(super) mod nearby;
 
-pub struct DbusNetworkManager;
+type Connect = Box<dyn Fn() -> BoxFuture<'static, zbus::Result<Connection>> + Send + Sync>;
+
+/// NetworkManager over one system bus connection. The portal reads network
+/// status every 2 s. A new connection for each read made korrid, dbus-daemon
+/// and NetworkManager busy on an idle device (#289). Every failed operation
+/// drops the connection, so the next operation connects again.
+pub struct DbusNetworkManager {
+    connect: Connect,
+    bus: tokio::sync::Mutex<Option<Connection>>,
+}
+impl DbusNetworkManager {
+    pub fn system() -> Self {
+        Self::connecting_with(Box::new(|| Box::pin(Connection::system())))
+    }
+    fn connecting_with(connect: Connect) -> Self {
+        Self {
+            connect,
+            bus: tokio::sync::Mutex::new(None),
+        }
+    }
+    async fn bus(&self) -> zbus::Result<Connection> {
+        let mut bus = self.bus.lock().await;
+        if let Some(bus) = bus.as_ref() {
+            return Ok(bus.clone());
+        }
+        let connection = (self.connect)().await?;
+        *bus = Some(connection.clone());
+        Ok(connection)
+    }
+    /// Run one operation on the shared connection within `limit`.
+    async fn on_bus<'a, T>(
+        &'a self,
+        limit: Duration,
+        operation: impl FnOnce(Connection) -> BoxFuture<'a, Result<T, NetworkFailure>>,
+    ) -> Result<T, NetworkFailure> {
+        let outcome = tokio::time::timeout(limit, async {
+            let bus = self
+                .bus()
+                .await
+                .map_err(|_| NetworkFailure::unavailable())?;
+            operation(bus).await
+        })
+        .await
+        .unwrap_or_else(|_| Err(NetworkFailure::timeout()));
+        if outcome.is_err() {
+            self.bus.lock().await.take();
+        }
+        outcome
+    }
+}
 
 async fn proxy<'a>(
     bus: &'a Connection,
@@ -306,27 +355,14 @@ async fn connect(
 }
 impl NetworkManager for DbusNetworkManager {
     fn read(&self) -> BoxFuture<'_, Result<NetworkSnapshot, NetworkFailure>> {
-        Box::pin(async {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                let bus = Connection::system().await?;
-                read(&bus).await
-            })
-            .await
-            .map_err(|_| NetworkFailure::timeout())?
-            .map_err(|_| NetworkFailure::unavailable())
-        })
+        Box::pin(self.on_bus(Duration::from_secs(5), |bus| {
+            Box::pin(async move { read(&bus).await.map_err(|_| NetworkFailure::unavailable()) })
+        }))
     }
     fn scan(&self) -> BoxFuture<'_, Result<(), NetworkFailure>> {
-        Box::pin(async {
-            tokio::time::timeout(Duration::from_secs(15), async {
-                let bus = Connection::system()
-                    .await
-                    .map_err(|_| NetworkFailure::unavailable())?;
-                scan(&bus).await
-            })
-            .await
-            .unwrap_or_else(|_| Err(NetworkFailure::timeout()))
-        })
+        Box::pin(self.on_bus(Duration::from_secs(15), |bus| {
+            Box::pin(async move { scan(&bus).await })
+        }))
     }
     fn connect<'a>(
         &'a self,
@@ -334,16 +370,9 @@ impl NetworkManager for DbusNetworkManager {
         hidden: bool,
         password: Option<&'a str>,
     ) -> BoxFuture<'a, Result<(), NetworkFailure>> {
-        Box::pin(async move {
-            tokio::time::timeout(Duration::from_secs(35), async {
-                let bus = Connection::system()
-                    .await
-                    .map_err(|_| NetworkFailure::unavailable())?;
-                connect(&bus, target, hidden, password).await
-            })
-            .await
-            .unwrap_or_else(|_| Err(NetworkFailure::timeout()))
-        })
+        Box::pin(self.on_bus(Duration::from_secs(35), move |bus| {
+            Box::pin(async move { connect(&bus, target, hidden, password).await })
+        }))
     }
 }
 #[cfg(test)]

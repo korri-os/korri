@@ -181,7 +181,7 @@ pub struct NetworkService {
 }
 impl Default for NetworkService {
     fn default() -> Self {
-        let mut service = Self::new(Arc::new(dbus::DbusNetworkManager));
+        let mut service = Self::new(Arc::new(dbus::DbusNetworkManager::system()));
         service.operation = nearby::radio_operation();
         service
     }

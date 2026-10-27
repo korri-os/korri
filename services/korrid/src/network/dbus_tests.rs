@@ -652,3 +652,34 @@ async fn nearby_dbus_reads_default_route_fact() {
     state.default_route.store(true, Ordering::SeqCst);
     assert!(nearby::has_default_route(&client).await.unwrap());
 }
+
+#[tokio::test]
+async fn dbus_manager_reuses_one_connection_and_reconnects_after_the_bus_closes() {
+    let servers: Arc<Mutex<Vec<Connection>>> = Arc::default();
+    let connects = Arc::new(AtomicU32::new(0));
+    let manager = DbusNetworkManager::connecting_with({
+        let servers = servers.clone();
+        let connects = connects.clone();
+        Box::new(move || {
+            let servers = servers.clone();
+            let connects = connects.clone();
+            Box::pin(async move {
+                connects.fetch_add(1, Ordering::SeqCst);
+                let (server, client, _state) = bus().await;
+                servers.lock().unwrap().push(server);
+                Ok(client)
+            })
+        })
+    });
+    manager.read().await.unwrap();
+    manager.read().await.unwrap();
+    manager.scan().await.unwrap();
+    assert_eq!(connects.load(Ordering::SeqCst), 1);
+
+    let server = servers.lock().unwrap().pop().unwrap();
+    server.close().await.unwrap();
+    assert!(manager.read().await.is_err());
+    manager.read().await.unwrap();
+    manager.read().await.unwrap();
+    assert_eq!(connects.load(Ordering::SeqCst), 2);
+}
