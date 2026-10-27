@@ -27,6 +27,45 @@ fn facts_lock() -> Result<MutexGuard<'static, ()>, SaveError> {
 fn lock() -> Result<MutexGuard<'static, ()>, SaveError> {
     STORAGE.lock().map_err(|_| invalid("storage lock poisoned"))
 }
+/// The file a record was read from, as the filesystem states it. A record
+/// file is named by its own hash and never rewritten in place, so the same
+/// stamp means the same bytes that were already read and validated.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct RecordStamp {
+    dev: u64,
+    ino: u64,
+    len: u64,
+    mtime: i64,
+    mtime_nsec: i64,
+}
+impl RecordStamp {
+    fn of(metadata: &fs::Metadata) -> Self {
+        use std::os::unix::fs::MetadataExt;
+        Self {
+            dev: metadata.dev(),
+            ino: metadata.ino(),
+            len: metadata.len(),
+            mtime: metadata.mtime(),
+            mtime_nsec: metadata.mtime_nsec(),
+        }
+    }
+}
+// Validating a record canonicalizes and hashes it. Peer save requests read
+// every record of every game, so without this memo each request repeated that
+// work for every file. A leaf lock: nothing else is taken while it is held.
+static VALIDATED: Mutex<BTreeMap<PathBuf, (RecordStamp, SnapshotRecord)>> =
+    Mutex::new(BTreeMap::new());
+fn validated(path: &Path, stamp: RecordStamp) -> Option<SnapshotRecord> {
+    let memo = VALIDATED.lock().ok()?;
+    memo.get(path)
+        .filter(|(known, _)| *known == stamp)
+        .map(|(_, record)| record.clone())
+}
+fn remember_validated(path: PathBuf, stamp: RecordStamp, record: &SnapshotRecord) {
+    if let Ok(mut memo) = VALIDATED.lock() {
+        memo.insert(path, (stamp, record.clone()));
+    }
+}
 fn io(e: std::io::Error) -> SaveError {
     SaveError::Storage(e.to_string())
 }
@@ -807,19 +846,33 @@ impl NativeSaveStore {
                 .ok_or_else(|| invalid("record filename"))?;
             let id = format!("sha256:{hex}");
             hash_hex(&id)?;
-            let record: SnapshotRecord = read_json(&entry.path())?;
+            let file = entry.path();
+            // The memo holds only records that passed the checks below at this
+            // path, and only for a regular file with the same stamp.
+            let stamp = fs::symlink_metadata(&file)
+                .ok()
+                .filter(|metadata| metadata.file_type().is_file())
+                .map(|metadata| RecordStamp::of(&metadata));
+            if let Some(record) = stamp.and_then(|stamp| validated(&file, stamp)) {
+                records.push((id, record));
+                continue;
+            }
+            let record: SnapshotRecord = read_json(&file)?;
             if snapshot_id(&record)? != id
                 || Some(codec(&record.game_id).as_str())
                     != path.file_name().and_then(|v| v.to_str())
             {
                 return Err(invalid("record identity mismatch"));
             }
-            records.push(record);
+            if let Some(stamp) = stamp {
+                remember_validated(file, stamp, &record);
+            }
+            records.push((id, record));
         }
-        // Canonicalization and hashing are expensive. Compute each immutable id
-        // once for sorting, not once per comparison in every history read.
-        records.sort_by_cached_key(|r| snapshot_id(r).expect("validated record"));
-        Ok(records)
+        // Each record's id is its validated filename hash: sort by that, not
+        // by canonicalizing and hashing every record again.
+        records.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(records.into_iter().map(|(_, record)| record).collect())
     }
     fn read_records(&self, person: &str, game: &str) -> Result<Vec<SnapshotRecord>, SaveError> {
         match self.game(person, game, false)? {
