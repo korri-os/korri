@@ -26,8 +26,7 @@ export type PicoMessage =
   /** A key, pointer or click on the screen. It wakes attract. */
   | { readonly _tag: "PressedScreen" }
   /** The host moved the cursor with focus alone: a d-pad press. It keeps the
-   * screen awake and wakes attract like any press; the composition root
-   * moves the cursor back, so the waking press only wakes. */
+   * screen awake and wakes attract like any press. The move itself stands. */
   | { readonly _tag: "MovedFocus" }
   // The runner picker
   | { readonly _tag: "ChoseRunnerAction"; readonly actionId: string }
