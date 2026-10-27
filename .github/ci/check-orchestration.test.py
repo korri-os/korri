@@ -66,6 +66,16 @@ class TreatyDriftTest(unittest.TestCase):
 
 
 class WorkflowContractTest(unittest.TestCase):
+    def test_retained_host_coverage_does_not_raise_the_original_thirty_minute_budget(
+        self,
+    ):
+        workflow = yaml.safe_load(
+            (ROOT / ".github/workflows/korri-checks.yml").read_text()
+        )
+        for lane in ["korrid", "portal", "fmt", "treaty"]:
+            with self.subTest(lane=lane):
+                self.assertLessEqual(workflow["jobs"][lane]["timeout-minutes"], 30)
+
     def test_cache_and_existing_delivery_checks_run_once_per_full_local_check(self):
         task = (
             (ROOT / "nix/tasks.nix")

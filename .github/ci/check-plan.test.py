@@ -66,7 +66,6 @@ class SelectionTest(unittest.TestCase):
                 "treaty",
                 "korrid",
                 "cli",
-                "inputd",
                 "acceptance",
             },
             "services/inputd/src/main.rs": {
@@ -92,6 +91,30 @@ class SelectionTest(unittest.TestCase):
                 actual = ci.affected([path])
                 self.assertEqual(actual, expected | {"policy"})
                 self.assertLessEqual(actual, full)
+
+    def test_inputd_dependency_direction_preserves_the_real_sandbox_consumer(self):
+        for path in [
+            "services/korrid/src/main.rs",
+            "services/korrid/src/config/library.rs",
+        ]:
+            with self.subTest(path=path):
+                self.assertNotIn("inputd", ci.affected([path]))
+                self.assertIn("acceptance", ci.affected([path]))
+        policy = "services/korrid/src/host/systemd_unit.rs"
+        self.assertIn("inputd", ci.affected([policy]))
+        consumer = (
+            SCRIPT.resolve().parents[2] / "services/inputd/deploy/test-device-check.sh"
+        )
+        self.assertIn("../../korrid/src/host/systemd_unit.rs", consumer.read_text())
+        self.assertIn("korrid", ci.affected(["services/inputd/src/main.rs"]))
+        for shared in [
+            "services/inputd/nix/korri-input-module-check.nix",
+            "contracts/input/src/lib.rs",
+            "flake.lock",
+        ]:
+            with self.subTest(path=shared):
+                self.assertIn("inputd", ci.affected([shared]))
+        self.assertTrue(ci.plan("full", [], "test")["lanes"]["inputd"])
 
     def test_cache_workflow_and_read_helpers_select_policy_without_compilers(self):
         for path in ci.CACHE_POLICY_INPUTS:
