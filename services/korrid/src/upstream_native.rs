@@ -1001,6 +1001,52 @@ async fn read_plain_test_response(
         .map_err(|_| UpstreamError::Wire("native response is invalid JSON".into()))
 }
 
+impl NativeClient {
+    pub(crate) async fn release_object(
+        &self,
+        key: &str,
+    ) -> Result<crate::federation::reach::http::Response, UpstreamError> {
+        self.ensure_not_revoked()?;
+        let peer = self
+            .expected_peer_public_key
+            .as_deref()
+            .ok_or_else(|| UpstreamError::Wire("netplay requires an authenticated peer".into()))?;
+        let directory = self
+            .directory
+            .as_ref()
+            .ok_or_else(|| UpstreamError::Wire("netplay requires federation reach".into()))?;
+        let credentials = self
+            .credentials
+            .as_ref()
+            .ok_or_else(|| UpstreamError::Wire("netplay requires device credentials".into()))?;
+        let request = credentials
+            .encode_request(
+                peer,
+                RpcRequest::ReleaseObject(crate::netplay::ReleaseObjectRequest {
+                    release_key: key.into(),
+                }),
+                unix_time(),
+            )
+            .map_err(|_| {
+                UpstreamError::Wire("release request could not be authenticated".into())
+            })?;
+        let connection = directory
+            .reach_connection(peer)
+            .await
+            .map_err(|_| UpstreamError::Wire("netplay route unavailable".into()))?;
+        let response = crate::federation::reach::http::post(
+            &connection,
+            "/peer-releases-object",
+            request.event_json,
+            None,
+        )
+        .await
+        .map_err(|_| UpstreamError::Wire("release copy failed".into()))?;
+        self.ensure_not_revoked()?;
+        Ok(response)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1436,51 +1482,5 @@ command = ["neverball"]
                 .unwrap()
                 .matched
         );
-    }
-}
-
-impl NativeClient {
-    pub(crate) async fn release_object(
-        &self,
-        key: &str,
-    ) -> Result<crate::federation::reach::http::Response, UpstreamError> {
-        self.ensure_not_revoked()?;
-        let peer = self
-            .expected_peer_public_key
-            .as_deref()
-            .ok_or_else(|| UpstreamError::Wire("netplay requires an authenticated peer".into()))?;
-        let directory = self
-            .directory
-            .as_ref()
-            .ok_or_else(|| UpstreamError::Wire("netplay requires federation reach".into()))?;
-        let credentials = self
-            .credentials
-            .as_ref()
-            .ok_or_else(|| UpstreamError::Wire("netplay requires device credentials".into()))?;
-        let request = credentials
-            .encode_request(
-                peer,
-                RpcRequest::ReleaseObject(crate::netplay::ReleaseObjectRequest {
-                    release_key: key.into(),
-                }),
-                unix_time(),
-            )
-            .map_err(|_| {
-                UpstreamError::Wire("release request could not be authenticated".into())
-            })?;
-        let connection = directory
-            .reach_connection(peer)
-            .await
-            .map_err(|_| UpstreamError::Wire("netplay route unavailable".into()))?;
-        let response = crate::federation::reach::http::post(
-            &connection,
-            "/peer-releases-object",
-            request.event_json,
-            None,
-        )
-        .await
-        .map_err(|_| UpstreamError::Wire("release copy failed".into()))?;
-        self.ensure_not_revoked()?;
-        Ok(response)
     }
 }

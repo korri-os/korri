@@ -68,6 +68,25 @@ pub(crate) fn install() -> Result<(), String> {
         .and_then(|()| file.sync_all())
         .map_err(|_| "netplay config could not be written".into())
 }
+pub(crate) fn remove(root: &Path, path: &Path) -> std::io::Result<()> {
+    let valid = path.parent() == Some(root.join("netplay").as_path())
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                name.len() == 36
+                    && name.ends_with(".cfg")
+                    && name[..32].bytes().all(|byte| byte.is_ascii_hexdigit())
+            });
+    if !valid {
+        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+    }
+    match fs::remove_file(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
+        _ => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,24 +105,5 @@ mod tests {
         assert!(fs::read_to_string(b)
             .unwrap()
             .contains("netplay_request_device_p2 = \"true\""));
-    }
-}
-
-pub(crate) fn remove(root: &Path, path: &Path) -> std::io::Result<()> {
-    let valid = path.parent() == Some(root.join("netplay").as_path())
-        && path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| {
-                name.len() == 36
-                    && name.ends_with(".cfg")
-                    && name[..32].bytes().all(|byte| byte.is_ascii_hexdigit())
-            });
-    if !valid {
-        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
-    }
-    match fs::remove_file(path) {
-        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
-        _ => Ok(()),
     }
 }
