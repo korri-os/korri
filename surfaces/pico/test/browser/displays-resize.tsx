@@ -1,7 +1,7 @@
 /**
  * The page test/pico-displays-browser.test.ts drives in Chromium: Pico
  * mounted through its treaty entry, as the portal mounts it, in the order the
- * RG DS kiosk sees things: the window opens on the main display only, the
+ * RG DS kiosk saw things before ADR 0039's 2026-10-27 amendment: the window opens on the main display only, the
  * host states both displays, the library arrives, and only then does the
  * window grow to cover both displays.
  */

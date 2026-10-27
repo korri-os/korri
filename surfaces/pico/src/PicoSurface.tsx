@@ -68,6 +68,8 @@ import { usePicoProgram } from "./use-pico-program"
  * the other holds every screen as before, less the stage it no longer needs.
  * With no `displays`, or one, Pico draws one screen exactly as it always has.
  * The gameplay overlay is always one screen: the host gives it one display.
+ * No host gives Pico several displays today (ADR 0039, amended 2026-10-27):
+ * the split is kept, unused, until per-display surfaces exist.
  */
 export function PicoSurface({
   model,

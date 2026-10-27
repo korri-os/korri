@@ -24,6 +24,9 @@ export interface PicoDisplayRect {
  * when the host's displays do. They are written to the region after layout
  * as `--pico-display-*` properties, the way Pico writes its other
  * measurements, and the stylesheet places the region from them.
+ *
+ * Unused on devices for now: ADR 0039 (amended 2026-10-27) gives catalog
+ * surfaces only the main display until per-display surfaces exist.
  */
 export function PicoDisplays({
   show,
