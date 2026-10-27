@@ -15,7 +15,10 @@ each device runs its own copy of the game, so no device has to encode video.
 - Netplay traffic uses the federation's own connections (ADR 0026, ADR 0036).
   So a third-party lobby or relay server, such as RetroArch's, is not used.
   korrid forwards RetroArch's netplay port through the iroh tunnel it already
-  uses for a stream viewer. RetroArch itself stays unchanged.
+  uses for a stream viewer. RetroArch's netplay protocol stays unchanged.
+- RetroArch carries one netplay patch: a receiving device sends the password
+  from its private config instead of opening a menu dialog. The null menu
+  cannot answer that dialog. Authentication and the wire protocol stay native.
 - The first slice is for devices with the same owner, as stream play is.
   Household and guest access waits for #178.
 - The first slice takes one receiving device per session. Several receiving
