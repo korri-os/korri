@@ -26,6 +26,7 @@ let
       "sha256-R4pIJux12JswW9/jzyhoE5unTFDQijlAXk8/N1blaOE="
       "sha256-M4LH2m638nI8BSxcECBEtmjDKsh4V5llICjcMU3tvTo="
       "sha256-T5EZjdos5VTw5DZwTu2aLXlbu3Uasz+5QtsTIy+EeGk="
+      "sha256-QNNOBVhcfLw9nEBdxpz8LjVDqD0CSTWpVGYPX+n2txk="
     ];
     x86_64-linux = [
       "sha256-nJZ+40Y/QRYy2ke3Th22b8g872uYFjH/c4ps2/IBrAE="
@@ -45,6 +46,7 @@ let
       "sha256-Z/0/z8TbV+LQozgsTP8ldLYxlrJjUOsycr2QHoaYLCA="
       "sha256-B7GFWg/avkoGUCvclWXDW4NNZlYh+5ptNHdhAN7eUkc="
       "sha256-5ngpjr8MiGUpj5PboDQz7wKeiWyZRQmN0QZkLilgURI="
+      "sha256-aCv1pu5P7dcWeoGDO/wx5IjebxN5nbrdcsu49aZg55Y="
     ];
   };
   batches = [
@@ -65,6 +67,7 @@ let
     "build-57de061520cc-settings-vocabulary"
     "build-b65ce7b266b4-moonlight-v4l2request"
     "build-dbb0917a5b58-moonlight-h700-gl"
+    "build-39fad980be48-moonlight-perf"
   ];
   archives = pkgs.lib.imap0 (
     index: batch:

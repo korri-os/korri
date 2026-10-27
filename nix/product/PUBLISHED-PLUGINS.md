@@ -125,6 +125,20 @@ unchanged derivation passed CI on `eb9fc27`. Both pins appear in the batch's
 SHA-256. The archives also carry a zao and a Fuji signature on some build-host
 paths; the Pages index carries only the publisher signature. Device acceptance
 is `docs/acceptance/h700-moonlight-v4l2request-2026-10-27.md`.
+Batch `build-39fad980be48-moonlight-perf` (source
+`39fad980be4814d9685e836c912f182cfad9678f`) replaces only Moonlight on both
+architectures. It builds Moonlight's Opus without custom modes, the upstream
+default. With custom modes, every audio packet made libopus read
+`/proc/cpuinfo`; Moonlight's audio thread on the RG353M fell from 16.6 % to
+5.3 % of one core. It was published from zao with the publisher key, not by CI:
+the CI run stopped on a Pyxel window timeout. The same CI check list passed on
+Unzen (x86_64) and on Fuji and Yari (aarch64), except the Pyxel checks, which
+this batch does not touch, and the aarch64 Sunshine input-seat VM check, which
+passed on x86_64. The lifecycle checks passed in CI on the same commit. Both
+pins appear in the batch's `paths-SYSTEM.txt`. The matching offline metadata
+archives are pinned by SHA-256. The archives also carry zao and Fuji
+signatures on some build-host paths; the Pages index carries only the
+publisher signature.
 Each pinned path is grounded in its batch's `paths-SYSTEM.txt` and
 `revision.txt`. The new Starter pack pins were checked against those public
 release assets directly. Earlier batches remain published even when their
