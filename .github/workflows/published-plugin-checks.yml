@@ -42,6 +42,7 @@ jobs:
       fmt: ${{ steps.plan.outputs.fmt }}
       treaty: ${{ steps.plan.outputs.treaty }}
       portal: ${{ steps.plan.outputs.portal }}
+      parity: ${{ steps.plan.outputs.parity }}
       cli: ${{ steps.plan.outputs.cli }}
       korrid: ${{ steps.plan.outputs.korrid }}
       inputd: ${{ steps.plan.outputs.inputd }}
@@ -55,7 +56,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.source_sha || github.sha }}
-          fetch-depth: 0
+          fetch-depth: 2
           persist-credentials: false
       - name: Verify source identity
         env:
@@ -68,10 +69,10 @@ jobs:
       - name: Select checks (unknown inputs broaden to full)
         id: plan
         env:
-          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || ((github.event_name == 'schedule' || github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'ci-full')) && 'full' || 'affected') }}
+          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || ((github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'ci-full')) && 'full' || 'affected') }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           PROBE_PATHS: ${{ inputs.probe_paths || '[]' }}
-        run: python3 .github/ci/check-plan.py select --mode "$MODE" --base "$BASE_SHA" --head HEAD --paths "$PROBE_PATHS"
+        run: python3 .github/ci/check-plan.py select --mode "$MODE" --base "$BASE_SHA" --head HEAD --fetch-base --paths "$PROBE_PATHS"
   acceptance:
     needs: select
     if: needs.select.outputs.acceptance == 'true'

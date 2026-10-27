@@ -5,8 +5,10 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
+import time
 from pathlib import Path, PurePosixPath
 
 LANES = (
@@ -14,6 +16,7 @@ LANES = (
     "fmt",
     "treaty",
     "portal",
+    "parity",
     "cli",
     "korrid",
     "inputd",
@@ -24,6 +27,54 @@ LANES = (
     "acceptance",
 )
 SURFACES = {"pico", "zone", "boxbuster"}
+# Exact producer files read by clients/cli/tests/parity.py, not all portal UI.
+PARITY_INPUTS = {
+    "clients/cli/tests/parity.py",
+    "clients/portal/src/surface/settings-model.ts",
+    "clients/portal/src/surface/plugin-repositories.ts",
+    "clients/portal/src/surface/launch-settings-model.ts",
+    "surfaces/pico/src/pico-settings-view.ts",
+    "surfaces/zone/src/plan/options.ts",
+}
+PORTAL_PRESENTATION = (
+    "clients/portal/src/input/",
+    "clients/portal/src/launchables/",
+    "clients/portal/src/overlay/",
+    "clients/portal/src/surface/",
+    "clients/portal/public/",
+    "clients/portal/test/",
+)
+PORTAL_BUILD_INPUTS = {
+    "clients/portal/src/index.css",
+    "clients/portal/src/vite-env.d.ts",
+    "clients/portal/index.html",
+    "clients/portal/vite.config.ts",
+    "clients/portal/bunfig.toml",
+}
+# File formats currently produced/consumed by the presentation areas below.
+# An unfamiliar format cannot acquire a frontend-only exemption by location.
+FRONTEND_SUFFIXES = {
+    ".css",
+    ".grid",
+    ".html",
+    ".ico",
+    ".md",
+    ".mjs",
+    ".png",
+    ".py",
+    ".sh",
+    ".svg",
+    ".ts",
+    ".tsx",
+    ".ttf",
+    ".txt",
+    ".webmanifest",
+    ".woff2",
+}
+SHARED_CSS = {
+    "packages/intrinsic-design/intrinsic.css",
+    "packages/intrinsic-design/recipe.css",
+}
 # These files describe agent/CI operation and are not runtime fixtures. New docs
 # (including docs/research fixtures) stay unknown and therefore select all lanes.
 NONFIXTURE_DOCS = {
@@ -48,18 +99,36 @@ def affected(paths):
             # Native composition and shared full-check orchestration reach
             # consumers outside their containing source directory.
             return set(LANES)
-        if path.startswith("clients/portal/"):
-            # CLI parity reads portal producers; korrid's smoke uses its client.
+        if path in PARITY_INPUTS:
+            selected.add("parity")
+        if path == "clients/cli/tests/parity.py":
+            continue
+        if path.startswith(PORTAL_PRESENTATION) or path in PORTAL_BUILD_INPUTS:
+            if (
+                path not in PORTAL_BUILD_INPUTS
+                and parsed.suffix not in FRONTEND_SUFFIXES
+            ):
+                return set(LANES)
+            selected.update({"portal"} | SURFACES)
+        elif path.startswith("clients/portal/src/korrid/"):
+            # The real RPC smoke imports this transport client. Keep backend
+            # validation for it, not for unrelated presentation or input code.
             selected.update({"portal", "cli", "korrid"} | SURFACES)
         elif path.startswith("surfaces/"):
-            surface = parsed.parts[1] if len(parsed.parts) > 1 else ""
-            if surface not in SURFACES:
+            parts = parsed.parts
+            surface = parts[1] if len(parts) > 1 else ""
+            if (
+                surface not in SURFACES
+                or len(parts) < 4
+                or parts[2] not in {"src", "test", "scripts"}
+                or parsed.suffix not in FRONTEND_SUFFIXES
+            ):
                 return set(LANES)
-            selected.update({surface, "portal", "cli"})
-        elif path.startswith("packages/"):
-            selected.update({"portal", "cli", "korrid"} | SURFACES)
+            selected.update({surface, "portal"})
+        elif path in SHARED_CSS:
+            selected.update({"portal"} | SURFACES)
         elif path.startswith("clients/cli/"):
-            selected.update({"cli", "fmt", "acceptance"})
+            selected.update({"cli", "fmt", "parity", "acceptance"})
         elif path.startswith("services/korrid/"):
             selected.update({"fmt", "treaty", "korrid", "cli", "inputd", "acceptance"})
         elif path.startswith("services/inputd/"):
@@ -86,16 +155,40 @@ def plan(mode, paths, reason):
     }
 
 
-def changed_paths(base, head):
+def changed_paths(base, head, fetch_base=False):
     # Disabling rename detection includes both old and new names. NUL framing
     # handles spaces; undecodable/unusual paths cannot accidentally be skipped.
-    merge_base = subprocess.check_output(
-        ["git", "merge-base", base, head],
-        stderr=subprocess.PIPE,
-        text=True,
-    ).strip()
+    if fetch_base and (not re.fullmatch(r"[0-9a-f]{40}", base) or base == "0" * 40):
+        raise ValueError("event base must be a nonzero full commit SHA")
+
+    def merge_base():
+        return subprocess.check_output(
+            ["git", "merge-base", base, head],
+            stderr=subprocess.PIPE,
+            text=True,
+        ).strip()
+
+    try:
+        ancestor = merge_base()
+    except subprocess.CalledProcessError:
+        if not fetch_base:
+            raise
+        pinned_head = subprocess.check_output(
+            ["git", "rev-parse", head], text=True
+        ).strip()
+        # Usually the two-commit checkout already contains the PR merge base.
+        # For multi-commit pushes, fetch only bounded histories of the exact
+        # event base and tested head. No unshallow/default-branch fetch.
+        subprocess.run(
+            ["git", "fetch", "--no-tags", "--depth=64", "origin", pinned_head, base],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
+        ancestor = merge_base()
     output = subprocess.check_output(
-        ["git", "diff", "--no-renames", "--name-only", "-z", merge_base, head],
+        ["git", "diff", "--no-renames", "--name-only", "-z", ancestor, head],
     )
     return [path.decode("utf-8") for path in output.split(b"\0") if path]
 
@@ -145,6 +238,11 @@ def main():
     )
     select.add_argument("--base", default="")
     select.add_argument("--head", default="HEAD")
+    select.add_argument(
+        "--fetch-base",
+        action="store_true",
+        help="Fetch bounded exact-SHA history if the merge base is unavailable",
+    )
     select.add_argument("--paths", default="[]", help="JSON array, probe mode only")
     finish = sub.add_parser("aggregate")
     finish.add_argument("--scope", choices=("checks", "published"), required=True)
@@ -155,6 +253,7 @@ def main():
         )
         print("All selected checks passed; deliberate skips match the plan.")
         return
+    started = time.perf_counter()
     mode, reason, paths = args.mode, "explicit full mode", []
     if mode == "probe":
         paths = json.loads(args.paths)
@@ -171,14 +270,24 @@ def main():
         try:
             if not args.base:
                 raise ValueError("no merge base supplied")
-            paths = changed_paths(args.base, args.head)
+            paths = changed_paths(args.base, args.head, args.fetch_base)
             reason = "merge-base diff (renames include both paths)"
-        except (subprocess.CalledProcessError, UnicodeError, ValueError) as error:
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            UnicodeError,
+            ValueError,
+        ) as error:
             mode, reason = "full", f"diff unavailable; broadened to full: {error}"
     selection = plan(mode, paths, reason)
     validate_plan(selection)
     encoded = json.dumps(selection, separators=(",", ":"))
     print(encoded)
+    elapsed = time.perf_counter() - started
+    print(
+        f"check selection elapsed: {elapsed:.6f}s (including any bounded fetch)",
+        file=sys.stderr,
+    )
     if output := os.environ.get("GITHUB_OUTPUT"):
         with Path(output).open("a") as stream:
             stream.write(f"plan={encoded}\n")
