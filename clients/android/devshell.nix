@@ -1,7 +1,7 @@
 # Android (Artemis) toolchain. Owned by clients/android; composed by the
 # root flake as devShells.<system>.android. Expects pkgs imported with
 # android_sdk.accept_license = true and allowUnfree = true.
-{ pkgs }:
+{ pkgs, korri }:
 let
   android = import ./sdk.nix { inherit pkgs; };
 in
@@ -17,6 +17,7 @@ pkgs.mkShell {
   ];
 
   JAVA_HOME = android.jdk;
+  KORRI_ANDROID_RELAYS_FILE = import ./product.nix { inherit pkgs korri; };
   # aapt2FromMavenOverride: NixOS cannot run Gradle's downloaded dynamically
   # linked aapt2; use the Nix-provided one (same pattern as hiper).
   GRADLE_OPTS = android.gradleOpts;

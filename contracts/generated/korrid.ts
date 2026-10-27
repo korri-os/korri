@@ -457,6 +457,7 @@ export interface IdentityRetiredExportRequest {
 
 export interface IdentityStatus {
 	identity: IdentityState;
+	canSwitchIdentity: boolean;
 	localBackupAvailable: boolean;
 	retiredPublicKeys: string[];
 }
@@ -1019,6 +1020,31 @@ export interface OnboardingStatus {
 }
 
 export interface OnboardingStatusRequest {
+}
+
+export interface OwnerBindingRequest {
+}
+
+export enum OwnerSignerKind {
+	Unavailable = "Unavailable",
+	Pending = "Pending",
+	Approved = "Approved",
+	Denied = "Denied",
+	InvalidResponse = "InvalidResponse",
+	Defect = "Defect",
+}
+
+export interface OwnerSignerState {
+	_tag: OwnerSignerKind;
+	message: string;
+}
+
+export interface OwnerBindingSnapshot {
+	identity: IdentityState;
+	personSigner: OwnerSignerState;
+	deviceFingerprint: string;
+	requestedAction: string;
+	signerRequirement?: string;
 }
 
 export enum PeerListState {
@@ -1930,6 +1956,10 @@ export type OnboardingStatusOutcome =
 	| { _tag: "Ok", payload: OnboardingStatus }
 	| { _tag: "Err", payload: RpcFailure };
 
+export type OwnerBindingOutcome =
+	| { _tag: "Ok", payload: OwnerBindingSnapshot }
+	| { _tag: "Err", payload: RpcFailure };
+
 export type PeerListOutcome =
 	| { _tag: "Ok", payload: PeerList }
 	| { _tag: "Err", payload: RpcFailure };
@@ -2042,6 +2072,8 @@ export type RpcRequest =
 	| { _tag: "system.settings.steamgriddbCredential.set", payload: SteamGridDbCredentialSetRequest }
 	| { _tag: "system.settings.steamgriddbCredential.clear", payload: SteamGridDbCredentialClearRequest }
 	| { _tag: "system.identity.status", payload: IdentityStatusRequest }
+	| { _tag: "system.identity.owner-binding.snapshot", payload: OwnerBindingRequest }
+	| { _tag: "system.identity.owner-binding.start", payload: OwnerBindingRequest }
 	| { _tag: "system.identity.backup.export", payload: IdentityBackupExportRequest }
 	| { _tag: "system.identity.switch.local", payload: IdentityLocalSwitchRequest }
 	| { _tag: "system.identity.switch.nip46", payload: IdentityNip46SwitchRequest }
@@ -2125,6 +2157,8 @@ export type RpcResponse =
 	| { _tag: "system.settings.steamgriddbCredential.set", outcome: SensitiveSettingOutcome }
 	| { _tag: "system.settings.steamgriddbCredential.clear", outcome: SensitiveSettingOutcome }
 	| { _tag: "system.identity.status", outcome: IdentityStatusOutcome }
+	| { _tag: "system.identity.owner-binding.snapshot", outcome: OwnerBindingOutcome }
+	| { _tag: "system.identity.owner-binding.start", outcome: OwnerBindingOutcome }
 	| { _tag: "system.identity.backup.export", outcome: IdentityBackupOutcome }
 	| { _tag: "system.identity.switch.local", outcome: IdentitySwitchOutcome }
 	| { _tag: "system.identity.switch.nip46", outcome: IdentitySwitchOutcome }

@@ -53,6 +53,7 @@ pub mod local_signer;
 pub mod native_input;
 pub mod network;
 pub mod onboarding;
+pub mod owner_binding;
 pub mod peer_listener;
 mod peer_rpc;
 pub mod play_log;
@@ -1126,9 +1127,23 @@ pub struct IdentityStatusRequest {}
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OwnerBindingRequest {}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum OwnerBindingOutcome {
+    Ok(owner_binding::OwnerBindingSnapshot),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityStatus {
     pub identity: identity::IdentityState,
+    pub can_switch_identity: bool,
     pub local_backup_available: bool,
     pub retired_public_keys: Vec<String>,
 }
@@ -1429,6 +1444,10 @@ pub enum RpcRequest {
     SteamGridDbCredentialClear(SteamGridDbCredentialClearRequest),
     #[serde(rename = "system.identity.status")]
     IdentityStatus(IdentityStatusRequest),
+    #[serde(rename = "system.identity.owner-binding.snapshot")]
+    OwnerBindingSnapshot(OwnerBindingRequest),
+    #[serde(rename = "system.identity.owner-binding.start")]
+    OwnerBindingStart(OwnerBindingRequest),
     #[serde(rename = "system.identity.backup.export")]
     IdentityBackupExport(IdentityBackupExportRequest),
     #[serde(rename = "system.identity.switch.local")]
@@ -1608,6 +1627,10 @@ pub enum RpcResponse {
     SteamGridDbCredentialClear(SensitiveSettingOutcome),
     #[serde(rename = "system.identity.status")]
     IdentityStatus(IdentityStatusOutcome),
+    #[serde(rename = "system.identity.owner-binding.snapshot")]
+    OwnerBindingSnapshot(OwnerBindingOutcome),
+    #[serde(rename = "system.identity.owner-binding.start")]
+    OwnerBindingStart(OwnerBindingOutcome),
     #[serde(rename = "system.identity.backup.export")]
     IdentityBackupExport(IdentityBackupOutcome),
     #[serde(rename = "system.identity.switch.local")]
@@ -1695,6 +1718,7 @@ struct AppState {
     federation: Option<federation::FederationDirectory>,
     federation_wake: Option<DiscoveryControl>,
     identity_switch: Option<Arc<identity_switch::IdentitySwitchCoordinator>>,
+    owner_binding: Option<owner_binding::OwnerBindingCoordinator>,
     /// korrid's only route to the root plugin host, when this device has one.
     plugin_admin: Option<plugin_repositories::PluginAdminSocket>,
     mode: ServerMode,
@@ -3718,6 +3742,7 @@ async fn dispatch(
                     .map(|(identity, local_backup_available, retired_public_keys)| {
                         IdentityStatusOutcome::Ok(IdentityStatus {
                             identity,
+                            can_switch_identity: true,
                             local_backup_available,
                             retired_public_keys,
                         })
@@ -3725,9 +3750,43 @@ async fn dispatch(
                     .unwrap_or_else(|message| {
                         IdentityStatusOutcome::Err(identity_failure(message))
                     }),
-                None => IdentityStatusOutcome::Err(identity_unavailable()),
+                None => match &state.federation {
+                    Some(directory) => match directory.identity_state() {
+                        Ok(identity)
+                            if !matches!(identity, identity::IdentityState::Invalid { .. }) =>
+                        {
+                            IdentityStatusOutcome::Ok(IdentityStatus {
+                                identity,
+                                can_switch_identity: false,
+                                local_backup_available: false,
+                                retired_public_keys: Vec::new(),
+                            })
+                        }
+                        _ => IdentityStatusOutcome::Err(RpcFailure {
+                            code: "IdentityUnavailable".into(),
+                            message: "Device identity is unavailable. Try again.".into(),
+                        }),
+                    },
+                    None => IdentityStatusOutcome::Err(identity_unavailable()),
+                },
             };
             RpcResponse::IdentityStatus(outcome)
+        }
+        RpcRequest::OwnerBindingSnapshot(_) => {
+            RpcResponse::OwnerBindingSnapshot(owner_binding_snapshot(state))
+        }
+        RpcRequest::OwnerBindingStart(_) => {
+            let outcome = match &state.owner_binding {
+                Some(coordinator) => match coordinator.request(state.private_state_root()) {
+                    Ok(()) => owner_binding_snapshot(state),
+                    Err(message) => OwnerBindingOutcome::Err(RpcFailure {
+                        code: "OwnerBindingFailed".into(),
+                        message,
+                    }),
+                },
+                None => OwnerBindingOutcome::Err(identity_unavailable()),
+            };
+            RpcResponse::OwnerBindingStart(outcome)
         }
         RpcRequest::IdentityBackupExport(request) => {
             let outcome = match &state.identity_switch {
@@ -3839,6 +3898,7 @@ async fn dispatch(
                         .map(|(identity, local_backup_available, retired_public_keys)| {
                             IdentityRetiredDeleteOutcome::Ok(IdentityStatus {
                                 identity,
+                                can_switch_identity: true,
                                 local_backup_available,
                                 retired_public_keys,
                             })
@@ -4207,6 +4267,29 @@ fn folder_selection_failure(error: discovery::FolderSelectionGrantError) -> RpcF
     }
 }
 
+fn owner_binding_snapshot(state: &AppState) -> OwnerBindingOutcome {
+    let Some(coordinator) = &state.owner_binding else {
+        return OwnerBindingOutcome::Err(identity_unavailable());
+    };
+    let result = (|| {
+        let directory = state
+            .federation
+            .as_ref()
+            .ok_or("Device identity is unavailable")?;
+        let identity = directory
+            .identity_state()
+            .map_err(|_| "Device identity is unavailable")?;
+        coordinator.snapshot(identity)
+    })();
+    match result {
+        Ok(snapshot) => OwnerBindingOutcome::Ok(snapshot),
+        Err(message) => OwnerBindingOutcome::Err(RpcFailure {
+            code: "OwnerBindingFailed".into(),
+            message: message.to_string(),
+        }),
+    }
+}
+
 fn identity_failure(message: String) -> RpcFailure {
     RpcFailure {
         code: "IdentitySwitchFailed".into(),
@@ -4497,6 +4580,7 @@ fn brain_app_state(
         federation: resources.map(|resources| resources.directory),
         federation_wake,
         identity_switch: None,
+        owner_binding: None,
         plugin_admin: plugin_repositories::PluginAdminSocket::from_env(),
         mode: ServerMode::Brain(BrainRuntime {
             upstream,
@@ -4719,6 +4803,7 @@ fn app_states_with(
         federation: None,
         federation_wake: None,
         identity_switch: None,
+        owner_binding: None,
         plugin_admin: plugin_repositories::PluginAdminSocket::from_env(),
         mode: ServerMode::Host(runtime.clone()),
         portal_access: None,
@@ -4738,6 +4823,7 @@ fn app_states_with(
         federation: None,
         federation_wake: None,
         identity_switch: None,
+        owner_binding: None,
         plugin_admin: plugin_repositories::PluginAdminSocket::from_env(),
         mode: ServerMode::Host(runtime),
         portal_access: None,
@@ -4909,6 +4995,7 @@ struct ServerHandle {
     upstream: upstreams::UpstreamRegistry,
     federation: FederationResources,
     federation_wake: DiscoveryControl,
+    owner_binding: Option<owner_binding::OwnerBindingCoordinator>,
     stop: oneshot::Sender<()>,
     thread: JoinHandle<()>,
 }
@@ -4923,18 +5010,26 @@ pub fn korrid_version() -> String {
     VERSION.into()
 }
 
-/// Starts the standalone localhost brain. Platform-native integrations are
-/// unavailable through this public host entrypoint.
+/// Effects and public product configuration supplied by the embedding host.
+#[derive(Default)]
+pub struct EmbeddedPlatform {
+    pub relays: Option<relay::RelayList>,
+    pub owner_binding: Option<owner_binding::OwnerBindingCoordinator>,
+}
+
+/// Start one localhost brain with explicitly supplied native effects.
 pub fn start_local_server(
     allowed_origin: &str,
     local_storage_root: &str,
     private_state_root: &str,
+    platform: EmbeddedPlatform,
 ) -> Result<u16, ServerError> {
     start_local_server_for_platform(
         allowed_origin,
         local_storage_root,
         private_state_root,
         plugin_policy::RegistrySource::Installed,
+        platform,
     )
 }
 
@@ -4943,6 +5038,7 @@ fn start_local_server_for_platform(
     local_storage_root: &str,
     private_state_root: &str,
     registry_source: plugin_policy::RegistrySource,
+    platform: EmbeddedPlatform,
 ) -> Result<u16, ServerError> {
     let mut slot = server_slot().lock().expect("server mutex poisoned");
     if slot.is_some() {
@@ -4991,10 +5087,21 @@ fn start_local_server_for_platform(
     .with_federation(federation.directory.clone());
     let server_federation = federation.clone();
     let relay_config = moonlight_config_snapshot.clone();
+    let product_relays = platform.relays;
+    let owner_binding = platform.owner_binding;
+    let server_owner_binding = owner_binding.clone();
     let (federation_wake, discovery) = Discovery::new(
         federation.directory.clone(),
         federation.credentials.clone(),
-        Arc::new(move || DiscoveryInputs::query_only(&relay_config)),
+        Arc::new(move || {
+            let mut inputs = DiscoveryInputs::query_only(&relay_config)?;
+            // Like the Linux product's KORRID_RELAYS, this is supplied by the
+            // product composition, not copied into or migrated through user data.
+            if let Some(relays) = &product_relays {
+                inputs.relays = Some(relays.clone());
+            }
+            Ok(inputs)
+        }),
         Arc::new(relay::WebSocketRelayTransport::new()),
         DiscoveryTiming::default(),
         Arc::new(peer_rpc::unix_time),
@@ -5011,27 +5118,26 @@ fn start_local_server_for_platform(
                 let listener = tokio::net::TcpListener::from_std(listener)
                     .expect("convert localhost listener");
                 let shutdown_discovery = server_federation_wake.clone();
-                let server = axum::serve(
-                    listener,
-                    router_with_capability_local_root_provision_and_grants(
-                        &server_capability,
-                        &allowed_origin,
-                        &local_storage_root,
-                        &private_state_root,
-                        server_registry_source.clone(),
-                        server_config_snapshot,
-                        server_folder_selection_grants,
-                        Some(server_upstream),
-                        Some(server_federation),
-                        Some(server_federation_wake.clone()),
-                    ),
-                )
-                .with_graceful_shutdown(async move {
-                    let _ = stopped.await;
-                    // Keep existing RPC draining, but do not wait for it to
-                    // cancel a blocked relay operation.
-                    shutdown_discovery.cancel();
-                });
+                let (mut app_state, ()) = brain_app_state(
+                    &server_capability,
+                    &allowed_origin,
+                    &local_storage_root,
+                    &private_state_root,
+                    server_registry_source.clone(),
+                    server_config_snapshot,
+                    server_folder_selection_grants,
+                    Some(server_upstream),
+                    Some(server_federation),
+                    Some(server_federation_wake.clone()),
+                );
+                app_state.owner_binding = server_owner_binding;
+                let server = axum::serve(listener, portal_router_from_state(app_state))
+                    .with_graceful_shutdown(async move {
+                        let _ = stopped.await;
+                        // Keep existing RPC draining, but do not wait for it to
+                        // cancel a blocked relay operation.
+                        shutdown_discovery.cancel();
+                    });
                 // Both tasks live inside this runtime and are joined before it exits.
                 let discovery = tokio::spawn(discovery);
                 let result = server.await;
@@ -5052,6 +5158,7 @@ fn start_local_server_for_platform(
         upstream,
         federation,
         federation_wake,
+        owner_binding,
         stop,
         thread,
     });
@@ -5147,6 +5254,34 @@ pub fn apply_local_owner_binding(
     serde_json::to_string(identity.state()).map_err(|error| ServerError::StartFailed {
         details: error.to_string(),
     })
+}
+
+fn running_owner_binding() -> Result<owner_binding::OwnerBindingCoordinator, ServerError> {
+    server_slot()
+        .lock()
+        .expect("server mutex poisoned")
+        .as_ref()
+        .ok_or(ServerError::NotRunning)?
+        .owner_binding
+        .clone()
+        .ok_or_else(|| ServerError::StartFailed {
+            details: "Native signer is unavailable".into(),
+        })
+}
+
+pub fn update_local_owner_signer(generation: u64, snapshot: &str) -> Result<u64, ServerError> {
+    running_owner_binding()?
+        .update(generation, snapshot)
+        .map_err(|details| ServerError::StartFailed { details })
+}
+
+pub fn take_local_owner_binding_request(generation: u64) -> Result<Option<String>, ServerError> {
+    Ok(running_owner_binding()?.take_request(generation))
+}
+
+pub fn detach_local_owner_signer(generation: u64) -> Result<(), ServerError> {
+    running_owner_binding()?.detach(generation);
+    Ok(())
 }
 
 pub fn local_server_port() -> Option<u16> {

@@ -40,7 +40,7 @@ public class KorriOwnerBindingControllerTest {
         ConfigurablePersonSigner signer = new ConfigurablePersonSigner(true);
         controller.attachSigner(signer);
 
-        controller.startOwnerBinding();
+        controller.startOwnerBinding(TEMPLATE);
         controller.onPersonSignerState(
                 PersonSigner.State.approved(OWNER, TEMPLATE, "{\"signed\":true}"));
 

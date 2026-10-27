@@ -1,5 +1,5 @@
 # The restored Artemis toolchain. Keep Android composition next to the client.
-{ pkgs, portalBundle }:
+{ pkgs, korri, portalBundle }:
 let
   android = import ./sdk.nix { inherit pkgs; };
   rust = pkgs.rust-bin.stable.latest.default.override {
@@ -19,6 +19,7 @@ let
   ];
   env = {
     KORRI_PORTAL_BUNDLE = portalBundle;
+    KORRI_ANDROID_RELAYS_FILE = import ./product.nix { inherit pkgs korri; };
     JAVA_HOME = "${android.jdk}";
     GRADLE_OPTS = android.gradleOpts;
     KORRI_ANDROID_SDK_NAME = "android";

@@ -4,7 +4,7 @@
 use crate::{
     apply_local_owner_binding, issue_folder_selection_receipt, korrid_version,
     local_identity_status_json, local_owner_binding_template, local_server_capability,
-    moonlight_host_candidates, start_local_server, stop_local_server,
+    moonlight_host_candidates, start_local_server, stop_local_server, EmbeddedPlatform,
     MoonlightCertificateProvisionOutcome, MoonlightCertificateProvisionRequest, RpcRequest,
     RpcResponse,
 };
@@ -37,6 +37,7 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_start(
     allowed_origin: JString,
     local_storage_root: JString,
     private_state_root: JString,
+    product_relays: JString,
 ) -> jint {
     // iroh's rustls verifier needs the application's class loader and trust
     // store before federation networking starts. Both wrappers borrow the
@@ -74,7 +75,28 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_start(
             return -1;
         }
     };
-    match start_local_server(&allowed_origin, &local_storage_root, &private_state_root) {
+    let relays = env
+        .get_string(&product_relays)
+        .ok()
+        .and_then(|json| serde_json::from_str::<Vec<String>>(&String::from(json)).ok())
+        .and_then(|values| crate::relay::RelayList::configured(values).ok());
+    let Some(relays) = relays else {
+        let _ = env.throw_new(
+            "java/lang/IllegalArgumentException",
+            "Android product relays are invalid",
+        );
+        return -1;
+    };
+    let platform = EmbeddedPlatform {
+        relays: Some(relays),
+        owner_binding: Some(crate::owner_binding::OwnerBindingCoordinator::default()),
+    };
+    match start_local_server(
+        &allowed_origin,
+        &local_storage_root,
+        &private_state_root,
+        platform,
+    ) {
         Ok(port) => port.into(),
         Err(error) => {
             let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
@@ -100,6 +122,82 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_capabili
             let _ = env.throw_new("java/lang/IllegalStateException", "korrid is not running");
             ptr::null_mut()
         }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_updateOwnerSigner(
+    mut env: JNIEnv,
+    _class: JClass,
+    generation: jni::sys::jlong,
+    snapshot: JString,
+) -> jni::sys::jlong {
+    if generation < 0 {
+        let _ = env.throw_new(
+            "java/lang/IllegalArgumentException",
+            "Invalid signer generation",
+        );
+        return 0;
+    }
+    let snapshot = match env.get_string(&snapshot) {
+        Ok(value) => String::from(value),
+        Err(_) => {
+            let _ = env.throw_new(
+                "java/lang/IllegalArgumentException",
+                "Invalid signer status",
+            );
+            return 0;
+        }
+    };
+    match crate::update_local_owner_signer(generation as u64, &snapshot) {
+        Ok(value) => value as jni::sys::jlong,
+        Err(_) => {
+            let _ = env.throw_new(
+                "java/lang/IllegalStateException",
+                "Could not update signer status",
+            );
+            0
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_takeOwnerBindingRequest(
+    mut env: JNIEnv,
+    _class: JClass,
+    generation: jni::sys::jlong,
+) -> jstring {
+    if generation <= 0 {
+        let _ = env.throw_new(
+            "java/lang/IllegalArgumentException",
+            "Invalid signer generation",
+        );
+        return ptr::null_mut();
+    }
+    match crate::take_local_owner_binding_request(generation as u64) {
+        Ok(Some(template)) => string_result(&mut env, Ok(template)),
+        Ok(None) => ptr::null_mut(),
+        Err(_) => {
+            let _ = env.throw_new(
+                "java/lang/IllegalStateException",
+                "Native signer is unavailable",
+            );
+            ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_detachOwnerSigner(
+    mut env: JNIEnv,
+    _class: JClass,
+    generation: jni::sys::jlong,
+) {
+    if generation <= 0 || crate::detach_local_owner_signer(generation as u64).is_err() {
+        let _ = env.throw_new(
+            "java/lang/IllegalStateException",
+            "Could not detach native signer",
+        );
     }
 }
 

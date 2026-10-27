@@ -135,7 +135,7 @@ public class Nip55PersonSignerTest {
     }
 
     @Test
-    public void selectedAccountUsesContentResolverBeforeOpeningAnActivity() {
+    public void explicitRetryReselectsTheKeyThenUsesRememberedSignaturePermission() {
         Nip55PersonSigner signer = signer();
         signer.request(new PersonSigner.Request(TEMPLATE));
         Intent account = launcher.last();
@@ -153,10 +153,16 @@ public class Nip55PersonSignerTest {
                 ConfigurableSignerProvider.class,
                 SIGNER_PACKAGE + ".SIGN_EVENT");
         int launchesBefore = launcher.intents.size();
-        PersonSigner.State result = signer.request(new PersonSigner.Request(TEMPLATE));
-        assertEquals(PersonSigner.Kind.Approved, result.kind);
-        assertEquals("{\"signed\":true}", result.signedEventJson);
-        assertEquals(launchesBefore, launcher.intents.size());
+        assertEquals(PersonSigner.Kind.Pending, signer.request(new PersonSigner.Request(TEMPLATE)).kind);
+        Intent reselect = launcher.last();
+        assertEquals("get_public_key", reselect.getStringExtra("type"));
+        signer.onActivityResult(Activity.RESULT_OK, new Intent()
+                .putExtra("id", reselect.getStringExtra("id"))
+                .putExtra("result", OWNER)
+                .putExtra("package", SIGNER_PACKAGE));
+        assertEquals(PersonSigner.Kind.Approved, signer.state().kind);
+        assertEquals("{\"signed\":true}", signer.state().signedEventJson);
+        assertEquals(launchesBefore + 1, launcher.intents.size());
         assertEquals(TEMPLATE, ConfigurableSignerProvider.lastProjection[0]);
         assertEquals(OWNER, ConfigurableSignerProvider.lastProjection[2]);
     }

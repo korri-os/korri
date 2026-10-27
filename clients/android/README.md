@@ -49,6 +49,33 @@ not request all-files or accessibility permissions. The old shared-storage
 library, local RetroArch launches and cross-app overlay service are outside this
 slice; their source remains at `android-final` for #293.
 
+## Identity and discovery
+
+A compatible NIP-55 signer such as Amber holds the person key. The native shell
+consumes owner-signing requests from authenticated local RPC and returns public
+signer status. Rust creates the unsigned request, verifies the exact signed
+statement, and updates the existing federation credentials. No new JavaScript
+bridge or Java-owned launch authority is involved.
+
+The public snapshot fields and signer states come from the retained
+`KorriOwnerBindingController.snapshotJson()` and `PersonSigner.State` producers.
+The old web signer URI is not part of this RPC: only the native adapter launches
+the signer. Activity generations prevent an old activity from consuming requests
+or detaching its replacement. The existing NIP-55 preferences retain an in-flight
+request across recreation.
+
+`product.nix` derives public relays from
+`nix/product/requirements.nix`, the same policy as the Linux product. The build
+passes that generated input through `BuildConfig` into the embedded brain. It
+neither copies a second relay list into Java nor rewrites existing user data.
+
+Initial owner setup uses the surface's existing confirmation/actions and the
+existing onboarding-finish RPC. This stream-only build does not offer the
+console's automatic person key or local-plugin starter pack. Identity backup and
+identity switching are not available on Android; the public status reports that
+limit instead of exposing controls which cannot work. Device ownership and peer
+membership are re-read after binding without rotating the browser capability.
+
 ## Device check
 
 `KorriRpcBindingDeviceTest` exercises the real WebView, JNI library and RPC

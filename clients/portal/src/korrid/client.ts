@@ -30,6 +30,7 @@ import type {
   IdentityDataDisposition,
   IdentityRetiredDeleteOutcome,
   IdentityStatusOutcome,
+  OwnerBindingOutcome,
   IdentitySwitchOutcome,
   LaunchWarning,
   LocalGame,
@@ -139,6 +140,8 @@ export interface KorridClient extends StoreAcquisitionMethods, LaunchSettingsMet
   setSteamGridDbCredential(token: string): Promise<SensitiveSettingOutcome>
   clearSteamGridDbCredential(): Promise<SensitiveSettingOutcome>
   identityStatus(): Promise<IdentityStatusOutcome>
+  ownerBindingSnapshot(): Promise<OwnerBindingOutcome>
+  startOwnerBinding(): Promise<OwnerBindingOutcome>
   exportIdentityBackup(password: string, retiredPublicKey?: string): Promise<IdentityBackupOutcome>
   switchIdentityFromBackup(
     encryptedSecret: string,
@@ -479,6 +482,20 @@ export function createHttpKorridClient(
       } catch (error) {
         return routeUnavailable(error)
       }
+    },
+    async ownerBindingSnapshot() {
+      try {
+        return (await callKorrid(baseUrl, capability, {
+          _tag: "system.identity.owner-binding.snapshot", payload: {},
+        })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async startOwnerBinding() {
+      try {
+        return (await callKorrid(baseUrl, capability, {
+          _tag: "system.identity.owner-binding.start", payload: {},
+        })).outcome
+      } catch (error) { return routeUnavailable(error) }
     },
     async exportIdentityBackup(password, retiredPublicKey) {
       try {
@@ -1645,6 +1662,12 @@ export function createInMemoryKorridClient(
         _tag: "Err",
         payload: { code: "OperationUnsupported", message: "Identity management is unavailable in browser preview." },
       }
+    },
+    async ownerBindingSnapshot() {
+      return { _tag: "Err", payload: { code: "OperationUnsupported", message: "No native signer is attached to browser preview." } }
+    },
+    async startOwnerBinding() {
+      return { _tag: "Err", payload: { code: "OperationUnsupported", message: "No native signer is attached to browser preview." } }
     },
     async exportIdentityBackup() {
       return {

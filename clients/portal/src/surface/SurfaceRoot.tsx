@@ -44,6 +44,7 @@ import {
   type GameDownloadContext,
 } from "./surface-model"
 import { useLaunchables } from "./use-launchables"
+import { createOwnerBindingController, ownerBindingStatus } from "./owner-binding"
 import { createSharedPlay, surfaceInvitesFrom } from "./shared-play"
 
 /** korrid ids of every game this device can launch itself, one per line. */
@@ -194,6 +195,17 @@ export function SurfaceRoot({
   const clockLabel = useClockLabel()
   const launchablesRef = useRef(launchables)
   launchablesRef.current = launchables
+  const ownerBinding = useMemo(() => createOwnerBindingController(korrid, {
+    changed: () => { void launchablesRef.current.refresh() },
+    finish: () => launchablesRef.current.finishOnboarding(),
+  }), [korrid])
+  const ownerBindingState = useSyncExternalStore(ownerBinding.subscribe, ownerBinding.snapshot)
+  useEffect(() => ownerBinding.start(), [ownerBinding])
+  useEffect(() => {
+    const returned = () => { void ownerBinding.refresh() }
+    window.addEventListener("focus", returned)
+    return () => window.removeEventListener("focus", returned)
+  }, [ownerBinding])
   const sharedPlay = useMemo(() => createSharedPlay(korrid, {
     state: () => launchablesRef.current.getState(),
     refreshSession: () => launchablesRef.current.refresh(),
@@ -375,9 +387,9 @@ export function SurfaceRoot({
   const starterPack = useSyncExternalStore(starterPackOnboarding.subscribe, starterPackOnboarding.snapshot)
   useEffect(() => starterPackOnboarding.start(), [starterPackOnboarding])
   useEffect(() => {
-    starterPackOnboarding.setNeeded(onboardingNeeded === true)
+    starterPackOnboarding.setNeeded(onboardingNeeded === true && ownerBindingState._tag === "Unsupported")
     return () => starterPackOnboarding.setNeeded(false)
-  }, [starterPackOnboarding, onboardingNeeded])
+  }, [starterPackOnboarding, onboardingNeeded, ownerBindingState._tag])
 
   const launchGroups = launchState.deviceGroups
   const settings = useMemo(
@@ -393,16 +405,22 @@ export function SurfaceRoot({
   }, [controllerSource, onboardingNeeded])
 
   const baseModel = useMemo(
-    () => surfaceModelFrom(state, {
-      clockLabel,
-      settings,
-      settingsStatus: launchState.status ?? settingsStatus,
-      network,
-      onboarding: onboardingNeeded === true ? { controllers: controllerList, ...(starterPack === undefined ? {} : { starterPack }) } : undefined,
-      systemProblem: networkProblem,
-      ...(identityManagement === undefined ? {} : { identityManagement }),
-    }),
-    [state, clockLabel, settings, settingsStatus, launchState.status, identityManagement, network, onboardingNeeded, controllerList, networkProblem, starterPack],
+    () => {
+      const model = surfaceModelFrom(state, {
+        clockLabel,
+        settings,
+        settingsStatus: launchState.status ?? settingsStatus,
+        network,
+        // Native signer setup uses the same confirmation/action treaty. It does
+        // not offer the console's automatic key or Linux starter-pack install.
+        onboarding: onboardingNeeded === true && ownerBindingState._tag === "Unsupported" ? { controllers: controllerList, ...(starterPack === undefined ? {} : { starterPack }) } : undefined,
+        systemProblem: networkProblem,
+        ...(identityManagement === undefined ? {} : { identityManagement }),
+      })
+      const setup = ownerBindingStatus(ownerBindingState, onboardingNeeded === true)
+      return setup === undefined || networkProblem !== undefined ? model : { ...model, status: setup }
+    },
+    [state, clockLabel, settings, settingsStatus, launchState.status, identityManagement, network, onboardingNeeded, controllerList, networkProblem, starterPack, ownerBindingState],
   )
   // Which local games still need a download is re-read when the set of local
   // games changes, and by the gate itself after a download it ran.
@@ -530,6 +548,7 @@ export function SurfaceRoot({
         confirmLaunch(id, entry)
       },
       runAction: id => {
+        if (ownerBinding.act(id)) return
         if (sharedPlay.act(id)) return
         if (launch.act(id)) return
         if (saves.act(id)) return
@@ -670,6 +689,7 @@ export function SurfaceRoot({
       dismissIdentityStatus,
       reload,
       runDeviceAction,
+      ownerBinding,
       endSession,
     ],
   )

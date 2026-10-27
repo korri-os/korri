@@ -278,6 +278,9 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::SettingsUpdate(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SteamGridDbCredentialSet(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SteamGridDbCredentialClear(_) => PeerPolicy::OwnerDeviceOnly,
+        RpcRequest::OwnerBindingSnapshot(_) | RpcRequest::OwnerBindingStart(_) => {
+            PeerPolicy::LocalPortalOnly
+        }
         RpcRequest::IdentityStatus(_)
         | RpcRequest::IdentityBackupExport(_)
         | RpcRequest::IdentityLocalSwitch(_)

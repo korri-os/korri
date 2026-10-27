@@ -106,19 +106,12 @@ public final class Nip55PersonSigner implements PersonSigner {
     public State request(Request request) {
         if (hasPendingRequest()) return transition(State.pending("Waiting for the selected signer"));
         if (!isAvailable()) return transition(State.unavailable(signerRequirement()));
-        String selectedPackage = preferences.getString(SELECTED_PACKAGE, null);
-        String selectedPublicKey = preferences.getString(SELECTED_PUBLIC_KEY, null);
-        if (selectedPackage == null
-                || selectedPublicKey == null
-                || !compatibleSignerPackages().contains(selectedPackage)) {
-            clearSelection();
-            return requestAccount(request.unsignedEventTemplate);
-        }
-        return requestSignature(
-                request.unsignedEventTemplate,
-                selectedPackage,
-                selectedPublicKey,
-                clock.nowMillis());
+        // This consumer binds an unowned device, not an already connected
+        // identity. Each explicit retry must let the person correct the key
+        // selection. Remembered signature permission is still used after that
+        // selection; an in-flight request above keeps its original selection.
+        clearSelection();
+        return requestAccount(request.unsignedEventTemplate);
     }
 
     @Override

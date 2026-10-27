@@ -31,6 +31,7 @@ impl PortalPermission {
             | RpcRequest::LocalGamesList(_)
             | RpcRequest::SettingsSnapshot(_)
             | RpcRequest::IdentityStatus(_)
+            | RpcRequest::OwnerBindingSnapshot(_)
             | RpcRequest::AttentionList(_)
             | RpcRequest::LibraryFoldersSnapshot(_)
             | RpcRequest::PeerList(_)
@@ -85,6 +86,7 @@ impl PortalPermission {
             | RpcRequest::SettingsUpdate(_)
             | RpcRequest::SteamGridDbCredentialSet(_)
             | RpcRequest::SteamGridDbCredentialClear(_)
+            | RpcRequest::OwnerBindingStart(_)
             | RpcRequest::IdentityBackupExport(_)
             | RpcRequest::IdentityLocalSwitch(_)
             | RpcRequest::IdentityNip46Switch(_)
@@ -266,6 +268,23 @@ mod tests {
         time::Duration,
     };
     use tower::ServiceExt;
+
+    #[test]
+    fn owner_binding_requires_full_portal_authority_but_status_is_readable() {
+        let read: RpcRequest = serde_json::from_value(
+            json!({"_tag":"system.identity.owner-binding.snapshot","payload":{}}),
+        )
+        .unwrap();
+        let start: RpcRequest = serde_json::from_value(
+            json!({"_tag":"system.identity.owner-binding.start","payload":{}}),
+        )
+        .unwrap();
+        for permission in [PortalPermission::ReadOnly, PortalPermission::LocalSessions] {
+            assert!(permission.permits(&read));
+            assert!(!permission.permits(&start));
+        }
+        assert!(PortalPermission::Full.permits(&start));
+    }
 
     const TOKEN: &str = "portal-test-token";
     const ORIGIN: &str = "http://127.0.0.1:8099";

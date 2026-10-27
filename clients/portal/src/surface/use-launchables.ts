@@ -276,13 +276,13 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
       seq !== loadSeq.current ||
       action !== actionSeq.current
     ) return
-    if (identity._tag === "Ok") {
+    if (identity._tag === "Ok" && identity.payload.canSwitchIdentity) {
       setIdentityManagement(current => ({
         localBackupAvailable: identity.payload.localBackupAvailable,
         retiredPublicKeys: identity.payload.retiredPublicKeys,
         status: current?.status ?? { _tag: "Idle" },
       }))
-    } else if (identity.payload.code === "OperationUnsupported" || identity.payload.code === "PermissionDenied") {
+    } else if (identity._tag === "Ok" || identity.payload.code === "OperationUnsupported" || identity.payload.code === "PermissionDenied") {
       setIdentityManagement(undefined)
     }
     setFacts({

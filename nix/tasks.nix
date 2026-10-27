@@ -3,6 +3,7 @@
 {
   pkgs,
   proseql,
+  korri,
   extraHelpText ? "",
 }:
 let
@@ -630,7 +631,7 @@ let
   };
 
   androidDefinitions = import ../clients/android/tasks.nix {
-    inherit pkgs;
+    inherit pkgs korri;
     portalBundle = "${packages.portal-bundle}/bin/portal-bundle";
   };
 

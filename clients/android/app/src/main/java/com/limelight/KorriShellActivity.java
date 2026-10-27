@@ -16,6 +16,10 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import com.limelight.identity.KorriOwnerBindingController;
+import com.limelight.identity.KorriOwnerBindingHost;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
@@ -39,6 +43,11 @@ public class KorriShellActivity extends AppCompatActivity {
     private WebView webView;
     private KorriRpcBinding binding;
     private boolean destroyed;
+    private KorriOwnerBindingHost ownerBinding;
+    private final ActivityResultLauncher<Intent> signerLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (ownerBinding != null) ownerBinding.onActivityResult(result.getResultCode(), result.getData());
+            });
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -58,6 +67,17 @@ public class KorriShellActivity extends AppCompatActivity {
         try {
             port = KorriBrainService.ensureRunning(this, policy.portalOrigin(), getFilesDir().getAbsolutePath());
             binding = new KorriRpcBinding(policy.portalOrigin(), port, KorridServer.capability());
+            ownerBinding = new KorriOwnerBindingHost(this, new KorriOwnerBindingController.NativeIdentity() {
+                @Override public String status() { return KorridServer.identityStatus(); }
+                @Override public String ownerBindingTemplate(long createdAt) { return KorridServer.ownerBindingTemplate(createdAt); }
+                @Override public String applyOwnerBinding(String template, String owner, String event) {
+                    return KorridServer.applyOwnerBinding(template, owner, event);
+                }
+            }, new KorriOwnerBindingHost.NativeRequests() {
+                @Override public long update(long generation, String snapshot) { return KorridServer.updateOwnerSigner(generation, snapshot); }
+                @Override public String take(long generation) { return KorridServer.takeOwnerBindingRequest(generation); }
+                @Override public void detach(long generation) { KorridServer.detachOwnerSigner(generation); }
+            }, signerLauncher::launch);
         } catch (RuntimeException error) {
             startupFailed();
             return;
@@ -142,6 +162,7 @@ public class KorriShellActivity extends AppCompatActivity {
 
     @Override protected void onResume() {
         super.onResume();
+        if (ownerBinding != null) ownerBinding.refresh();
         applyImmersiveFullscreen();
     }
 
@@ -152,6 +173,7 @@ public class KorriShellActivity extends AppCompatActivity {
 
     @Override protected void onDestroy() {
         destroyed = true;
+        if (ownerBinding != null) { ownerBinding.close(); ownerBinding = null; }
         handler.removeCallbacks(startupDeadline);
         final WebView owned = webView;
         webView = null;

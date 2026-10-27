@@ -61,7 +61,7 @@ public final class KorriOwnerBindingController implements PersonSigner.Listener,
         }
     }
 
-    public String startOwnerBinding() {
+    public String startOwnerBinding(String unsignedTemplateJson) {
         if (signer == null) {
             signerState = PersonSigner.State.unavailable(Nip55PersonSigner.signerRequirement());
             listener.onOwnerBindingChanged();
@@ -70,8 +70,7 @@ public final class KorriOwnerBindingController implements PersonSigner.Listener,
         try {
             JSONObject current = new JSONObject(identity.status());
             if (!"Unowned".equals(current.optString("_tag"))) return snapshotJson();
-            String template = identity.ownerBindingTemplate(System.currentTimeMillis() / 1000L);
-            signerState = signer.request(new PersonSigner.Request(template));
+            signerState = signer.request(new PersonSigner.Request(unsignedTemplateJson));
         } catch (Exception error) {
             signerState = PersonSigner.State.defect("Korri could not create the owner request");
             listener.onOwnerBindingChanged();
