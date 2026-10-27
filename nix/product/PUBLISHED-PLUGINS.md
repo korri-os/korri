@@ -112,6 +112,19 @@ guard and the Pyxel native check timed out on CI runners. Both pins were
 evaluated from the source and appear in the batch's `paths-SYSTEM.txt`. The
 matching offline metadata archives are pinned by SHA-256. Device acceptance is
 `docs/acceptance/rg353m-moonlight-v4l2request-2026-10-27.md`.
+Batch `build-dbb0917a5b58-moonlight-h700-gl` (source
+`dbb0917a5b585861257bcd02fc0affa5abd58e17`, Core pin `3047c2af1`) replaces only
+Moonlight on both architectures. Its patch 0022 makes the `v4l2request`
+platform import decoder buffers into GLES without a CPU copy and create its
+window off the stream's setup path, which the H700 needs. It was published from
+zao with the publisher key, not by CI: two CI runs failed on unrelated timing
+and rate limits. The same CI check list passed on Unzen (x86_64) and on Fuji and
+Yari (aarch64), except the aarch64 Sunshine input-seat VM check, whose
+unchanged derivation passed CI on `eb9fc27`. Both pins appear in the batch's
+`paths-SYSTEM.txt`. The matching offline metadata archives are pinned by
+SHA-256. The archives also carry a zao and a Fuji signature on some build-host
+paths; the Pages index carries only the publisher signature. Device acceptance
+is `docs/acceptance/h700-moonlight-v4l2request-2026-10-27.md`.
 Each pinned path is grounded in its batch's `paths-SYSTEM.txt` and
 `revision.txt`. The new Starter pack pins were checked against those public
 release assets directly. Earlier batches remain published even when their

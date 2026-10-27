@@ -9,6 +9,7 @@
 # and build-e40a4300533b-stream-play (Moonlight and Sunshine stream play)
 # and build-57de061520cc-settings-vocabulary (nested settings vocabulary, ADR 0037)
 # and build-b65ce7b266b4-moonlight-v4l2request (Moonlight stateless V4L2 Request decode)
+# and build-dbb0917a5b58-moonlight-h700-gl (Moonlight zero-copy GL presentation for the H700)
 # paths-SYSTEM.txt and revision.txt from their immutable releases;
 # IDs below come from the current host seed report over each published package.
 # Plugin updates change these pins and matching offline proof assets explicitly.
@@ -31,7 +32,7 @@ let
       korri-plugin-homebrewhub = "/nix/store/3wwimpj0mmmr1qr6zldjyxdp81jfc45s-korri-plugin";
       korri-plugin-melonds = "/nix/store/pixmh9gch884ibrqhgpq4ck8hk931bd9-korri-plugin";
       korri-plugin-mgba = "/nix/store/j3hs59kazd336wdr7qsfyj7q7ga34bnd-korri-plugin";
-      korri-plugin-moonlight = "/nix/store/qzza390r42x6d5hlwfkhqr9iwd9a8a6i-korri-plugin";
+      korri-plugin-moonlight = "/nix/store/84cqgpjixgcf1a96g6gpgqvvpr475xfg-korri-plugin";
       korri-plugin-mupen64plus = "/nix/store/adx8r2y8677yqcrkm0x15f0k1l3yg94v-korri-plugin";
       korri-plugin-nestopia = "/nix/store/7bfn8ir63qnyg89scpyj5wgvf1h73zil-korri-plugin";
       korri-plugin-pcsx-rearmed = "/nix/store/678d4lp9v6ldzmix8q7836pln6xpfafn-korri-plugin";
@@ -66,7 +67,7 @@ let
       korri-plugin-homebrewhub = "/nix/store/fdk5i6vnxbwmq0a1jx7kpp64zi33fx08-korri-plugin";
       korri-plugin-melonds = "/nix/store/ghsz6gznr76agv6k85hjj8sd4g1lclva-korri-plugin";
       korri-plugin-mgba = "/nix/store/kbnj3vqr3rjin17rijhh2j3plcrq7skv-korri-plugin";
-      korri-plugin-moonlight = "/nix/store/fyr0g5zf3hhjd0kiwjh1czr03kr4qs3n-korri-plugin";
+      korri-plugin-moonlight = "/nix/store/92wjmvjlr9pqnqks2cwv4s2klg42vz95-korri-plugin";
       korri-plugin-mupen64plus = "/nix/store/cw9l6bm480vwmdn174kx75zccfmpk1rq-korri-plugin";
       korri-plugin-nestopia = "/nix/store/9p9q03yb4nnvsaxqxhljvi5la95w07q2-korri-plugin";
       korri-plugin-pcsx-rearmed = "/nix/store/pajciplk4is9f3nxlsdwbcahs0ydzzmy-korri-plugin";
