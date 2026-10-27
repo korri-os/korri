@@ -58,8 +58,7 @@ let
       pkgs.llvmPackages.libclang
     ];
     LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-  }
-  // lib.optionalAttrs (buildIdentity != null) { KORRI_BUILD_ID = buildIdentity; };
+  };
   cargoArtifacts = craneLib.buildDepsOnly (
     (builtins.removeAttrs common [ "src" ])
     // {
@@ -82,4 +81,7 @@ craneLib.buildPackage (
     nativeCheckInputs = [ pkgs.python3 ];
     meta.mainProgram = "korri";
   }
+  # Only the final binary carries source identity. Dependencies must stay
+  # substitutable across revisions with the same dependency inputs.
+  // lib.optionalAttrs (buildIdentity != null) { KORRI_BUILD_ID = buildIdentity; }
 )
