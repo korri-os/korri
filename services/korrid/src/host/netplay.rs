@@ -70,6 +70,9 @@ impl HostRuntime {
             .ok_or_else(|| dynamic_failure("netplay runner unavailable"))?;
         let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
             .map_err(crate::game_routes::settings_failure)?;
+        if snapshot.library.get(&game).into_iter().flat_map(|game| &game.releases).any(|candidate| matches!(candidate.identity.as_ref(), Some(crate::config::library::LibraryIdentity::Parts { value, .. }) if value == &release)) {
+            return Err(crate::netplay::failure("MultipartReleaseUnsupported", "This release needs several files. Use stream play."));
+        }
         let route = crate::config::resolver::resolve_linux_route(
             root,
             &snapshot,
@@ -467,6 +470,37 @@ mod tests {
         assert!(crate::netplay::holder::object(&state, &peer(&device), &key)
             .await
             .is_err());
+        // The holder cannot serve a multipart release through this one-file
+        // treaty. Use the existing ordered-parts producer's aggregate key.
+        let parts = [
+            format!("sha256:{}", "1".repeat(64)),
+            format!("sha256:{}", "2".repeat(64)),
+        ];
+        let multipart = format!(
+            "sha256:{}",
+            hex::encode(Sha256::digest(parts.join("\n").as_bytes()))
+        );
+        std::fs::write(root.path().join("catalog/library.yaml"), format!("library:\n  turtles:\n    title: Turtles\n    releases:\n      - id: snes\n        system: snes\n        identity: {{kind: parts, value: '{multipart}', parts: ['{}', '{}']}}\n", parts[0], parts[1])).unwrap();
+        std::fs::write(
+            root.path().join("device.yaml"),
+            format!("locations:\n  '{multipart}':\n    - storage: roms\n      path: Turtles.sfc\n"),
+        )
+        .unwrap();
+        let multipart_live = host
+            .prepare("turtles", host.owner_public_key().as_deref())
+            .await
+            .unwrap()
+            .session;
+        let mut description: crate::ActiveSession = serde_json::from_value(
+            serde_json::json!({"launchId":multipart_live.launch_id,"gameId":"turtles"}),
+        )
+        .unwrap();
+        host.describe_active_session(&mut description).unwrap();
+        assert!(description.netplay.is_none());
+        assert!(
+            matches!(crate::dispatch(&state, &peer(&device), request(&multipart_live.launch_id)).await.unwrap(), RpcResponse::SessionNetplay(SessionNetplayOutcome::Err(crate::RpcFailure { code, .. })) if code == "MultipartReleaseUnsupported")
+        );
+        host.session_stop(&multipart_live.launch_id).await.unwrap();
         coordinator.fence();
         receiver.join().unwrap();
     }
