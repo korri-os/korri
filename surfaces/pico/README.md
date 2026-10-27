@@ -226,6 +226,14 @@ files into the glyph tables; run them only to take a new upstream version.
 
 ## Two displays
 
+**Kept but unused on devices for now.** ADR 0039 (amended 2026-10-27) rejects
+one window spanning several displays: a device's displays need not form a
+rectangle. Until per-display surfaces are designed, the host gives catalog
+surfaces only the main display, so on the RG DS Pico draws its one-display
+layout on the top display. The two-region layout below stays in the code and
+its tests, unused, until per-display surfaces exist; the per-display design
+may replace it. Nothing below describes what a device shows today.
+
 A host that gives Pico every display (`SurfaceModel.displays`, two or more)
 gets one window across them, with each display's rectangle inside it. Pico
 then draws two whole screens, each at its own rectangle, with its own
@@ -249,7 +257,7 @@ With no `displays`, or one, Pico draws one screen exactly as before. The
 gameplay overlay is always one screen: the host gives it one display.
 
 The host may grow the window to cover every display only after Pico mounts,
-as the RG DS kiosk does (640 × 480, then 640 × 960). Until then the display
+as the RG DS kiosk did before the amendment (640 × 480, then 640 × 960). Until then the display
 for choosing stands past the window's bottom edge, and focusing a cart there
 would scroll the root and move both pictures. So with two displays the root
 (`data-pico-displays="split"`) and both regions are `overflow: clip`: not
@@ -272,7 +280,8 @@ one, through the portal's own input path with the CPU throttled.
 
 Caliper's `rgds` device (640 × 960) shows both RG DS displays at once
 (`ui/templates/PicoDisplays.template.part.tsx`); `rgds-side` puts them side
-by side.
+by side. Both preview the unused two-region layout, not what the RG DS shows
+today; its top display matches Caliper's `rg353m` (640 × 480).
 
 ## Supported UI
 

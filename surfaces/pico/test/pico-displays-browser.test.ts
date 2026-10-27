@@ -1,7 +1,8 @@
 /**
  * Two displays in a real browser, through a window that grows after Pico
- * mounts, as the RG DS kiosk does: 640 × 480 on the main display first, then
- * 640 × 960 across both.
+ * mounts, as the RG DS kiosk did before ADR 0039's 2026-10-27 amendment:
+ * 640 × 480 on the main display first, then 640 × 960 across both. The
+ * two-region layout is kept, unused, until per-display surfaces exist.
  *
  * happy-dom does no layout and no focus scrolling, so this one runs in
  * Chromium. Set CHROMIUM to a Chromium executable; without it the test is
