@@ -48,7 +48,7 @@ pkgs.runCommand "rpminiv2-delivery-check"
     actionlint ${imageWorkflowPath} ${cacheWorkflowPath}
     shellcheck --shell=bash ${trustScriptPath} ${fetchScriptPath}
     python3 ${./delivery-workflow-check.py} ${cacheWorkflowPath}
-    python3 ${./delivery-build-once.test.py} ${cacheWorkflowPath}
+    python3 ${./delivery-build-once.test.py} ${cacheWorkflowPath} ${../../cache/build-with-read-retry.py}
     python3 ${../../cache/fetch-image-plugins.test.py} ${fetchScriptPath}
     touch "$out"
   ''
