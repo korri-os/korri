@@ -39,7 +39,7 @@ case "$mode" in
     ;;
   test)
     cd "$KORRI_ROOT/clients/android"
-    exec ./gradlew testDebugUnitTest "$@"
+    exec ./gradlew :app:testDebugUnitTest "$@"
     ;;
   *) echo "Unknown Android build mode: $mode" >&2; exit 2 ;;
 esac

@@ -8,10 +8,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -29,10 +29,22 @@ public class KorriUiStartGateTest {
 
     @Test
     public void timeoutRaceWaitsForStartThatAlreadyCrossedTheGate() throws Exception {
-        ManualUiQueue queue = new ManualUiQueue();
         CountDownLatch startEntered = new CountDownLatch(1);
         CountDownLatch releaseStart = new CountDownLatch(1);
         ExecutorService callers = Executors.newSingleThreadExecutor();
+        ExecutorService ui = Executors.newSingleThreadExecutor();
+        KorriUiStartGate.Dispatcher queue = callback -> {
+            ui.submit(callback);
+            // dispatch must return only after Start has entered. The gate's
+            // timeout then begins with STARTED established, not with a bet
+            // that the test thread wins a 20 ms scheduling race.
+            try {
+                assertTrue(startEntered.await(5, TimeUnit.SECONDS));
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("UI start was interrupted");
+            }
+        };
         try {
             Future<?> result = callers.submit(() -> {
                 KorriUiStartGate.run(queue, () -> {
@@ -42,17 +54,18 @@ public class KorriUiStartGateTest {
                 return null;
             });
 
-            queue.awaitQueued();
-            Thread ui = new Thread(queue::runQueued);
-            ui.start();
-            assertTrue(startEntered.await(1, TimeUnit.SECONDS));
-            Thread.sleep(40);
-            assertFalse(result.isDone());
-
+            assertTrue(startEntered.await(5, TimeUnit.SECONDS));
+            try {
+                result.get(100, TimeUnit.MILLISECONDS);
+                fail("An executing start must remain pending until it completes");
+            } catch (TimeoutException expected) {
+                // The caller waits for the executing action past its timeout.
+            }
             releaseStart.countDown();
-            result.get(1, TimeUnit.SECONDS);
-            ui.join(1000);
+            result.get(5, TimeUnit.SECONDS);
         } finally {
+            releaseStart.countDown();
+            ui.shutdownNow();
             callers.shutdownNow();
         }
     }
