@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 
 LANES = (
     "policy",
+    "cache",
     "fmt",
     "treaty",
     "portal",
@@ -27,6 +28,24 @@ LANES = (
     "acceptance",
 )
 SURFACES = {"pico", "zone", "boxbuster"}
+# Inputs of the existing cache tests and delivery-workflow check. Shared Nix
+# trust/composition remains full; unfamiliar helpers also keep the full fallback.
+CACHE_POLICY_INPUTS = {
+    ".github/workflows/nix-cache.yml",
+    ".github/workflows/device-images.yml",
+    ".github/workflows/fetch-image-plugins.sh",
+    ".github/workflows/trust-korri-cache.sh",
+    ".github/workflows/prepare-nix-cache.py",
+    ".github/workflows/test_prepare_nix_cache.py",
+    ".github/workflows/test_fetch_image_plugins.py",
+    "nix/devices/rpminiv2/delivery-workflow-check.py",
+    "nix/cache/publish.sh",
+    "nix/cache/prepare.test.py",
+    "nix/cache/github-cache.py",
+    "nix/cache/github-cache-test-api.py",
+    "nix/cache/github-cache.test.py",
+    "nix/cache/pages-cache.test.py",
+}
 # Exact producer files read by clients/cli/tests/parity.py, not all portal UI.
 PARITY_INPUTS = {
     "clients/cli/tests/parity.py",
@@ -92,6 +111,9 @@ def affected(paths):
         if not path or parsed.is_absolute() or ".." in parsed.parts or "\n" in path:
             raise ValueError(f"invalid repository path: {path!r}")
         if path in NONFIXTURE_DOCS:
+            continue
+        if path in CACHE_POLICY_INPUTS:
+            selected.add("cache")
             continue
         if path.endswith(".nix") or (
             path.startswith("services/korrid/check") and path.endswith(".sh")

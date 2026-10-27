@@ -32,8 +32,10 @@ validation runs for the same event/ref; these workflows never cancel publishers.
 ## Selection and coverage
 
 `.github/ci/check-plan.py` owns selection and validates aggregation. Tests run
-before CI applies omissions. Unknown paths, contracts, Nix composition, workflow
-changes and any dependency lock select **all** lanes. A missing merge base or
+before CI applies omissions. Unknown paths, contracts, Nix composition, validation
+workflow changes and any dependency lock select **all** lanes. The known cache
+workflows, read helpers and their tests select `policy` plus `cache`, without
+Rust compiler jobs. Shared cache trust identity/composition still selects full. A missing merge base or
 failed diff broadens to full. Invalid probe input or selection errors fail closed.
 The selector starts from a two-commit checkout. If the merge base is missing, it
 fetches at most 64 commits for each exact event-base/tested-head SHA, with a
@@ -62,6 +64,7 @@ consumers. New documentation is unknown until reviewed, not silently skipped.
 | Lane | App / retained coverage |
 | --- | --- |
 | `policy` (always) | `ci-plan-check`: selector/aggregate edge cases, workflow topology and syntax, shell lint, real Typeshare drift behavior. |
+| `cache` | `korri-nix-cache-check` and `rpminiv2-delivery-check`: existing cache protocol/read tests and `checks.<system>.rpminiv2-delivery` workflow safety/failure propagation. These validate locally and do not publish or prefetch production closures. |
 | `fmt` | `korrid-fmt-check`: Rust formatting without compilation. |
 | `treaty` | `korrid-treaty-check`: generate into a temporary file, compare without repairing drift, then check local and pinned plugin declarations. |
 | `portal` | `portal-check`, `portal-bundle`: portal typecheck **before** Bun tests, then installed bundle. |
@@ -115,7 +118,8 @@ two stamped packages. It can cost two cold builds and does not run on every PR.
 The coordinator can reuse its proof only when the packaging inputs match exactly.
 
 Run all documented validation lanes and the real-binary packaging proof once on
-the combined source:
+the combined source. This also runs `korri-nix-cache-check` and the existing
+`rpminiv2-delivery` check once each:
 
 ```sh
 nix run .#ci-full-check

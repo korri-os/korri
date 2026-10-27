@@ -39,6 +39,7 @@ jobs:
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
       policy: ${{ steps.plan.outputs.policy }}
+      cache: ${{ steps.plan.outputs.cache }}
       fmt: ${{ steps.plan.outputs.fmt }}
       treaty: ${{ steps.plan.outputs.treaty }}
       portal: ${{ steps.plan.outputs.portal }}
