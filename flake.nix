@@ -246,6 +246,9 @@
             hostPackage = pluginHost.packages.korri-plugin-host;
           })
           // {
+            korri-cli-build-identity = import ./clients/cli/build-identity-check.nix {
+              inherit pkgs crane proseql;
+            };
             korri-limits = import ./services/limitsd/module-check.nix {
               inherit pkgs nixpkgs;
               korri = self;
