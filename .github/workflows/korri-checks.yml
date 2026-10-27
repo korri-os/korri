@@ -42,6 +42,7 @@ jobs:
       fmt: ${{ steps.plan.outputs.fmt }}
       treaty: ${{ steps.plan.outputs.treaty }}
       portal: ${{ steps.plan.outputs.portal }}
+      parity: ${{ steps.plan.outputs.parity }}
       cli: ${{ steps.plan.outputs.cli }}
       korrid: ${{ steps.plan.outputs.korrid }}
       inputd: ${{ steps.plan.outputs.inputd }}
@@ -55,7 +56,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.source_sha || github.sha }}
-          fetch-depth: 0
+          fetch-depth: 2
           persist-credentials: false
       - name: Verify source identity
         env:
@@ -68,10 +69,10 @@ jobs:
       - name: Select checks (unknown inputs broaden to full)
         id: plan
         env:
-          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || ((github.event_name == 'schedule' || github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'ci-full')) && 'full' || 'affected') }}
+          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || ((github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'ci-full')) && 'full' || 'affected') }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           PROBE_PATHS: ${{ inputs.probe_paths || '[]' }}
-        run: python3 .github/ci/check-plan.py select --mode "$MODE" --base "$BASE_SHA" --head HEAD --paths "$PROBE_PATHS"
+        run: python3 .github/ci/check-plan.py select --mode "$MODE" --base "$BASE_SHA" --head HEAD --fetch-base --paths "$PROBE_PATHS"
   policy:
     name: CI policy and orchestration
     needs: select
@@ -170,6 +171,26 @@ jobs:
         run: nix run .#portal-check
       - name: Run portal-bundle
         run: nix run .#portal-bundle
+  parity:
+    name: Portal and CLI producer parity
+    needs: select
+    if: needs.select.outputs.parity == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the exact tested source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+      - name: Verify source identity
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+        run: |
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+      - name: Check producer parity without Rust compilation
+        run: python3 clients/cli/tests/parity.py
   cli:
     name: Person CLI
     needs: select
@@ -359,7 +380,7 @@ jobs:
   check:
     name: Host, portal, and surface
     if: always()
-    needs: [select, policy, fmt, treaty, portal, cli, korrid, inputd, limitsd, pico, zone, boxbuster]
+    needs: [select, policy, fmt, treaty, portal, parity, cli, korrid, inputd, limitsd, pico, zone, boxbuster]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

@@ -66,6 +66,23 @@ class TreatyDriftTest(unittest.TestCase):
 
 
 class WorkflowContractTest(unittest.TestCase):
+    def test_portal_typecheck_precedes_bun_tests(self):
+        task = (
+            (ROOT / "nix/tasks.nix")
+            .read_text()
+            .split("    portal-check = {", 1)[1]
+            .split("    };", 1)[0]
+        )
+        self.assertLess(task.index("bun run typecheck"), task.index("bun test"))
+
+    def test_parity_runs_without_installing_nix_or_compiling_rust(self):
+        workflow = yaml.safe_load(
+            (ROOT / ".github/workflows/korri-checks.yml").read_text()
+        )
+        steps = workflow["jobs"]["parity"]["steps"]
+        self.assertEqual(steps[-1]["run"], "python3 clients/cli/tests/parity.py")
+        self.assertFalse(any("install-nix" in step.get("uses", "") for step in steps))
+
     def test_normal_cli_lane_uses_fast_identity_evaluation_not_two_binary_builds(self):
         workflow = yaml.safe_load(
             (ROOT / ".github/workflows/korri-checks.yml").read_text()
@@ -96,6 +113,12 @@ class WorkflowContractTest(unittest.TestCase):
                     set(jobs["select"]["outputs"]), set(ci.LANES) | {"plan"}
                 )
                 self.assertEqual(workflow["permissions"], {"contents": "read"})
+                selection_steps = jobs["select"]["steps"]
+                self.assertEqual(selection_steps[0]["with"]["fetch-depth"], 2)
+                select = selection_steps[-1]
+                self.assertNotIn("github.event_name == 'push'", select["env"]["MODE"])
+                self.assertIn("github.event_name == 'schedule'", select["env"]["MODE"])
+                self.assertIn("--fetch-base", select["run"])
                 for lane in expected:
                     self.assertEqual(jobs[lane]["needs"], "select")
                     self.assertEqual(
