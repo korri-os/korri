@@ -39,6 +39,7 @@ pkgs.runCommand "rpminiv2-delivery-check"
   {
     nativeBuildInputs = [
       pkgs.actionlint
+      pkgs.jq
       pkgs.shellcheck
       (pkgs.python3.withPackages (ps: [ ps.pyyaml ]))
     ];
