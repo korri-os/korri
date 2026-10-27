@@ -49,7 +49,7 @@ consumers. New documentation is unknown until reviewed, not silently skipped.
 | `fmt` | `korrid-fmt-check`: Rust formatting without compilation. |
 | `treaty` | `korrid-treaty-check`: generate into a temporary file, compare without repairing drift, then check local and pinned plugin declarations. |
 | `portal` | `portal-check`, `portal-bundle`: portal types/tests and installed bundle. |
-| `cli` | Existing `cli-check`: parity, fmt, clippy, real-process tests. `cli-build-identity-check` also builds `checks.<system>.korri-cli-build-identity` once. |
+| `cli` | Existing `cli-check`: parity, fmt, clippy, real-process tests. `cli-build-identity-eval-check` checks dependency reuse and final derivation identity through `checks.<system>.korri-cli-build-identity-eval`, without compiling two stamped packages. |
 | `korrid` | `korrid-host-check`: pinned fixture hashes, script setup, all Rust tests, config review, dev binaries, socket-activated signer and real portal RPC smoke. No individual Rust-test selection. |
 | `inputd` | Existing `inputd-check`: Rust/core tests, portability, package and module gates. |
 | `limitsd` | Existing `limitsd-check`: fmt, clippy, real filesystem/socket tests. |
@@ -85,7 +85,20 @@ The existing full korrid gate remains available as `nix run .#korrid-check`.
 It now rejects stale generated treaties instead of silently rewriting them.
 Deliberate regeneration remains `nix run .#korrid-check -- --types-only`.
 
-Run all documented validation lanes once on the combined source:
+The normal required CLI lane, including hosted full mode, uses the fast identity
+evaluation check. Real-binary stamp proof remains an explicit packaging/release
+qualification:
+
+```sh
+nix run .#cli-build-identity-check
+```
+
+This builds `checks.<system>.korri-cli-build-identity`, which compiles and tests
+two stamped packages. It can cost two cold builds and does not run on every PR.
+The coordinator can reuse its proof only when the packaging inputs match exactly.
+
+Run all documented validation lanes and the real-binary packaging proof once on
+the combined source:
 
 ```sh
 nix run .#ci-full-check

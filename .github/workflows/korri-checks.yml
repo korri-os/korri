@@ -198,8 +198,8 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run cli-check
         run: nix run .#cli-check
-      - name: Check CLI dependency and final binary identities
-        run: nix run .#cli-build-identity-check
+      - name: Check CLI dependency and final derivation identities without duplicate builds
+        run: nix run .#cli-build-identity-eval-check
   korrid:
     name: Korrid tests, config, and real RPC smoke
     needs: select
