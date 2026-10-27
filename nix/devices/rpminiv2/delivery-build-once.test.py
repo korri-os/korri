@@ -28,6 +28,12 @@ READ_ERROR = (
     "zhir3wxi0bkvsz7ab21l1hw9wn7smw2j.narinfo': HTTP error 429\n"
 )
 
+# Real Nix renders a missing payload differently from an HTTP429 narinfo read.
+NATIVE_PATH = "/nix/store/jzr3z7lvfq87w2zxmdj9p5a403zplg5p-korri-read-recovery-fixture"
+NATIVE_COPY = f"copying path '{NATIVE_PATH}' from 'http://127.0.0.1:1'...\n"
+NATIVE_MISSING = "error: file 'nar/payload.nar.zst' does not exist in binary cache 'http://127.0.0.1:1'\n"
+NATIVE_REQUIRED = f"error: path '{NATIVE_PATH}' is required, but there is no substituter that can build it\n"
+
 
 class DeviceBuildWorkflowTest(unittest.TestCase):
     def execute(self, device, results):
@@ -144,6 +150,37 @@ class DeviceBuildWorkflowTest(unittest.TestCase):
                         [call[0] for call in calls], ["build", "sleep", "build", "run"]
                     )
                     self.assertEqual(calls[1], ["sleep", "60"])
+
+    def test_native_missing_payload_recovers_only_for_its_copied_path(self):
+        message = NATIVE_COPY + NATIVE_MISSING + NATIVE_REQUIRED
+        result, calls = self.execute("rg353m", [(1, message), (0, "")])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            [call[0] for call in calls], ["build", "sleep", "build", "run"]
+        )
+        metadata_path = READ_ERROR.split("/")[-1].split(".narinfo")[0]
+        metadata_required = NATIVE_REQUIRED.replace(
+            NATIVE_PATH, f"/nix/store/{metadata_path}-fixture"
+        )
+        result, calls = self.execute(
+            "rg353m", [(1, READ_ERROR + metadata_required), (0, "")]
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            [call[0] for call in calls], ["build", "sleep", "build", "run"]
+        )
+        for unrelated in (
+            NATIVE_REQUIRED,
+            NATIVE_COPY + NATIVE_REQUIRED,
+            NATIVE_COPY + READ_ERROR + NATIVE_REQUIRED,
+            NATIVE_COPY + NATIVE_MISSING.replace(":1'", ":2'") + NATIVE_REQUIRED,
+            message + "error: Cannot build '/nix/store/example.drv'.\n",
+            message + "error: path does not have enough signatures from trusted keys\n",
+        ):
+            with self.subTest(message=unrelated):
+                result, calls = self.execute("rg353m", [(1, unrelated), (0, "")])
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertEqual([call[0] for call in calls], ["build"], result.stderr)
 
     def test_terminal_nar_read_recovery_is_bounded(self):
         result, calls = self.execute("rg353m", [(1, READ_ERROR)])
