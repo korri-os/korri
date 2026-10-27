@@ -513,14 +513,29 @@ impl DeviceIdentity {
         event_json: &str,
         expected_device_public_key: &str,
     ) -> Result<VerifiedOwnerStatement, IdentityError> {
+        let key = (event_json.to_owned(), expected_device_public_key.to_owned());
+        if let Some(verified) = VERIFIED_OWNER_STATEMENTS
+            .lock()
+            .ok()
+            .and_then(|memo| memo.get(&key).cloned())
+        {
+            return Ok(verified);
+        }
         let statement = parse_owner_statement(event_json.as_bytes(), expected_device_public_key)?;
-        Ok(VerifiedOwnerStatement {
+        let verified = VerifiedOwnerStatement {
             event_id: statement.event.id.to_hex(),
             owner_public_key: statement.event.pubkey.to_hex(),
             device_public_key: expected_device_public_key.into(),
             status: statement.status,
             created_at: statement.event.created_at.as_secs(),
-        })
+        };
+        if let Ok(mut memo) = VERIFIED_OWNER_STATEMENTS.lock() {
+            if memo.len() >= MAX_VERIFIED_OWNER_STATEMENTS {
+                memo.clear();
+            }
+            memo.insert(key, verified.clone());
+        }
+        Ok(verified)
     }
 
     /// Derive the canonical device key, then apply the existing strict owner verifier.
@@ -969,6 +984,17 @@ fn owner_tags(device_public_key: &str, status: OwnerStatementStatus) -> Vec<Vec<
         vec!["status".into(), status.as_str().into()],
     ]
 }
+
+/// Owner statements that passed verification, by exact bytes and device.
+/// Verification is a pure function of those inputs (no clock), and every peer
+/// request and federation snapshot verified the same few statements again:
+/// Schnorr verification was a fifth of korrid's CPU on an RG353M. Revocation
+/// is checked by callers after verification, so it stays live. Only successes
+/// are kept, and the memo is bounded. A leaf lock.
+static VERIFIED_OWNER_STATEMENTS: std::sync::Mutex<
+    std::collections::BTreeMap<(String, String), VerifiedOwnerStatement>,
+> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+const MAX_VERIFIED_OWNER_STATEMENTS: usize = 256;
 
 fn parse_owner_statement(
     bytes: &[u8],
