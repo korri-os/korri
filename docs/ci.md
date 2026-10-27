@@ -107,9 +107,19 @@ coverage cost rather than compare unequal gates or extend old deadlines.
 The stable `Host, portal, and surface` aggregate always runs. It requires the
 selector to succeed and every selected lane to report success. Missing, skipped,
 failed or cancelled selected lanes fail the aggregate. Unselected lanes must
-report exactly `skipped`. The separate `Published plugin acceptance result`
-aggregate applies the same rule to acceptance. No protection/ruleset settings
-are changed; use these aggregate check names when configuring required results.
+report exactly `skipped`. Published acceptance has one always-reporting job named
+`Published plugin acceptance result`. That job verifies source identity, runs
+selector tests/selection, conditionally runs every heavy acceptance/cache step,
+and always validates the actual `plan.outcome` and `published-plugins-check.outcome`
+through the existing published aggregate contract. Selected missing, skipped,
+failed or cancelled checks fail; only a planned skip passes. Earlier failed
+steps still fail the native job, including snapshot preparation/save failures.
+No result is replaced with a synthetic success or a step conclusion.
+
+The two workflows retain independent required results. There is no cross-workflow
+polling or extra acceptance selector/aggregate runner allocation. No protection
+or ruleset settings are changed; use these stable result names when configuring
+required checks.
 
 ## Build-host portability
 
@@ -172,6 +182,22 @@ a hosted latency sample. This is a build-host operation. Published lifecycle acc
 x86_64 KVM and the exact signed published closures. It does not deploy anything.
 
 ## Latency evidence
+
+One observed full acceptance sample per source showed the cost of separate
+selector/aggregate runners:
+
+| Hosted run / source | End-to-end | Acceptance job | Runner allocations |
+| --- | --- | --- | --- |
+| `40540624581` / `3601c3610` | 1081 s | 1078 s | 1 |
+| `40561086756` / `5faccef22` | 1138 s | 1111 s | 3 |
+
+The observed 57-second difference comprises a 33-second acceptance-job difference
+and 24 seconds outside that job. Different-source single samples do not prove
+causality or a runtime budget. The one-job acceptance layout is a prototype that
+removes allocation boundaries, not a claimed measured saving. Repeat comparable
+full and affected/probe runs before landing; retain it only with hosted evidence.
+The acceptance commands, signed trust, snapshot behavior, KVM prerequisite and
+60/40/3-minute job/check/preparation deadlines remain unchanged.
 
 Selection tests prove coverage relationships, not hosted latency. Before landing
 a topology change, compare the same source and runner class in full and path
