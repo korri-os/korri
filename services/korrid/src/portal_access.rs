@@ -530,6 +530,28 @@ mod tests {
     }
 
     impl crate::host::CompositorControl for InMemoryCompositor {
+        fn command(&self, command: &str) -> Result<(), String> {
+            let (node_id, opacity) = command
+                .strip_prefix("[con_id=")
+                .and_then(|command| command.split_once("] opacity "))
+                .ok_or("unsupported compositor command")?;
+            let node_id = node_id.parse::<i64>().map_err(|_| "invalid node id")?;
+            let opacity = match opacity {
+                "0.4" => 0.4,
+                "1" => 1.0,
+                _ => return Err("unsupported opacity".into()),
+            };
+            let mut tree = self.tree.lock().unwrap();
+            let window = tree["nodes"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|node| node["id"] == node_id)
+                .ok_or("window no longer exists")?;
+            window["opacity"] = json!(opacity);
+            Ok(())
+        }
+
         fn tree(&self) -> Result<String, String> {
             Ok(self.tree.lock().unwrap().to_string())
         }
@@ -560,8 +582,8 @@ mod tests {
         let backend = Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default());
         let compositor = Arc::new(InMemoryCompositor {
             tree: Mutex::new(json!({"id":1,"nodes":[
-                {"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true},
-                {"id":3,"pid":9100,"app_id":"retroarch","focused":false}
+                {"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true,"opacity":1.0},
+                {"id":3,"pid":9100,"app_id":"retroarch","focused":false,"opacity":1.0}
             ]})),
         });
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -673,6 +695,14 @@ mod tests {
         )
         .await;
         assert_eq!(frozen["outcome"]["_tag"], "Ok", "{frozen}");
+        assert_eq!(
+            compositor.tree.lock().unwrap()["nodes"][1]["opacity"],
+            json!(0.4)
+        );
+        assert_eq!(
+            compositor.tree.lock().unwrap()["nodes"][0]["opacity"],
+            json!(1.0)
+        );
         assert_eq!(backend.thaw_count(), 0);
         let invoked = rpc(
             &app,
@@ -782,6 +812,14 @@ mod tests {
         );
         let resumed = rpc(&app, "app.session.prepare", json!({"gameId":game_id})).await;
         assert_eq!(resumed["outcome"]["_tag"], "Ok", "{resumed}");
+        assert_eq!(
+            compositor.tree.lock().unwrap()["nodes"][1]["opacity"],
+            json!(1.0)
+        );
+        assert_eq!(
+            compositor.tree.lock().unwrap()["nodes"][0]["opacity"],
+            json!(1.0)
+        );
         assert_eq!(
             resumed["outcome"]["payload"]["session"], launch["outcome"]["payload"]["session"],
             "ordinary prepare must resume the explicit launch despite the stale preference"
