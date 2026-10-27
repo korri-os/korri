@@ -215,7 +215,7 @@ files into the glyph tables; run them only to take a new upstream version.
 - **Layout answers the container, not the device.** The body, the stage, the
   shelf and the launch slot are size containers; thresholds are in em of the
   small face, so they scale with the pixel and with the face's rows. The ladder checked is 1920×1080,
-  1280×720, 640×480, 480×800, 1280×300 and 320×240. Every threshold is a
+  1280×720, 1240×1080, 720×720, 640×480, 480×800, 1280×300 and 320×240. Every threshold is a
   guess until measured on the real panels.
 
 ## Supported UI
@@ -259,6 +259,24 @@ own Leave, so Pico shows B BACK and runs nothing on Back.
 `Ended` is a blue card with Korri's reason and OK, which calls `dismiss`, as
 Back does. Player 1's pause menu names who plays on the stream
 (`streamPlayers`) above its controls.
+
+Netplay (ADR 0040) arrives the same way: when this device can run its own
+copy, Korri adds a route to the invite's actions, between Play on stream and
+Dismiss, in its own words: Play here, Copy and play here (4.2 MB), or
+Install Snes9x 2010 and play here. Pico draws it as one more quiet button;
+a label longer than the row wraps inside its button (`--pico-button-wrap`),
+so no route is ever cut. What follows is Korri's `Busy`, `Paused`, `Ended`,
+`Problem` and `Confirm`, drawn as any launch: the copy is the launch stage
+with a real bar, Korri's percent under it and Cancel; Connecting has Cancel;
+Paused on the holder has Leave; Reconnecting has nothing to press and no B
+hint. Before an install, Korri asks with the plugin's review, the report
+Settings shows: a `Confirm` whose detail has one fact per line. A notice
+with such a report puts the cursor on its first line, keeps Korri's answers
+between the title and the report so they never leave the screen, and lets
+the report scroll under them as the d-pad walks it down. Up from the first
+line reaches the answers, Cancel first. On a short screen the card yields
+as a question over Settings does: the title steps down, then the kicker
+goes and the answers stand side by side.
 
 Settings shows a WI-FI group whenever Korri publishes `network`: the
 connection and Korri's words for a failed attempt, a scan, every network the
@@ -389,7 +407,9 @@ space for the hero cart's lift in two isolated examples. It changes only the
 preview container. The [verification record](../../docs/acceptance/pico-named-states-2026-09-27.md)
 lists intentional empty states, browser checks, and limits.
 
-To review all states of one part at both configured device sizes:
+To review all states of one part at every configured device size (the
+RG353M's 640×480, which the RG35XX SP and Pro share; the Odin 2 Portal; the
+RP Mini V2; the R36T Max):
 
 ```sh
 caliper-render --url http://localhost:5173 \

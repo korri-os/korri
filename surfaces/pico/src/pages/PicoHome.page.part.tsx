@@ -14,6 +14,28 @@ import {
   streamEndedStatus,
   streamFailedStatus,
   streamPausedStatus,
+  netplayCheckingStatus,
+  netplayConnectingStatus,
+  netplayCopyFailedStatus,
+  netplayCopyInvite,
+  netplayCopyingLongStatus,
+  netplayCopyingStatus,
+  netplayEndedStatus,
+  netplayFindingStatus,
+  netplayInstallFailedStatus,
+  netplayInstallingStatus,
+  netplayInstallInvite,
+  netplayLongInvites,
+  netplayLostStatus,
+  netplayMixedInvites,
+  netplayNoRouteStatus,
+  netplayNoSpaceStatus,
+  netplayPausedStatus,
+  netplayReadyInvite,
+  netplayReconnectingStatus,
+  netplayReviewLongStatus,
+  netplayReviewStatus,
+  netplayVersionStatus,
 } from "../fixtures/named-states"
 import { picoInvitesFrom } from "../pico-invite-view"
 import { picoScreenViewFromModel } from "../pico-screen-view"
@@ -252,6 +274,40 @@ export function StreamPaused() {
 export function StreamEnded() {
   return home({ ...fixtureModel, status: streamEndedStatus })
 }
+
+/* ---- Netplay, on the receiving device ---- */
+
+/** Netplay is possible: Play here beside Play on stream. */
+export function NetplayPlayHere() { return home(inviteModel([netplayReadyInvite])) }
+/** The release is copied first: its size is on the button. */
+export function NetplayCopyAndPlay() { return home(inviteModel([netplayCopyInvite])) }
+/** The core is missing: the plugin is installed first. */
+export function NetplayInstallAndPlay() { return home(inviteModel([netplayInstallInvite])) }
+/** Every route, and an invite with stream play only. */
+export function NetplayRoutes() { return home(inviteModel(netplayMixedInvites)) }
+/** The longest words: a long plugin title, a size in GB, names with no break. */
+export function NetplayLongNames() { return home(inviteModel(netplayLongInvites)) }
+export function NetplayCopying() { return home({ ...fixtureModel, status: netplayCopyingStatus }) }
+export function NetplayCopyingLong() { return home({ ...fixtureModel, status: netplayCopyingLongStatus }) }
+export function NetplayConnecting() { return home({ ...fixtureModel, status: netplayConnectingStatus }) }
+/** The holder left the session: this device waits, and can Leave. */
+export function NetplayPaused() { return home({ ...fixtureModel, status: netplayPausedStatus }) }
+/** A drop: korrid retries for about 10 s, with nothing to press. */
+export function NetplayReconnecting() { return home({ ...fixtureModel, status: netplayReconnectingStatus }) }
+export function NetplayEnded() { return home({ ...fixtureModel, status: netplayEndedStatus }) }
+export function NetplayLost() { return home({ ...fixtureModel, status: netplayLostStatus }) }
+export function NetplayNoRoute() { return home({ ...fixtureModel, status: netplayNoRouteStatus }) }
+export function NetplayVersionMismatch() { return home({ ...fixtureModel, status: netplayVersionStatus }) }
+export function NetplayCopyFailed() { return home({ ...fixtureModel, status: netplayCopyFailedStatus }) }
+export function NetplayNoSpace() { return home({ ...fixtureModel, status: netplayNoSpaceStatus }) }
+export function NetplayFinding() { return home({ ...fixtureModel, status: netplayFindingStatus }) }
+export function NetplayChecking() { return home({ ...fixtureModel, status: netplayCheckingStatus }) }
+/** Settings' review, before anything installs. */
+export function NetplayInstallReview() { return home({ ...fixtureModel, status: netplayReviewStatus }) }
+export function NetplayInstallReviewLong() { return home({ ...fixtureModel, status: netplayReviewLongStatus }) }
+/** Installing has no Cancel: the plugin is half in place until it ends. */
+export function NetplayInstalling() { return home({ ...fixtureModel, status: netplayInstallingStatus }) }
+export function NetplayInstallFailed() { return home({ ...fixtureModel, status: netplayInstallFailedStatus }) }
 
 export default function PicoHomePart() {
   return (

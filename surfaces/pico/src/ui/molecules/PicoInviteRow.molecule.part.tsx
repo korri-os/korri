@@ -1,4 +1,4 @@
-import { dimmedInvite, fixtureInvite, inviteViews, longInvite } from "../../fixtures/named-states"
+import { dimmedInvite, fixtureInvite, inviteViews, longInvite, netplayCopyInvite, netplayLongInvites } from "../../fixtures/named-states"
 import { PicoInviteRow } from "./PicoInviteRow"
 
 export const name = "Invite Row"
@@ -47,6 +47,36 @@ export function RouteDimmed() {
       id={dimmedInvite.id}
       onAction={() => undefined}
       personName={dimmedInvite.personName}
+    />
+  )
+}
+
+/** Netplay is possible too: its route sits between stream play and Dismiss. */
+export function NetplayRoute() {
+  return (
+    <PicoInviteRow
+      actions={netplayCopyInvite.actions}
+      artUrl={turtles?.artUrl}
+      deviceLabel={netplayCopyInvite.deviceLabel}
+      gameTitle={netplayCopyInvite.gameTitle}
+      id={netplayCopyInvite.id}
+      onAction={() => undefined}
+      personName={netplayCopyInvite.personName}
+    />
+  )
+}
+
+/** The longest route Korri words: its label wraps inside its button. */
+export function LongNetplayRoute() {
+  const invite = netplayLongInvites[0]!
+  return (
+    <PicoInviteRow
+      actions={invite.actions}
+      deviceLabel={invite.deviceLabel}
+      gameTitle={invite.gameTitle}
+      id={invite.id}
+      onAction={() => undefined}
+      personName={invite.personName}
     />
   )
 }

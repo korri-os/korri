@@ -227,3 +227,179 @@ export const streamEndedStatus = {
   reason: "Turtles in Time ended on Odin 2 Portal.",
   gameTitle: "Turtles in Time",
 } satisfies SurfaceStatus
+
+/* ---- Netplay ----
+ * The receiving device's words come from the portal
+ * (clients/portal/src/surface/shared-play.ts); these fixtures repeat them, so
+ * a render here is what the RG35XX Pro shows when the SP holds the session. */
+
+/** The holder in the first netplay proof (ADR 0040). */
+const HOLDER = "RG35XX SP"
+
+/** An invite's actions when netplay is possible: stream play, the netplay
+ * route in Korri's words, then a dismiss. */
+export function netplayInviteActions(inviteId: string, netplay: string): readonly SurfaceAction[] {
+  return [
+    { id: `${inviteId}:stream`, label: "Play on stream", enabled: true },
+    { id: `${inviteId}:netplay`, label: netplay, enabled: true },
+    { id: `${inviteId}:dismiss`, label: "Dismiss", enabled: true },
+  ]
+}
+
+const netplayInvite = (id: string, netplay: string): SurfaceInvite => ({
+  ...fixtureInvite, id, deviceLabel: HOLDER, actions: netplayInviteActions(id, netplay),
+})
+
+/** The release and a matching core are both here. */
+export const netplayReadyInvite = netplayInvite("invite-sp-turtles", "Play here")
+/** The core is here; the release is copied first. */
+export const netplayCopyInvite = netplayInvite("invite-sp-turtles", "Copy and play here (1 MB)")
+/** No core here can play it in netplay; a plugin can. */
+export const netplayInstallInvite = netplayInvite("invite-sp-turtles", "Install Snes9x 2010 and play here")
+
+/** The longest words a netplay route reaches: a long plugin title, a disc
+ * image of several GB, and the longest names of `longInvite`. */
+export const netplayLongInvites: readonly SurfaceInvite[] = [
+  { ...longInvite, actions: netplayInviteActions(longInvite.id, "Install Beetle PSX HW (Mednafen PlayStation) and play here") },
+  { ...fixtureSecondInvite, actions: netplayInviteActions(fixtureSecondInvite.id, "Copy and play here (4.7 GB)") },
+]
+
+/** Every kind of invite at once: each netplay route, and one with stream
+ * play only. */
+export const netplayMixedInvites: readonly SurfaceInvite[] = [
+  netplayReadyInvite,
+  { ...fixtureSecondInvite, actions: netplayInviteActions(fixtureSecondInvite.id, "Copy and play here (612 MB)") },
+  { ...fixtureThirdInvite, actions: netplayInviteActions(fixtureThirdInvite.id, "Install Snes9x 2010 and play here") },
+  { ...longInvite, deviceLabel: "Odin 2 Portal" },
+]
+
+const netplayCancel = { id: "netplay:cancel", label: "Cancel", enabled: true }
+
+export const netplayCopyingStatus = {
+  _tag: "Busy",
+  kicker: `Copying Turtles in Time from ${HOLDER}`,
+  detail: "42% of 1 MB",
+  progress: { done: 440_000, total: 1_048_576 },
+  actions: [netplayCancel],
+} satisfies SurfaceStatus
+
+/** A disc image from a device with a long label. */
+export const netplayCopyingLongStatus = {
+  _tag: "Busy",
+  kicker: `Copying ${longInvite.gameTitle} from ${longInvite.deviceLabel}`,
+  detail: "7% of 4.7 GB",
+  progress: { done: 329_000_000, total: 4_700_000_000 },
+  actions: [netplayCancel],
+} satisfies SurfaceStatus
+
+/** Play here pressed; the game is in this device's library. */
+export const netplayConnectingStatus = {
+  _tag: "Busy",
+  kicker: `Connecting to ${HOLDER}`,
+  actions: [netplayCancel],
+  gameId: "bramble",
+} satisfies SurfaceStatus
+
+/** The holder left the session; this device waits. */
+export const netplayPausedStatus = {
+  _tag: "Paused",
+  kicker: `Paused on ${HOLDER}`,
+  actions: [{ id: "netplay:leave:mine", label: "Leave", enabled: true }],
+  gameId: "bramble",
+} satisfies SurfaceStatus
+
+/** The connection dropped; korrid retries for about 10 s. Nothing to press. */
+export const netplayReconnectingStatus = {
+  _tag: "Busy",
+  kicker: `Reconnecting to ${HOLDER}`,
+  gameId: "bramble",
+} satisfies SurfaceStatus
+
+export const netplayEndedStatus = {
+  _tag: "Ended",
+  kicker: "Session ended",
+  reason: `Turtles in Time ended on ${HOLDER}`,
+  gameTitle: "Turtles in Time",
+} satisfies SurfaceStatus
+
+export const netplayLostStatus = {
+  _tag: "Ended",
+  kicker: "Session ended",
+  reason: `Lost ${HOLDER}`,
+  gameTitle: "Turtles in Time",
+} satisfies SurfaceStatus
+
+const STREAM_STILL_WORKS = "Play on stream still works."
+
+export const netplayNoRouteStatus = {
+  _tag: "Problem",
+  kicker: "Netplay unavailable",
+  reason: `Turtles in Time can't play here with ${HOLDER} right now. ${STREAM_STILL_WORKS}`,
+  canRetry: false,
+} satisfies SurfaceStatus
+
+export const netplayVersionStatus = {
+  _tag: "Problem",
+  kicker: "Netplay unavailable",
+  reason: `${HOLDER} runs a different version of Snes9x 2010. ${STREAM_STILL_WORKS}`,
+  canRetry: false,
+} satisfies SurfaceStatus
+
+export const netplayCopyFailedStatus = {
+  _tag: "Problem",
+  kicker: "Copy failed",
+  reason: `Turtles in Time did not copy from ${HOLDER}. Nothing was kept.`,
+  canRetry: false,
+} satisfies SurfaceStatus
+
+export const netplayNoSpaceStatus = {
+  _tag: "Problem",
+  kicker: "Not enough space",
+  reason: `${longInvite.gameTitle} needs 4.7 GB free on this device.`,
+  canRetry: false,
+} satisfies SurfaceStatus
+
+/* The plugin install before netplay: Settings' review, in the portal's words. */
+
+export const netplayFindingStatus = {
+  _tag: "Busy", kicker: "Finding Snes9x 2010", actions: [netplayCancel],
+} satisfies SurfaceStatus
+
+export const netplayCheckingStatus = {
+  _tag: "Busy", kicker: "Checking Snes9x 2010", actions: [netplayCancel],
+} satisfies SurfaceStatus
+
+export const netplayInstallingStatus = {
+  _tag: "Busy", kicker: "Installing Snes9x 2010",
+} satisfies SurfaceStatus
+
+const installActions = [{ id: "netplay:install", label: "Install and play here", enabled: true }, netplayCancel]
+
+/** The report of a plugin that asks for little. */
+export const netplayReviewStatus = {
+  _tag: "Confirm",
+  kicker: "Install Snes9x 2010?",
+  detail: "It asks for no network ports and runs nothing in the background.",
+  actions: installActions,
+} satisfies SurfaceStatus
+
+/** A long report: a warning, ports, a background unit and what it brings. */
+export const netplayReviewLongStatus = {
+  _tag: "Confirm",
+  kicker: "Install Beetle PSX HW (Mednafen PlayStation)?",
+  detail: [
+    "Warning: This core uses a lot of memory on devices with 1 GB or less.",
+    "Opens network ports: TCP 55435; UDP 55435.",
+    "Runs in the background: retroarch-netplay-relay.service.",
+    "Also installs RetroArch.",
+    "Also uses PlayStation BIOS files. You approved it before.",
+  ].join("\n"),
+  actions: installActions,
+} satisfies SurfaceStatus
+
+export const netplayInstallFailedStatus = {
+  _tag: "Problem",
+  kicker: "Install failed",
+  reason: "No plugin repository on this device offers Snes9x 2010.",
+  canRetry: false,
+} satisfies SurfaceStatus
