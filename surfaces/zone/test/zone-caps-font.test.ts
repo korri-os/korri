@@ -327,7 +327,7 @@ describe("the font is the grid, built", () => {
     const out = mkdtempSync(join(tmpdir(), "zone-caps-"))
     try {
       const run = spawnSync(join(ROOT, "scripts", "build-zone-caps.py"), ["--out", out], { cwd: ROOT, encoding: "utf8", timeout: 240_000 })
-      expect(run.status).toBe(0)
+      expect(run.status, `font builder failed:\n${run.stderr}\n${run.stdout}\n${run.error ?? ""}`).toBe(0)
       const rebuilt = readFileSync(join(out, "ZoneCaps.ttf"))
       const again = readFont(rebuilt)
       for (const [code, glyph] of font.cmap) {

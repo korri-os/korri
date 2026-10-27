@@ -111,6 +111,25 @@ report exactly `skipped`. The separate `Published plugin acceptance result`
 aggregate applies the same rule to acceptance. No protection/ruleset settings
 are changed; use these aggregate check names when configuring required results.
 
+## Build-host portability
+
+Inputd's dev shell supplies real immutable `true` and shell executables from its
+native Nix packages. Tests do not depend on a NixOS `/run/current-system` link.
+Executable identity, store-item confinement and privilege assertions remain in
+place. Its private DBus test uses the daemon package's native session policy and
+explicitly binds only the fixture's temporary socket, never a host bus address.
+
+Zone's check supplies the locked `NIX_PATH` to its existing Nix-shebang font
+builder. It does not require a runner channel. Builder failures include stderr;
+the deterministic TrueType/WOFF2 byte comparisons and timeouts are unchanged.
+A focused native-builder replay, including Zone typecheck and lint, is:
+
+```sh
+NIX_PATH= nix run .#zone-check -- test/zone-caps-font.test.ts
+```
+
+Without Bun test arguments, the normal Zone lane still runs every Zone test.
+
 ## Local verification
 
 Focused CI policy checks:
