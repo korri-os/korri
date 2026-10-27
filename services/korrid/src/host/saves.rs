@@ -104,6 +104,8 @@ fn baseline_deferral(game: &str, error: &SaveDiagnostic) -> String {
 // Request-local route facts. Peer transfer changes history, not the launch
 // declaration. Reuse these facts for the post-pull projection, but never across
 // requests: plugin selection, routes and settings can change between checks.
+// Each request still resolves routes and settings again. Only plugin answers
+// to identical source and input are reused across requests (script/reuse.rs).
 struct SaveCheckPreparation {
     support: Option<SaveMark>,
     declaration: Option<(
@@ -1377,9 +1379,10 @@ mod tests {
         peer.remember(&device);
         let source = device.root.path().join("plugin/plugin.ts");
         let mut plugin = std::fs::read_to_string(&source).unwrap();
-        // Two real declaration evaluations take at least 1.5 seconds, like
-        // the measured device cost, but each stays below the VM's 1 s limit.
-        plugin.push_str("\nhandlers['launch.prepare']=(prepare=>input=>{const end=Date.now()+750;while(Date.now()<end){};return prepare(input)})(handlers['launch.prepare']);");
+        // The check asks launch.prepare twice with the same input. korrid
+        // reuses the second answer (#289), so one slow evaluation is the slow
+        // path. It stays below the VM's 1 s limit.
+        plugin.push_str("\nhandlers['launch.prepare']=(prepare=>input=>{const end=Date.now()+850;while(Date.now()<end){};return prepare(input)})(handlers['launch.prepare']);");
         std::fs::write(source, plugin).unwrap();
         let (mut state, _) = crate::app_states(device.host.clone());
         state.saves = Some(device.service.clone());
@@ -1416,7 +1419,7 @@ mod tests {
             "peer records must arrive during local preparation"
         );
         assert!(
-            elapsed >= std::time::Duration::from_millis(1400),
+            elapsed >= std::time::Duration::from_millis(800),
             "declaration must exercise the slow path: {elapsed:?}"
         );
         assert!(

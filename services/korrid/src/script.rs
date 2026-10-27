@@ -23,6 +23,8 @@ mod heap;
 mod packages;
 #[path = "script/preparation.rs"]
 mod preparation;
+#[path = "script/reuse.rs"]
+mod reuse;
 #[path = "script/source.rs"]
 pub mod source;
 
@@ -164,22 +166,28 @@ pub fn call_plugin_operation_bounded(
             max_input_bytes / 1024
         )));
     }
-    let graph =
-        preparation::PreparedGraph::new(snapshot, "plugin.ts").map_err(OperationFailure::Failed)?;
-    evaluate_module(
-        graph,
-        Some(Invocation {
-            operation,
-            input: input_json,
-        }),
-    )
-    .map_err(|failure| match failure {
-        OperationFailure::Failed(message) if message == unimplemented_message(operation) => {
-            OperationFailure::Unimplemented {
-                operation: operation.into(),
+    let question = reuse::Question::Operation {
+        name: operation,
+        input: input_json,
+    };
+    reuse::answer(snapshot, "plugin.ts", question, || {
+        let graph = preparation::PreparedGraph::new(snapshot, "plugin.ts")
+            .map_err(OperationFailure::Failed)?;
+        evaluate_module(
+            graph,
+            Some(Invocation {
+                operation,
+                input: input_json,
+            }),
+        )
+        .map_err(|failure| match failure {
+            OperationFailure::Failed(message) if message == unimplemented_message(operation) => {
+                OperationFailure::Unimplemented {
+                    operation: operation.into(),
+                }
             }
-        }
-        other => other,
+            other => other,
+        })
     })
 }
 
@@ -604,10 +612,12 @@ pub fn eval_plugin_ts(source: &str) -> Result<String, String> {
 /// Eagerly prepare the closed source graph from retained bytes only.
 /// Preparation has no hard host-memory or time guarantee; VM limits start after it.
 pub fn eval_plugin_snapshot(snapshot: &source::SourceSnapshot) -> Result<String, String> {
-    evaluate_module(
-        preparation::PreparedGraph::new(snapshot, "plugin.ts")?,
-        None,
-    )
+    reuse::answer(snapshot, "plugin.ts", reuse::Question::Declaration, || {
+        evaluate_module(
+            preparation::PreparedGraph::new(snapshot, "plugin.ts")?,
+            None,
+        )
+    })
     .map_err(|failure| failure.to_string())
 }
 
