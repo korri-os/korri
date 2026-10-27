@@ -18,6 +18,21 @@ use tokio::sync::broadcast;
 
 const IO_TIMEOUT_MS: i32 = 2_000;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
+/// Poll cadence while the receiver reports a session: remote input edges and
+/// shortcuts arrive only then, and its 128-event queue must not fill.
+const LIVE_POLL: Duration = Duration::from_millis(20);
+/// Poll cadence with no session. Only local plugs and stale-source expiry can
+/// change the reply. It stays well inside the receiver's 1250 ms watchdog.
+const IDLE_POLL: Duration = Duration::from_millis(250);
+
+/// Commands are sent at once whatever the cadence; this only spaces the polls.
+fn poll_cadence(reply: &SeatReply) -> Duration {
+    if reply.session.is_some() || !reply.remote_sources.is_empty() {
+        LIVE_POLL
+    } else {
+        IDLE_POLL
+    }
+}
 type Command = (SeatRequest, mpsc::SyncSender<Result<SeatReply, String>>);
 
 pub(crate) struct SeatCoordinator {
@@ -44,6 +59,7 @@ impl SeatCoordinator {
         if hello.failure.is_some() {
             return Err("input-seat coordinator refused".into());
         }
+        let mut cadence = poll_cadence(&hello);
         let latest = Arc::new(Mutex::new(hello));
         let (commands, incoming) = mpsc::sync_channel::<Command>(64);
         let (feedback, _) = broadcast::channel(256);
@@ -63,7 +79,7 @@ impl SeatCoordinator {
                     if fenced.load(Ordering::SeqCst) {
                         break;
                     }
-                    let command = match incoming.recv_timeout(Duration::from_millis(20)) {
+                    let command = match incoming.recv_timeout(cadence) {
                         Ok(command) => Some(command),
                         Err(mpsc::RecvTimeoutError::Timeout) => None,
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -74,6 +90,7 @@ impl SeatCoordinator {
                         .unwrap_or(&SeatRequest::Poll);
                     let result = exchange(&fd, request).and_then(|reply| {
                         mapper.remote(&reply)?;
+                        cadence = poll_cadence(&reply);
                         if reply.failure.is_none() {
                             mapper.physical(request)?;
                         }
@@ -502,6 +519,52 @@ mod tests {
         }
     }
 
+    #[test]
+    fn polls_fast_only_while_a_session_or_remote_source_exists() {
+        let mut reply = test_support::reply();
+        assert_eq!(poll_cadence(&reply), IDLE_POLL);
+        reply.session = Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into());
+        assert_eq!(poll_cadence(&reply), LIVE_POLL);
+        reply.session = None;
+        reply.remote_sources.push(korri_input_contract::RemoteSource {
+            client_id: "paired-client-a".into(),
+            launch_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            controller_number: 0,
+            state: GamepadState::neutral(),
+            slot: None,
+        });
+        assert_eq!(poll_cadence(&reply), LIVE_POLL);
+    }
+    #[test]
+    fn idle_receiver_is_polled_slowly_and_a_session_restores_the_fast_poll() {
+        let polls = Arc::new(Mutex::new(0usize));
+        let counted = polls.clone();
+        let mut current = test_support::reply();
+        let (coordinator, worker) = test_support::coordinator(move |request| {
+            match request {
+                SeatRequest::Poll => *counted.lock().unwrap() += 1,
+                SeatRequest::BeginSession { launch_id } => current.session = Some(launch_id),
+                _ => {}
+            }
+            current.clone()
+        });
+        let window = Duration::from_millis(1000);
+        std::thread::sleep(window);
+        let idle = std::mem::take(&mut *polls.lock().unwrap());
+        // 4 per second at 250 ms; 50 per second at the live cadence.
+        assert!(idle <= 6, "idle polls in 1 s: {idle}");
+        coordinator
+            .request(SeatRequest::BeginSession {
+                launch_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            })
+            .unwrap();
+        *polls.lock().unwrap() = 0;
+        std::thread::sleep(window);
+        let live = *polls.lock().unwrap();
+        assert!(live >= 12, "live polls in 1 s: {live}");
+        drop(coordinator);
+        worker.join().unwrap();
+    }
     #[test]
     fn explicit_uncertainty_fence_refuses_further_commands() {
         let (coordinator, worker) = test_support::coordinator(|_| test_support::reply());
