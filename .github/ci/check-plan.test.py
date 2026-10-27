@@ -4,6 +4,7 @@ import copy
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -116,11 +117,34 @@ class SelectionTest(unittest.TestCase):
                 self.assertIn("inputd", ci.affected([shared]))
         self.assertTrue(ci.plan("full", [], "test")["lanes"]["inputd"])
 
-    def test_cache_workflow_and_read_helpers_select_policy_without_compilers(self):
+    def test_cache_inputs_select_their_actual_acceptance_consumer(self):
+        workflow = (
+            SCRIPT.resolve().parents[2]
+            / ".github/workflows/published-plugin-checks.yml"
+        ).read_text()
+        acceptance = workflow.split("\n  acceptance:\n", 1)[1].split("\n  check:\n", 1)[
+            0
+        ]
+        consumed = set(re.findall(r"\.github/workflows/[\w.-]+", acceptance))
         for path in ci.CACHE_POLICY_INPUTS:
             with self.subTest(path=path):
-                self.assertEqual(ci.affected([path]), {"policy", "cache"})
+                expected = {"policy", "cache"}
+                if path in consumed:
+                    expected.add("acceptance")
+                self.assertEqual(ci.affected([path]), expected)
+        for path in consumed:
+            with self.subTest(acceptance_input=path):
+                self.assertIn("acceptance", ci.affected([path]))
         self.assertEqual(ci.affected(["docs/ci.md"]), {"policy"})
+
+    def test_trust_and_snapshot_helpers_cannot_skip_published_acceptance(self):
+        for path in [
+            ".github/workflows/prepare-nix-cache.py",
+            ".github/workflows/test_prepare_nix_cache.py",
+            ".github/workflows/trust-korri-cache.sh",
+        ]:
+            with self.subTest(path=path):
+                self.assertEqual(ci.affected([path]), {"policy", "cache", "acceptance"})
 
     def test_known_frontend_changes_select_no_rust_compilation(self):
         rust = {"cli", "korrid", "inputd", "limitsd", "acceptance"}
