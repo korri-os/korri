@@ -32,6 +32,15 @@ case "$(basename "$0")" in
     esac
     exit 0
     ;;
+  realpath|user-scope-realpath)
+    # Model only the remote generation lookup. All private-file canonicalization
+    # below still uses the real native tool and filesystem.
+    if [[ "$#" -eq 2 && "$1" == -e && "$2" == /run/current-system ]]; then
+      printf '%s\n' "${HARNESS_CURRENT_GENERATION:-$ROLLBACK}"
+      exit 0
+    fi
+    exec "${HARNESS_NATIVE_REALPATH:?}" "$@"
+    ;;
   systemctl)
     scope=system unit='' values_only=false
     properties=()
@@ -765,6 +774,8 @@ MODEL_SWAY_PROCESS_VISIBLE=yes assert_modeled_namespace_fails \
 MODEL_SWAY_ROOT_VISIBLE=yes assert_modeled_namespace_fails \
   'Sunshine can reach compositor control through procfs' run_modeled_sunshine_namespace_gate
 
+HARNESS_NATIVE_REALPATH="$(command -v realpath)"
+export HARNESS_NATIVE_REALPATH
 SELF="$(realpath "$0")"
 ln -s "$SELF" "$TMP/ssh-command-harness"
 mkdir "$TMP/user-scope-bin"
@@ -772,10 +783,12 @@ ln -s "$SELF" "$TMP/user-scope-bin/user-scope-id"
 ln -s "$SELF" "$TMP/user-scope-bin/user-scope-sudo"
 ln -s "$SELF" "$TMP/user-scope-bin/user-scope-systemctl"
 ln -s "$SELF" "$TMP/user-scope-bin/user-scope-getent"
+ln -s "$SELF" "$TMP/user-scope-bin/user-scope-realpath"
 ln -s user-scope-id "$TMP/user-scope-bin/id"
 ln -s user-scope-sudo "$TMP/user-scope-bin/sudo"
 ln -s user-scope-systemctl "$TMP/user-scope-bin/systemctl"
 ln -s user-scope-getent "$TMP/user-scope-bin/getent"
+ln -s user-scope-realpath "$TMP/user-scope-bin/realpath"
 export KORRI_DEVICE_GATE_SSH="$TMP/ssh-command-harness"
 export HARNESS_LOG="$TMP/commands.log" HARNESS_GATE_SOURCE="$GATE"
 HARNESS_RUNTIME_UID="$(id -u)"
@@ -2111,6 +2124,7 @@ run_production_predicates() {
 }
 : >"$HARNESS_USER_SCOPE_LOG"
 user_scope_predicates="$(run_production_predicates HARNESS_CALLER_UID=0)"
+grep -Fx "generation.current=$ROLLBACK" <<<"$user_scope_predicates" >/dev/null
 grep -Fx 'old-user.sunshine.active=true' <<<"$user_scope_predicates" >/dev/null
 grep -Fx 'old-user.sunshine.enabled=true' <<<"$user_scope_predicates" >/dev/null
 grep -Fx 'old-user.x11-headless.active=true' <<<"$user_scope_predicates" >/dev/null
@@ -2193,7 +2207,11 @@ chmod 0750 "$HARNESS_RUNTIME_HOME/.config/sunshine"
 predicates="$(run_production_predicates)"
 grep -Fx 'sunshine.pairing-state-present=false' <<<"$predicates" >/dev/null
 chmod 0700 "$HARNESS_RUNTIME_HOME/.config/sunshine"
-predicates="$(run_production_predicates HARNESS_RUNTIME_UID=1001)"
+# UID 1001 can be the actual Ubuntu runner/fixture owner, not a mismatch.
+pairing_owner_uid="$(stat -c '%u' -- "$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json")"
+mismatched_runtime_uid="$((pairing_owner_uid == 1 ? 2 : 1))"
+[[ "$mismatched_runtime_uid" != "$pairing_owner_uid" ]]
+predicates="$(run_production_predicates HARNESS_RUNTIME_UID="$mismatched_runtime_uid")"
 grep -Fx 'sunshine.pairing-state-present=false' <<<"$predicates" >/dev/null
 mv "$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json" "$TMP/pairing-state"
 ln -s "$TMP/pairing-state" "$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json"
