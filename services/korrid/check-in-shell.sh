@@ -1,7 +1,7 @@
 #!/usr/bin/env nix-shell
 #! nix-shell -i bash -p bash curl coreutils gcc
 # shellcheck shell=bash
-# THROWAWAY PROTOTYPE implementation; invoked by run-spike.sh in its devshell.
+# Full gate, or the Rust/config/runtime lane used by independent CI jobs.
 set -euo pipefail
 
 # Child Nix-shebang helpers return JSON. Do not replay this development
@@ -10,48 +10,38 @@ unset shellHook
 
 ROOT="${KORRI_ROOT:-$(git rev-parse --show-toplevel)}"
 CRATE="$ROOT/services/korrid"
-GENERATED_TS="$ROOT/contracts/generated/korrid.ts"
-
-cd "$CRATE"
-# Focused treaty regeneration uses the same Typeshare invocation as the full gate.
-if [[ "${1:-}" == "--types-only" && $# == 1 ]]; then
-  typeshare . --lang=typescript --output-file="$GENERATED_TS"
-  sed -i -e 's/[[:space:]]\+$//' -e '${/^$/d;}' "$GENERATED_TS"
-  exit 0
+mode="${1:---full}"
+if [[ $# -gt 1 || ( "$mode" != --full && "$mode" != --host-only && "$mode" != --types-only ) ]]; then
+  echo 'usage: korrid-check [--full | --host-only | --types-only]' >&2
+  exit 2
 fi
-cargo fmt --check
+if [[ "$mode" == --types-only ]]; then
+  exec bash "$CRATE/check-treaty.sh" --write
+fi
+cd "$CRATE"
+if [[ "$mode" == --full ]]; then
+  cargo fmt --check
+  bash "$CRATE/check-treaty.sh"
+fi
 # `cargo test` compiles the library, binaries and tests; a separate
 # `cargo check` would only repeat that work.
 (cd "$CRATE/tests/fixtures/first-party" && sha256sum -c SHA256SUMS)
 KORRI_SCRIPT_FIXTURES_IN_SHELL=1 bash "$CRATE/script-fixtures-setup.sh"
 cargo test
 KORRI_CONFIG_REVIEW_IN_SHELL=1 "$CRATE/config-snapshot-review.sh"
-typeshare . --lang=typescript --output-file="$GENERATED_TS"
-# Typeshare 1.13 emits trailing spaces and an extra final blank line.
-sed -i -e 's/[[:space:]]\+$//' -e '${/^$/d;}' "$GENERATED_TS"
-
-# Check local and pinned external first-party declarations against the fresh treaty.
-nix build --no-link -L \
-  "$ROOT#checks.$(nix eval --raw --impure --expr builtins.currentSystem).korri-plugins-typecheck"
-
-cd "$ROOT/clients/portal"
-bun install --frozen-lockfile --ignore-scripts
-# Every registered surface compiles from source and must share the portal's
-# React instance. A missing local dependency must not fall through to a parent
-# checkout when this check runs in a worktree.
-for surface in pico boxbuster zone; do
-  cd "$ROOT/surfaces/$surface"
+if [[ "$mode" == --full ]]; then
+  # The independent treaty lane owns this in CI, not the Rust compilation lane.
+  nix build --no-link -L \
+    "$ROOT#checks.$(nix eval --raw --impure --expr builtins.currentSystem).korri-plugins-typecheck"
+  bash "$CRATE/check-portal-setup.sh"
+  cd "$ROOT/clients/portal"
+  bun run typecheck
+  bun test
+else
+  # The real RPC smoke imports the portal client but no presentation surface.
+  cd "$ROOT/clients/portal"
   bun install --frozen-lockfile --ignore-scripts
-  for package in react react-dom; do
-    rm -rf "$ROOT/surfaces/$surface/node_modules/$package"
-    ln -s "$ROOT/clients/portal/node_modules/$package" \
-      "$ROOT/surfaces/$surface/node_modules/$package"
-  done
-done
-
-cd "$ROOT/clients/portal"
-bun run typecheck
-bun test
+fi
 
 cd "$CRATE"
 # The smoke test uses the dev-profile binaries that `cargo test` already built.
@@ -143,9 +133,11 @@ cd "$ROOT/clients/portal"
 bun src/korrid/smoke.ts
 
 # The installed proof is the whole app, not only its hidden RPC.
-cd "$ROOT"
-if [[ -n "${KORRI_PORTAL_BUNDLE:-}" ]]; then
-  "$KORRI_PORTAL_BUNDLE"
-else
-  nix run "$ROOT#portal-bundle"
+if [[ "$mode" == --full ]]; then
+  cd "$ROOT"
+  if [[ -n "${KORRI_PORTAL_BUNDLE:-}" ]]; then
+    "$KORRI_PORTAL_BUNDLE"
+  else
+    nix run "$ROOT#portal-bundle"
+  fi
 fi
