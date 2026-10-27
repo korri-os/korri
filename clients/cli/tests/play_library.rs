@@ -20,7 +20,9 @@ struct Server {
 }
 impl Server {
     fn start(responses: Vec<RpcResponse>) -> Self {
-        let root = tempfile::tempdir().unwrap();
+        Self::start_in(tempfile::tempdir().unwrap(), responses)
+    }
+    fn start_in(root: tempfile::TempDir, responses: Vec<RpcResponse>) -> Self {
         let listener =
             std::os::unix::net::UnixListener::bind(root.path().join("cli.sock")).unwrap();
         listener.set_nonblocking(true).unwrap();
@@ -1038,7 +1040,13 @@ fn play_library_inherit_clears_only_the_authored_value_with_exact_revision() {
     );
     let response =
         RpcResponse::LaunchSettingsSet(LaunchSettingsWriteOutcome::Ok(snapshot.revisions.clone()));
-    let server = Server::start(vec![snapshot_response(snapshot), response]);
+    // The suggested follow-up must remain correct when an opaque socket path
+    // happens to contain the inherited value's digits.
+    let root = tempfile::Builder::new()
+        .prefix("cli-93-")
+        .tempdir()
+        .unwrap();
+    let server = Server::start_in(root, vec![snapshot_response(snapshot), response]);
     let output = server.run(&["launch-settings", "set", "cpu.max", "--inherit"]);
     assert!(output.status.success());
     let human = String::from_utf8(output.stdout).unwrap();
@@ -1046,8 +1054,27 @@ fn play_library_inherit_clears_only_the_authored_value_with_exact_revision() {
     assert!(human.contains("korri launch-settings show"));
     assert!(human.contains("Device"));
     assert!(human.contains("Any"));
-    assert!(!human.contains("93"));
-    assert!(!human.contains("DeviceDefault"));
+    let acknowledgement = human.lines().next().unwrap();
+    assert!(!acknowledgement.contains("93"));
+    assert!(!acknowledgement.contains("DeviceDefault"));
+    let place = LaunchPlace {
+        layer: LaunchLayer::Device,
+        scope: LaunchRunnerScope::Any,
+    };
+    let socket = server.root.path().join("cli.sock");
+    assert_eq!(
+        human,
+        format!(
+            "Cleared the cpu.max override at {}.\nNext: korri launch-settings show --socket '{}' to inspect current effective values and origins.\n",
+            serde_json::to_string(&place).unwrap(),
+            socket.display().to_string().replace('\'', "'\\''"),
+        )
+    );
+    let calls = server.calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert!(matches!(&calls[1], RpcRequest::LaunchSettingsSet(r)
+        if r.value.is_none() && !r.clear && r.expected_revision == "device-revision"
+            && r.place == place && matches!(r.path, LaunchPath::CpuMax)));
 }
 #[test]
 fn play_library_inherit_conflicts_and_unavailable_places_never_mutate() {
