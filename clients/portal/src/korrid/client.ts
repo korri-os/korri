@@ -68,6 +68,15 @@ import type {
 } from "@contracts/generated/korrid"
 import { createInMemorySaves, type InMemorySavesConfig } from "./in-memory-saves"
 import {
+  NetplayFailureCode,
+  inviteNetplayOf,
+  netplayOutcomeOf,
+  netplayRpcRequest,
+  type InvitesNetplayOutcome,
+  type NetplayInvite,
+  type NetplayObservation,
+} from "./netplay-contract"
+import {
   createInMemoryLaunchSettings,
   type InMemoryLaunchSettingsConfig,
   type LaunchSettingsMethods,
@@ -112,6 +121,9 @@ export type SessionCancelResult = Extract<RpcResponse, { _tag: "app.session.canc
 export interface KorridClient extends StoreAcquisitionMethods, LaunchSettingsMethods {
   invitesList(): Promise<InvitesListOutcome>
   invitesStreamPlay(inviteId: string): Promise<SessionStreamPlayOutcome>
+  /** Copies the release when needed, prepares netplay with the holder and
+   * launches this device's copy. Progress shows in `sessionStatus`. */
+  invitesNetplay(inviteId: string): Promise<InvitesNetplayOutcome>
   invitesDismiss(inviteId: string): Promise<InviteDismissOutcome>
   networkStatus(): Promise<NetworkStatusOutcome>
   scanWifi(): Promise<NetworkStatusOutcome>
@@ -229,6 +241,10 @@ export interface KorridClient extends StoreAcquisitionMethods, LaunchSettingsMet
 }
 
 const RPC_TIMEOUT_MS = 25_000
+// `app.invites.netplay` answers after it copied the release, which can be a
+// disc image of several GB. Progress arrives through `sessionStatus`; this
+// bounds only the portal's wait for the answer.
+const NETPLAY_TIMEOUT_MS = 60 * 60_000
 // The host bounds a catalog fetch to 10 s to connect plus 30 s to transfer.
 const PLUGIN_CATALOG_TIMEOUT_MS = 60_000
 // Inspect and install download a whole plugin archive with no size limit; the
@@ -631,6 +647,10 @@ export function createHttpKorridClient(
     },
     async invitesStreamPlay(inviteId) {
       try { return (await callKorrid(baseUrl, capability, { _tag: "app.invites.streamPlay", payload: { inviteId } })).outcome }
+      catch (error) { return unreachable(error) }
+    },
+    async invitesNetplay(inviteId) {
+      try { return netplayOutcomeOf(await callKorrid(baseUrl, capability, netplayRpcRequest(inviteId), NETPLAY_TIMEOUT_MS)) }
       catch (error) { return unreachable(error) }
     },
     async invitesDismiss(inviteId) {
@@ -1103,8 +1123,11 @@ export interface InMemoryArtifact {
 }
 
 export interface InMemoryKorridClientConfig {
-  /** Same-owner live sessions, already cached by the daemon. */
-  readonly invites?: readonly Invite[] | (() => readonly Invite[])
+  /** Same-owner live sessions, already cached by the daemon, with the
+   * netplay route this device has for each (provisional, see netplay-contract). */
+  readonly invites?: readonly NetplayInvite[] | (() => readonly NetplayInvite[])
+  /** This device's netplay, as `sessionStatus` reports it. */
+  readonly netplaySession?: () => NetplayObservation | undefined
   /** Selected stream-play launch, including a portal reloaded mid-stream. */
   readonly streamPlayLaunchId?: string
   /** Far holder facts while the local viewer is selected. Undefined means End. */
@@ -1826,6 +1849,21 @@ export function createInMemoryKorridClient(
       streamPlayEnded = undefined
       return { _tag: "Ok", payload: structuredClone(activeSession) }
     },
+    async invitesNetplay(inviteId) {
+      if (activeSession !== undefined) return routeFailure("ActiveSessionConflict", "This device already has a live session")
+      const invite = liveInvites().find(invite => invite.inviteId === inviteId)
+      if (invite === undefined) return routeFailure("InviteUnavailable", "This invite is no longer available")
+      const netplay = inviteNetplayOf(invite)
+      if (netplay?._tag !== "Ready" && netplay?._tag !== "NeedsCopy") {
+        return routeFailure(NetplayFailureCode.NoNetplayRoute, "This device has no netplay route for this session")
+      }
+      // This device runs its own copy: a local session of the same game.
+      activeSession = { launchId: `netplay:${invite.session.launchId}`, phase: "running",
+        ...(invite.session.gameId === undefined ? {} : { gameId: invite.session.gameId }),
+        ...(invite.session.title === undefined ? {} : { title: invite.session.title }) }
+      streamPlayEnded = undefined
+      return { _tag: "Ok", payload: structuredClone(activeSession) }
+    },
     async invitesDismiss(inviteId) {
       const invite = liveInvites().find(invite => invite.inviteId === inviteId)
       if (invite === undefined) return routeFailure("InviteUnavailable", "This invite is no longer available")
@@ -1879,9 +1917,11 @@ export function createInMemoryKorridClient(
           payload: { code: "HostUnavailable", message: "configured to fail" },
         }
       }
+      const netplay = config.netplaySession?.()
+      const netplayFacts = netplay === undefined ? {} : { netplay: structuredClone(netplay) }
       if (activeSession === undefined) {
         overlayIntent = undefined
-        return { _tag: "Ok", payload: { ...pendingFacts, ...(streamPlayEnded === undefined ? {} : { streamPlayEnded }) } }
+        return { _tag: "Ok", payload: { ...pendingFacts, ...netplayFacts, ...(streamPlayEnded === undefined ? {} : { streamPlayEnded }) } }
       }
       if (activeSession.phase === "running") {
         const ownership = config.sessionFocusOwnership ? config.sessionFocusOwnership()
@@ -1901,6 +1941,7 @@ export function createInMemoryKorridClient(
         _tag: "Ok",
         payload: {
           ...pendingFacts,
+          ...netplayFacts,
           active: structuredClone(activeSession),
           ...(streamPlayLaunchId === undefined ? {} : { streamPlayLaunchId }),
           ...(overlay === undefined ? {} : { overlay }),
