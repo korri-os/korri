@@ -49,6 +49,7 @@ use config::{HostConfig, HostConfigError};
 use moonlight_certificate::MoonlightCertificateAdapter;
 use prepare::HostLauncher;
 use retroarch_control::{NetworkRetroarchControl, RetroarchControlExecutor};
+pub(crate) use session_state::CatalogReadinessRestore;
 use session_state::{
     HostSessionControl, HostSessionEffectFailure, HostSessionFreezeChange, HostSessionStatus,
     HostSessionStop,
@@ -1424,6 +1425,36 @@ impl HostRuntime {
         })
         .await
         .map_err(|e| e.to_string())?
+    }
+
+    pub(crate) fn take_catalog_readiness_restore(&self) -> Option<CatalogReadinessRestore> {
+        self.control().ok()?.take_catalog_readiness_restore()
+    }
+
+    /// Called only when the successful surface reply body reaches EOF.
+    pub(crate) fn schedule_catalog_readiness_restore(&self, plan: CatalogReadinessRestore) {
+        #[cfg(test)]
+        self.session_rpc_probe("app.surface.displays.reply_complete");
+        let runtime = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep_until(plan.deadline().into()).await;
+            let worker = runtime.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                if let Ok(control) = worker.control() {
+                    control.restore_catalog_after_reply(plan);
+                } else {
+                    plan.cancelled("controller_unavailable");
+                }
+            })
+            .await;
+            if let Err(error) = result {
+                eprintln!(
+                    "<6>korrid: PortalReadinessRestore {{ outcome: Failed, reason: {error} }}"
+                );
+            }
+            #[cfg(test)]
+            runtime.session_rpc_probe("app.surface.displays.readiness_done");
+        });
     }
 
     fn control(&self) -> Result<&HostSessionControl, RpcFailure> {

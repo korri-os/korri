@@ -1,3 +1,8 @@
+#[path = "portal_readiness.rs"]
+mod portal_readiness;
+use portal_readiness::CatalogReadiness;
+pub(crate) use portal_readiness::CatalogReadinessRestore;
+
 #[path = "session_rights.rs"]
 mod session_rights;
 #[path = "stream_players.rs"]
@@ -263,6 +268,11 @@ impl Drop for SessionStateGuard<'_> {
 
 #[derive(Clone)]
 enum AppliedDisplayPlacement {
+    Catalog {
+        instance: super::compositor_focus::FocusCandidate,
+        rectangles: Vec<super::display_placement::SurfaceDisplay>,
+        generation: Arc<()>,
+    },
     Game(String),
     Overlay {
         launch_id: String,
@@ -270,9 +280,10 @@ enum AppliedDisplayPlacement {
     },
 }
 impl AppliedDisplayPlacement {
-    fn launch_id(&self) -> &str {
+    fn launch_id(&self) -> Option<&str> {
         match self {
-            Self::Game(id) | Self::Overlay { launch_id: id, .. } => id,
+            Self::Catalog { .. } => None,
+            Self::Game(id) | Self::Overlay { launch_id: id, .. } => Some(id),
         }
     }
 }
@@ -327,6 +338,7 @@ pub struct HostSessionControl {
     /// return. Absence is a product-path focus failure, never implicit success.
     compositor: Option<Arc<dyn CompositorControl>>,
     placement_applied: Arc<Mutex<Option<AppliedDisplayPlacement>>>,
+    catalog_readiness: Arc<Mutex<CatalogReadiness>>,
     display_content: Arc<Mutex<Vec<String>>>,
     /// Frozen only while a running exact launch has observed compositor focus.
     /// Absent, the portal is never touched.
@@ -395,6 +407,7 @@ impl HostSessionControl {
             initial_handoff: Arc::new(Mutex::new(None)),
             compositor: None,
             placement_applied: Arc::new(Mutex::new(None)),
+            catalog_readiness: Arc::new(Mutex::new(CatalogReadiness::default())),
             display_content: Arc::new(Mutex::new(Vec::new())),
             portal: None,
             native_input: None,
@@ -746,6 +759,7 @@ impl HostSessionControl {
         if displays.len() > 1 {
             let mut placement_timings =
                 super::display_placement::SurfacePlacementTimings::default();
+            self.invalidate_catalog_placement();
             let result = trace.time("portal_placement", || {
                 let placement = self.launch_placement(launch_id, &displays)?;
                 let pids = self
@@ -1089,9 +1103,14 @@ impl HostSessionControl {
         if !force
             && applied
                 .as_ref()
-                .is_some_and(|value| value.launch_id() == launch_id)
+                .is_some_and(|value| value.launch_id() == Some(launch_id))
         {
             return Ok(None);
+        }
+        // A newer placement attempt invalidates an older startup reflow,
+        // including when the new native operation only partially succeeds.
+        if matches!(*applied, Some(AppliedDisplayPlacement::Catalog { .. })) {
+            *applied = None;
         }
         let result: Result<GamePlacementStatus, String> = (|| {
             let displays = super::display_placement::configured_displays()?;
@@ -1156,7 +1175,29 @@ impl HostSessionControl {
                 &displays, scope, None,
             ));
         }
-        let state = self.lock_state_named("surface_displays");
+        // Catalog facts can be read while the post-reply reflow holds native
+        // transition authority. A live unit PID is the kiosk-instance key;
+        // no compositor mutation or session reconciliation belongs in a hit.
+        let catalog_portal_pids =
+            if !request.overlay && scope == super::display_placement::SurfaceDisplayScope::All {
+                let portal_pids = self.portal_pids()?;
+                if let Some(rectangles) = self.cached_catalog_rectangles(&portal_pids) {
+                    return Ok(rectangles);
+                }
+                Some(portal_pids)
+            } else {
+                None
+            };
+        let mut state = self.lock_state_named("surface_displays");
+        // Another mounted request may have completed while this one waited
+        // for native authority. Do not perform a second synchronous restore.
+        if let Some(pids) = catalog_portal_pids.as_ref() {
+            if let Some(rectangles) = self.cached_catalog_rectangles(pids) {
+                state.reconcile = false;
+                return Ok(rectangles);
+            }
+        }
+
         let launch_id = match &*state {
             ActiveState::Running { launch_id, .. }
             | ActiveState::Frozen { launch_id, .. }
@@ -1194,13 +1235,20 @@ impl HostSessionControl {
             .transpose()?
             .unwrap_or_default();
         let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
-        let portal_pids = self
-            .portal
-            .as_ref()
-            .ok_or("portal unit unavailable")?
-            .unit
-            .window_pids()
-            .map_err(|error| error.message)?;
+        let portal_pids = match catalog_portal_pids {
+            Some(pids) => pids,
+            None => self.portal_pids()?,
+        };
+        let catalog_instance =
+            if launch_id.is_none() && scope == super::display_placement::SurfaceDisplayScope::All {
+                Some(super::compositor_focus::portal_window(
+                    &compositor.tree()?,
+                    &portal_pids,
+                )?)
+            } else {
+                None
+            };
+        self.invalidate_catalog_placement();
         let rectangles = super::display_placement::place_surface(
             compositor.as_ref(),
             &displays,
@@ -1223,6 +1271,15 @@ impl HostSessionControl {
                 launch_id: id.into(),
                 rectangles: rectangles.clone(),
             });
+        } else if let Some(instance) = catalog_instance {
+            // Do not publish a receipt for a different window created during
+            // the synchronous transaction.
+            if super::compositor_focus::portal_window(&compositor.tree()?, &portal_pids)?
+                != instance
+            {
+                return Err("portal instance changed during catalog placement".into());
+            }
+            self.record_catalog_placement(instance, rectangles.clone());
         } else {
             *self
                 .placement_applied
@@ -1235,6 +1292,7 @@ impl HostSessionControl {
     /// Restore the exact launch's fullscreen/opacity recipe on failed Leave.
     /// Do not append a focus command when seat recovery may have failed.
     fn restore_game_presentation(&self, launch_id: &str) -> Result<(), String> {
+        self.invalidate_catalog_placement();
         let displays = super::display_placement::configured_displays()?;
         if displays.len() <= 1 {
             return self.game_opacity(launch_id, false).map(|_| ());
