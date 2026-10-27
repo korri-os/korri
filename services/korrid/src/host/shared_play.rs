@@ -27,7 +27,7 @@ impl HostRuntime {
     ) -> Result<(), RpcFailure> {
         self.control()?.describe_stream_players(active)?;
         active.netplay = self
-            .netplay_local(&active.launch_id)
+            .describe_netplay(&active.launch_id)
             .ok()
             .map(|local| Box::new(local.facts));
         if let Some(game_id) = active.game_id.as_deref() {

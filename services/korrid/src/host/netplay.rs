@@ -58,7 +58,21 @@ impl HostRuntime {
         Ok(())
     }
     pub(crate) fn netplay_local(&self, expected: &str) -> Result<NetplayLocal, RpcFailure> {
-        let (game, runner, release, config) = self.control()?.netplay_launch(expected)?;
+        let launch = self.control()?.netplay_launch(expected)?;
+        self.netplay_from_launch(launch)
+    }
+
+    /// Status projection already holds the native transition lock. Read only
+    /// the exact journal snapshot here; never start another status observation.
+    pub(super) fn describe_netplay(&self, expected: &str) -> Result<NetplayLocal, RpcFailure> {
+        let launch = self.control()?.netplay_launch_snapshot(expected)?;
+        self.netplay_from_launch(launch)
+    }
+
+    fn netplay_from_launch(
+        &self,
+        (game, runner, release, config): (String, String, String, String),
+    ) -> Result<NetplayLocal, RpcFailure> {
         let root = self.route_root()?;
         let registry = self.route_registry()?;
         let runner_record = registry
@@ -274,22 +288,30 @@ impl HostSessionControl {
                     "That launch is no longer live.",
                 ));
             }
-            match read_active(&self.identity_root)
-                .map_err(|_| dynamic_failure("live session unavailable"))?
-            {
-                Some(ActiveSession::Running {
-                    game_id,
-                    runner_id: Some(runner),
-                    release_id: Some(release),
-                    netplay_config: Some(config),
-                    ..
-                }) => Ok((game_id, runner, release, config)),
-                _ => Err(crate::netplay::failure(
-                    "NoNetplayRoute",
-                    "This live session cannot host netplay.",
-                )),
-            }
+            self.netplay_launch_snapshot(expected)
         })
+    }
+
+    fn netplay_launch_snapshot(
+        &self,
+        expected: &str,
+    ) -> Result<(String, String, String, String), RpcFailure> {
+        match read_active(&self.identity_root)
+            .map_err(|_| dynamic_failure("live session unavailable"))?
+        {
+            Some(ActiveSession::Running {
+                launch_id,
+                game_id,
+                runner_id: Some(runner),
+                release_id: Some(release),
+                netplay_config: Some(config),
+                ..
+            }) if launch_id == expected => Ok((game_id, runner, release, config)),
+            _ => Err(crate::netplay::failure(
+                "NoNetplayRoute",
+                "This live session cannot host netplay.",
+            )),
+        }
     }
 }
 
@@ -331,9 +353,48 @@ mod tests {
             owner_statement: "verified".into(),
         })
     }
+    #[test]
+    fn netplay_peer_preparation_requires_exact_live_launch_one_receiver_and_its_object_seat() {
+        use std::process::{Command, Stdio};
+        use std::time::{Duration, Instant};
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "host::netplay::tests::netplay_status_and_preparation_child",
+                "--ignored",
+                "--nocapture",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if child.try_wait().unwrap().is_some() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                child.kill().unwrap();
+                let output = child.wait_with_output().unwrap();
+                panic!(
+                    "netplay status/preparation deadlocked: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
     #[tokio::test]
-    async fn netplay_peer_preparation_requires_exact_live_launch_one_receiver_and_its_object_seat()
-    {
+    #[ignore = "subprocess helper: parent bounds native status deadlocks"]
+    async fn netplay_status_and_preparation_child() {
         use super::super::input_coordination::test_support;
         let root = tempfile::tempdir().unwrap();
         let key = format!("sha256:{}", hex::encode(Sha256::digest(b"game bytes")));
@@ -405,6 +466,17 @@ mod tests {
         let (state, _) = crate::app_states(host.clone());
         let device = "33".repeat(32);
         let other = "55".repeat(32);
+        let status = crate::dispatch(
+            &state,
+            &peer(&device),
+            RpcRequest::SessionStatus(crate::SessionStatusRequest {}),
+        )
+        .await
+        .unwrap();
+        let RpcResponse::SessionStatus(crate::SessionStatusOutcome::Ok(status)) = status else {
+            panic!("status failed");
+        };
+        assert_eq!(status.active.unwrap().netplay.unwrap().release_key, key);
         let request = |launch: &str| {
             RpcRequest::SessionNetplay(SessionNetplayRequest {
                 launch_id: launch.into(),
@@ -491,12 +563,17 @@ mod tests {
             .await
             .unwrap()
             .session;
-        let mut description: crate::ActiveSession = serde_json::from_value(
-            serde_json::json!({"launchId":multipart_live.launch_id,"gameId":"turtles"}),
+        let status = crate::dispatch(
+            &state,
+            &peer(&device),
+            RpcRequest::SessionStatus(crate::SessionStatusRequest {}),
         )
+        .await
         .unwrap();
-        host.describe_active_session(&mut description).unwrap();
-        assert!(description.netplay.is_none());
+        let RpcResponse::SessionStatus(crate::SessionStatusOutcome::Ok(status)) = status else {
+            panic!("status failed");
+        };
+        assert!(status.active.unwrap().netplay.is_none());
         assert!(
             matches!(crate::dispatch(&state, &peer(&device), request(&multipart_live.launch_id)).await.unwrap(), RpcResponse::SessionNetplay(SessionNetplayOutcome::Err(crate::RpcFailure { code, .. })) if code == "MultipartReleaseUnsupported")
         );
