@@ -51,7 +51,6 @@ jobs:
       pico: ${{ steps.plan.outputs.pico }}
       zone: ${{ steps.plan.outputs.zone }}
       boxbuster: ${{ steps.plan.outputs.boxbuster }}
-      acceptance: ${{ steps.plan.outputs.acceptance }}
     steps:
       - name: Check out the exact tested source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -440,4 +439,4 @@ jobs:
         env:
           PLAN: ${{ needs.select.outputs.plan }}
           NEEDS: ${{ toJSON(needs) }}
-        run: python3 .github/ci/check-plan.py aggregate --scope checks
+        run: python3 .github/ci/check-plan.py aggregate
