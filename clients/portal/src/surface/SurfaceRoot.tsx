@@ -478,6 +478,34 @@ export function SurfaceRoot({
     return { ref, context: { facts, live, enabled } }
   }, [downloads])
 
+  // Location choices and game actions share the same local launch lifecycle.
+  const confirmLaunch = useCallback((id: string, picked: PortalEntry) => {
+    const current = launchablesRef.current.getState()
+    if (current._tag !== "Ready") return
+    const chosen = launchableOnThisDevice(picked)
+    if (chosen.kind !== "game" || !chosen.game.source.isLocal) {
+      confirmEntry(chosen)
+      return
+    }
+    // A game already live on this device is returned to, never fetched for.
+    const active = current.entries.find(entry =>
+      entry.kind === "now-playing" && entry.session.gameId === chosen.game.id &&
+      (entry.session.host === undefined || entry.session.host === chosen.game.host),
+    )
+    if (active?.kind === "now-playing") {
+      confirmEntry(active)
+      return
+    }
+    if (current.unavailableSessionStatus !== undefined) return
+    // Several runners: the chooser first, then the gate with its choice,
+    // because korrid resolves artifacts per runner. Otherwise the gate now.
+    if (chosen.game.supportsRunnerSelection) {
+      void runner.open(chosen.game.id, chosen.game.title, "launch")
+      return
+    }
+    void gatedStart({ id: chosen.game.id, surfaceId: id, title: chosen.game.title })
+  }, [confirmEntry, gatedStart, runner])
+
   // The host object is stable: it reads the latest state through the closures
   // above rather than capturing a snapshot, so re-creating it on every model
   // change would only churn the surface's subscriptions.
@@ -492,38 +520,14 @@ export function SurfaceRoot({
         if (runner.getSnapshot()._tag !== "Closed" || launch.isOpen() || saves.getStatus() !== undefined || acquisition.getStatus() !== undefined || current._tag !== "Ready") return
         const entry = entryForId(current, id)
         if (!entry) return
-        const confirm = (picked: PortalEntry) => {
-          const chosen = launchableOnThisDevice(picked)
-          if (chosen.kind !== "game" || !chosen.game.source.isLocal) {
-            confirmEntry(chosen)
-            return
-          }
-          // A game already live on this device is returned to, never fetched for.
-          const active = current.entries.find(entry =>
-            entry.kind === "now-playing" && entry.session.gameId === chosen.game.id &&
-            (entry.session.host === undefined || entry.session.host === chosen.game.host),
-          )
-          if (active?.kind === "now-playing") {
-            confirmEntry(active)
-            return
-          }
-          if (current.unavailableSessionStatus !== undefined) return
-          // Several runners: the chooser first, then the gate with its choice,
-          // because korrid resolves artifacts per runner. Otherwise the gate now.
-          if (chosen.game.supportsRunnerSelection) {
-            void runner.open(chosen.game.id, chosen.game.title, "launch")
-            return
-          }
-          void gatedStart({ id: chosen.game.id, surfaceId: id, title: chosen.game.title })
-        }
         const locations = launchLocationsForEntry(entry)
         if (locations.length > 1) {
           if (launchLocationId === undefined) return
           const chosen = entryForLaunchLocation(entry, launchLocationId)
-          if (chosen) confirm(chosen)
+          if (chosen) confirmLaunch(id, chosen)
           return
         }
-        confirm(entry)
+        confirmLaunch(id, entry)
       },
       runAction: id => {
         if (sharedPlay.act(id)) return
@@ -618,7 +622,7 @@ export function SurfaceRoot({
           return
         }
         if (actionId === "end") endSession(entry)
-        else confirmEntry(entry)
+        else confirmLaunch(gameId, entry)
       },
       // The browsing root never publishes gameplay-overlay controls. U5 owns
       // the dedicated overlay host that binds these calls to a launch id.
@@ -656,7 +660,7 @@ export function SurfaceRoot({
       connectHiddenWifi,
       finishOnboarding,
       changeSetting,
-      confirmEntry,
+      confirmLaunch,
       dismissNotice,
       dismissSettingsProblem,
       exportIdentityBackup,

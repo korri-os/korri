@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { PendingLaunchPhase } from "@contracts/generated/korrid"
 import { LaunchablesState, launchSubjectForGame, type LaunchSubject, type PortalEntry } from "../launchables/state"
 import type { GameDownloadFacts } from "./game-downloads"
+import { turtlesCatalogGames, turtlesLocalGame } from "./fixtures/turtles-in-time"
 import {
   entryForId,
   entryForLaunchLocation,
@@ -238,6 +239,39 @@ describe("surfaceModelFrom", () => {
     expect(entryForLaunchLocation(folded, zao.id)).toEqual({
       kind: "game",
       game: { id: "wl4", title: "Wario Land 4", host: "zao", supportsRunnerSelection: false, source: source("zao") },
+    })
+  })
+
+  test("This device resolves a folded local record to its launchable catalog copy", () => {
+    const state = LaunchablesState.fromSources(
+      { _tag: "Ok", payload: { games: [...turtlesCatalogGames] } },
+      undefined,
+      { _tag: "Ok", payload: { games: [turtlesLocalGame] } },
+    )
+    if (state._tag !== "Ready") throw new Error("expected Ready")
+    expect(state.entries).toHaveLength(1)
+    const folded = state.entries[0]!
+    expect(folded.kind).toBe("local-game")
+    const model = surfaceModelFrom(state)
+    if (model.catalog._tag !== "Ready") throw new Error("expected Ready catalog")
+    const locations = model.catalog.games[0]!.launchLocations!
+    // Keep the local record's opaque location id, but use the catalog route.
+    expect(locations[0]!.id).toBe(JSON.stringify(["local", null, turtlesLocalGame.id]))
+    for (const location of locations) {
+      const game = turtlesCatalogGames.find(game => game.host === (location.label === "This device" ? "rpminiv2" : location.label))
+      if (game === undefined) throw new Error(`missing catalog copy for ${location.label}`)
+      expect(entryForLaunchLocation(folded, location.id)).toEqual({ kind: "game", game })
+    }
+    expect(entryForLaunchLocation(folded, "unknown-location")).toBeUndefined()
+  })
+
+  test("a local record without a local catalog route never falls back to a remote copy", () => {
+    const folded: PortalEntry = {
+      kind: "local-game", game: turtlesLocalGame,
+      alternatives: turtlesCatalogGames.filter(game => !game.source.isLocal).map(game => ({ kind: "remote", game })),
+    }
+    expect(entryForLaunchLocation(folded, JSON.stringify(["local", null, turtlesLocalGame.id]))).toEqual({
+      kind: "local-game", game: turtlesLocalGame,
     })
   })
 

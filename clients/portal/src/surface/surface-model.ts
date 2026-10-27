@@ -124,9 +124,14 @@ export function entryForLaunchLocation(
     candidate => copyLocationId(candidate) === launchLocationId,
   )
   if (copy === undefined) return undefined
-  return copy.kind === "local"
-    ? { kind: "local-game", game: copy.game }
-    : { kind: "game", game: copy.game }
+  // A local record supplies display metadata, not a launch route. Resolve
+  // This device to its catalog copy before discarding the folded alternatives.
+  const launchable = copy.kind === "local"
+    ? orderedCopiesForEntry(entry).find(candidate => candidate.kind === "remote" && candidate.game.source.isLocal) ?? copy
+    : copy
+  return launchable.kind === "local"
+    ? { kind: "local-game", game: launchable.game }
+    : { kind: "game", game: launchable.game }
 }
 
 /**
