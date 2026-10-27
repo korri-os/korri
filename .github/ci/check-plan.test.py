@@ -131,6 +131,11 @@ class SelectionTest(unittest.TestCase):
                 expected = {"policy", "cache"}
                 if path in consumed:
                     expected.add("acceptance")
+                if path in {
+                    ".github/workflows/fetch-image-plugins.sh",
+                    "nix/cache/plugin-read-failure.py",
+                }:
+                    expected.add("inputd")
                 self.assertEqual(ci.affected([path]), expected)
         for path in consumed:
             with self.subTest(acceptance_input=path):

@@ -14,7 +14,12 @@
 # paths-SYSTEM.txt and revision.txt from their immutable releases;
 # IDs below come from the current host seed report over each published package.
 # Plugin updates change these pins and matching offline proof assets explicitly.
-{ system }:
+# Signed-read preparation needs the same pins before appendContext can fetch
+# them. Core consumers keep store contexts; metadata readers request only facts.
+{
+  system,
+  withContext ? true,
+}:
 let
   published = {
     aarch64-linux = {
@@ -89,11 +94,14 @@ let
     };
   };
 in
-builtins.mapAttrs (
-  name: path:
-  builtins.appendContext path {
-    "${path}" = {
-      path = true;
-    };
-  }
-) published.${system}
+if !withContext then
+  published.${system}
+else
+  builtins.mapAttrs (
+    name: path:
+    builtins.appendContext path {
+      "${path}" = {
+        path = true;
+      };
+    }
+  ) published.${system}

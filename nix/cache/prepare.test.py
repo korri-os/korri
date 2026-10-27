@@ -240,6 +240,26 @@ class PrepareUpstreamTest(unittest.TestCase):
         self.assert_uploads_only_retained_payloads()
         self.assert_substitutes(published=[self.remote / name])
 
+    def test_plugin_reads_use_real_signed_receiving_stores(self):
+        # Reuse this fixture's ephemeral signer. The input-addressed output is
+        # only text, not compiled plugin code; unlike a CA path it cannot pass
+        # require-sigs merely by authenticating its own content hash.
+        builder = Path(shutil.which("bash")).resolve()
+        self.assertTrue(str(builder).startswith("/nix/store/"), builder)
+        expression = f'''derivation {{
+          name = "korri-plugin";
+          system = builtins.currentSystem;
+          builder = builtins.storePath {json.dumps(str(builder))};
+          args = [ "-c" "printf 'signed plugin read fixture' > $out" ];
+        }}'''
+        package = json.loads(run("nix", "build", "--impure", "--no-link", "--json", "--expr", expression))[0]["outputs"]["out"]
+        run("nix", "store", "sign", "--key-file", str(self.key), package)
+        subprocess.run([
+            sys.executable,
+            str(HERE.parents[1] / ".github/workflows/test_fetch_image_plugins.py"),
+            package, self.public,
+        ], check=True)
+
     def test_temporary_upstream_outage_is_retried(self):
         published = self.shared[0]
         self.publish(published)

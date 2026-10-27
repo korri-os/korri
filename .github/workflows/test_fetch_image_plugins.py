@@ -11,6 +11,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -21,18 +22,19 @@ import unittest
 SCRIPT = Path(__file__).with_name("fetch-image-plugins.sh").resolve()
 PACKAGE = None
 PUBLIC_KEY = None
+DEVICES = ("rg353m", "rgds", "r36tmax", "rpminiv2", "odin2portal", "rg35xxsp", "rg35xxpro")
 
 
 class CacheHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.endswith(".narinfo"):
             self.server.metadata_requests += 1
-            if self.server.metadata_requests <= self.server.failed_metadata:
+            if self.server.failed_metadata >= self.server.metadata_requests:
                 self.send_error(404, "Temporary release metadata miss")
                 return
         if self.path.startswith("/nar/"):
             self.server.payload_requests += 1
-            if self.server.payload_requests <= self.server.failed_payloads:
+            if self.server.failed_payloads >= self.server.payload_requests:
                 self.send_error(404, "Temporary release asset miss")
                 return
         super().do_GET()
@@ -46,27 +48,25 @@ class PluginFetchTest(unittest.TestCase):
         if not PACKAGE or not PUBLIC_KEY:
             self.skipTest("Pass an existing signed plugin path and its publisher key.")
 
-    def fetch(self, failed_payloads, *, failed_metadata=0, force_eval=True):
-        with tempfile.TemporaryDirectory(
-            prefix="korri-image-plugin-fetch-"
-        ) as directory:
+    def fetch(self, failed_payloads, *, failed_metadata=0, force_eval=True,
+              consumer="rg353m", wrong_key=False, bad_metadata=False):
+        with tempfile.TemporaryDirectory(prefix="korri-image-plugin-fetch-") as directory:
             root = Path(directory)
             cache = root / "cache"
-            # Reuse a published signature in an isolated, local HTTP cache.
-            # The reference-free package keeps this regression small and offline.
-            info = json.loads(
-                subprocess.check_output(
-                    ["nix", "path-info", "--json", PACKAGE], text=True
-                )
-            )[PACKAGE]
+            # Reuse a signed, reference-free package in an isolated HTTP cache.
+            info = json.loads(subprocess.check_output(
+                ["nix", "path-info", "--json", PACKAGE], text=True
+            ))[PACKAGE]
             self.assertEqual(info["references"], [])
-            self.assertTrue(
-                any(
-                    s.startswith(PUBLIC_KEY.split(":")[0] + ":")
-                    for s in info["signatures"]
-                )
-            )
+            self.assertIsNone(info.get("ca"), "Trust tests need an input-addressed fixture.")
+            self.assertTrue(any(s.startswith(PUBLIC_KEY.split(":")[0] + ":") for s in info["signatures"]))
             subprocess.run(["nix", "copy", "--to", cache.as_uri(), PACKAGE], check=True)
+            if bad_metadata:
+                narinfo = cache / (Path(PACKAGE).name.split("-", 1)[0] + ".narinfo")
+                original = narinfo.read_text()
+                invalid = re.sub(r"(?m)^NarHash:.*$", "NarHash: invalid:broken", original)
+                self.assertNotEqual(original, invalid)
+                narinfo.write_text(invalid)
             server = ThreadingHTTPServer(
                 ("127.0.0.1", 0), functools.partial(CacheHandler, directory=cache)
             )
@@ -78,58 +78,73 @@ class PluginFetchTest(unittest.TestCase):
             thread.start()
             try:
                 url = f"http://127.0.0.1:{server.server_port}"
-                # Inspecting the contextual package forces a real cold substitution
-                # during eval, where the original CI failure occurred.
+                # Keep the publisher name but replace its key, so a name-only
+                # check cannot satisfy the real Nix signature requirement.
+                public_key = PUBLIC_KEY.split(":")[0] + ":" + "A" * 43 + "=" if wrong_key else PUBLIC_KEY
+                devices = " ".join(json.dumps(device) for device in DEVICES)
                 (root / "flake.nix").write_text(f"""{{
   outputs = _: let
     path = {json.dumps(PACKAGE)};
     package = if {str(force_eval).lower()} then builtins.appendContext path {{
       "${{path}}" = {{ path = true; }};
     }} else path;
-  in {{
-    nixosConfigurations.rg353m.config = {{
+    device.config = {{
       services.korri.pluginHost.publishers."@korri" = {{
         cacheUrl = {json.dumps(url)};
-        publicKey = {json.dumps(PUBLIC_KEY)};
+        publicKey = {json.dumps(public_key)};
       }};
       sdImage.storePaths = builtins.seq
         (if {str(force_eval).lower()} then builtins.pathExists "${{package}}/manifest.json" else false)
         [ package "system-path" ];
     }};
+  in {{
+    nixosConfigurations = builtins.listToAttrs (map (name: {{ inherit name; value = device; }})
+      [ {devices} ]);
   }};
 }}
 """)
+                product = root / "nix/product"
+                product.mkdir(parents=True)
+                (product / "requirements.nix").write_text(f"""{{ korri }}: {{
+  constants.publishers."@korri" = {{
+    cacheUrl = {json.dumps(url)};
+    publicKey = {json.dumps(public_key)};
+  }};
+}}
+""")
+                (product / "published-plugins.nix").write_text(f"""{{ system, withContext ? true }}:
+assert system == {"builtins.currentSystem" if consumer == "--inputd" else '"aarch64-linux"'};
+let path = {json.dumps(PACKAGE)}; in {{
+  korri-plugin-sunshine = if withContext then
+    builtins.appendContext path {{ "${{path}}" = {{ path = true; }}; }} else path;
+  {('korri-plugin-starter-pack = throw "Inputd must not read unrelated plugin pins";' if consumer == '--inputd' else '')}
+}}
+""")
+                if consumer == "--inputd":
+                    (root / "flake.nix").write_text('{ outputs = _: throw "Inputd must not evaluate devices"; }')
                 env = {k: v for k, v in os.environ.items() if not k.startswith("NIX_")}
-                env.update(
-                    {
-                        "HOME": str(root / "home"),
-                        "XDG_CACHE_HOME": str(root / "xdg-cache"),
-                        "NIX_REMOTE": f"local?root={root / 'store-root'}",
-                        "NIX_USER_CONF_FILES": "/dev/null",
-                        "NIX_CONFIG": "experimental-features = nix-command flakes\n"
-                        "substituters =\nextra-substituters =\n"
-                        "trusted-public-keys =\nextra-trusted-public-keys =\n"
-                        "require-sigs = true\nmax-jobs = 0\nbuilders =\n"
-                        "fallback = false\nsubstitute = true\n"
-                        "download-attempts = 5\nbuild-users-group =\n",
-                        "GITHUB_ENV": str(root / "github-env"),
-                        "KORRI_IMAGE_PLUGIN_RETRY_SECONDS": "1",
-                    }
-                )
+                env.update({
+                    "HOME": str(root / "home"),
+                    "XDG_CACHE_HOME": str(root / "xdg-cache"),
+                    "NIX_REMOTE": f"local?root={root / 'store-root'}",
+                    "NIX_USER_CONF_FILES": "/dev/null",
+                    "NIX_CONFIG": "experimental-features = nix-command flakes\n"
+                    "substituters =\nextra-substituters =\n"
+                    "trusted-public-keys =\nextra-trusted-public-keys =\n"
+                    "require-sigs = true\nmax-jobs = 0\nbuilders =\n"
+                    "fallback = false\nsubstitute = true\n"
+                    "download-attempts = 5\nbuild-users-group =\n",
+                    "GITHUB_ENV": str(root / "github-env"),
+                    "KORRI_IMAGE_PLUGIN_RETRY_SECONDS": "1",
+                })
                 result = subprocess.run(
-                    ["bash", str(SCRIPT), "rg353m"],
-                    cwd=root,
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    timeout=90,
+                    ["bash", str(SCRIPT), consumer], cwd=root, env=env,
+                    capture_output=True, text=True, timeout=90,
                 )
                 installed = root / "store-root" / PACKAGE.lstrip("/")
-                self.assertEqual(installed.exists(), failed_payloads < 4, result.stderr)
-                github_env = Path(env["GITHUB_ENV"])
-                self.assertEqual(
-                    github_env.exists(), failed_payloads < 4, result.stderr
-                )
+                success = failed_payloads < 4 and not wrong_key and not bad_metadata
+                self.assertEqual(installed.exists(), success, result.stderr)
+                self.assertEqual(Path(env["GITHUB_ENV"]).exists(), success, result.stderr)
                 return result, server.payload_requests
             finally:
                 server.shutdown()
@@ -142,6 +157,44 @@ class PluginFetchTest(unittest.TestCase):
         self.assertEqual(requests, 1)
         self.assertNotIn("retry", result.stderr)
         self.assertIn("verified signed image plugin:", result.stdout)
+
+    def test_every_existing_device_mode_keeps_its_signed_selection(self):
+        for device in DEVICES:
+            with self.subTest(device=device):
+                result, requests = self.fetch(0, consumer=device)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(requests, 1)
+                self.assertIn("verified signed image plugin:", result.stdout)
+
+    def test_inputd_fetches_only_its_native_signed_pin_without_device_evaluation(self):
+        result, requests = self.fetch(0, consumer="--inputd")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(requests, 1)
+        self.assertIn("verified signed Inputd plugin:", result.stdout)
+
+    def test_inputd_cold_metadata_read_uses_the_existing_bounded_retry(self):
+        result, requests = self.fetch(0, failed_metadata=1, consumer="--inputd")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(requests, 1)
+        self.assertIn("retry 2/4", result.stderr)
+        self.assertIn("verified signed Inputd plugin:", result.stdout)
+
+    def test_wrong_bound_key_is_rejected_without_retry(self):
+        for consumer in ("rg353m", "--inputd"):
+            with self.subTest(consumer=consumer):
+                result, requests = self.fetch(0, consumer=consumer, wrong_key=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(requests, 0)
+                self.assertIn("not signed", result.stderr)
+                self.assertNotIn("retry", result.stderr)
+
+    def test_invalid_metadata_is_rejected_without_retry(self):
+        for consumer in ("rg353m", "--inputd"):
+            with self.subTest(consumer=consumer):
+                result, requests = self.fetch(0, consumer=consumer, bad_metadata=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(requests, 0)
+                self.assertNotIn("retry", result.stderr)
 
     def test_temporary_payload_miss_retries_and_succeeds(self):
         result, requests = self.fetch(1)
