@@ -35,17 +35,27 @@ fi
 # 120 s by default. The tests shorten them.
 retry_seconds="${KORRI_IMAGE_PLUGIN_RETRY_SECONDS:-30}"
 attempts=4
+fetch_errors=$(mktemp)
+trap 'rm -f "$fetch_errors"' EXIT
 fetch_plugin() {
   local attempt status output delay
   local -a refresh=()
   for (( attempt = 1; attempt <= attempts; attempt++ )); do
     # A failed JSON command can write partial stdout. Keep only the successful
     # attempt's result; stderr still shows every original download failure.
-    if output=$(NIX_CONFIG="$config" nix "${refresh[@]}" "$@"); then
+    if output=$(NIX_CONFIG="$config" nix "${refresh[@]}" "$@" 2>"$fetch_errors"); then
+      cat "$fetch_errors" >&2
       printf '%s\n' "$output"
       return 0
     else
       status=$?
+      cat "$fetch_errors" >&2
+    fi
+    # Evaluation can fail an assertion before a download starts. Retry only
+    # transport reads, never compiler/assertion failures or invalid metadata.
+    if grep -Eiq 'assertion.*failed|error: assertion|error\[E[0-9]+\]|builder for .* failed' "$fetch_errors" ||
+      ! grep -Eiq 'unable to download|failed to download|HTTP error (403|404|408|429|5[0-9][0-9])|Could not resolve|Connection reset|Timeout was reached|connection timed out|unexpected EOF' "$fetch_errors"; then
+      return "$status"
     fi
     if (( attempt < attempts )); then
       delay=$(( retry_seconds * (1 << (attempt - 1)) ))
