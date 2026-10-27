@@ -33,6 +33,10 @@ NATIVE_PATH = "/nix/store/jzr3z7lvfq87w2zxmdj9p5a403zplg5p-korri-read-recovery-f
 NATIVE_COPY = f"copying path '{NATIVE_PATH}' from 'http://127.0.0.1:1'...\n"
 NATIVE_MISSING = "error: file 'nar/payload.nar.zst' does not exist in binary cache 'http://127.0.0.1:1'\n"
 NATIVE_REQUIRED = f"error: path '{NATIVE_PATH}' is required, but there is no substituter that can build it\n"
+NATIVE_SIGNATURE_WARNING = (
+    f"warning: ignoring substitute for '{NATIVE_PATH}' from 'http://127.0.0.1:1', "
+    "as it's not signed by any of the keys in 'trusted-public-keys'\n"
+)
 
 
 class DeviceBuildWorkflowTest(unittest.TestCase):
@@ -176,11 +180,23 @@ class DeviceBuildWorkflowTest(unittest.TestCase):
             NATIVE_COPY + NATIVE_MISSING.replace(":1'", ":2'") + NATIVE_REQUIRED,
             message + "error: Cannot build '/nix/store/example.drv'.\n",
             message + "error: path does not have enough signatures from trusted keys\n",
+            NATIVE_SIGNATURE_WARNING + message,
+            message + NATIVE_SIGNATURE_WARNING,
+            message + "warning: nar hash mismatch in substitute\n",
+            message + "warning: ignoring untrusted substituter\n",
         ):
             with self.subTest(message=unrelated):
                 result, calls = self.execute("rg353m", [(1, unrelated), (0, "")])
                 self.assertEqual(result.returncode, 1, result.stderr)
                 self.assertEqual([call[0] for call in calls], ["build"], result.stderr)
+
+    def test_transient_download_warnings_do_not_veto_read_recovery(self):
+        message = READ_ERROR.replace("error:", "warning:") + READ_ERROR
+        result, calls = self.execute("rg353m", [(1, message), (0, "")])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            [call[0] for call in calls], ["build", "sleep", "build", "run"]
+        )
 
     def test_terminal_nar_read_recovery_is_bounded(self):
         result, calls = self.execute("rg353m", [(1, READ_ERROR)])

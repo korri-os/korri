@@ -10,6 +10,10 @@ from urllib.parse import urlsplit
 
 ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 ERROR_LINE = re.compile(r"^[ \t]*error:[ \t]*(.*)$", re.MULTILINE)
+WARNING_LINE = re.compile(r"^[ \t]*warning:[ \t]*(.*)$", re.MULTILINE)
+INTEGRITY = re.compile(
+    r"\b(?:signatures?|signed|trusted|untrusted|hash|checksum)\b", re.I
+)
 DOWNLOAD = re.compile(r"unable to download ['\"](https?://.+?)['\"]: (.+)")
 COPY_LINE = re.compile(
     r"copying path '(/nix/store/[^']+)' from '(https?://[^']+)'\.\.\."
@@ -31,6 +35,10 @@ TRANSIENT = re.compile(
 def transient_cache_read(stderr):
     """Unknown or mixed errors never acquire a retry from an earlier warning."""
     text = ANSI.sub("", stderr)
+    # Nix emits rejected signatures as warnings. A separate cache outage must
+    # never turn that trust/hash failure into a retry, even for the same path.
+    if any(INTEGRITY.search(match.group(1)) for match in WARNING_LINE.finditer(text)):
+        return False
     messages = [
         match.group(1).strip()
         for match in ERROR_LINE.finditer(text)
@@ -96,7 +104,11 @@ def main():
             sys.stderr.flush()
             # Compilation progress is streamed, not retained in memory.
             plain = ANSI.sub("", line)
-            if ERROR_LINE.match(plain) or COPY_LINE.match(plain):
+            if (
+                ERROR_LINE.match(plain)
+                or WARNING_LINE.match(plain)
+                or COPY_LINE.match(plain)
+            ):
                 lines.append(line)
         status = process.wait()
         if status == 0:
