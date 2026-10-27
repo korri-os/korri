@@ -10,7 +10,7 @@ controls in published acceptance are unchanged.
 | Trigger/mode | Selection |
 | --- | --- |
 | Pull request | Conservative merge-base diff; both paths of a rename and deleted paths count. The optional `ci-full` PR label forces full mode. No label is created by CI. |
-| Push to `main` | Full. |
+| Push to `main` | Conservative affected selection from the event's `before` SHA; unavailable history broadens to full. |
 | Weekly schedule | Full, including published acceptance. |
 | Manual `full` (default) | Every lane in that workflow. Dispatch both validation workflows on the same PR SHA for a full hosted comparison without publishing. |
 | Manual `affected` | Diff if a base is available; otherwise full. |
@@ -35,6 +35,22 @@ validation runs for the same event/ref; these workflows never cancel publishers.
 before CI applies omissions. Unknown paths, contracts, Nix composition, workflow
 changes and any dependency lock select **all** lanes. A missing merge base or
 failed diff broadens to full. Invalid probe input or selection errors fail closed.
+The selector starts from a two-commit checkout. If the merge base is missing, it
+fetches at most 64 commits for each exact event-base/tested-head SHA, with a
+30-second read timeout. It never fetches all history. A bad `before`, failed
+fetch, or still-missing merge base selects full coverage. Selector logs report
+selection elapsed time, including any bounded fetch; checkout and selector-test
+time remain separate steps in the hosted job timings.
+
+Known portal presentation, CSS, semantic input, overlay and surface code select
+frontend/surface checks without Rust compilation. The separate Python `parity`
+lane runs only when one of the five producer files read by
+`clients/cli/tests/parity.py` changes, or the parity guard itself changes. Those
+files are `settings-model.ts`, `plugin-repositories.ts`,
+`launch-settings-model.ts`, Pico's `pico-settings-view.ts` and Zone's
+`plan/options.ts`. Transport inputs under `clients/portal/src/korrid/` still
+select real korrid RPC smoke and CLI/backend validation. Unknown portal, surface
+or package inputs broaden to full; there is no blanket frontend-directory skip.
 
 Only four named operation documents can omit product lanes: this file and the
 three existing `docs/agents/` documents listed in the selector. There is no
@@ -48,7 +64,8 @@ consumers. New documentation is unknown until reviewed, not silently skipped.
 | `policy` (always) | `ci-plan-check`: selector/aggregate edge cases, workflow topology and syntax, shell lint, real Typeshare drift behavior. |
 | `fmt` | `korrid-fmt-check`: Rust formatting without compilation. |
 | `treaty` | `korrid-treaty-check`: generate into a temporary file, compare without repairing drift, then check local and pinned plugin declarations. |
-| `portal` | `portal-check`, `portal-bundle`: portal types/tests and installed bundle. |
+| `portal` | `portal-check`, `portal-bundle`: portal typecheck **before** Bun tests, then installed bundle. |
+| `parity` | `cli-parity-check` / existing Python producer guard, without Nix setup or Rust compilation in the hosted job. Standalone `cli-check` also retains its original parity guard. |
 | `cli` | Existing `cli-check`: parity, fmt, clippy, real-process tests. `cli-build-identity-eval-check` checks dependency reuse and final derivation identity through `checks.<system>.korri-cli-build-identity-eval`, without compiling two stamped packages. |
 | `korrid` | `korrid-host-check`: pinned fixture hashes, script setup, all Rust tests, config review, dev binaries, socket-activated signer and real portal RPC smoke. No individual Rust-test selection. |
 | `inputd` | Existing `inputd-check`: Rust/core tests, portability, package and module gates. |

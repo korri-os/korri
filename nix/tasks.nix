@@ -41,7 +41,7 @@ let
       script = ''
         cd "$KORRI_ROOT"
         for task in ci-plan-check korrid-fmt-check korrid-treaty-check portal-check portal-bundle \
-          cli-check cli-build-identity-eval-check cli-build-identity-check korrid-host-check inputd-check limitsd-check pico-check zone-check boxbuster-check \
+          cli-parity-check cli-check cli-build-identity-eval-check cli-build-identity-check korrid-host-check inputd-check limitsd-check pico-check zone-check boxbuster-check \
           korri-published-plugins-check; do
           nix run ".#$task"
         done
@@ -79,6 +79,13 @@ let
       env.NIX_PATH = "nixpkgs=${pkgs.path}";
       script = ''
         exec bash "$KORRI_ROOT/services/korrid/check.sh" --host-only
+      '';
+    };
+    cli-parity-check = {
+      description = "Check portal and surface producer parity with CLI commands without compiling Rust.";
+      runtimeInputs = [ pkgs.python3 ];
+      script = ''
+        exec python3 "$KORRI_ROOT/clients/cli/tests/parity.py"
       '';
     };
     cli-check = {

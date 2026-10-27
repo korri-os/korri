@@ -36,6 +36,11 @@ class SelectionTest(unittest.TestCase):
             "services/inputd/nix/korri-linux-host.nix",
             "docs/new-guide.md",
             "unknown/file",
+            "clients/portal/unknown-runtime.json",
+            "clients/portal/src/surface/unknown-runtime.rs",
+            "surfaces/pico/src/unknown-runtime.rs",
+            "surfaces/pico/unknown-runtime.json",
+            "packages/view/src/index.ts",
             "surfaces/new/src.ts",
             ".github/workflows/korri-checks.yml",
             "flake.lock",
@@ -49,9 +54,11 @@ class SelectionTest(unittest.TestCase):
 
     def test_path_probes_are_subsets_of_full_and_include_consumers(self):
         probes = {
-            "clients/portal/src/surface/settings-model.ts": {"portal", "cli", "korrid"}
+            "clients/portal/src/surface/settings-model.ts": {"portal", "parity"}
             | ci.SURFACES,
-            "surfaces/pico/src/pico-settings-view.ts": {"pico", "portal", "cli"},
+            "surfaces/pico/src/pico-settings-view.ts": {"pico", "portal", "parity"},
+            "clients/portal/src/korrid/client.ts": {"portal", "cli", "korrid"}
+            | ci.SURFACES,
             "services/korrid/src/main.rs": {
                 "fmt",
                 "treaty",
@@ -74,8 +81,8 @@ class SelectionTest(unittest.TestCase):
                 "cli",
                 "acceptance",
             },
-            "clients/cli/src/main.rs": {"fmt", "cli", "acceptance"},
-            "packages/view/src/index.ts": {"portal", "cli", "korrid"} | ci.SURFACES,
+            "clients/cli/src/main.rs": {"fmt", "cli", "parity", "acceptance"},
+            "packages/intrinsic-design/intrinsic.css": {"portal"} | ci.SURFACES,
         }
         full = set(ci.LANES)
         for path, expected in probes.items():
@@ -83,6 +90,32 @@ class SelectionTest(unittest.TestCase):
                 actual = ci.affected([path])
                 self.assertEqual(actual, expected | {"policy"})
                 self.assertLessEqual(actual, full)
+
+    def test_known_frontend_changes_select_no_rust_compilation(self):
+        rust = {"cli", "korrid", "inputd", "limitsd", "acceptance"}
+        for path in [
+            "clients/portal/src/index.css",
+            "clients/portal/src/input/keyboard-adapter.ts",
+            "clients/portal/src/overlay/OverlayRoot.tsx",
+            "clients/portal/src/surface/SurfaceRoot.tsx",
+            "clients/portal/src/surface/settings-model.ts",
+            "surfaces/pico/src/ui/atoms/PicoClock.css",
+            "surfaces/boxbuster/src/BoxbusterSurface.tsx",
+            "surfaces/zone/src/plan/options.ts",
+        ]:
+            with self.subTest(path=path):
+                selected = ci.affected([path])
+                self.assertIn("portal", selected)
+                self.assertFalse(selected & rust)
+                self.assertEqual("parity" in selected, path in ci.PARITY_INPUTS)
+        self.assertEqual(
+            ci.affected(["clients/cli/tests/parity.py"]), {"policy", "parity"}
+        )
+
+    def test_every_existing_parity_producer_selects_the_cheap_guard(self):
+        for path in ci.PARITY_INPUTS:
+            with self.subTest(path=path):
+                self.assertIn("parity", ci.affected([path]))
 
     def test_invalid_paths_fail(self):
         for path in ["", "../outside", "/absolute", "docs/ci.md\ninjected"]:
@@ -130,6 +163,79 @@ class SelectionTest(unittest.TestCase):
                 )
             finally:
                 os.chdir(old_cwd)
+
+    def test_bounded_exact_sha_fetch_recovers_a_multi_commit_push_base(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            origin = root / "origin"
+            origin.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(
+                    ["git", "-C", str(origin), *args], text=True
+                ).strip()
+
+            git("init", "-q")
+            git("config", "user.email", "ci-test@example.invalid")
+            git("config", "user.name", "CI test")
+            (origin / "docs").mkdir()
+            base = None
+            for index in range(6):
+                (origin / "docs/ci.md").write_text(f"operation {index}")
+                git("add", ".")
+                git("commit", "-qm", f"change {index}")
+                if base is None:
+                    base = git("rev-parse", "HEAD")
+            checkout = root / "checkout"
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "--quiet",
+                    "--depth=2",
+                    origin.as_uri(),
+                    str(checkout),
+                ],
+                check=True,
+            )
+            missing = subprocess.run(
+                ["git", "cat-file", "-e", base],
+                cwd=checkout,
+                check=False,
+                capture_output=True,
+            )
+            self.assertNotEqual(missing.returncode, 0)
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), "select", "--base", base, "--fetch-base"],
+                cwd=checkout,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            selection = json.loads(result.stdout)
+            self.assertEqual(selection["mode"], "affected")
+            self.assertEqual(
+                {lane for lane, enabled in selection["lanes"].items() if enabled},
+                {"policy"},
+            )
+            self.assertIn("check selection elapsed:", result.stderr)
+            disconnected = git(
+                "commit-tree", "HEAD^{tree}", "-m", "disconnected event base"
+            )
+            for invalid in ["0" * 40, "HEAD", "f" * 40, disconnected]:
+                failed = subprocess.check_output(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "select",
+                        "--base",
+                        invalid,
+                        "--fetch-base",
+                    ],
+                    cwd=checkout,
+                    text=True,
+                )
+                self.assertEqual(json.loads(failed)["mode"], "full")
 
     def test_unavailable_diff_runs_full_and_emits_outputs(self):
         with tempfile.TemporaryDirectory() as directory:
