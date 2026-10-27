@@ -89,11 +89,45 @@ cost. Moonlight's own CPU in those runs (28–65% of one core with hardware
 decode, 48–50% with software) mixes presentation through Xwayland with near-empty
 frames, and is not a decode measurement.
 
+### Production stream play
+
+haku runs system
+`/nix/store/ask5rfdqg1krwnj3x2zhsv0xm0lmqarb-nixos-system-haku-sd-card-26.11.20260923.4975466`
+with bundle `/nix/store/6m0hcm22vm9xbnbb1sgz9glij5pbg33w-korri-bundle-0.0.0`
+and `@korri:moonlight` `/nix/store/qzza390r42x6d5hlwfkhqr9iwd9a8a6i-korri-plugin`
+from batch `build-b65ce7b266b4-moonlight-v4l2request`. The RG35XX Pro held
+Wario Land 4, and haku joined its invite through `app.invites.streamPlay`.
+
+| Check | Result |
+| --- | --- |
+| Platform korrid passed | `-platform v4l2request` |
+| Decoder | `Using V4L2 media driver hantro-vpu (7.2.0) for S264`, DRM_PRIME frames mapped to NV12 |
+| Hantro decodes | 57.3 and 58.1 per second over 20–30 s windows |
+| Moonlight CPU | 43.5–60.8% of one core, including audio and presentation |
+| Window | Sway fullscreen, 640x480, picture correct on screen |
+
+The first join showed the stream in a 320x480 tile beside the portal. korrid
+now focuses the viewer with `[con_id=N] focus, fullscreen enable`.
+
+Inside Moonlight, the display thread took about 37% of one core, audio about
+17%, and video receive and decode submission about 8% (`top -H`, one sample).
+The CPU copy of each frame for SDL presentation is the main remaining cost.
+
+## Deployment notes
+
+- Installing any system built after 2026-10-24 on haku needed the one-off
+  `@korri` receipt cutover (`docs/briefs/plugin-cache-pages.md`). The owner
+  approved it, and the removal of three unbound `@simonwjackson` selections
+  (`bitsybox-startfix`, `itchio`, `mega-man-rock-n-roll`; data kept, receipts
+  backed up under `/var/lib/korri-backup-cutover-20261027T143440Z/` and
+  `/var/lib/korri-backup-sj-*`).
+- `@korri:moonlight` was not installed on haku. It was installed from the
+  Pages cache by exact package path and approval digest.
+- haku moved from owner `4994…b16e` to the owner's NIP-46 identity
+  (`a80d…3dca`) with data transfer; the old identity is exported.
+
 ## Limits
 
-- The production path, korrid launching the published plugin with
-  `-platform v4l2request` and evdev seats, is verified only after the plugin
-  batch is published and the system is installed. See the deployment section.
 - Mapping each frame for the SDL NV12 upload reads the decoder's buffer with
   the CPU. A zero-copy EGL dma-buf import is a later optimisation.
 - `rockchip,rk3568` (the RG DS) has the same Hantro block but has not been
