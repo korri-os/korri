@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'e2fsck %s\n' "$*" >> "${FAKE_TOOL_LOG:?}"
+if [[ "${FAKE_E2FSCK_FAIL:-0}" == 1 ]]; then
+  echo 'fixture filesystem failure' >&2
+  exit 4
+fi
+printf '%s: clean\n' "${*: -1}"

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'lpunpack %s\n' "$*" >> "${FAKE_TOOL_LOG:?}"
+input="${1:?missing input image}"
+output="${2:?missing output directory}"
+mkdir -p "$output"
+
+if [[ "$(head -n 1 "$input")" == KORRI_FAKE_SUPER_V1 ]]; then
+  while IFS=$'\t' read -r kind name payload; do
+    case "$kind" in
+      P)
+        partition_name="${name%%:*}"
+        partition_size="${name#*:readonly:}"
+        partition_size="${partition_size%%:*}"
+        if [[ "$partition_size" == 0 ]]; then
+          : > "$output/$partition_name.img"
+        fi
+        ;;
+      I)
+        printf '%s' "$payload" | base64 -d > "$output/$name.img"
+        ;;
+      END)
+        break
+        ;;
+    esac
+  done < "$input"
+  if [[ "${FAKE_CORRUPT_REBUILT_LOGICAL:-0}" == 1 ]]; then
+    printf 'corrupt rebuilt bytes\n' >> "$output/system_a.img"
+  fi
+else
+  for partition in odm product system system_dlkm system_ext vendor vendor_dlkm; do
+    printf '%s-fixture\n' "$partition" > "$output/${partition}_a.img"
+    : > "$output/${partition}_b.img"
+  done
+fi

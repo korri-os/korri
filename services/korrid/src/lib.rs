@@ -1,5 +1,8 @@
 //! Embedded-capable korrid server core: contracts, dispatch, and lifecycle.
 
+#[cfg(target_os = "android")]
+mod android;
+
 pub mod acquisition;
 pub mod invites;
 pub mod netplay;
@@ -59,6 +62,7 @@ pub mod portal_access;
 pub mod portal_input;
 pub mod relay;
 pub mod remote_signer;
+mod rename;
 pub mod saves;
 
 pub use play_log::{PlayEntry, PlayLog};

@@ -28,7 +28,7 @@ use tokio::time::timeout;
 const CATALOG_HOST_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const MOONLIGHT_CERTIFICATE_BROKER_TIMEOUT: Duration =
     Duration::from_secs(NATIVE_RPC_TIMEOUT.as_secs() * 2 + 1);
-#[cfg(test)]
+#[cfg(any(test, target_os = "android"))]
 pub(crate) const MOONLIGHT_CERTIFICATE_CALLER_TIMEOUT: Duration =
     Duration::from_secs(MOONLIGHT_CERTIFICATE_BROKER_TIMEOUT.as_secs() + 1);
 

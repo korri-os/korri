@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="korri_overlay_service_label">Korri gameplay overlay</string>
+    <string name="korri_overlay_service_description">Lets Guide open Korri controls only during a game launched by Korri.</string>
+</resources>

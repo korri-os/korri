@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'lpmake %s\n' "$*" >> "${FAKE_TOOL_LOG:?}"
+output=""
+metadata_size=""
+metadata_slots=""
+super_name=""
+device=""
+groups=()
+virtual_ab=0
+partitions=()
+images=()
+while (($#)); do
+  case "$1" in
+    --output|-o)
+      output="${2:?missing output value}"
+      shift 2
+      ;;
+    --metadata-size)
+      metadata_size="${2:?}"
+      shift 2
+      ;;
+    --metadata-slots)
+      metadata_slots="${2:?}"
+      shift 2
+      ;;
+    --super-name)
+      super_name="${2:?}"
+      shift 2
+      ;;
+    --device)
+      device="${2:?}"
+      shift 2
+      ;;
+    --group)
+      groups+=("${2:?}")
+      shift 2
+      ;;
+    --partition)
+      partitions+=("${2:?}")
+      shift 2
+      ;;
+    --image)
+      images+=("${2:?}")
+      shift 2
+      ;;
+    --virtual-ab)
+      virtual_ab=1
+      shift
+      ;;
+    *)
+      echo "unexpected lpmake argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+fake_super_size="${FAKE_SUPER_SIZE:?}"
+expected_group_size=$((fake_super_size - 4194304))
+logical_partitions=(odm product system system_dlkm system_ext vendor vendor_dlkm)
+[[ -n "$output" ]]
+[[ "$metadata_size" == 65536 ]]
+[[ "$metadata_slots" == 3 ]]
+[[ "$super_name" == super ]]
+[[ "$device" == "super:$fake_super_size:1048576:0" ]]
+[[ "${#groups[@]}" -eq 2 ]]
+[[ "${groups[0]}" == "qti_dynamic_partitions_a:$expected_group_size" ]]
+[[ "${groups[1]}" == "qti_dynamic_partitions_b:$expected_group_size" ]]
+[[ "$virtual_ab" -eq 1 ]]
+[[ "${#partitions[@]}" -eq 14 ]]
+[[ "${#images[@]}" -eq 7 ]]
+
+for index in "${!logical_partitions[@]}"; do
+  partition="${logical_partitions[$index]}"
+  image="${images[$index]}"
+  image_name="${image%%=*}"
+  image_path="${image#*=}"
+  image_size="$(stat -c %s "$image_path")"
+  slot_a_index=$((index * 2))
+  slot_b_index=$((slot_a_index + 1))
+  [[ "$image_name" == "${partition}_a" ]]
+  [[ "${partitions[$slot_a_index]}" == "${partition}_a:readonly:$image_size:qti_dynamic_partitions_a" ]]
+  [[ "${partitions[$slot_b_index]}" == "${partition}_b:readonly:0:qti_dynamic_partitions_b" ]]
+done
+
+{
+  printf 'KORRI_FAKE_SUPER_V1\n'
+  printf 'L\t'
+  base64 -w0 "${FAKE_LAYOUT_FILE:?}"
+  printf '\n'
+} > "$output"
+for partition in "${partitions[@]}"; do
+  printf 'P\t%s\n' "$partition" >> "$output"
+done
+for image in "${images[@]}"; do
+  name="${image%%=*}"
+  path="${image#*=}"
+  {
+    printf 'I\t%s\t' "$name"
+    base64 -w0 "$path"
+    printf '\n'
+  } >> "$output"
+done
+printf 'END\n' >> "$output"
+if [[ "$(stat -c %s "$output")" -gt "$fake_super_size" ]]; then
+  echo 'fake super manifest exceeds fixture size' >&2
+  exit 1
+fi
+truncate -s "${FAKE_REBUILT_SIZE:-$fake_super_size}" "$output"
+if [[ -n "${FAKE_CREATE_DESTINATION:-}" ]]; then
+  mkdir "$FAKE_CREATE_DESTINATION"
+fi
+if [[ -n "${FAKE_MUTATE_SOURCE:-}" ]]; then
+  printf 'changed during repack\n' >> "$FAKE_MUTATE_SOURCE"
+fi

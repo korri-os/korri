@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${FAKE_PREPUBLISH_SYNC_FAIL:-0}" == 1 && "$1" == -d ]]; then
+  echo 'fixture pre-publish sync failure' >&2
+  exit 1
+fi
+if [[ "${FAKE_FINAL_SYNC_FAIL:-0}" == 1 &&
+      "$*" == "-f ${FAKE_FINAL_SYNC_PARENT:?}" ]]; then
+  echo 'fixture final sync failure' >&2
+  exit 1
+fi
+exec "${REAL_SYNC:?}" "$@"

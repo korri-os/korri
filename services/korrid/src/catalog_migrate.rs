@@ -1448,15 +1448,13 @@ fn rename_no_replace(from: &Path, to: &Path) -> Result<(), MigrationError> {
     let to = std::ffi::CString::new(to.as_os_str().as_bytes())
         .map_err(|_| step_error("move destination"))?;
     // SAFETY: valid, live C strings; renameat2 retains neither pointer.
-    let result = unsafe {
-        libc::renameat2(
-            libc::AT_FDCWD,
-            from.as_ptr(),
-            libc::AT_FDCWD,
-            to.as_ptr(),
-            libc::RENAME_NOREPLACE,
-        )
-    };
+    let result = crate::rename::renameat2(
+        libc::AT_FDCWD,
+        &from,
+        libc::AT_FDCWD,
+        &to,
+        libc::RENAME_NOREPLACE as _,
+    );
     if result != 0 {
         return Err(step_error(
             "rename refused (destination exists, filesystem differs, or file is unavailable)",

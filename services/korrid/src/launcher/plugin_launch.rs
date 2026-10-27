@@ -671,12 +671,13 @@ pub fn execute(
 /// Native systemd status survives this process's early exit. It is then read
 /// by the same UnitFailed path as ExecMainStatus, without reading the journal.
 pub fn notify_failure(reason: &str) {
-    use std::os::{
-        linux::net::SocketAddrExt,
-        unix::{
-            ffi::OsStrExt,
-            net::{SocketAddr, UnixDatagram},
-        },
+    #[cfg(target_os = "android")]
+    use std::os::android::net::SocketAddrExt;
+    #[cfg(target_os = "linux")]
+    use std::os::linux::net::SocketAddrExt;
+    use std::os::unix::{
+        ffi::OsStrExt,
+        net::{SocketAddr, UnixDatagram},
     };
     let Some(socket) = std::env::var_os("NOTIFY_SOCKET") else {
         return;

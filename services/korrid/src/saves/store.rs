@@ -605,15 +605,13 @@ impl NativeSaveStore {
                             .map_err(|_| invalid("save path"))?;
                         let b = std::ffi::CString::new(target.as_os_str().as_bytes())
                             .map_err(|_| invalid("save path"))?;
-                        if unsafe {
-                            libc::renameat2(
-                                libc::AT_FDCWD,
-                                a.as_ptr(),
-                                libc::AT_FDCWD,
-                                b.as_ptr(),
-                                libc::RENAME_EXCHANGE,
-                            )
-                        } != 0
+                        if crate::rename::renameat2(
+                            libc::AT_FDCWD,
+                            &a,
+                            libc::AT_FDCWD,
+                            &b,
+                            libc::RENAME_EXCHANGE as _,
+                        ) != 0
                         {
                             return Err(io(std::io::Error::last_os_error()));
                         }

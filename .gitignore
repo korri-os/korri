@@ -4,6 +4,7 @@ result
 result-*
 .direnv/
 .cache/
+.android-sdk/
 .env
 .env.local
 *.local.md

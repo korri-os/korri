@@ -449,15 +449,13 @@ fn exchange_paths(left: &Path, right: &Path) -> Result<(), PlayLogError> {
         std::ffi::CString::new(right.as_os_str().as_bytes()).map_err(|_| PlayLogError::Storage)?;
     // SAFETY: both C strings live through the call and contain no interior
     // NUL. renameat2 does not retain either pointer.
-    let result = unsafe {
-        libc::renameat2(
-            libc::AT_FDCWD,
-            left.as_ptr(),
-            libc::AT_FDCWD,
-            right.as_ptr(),
-            libc::RENAME_EXCHANGE,
-        )
-    };
+    let result = crate::rename::renameat2(
+        libc::AT_FDCWD,
+        &left,
+        libc::AT_FDCWD,
+        &right,
+        libc::RENAME_EXCHANGE as _,
+    );
     if result == 0 {
         Ok(())
     } else {

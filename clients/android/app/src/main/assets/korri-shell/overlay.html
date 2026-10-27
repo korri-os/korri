@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Korri Overlay</title>
+  <style>
+    :root {
+      --panel: #191926f2;
+      --panel-hover: #23233a;
+      --accent: #7c6cf0;
+      --text: #e8e8f0;
+      --muted: #8a8aa0;
+      --danger: #f07c7c;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%;
+      background: rgba(6, 6, 12, 0.55); /* scrim over the live stream */
+      font-family: system-ui, sans-serif;
+      color: var(--text);
+    }
+    .sheet {
+      position: absolute; top: 0; bottom: 0; left: 0;
+      width: min(420px, 86vw);
+      background: var(--panel);
+      backdrop-filter: blur(6px);
+      padding: 28px 22px;
+      display: flex; flex-direction: column; gap: 8px;
+      overflow-y: auto;
+    }
+    h1 { font-size: 1.1rem; margin: 0 0 2px; }
+    .hint { color: var(--muted); font-size: 0.8rem; margin: 0 0 14px; }
+    button.item {
+      display: flex; justify-content: space-between; align-items: center;
+      width: 100%; text-align: left;
+      background: none; border: 1px solid #2a2a40; border-radius: 10px;
+      color: var(--text); font-size: 0.95rem;
+      padding: 13px 14px; cursor: pointer;
+    }
+    button.item:focus, button.item:hover {
+      background: var(--panel-hover);
+      border-color: var(--accent);
+      outline: none;
+    }
+    button.item .state { color: var(--muted); font-size: 0.85rem; }
+    button.item.danger { color: var(--danger); }
+    .divider { height: 1px; background: #2a2a40; margin: 10px 0; }
+    .slider-row {
+      border: 1px solid #2a2a40; border-radius: 10px; padding: 11px 14px;
+    }
+    .slider-row:focus-within { border-color: var(--accent); background: var(--panel-hover); }
+    .slider-row .top { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px; }
+    .slider-row .value { color: var(--muted); }
+    input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="sheet" id="sheet">
+    <h1>Korri</h1>
+    <p class="hint">B / Back to resume &middot; stream keeps running</p>
+
+    <button class="item" id="resumeBtn" onclick="KorriOverlayNative.resume()">Resume</button>
+    <button class="item" id="fillBtn" onclick="toggleFill()">
+      <span>Screen fit</span><span class="state" id="fillState"></span>
+    </button>
+    <button class="item" onclick="KorriOverlayNative.toggleKeyboard()">Toggle keyboard</button>
+    <button class="item" onclick="KorriOverlayNative.toggleFullKeyboard()">Full keyboard</button>
+    <button class="item" id="zoomBtn" onclick="KorriOverlayNative.toggleZoomMode()">
+      <span>Pan &amp; zoom</span><span class="state" id="zoomState"></span>
+    </button>
+    <button class="item" onclick="toggleMouseModes()">
+      <span>Mouse mode</span><span class="state">&#9662;</span>
+    </button>
+    <div id="mouseModes" hidden></div>
+    <button class="item" onclick="KorriOverlayNative.rotateScreen()">Rotate screen</button>
+    <button class="item" onclick="KorriOverlayNative.toggleHud()">Toggle HUD</button>
+    <button class="item" onclick="KorriOverlayNative.toggleFloatingButton()">Floating menu button</button>
+    <button class="item" onclick="KorriOverlayNative.toggleKeyboardController()">Keyboard as controller</button>
+    <button class="item" onclick="KorriOverlayNative.switchTouchSensitivity()">Touch sensitivity</button>
+
+    <div class="divider"></div>
+
+    <div class="slider-row">
+      <div class="top"><span>SGSR sharpness</span><span class="value" id="sharpVal"></span></div>
+      <input type="range" id="sharpSlider" min="0" max="50" step="1"
+             oninput="liveSet('seekbar_sgsr_sharpness', this.value, 'sharpVal')">
+    </div>
+    <div class="slider-row">
+      <div class="top"><span>SGSR edge threshold</span><span class="value" id="threshVal"></span></div>
+      <input type="range" id="threshSlider" min="1" max="32" step="1"
+             oninput="liveSet('seekbar_sgsr_edge_threshold', this.value, 'threshVal')">
+    </div>
+
+    <button class="item" onclick="liveToggle('checkbox_flip_face_buttons', this)">
+      <span>Flip A/B and X/Y</span><span class="state" data-live="checkbox_flip_face_buttons"></span>
+    </button>
+    <button class="item" onclick="liveToggle('checkbox_enable_rumble', this)">
+      <span>Rumble</span><span class="state" data-live="checkbox_enable_rumble"></span>
+    </button>
+    <button class="item" onclick="liveToggle('checkbox_enable_pip', this)">
+      <span>Picture-in-picture</span><span class="state" data-live="checkbox_enable_pip"></span>
+    </button>
+
+    <div class="divider"></div>
+
+    <button class="item" onclick="KorriOverlayNative.disconnect()">
+      <span>Disconnect</span><span class="state">game keeps running</span>
+    </button>
+    <button class="item danger" onclick="KorriOverlayNative.quitSession()">
+      <span>Quit game on host</span>
+    </button>
+  </div>
+
+  <script>
+    function refresh() {
+      try {
+        const fill = KorriOverlayNative.isFillMode();
+        document.getElementById('fillState').textContent =
+          fill ? 'crop to fill' : 'fit (letterbox)';
+        document.getElementById('zoomState').textContent =
+          KorriOverlayNative.isZoomMode() ? 'on' : 'off';
+        const values = JSON.parse(KorriOverlayNative.getSettingsValues());
+        setSlider('sharpSlider', 'sharpVal', values['seekbar_sgsr_sharpness']);
+        setSlider('threshSlider', 'threshVal', values['seekbar_sgsr_edge_threshold']);
+        for (const el of document.querySelectorAll('[data-live]')) {
+          el.textContent = values[el.dataset.live] ? 'on' : 'off';
+        }
+      } catch (e) { /* bridge not ready yet */ }
+      document.getElementById('resumeBtn').focus();
+    }
+
+    function setSlider(sliderId, valueId, value) {
+      document.getElementById(sliderId).value = value;
+      document.getElementById(valueId).textContent = value;
+    }
+
+    function toggleFill() {
+      KorriOverlayNative.toggleFillMode();
+      setTimeout(refresh, 60);
+    }
+
+    let mouseModesBuilt = false;
+    function toggleMouseModes() {
+      const holder = document.getElementById('mouseModes');
+      if (!mouseModesBuilt) {
+        try {
+          for (const mode of JSON.parse(KorriOverlayNative.getMouseModes())) {
+            const btn = document.createElement('button');
+            btn.className = 'item';
+            btn.style.marginLeft = '16px';
+            btn.textContent = mode.label;
+            btn.onclick = () => KorriOverlayNative.setMouseMode(mode.index);
+            holder.appendChild(btn);
+          }
+          mouseModesBuilt = true;
+        } catch (e) { return; }
+      }
+      holder.hidden = !holder.hidden;
+    }
+
+    // Live toggle: write through the settings contract, applied per-event.
+    function liveToggle(key, btn) {
+      try {
+        const values = JSON.parse(KorriOverlayNative.getSettingsValues());
+        const result = JSON.parse(
+          KorriOverlayNative.setSetting(key, JSON.stringify(!values[key])));
+        if (result.status === 'ok') {
+          btn.querySelector('.state').textContent = result.values[key] ? 'on' : 'off';
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // Live mid-stream apply: setSetting triggers the native SGSR param push.
+    function liveSet(key, value, valueId) {
+      document.getElementById(valueId).textContent = value;
+      try { KorriOverlayNative.setSetting(key, JSON.stringify(Number(value))); }
+      catch (e) { /* ignore */ }
+    }
+
+    // Dpad focus travel between rows (sliders keep left/right for value).
+    const focusables = () => Array.from(
+      document.querySelectorAll('button.item, input[type=range]'));
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const items = focusables();
+      const idx = items.indexOf(document.activeElement);
+      const next = e.key === 'ArrowDown'
+        ? Math.min(items.length - 1, idx + 1)
+        : Math.max(0, idx - 1);
+      items[next].focus();
+      e.preventDefault();
+    });
+
+    window.addEventListener('korri-overlay-shown', refresh);
+    refresh();
+  </script>
+</body>
+</html>

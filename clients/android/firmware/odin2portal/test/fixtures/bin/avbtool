@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'avbtool %s\n' "$*" >> "${FAKE_TOOL_LOG:?}"
+if [[ "${FAKE_AVBTOOL_FAIL:-0}" == 1 ]]; then
+  echo 'fixture AVB failure' >&2
+  exit 1
+fi
+printf 'Footer version: 1.0\n'

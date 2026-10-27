@@ -68,6 +68,13 @@ proseql-engine = { path = ".cache/proseql/crates/proseql-engine" }
 proseql-formats = { path = ".cache/proseql/crates/proseql-formats" }
 proseql-storage = { path = ".cache/proseql/crates/proseql-storage" }
 
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+# iroh's Android TLS verifier uses JNI 0.22. Keep the restored edge on 0.21;
+# only its initialization crosses into the verifier's JNI runtime.
+jni-runtime = { package = "jni", version = "0.22" }
+rustls-platform-verifier = "0.7"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
 korri-inputd = { path = "../inputd" }

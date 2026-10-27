@@ -626,12 +626,17 @@ let
 
   };
 
+  androidDefinitions = import ../clients/android/tasks.nix {
+    inherit pkgs;
+    portalBundle = "${packages.portal-bundle}/bin/portal-bundle";
+  };
+
   exports = pkgs.lib.mapAttrs (
     _: task:
     pkgs.lib.concatStringsSep "\n" (
       pkgs.lib.mapAttrsToList (name: value: ''export ${name}="${value}"'') (task.env or { })
     )
-  ) definitions;
+  ) (definitions // androidDefinitions);
 
   makeTask =
     name: task:
@@ -664,13 +669,13 @@ let
       '';
     };
 
-  packages = pkgs.lib.mapAttrs makeTask definitions;
+  packages = pkgs.lib.mapAttrs makeTask (definitions // androidDefinitions);
 
   helpText =
     pkgs.lib.concatStringsSep "\n" (
       pkgs.lib.mapAttrsToList (
         name: task: "  nix run .#${name}${task.usageSuffix or ""}\n      ${task.description}"
-      ) definitions
+      ) (definitions // androidDefinitions)
     )
     + extraHelpText;
 

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'lpdump %s\n' "$*" >> "${FAKE_TOOL_LOG:?}"
+input="${1:?missing super image}"
+if [[ "$(head -n 1 "$input")" == KORRI_FAKE_SUPER_V1 ]]; then
+  if [[ -n "${FAKE_REBUILT_LAYOUT_FILE:-}" ]]; then
+    cat "$FAKE_REBUILT_LAYOUT_FILE"
+  else
+    encoded_layout="$(sed -n $'2s/^L\\t//p' "$input")"
+    [[ -n "$encoded_layout" ]]
+    printf '%s' "$encoded_layout" | base64 -d
+  fi
+else
+  cat "${FAKE_LAYOUT_FILE:?}"
+fi

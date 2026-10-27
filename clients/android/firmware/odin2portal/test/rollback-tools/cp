@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+args=("$@")
+source_arg="${args[${#args[@]} - 2]}"
+"${REAL_CP:?}" "$@"
+if [[ -n "${FAKE_TRIGGER_COPY_SOURCE:-}" &&
+      "$source_arg" == "$FAKE_TRIGGER_COPY_SOURCE" ]]; then
+  printf 'changed during staging\n' >> "${FAKE_MUTATE_SOURCE:?}"
+fi

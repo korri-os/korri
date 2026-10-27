@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'FORBIDDEN adb %s\n' "$*" >> "${FAKE_TOOL_LOG:?}"
+echo 'adb is forbidden in the read-only repack pipeline' >&2
+exit 99

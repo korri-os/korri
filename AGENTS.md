@@ -19,9 +19,11 @@ the `legacy` branch apply here unless this file says so.
   `docs/briefs/2026-09-16-android-removal-scope.md` records what went.
 - Android returns as an app for stock phones (owner decision, 2026-10-27,
   issue #290). It returns piecemeal, one epic at a time, and may support only a
-  subset of Korri's features. It is a rebuild from the ground up, not a restore
-  of `android-final`. Revive old code only where it fits the current tree and
-  saves work; bring no cruft with it. Issue #300 tracks the epics.
+  subset of Korri's features. Start from the trimmed Artemis stack at
+  `android-final`; reuse its decoder, input and stream work instead of trimming
+  upstream again. Rebuild its integration against the current korrid, one slice
+  at a time. Artemis's Game activity is korrid's Android stream viewer, not a
+  second Java-driven launch path. Issue #300 tracks the epics.
 - Read before you touch. Do exactly what was asked. No bonus refactors.
 - Backlog work lives in GitHub issues on `korri-os/korri`, not in
   `work/items/` (moved 2026-10-07; `work/items/.archive/` is history). Label
