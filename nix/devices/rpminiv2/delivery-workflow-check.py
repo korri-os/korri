@@ -9,6 +9,22 @@ import yaml
 
 
 workflow = yaml.safe_load(Path(sys.argv[1]).read_text())
+for job in ("cross", "devices"):
+    job_steps = workflow["jobs"][job]["steps"]
+    source_checks = [
+        (index, step)
+        for index, step in enumerate(job_steps)
+        if step.get("name") == "Verify the publication source"
+    ]
+    assert len(source_checks) == 1, "each publisher must verify its source"
+    source_index, source_check = source_checks[0]
+    assert source_check["env"] == {"EXPECTED_SOURCE_SHA": "${{ github.sha }}"}
+    assert source_check["run"] == (
+        'test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"'
+    )
+    assert source_index == 1, "verify source immediately after checkout"
+    assert "if" not in source_check, "source verification cannot be skipped"
+
 steps = workflow["jobs"]["devices"]["steps"]
 
 
