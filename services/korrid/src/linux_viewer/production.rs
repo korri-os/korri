@@ -224,11 +224,17 @@ fn platform_from_path(path: &Path, report: impl FnOnce(&std::io::Error)) -> &'st
             return "x11";
         }
     };
-    if compatible
-        .split(|byte| *byte == 0)
+    let mut values = compatible.split(|byte| *byte == 0);
+    if values
+        .clone()
         .any(|value| value == b"qcom,sm8550" || value == b"qcom,sm8250")
     {
+        // Qualcomm Iris/Venus: stateful V4L2 M2M decoders.
         "v4l2m2m"
+    } else if values.any(|value| value == b"rockchip,rk3566") {
+        // RK3566 Hantro G1: a stateless decoder driven through FFmpeg's
+        // V4L2 Request API hwaccel.
+        "v4l2request"
     } else {
         "x11"
     }

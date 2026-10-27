@@ -394,6 +394,11 @@ fn linux_viewer_reads_sysfs_device_tree_and_reports_read_failures() {
             "v4l2m2m"
         );
     }
+    std::fs::write(&path, b"anbernic,rg353p\0rockchip,rk3566\0").unwrap();
+    assert_eq!(
+        platform_from_path(&path, |_| panic!("readable hardware fact")),
+        "v4l2request"
+    );
     std::fs::write(&path, b"other-device\0").unwrap();
     assert_eq!(
         platform_from_path(&path, |_| panic!("readable hardware fact")),
