@@ -46,6 +46,13 @@ CACHE_POLICY_INPUTS = {
     "nix/cache/github-cache.test.py",
     "nix/cache/pages-cache.test.py",
 }
+# The acceptance workflow directly runs these shared trust/snapshot helpers.
+# Their consumer is acceptance as well as cache policy, regardless of directory.
+ACCEPTANCE_CACHE_INPUTS = {
+    ".github/workflows/trust-korri-cache.sh",
+    ".github/workflows/prepare-nix-cache.py",
+    ".github/workflows/test_prepare_nix_cache.py",
+}
 # Exact producer files read by clients/cli/tests/parity.py, not all portal UI.
 PARITY_INPUTS = {
     "clients/cli/tests/parity.py",
@@ -114,6 +121,8 @@ def affected(paths):
             continue
         if path in CACHE_POLICY_INPUTS:
             selected.add("cache")
+            if path in ACCEPTANCE_CACHE_INPUTS:
+                selected.add("acceptance")
             continue
         if path.endswith(".nix") or (
             path.startswith("services/korrid/check") and path.endswith(".sh")

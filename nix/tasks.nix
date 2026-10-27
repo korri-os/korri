@@ -367,6 +367,7 @@ let
       ];
       script = ''
         shellcheck -s bash "$KORRI_ROOT/nix/cache/publish.sh"
+        python3 "$KORRI_ROOT/.github/workflows/test_prepare_nix_cache.py"
         python3 "$KORRI_ROOT/nix/cache/prepare.test.py"
         python3 "$KORRI_ROOT/nix/cache/github-cache.test.py"
         exec python3 "$KORRI_ROOT/nix/cache/pages-cache.test.py"

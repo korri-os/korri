@@ -85,6 +85,13 @@ class WorkflowContractTest(unittest.TestCase):
         )
         for app in ["korri-nix-cache-check", "rpminiv2-delivery-check"]:
             self.assertEqual(task.count(app), 1)
+        cache = (
+            (ROOT / "nix/tasks.nix")
+            .read_text()
+            .split("    korri-nix-cache-check = {", 1)[1]
+            .split("    };", 1)[0]
+        )
+        self.assertEqual(cache.count("test_prepare_nix_cache.py"), 1)
         workflow = yaml.safe_load(
             (ROOT / ".github/workflows/korri-checks.yml").read_text()
         )
