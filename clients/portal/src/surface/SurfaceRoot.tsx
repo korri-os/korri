@@ -26,7 +26,7 @@ import {
   surfaceSavesFrom,
 } from "./save-sync"
 import { createControllers, type Controllers } from "../input/controllers"
-import { entryKey, type LaunchablesState, type PortalEntry } from "../launchables/state"
+import { entryForLaunch, entryKey, type LaunchablesState, type PortalEntry } from "../launchables/state"
 import { createInputBus, type InputBus } from "../input/bus"
 import type { KorridClient, SessionStartResult } from "../korrid/client"
 import type { LaunchWarning } from "@contracts/generated/korrid"
@@ -133,18 +133,6 @@ function liveGameIdsOf(state: LaunchablesState): string {
     .flatMap(entry => (entry.kind === "now-playing" ? [entry.session.gameId] : []))
     .sort()
     .join("\n")
-}
-
-/**
- * The launchable form of a game on this device. A host korrid lists its own
- * library twice: as local games and as catalog games with `source.isLocal`.
- * Folding prefers the local copy for display, but only the catalog copy has a
- * launch path, so Play uses it.
- */
-function launchableOnThisDevice(entry: PortalEntry): PortalEntry {
-  if (entry.kind !== "local-game") return entry
-  const copy = entry.alternatives?.find(copy => copy.kind === "remote" && copy.game.source.isLocal)
-  return copy?.kind === "remote" ? { kind: "game", game: copy.game } : entry
 }
 
 function localRunnerEntry(entry: PortalEntry | undefined): Extract<PortalEntry, { kind: "game" }> | undefined {
@@ -500,7 +488,8 @@ export function SurfaceRoot({
   const confirmLaunch = useCallback((id: string, picked: PortalEntry) => {
     const current = launchablesRef.current.getState()
     if (current._tag !== "Ready") return
-    const chosen = launchableOnThisDevice(picked)
+    const chosen = entryForLaunch(picked, current.entries)
+    if (chosen === undefined) return
     if (chosen.kind !== "game" || !chosen.game.source.isLocal) {
       confirmEntry(chosen)
       return

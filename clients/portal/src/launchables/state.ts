@@ -220,6 +220,28 @@ export const entryKey = (entry: PortalEntry): string => {
   }
 }
 
+/**
+ * Resolve a selection against the current catalog before launching. Local
+ * inventory records supply display metadata; only their source-local catalog
+ * copy can launch. Never recover that route from a retained caller's copies.
+ */
+export function entryForLaunch(
+  selected: PortalEntry,
+  entries: readonly PortalEntry[],
+): PortalEntry | undefined {
+  const current = entries.find(candidate =>
+    entryKey(candidate) === entryKey(selected) ||
+    (candidate.kind !== "now-playing" && candidate.alternatives?.some(copy => entryKey(
+      copy.kind === "remote" ? { kind: "game", game: copy.game } : { kind: "local-game", game: copy.game },
+    ) === entryKey(selected))),
+  )
+  if (current === undefined) return undefined
+  if (selected.kind !== "local-game" || current.kind === "now-playing") return selected
+  if (current.kind === "game" && current.game.source.isLocal) return { kind: "game", game: current.game }
+  const copy = current.alternatives?.find(copy => copy.kind === "remote" && copy.game.source.isLocal)
+  return copy?.kind === "remote" ? { kind: "game", game: copy.game } : selected
+}
+
 export const entryLabel = (entry: PortalEntry): string =>
   entry.kind === "now-playing"
     ? (entry.session.title ?? entry.session.gameId ?? "Current session")

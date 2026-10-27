@@ -11,7 +11,7 @@ import {
   PendingLaunchPhase,
   SessionEndPhase,
 } from "@contracts/generated/korrid"
-import { entryKey, entryLabel, isLocalCatalogSession, LaunchablesState } from "./state"
+import { entryForLaunch, entryKey, entryLabel, isLocalCatalogSession, LaunchablesState } from "./state"
 import type { LaunchablesState as State, PortalEntry } from "./state"
 
 /** The banner entry a stop is about. Surfaces name it; this ADT never guesses. */
@@ -60,6 +60,36 @@ const localGamesOk: LocalGamesListOutcome = {
 }
 
 const ready = LaunchablesState.fromSources(gamesOk)
+
+describe("entryForLaunch", () => {
+  const local: PortalEntry = { kind: "local-game", game: { id: "wl4", title: "Wario Land 4", system: "Game Boy Advance" } }
+  const catalog: Extract<PortalEntry, { kind: "game" }> = {
+    kind: "game", game: { id: "wl4", title: "Wario Land 4", host: "this-device", supportsRunnerSelection: true, source: { label: "this-device", isLocal: true } },
+  }
+  const peer: Extract<PortalEntry, { kind: "game" }> = {
+    kind: "game", game: { ...catalog.game, host: "peer", source: source("peer") },
+  }
+  const folded: PortalEntry = { ...local, alternatives: [{ kind: "remote", game: peer.game }, { kind: "remote", game: catalog.game }] }
+
+  test("a bare local selection resolves through the current folded group", () => {
+    expect(entryForLaunch(local, [folded])).toEqual(catalog)
+  })
+
+  test("explicit peer choices never become local choices", () => {
+    expect(entryForLaunch(peer, [folded])).toEqual(peer)
+  })
+
+  test("a stale selection cannot restore its removed route or guess a same-id peer", () => {
+    const current: PortalEntry = { ...local, alternatives: [{ kind: "remote", game: peer.game }] }
+    expect(entryForLaunch(folded, [current])?.kind).toBe("local-game")
+    expect(entryForLaunch(folded, [peer])).toBeUndefined()
+    expect(entryForLaunch(folded, [])).toBeUndefined()
+  })
+
+  test("a local alternative resolves through its own current folded group", () => {
+    expect(entryForLaunch(local, [{ ...catalog, alternatives: [{ kind: "local", game: local.game }] }])).toEqual(catalog)
+  })
+})
 
 describe("catalog session locality", () => {
   const catalogGame = {

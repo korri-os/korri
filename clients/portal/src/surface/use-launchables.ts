@@ -36,7 +36,7 @@ import { initialPluginFacts, type PluginFacts } from "./plugin-repositories"
 import { createPluginRepositoriesController } from "./plugin-repositories-controller"
 import { SETUP_RESTART_ACTION_ID, type DeviceFacts } from "./settings-model"
 import {
-  entryKey,
+  entryForLaunch,
   entryLabel,
   isAuthoritativeSessionStatus,
   isLocalCatalogSession,
@@ -868,21 +868,13 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
   }, [cancelOwnedStartup, korrid, load, publish])
 
   const confirmEntry = useCallback(
-    (entry: PortalEntry) => {
+    (selected: PortalEntry) => {
       const current = stateRef.current
       // Only Ready accepts new work; every in-flight command is locked by
       // the model rather than by a nullable flag convention.
       if (!mountedRef.current || current._tag !== "Ready") return
-      // A retained caller selection is not authority to launch a removed game.
-      if (!current.entries.some(candidate =>
-        entryKey(candidate) === entryKey(entry) ||
-        ((candidate.kind === "game" || candidate.kind === "local-game") &&
-          candidate.alternatives?.some(copy => entryKey(
-            copy.kind === "remote"
-              ? { kind: "game", game: copy.game }
-              : { kind: "local-game", game: copy.game },
-          ) === entryKey(entry))),
-      )) return
+      const entry = entryForLaunch(selected, current.entries)
+      if (entry === undefined) return
       /* A catalog-local game that already runs on this display is resumed, not
        * started again. Both its banner and its catalog copy name that session,
        * so neither may ask korrid to prepare it a second time. */
