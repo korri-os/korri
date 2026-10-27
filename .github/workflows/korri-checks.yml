@@ -277,12 +277,12 @@ jobs:
       - name: Run korrid-host-check
         run: nix run .#korrid-host-check
   inputd:
-    name: Input service
+    name: Input service (module/VM checks only in full mode)
     needs: select
     if: needs.select.outputs.inputd == 'true'
     runs-on: ubuntu-24.04
-    # Added Rust/core plus eight Nix module/package gates. Ordinary Korrid
-    # body edits do not select this lane; full mode retains every gate.
+    # Affected coverage is Rust/wasm/shell only. Full mode additionally runs
+    # all module/package/VM checks, which DO depend on korridPackage.
     timeout-minutes: 45
     # Preserve baseline compiler policy; do not create redundant cargo check/test builds.
     env:
@@ -301,6 +301,7 @@ jobs:
           [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
       - name: Enable the disposable Inputd module VMs
+        if: fromJSON(needs.select.outputs.plan).mode == 'full'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
@@ -311,7 +312,11 @@ jobs:
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run inputd-check --fast
+        if: fromJSON(needs.select.outputs.plan).mode != 'full'
+        run: nix run .#inputd-check -- --fast
       - name: Run inputd-check
+        if: fromJSON(needs.select.outputs.plan).mode == 'full'
         run: nix run .#inputd-check
   limitsd:
     name: Launch limits service

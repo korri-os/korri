@@ -5,6 +5,8 @@
 import importlib.util
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -67,6 +69,93 @@ class TreatyDriftTest(unittest.TestCase):
         self.assertIn("usage:", result.stderr)
 
 
+class InputdProfileTest(unittest.TestCase):
+    def run_profile(self, args=(), fail_command=""):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "services/inputd/deploy").mkdir(parents=True)
+            commands = root / "commands"
+            commands.mkdir()
+            log = root / "calls.jsonl"
+            adapter = root / "command.py"
+            adapter.write_text('''import json, os, pathlib, sys
+call = sys.argv[1:]
+with pathlib.Path(os.environ["COMMAND_LOG"]).open("a") as stream:
+    stream.write(json.dumps(call) + "\\n")
+if " ".join(call) == os.environ.get("FAIL_COMMAND"):
+    sys.exit(7)
+if call[:2] == ["nix", "eval"]:
+    print("x86_64-linux")
+''')
+            for name in ("cargo", "shellcheck", "nix", "device-check.sh", "test-device-check.sh", "test-device-bitmap.sh"):
+                path = commands / name if not name.endswith(".sh") else root / "services/inputd/deploy" / name
+                path.write_text(
+                    f"#!{shutil.which('bash')}\nexec {shlex.quote(sys.executable)} {shlex.quote(str(adapter))} {name} \"$@\"\n"
+                )
+                path.chmod(0o755)
+            result = subprocess.run(
+                ["bash", str(ROOT / "services/inputd/check-in-shell.sh"), *args],
+                env={**os.environ, "KORRI_ROOT": str(root), "PATH": f"{commands}:{os.environ['PATH']}",
+                     "COMMAND_LOG": str(log), "FAIL_COMMAND":
+                     f"nix run {root}#inputd-plugins-prepare" if fail_command == "signed-preparation" else fail_command},
+                capture_output=True, text=True, check=False,
+            )
+            calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+            return result, calls
+
+    def test_fast_retains_all_rust_wasm_and_shell_commands_without_nix(self):
+        result, calls = self.run_profile(["--fast"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, [
+            ["cargo", "fmt", "--check"],
+            ["cargo", "fmt", "--manifest-path", "core/Cargo.toml", "--check"],
+            ["cargo", "clippy", "--all-targets", "--", "-D", "warnings"],
+            ["cargo", "clippy", "--manifest-path", "core/Cargo.toml", "--all-targets", "--", "-D", "warnings"],
+            ["cargo", "test", "--all-targets"],
+            ["cargo", "build", "--bin", "korri-ledger-proof"],
+            ["cargo", "test", "--manifest-path", "core/Cargo.toml", "--all-targets"],
+            ["cargo", "check", "--manifest-path", "core/Cargo.toml", "--target", "wasm32-unknown-unknown"],
+            ["shellcheck", "services/inputd/deploy/device-check.sh", "services/inputd/deploy/test-device-check.sh", "services/inputd/deploy/test-device-bitmap.sh"],
+            ["test-device-bitmap.sh"], ["test-device-check.sh"],
+        ])
+
+    def test_default_still_runs_fast_then_signed_preparation_and_all_eight_checks(self):
+        result, calls = self.run_profile()
+        fast, fast_calls = self.run_profile(["--fast"])
+        self.assertEqual((result.returncode, fast.returncode), (0, 0), result.stderr)
+        self.assertEqual(calls[:len(fast_calls)], fast_calls)
+        self.assertEqual(calls[len(fast_calls)], ["nix", "run", calls[len(fast_calls)][2]])
+        self.assertTrue(calls[len(fast_calls)][2].endswith("#inputd-plugins-prepare"))
+        self.assertEqual(calls[-1], ["nix", "build", "--no-link", *[
+            f".#checks.x86_64-linux.{check}" for check in (
+                "inputplumber-korri-package", "korri-input-module", "korrid-linux-device-module",
+                "korri-linux-host-module", "korri-sunshine-plugin-native", "korri-input-seat-core",
+                "korri-input-seat-receiver", "korri-inputd-package",
+            )
+        ]])
+
+    def test_full_signed_preparation_failure_prevents_module_evaluation(self):
+        result, calls = self.run_profile(fail_command="signed-preparation")
+        self.assertEqual(result.returncode, 7)
+        self.assertEqual(calls[-1][:2], ["nix", "run"])
+        self.assertTrue(calls[-1][2].endswith("#inputd-plugins-prepare"))
+        self.assertFalse(any(call[:2] == ["nix", "build"] for call in calls))
+
+    def test_invalid_profile_fails_before_any_checks(self):
+        for args in (["--typo"], ["--fast", "--fast"]):
+            with self.subTest(args=args):
+                result, calls = self.run_profile(args)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("usage:", result.stderr)
+                self.assertEqual(calls, [])
+
+    def test_fast_failure_does_not_reach_module_preparation(self):
+        result, calls = self.run_profile(fail_command="cargo test --all-targets")
+        self.assertEqual(result.returncode, 7)
+        self.assertEqual(calls[-1], ["cargo", "test", "--all-targets"])
+        self.assertFalse(any(call[0] == "nix" for call in calls))
+
+
 class WorkflowContractTest(unittest.TestCase):
     def test_inputd_prepares_only_signed_native_inputs_at_its_module_boundary(self):
         source = (ROOT / "services/inputd/check-in-shell.sh").read_text()
@@ -82,6 +171,18 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertNotIn("korri-published-plugins-check", task)
         for helper in (".github/workflows/fetch-image-plugins.sh", "nix/cache/plugin-read-failure.py"):
             self.assertIn("inputd", ci.affected([helper]))
+
+    def test_explicit_full_schedule_and_ci_full_label_control_the_same_profile(self):
+        workflow = yaml.safe_load((ROOT / ".github/workflows/korri-checks.yml").read_text())
+        triggers = workflow.get("on", workflow.get(True))
+        self.assertEqual(triggers["workflow_dispatch"]["inputs"]["mode"]["default"], "full")
+        self.assertIn("schedule", triggers)
+        selection = next(step for step in workflow["jobs"]["select"]["steps"] if step.get("id") == "plan")
+        expression = selection["env"]["MODE"]
+        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.mode", expression)
+        self.assertIn("github.event_name == 'schedule'", expression)
+        self.assertIn("contains(github.event.pull_request.labels.*.name, 'ci-full')", expression)
+        self.assertIn("'full' || 'affected'", expression)
 
     def test_cache_app_runs_real_plugin_read_cases_outside_a_builder(self):
         tasks = (ROOT / "nix/tasks.nix").read_text()
@@ -122,6 +223,11 @@ class WorkflowContractTest(unittest.TestCase):
             if step["name"] == "Enable the disposable lifecycle VM"
         )
         self.assertEqual(steps[kvm]["run"], established["run"])
+        full = "fromJSON(needs.select.outputs.plan).mode == 'full'"
+        self.assertEqual(steps[kvm]["if"], full)
+        self.assertEqual(steps[run]["if"], full)
+        fast = next(step for step in steps if step.get("run") == "nix run .#inputd-check -- --fast")
+        self.assertEqual(fast["if"], "fromJSON(needs.select.outputs.plan).mode != 'full'")
         self.assertIn("sudo udevadm control --reload-rules", steps[kvm]["run"])
         self.assertIn(
             "sudo udevadm trigger --settle --name-match=kvm", steps[kvm]["run"]
@@ -145,6 +251,8 @@ class WorkflowContractTest(unittest.TestCase):
             .split("    ci-full-check = {", 1)[1]
             .split("    };", 1)[0]
         )
+        self.assertIn("inputd-check", task)
+        self.assertNotIn("--fast", task)
         for app in ["korri-nix-cache-check", "rpminiv2-delivery-check"]:
             self.assertEqual(task.count(app), 1)
         cache = (

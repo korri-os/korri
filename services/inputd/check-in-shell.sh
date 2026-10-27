@@ -2,6 +2,12 @@
 #! nix-shell -i bash -p bash git nix
 set -euo pipefail
 
+case "$#:${1:-}" in
+  0:) profile=full ;;
+  1:--fast) profile=fast ;;
+  *) echo "usage: inputd-check [--fast] (default: complete module/package/VM checks)" >&2; exit 2 ;;
+esac
+
 ROOT="${KORRI_ROOT:-$(git rev-parse --show-toplevel)}"
 export CARGO_TARGET_DIR="$ROOT/.cache/inputd-target"
 
@@ -22,6 +28,11 @@ shellcheck services/inputd/deploy/device-check.sh services/inputd/deploy/test-de
   services/inputd/deploy/test-device-bitmap.sh
 services/inputd/deploy/test-device-bitmap.sh
 services/inputd/deploy/test-device-check.sh
+
+# Affected/PR coverage stops here. The default command remains complete.
+if [[ "$profile" == fast ]]; then
+  exit 0
+fi
 
 # Module and VM evaluation reads Sunshine's immutable manifest. Prepare only
 # this consumer's signed native input, after the independent Rust/shell checks.
