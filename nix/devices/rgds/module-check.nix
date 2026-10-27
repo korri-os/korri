@@ -66,6 +66,12 @@ assert
   == "/dev/dri/by-path/platform-display-subsystem-card";
 assert c.services.korriLinuxHost.compositor.renderDevice == "/dev/dri/renderD128";
 assert c.services.korriLinuxHost.compositor.mainDisplay == "DSI-2";
+# Catalog startup powers only its main display; game/overlay placement owns
+# waking other displays later. This is not an output-disable/removal rule.
+assert lib.hasInfix "output DSI-1 power off"
+  c.systemd.services.korri-compositor.environment.KORRI_SWAY_CONFIG.text;
+assert
+  !(lib.hasInfix "output DSI-2 power off" c.systemd.services.korri-compositor.environment.KORRI_SWAY_CONFIG.text);
 assert (builtins.head c.services.korriLinuxHost.compositor.displays).mode == "640x480@60Hz";
 assert
   map (d: {

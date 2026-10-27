@@ -1,8 +1,3 @@
-#[path = "portal_readiness.rs"]
-mod portal_readiness;
-use portal_readiness::CatalogReadiness;
-pub(crate) use portal_readiness::CatalogReadinessRestore;
-
 #[path = "session_rights.rs"]
 mod session_rights;
 #[path = "stream_players.rs"]
@@ -271,7 +266,6 @@ enum AppliedDisplayPlacement {
     Catalog {
         instance: super::compositor_focus::FocusCandidate,
         rectangles: Vec<super::display_placement::SurfaceDisplay>,
-        generation: Arc<()>,
     },
     Game(String),
     Overlay {
@@ -338,7 +332,6 @@ pub struct HostSessionControl {
     /// return. Absence is a product-path focus failure, never implicit success.
     compositor: Option<Arc<dyn CompositorControl>>,
     placement_applied: Arc<Mutex<Option<AppliedDisplayPlacement>>>,
-    catalog_readiness: Arc<Mutex<CatalogReadiness>>,
     display_content: Arc<Mutex<Vec<String>>>,
     /// Frozen only while a running exact launch has observed compositor focus.
     /// Absent, the portal is never touched.
@@ -407,7 +400,6 @@ impl HostSessionControl {
             initial_handoff: Arc::new(Mutex::new(None)),
             compositor: None,
             placement_applied: Arc::new(Mutex::new(None)),
-            catalog_readiness: Arc::new(Mutex::new(CatalogReadiness::default())),
             display_content: Arc::new(Mutex::new(Vec::new())),
             portal: None,
             native_input: None,
@@ -769,7 +761,6 @@ impl HostSessionControl {
                 let rectangles = super::display_placement::place_surface_timed(
                     compositor.as_ref(),
                     &displays,
-                    super::display_placement::SurfaceDisplayScope::All,
                     Some(&placement),
                     &pids,
                     &portal_pids,
@@ -786,9 +777,6 @@ impl HostSessionControl {
             trace
                 .phases_ms
                 .insert("portal_geometry", placement_timings.geometry_ms);
-            trace
-                .phases_ms
-                .insert("portal_settle", placement_timings.settle_ms);
             let (placement, rectangles) = result?;
             trace.overlay_output = rectangles.first().map(|display| display.id.clone());
             let mut occupied = placement.outputs;
@@ -1107,8 +1095,9 @@ impl HostSessionControl {
         {
             return Ok(None);
         }
-        // A newer placement attempt invalidates an older startup reflow,
-        // including when the new native operation only partially succeeds.
+        // A new game placement invalidates the catalog receipt, including
+        // partial native failure: cached catalog facts must not claim that
+        // the portal is still the applied presentation.
         if matches!(*applied, Some(AppliedDisplayPlacement::Catalog { .. })) {
             *applied = None;
         }
@@ -1157,11 +1146,52 @@ impl HostSessionControl {
         }
     }
 
+    fn cached_catalog_rectangles(
+        &self,
+        pids: &std::collections::BTreeSet<i32>,
+    ) -> Option<Vec<super::display_placement::SurfaceDisplay>> {
+        match self
+            .placement_applied
+            .lock()
+            .expect("placement mutex poisoned")
+            .as_ref()
+        {
+            Some(AppliedDisplayPlacement::Catalog {
+                instance,
+                rectangles,
+            }) if pids.contains(&instance.pid) => Some(rectangles.clone()),
+            _ => None,
+        }
+    }
+
+    fn invalidate_catalog_placement(&self) {
+        let mut applied = self
+            .placement_applied
+            .lock()
+            .expect("placement mutex poisoned");
+        if matches!(*applied, Some(AppliedDisplayPlacement::Catalog { .. })) {
+            *applied = None;
+        }
+    }
+
+    fn record_catalog_placement(
+        &self,
+        instance: super::compositor_focus::FocusCandidate,
+        rectangles: Vec<super::display_placement::SurfaceDisplay>,
+    ) {
+        *self
+            .placement_applied
+            .lock()
+            .expect("placement mutex poisoned") = Some(AppliedDisplayPlacement::Catalog {
+            instance,
+            rectangles,
+        });
+    }
+
     pub(crate) fn surface_displays(
         &self,
         request: super::display_placement::SurfaceDisplaysRequest,
     ) -> Result<Vec<super::display_placement::SurfaceDisplay>, String> {
-        let scope = request.displays;
         let mut displays = super::display_placement::configured_displays()?;
         if displays.len() <= 1 {
             if let (Some(display), Some(control)) = (displays.first_mut(), self.compositor.as_ref())
@@ -1172,22 +1202,21 @@ impl HostSessionControl {
                 display.height = logical.height;
             }
             return Ok(super::display_placement::surface_rectangles(
-                &displays, scope, None,
+                &displays, None,
             ));
         }
-        // Catalog facts can be read while the post-reply reflow holds native
-        // transition authority. A live unit PID is the kiosk-instance key;
-        // no compositor mutation or session reconciliation belongs in a hit.
-        let catalog_portal_pids =
-            if !request.overlay && scope == super::display_placement::SurfaceDisplayScope::All {
-                let portal_pids = self.portal_pids()?;
-                if let Some(rectangles) = self.cached_catalog_rectangles(&portal_pids) {
-                    return Ok(rectangles);
-                }
-                Some(portal_pids)
-            } else {
-                None
-            };
+        // Catalog requests return only main-display facts, even when the surface
+        // asks for all. Overlay requests retain their free-display placement.
+        // A live unit PID keys the effect-free catalog cache.
+        let catalog_portal_pids = if !request.overlay {
+            let portal_pids = self.portal_pids()?;
+            if let Some(rectangles) = self.cached_catalog_rectangles(&portal_pids) {
+                return Ok(rectangles);
+            }
+            Some(portal_pids)
+        } else {
+            None
+        };
         let mut state = self.lock_state_named("surface_displays");
         // Another mounted request may have completed while this one waited
         // for native authority. Do not perform a second synchronous restore.
@@ -1239,20 +1268,18 @@ impl HostSessionControl {
             Some(pids) => pids,
             None => self.portal_pids()?,
         };
-        let catalog_instance =
-            if launch_id.is_none() && scope == super::display_placement::SurfaceDisplayScope::All {
-                Some(super::compositor_focus::portal_window(
-                    &compositor.tree()?,
-                    &portal_pids,
-                )?)
-            } else {
-                None
-            };
+        let catalog_instance = if launch_id.is_none() {
+            Some(super::compositor_focus::portal_window(
+                &compositor.tree()?,
+                &portal_pids,
+            )?)
+        } else {
+            None
+        };
         self.invalidate_catalog_placement();
         let rectangles = super::display_placement::place_surface(
             compositor.as_ref(),
             &displays,
-            scope,
             placement.as_ref(),
             &pids,
             &portal_pids,
@@ -3301,7 +3328,6 @@ impl HostSessionControl {
             "portal_tree",
             "portal_power",
             "portal_geometry",
-            "portal_settle",
             "portal_focus",
             "seat_restore",
             "seat_reset",
@@ -4249,11 +4275,11 @@ printf '[{{"success":true}}]'
     }
 
     #[test]
-    fn all_displays_place_the_kiosk_unit_window_with_its_real_chromium_app_id() {
+    fn both_requested_scopes_place_only_main_by_kiosk_unit_identity() {
         const CHILD: &str = "KORRI_PORTAL_IDENTITY_TEST_CHILD";
         if std::env::var_os(CHILD).is_none() {
             let result = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "host::session_state::tests::all_displays_place_the_kiosk_unit_window_with_its_real_chromium_app_id", "--nocapture"])
+                .args(["--exact", "host::session_state::tests::both_requested_scopes_place_only_main_by_kiosk_unit_identity", "--nocapture"])
                 .env(CHILD, "1")
                 .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
                 .output().unwrap();
@@ -4265,8 +4291,12 @@ printf '[{{"success":true}}]'
             );
             assert!(String::from_utf8_lossy(&result.stdout).contains("running 1 test"));
             let stderr = String::from_utf8_lossy(&result.stderr);
-            assert!(stderr.contains("phase1_size: Some((640, 900))"), "{stderr}");
-            assert!(stderr.contains("\"portal_settle\":"), "{stderr}");
+            assert!(
+                stderr.contains("target: Catalog, outcome: Changed"),
+                "{stderr}"
+            );
+            assert!(!stderr.contains("portal_settle"), "{stderr}");
+            assert!(!stderr.contains("PortalReadinessRestore"), "{stderr}");
             return;
         }
         use super::super::systemd_unit::{SystemdLaunchUnitBackend, SystemdPortalUnit};
@@ -4330,11 +4360,25 @@ printf '[{{"success":true}}]'
                 launch_id: None,
             })
             .unwrap();
-        assert_eq!(displays.len(), 2);
+        assert_eq!(displays.len(), 1);
+        assert_eq!(displays[0].id, "DSI-2");
         let commands = fs::read_to_string(root.path().join("commands")).unwrap();
-        assert!(commands.contains("output DSI-2 power on; output DSI-1 power on\n"));
-        assert!(commands.contains("output DSI-1 power on\n"));
-        assert!(commands.contains("[con_id=10] fullscreen enable global; [con_id=10] focus\n"));
+        assert!(commands.contains("output DSI-2 power on\n"));
+        assert!(commands.contains("[con_id=10] move container to output DSI-2; [con_id=10] fullscreen enable; [con_id=10] focus; output DSI-1 power off\n"));
+        assert!(!commands.contains(" global"), "{commands}");
+        let main = control
+            .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
+                displays: super::super::display_placement::SurfaceDisplayScope::Main,
+                overlay: false,
+                launch_id: None,
+            })
+            .unwrap();
+        assert_eq!(main, displays);
+        assert_eq!(
+            fs::read_to_string(root.path().join("commands")).unwrap(),
+            commands,
+            "cached main request must be effect-free"
+        );
         let queries = fs::read_to_string(root.path().join("unit-queries")).unwrap();
         assert!(queries.contains(
             "show korri-chromium-kiosk.service --property=ControlGroup --property=MainPID"

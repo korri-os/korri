@@ -166,8 +166,8 @@ pub(crate) fn game_commands(
         "[con_id={node}] fullscreen enable{}",
         if placement.global { " global" } else { "" }
     ));
-    // A globally fullscreen portal suppresses focus-on-map. Placement is a
-    // handoff, so focus the exact game only after its output and fullscreen.
+    // Placement is a handoff: focus the exact game only after its output and
+    // fullscreen recipe, before powering off unused displays.
     commands.push(format!("[con_id={node}] opacity 1"));
     if focus {
         commands.push(format!("[con_id={node}] focus"));
@@ -289,16 +289,12 @@ pub enum SurfaceDisplaysOutcome {
 
 pub(crate) fn surface_rectangles(
     displays: &[Display],
-    scope: SurfaceDisplayScope,
     game: Option<&Placement>,
 ) -> Vec<SurfaceDisplay> {
     let selected: Vec<&Display> = if let Some(game) = game {
         overlay_display(displays, game).into_iter().collect()
     } else {
-        displays
-            .iter()
-            .filter(|d| scope == SurfaceDisplayScope::All || d.main)
-            .collect()
+        displays.iter().filter(|d| d.main).collect()
     };
     let x = selected.iter().map(|d| d.x).min().unwrap_or(0);
     let y = selected.iter().map(|d| d.y).min().unwrap_or(0);
@@ -319,62 +315,37 @@ pub(crate) fn surface_rectangles(
 pub(crate) fn place_surface(
     control: &dyn super::compositor_focus::CompositorControl,
     displays: &[Display],
-    scope: SurfaceDisplayScope,
     game: Option<&Placement>,
     pids: &std::collections::BTreeSet<i32>,
     portal_pids: &std::collections::BTreeSet<i32>,
 ) -> Result<Vec<SurfaceDisplay>, String> {
     let started = std::time::Instant::now();
     let mut timings = SurfacePlacementTimings::default();
-    let result = place_surface_timed(
-        control,
-        displays,
-        scope,
-        game,
-        pids,
-        portal_pids,
-        &mut timings,
-    );
-    if displays.len() > 1 && game.is_none() && scope == SurfaceDisplayScope::All {
+    let result = place_surface_timed(control, displays, game, pids, portal_pids, &mut timings);
+    if displays.len() > 1 && game.is_none() {
         let outcome = if result.is_ok() { "Changed" } else { "Failed" };
-        eprintln!("<6>korrid: PlacementTransition {{ target: Catalog, outcome: {outcome}, total_ms: {}, phase1_size: {:?}, phases_ms: {{\"portal_tree\": {}, \"portal_power\": {}, \"portal_geometry\": {}, \"portal_settle\": {}}} }}", started.elapsed().as_millis(), timings.phase1_size, timings.tree_ms, timings.power_ms, timings.geometry_ms, timings.settle_ms);
+        eprintln!("<6>korrid: PlacementTransition {{ target: Catalog, outcome: {outcome}, total_ms: {}, phases_ms: {{\"portal_tree\": {}, \"portal_power\": {}, \"portal_geometry\": {}}} }}", started.elapsed().as_millis(), timings.tree_ms, timings.power_ms, timings.geometry_ms);
     }
     result
 }
-
-/// Sway 1.12's window events and get_tree expose pending container state,
-/// not the client's xdg ack/commit. Let the non-fullscreen configure settle
-/// separately before entering global fullscreen (Chromium 153 on RG DS).
-/// This bounded interval exceeds Sway's default 200 ms transaction timeout;
-/// it is not proof that an unresponsive client has committed. The 900-high
-/// repair with this interval was verified near cold kiosk startup on RG DS.
-const PORTAL_SETTLE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
-
-/// The owner's live RG DS probe recovered presentation with 640x900 before
-/// returning to 640x960. A genuine size change, not just fullscreen state,
-/// avoids retaining Chromium 153's same-size presentation stall.
-const PORTAL_PREPARATION_HEIGHT_MARGIN: i64 = 60;
 
 #[derive(Default)]
 pub(crate) struct SurfacePlacementTimings {
     pub tree_ms: u128,
     pub power_ms: u128,
     pub geometry_ms: u128,
-    pub settle_ms: u128,
-    pub phase1_size: Option<(i64, i64)>,
 }
 
 pub(crate) fn place_surface_timed(
     control: &dyn super::compositor_focus::CompositorControl,
     displays: &[Display],
-    scope: SurfaceDisplayScope,
     game: Option<&Placement>,
     pids: &std::collections::BTreeSet<i32>,
     portal_pids: &std::collections::BTreeSet<i32>,
     timings: &mut SurfacePlacementTimings,
 ) -> Result<Vec<SurfaceDisplay>, String> {
     use super::compositor_focus::{select_focus_target, FocusTarget};
-    let rectangles = surface_rectangles(displays, scope, game);
+    let rectangles = surface_rectangles(displays, game);
     if displays.len() <= 1 {
         return Ok(rectangles);
     }
@@ -412,79 +383,55 @@ pub(crate) fn place_surface_timed(
         .iter()
         .find(|d| d.name == first.id)
         .ok_or("display missing")?;
-    let width = rectangles
-        .iter()
-        .map(|d| i64::from(d.x) + i64::from(d.width))
-        .max()
-        .unwrap_or(0);
-    let height = rectangles
-        .iter()
-        .map(|d| i64::from(d.y) + i64::from(d.height))
-        .max()
-        .unwrap_or(0);
-    let restore_catalog = game.is_none() && scope == SurfaceDisplayScope::All;
-    let preparation_height = if restore_catalog {
-        // Force a different, positive size even when the portal is already at
-        // the full catalog extent. Cap the measured margin on tiny viewports.
-        let margin = PORTAL_PREPARATION_HEIGHT_MARGIN.min(height.saturating_sub(1));
-        if margin <= 0 {
-            return Err("catalog viewport is too short for a distinct preparation size".into());
-        }
-        let prepared = height - margin;
-        timings.phase1_size = Some((width, prepared));
-        prepared
-    } else {
-        height
-    };
-    // A separately settled non-fullscreen configure must also change size:
-    // the same-size version could stall Chromium's main-frame presentation.
-    commands.extend([
-        format!("[con_id={portal}] fullscreen disable"),
-        format!("[con_id={portal}] floating enable"),
-        format!("[con_id={portal}] resize set width {width} px height {preparation_height} px"),
-        format!(
-            "[con_id={portal}] move absolute position {} px {} px",
-            origin.x, origin.y
-        ),
-    ]);
-    if !restore_catalog {
-        commands.push(format!("[con_id={portal}] focus"));
-    }
-    // Measure power separately: the DRM modeset can dominate this call.
-    // Catalog activation follows a separately settled geometry batch below.
-    let start = std::time::Instant::now();
-    let power = control.command(&power_commands(displays, &occupied).join("; "));
-    timings.power_ms = start.elapsed().as_millis();
-    power?;
-    let start = std::time::Instant::now();
-    let geometry = control.command(&commands.join("; "));
-    timings.geometry_ms = start.elapsed().as_millis();
-    geometry?;
-    if restore_catalog {
-        let start = std::time::Instant::now();
-        std::thread::sleep(PORTAL_SETTLE_INTERVAL);
-        timings.settle_ms = start.elapsed().as_millis();
-        // This read is an identity recheck, NOT a client-commit fence. Never
-        // activate a different kiosk window that appeared during the interval.
-        let start = std::time::Instant::now();
-        let tree = control.tree();
-        timings.tree_ms += start.elapsed().as_millis();
-        if super::compositor_focus::portal_node(&tree?, portal_pids)? != portal {
-            return Err("portal window changed during catalog preparation".into());
-        }
-        let start = std::time::Instant::now();
-        let activation = control.command(
-            &[
-                format!("[con_id={portal}] fullscreen disable"),
-                format!("[con_id={portal}] floating disable"),
-                format!("[con_id={portal}] fullscreen enable global"),
-                format!("[con_id={portal}] focus"),
-            ]
-            .join("; "),
+    let power = power_commands(displays, &occupied);
+    if game.is_none() {
+        // Surfaces never span outputs. Normal fullscreen selects the main
+        // output even when the previous portal presentation was a free-display
+        // overlay. Focus before the blocking unused-output power-off tail.
+        commands.extend([
+            format!("[con_id={portal}] fullscreen disable"),
+            format!("[con_id={portal}] floating disable"),
+            format!("[con_id={portal}] move container to output {}", origin.name),
+            format!("[con_id={portal}] fullscreen enable"),
+            format!("[con_id={portal}] focus"),
+        ]);
+        commands.extend(
+            power
+                .iter()
+                .filter(|command| command.ends_with(" off"))
+                .cloned(),
         );
-        timings.geometry_ms += start.elapsed().as_millis();
-        activation?;
+    } else {
+        commands.extend([
+            format!("[con_id={portal}] fullscreen disable"),
+            format!("[con_id={portal}] floating enable"),
+            format!(
+                "[con_id={portal}] resize set width {} px height {} px",
+                first.width, first.height
+            ),
+            format!(
+                "[con_id={portal}] move absolute position {} px {} px",
+                origin.x, origin.y
+            ),
+            format!("[con_id={portal}] focus"),
+        ]);
     }
+    let start = std::time::Instant::now();
+    let power = if game.is_none() {
+        power
+            .into_iter()
+            .filter(|command| command.ends_with(" on"))
+            .collect::<Vec<_>>()
+    } else {
+        power
+    };
+    let result = control.command(&power.join("; "));
+    timings.power_ms = start.elapsed().as_millis();
+    result?;
+    let start = std::time::Instant::now();
+    let result = control.command(&commands.join("; "));
+    timings.geometry_ms = start.elapsed().as_millis();
+    result?;
     Ok(rectangles)
 }
 
@@ -565,19 +512,20 @@ mod tests {
         assert!(choose(Some(&system()), &r, &displays()).is_err());
     }
     #[test]
-    fn surface_opt_in_uses_viewport_rectangles_and_overlay_uses_one_display() {
+    fn catalog_uses_main_and_overlay_still_uses_the_free_display() {
         let ds = displays();
+        assert_eq!(surface_rectangles(&ds, None).len(), 1);
+        let all = surface_rectangles(&ds, None);
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, "DSI-2");
         assert_eq!(
-            surface_rectangles(&ds, SurfaceDisplayScope::Main, None).len(),
-            1
+            (all[0].x, all[0].y, all[0].width, all[0].height),
+            (0, 0, 640, 480)
         );
-        let all = surface_rectangles(&ds, SurfaceDisplayScope::All, None);
-        assert_eq!(all.len(), 2);
-        assert_eq!((all[1].x, all[1].y), (0, 480));
         let mut r = runner();
         r.layouts.clear();
         let single = choose(None, &r, &ds).unwrap();
-        let overlay = surface_rectangles(&ds, SurfaceDisplayScope::All, Some(&single));
+        let overlay = surface_rectangles(&ds, Some(&single));
         assert_eq!(overlay.len(), 1);
         assert_eq!(overlay[0].id, "DSI-1");
         assert_eq!(overlay[0].y, 0);
@@ -599,12 +547,11 @@ cd '{}' || exit 1
 for argument do command="$argument"; done
 case "$command" in get_tree)
  printf 'get_tree\n' >> events
- if test -f prepared && test -f replacement-tree; then cat replacement-tree; else cat tree; fi
+ cat tree
  exit;;
 esac
 printf '%s\n' "$command" >> events
 printf '%s\n' "$command" >> batches
-case "$command" in *'[con_id=10] resize set width 640 px height 900 px'*) touch prepared;; esac
 old_ifs="$IFS"
 IFS=';'
 for part in $command; do
@@ -616,9 +563,9 @@ for part in $command; do
    '[con_id=10] fullscreen disable') mode=0;;
    '[con_id=10] floating disable')
     if test "$mode" != 0; then printf '[{{"success":false,"error":"floating changed while fullscreen"}}]'; exit; fi;;
-   '[con_id=10] fullscreen enable global')
-    if test "$mode" != 0; then printf '[{{"success":false,"error":"global enable on already-fullscreen con"}}]'; exit; fi
-    mode=2;;
+   '[con_id=10] fullscreen enable')
+    if test "$mode" != 0; then printf '[{{"success":false,"error":"enable on already-fullscreen con"}}]'; exit; fi
+    mode=1;;
   esac
   printf '%s' "$mode" > portal-fullscreen
  fi
@@ -644,181 +591,83 @@ fi
     }
 
     #[test]
-    fn catalog_restore_prepares_size_in_a_separate_call_before_global_fullscreen() {
-        assert_eq!(
-            PORTAL_SETTLE_INTERVAL,
-            std::time::Duration::from_millis(250)
-        );
+    fn catalog_moves_the_owned_portal_to_main_then_powers_off_unused_displays() {
         let dir = tempfile::tempdir().unwrap();
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
-        place_surface(
+        std::fs::write(dir.path().join("validate-portal-restore"), "").unwrap();
+        std::fs::write(dir.path().join("portal-fullscreen"), "1").unwrap();
+        let facts = place_surface(
             &control,
             &displays(),
-            SurfaceDisplayScope::All,
             None,
             &Default::default(),
             &[100].into_iter().collect(),
         )
         .unwrap();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].id, "DSI-2");
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
-        assert_eq!(
-            batches.lines().count(),
-            3,
-            "power plus preparation and activation IPC: {batches}"
-        );
-        assert_eq!(batches.lines().nth(1).unwrap(), "[con_id=10] fullscreen disable; [con_id=10] floating enable; [con_id=10] resize set width 640 px height 900 px; [con_id=10] move absolute position 0 px 0 px");
-        assert!(
-            !batches.lines().nth(1).unwrap().contains("height 960 px"),
-            "phase 1 must force a different size: {batches}"
-        );
-        let events = std::fs::read_to_string(dir.path().join("events")).unwrap();
-        assert_eq!(
-            events.lines().nth(3),
-            Some("get_tree"),
-            "revalidate identity between preparation and activation: {events}"
-        );
-        assert_eq!(batches.lines().last().unwrap(), "[con_id=10] fullscreen disable; [con_id=10] floating disable; [con_id=10] fullscreen enable global; [con_id=10] focus");
+        assert_eq!(batches.lines().count(), 2, "{batches}");
+        assert_eq!(batches.lines().next().unwrap(), "output DSI-2 power on");
+        assert_eq!(batches.lines().nth(1).unwrap(), "[con_id=10] fullscreen disable; [con_id=10] floating disable; [con_id=10] move container to output DSI-2; [con_id=10] fullscreen enable; [con_id=10] focus; output DSI-1 power off");
+        assert!(!batches.contains(" global"), "{batches}");
+        assert!(!batches.contains("resize set"), "{batches}");
     }
 
     #[test]
-    fn catalog_preparation_changes_an_already_full_sized_portal_without_publishing_that_size() {
-        assert_eq!(PORTAL_PREPARATION_HEIGHT_MARGIN, 60);
-        let dir = tempfile::tempdir().unwrap();
-        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
-        std::fs::write(dir.path().join("tree"), r#"{"nodes":[{"id":10,"pid":100,"fullscreen_mode":2,"rect":{"x":0,"y":0,"width":640,"height":960}}]}"#).unwrap();
-        let mut timings = SurfacePlacementTimings::default();
-        let facts = place_surface_timed(
-            &control,
-            &displays(),
-            SurfaceDisplayScope::All,
-            None,
-            &Default::default(),
-            &[100].into_iter().collect(),
-            &mut timings,
-        )
-        .unwrap();
-        assert_eq!(timings.phase1_size, Some((640, 900)));
-        assert_eq!(
-            facts
-                .iter()
-                .map(|display| i64::from(display.y) + i64::from(display.height))
-                .max(),
-            Some(960)
-        );
-        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
-        assert!(
-            batches.lines().nth(1).unwrap().contains("height 900 px"),
-            "{batches}"
-        );
-        assert!(
-            batches
-                .lines()
-                .last()
-                .unwrap()
-                .contains("fullscreen enable global"),
-            "{batches}"
-        );
-    }
-
-    #[test]
-    fn catalog_preparation_keeps_a_positive_distinct_size_on_small_viewports() {
+    fn catalog_handles_irregular_display_arrangements_without_a_bounding_viewport() {
         let dir = tempfile::tempdir().unwrap();
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
         let mut ds = displays();
-        ds[0].height = 1;
-        ds[1].height = 1;
-        ds[1].y = 1;
-        let mut timings = SurfacePlacementTimings::default();
-        place_surface_timed(
+        ds[1].x = 640;
+        ds[1].y = -200;
+        ds.push(Display {
+            name: "SIDE".into(),
+            main: false,
+            x: 1280,
+            y: 300,
+            width: 1920,
+            height: 1080,
+            touch: None,
+        });
+        let facts = place_surface(
             &control,
             &ds,
-            SurfaceDisplayScope::All,
             None,
             &Default::default(),
             &[100].into_iter().collect(),
-            &mut timings,
         )
         .unwrap();
-        assert_eq!(timings.phase1_size, Some((640, 1)));
-    }
-
-    #[test]
-    fn refused_catalog_preparation_never_waits_or_activates() {
-        let dir = tempfile::tempdir().unwrap();
-        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
-        std::fs::write(
-            dir.path().join("reject"),
-            "resize set width 640 px height 900 px",
-        )
-        .unwrap();
-        let mut timings = SurfacePlacementTimings::default();
-        assert!(place_surface_timed(
-            &control,
-            &displays(),
-            SurfaceDisplayScope::All,
-            None,
-            &Default::default(),
-            &[100].into_iter().collect(),
-            &mut timings
-        )
-        .is_err());
-        assert_eq!(timings.settle_ms, 0);
+        assert_eq!(facts.len(), 1);
+        assert_eq!((facts[0].width, facts[0].height), (640, 480));
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
-        assert_eq!(batches.lines().count(), 2, "{batches}");
-        assert!(!batches.contains("fullscreen enable global"), "{batches}");
+        assert!(
+            batches.ends_with("output DSI-1 power off; output SIDE power off\n"),
+            "{batches}"
+        );
+        assert!(!batches.contains(" global"), "{batches}");
     }
 
     #[test]
-    fn catalog_restore_does_not_activate_a_replaced_portal_after_preparation() {
+    fn refused_catalog_move_is_an_error_not_a_mutation_retry() {
         let dir = tempfile::tempdir().unwrap();
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
-        std::fs::write(
-            dir.path().join("replacement-tree"),
-            r#"{"nodes":[{"id":11,"pid":100}]}"#,
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("reject"), "move container to output DSI-2").unwrap();
         assert!(place_surface(
             &control,
             &displays(),
-            SurfaceDisplayScope::All,
             None,
             &Default::default(),
             &[100].into_iter().collect()
         )
         .is_err());
-        let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
-        assert_eq!(batches.lines().count(), 2, "{batches}");
-        assert!(!batches.contains("fullscreen enable global"), "{batches}");
-        assert!(!batches.contains(" focus"), "{batches}");
-    }
-
-    #[test]
-    fn catalog_restore_leaves_fullscreen_before_changing_floating_or_enabling_global() {
-        let dir = tempfile::tempdir().unwrap();
-        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
-        std::fs::write(dir.path().join("validate-portal-restore"), "").unwrap();
-        // Both boot (tiling) and the retained overlay (floating) can already
-        // carry global fullscreen. The fake rejects a no-op global re-enable.
-        for initial_mode in [2, 0, 2] {
-            std::fs::write(
-                dir.path().join("portal-fullscreen"),
-                initial_mode.to_string(),
-            )
-            .unwrap();
-            place_surface(
-                &control,
-                &displays(),
-                SurfaceDisplayScope::All,
-                None,
-                &Default::default(),
-                &[100].into_iter().collect(),
-            )
-            .unwrap();
-            assert_eq!(
-                std::fs::read_to_string(dir.path().join("portal-fullscreen")).unwrap(),
-                "2"
-            );
-        }
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("batches"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
     }
 
     #[test]
@@ -830,17 +679,12 @@ fi
         place_surface_timed(
             &control,
             &displays(),
-            SurfaceDisplayScope::All,
             Some(&single),
             &[200].into_iter().collect(),
             &[100].into_iter().collect(),
             &mut timings,
         )
         .unwrap();
-        assert_eq!(
-            timings.settle_ms, 0,
-            "Home's overlay does not need catalog settling"
-        );
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
         assert_eq!(batches.lines().count(), 2, "{batches}");
         assert!(batches
@@ -884,15 +728,7 @@ fi
             "[con_id=20] fullscreen enable global\n[con_id=20] opacity 1\n[con_id=20] focus\n"
         ));
         std::fs::write(dir.path().join("commands"), "").unwrap();
-        place_surface(
-            &control,
-            &ds,
-            SurfaceDisplayScope::All,
-            Some(&p),
-            &pids,
-            &[100].into_iter().collect(),
-        )
-        .unwrap();
+        place_surface(&control, &ds, Some(&p), &pids, &[100].into_iter().collect()).unwrap();
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
         assert!(commands.contains("[con_id=20] resize set width 640 px height 960 px"));
         assert!(
@@ -910,7 +746,6 @@ fi
         place_surface(
             &control,
             &ds,
-            SurfaceDisplayScope::All,
             Some(&single),
             &pids,
             &[100].into_iter().collect(),
@@ -936,20 +771,21 @@ fi
             .last()
             .unwrap()
             .ends_with("[con_id=20] fullscreen enable; [con_id=20] opacity 1; [con_id=20] focus; output DSI-1 power off"));
-        // Once the game ends, the retained catalog is placed over all displays.
+        // End returns from the free-display overlay to the main-only catalog.
         place_surface(
             &control,
             &ds,
-            SurfaceDisplayScope::All,
             None,
             &std::collections::BTreeSet::new(),
             &[100].into_iter().collect(),
         )
         .unwrap();
         let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
-        assert!(batches.lines().last().unwrap().ends_with("[con_id=10] floating disable; [con_id=10] fullscreen enable global; [con_id=10] focus"), "{batches}");
+        assert!(batches.lines().last().unwrap().ends_with("[con_id=10] move container to output DSI-2; [con_id=10] fullscreen enable; [con_id=10] focus; output DSI-1 power off"), "{batches}");
         let commands = std::fs::read_to_string(dir.path().join("commands")).unwrap();
-        assert!(commands.ends_with("[con_id=10] fullscreen enable global\n[con_id=10] focus\n"));
+        assert!(commands.ends_with(
+            "[con_id=10] fullscreen enable\n[con_id=10] focus\noutput DSI-1 power off\n"
+        ));
     }
 
     #[test]
@@ -966,7 +802,6 @@ fi
                 place_surface(
                     &control,
                     &displays(),
-                    SurfaceDisplayScope::All,
                     None,
                     &std::collections::BTreeSet::new(),
                     &portal_pids
