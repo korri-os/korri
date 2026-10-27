@@ -32,26 +32,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  select:
-    name: Select affected checks
+  acceptance:
+    name: Published plugin acceptance result
+    if: always()
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      plan: ${{ steps.plan.outputs.plan }}
-      policy: ${{ steps.plan.outputs.policy }}
-      cache: ${{ steps.plan.outputs.cache }}
-      fmt: ${{ steps.plan.outputs.fmt }}
-      treaty: ${{ steps.plan.outputs.treaty }}
-      portal: ${{ steps.plan.outputs.portal }}
-      parity: ${{ steps.plan.outputs.parity }}
-      cli: ${{ steps.plan.outputs.cli }}
-      korrid: ${{ steps.plan.outputs.korrid }}
-      inputd: ${{ steps.plan.outputs.inputd }}
-      limitsd: ${{ steps.plan.outputs.limitsd }}
-      pico: ${{ steps.plan.outputs.pico }}
-      zone: ${{ steps.plan.outputs.zone }}
-      boxbuster: ${{ steps.plan.outputs.boxbuster }}
-      acceptance: ${{ steps.plan.outputs.acceptance }}
+    timeout-minutes: 60
     steps:
       - name: Check out the exact tested source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -74,24 +59,8 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           PROBE_PATHS: ${{ inputs.probe_paths || '[]' }}
         run: python3 .github/ci/check-plan.py select --mode "$MODE" --base "$BASE_SHA" --head HEAD --fetch-base --paths "$PROBE_PATHS"
-  acceptance:
-    needs: select
-    if: needs.select.outputs.acceptance == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - name: Check out the exact tested source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ inputs.source_sha || github.sha }}
-          persist-credentials: false
-      - name: Verify source identity
-        env:
-          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
-        run: |
-          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
       - name: Enable the disposable lifecycle VM
+        if: steps.plan.outputs.acceptance == 'true'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
@@ -99,16 +68,19 @@ jobs:
           sudo udevadm trigger --settle --name-match=kvm
           test -r /dev/kvm -a -w /dev/kvm
       - name: Install Nix
+        if: steps.plan.outputs.acceptance == 'true'
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Test Nix cache preparation
+        if: steps.plan.outputs.acceptance == 'true'
         run: python3 .github/workflows/test_prepare_nix_cache.py
       # The snapshot is about 9 GB and takes about 7 minutes to save, so save
       # it only when the inputs that fill it change: the Nix and Cargo locks,
       # the published plugin pins, or the ISO week. The week bounds how far the
       # store drifts from Core's own derivations between lock changes.
       - name: Name the Nix store snapshot
+        if: steps.plan.outputs.acceptance == 'true'
         id: nix-store-key
         env:
           INPUTS: ${{ hashFiles('flake.lock', 'services/korrid/Cargo.lock', 'services/korrid/plugin-host/Cargo.lock', 'nix/product/published-plugins.nix') }}
@@ -117,6 +89,7 @@ jobs:
       # snapshot per key. Failed runs use separate keys so a partial store
       # cannot freeze the key's complete cache.
       - name: Restore the Nix store
+        if: steps.plan.outputs.acceptance == 'true'
         id: nix-store
         uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
@@ -126,44 +99,33 @@ jobs:
             ${{ steps.nix-store-key.outputs.prefix }}
             published-plugins-${{ runner.os }}-
       - name: Read existing signed Core outputs
+        if: steps.plan.outputs.acceptance == 'true'
         run: .github/workflows/trust-korri-cache.sh
       # Leave time to save partial downloads before the job's 60-minute limit.
       - name: Test Core without rebuilding or publishing plugins
+        if: steps.plan.outputs.acceptance == 'true'
         id: published-plugins-check
         timeout-minutes: 40
         run: nix run .#korri-published-plugins-check
       - name: Prepare the Nix store for caching
         id: prepare-nix-store
-        if: always() && steps.nix-store.outcome == 'success' && steps.nix-store.outputs.hit-primary-key != 'true'
+        if: always() && steps.plan.outputs.acceptance == 'true' && steps.nix-store.outcome == 'success' && steps.nix-store.outputs.hit-primary-key != 'true'
         timeout-minutes: 3
         run: python3 .github/workflows/prepare-nix-cache.py
       # Preserve downloaded paths even after a failed check. Do not run GC:
       # --no-link checks leave useful outputs unrooted after they finish.
       - name: Save the Nix store
-        if: always() && steps.prepare-nix-store.outcome == 'success'
+        if: always() && steps.plan.outputs.acceptance == 'true' && steps.prepare-nix-store.outcome == 'success'
         uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
           primary-key: ${{ steps.published-plugins-check.outcome == 'success' && steps.nix-store.outputs.primary-key || format('{0}-{1}-{2}', steps.nix-store.outputs.primary-key, github.run_id, github.run_attempt) }}
-  check:
-    name: Published plugin acceptance result
-    if: always()
-    needs: [select, acceptance]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Check out the exact tested source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ inputs.source_sha || github.sha }}
-          persist-credentials: false
-      - name: Verify source identity
+      # Adapt actual step outcomes, never conclusions or a synthetic success.
+      # A selected missing/skipped/cancelled check still fails closed.
+      - name: Require selected success and validate a deliberate skip
+        if: always()
         env:
-          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
-        run: |
-          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
-      - name: Require selected successes and validate every deliberate skip
-        env:
-          PLAN: ${{ needs.select.outputs.plan }}
-          NEEDS: ${{ toJSON(needs) }}
+          PLAN: ${{ steps.plan.outputs.plan }}
+          NEEDS: >-
+            {"select":{"result":"${{ steps.plan.outcome }}"},
+             "acceptance":{"result":"${{ steps.published-plugins-check.outcome }}"}}
         run: python3 .github/ci/check-plan.py aggregate --scope published
