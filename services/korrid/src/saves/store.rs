@@ -66,6 +66,40 @@ fn remember_validated(path: PathBuf, stamp: RecordStamp, record: &SnapshotRecord
         memo.insert(path, (stamp, record.clone()));
     }
 }
+/// Read and check the record file `file` in the game directory `dir`, whose
+/// name states `id`. The memo holds only records that passed these checks at
+/// this path, and only for a regular file with the same stamp.
+fn record_file(dir: &Path, file: PathBuf, id: &str) -> Result<SnapshotRecord, SaveError> {
+    let stamp = fs::symlink_metadata(&file)
+        .ok()
+        .filter(|metadata| metadata.file_type().is_file())
+        .map(|metadata| RecordStamp::of(&metadata));
+    if let Some(record) = stamp.and_then(|stamp| validated(&file, stamp)) {
+        return Ok(record);
+    }
+    let record: SnapshotRecord = read_json(&file)?;
+    if snapshot_id(&record)? != id
+        || Some(codec(&record.game_id).as_str()) != dir.file_name().and_then(|v| v.to_str())
+    {
+        return Err(invalid("record identity mismatch"));
+    }
+    if let Some(stamp) = stamp {
+        remember_validated(file, stamp, &record);
+    }
+    Ok(record)
+}
+// Objects whose bytes matched their hash name, by path and open-file stamp.
+static VERIFIED: Mutex<BTreeMap<PathBuf, RecordStamp>> = Mutex::new(BTreeMap::new());
+fn verified_before(path: &Path, stamp: RecordStamp) -> bool {
+    VERIFIED
+        .lock()
+        .is_ok_and(|memo| memo.get(path) == Some(&stamp))
+}
+fn remember_verified(path: PathBuf, stamp: RecordStamp) {
+    if let Ok(mut memo) = VERIFIED.lock() {
+        memo.insert(path, stamp);
+    }
+}
 fn io(e: std::io::Error) -> SaveError {
     SaveError::Storage(e.to_string())
 }
@@ -846,33 +880,30 @@ impl NativeSaveStore {
                 .ok_or_else(|| invalid("record filename"))?;
             let id = format!("sha256:{hex}");
             hash_hex(&id)?;
-            let file = entry.path();
-            // The memo holds only records that passed the checks below at this
-            // path, and only for a regular file with the same stamp.
-            let stamp = fs::symlink_metadata(&file)
-                .ok()
-                .filter(|metadata| metadata.file_type().is_file())
-                .map(|metadata| RecordStamp::of(&metadata));
-            if let Some(record) = stamp.and_then(|stamp| validated(&file, stamp)) {
-                records.push((id, record));
-                continue;
-            }
-            let record: SnapshotRecord = read_json(&file)?;
-            if snapshot_id(&record)? != id
-                || Some(codec(&record.game_id).as_str())
-                    != path.file_name().and_then(|v| v.to_str())
-            {
-                return Err(invalid("record identity mismatch"));
-            }
-            if let Some(stamp) = stamp {
-                remember_validated(file, stamp, &record);
-            }
+            let record = record_file(path, entry.path(), &id)?;
             records.push((id, record));
         }
         // Each record's id is its validated filename hash: sort by that, not
         // by canonicalizing and hashing every record again.
         records.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(records.into_iter().map(|(_, record)| record).collect())
+    }
+    /// One record, read from the file its id names, without the game's others.
+    fn record_by_id(
+        &self,
+        person: &str,
+        game: &str,
+        id: &str,
+    ) -> Result<Option<SnapshotRecord>, SaveError> {
+        let Some(dir) = self.game(person, game, false)? else {
+            return Ok(None);
+        };
+        let file = dir.join(format!("{}.json", hash_hex(id)?));
+        match fs::symlink_metadata(&file) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(io(error)),
+            Ok(_) => record_file(&dir, file, id).map(Some),
+        }
     }
     fn read_records(&self, person: &str, game: &str) -> Result<Vec<SnapshotRecord>, SaveError> {
         match self.game(person, game, false)? {
@@ -918,7 +949,14 @@ impl NativeSaveStore {
         Ok(objects.join(hex))
     }
     fn verified_object(&self, hash: &str) -> Result<File, SaveError> {
-        let mut file = regular(&self.object_path(hash, false)?)?;
+        let path = self.object_path(hash, false)?;
+        let mut file = regular(&path)?;
+        // An object is named by its hash and never rewritten in place: the
+        // same open file stamp means the same bytes that already matched.
+        let stamp = RecordStamp::of(&file.metadata().map_err(io)?);
+        if verified_before(&path, stamp) {
+            return Ok(file);
+        }
         let mut sha = Sha256::new();
         let mut buffer = [0u8; 65536];
         loop {
@@ -932,6 +970,7 @@ impl NativeSaveStore {
             return Err(invalid("stored object hash mismatch"));
         }
         file.seek(SeekFrom::Start(0)).map_err(io)?;
+        remember_verified(path, stamp);
         Ok(file)
     }
     fn authorize_object(&self, person: &str, hash: &str) -> Result<(), SaveError> {
@@ -1039,9 +1078,7 @@ impl SaveRepository for NativeSaveStore {
         let _guard = lock()?;
         hash_hex(id)?;
         let record = self
-            .read_records(person, game)?
-            .into_iter()
-            .find(|r| snapshot_id(r).is_ok_and(|value| value == id))
+            .record_by_id(person, game, id)?
             .ok_or(SaveError::Missing)?;
         self.record_complete(&record)
     }
