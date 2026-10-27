@@ -278,4 +278,4 @@ impl FederationDirectory {
 }
 pub(crate) use controller::start;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

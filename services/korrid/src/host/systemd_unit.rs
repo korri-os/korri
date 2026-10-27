@@ -482,6 +482,7 @@ pub(crate) struct InMemoryLaunchUnitBackend {
     runners: Mutex<BTreeMap<String, String>>,
     window_pids: Mutex<BTreeMap<String, BTreeSet<i32>>>,
     thawed: Mutex<Vec<String>>,
+    frozen: Mutex<Vec<String>>,
     launch_probe: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     hook_probe: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     service_probe: Mutex<Option<LaunchServiceProbe>>,
@@ -549,6 +550,10 @@ impl InMemoryLaunchUnitBackend {
             .map(|(launch_id, _)| launch_id.clone())
             .expect("one live test launch");
         units.insert(launch_id, LaunchUnitState::Completed);
+    }
+
+    pub(crate) fn freeze_count(&self) -> usize {
+        self.frozen.lock().unwrap().len()
     }
 
     pub(crate) fn thaw_count(&self) -> usize {
@@ -671,6 +676,7 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
     }
 
     fn freeze(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
+        self.frozen.lock().unwrap().push(launch_id.into());
         let mut units = self.units.lock().unwrap();
         match units.get(launch_id).copied() {
             Some(

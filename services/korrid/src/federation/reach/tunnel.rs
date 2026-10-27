@@ -347,7 +347,11 @@ pub(crate) struct NetplayForward {
 }
 impl NetplayForward {
     pub(crate) fn ready(&self) -> bool {
-        self.connected.load(std::sync::atomic::Ordering::Acquire) && !self.lost()
+        self.has_connected() && !self.lost()
+    }
+    /// A fresh client must run long enough to open its local TCP connection.
+    pub(crate) fn has_connected(&self) -> bool {
+        self.connected.load(std::sync::atomic::Ordering::Acquire)
     }
     pub(crate) fn lost(&self) -> bool {
         self.connection.close_reason().is_some()
@@ -403,6 +407,27 @@ impl Drop for NetplayForward {
     }
 }
 
+/// Run the production tunnel handler against a loopback TCP echo endpoint.
+#[cfg(test)]
+pub(super) async fn netplay_echo(connection: Connection) -> tokio::task::JoinHandle<()> {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let targets = Targets {
+        netplay: listener.local_addr().unwrap().port(),
+        ..Default::default()
+    };
+    tokio::spawn(async move {
+        let echo = async {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let (mut read, mut write) = tcp.into_split();
+            let _ = tokio::io::copy(&mut read, &mut write).await;
+        };
+        tokio::select! {
+            _ = serve_on(connection, axum::Router::new(), targets) => {},
+            _ = echo => {},
+        }
+    })
+}
+
 #[cfg(test)]
 mod netplay_tests {
     use super::*;
@@ -426,6 +451,7 @@ mod netplay_tests {
         assert_ne!(forward.address.port(), 55435);
         assert!(!TCP_PORTS.contains(&55355));
         assert!(!forward.ready());
+        assert!(!forward.has_connected());
         let mut client = TcpStream::connect(forward.address).await.unwrap();
         client.write_all(b"RetroArch netplay").await.unwrap();
         let mut bytes = [0; 17];
@@ -438,6 +464,7 @@ mod netplay_tests {
         .unwrap();
         assert_eq!(&bytes, b"RetroArch netplay");
         assert!(forward.ready());
+        assert!(forward.has_connected());
         drop(client);
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
             while !forward.lost() {
@@ -446,6 +473,7 @@ mod netplay_tests {
         })
         .await
         .unwrap();
+        assert!(forward.has_connected());
         drop(forward);
         server.abort();
         echo.abort();

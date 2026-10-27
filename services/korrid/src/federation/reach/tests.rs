@@ -151,6 +151,41 @@ pub(super) async fn pair() -> (
     (a, b, outgoing.unwrap(), incoming)
 }
 
+/// A same-owner directory with a real loopback iroh netplay route.
+pub(crate) struct NetplayRoute {
+    pub(crate) directory: FederationDirectory,
+    pub(crate) device: String,
+    pub(crate) forward: Option<NetplayForward>,
+    echo: tokio::task::JoinHandle<()>,
+    _endpoints: [Endpoint; 2],
+    _devices: Devices,
+}
+impl Drop for NetplayRoute {
+    fn drop(&mut self) {
+        self.echo.abort();
+    }
+}
+pub(crate) async fn netplay_route() -> NetplayRoute {
+    let devices = Devices::new();
+    let (a, b, outgoing, incoming) = pair().await;
+    let device = devices.cb.public_key().unwrap();
+    devices.da.reach.live.write().unwrap().insert(
+        device.clone(),
+        LiveRoute {
+            connection: outgoing.clone(),
+        },
+    );
+    let forward = NetplayForward::open(outgoing).await.unwrap();
+    NetplayRoute {
+        directory: devices.da.clone(),
+        device,
+        forward: Some(forward),
+        echo: tunnel::netplay_echo(incoming).await,
+        _endpoints: [a, b],
+        _devices: devices,
+    }
+}
+
 #[test]
 fn reach_build_has_no_public_relay_or_discovery_defaults() {
     let cargo: toml::Value = toml::from_str(include_str!("../../../Cargo.toml")).unwrap();

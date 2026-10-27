@@ -6,7 +6,13 @@ use crate::{
 
 #[derive(Default)]
 pub(crate) struct Holder {
-    reservation: tokio::sync::Mutex<Option<(String, String, u8, bool)>>,
+    reservation: tokio::sync::Mutex<Option<Reservation>>,
+}
+struct Reservation {
+    launch_id: String,
+    device_public_key: String,
+    seat: u8,
+    hosting_confirmed: bool,
 }
 impl Holder {
     pub(crate) async fn stream_play(
@@ -16,12 +22,10 @@ impl Holder {
         player: StreamPlayer,
     ) -> Result<ActiveSession, RpcFailure> {
         let reservation = self.reservation.lock().await;
-        if reservation
-            .as_ref()
-            .is_some_and(|(known_launch, device, _, _)| {
-                known_launch == launch && device != &player.device_public_key
-            })
-        {
+        if reservation.as_ref().is_some_and(|reservation| {
+            reservation.launch_id == launch
+                && reservation.device_public_key != player.device_public_key
+        }) {
             return Err(failure(
                 "NetplayReceiverPresent",
                 "This session already has a receiving device.",
@@ -65,15 +69,15 @@ pub(crate) async fn register(
             .map_err(|_| failure("NoNetplayRoute", "Netplay is unavailable."))??;
         let already = reservation
             .as_ref()
-            .filter(|(launch, _, _, _)| launch == &request.launch_id);
-        if already.is_some_and(|(_, device, _, _)| device != device_public_key) {
+            .filter(|reservation| reservation.launch_id == request.launch_id);
+        if already.is_some_and(|reservation| reservation.device_public_key != *device_public_key) {
             return Err(failure(
                 "NetplayReceiverPresent",
                 "This session already has a receiving device.",
             ));
         }
-        let seat = if let Some((_, _, seat, _)) = already {
-            *seat
+        let seat = if let Some(reservation) = already {
+            reservation.seat
         } else {
             let ServerMode::Host(host) = &state.mode else {
                 unreachable!()
@@ -87,15 +91,19 @@ pub(crate) async fn register(
                     .map_err(|_| failure("NoNetplayRoute", "No controller seat is available."))??;
             // Keep the claim even when the toggle/readback fails. Retrying
             // cannot admit another device or consume another seat.
-            *reservation = Some((
-                request.launch_id.clone(),
-                device_public_key.clone(),
+            *reservation = Some(Reservation {
+                launch_id: request.launch_id.clone(),
+                device_public_key: device_public_key.clone(),
                 seat,
-                false,
-            ));
+                hosting_confirmed: false,
+            });
             seat
         };
-        if !reservation.as_ref().expect("reserved seat").3 {
+        if !reservation
+            .as_ref()
+            .expect("reserved seat")
+            .hosting_confirmed
+        {
             let ServerMode::Host(host) = &state.mode else {
                 unreachable!()
             };
@@ -104,7 +112,7 @@ pub(crate) async fn register(
             tokio::task::spawn_blocking(move || host.netplay_host(&expected))
                 .await
                 .map_err(|_| failure("NoNetplayRoute", "Hosting is unavailable."))??;
-            reservation.as_mut().unwrap().3 = true;
+            reservation.as_mut().unwrap().hosting_confirmed = true;
         }
         let password = password::read(&local.config)
             .map_err(|_| failure("NoNetplayRoute", "The session credential is unavailable."))?;
@@ -137,13 +145,12 @@ pub(crate) async fn object(
         return Err(failure("NoNetplayRoute", "No release is available."));
     };
     let reservation = state.netplay_holder.reservation.lock().await;
-    let (launch, device, _, _) = reservation
+    let reserved = reservation
         .as_ref()
-        .filter(|(_, device, _, _)| device == device_public_key)
+        .filter(|reservation| reservation.device_public_key == *device_public_key)
         .ok_or_else(|| failure("NoNetplayRoute", "No netplay seat is reserved."))?;
-    let _ = device;
     let host = host.clone();
-    let launch = launch.clone();
+    let launch = reserved.launch_id.clone();
     let key = key.to_owned();
     tokio::task::spawn_blocking(move || {
         let local = host.netplay_local(&launch)?;

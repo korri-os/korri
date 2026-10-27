@@ -1491,10 +1491,13 @@ impl HostSessionControl {
         // refuse before a before-hook can perform an effect. This observation
         // does not capture initial saves or publish an automatic history join;
         // the existing post-capture reconcile remains authoritative below.
-        if prepared_plan
-            .as_ref()
-            .is_some_and(|(_, prepared)| !prepared.plan.save_locations.is_empty())
-        {
+        if prepared_plan.as_ref().is_some_and(|(input, prepared)| {
+            !input
+                .netplay
+                .as_ref()
+                .is_some_and(crate::netplay::PluginLaunchNetplay::is_client)
+                && !prepared.plan.save_locations.is_empty()
+        }) {
             let person = person_public_key.ok_or_else(|| {
                 failure(
                     "SaveIdentityUnavailable",
@@ -6913,22 +6916,57 @@ mod tests {
         let backend = Arc::new(DeterministicBackend::default());
         let clock = TestClock::at(1_700_000_000);
         let control = control_with_clock(root.path(), backend.clone(), clock.clone());
+        // Two independent heads disagree about the same file. Normal launch
+        // must refuse this history; a receiving copy must not read it at all.
+        use crate::saves::types::{SaveFile, SaveKind, SnapshotLocation, SnapshotRecord};
+        let store = NativeSaveStore::new(root.path());
+        for (device, content) in [("11".repeat(32), b"a"), ("22".repeat(32), b"b")] {
+            let hash = crate::saves::record::hash(content);
+            store
+                .put_record(
+                    PERSON,
+                    &SnapshotRecord {
+                        parents: vec![],
+                        game_id: "gba/wario".into(),
+                        release_id: Some("gba-release".into()),
+                        runner_id: "mgba".into(),
+                        device,
+                        ended_at: "2026-10-21T00:00:00.000Z".into(),
+                        duration_seconds: 1,
+                        interrupted: false,
+                        locations: vec![SnapshotLocation {
+                            key: "saves".into(),
+                            kind: SaveKind::Save,
+                            files: vec![SaveFile {
+                                path: "game.srm".into(),
+                                sha256: hash.clone(),
+                                bytes: 1,
+                            }],
+                        }],
+                    },
+                )
+                .unwrap();
+            store
+                .put_object(PERSON, &hash, &mut content.as_slice())
+                .unwrap();
+        }
+        assert_eq!(
+            store.reconciliation_status(PERSON, "gba/wario").unwrap(),
+            crate::saves::types::SaveMark::Split
+        );
+        let before = store.records(PERSON, "gba/wario").unwrap();
         let started = control
             .prepare("gba/wario", Some(PERSON), Ok(&command), &BTreeMap::new())
             .unwrap();
         fs::write(folder.join("game.srm"), b"progress").unwrap();
-        let store = NativeSaveStore::new(root.path());
-        assert!(store.records(PERSON, "gba/wario").unwrap().is_empty());
+        assert_eq!(store.records(PERSON, "gba/wario").unwrap(), before);
         control.freeze(&started.launch_id);
-        assert!(store.records(PERSON, "gba/wario").unwrap().is_empty());
+        assert_eq!(store.records(PERSON, "gba/wario").unwrap(), before);
         clock.advance(30);
         backend.insert(&started.launch_id, LaunchUnitState::Completed);
         control.status();
         let records = store.records(PERSON, "gba/wario").unwrap();
-        assert!(
-            records.is_empty(),
-            "a receiver must never publish a snapshot"
-        );
+        assert_eq!(records, before, "a receiver must never publish a snapshot");
     }
 
     #[test]

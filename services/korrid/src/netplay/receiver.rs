@@ -10,19 +10,101 @@ const RECONNECT_WINDOW: Duration = Duration::from_secs(10);
 #[derive(Clone, Default)]
 pub(crate) struct Receiver(Arc<Mutex<State>>);
 #[derive(Default)]
-struct State {
-    status: Option<NetplayStatus>,
-    active: Option<ActiveSession>,
-    ended: Option<StreamPlayEnded>,
-    cancel: Option<watch::Sender<bool>>,
+enum State {
+    #[default]
+    Idle,
+    Preparing(Run),
+    Active {
+        run: Run,
+        session: Box<ActiveSession>,
+    },
+    Ended(StreamPlayEnded),
+}
+#[derive(Clone)]
+struct Run {
+    id: String,
+    status: NetplayStatus,
+    cancel: watch::Sender<bool>,
+}
+impl State {
+    fn run(&self) -> Option<&Run> {
+        match self {
+            Self::Preparing(run) | Self::Active { run, .. } => Some(run),
+            Self::Idle | Self::Ended(_) => None,
+        }
+    }
+    fn run_mut(&mut self) -> Option<&mut Run> {
+        match self {
+            Self::Preparing(run) | Self::Active { run, .. } => Some(run),
+            Self::Idle | Self::Ended(_) => None,
+        }
+    }
 }
 impl Receiver {
     pub(crate) fn busy(&self) -> bool {
-        self.0.lock().expect("netplay receiver").status.is_some()
+        self.0.lock().expect("netplay receiver").run().is_some()
     }
-    fn phase(&self, phase: NetplayPhase) {
-        if let Some(status) = &mut self.0.lock().expect("netplay receiver").status {
-            status.phase = phase;
+    fn begin(&self, status: NetplayStatus) -> Result<(String, watch::Receiver<bool>), RpcFailure> {
+        let mut local = self.0.lock().expect("netplay receiver");
+        if local.run().is_some() {
+            return Err(failure(
+                "ActiveSessionConflict",
+                "This device already has a live session.",
+            ));
+        }
+        let id = status.launch_id.clone();
+        let (cancel, cancelled) = watch::channel(false);
+        *local = State::Preparing(Run {
+            id: id.clone(),
+            status,
+            cancel,
+        });
+        Ok((id, cancelled))
+    }
+    fn failed_preparation(&self, id: &str) {
+        let mut local = self.0.lock().expect("netplay receiver");
+        if matches!(&*local, State::Preparing(run) if run.id == id) {
+            *local = State::Idle;
+        }
+    }
+    fn activate(&self, id: &str, session: ActiveSession) -> Result<(), RpcFailure> {
+        let mut local = self.0.lock().expect("netplay receiver");
+        let State::Preparing(run) = &*local else {
+            return Err(failure("NoNetplayRoute", "The launch was cancelled."));
+        };
+        if run.id != id || *run.cancel.borrow() {
+            return Err(failure("NoNetplayRoute", "The launch was cancelled."));
+        }
+        let mut run = run.clone();
+        run.status.launch_id = session.launch_id.clone();
+        run.status.phase = NetplayPhase::Connecting;
+        *local = State::Active {
+            run,
+            session: Box::new(session),
+        };
+        Ok(())
+    }
+    fn phase(&self, id: &str, phase: NetplayPhase) {
+        if let Some(run) = self
+            .0
+            .lock()
+            .expect("netplay receiver")
+            .run_mut()
+            .filter(|run| run.id == id)
+        {
+            run.status.phase = phase;
+        }
+    }
+    fn owns_copy(&self, id: &str, launch: &str) -> bool {
+        matches!(&*self.0.lock().expect("netplay receiver"), State::Active { run, session } if run.id == id && session.launch_id == launch)
+    }
+    fn retarget(&self, id: &str, launch: &str) {
+        let mut local = self.0.lock().expect("netplay receiver");
+        if let State::Active { run, session } = &mut *local {
+            if run.id == id {
+                run.status.launch_id = launch.into();
+                session.launch_id = launch.into();
+            }
         }
     }
 }
@@ -182,17 +264,12 @@ pub(crate) async fn project(state: &AppState, invite: &mut invites::Invite) {
 }
 
 pub(crate) async fn start(state: &AppState, request: &InviteRequest) -> SessionStreamPlayOutcome {
-    let result = start_inner(state, request).await;
-    if result.is_err() {
-        let mut local = state.netplay_receiver.0.lock().expect("netplay receiver");
-        local.status = None;
-        local.active = None;
-        local.cancel = None;
-    }
-    result
+    start_inner(state, request)
+        .await
         .map(SessionStreamPlayOutcome::Ok)
         .unwrap_or_else(SessionStreamPlayOutcome::Err)
 }
+
 async fn start_inner(
     state: &AppState,
     request: &InviteRequest,
@@ -211,9 +288,10 @@ async fn start_inner(
         .session
         .netplay
         .as_ref()
+        .cloned()
         .ok_or_else(|| failure("NoNetplayRoute", "This runner cannot use netplay."))?;
     let context = state.game_context()?;
-    let runner = core(&context, facts).ok_or_else(|| {
+    let runner = core(&context, &facts).ok_or_else(|| {
         failure(
             "CoreVersionMismatch",
             &format!(
@@ -232,215 +310,217 @@ async fn start_inner(
         .federation
         .as_ref()
         .ok_or_else(|| failure("NoNetplayRoute", "No federation route is available."))?;
-    let (cancel, mut cancelled) = watch::channel(false);
-    {
-        let mut local = state.netplay_receiver.0.lock().expect("netplay receiver");
-        local.status = Some(NetplayStatus {
-            launch_id: crate::generate_launch_id(),
-            device_label: invite.device_label.clone(),
-            game_title: invite.session.title.clone(),
-            phase: NetplayPhase::Connecting,
-        });
-        local.cancel = Some(cancel);
-        local.ended = None;
-    }
-    // Holder preparation reserves the authenticated seat before the object RPC.
-    let label = stream_play::registration::caller_label(state)?;
-    let prepared = tokio::select! {
-        _ = cancelled.changed() => return Err(failure("NoNetplayRoute", "The launch was cancelled.")),
-        response = peer.call(RpcRequest::SessionNetplay(SessionNetplayRequest { launch_id: invite.session.launch_id.clone(), device_label: label })) => match response.map_err(|_| failure("NoNetplayRoute", "The holding device could not prepare netplay."))? {
-            RpcResponse::SessionNetplay(SessionNetplayOutcome::Ok(prepared)) => prepared,
-            RpcResponse::SessionNetplay(SessionNetplayOutcome::Err(_)) => return Err(failure("NoNetplayRoute", "The holding device could not prepare netplay.")),
-            _ => return Err(failure("NoNetplayRoute", "The holding device returned an invalid reply.")),
-        }
-    };
-    if prepared.runner.netplay != facts.runner.netplay {
-        return Err(failure(
-            "CoreVersionMismatch",
-            &format!(
-                "{} runs a different version of {}",
-                invite.device_label, facts.runner.netplay.library
-            ),
-        ));
-    }
-    if prepared.release_key != facts.release_key || prepared.release_bytes != facts.release_bytes {
-        return Err(failure(
-            "CopyFailed",
-            "The holding device's release changed.",
-        ));
-    }
-    let game = match release_game(&context, &prepared.release_key) {
-        Some(game) => game,
-        None => {
-            if !acquisition::netplay::room(&context.root, prepared.release_bytes) {
-                return Err(failure(
-                    "NotEnoughSpace",
-                    &format!("The copy needs {} bytes.", prepared.release_bytes),
-                ));
+    let (attempt, mut cancelled) = state.netplay_receiver.begin(NetplayStatus {
+        launch_id: crate::generate_launch_id(),
+        device_label: invite.device_label.clone(),
+        game_title: invite.session.title.clone(),
+        phase: NetplayPhase::Connecting,
+    })?;
+    let result = async {
+        // Holder preparation reserves the authenticated seat before the object RPC.
+        let label = stream_play::registration::caller_label(state)?;
+        let prepared = tokio::select! {
+            _ = cancelled.changed() => return Err(failure("NoNetplayRoute", "The launch was cancelled.")),
+            response = peer.call(RpcRequest::SessionNetplay(SessionNetplayRequest { launch_id: invite.session.launch_id.clone(), device_label: label })) => match response.map_err(|_| failure("NoNetplayRoute", "The holding device could not prepare netplay."))? {
+                RpcResponse::SessionNetplay(SessionNetplayOutcome::Ok(prepared)) => prepared,
+                RpcResponse::SessionNetplay(SessionNetplayOutcome::Err(_)) => return Err(failure("NoNetplayRoute", "The holding device could not prepare netplay.")),
+                _ => return Err(failure("NoNetplayRoute", "The holding device returned an invalid reply.")),
             }
-            state.netplay_receiver.phase(NetplayPhase::Copying {
-                done: 0,
-                total: prepared.release_bytes,
-            });
-            let transfer = async {
-                let _turn = acquisition::netplay::turn(
-                    &state.acquisition,
-                    &context.root,
-                    &prepared.release_key,
-                )
-                .await;
-                let mut response = peer
-                    .release_object(&prepared.release_key)
-                    .await
-                    .map_err(|_| failure("CopyFailed", "The release could not be copied."))?;
-                if !response.status().is_success()
-                    || response.content_length() != Some(prepared.release_bytes)
-                {
+        };
+        if prepared.runner.netplay != facts.runner.netplay {
+            return Err(failure(
+                "CoreVersionMismatch",
+                &format!(
+                    "{} runs a different version of {}",
+                    invite.device_label, facts.runner.netplay.library
+                ),
+            ));
+        }
+        if prepared.release_key != facts.release_key || prepared.release_bytes != facts.release_bytes {
+            return Err(failure(
+                "CopyFailed",
+                "The holding device's release changed.",
+            ));
+        }
+        let game = match release_game(&context, &prepared.release_key) {
+            Some(game) => game,
+            None => {
+                if !acquisition::netplay::room(&context.root, prepared.release_bytes) {
                     return Err(failure(
-                        "CopyFailed",
-                        "The release copy has an unexpected length.",
+                        "NotEnoughSpace",
+                        &format!("The copy needs {} bytes.", prepared.release_bytes),
                     ));
                 }
-                let encoded = response
-                    .headers()
-                    .get(axum::http::header::CONTENT_DISPOSITION)
-                    .and_then(|value| value.to_str().ok())
-                    .and_then(|value| value.strip_prefix("attachment; filename*=UTF-8''"))
-                    .ok_or_else(|| failure("CopyFailed", "The release has no file name."))?;
-                let encoded = format!("name={encoded}");
-                let name = url::form_urlencoded::parse(encoded.as_bytes())
-                    .next()
-                    .map(|(_, name)| name.into_owned())
-                    .ok_or_else(|| failure("CopyFailed", "The release name is invalid."))?;
-                let writer_context = context.clone();
-                let bytes = prepared.release_bytes;
-                let mut copy = tokio::task::spawn_blocking(move || {
-                    acquisition::netplay::Copy::begin(&writer_context, &name, bytes)
-                })
-                .await
-                .map_err(|_| failure("CopyFailed", "The release copy could not start."))??;
-                let mut done = 0;
-                loop {
-                    let chunk = tokio::time::timeout(Duration::from_secs(60), response.chunk())
+                state.netplay_receiver.phase(&attempt, NetplayPhase::Copying {
+                    done: 0,
+                    total: prepared.release_bytes,
+                });
+                let transfer = async {
+                    let _turn = acquisition::netplay::turn(
+                        &state.acquisition,
+                        &context.root,
+                        &prepared.release_key,
+                    )
+                    .await;
+                    let mut response = peer
+                        .release_object(&prepared.release_key)
                         .await
-                        .map_err(|_| failure("CopyFailed", "The release copy stopped."))?
-                        .map_err(|_| failure("CopyFailed", "The release copy failed."))?;
-                    let Some(chunk) = chunk else {
-                        break;
-                    };
-                    let count = chunk.len() as u64;
-                    copy = tokio::task::spawn_blocking(move || {
-                        copy.write(&chunk)?;
-                        Ok::<_, RpcFailure>(copy)
+                        .map_err(|_| failure("CopyFailed", "The release could not be copied."))?;
+                    if !response.status().is_success()
+                        || response.content_length() != Some(prepared.release_bytes)
+                    {
+                        return Err(failure(
+                            "CopyFailed",
+                            "The release copy has an unexpected length.",
+                        ));
+                    }
+                    let encoded = response
+                        .headers()
+                        .get(axum::http::header::CONTENT_DISPOSITION)
+                        .and_then(|value| value.to_str().ok())
+                        .and_then(|value| value.strip_prefix("attachment; filename*=UTF-8''"))
+                        .ok_or_else(|| failure("CopyFailed", "The release has no file name."))?;
+                    let encoded = format!("name={encoded}");
+                    let name = url::form_urlencoded::parse(encoded.as_bytes())
+                        .next()
+                        .map(|(_, name)| name.into_owned())
+                        .ok_or_else(|| failure("CopyFailed", "The release name is invalid."))?;
+                    let writer_context = context.clone();
+                    let bytes = prepared.release_bytes;
+                    let mut copy = tokio::task::spawn_blocking(move || {
+                        acquisition::netplay::Copy::begin(&writer_context, &name, bytes)
                     })
                     .await
-                    .map_err(|_| failure("CopyFailed", "The release copy failed."))??;
-                    done += count;
-                    state.netplay_receiver.phase(NetplayPhase::Copying {
-                        done,
-                        total: prepared.release_bytes,
-                    });
+                    .map_err(|_| failure("CopyFailed", "The release copy could not start."))??;
+                    let mut done = 0;
+                    loop {
+                        let chunk = tokio::time::timeout(Duration::from_secs(60), response.chunk())
+                            .await
+                            .map_err(|_| failure("CopyFailed", "The release copy stopped."))?
+                            .map_err(|_| failure("CopyFailed", "The release copy failed."))?;
+                        let Some(chunk) = chunk else {
+                            break;
+                        };
+                        let count = chunk.len() as u64;
+                        copy = tokio::task::spawn_blocking(move || {
+                            copy.write(&chunk)?;
+                            Ok::<_, RpcFailure>(copy)
+                        })
+                        .await
+                        .map_err(|_| failure("CopyFailed", "The release copy failed."))??;
+                        done += count;
+                        state.netplay_receiver.phase(&attempt, NetplayPhase::Copying {
+                            done,
+                            total: prepared.release_bytes,
+                        });
+                    }
+                    let context = context.clone();
+                    let key = prepared.release_key.clone();
+                    let title = invite
+                        .session
+                        .title
+                        .clone()
+                        .unwrap_or_else(|| "Game".into());
+                    tokio::task::spawn_blocking(move || copy.finish(&context, &key, &title))
+                        .await
+                        .map_err(|_| failure("CopyFailed", "The release could not be verified."))?
+                };
+                tokio::select! {
+                    _ = cancelled.changed() => return Err(failure("NoNetplayRoute", "The launch was cancelled.")),
+                    result = transfer => result?,
                 }
-                let context = context.clone();
-                let key = prepared.release_key.clone();
-                let title = invite
-                    .session
-                    .title
-                    .clone()
-                    .unwrap_or_else(|| "Game".into());
-                tokio::task::spawn_blocking(move || copy.finish(&context, &key, &title))
-                    .await
-                    .map_err(|_| failure("CopyFailed", "The release could not be verified."))?
-            };
-            tokio::select! {
-                _ = cancelled.changed() => return Err(failure("NoNetplayRoute", "The launch was cancelled.")),
-                result = transfer => result?,
             }
-        }
-    };
-    state.netplay_receiver.phase(NetplayPhase::Connecting);
-    let forward = tokio::select! {
-        _ = cancelled.changed() => return Err(failure("NoNetplayRoute", "The launch was cancelled.")),
-        forward = directory.netplay_forward(&invite.device_public_key) => forward.map_err(|_| failure("NoNetplayRoute", "No federation route is available."))?,
-    };
-    let source = password::create(
-        state.private_state_root(),
-        Some(prepared.seat),
-        Some(&prepared.password),
-    )
-    .map_err(|_| {
-        failure(
-            "NoNetplayRoute",
-            "The session credential could not be created.",
+        };
+        state.netplay_receiver.phase(&attempt, NetplayPhase::Connecting);
+        let forward = tokio::select! {
+            _ = cancelled.changed() => return Err(failure("NoNetplayRoute", "The launch was cancelled.")),
+            forward = directory.netplay_forward(&invite.device_public_key) => forward.map_err(|_| failure("NoNetplayRoute", "No federation route is available."))?,
+        };
+        let source = password::create(
+            state.private_state_root(),
+            Some(prepared.seat),
+            Some(&prepared.password),
         )
-    })?;
-    let input = PluginLaunchNetplay::Client {
-        address: forward.address.ip().to_string(),
-        port: forward.address.port(),
-        player: prepared.seat,
-        password_config: password::GAME_CONFIG.into(),
-    };
-    let ServerMode::Host(host) = &state.mode else {
-        return Err(failure(
-            "NoNetplayRoute",
-            "A local game runner is required.",
+        .map_err(|_| {
+            failure(
+                "NoNetplayRoute",
+                "The session credential could not be created.",
+            )
+        })?;
+        let input = PluginLaunchNetplay::Client {
+            address: forward.address.ip().to_string(),
+            port: forward.address.port(),
+            player: prepared.seat,
+            password_config: password::GAME_CONFIG.into(),
+        };
+        let ServerMode::Host(host) = &state.mode else {
+            return Err(failure(
+                "NoNetplayRoute",
+                "A local game runner is required.",
+            ));
+        };
+        let host = host.clone();
+        let release = prepared.release_key.clone();
+        let launched = tokio::task::spawn_blocking(move || {
+            host.prepare_netplay_client(&game, &runner, &release, input, source)
+        })
+        .await
+        .map_err(|_| failure("NoNetplayRoute", "The local game could not start."))??;
+        let ServerMode::Host(host) = &state.mode else {
+            unreachable!()
+        };
+        let mut active = match crate::host_session_status_outcome(host.session_status().await) {
+            SessionStatusOutcome::Ok(status) => status
+                .active
+                .ok_or_else(|| failure("NoNetplayRoute", "The local game did not start."))?,
+            SessionStatusOutcome::Err(error) => return Err(error),
+        };
+        active.title = invite.session.title.clone();
+        if *cancelled.borrow() {
+            let _ = host.session_stop(&launched.session.launch_id).await;
+            return Err(failure("NoNetplayRoute", "The launch was cancelled."));
+        }
+        state.netplay_receiver.activate(&attempt, active.clone())?;
+        state.invites.netplay_clear();
+        tokio::spawn(monitor(
+            state.clone(),
+            invite,
+            peer,
+            MonitoredCopy { attempt_id: attempt.clone(), launch_id: active.launch_id.clone(), forward },
+            prepared,
+            cancelled,
         ));
-    };
-    let host = host.clone();
-    let release = prepared.release_key.clone();
-    let launched = tokio::task::spawn_blocking(move || {
-        host.prepare_netplay_client(&game, &runner, &release, input, source)
-    })
-    .await
-    .map_err(|_| failure("NoNetplayRoute", "The local game could not start."))??;
-    let ServerMode::Host(host) = &state.mode else {
-        unreachable!()
-    };
-    let mut active = match crate::host_session_status_outcome(host.session_status().await) {
-        SessionStatusOutcome::Ok(status) => status
-            .active
-            .ok_or_else(|| failure("NoNetplayRoute", "The local game did not start."))?,
-        SessionStatusOutcome::Err(error) => return Err(error),
-    };
-    active.title = invite.session.title.clone();
-    if *cancelled.borrow() {
-        let _ = host.session_stop(&launched.session.launch_id).await;
-        return Err(failure("NoNetplayRoute", "The launch was cancelled."));
+        Ok(active)
+    }.await;
+    if result.is_err() {
+        // A refused second Start never owns the first run's state or sender.
+        state.netplay_receiver.failed_preparation(&attempt);
     }
-    {
-        let mut local = state.netplay_receiver.0.lock().expect("netplay receiver");
-        let status = local
-            .status
-            .as_mut()
-            .ok_or_else(|| failure("NoNetplayRoute", "The launch was cancelled."))?;
-        status.launch_id = active.launch_id.clone();
-        status.phase = NetplayPhase::Connecting;
-        local.active = Some(active.clone());
-    }
-    state.invites.netplay_clear();
-    tokio::spawn(monitor(
-        state.clone(),
-        invite,
-        peer,
-        active.launch_id.clone(),
-        forward,
-        prepared,
-        cancelled,
-    ));
-    Ok(active)
+    result
+}
+
+struct MonitoredCopy {
+    attempt_id: String,
+    launch_id: String,
+    forward: federation::reach::NetplayForward,
+}
+enum ConnectionState {
+    Connecting { since: tokio::time::Instant },
+    Playing,
+    Reconnecting { since: tokio::time::Instant },
 }
 
 async fn monitor(
     state: AppState,
     invite: invites::Invite,
     peer: upstream_native::NativeClient,
-    mut launch: String,
-    mut forward: federation::reach::NetplayForward,
+    mut copy: MonitoredCopy,
     prepared: SessionNetplayPrepared,
     mut cancelled: watch::Receiver<bool>,
 ) {
-    let mut lost = None;
-    let mut played = false;
+    let mut connection = ConnectionState::Connecting {
+        since: tokio::time::Instant::now(),
+    };
     let ServerMode::Host(host) = &state.mode else {
         return;
     };
@@ -450,13 +530,25 @@ async fn monitor(
         if *cancelled.borrow() {
             return;
         }
+        // Serialize native stop/relaunch with Leave and local admission. A
+        // stopped copy cannot be replaced behind a successful Leave.
+        let _selection = state.session_selection.lock().await;
+        if *cancelled.borrow()
+            || !state
+                .netplay_receiver
+                .owns_copy(&copy.attempt_id, &copy.launch_id)
+        {
+            return;
+        }
         let observation = match status {
             Ok(Ok(upstream::UpstreamSessionStatus::SessionStatus {
                 active: Some(active),
             })) if active.launch_id == invite.session.launch_id => Some(active),
             Ok(Ok(_)) => {
-                finish(&state, &invite, &launch, false).await;
-                return;
+                if finish(&state, &invite, &copy, false).await {
+                    return;
+                }
+                continue;
             }
             _ => None,
         };
@@ -464,19 +556,33 @@ async fn monitor(
             .federation
             .as_ref()
             .is_some_and(|directory| directory.has_iroh_route(&invite.device_public_key));
-        if observation.is_none() || !route_alive || !forward.ready() {
-            let since = *lost.get_or_insert_with(tokio::time::Instant::now);
-            state.netplay_receiver.phase(if played {
-                NetplayPhase::Reconnecting
-            } else {
-                NetplayPhase::Connecting
-            });
-            let _ = host.session_freeze(&launch).await;
+        if observation.is_none() || !route_alive || !copy.forward.ready() {
+            connection = match connection {
+                ConnectionState::Playing => ConnectionState::Reconnecting {
+                    since: tokio::time::Instant::now(),
+                },
+                waiting => waiting,
+            };
+            let (phase, since) = match connection {
+                ConnectionState::Connecting { since } => (NetplayPhase::Connecting, since),
+                ConnectionState::Reconnecting { since } => {
+                    // A replacement client is making its own first connection.
+                    // Freeze only a copy that has already opened its bridge.
+                    if copy.forward.has_connected() {
+                        let _ = host.session_freeze(&copy.launch_id).await;
+                    }
+                    (NetplayPhase::Reconnecting, since)
+                }
+                ConnectionState::Playing => unreachable!(),
+            };
+            state.netplay_receiver.phase(&copy.attempt_id, phase);
             if reconnect_expired(since, tokio::time::Instant::now()) {
-                finish(&state, &invite, &launch, true).await;
-                return;
+                if finish(&state, &invite, &copy, true).await {
+                    return;
+                }
+                continue;
             }
-            if observation.is_some() && route_alive && forward.lost() {
+            if observation.is_some() && route_alive && copy.forward.lost() {
                 // RetroArch has no reconnect command. Start its client again;
                 // it receives the holder's current state in a fresh private tmp.
                 if let Some(directory) = &state.federation {
@@ -487,7 +593,7 @@ async fn monitor(
                     .await
                     .unwrap_or_else(|_| Err(std::io::Error::from(std::io::ErrorKind::TimedOut)))
                     {
-                        if host.session_stop(&launch).await.is_ok() {
+                        if host.session_stop(&copy.launch_id).await.is_ok() {
                             if let (Ok(context), Ok(source)) = (
                                 state.game_context(),
                                 password::create(
@@ -523,23 +629,15 @@ async fn monitor(
                                         })
                                         .await
                                     {
-                                        launch = started.session.launch_id;
-                                        forward = next;
+                                        copy.launch_id = started.session.launch_id;
+                                        copy.forward = next;
                                         if *cancelled.borrow() {
-                                            let _ = host.session_stop(&launch).await;
+                                            let _ = host.session_stop(&copy.launch_id).await;
                                             return;
                                         }
-                                        let mut local = state
+                                        state
                                             .netplay_receiver
-                                            .0
-                                            .lock()
-                                            .expect("netplay receiver");
-                                        if let Some(status) = &mut local.status {
-                                            status.launch_id = launch.clone();
-                                        }
-                                        if let Some(active) = &mut local.active {
-                                            active.launch_id = launch.clone();
-                                        }
+                                            .retarget(&copy.attempt_id, &copy.launch_id);
                                     }
                                 }
                             }
@@ -549,44 +647,43 @@ async fn monitor(
             }
             continue;
         }
-        lost = None;
-        played = true;
+        connection = ConnectionState::Playing;
         let active = observation.expect("observed holder");
         if active.phase.as_deref() == Some("frozen") {
-            let _ = host.session_freeze(&launch).await;
-            state.netplay_receiver.phase(NetplayPhase::HolderLeft);
+            let _ = host.session_freeze(&copy.launch_id).await;
+            state
+                .netplay_receiver
+                .phase(&copy.attempt_id, NetplayPhase::HolderLeft);
         } else {
-            let _ = host.session_thaw(&launch).await;
-            state.netplay_receiver.phase(NetplayPhase::Playing);
+            let _ = host.session_thaw(&copy.launch_id).await;
+            state
+                .netplay_receiver
+                .phase(&copy.attempt_id, NetplayPhase::Playing);
         }
     }
 }
 fn reconnect_expired(since: tokio::time::Instant, now: tokio::time::Instant) -> bool {
     now.duration_since(since) >= RECONNECT_WINDOW
 }
-async fn finish(state: &AppState, invite: &invites::Invite, launch: &str, lost: bool) {
+async fn finish(
+    state: &AppState,
+    invite: &invites::Invite,
+    copy: &MonitoredCopy,
+    lost: bool,
+) -> bool {
     if let ServerMode::Host(host) = &state.mode {
-        while stop_copy(host, launch).await.is_err() {
+        if stop_copy(host, &copy.launch_id).await.is_err() {
             log::warn!("netplay receiver is waiting for native stop recovery");
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            if !state.netplay_receiver.busy() {
-                return;
-            }
+            return false;
         }
     }
     let mut local = state.netplay_receiver.0.lock().expect("netplay receiver");
-    if local
-        .active
-        .as_ref()
-        .is_none_or(|active| active.launch_id != launch)
+    if !matches!(&*local, State::Active { run, session } if run.id == copy.attempt_id && session.launch_id == copy.launch_id)
     {
-        return;
+        return true;
     }
-    local.status = None;
-    local.active = None;
-    local.cancel = None;
-    local.ended = Some(StreamPlayEnded {
-        launch_id: launch.into(),
+    *local = State::Ended(StreamPlayEnded {
+        launch_id: copy.launch_id.clone(),
         game_id: invite.session.game_id.clone(),
         game_title: invite.session.title.clone(),
         device_label: invite.device_label.clone(),
@@ -596,6 +693,7 @@ async fn finish(state: &AppState, invite: &invites::Invite, launch: &str, lost: 
             stream_play::StreamPlayEndCause::SessionEnded
         },
     });
+    true
 }
 
 pub(crate) async fn dispatch(
@@ -636,29 +734,30 @@ pub(crate) async fn dispatch(
         }
         return None;
     }
-    if !state.netplay_receiver.busy()
-        && matches!(
-            request,
-            RpcRequest::SessionPrepare(_)
-                | RpcRequest::SessionStart(_)
-                | RpcRequest::SelectedGameLaunch(_)
-                | RpcRequest::InvitesStreamPlay(_)
-        )
-    {
-        state
-            .netplay_receiver
-            .0
-            .lock()
-            .expect("netplay receiver")
-            .ended = None;
+    if matches!(
+        request,
+        RpcRequest::SessionPrepare(_)
+            | RpcRequest::SessionStart(_)
+            | RpcRequest::SelectedGameLaunch(_)
+            | RpcRequest::InvitesStreamPlay(_)
+    ) {
+        let mut local = state.netplay_receiver.0.lock().expect("netplay receiver");
+        if matches!(&*local, State::Ended(_)) {
+            *local = State::Idle;
+        }
     }
     let (status, active, ended) = {
         let local = state.netplay_receiver.0.lock().expect("netplay receiver");
-        (
-            local.status.clone(),
-            local.active.clone(),
-            local.ended.clone(),
-        )
+        match &*local {
+            State::Idle => (None, None, None),
+            State::Preparing(run) => (Some(run.status.clone()), None, None),
+            State::Active { run, session } => (
+                Some(run.status.clone()),
+                Some(session.as_ref().clone()),
+                None,
+            ),
+            State::Ended(ended) => (None, None, Some(ended.clone())),
+        }
     };
     if let RpcRequest::SessionStatus(_) = request {
         if status.is_some() || ended.is_some() {
@@ -732,27 +831,45 @@ async fn leave(
             "The exact launch is required.",
         ));
     }
+    {
+        let local = state.netplay_receiver.0.lock().expect("netplay receiver");
+        if let State::Preparing(run) = &*local {
+            if run.status.launch_id != status.launch_id {
+                return Err(failure(
+                    "StaleLaunchIdentity",
+                    "The exact launch is required.",
+                ));
+            }
+            // Preparation owns cleanup until its cancellable work has ended.
+            // It already holds the admission gate, so do not wait for it here.
+            let _ = run.cancel.send(true);
+            return Ok(());
+        }
+    }
+    let _selection = state.session_selection.lock().await;
     let active = {
         let local = state.netplay_receiver.0.lock().expect("netplay receiver");
-        if let Some(cancel) = &local.cancel {
-            let _ = cancel.send(true);
+        match &*local {
+            State::Active { run, session } if run.status.launch_id == status.launch_id => {
+                session.as_ref().clone()
+            }
+            _ => {
+                return Err(failure(
+                    "StaleLaunchIdentity",
+                    "The exact launch is required.",
+                ))
+            }
         }
-        local.active.clone()
     };
-    if let (ServerMode::Host(host), Some(active)) = (&state.mode, active) {
+    if let ServerMode::Host(host) = &state.mode {
         stop_copy(host, &active.launch_id).await?;
     }
     let mut local = state.netplay_receiver.0.lock().expect("netplay receiver");
-    if local
-        .status
-        .as_ref()
-        .is_some_and(|current| current.launch_id == status.launch_id)
-    {
-        local.active = None;
-        local.status = None;
-        local.cancel = None;
+    if let State::Active { run, .. } = &*local {
+        // Cancellation is committed only after the native copy has stopped.
+        let _ = run.cancel.send(true);
     }
-
+    *local = State::Idle;
     Ok(())
 }
 
@@ -775,6 +892,10 @@ async fn stop_copy(host: &host::HostRuntime, launch: &str) -> Result<(), RpcFail
         }
     }
 }
+
+#[cfg(test)]
+#[path = "receiver_monitor_tests.rs"]
+mod monitor_tests;
 
 #[cfg(test)]
 mod tests {
@@ -810,7 +931,6 @@ mod tests {
         let held = holder.prepare("game", None).await.unwrap().session;
         let copy = receiver.prepare("game", None).await.unwrap().session;
         let (state, _) = app_states(receiver.clone());
-        let (cancel, cancellation) = watch::channel(false);
         let status = NetplayStatus {
             launch_id: copy.launch_id.clone(),
             device_label: "Holder".into(),
@@ -821,12 +941,8 @@ mod tests {
             serde_json::json!({"launchId":copy.launch_id,"gameId":"game","phase":"running"}),
         )
         .unwrap();
-        *state.netplay_receiver.0.lock().unwrap() = State {
-            status: Some(status),
-            active: Some(active),
-            ended: None,
-            cancel: Some(cancel),
-        };
+        let (attempt, cancellation) = state.netplay_receiver.begin(status).unwrap();
+        state.netplay_receiver.activate(&attempt, active).unwrap();
         let response = crate::dispatch(
             &state,
             &authorization::AuthorizationContext::LocalBrowser,
@@ -867,7 +983,7 @@ mod tests {
                 | host::control::HostSessionStatus::Completed { .. }
         ));
     }
-    fn facts() -> NetplaySession {
+    pub(super) fn facts() -> NetplaySession {
         NetplaySession {
             release_key: format!("sha256:{}", "1".repeat(64)),
             release_bytes: 123,
