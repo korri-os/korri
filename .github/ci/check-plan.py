@@ -121,6 +121,9 @@ def affected(paths):
             # Native composition and shared full-check orchestration reach
             # consumers outside their containing source directory.
             return set(LANES)
+        # The deploy harness reads these sandbox properties from the backend.
+        if path == "services/korrid/src/host/systemd_unit.rs":
+            selected.add("inputd")
         if path in PARITY_INPUTS:
             selected.add("parity")
         if path == "clients/cli/tests/parity.py":
@@ -152,7 +155,10 @@ def affected(paths):
         elif path.startswith("clients/cli/"):
             selected.update({"cli", "fmt", "parity", "acceptance"})
         elif path.startswith("services/korrid/"):
-            selected.update({"fmt", "treaty", "korrid", "cli", "inputd", "acceptance"})
+            # inputd's Rust crate does not consume korrid. Its module/package
+            # checks stay selected for inputd, shared Nix, treaty and lock inputs,
+            # not every unrelated backend implementation edit.
+            selected.update({"fmt", "treaty", "korrid", "cli", "acceptance"})
         elif path.startswith("services/inputd/"):
             # korrid embeds inputd's seat runtime in controller tests.
             selected.update({"fmt", "inputd", "korrid", "cli", "acceptance"})

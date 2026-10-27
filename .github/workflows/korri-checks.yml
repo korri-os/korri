@@ -79,7 +79,7 @@ jobs:
     needs: select
     if: needs.select.outputs.policy == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
       - name: Check out the exact tested source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -103,7 +103,7 @@ jobs:
     needs: select
     if: needs.select.outputs.cache == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Check out the exact tested source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -129,7 +129,7 @@ jobs:
     needs: select
     if: needs.select.outputs.fmt == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
       - name: Check out the exact tested source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -153,7 +153,7 @@ jobs:
     needs: select
     if: needs.select.outputs.treaty == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Check out the exact tested source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -177,7 +177,7 @@ jobs:
     needs: select
     if: needs.select.outputs.portal == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Check out the exact tested source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -223,7 +223,7 @@ jobs:
     needs: select
     if: needs.select.outputs.cli == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     # Preserve baseline compiler policy; do not create redundant cargo check/test builds.
     env:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
@@ -253,7 +253,7 @@ jobs:
     needs: select
     if: needs.select.outputs.korrid == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     # Preserve baseline compiler policy; do not create redundant cargo check/test builds.
     env:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
@@ -281,6 +281,8 @@ jobs:
     needs: select
     if: needs.select.outputs.inputd == 'true'
     runs-on: ubuntu-24.04
+    # Added Rust/core plus eight Nix module/package gates. Ordinary Korrid
+    # body edits do not select this lane; full mode retains every gate.
     timeout-minutes: 45
     # Preserve baseline compiler policy; do not create redundant cargo check/test builds.
     env:
@@ -309,7 +311,7 @@ jobs:
     needs: select
     if: needs.select.outputs.limitsd == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     # Preserve baseline compiler policy; do not create redundant cargo check/test builds.
     env:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
@@ -337,7 +339,7 @@ jobs:
     needs: select
     if: needs.select.outputs.pico == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Check out the exact tested source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -361,7 +363,7 @@ jobs:
     needs: select
     if: needs.select.outputs.zone == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Check out the exact tested source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -385,7 +387,7 @@ jobs:
     needs: select
     if: needs.select.outputs.boxbuster == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Check out the exact tested source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
