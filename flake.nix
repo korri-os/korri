@@ -245,6 +245,10 @@
             hostPackage = pluginHost.packages.korri-plugin-host;
           })
           // {
+            korri-cli-build-identity-eval = import ./clients/cli/build-identity-check.nix {
+              inherit pkgs crane proseql;
+              buildBinaries = false;
+            };
             korri-cli-build-identity = import ./clients/cli/build-identity-check.nix {
               inherit pkgs crane proseql;
             };

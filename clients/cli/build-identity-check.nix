@@ -2,6 +2,7 @@
   pkgs,
   crane,
   proseql,
+  buildBinaries ? true,
 }:
 let
   package =
@@ -15,8 +16,12 @@ let
 in
 assert first.cargoArtifacts.drvPath == second.cargoArtifacts.drvPath;
 assert first.drvPath != second.drvPath;
-pkgs.runCommand "korri-build-identity-check" { } ''
-  test "$(${first}/bin/korri --version)" = 'korri 0.0.0 (identity-regression-first)'
-  test "$(${second}/bin/korri --version)" = 'korri 0.0.0 (identity-regression-second)'
-  touch "$out"
-''
+pkgs.runCommand "korri-build-identity${if buildBinaries then "" else "-eval"}-check" { } (
+  pkgs.lib.optionalString buildBinaries ''
+    test "$(${first}/bin/korri --version)" = 'korri 0.0.0 (identity-regression-first)'
+    test "$(${second}/bin/korri --version)" = 'korri 0.0.0 (identity-regression-second)'
+  ''
+  + ''
+    touch "$out"
+  ''
+)
