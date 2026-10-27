@@ -693,11 +693,15 @@ let
 
     zone-check = {
       description = "Run the Zone surface unit tests, gates and acceptance, typecheck, and architecture lint.";
+      usageSuffix = " -- [bun test arguments]";
       runtimeInputs = [ pkgs.bun ];
+      # The font reproducibility check launches its native Nix-shebang builder.
+      # Hosted Nix installs need not have a channel or a pre-existing NIX_PATH.
+      env.NIX_PATH = "nixpkgs=${pkgs.path}";
       script = ''
         cd "$KORRI_ROOT/surfaces/zone"
         bun install --frozen-lockfile --ignore-scripts
-        bun test
+        bun test "$@"
         bun run typecheck
         bun run lint
       '';

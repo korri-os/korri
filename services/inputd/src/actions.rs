@@ -151,7 +151,11 @@ mod tests {
         commands.insert(
             ActionId::WorkspaceNext,
             ActionCommand::new(
-                std::fs::canonicalize("/run/current-system/sw/bin/true").unwrap(),
+                std::fs::canonicalize(
+                    std::env::var_os("KORRI_TEST_TRUE")
+                        .expect("immutable true fixture from the inputd dev shell"),
+                )
+                .unwrap(),
                 [],
                 BTreeMap::new(),
             )

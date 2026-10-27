@@ -843,7 +843,11 @@ mod tests {
     fn development_profile_rejects_configured_action_commands() {
         use korri_inputd::actions::{action_entry, ActionId};
 
-        let executable = std::fs::canonicalize("/run/current-system/sw/bin/true").unwrap();
+        let executable = std::fs::canonicalize(
+            std::env::var_os("KORRI_TEST_TRUE")
+                .expect("immutable true fixture from the inputd dev shell"),
+        )
+        .unwrap();
         let command = serde_json::json!({
             "executable": executable,
             "argv": [],
