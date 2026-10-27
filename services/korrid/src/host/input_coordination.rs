@@ -526,13 +526,15 @@ mod tests {
         reply.session = Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into());
         assert_eq!(poll_cadence(&reply), LIVE_POLL);
         reply.session = None;
-        reply.remote_sources.push(korri_input_contract::RemoteSource {
-            client_id: "paired-client-a".into(),
-            launch_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
-            controller_number: 0,
-            state: GamepadState::neutral(),
-            slot: None,
-        });
+        reply
+            .remote_sources
+            .push(korri_input_contract::RemoteSource {
+                client_id: "paired-client-a".into(),
+                launch_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                controller_number: 0,
+                state: GamepadState::neutral(),
+                slot: None,
+            });
         assert_eq!(poll_cadence(&reply), LIVE_POLL);
     }
     #[test]

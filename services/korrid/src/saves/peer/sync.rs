@@ -80,8 +80,7 @@ fn held_record(
         // Prelaunch needs no renewed historical receipts: only a shared head
         // without a current receipt from a complete peer is offered again.
         SyncPurpose::CheckLaunch => {
-            if advertised.contains(id)
-                && !(confirmed.contains(id) && remote_complete.contains(id))
+            if advertised.contains(id) && !(confirmed.contains(id) && remote_complete.contains(id))
             {
                 HeldRecord::Push
             } else {
@@ -452,8 +451,9 @@ impl SavePeerService {
             let records = self
                 .storage(move |repository| repository.records(&person_key, &game_key))
                 .await?;
-            let local_heads: BTreeSet<String> =
-                crate::saves::store::head_ids(&records)?.into_iter().collect();
+            let local_heads: BTreeSet<String> = crate::saves::store::head_ids(&records)?
+                .into_iter()
+                .collect();
             let known_incomplete = self.known_incomplete(person, peer);
             // One record per envelope keeps large histories from exceeding the
             // native peer envelope bound. Object bytes never enter RPC JSON.
