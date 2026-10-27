@@ -144,6 +144,22 @@ struct DirectoryState {
     memory: Memory,
     live: BTreeMap<String, LivePeer>,
     epoch: u64,
+    /// Signature-checked results derived from each remembered peer's exact
+    /// signed sources. Every save peer request reads a snapshot, and
+    /// re-verifying each owner statement and decrypting each endpoint event
+    /// took about a third of korrid's CPU on an RG353M. An entry is reused
+    /// only for byte-identical sources under the same local identity, so it
+    /// can never vouch for anything the full checks would reject.
+    derived: BTreeMap<String, DerivedPeer>,
+}
+
+struct DerivedPeer {
+    device_public_key: Option<String>,
+    owner_public_key: Option<String>,
+    owner_statement: String,
+    endpoint_event: Option<String>,
+    membership: VerifiedOwnerStatement,
+    endpoint: Option<EndpointRecord>,
 }
 
 #[derive(Clone)]
@@ -268,6 +284,7 @@ impl FederationDirectory {
                     memory,
                     live,
                     epoch: 0,
+                    derived: BTreeMap::new(),
                 })
             })
             .map_err(|_| FederationError::Identity)??;
@@ -661,7 +678,8 @@ impl FederationDirectory {
     }
 
     pub fn snapshot(&self) -> Result<Vec<PeerSnapshot>, FederationError> {
-        let state = self.state.lock().map_err(|_| FederationError::Storage)?;
+        let mut guard = self.state.lock().map_err(|_| FederationError::Storage)?;
+        let state = &mut *guard;
         self.credentials
             .with_identity(|identity| {
                 check_binding(&state.memory, identity)?;
@@ -669,17 +687,46 @@ impl FederationDirectory {
                 validate_authorization_paths(&self.root)?;
                 let authorization = &self.authorization;
                 let now = (self.clock)();
+                let device_public_key = identity.device_public_key().map(str::to_owned);
+                let owner_public_key = owner_key(identity).map(str::to_owned);
+                let peers_memory = &state.memory.peers;
+                state
+                    .derived
+                    .retain(|key, _| peers_memory.contains_key(key));
                 let mut peers = Vec::new();
                 for (key, peer) in &state.memory.peers {
+                    // Authorization stays live: a revocation must apply at once.
                     if !is_authorized(identity, authorization, &peer.owner_statement)? {
                         continue;
                     }
-                    let membership = verify_membership(identity, &peer.owner_statement)?;
-                    let endpoint = peer
-                        .endpoint_event
-                        .as_ref()
-                        .map(|event| endpoint_from_event(identity, event, None))
-                        .transpose()?;
+                    let reusable = state.derived.get(key).is_some_and(|derived| {
+                        derived.device_public_key == device_public_key
+                            && derived.owner_public_key == owner_public_key
+                            && derived.owner_statement == peer.owner_statement
+                            && derived.endpoint_event == peer.endpoint_event
+                    });
+                    if !reusable {
+                        let membership = verify_membership(identity, &peer.owner_statement)?;
+                        let endpoint = peer
+                            .endpoint_event
+                            .as_ref()
+                            .map(|event| endpoint_from_event(identity, event, None))
+                            .transpose()?;
+                        state.derived.insert(
+                            key.clone(),
+                            DerivedPeer {
+                                device_public_key: device_public_key.clone(),
+                                owner_public_key: owner_public_key.clone(),
+                                owner_statement: peer.owner_statement.clone(),
+                                endpoint_event: peer.endpoint_event.clone(),
+                                membership,
+                                endpoint,
+                            },
+                        );
+                    }
+                    let derived = state.derived.get(key).ok_or(FederationError::Identity)?;
+                    let membership = derived.membership.clone();
+                    let endpoint = derived.endpoint.clone();
                     let live = state.live.get(key).ok_or(FederationError::Identity)?;
                     peers.push(PeerSnapshot {
                         device_public_key: key.clone(),

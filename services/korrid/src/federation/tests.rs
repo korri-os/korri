@@ -223,6 +223,9 @@ fn membership_endpoint_expiry_restart_and_timestamp_high_water() {
     f.roster(&d);
     let p = d.snapshot().unwrap().remove(0);
     assert_eq!((p.first_seen, p.last_seen), (1000, 1700));
+    // The earlier snapshots cached the old endpoint; a new signed event
+    // must replace it, not be shadowed by the cache.
+    assert_eq!(p.remembered_endpoint, Some(fresh));
 }
 
 #[test]
