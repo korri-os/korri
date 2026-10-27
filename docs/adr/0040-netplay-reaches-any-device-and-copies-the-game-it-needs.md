@@ -29,6 +29,7 @@ each device runs its own copy of the game, so no device has to encode video.
   like a downloaded game (ADR 0016): in korrid's cache under its release key
   (ADR 0030), checked against that key, and added to the library through the
   records of ADR 0013.
+- A copied release is stored at `cache/<release-key hex>/<original filename>`. The release key (ADR 0030) names it, so it needs no provider.
 - Netplay can open during play. The device that holds the session does not
   have to start the game in a netplay mode. RetroArch can start hosting while
   a game runs, and a device that joins gets the current state.

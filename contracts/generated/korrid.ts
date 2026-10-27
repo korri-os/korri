@@ -27,6 +27,8 @@ export type FinalDownloadTag = "FinalDownload";
 
 export type IdentityState = { _tag: "Unowned"; devicePublicKey: string } | { _tag: "Owned"; devicePublicKey: string; ownerPublicKey: string; eventId: string; createdAt: number } | { _tag: "Revoked"; devicePublicKey: string; ownerPublicKey: string; eventId: string; createdAt: number } | { _tag: "Invalid"; reason: string };
 
+export type InviteNetplay = { _tag: "Ready" } | { _tag: "NeedsCopy"; bytes: number } | { _tag: "NeedsPlugin"; pluginId: string; title: string; bytes?: number } | { _tag: "Unavailable"; reason: string };
+
 /** Opaque JSON is decoded against the runner schema or the authored place schema. */
 export type LaunchJsonValue = unknown;
 
@@ -43,6 +45,8 @@ export type NativeInputDeviceClass = "gamepad" | "keyboard" | "mouse" | "touch" 
 
 export type NativeInputEvent = NativeInputInput | NativeInputDeviceAdded | NativeInputDeviceRemoved | NativeInputAction;
 
+export type NetplayPhase = { _tag: "Copying"; done: number; total: number } | { _tag: "Connecting" } | { _tag: "Playing" } | { _tag: "HolderLeft" } | { _tag: "Reconnecting" };
+
 export type NonFinalDownloadReason = "interstitial" | "requires-user-action" | "unsupported";
 
 export type NonFinalDownloadTag = "NonFinalDownload";
@@ -53,6 +57,8 @@ export type PluginDetailsOutput = PluginHttpRequests | ProviderClaimDetails;
 export type PluginHttpQueryValue = string | number | boolean;
 
 export type PluginHttpRequestsTag = "HttpRequests";
+
+export type PluginLaunchNetplay = { role: "host"; passwordConfig: string } | { role: "client"; address: string; port: number; player: number; passwordConfig: string };
 
 export type PluginResolveDownloadOutput = PluginHttpRequests | DownloadResolution;
 
@@ -154,6 +160,23 @@ export interface AcquisitionStatusRequest {
 	runnerId?: string;
 }
 
+export interface RunnerNetplay {
+	library: string;
+	version: string;
+}
+
+export interface NetplayRunner {
+	pluginId: string;
+	runnerId: string;
+	netplay: RunnerNetplay;
+}
+
+export interface NetplaySession {
+	releaseKey: string;
+	releaseBytes: number;
+	runner: NetplayRunner;
+}
+
 export interface StreamPlayer {
 	devicePublicKey: string;
 	label: string;
@@ -179,6 +202,7 @@ export enum FocusOwnership {
 }
 
 export interface ActiveSession {
+	netplay?: NetplaySession;
 	personPublicKey?: string;
 	streamPlayers?: StreamPlayer[];
 	initialHandoff?: InitialHandoff;
@@ -442,6 +466,7 @@ export interface IdentitySwitchCompleted {
 }
 
 export interface Invite {
+	netplay?: InviteNetplay;
 	inviteId: string;
 	devicePublicKey: string;
 	deviceLabel: string;
@@ -941,6 +966,13 @@ export interface NativeInputSuspend {
 	requestId: string;
 }
 
+export interface NetplayStatus {
+	launchId: string;
+	deviceLabel: string;
+	gameTitle?: string;
+	phase: NetplayPhase;
+}
+
 export type NetworkConnection =
 	| { _tag: "Offline", payload?: undefined }
 	| { _tag: "Wired", payload?: undefined }
@@ -1202,6 +1234,7 @@ export interface PluginLaunchOverrides {
 
 /** Selected runner facts and named files for launch preparation. */
 export interface PluginLaunchInput {
+	netplay?: PluginLaunchNetplay;
 	runnerId: string;
 	familyId?: string;
 	program: string;
@@ -1396,6 +1429,10 @@ export interface ReleaseDiscoveryFile {
 
 export interface ReleaseDiscoveryInput {
 	files: ReleaseDiscoveryFile[];
+}
+
+export interface ReleaseObjectRequest {
+	releaseKey: string;
 }
 
 export interface RetroarchSessionTelemetry {
@@ -1615,6 +1652,20 @@ export interface SessionLeaveRequest {
 	expectedLaunchId?: string;
 }
 
+export interface SessionNetplayPrepared {
+	seat: number;
+	port: number;
+	password: string;
+	releaseKey: string;
+	releaseBytes: number;
+	runner: NetplayRunner;
+}
+
+export interface SessionNetplayRequest {
+	launchId: string;
+	deviceLabel: string;
+}
+
 export interface SessionPrepareRequest {
 	gameId: string;
 	host?: string;
@@ -1650,6 +1701,7 @@ export interface StreamPlayEnded {
 }
 
 export interface SessionStatus {
+	netplay?: NetplayStatus;
 	streamPlayLaunchId?: string;
 	streamPlayEnded?: StreamPlayEnded;
 	/** All pending reservations owned by this authenticated portal caller; never a selection. */
@@ -1930,6 +1982,8 @@ export type RpcRequest =
 	| { _tag: "app.session.reserve", payload: SessionReserveRequest }
 	| { _tag: "app.session.start", payload: SessionStartRequest }
 	| { _tag: "app.session.cancel", payload: SessionCancelRequest }
+	| { _tag: "app.session.netplay", payload: SessionNetplayRequest }
+	| { _tag: "app.invites.netplay", payload: InviteRequest }
 	| { _tag: "app.session.streamPlay", payload: SessionStreamPlayRequest }
 	| { _tag: "app.invites.list", payload: InvitesListRequest }
 	| { _tag: "app.invites.streamPlay", payload: InviteRequest }
@@ -2009,6 +2063,8 @@ export type RpcResponse =
 	| { _tag: "app.session.reserve", outcome: SessionReserveOutcome }
 	| { _tag: "app.session.start", outcome: SelectedGameLaunchOutcome }
 	| { _tag: "app.session.cancel", outcome: SessionEndOutcome }
+	| { _tag: "app.session.netplay", outcome: SessionNetplayOutcome }
+	| { _tag: "app.invites.netplay", outcome: SessionStreamPlayOutcome }
 	| { _tag: "app.session.streamPlay", outcome: SessionStreamPlayOutcome }
 	| { _tag: "app.invites.list", outcome: InvitesListOutcome }
 	| { _tag: "app.invites.streamPlay", outcome: SessionStreamPlayOutcome }
@@ -2083,6 +2139,10 @@ export type SessionControlsOutcome =
 
 export type SessionEndOutcome =
 	| { _tag: "Ok", payload: SessionEndResult }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type SessionNetplayOutcome =
+	| { _tag: "Ok", payload: SessionNetplayPrepared }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type SessionReserveOutcome =
