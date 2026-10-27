@@ -102,6 +102,16 @@ source; `revision.txt` matches the source. The matching offline metadata
 archives are pinned by SHA-256. FEX, Homebrew Hub, PICO-8, Proton, RetroBrews,
 SSH and Steam keep their pins. This pin does not establish physical-device
 acceptance.
+Batch `build-b65ce7b266b4-moonlight-v4l2request` (source
+`b65ce7b266b4f85c1d8d860e229168a1267f6313`, Core pin `5f4f89e2b`) replaces only
+Moonlight on both architectures. It adds FFmpeg's V4L2 Request hwaccel and the
+`v4l2request` platform for stateless decoders. The source is `57de061` plus
+the Moonlight commit (`e21e55a` on publisher `main`) and a Pyxel test-timing
+fix, because publisher `main` at `9824648` failed its own Sunshine derivation
+guard and the Pyxel native check timed out on CI runners. Both pins were
+evaluated from the source and appear in the batch's `paths-SYSTEM.txt`. The
+matching offline metadata archives are pinned by SHA-256. Device acceptance is
+`docs/acceptance/rg353m-moonlight-v4l2request-2026-10-27.md`.
 Each pinned path is grounded in its batch's `paths-SYSTEM.txt` and
 `revision.txt`. The new Starter pack pins were checked against those public
 release assets directly. Earlier batches remain published even when their
