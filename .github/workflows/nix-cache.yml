@@ -212,11 +212,10 @@ jobs:
       # reproducible, and every device job builds it at the same time when
       # Cargo.lock changes; run 39721502192 failed on the second copy.
       #
-      # Build once. Repeating a whole build cannot repair a compiler error or
-      # failed assertion. Nix keeps its native download retry policy; this
-      # wrapper never restarts compilation after a failed build. A transient
-      # NAR 404 can now fail the job instead of restarting all its work.
-      # Do not add a prefetch barrier without measuring device-ready latency.
+      # Compiler, assertion, trust and unfamiliar failures stop immediately.
+      # Only identified transient NAR reads retain bounded wrapper recovery.
+      # Nix retains completed outputs between attempts. There is no prefetch
+      # barrier or publication retry.
       - name: Publish the device closure
         env:
           KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
@@ -240,5 +239,5 @@ jobs:
             targets+=(".#$attribute^*")
             packages+=(--package "$attribute")
           done
-          nix build --no-link "${targets[@]}"
+          python3 nix/cache/build-with-read-retry.py "${targets[@]}"
           nix run .#korri-nix-cache-publish -- "$DEVICE" "${packages[@]}"
