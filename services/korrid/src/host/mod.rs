@@ -231,6 +231,9 @@ pub struct HostRuntime {
     save_service: Arc<std::sync::OnceLock<Arc<crate::saves::peer::SavePeerService>>>,
     private_state_root: PathBuf,
     route_write_lock: Arc<std::sync::Mutex<()>>,
+    /// The active session's title, found once per launch. See
+    /// `shared_play::ActiveTitle`.
+    active_title: Arc<std::sync::Mutex<Option<shared_play::ActiveTitle>>>,
     launch_reservations: launch_reservation::LaunchReservations,
     // Tests can delay one response after the real setter releases its lock.
     #[cfg(test)]
@@ -340,6 +343,7 @@ impl HostRuntime {
             private_state_root,
             save_service: Arc::new(std::sync::OnceLock::new()),
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
+            active_title: Arc::new(std::sync::Mutex::new(None)),
             launch_reservations: launch_reservation::LaunchReservations::default(),
             #[cfg(test)]
             after_launch_settings_write: None,
@@ -385,6 +389,7 @@ impl HostRuntime {
             private_state_root,
             save_service: Arc::new(std::sync::OnceLock::new()),
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
+            active_title: Arc::new(std::sync::Mutex::new(None)),
             launch_reservations: launch_reservation::LaunchReservations::default(),
             after_launch_settings_write: None,
             before_reserved_route: None,
