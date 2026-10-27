@@ -312,3 +312,35 @@ test("the HTTP client asks its own korrid for app.invites.netplay with the opaqu
     expect(requests).toEqual([{ _tag: "app.invites.netplay", payload: { inviteId: "opaque" } }])
   } finally { await server.stop(true) }
 })
+
+test("Cancel after app.invites.netplay returned cancels the exact launch korrid still reports Connecting", async () => {
+  let report: NetplayStatus | undefined
+  const client = createInMemoryKorridClient({ invites: [withRoute({ _tag: "Ready" })], netplaySession: () => report })
+  const cancel = spyOn(client, "sessionCancel")
+  const shared = createSharedPlay(client, { state: ready, refreshSession: async () => {} })
+  const stop = shared.start()
+  await settle()
+  report = observed({ _tag: "Connecting" })
+  shared.act("invite:netplay:opaque")
+  await settle()
+  // The request answered; korrid still connects and publishes Cancel.
+  expect(shared.getSnapshot().status).toMatchObject({ _tag: "Busy", kicker: "Connecting to RG35XX SP", actions: [{ id: "netplay:cancel" }] })
+  expect(shared.act("netplay:cancel")).toBe(true)
+  expect(cancel).toHaveBeenCalledWith({ expectedLaunchId: "mine" })
+  expect(shared.getSnapshot().status).toEqual({ _tag: "Busy", kicker: "Cancelling" })
+  stop()
+})
+
+test("Cancel after a reload during Connecting cancels the exact launch korrid reports, and Back does too", async () => {
+  for (const press of ["act", "back"] as const) {
+    const client = createInMemoryKorridClient({ netplaySession: () => observed({ _tag: "Connecting" }) })
+    const cancel = spyOn(client, "sessionCancel")
+    const shared = createSharedPlay(client, { state: ready, refreshSession: async () => {} })
+    const stop = shared.start()
+    await settle()
+    expect(shared.getSnapshot().status).toMatchObject({ _tag: "Busy", kicker: "Connecting to RG35XX SP" })
+    expect(press === "act" ? shared.act("netplay:cancel") : shared.back()).toBe(true)
+    expect(cancel).toHaveBeenCalledWith({ expectedLaunchId: "mine" })
+    stop()
+  }
+})
