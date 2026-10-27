@@ -3737,6 +3737,96 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
+    fn recovery_without_a_stream_root_reaches_idle_and_initializes_input() {
+        use super::super::{input_coordination::test_support, input_seat::UnixInputSeatManager};
+        use korri_input_contract::SeatRequest;
+
+        let root = tempfile::tempdir().unwrap();
+        let journal = root.path().join("host-session");
+        fs::create_dir(&journal).unwrap();
+        fs::set_permissions(&journal, fs::Permissions::from_mode(0o700)).unwrap();
+        let helper = root.path().join("systemctl");
+        fs::write(
+            &helper,
+            "#!/bin/sh\ncase \"$3\" in list-units) exit 0;; *) exit 1;; esac\n",
+        )
+        .unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        let backend = SystemdLaunchUnitBackend::with_protected_paths(
+            helper.clone(),
+            helper,
+            1000,
+            1000,
+            root.path().to_owned(),
+            "/run/korrid-control/control.sock".into(),
+            "/run/korrid-control".into(),
+            None,
+            "/run/korri-compositor".into(),
+        )
+        .unwrap();
+        assert!(backend.live_launch_ids().unwrap().is_empty());
+
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let seen = requests.clone();
+        let (coordinator, receiver) = test_support::coordinator(move |request| {
+            let mut reply = test_support::reply();
+            if let SeatRequest::ApplyCount { count } = &request {
+                reply.count = *count;
+            }
+            seen.lock().unwrap().push(request);
+            reply
+        });
+        let manager = Arc::new(UnixInputSeatManager::new(
+            "unused".into(),
+            Ok(coordinator.clone()),
+        ));
+        let control =
+            HostSessionControl::with_input_seats(root.path(), Arc::new(backend), manager.clone());
+        assert!(matches!(control.recover(), ActiveState::NoActive));
+        control.initialize_input(6).unwrap();
+        assert_eq!(control.status(), HostSessionStatus::NoActive);
+        assert!(manager.ready().is_ok());
+        assert!(requests
+            .lock()
+            .unwrap()
+            .contains(&SeatRequest::ApplyCount { count: 6 }));
+        drop(control);
+        drop(manager);
+        drop(coordinator);
+        receiver.join().unwrap();
+    }
+
+    #[test]
+    fn repeated_recovery_helper_errors_are_suppressed_until_recovery_finishes() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.state.lock().unwrap().enumeration_unavailable = true;
+        let control = HostSessionControl::new(root.path(), backend.clone());
+        let mut state = ActiveState::RecoveryPending;
+        for _ in 0..2 {
+            control.refresh_recovery(&mut state);
+            assert!(matches!(state, ActiveState::RecoveryPending));
+            assert_eq!(
+                control.recovery_helper_error.lock().unwrap().as_deref(),
+                Some("systemd enumeration unavailable")
+            );
+        }
+        backend.state.lock().unwrap().enumeration_unavailable = false;
+        control.refresh_recovery(&mut state);
+        assert!(matches!(state, ActiveState::NoActive));
+        assert!(control.recovery_helper_error.lock().unwrap().is_none());
+
+        // After a successful recovery the same failure is reported again.
+        backend.state.lock().unwrap().enumeration_unavailable = true;
+        state = ActiveState::RecoveryPending;
+        control.refresh_recovery(&mut state);
+        assert!(matches!(state, ActiveState::RecoveryPending));
+        assert_eq!(
+            control.recovery_helper_error.lock().unwrap().as_deref(),
+            Some("systemd enumeration unavailable")
+        );
+    }
+    #[test]
     fn failed_portal_focus_rolls_back_only_the_exact_launch_and_reports_unproven_game_focus() {
         for rollback_focus_fails in [false, true] {
             let root = tempfile::tempdir().unwrap();
@@ -9168,95 +9258,4 @@ mod launch_settings_completion_tests {
         assert_eq!(requests[0]["_tag"], "ApplySession");
         assert_eq!(requests[1]["_tag"], "EndSession");
     }
-    #[test]
-    fn recovery_without_a_stream_root_reaches_idle_and_initializes_input() {
-        use super::super::{input_coordination::test_support, input_seat::UnixInputSeatManager};
-        use korri_input_contract::SeatRequest;
-
-        let root = tempfile::tempdir().unwrap();
-        let journal = root.path().join("host-session");
-        fs::create_dir(&journal).unwrap();
-        fs::set_permissions(&journal, fs::Permissions::from_mode(0o700)).unwrap();
-        let helper = root.path().join("systemctl");
-        fs::write(
-            &helper,
-            "#!/bin/sh\ncase \"$3\" in list-units) exit 0;; *) exit 1;; esac\n",
-        )
-        .unwrap();
-        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
-        let backend = SystemdLaunchUnitBackend::with_protected_paths(
-            helper.clone(),
-            helper,
-            1000,
-            1000,
-            root.path().to_owned(),
-            "/run/korrid-control/control.sock".into(),
-            "/run/korrid-control".into(),
-            None,
-            "/run/korri-compositor".into(),
-        )
-        .unwrap();
-        assert!(backend.live_launch_ids().unwrap().is_empty());
-
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let seen = requests.clone();
-        let (coordinator, receiver) = test_support::coordinator(move |request| {
-            let mut reply = test_support::reply();
-            if let SeatRequest::ApplyCount { count } = &request {
-                reply.count = *count;
-            }
-            seen.lock().unwrap().push(request);
-            reply
-        });
-        let manager = Arc::new(UnixInputSeatManager::new(
-            "unused".into(),
-            Ok(coordinator.clone()),
-        ));
-        let control =
-            HostSessionControl::with_input_seats(root.path(), Arc::new(backend), manager.clone());
-        assert!(matches!(control.recover(), ActiveState::NoActive));
-        control.initialize_input(6).unwrap();
-        assert_eq!(control.status(), HostSessionStatus::NoActive);
-        assert!(manager.ready().is_ok());
-        assert!(requests
-            .lock()
-            .unwrap()
-            .contains(&SeatRequest::ApplyCount { count: 6 }));
-        drop(control);
-        drop(manager);
-        drop(coordinator);
-        receiver.join().unwrap();
-    }
-
-    #[test]
-    fn repeated_recovery_helper_errors_are_suppressed_until_recovery_finishes() {
-        let root = tempfile::tempdir().unwrap();
-        let backend = Arc::new(DeterministicBackend::default());
-        backend.state.lock().unwrap().enumeration_unavailable = true;
-        let control = HostSessionControl::new(root.path(), backend.clone());
-        let mut state = ActiveState::RecoveryPending;
-        for _ in 0..2 {
-            control.refresh_recovery(&mut state);
-            assert!(matches!(state, ActiveState::RecoveryPending));
-            assert_eq!(
-                control.recovery_helper_error.lock().unwrap().as_deref(),
-                Some("systemd enumeration unavailable")
-            );
-        }
-        backend.state.lock().unwrap().enumeration_unavailable = false;
-        control.refresh_recovery(&mut state);
-        assert!(matches!(state, ActiveState::NoActive));
-        assert!(control.recovery_helper_error.lock().unwrap().is_none());
-
-        // After a successful recovery the same failure is reported again.
-        backend.state.lock().unwrap().enumeration_unavailable = true;
-        state = ActiveState::RecoveryPending;
-        control.refresh_recovery(&mut state);
-        assert!(matches!(state, ActiveState::RecoveryPending));
-        assert_eq!(
-            control.recovery_helper_error.lock().unwrap().as_deref(),
-            Some("systemd enumeration unavailable")
-        );
-    }
-
 }
