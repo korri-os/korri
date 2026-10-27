@@ -5,6 +5,7 @@ import type { SurfaceHost, SurfaceModel } from "@contracts/surface/korri-surface
 import type { ActiveSession, Invite } from "@contracts/generated/korrid"
 import { createInputBus } from "../input/bus"
 import { createInMemoryKorridClient, type KorridClient } from "../korrid/client"
+import type { NetplayObservation } from "../korrid/netplay-contract"
 import { SurfaceRoot } from "./SurfaceRoot"
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -83,4 +84,29 @@ test("Ended is observed, names the game and holder, and stays hidden after dismi
   await act(async () => view.host().reload())
   await waitFor(() => view.model().catalog._tag !== "Loading")
   expect(view.model().status._tag).toBe("Browsing")
+})
+
+test("the portal publishes the netplay route, shows korrid's copy progress, and Back cancels it", async () => {
+  let report: NetplayObservation | undefined
+  let release!: () => void
+  const answered = new Promise<void>(resolve => { release = resolve })
+  const base = createInMemoryKorridClient({ games: [], netplaySession: () => report,
+    invites: [{ ...invite, netplay: { _tag: "NeedsCopy", bytes: 4_000_000 } }] })
+  const client = { ...base, invitesNetplay: async (id: string) => { await answered; return base.invitesNetplay(id) } }
+  const cancel = spyOn(client, "sessionCancel")
+  const view = await mount(client)
+  await waitFor(() => view.model().invites?.length === 1)
+  expect(view.model().invites![0]!.actions.map(action => action.label)).toEqual(["Play on stream", "Copy and play here (4 MB)", "Dismiss"])
+  await act(async () => view.host().runAction(view.model().invites![0]!.actions[1]!.id))
+  report = { launchId: "mine", deviceLabel: invite.deviceLabel, gameTitle: "Turtles in Time", phase: { _tag: "Copying", done: 1_000_000, total: 4_000_000 } }
+  await waitFor(() => view.model().status._tag === "Busy" && "progress" in view.model().status
+    && (view.model().status as { progress?: { done: number } }).progress?.done === 1_000_000)
+  expect(view.model().status).toMatchObject({ kicker: "Copying Turtles in Time from Odin 2 Portal", detail: "25% of 4 MB" })
+  expect(view.model().invites).toEqual([])
+  await act(async () => view.bus.emit({ type: "back" }))
+  expect(cancel).toHaveBeenCalledWith({ expectedLaunchId: "mine" })
+  expect(view.backs()).toBe(0)
+  report = undefined
+  release()
+  await view.unmount()
 })

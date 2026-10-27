@@ -196,6 +196,9 @@ export function SurfaceRoot({
   const sharedPlay = useMemo(() => createSharedPlay(korrid, {
     state: () => launchablesRef.current.getState(),
     refreshSession: () => launchablesRef.current.refresh(),
+    // Installing a plugin for netplay changes what can be played, as it
+    // does from Settings.
+    pluginsChanged: () => launchablesRef.current.reload(),
   }), [korrid])
   useEffect(() => sharedPlay.start(), [sharedPlay])
   const shared = useSyncExternalStore(sharedPlay.subscribe, sharedPlay.getSnapshot)
