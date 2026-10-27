@@ -4206,6 +4206,9 @@ printf '[{{"success":true}}]'
                 String::from_utf8_lossy(&result.stderr)
             );
             assert!(String::from_utf8_lossy(&result.stdout).contains("running 1 test"));
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            assert!(stderr.contains("phase1_size: Some((640, 900))"), "{stderr}");
+            assert!(stderr.contains("\"portal_settle\":"), "{stderr}");
             return;
         }
         use super::super::systemd_unit::{SystemdLaunchUnitBackend, SystemdPortalUnit};

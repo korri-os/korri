@@ -1,5 +1,12 @@
 # Chromium 153 catalog configure settling — 2026-10-26
 
+> **Correction:** same-size phase-1 preparation could leave Chromium's visible
+> main-thread presentation stalled after catalog restore. It is superseded by
+> [distinct-size preparation](2026-10-27-distinct-size-catalog-preparation.md):
+> the RG DS requests 640×900 before global 640×960, retaining the 250 ms settle.
+> The near-startup device repair stayed live; the integrated first configure
+> still needs acceptance. The historical tests below did not prove liveness.
+
 ## Correction
 
 The single-batch tiling/global restore in `e391f8f35` did **not** fix the device's
