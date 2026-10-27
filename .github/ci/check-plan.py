@@ -1,6 +1,6 @@
 #!/usr/bin/env nix-shell
 #! nix-shell -i python3 -p python3 git
-"""Conservative check selection and fail-closed GitHub job aggregation."""
+"""Conservative Host check selection and fail-closed GitHub job aggregation."""
 
 import argparse
 import json
@@ -25,11 +25,10 @@ LANES = (
     "pico",
     "zone",
     "boxbuster",
-    "acceptance",
 )
 SURFACES = {"pico", "zone", "boxbuster"}
 # Inputs of the existing cache tests and delivery-workflow check. Shared Nix
-# trust/composition remains full; unfamiliar helpers also keep the full fallback.
+# trust/composition and unfamiliar helpers select all lanes in the requested profile.
 CACHE_POLICY_INPUTS = {
     ".github/workflows/nix-cache.yml",
     ".github/workflows/device-images.yml",
@@ -47,18 +46,6 @@ CACHE_POLICY_INPUTS = {
     "nix/cache/pages-cache.test.py",
     "nix/cache/plugin-read-failure.py",
     "nix/cache/plugin-read-failure.test.py",
-}
-# Both consumers use the same signed read helper/parser, not full acceptance.
-INPUTD_CACHE_INPUTS = {
-    ".github/workflows/fetch-image-plugins.sh",
-    "nix/cache/plugin-read-failure.py",
-}
-# The acceptance workflow directly runs these shared trust/snapshot helpers.
-# Their consumer is acceptance as well as cache policy, regardless of directory.
-ACCEPTANCE_CACHE_INPUTS = {
-    ".github/workflows/trust-korri-cache.sh",
-    ".github/workflows/prepare-nix-cache.py",
-    ".github/workflows/test_prepare_nix_cache.py",
 }
 # Exact producer files read by clients/cli/tests/parity.py, not all portal UI.
 PARITY_INPUTS = {
@@ -128,10 +115,6 @@ def affected(paths):
             continue
         if path in CACHE_POLICY_INPUTS:
             selected.add("cache")
-            if path in ACCEPTANCE_CACHE_INPUTS:
-                selected.add("acceptance")
-            if path in INPUTD_CACHE_INPUTS:
-                selected.add("inputd")
             continue
         if path.endswith(".nix") or (
             path.startswith("services/korrid/check") and path.endswith(".sh")
@@ -171,17 +154,17 @@ def affected(paths):
         elif path in SHARED_CSS:
             selected.update({"portal"} | SURFACES)
         elif path.startswith("clients/cli/"):
-            selected.update({"cli", "fmt", "parity", "acceptance"})
+            selected.update({"cli", "fmt", "parity"})
         elif path.startswith("services/korrid/"):
             # The affected profile runs only Inputd Rust/wasm/shell checks.
             # Full Inputd module/package/VM checks DO consume korridPackage;
             # explicit full mode selects all lanes instead of inferring here.
-            selected.update({"fmt", "treaty", "korrid", "cli", "acceptance"})
+            selected.update({"fmt", "treaty", "korrid", "cli"})
         elif path.startswith("services/inputd/"):
             # korrid embeds inputd's seat runtime in controller tests.
-            selected.update({"fmt", "inputd", "korrid", "cli", "acceptance"})
+            selected.update({"fmt", "inputd", "korrid", "cli"})
         elif path.startswith("services/limitsd/"):
-            selected.update({"fmt", "limitsd", "korrid", "cli", "acceptance"})
+            selected.update({"fmt", "limitsd", "korrid", "cli"})
         else:
             # Contracts, locks, workflows, Nix composition, fixture docs and all
             # unreviewed inputs select consumers as well as producers.
@@ -260,9 +243,9 @@ def validate_plan(value):
     return lanes
 
 
-def aggregate(selection, needs, scope):
+def aggregate(selection, needs):
     lanes = validate_plan(selection)
-    expected = set(LANES) - {"acceptance"} if scope == "checks" else {"acceptance"}
+    expected = set(LANES)
     if not isinstance(needs, dict) or set(needs) != expected | {"select"}:
         raise ValueError("aggregate dependencies do not match the documented lanes")
     if needs["select"].get("result") != "success":
@@ -292,12 +275,11 @@ def main():
         help="Fetch bounded exact-SHA history if the merge base is unavailable",
     )
     select.add_argument("--paths", default="[]", help="JSON array, probe mode only")
-    finish = sub.add_parser("aggregate")
-    finish.add_argument("--scope", choices=("checks", "published"), required=True)
+    sub.add_parser("aggregate")
     args = parser.parse_args()
     if args.command == "aggregate":
         aggregate(
-            json.loads(os.environ["PLAN"]), json.loads(os.environ["NEEDS"]), args.scope
+            json.loads(os.environ["PLAN"]), json.loads(os.environ["NEEDS"])
         )
         print("All selected checks passed; deliberate skips match the plan.")
         return

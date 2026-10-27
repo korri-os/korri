@@ -4,7 +4,6 @@ import copy
 import importlib.util
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -81,23 +80,20 @@ class SelectionTest(unittest.TestCase):
                 "treaty",
                 "korrid",
                 "cli",
-                "acceptance",
             },
             "services/inputd/src/main.rs": {
                 "fmt",
                 "inputd",
                 "korrid",
                 "cli",
-                "acceptance",
             },
             "services/limitsd/src/main.rs": {
                 "fmt",
                 "limitsd",
                 "korrid",
                 "cli",
-                "acceptance",
             },
-            "clients/cli/src/main.rs": {"fmt", "cli", "parity", "acceptance"},
+            "clients/cli/src/main.rs": {"fmt", "cli", "parity"},
             "packages/intrinsic-design/intrinsic.css": {"portal"} | ci.SURFACES,
         }
         full = set(ci.LANES)
@@ -114,7 +110,6 @@ class SelectionTest(unittest.TestCase):
         ]:
             with self.subTest(path=path):
                 self.assertNotIn("inputd", ci.affected([path]))
-                self.assertIn("acceptance", ci.affected([path]))
         policy = "services/korrid/src/host/systemd_unit.rs"
         self.assertIn("inputd", ci.affected([policy]))
         consumer = (
@@ -131,42 +126,17 @@ class SelectionTest(unittest.TestCase):
                 self.assertIn("inputd", ci.affected([shared]))
         self.assertTrue(ci.plan("full", [], "test")["lanes"]["inputd"])
 
-    def test_cache_inputs_select_their_actual_acceptance_consumer(self):
-        workflow = (
-            SCRIPT.resolve().parents[2]
-            / ".github/workflows/published-plugin-checks.yml"
-        ).read_text()
-        acceptance = workflow.split("\n  acceptance:\n", 1)[1].split("\n  check:\n", 1)[
-            0
-        ]
-        consumed = set(re.findall(r"\.github/workflows/[\w.-]+", acceptance))
+    def test_cache_inputs_select_only_consumers_in_the_affected_profile(self):
+        # Published acceptance runs unconditionally in its existing workflow.
+        # Inputd's signed preparation belongs only to explicit full coverage.
+        self.assertNotIn("acceptance", ci.LANES)
         for path in ci.CACHE_POLICY_INPUTS:
             with self.subTest(path=path):
-                expected = {"policy", "cache"}
-                if path in consumed:
-                    expected.add("acceptance")
-                if path in {
-                    ".github/workflows/fetch-image-plugins.sh",
-                    "nix/cache/plugin-read-failure.py",
-                }:
-                    expected.add("inputd")
-                self.assertEqual(ci.affected([path]), expected)
-        for path in consumed:
-            with self.subTest(acceptance_input=path):
-                self.assertIn("acceptance", ci.affected([path]))
+                self.assertEqual(ci.affected([path]), {"policy", "cache"})
         self.assertEqual(ci.affected(["docs/ci.md"]), {"policy"})
 
-    def test_trust_and_snapshot_helpers_cannot_skip_published_acceptance(self):
-        for path in [
-            ".github/workflows/prepare-nix-cache.py",
-            ".github/workflows/test_prepare_nix_cache.py",
-            ".github/workflows/trust-korri-cache.sh",
-        ]:
-            with self.subTest(path=path):
-                self.assertEqual(ci.affected([path]), {"policy", "cache", "acceptance"})
-
     def test_known_frontend_changes_select_no_rust_compilation(self):
-        rust = {"cli", "korrid", "inputd", "limitsd", "acceptance"}
+        rust = {"cli", "korrid", "inputd", "limitsd"}
         for path in [
             "clients/portal/src/index.css",
             "clients/portal/src/input/keyboard-adapter.ts",
@@ -381,24 +351,18 @@ class AggregateTest(unittest.TestCase):
             {
                 lane: {"result": "success" if selected else "skipped"}
                 for lane, selected in self.selection["lanes"].items()
-                if lane != "acceptance"
             }
         )
 
     def test_selected_success_and_only_expected_skips_pass(self):
-        ci.aggregate(self.selection, self.needs, "checks")
-        ci.aggregate(
-            self.selection,
-            {"select": {"result": "success"}, "acceptance": {"result": "skipped"}},
-            "published",
-        )
+        ci.aggregate(self.selection, self.needs)
 
     def test_failure_skip_cancel_or_missing_selected_result_fails(self):
         for result in ["failure", "skipped", "cancelled", None, ""]:
             needs = copy.deepcopy(self.needs)
             needs["portal"]["result"] = result
             with self.subTest(result=result), self.assertRaises(ValueError):
-                ci.aggregate(self.selection, needs, "checks")
+                ci.aggregate(self.selection, needs)
 
     def test_missing_extra_or_unexpected_jobs_fail(self):
         for change in ["missing", "extra", "unexpected_success"]:
@@ -410,14 +374,14 @@ class AggregateTest(unittest.TestCase):
             else:
                 needs["treaty"]["result"] = "success"
             with self.subTest(change=change), self.assertRaises(ValueError):
-                ci.aggregate(self.selection, needs, "checks")
+                ci.aggregate(self.selection, needs)
 
     def test_selection_failure_or_malformed_plan_fails_closed(self):
         for result in ["failure", "skipped", "cancelled", None]:
             needs = copy.deepcopy(self.needs)
             needs["select"]["result"] = result
             with self.subTest(result=result), self.assertRaises(ValueError):
-                ci.aggregate(self.selection, needs, "checks")
+                ci.aggregate(self.selection, needs)
         malformed = [
             None,
             {},
@@ -428,36 +392,25 @@ class AggregateTest(unittest.TestCase):
         ]
         for selection in malformed:
             with self.subTest(selection=selection), self.assertRaises(ValueError):
-                ci.aggregate(selection, self.needs, "checks")
+                ci.aggregate(selection, self.needs)
 
-    def test_full_success_for_both_workflows(self):
+    def test_full_success_for_the_host_workflow(self):
         selection = ci.plan("full", [], "test")
-        for scope, lanes in [
-            ("checks", set(ci.LANES) - {"acceptance"}),
-            ("published", {"acceptance"}),
-        ]:
-            needs = {lane: {"result": "success"} for lane in lanes | {"select"}}
-            ci.aggregate(selection, needs, scope)
+        needs = {lane: {"result": "success"} for lane in set(ci.LANES) | {"select"}}
+        ci.aggregate(selection, needs)
 
-    def test_every_selected_lane_fails_closed_in_its_workflow_scope(self):
+    def test_every_selected_lane_fails_closed(self):
         selection = ci.plan("full", [], "test")
-        for scope, lanes in [
-            ("checks", set(ci.LANES) - {"acceptance"}),
-            ("published", {"acceptance"}),
-        ]:
-            for lane in lanes:
-                for result in ["failure", "skipped", "cancelled", None]:
-                    needs = {name: {"result": "success"} for name in lanes | {"select"}}
-                    needs[lane]["result"] = result
-                    with (
-                        self.subTest(scope=scope, lane=lane, result=result),
-                        self.assertRaises(ValueError),
-                    ):
-                        ci.aggregate(selection, needs, scope)
+        for lane in ci.LANES:
+            for result in ["failure", "skipped", "cancelled", None]:
+                needs = {name: {"result": "success"} for name in set(ci.LANES) | {"select"}}
+                needs[lane]["result"] = result
+                with self.subTest(lane=lane, result=result), self.assertRaises(ValueError):
+                    ci.aggregate(selection, needs)
 
     def test_real_aggregate_command_reports_failure(self):
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "aggregate", "--scope", "checks"],
+            [sys.executable, str(SCRIPT), "aggregate"],
             env={**os.environ, "PLAN": json.dumps(self.selection), "NEEDS": "{}"},
             text=True,
             capture_output=True,

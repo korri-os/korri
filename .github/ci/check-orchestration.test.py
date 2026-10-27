@@ -2,6 +2,7 @@
 #! nix-shell -i python3 -p python3 python3Packages.pyyaml typeshare bash gnused diffutils
 """Exercise the treaty check and validation workflow's actual orchestration."""
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -170,7 +171,7 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertIn('fetch-image-plugins.sh" --inputd', task)
         self.assertNotIn("korri-published-plugins-check", task)
         for helper in (".github/workflows/fetch-image-plugins.sh", "nix/cache/plugin-read-failure.py"):
-            self.assertIn("inputd", ci.affected([helper]))
+            self.assertEqual(ci.affected([helper]), {"policy", "cache"})
 
     def test_explicit_full_schedule_and_ci_full_label_control_the_same_profile(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/korri-checks.yml").read_text())
@@ -308,184 +309,68 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertEqual(commands.count("nix run .#cli-build-identity-eval-check"), 1)
         self.assertNotIn("nix run .#cli-build-identity-check", commands)
 
-    def test_one_job_acceptance_keeps_all_heavy_steps_conditional_and_bounded(self):
-        workflow = yaml.safe_load(
-            (ROOT / ".github/workflows/published-plugin-checks.yml").read_text()
-        )
+    def test_published_acceptance_preserves_the_frozen_main_base_byte_for_byte(self):
+        source = (ROOT / ".github/workflows/published-plugin-checks.yml").read_bytes()
+        # Actual blob at 7e4bf0500c6dab2c0568230906ddb197dbbf69cf, not moving main.
+        self.assertEqual(hashlib.sha256(source).hexdigest(),
+                         "ece70c4b1b8d02013eb4c4e08cf552a30b6e2f37c3765f9b0cd40ae9d32ceb22")
+        workflow = yaml.safe_load(source)
+        self.assertEqual(set(workflow.get("on", workflow.get(True))),
+                         {"workflow_dispatch", "pull_request", "push"})
+        self.assertEqual(set(workflow["jobs"]), {"acceptance"})
         job = workflow["jobs"]["acceptance"]
+        self.assertNotIn("if", job)
+        self.assertNotIn("needs", job)
         self.assertEqual(job["timeout-minutes"], 60)
         steps = job["steps"]
-        plan = next(
-            index for index, step in enumerate(steps) if step.get("id") == "plan"
-        )
-        self.assertEqual(
-            steps[plan - 1]["run"], "python3 .github/ci/check-plan.test.py"
-        )
-        expected_heavy = [
-            "Enable the disposable lifecycle VM",
-            "Install Nix",
-            "Test Nix cache preparation",
-            "Name the Nix store snapshot",
-            "Restore the Nix store",
-            "Read existing signed Core outputs",
-            "Test Core without rebuilding or publishing plugins",
-            "Prepare the Nix store for caching",
-            "Save the Nix store",
-        ]
-        heavy = steps[plan + 1 : -1]
-        self.assertEqual([step["name"] for step in heavy], expected_heavy)
-        for step in heavy:
-            self.assertIn("steps.plan.outputs.acceptance == 'true'", step["if"])
+        self.assertFalse(any(step.get("id") == "plan" for step in steps))
         self.assertFalse(any(step.get("continue-on-error", False) for step in steps))
+        for step in steps[:-2]:
+            self.assertNotIn("if", step)
         by_id = {step["id"]: step for step in steps if "id" in step}
-        self.assertEqual(
-            by_id["published-plugins-check"]["run"],
-            "nix run .#korri-published-plugins-check",
-        )
-        self.assertEqual(by_id["published-plugins-check"]["timeout-minutes"], 40)
+        check = by_id["published-plugins-check"]
+        self.assertEqual(check["run"], "nix run .#korri-published-plugins-check")
+        self.assertEqual(check["timeout-minutes"], 40)
         prepare = by_id["prepare-nix-store"]
         self.assertEqual(prepare["timeout-minutes"], 3)
         self.assertIn("always()", prepare["if"])
         self.assertIn("steps.nix-store.outcome == 'success'", prepare["if"])
-        self.assertIn(
-            "steps.nix-store.outputs.hit-primary-key != 'true'", prepare["if"]
-        )
-        save = heavy[-1]
-        self.assertIn("always()", save["if"])
-        self.assertIn("steps.prepare-nix-store.outcome == 'success'", save["if"])
-        self.assertIn(
-            "steps.published-plugins-check.outcome == 'success'",
-            save["with"]["primary-key"],
-        )
-        self.assertIn("github.run_id, github.run_attempt", save["with"]["primary-key"])
-        final = steps[-1]
-        self.assertEqual(final["if"], "always()")
-        self.assertEqual(final["env"]["PLAN"], "${{ steps.plan.outputs.plan }}")
+        self.assertIn("steps.nix-store.outputs.hit-primary-key != 'true'", prepare["if"])
+        self.assertIn("steps.prepare-nix-store.outcome == 'success'", steps[-1]["if"])
+        self.assertIn("github.run_id, github.run_attempt", steps[-1]["with"]["primary-key"])
 
-    def test_published_step_outcome_adapter_fails_closed_through_the_real_command(self):
-        workflow = yaml.safe_load(
-            (ROOT / ".github/workflows/published-plugin-checks.yml").read_text()
-        )
-        final = workflow["jobs"]["acceptance"]["steps"][-1]
-        full = ci.plan("full", [], "test")
-        omitted = ci.plan("probe", ["docs/ci.md"], "test")
-        cases = [
-            (full, "success", "success", True),
-            (omitted, "success", "skipped", True),
-            (omitted, "success", "success", False),
-            (omitted, "failure", "skipped", False),
-            (omitted, "success", "", False),
-            (None, "success", "skipped", False),
-        ]
-        for outcome in ["failure", "skipped", "cancelled", ""]:
-            cases.append((full, "success", outcome, False))
-            cases.append((full, outcome, "success", False))
-        for selection, selector, check, succeeds in cases:
-            with self.subTest(
-                selector=selector, check=check, selected=selection == full
-            ):
-                needs = (
-                    final["env"]["NEEDS"]
-                    .replace("${{ steps.plan.outcome }}", selector)
-                    .replace("${{ steps.published-plugins-check.outcome }}", check)
-                )
-                result = subprocess.run(
-                    [
-                        sys.executable,
-                        str(ROOT / ".github/ci/check-plan.py"),
-                        "aggregate",
-                        "--scope",
-                        "published",
-                    ],
-                    env={
-                        **os.environ,
-                        "PLAN": json.dumps(selection) if selection is not None else "",
-                        "NEEDS": needs,
-                    },
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                self.assertEqual(
-                    result.returncode == 0, succeeds, result.stdout + result.stderr
-                )
-
-    def test_static_jobs_and_aggregate_dependencies_cover_full_plan(self):
-        for filename, expected, scope in [
-            ("korri-checks.yml", set(ci.LANES) - {"acceptance"}, "checks"),
-            ("published-plugin-checks.yml", {"acceptance"}, "published"),
-        ]:
-            with self.subTest(filename=filename):
-                workflow = yaml.safe_load(
-                    (ROOT / ".github/workflows" / filename).read_text()
-                )
-                jobs = workflow["jobs"]
-                if scope == "checks":
-                    self.assertEqual(set(jobs), expected | {"select", "check"})
-                    self.assertEqual(set(jobs["check"]["needs"]), expected | {"select"})
-                    self.assertEqual(
-                        set(jobs["select"]["outputs"]), set(ci.LANES) | {"plan"}
-                    )
-                    aggregate_job = jobs["check"]
-                    selection_steps = jobs["select"]["steps"]
-                else:
-                    self.assertEqual(set(jobs), {"acceptance"})
-                    aggregate_job = jobs["acceptance"]
-                    selection_steps = aggregate_job["steps"]
-                    self.assertNotIn("needs", aggregate_job)
-                    self.assertEqual(
-                        aggregate_job["name"], "Published plugin acceptance result"
-                    )
-                self.assertEqual(aggregate_job["if"], "always()")
-                self.assertIn(
-                    f"aggregate --scope {scope}", aggregate_job["steps"][-1]["run"]
-                )
-                self.assertEqual(workflow["permissions"], {"contents": "read"})
-                self.assertEqual(selection_steps[0]["with"]["fetch-depth"], 2)
-                select = next(
-                    step for step in selection_steps if step.get("id") == "plan"
-                )
-                self.assertNotIn("github.event_name == 'push'", select["env"]["MODE"])
-                self.assertIn("github.event_name == 'schedule'", select["env"]["MODE"])
-                self.assertIn("--fetch-base", select["run"])
-                if scope == "checks":
-                    for lane in expected:
-                        self.assertEqual(jobs[lane]["needs"], "select")
-                        self.assertEqual(
-                            jobs[lane]["if"], f"needs.select.outputs.{lane} == 'true'"
-                        )
-                # Consumers use checked-in treaties. Neither compilation nor a
-                # large Nix snapshot can sit in the fast lanes' ancestry.
-                if scope == "checks":
-                    for lane in ["portal", "fmt", "treaty"]:
-                        self.assertFalse(
-                            any(
-                                "cache-nix-action" in step.get("uses", "")
-                                for step in jobs[lane]["steps"]
-                            )
-                        )
-                for job in jobs.values():
-                    checkout = [
-                        step
-                        for step in job["steps"]
-                        if step.get("uses", "").startswith("actions/checkout@")
-                    ]
-                    self.assertEqual(len(checkout), 1)
-                    self.assertEqual(
-                        checkout[0]["with"]["ref"],
-                        "${{ inputs.source_sha || github.sha }}",
-                    )
-                    self.assertFalse(checkout[0]["with"]["persist-credentials"])
-                    checks = [
-                        step
-                        for step in job["steps"]
-                        if "EXPECTED_SOURCE_SHA" in step.get("env", {})
-                    ]
-                    self.assertEqual(len(checks), 1)
-                    self.assertIn(
-                        'test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"',
-                        checks[0]["run"],
-                    )
+    def test_static_jobs_and_aggregate_dependencies_cover_the_host_plan(self):
+        workflow = yaml.safe_load((ROOT / ".github/workflows/korri-checks.yml").read_text())
+        jobs = workflow["jobs"]
+        expected = set(ci.LANES)
+        self.assertEqual(set(jobs), expected | {"select", "check"})
+        self.assertEqual(set(jobs["check"]["needs"]), expected | {"select"})
+        self.assertEqual(set(jobs["select"]["outputs"]), expected | {"plan"})
+        self.assertEqual(jobs["check"]["if"], "always()")
+        self.assertEqual(jobs["check"]["steps"][-1]["run"],
+                         "python3 .github/ci/check-plan.py aggregate")
+        self.assertEqual(workflow["permissions"], {"contents": "read"})
+        selection_steps = jobs["select"]["steps"]
+        self.assertEqual(selection_steps[0]["with"]["fetch-depth"], 2)
+        select = next(step for step in selection_steps if step.get("id") == "plan")
+        self.assertNotIn("github.event_name == 'push'", select["env"]["MODE"])
+        self.assertIn("github.event_name == 'schedule'", select["env"]["MODE"])
+        self.assertIn("--fetch-base", select["run"])
+        for lane in expected:
+            self.assertEqual(jobs[lane]["needs"], "select")
+            self.assertEqual(jobs[lane]["if"], f"needs.select.outputs.{lane} == 'true'")
+        for lane in ["portal", "fmt", "treaty"]:
+            self.assertFalse(any("cache-nix-action" in step.get("uses", "")
+                                 for step in jobs[lane]["steps"]))
+        for job in jobs.values():
+            checkout = [step for step in job["steps"]
+                        if step.get("uses", "").startswith("actions/checkout@")]
+            self.assertEqual(len(checkout), 1)
+            self.assertEqual(checkout[0]["with"]["ref"], "${{ inputs.source_sha || github.sha }}")
+            self.assertFalse(checkout[0]["with"]["persist-credentials"])
+            guards = [step for step in job["steps"] if "EXPECTED_SOURCE_SHA" in step.get("env", {})]
+            self.assertEqual(len(guards), 1)
+            self.assertIn('test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"', guards[0]["run"])
 
 
 if __name__ == "__main__":
