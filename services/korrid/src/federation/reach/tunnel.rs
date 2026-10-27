@@ -417,9 +417,11 @@ pub(super) async fn netplay_echo(connection: Connection) -> tokio::task::JoinHan
     };
     tokio::spawn(async move {
         let echo = async {
-            let (tcp, _) = listener.accept().await.unwrap();
-            let (mut read, mut write) = tcp.into_split();
-            let _ = tokio::io::copy(&mut read, &mut write).await;
+            loop {
+                let (tcp, _) = listener.accept().await.unwrap();
+                let (mut read, mut write) = tcp.into_split();
+                let _ = tokio::io::copy(&mut read, &mut write).await;
+            }
         };
         tokio::select! {
             _ = serve_on(connection, axum::Router::new(), targets) => {},

@@ -1,5 +1,6 @@
 use super::*;
 use crate::*;
+use futures::StreamExt;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -7,6 +8,8 @@ use std::{
 use tokio::sync::watch;
 
 const RECONNECT_WINDOW: Duration = Duration::from_secs(10);
+const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
+const STATUS_TIMEOUT: Duration = Duration::from_secs(3);
 #[derive(Clone, Default)]
 pub(crate) struct Receiver(Arc<Mutex<State>>);
 #[derive(Default)]
@@ -76,7 +79,7 @@ impl Receiver {
             return Err(failure("NoNetplayRoute", "The launch was cancelled."));
         }
         let mut run = run.clone();
-        run.status.launch_id = session.launch_id.clone();
+        // The public receiving run survives replacement native clients.
         run.status.phase = NetplayPhase::Connecting;
         *local = State::Active {
             run,
@@ -102,7 +105,6 @@ impl Receiver {
         let mut local = self.0.lock().expect("netplay receiver");
         if let State::Active { run, session } = &mut *local {
             if run.id == id {
-                run.status.launch_id = launch.into();
                 session.launch_id = launch.into();
             }
         }
@@ -490,6 +492,7 @@ async fn start_inner(
             prepared,
             cancelled,
         ));
+        active.launch_id = attempt.clone();
         Ok(active)
     }.await;
     if result.is_err() {
@@ -524,9 +527,23 @@ async fn monitor(
     let ServerMode::Host(host) = &state.mode else {
         return;
     };
+    let mut holder_left = invite.session.phase.as_deref() == Some("frozen");
+    // Keep the in-flight poll across transport ticks. A loaded holder must not
+    // delay bridge-loss detection or consume the reconnect window.
+    let observations = futures::stream::unfold(&peer, |peer| async move {
+        tokio::time::sleep(MONITOR_INTERVAL).await;
+        Some((
+            tokio::time::timeout(STATUS_TIMEOUT, peer.session_status()).await,
+            peer,
+        ))
+    });
+    tokio::pin!(observations);
     loop {
-        tokio::select! { _ = cancelled.changed() => return, _ = tokio::time::sleep(Duration::from_millis(500)) => {} }
-        let status = tokio::time::timeout(Duration::from_secs(1), peer.session_status()).await;
+        let status = tokio::select! {
+            _ = cancelled.changed() => return,
+            status = observations.next() => status,
+            _ = tokio::time::sleep(MONITOR_INTERVAL) => None,
+        };
         if *cancelled.borrow() {
             return;
         }
@@ -540,23 +557,40 @@ async fn monitor(
         {
             return;
         }
-        let observation = match status {
-            Ok(Ok(upstream::UpstreamSessionStatus::SessionStatus {
+        match status {
+            Some(Ok(Ok(upstream::UpstreamSessionStatus::SessionStatus {
                 active: Some(active),
-            })) if active.launch_id == invite.session.launch_id => Some(active),
-            Ok(Ok(_)) => {
+            }))) if active.launch_id == invite.session.launch_id => {
+                holder_left = active.phase.as_deref() == Some("frozen");
+            }
+            Some(Ok(Ok(_))) => {
                 if finish(&state, &invite, &copy, false).await {
                     return;
                 }
                 continue;
             }
-            _ => None,
-        };
+            // A timeout or RPC failure says nothing about the game connection.
+            // Keep the last observed holder phase until a successful reply.
+            _ => {}
+        }
         let route_alive = state
             .federation
             .as_ref()
             .is_some_and(|directory| directory.has_iroh_route(&invite.device_public_key));
-        if observation.is_none() || !route_alive || !copy.forward.ready() {
+        if holder_left && route_alive {
+            let _ = host.session_freeze(&copy.launch_id).await;
+            state
+                .netplay_receiver
+                .phase(&copy.attempt_id, NetplayPhase::HolderLeft);
+            // Waiting for the holder is not a connection-loss deadline.
+            if let ConnectionState::Connecting { since } | ConnectionState::Reconnecting { since } =
+                &mut connection
+            {
+                *since = tokio::time::Instant::now();
+            }
+            continue;
+        }
+        if !route_alive || !copy.forward.ready() {
             connection = match connection {
                 ConnectionState::Playing => ConnectionState::Reconnecting {
                     since: tokio::time::Instant::now(),
@@ -565,14 +599,7 @@ async fn monitor(
             };
             let (phase, since) = match connection {
                 ConnectionState::Connecting { since } => (NetplayPhase::Connecting, since),
-                ConnectionState::Reconnecting { since } => {
-                    // A replacement client is making its own first connection.
-                    // Freeze only a copy that has already opened its bridge.
-                    if copy.forward.has_connected() {
-                        let _ = host.session_freeze(&copy.launch_id).await;
-                    }
-                    (NetplayPhase::Reconnecting, since)
-                }
+                ConnectionState::Reconnecting { since } => (NetplayPhase::Reconnecting, since),
                 ConnectionState::Playing => unreachable!(),
             };
             state.netplay_receiver.phase(&copy.attempt_id, phase);
@@ -582,7 +609,7 @@ async fn monitor(
                 }
                 continue;
             }
-            if observation.is_some() && route_alive && copy.forward.lost() {
+            if route_alive && copy.forward.lost() {
                 // RetroArch has no reconnect command. Start its client again;
                 // it receives the holder's current state in a fresh private tmp.
                 if let Some(directory) = &state.federation {
@@ -648,18 +675,10 @@ async fn monitor(
             continue;
         }
         connection = ConnectionState::Playing;
-        let active = observation.expect("observed holder");
-        if active.phase.as_deref() == Some("frozen") {
-            let _ = host.session_freeze(&copy.launch_id).await;
-            state
-                .netplay_receiver
-                .phase(&copy.attempt_id, NetplayPhase::HolderLeft);
-        } else {
-            let _ = host.session_thaw(&copy.launch_id).await;
-            state
-                .netplay_receiver
-                .phase(&copy.attempt_id, NetplayPhase::Playing);
-        }
+        let _ = host.session_thaw(&copy.launch_id).await;
+        state
+            .netplay_receiver
+            .phase(&copy.attempt_id, NetplayPhase::Playing);
     }
 }
 fn reconnect_expired(since: tokio::time::Instant, now: tokio::time::Instant) -> bool {
@@ -678,12 +697,16 @@ async fn finish(
         }
     }
     let mut local = state.netplay_receiver.0.lock().expect("netplay receiver");
-    if !matches!(&*local, State::Active { run, session } if run.id == copy.attempt_id && session.launch_id == copy.launch_id)
-    {
-        return true;
-    }
+    let launch_id = match &*local {
+        State::Active { run, session }
+            if run.id == copy.attempt_id && session.launch_id == copy.launch_id =>
+        {
+            run.status.launch_id.clone()
+        }
+        _ => return true,
+    };
     *local = State::Ended(StreamPlayEnded {
-        launch_id: copy.launch_id.clone(),
+        launch_id,
         game_id: invite.session.game_id.clone(),
         game_title: invite.session.title.clone(),
         device_label: invite.device_label.clone(),
@@ -751,11 +774,11 @@ pub(crate) async fn dispatch(
         match &*local {
             State::Idle => (None, None, None),
             State::Preparing(run) => (Some(run.status.clone()), None, None),
-            State::Active { run, session } => (
-                Some(run.status.clone()),
-                Some(session.as_ref().clone()),
-                None,
-            ),
+            State::Active { run, session } => {
+                let mut active = session.as_ref().clone();
+                active.launch_id = run.status.launch_id.clone();
+                (Some(run.status.clone()), Some(active), None)
+            }
             State::Ended(ended) => (None, None, Some(ended.clone())),
         }
     };
@@ -932,7 +955,7 @@ mod tests {
         let copy = receiver.prepare("game", None).await.unwrap().session;
         let (state, _) = app_states(receiver.clone());
         let status = NetplayStatus {
-            launch_id: copy.launch_id.clone(),
+            launch_id: "receiving-run".into(),
             device_label: "Holder".into(),
             game_title: Some("Game".into()),
             phase: NetplayPhase::Playing,
@@ -943,6 +966,18 @@ mod tests {
         .unwrap();
         let (attempt, cancellation) = state.netplay_receiver.begin(status).unwrap();
         state.netplay_receiver.activate(&attempt, active).unwrap();
+        let status = dispatch(
+            &state,
+            &authorization::AuthorizationContext::LocalBrowser,
+            &RpcRequest::SessionStatus(SessionStatusRequest {}),
+        )
+        .await
+        .unwrap();
+        let RpcResponse::SessionStatus(SessionStatusOutcome::Ok(status)) = status else {
+            panic!("status failed");
+        };
+        assert_eq!(status.active.unwrap().launch_id, "receiving-run");
+        assert_eq!(status.netplay.unwrap().launch_id, "receiving-run");
         let response = crate::dispatch(
             &state,
             &authorization::AuthorizationContext::LocalBrowser,
@@ -960,7 +995,7 @@ mod tests {
             &state,
             &authorization::AuthorizationContext::LocalBrowser,
             RpcRequest::SessionLeave(SessionLeaveRequest {
-                expected_launch_id: Some(copy.launch_id.clone()),
+                expected_launch_id: Some("receiving-run".into()),
             }),
         )
         .await
