@@ -46,8 +46,12 @@
 	color: var(--pico-ink-quiet);
 }
 
-/* The buttons keep their shadows' room inside the row. */
+/* The buttons keep their shadows' room inside the row. A route's words are
+ * Korri's and can outgrow the row ("Install … and play here"), so a label
+ * wraps inside its button rather than running off the screen. */
 .pico-invite-row-actions {
+	--pico-button-wrap: normal;
+	--pico-button-max: calc(100% - var(--pico-drop));
 	flex: none;
 	display: flex;
 	flex-wrap: wrap;

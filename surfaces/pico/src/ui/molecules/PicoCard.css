@@ -4,6 +4,8 @@
  * the plastic, and a light plate for the cursor.
  * Parents may set --pico-card-width on their own element to constrain a card.
  * With no constraint the card keeps its normal grid or block sizing.
+ * Parents may set --pico-card-rows to the card's row tracks, so one child (a
+ * long report) takes what room is left and scrolls while the others stay.
  */
 .pico-card {
 	--pico-card-shell: var(--pico-shell-ask);
@@ -17,6 +19,7 @@
 	--pico-row-pick-ink: var(--pico-pick-ink);
 	position: relative;
 	display: grid;
+	grid-template-rows: var(--pico-card-rows, none);
 	align-content: start;
 	/* Spacing yields first: a container out of room may close the gap. */
 	gap: var(--pico-card-gap, var(--pico-u));

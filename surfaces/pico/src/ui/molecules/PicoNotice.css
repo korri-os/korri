@@ -1,9 +1,15 @@
-/* A notice stands alone in the middle of whatever room it is given. */
+/* A notice stands alone in the middle of whatever room it is given. A
+ * column, not a grid: a flex item shrinks to the room's height, so a card
+ * taller than the room scrolls inside itself instead of running off the
+ * bottom with its answers. */
 .pico-notice {
 	--pico-card-width: min(100%, calc(var(--pico-px) * 220));
-	display: grid;
-	place-items: center;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
 	height: 100%;
+	min-height: 0;
 	padding: var(--pico-u);
 }
 
@@ -15,4 +21,92 @@
 .pico-notice-actions {
 	display: grid;
 	gap: calc(var(--pico-px) * 2);
+}
+
+/* A report comes last, under the answers, and takes the room the title and
+ * the answers leave; it scrolls in it, so the answers never leave the
+ * screen. A kicker comes first only when the notice has a title. */
+.pico-notice[data-report="after-title"] {
+	--pico-card-rows: auto auto minmax(0, 1fr);
+}
+
+.pico-notice[data-report="after-kicker"] {
+	--pico-card-rows: auto auto auto minmax(0, 1fr);
+}
+
+/* A report's notice is a size container, measured in the small face as a
+ * question over Settings is; the room the card has is this wrapper. */
+.pico-notice[data-report] {
+	container: pico-notice / size;
+	font-size: var(--pico-text-sm);
+}
+
+.pico-notice-fit {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	width: 100%;
+	max-height: 100%;
+	min-height: 0;
+}
+
+/* Short: the title steps down a size, so the report keeps some room. */
+@container pico-notice (height < 45em) {
+	.pico-notice-fit {
+		--pico-title-xl: var(--pico-text-lg);
+	}
+}
+
+/* Very short (320x240, a strip). The answers must stay on screen, so the
+ * card yields in order: its padding and gaps close, the kicker (the title
+ * says the same) goes, the title and report step down a size, and the
+ * answers stand side by side in the small face. The report scrolls in what
+ * is left. */
+@container pico-notice (height < 20em) {
+	/* More specific than the 45em rule, so one selector declares it once. */
+	.pico-notice > .pico-notice-fit {
+		--pico-title-xl: var(--pico-text);
+		--pico-card-kicker-display: none;
+		--pico-card-gap: calc(var(--pico-px) * 2);
+		--pico-card-pad: calc(var(--pico-px) * 5) calc(var(--pico-px) * 5) calc(var(--pico-px) * 4);
+	}
+
+	.pico-notice-report {
+		font-size: var(--pico-text-sm);
+	}
+
+	.pico-notice-fit .pico-notice-actions {
+		--pico-text: var(--pico-text-sm);
+		grid-template-columns: fit-content(70%) minmax(0, 1fr);
+		grid-auto-flow: column;
+	}
+}
+
+/* A report: one fact per line, each a stop for the cursor. The bottom pad
+ * keeps the focused line's shadow inside the scroll. */
+.pico-notice-report {
+	display: grid;
+	align-content: start;
+	gap: calc(var(--pico-px) * 2);
+	min-height: 0;
+	margin: 0;
+	padding: 0 0 var(--pico-drop);
+	list-style: none;
+	overflow-y: auto;
+	scrollbar-width: none;
+}
+
+.pico-notice-line {
+	padding: calc(var(--pico-px) * 1) calc(var(--pico-px) * 3);
+	overflow-wrap: anywhere;
+	border-left: calc(var(--pico-px) * 2) solid var(--pico-card-kicker);
+}
+
+/* The cursor on a line: the same plate a focused row lifts onto. */
+.pico-notice-line:focus-visible {
+	outline: none;
+	color: var(--pico-row-pick-ink, var(--pico-go-ink));
+	background: var(--pico-row-pick, var(--pico-go));
+	box-shadow: var(--pico-drop) var(--pico-drop) 0 var(--pico-cycle);
+	animation: pico-cycle 600ms steps(1, end) infinite;
 }

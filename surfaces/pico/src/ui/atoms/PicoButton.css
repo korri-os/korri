@@ -1,6 +1,10 @@
 /* A plastic button: solid body, hard shadow down and right, and nothing soft.
  * The shadow is part of the button's footprint, so a margin reserves it and a
- * neighbour's gap is measured from the shadow, not from the body. */
+ * neighbour's gap is measured from the shadow, not from the body.
+ * A label stays on one line. A parent whose labels come from Korri and can be
+ * longer than its width (an invite's routes) sets --pico-button-wrap: normal
+ * and --pico-button-max (such as 100% less the shadow) on its own element: the label then wraps inside
+ * the button instead of running off the screen. */
 .pico-button {
 	--pico-button-body: var(--pico-go);
 	--pico-button-ink: var(--pico-go-ink);
@@ -15,7 +19,10 @@
 	color: var(--pico-button-ink);
 	background: var(--pico-button-body);
 	box-shadow: var(--pico-drop) var(--pico-drop) 0 var(--pico-button-shadow);
-	white-space: nowrap;
+	white-space: var(--pico-button-wrap, nowrap);
+	max-width: var(--pico-button-max, none);
+	overflow-wrap: anywhere;
+	text-align: start;
 }
 
 .pico-button[data-tone="quiet"] {
