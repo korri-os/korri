@@ -8,6 +8,10 @@ const RETROARCH_CONTROL_PORT: u16 = 55355;
 const CONTROL_TIMEOUT: Duration = Duration::from_millis(250);
 const READBACK_ATTEMPTS: usize = 5;
 const READBACK_DELAY: Duration = Duration::from_millis(20);
+/// Starting to host during play reinitialises RetroArch's netplay state, which
+/// took seconds on the Mini V2. Wait this long for its host socket.
+const HOSTING_DEADLINE: Duration = Duration::from_secs(10);
+const HOSTING_POLL: Duration = Duration::from_millis(200);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum RetroarchCommand {
@@ -128,8 +132,9 @@ impl RetroarchControlExecutor for NetworkRetroarchControl {
                     return Ok(());
                 }
                 self.send(b"NETPLAY_HOST_TOGGLE\n")?;
-                for _ in 0..READBACK_ATTEMPTS {
-                    std::thread::sleep(READBACK_DELAY);
+                let deadline = std::time::Instant::now() + HOSTING_DEADLINE;
+                while std::time::Instant::now() < deadline {
+                    std::thread::sleep(HOSTING_POLL);
                     // GET_STATUS has no hosting bit. Confirm the exact content
                     // is still live, then probe RetroArch's fixed host socket.
                     if self.status().is_ok_and(|after| {
@@ -274,5 +279,51 @@ mod netplay_tests {
         assert_eq!(command, PreparedRetroarchCommand::NetplayHostToggle);
         executor.invoke(command).unwrap();
         runtime.join().unwrap();
+    }
+
+    // On the Mini V2 (2026-10-27) RetroArch took seconds to reinitialise for
+    // hosting during play, so a 100 ms readback refused every first request.
+    #[test]
+    fn netplay_host_toggle_waits_for_a_host_that_starts_listening_late() {
+        let control = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        control
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let hosting =
+            socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::STREAM, None).unwrap();
+        hosting
+            .bind(&SocketAddr::from((Ipv4Addr::LOCALHOST, 0)).into())
+            .unwrap();
+        let mut executor = NetworkRetroarchControl::new(control.local_addr().unwrap().port());
+        executor.netplay_endpoint = hosting.local_addr().unwrap().as_socket().unwrap();
+        let runtime = std::thread::spawn(move || {
+            let mut bytes = [0; 128];
+            let started = std::time::Instant::now();
+            let mut listening = false;
+            loop {
+                let Ok((n, source)) = control.recv_from(&mut bytes) else {
+                    break;
+                };
+                if !listening && started.elapsed() >= Duration::from_millis(1500) {
+                    hosting.listen(4).unwrap();
+                    listening = true;
+                }
+                if &bytes[..n] == b"GET_STATUS\n" {
+                    control
+                        .send_to(
+                            b"GET_STATUS PLAYING snes,Turtles.sfc,crc32=1234abcd\n",
+                            source,
+                        )
+                        .unwrap();
+                }
+            }
+        });
+        let command = executor
+            .prepare(RetroarchCommand::NetplayHostToggle)
+            .unwrap();
+        let result = executor.invoke(command);
+        drop(executor);
+        assert!(result.is_ok(), "{result:?}");
+        let _ = runtime;
     }
 }
