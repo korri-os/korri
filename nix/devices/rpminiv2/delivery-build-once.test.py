@@ -5,6 +5,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -31,7 +32,7 @@ class DeviceBuildWorkflowTest(unittest.TestCase):
             calls = root / "calls.jsonl"
             nix = root / "nix"
             nix.write_text(
-                "#!/usr/bin/env python3\n"
+                f"#!{sys.executable}\n"
                 "import json, os, sys\n"
                 "with open(os.environ['CALLS'], 'a') as out:\n"
                 "    out.write(json.dumps(sys.argv[1:]) + '\\n')\n"
@@ -46,7 +47,7 @@ class DeviceBuildWorkflowTest(unittest.TestCase):
             # regression test take three minutes. This is a real command whose
             # configured behavior is an immediate successful exit.
             sleep = root / "sleep"
-            sleep.write_text("#!/bin/sh\nexit 0\n")
+            sleep.write_text(f"#!{shutil.which('bash')}\nexit 0\n")
             sleep.chmod(0o755)
             command = root / "workflow-command.sh"
             command.write_text(
@@ -70,7 +71,11 @@ class DeviceBuildWorkflowTest(unittest.TestCase):
                 timeout=10,
                 check=False,
             )
-            captured = [json.loads(line) for line in calls.read_text().splitlines()]
+            captured = (
+                [json.loads(line) for line in calls.read_text().splitlines()]
+                if calls.exists()
+                else []
+            )
             return result, captured
 
     def test_failed_build_runs_once_and_never_publishes(self):
