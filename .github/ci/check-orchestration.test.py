@@ -66,6 +66,41 @@ class TreatyDriftTest(unittest.TestCase):
 
 
 class WorkflowContractTest(unittest.TestCase):
+    def test_inputd_prepares_real_kvm_access_before_nix_installation(self):
+        checks = yaml.safe_load(
+            (ROOT / ".github/workflows/korri-checks.yml").read_text()
+        )
+        published = yaml.safe_load(
+            (ROOT / ".github/workflows/published-plugin-checks.yml").read_text()
+        )
+        steps = checks["jobs"]["inputd"]["steps"]
+        kvm = next(
+            index
+            for index, step in enumerate(steps)
+            if step["name"] == "Enable the disposable Inputd module VMs"
+        )
+        install = next(
+            index for index, step in enumerate(steps) if step["name"] == "Install Nix"
+        )
+        run = next(
+            index
+            for index, step in enumerate(steps)
+            if step.get("run") == "nix run .#inputd-check"
+        )
+        self.assertLess(kvm, install)
+        self.assertLess(install, run)
+        established = next(
+            step
+            for step in published["jobs"]["acceptance"]["steps"]
+            if step["name"] == "Enable the disposable lifecycle VM"
+        )
+        self.assertEqual(steps[kvm]["run"], established["run"])
+        self.assertIn("sudo udevadm control --reload-rules", steps[kvm]["run"])
+        self.assertIn(
+            "sudo udevadm trigger --settle --name-match=kvm", steps[kvm]["run"]
+        )
+        self.assertIn("test -r /dev/kvm -a -w /dev/kvm", steps[kvm]["run"])
+
     def test_retained_host_coverage_does_not_raise_the_original_thirty_minute_budget(
         self,
     ):

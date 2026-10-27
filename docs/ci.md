@@ -118,6 +118,9 @@ native Nix packages. Tests do not depend on a NixOS `/run/current-system` link.
 Executable identity, store-item confinement and privilege assertions remain in
 place. Its private DBus test uses the daemon package's native session policy and
 explicitly binds only the fixture's temporary socket, never a host bus address.
+The hosted Inputd job uses the same real KVM permission, udev settle and read/write
+access prerequisite as published acceptance, before installing Nix. Missing KVM
+fails the job; no system-feature override substitutes for actual access.
 
 Zone's check supplies the locked `NIX_PATH` to its existing Nix-shebang font
 builder. It does not require a runner channel. Builder failures include stderr;
