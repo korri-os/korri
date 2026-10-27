@@ -66,6 +66,16 @@ class TreatyDriftTest(unittest.TestCase):
 
 
 class WorkflowContractTest(unittest.TestCase):
+    def test_normal_cli_lane_uses_fast_identity_evaluation_not_two_binary_builds(self):
+        workflow = yaml.safe_load(
+            (ROOT / ".github/workflows/korri-checks.yml").read_text()
+        )
+        commands = [
+            step["run"] for step in workflow["jobs"]["cli"]["steps"] if "run" in step
+        ]
+        self.assertEqual(commands.count("nix run .#cli-build-identity-eval-check"), 1)
+        self.assertNotIn("nix run .#cli-build-identity-check", commands)
+
     def test_static_jobs_and_aggregate_dependencies_cover_full_plan(self):
         for filename, expected, scope in [
             ("korri-checks.yml", set(ci.LANES) - {"acceptance"}, "checks"),
