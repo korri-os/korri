@@ -21,6 +21,20 @@ class SelectionTest(unittest.TestCase):
     def test_full_mode_selects_every_documented_lane(self):
         self.assertTrue(all(ci.plan("full", [], "test")["lanes"].values()))
 
+    def test_unknown_shared_inputs_keep_requested_profile_while_selecting_all_lanes(self):
+        for mode in ("affected", "probe", "full"):
+            for path in ("unknown/file", "flake.lock", "services/inputd/nix/default.nix", "services/korrid/src/main.rs"):
+                with self.subTest(mode=mode, path=path):
+                    selection = ci.plan(mode, [path], "test")
+                    self.assertEqual(selection["mode"], mode)
+                    if path != "services/korrid/src/main.rs" or mode == "full":
+                        self.assertTrue(all(selection["lanes"].values()))
+        fallback = ci.plan("affected", [], "diff unavailable", broaden=True)
+        self.assertEqual(fallback["mode"], "affected")
+        self.assertTrue(all(fallback["lanes"].values()))
+        full_source = (SCRIPT.resolve().parents[2] / "services/inputd/nix/default.nix").read_text()
+        self.assertIn("korridPackage", full_source)
+
     def test_known_nonfixture_document_can_skip_checks(self):
         self.assertEqual(ci.affected(["docs/agents/domain.md"]), {"policy"})
 
@@ -93,7 +107,7 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(actual, expected | {"policy"})
                 self.assertLessEqual(actual, full)
 
-    def test_inputd_dependency_direction_preserves_the_real_sandbox_consumer(self):
+    def test_inputd_fast_profile_preserves_the_real_sandbox_consumer(self):
         for path in [
             "services/korrid/src/main.rs",
             "services/korrid/src/config/library.rs",
@@ -295,9 +309,11 @@ class SelectionTest(unittest.TestCase):
                     cwd=checkout,
                     text=True,
                 )
-                self.assertEqual(json.loads(failed)["mode"], "full")
+                selection = json.loads(failed)
+                self.assertEqual(selection["mode"], "affected")
+                self.assertTrue(all(selection["lanes"].values()))
 
-    def test_unavailable_diff_runs_full_and_emits_outputs(self):
+    def test_unavailable_diff_broadens_lanes_without_escalating_profile(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "outputs"
             result = subprocess.check_output(
@@ -305,7 +321,8 @@ class SelectionTest(unittest.TestCase):
                 env={**os.environ, "GITHUB_OUTPUT": str(output)},
                 text=True,
             )
-            self.assertEqual(json.loads(result)["mode"], "full")
+            self.assertEqual(json.loads(result)["mode"], "affected")
+            self.assertTrue(all(json.loads(result)["lanes"].values()))
             self.assertIn("portal=true", output.read_text())
             self.assertIn("plan=", output.read_text())
 
@@ -313,7 +330,8 @@ class SelectionTest(unittest.TestCase):
         result = subprocess.check_output(
             [sys.executable, str(SCRIPT), "select"], text=True
         )
-        self.assertEqual(json.loads(result)["mode"], "full")
+        self.assertEqual(json.loads(result)["mode"], "affected")
+        self.assertTrue(all(json.loads(result)["lanes"].values()))
         self.assertEqual(ci.affected([]), {"policy"})
 
     def test_manual_probe_uses_same_selection_and_rejects_bad_json(self):

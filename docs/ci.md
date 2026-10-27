@@ -10,10 +10,10 @@ controls in published acceptance are unchanged.
 | Trigger/mode | Selection |
 | --- | --- |
 | Pull request | Conservative merge-base diff; both paths of a rename and deleted paths count. The optional `ci-full` PR label forces full mode. No label is created by CI. |
-| Push to `main` | Conservative affected selection from the event's `before` SHA; unavailable history broadens to full. |
+| Push to `main` | Conservative affected selection from the event's `before` SHA; unavailable history selects all lanes within the affected profile. |
 | Weekly schedule | Full, including published acceptance. |
 | Manual `full` (default) | Every lane in that workflow. Dispatch both validation workflows on the same PR SHA for a full hosted comparison without publishing. |
-| Manual `affected` | Diff if a base is available; otherwise full. |
+| Manual `affected` | Diff if a base is available; otherwise all lanes within the affected profile. |
 | Manual `probe` | Apply the real selector to `probe_paths`, a nonempty JSON array. This measures the selected paths on the tested source; it is not proof about an arbitrary commit's actual diff. |
 
 Every checkout uses `source_sha` (a full 40-character commit SHA) or the event's
@@ -33,16 +33,16 @@ validation runs for the same event/ref; these workflows never cancel publishers.
 
 `.github/ci/check-plan.py` owns selection and validates aggregation. Tests run
 before CI applies omissions. Unknown paths, contracts, Nix composition, validation
-workflow changes and any dependency lock select **all** lanes. The known cache
+workflow changes and any dependency lock select **all** lanes within the requested profile. The known cache
 workflows, read helpers and their tests select `policy` plus `cache`. The trust
 script and snapshot preparation script/tests also select their actual published
 acceptance consumer. Cache-only inputs do not select Rust compiler jobs. Shared
 cache trust identity/composition still selects full. A missing merge base or
-failed diff broadens to full. Invalid probe input or selection errors fail closed.
+failed diff selects all lanes without changing the requested profile. Invalid probe input or selection errors fail closed.
 The selector starts from a two-commit checkout. If the merge base is missing, it
 fetches at most 64 commits for each exact event-base/tested-head SHA, with a
 30-second read timeout. It never fetches all history. A bad `before`, failed
-fetch, or still-missing merge base selects full coverage. Selector logs report
+fetch, or still-missing merge base selects all lanes within the requested profile. Selector logs report
 selection elapsed time, including any bounded fetch; checkout and selector-test
 time remain separate steps in the hosted job timings.
 
@@ -56,13 +56,21 @@ files are `settings-model.ts`, `plugin-repositories.ts`,
 select real korrid RPC smoke and CLI/backend validation. Unknown portal, surface
 or package inputs broaden to full; there is no blanket frontend-directory skip.
 
-Dependency direction matters: `services/inputd/Cargo.toml` consumes its core and
-`contracts/input`, not korrid. Inputd changes select korrid because korrid embeds
-the seat runtime. Ordinary korrid implementation edits do not select Inputd's
-Rust/module/package lane. The concrete exception is
-`services/korrid/src/host/systemd_unit.rs`: Inputd's deploy harness reads its
-sandbox properties, so it still selects Inputd coverage. Shared Nix, input treaty
-and lock changes retain broad/full selection.
+Ordinary affected/PR runs intentionally use Inputd's **fast profile**: Rust/core,
+wasm and deployment-shell checks, without module/package/VM evaluation. Its Rust
+crate consumes its core and `contracts/input`. Inputd changes select korrid
+because korrid embeds the seat runtime. Ordinary korrid edits do not select the
+fast Inputd profile; `services/korrid/src/host/systemd_unit.rs` does, because the
+deployment-shell fixture reads its sandbox properties.
+
+The **complete Inputd command does depend on `korridPackage`**, through
+`services/inputd/nix/default.nix` and its bundle/package/Linux-module/seat-VM
+consumers. The earlier claim of no general dependency was wrong for that command.
+The 590-second backend probe omitted these checks and cannot prove full-coverage
+selection. The user chose speed-first: the new PR module/VM requirement is deferred,
+not treated as dependency-free. Manual `full`, the weekly schedule and the explicit
+`ci-full` label run every Inputd check. Unknown/shared paths and missing history
+broaden affected lanes but never opt an ordinary run into this heavy profile.
 
 Only four named operation documents can omit product lanes: this file and the
 three existing `docs/agents/` documents listed in the selector. There is no
@@ -81,7 +89,7 @@ consumers. New documentation is unknown until reviewed, not silently skipped.
 | `parity` | `cli-parity-check` / existing Python producer guard, without Nix setup or Rust compilation in the hosted job. Standalone `cli-check` also retains its original parity guard. |
 | `cli` | Existing `cli-check`: parity, fmt, clippy, real-process tests. `cli-build-identity-eval-check` checks dependency reuse and final derivation identity through `checks.<system>.korri-cli-build-identity-eval`, without compiling two stamped packages. |
 | `korrid` | `korrid-host-check`: pinned fixture hashes, script setup, all Rust tests, config review, dev binaries, socket-activated signer and real portal RPC smoke. No individual Rust-test selection. |
-| `inputd` | Existing `inputd-check`: Rust/core tests, portability, package and module gates. |
+| `inputd` | Affected/probe: `inputd-check -- --fast` retains all Rust/core, wasm, portability and deployment-shell checks. Explicit full/scheduled/`ci-full`: default `inputd-check` also retains all eight module/package/VM gates. |
 | `limitsd` | Existing `limitsd-check`: fmt, clippy, real filesystem/socket tests. |
 | `pico`, `zone`, `boxbuster` | Their existing surface check apps, separate from portal tests. |
 | `acceptance` (other workflow) | Existing `korri-published-plugins-check`: both signed architecture pins, stability, launch/interface negative controls, image/plugin checks, lifecycle VM. |
@@ -98,11 +106,12 @@ builds. The acceptance snapshot remains confined to its own job.
 The retained korrid, portal and treaty lanes keep the original **30-minute** host
 deadline; formatting is limited to 10 minutes. No test timeout is raised. The
 additional CLI, surface, limits and cache lanes have 30-minute budgets. The new
-Inputd lane has a separate 45-minute budget and includes all eight existing Nix
-module/package checks. That added coverage can dominate a cold full run; it is
-not required for unrelated presentation or ordinary backend changes. Full mode
-still includes it. Hosted critical-path measurements must account for this
-coverage cost rather than compare unequal gates or extend old deadlines.
+Inputd lane retains a 45-minute budget for complete runs. Its new module/package/VM
+coverage dominated the same-source full comparison: 1838 seconds versus 702 seconds
+for the old checks, with a 1782-second Inputd job. Ordinary PR/affected runs now
+exclude only that new heavy coverage, as the user requested. Complete runs still
+include every assertion. The narrowed source needs new hosted qualification;
+these measurements are not a speed claim for the new profile.
 
 The stable `Host, portal, and surface` aggregate always runs. It requires the
 selector to succeed and every selected lane to report success. Missing, skipped,
@@ -128,9 +137,11 @@ native Nix packages. Tests do not depend on a NixOS `/run/current-system` link.
 Executable identity, store-item confinement and privilege assertions remain in
 place. Its private DBus test uses the daemon package's native session policy and
 explicitly binds only the fixture's temporary socket, never a host bus address.
-The hosted Inputd job uses the same real KVM permission, udev settle and read/write
-access prerequisite as published acceptance, before installing Nix. Missing KVM
-fails the job; no system-feature override substitutes for actual access.
+For the full profile only, the hosted Inputd job uses the same real KVM permission,
+udev settle and read/write prerequisite as published acceptance, before installing
+Nix. Missing KVM fails that full job; no system-feature override substitutes for
+actual access. Signed native Sunshine preparation remains immediately before
+module evaluation. The fast profile needs neither KVM nor published plugin inputs.
 
 Zone's check supplies the locked `NIX_PATH` to its existing Nix-shebang font
 builder. It does not require a runner channel. Builder failures include stderr;
@@ -151,6 +162,10 @@ Focused CI policy checks:
 nix run .#ci-plan-check
 nix run .#korrid-fmt-check
 ```
+
+`nix run .#inputd-check` remains complete by default. The opt-in fast command is
+`nix run .#inputd-check -- --fast`; it does not replace any Rust/wasm/shell assertion.
+`ci-full-check` calls the complete default, not the fast profile.
 
 The existing full korrid gate remains available as `nix run .#korrid-check`.
 It now rejects stale generated treaties instead of silently rewriting them.

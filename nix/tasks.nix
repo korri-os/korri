@@ -526,7 +526,8 @@ let
     };
 
     inputd-check = {
-      description = "Run inputd Rust, portability, package, and NixOS module checks.";
+      description = "Run complete inputd checks by default; --fast runs Rust/core, wasm and deployment-shell checks only.";
+      usageSuffix = " -- [--fast]";
       runtimeInputs = [ pkgs.nix ];
       script = ''
         exec bash "$KORRI_ROOT/services/inputd/check.sh" "$@"

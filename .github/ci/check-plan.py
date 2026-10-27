@@ -173,9 +173,9 @@ def affected(paths):
         elif path.startswith("clients/cli/"):
             selected.update({"cli", "fmt", "parity", "acceptance"})
         elif path.startswith("services/korrid/"):
-            # inputd's Rust crate does not consume korrid. Its module/package
-            # checks stay selected for inputd, shared Nix, treaty and lock inputs,
-            # not every unrelated backend implementation edit.
+            # The affected profile runs only Inputd Rust/wasm/shell checks.
+            # Full Inputd module/package/VM checks DO consume korridPackage;
+            # explicit full mode selects all lanes instead of inferring here.
             selected.update({"fmt", "treaty", "korrid", "cli", "acceptance"})
         elif path.startswith("services/inputd/"):
             # korrid embeds inputd's seat runtime in controller tests.
@@ -192,8 +192,10 @@ def affected(paths):
     return selected
 
 
-def plan(mode, paths, reason):
-    selected = set(LANES) if mode == "full" else affected(paths)
+def plan(mode, paths, reason, *, broaden=False):
+    # Mode records the requested coverage profile, not diff availability.
+    # Unknown/missing history broadens lanes within that profile only.
+    selected = set(LANES) if mode == "full" or broaden else affected(paths)
     return {
         "mode": mode,
         "reason": reason,
@@ -301,6 +303,7 @@ def main():
         return
     started = time.perf_counter()
     mode, reason, paths = args.mode, "explicit full mode", []
+    broaden = False
     if mode == "probe":
         paths = json.loads(args.paths)
         if (
@@ -324,8 +327,9 @@ def main():
             UnicodeError,
             ValueError,
         ) as error:
-            mode, reason = "full", f"diff unavailable; broadened to full: {error}"
-    selection = plan(mode, paths, reason)
+            broaden = True
+            reason = f"diff unavailable; broadened to all lanes: {error}"
+    selection = plan(mode, paths, reason, broaden=broaden)
     validate_plan(selection)
     encoded = json.dumps(selection, separators=(",", ":"))
     print(encoded)
