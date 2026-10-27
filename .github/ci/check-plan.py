@@ -45,6 +45,13 @@ CACHE_POLICY_INPUTS = {
     "nix/cache/github-cache-test-api.py",
     "nix/cache/github-cache.test.py",
     "nix/cache/pages-cache.test.py",
+    "nix/cache/plugin-read-failure.py",
+    "nix/cache/plugin-read-failure.test.py",
+}
+# Both consumers use the same signed read helper/parser, not full acceptance.
+INPUTD_CACHE_INPUTS = {
+    ".github/workflows/fetch-image-plugins.sh",
+    "nix/cache/plugin-read-failure.py",
 }
 # The acceptance workflow directly runs these shared trust/snapshot helpers.
 # Their consumer is acceptance as well as cache policy, regardless of directory.
@@ -123,6 +130,8 @@ def affected(paths):
             selected.add("cache")
             if path in ACCEPTANCE_CACHE_INPUTS:
                 selected.add("acceptance")
+            if path in INPUTD_CACHE_INPUTS:
+                selected.add("inputd")
             continue
         if path.endswith(".nix") or (
             path.startswith("services/korrid/check") and path.endswith(".sh")

@@ -23,6 +23,9 @@ shellcheck services/inputd/deploy/device-check.sh services/inputd/deploy/test-de
 services/inputd/deploy/test-device-bitmap.sh
 services/inputd/deploy/test-device-check.sh
 
+# Module and VM evaluation reads Sunshine's immutable manifest. Prepare only
+# this consumer's signed native input, after the independent Rust/shell checks.
+nix run "$ROOT#inputd-plugins-prepare"
 nix build --no-link \
   .#checks."$(nix eval --raw --impure --expr builtins.currentSystem)".inputplumber-korri-package \
   .#checks."$(nix eval --raw --impure --expr builtins.currentSystem)".korri-input-module \

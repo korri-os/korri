@@ -68,6 +68,31 @@ class TreatyDriftTest(unittest.TestCase):
 
 
 class WorkflowContractTest(unittest.TestCase):
+    def test_inputd_prepares_only_signed_native_inputs_at_its_module_boundary(self):
+        source = (ROOT / "services/inputd/check-in-shell.sh").read_text()
+        preparation = source.index('nix run "$ROOT#inputd-plugins-prepare"')
+        self.assertLess(source.index("cargo test --all-targets"), preparation)
+        self.assertLess(source.index("services/inputd/deploy/test-device-check.sh\n"), preparation)
+        self.assertLess(preparation, source.index("nix build --no-link"))
+        tasks = (ROOT / "nix/tasks.nix").read_text()
+        task = tasks.split("    inputd-plugins-prepare = {", 1)[1].split("\n    };", 1)[0]
+        self.assertIn("pkgs.nix", task)
+        self.assertIn("pkgs.jq", task)
+        self.assertIn('fetch-image-plugins.sh" --inputd', task)
+        self.assertNotIn("korri-published-plugins-check", task)
+        for helper in (".github/workflows/fetch-image-plugins.sh", "nix/cache/plugin-read-failure.py"):
+            self.assertIn("inputd", ci.affected([helper]))
+
+    def test_cache_app_runs_real_plugin_read_cases_outside_a_builder(self):
+        tasks = (ROOT / "nix/tasks.nix").read_text()
+        cache = tasks.split("    korri-nix-cache-check = {", 1)[1].split("\n    };", 1)[0]
+        self.assertIn('python3 "$KORRI_ROOT/nix/cache/prepare.test.py"', cache)
+        self.assertIn('python3 "$KORRI_ROOT/nix/cache/plugin-read-failure.test.py"', cache)
+        fixture = (ROOT / "nix/cache/prepare.test.py").read_text()
+        self.assertIn("def test_plugin_reads_use_real_signed_receiving_stores", fixture)
+        self.assertIn(".github/workflows/test_fetch_image_plugins.py", fixture)
+        self.assertNotIn("nix build", cache)
+
     def test_inputd_prepares_real_kvm_access_before_nix_installation(self):
         checks = yaml.safe_load(
             (ROOT / ".github/workflows/korri-checks.yml").read_text()

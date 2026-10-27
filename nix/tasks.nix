@@ -91,7 +91,10 @@ let
     };
     cli-check = {
       description = "Check the person CLI types, lint, and real-process tests.";
-      runtimeInputs = [ pkgs.nix pkgs.git ];
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.git
+      ];
       script = ''
         exec bash "$KORRI_ROOT/clients/cli/check.sh" "$@"
       '';
@@ -114,7 +117,10 @@ let
     };
     cli-daemon-check = {
       description = "Check focused person-socket authority, sandbox, forwarding, and daemon usage behavior.";
-      runtimeInputs = [ pkgs.nix pkgs.git ];
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.git
+      ];
       script = ''
         exec bash "$KORRI_ROOT/clients/cli/daemon-check.sh"
       '';
@@ -364,10 +370,13 @@ let
         pkgs.shellcheck
         pkgs.openssl
         pkgs.git
+        pkgs.jq
+        pkgs.bash
       ];
       script = ''
         shellcheck -s bash "$KORRI_ROOT/nix/cache/publish.sh"
         python3 "$KORRI_ROOT/.github/workflows/test_prepare_nix_cache.py"
+        python3 "$KORRI_ROOT/nix/cache/plugin-read-failure.test.py"
         python3 "$KORRI_ROOT/nix/cache/prepare.test.py"
         python3 "$KORRI_ROOT/nix/cache/github-cache.test.py"
         exec python3 "$KORRI_ROOT/nix/cache/pages-cache.test.py"
@@ -489,26 +498,6 @@ let
       '';
     };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     korrid-check = {
       description = "Run the full host, contracts, and portal check.";
       needsProseql = true;
@@ -520,6 +509,19 @@ let
       };
       script = ''
         exec bash "$KORRI_ROOT/services/korrid/check.sh" "$@"
+      '';
+    };
+
+    inputd-plugins-prepare = {
+      description = "Read the exact native Sunshine plugin signed by the product's bound publisher.";
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.jq
+        pkgs.python3
+      ];
+      script = ''
+        cd "$KORRI_ROOT"
+        exec bash "$KORRI_ROOT/.github/workflows/fetch-image-plugins.sh" --inputd
       '';
     };
 
@@ -551,19 +553,6 @@ let
         exec "$KORRI_ROOT/services/korrid/config-snapshot-review.sh" "$@"
       '';
     };
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     limitsd-check = {
       description = "Check the launch-limits helper with real filesystem and Unix socket tests, format and clippy.";
@@ -715,13 +704,6 @@ let
         exec bun run dev "$@"
       '';
     };
-
-
-
-
-
-
-
 
   };
 
