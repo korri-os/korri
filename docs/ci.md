@@ -54,6 +54,14 @@ files are `settings-model.ts`, `plugin-repositories.ts`,
 select real korrid RPC smoke and CLI/backend validation. Unknown portal, surface
 or package inputs broaden to full; there is no blanket frontend-directory skip.
 
+Dependency direction matters: `services/inputd/Cargo.toml` consumes its core and
+`contracts/input`, not korrid. Inputd changes select korrid because korrid embeds
+the seat runtime. Ordinary korrid implementation edits do not select Inputd's
+Rust/module/package lane. The concrete exception is
+`services/korrid/src/host/systemd_unit.rs`: Inputd's deploy harness reads its
+sandbox properties, so it still selects Inputd coverage. Shared Nix, input treaty
+and lock changes retain broad/full selection.
+
 Only four named operation documents can omit product lanes: this file and the
 three existing `docs/agents/` documents listed in the selector. There is no
 `docs/**` exclusion. In particular, the RetroArch QuickJS probe, RetroArch route
@@ -84,6 +92,15 @@ does. The renderer-entry regression test checks real export identity. It replace
 no renderer behavior and does not use a test double.
 Korrid compilation/test/config/smoke stay together to avoid redundant cold Cargo
 builds. The acceptance snapshot remains confined to its own job.
+
+The retained korrid, portal and treaty lanes keep the original **30-minute** host
+deadline; formatting is limited to 10 minutes. No test timeout is raised. The
+additional CLI, surface, limits and cache lanes have 30-minute budgets. The new
+Inputd lane has a separate 45-minute budget and includes all eight existing Nix
+module/package checks. That added coverage can dominate a cold full run; it is
+not required for unrelated presentation or ordinary backend changes. Full mode
+still includes it. Hosted critical-path measurements must account for this
+coverage cost rather than compare unequal gates or extend old deadlines.
 
 The stable `Host, portal, and surface` aggregate always runs. It requires the
 selector to succeed and every selected lane to report success. Missing, skipped,
