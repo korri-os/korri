@@ -45,6 +45,11 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      - name: Verify the publication source
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+
       # Before Nix is installed: this reformats the runner's spare disk into
       # /nix. A GitHub runner otherwise offers about 20 GB, and a kernel build
       # needs more than that.
@@ -153,6 +158,11 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      - name: Verify the publication source
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+
       - uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7 # v10
         with:
           hatchet-protocol: cleave
@@ -202,12 +212,11 @@ jobs:
       # reproducible, and every device job builds it at the same time when
       # Cargo.lock changes; run 39721502192 failed on the second copy.
       #
-      # Build everything first, and retry the build. GitHub release downloads
-      # sometimes answer 404 for a NAR that exists. Nix does not retry a 404:
-      # it builds the path instead, and a cross-built kernel cannot be built
-      # here. Run 39761993867 failed that way on odin2portal. A retry
-      # downloads the NAR again; the publish step below then has nothing
-      # left to build.
+      # Build once. Repeating a whole build cannot repair a compiler error or
+      # failed assertion. Nix keeps its native download retry policy; this
+      # wrapper never restarts compilation after a failed build. A transient
+      # NAR 404 can now fail the job instead of restarting all its work.
+      # Do not add a prefetch barrier without measuring device-ready latency.
       - name: Publish the device closure
         env:
           KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
@@ -231,14 +240,5 @@ jobs:
             targets+=(".#$attribute^*")
             packages+=(--package "$attribute")
           done
-          for attempt in 1 2 3; do
-            if nix build --no-link "${targets[@]}"; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            echo "device closure build failed; retry $((attempt + 1))/3 in $((attempt * 60))s" >&2
-            sleep "$((attempt * 60))"
-          done
+          nix build --no-link "${targets[@]}"
           nix run .#korri-nix-cache-publish -- "$DEVICE" "${packages[@]}"
