@@ -15,6 +15,101 @@ pub struct PeerCheckResult {
     pub heads_without_records: Vec<String>,
 }
 
+/// A contact whose heads on both sides match the last complete contact with
+/// that peer finds nothing new, so it stops after the one SaveHeads call.
+/// Restart doubles and Ready-after-Failed flaps then stay cheap. After this long
+/// a full contact runs anyway, so a head payload the peer lost is still offered
+/// again even when no heads changed.
+const CONTACT_MEMORY_TTL: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
+type HeadSets = BTreeMap<String, BTreeSet<String>>;
+
+pub(super) struct ContactMark {
+    remote: HeadSets,
+    local: HeadSets,
+    at: Instant,
+}
+
+/// Process-local, keyed by (person, peer). Not a wire or persisted shape.
+#[derive(Default)]
+pub(super) struct ContactMemory {
+    pub(super) marks: BTreeMap<(String, String), ContactMark>,
+    /// Records the peer holds as metadata but reported without their payload.
+    /// Only a restore fetch on the peer changes that, so they are not asked
+    /// about again in this process.
+    pub(super) incomplete: BTreeMap<(String, String), BTreeSet<String>>,
+}
+
+fn head_sets(heads: &SaveHeads) -> HeadSets {
+    heads
+        .games
+        .iter()
+        .filter(|game| !game.heads.is_empty())
+        .map(|game| (game.game_id.clone(), game.heads.iter().cloned().collect()))
+        .collect()
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum HeldRecord {
+    /// Push the record, so the peer fetches the payload and both sides
+    /// exchange receipts.
+    Push,
+    /// Ask for the record by id only. The answer carries the peer's receipt
+    /// when it holds the payload. The peer imports nothing and calls nothing.
+    Read,
+    Skip,
+}
+
+/// What a record the peer already holds as metadata still needs. A record is
+/// visited when it is in the ancestry of the peer's heads, and a peer imports
+/// the full ancestry of its heads. A receiver fetches payloads only for the
+/// sender's heads, so an older record whose payload it never fetched stays
+/// unconfirmed for good (ADR 0014: older snapshots stay on the device that
+/// made them). Pushing such a record on every contact cost three signed round
+/// trips each and changed nothing.
+fn held_record(
+    purpose: SyncPurpose,
+    id: &str,
+    advertised: &BTreeSet<String>,
+    local_heads: &BTreeSet<String>,
+    confirmed: &BTreeSet<String>,
+    remote_complete: &BTreeSet<String>,
+    known_incomplete: &BTreeSet<String>,
+) -> HeldRecord {
+    match purpose {
+        // Prelaunch needs no renewed historical receipts: only a shared head
+        // without a current receipt from a complete peer is offered again.
+        SyncPurpose::CheckLaunch => {
+            if advertised.contains(id)
+                && !(confirmed.contains(id) && remote_complete.contains(id))
+            {
+                HeldRecord::Push
+            } else {
+                HeldRecord::Skip
+            }
+        }
+        SyncPurpose::Replicate | SyncPurpose::Contact => {
+            // A peer head it lacks the payload for is offered so the peer can
+            // repair it. Our own head without the peer's receipt is offered so
+            // the peer fetches its payload and confirms it.
+            if (advertised.contains(id) && !remote_complete.contains(id))
+                || (local_heads.contains(id) && !confirmed.contains(id))
+            {
+                HeldRecord::Push
+            } else if confirmed.contains(id)
+                || remote_complete.contains(id)
+                || known_incomplete.contains(id)
+            {
+                HeldRecord::Skip
+            } else {
+                // Retention still wants a receipt for an older record that the
+                // peer may hold in full.
+                HeldRecord::Read
+            }
+        }
+    }
+}
+
 // Launch checks need current-head receipts, not fresh receipts for every
 // historical snapshot. Contact/publication still gather retention receipts.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -251,6 +346,12 @@ impl SavePeerService {
         let local = self
             .storage(move |repository| repository.heads(&person_key))
             .await?;
+        let remote_mark = (purpose == SyncPurpose::Contact).then(|| head_sets(&remote));
+        if let Some(remote_mark) = &remote_mark {
+            if self.contact_unchanged(person, peer, remote_mark, &head_sets(&local)) {
+                return Ok(());
+            }
+        }
         let mut games: BTreeSet<String> = remote
             .games
             .iter()
@@ -351,22 +452,49 @@ impl SavePeerService {
             let records = self
                 .storage(move |repository| repository.records(&person_key, &game_key))
                 .await?;
+            let local_heads: BTreeSet<String> =
+                crate::saves::store::head_ids(&records)?.into_iter().collect();
+            let known_incomplete = self.known_incomplete(person, peer);
             // One record per envelope keeps large histories from exceeding the
             // native peer envelope bound. Object bytes never enter RPC JSON.
             for record in records {
                 let id = snapshot_id(&record)?;
-                // Prelaunch needs no renewed historical receipts; replication
-                // still gathers them for retention. Shared ancestry with an
-                // existing signed receipt needs no replay in either case.
-                // New records still exchange receipts in both directions. A
-                // head with a missing current receipt must be offered again so
-                // the receiver can repair a pruned/lost payload.
-                if visited.contains(&id)
-                    && ((purpose == SyncPurpose::CheckLaunch && !advertised.contains(&id))
-                        || (confirmed.contains(&id)
-                            && (!advertised.contains(&id) || remote_complete.contains(&id))))
-                {
-                    continue;
+                // A record the peer lacks is always pushed, with its receipt
+                // exchange. A record it already holds is pushed only to move a
+                // head payload (see held_record).
+                if visited.contains(&id) {
+                    match held_record(
+                        purpose,
+                        &id,
+                        &advertised,
+                        &local_heads,
+                        &confirmed,
+                        &remote_complete,
+                        &known_incomplete,
+                    ) {
+                        HeldRecord::Push => {}
+                        HeldRecord::Skip => continue,
+                        HeldRecord::Read => {
+                            let response = self
+                                .remote_records(
+                                    person,
+                                    peer,
+                                    SaveRecordsRequest {
+                                        game_id: game.clone(),
+                                        ids: vec![id.clone()],
+                                        records: None,
+                                    },
+                                    provenance,
+                                )
+                                .await?;
+                            if !response.confirmed.contains(&id) {
+                                self.remember_incomplete(person, peer, &id);
+                            }
+                            self.confirm_response(person, peer, &game, &[id], response.confirmed)
+                                .await?;
+                            continue;
+                        }
+                    }
                 }
                 let response = self
                     .remote_records(
@@ -384,6 +512,71 @@ impl SavePeerService {
                     .await?;
             }
         }
+        if let Some(remote_mark) = remote_mark {
+            // Our heads can change while the contact imports the peer's
+            // records. A push can change the peer's heads too; the next contact
+            // then runs once more in full and records the settled heads.
+            let person_key = person.to_owned();
+            let local = self
+                .storage(move |repository| repository.heads(&person_key))
+                .await?;
+            self.remember_contact(person, peer, remote_mark, head_sets(&local));
+        }
         Ok(())
+    }
+
+    fn contact_unchanged(
+        &self,
+        person: &str,
+        peer: &str,
+        remote: &HeadSets,
+        local: &HeadSets,
+    ) -> bool {
+        self.contacts.lock().is_ok_and(|memory| {
+            memory
+                .marks
+                .get(&(person.to_owned(), peer.to_owned()))
+                .is_some_and(|mark| {
+                    mark.at.elapsed() < CONTACT_MEMORY_TTL
+                        && &mark.remote == remote
+                        && &mark.local == local
+                })
+        })
+    }
+
+    fn remember_contact(&self, person: &str, peer: &str, remote: HeadSets, local: HeadSets) {
+        if let Ok(mut memory) = self.contacts.lock() {
+            memory.marks.insert(
+                (person.to_owned(), peer.to_owned()),
+                ContactMark {
+                    remote,
+                    local,
+                    at: Instant::now(),
+                },
+            );
+        }
+    }
+
+    fn known_incomplete(&self, person: &str, peer: &str) -> BTreeSet<String> {
+        self.contacts
+            .lock()
+            .ok()
+            .and_then(|memory| {
+                memory
+                    .incomplete
+                    .get(&(person.to_owned(), peer.to_owned()))
+                    .cloned()
+            })
+            .unwrap_or_default()
+    }
+
+    fn remember_incomplete(&self, person: &str, peer: &str, id: &str) {
+        if let Ok(mut memory) = self.contacts.lock() {
+            memory
+                .incomplete
+                .entry((person.to_owned(), peer.to_owned()))
+                .or_default()
+                .insert(id.to_owned());
+        }
     }
 }

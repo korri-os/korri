@@ -98,6 +98,10 @@ pub struct SavePeerService {
     private_root: PathBuf,
     http: reqwest::Client,
     in_use: InUse,
+    /// Process memory of the last complete contact with each peer. Never
+    /// persisted and never sent: a restart forgets it, so the first contact
+    /// after a restart is a full one.
+    contacts: Arc<std::sync::Mutex<sync::ContactMemory>>,
 }
 
 impl SavePeerService {
@@ -121,6 +125,7 @@ impl SavePeerService {
             private_root,
             http,
             in_use,
+            contacts: Default::default(),
         })
     }
 

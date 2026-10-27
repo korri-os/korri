@@ -642,7 +642,10 @@ async fn two_authenticated_korrids_exchange_both_children_objects_and_confirmati
         .unwrap();
     let left = a.seed(b"left progress", vec![id(&base)]);
     let right = b.seed(b"right progress", vec![id(&base)]);
+    // Devices that meet both start a contact. Each gathers its own receipt for
+    // the shared older record; neither pushes it to the other.
     a.service.on_contact(&b.device()).await.unwrap();
+    b.service.on_contact(&a.device()).await.unwrap();
     for (node, peer) in [(&a, &b), (&b, &a)] {
         let heads = node.repository.heads(&node.owner()).unwrap();
         assert_eq!(heads.games.len(), 1);
@@ -1413,6 +1416,98 @@ async fn matching_forty_two_record_history_has_constant_prelaunch_requests_child
         behaviour.requests.lock().unwrap().len() <= 6,
         "missing old receipts must not replay shared ancestry during prelaunch"
     );
+}
+
+/// The issue #289 shape: the peer holds the whole history as metadata but only
+/// the head's payload, so the older records can never be confirmed.
+fn seed_history_with_head_payload_only(a: &Node, b: &Node, count: usize) -> Vec<String> {
+    let mut ids = vec![];
+    for n in 0..count {
+        let bytes = format!("save {n}");
+        let record = a.seed(bytes.as_bytes(), ids.last().cloned().into_iter().collect());
+        b.repository.put_record(&b.owner(), &record).unwrap();
+        ids.push(id(&record));
+    }
+    let head = ids.last().unwrap();
+    let bytes = format!("save {}", count - 1);
+    b.repository
+        .put_object(&b.owner(), &digest(bytes.as_bytes()), &mut bytes.as_bytes())
+        .unwrap();
+    a.repository
+        .confirm(&a.owner(), "wario-land-4", head, &b.device())
+        .unwrap();
+    b.repository
+        .confirm(&b.owner(), "wario-land-4", head, &a.device())
+        .unwrap();
+    ids
+}
+
+fn tags(behaviour: &TransferBehaviour) -> Vec<String> {
+    behaviour
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(tag, _)| tag.clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn contact_never_pushes_older_records_the_peer_already_holds() {
+    let behaviour = TransferBehaviour {
+        measure: true,
+        ..Default::default()
+    };
+    let a = Node::new(5, 3, behaviour.clone()).await;
+    let b = Node::new(6, 3, behaviour.clone()).await;
+    a.remember(&b);
+    b.remember(&a);
+    seed_history_with_head_payload_only(&a, &b, 12);
+    a.service.on_contact(&b.device()).await.unwrap();
+    let first = tags(&behaviour);
+    // One heads call and one read for the shared head; one read for each of
+    // the 11 older records. No pushes, so b calls nothing back.
+    assert_eq!(
+        first.iter().filter(|tag| *tag == "app.saves.heads").count(),
+        1,
+        "{first:?}"
+    );
+    assert_eq!(first.len(), 13, "{first:?}");
+    assert!(behaviour.ranges.lock().unwrap().is_empty());
+    // A later full contact in the same process does not ask about the older
+    // records again: b reported them without their payloads.
+    a.service.contacts.lock().unwrap().marks.clear();
+    behaviour.requests.lock().unwrap().clear();
+    a.service.on_contact(&b.device()).await.unwrap();
+    let second = tags(&behaviour);
+    assert_eq!(second.len(), 2, "{second:?}");
+}
+
+#[tokio::test]
+async fn repeated_contact_with_unchanged_heads_costs_one_heads_call() {
+    let behaviour = TransferBehaviour {
+        measure: true,
+        ..Default::default()
+    };
+    let a = Node::new(5, 3, behaviour.clone()).await;
+    let b = Node::new(6, 3, behaviour.clone()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let ids = seed_history_with_head_payload_only(&a, &b, 5);
+    a.service.on_contact(&b.device()).await.unwrap();
+    behaviour.requests.lock().unwrap().clear();
+    a.service.on_contact(&b.device()).await.unwrap();
+    assert_eq!(tags(&behaviour), vec!["app.saves.heads".to_owned()]);
+    // A new head on the peer changes its heads, so the next contact runs in
+    // full and imports it.
+    let next = b.seed(b"new progress", vec![ids.last().unwrap().clone()]);
+    behaviour.requests.lock().unwrap().clear();
+    a.service.on_contact(&b.device()).await.unwrap();
+    assert!(tags(&behaviour).len() > 1);
+    assert!(a
+        .repository
+        .complete(&a.owner(), &next.game_id, &id(&next))
+        .unwrap());
 }
 
 fn seed_shared_history(a: &Node, b: &Node, count: usize) -> Vec<String> {
