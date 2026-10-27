@@ -270,11 +270,15 @@ so no route is ever cut. What follows is Korri's `Busy`, `Paused`, `Ended`,
 with a real bar, Korri's percent under it and Cancel; Connecting has Cancel;
 Paused on the holder has Leave; Reconnecting has nothing to press and no B
 hint. Before an install, Korri asks with the plugin's review, the report
-Settings shows: a `Confirm` whose detail has one fact per line. A notice
-with such a report puts the cursor on its first line, keeps Korri's answers
-between the title and the report so they never leave the screen, and lets
-the report scroll under them as the d-pad walks it down. Up from the first
-line reaches the answers, Cancel first. On a short screen the card yields
+Settings shows: a `Confirm` whose detail has one fact per line. Korri names
+its Cancel as the answer that declines (`declineActionId`), and the cursor
+starts there, as a question over Settings starts on Cancel: a stray press
+never approves a plugin or its permissions. A notice with such a report
+keeps Korri's answers between the title and the report so they never leave
+the screen, makes each line a stop for the cursor, and lets the report
+scroll under the answers as the d-pad walks down it from Cancel. A report
+with no declining answer named starts the cursor on its first line. On a
+short screen the card yields
 as a question over Settings does: the title steps down, then the kicker
 goes and the answers stand side by side.
 

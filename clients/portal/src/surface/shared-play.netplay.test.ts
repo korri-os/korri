@@ -242,6 +242,8 @@ test("Install and play here: Settings' review first, then the install, then netp
   expect(flow.shared.getSnapshot().status).toEqual({
     _tag: "Confirm", kicker: "Install Snes9x 2010?", detail: "Opens network ports: TCP 55435.",
     actions: [{ id: "netplay:install", label: "Install and play here", enabled: true }, { id: "netplay:cancel", label: "Cancel", enabled: true }],
+    // A stray press must never approve the install: the cursor starts on Cancel.
+    declineActionId: "netplay:cancel",
   })
   const shown: unknown[] = []
   flow.shared.subscribe(() => shown.push(flow.shared.getSnapshot().status))

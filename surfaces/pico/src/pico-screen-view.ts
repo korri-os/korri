@@ -38,6 +38,8 @@ export type PicoScreenView =
       readonly kicker: string
       readonly detail?: string
       readonly actions: readonly SurfaceAction[]
+      /** The action that declines; the cursor starts on it. */
+      readonly declineActionId?: string
       readonly cart?: PicoLaunchCart
     }
   | {
@@ -96,6 +98,7 @@ export function picoScreenViewFromModel(model: SurfaceModel): PicoScreenView {
         kicker: status.kicker,
         ...(status.detail === undefined ? {} : { detail: status.detail }),
         actions: status.actions,
+        ...(status.declineActionId === undefined ? {} : { declineActionId: status.declineActionId }),
         ...(cart === undefined ? {} : { cart }),
       }
     }

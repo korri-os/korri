@@ -281,6 +281,7 @@ export function PicoHome({
           actions={view.actions.map(action => ({
             label: action.label,
             disabled: !action.enabled,
+            ...(action.id === view.declineActionId ? { start: true } : {}),
             onPress: () => onAction?.(action.id),
           }))}
           kicker={view.kicker}

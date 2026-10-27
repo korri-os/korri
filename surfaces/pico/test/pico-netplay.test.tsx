@@ -17,6 +17,7 @@ import {
   netplayCopyFailedStatus,
   netplayCopyInvite,
   netplayCopyingStatus,
+  netplayCheckingStatus,
   netplayEndedStatus,
   netplayInstallingStatus,
   netplayInstallInvite,
@@ -140,12 +141,39 @@ describe("the plugin review before an install", () => {
     expect(actions()).toEqual(["action:netplay:install"])
   })
 
-  test("a long report: one stop per line, the cursor on the first, the answers above it", () => {
+  test("the review's first focused action is Cancel, short or long, so a stray press never approves", () => {
+    for (const review of [netplayReviewStatus, netplayReviewLongStatus]) {
+      const { actions } = surface(status(review))
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }))
+      // A stray A press clicks what has focus: it declines.
+      fireEvent.click(document.activeElement as HTMLElement)
+      expect(actions()).toEqual(["action:netplay:cancel"])
+      cleanup()
+    }
+  })
+
+  test("the review takes the cursor to Cancel when it replaces Checking, whose Cancel had it", () => {
+    const host = createFixtureHost()
+    const view = render(<PicoSurface host={host} model={status(netplayCheckingStatus)} />)
+    const checking = screen.getByRole("button", { name: "Cancel" })
+    act(() => checking.focus())
+    view.rerender(<PicoSurface host={host} model={status(netplayReviewLongStatus)} />)
+    const cancel = screen.getByRole("button", { name: "Cancel" })
+    expect(cancel).not.toBe(checking)
+    expect(document.activeElement).toBe(cancel)
+  })
+
+  test("a report with no answer named to start on puts the cursor on its first line", () => {
+    const { declineActionId: _, ...unnamed } = netplayReviewLongStatus
+    surface(status(unnamed))
+    expect(document.activeElement).toBe(document.querySelector(".pico-notice-line"))
+  })
+
+  test("a long report: one stop per line, the answers above it", () => {
     const { actions } = surface(status(netplayReviewLongStatus))
     const lines = [...document.querySelectorAll<HTMLElement>(".pico-notice-line")]
     expect(lines.map(line => line.textContent)).toEqual(netplayReviewLongStatus.detail.split("\n"))
     expect(lines.every(line => line.tabIndex === 0)).toBe(true)
-    expect(document.activeElement).toBe(lines[0] ?? null)
     // The answers come before the report, so a report that scrolls never
     // carries them off the screen.
     const answers = screen.getByRole("button", { name: "Install and play here" })

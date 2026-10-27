@@ -381,6 +381,7 @@ export const netplayReviewStatus = {
   kicker: "Install Snes9x 2010?",
   detail: "It asks for no network ports and runs nothing in the background.",
   actions: installActions,
+  declineActionId: "netplay:cancel",
 } satisfies SurfaceStatus
 
 /** A long report: a warning, ports, a background unit and what it brings. */
@@ -395,6 +396,7 @@ export const netplayReviewLongStatus = {
     "Also uses PlayStation BIOS files. You approved it before.",
   ].join("\n"),
   actions: installActions,
+  declineActionId: "netplay:cancel",
 } satisfies SurfaceStatus
 
 export const netplayInstallFailedStatus = {

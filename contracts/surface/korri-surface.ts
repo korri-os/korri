@@ -293,6 +293,13 @@ export type SurfaceStatus =
       readonly kicker: string
       readonly detail?: string
       readonly actions: readonly SurfaceAction[]
+      /**
+       * The id of the action in `actions` that declines, when a stray press
+       * must never agree, such as before a plugin installs with its
+       * permissions. A surface puts its cursor there first. Absent: the
+       * surface chooses where the cursor starts.
+       */
+      readonly declineActionId?: string
       /** The game this question belongs to, when it belongs to exactly one. */
       readonly gameId?: string
     }

@@ -377,6 +377,8 @@ export function createSharedPlay(korrid: KorridClient, context: {
         kicker: `Install ${review.report.title ?? title}?`,
         detail: reviewMessage(review.report),
         actions: [{ id: NETPLAY_INSTALL, label: "Install and play here", enabled: true }, netplayCancel],
+        // A stray press must never approve a plugin or its permissions.
+        declineActionId: NETPLAY_CANCEL,
         ...(gameFacts(context.state(), invite.session.gameId).id === undefined ? {} : { gameId: gameFacts(context.state(), invite.session.gameId).id }),
       })
     })
