@@ -113,6 +113,40 @@ Inside Moonlight, the display thread took about 37% of one core, audio about
 17%, and video receive and decode submission about 8% (`top -H`, one sample).
 The CPU copy of each frame for SDL presentation is the main remaining cost.
 
+### Zero-copy presentation and Opus fix
+
+Later on 2026-10-27, haku moved to `@korri:moonlight` from batch
+`build-39fad980be48-moonlight-perf` (aarch64
+`/nix/store/yr98qbqw52v7qg9s9l65gcr6iwgxs43y-korri-plugin`). That batch has
+korri-plugins patch 0022, which imports Hantro's capture buffers into GLES
+without a CPU copy, and builds Opus without custom modes. With custom modes,
+libopus read `/proc/cpuinfo` for every audio packet.
+
+Loopback stream on haku, 640x480 at 60 fps, two runs per build, `/proc`
+samples per thread:
+
+| Build | Moonlight | Display thread | Audio thread |
+|---|---|---|---|
+| SDL upload (above) | 63% | 38% | 16.6% |
+| Zero-copy GL and Opus fix | 21% | 10% | 5.3% |
+
+Production stream play, RG35XX Pro holds Wario Land 4 and haku joins its
+invite, with the system built from the pin commit:
+
+- korrid started Moonlight with `-platform v4l2request`. The log shows
+  `decoder=v4l2request presenter=prime-gl` and
+  `direct-dmabuf GL output=640x480 display=0 driver=x11`.
+- Hantro decoded 60.0 frames per second. Moonlight used 23.2% to 30% of one
+  core over 30 s and 60 s windows. korrid used 20% during the stream.
+- Moonlight was fullscreen and focused, and the colours were correct in a
+  screenshot of haku's output.
+- The Pro ended the session, and Moonlight on haku stopped within 10 s.
+
+With a panel powered off by `korri-display-idle`, stream play failed: the
+holder's Sunshine found no monitor, and the joiner's Moonlight ignored SIGTERM
+until systemd killed it after 90 s. That is issue #309. The run above powered
+both panels on first.
+
 ## Deployment notes
 
 - Installing any system built after 2026-10-24 on haku needed the one-off
@@ -128,7 +162,7 @@ The CPU copy of each frame for SDL presentation is the main remaining cost.
 
 ## Limits
 
-- Mapping each frame for the SDL NV12 upload reads the decoder's buffer with
-  the CPU. A zero-copy EGL dma-buf import is a later optimisation.
+- The zero-copy GL presenter still goes through X11 and GL. Showing frames on
+  a DRM plane is issue #306, and it saves at most the display thread's 10%.
 - `rockchip,rk3568` (the RG DS) has the same Hantro block but has not been
   tested, so korrid does not select `v4l2request` there.
