@@ -224,6 +224,7 @@ async fn linux_viewer_production_lifecycle_uses_broker_seats_focus_and_confirmed
     let certificate = "-----BEGIN CERTIFICATE-----\nY2VydA==\n-----END CERTIFICATE-----\n";
     let focus = root.path().join("focus");
     std::fs::write(&focus, "portal").unwrap();
+    let commands = root.path().join("commands");
     let compositor = root.path().join("swaymsg");
     std::fs::write(&compositor, format!(r##"#!/bin/sh
 case "$*" in
@@ -232,11 +233,11 @@ case "$*" in
    viewer=false; portal=false
    if [ "$(cat '{focus}')" = viewer ]; then viewer=true; else portal=true; fi
    printf '{{"nodes":[{{"id":11,"pid":4242,"focused":%s}},{{"id":22,"pid":4343,"app_id":"chromium-browser","focused":%s}}]}}' "$viewer" "$portal" ;;
- *con_id=11*) printf viewer > '{focus}'; printf '[{{"success":true}}]' ;;
- *con_id=22*) printf portal > '{focus}'; printf '[{{"success":true}}]' ;;
+ *con_id=11*) printf viewer > '{focus}'; printf '%s\n' "$*" >> '{commands}'; printf '[{{"success":true}}]' ;;
+ *con_id=22*) printf portal > '{focus}'; printf '%s\n' "$*" >> '{commands}'; printf '[{{"success":true}}]' ;;
  *) exit 1 ;;
 esac
-"##, focus=focus.display())).unwrap();
+"##, focus=focus.display(), commands=commands.display())).unwrap();
     std::fs::set_permissions(&compositor, std::fs::Permissions::from_mode(0o700)).unwrap();
     let server = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = server.local_addr().unwrap().to_string();
@@ -317,6 +318,20 @@ esac
         viewer.status(launch).await.unwrap(),
         LinuxViewerStatus::Running
     );
+    // The viewer fills its output on every return; the portal never does.
+    let commands = std::fs::read_to_string(&commands).unwrap();
+    let viewer_commands: Vec<_> = commands
+        .lines()
+        .filter(|c| c.contains("con_id=11"))
+        .collect();
+    assert!(!viewer_commands.is_empty());
+    assert!(viewer_commands
+        .iter()
+        .all(|c| c.ends_with("[con_id=11] focus, fullscreen enable")));
+    assert!(commands
+        .lines()
+        .filter(|c| c.contains("con_id=22"))
+        .all(|c| !c.contains("fullscreen")));
     {
         let launches = units.launches.lock().unwrap();
         assert!(!launches[0]

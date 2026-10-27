@@ -512,7 +512,11 @@ impl ProductionLinuxStreamViewer {
                 }
             };
             if let Some(node) = target {
-                control.focus(node).map_err(error)?;
+                if portal {
+                    control.focus(node).map_err(error)?;
+                } else {
+                    control.focus_fullscreen(node).map_err(error)?;
+                }
                 let tree = control.tree().map_err(error)?;
                 let actual = focused_ownership(&tree, &pids, &portal_ids).map_err(error)?;
                 let expected = if portal {

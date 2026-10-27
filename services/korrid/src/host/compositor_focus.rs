@@ -94,6 +94,18 @@ impl SwaymsgCompositorControl {
         }
         String::from_utf8(answer).map_err(|error| error.to_string())
     }
+
+    /// Focus a stream viewer and fill its output. Moonlight runs windowed,
+    /// and Sway otherwise tiles it beside the portal, which kept half of the
+    /// RG353M's screen for a stream. Focusing the portal later leaves
+    /// fullscreen again, so each return to the viewer requests it anew.
+    pub(crate) fn focus_fullscreen(&self, node_id: i64) -> Result<(), String> {
+        self.run(&[
+            "--",
+            &format!("[con_id={node_id}] focus, fullscreen enable"),
+        ])
+        .map(|_| ())
+    }
 }
 
 impl CompositorControl for SwaymsgCompositorControl {
