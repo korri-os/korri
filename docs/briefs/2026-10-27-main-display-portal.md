@@ -49,7 +49,7 @@ reads and DSI-1 DPMS=false. This control still ran after the old binary's stock
 spanning restores. It chose the product direction; it does **not** prove that
 the clean candidate works with both old workarounds removed.
 
-### Detector validation and positive controls
+### Historical hint-strip detector and positive controls
 
 Two-display runs used the owner's header strip x16–256,y495–515. More than20
 pixels with RGB sum>90 at+120s meant Loading/Ready remained visible rather than
@@ -141,24 +141,114 @@ The independent status-enrichment mutex fix remains documented in
 The opacity and dim-before-freeze investigations remain separate because their
 game effects are still current. Obsolete spanning-restore briefs are folded here.
 
-## Clean-candidate acceptance — pending staged build
+## Clean-candidate device acceptance — completed 2026-10-27
 
-The parent will stage this committed main-only candidate with Pico, reboot,
-select the bundle/portal, and hand the device back. No deployment or reboot is
-authorized for this child. The current device binary cannot establish that
-removed compiled mechanisms are unnecessary; its runtime recipes always followed
-them. Do not relabel the earlier6/6 control as clean-build acceptance.
+The parent staged main-only `dfb38ea55` with Pico at scratch head `2e75c8f3d`
+(design head `ac44c829a` differs only in comments/docs). The device booted about
+15:38 UTC on unchanged system1wqzjsag, selected bundle88vxm5fy and portal
+yjkixvgz. This child performed no update or reboot. The hardware tests exercise
+the new bundle's korrid path; the Nix startup-generator change is covered by
+module checks, not a changed system closure in this measurement.
 
-| Candidate test, both old mechanisms absent | Result |
-|---|---|
-| Cold kiosk start ×6 | Pending parent staging |
-| Play → Leave (DSI-1 overlay) → End (DSI-2 catalog) ×6 | Pending parent staging |
+Both spanning mechanisms were absent. There were **no corrective Sway move,
+resize or fullscreen commands** in these measurements: the product code alone
+placed the portal. The operator preamble was only the original power-on batch.
 
-Use the three-way one-display detector and positive controls above, audit
-inputd events, sync journals, keep display-idle stopped, and stop without retry
-if the device becomes unresponsive. A measured failure gets a subsequent commit
-restoring only a mechanism that the numbers show is needed, not a speculative
-carry-over of the spanning workarounds.
+| Clean candidate, both mechanisms removed | Attract at+120s | Stalls |
+|---|---:|---:|
+| Cold kiosk starts | 6/6 | 0 |
+| Play2048gb → Leave (DSI-1 overlay) → End (DSI-2 catalog) | 6/6 | 0 |
+
+**Keep both mechanisms removed.** These runs do not justify restoring either
+preparation or readiness timers. This is six observations per path, not a
+universal guarantee or a Chromium root-cause proof.
+
+Cold samples completed by16:00:38 UTC. Cycle samples1–4 completed earlier;
+the final two completed at16:18:50 and16:21:18 UTC. End measurement deadlines
+were anchored to CLI End completion, not to later placement polling. All six
+overlay trees were focused at(0,480,640,480), fullscreen_mode0 on DSI-1. At
+classification every portal was the only mapped PID-bearing window, focused,
+fullscreen_mode1 at(0,0,640,480). DSI-2 was DPMS-on and DSI-1 off in bounding
+output reads. Saved journal windows had no inputd_policy_match contamination.
+Each attempt finished with journalctl --sync.
+
+### Correction: the blinking hint was not a valid attract detector
+
+The historical y200–350 hint strip produced zero when PRESS ANY BUTTON was in
+its blink-off phase. That did **not** mean the whole display was black. Full
+PNGs for cold6 and cycle2–4 show the colored attract cart row at y50–150. The
+owner independently reviewed and accepted those captures as attract. The
+extra repeated cold attempt also showed attract; it is not used to inflate the
+requested six-run result.
+
+Representative zero-hint capture states, checked from saved metadata:
+
+| Capture UTC | DSI-2 / DSI-1 DPMS | Portal | Other mapped windows | Full-frame row/header counts |
+|---|---|---|---|---|
+| Cold6,15:58:31.905 | on / off | focused, fs1, rect0,0,640,480 | none | 50732 /0 |
+| Cycle2,16:05:32.284 | on / off | focused, fs1, rect0,0,640,480 | none | 50968 /0 |
+| Cycle3,16:07:58.945 | on / off | focused, fs1, rect0,0,640,480 | none | 48800 /0 |
+
+The saved ±10s journals show the *following* automatic attempt after those
+captures: cold6's next kiosk stop at15:58:32.801; cycle2's next game unit start
+at16:05:36.002; cycle3's next game unit start at16:08:02.644. Those later
+transitions do not explain away the PNGs captured earlier. At capture time
+there was no leftover game window or black main-output evidence.
+
+The initial repetition loop was stopped too late: it had completed cycle4 and
+launched another game. The owner ended that interrupted launch; it is excluded.
+The final two cycles used a fixed two-iteration script with no automatic retry
+loop. The first four accepted cycle PNGs plus those two make the six above.
+
+### Current detector: cart row plus library header, not blinking text
+
+For the final two cycles, both regions are counted from **one full640×480
+PPM frame**, using RGB sum>90. The same masks were applied to saved full PNGs
+when reclassifying the earlier captures:
+
+- Cart row: x0–640,y50–150.
+- Library header: x16–256,y10–50; it excludes the cart row starting at y50.
+- Header>1000 means Loading/Ready remains (STALL at+120s).
+- Row>20000 and header<1000 means attract (ok).
+- Otherwise UNKNOWN; blank0/0 cannot pass. DSI-2 must be active and DPMS-on
+  before and after capture, with no leftover game window and the portal focused
+  fullscreen on main. These checks remain independent of pixel classification.
+
+Fresh controls on this staged build:
+
+| Frame | Cart-row pixels | Header pixels |
+|---|---:|---:|
+| [Loading positive control](assets/2026-10-27-single-detector/main-only-loading-positive.png) | 3648 | 2445 |
+| Attract control, earlier cycle2 PNG | 50968 | 0 |
+| Attract control, earlier cycle3 PNG | 48800 | 0 |
+| Final cycle5 primary PPM | 49944 | 0 |
+| Final cycle6 primary PPM | 49916 | 0 |
+
+The fresh Loading control at15:45:21.144 visibly says READING CARTS. Its full
+single-display viewport had con_id10, fs1 and rect0,0,640,480 in bounding tree
+reads; output metadata showed main on and other off. It was captured without
+any scene/geometry override. Its old hint-region count was42438, retained only
+for comparison with the superseded detector. The new detector uses3648/2445.
+[Final cycle6 full PNG](assets/2026-10-27-single-detector/main-only-attract-row.png)
+shows attract; its row count differs slightly from the preceding primary PPM
+because the cart rail drifts, but classification is unaffected.
+
+### Handoff and remaining limits
+
+All measurement processes ended. At16:23:38 UTC this child started
+korri-display-idle, confirmed active, and synced the journal. The device was
+handed back with no queued tests. No further device access followed.
+
+The CLI warned that offline saves were not checked and could split; no save
+policy or permission was bypassed. No new program, plugin or bundle was changed
+by this child during acceptance. The default journal and native ownership/focus
+checks remained in force.
+
+Raw scripts/logs and original controls: `/tmp/rgds-main-acceptance/`. Final
+fixed-cycle scripts, captures, PPMs, trees, output metadata and journal windows:
+`/tmp/rgds-main-final/evidence/` locally; device originals `/tmp/main-acc/`.
+The owner also retained copies under `/tmp/rgds-acceptance/main-acc/`.
+Software remains `dfb38ea55`; this acceptance record changes documentation only.
 
 ## Checks on the clean candidate
 
@@ -172,5 +262,5 @@ carry-over of the spanning workarounds.
 - Green: Nix korri-linux-host-module, rgds and one-display-unchanged checks.
   The last check verifies complete generated Sway bytes on six existing
   single-display devices. Touched Nix files were formatted.
-- These checks exercise native subprocess Sway/systemd boundaries. They do
-  not substitute for the12 pending on-device clean-build cases above.
+- These checks exercise native subprocess Sway/systemd boundaries and preceded
+  the12 completed on-device clean-build cases above.
