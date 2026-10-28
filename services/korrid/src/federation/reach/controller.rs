@@ -314,13 +314,19 @@ impl Controller {
         let incoming_endpoint = endpoint.clone();
         let router = self.peer_router.clone();
         let diagnostics = self.directory.reach.diagnostics.clone();
+        let dialer = Dialer {
+            endpoint: endpoint.clone(),
+            directory: self.directory.clone(),
+            dialing: self.dialing.clone(),
+            relaying: self.relaying.clone(),
+        };
         self.tasks.spawn(async move {
             let mut sessions = JoinSet::new();
             loop {
                 tokio::select! {
                     incoming = incoming_endpoint.accept(), if sessions.len() < 64 => {
                         let Some(incoming) = incoming else {break};
-                        let (router,access,recovery,diagnostics) = (router.clone(),access.clone(),recovery.clone(),diagnostics.clone());
+                        let (router,access,recovery,diagnostics,dialer) = (router.clone(),access.clone(),recovery.clone(),diagnostics.clone(),dialer.clone());
                         sessions.spawn(async move {
                             let connection = match timeout(Duration::from_secs(10),incoming).await {
                                 Ok(Ok(connection)) => connection,
@@ -351,6 +357,23 @@ impl Controller {
                             let admitted = recovery.lock().expect("reach recovery").register(device.clone(),connection.clone());
                             eprintln!("korrid: reach: {} stage=connection_established direction=incoming peer={} path={} admitted={admitted}", diagnostics.stamp(),short_peer(&device),connection_path(&connection));
                             if !admitted {return;}
+                            // Only the dialer of a connection opens streams on it, so
+                            // this connection is the peer's route, not ours. It proves
+                            // both firewalls pass this address pair now, and iroh sends
+                            // a dial to this endpoint id on its path. Dial back (#315).
+                            // `signalled` stays empty: an observed address behind NAT
+                            // can differ from every signed one.
+                            let dial_back = (access.directory.reach.connection(&device).is_none())
+                                .then(|| {
+                                    let paths = connection.paths();
+                                    let addresses = paths.iter().filter_map(|path| match path.remote_addr() {
+                                        TransportAddr::Ip(address) => Some(*address),
+                                        _ => None,
+                                    }).collect();
+                                    dialer.start(device.clone(), connection.remote_id().to_string(), addresses, Vec::new(), Vec::new())
+                                })
+                                .flatten();
+                            let dial_back = async { if let Some(dial) = dial_back { dial.await } };
                             let monitor = async {
                                 loop {
                                     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -359,10 +382,13 @@ impl Controller {
                                     }
                                 }
                             };
-                            tokio::select! {
-                                _ = tunnel::serve(connection.clone(),router) => {},
-                                _ = monitor => {},
-                            }
+                            let serving = async {
+                                tokio::select! {
+                                    _ = tunnel::serve(connection.clone(),router) => {},
+                                    _ = monitor => {},
+                                }
+                            };
+                            tokio::join!(dial_back, serving);
                         });
                     }
                     _ = sessions.join_next(), if !sessions.is_empty() => {}
@@ -867,14 +893,49 @@ impl Controller {
         // rebuilt endpoint needs our dial (#315). Closing the route lets the
         // check below dial instead of refreshing it.
         self.directory.reach.close_replaced(&device, &addresses);
-        if refresh_open_route(&mut self.tasks, &self.directory, &device)
-            || !self
-                .dialing
-                .lock()
-                .expect("reach dialing")
-                .insert(device.clone())
-        {
+        if refresh_open_route(&mut self.tasks, &self.directory, &device) {
             return;
+        }
+        let dialer = Dialer {
+            endpoint,
+            directory: self.directory.clone(),
+            dialing: self.dialing.clone(),
+            relaying: self.relaying.clone(),
+        };
+        let signalled = addresses.clone();
+        if let Some(dial) = dialer.start(device, endpoint_id, addresses, relays, signalled) {
+            self.tasks.spawn(dial);
+        }
+    }
+}
+
+/// What a dial shares with the controller. The incoming accept task holds
+/// one too, so it can dial an admitted peer back without the controller.
+#[derive(Clone)]
+struct Dialer {
+    endpoint: Endpoint,
+    directory: FederationDirectory,
+    dialing: Arc<Mutex<BTreeSet<String>>>,
+    relaying: RelayAnswers,
+}
+impl Dialer {
+    /// Claims the per-peer dial slot. Returns None while another dial holds it.
+    /// `signalled` is what a later signal is compared with in `close_replaced`.
+    fn start(
+        &self,
+        device: String,
+        endpoint_id: String,
+        addresses: Vec<SocketAddr>,
+        relays: Vec<SocketAddr>,
+        signalled: Vec<SocketAddr>,
+    ) -> Option<impl std::future::Future<Output = ()> + Send + 'static> {
+        if !self
+            .dialing
+            .lock()
+            .expect("reach dialing")
+            .insert(device.clone())
+        {
+            return None;
         }
         struct Dialing {
             device: String,
@@ -892,19 +953,22 @@ impl Controller {
             device: device.clone(),
             pending: self.dialing.clone(),
         };
-        let Ok(token) = self.directory.begin_peer_work(&device) else {
-            return;
-        };
+        let token = self.directory.begin_peer_work(&device).ok()?;
         let (directory, routes) = (self.directory.clone(), self.directory.reach.clone());
         let relay_answers = self.relaying.clone();
-        let signalled = addresses.clone();
-        self.tasks.spawn(async move {
+        let endpoint = self.endpoint.clone();
+        Some(async move {
             let _guard = guard;
             let Ok(id) = endpoint_id.parse::<EndpointId>() else {
                 return;
             };
             let started = Instant::now();
-            eprintln!("korrid: reach: {} stage=dial_started peer={} address_count={}", routes.diagnostics.stamp(),short_peer(&device),addresses.len());
+            eprintln!(
+                "korrid: reach: {} stage=dial_started peer={} address_count={}",
+                routes.diagnostics.stamp(),
+                short_peer(&device),
+                addresses.len()
+            );
             let result = connect_iroh(&endpoint, id, addresses, || {
                 // A signed answer can arrive while the direct phase is active.
                 // Read the SAME answer table at fallback, not a start-time copy.
@@ -934,19 +998,16 @@ impl Controller {
                         .expect("reach recovery")
                         .register(device.clone(), connection.clone());
                     eprintln!("korrid: reach: {} stage=connection_established direction=outgoing peer={} path={} admitted={admitted} dial_ms={}", routes.diagnostics.stamp(),short_peer(&device),connection_path(&connection),started.elapsed().as_millis());
-                    if !admitted { return; }
-                    if let Some(old) = routes
-                        .live
-                        .write()
-                        .expect("reach routes")
-                        .insert(
-                            device.clone(),
-                            LiveRoute {
-                                connection,
-                                signalled,
-                            },
-                        )
-                    {
+                    if !admitted {
+                        return;
+                    }
+                    if let Some(old) = routes.live.write().expect("reach routes").insert(
+                        device.clone(),
+                        LiveRoute {
+                            connection,
+                            signalled,
+                        },
+                    ) {
                         old.connection.close(0u32.into(), b"connection replaced");
                     }
                     routes.changed.notify_waiters();
@@ -991,7 +1052,7 @@ impl Controller {
                     }
                 }
             }
-        });
+        })
     }
 }
 

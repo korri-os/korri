@@ -1271,3 +1271,162 @@ async fn reach_repeated_offer_from_the_same_peer_endpoint_keeps_the_live_route()
         "a repeated offer replaced a live route"
     );
 }
+
+async fn host_endpoint(key: iroh::SecretKey, ip: IpAddr) -> Endpoint {
+    Builder::empty()
+        .crypto_provider(iroh::tls::default_provider())
+        .secret_key(key)
+        .alpns(vec![ALPN.to_vec()])
+        .relay_mode(RelayMode::Custom(iroh::RelayMap::empty()))
+        .portmapper_config(iroh::endpoint::PortmapperConfig::Disabled)
+        .clear_ip_transports()
+        .bind_addr(SocketAddr::new(ip, 0))
+        .unwrap()
+        .bind()
+        .await
+        .unwrap()
+}
+
+/// A controller with its production accept loop, and a peer endpoint bound
+/// to the peer device by a signed offer. The peer serves every connection.
+struct IncomingFixture {
+    fixture: RebindFixture,
+    endpoint: Endpoint,
+    local: Vec<SocketAddr>,
+    peer: String,
+    remote: Endpoint,
+    accepted: Arc<std::sync::atomic::AtomicUsize>,
+    serving: JoinHandle<()>,
+}
+async fn incoming_fixture() -> IncomingFixture {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let mut fixture = rebind_fixture().await;
+    fixture.bindable.store(true, Ordering::SeqCst);
+    let endpoint = fixture
+        .controller
+        .ensure_endpoint(&StunList(Vec::new()))
+        .await
+        .unwrap();
+    let local = endpoint_addresses(&endpoint);
+    let peer = fixture.devices.cb.public_key().unwrap();
+    let remote = host_endpoint(iroh::SecretKey::generate(), local[0].ip()).await;
+    bind_offer(
+        &fixture.devices.da,
+        &fixture.controller.bindings,
+        &peer,
+        &Offer {
+            endpoint_id: remote.id().to_string(),
+            direct_addresses: endpoint_addresses(&remote),
+            expires_at: unix_time() + SIGNAL_LIFETIME,
+            request_id: "b4".repeat(32),
+        },
+        unix_time(),
+    )
+    .unwrap();
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let (accepting, counter, router) = (remote.clone(), accepted.clone(), fixture.devices.router());
+    let serving = tokio::spawn(async move {
+        let mut sessions = JoinSet::new();
+        while let Some(incoming) = accepting.accept().await {
+            if let Ok(connection) = incoming.await {
+                counter.fetch_add(1, Ordering::SeqCst);
+                sessions.spawn(tunnel::serve(connection, router.clone()));
+            }
+        }
+    });
+    fixture
+        .devices
+        .da
+        .reach
+        .active
+        .store(true, Ordering::Release);
+    IncomingFixture {
+        fixture,
+        endpoint,
+        local,
+        peer,
+        remote,
+        accepted,
+        serving,
+    }
+}
+impl IncomingFixture {
+    /// The peer read our answer and dialed us. Its firewall dropped our dial.
+    async fn peer_dials(&self) -> Connection {
+        connect_iroh(
+            &self.remote,
+            self.endpoint.id(),
+            self.local.clone(),
+            Vec::new,
+        )
+        .await
+        .unwrap()
+    }
+    async fn close(mut self) {
+        self.serving.abort();
+        self.fixture.controller.reset().await;
+        self.remote.close().await;
+    }
+}
+
+#[tokio::test]
+async fn reach_admitted_incoming_connection_gives_a_waiting_invite_a_route() {
+    let fixture = incoming_fixture().await;
+    let directory = fixture.fixture.devices.da.clone();
+    let waited = fixture.peer.clone();
+    let waiting = tokio::spawn(async move {
+        directory
+            .reach_connection(&waited)
+            .await
+            .map(|connection| connection.remote_id())
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let incoming = fixture.peer_dials().await;
+    let route = timeout(Duration::from_secs(5), waiting).await;
+    let remote = fixture.remote.id();
+    incoming.close(0u32.into(), b"test complete");
+    fixture.close().await;
+    assert!(
+        matches!(route, Ok(Ok(Ok(id))) if id == remote),
+        "a waiting invite never saw the admitted incoming connection: {route:?}"
+    );
+}
+
+#[tokio::test]
+async fn reach_incoming_connection_with_a_live_route_does_not_dial_back() {
+    use std::sync::atomic::Ordering;
+    let fixture = incoming_fixture().await;
+    let first = fixture.peer_dials().await;
+    let route = timeout(
+        Duration::from_secs(5),
+        fixture.fixture.devices.da.reach_connection(&fixture.peer),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let _ = timeout(Duration::from_secs(2), async {
+        while fixture.accepted.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    let dialed = fixture.accepted.load(Ordering::SeqCst);
+    // The peer dials again, for example after its next exchange. Our route
+    // is live, so another dial back would only churn connections.
+    let second = fixture.peer_dials().await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let current = fixture.fixture.devices.da.reach.connection(&fixture.peer);
+    let redialed = fixture.accepted.load(Ordering::SeqCst);
+    first.close(0u32.into(), b"test complete");
+    second.close(0u32.into(), b"test complete");
+    fixture.close().await;
+    assert_eq!(dialed, 1, "fixture did not dial back once");
+    assert_eq!(
+        redialed, 1,
+        "an incoming connection dialed back over a live route"
+    );
+    assert_eq!(
+        current.map(|connection| connection.stable_id()),
+        Some(route.stable_id())
+    );
+}
