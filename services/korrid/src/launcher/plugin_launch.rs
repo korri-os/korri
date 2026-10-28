@@ -227,6 +227,9 @@ pub fn evaluate_snapshot(
     source: &crate::script::source::SourceSnapshot,
     input: &PluginLaunchInput,
 ) -> Result<PluginLaunchOutput, String> {
+    if !crate::script::has_plugin_operation_snapshot(source, crate::script::LAUNCH_PREPARE)? {
+        return default_launch(input);
+    }
     let mut input = input.clone();
     if let Some(overrides) = &mut input.overrides {
         super::typed_settings::validate(source, &mut overrides.settings, &input.runner_id, "")?;
@@ -242,6 +245,57 @@ pub fn evaluate_snapshot(
         serde_json::from_str(&result).map_err(|e| format!("invalid launch result: {e}"))?;
     validate_save_locations(&input.save_root, &plan.save_locations)?;
     Ok(plan)
+}
+
+pub(super) fn validate_default_launch(
+    runner_id: &str,
+    content_path: Option<&str>,
+    provider_ref: Option<&str>,
+    overrides: Option<&PluginLaunchOverrides>,
+) -> Result<(), String> {
+    let refusal = |reason| {
+        format!(
+            "runner {} has no launch.prepare handler, so it {reason}",
+            runner_id
+        )
+    };
+    if content_path.is_none() && provider_ref.is_some() {
+        return Err(refusal("cannot start provider references"));
+    }
+    if let Some(overrides) = overrides {
+        if !overrides.settings.is_empty() {
+            return Err(refusal("takes no settings"));
+        }
+        if overrides.config.is_some() {
+            return Err(refusal("takes no config override"));
+        }
+    }
+    Ok(())
+}
+
+fn default_launch(input: &PluginLaunchInput) -> Result<PluginLaunchOutput, String> {
+    validate_default_launch(
+        &input.runner_id,
+        input.content_path.as_deref(),
+        input.provider_ref.as_deref(),
+        input.overrides.as_ref(),
+    )?;
+    let content = input.content_path.as_ref().ok_or_else(|| {
+        format!(
+            "runner {} has no launch.prepare handler, so it requires a content path",
+            input.runner_id
+        )
+    })?;
+    Ok(PluginLaunchOutput {
+        command: input.program.clone(),
+        args: vec![content.clone()],
+        env: HashMap::new(),
+        env_unset: Vec::new(),
+        cwd: None,
+        directories: Vec::new(),
+        files: Vec::new(),
+        save_locations: Vec::new(),
+    })
 }
 
 #[derive(Deserialize)]

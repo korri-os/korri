@@ -439,13 +439,11 @@ pub(crate) fn place_surface_timed(
 mod tests {
     use super::*;
     fn runner() -> RunnerRecord {
-        serde_json::from_value(serde_json::json!({"id":"test", "layouts":{"Top/Bottom":{"panes":{"upper":{"x":0,"y":0,"width":1,"height":0.5},"lower":{"x":0,"y":0.5,"width":1,"height":0.5}}}}})).unwrap()
+        serde_json::from_value(serde_json::json!({"layouts":{"Top/Bottom":{"panes":{"upper":{"x":0,"y":0,"width":1,"height":0.5},"lower":{"x":0,"y":0.5,"width":1,"height":0.5}}}}})).unwrap()
     }
     fn system() -> SystemRecord {
-        serde_json::from_str(
-            r#"{"id":"nds","panes":["upper","lower"],"arrangement":"upper-above-lower"}"#,
-        )
-        .unwrap()
+        serde_json::from_str(r#"{"panes":["upper","lower"],"arrangement":"upper-above-lower"}"#)
+            .unwrap()
     }
     fn displays() -> Vec<Display> {
         vec![
@@ -875,9 +873,9 @@ fi
 
     #[test]
     fn parser_rejects_unknown_keys_and_invalid_fractions() {
-        assert!(serde_json::from_str::<SystemRecord>(r#"{"id":"nds","unknown":true}"#).is_err());
+        assert!(serde_json::from_str::<SystemRecord>(r#"{"unknown":true}"#).is_err());
         assert!(serde_json::from_str::<RunnerRecord>(
-            r#"{"id":"x","layouts":{"x":{"panes":{},"unknown":true}}}"#
+            r#"{"layouts":{"x":{"panes":{},"unknown":true}}}"#
         )
         .is_err());
         assert!(serde_json::from_str::<crate::plugin::PaneRect>(

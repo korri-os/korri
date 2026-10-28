@@ -45,7 +45,7 @@ fn standalone_core() -> String {
 
 #[test]
 fn content_rules_are_independent_of_runners() {
-    let source = "export const name = 'content'; export const systems = { gba: { id: 'gba', content: { extensions: ['gba'] } } };";
+    let source = "export const name = 'content'; export const systems = { gba: { content: { extensions: ['gba'] } } };";
     let plugin = load_plugin_source("@korri", source).unwrap();
     let registry = PluginRegistry::new(vec![plugin], ["@korri:content".into()]).unwrap();
     assert_eq!(registry.content_rules("gba").unwrap().extensions, ["gba"]);
@@ -77,8 +77,8 @@ fn only_the_owning_namespace_may_name_a_family() {
 
     // Joining stays open: a stranger's runner still references @korri:retroarch.
     let joiner = "export const name = 'ppsspp'; \
-         export const systems = { psp: { id: 'psp', title: 'PSP' } }; \
-         export const runners = { ppsspp: { id: '@alice:ppsspp/ppsspp', \
+         export const systems = { psp: { title: 'PSP' } }; \
+         export const runners = { ppsspp: { \
              family: '@korri:retroarch', command: 'ppsspp', systems: ['psp'] } };";
     let plugin = load_plugin_source("@alice", joiner).unwrap();
     let registry = PluginRegistry::new(vec![plugin], ["@alice:ppsspp".into()]).unwrap();
@@ -209,7 +209,6 @@ fn two_cores_of_one_family_coexist() {
 #[test]
 fn malformed_runner_shapes_fail_without_legacy_fields() {
     for source in [
-        MGBA_PLUGIN.replace("id: \"@korri:mgba/mgba\"", "id: \"@korri:mgba/other\""),
         MGBA_PLUGIN.replace("systems: [", "runtimes: ["),
         MGBA_PLUGIN.replace("owner: { kind: \"runner\"", "owner: { kind: \"runtime\""),
     ] {

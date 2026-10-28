@@ -75,7 +75,7 @@ mod tests {
             serde_json::json!({"library":"Snes9x 2010","version":"1.52.4fe690dd","other":true})
         )
         .is_err());
-        let source = "export const name='core'; export const runners={core:{id:'@korri:core/core',program:'program',systems:['snes'],netplay:{library:'Snes9x 2010',version:'1.52.4fe690dd'}}}; export const handlers={'launch.prepare': input=>({command:input.program,args:[]})};";
+        let source = "export const name='core'; export const runners={core:{program:'program',systems:['snes'],netplay:{library:'Snes9x 2010',version:'1.52.4fe690dd'}}}; export const handlers={'launch.prepare': input=>({command:input.program,args:[]})};";
         let registry = crate::plugin::load_plugin_source("@korri", source);
         assert!(registry.is_ok(), "{registry:?}");
     }

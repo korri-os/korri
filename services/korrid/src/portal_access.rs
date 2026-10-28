@@ -902,7 +902,7 @@ mod tests {
         let source = std::fs::read_to_string(mgba.package.join("plugin.ts")).unwrap();
         std::fs::write(
             mgba.package.join("plugin.ts"),
-            format!("{source}\nrunners.other = {{ ...runners.mgba, id: '@korri:mgba/other' }};\n"),
+            format!("{source}\nrunners.other = {{ ...runners.mgba }};\n"),
         )
         .unwrap();
         let registry = crate::plugin::PluginRegistry::from_installed(vec![mgba]).unwrap();

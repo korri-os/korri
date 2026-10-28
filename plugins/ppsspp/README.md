@@ -17,7 +17,13 @@ the same rules as `korri-plugin-mgba`.
 
 `services/korrid/tests/diy_runner.rs` holds that proof: the runner registers
 with no family record present anywhere, resolves its own program from its own
-package, claims `.iso`, `.cso` and `.pbp`, and produces a launch plan.
+package, claims `.iso`, `.cso` and `.pbp`, and produces a launch plan. Runner and system IDs are derived from their map
+keys, not written in the declaration.
+
+Native runners may omit `launch.prepare` for a program that takes only a content
+path. PPSSPP keeps its handler because it adds `--fullscreen` and its memory-stick
+layout. The same test file admits a minimal Hello runner without a handler and
+checks korrid's default launch plan.
 
 ## What it does not get
 

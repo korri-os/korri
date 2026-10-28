@@ -31,7 +31,7 @@ const RENDER_CALLBACK: &str =
 #[test]
 fn native_runner_owns_program_and_core_in_one_package() {
     let root = tempfile::tempdir().unwrap();
-    let source = "export const runners = {main: {id:'@test:mgba/main', family:'@korri:retroarch', program:'program', core:'core', systems:['gba']}};";
+    let source = "export const runners = {main: {family:'@korri:retroarch', program:'program', core:'core', systems:['gba']}};";
     let complete = package(
         root.path(),
         "mgba",
@@ -52,12 +52,13 @@ fn native_runner_owns_program_and_core_in_one_package() {
 }
 
 #[test]
-fn native_runners_require_a_callable_launch_prepare_handler_without_invocation() {
+fn native_runners_allow_no_launch_handler_and_never_invoke_an_authored_handler() {
     for selector in [
         "systems:['gba']",
         "releases:['sha256:0000000000000000000000000000000000000000000000000000000000000000']",
     ] {
-        let declaration=format!("export const runners = {{main: {{id:'@test:kind/main', program:'program', {selector}}}}};");
+        let declaration =
+            format!("export const runners = {{main: {{program:'program', {selector}}}}};");
         for callback in [
             "",
             "export const handlers = {};",
@@ -73,7 +74,7 @@ fn native_runners_require_a_callable_launch_prepare_handler_without_invocation()
                 &["program"],
             );
             let result = PluginRegistry::from_installed(vec![runner]);
-            if callback == CALLBACK {
+            if callback != "export const handlers = {'launch.prepare': 42};" {
                 assert!(result.is_ok(), "callback must not run: {result:?}");
             } else {
                 assert!(result.unwrap_err().to_string().contains("launch"));
@@ -88,7 +89,7 @@ fn command_runners_do_not_require_a_native_launch_callback() {
     let command = package(
         root.path(),
         "command",
-        "export const runners = {main: {id:'@test:command/main', command:'retroarch', systems:['gba']}};",
+        "export const runners = {main: {command:'retroarch', systems:['gba']}};",
         &[],
     );
     PluginRegistry::from_installed(vec![command]).unwrap();
@@ -97,7 +98,8 @@ fn command_runners_do_not_require_a_native_launch_callback() {
 #[test]
 fn settings_only_native_runners_require_callable_render_without_invocation() {
     for selectors in ["", ", systems:[]"] {
-        let declaration=format!("export const runners = {{main: {{id:'@test:viewer/main', program:'program'{selectors}}}}};");
+        let declaration =
+            format!("export const runners = {{main: {{program:'program'{selectors}}}}};");
         for callback in [
             "",
             "export const handlers = {};",
@@ -124,12 +126,12 @@ fn settings_only_native_runners_require_callable_render_without_invocation() {
 }
 
 #[test]
-fn a_package_with_local_and_settings_only_runners_requires_both_callbacks() {
-    let declaration="export const runners = {local:{id:'@test:mixed/local',program:'program',systems:['gba']},viewer:{id:'@test:mixed/viewer',program:'program'}};";
+fn a_package_with_local_and_settings_only_runners_requires_only_render() {
+    let declaration="export const runners = {local:{program:'program',systems:['gba']},viewer:{program:'program'}};";
     let both="export const handlers = {'launch.prepare':()=>{throw Error('launch must not run')},'settings.render':()=>{throw Error('render must not run')}};";
     for (callback, missing) in [
         (CALLBACK, Some("settings.render")),
-        (RENDER_CALLBACK, Some("launch.prepare")),
+        (RENDER_CALLBACK, None),
         (both, None),
     ] {
         let root = tempfile::tempdir().unwrap();

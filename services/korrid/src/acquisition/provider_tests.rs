@@ -91,19 +91,19 @@ export const games = {{ big: {{ title: 'Big Game', releases: {{ v1: {{ hashes: [
         r#"
 export const name = "core";
 export const systems = {{
-  gba: {{ id: "gba", title: "Game Boy Advance", content: {{ extensions: ["gba"] }} }},
-  gb: {{ id: "gb", title: "Game Boy", content: {{ extensions: ["gb"] }} }},
-  nes: {{ id: "nes", title: "NES", content: {{ extensions: ["nes"],
+  gba: {{ title: "Game Boy Advance", content: {{ extensions: ["gba"] }} }},
+  gb: {{ title: "Game Boy", content: {{ extensions: ["gb"] }} }},
+  nes: {{ title: "NES", content: {{ extensions: ["nes"],
     header: [{{ size: 16, bytes: {{ offset: 0, hex: "4e45531a" }} }}] }} }},
-  psx: {{ id: "psx", title: "PlayStation", content: {{ extensions: ["m3u", "cue", "bin", "chd"],
+  psx: {{ title: "PlayStation", content: {{ extensions: ["m3u", "cue", "bin", "chd"],
     layout: ["{{title}}.{{ext}}"] }} }},
-  md: {{ id: "md", title: "Mega Drive", content: {{ extensions: ["md", "gen", "smd", "bin"] }} }},
-  sat: {{ id: "sat", title: "Saturn", content: {{ extensions: ["cue", "bin"],
+  md: {{ title: "Mega Drive", content: {{ extensions: ["md", "gen", "smd", "bin"] }} }},
+  sat: {{ title: "Saturn", content: {{ extensions: ["cue", "bin"],
     layout: ["{{title}} (Disc {{disc}}).{{ext}}"] }} }},
-  nativecart: {{ id: "nativecart", title: "Native container", content: {{ extensions: ["cartz"],
+  nativecart: {{ title: "Native container", content: {{ extensions: ["cartz"],
     evidence: {{ bytes: [{{ offset: 0, hex: "504b0304" }}] }} }} }},
 }};
-export const runners = {{ run: {{ id: "@test:core/run", program: "run", systems: ["gba", "nes", "psx", "md", "sat", "nativecart"] }} }};
+export const runners = {{ run: {{ program: "run", systems: ["gba", "nes", "psx", "md", "sat", "nativecart"] }} }};
 export const handlers = {{ "launch.prepare": (input: any) => ({{ command: input.program, args: [input.contentPath] }}) }};
 {artifacts}
 "#

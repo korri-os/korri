@@ -43,7 +43,7 @@ impl Fixture {
               bonus: {{id: '@test:rock/bonus', version: 'v1', title: 'Bonus', files: file('bonus.pck', '{bonus}')}},
               runtime: {{id: '@test:rock/runtime', version: 'v1', title: 'Runtime', files: file('runtime.bin', '{runtime}')}},
             }};
-            export const runners = {{run: {{id: '@test:rock/run', program: 'run',
+            export const runners = {{run: {{program: 'run',
               releases: ['{content}', '{second}'], artifacts: ['@test:rock/runtime']}}}};
             export const games = {{
               rock: {{title: 'Rock N Roll', releases: {{v1: {{hashes: ['{content}'],
@@ -579,7 +579,7 @@ async fn package_games_resolve_content_path_offline_and_become_unavailable_when_
     fs::create_dir(&runner_package).unwrap();
     fs::write(runner_package.join("plugin.ts"), format!(r#"
         export const name = 'runner';
-        export const runners = {{ run: {{id: '@test:runner/run', program: 'run', releases: ['{hash}']}} }};
+        export const runners = {{ run: {{program: 'run', releases: ['{hash}']}} }};
         export const handlers = {{'launch.prepare': (input: any) => ({{command: input.program, args: [input.contentPath]}})}};
     "#, hash=sha(CONTENT))).unwrap();
     let runner = plugin_installation::EnabledPackage {

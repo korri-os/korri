@@ -36,7 +36,7 @@ use std::{
 use rquickjs::{function::This, Context, Filter, Function, Object, Runtime, Type, Value};
 
 /// The operation that turns a selected runner and target into a launch plan.
-/// A runner that korrid must start needs this handler and nothing else.
+/// Native runners may omit this handler for the default program/content launch.
 pub const LAUNCH_PREPARE: &str = "launch.prepare";
 
 /// Compose a modifier around the preceding plan, before any launch effects.
@@ -116,7 +116,7 @@ pub fn eval_plugin(source: &str) -> Result<String, String> {
     let snapshot = source::SourceSnapshot::javascript(source)?;
     evaluate_module(
         preparation::PreparedGraph::new(&snapshot, "plugin.js")?,
-        None,
+        ModuleQuestion::Declaration,
     )
     .map_err(|failure| failure.to_string())
 }
@@ -175,7 +175,7 @@ pub fn call_plugin_operation_bounded(
             .map_err(OperationFailure::Failed)?;
         evaluate_module(
             graph,
-            Some(Invocation {
+            ModuleQuestion::Invoke(Invocation {
                 operation,
                 input: input_json,
             }),
@@ -191,9 +191,55 @@ pub fn call_plugin_operation_bounded(
     })
 }
 
+/// Both source evaluation (including plugin-host) and direct JSON admission
+/// reject authored IDs before typed decoding can discard or accept them.
+pub(crate) fn reject_derived_ids(declaration: &serde_json::Value) -> Result<(), String> {
+    for (records, kind) in [("runners", "runner"), ("systems", "system")] {
+        if let Some(records) = declaration
+            .get(records)
+            .and_then(serde_json::Value::as_object)
+        {
+            for (key, record) in records {
+                if record
+                    .as_object()
+                    .is_some_and(|record| record.contains_key("id"))
+                {
+                    return Err(format!("{kind} {key}: id is derived; remove it"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+enum ModuleQuestion<'a> {
+    Declaration,
+    HasOperation(&'a str),
+    Invoke(Invocation<'a>),
+}
+
+/// Inspect a callable without invoking it. Launch must reject authored settings
+/// before validation can remove values when the default plan applies.
+pub fn has_plugin_operation_snapshot(
+    snapshot: &source::SourceSnapshot,
+    operation: &str,
+) -> Result<bool, String> {
+    reuse::answer(
+        snapshot,
+        "plugin.ts",
+        reuse::Question::HasOperation(operation),
+        || {
+            let graph = preparation::PreparedGraph::new(snapshot, "plugin.ts")?;
+            evaluate_module(graph, ModuleQuestion::HasOperation(operation))
+        },
+    )
+    .map(|answer| answer == "true")
+    .map_err(|failure| failure.to_string())
+}
+
 fn evaluate_module(
     graph: preparation::PreparedGraph,
-    invocation: Option<Invocation<'_>>,
+    question: ModuleQuestion<'_>,
 ) -> Result<String, OperationFailure> {
     // External declarations run before permission approval. Resource limits
     // therefore belong to the empty interpreter, not to the installed payload.
@@ -279,8 +325,9 @@ fn evaluate_module(
         // Capture declaration bytes before queued mutation, then complete all
         // initialization work before inspecting the callable or invoking it.
         completion.drain(&ctx, &rejections)?;
-        // Local runners prepare a launch plan; settings-only runners render
-        // arguments. Admission inspects the required callable, never invokes it.
+        reject_derived_ids(&declaration)?;
+        // Local runners may use the default launch; settings-only runners still
+        // render arguments. Admission never invokes the required callable.
         if let Some(runners) = declaration
             .get("runners")
             .and_then(serde_json::Value::as_object)
@@ -297,11 +344,7 @@ fn evaluate_module(
                         .and_then(serde_json::Value::as_array)
                         .is_some_and(|values| !values.is_empty())
                 });
-                if local {
-                    handler(&exports, LAUNCH_PREPARE).map_err(|_| {
-                        "native runner kind has no callable launch.prepare handler".to_owned()
-                    })?;
-                } else {
+                if !local {
                     handler(&exports, SETTINGS_RENDER).map_err(|_| {
                         "native runner kind has no callable settings.render handler".to_owned()
                     })?;
@@ -347,41 +390,45 @@ fn evaluate_module(
                 }
             }
         }
-        let result = if let Some(invocation) = invocation {
-            let operation = invocation.operation;
-            let handler = handler(&exports, operation)?;
-            let argument = ctx
-                .json_parse(invocation.input)
-                .map_err(|error| error.to_string())?;
-            let value: Value = handler.call((argument,)).map_err(|error| {
-                // Preserve the producer's code/message/retryable fields. Do not
-                // invoke toJSON/toString hooks while inspecting a thrown value.
-                let exception = error.is_exception().then(|| ctx.catch());
-                let object = exception.as_ref().and_then(Value::as_object);
-                let message = object
-                    .and_then(|v| v.get::<_, String>("message").ok())
-                    .unwrap_or_else(|| error.to_string());
-                match object.and_then(|v| v.get::<_, String>("code").ok()) {
-                    Some(code) => OperationFailure::Plugin(PluginOperationError {
-                        code,
-                        message,
-                        retryable: object.and_then(|v| v.get::<_, bool>("retryable").ok()),
-                    }),
-                    None => {
-                        OperationFailure::Failed(format!("plugin {operation} failed: {message}"))
+        let result = match question {
+            ModuleQuestion::HasOperation(operation) => {
+                serde_json::Value::Bool(handler(&exports, operation).is_ok())
+            }
+            ModuleQuestion::Invoke(invocation) => {
+                let operation = invocation.operation;
+                let handler = handler(&exports, operation)?;
+                let argument = ctx
+                    .json_parse(invocation.input)
+                    .map_err(|error| error.to_string())?;
+                let value: Value = handler.call((argument,)).map_err(|error| {
+                    // Preserve the producer's code/message/retryable fields. Do not
+                    // invoke toJSON/toString hooks while inspecting a thrown value.
+                    let exception = error.is_exception().then(|| ctx.catch());
+                    let object = exception.as_ref().and_then(Value::as_object);
+                    let message = object
+                        .and_then(|v| v.get::<_, String>("message").ok())
+                        .unwrap_or_else(|| error.to_string());
+                    match object.and_then(|v| v.get::<_, String>("code").ok()) {
+                        Some(code) => OperationFailure::Plugin(PluginOperationError {
+                            code,
+                            message,
+                            retryable: object.and_then(|v| v.get::<_, bool>("retryable").ok()),
+                        }),
+                        None => {
+                            OperationFailure::Failed(format!("plugin {operation} failed: {message}"))
+                        }
                     }
-                }
-            })?;
-            json_data_from_js(
-                &value,
-                "$.result",
-                0,
-                &plain_object_prototype,
-                &object_to_string,
-                &mut budget,
-            )?
-        } else {
-            declaration
+                })?;
+                json_data_from_js(
+                    &value,
+                    "$.result",
+                    0,
+                    &plain_object_prototype,
+                    &object_to_string,
+                    &mut budget,
+                )?
+            }
+            ModuleQuestion::Declaration => declaration,
         };
         completion.drain(&ctx, &rejections)?;
         let output = serde_json::to_string(&result)
@@ -615,7 +662,7 @@ pub fn eval_plugin_snapshot(snapshot: &source::SourceSnapshot) -> Result<String,
     reuse::answer(snapshot, "plugin.ts", reuse::Question::Declaration, || {
         evaluate_module(
             preparation::PreparedGraph::new(snapshot, "plugin.ts")?,
-            None,
+            ModuleQuestion::Declaration,
         )
     })
     .map_err(|failure| failure.to_string())
@@ -648,11 +695,29 @@ mod tests {
     }
 
     #[test]
+    fn operation_presence_inspects_without_invoking_and_does_not_hide_invalid_source() {
+        let snapshot = source::SourceSnapshot::plugin("export const name='presence'; export const handlers={'launch.prepare':()=>{throw Error('must not call')}};").unwrap();
+        assert!(has_plugin_operation_snapshot(&snapshot, LAUNCH_PREPARE).unwrap());
+        assert!(!has_plugin_operation_snapshot(&snapshot, SETTINGS_RENDER).unwrap());
+        assert!(call_plugin_operation_snapshot(&snapshot, LAUNCH_PREPARE, "{}").is_err());
+        for source in [
+            "export const name='presence'; export const handlers={'launch.prepare':42};",
+            "export const name='presence'; throw Error('module failed');",
+        ] {
+            let snapshot = source::SourceSnapshot::plugin(source).unwrap();
+            assert!(has_plugin_operation_snapshot(&snapshot, LAUNCH_PREPARE).is_err());
+        }
+    }
+
+    #[test]
     fn typescript_example_runs_and_types_are_erased() {
         let source = include_str!("../examples/catalog.plugin.ts");
         let json = eval_plugin_ts(source).expect("example plugin should run");
         assert!(json.contains("\"name\":\"catalog\""), "got: {json}");
-        assert!(json.contains("\"id\":\"gba\""), "got: {json}");
+        assert!(
+            json.contains("\"gba\":{\"title\":\"Game Boy Advance\"}"),
+            "got: {json}"
+        );
         let javascript = transpile_ts(source).unwrap();
         assert!(!javascript.contains("interface"));
         assert!(!javascript.contains(": string"));

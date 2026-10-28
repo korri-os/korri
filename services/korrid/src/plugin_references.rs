@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 
 #[derive(Deserialize)]
 struct RunnerReference {
-    id: String,
     program: Option<String>,
     core: Option<String>,
 }
@@ -40,15 +39,14 @@ pub fn validate_files(
             }
         }
     }
-    for runner in references.runners.values() {
-        for key in [runner.program.as_ref(), runner.core.as_ref()]
+    for (key, runner) in &references.runners {
+        for file in [runner.program.as_ref(), runner.core.as_ref()]
             .into_iter()
             .flatten()
         {
-            if !files.contains_key(key) {
+            if !files.contains_key(file) {
                 return Err(format!(
-                    "runner {} requires file {key} in its own package",
-                    runner.id
+                    "runner {key} requires file {file} in its own package"
                 ));
             }
         }
@@ -63,11 +61,12 @@ mod tests {
 
     #[test]
     fn file_keys_belong_to_the_contributions_own_package() {
-        let data = json!({"runners":{"ra":{"id":"@korri:ra/ra", "program":"ra", "core":"core"}}});
+        let data = json!({"runners":{"ra":{"program":"ra", "core":"core"}}});
         let files = BTreeMap::from([("ra".into(), std::path::PathBuf::from("/program"))]);
-        assert!(validate_files(data.clone(), &files)
-            .unwrap_err()
-            .contains("core"));
+        assert_eq!(
+            validate_files(data.clone(), &files).unwrap_err(),
+            "runner ra requires file core in its own package"
+        );
         let mut files = files;
         files.insert("core".into(), "/core".into());
         validate_files(data, &files).unwrap();

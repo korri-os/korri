@@ -133,6 +133,13 @@ already accepts raw service files. Changing that runtime boundary requires its
 own implementation and verification; this rule does not authorize a silent
 permission expansion.
 
+### Plugin content (ADR 0042)
+
+`@korri` publishes only content licensed for redistribution. A `@korri`
+acquisition provider serves only sources that publish their content legally.
+Korri hosts no plugin by an outside author and no list of outside plugin
+repositories, and the portal ships no outside repository address.
+
 ## Standing decisions
 
 - The portal is hardware-blind: it receives semantic input actions

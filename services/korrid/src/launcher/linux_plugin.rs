@@ -159,6 +159,22 @@ fn inspect_route(
         &package.sources,
     )
     .map_err(error)?;
+    if !crate::script::has_plugin_operation_snapshot(&source, crate::script::LAUNCH_PREPARE)
+        .map_err(error)?
+    {
+        // Refuse unsupported authored input before settings validation can drop
+        // values. Preflight and actual preparation use the same default rule.
+        super::plugin_launch::validate_default_launch(
+            &route.runner_id,
+            content_path.as_deref(),
+            provider_ref.as_deref(),
+            Some(&PluginLaunchOverrides {
+                settings: folded.settings.clone(),
+                config: folded.config.clone(),
+            }),
+        )
+        .map_err(error)?;
+    }
     let mut warnings =
         super::typed_settings::validate(&source, &mut folded.settings, &route.runner_id, &build)
             .map_err(error)?

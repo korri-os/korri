@@ -470,7 +470,7 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
     let root = tempfile::tempdir().unwrap();
     let package = root.path().join("plugin");
     std::fs::create_dir(&package).unwrap();
-    let source = r#"export const name='moonlight';export const runners={moonlight:{id:'@korri:moonlight/moonlight',program:'program'}};export const handlers={
+    let source = r#"export const name='moonlight';export const runners={moonlight:{program:'program'}};export const handlers={
       'settings.describe':()=>({revision:'v1',schema:{}}),
       'settings.validate': input=>({valid:false,diagnostics:input.values.video?.codec==='bad'?[{severity:'error',code:'codec',path:['video','codec'],message:'unsupported codec'}]:[]}),
       'settings.render':input=>({args:[JSON.stringify(input.settings),String(input.display.width)]})

@@ -24,8 +24,8 @@ fn registry() -> RegistrySource {
         r#"
 export const name = "discovery-test";
 export const systems = {
-  gb: { id: "gb", title: "Game Boy", content: { extensions: ["gb"] } },
-  gbc: { id: "gbc", title: "Game Boy Color", content: { extensions: ["gb"] } },
+  gb: { title: "Game Boy", content: { extensions: ["gb"] } },
+  gbc: { title: "Game Boy Color", content: { extensions: ["gb"] } },
 };
 export const groups = { gameboy: { id: "gameboy", title: "Game Boy", systems: ["gb", "gbc"] } };
 "#,

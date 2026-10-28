@@ -186,7 +186,7 @@ fn cross_package_executable_reference_has_no_contract_shape() {
     let source = r#"
       export const name = 'bad';
       export const runners = { main: {
-        id: '@test:bad/main', program: 'program', core: 'core',
+        program: 'program', core: 'core',
         launcher: '@other:frontend/main', systems: ['gba']
       }};
       export const handlers = {'launch.prepare': function () { return {command:'/bin/false', args:[]}; }}

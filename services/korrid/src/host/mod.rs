@@ -2508,7 +2508,7 @@ esac
         fs::write(
             package.join("plugin.ts"),
             "export const name = 'viewer';
-             export const runners = {viewer: {id: '@test:viewer/viewer', program: 'run'}};
+             export const runners = {viewer: {program: 'run'}};
              export const handlers = {
                'settings.describe': () => ({revision: '1', schema: {type: 'object',
                  additionalProperties: false, properties: {video: {type: 'object',

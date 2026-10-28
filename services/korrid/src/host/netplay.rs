@@ -411,8 +411,8 @@ mod tests {
         std::fs::create_dir(&package).unwrap();
         std::fs::write(package.join("plugin.ts"), r#"
             export const name='core';
-            export const systems={snes:{id:'snes',title:'Super Nintendo',content:{extensions:['sfc']}}};
-            export const runners={core:{id:'@test:core/core',program:'program',systems:['snes'],netplay:{library:'Snes9x 2010',version:'1.52.4fe690dd'}}};
+            export const systems={snes:{title:'Super Nintendo',content:{extensions:['sfc']}}};
+            export const runners={core:{program:'program',systems:['snes'],netplay:{library:'Snes9x 2010',version:'1.52.4fe690dd'}}};
             export const handlers={'launch.prepare':input=>({command:input.program,args:[],saveLocations:[{key:'saves',kind:'save',path:input.saveRoot+'/saves'}]})};
         "#).unwrap();
         std::fs::write(
