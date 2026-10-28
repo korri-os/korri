@@ -3,6 +3,7 @@
 mod controller;
 mod datagrams;
 mod diagnostics;
+pub(crate) use diagnostics::relay_read_failure;
 pub(crate) mod http;
 pub(crate) mod nearby_seam;
 mod policy;

@@ -3,7 +3,7 @@
 //! advance the shared reset epoch; endpoint/settings refreshes do not.
 //! Stage lines use the existing stderr-to-journal convention. No global logger
 //! or third-party tracing is enabled, and no raw protocol errors are printed.
-use crate::relay::{PublishState, RelayError};
+use crate::relay::{relay_failure_class, PublishState, RelayError};
 use iroh::{endpoint::Connection, TransportAddr};
 use std::{
     fmt,
@@ -175,12 +175,29 @@ fn publication_outcomes(state: &PublishState) -> Vec<String> {
     accepted
         .iter()
         .map(|relay| format!("{}=ok", relay_label(relay)))
-        .chain(
-            failed
-                .iter()
-                .map(|failure| format!("{}=failed", relay_label(&failure.relay))),
-        )
+        .chain(failed.iter().map(|failure| {
+            format!(
+                "{}=failed:{}",
+                relay_label(&failure.relay),
+                relay_failure_class(&failure.message)
+            )
+        }))
         .collect()
+}
+
+pub(crate) fn relay_read_failure(relay: &str, error: &RelayError, failures: u64) {
+    eprintln!(
+        "korrid: reach: {}",
+        relay_read_outcome(relay, error, failures)
+    );
+}
+
+fn relay_read_outcome(relay: &str, error: &RelayError, failures: u64) -> String {
+    format!(
+        "stage=relay_read relay={} outcome=failed reason={} failures={failures}",
+        relay_label(relay),
+        relay_failure_class(&error.to_string())
+    )
 }
 
 fn path_kind(address: Option<&TransportAddr>) -> &'static str {
@@ -241,12 +258,15 @@ mod tests {
             accepted_relays: vec!["wss://accepted.invalid/private?token=private".into()],
             failed_relays: vec![crate::relay::RelayFailure {
                 relay: "wss://user:private@failed.invalid".into(),
-                message: "private server response".into(),
+                message: "relay protocol: blocked: private server response".into(),
             }],
         };
         assert_eq!(
             publication_outcomes(&state),
-            ["wss://accepted.invalid=ok", "wss://failed.invalid=failed"]
+            [
+                "wss://accepted.invalid=ok",
+                "wss://failed.invalid=failed:blocked"
+            ]
         );
         assert_eq!(
             publication_outcomes(&PublishState::Published {
@@ -261,7 +281,51 @@ mod tests {
                     message: "private".into()
                 }]
             }),
-            ["wss://only.invalid=failed"]
+            ["wss://only.invalid=failed:unprefixed"]
+        );
+    }
+
+    #[test]
+    fn relay_reason_classes_never_include_the_response_text() {
+        for (message, expected) in [
+            ("blocked: private", "blocked"),
+            ("relay protocol: rate-limited: private", "rate-limited"),
+            ("invalid: private", "invalid"),
+            ("restricted: private", "restricted"),
+            ("auth-required: private", "auth-required"),
+            ("pow: private", "pow"),
+            ("duplicate: private", "duplicate"),
+            ("error: private", "error"),
+            ("unknown-private-prefix: private", "unprefixed"),
+            ("private server response", "unprefixed"),
+            ("relay HTTP 429", "http_429"),
+            ("relay HTTP 403", "http_403"),
+            ("relay operation timed out", "timeout"),
+            ("relay is unavailable: relay closed before EOSE", "closed"),
+            ("relay DNS lookup failed", "dns"),
+            ("relay backoff: http_429", "http_429"),
+            ("relay HTTP 429 private", "unprefixed"),
+            ("relay backoff: private", "unprefixed"),
+        ] {
+            let outcomes = publication_outcomes(&PublishState::Failed {
+                failed_relays: vec![crate::relay::RelayFailure {
+                    relay: "wss://relay.invalid/private".into(),
+                    message: message.into(),
+                }],
+            });
+            assert_eq!(outcomes, [format!("wss://relay.invalid=failed:{expected}")]);
+        }
+    }
+
+    #[test]
+    fn relay_read_failure_count_keeps_only_the_safe_relay_and_reason_labels() {
+        assert_eq!(
+            relay_read_outcome(
+                "wss://user:private@relay.invalid/private?token=private",
+                &RelayError::Protocol("blocked: private server response".into()),
+                17
+            ),
+            "stage=relay_read relay=wss://relay.invalid outcome=failed reason=blocked failures=17"
         );
     }
 

@@ -412,6 +412,7 @@ impl Controller {
         Ok(endpoint)
     }
     async fn run(mut self) {
+        let transport = Arc::new(WebSocketRelayTransport::new());
         loop {
             let interfaces = self.environment.interfaces.clone();
             let previous = network_snapshot(&interfaces);
@@ -421,7 +422,7 @@ impl Controller {
                 interfaces::ADDRESS_POLL,
             );
             tokio::select! {
-                _ = self.drive() => break,
+                _ = self.drive(transport.clone()) => break,
                 _ = changed => {
                     self.directory.reach.diagnostics.network_reset();
                     self.reset().await;
@@ -429,7 +430,7 @@ impl Controller {
             }
         }
     }
-    async fn drive(&mut self) {
+    async fn drive(&mut self, transport: Arc<WebSocketRelayTransport>) {
         let mut old_settings = None;
         loop {
             if self.endpoint.is_some()
@@ -484,9 +485,7 @@ impl Controller {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             }
-            let Ok(signal) =
-                CoordinatedRelays::new(relays, identity, Arc::new(WebSocketRelayTransport::new()))
-            else {
+            let Ok(signal) = CoordinatedRelays::new(relays, identity, transport.clone()) else {
                 break;
             };
             let now = unix_time();

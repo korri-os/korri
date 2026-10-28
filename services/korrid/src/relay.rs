@@ -15,7 +15,9 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::time::{sleep, timeout};
+#[cfg(test)]
+use tokio::time::sleep;
+use tokio::time::{timeout, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
@@ -35,9 +37,9 @@ const MAX_ENDPOINT_LIFETIME_SECONDS: u64 = 7 * 24 * 60 * 60;
 const MAX_CLOCK_FUTURE_SECONDS: u64 = 5 * 60;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(8);
-const INITIAL_RECONNECT_DELAY: Duration = Duration::from_millis(50);
-const MAX_RECONNECT_DELAY: Duration = Duration::from_millis(500);
-const MAX_CONNECT_ATTEMPTS: usize = 3;
+const INITIAL_RECONNECT_DELAY: Duration = Duration::from_secs(5);
+const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(300);
+const REFUSAL_BACKOFF: Duration = Duration::from_secs(300);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelayList(Vec<String>);
@@ -399,6 +401,15 @@ pub enum RelayError {
     Protocol(String),
     #[error("relay operation timed out")]
     Timeout,
+    #[error("relay HTTP {code}")]
+    Http {
+        code: u16,
+        retry_after: Option<Duration>,
+    },
+    #[error("relay DNS lookup failed")]
+    Dns,
+    #[error("relay backoff: {reason}")]
+    Backoff { reason: String },
     #[error("device identity cannot coordinate")]
     Identity,
 }
@@ -1585,13 +1596,107 @@ fn has_tag(tags: &[Vec<String>], name: &str, value: &str) -> bool {
         .any(|tag| tag.len() >= 2 && tag[0] == name && tag[1] == value)
 }
 
-/// Production NIP-01 WebSocket transport. Each bounded operation has one
-/// subscription per connection and retries connection establishment only.
-pub struct WebSocketRelayTransport;
+/// Production NIP-01 transport. Every caller shares the relay's refusal window.
+pub struct WebSocketRelayTransport {
+    relays: Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<RelayHealth>>>>,
+}
+
+#[derive(Default)]
+struct RelayHealth {
+    retry_at: Option<Instant>,
+    failures: u32,
+    reason: String,
+    read_failures: u64,
+    read_report: Option<(Instant, String)>,
+}
+impl RelayHealth {
+    fn begin(&mut self) -> Result<(), RelayError> {
+        if self.retry_at.is_some_and(|until| until > Instant::now()) {
+            return Err(RelayError::Backoff {
+                reason: self.reason.clone(),
+            });
+        }
+        self.failures = self.failures.saturating_add(1);
+        // Reserve the retry window before I/O. Cancellation must not let the next
+        // reach pass open another connection to the same unresponsive relay.
+        self.reason = "timeout".into();
+        self.retry_at = Some(Instant::now() + self.reconnect_delay());
+        Ok(())
+    }
+
+    fn read_failed(&mut self, relay: &str, error: &RelayError) {
+        self.read_failures = self.read_failures.saturating_add(1);
+        let class = relay_failure_class(&error.to_string());
+        let now = Instant::now();
+        // Count every failed read, including backoff suppression. Report a new
+        // reason immediately, then totals once a minute instead of every poll.
+        if self.read_report.as_ref().is_none_or(|(at, previous)| {
+            previous != &class || now.duration_since(*at) >= Duration::from_secs(60)
+        }) {
+            crate::federation::reach::relay_read_failure(relay, error, self.read_failures);
+            self.read_report = Some((now, class));
+        }
+    }
+
+    fn reconnect_delay(&self) -> Duration {
+        INITIAL_RECONNECT_DELAY
+            .saturating_mul(
+                1u32.checked_shl(self.failures.saturating_sub(1))
+                    .unwrap_or(u32::MAX),
+            )
+            .min(MAX_RECONNECT_DELAY)
+    }
+
+    fn complete<T>(&mut self, result: &Result<T, RelayError>) {
+        match result {
+            Ok(_) => {
+                self.retry_at = None;
+                self.failures = 0;
+            }
+            Err(error) => {
+                self.reason = relay_failure_class(&error.to_string());
+                let delay = match error {
+                    RelayError::Http { code, retry_after } => {
+                        let base = if (400..500).contains(code) {
+                            REFUSAL_BACKOFF
+                        } else {
+                            self.reconnect_delay()
+                        };
+                        base.max(retry_after.unwrap_or_default())
+                    }
+                    RelayError::Protocol(_) => REFUSAL_BACKOFF,
+                    _ => self.reconnect_delay(),
+                };
+                self.retry_at = Some(Instant::now() + delay);
+            }
+        }
+    }
+}
 
 impl WebSocketRelayTransport {
     pub fn new() -> Self {
-        Self
+        Self {
+            relays: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    fn health(&self, relay: &str) -> Result<Arc<tokio::sync::Mutex<RelayHealth>>, RelayError> {
+        validate_relay_url(relay)?;
+        let mut relays = self.relays.lock().expect("relay connections");
+        if !relays.contains_key(relay) && relays.len() >= MAX_RELAYS {
+            let unused = relays
+                .iter()
+                .find(|(_, state)| Arc::strong_count(state) == 1)
+                .map(|(url, _)| url.clone());
+            if let Some(unused) = unused {
+                relays.remove(&unused);
+            } else {
+                return Err(RelayError::Unavailable(
+                    "relay connection bound reached".into(),
+                ));
+            }
+        }
+        Ok(relays.entry(relay.into()).or_default().clone())
     }
 
     async fn connect(
@@ -1604,23 +1709,103 @@ impl WebSocketRelayTransport {
         RelayError,
     > {
         validate_relay_url(relay)?;
-        let mut delay = INITIAL_RECONNECT_DELAY;
-        let mut last = None;
-        for attempt in 0..MAX_CONNECT_ATTEMPTS {
-            match timeout(CONNECT_TIMEOUT, connect_async(relay)).await {
-                Ok(Ok((socket, _))) => return Ok(socket),
-                Ok(Err(error)) => last = Some(error.to_string()),
-                Err(_) => last = Some("connection timed out".into()),
-            }
-            if attempt + 1 < MAX_CONNECT_ATTEMPTS {
-                sleep(delay).await;
-                delay = delay.saturating_mul(2).min(MAX_RECONNECT_DELAY);
-            }
-        }
-        Err(RelayError::Unavailable(
-            last.unwrap_or_else(|| relay.into()),
-        ))
+        timeout(CONNECT_TIMEOUT, connect_async(relay))
+            .await
+            .map_err(|_| RelayError::Timeout)?
+            .map(|(socket, _)| socket)
+            .map_err(websocket_error)
     }
+}
+
+fn websocket_error(error: tokio_tungstenite::tungstenite::Error) -> RelayError {
+    use tokio_tungstenite::tungstenite::Error;
+    match error {
+        Error::Http(response) => RelayError::Http {
+            code: response.status().as_u16(),
+            retry_after: response
+                .headers()
+                .get("retry-after")
+                .and_then(|value| value.to_str().ok())
+                .and_then(retry_after),
+        },
+        Error::ConnectionClosed | Error::AlreadyClosed => {
+            RelayError::Unavailable("relay closed".into())
+        }
+        Error::Io(ref error)
+            if [
+                "failed to lookup address",
+                "Name or service not known",
+                "dns error",
+            ]
+            .iter()
+            .any(|part| error.to_string().contains(part)) =>
+        {
+            RelayError::Dns
+        }
+        error => RelayError::Unavailable(error.to_string()),
+    }
+}
+
+fn retry_after(value: &str) -> Option<Duration> {
+    if let Ok(seconds) = value.trim().parse::<u64>() {
+        let delay = Duration::from_secs(seconds);
+        Instant::now().checked_add(delay)?;
+        return Some(delay);
+    }
+    let date = chrono::DateTime::parse_from_rfc2822(value)
+        .ok()?
+        .timestamp();
+    Some(Duration::from_secs(
+        u64::try_from(date).ok()?.saturating_sub(unix_now()),
+    ))
+}
+
+/// Only fixed protocol labels leave this seam. Never return an arbitrary prefix
+/// or a substring of a relay's response, even when it resembles a diagnostic.
+pub(crate) fn relay_failure_class(message: &str) -> String {
+    let message = message.strip_prefix("relay protocol: ").unwrap_or(message);
+    let message = message.strip_prefix("relay backoff: ").unwrap_or(message);
+    for prefix in [
+        "blocked",
+        "rate-limited",
+        "invalid",
+        "restricted",
+        "auth-required",
+        "pow",
+        "duplicate",
+        "error",
+    ] {
+        if message
+            .strip_prefix(prefix)
+            .is_some_and(|tail| tail.starts_with(':') || tail.is_empty())
+        {
+            return prefix.into();
+        }
+    }
+    if let Some(code) = message
+        .strip_prefix("relay HTTP ")
+        .and_then(|code| code.parse::<u16>().ok())
+        .filter(|code| (100..600).contains(code))
+    {
+        return format!("http_{code}");
+    }
+    if message == "relay operation timed out" || message == "timeout" {
+        return "timeout".into();
+    }
+    if message == "relay DNS lookup failed" || message == "dns" {
+        return "dns".into();
+    }
+    if message.starts_with("relay is unavailable: relay closed") || message == "closed" {
+        return "closed".into();
+    }
+    if message
+        .strip_prefix("http_")
+        .and_then(|code| code.parse::<u16>().ok())
+        .is_some_and(|code| (100..600).contains(&code))
+    {
+        return message.into();
+    }
+    "unprefixed".into()
 }
 
 impl Default for WebSocketRelayTransport {
@@ -1629,8 +1814,8 @@ impl Default for WebSocketRelayTransport {
     }
 }
 
-impl RelayTransport for WebSocketRelayTransport {
-    fn publish<'a>(
+impl WebSocketRelayTransport {
+    fn publish_operation<'a>(
         &'a self,
         relay: &'a str,
         event_json: &'a str,
@@ -1762,7 +1947,7 @@ impl RelayTransport for WebSocketRelayTransport {
         })
     }
 
-    fn read<'a>(
+    fn read_operation<'a>(
         &'a self,
         relay: &'a str,
         filter: &'a RelayFilter,
@@ -1876,6 +2061,45 @@ impl RelayTransport for WebSocketRelayTransport {
             })
             .await
             .map_err(|_| RelayError::Timeout)?
+        })
+    }
+}
+
+impl RelayTransport for WebSocketRelayTransport {
+    fn publish<'a>(
+        &'a self,
+        relay: &'a str,
+        event_json: &'a str,
+        auth: Arc<dyn RelayAuthSigner>,
+    ) -> BoxFuture<'a, Result<(), RelayError>> {
+        Box::pin(async move {
+            let state = self.health(relay)?;
+            let mut state = state.lock().await;
+            state.begin()?;
+            let result = self.publish_operation(relay, event_json, auth).await;
+            state.complete(&result);
+            result
+        })
+    }
+    fn read<'a>(
+        &'a self,
+        relay: &'a str,
+        filter: &'a RelayFilter,
+        auth: Arc<dyn RelayAuthSigner>,
+    ) -> BoxFuture<'a, Result<Vec<RelayEvent>, RelayError>> {
+        Box::pin(async move {
+            let state = self.health(relay)?;
+            let mut state = state.lock().await;
+            if let Err(error) = state.begin() {
+                state.read_failed(relay, &error);
+                return Err(error);
+            }
+            let result = self.read_operation(relay, filter, auth).await;
+            state.complete(&result);
+            if let Err(error) = &result {
+                state.read_failed(relay, error);
+            }
+            result
         })
     }
 }
@@ -2607,6 +2831,139 @@ mod tests {
         .expect("authentication must not reset the publication deadline");
         server.await.unwrap();
         result
+    }
+
+    #[tokio::test]
+    async fn websocket_http_429_does_not_retry_and_shares_backoff_with_reads() {
+        use tokio::io::AsyncWriteExt;
+        let date = chrono::DateTime::from_timestamp((unix_now() + 600) as i64, 0)
+            .unwrap()
+            .format("%a, %d %b %Y %H:%M:%S GMT")
+            .to_string();
+        for response in [
+            "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 600\r\nContent-Length: 0\r\n\r\n"
+                .to_owned(),
+            format!("HTTP/1.1 403 Forbidden\r\nRetry-After: {date}\r\nContent-Length: 0\r\n\r\n"),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("ws://{}", listener.local_addr().unwrap());
+            let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let connections = count.clone();
+            let server = tokio::spawn(async move {
+                loop {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    connections.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let response = response.clone();
+                    tokio::spawn(async move {
+                        use tokio::io::AsyncReadExt;
+                        let mut request = [0; 4096];
+                        let _ = stream.read(&mut request).await;
+                        stream.write_all(response.as_bytes()).await.unwrap();
+                    });
+                }
+            });
+            let root = tempfile::tempdir().unwrap();
+            let identity = owned_identity(root.path(), &Keys::generate(), 10);
+            let auth: Arc<dyn RelayAuthSigner> =
+                Arc::new(DeviceAuthSigner(Arc::new(identity.clone())));
+            let transport = WebSocketRelayTransport::new();
+            let event = identity.owner_statement_json().unwrap();
+            assert!(transport.publish(&url, &event, auth.clone()).await.is_err());
+            let filter = CoordinationDecoder::new(&identity, unix_now())
+                .unwrap()
+                .filter();
+            assert!(transport.read(&url, &filter, auth).await.is_err());
+            assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_secs(301)).await;
+            let auth: Arc<dyn RelayAuthSigner> = Arc::new(DeviceAuthSigner(Arc::new(identity)));
+            assert!(transport.read(&url, &filter, auth.clone()).await.is_err());
+            assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+            tokio::time::advance(Duration::from_secs(300)).await;
+            tokio::time::resume();
+            assert!(transport.read(&url, &filter, auth).await.is_err());
+            assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+            server.abort();
+        }
+    }
+
+    async fn counted_publication_relay(
+        reason: Option<&'static str>,
+    ) -> (
+        String,
+        Arc<std::sync::atomic::AtomicUsize>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connections = count.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                connections.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                tokio::spawn(async move {
+                    let mut socket = accept_async(stream).await.unwrap();
+                    let event = receive_relay(&mut socket).await;
+                    send_relay(
+                        &mut socket,
+                        serde_json::json!([
+                            "OK",
+                            event[1]["id"],
+                            reason.is_none(),
+                            reason.unwrap_or("")
+                        ]),
+                    )
+                    .await;
+                });
+            }
+        });
+        (url, count, server)
+    }
+
+    #[tokio::test]
+    async fn websocket_ok_false_backs_off_only_the_refusing_relay() {
+        use std::sync::atomic::Ordering;
+        for reason in [
+            "blocked: private response",
+            "Policy violated and private response",
+        ] {
+            let (refusing, count, server) = counted_publication_relay(Some(reason)).await;
+            let (accepting, other_count, other_server) = counted_publication_relay(None).await;
+            let root = tempfile::tempdir().unwrap();
+            let identity = owned_identity(root.path(), &Keys::generate(), 10);
+            let event = identity.owner_statement_json().unwrap();
+            let filter = CoordinationDecoder::new(&identity, unix_now())
+                .unwrap()
+                .filter();
+            let auth: Arc<dyn RelayAuthSigner> = Arc::new(DeviceAuthSigner(Arc::new(identity)));
+            let transport = WebSocketRelayTransport::new();
+            assert!(transport
+                .publish(&refusing, &event, auth.clone())
+                .await
+                .is_err());
+            assert!(transport
+                .publish(&refusing, &event, auth.clone())
+                .await
+                .is_err());
+            assert!(transport
+                .read(&refusing, &filter, auth.clone())
+                .await
+                .is_err());
+            assert!(transport
+                .publish(&accepting, &event, auth.clone())
+                .await
+                .is_ok());
+            assert_eq!(count.load(Ordering::SeqCst), 1);
+            assert_eq!(other_count.load(Ordering::SeqCst), 1);
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_secs(301)).await;
+            tokio::time::resume();
+            assert!(transport.publish(&refusing, &event, auth).await.is_err());
+            assert_eq!(count.load(Ordering::SeqCst), 2);
+            server.abort();
+            other_server.abort();
+        }
     }
 
     #[tokio::test]

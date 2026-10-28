@@ -107,6 +107,16 @@ first-ack timing and whether fanout has finished. Other publication APIs keep
 their complete all-relay results. Fresh outgoing offers precede draining a read
 cycle's failed-relay tail. No relay is removed or substituted by this policy.
 
+Public relay operations share one refusal window per configured relay and
+transport. HTTP 4xx and NIP-01 refusals stop further reads and publications for
+five minutes, or longer when `Retry-After` says so. Both delta-seconds and HTTP
+dates are accepted. Connection failures use a five-second exponential delay,
+capped at five minutes. No operation retries a failed handshake immediately.
+The reach controller retains this state across passes and network resets.
+Publication diagnostics contain only fixed NIP-01 or transport reason classes.
+Read failures have cumulative per-relay counts, including reads suppressed by
+backoff; repeated identical reasons report their totals once per minute.
+
 ## Local stream forwards
 
 While a nearby link is up, korrid uses its peer IP instead of the remembered
