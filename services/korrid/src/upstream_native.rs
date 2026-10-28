@@ -618,6 +618,7 @@ impl NativeClient {
         request: &RpcRequest,
         answered: &AtomicBool,
     ) -> Result<RpcResponse, UpstreamError> {
+        let catalog_read = matches!(request, RpcRequest::CatalogSnapshot(_));
         let read_only = matches!(
             request,
             RpcRequest::CatalogSnapshot(_)
@@ -645,13 +646,23 @@ impl NativeClient {
         }
         let mut seen = std::collections::BTreeSet::new();
         candidates.retain(|url| seen.insert(url.clone()));
-        let deadline = tokio::time::Instant::now() + self.operation_timeout;
+        let started = tokio::time::Instant::now();
+        let deadline = started + self.operation_timeout;
+        // A TCP peer can accept and then never answer HTTP. Reserve half the
+        // catalog budget for a sequential signed read over reach, rather than
+        // letting that stalled candidate hide an already-working connection.
+        // Effectful requests keep their existing single-destination policy.
+        let candidate_deadline = if catalog_read && self.directory.is_some() {
+            started + self.operation_timeout / 2
+        } else {
+            deadline
+        };
         let mut last_error = UpstreamError::Unreachable("no eligible peer endpoint".into());
         let mut may_try_reach = true;
         while !candidates.is_empty() {
             // Only TCP probes race. HTTP effects go to one winning origin.
             let selected = match tokio::time::timeout_at(
-                deadline,
+                candidate_deadline,
                 crate::federation::connect::select_origin(&candidates),
             )
             .await
@@ -668,7 +679,8 @@ impl NativeClient {
             };
             let url = candidates.remove(selected);
             self.ensure_not_revoked()?;
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            let remaining =
+                candidate_deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
                 break;
             }
