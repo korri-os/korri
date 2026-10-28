@@ -31,8 +31,11 @@ publish and route plugin rows.
 | `plugin-repository-remove:URL` | `plugins repositories remove URL --yes` | Installed plugins stay |
 | `plugin-release:TARGET` / `plugin-inspect:TARGET` | `plugins review URL PLUGIN VERSION` | Same exact release inspection |
 | `plugin-review:TARGET` | `plugins install URL PLUGIN VERSION --approval DIGEST`; `plugins on PLUGIN` | Explicit current inspection digest; `--yes` grants nothing |
-| Publisher list / trust / revoke | `plugins publishers`; `plugins trust NAMESPACE --key FULL_PUBLIC_KEY`; `plugins revoke NAMESPACE --yes` | Same selected-device publisher policy; config-bound keys cannot be replaced; revoke confirmation only is skipped |
-| Publisher facts and dependency publishers in review | `plugins review URL PLUGIN VERSION` | Bound, Trusted, New, Key changed, Unsigned, fingerprint, disclosure/key-change warning; terminal trust is separate from approval |
+| `plugin-review-publisher:TARGET:NAMESPACE` (`reviewPublisherRowId`, read-only) | `plugins review URL PLUGIN VERSION` | Root and dependency publisher facts: Bound, Trusted, New, Key changed, Unsigned, fingerprint, disclosure/key-change warning |
+| `plugin-trust:TARGET:NAMESPACE` (`trustActionId`) | `plugins trust NAMESPACE --key FULL_PUBLIC_KEY`; trust prompt in `plugins review URL PLUGIN VERSION` | Same selected-device key; review reinspects after explicit terminal trust; `--yes` grants no trust or approval |
+| `plugin-publisher:NAMESPACE` (`publisherRowId`) | `plugins publishers` | Namespace, fingerprint, bound or pinned state, and installed plugins; config-bound keys remain read-only |
+| `plugin-publisher-revoke:NAMESPACE` (`revokeActionId`) | `plugins revoke NAMESPACE [--yes]` | Same selected-device publisher pin; confirmation is required unless `--yes`; config-bound keys cannot be revoked |
+| `plugin-publishers:status` (`PUBLISHERS_STATUS_ROW`, read-only) | `plugins publishers` | Publisher-list empty or failure status; no stored change |
 | `plugin-toggle:ID` | `plugins on ID` / `plugins off ID` | Stale approval requires review and explicit reapproval |
 | `launch-device:cpu.min`, `cpu.max`, `gpu.min`, `gpu.max` | `launch-settings set KEY=PERCENT` | Same Device/Any place |
 | `launch-device:cpu.governor` | `launch-settings set cpu.governor=VALUE` | Device/Any only, when advertised |
@@ -120,11 +123,13 @@ storage, terminal/piped behavior and staging expiry.
 
 `nix run .#cli-check -- FILTER` always runs `tests/parity.py` before Rust format,
 lint and the focused Rust tests. The guard reads the actual portal setting rows,
-plugin ID constructors, launch ID constructors, limit keys, dynamic editor
+plugin row/action ID constructors and their prefix constants, launch ID
+constructors, limit keys, dynamic editor
 paths and the two surface-owned preference IDs. An unrecognized ID/path fails
 and needs a command mapping in that change.
 Its small test-local table is not a second runtime settings manifest. Negative
-tests prove new literal, constant and dynamic IDs cannot pass without review.
+tests prove new literal, constant and dynamic IDs, plugin actions, and changed
+publisher prefixes cannot pass without review.
 The check refuses a stale known-gap entry: once a gap's command exists, the
 entry must become a real mapping.
 
