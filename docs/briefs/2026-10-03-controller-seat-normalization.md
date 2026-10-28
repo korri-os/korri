@@ -53,3 +53,14 @@ nix build .#checks.x86_64-linux.unified-controller-input-vm -L
 ```
 
 These results cover the isolated receiver and gamepad APIs, not the complete korrid game sandbox, physical InputPlumber capture, other SDL versions, or arbitrary application assignment. The physical device was not changed during these off-device checks. The later [approved Mini V2 rollout](2026-10-03-controller-seat-policy-miniv2.md) applied and verified the native permission rule without restarting services, launching games, altering trust, or injecting input. The live rule lasts until reboot. Permanent deployment still needs normal signed system-generation delivery. Preserve the current game and the account pin until an approved validation requires changing them.
+
+## First-press seat order (2026-10-28)
+
+The user chose `active_first` in ask `a0213127-0300-4244-a48c-18845235e322`: in stream play, the first controller to press a button is player 1. The question arose on issue #292. A Fold8 streaming Wario Land 4 from Haku sent its controller to seat 2 because Haku's own controller had taken seat 1 at boot, so the one-player game ignored the phone.
+
+The receiver now gets a seat order with every `BeginSession`:
+
+- `firstPress`: the device holds the game. Beginning the session frees every seat. A controller, local or remote, takes the lowest free seat at its first non-neutral input while the game has input, after the existing neutral rearm. An idle controller never takes a seat. The seat is reserved through disconnects until the session ends, as before.
+- `attached`: a stream viewer's own session. Connected controllers keep their attach-order seats, because the Linux viewer forwards exactly its occupied seats to Moonlight when it starts.
+
+Outside a session, attach order is unchanged. Netplay reservations are unchanged. The order resets at every holder session. An accidental press on an idle controller can take seat 1.

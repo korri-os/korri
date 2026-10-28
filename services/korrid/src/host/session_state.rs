@@ -2312,7 +2312,7 @@ impl HostSessionControl {
         })?;
         let seat_lease = match self
             .input_seats
-            .begin_session(&launch_id)
+            .begin_session(&launch_id, korri_input_contract::SeatOrder::FirstPress)
             .and_then(|()| self.input_seats.start(&launch_id))
         {
             Ok(lease) => lease,
@@ -5144,7 +5144,7 @@ printf '[{{"success":true}}]'
         fn apply_count(&self, _: u8) -> Result<(), String> {
             Ok(())
         }
-        fn begin_session(&self, _: &str) -> Result<(), String> {
+        fn begin_session(&self, _: &str, _: korri_input_contract::SeatOrder) -> Result<(), String> {
             Ok(())
         }
         fn end_session(&self, _: &str) -> Result<(), String> {
@@ -5175,7 +5175,7 @@ printf '[{{"success":true}}]'
         fn apply_count(&self, _: u8) -> Result<(), String> {
             Ok(())
         }
-        fn begin_session(&self, _: &str) -> Result<(), String> {
+        fn begin_session(&self, _: &str, _: korri_input_contract::SeatOrder) -> Result<(), String> {
             Ok(())
         }
         fn end_session(&self, _: &str) -> Result<(), String> {
@@ -5235,7 +5235,7 @@ printf '[{{"success":true}}]'
         fn apply_count(&self, _: u8) -> Result<(), String> {
             Ok(())
         }
-        fn begin_session(&self, _: &str) -> Result<(), String> {
+        fn begin_session(&self, _: &str, _: korri_input_contract::SeatOrder) -> Result<(), String> {
             Ok(())
         }
         fn end_session(&self, _: &str) -> Result<(), String> {
@@ -6801,7 +6801,13 @@ printf '[{{"success":true}}]'
                     .lock()
                     .unwrap()
                     .iter()
-                    .filter(|request| matches!(request, SeatRequest::BeginSession { .. }))
+                    .filter(|request| matches!(
+                        request,
+                        SeatRequest::BeginSession {
+                            seat_order: korri_input_contract::SeatOrder::FirstPress,
+                            ..
+                        }
+                    ))
                     .count(),
                 1
             );
@@ -6969,6 +6975,11 @@ printf '[{{"success":true}}]'
                 .filter(|call| call.starts_with("begin:"))
                 .count(),
             1
+        );
+        // The device that holds the game gives seats in press order.
+        assert_eq!(
+            *pool.seat_orders.lock().unwrap(),
+            [korri_input_contract::SeatOrder::FirstPress]
         );
         assert_eq!(
             calls.iter().filter(|call| call.starts_with("end:")).count(),

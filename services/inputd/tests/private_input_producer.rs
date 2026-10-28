@@ -1,5 +1,5 @@
 use futures_util::{SinkExt, StreamExt};
-use korri_input_contract::{GamepadState, RemoteSource, SeatReply, SeatRequest};
+use korri_input_contract::{GamepadState, RemoteSource, SeatOrder, SeatReply, SeatRequest};
 use korri_inputd::producer::PrivateInputChannel;
 use std::time::Duration;
 use tokio::net::UnixListener;
@@ -137,6 +137,7 @@ async fn producer_cannot_send_count_session_or_remote_authority_and_queue_is_fin
         SeatRequest::ApplyCount { count: 8 },
         SeatRequest::BeginSession {
             launch_id: "forged".into(),
+            seat_order: SeatOrder::Attached,
         },
     ] {
         assert!(channel.send(request).is_err());

@@ -545,7 +545,7 @@ mod tests {
         let (coordinator, worker) = test_support::coordinator(move |request| {
             match request {
                 SeatRequest::Poll => *counted.lock().unwrap() += 1,
-                SeatRequest::BeginSession { launch_id } => current.session = Some(launch_id),
+                SeatRequest::BeginSession { launch_id, .. } => current.session = Some(launch_id),
                 _ => {}
             }
             current.clone()
@@ -558,6 +558,7 @@ mod tests {
         coordinator
             .request(SeatRequest::BeginSession {
                 launch_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                seat_order: korri_input_contract::SeatOrder::FirstPress,
             })
             .unwrap();
         *polls.lock().unwrap() = 0;
@@ -621,7 +622,7 @@ mod tests {
             received.lock().unwrap().push(request.clone());
             match request {
                 SeatRequest::ApplyCount { count } => current.count = count,
-                SeatRequest::BeginSession { launch_id } => current.session = Some(launch_id),
+                SeatRequest::BeginSession { launch_id, .. } => current.session = Some(launch_id),
                 SeatRequest::EndSession { .. } => current.session = None,
                 _ => {}
             }
@@ -638,7 +639,8 @@ mod tests {
         assert_eq!(
             coordinator
                 .request(SeatRequest::BeginSession {
-                    launch_id: launch_id.clone()
+                    launch_id: launch_id.clone(),
+                    seat_order: korri_input_contract::SeatOrder::FirstPress,
                 })
                 .unwrap()
                 .session

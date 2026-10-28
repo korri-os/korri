@@ -67,7 +67,9 @@ impl LocalInputViewer {
                 Input::Begin => {
                     control.input_seats.ready()?;
                     if session.is_none() {
-                        control.input_seats.begin_session(&launch)?;
+                        control
+                            .input_seats
+                            .begin_session(&launch, korri_input_contract::SeatOrder::Attached)?;
                     }
                     control.thaw_portal()
                 }

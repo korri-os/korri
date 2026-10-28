@@ -23,7 +23,11 @@ pub trait InputSeatLease: Send {
 pub trait InputSeatManager: Send + Sync {
     fn initialize(&self, count: u8, session: Option<&str>) -> Result<(), String>;
     fn apply_count(&self, count: u8) -> Result<(), String>;
-    fn begin_session(&self, launch_id: &str) -> Result<(), String>;
+    fn begin_session(
+        &self,
+        launch_id: &str,
+        seat_order: korri_input_contract::SeatOrder,
+    ) -> Result<(), String>;
     fn end_session(&self, launch_id: &str) -> Result<(), String>;
     fn route(&self, launch_id: Option<&str>) -> Result<(), String>;
     fn ready(&self) -> Result<(), String>;
@@ -46,7 +50,11 @@ impl InputSeatManager for DisabledInputSeats {
     fn apply_count(&self, _count: u8) -> Result<(), String> {
         Ok(())
     }
-    fn begin_session(&self, _launch_id: &str) -> Result<(), String> {
+    fn begin_session(
+        &self,
+        _launch_id: &str,
+        _seat_order: korri_input_contract::SeatOrder,
+    ) -> Result<(), String> {
         Ok(())
     }
     fn end_session(&self, _launch_id: &str) -> Result<(), String> {
@@ -127,7 +135,8 @@ impl InputSeatManager for UnixInputSeatManager {
             return Err("stored count differs from active pool".into());
         }
         if let Some(launch_id) = session {
-            self.begin_session(launch_id)?;
+            // Only a game this device holds survives restart; viewer sessions are process-local.
+            self.begin_session(launch_id, korri_input_contract::SeatOrder::FirstPress)?;
         }
         self.initialized
             .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -143,11 +152,16 @@ impl InputSeatManager for UnixInputSeatManager {
         }
         Ok(())
     }
-    fn begin_session(&self, launch_id: &str) -> Result<(), String> {
+    fn begin_session(
+        &self,
+        launch_id: &str,
+        seat_order: korri_input_contract::SeatOrder,
+    ) -> Result<(), String> {
         let reply =
             self.coordinator()?
                 .request(korri_input_contract::SeatRequest::BeginSession {
                     launch_id: launch_id.into(),
+                    seat_order,
                 })?;
         if reply.session.as_deref() != Some(launch_id) || reply.recovery_required {
             self.fence();
@@ -415,6 +429,7 @@ pub(crate) struct RecordingInputPool {
     pub(crate) count: std::sync::Mutex<u8>,
     pub(crate) session: std::sync::Mutex<Option<String>>,
     pub(crate) calls: std::sync::Mutex<Vec<String>>,
+    pub(crate) seat_orders: std::sync::Mutex<Vec<korri_input_contract::SeatOrder>>,
     pub(crate) fail_counts: std::sync::Mutex<Vec<u8>>,
     pub(crate) fenced: std::sync::atomic::AtomicBool,
     pub(crate) on_apply: std::sync::Mutex<Option<ApplyCountCallback>>,
@@ -425,7 +440,7 @@ impl InputSeatManager for RecordingInputPool {
     fn initialize(&self, count: u8, session: Option<&str>) -> Result<(), String> {
         self.apply_count(count)?;
         if let Some(id) = session {
-            self.begin_session(id)?;
+            self.begin_session(id, korri_input_contract::SeatOrder::FirstPress)?;
         }
         Ok(())
     }
@@ -443,9 +458,14 @@ impl InputSeatManager for RecordingInputPool {
         }
         Ok(())
     }
-    fn begin_session(&self, id: &str) -> Result<(), String> {
+    fn begin_session(
+        &self,
+        id: &str,
+        seat_order: korri_input_contract::SeatOrder,
+    ) -> Result<(), String> {
         self.ready()?;
         self.calls.lock().unwrap().push(format!("begin:{id}"));
+        self.seat_orders.lock().unwrap().push(seat_order);
         *self.session.lock().unwrap() = Some(id.into());
         Ok(())
     }
@@ -597,7 +617,7 @@ mod tests {
                 request,
                 korri_input_contract::SeatRequest::ApplyCount { .. }
             ));
-            if let korri_input_contract::SeatRequest::BeginSession { launch_id } = request {
+            if let korri_input_contract::SeatRequest::BeginSession { launch_id, .. } = request {
                 assert_eq!(launch_id, LAUNCH_ID);
                 current.recovery_required = false;
             }

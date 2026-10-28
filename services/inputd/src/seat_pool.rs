@@ -143,6 +143,30 @@ impl<K: Eq, B: SeatBackend> SeatPool<K, B> {
         Ok(self.seats[index].slot)
     }
 
+    /// Frees every seat of the current session, connected or reserved, so the
+    /// session can give seats out again in its own order. A failed neutral
+    /// write keeps that seat bound and reports the error.
+    pub fn release_all(&mut self, session: &str) -> Result<(), PoolError> {
+        if self.session.as_deref() != Some(session) {
+            return Err(PoolError::StaleSession);
+        }
+        let mut errors = Vec::new();
+        for index in 0..self.seats.len() {
+            if self.seats[index].binding.is_none() {
+                continue;
+            }
+            match self.write(index, GamepadState::neutral()) {
+                Ok(()) => self.seats[index].binding = None,
+                Err(error) => errors.push(error),
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(PoolError::Backend(errors.join("; ")))
+        }
+    }
+
     /// Reserve without connecting an input source. The claim expires only at
     /// exact session end. Repeated reservations reclaim the same seat.
     pub fn reserve(&mut self, session: &str, source: K) -> Result<u8, PoolError> {

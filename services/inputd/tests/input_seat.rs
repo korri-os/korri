@@ -78,6 +78,7 @@ fn begin(runtime: &mut Runtime) {
         runtime,
         SeatRequest::BeginSession {
             launch_id: LAUNCH.into(),
+            seat_order: SeatOrder::Attached,
         },
     );
     ok(
@@ -172,7 +173,8 @@ fn startup_requires_count_reconciliation_and_authoritative_session() {
         runtime
             .coordinate(
                 SeatRequest::BeginSession {
-                    launch_id: LAUNCH.into()
+                    launch_id: LAUNCH.into(),
+                    seat_order: SeatOrder::Attached,
                 },
                 0
             )
@@ -551,6 +553,7 @@ fn coordinator_loss_neutralizes_all_and_preserves_authoritative_session_until_re
         &mut runtime,
         SeatRequest::BeginSession {
             launch_id: LAUNCH.into(),
+            seat_order: SeatOrder::Attached,
         },
     );
     assert_eq!(connect(&mut runtime, "replacement"), None);
@@ -686,7 +689,8 @@ fn idle_count_apply_preserves_assignments_and_failure_never_permits_launch() {
         runtime
             .coordinate(
                 SeatRequest::BeginSession {
-                    launch_id: LAUNCH.into()
+                    launch_id: LAUNCH.into(),
+                    seat_order: SeatOrder::Attached,
                 },
                 10
             )
@@ -772,6 +776,7 @@ fn explicit_remote_disconnect_is_launch_scoped_and_same_controller_reclaims() {
         &mut runtime,
         SeatRequest::BeginSession {
             launch_id: OTHER.into(),
+            seat_order: SeatOrder::Attached,
         },
     );
     runtime.bind(OTHER, TOKEN).unwrap();
@@ -873,7 +878,8 @@ fn netplay_reserves_without_input_and_releases_only_at_exact_session_end() {
     assert!(runtime
         .coordinate(
             SeatRequest::BeginSession {
-                launch_id: launch.clone()
+                launch_id: launch.clone(),
+                seat_order: SeatOrder::Attached,
             },
             0
         )
@@ -935,5 +941,162 @@ fn netplay_reserves_without_input_and_releases_only_at_exact_session_end() {
             )
             .slot,
         Some(1)
+    );
+}
+
+const PRESS: GamepadState = GamepadState {
+    buttons: 0x1000,
+    ..GamepadState::neutral()
+};
+fn begin_holder(runtime: &mut Runtime) {
+    ok(
+        runtime,
+        SeatRequest::BeginSession {
+            launch_id: LAUNCH.into(),
+            seat_order: SeatOrder::FirstPress,
+        },
+    );
+    ok(
+        runtime,
+        SeatRequest::Route {
+            launch_id: Some(LAUNCH.into()),
+        },
+    );
+    runtime.bind(LAUNCH, TOKEN).unwrap();
+}
+
+#[test]
+fn holder_session_gives_p1_to_the_first_controller_that_presses() {
+    let (mut runtime, backend) = runtime(4);
+    // Haku's own controller attached at boot and took P1 by attach order.
+    assert_eq!(connect(&mut runtime, "local-pad"), Some(1));
+    update(&mut runtime, "local-pad", GamepadState::neutral());
+    begin_holder(&mut runtime);
+    assert_eq!(runtime.coordinate(SeatRequest::Poll, 10).slot, None);
+    // The game's seats start free; nothing pressed yet.
+    update(&mut runtime, "local-pad", GamepadState::neutral());
+    assert_eq!(
+        remote(&mut runtime, 0, GamepadState::neutral()),
+        MirrorOutcome::NoSeat
+    );
+    // The phone presses first and becomes P1.
+    assert_eq!(
+        remote(&mut runtime, 0, PRESS),
+        MirrorOutcome::Accepted { slot: 1 }
+    );
+    assert_eq!(backend.state(1), PRESS);
+    // Haku's own controller presses second and becomes P2.
+    let reply = ok(
+        &mut runtime,
+        SeatRequest::PhysicalState {
+            device_id: "local-pad".into(),
+            state: PRESS,
+        },
+    );
+    assert_eq!(reply.slot, Some(2));
+    assert_eq!(backend.state(2), PRESS);
+}
+
+#[test]
+fn first_press_waits_for_neutral_and_ignores_idle_controllers() {
+    let (mut runtime, backend) = runtime(4);
+    begin_holder(&mut runtime);
+    // A controller that arrives held must release before its press counts.
+    assert_eq!(connect(&mut runtime, "held-pad"), None);
+    update(&mut runtime, "held-pad", HELD);
+    assert_eq!(
+        runtime
+            .coordinate(SeatRequest::Poll, 10)
+            .occupied_local_seats,
+        Vec::<std::path::PathBuf>::new()
+    );
+    // An idle controller never takes a seat.
+    assert_eq!(connect(&mut runtime, "idle-pad"), None);
+    update(&mut runtime, "idle-pad", GamepadState::neutral());
+    update(&mut runtime, "held-pad", GamepadState::neutral());
+    let reply = ok(
+        &mut runtime,
+        SeatRequest::PhysicalState {
+            device_id: "held-pad".into(),
+            state: PRESS,
+        },
+    );
+    assert_eq!(reply.slot, Some(1));
+    assert_eq!(backend.state(1), PRESS);
+    let idle = ok(
+        &mut runtime,
+        SeatRequest::PhysicalState {
+            device_id: "idle-pad".into(),
+            state: GamepadState::neutral(),
+        },
+    );
+    assert_eq!(idle.slot, None);
+}
+
+#[test]
+fn first_press_seat_is_reserved_through_disconnect_and_freed_at_end() {
+    let (mut runtime, _backend) = runtime(4);
+    begin_holder(&mut runtime);
+    assert_eq!(
+        remote(&mut runtime, 0, GamepadState::neutral()),
+        MirrorOutcome::NoSeat
+    );
+    assert_eq!(
+        remote(&mut runtime, 0, PRESS),
+        MirrorOutcome::Accepted { slot: 1 }
+    );
+    assert_eq!(
+        runtime.accept(&envelope(&disconnected(0), TOKEN), 20),
+        MirrorOutcome::Accepted { slot: 1 }
+    );
+    // Another controller pressing now must not take the reserved P1.
+    connect(&mut runtime, "local-pad");
+    update(&mut runtime, "local-pad", GamepadState::neutral());
+    let reply = ok(
+        &mut runtime,
+        SeatRequest::PhysicalState {
+            device_id: "local-pad".into(),
+            state: PRESS,
+        },
+    );
+    assert_eq!(reply.slot, Some(2));
+    // The phone's controller returns to its own seat.
+    assert_eq!(
+        remote(&mut runtime, 0, GamepadState::neutral()),
+        MirrorOutcome::Accepted { slot: 1 }
+    );
+    ok(
+        &mut runtime,
+        SeatRequest::EndSession {
+            launch_id: LAUNCH.into(),
+        },
+    );
+    // After the game, the connected local controller keeps attach-order seating.
+    assert_eq!(
+        runtime
+            .coordinate(SeatRequest::Poll, 30)
+            .occupied_local_seats
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn viewer_session_keeps_attached_local_seats_for_forwarding() {
+    let (mut runtime, _backend) = runtime(4);
+    assert_eq!(connect(&mut runtime, "viewer-pad"), Some(1));
+    ok(
+        &mut runtime,
+        SeatRequest::BeginSession {
+            launch_id: LAUNCH.into(),
+            seat_order: SeatOrder::Attached,
+        },
+    );
+    // The Linux viewer reads these seats before Moonlight starts.
+    assert_eq!(
+        runtime
+            .coordinate(SeatRequest::Poll, 10)
+            .occupied_local_seats,
+        vec![std::path::PathBuf::from("/dev/input/event1")]
     );
 }

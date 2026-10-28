@@ -57,6 +57,19 @@ impl GamepadState {
     }
 }
 
+/// How a live session gives out controller seats.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SeatOrder {
+    /// The device holds the game. Every seat is released when the session
+    /// begins, and a controller takes the lowest free seat at its first press
+    /// while the game has input. The first controller to press is P1.
+    FirstPress,
+    /// A stream viewer's own session. Connected controllers keep the seats
+    /// they took when they attached, because the viewer forwards exactly those.
+    Attached,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
 pub enum SeatRequest {
@@ -69,6 +82,8 @@ pub enum SeatRequest {
     BeginSession {
         #[serde(rename = "launchId")]
         launch_id: String,
+        #[serde(rename = "seatOrder")]
+        seat_order: SeatOrder,
     },
     /// Reservation only. This device sends its input through RetroArch, not uinput.
     ReserveNetplay {

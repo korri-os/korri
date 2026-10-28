@@ -72,6 +72,7 @@ pub struct SeatRuntime<B: SeatBackend> {
     sources: BTreeMap<SourceKey, Source>,
     mirror: Option<(String, String)>,
     game_route: bool,
+    seat_order: SeatOrder,
     recovery_required: bool,
     faulted: bool,
     feedback_failed: bool,
@@ -84,6 +85,7 @@ impl<B: SeatBackend> SeatRuntime<B> {
             sources: BTreeMap::new(),
             mirror: None,
             game_route: false,
+            seat_order: SeatOrder::Attached,
             recovery_required: true,
             faulted: false,
             feedback_failed: false,
@@ -142,14 +144,25 @@ impl<B: SeatBackend> SeatRuntime<B> {
                 self.recovery_required = false;
                 Ok(None)
             }
-            SeatRequest::BeginSession { launch_id } => {
+            SeatRequest::BeginSession {
+                launch_id,
+                seat_order,
+            } => {
                 validate_launch_id(&launch_id).map_err(|_| SeatFailure::Invalid)?;
                 if self.recovery_required && self.pool.session() == Some(launch_id.as_str()) {
+                    // Recovery keeps the seats already claimed in this session.
+                    self.seat_order = seat_order;
                     self.recovery_required = false;
                     return Ok(None);
                 }
                 self.require_ready()?;
                 self.pool.begin_session(&launch_id).map_err(pool_failure)?;
+                self.seat_order = seat_order;
+                if seat_order == SeatOrder::FirstPress {
+                    // Seats taken outside this game, by attach order, do not
+                    // carry into it. Controllers claim seats again by pressing.
+                    self.pool.release_all(&launch_id).map_err(pool_failure)?;
+                }
                 Ok(None)
             }
             SeatRequest::ReserveNetplay {
@@ -180,6 +193,7 @@ impl<B: SeatBackend> SeatRuntime<B> {
                 self.unbind().map_err(|_| SeatFailure::Backend)?;
                 self.set_route(false)?;
                 self.pool.end_session(&launch_id).map_err(pool_failure)?;
+                self.seat_order = SeatOrder::Attached;
                 self.rebalance()?;
                 Ok(None)
             }
@@ -263,10 +277,16 @@ impl<B: SeatBackend> SeatRuntime<B> {
         now_ms: u64,
         has_state: bool,
     ) -> Result<Option<u8>, SeatFailure> {
-        let slot = match self.pool.connect(key.clone()) {
-            Ok(slot) => Some(slot),
-            Err(PoolError::NoSeat) => None,
-            Err(error) => return Err(pool_failure(error)),
+        // In a first-press session a new controller waits for its first press;
+        // a reconnecting controller still reclaims its reserved seat.
+        let slot = if self.first_press() && self.pool.slot(&key).is_none() {
+            None
+        } else {
+            match self.pool.connect(key.clone()) {
+                Ok(slot) => Some(slot),
+                Err(PoolError::NoSeat) => None,
+                Err(error) => return Err(pool_failure(error)),
+            }
         };
         self.sources.insert(
             key,
@@ -308,7 +328,7 @@ impl<B: SeatBackend> SeatRuntime<B> {
         source.last_event_ms = now_ms;
         source.state = state;
         source.has_state = true;
-        let slot = self.pool.slot(key);
+        let mut slot = self.pool.slot(key);
         if !self.game_route {
             return Ok(slot);
         }
@@ -317,6 +337,14 @@ impl<B: SeatBackend> SeatRuntime<B> {
                 source.requires_neutral = false;
             }
             return Ok(slot);
+        }
+        let first_press = self.pool.session().is_some() && self.seat_order == SeatOrder::FirstPress;
+        if slot.is_none() && first_press && !state.is_neutral_for_rearm() {
+            slot = match self.pool.connect(key.clone()) {
+                Ok(slot) => Some(slot),
+                Err(PoolError::NoSeat) => None,
+                Err(error) => return Err(pool_failure(error)),
+            };
         }
         if slot.is_some() {
             self.pool.write_state(key, state).map_err(pool_failure)?;
@@ -341,7 +369,14 @@ impl<B: SeatBackend> SeatRuntime<B> {
         result?;
         self.rebalance()
     }
+    fn first_press(&self) -> bool {
+        self.pool.session().is_some() && self.seat_order == SeatOrder::FirstPress
+    }
     fn rebalance(&mut self) -> Result<(), SeatFailure> {
+        if self.first_press() {
+            // Freed seats wait for the next controller that presses.
+            return Ok(());
+        }
         for (key, source) in &mut self.sources {
             if self.pool.slot(key).is_none() {
                 match self.pool.connect(key.clone()) {

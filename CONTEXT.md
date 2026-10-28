@@ -56,7 +56,7 @@ The one exact game launch a device holds as active. Every session control names 
 _Avoid_: current game, running process
 
 **Controller seat**:
-A stable Korri input position to which a controller is bound. A seat is distinct from a physical controller and from a player inside a game. People see it as **seat**.
+A stable Korri input position to which a controller is bound. A seat is distinct from a physical controller and from a player inside a game. People see it as **seat**. On the device that holds a live session, controllers take seats in the order they first press a button: the first to press is seat 1, whether the controller is on that device or on a device playing its stream.
 _Avoid_: physical controller, game player
 
 **Pending launch**:
@@ -96,7 +96,7 @@ More than one device playing one game together. Stream play and netplay are its 
 _Avoid_: co-op, multiplayer, join
 
 **Stream play**:
-Shared play in which one device runs the game and holds the live session, and other devices play on its stream. Their controllers take free controller seats in that session. They can play and watch, but only the device that holds the session can end it or change it.
+Shared play in which one device runs the game and holds the live session, and other devices play on its stream. Their controllers take controller seats in that session in first-press order, as the holder's own controllers do. They can play and watch, but only the device that holds the session can end it or change it.
 _Avoid_: remote play, guest stream, player two
 
 **Netplay**:

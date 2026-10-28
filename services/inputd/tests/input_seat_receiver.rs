@@ -1,7 +1,8 @@
 #![cfg(target_os = "linux")]
 
 use korri_inputd::input_seat::{
-    GamepadState, SeatFailure, SeatReply, SeatRequest, COORDINATION_VERSION, MAX_COORDINATION_BYTES,
+    GamepadState, SeatFailure, SeatOrder, SeatReply, SeatRequest, COORDINATION_VERSION,
+    MAX_COORDINATION_BYTES,
 };
 use serde_json::Value;
 use std::{
@@ -209,6 +210,7 @@ fn exact_start_mirror_and_stop_lifecycle() {
         &coordinator,
         SeatRequest::BeginSession {
             launch_id: OTHER.into(),
+            seat_order: SeatOrder::Attached,
         },
     );
     let next = connect(&receiver.path("control.sock"));
@@ -285,6 +287,7 @@ fn initialize(receiver: &Receiver, count: u8, launch: &str) -> OwnedFd {
         &fd,
         SeatRequest::BeginSession {
             launch_id: launch.into(),
+            seat_order: SeatOrder::Attached,
         },
     );
     fd
@@ -444,6 +447,7 @@ fn process_coordinator_disconnect_requires_recovery_without_clearing_game_reserv
         &recovery,
         SeatRequest::BeginSession {
             launch_id: LAUNCH.into(),
+            seat_order: SeatOrder::Attached,
         },
     );
     assert_eq!(physical(&recovery, "replacement").slot, None);
@@ -525,7 +529,8 @@ fn process_restart_reports_unreconciled_pool_and_requires_current_authority() {
         coordinate(
             &coordinator,
             SeatRequest::BeginSession {
-                launch_id: LAUNCH.into()
+                launch_id: LAUNCH.into(),
+                seat_order: SeatOrder::Attached,
             }
         )
         .failure,
@@ -538,6 +543,7 @@ fn process_restart_reports_unreconciled_pool_and_requires_current_authority() {
         &coordinator,
         SeatRequest::BeginSession {
             launch_id: OTHER.into(),
+            seat_order: SeatOrder::Attached,
         },
     );
     assert_eq!(physical(&coordinator, "physical").slot, Some(1));

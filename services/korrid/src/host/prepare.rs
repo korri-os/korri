@@ -376,7 +376,7 @@ mod tests {
         fn apply_count(&self, _: u8) -> Result<(), String> {
             Ok(())
         }
-        fn begin_session(&self, _: &str) -> Result<(), String> {
+        fn begin_session(&self, _: &str, _: korri_input_contract::SeatOrder) -> Result<(), String> {
             Ok(())
         }
         fn end_session(&self, _: &str) -> Result<(), String> {
