@@ -193,7 +193,7 @@ impl Controller {
         }
         self.pending.clear();
         self.retry.clear();
-        // Keep `processed`. Relay reads have no cursor, so every pass rereads
+        // Keep `processed`. Relay reconnects and snapshot adapters can replay
         // each unexpired offer. An offer answered before a reset has been
         // consumed by its sender, which ignores a second answer and does not
         // dial back. Our own dial then times out while it holds the per-peer

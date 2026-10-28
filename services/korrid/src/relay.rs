@@ -32,7 +32,6 @@ const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_STORED_EVENTS_PER_RELAY: usize = 256;
 const MAX_READ_EVENTS: usize = 128;
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
-const MAX_SUBSCRIPTIONS_PER_CONNECTION: usize = 1;
 const MAX_ENDPOINT_LIFETIME_SECONDS: u64 = 7 * 24 * 60 * 60;
 const MAX_CLOCK_FUTURE_SECONDS: u64 = 5 * 60;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -40,6 +39,7 @@ const OPERATION_TIMEOUT: Duration = Duration::from_secs(8);
 const INITIAL_RECONNECT_DELAY: Duration = Duration::from_secs(5);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(300);
 const REFUSAL_BACKOFF: Duration = Duration::from_secs(300);
+const READ_COMPLETION_GRACE: Duration = Duration::from_millis(200);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelayList(Vec<String>);
@@ -355,6 +355,18 @@ pub trait RelayTransport: Send + Sync {
         filter: &'a RelayFilter,
         auth: Arc<dyn RelayAuthSigner>,
     ) -> BoxFuture<'a, Result<Vec<RelayEvent>, RelayError>>;
+
+    /// Reach consumes incremental batches when supported. Snapshot adapters may
+    /// return repeats; the controller already deduplicates signed event IDs.
+    /// A transport owns one device's coordination subscription per relay.
+    fn read_coordination<'a>(
+        &'a self,
+        relay: &'a str,
+        filter: &'a RelayFilter,
+        auth: Arc<dyn RelayAuthSigner>,
+    ) -> BoxFuture<'a, Result<Vec<RelayEvent>, RelayError>> {
+        self.read(relay, filter, auth)
+    }
 }
 
 pub trait RelayCoordinator: Send + Sync {
@@ -459,12 +471,17 @@ where
     /// Reach admits a completed batch without waiting for unavailable relays.
     /// Deduplication and the total decode bound span this entire read cycle.
     /// Only the final batch can report that every configured read failed.
+    /// After one successful read, abandon the unfinished tail after 200 ms;
+    /// persistent transports retain already buffered events for the next pass.
     pub(crate) fn receive_batches(
         &self,
         now: u64,
     ) -> Result<futures::stream::BoxStream<'_, CoordinationSnapshot>, RelayError> {
         let decoder = CoordinationDecoder::new(&self.identity, now)?;
-        let filter = decoder.filter();
+        let mut filter = decoder.filter();
+        // Covers the longest accepted endpoint lifetime, and the randomized
+        // outer timestamps of NIP-59 wraps. Reconnects retain this overlap.
+        filter.since = Some(now.saturating_sub(MAX_ENDPOINT_LIFETIME_SECONDS));
         let auth: Arc<dyn RelayAuthSigner> = Arc::new(DeviceAuthSigner(self.identity.clone()));
         let count = self.relays.as_slice().len();
         let reads = self
@@ -474,13 +491,22 @@ where
             .map(|relay| {
                 let filter = filter.clone();
                 let auth = auth.clone();
-                async move { self.transport.read(relay, &filter, auth).await }
+                async move { self.transport.read_coordination(relay, &filter, auth).await }
             })
             .collect::<futures::stream::FuturesUnordered<_>>();
         Ok(futures::stream::unfold(
-            (reads, decoder, 0, 0),
-            move |(mut reads, mut decoder, mut completed, mut failures)| async move {
-                let result = reads.next().await?;
+            (reads, decoder, 0, 0, None::<Instant>),
+            move |(mut reads, mut decoder, mut completed, mut failures, mut deadline)| async move {
+                let result = match deadline {
+                    Some(until) => tokio::time::timeout_at(until, reads.next())
+                        .await
+                        .ok()
+                        .flatten()?,
+                    None => reads.next().await?,
+                };
+                if result.is_ok() && deadline.is_none() {
+                    deadline = Some(Instant::now() + READ_COMPLETION_GRACE);
+                }
                 completed += 1;
                 let failed = usize::from(result.is_err());
                 failures += failed;
@@ -489,7 +515,7 @@ where
                     failed,
                     completed == count && failures == count,
                 );
-                Some((batch, (reads, decoder, completed, failures)))
+                Some((batch, (reads, decoder, completed, failures, deadline)))
             },
         )
         .boxed())
@@ -1598,18 +1624,30 @@ fn has_tag(tags: &[Vec<String>], name: &str, value: &str) -> bool {
 
 /// Production NIP-01 transport. Every caller shares the relay's refusal window.
 pub struct WebSocketRelayTransport {
-    relays: Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<RelayHealth>>>>,
+    relays: Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<RelayConnection>>>>,
 }
 
 #[derive(Default)]
-struct RelayHealth {
+struct RelayConnection {
     retry_at: Option<Instant>,
     failures: u32,
     reason: String,
     read_failures: u64,
     read_report: Option<(Instant, String)>,
+    socket: Option<RelaySocket>,
+    authentication: Authentication,
+    coordination: Option<CoordinationSubscription>,
+    maintenance_auth: Option<Arc<dyn RelayAuthSigner>>,
+    maintenance: Option<tokio::task::JoinHandle<()>>,
 }
-impl RelayHealth {
+impl Drop for RelayConnection {
+    fn drop(&mut self) {
+        if let Some(task) = &self.maintenance {
+            task.abort();
+        }
+    }
+}
+impl RelayConnection {
     fn begin(&mut self) -> Result<(), RelayError> {
         if self.retry_at.is_some_and(|until| until > Instant::now()) {
             return Err(RelayError::Backoff {
@@ -1680,7 +1718,10 @@ impl WebSocketRelayTransport {
         }
     }
 
-    fn health(&self, relay: &str) -> Result<Arc<tokio::sync::Mutex<RelayHealth>>, RelayError> {
+    fn connection(
+        &self,
+        relay: &str,
+    ) -> Result<Arc<tokio::sync::Mutex<RelayConnection>>, RelayError> {
         validate_relay_url(relay)?;
         let mut relays = self.relays.lock().expect("relay connections");
         if !relays.contains_key(relay) && relays.len() >= MAX_RELAYS {
@@ -1696,7 +1737,18 @@ impl WebSocketRelayTransport {
                 ));
             }
         }
-        Ok(relays.entry(relay.into()).or_default().clone())
+        Ok(relays
+            .entry(relay.into())
+            .or_insert_with(|| {
+                let state = Arc::new(tokio::sync::Mutex::new(RelayConnection::default()));
+                let task = tokio::spawn(maintain_connection(
+                    relay.to_owned(),
+                    Arc::downgrade(&state),
+                ));
+                state.try_lock().expect("new relay connection").maintenance = Some(task);
+                state
+            })
+            .clone())
     }
 
     async fn connect(
@@ -1728,6 +1780,20 @@ fn websocket_error(error: tokio_tungstenite::tungstenite::Error) -> RelayError {
                 .and_then(|value| value.to_str().ok())
                 .and_then(retry_after),
         },
+        Error::Protocol(
+            tokio_tungstenite::tungstenite::error::ProtocolError::ResetWithoutClosingHandshake,
+        ) => RelayError::Unavailable("relay closed".into()),
+        Error::Io(ref error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::UnexpectedEof
+            ) =>
+        {
+            RelayError::Unavailable("relay closed".into())
+        }
         Error::ConnectionClosed | Error::AlreadyClosed => {
             RelayError::Unavailable("relay closed".into())
         }
@@ -1762,50 +1828,58 @@ fn retry_after(value: &str) -> Option<Duration> {
 
 /// Only fixed protocol labels leave this seam. Never return an arbitrary prefix
 /// or a substring of a relay's response, even when it resembles a diagnostic.
-pub(crate) fn relay_failure_class(message: &str) -> String {
-    let message = message.strip_prefix("relay protocol: ").unwrap_or(message);
-    let message = message.strip_prefix("relay backoff: ").unwrap_or(message);
-    for prefix in [
-        "blocked",
-        "rate-limited",
-        "invalid",
-        "restricted",
-        "auth-required",
-        "pow",
-        "duplicate",
-        "error",
-    ] {
-        if message
+const NIP_REASON_CLASSES: &[&str] = &[
+    "blocked",
+    "rate-limited",
+    "invalid",
+    "restricted",
+    "auth-required",
+    "pow",
+    "duplicate",
+    "error",
+];
+
+fn nip_reason_class(message: &str) -> Option<&'static str> {
+    NIP_REASON_CLASSES.iter().copied().find(|prefix| {
+        message
             .strip_prefix(prefix)
-            .is_some_and(|tail| tail.starts_with(':') || tail.is_empty())
-        {
-            return prefix.into();
-        }
+            .is_some_and(|tail| tail.starts_with(':'))
+    })
+}
+
+pub(crate) fn relay_failure_class(message: &str) -> String {
+    if let Some(reason) = message.strip_prefix("relay protocol: ") {
+        // Raw protocol text cannot impersonate a typed transport error.
+        return nip_reason_class(reason).unwrap_or("unprefixed").into();
     }
-    if let Some(code) = message
-        .strip_prefix("relay HTTP ")
+    if let Some(class) = message.strip_prefix("relay backoff: ") {
+        if NIP_REASON_CLASSES.contains(&class)
+            || ["timeout", "closed", "dns", "unprefixed"].contains(&class)
+        {
+            return class.into();
+        }
+        return http_reason_class(class, "http_").unwrap_or_else(|| "unprefixed".into());
+    }
+    if let Some(class) = nip_reason_class(message) {
+        return class.into();
+    }
+    if let Some(class) = http_reason_class(message, "relay HTTP ") {
+        return class;
+    }
+    match message {
+        "relay operation timed out" => "timeout".into(),
+        "relay DNS lookup failed" => "dns".into(),
+        value if value.starts_with("relay is unavailable: relay closed") => "closed".into(),
+        _ => "unprefixed".into(),
+    }
+}
+
+fn http_reason_class(message: &str, prefix: &str) -> Option<String> {
+    message
+        .strip_prefix(prefix)
         .and_then(|code| code.parse::<u16>().ok())
         .filter(|code| (100..600).contains(code))
-    {
-        return format!("http_{code}");
-    }
-    if message == "relay operation timed out" || message == "timeout" {
-        return "timeout".into();
-    }
-    if message == "relay DNS lookup failed" || message == "dns" {
-        return "dns".into();
-    }
-    if message.starts_with("relay is unavailable: relay closed") || message == "closed" {
-        return "closed".into();
-    }
-    if message
-        .strip_prefix("http_")
-        .and_then(|code| code.parse::<u16>().ok())
-        .is_some_and(|code| (100..600).contains(&code))
-    {
-        return message.into();
-    }
-    "unprefixed".into()
+        .map(|code| format!("http_{code}"))
 }
 
 impl Default for WebSocketRelayTransport {
@@ -1814,8 +1888,478 @@ impl Default for WebSocketRelayTransport {
     }
 }
 
+type RelaySocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+const COORDINATION_SUBSCRIPTION: &str = "korri-reach";
+const SNAPSHOT_SUBSCRIPTION: &str = "korri-snapshot";
+const LIVE_READ_WINDOW: Duration = Duration::from_millis(20);
+
+#[derive(Default)]
+enum Authentication {
+    #[default]
+    Unchallenged,
+    Pending(String),
+    Accepted,
+}
+#[derive(Default)]
+enum AuthRetry {
+    #[default]
+    Initial,
+    Required,
+    Retried,
+}
+struct CoordinationSubscription {
+    filter: RelayFilter,
+    ready: bool,
+    authentication: AuthRetry,
+    events: std::collections::VecDeque<RelayEvent>,
+}
+
 impl WebSocketRelayTransport {
-    fn publish_operation<'a>(
+    async fn exchange<T: Send>(
+        &self,
+        relay: &str,
+        read: bool,
+        auth: Arc<dyn RelayAuthSigner>,
+        operation: impl for<'a> FnOnce(
+                &'a mut RelayConnection,
+                &'a mut RelaySocket,
+            ) -> BoxFuture<'a, Result<T, RelayError>>
+            + Send,
+    ) -> Result<T, RelayError> {
+        let deadline = Instant::now() + OPERATION_TIMEOUT;
+        let state = self.connection(relay)?;
+        let mut state = tokio::time::timeout_at(deadline, state.lock())
+            .await
+            .map_err(|_| RelayError::Timeout)?;
+        if let Err(error) = state.begin() {
+            if read {
+                state.read_failed(relay, &error);
+            }
+            return Err(error);
+        }
+        state.maintenance_auth = Some(auth);
+        // The socket lives outside the table during I/O. Cancellation drops it,
+        // but retains the reserved backoff and any already received live events.
+        let mut socket = state.socket.take();
+        let result = tokio::time::timeout_at(deadline, async {
+            if socket.is_none() {
+                state.authentication = Authentication::Unchallenged;
+                socket = Some(self.connect(relay).await?);
+                if let Some(subscription) = &mut state.coordination {
+                    subscription.ready = false;
+                    subscription.authentication = AuthRetry::Initial;
+                    send_frame(
+                        socket.as_mut().expect("connected relay"),
+                        relay_request(COORDINATION_SUBSCRIPTION, &subscription.filter),
+                    )
+                    .await?;
+                }
+            }
+            operation(&mut state, socket.as_mut().expect("connected relay")).await
+        })
+        .await
+        .unwrap_or(Err(RelayError::Timeout));
+        if result.is_ok() {
+            state.socket = socket;
+        }
+        state.complete(&result);
+        if let Err(error) = &result {
+            if read {
+                state.read_failed(relay, error);
+            }
+        }
+        result
+    }
+}
+
+/// Keep snapshot-only callers' sockets alive too. The table owns this task;
+/// its weak reference never keeps a discarded transport or relay entry alive.
+async fn maintain_connection(
+    relay: String,
+    weak: std::sync::Weak<tokio::sync::Mutex<RelayConnection>>,
+) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let Some(connection) = weak.upgrade() else {
+            return;
+        };
+        let Ok(mut state) = connection.try_lock() else {
+            continue;
+        };
+        let Some(auth) = state.maintenance_auth.clone() else {
+            continue;
+        };
+        let Some(mut socket) = state.socket.take() else {
+            continue;
+        };
+        let result = timeout(OPERATION_TIMEOUT, async {
+            let deadline = Instant::now() + LIVE_READ_WINDOW;
+            let mut bytes = 0;
+            loop {
+                let frame =
+                    match tokio::time::timeout_at(deadline, next_frame(&mut socket, &mut bytes))
+                        .await
+                    {
+                        Ok(result) => result?,
+                        Err(_) => return Ok::<_, RelayError>(()),
+                    };
+                connection_frame(&relay, &mut socket, &mut state, auth.as_ref(), &frame).await?;
+            }
+        })
+        .await
+        .unwrap_or(Err(RelayError::Timeout));
+        match &result {
+            Ok(()) => state.socket = Some(socket),
+            Err(error) => {
+                state.failures = state.failures.saturating_add(1);
+                state.complete(&result);
+                state.read_failed(&relay, error);
+            }
+        }
+    }
+}
+
+async fn send_frame(socket: &mut RelaySocket, frame: String) -> Result<(), RelayError> {
+    socket
+        .send(Message::Text(frame.into()))
+        .await
+        .map_err(websocket_error)
+}
+
+async fn next_frame(
+    socket: &mut RelaySocket,
+    bytes: &mut usize,
+) -> Result<serde_json::Value, RelayError> {
+    while let Some(message) = socket.next().await {
+        let message = message.map_err(websocket_error)?;
+        if let Some(text) = bounded_text(message, bytes)? {
+            return serde_json::from_str(&text)
+                .map_err(|_| RelayError::Protocol("relay response is malformed".into()));
+        }
+        // Tungstenite queues the PONG when it reads PING. Flush it even when
+        // this operation has no application message to send back.
+        socket.flush().await.map_err(websocket_error)?;
+    }
+    Err(RelayError::Unavailable("relay closed".into()))
+}
+
+fn frame_reason(frame: &serde_json::Value, index: usize) -> &str {
+    frame
+        .get(index)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("relay rejected operation")
+}
+
+fn received_event(
+    relay: &str,
+    value: &serde_json::Value,
+) -> Result<Option<(String, RelayEvent)>, RelayError> {
+    let event = value
+        .get(2)
+        .ok_or_else(|| RelayError::Protocol("EVENT payload is missing".into()))?;
+    let json = serde_json::to_string(event)
+        .map_err(|_| RelayError::Protocol("EVENT payload is invalid".into()))?;
+    if json.len() > MAX_EVENT_BYTES {
+        return Ok(None);
+    }
+    Ok(DeviceIdentity::verify_encrypted_event(&json)
+        .ok()
+        .map(|verified| {
+            (
+                verified.id,
+                RelayEvent {
+                    relay: relay.into(),
+                    event_json: json,
+                },
+            )
+        }))
+}
+
+async fn retry_authenticated_subscription(
+    socket: &mut RelaySocket,
+    retry: &mut AuthRetry,
+    authenticated: bool,
+    request: &str,
+) -> Result<(), RelayError> {
+    if authenticated && matches!(retry, AuthRetry::Required) {
+        send_frame(socket, request.into()).await?;
+        *retry = AuthRetry::Retried;
+    }
+    Ok(())
+}
+
+/// Demultiplex connection authentication and the retained reach subscription.
+/// Other read contracts keep their complete snapshot and EOSE semantics.
+async fn connection_frame(
+    relay: &str,
+    socket: &mut RelaySocket,
+    state: &mut RelayConnection,
+    auth: &dyn RelayAuthSigner,
+    frame: &serde_json::Value,
+) -> Result<bool, RelayError> {
+    match frame.get(0).and_then(serde_json::Value::as_str) {
+        Some("AUTH") => {
+            if !matches!(state.authentication, Authentication::Unchallenged) {
+                return Err(RelayError::Protocol("AUTH challenge limit exceeded".into()));
+            }
+            let challenge = frame
+                .get(1)
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| RelayError::Protocol("AUTH challenge is malformed".into()))?;
+            let event: serde_json::Value =
+                serde_json::from_str(&auth.sign_auth(relay, challenge, unix_now())?)
+                    .map_err(|_| RelayError::Protocol("AUTH event is malformed".into()))?;
+            let id = event
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| RelayError::Protocol("AUTH event id is missing".into()))?
+                .to_owned();
+            send_frame(socket, serde_json::json!(["AUTH", event]).to_string()).await?;
+            state.authentication = Authentication::Pending(id);
+            return Ok(true);
+        }
+        Some("OK") if matches!(&state.authentication, Authentication::Pending(id) if frame.get(1).and_then(serde_json::Value::as_str) == Some(id.as_str())) =>
+        {
+            if frame.get(2).and_then(serde_json::Value::as_bool) != Some(true) {
+                return Err(RelayError::Protocol(frame_reason(frame, 3).into()));
+            }
+            state.authentication = Authentication::Accepted;
+            if let Some(subscription) = &mut state.coordination {
+                retry_authenticated_subscription(
+                    socket,
+                    &mut subscription.authentication,
+                    true,
+                    &relay_request(COORDINATION_SUBSCRIPTION, &subscription.filter),
+                )
+                .await?;
+            }
+            return Ok(true);
+        }
+        _ => {}
+    }
+    let Some(subscription) = &mut state.coordination else {
+        return Ok(false);
+    };
+    if frame.get(1).and_then(serde_json::Value::as_str) != Some(COORDINATION_SUBSCRIPTION) {
+        return Ok(false);
+    }
+    match frame.get(0).and_then(serde_json::Value::as_str) {
+        Some("EVENT") => {
+            if let Some((_, event)) = received_event(relay, frame)? {
+                if subscription.events.len() >= MAX_READ_EVENTS {
+                    subscription.events.pop_front();
+                }
+                subscription.events.push_back(event);
+            }
+        }
+        Some("EOSE") => subscription.ready = true,
+        Some("CLOSED") => {
+            let reason = frame_reason(frame, 2);
+            if !reason.starts_with("auth-required:")
+                || !matches!(subscription.authentication, AuthRetry::Initial)
+            {
+                return Err(RelayError::Protocol(reason.into()));
+            }
+            subscription.authentication = AuthRetry::Required;
+            retry_authenticated_subscription(
+                socket,
+                &mut subscription.authentication,
+                matches!(state.authentication, Authentication::Accepted),
+                &relay_request(COORDINATION_SUBSCRIPTION, &subscription.filter),
+            )
+            .await?;
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+async fn publish_operation(
+    relay: String,
+    event: serde_json::Value,
+    id: String,
+    auth: Arc<dyn RelayAuthSigner>,
+    state: &mut RelayConnection,
+    socket: &mut RelaySocket,
+) -> Result<(), RelayError> {
+    let request = serde_json::json!(["EVENT", event]).to_string();
+    send_frame(socket, request.clone()).await?;
+    let mut retry = AuthRetry::Initial;
+    let mut bytes = 0;
+    loop {
+        let frame = next_frame(socket, &mut bytes).await?;
+        let handled = connection_frame(&relay, socket, state, auth.as_ref(), &frame).await?;
+        if !handled
+            && frame.get(0).and_then(serde_json::Value::as_str) == Some("OK")
+            && frame.get(1).and_then(serde_json::Value::as_str) == Some(&id)
+        {
+            if frame.get(2).and_then(serde_json::Value::as_bool) == Some(true) {
+                return Ok(());
+            }
+            let reason = frame_reason(&frame, 3);
+            if frame.get(2).and_then(serde_json::Value::as_bool) != Some(false)
+                || !reason.starts_with("auth-required:")
+                || !matches!(retry, AuthRetry::Initial)
+            {
+                return Err(RelayError::Protocol(reason.into()));
+            }
+            retry = AuthRetry::Required;
+        }
+        // A matching AUTH OK and the initial EVENT's auth-required rejection
+        // may arrive in either order. Only both permit the one EVENT retry.
+        retry_authenticated_subscription(
+            socket,
+            &mut retry,
+            matches!(state.authentication, Authentication::Accepted),
+            &request,
+        )
+        .await?;
+    }
+}
+
+async fn snapshot_read(
+    relay: String,
+    filter: RelayFilter,
+    auth: Arc<dyn RelayAuthSigner>,
+    state: &mut RelayConnection,
+    socket: &mut RelaySocket,
+) -> Result<Vec<RelayEvent>, RelayError> {
+    let request = relay_request(SNAPSHOT_SUBSCRIPTION, &filter);
+    send_frame(socket, request.clone()).await?;
+    let mut bytes = 0;
+    let mut events = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut retry = AuthRetry::Initial;
+    loop {
+        let frame = next_frame(socket, &mut bytes).await?;
+        let handled = connection_frame(&relay, socket, state, auth.as_ref(), &frame).await?;
+        retry_authenticated_subscription(
+            socket,
+            &mut retry,
+            matches!(state.authentication, Authentication::Accepted),
+            &request,
+        )
+        .await?;
+        if handled
+            || frame.get(1).and_then(serde_json::Value::as_str) != Some(SNAPSHOT_SUBSCRIPTION)
+        {
+            continue;
+        }
+        match frame.get(0).and_then(serde_json::Value::as_str) {
+            Some("EVENT") if events.len() < filter.limit => {
+                if let Some((id, event)) = received_event(&relay, &frame)? {
+                    if seen.insert(id) {
+                        events.push(event);
+                    }
+                }
+            }
+            Some("EOSE") => {
+                send_frame(
+                    socket,
+                    serde_json::json!(["CLOSE", SNAPSHOT_SUBSCRIPTION]).to_string(),
+                )
+                .await?;
+                return Ok(events);
+            }
+            Some("CLOSED") => {
+                let reason = frame_reason(&frame, 2);
+                if !reason.starts_with("auth-required:") || !matches!(retry, AuthRetry::Initial) {
+                    return Err(RelayError::Protocol(reason.into()));
+                }
+                retry = AuthRetry::Required;
+                retry_authenticated_subscription(
+                    socket,
+                    &mut retry,
+                    matches!(state.authentication, Authentication::Accepted),
+                    &request,
+                )
+                .await?;
+            }
+            _ => {}
+        }
+    }
+}
+
+async fn coordination_read(
+    relay: String,
+    filter: RelayFilter,
+    auth: Arc<dyn RelayAuthSigner>,
+    state: &mut RelayConnection,
+    socket: &mut RelaySocket,
+) -> Result<Vec<RelayEvent>, RelayError> {
+    let replace = state.coordination.as_ref().is_none_or(|subscription| {
+        subscription.filter.kinds != filter.kinds
+            || subscription.filter.recipient_public_key != filter.recipient_public_key
+            || subscription.filter.author_public_key != filter.author_public_key
+            || subscription.filter.limit != filter.limit
+    });
+    if replace {
+        if state.coordination.is_some() {
+            send_frame(
+                socket,
+                serde_json::json!(["CLOSE", COORDINATION_SUBSCRIPTION]).to_string(),
+            )
+            .await?;
+        }
+        send_frame(socket, relay_request(COORDINATION_SUBSCRIPTION, &filter)).await?;
+        state.coordination = Some(CoordinationSubscription {
+            filter,
+            ready: false,
+            authentication: AuthRetry::Initial,
+            events: Default::default(),
+        });
+    } else {
+        // The live filter stays installed. Only the next reconnect uses the
+        // caller's newer overlap; don't issue another REQ on every reach pass.
+        state
+            .coordination
+            .as_mut()
+            .expect("coordination subscription")
+            .filter
+            .since = filter.since;
+    }
+    let mut bytes = 0;
+    let mut drain_until = None;
+    loop {
+        if state
+            .coordination
+            .as_ref()
+            .expect("coordination subscription")
+            .ready
+        {
+            let deadline = *drain_until.get_or_insert_with(|| Instant::now() + LIVE_READ_WINDOW);
+            match tokio::time::timeout_at(deadline, next_frame(socket, &mut bytes)).await {
+                Ok(frame) => {
+                    connection_frame(&relay, socket, state, auth.as_ref(), &frame?).await?;
+                }
+                Err(_) => {
+                    return Ok(state
+                        .coordination
+                        .as_mut()
+                        .expect("coordination subscription")
+                        .events
+                        .drain(..)
+                        .collect())
+                }
+            }
+        } else {
+            let frame = next_frame(socket, &mut bytes).await?;
+            connection_frame(&relay, socket, state, auth.as_ref(), &frame).await?;
+        }
+    }
+}
+
+fn validate_filter(filter: &RelayFilter) -> Result<(), RelayError> {
+    if filter.limit == 0 || filter.limit > MAX_READ_EVENTS {
+        Err(RelayError::Protocol("subscription bound is invalid".into()))
+    } else {
+        Ok(())
+    }
+}
+
+impl RelayTransport for WebSocketRelayTransport {
+    fn publish<'a>(
         &'a self,
         relay: &'a str,
         event_json: &'a str,
@@ -1832,253 +2376,11 @@ impl WebSocketRelayTransport {
                 .and_then(serde_json::Value::as_str)
                 .ok_or_else(|| RelayError::InvalidEvent("event id is missing".into()))?
                 .to_owned();
-            timeout(OPERATION_TIMEOUT, async {
-                // Connection retries and initial send consume the same bounded
-                // operation budget as authentication and acknowledgement.
-                let mut socket = self.connect(relay).await?;
-                socket
-                    .send(Message::Text(
-                        serde_json::json!(["EVENT", event]).to_string().into(),
-                    ))
-                    .await
-                    .map_err(|error| RelayError::Unavailable(error.to_string()))?;
-                enum Authentication {
-                    Unchallenged,
-                    Pending(String),
-                    Accepted,
-                }
-                enum Publication {
-                    Pending,
-                    AuthRequired,
-                    Retried,
-                }
-                let mut authentication = Authentication::Unchallenged;
-                let mut publication = Publication::Pending;
-                let mut bytes = 0usize;
-                while let Some(message) = socket.next().await {
-                    let message =
-                        message.map_err(|error| RelayError::Protocol(error.to_string()))?;
-                    let Some(text) = bounded_text(message, &mut bytes)? else {
-                        continue;
-                    };
-                    let value: serde_json::Value = serde_json::from_str(&text)
-                        .map_err(|_| RelayError::Protocol("relay response is malformed".into()))?;
-                    if value.get(0).and_then(serde_json::Value::as_str) == Some("AUTH") {
-                        // One challenge and one EVENT retry per connection, within the
-                        // original operation deadline and aggregate response-byte bound.
-                        if !matches!(authentication, Authentication::Unchallenged) {
-                            return Err(RelayError::Protocol(
-                                "AUTH challenge limit exceeded".into(),
-                            ));
-                        }
-                        let challenge = value
-                            .get(1)
-                            .and_then(serde_json::Value::as_str)
-                            .ok_or_else(|| {
-                                RelayError::Protocol("AUTH challenge is malformed".into())
-                            })?;
-                        let auth_event: serde_json::Value =
-                            serde_json::from_str(&auth.sign_auth(relay, challenge, unix_now())?)
-                                .map_err(|_| {
-                                    RelayError::Protocol("AUTH event is malformed".into())
-                                })?;
-                        let auth_id = auth_event
-                            .get("id")
-                            .and_then(serde_json::Value::as_str)
-                            .ok_or_else(|| RelayError::Protocol("AUTH event id is missing".into()))?
-                            .to_owned();
-                        socket
-                            .send(Message::Text(
-                                serde_json::json!(["AUTH", auth_event]).to_string().into(),
-                            ))
-                            .await
-                            .map_err(|error| RelayError::Unavailable(error.to_string()))?;
-                        authentication = Authentication::Pending(auth_id);
-                        continue;
-                    }
-                    if value.get(0).and_then(serde_json::Value::as_str) == Some("OK") {
-                        let acknowledged = value.get(1).and_then(serde_json::Value::as_str);
-                        let accepted = value.get(2).and_then(serde_json::Value::as_bool);
-                        let reason = value
-                            .get(3)
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("relay rejected event");
-                        if matches!(&authentication, Authentication::Pending(auth_id)
-                            if acknowledged == Some(auth_id.as_str()))
-                        {
-                            if accepted != Some(true) {
-                                return Err(RelayError::Protocol(reason.into()));
-                            }
-                            authentication = Authentication::Accepted;
-                        } else if acknowledged == Some(id.as_str()) {
-                            if accepted == Some(true) {
-                                return Ok(());
-                            }
-                            if accepted == Some(false)
-                                && reason.starts_with("auth-required:")
-                                && matches!(publication, Publication::Pending)
-                            {
-                                publication = Publication::AuthRequired;
-                            } else {
-                                return Err(RelayError::Protocol(reason.into()));
-                            }
-                        }
-                        // The original EVENT rejection and AUTH OK may arrive in either
-                        // order. Neither alone permits retrying or proves publication.
-                        if matches!(authentication, Authentication::Accepted)
-                            && matches!(publication, Publication::AuthRequired)
-                        {
-                            socket
-                                .send(Message::Text(
-                                    serde_json::json!(["EVENT", event]).to_string().into(),
-                                ))
-                                .await
-                                .map_err(|error| RelayError::Unavailable(error.to_string()))?;
-                            publication = Publication::Retried;
-                        }
-                    }
-                }
-                Err(RelayError::Unavailable(
-                    "relay closed before acknowledgement".into(),
-                ))
+            let url = relay.to_owned();
+            self.exchange(relay, false, auth.clone(), move |state, socket| {
+                Box::pin(publish_operation(url, event, id, auth, state, socket))
             })
             .await
-            .map_err(|_| RelayError::Timeout)?
-        })
-    }
-
-    fn read_operation<'a>(
-        &'a self,
-        relay: &'a str,
-        filter: &'a RelayFilter,
-        auth: Arc<dyn RelayAuthSigner>,
-    ) -> BoxFuture<'a, Result<Vec<RelayEvent>, RelayError>> {
-        Box::pin(async move {
-            if filter.limit == 0
-                || filter.limit > MAX_READ_EVENTS
-                || MAX_SUBSCRIPTIONS_PER_CONNECTION != 1
-            {
-                return Err(RelayError::Protocol("subscription bound is invalid".into()));
-            }
-            timeout(OPERATION_TIMEOUT, async {
-                // A dead configured relay must not add a separate connection
-                // retry budget before this subscription's operation budget.
-                let mut socket = self.connect(relay).await?;
-                let subscription = "korri-coordination";
-                let request = relay_request(subscription, filter);
-                socket
-                    .send(Message::Text(request.clone().into()))
-                    .await
-                    .map_err(|error| RelayError::Unavailable(error.to_string()))?;
-                let mut bytes = 0usize;
-                let mut events = Vec::new();
-                let mut seen = BTreeSet::new();
-                while let Some(message) = socket.next().await {
-                    let message =
-                        message.map_err(|error| RelayError::Protocol(error.to_string()))?;
-                    let Some(text) = bounded_text(message, &mut bytes)? else {
-                        continue;
-                    };
-                    let value: serde_json::Value = serde_json::from_str(&text)
-                        .map_err(|_| RelayError::Protocol("relay response is malformed".into()))?;
-                    match value.get(0).and_then(serde_json::Value::as_str) {
-                        Some("AUTH") => {
-                            let challenge = value
-                                .get(1)
-                                .and_then(serde_json::Value::as_str)
-                                .ok_or_else(|| {
-                                    RelayError::Protocol("AUTH challenge is malformed".into())
-                                })?;
-                            let auth_event: serde_json::Value = serde_json::from_str(
-                                &auth.sign_auth(relay, challenge, unix_now())?,
-                            )
-                            .map_err(|_| RelayError::Protocol("AUTH event is malformed".into()))?;
-                            socket
-                                .send(Message::Text(
-                                    serde_json::json!(["AUTH", auth_event]).to_string().into(),
-                                ))
-                                .await
-                                .map_err(|error| RelayError::Unavailable(error.to_string()))?;
-                            socket
-                                .send(Message::Text(request.clone().into()))
-                                .await
-                                .map_err(|error| RelayError::Unavailable(error.to_string()))?;
-                        }
-                        Some("EVENT")
-                            if value.get(1).and_then(serde_json::Value::as_str)
-                                == Some(subscription) =>
-                        {
-                            if events.len() >= MAX_READ_EVENTS {
-                                continue;
-                            }
-                            let event = value.get(2).ok_or_else(|| {
-                                RelayError::Protocol("EVENT payload is missing".into())
-                            })?;
-                            let json = serde_json::to_string(event).map_err(|_| {
-                                RelayError::Protocol("EVENT payload is invalid".into())
-                            })?;
-                            if json.len() > MAX_EVENT_BYTES {
-                                continue;
-                            }
-                            if let Ok(verified) = DeviceIdentity::verify_encrypted_event(&json) {
-                                if seen.insert(verified.id) {
-                                    events.push(RelayEvent {
-                                        relay: relay.into(),
-                                        event_json: json,
-                                    });
-                                }
-                            }
-                        }
-                        Some("EOSE")
-                            if value.get(1).and_then(serde_json::Value::as_str)
-                                == Some(subscription) =>
-                        {
-                            let _ = socket
-                                .send(Message::Text(
-                                    serde_json::json!(["CLOSE", subscription])
-                                        .to_string()
-                                        .into(),
-                                ))
-                                .await;
-                            return Ok(events);
-                        }
-                        Some("CLOSED")
-                            if value.get(1).and_then(serde_json::Value::as_str)
-                                == Some(subscription) =>
-                        {
-                            return Err(RelayError::Protocol(
-                                value
-                                    .get(2)
-                                    .and_then(serde_json::Value::as_str)
-                                    .unwrap_or("subscription closed")
-                                    .into(),
-                            ));
-                        }
-                        _ => {}
-                    }
-                }
-                Err(RelayError::Unavailable("relay closed before EOSE".into()))
-            })
-            .await
-            .map_err(|_| RelayError::Timeout)?
-        })
-    }
-}
-
-impl RelayTransport for WebSocketRelayTransport {
-    fn publish<'a>(
-        &'a self,
-        relay: &'a str,
-        event_json: &'a str,
-        auth: Arc<dyn RelayAuthSigner>,
-    ) -> BoxFuture<'a, Result<(), RelayError>> {
-        Box::pin(async move {
-            let state = self.health(relay)?;
-            let mut state = state.lock().await;
-            state.begin()?;
-            let result = self.publish_operation(relay, event_json, auth).await;
-            state.complete(&result);
-            result
         })
     }
     fn read<'a>(
@@ -2088,18 +2390,27 @@ impl RelayTransport for WebSocketRelayTransport {
         auth: Arc<dyn RelayAuthSigner>,
     ) -> BoxFuture<'a, Result<Vec<RelayEvent>, RelayError>> {
         Box::pin(async move {
-            let state = self.health(relay)?;
-            let mut state = state.lock().await;
-            if let Err(error) = state.begin() {
-                state.read_failed(relay, &error);
-                return Err(error);
-            }
-            let result = self.read_operation(relay, filter, auth).await;
-            state.complete(&result);
-            if let Err(error) = &result {
-                state.read_failed(relay, error);
-            }
-            result
+            validate_filter(filter)?;
+            let (url, filter) = (relay.to_owned(), filter.clone());
+            self.exchange(relay, true, auth.clone(), move |state, socket| {
+                Box::pin(snapshot_read(url, filter, auth, state, socket))
+            })
+            .await
+        })
+    }
+    fn read_coordination<'a>(
+        &'a self,
+        relay: &'a str,
+        filter: &'a RelayFilter,
+        auth: Arc<dyn RelayAuthSigner>,
+    ) -> BoxFuture<'a, Result<Vec<RelayEvent>, RelayError>> {
+        Box::pin(async move {
+            validate_filter(filter)?;
+            let (url, filter) = (relay.to_owned(), filter.clone());
+            self.exchange(relay, true, auth.clone(), move |state, socket| {
+                Box::pin(coordination_read(url, filter, auth, state, socket))
+            })
+            .await
         })
     }
 }
@@ -2964,6 +3275,274 @@ mod tests {
             server.abort();
             other_server.abort();
         }
+    }
+
+    #[tokio::test]
+    async fn websocket_coordination_minute_reuses_one_connection_and_subscription_per_relay() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let root = tempfile::tempdir().unwrap();
+        let owner = Keys::generate();
+        let identity = owned_identity(root.path(), &owner, 10);
+        let now = unix_now();
+        let key = identity.device_public_key().unwrap();
+        let event = identity
+            .encrypt_tagged_event(
+                key,
+                ENDPOINT_EVENT_KIND,
+                vec![vec!["p".into(), key.into()]],
+                "encrypted endpoint fixture",
+                now,
+            )
+            .unwrap()
+            .json;
+        let expected: serde_json::Value = serde_json::from_str(&event).unwrap();
+        let mut urls = Vec::new();
+        let mut servers = Vec::new();
+        let mut counts = Vec::new();
+        for _ in 0..2 {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            urls.push(format!("ws://{}", listener.local_addr().unwrap()));
+            let connections = Arc::new(AtomicUsize::new(0));
+            let subscriptions = Arc::new(AtomicUsize::new(0));
+            let publications = Arc::new(AtomicUsize::new(0));
+            counts.push((
+                connections.clone(),
+                subscriptions.clone(),
+                publications.clone(),
+            ));
+            let expected = expected.clone();
+            let recipient = key.to_owned();
+            servers.push(tokio::spawn(async move {
+                loop {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    connections.fetch_add(1, Ordering::SeqCst);
+                    let (subscriptions, publications, expected, recipient) = (
+                        subscriptions.clone(),
+                        publications.clone(),
+                        expected.clone(),
+                        recipient.clone(),
+                    );
+                    tokio::spawn(async move {
+                        let mut socket = accept_async(stream).await.unwrap();
+                        let mut subscription = None;
+                        while let Some(Ok(Message::Text(text))) = socket.next().await {
+                            let frame: serde_json::Value = serde_json::from_str(&text).unwrap();
+                            match frame[0].as_str() {
+                                Some("REQ") => {
+                                    if frame[2]["kinds"] == serde_json::json!([30078, 1059]) {
+                                        assert!(frame[2]["since"].is_u64());
+                                        assert_eq!(frame[2]["#p"], serde_json::json!([recipient]));
+                                        subscriptions.fetch_add(1, Ordering::SeqCst);
+                                        subscription = Some(frame[1].clone());
+                                    } else {
+                                        assert_eq!(frame[2]["kinds"], serde_json::json!([30078]));
+                                    }
+                                    send_relay(
+                                        &mut socket,
+                                        serde_json::json!(["EVENT", frame[1], expected]),
+                                    )
+                                    .await;
+                                    send_relay(&mut socket, serde_json::json!(["EOSE", frame[1]]))
+                                        .await;
+                                }
+                                Some("EVENT") => {
+                                    publications.fetch_add(1, Ordering::SeqCst);
+                                    // Push while the caller waits for its publication ACK.
+                                    send_relay(
+                                        &mut socket,
+                                        serde_json::json!(["EVENT", subscription, expected]),
+                                    )
+                                    .await;
+                                    send_relay(
+                                        &mut socket,
+                                        serde_json::json!(["OK", frame[1]["id"], true, ""]),
+                                    )
+                                    .await;
+                                }
+                                Some("CLOSE") if subscription.as_ref() == Some(&frame[1]) => {
+                                    subscription = None
+                                }
+                                _ => {}
+                            }
+                        }
+                    });
+                }
+            }));
+        }
+        let transport = WebSocketRelayTransport::new();
+        let auth: Arc<dyn RelayAuthSigner> = Arc::new(DeviceAuthSigner(Arc::new(identity.clone())));
+        let mut filter = CoordinationDecoder::new(&identity, now).unwrap().filter();
+        filter.since = Some(now - MAX_ENDPOINT_LIFETIME_SECONDS);
+        for second in 0..60 {
+            for url in &urls {
+                let events = transport
+                    .read_coordination(url, &filter, auth.clone())
+                    .await
+                    .unwrap();
+                if second == 0 {
+                    assert_eq!(events.len(), 1);
+                    assert_eq!(events[0].event_json, event);
+                }
+                if second % 5 == 1 {
+                    assert!(
+                        events.iter().any(|received| received.event_json == event),
+                        "publication discarded a pushed coordination event"
+                    );
+                }
+                if second == 0 || second == 30 {
+                    let mut snapshot = filter.clone();
+                    snapshot.kinds = vec![ENDPOINT_EVENT_KIND];
+                    snapshot.recipient_public_key = None;
+                    snapshot.author_public_key = Some(key.into());
+                    snapshot.since = None;
+                    assert_eq!(
+                        transport
+                            .read(url, &snapshot, auth.clone())
+                            .await
+                            .unwrap()
+                            .len(),
+                        1
+                    );
+                }
+                if second % 5 == 0 || second == 59 {
+                    transport.publish(url, &event, auth.clone()).await.unwrap();
+                }
+            }
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_secs(1)).await;
+            tokio::time::resume();
+        }
+        for server in servers {
+            server.abort();
+        }
+        for (connections, subscriptions, publications) in counts {
+            assert_eq!(connections.load(Ordering::SeqCst), 1);
+            assert_eq!(subscriptions.load(Ordering::SeqCst), 1);
+            assert_eq!(publications.load(Ordering::SeqCst), 13);
+        }
+    }
+
+    #[tokio::test]
+    async fn websocket_cancelled_subscription_keeps_buffered_events_and_reconnects_with_since() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let root = tempfile::tempdir().unwrap();
+        let identity = owned_identity(root.path(), &Keys::generate(), 10);
+        let key = identity.device_public_key().unwrap();
+        let event = identity
+            .encrypt_tagged_event(
+                key,
+                ENDPOINT_EVENT_KIND,
+                vec![vec!["p".into(), key.into()]],
+                "buffered ciphertext",
+                unix_now(),
+            )
+            .unwrap()
+            .json;
+        let expected = event.clone();
+        let mut filter = CoordinationDecoder::new(&identity, unix_now())
+            .unwrap()
+            .filter();
+        filter.since = Some(unix_now() - MAX_ENDPOINT_LIFETIME_SECONDS);
+        let since = filter.since;
+        let connections = Arc::new(AtomicUsize::new(0));
+        let count = connections.clone();
+        let (received_event, first_event) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            count.fetch_add(1, Ordering::SeqCst);
+            let mut socket = accept_async(stream).await.unwrap();
+            let request = receive_relay(&mut socket).await;
+            assert_eq!(request[2]["since"], serde_json::json!(since.unwrap()));
+            send_relay(
+                &mut socket,
+                serde_json::json!([
+                    "EVENT",
+                    request[1],
+                    serde_json::from_str::<serde_json::Value>(&event).unwrap()
+                ]),
+            )
+            .await;
+            received_event.send(()).unwrap();
+            // No EOSE: the caller cancels this pass after buffering the event.
+            let _ = socket.next().await;
+            let (stream, _) = listener.accept().await.unwrap();
+            count.fetch_add(1, Ordering::SeqCst);
+            let mut socket = accept_async(stream).await.unwrap();
+            let request = receive_relay(&mut socket).await;
+            assert_eq!(request[2]["since"], serde_json::json!(since.unwrap()));
+            send_relay(&mut socket, serde_json::json!(["EOSE", request[1]])).await;
+            let _ = socket.next().await;
+        });
+        let auth: Arc<dyn RelayAuthSigner> = Arc::new(DeviceAuthSigner(Arc::new(identity)));
+        let transport = WebSocketRelayTransport::new();
+        {
+            let read = transport.read_coordination(&url, &filter, auth.clone());
+            tokio::pin!(read);
+            tokio::select! {
+                result = &mut read => panic!("subscription completed without EOSE: {result:?}"),
+                _ = first_event => {}
+            }
+            assert!(timeout(Duration::from_millis(100), read).await.is_err());
+        }
+        assert!(transport
+            .read_coordination(&url, &filter, auth.clone())
+            .await
+            .is_err());
+        assert_eq!(connections.load(Ordering::SeqCst), 1);
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(6)).await;
+        tokio::time::resume();
+        let events = transport
+            .read_coordination(&url, &filter, auth)
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_json, expected);
+        assert_eq!(connections.load(Ordering::SeqCst), 2);
+        drop(transport);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn websocket_idle_snapshot_connection_answers_relay_ping() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            let request = receive_relay(&mut socket).await;
+            assert_eq!(request[0], "REQ");
+            send_relay(&mut socket, serde_json::json!(["EOSE", request[1]])).await;
+            assert_eq!(receive_relay(&mut socket).await[0], "CLOSE");
+            socket
+                .send(Message::Ping(b"alive".to_vec().into()))
+                .await
+                .unwrap();
+            let pong = timeout(Duration::from_secs(3), socket.next())
+                .await
+                .expect("an idle relay connection must keep answering PING")
+                .unwrap()
+                .unwrap();
+            assert_eq!(pong, Message::Pong(b"alive".to_vec().into()));
+        });
+        let root = tempfile::tempdir().unwrap();
+        let identity = owned_identity(root.path(), &Keys::generate(), 10);
+        let filter = CoordinationDecoder::new(&identity, unix_now())
+            .unwrap()
+            .filter();
+        let transport = WebSocketRelayTransport::new();
+        assert!(transport
+            .read(
+                &url,
+                &filter,
+                Arc::new(DeviceAuthSigner(Arc::new(identity)))
+            )
+            .await
+            .unwrap()
+            .is_empty());
+        server.await.unwrap();
     }
 
     #[tokio::test]

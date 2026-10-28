@@ -21,6 +21,7 @@ struct CachedRecords {
 
 #[derive(Clone, Default)]
 pub(crate) struct PersonNames {
+    transport: Arc<WebSocketRelayTransport>,
     records: Arc<tokio::sync::Mutex<HashMap<String, CachedRecords>>>,
     writes: Arc<tokio::sync::Mutex<()>>,
 }
@@ -38,15 +39,10 @@ fn owner(identity: &DeviceIdentity) -> Option<&str> {
     }
 }
 
-fn relays(identity: &DeviceIdentity) -> Option<Relays> {
+fn relays(identity: &DeviceIdentity, transport: Arc<WebSocketRelayTransport>) -> Option<Relays> {
     let relays = RelayList::from_linux_environment(std::env::var("KORRID_RELAYS").ok().as_deref())
         .ok()??;
-    CoordinatedRelays::new(
-        relays,
-        identity.clone(),
-        Arc::new(WebSocketRelayTransport::new()),
-    )
-    .ok()
+    CoordinatedRelays::new(relays, identity.clone(), transport).ok()
 }
 
 async fn signer(state: &AppState, identity: &DeviceIdentity) -> Option<Arc<dyn PersonSigner>> {
@@ -92,7 +88,7 @@ impl PersonNames {
             events: Vec::new(),
         });
         if entry.fetched.elapsed() >= Duration::from_secs(30) {
-            if let Some(relays) = relays(&identity) {
+            if let Some(relays) = relays(&identity, self.transport.clone()) {
                 if let Ok(Ok(records)) = tokio::time::timeout(
                     Duration::from_millis(400),
                     relays.read_person_records(person),
@@ -212,7 +208,7 @@ pub(crate) async fn update(
                 message: "Could not store the person name.".into(),
             })?;
         state.person_names.records.lock().await.remove(person);
-        if let Some(relays) = relays(&identity) {
+        if let Some(relays) = relays(&identity, state.person_names.transport.clone()) {
             // Like owner statements, the local signed record remains authoritative
             // offline. Retry publication from the idle watcher on the next pass.
             let _ = tokio::time::timeout(
@@ -238,7 +234,7 @@ pub(crate) async fn publish_local(state: &AppState) {
     let (Some(person), Some(event), Some(relays)) = (
         owner(&identity),
         identity.person_name_event(),
-        relays(&identity),
+        relays(&identity, state.person_names.transport.clone()),
     ) else {
         return;
     };

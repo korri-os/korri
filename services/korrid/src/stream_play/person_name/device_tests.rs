@@ -275,4 +275,49 @@ async fn cli_person_name_dispatch_child() {
         "PersonSignerUnavailable",
     );
     assert_eq!(fs::read(&signed_record).unwrap(), before_unavailable);
+    // This child owns its environment. Exercise the real idle publication path
+    // over a simulated minute, not a separately retained test transport.
+    use futures::{SinkExt, StreamExt};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let relay = format!("ws://{}", listener.local_addr().unwrap());
+    std::env::set_var("KORRID_RELAYS", serde_json::json!([relay]).to_string());
+    let connections = Arc::new(AtomicUsize::new(0));
+    let count = connections.clone();
+    let relaying = tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            count.fetch_add(1, Ordering::SeqCst);
+            tokio::spawn(async move {
+                let mut socket = accept_async(stream).await.unwrap();
+                while let Some(Ok(Message::Text(text))) = socket.next().await {
+                    let frame: serde_json::Value = serde_json::from_str(&text).unwrap();
+                    assert_eq!(frame[0], "EVENT");
+                    socket
+                        .send(Message::Text(
+                            serde_json::json!(["OK", frame[1]["id"], true, ""])
+                                .to_string()
+                                .into(),
+                        ))
+                        .await
+                        .unwrap();
+                }
+            });
+        }
+    });
+    for tick in 0..3 {
+        publish_local(&state).await;
+        if tick < 2 {
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_secs(30)).await;
+            tokio::time::resume();
+        }
+    }
+    relaying.abort();
+    assert_eq!(
+        connections.load(Ordering::SeqCst),
+        1,
+        "idle name publication recreated its relay transport"
+    );
 }

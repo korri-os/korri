@@ -428,7 +428,7 @@ impl crate::relay::RelayTransport for ReachReceiveTransports {
 }
 
 #[tokio::test]
-async fn reach_admits_matching_live_batch_before_slow_relay_expires_pending_offer() {
+async fn reach_read_pass_releases_next_offer_before_dead_relay_handshake_timeout() {
     use std::sync::atomic::{AtomicU64, Ordering};
     let devices = Devices::new();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -520,21 +520,24 @@ async fn reach_admits_matching_live_batch_before_slow_relay_expires_pending_offe
         retry: BTreeMap::new(),
         relaying: Arc::new(RwLock::new(BTreeMap::new())),
     };
+    let started = Instant::now();
     controller
         .receive_reach(&signal, &StunList(Vec::new()), unix_time())
         .await;
     let admitted = controller.relaying.read().unwrap().get(&peer).cloned();
-    controller.tasks.abort_all();
-    while controller.tasks.join_next().await.is_some() {}
-    accepting.abort();
-    endpoint.close().await;
     assert!(
         transport.live_completed.load(Ordering::SeqCst) < pending_expires,
         "live batch did not finish before original pending expiry"
     );
     assert!(
-        transport.unavailable_completed.load(Ordering::SeqCst) >= pending_expires,
-        "unavailable branch did not cross the original pending expiry"
+        started.elapsed() < Duration::from_secs(2),
+        "a dead handshake held the read pass: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(
+        transport.unavailable_completed.load(Ordering::SeqCst),
+        0,
+        "the dead handshake should still be pending when the pass ends"
     );
     assert!(
         answer.validate(unix_time()).is_ok(),
@@ -550,6 +553,28 @@ async fn reach_admits_matching_live_batch_before_slow_relay_expires_pending_offe
         controller.bindings.read().unwrap().get(&remote),
         Some(&peer)
     );
+    let next = devices
+        .da
+        .snapshot()
+        .unwrap()
+        .into_iter()
+        .find(|snapshot| snapshot.device_public_key == peer)
+        .unwrap();
+    controller
+        .offer_peer(next, &signal, &StunList(Vec::new()), unix_time())
+        .await;
+    assert!(
+        controller.pending.contains_key(&peer),
+        "the next offer was not published"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "the next offer waited for the dead relay"
+    );
+    controller.tasks.abort_all();
+    while controller.tasks.join_next().await.is_some() {}
+    accepting.abort();
+    endpoint.close().await;
 }
 
 struct PublicationFixture {
@@ -773,7 +798,6 @@ async fn reach_all_failed_relays_report_failure_within_the_existing_bound() {
 #[tokio::test]
 async fn non_reach_publication_still_waits_for_complete_per_relay_results() {
     let fixture = publication_fixture().await;
-    let started = Instant::now();
     let now = unix_time();
     let result = timeout(
         Duration::from_secs(9),
@@ -790,14 +814,20 @@ async fn non_reach_publication_still_waits_for_complete_per_relay_results() {
     .await
     .unwrap()
     .unwrap();
-    assert!(
-        started.elapsed() >= Duration::from_secs(7),
-        "non-reach publication returned first-ack results"
+    let PublishState::Partial {
+        accepted_relays,
+        failed_relays,
+    } = result
+    else {
+        panic!("non-reach publication did not wait for both relay outcomes");
+    };
+    assert_eq!(accepted_relays, ["wss://live.invalid"]);
+    assert_eq!(failed_relays.len(), 1);
+    assert_eq!(
+        failed_relays[0].relay,
+        fixture.signal.relay_list().as_slice()[1]
     );
-    assert!(
-        matches!(result, PublishState::Partial { accepted_relays, failed_relays }
-        if accepted_relays == ["wss://live.invalid"] && failed_relays.len() == 1)
-    );
+    assert_eq!(failed_relays[0].message, "relay operation timed out");
 }
 
 #[tokio::test]

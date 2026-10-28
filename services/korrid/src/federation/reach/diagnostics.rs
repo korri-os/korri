@@ -305,6 +305,10 @@ mod tests {
             ("relay DNS lookup failed", "dns"),
             ("relay backoff: http_429", "http_429"),
             ("relay HTTP 429 private", "unprefixed"),
+            ("relay protocol: relay HTTP 429", "unprefixed"),
+            ("relay protocol: relay DNS lookup failed", "unprefixed"),
+            ("relay protocol: timeout", "unprefixed"),
+            ("relay protocol: blocked", "unprefixed"),
             ("relay backoff: private", "unprefixed"),
         ] {
             let outcomes = publication_outcomes(&PublishState::Failed {

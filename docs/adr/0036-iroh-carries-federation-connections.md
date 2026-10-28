@@ -117,6 +117,28 @@ Publication diagnostics contain only fixed NIP-01 or transport reason classes.
 Read failures have cumulative per-relay counts, including reads suppressed by
 backoff; repeated identical reasons report their totals once per minute.
 
+Each transport retains at most eight relay connections. Reads and publications
+serialize on each connection, not across relays. The periodic person-name
+publisher also retains its transport across ticks instead of opening another
+connection every 30 seconds. Reach installs one subscription
+for kinds 30078 and 1059 addressed to its device key. Its `since` overlap is the
+existing seven-day maximum endpoint lifetime, which also covers NIP-59's
+backdated wrap timestamps. Later passes drain bounded batches without another
+REQ. Reconnects restore the subscription and retain already buffered events.
+Snapshot reads for membership, owner records, signer packets and saves keep
+their EOSE/CLOSE contract on the same connection. A transport-owned idle reader
+answers PING and buffers coordination events between operations. Dropping the
+transport or evicting an unused relay aborts that reader and closes its socket.
+
+A reach pass waits at most 200 ms after the first successful read for unfinished
+relays. Cancelling that tail closes only its in-flight socket and keeps its
+backoff, so the next pass cannot repeat a dead handshake immediately. Other
+aggregate read and publication contracts still collect every relay outcome.
+Healthy relay traffic opens one connection per transport at startup, and none
+per minute afterwards unless the connection closes or network settings change.
+Separate transport owners retain separate connections; they do not share a
+single-consumer coordination buffer.
+
 ## Local stream forwards
 
 While a nearby link is up, korrid uses its peer IP instead of the remembered
