@@ -30,6 +30,7 @@ pub struct DependencyReport {
 #[derive(Clone, Serialize)]
 pub struct Report {
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub publisher: Option<crate::plugin_admin::PluginPublisher>,
     pub package: PathBuf,
     pub provenance: Provenance,
