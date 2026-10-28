@@ -88,6 +88,11 @@ the VM when they need a fresh observation. Linux keeps its route and power
 readers. No observation is persisted. QUIC uses physical links; unknown power
 or metering denies relaying. No public traffic relay or STUN default is added.
 
+As ADR 0035 requires, a signed peer catalog read returns this device's local
+games, not another federation fan-out. The local portal still reads its peers'
+games. The peer projection reuses the local game producer and existing source,
+runner and identity fields; non-owner callers do not receive owner play stats.
+
 ## Device check
 
 `KorriRpcBindingDeviceTest` exercises the real WebView, JNI library and RPC

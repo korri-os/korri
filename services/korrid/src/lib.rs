@@ -2400,6 +2400,91 @@ fn caller_is_owner(
     }
 }
 
+fn brain_local_games(
+    brain: &BrainRuntime,
+    config_state: &config::snapshot::ConfigSnapshotState,
+) -> Result<LocalGames, RpcFailure> {
+    let registry = brain
+        .registry_source
+        .registry()
+        .map_err(|error| RpcFailure {
+            code: "PluginPolicyInvalid".into(),
+            message: error.to_string(),
+        })?;
+    let catalog = launcher::local_games_with_cover_assets(
+        &brain.local_storage_root,
+        Some(&brain.private_state_root),
+        config_state,
+        &registry,
+    );
+    let mut failures = Vec::new();
+    if let Some(diagnostic) = &config_state.diagnostic {
+        failures.push(snapshot_diagnostic_failure(diagnostic));
+    }
+    failures.extend(catalog.diagnostics.iter().map(route_diagnostic_failure));
+    Ok(LocalGames {
+        games: catalog.games,
+        failures: (!failures.is_empty()).then_some(failures),
+    })
+}
+
+/// Adapt the existing local game producer to the existing peer catalog treaty.
+fn brain_local_catalog(
+    brain: &BrainRuntime,
+    authorization: &authorization::AuthorizationContext,
+) -> Result<CatalogSnapshot, RpcFailure> {
+    let identity =
+        identity::DeviceIdentity::load_or_create(&brain.private_state_root).map_err(|_| {
+            RpcFailure {
+                code: "IdentityUnavailable".into(),
+                message: "This device's identity is unavailable".into(),
+            }
+        })?;
+    let key = identity.device_public_key().ok_or_else(|| RpcFailure {
+        code: "IdentityUnavailable".into(),
+        message: "This device's identity is unavailable".into(),
+    })?;
+    let config_state = brain.config_snapshot.reload();
+    let label = federation::coordinator::device_label(&config_state.snapshot, Some(key.into()))
+        .expect("device key supplies the existing label fallback");
+    let local = brain_local_games(brain, &config_state)?;
+    let source = GameSource {
+        device_public_key: Some(key.into()),
+        label: label.clone(),
+        is_local: true,
+    };
+    let snapshot = CatalogSnapshot {
+        games: local
+            .games
+            .into_iter()
+            .map(|game| Game {
+                id: game.id,
+                title: game.title,
+                host: Some(label.clone()),
+                identity: game.identity,
+                source: source.clone(),
+                supports_runner_selection: true,
+                play_stats: game.play_stats,
+            })
+            .collect(),
+        failures: local.failures.map(|failures| {
+            failures
+                .into_iter()
+                .map(|failure| CatalogHostFailure {
+                    host: label.clone(),
+                    code: failure.code,
+                    message: failure.message,
+                })
+                .collect()
+        }),
+    };
+    Ok(if brain_caller_is_owner(brain, authorization) {
+        snapshot
+    } else {
+        strip_play_stats(snapshot)
+    })
+}
+
 fn strip_play_stats(mut snapshot: CatalogSnapshot) -> CatalogSnapshot {
     for game in &mut snapshot.games {
         game.play_stats = None;
@@ -2914,6 +2999,15 @@ async fn dispatch(
         RpcRequest::PeerList(_) => RpcResponse::PeerList(peer_list(state)),
         RpcRequest::CatalogSnapshot(_) => {
             let outcome = match &state.mode {
+                // ADR 0035: peers ask for this device's games. Forwarding
+                // their read into the federation creates recursive fan-out.
+                ServerMode::Brain(brain)
+                    if matches!(authorization, authorization::AuthorizationContext::Peer(_)) =>
+                {
+                    brain_local_catalog(brain, authorization)
+                        .map(CatalogSnapshotOutcome::Ok)
+                        .unwrap_or_else(CatalogSnapshotOutcome::Err)
+                }
                 ServerMode::Brain(brain) => brain
                     .upstream
                     .catalog_snapshot()
@@ -3461,35 +3555,11 @@ async fn dispatch(
             RpcResponse::SourceStatus(outcome)
         }
         RpcRequest::LocalGamesList(_) => match &state.mode {
-            ServerMode::Brain(brain) => {
-                let config_state = brain.config_snapshot.reload();
-                let registry = match brain.registry_source.registry() {
-                    Ok(registry) => registry,
-                    Err(error) => {
-                        return Ok(RpcResponse::LocalGamesList(LocalGamesListOutcome::Err(
-                            RpcFailure {
-                                code: "PluginPolicyInvalid".into(),
-                                message: error.to_string(),
-                            },
-                        )));
-                    }
-                };
-                let catalog = launcher::local_games_with_cover_assets(
-                    &brain.local_storage_root,
-                    Some(&brain.private_state_root),
-                    &config_state,
-                    &registry,
-                );
-                let mut failures = Vec::new();
-                if let Some(diagnostic) = &config_state.diagnostic {
-                    failures.push(snapshot_diagnostic_failure(diagnostic));
-                }
-                failures.extend(catalog.diagnostics.iter().map(route_diagnostic_failure));
-                RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(LocalGames {
-                    games: catalog.games,
-                    failures: (!failures.is_empty()).then_some(failures),
-                }))
-            }
+            ServerMode::Brain(brain) => RpcResponse::LocalGamesList(
+                brain_local_games(brain, &brain.config_snapshot.reload())
+                    .map(LocalGamesListOutcome::Ok)
+                    .unwrap_or_else(LocalGamesListOutcome::Err),
+            ),
             ServerMode::Host(host) => RpcResponse::LocalGamesList(
                 host.local_games()
                     .await
@@ -5381,6 +5451,8 @@ pub mod upstreams;
 
 #[cfg(test)]
 mod embedded_tests;
+#[cfg(test)]
+mod peer_catalog_tests;
 
 #[cfg(test)]
 mod tests {
