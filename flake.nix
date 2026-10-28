@@ -11,7 +11,7 @@
     };
     crane.url = "github:ipetkov/crane";
     proseql = {
-      url = "github:simonwjackson/proseql/7ba57cf17c01b15ccdb030237a96b6376a349253";
+      url = "github:simonwjackson/proseql/112817e6ebc865675b54990f6b880ce4267092bf";
       flake = false;
     };
   };

@@ -68,17 +68,17 @@
     "proseql": {
       "flake": false,
       "locked": {
-        "lastModified": 1785529631,
-        "narHash": "sha256-lCNAutPfiqWtwjy5wSYLi+kDSRKdBRBGRAb+H2WUtAg=",
+        "lastModified": 1792953874,
+        "narHash": "sha256-SZp+1zfOsBC1RCTzQkVmZ54XbXFF3GJYGujRcf9xtjU=",
         "owner": "simonwjackson",
         "repo": "proseql",
-        "rev": "7ba57cf17c01b15ccdb030237a96b6376a349253",
+        "rev": "112817e6ebc865675b54990f6b880ce4267092bf",
         "type": "github"
       },
       "original": {
         "owner": "simonwjackson",
         "repo": "proseql",
-        "rev": "7ba57cf17c01b15ccdb030237a96b6376a349253",
+        "rev": "112817e6ebc865675b54990f6b880ce4267092bf",
         "type": "github"
       }
     },
