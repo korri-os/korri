@@ -373,17 +373,70 @@ impl Saved {
         }
     }
 }
-struct Profile;
+struct Profile(Arc<State>);
 #[zbus::interface(name = "org.freedesktop.NetworkManager.Settings.Connection")]
 impl Profile {
     fn get_settings(&self) -> Settings {
-        HashMap::from([(
-            "802-11-wireless".into(),
-            HashMap::from([(
-                "ssid".into(),
-                Value::from(b"Home".as_slice()).try_to_owned().unwrap(),
-            )]),
-        )])
+        HashMap::from([
+            (
+                "connection".into(),
+                HashMap::from([(
+                    "uuid".into(),
+                    Value::from("home-uuid").try_to_owned().unwrap(),
+                )]),
+            ),
+            (
+                "802-11-wireless".into(),
+                HashMap::from([(
+                    "ssid".into(),
+                    Value::from(b"Home".as_slice()).try_to_owned().unwrap(),
+                )]),
+            ),
+            (
+                "802-11-wireless-security".into(),
+                HashMap::from([
+                    (
+                        "key-mgmt".into(),
+                        Value::from("sae").try_to_owned().unwrap(),
+                    ),
+                    (
+                        "psk-flags".into(),
+                        Value::from(1u32).try_to_owned().unwrap(),
+                    ),
+                ]),
+            ),
+        ])
+    }
+    /// NetworkManager replaces the whole profile with `settings`. The fake
+    /// checks that the rest of the profile survives and the new key is
+    /// stored by NetworkManager itself (`psk-flags` 0), not by an agent.
+    fn update2(
+        &self,
+        settings: Settings,
+        flags: u32,
+        args: HashMap<String, OwnedValue>,
+    ) -> HashMap<String, OwnedValue> {
+        assert_eq!(flags, 0, "keep the profile's storage");
+        assert!(args.is_empty());
+        assert_eq!(
+            <&str>::try_from(&settings["connection"]["uuid"]).unwrap(),
+            "home-uuid"
+        );
+        let ssid: Vec<u8> = settings["802-11-wireless"]["ssid"]
+            .try_clone()
+            .unwrap()
+            .try_into()
+            .unwrap();
+        assert_eq!(ssid, b"Home");
+        let security = &settings["802-11-wireless-security"];
+        assert_eq!(<&str>::try_from(&security["key-mgmt"]).unwrap(), "sae");
+        assert_eq!(u32::try_from(&security["psk-flags"]).unwrap(), 0);
+        let mut password = String::try_from(security["psk"].try_clone().unwrap()).unwrap();
+        assert_eq!(password, "new-passphrase");
+        use zeroize::Zeroize;
+        password.zeroize();
+        self.0.calls.lock().unwrap().push("Update2");
+        HashMap::new()
     }
 }
 pub(in crate::network) async fn bus() -> (Connection, Connection, Arc<State>) {
@@ -436,7 +489,7 @@ pub(in crate::network) async fn bus() -> (Connection, Connection, Arc<State>) {
         .unwrap()
         .serve_at(SETTINGS, Saved(state.clone()))
         .unwrap()
-        .serve_at(PROFILE, Profile)
+        .serve_at(PROFILE, Profile(state.clone()))
         .unwrap()
         .serve_at(NEARBY_PROFILE, NearbyProfile(state.clone()))
         .unwrap()
@@ -488,6 +541,19 @@ async fn dbus_reads_primary_merges_utf8_ssids_marks_saved_and_uses_native_activa
         read(&client).await.unwrap().connection,
         NetworkConnection::Offline
     ));
+}
+#[tokio::test]
+async fn dbus_password_for_saved_network_replaces_the_stored_key_before_activation() {
+    // A saved profile with a wrong or missing key fails with NO_SECRETS.
+    // The surface then asks for a new password; it must reach the profile.
+    let (_server, client, state) = bus().await;
+    connect(&client, AP_PATH, false, Some("new-passphrase"))
+        .await
+        .unwrap();
+    assert_eq!(
+        *state.calls.lock().unwrap(),
+        ["Update2", "ActivateConnection"]
+    );
 }
 #[tokio::test]
 async fn dbus_failed_activation_reports_device_reason_and_pending_activation_is_bounded() {

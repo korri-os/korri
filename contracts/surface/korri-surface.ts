@@ -890,7 +890,9 @@ export interface SurfaceHost {
   /**
    * Join a listed network. `password` is required for a secured network that
    * is not `known`, and is passed straight to NetworkManager: Korri never
-   * stores, logs, or republishes it.
+   * stores, logs, or republishes it. For a `known` network, a `password`
+   * replaces the key NetworkManager saved for it; without one, the saved key
+   * is used.
    */
   connectWifi(networkId: string, password?: string): void
   /** Join a network that does not broadcast its name. With a password Korri

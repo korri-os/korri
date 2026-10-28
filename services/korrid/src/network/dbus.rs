@@ -270,6 +270,54 @@ fn activation_settings<'a>(
     }
     settings
 }
+/// Replace the key of a saved profile. A saved profile with a wrong or missing
+/// key fails with NO_SECRETS, because Korri runs no secret agent. The surface
+/// then asks for a new password, and only this call stores it.
+///
+/// `Update2` replaces the whole profile, so the call sends the profile's
+/// current settings back with the new key. `psk-flags` 0 makes
+/// NetworkManager store the key itself. Flags 0 keeps the profile's storage:
+/// a profile on disk stays on disk, one in `/run` stays there.
+async fn store_password(
+    bus: &Connection,
+    profile: &OwnedObjectPath,
+    password: &str,
+) -> zbus::Result<()> {
+    let connection = proxy(
+        bus,
+        profile.as_str(),
+        "org.freedesktop.NetworkManager.Settings.Connection",
+    )
+    .await?;
+    // GetSettings excludes secrets. Never call GetSecrets.
+    let current: Settings = connection.call("GetSettings", &()).await?;
+    let mut settings: HashMap<&str, HashMap<&str, &Value<'_>>> = current
+        .iter()
+        .map(|(name, values)| {
+            let values = values
+                .iter()
+                .map(|(key, value)| (key.as_str(), &**value))
+                .collect();
+            (name.as_str(), values)
+        })
+        .collect();
+    let (wpa_psk, psk, stored) = (
+        Value::from("wpa-psk"),
+        Value::from(password),
+        Value::from(0u32),
+    );
+    let security = settings.entry("802-11-wireless-security").or_default();
+    security.entry("key-mgmt").or_insert(&wpa_psk);
+    security.insert("psk", &psk);
+    security.insert("psk-flags", &stored);
+    connection
+        .call::<_, _, HashMap<String, OwnedValue>>(
+            "Update2",
+            &(&settings, 0u32, HashMap::<&str, Value<'_>>::new()),
+        )
+        .await?;
+    Ok(())
+}
 async fn connect(
     bus: &Connection,
     target: &str,
@@ -297,12 +345,15 @@ async fn connect(
             .ok_or_else(NetworkFailure::unavailable)?;
         (network.ssid, point)
     };
-    let activation: zbus::Result<OwnedObjectPath> = if !hidden && saved.contains_key(&ssid) {
+    let profile = saved.get(&ssid).filter(|_| !hidden);
+    if let (Some(profile), Some(password)) = (profile, password) {
+        store_password(&bus, profile, password)
+            .await
+            .map_err(|_| NetworkFailure::unavailable())?;
+    }
+    let activation: zbus::Result<OwnedObjectPath> = if let Some(profile) = profile {
         manager
-            .call(
-                "ActivateConnection",
-                &(saved.get(&ssid).expect("known profile"), &device, &point),
-            )
+            .call("ActivateConnection", &(profile, &device, &point))
             .await
     } else {
         let settings = activation_settings(&ssid, hidden, password);
