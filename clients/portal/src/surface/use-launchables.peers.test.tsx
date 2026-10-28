@@ -162,6 +162,47 @@ test("peer failure ends the wait with its catalog error and recovery refreshes a
   expect(harness.current().state).toMatchObject({ notice: null })
 })
 
+test("a peer change skipped during Preparing refreshes after deferred preparation fails", async () => {
+  const config = fixture(peers(PeerListState.Ready))
+  config.setGames([game])
+  const preparation = deferred<Awaited<ReturnType<KorridClient["sessionPrepare"]>>>()
+  let prepares = 0
+  const harness = await mount({ ...config.client,
+    async sessionStatus() { return { _tag: "Ok", payload: {} } },
+    sessionPrepare() { prepares += 1; return preparation.promise },
+  })
+  await waitFor(() => harness.current().state._tag === "Ready")
+  const ready = harness.current().state
+  if (ready._tag !== "Ready") throw new Error("not ready")
+  const entry = ready.entries.find(entry => entry.kind === "game")
+  if (!entry) throw new Error("missing game")
+  await act(async () => harness.current().confirmEntry(entry))
+  expect(harness.current().state._tag).toBe("Preparing")
+
+  const added = { ...game, id: "other-game", title: "Other peer's game", host: "Other peer", source: { label: "Other peer", isLocal: false } }
+  const connected = peers(PeerListState.Ready)
+  if (connected._tag !== "Ok") throw new Error("missing peers")
+  config.setPeers({ _tag: "Ok", payload: { peers: [
+    ...connected.payload.peers,
+    { devicePublicKey: "bb".repeat(32), label: "Other peer", state: PeerListState.Ready, updatedAt: 2 },
+  ] } })
+  config.setGames([game, added])
+  await waitFor(() => config.reads() > 1)
+  // The peer refresh must not replace or unlock the command in progress.
+  expect(harness.current().state).toMatchObject({ _tag: "Preparing", entries: [{ kind: "game", game }] })
+  await act(async () => harness.current().confirmEntry(entry))
+  expect(prepares).toBe(1)
+
+  await act(async () => preparation.resolve({ _tag: "Err", payload: { code: "UpstreamFailure", message: "preparation failed" } }))
+  await waitFor(() => {
+    const state = harness.current().state
+    return state._tag === "Ready" && state.entries.some(entry => entry.kind === "game" && entry.game.id === added.id)
+  })
+  expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { _tag: "Launch", message: expect.stringContaining("preparation failed") } })
+  expect(config.reads()).toBeGreaterThan(2)
+  expect(prepares).toBe(1)
+})
+
 test("unmount retires single-flight peer polling and late peer responses", async () => {
   const config = fixture()
   const pending = deferred<PeerListOutcome>()

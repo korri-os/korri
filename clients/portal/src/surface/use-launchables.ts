@@ -173,7 +173,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
   )
 
   const loadSeq = useRef(0)
-  const catalogPeersKey = useRef<string | undefined>(undefined)
+  const appliedCatalogPeersKey = useRef<string | undefined>(undefined)
   const actionSeq = useRef(0)
   const stopPollSeq = useRef(0)
   const startupRef = useRef<{
@@ -273,7 +273,6 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
     // finalize an empty catalog read that started while peers were Loading.
     const peers = observedPeers ?? await korrid.peerList()
     if (!mountedRef.current || seq !== loadSeq.current || action !== actionSeq.current) return
-    catalogPeersKey.current = peerCatalogKey(peers)
     // Plugin facts are read beside the rest and publish on their own.
     void plugins.refresh()
     const [games, localGames, session, health, settings, discovery, identity] =
@@ -342,8 +341,12 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
       actionSeq.current += 1
       stopPollSeq.current += 1
     }
+    // Only an applied catalog consumes its peer observation. A discarded read
+    // or status-only command observation leaves the changed key pending, so
+    // polling retries it after the command lock clears.
     publish(preserveAction && current._tag === "Ready" && current.notice !== null && current.notice._tag !== "Catalog" && loaded._tag === "Ready"
       ? { ...loaded, notice: current.notice } : loaded)
+    appliedCatalogPeersKey.current = peerCatalogKey(peers)
   }, [korrid, plugins, publish, sessionStatusWithTimeout])
   reloadRef.current = () => void load(true)
 
@@ -368,7 +371,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
       const peers = await korrid.peerList()
       if (disposed) return
       // A newer reload owns its readiness observation too.
-      if (seq === loadSeq.current && peerCatalogKey(peers) !== catalogPeersKey.current) await load(true, peers)
+      if (seq === loadSeq.current && peerCatalogKey(peers) !== appliedCatalogPeersKey.current) await load(true, peers)
       if (!disposed) timer = setTimeout(() => void poll(), PEER_POLL_INTERVAL_MS)
     }
     timer = setTimeout(() => void poll(), PEER_POLL_INTERVAL_MS)
