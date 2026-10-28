@@ -18,8 +18,9 @@ one is Korri's own rule (`services/korrid/plugin-host/README.md`).
   at runtime can stand in for it.
 - **Signed lane, the default.** The author tooling creates the publisher key
   and signs every build, so the author never handles a key. A device pins the
-  key the first time its owner trusts that publisher. Later releases must match
-  it.
+  key the first time its owner trusts that publisher. The device learns the
+  key from that first signed release, and the portal shows its fingerprint.
+  Later releases must match it.
 - **Unsigned lane.** A device owner can install an unsigned plugin after a
   disclosure that names the risk: Korri cannot confirm who made it, or that an
   update comes from the same person. The disclosure appears again for every
@@ -40,6 +41,8 @@ one is Korri's own rule (`services/korrid/plugin-host/README.md`).
   the owner's other devices.
 - A device owner can enter a repository address three ways: typed on the
   device, from a computer with `korri ... --device`, or passed from a phone.
+  A QR code or phone link carries the plain `https` address of the plugin
+  repository.
 
 ## Consequences
 
@@ -54,4 +57,4 @@ add through `--device`; trusting a publisher remotely is a further widening
 that `clients/cli/README.md` does not allow today.
 
 The storage and wire format of a pinned key, and how the disclosure is worded,
-are not decided.
+are not decided. ADR 0049 records how requirements across publishers work.

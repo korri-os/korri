@@ -14,8 +14,11 @@ for authors who know it.
 
 - Nix stays the only tool that builds and packages a plugin. Korri does not
   reimplement Nix's archive, store path or signing rules in its own code.
-- Korri's author tooling and templates run Nix for the author. A new author
-  can publish a plugin without installing or learning Nix.
+- Korri's author tooling runs Nix for the author. A new author can get a
+  plugin onto their own device without installing, configuring or learning
+  Nix.
+- Getting started needs no CI and no account on a hosting service. A CI
+  template is optional, for authors who want it.
 - An author who knows Nix keeps full control: their own `plugin.nix`, their
   own flake, and every builder input.
 
