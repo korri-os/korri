@@ -838,6 +838,7 @@ fn settings_saves_reads_use_only_existing_status_and_history() {
 
 fn identity_status() -> IdentityStatus {
     IdentityStatus {
+        can_switch_identity: true,
         identity: identity::IdentityState::Owned {
             device_public_key: "device-key".into(),
             owner_public_key: "person-key".into(),

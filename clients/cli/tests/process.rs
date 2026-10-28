@@ -110,6 +110,7 @@ async fn respond(state: RpcState, device: Option<String>, request: RpcRequest) -
         }
         RpcRequest::IdentityStatus(_) => {
             RpcResponse::IdentityStatus(IdentityStatusOutcome::Ok(IdentityStatus {
+                can_switch_identity: true,
                 identity: IdentityState::Owned {
                     device_public_key: "11".repeat(32),
                     owner_public_key: "22".repeat(32),
