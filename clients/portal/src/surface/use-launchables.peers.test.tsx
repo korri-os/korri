@@ -72,6 +72,37 @@ test("an empty cold-start catalog stays reading until peers connect, then shows 
   expect(config.reads()).toBeGreaterThan(1)
 })
 
+test("a failed catalog with a stable peer roster retries until games arrive", async () => {
+  const config = fixture(peers(PeerListState.Ready))
+  let attempts = 0
+  let failing = true
+  const harness = await mount({ ...config.client, async catalogSnapshot() {
+    attempts += 1
+    return failing ? { _tag: "Err", payload: { code: "BrainUnreachable", message: "signal timed out" } } : config.client.catalogSnapshot()
+  } })
+  await waitFor(() => harness.current().state._tag === "Ready")
+  expect(harness.current().state).toMatchObject({ notice: { _tag: "Catalog" } })
+  await waitFor(() => attempts >= 2)
+  config.setGames([game])
+  failing = false
+  await waitFor(() => surfaceModelFrom(harness.current().state).catalog._tag === "Ready")
+  expect(harness.current().state).toMatchObject({ notice: null })
+})
+
+test("a failed catalog retry stops after an authoritative empty read", async () => {
+  const config = fixture(peers(PeerListState.Ready))
+  let attempts = 0
+  const harness = await mount({ ...config.client, async catalogSnapshot() {
+    attempts += 1
+    return attempts === 1 ? { _tag: "Err", payload: { code: "BrainUnreachable", message: "signal timed out" } } : config.client.catalogSnapshot()
+  } })
+  await waitFor(() => attempts >= 2)
+  await waitFor(() => surfaceModelFrom(harness.current().state).catalog._tag === "Empty")
+  const observations = config.peerReads()
+  await waitFor(() => config.peerReads() > observations)
+  expect(attempts).toBe(2)
+})
+
 test("a genuinely empty library settles when the loading peers become ready", async () => {
   const config = fixture()
   const harness = await mount(config.client)
