@@ -684,8 +684,8 @@ impl NativeClient {
             if remaining.is_zero() {
                 break;
             }
-            // Ordinary calls get the remaining aggregate budget, not a
-            // fraction per advertised route. Admin calls use the host's bounds.
+            // Candidates share one direct-request budget, including the TCP
+            // probes. Catalogs reserve reach time; admin calls use host bounds.
             let attempt = self
                 .attempt_with_wait(&url, request.clone(), None, answered, remaining)
                 .await;
@@ -714,15 +714,25 @@ impl NativeClient {
         if may_try_reach {
             if let (Some(directory), Some(key)) = (&self.directory, &self.expected_peer_public_key)
             {
-                // Route discovery and the signed request share the candidate
-                // deadline. Reach may wait 20 seconds on its own; giving it a
-                // fresh budget here held every catalog behind one offline peer.
-                if let Ok(Ok(connection)) =
-                    tokio::time::timeout_at(deadline, directory.reach_connection(key)).await
-                {
+                // Catalog fan-out has a short total budget. Other operations
+                // retain reach's bounded discovery wait and then their request
+                // budget: member-relay setup can take longer than five seconds.
+                let connection = if catalog_read {
+                    tokio::time::timeout_at(deadline, directory.reach_connection(key))
+                        .await
+                        .ok()
+                        .and_then(Result::ok)
+                } else {
+                    directory.reach_connection(key).await.ok()
+                };
+                if let Some(connection) = connection {
                     self.ensure_not_revoked()?;
-                    let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-                    if remaining.is_zero() {
+                    let request_timeout = if catalog_read {
+                        deadline.saturating_duration_since(tokio::time::Instant::now())
+                    } else {
+                        self.operation_timeout
+                    };
+                    if request_timeout.is_zero() {
                         return Err(UpstreamError::Unreachable(
                             "peer operation timed out".into(),
                         ));
@@ -733,7 +743,7 @@ impl NativeClient {
                             request.clone(),
                             Some(&connection),
                             answered,
-                            remaining,
+                            request_timeout,
                         )
                         .await
                     {
