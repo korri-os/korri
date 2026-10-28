@@ -81,8 +81,47 @@ async fn call(app: &Router, body: Value) -> (StatusCode, Value) {
     )
 }
 
+fn publisher() -> PluginPublisher {
+    PluginPublisher {
+        namespace: "@example".into(),
+        state: PluginPublisherState::Trusted,
+        fingerprint: Some("test key".into()),
+        previous_fingerprint: None,
+        disclosure: None,
+        public_key: None,
+    }
+}
+
 fn answer(request: PluginAdminRequest) -> PluginAdminResponse {
     match request {
+        PluginAdminRequest::Publishers(_) => PluginAdminResponse::Publishers(PluginPublishers {
+            entries: vec![PluginPublisherEntry {
+                namespace: "@example".into(),
+                fingerprint: "test key".into(),
+                state: PluginPublisherState::Trusted,
+                installed: vec!["@example:clock".into()],
+            }],
+        }),
+        PluginAdminRequest::TrustPublisher(_)
+        | PluginAdminRequest::RevokePublisher(_)
+        | PluginAdminRequest::InstallArchive(_) => {
+            PluginAdminResponse::Applied(PluginChangeApplied {})
+        }
+        PluginAdminRequest::InspectArchive(_) => {
+            PluginAdminResponse::Inspection(PluginInspection {
+                publisher: publisher(),
+                id: "@example:clock".into(),
+                title: None,
+                approval: "digest".into(),
+                warning: String::new(),
+                ports: PluginPorts {
+                    allowed_tcp_ports: vec![],
+                    allowed_udp_ports: vec![],
+                },
+                native_units: vec![],
+                brings: vec![],
+            })
+        }
         PluginAdminRequest::Repositories(_) => {
             PluginAdminResponse::Repositories(PluginRepositories {
                 official: None,
@@ -110,7 +149,7 @@ fn answer(request: PluginAdminRequest) -> PluginAdminResponse {
                 description: None,
                 release_version: "v1".into(),
                 installed: Some(PluginInstalledState::Disabled),
-                publisher_trusted: true,
+                publisher: publisher(),
             }],
         }),
         PluginAdminRequest::SetEnabled(request) if request.enabled => {
@@ -178,7 +217,7 @@ async fn plugin_requests_reach_the_host_socket_and_return_its_answers() {
             "title":"Clock",
             "releaseVersion":"v1",
             "installed":"Disabled",
-            "publisherTrusted":true
+            "publisher":{"namespace":"@example","state":"Trusted","fingerprint":"test key"}
         })
     );
 

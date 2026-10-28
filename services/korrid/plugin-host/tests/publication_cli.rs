@@ -1,150 +1,126 @@
-use korri_plugin_host::{
-    catalog::{Catalog, CatalogRecord},
-    publisher,
-};
-use sha2::{Digest, Sha256};
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Output},
-};
+use korri_plugin_host::{archive, catalog::Catalog, package};
+use std::{fs, path::Path, process::Command};
 
-fn cli(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_korri-publish"))
-        .args(args)
-        .env_remove("KORRI_PUBLISH_NIX")
-        .output()
-        .unwrap()
-}
-
-fn record(root: &Path, platform: &str) -> CatalogRecord {
-    let name = publisher::archive_name("@korri:tailscale", "plugin-2", platform).unwrap();
-    let bytes = format!("asset for {platform}");
-    fs::write(root.join(&name), &bytes).unwrap();
-    CatalogRecord {
-        plugin_id: "@korri:tailscale".into(),
-        title: None,
-        description: None,
-        release_version: "plugin-2".into(),
-        platform: platform.into(),
-        store_path: "/nix/store/00000000000000000000000000000000-tailscale".into(),
-        archive_url: format!("https://example.com/download/{name}"),
-        archive_sha256: hex::encode(Sha256::digest(bytes)),
+#[test]
+fn publication_requires_explicit_signing_and_has_no_obsolete_forms() {
+    for args in [
+        vec!["catalog"],
+        vec!["verify-release"],
+        vec!["archive-name"],
+        vec![
+            "/nix/store/00000000000000000000000000000000-plugin",
+            "v1",
+            "any",
+            "https://example.invalid/",
+            "/tmp",
+        ],
+        vec!["repository", "--release", "v1"],
+        vec!["archive"],
+    ] {
+        let result = Command::new(env!("CARGO_BIN_EXE_korri-publish"))
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        assert!(String::from_utf8(result.stderr).unwrap().contains("usage:"));
     }
 }
 
 #[test]
-fn metadata_cli_merges_validates_and_checks_every_uploaded_asset_without_nix() {
-    let root = tempfile::tempdir().unwrap();
-    let records = [
-        record(root.path(), "x86_64-linux"),
-        record(root.path(), "aarch64-linux"),
-    ];
-    let paths: Vec<_> = records
-        .iter()
-        .enumerate()
-        .map(|(i, r)| {
-            let path = root.path().join(format!("{i}.json"));
-            fs::write(&path, serde_json::to_vec(r).unwrap()).unwrap();
-            path
-        })
-        .collect();
-    let catalog = cli(&[
-        "catalog",
-        paths[0].to_str().unwrap(),
-        paths[1].to_str().unwrap(),
-    ]);
-    assert!(catalog.status.success(), "{:?}", catalog.stderr);
-    assert_eq!(
-        Catalog::from_json(&catalog.stdout).unwrap().records.len(),
-        2
-    );
-    let catalog_path = root.path().join("catalog.json");
-    fs::write(&catalog_path, catalog.stdout).unwrap();
-    let args = [
-        "verify-release",
-        catalog_path.to_str().unwrap(),
-        root.path().to_str().unwrap(),
-        "https://example.com/download/",
-        "@korri:tailscale",
-        "plugin-2",
-        "x86_64-linux",
-        "aarch64-linux",
-    ];
-    let checked = cli(&args);
-    assert!(checked.status.success(), "{:?}", checked.stderr);
-    assert_eq!(
-        String::from_utf8(checked.stdout).unwrap().lines().count(),
-        2
-    );
-
-    // A missing architecture and duplicate records both fail before upload.
-    assert!(!cli(&args[..args.len() - 1]).status.success());
-    assert!(!cli(&[
-        "catalog",
-        paths[0].to_str().unwrap(),
-        paths[0].to_str().unwrap()
-    ])
-    .status
-    .success());
-    assert!(!cli(&["catalog"]).status.success());
-    fs::write(&paths[0], b"{\"records\": []}").unwrap();
-    assert!(!cli(&["catalog", paths[0].to_str().unwrap()])
-        .status
-        .success());
-
-    let asset = root
-        .path()
-        .join(publisher::archive_name("@korri:tailscale", "plugin-2", "aarch64-linux").unwrap());
-    fs::write(&asset, b"changed").unwrap();
-    assert!(!cli(&args).status.success());
-    fs::remove_file(&asset).unwrap();
-    assert!(!cli(&args).status.success());
-}
-
-#[test]
-fn publication_rejects_wrong_urls_symlinks_oversized_assets_and_release_selection() {
-    let root = tempfile::tempdir().unwrap();
-    let mut r = record(root.path(), "x86_64-linux");
-    let path = root.path().join("catalog.json");
-    let check = |record: &CatalogRecord, release: &str| {
-        fs::write(
-            &path,
-            Catalog {
-                records: vec![record.clone()],
-            }
-            .to_json()
-            .unwrap(),
-        )
-        .unwrap();
-        publisher::release_assets(
-            &path,
-            root.path(),
-            "https://example.com/download/",
-            "@korri:tailscale",
-            release,
-            &["x86_64-linux".into()],
-        )
+#[ignore = "requires writable build-machine Nix; no target device"]
+fn repository_and_archive_commands_sign_and_write_complete_outputs() {
+    let nix = std::env::var("KORRI_PUBLISH_NIX").expect("immutable Nix");
+    let run = |args: &[&str]| {
+        let result = Command::new(&nix)
+            .args(["--extra-experimental-features", "nix-command"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        String::from_utf8(result.stdout).unwrap().trim().to_owned()
     };
-    assert!(check(&r, "wrong-release").is_err());
-    r.archive_url = "https://example.com/download/wrong-name.tar".into();
-    assert!(check(&r, "plugin-2").is_err());
-    r = record(root.path(), "x86_64-linux");
-    let asset = root
-        .path()
-        .join(publisher::archive_name(&r.plugin_id, &r.release_version, &r.platform).unwrap());
-    fs::remove_file(&asset).unwrap();
-    std::os::unix::fs::symlink(&path, &asset).unwrap();
-    assert!(check(&r, "plugin-2").is_err());
-    fs::remove_file(&asset).unwrap();
-    fs::File::create(&asset)
-        .unwrap()
-        .set_len(2 * 1024 * 1024 * 1024)
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("plugin");
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("plugin.ts"), "export const name = 'hello';").unwrap();
+    fs::write(
+        source.join("manifest.json"),
+        r#"{"publisher":{"namespace":"@cli-test"},"entry":"plugin.ts","sources":["plugin.ts"]}"#,
+    )
+    .unwrap();
+    let path = run(&["store", "add-path", source.to_str().unwrap()]);
+    let key = root.path().join("secret");
+    fs::write(
+        &key,
+        run(&[
+            "key",
+            "generate-secret",
+            "--key-name",
+            "cli-publication-test",
+        ]),
+    )
+    .unwrap();
+    let repository = root.path().join("repository");
+    let result = Command::new(env!("CARGO_BIN_EXE_korri-publish"))
+        .env("KORRI_PUBLISH_NIX", &nix)
+        .args([
+            "repository",
+            "--secret-key",
+            key.to_str().unwrap(),
+            "--release",
+            "v1",
+            "--base-url",
+            "https://example.invalid/releases/",
+            repository.to_str().unwrap(),
+            &path,
+        ])
+        .output()
         .unwrap();
-    assert!(check(&r, "plugin-2").is_err());
-    assert!(publisher::archive_name("@korri:tailscale", "../escape", "x86_64-linux").is_err());
-    assert_ne!(
-        publisher::archive_name("@a-b:c", "1", "x86_64-linux").unwrap(),
-        publisher::archive_name("@a:b-c", "1", "x86_64-linux").unwrap()
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
     );
+    let catalog = Catalog::from_json(&fs::read(repository.join("catalog.json")).unwrap()).unwrap();
+    let record = &catalog.records[0];
+    assert_eq!(catalog.latest["@cli-test:hello"], "v1");
+    assert_eq!(record.platform, "any");
+    let archive_path = repository.join(record.archive_url.rsplit('/').next().unwrap());
+    let cache = root.path().join("cache");
+    fs::create_dir(&cache).unwrap();
+    archive::extract(&archive_path, &cache).unwrap();
+    assert!(package::archive_signature(
+        Path::new(&nix),
+        Path::new(&record.store_path),
+        &archive::path_to_file_uri(&cache).unwrap(),
+        record.public_key.as_deref()
+    )
+    .unwrap());
+    let sideload = root.path().join("sideload");
+    let result = Command::new(env!("CARGO_BIN_EXE_korri-publish"))
+        .env("KORRI_PUBLISH_NIX", &nix)
+        .args([
+            "archive",
+            "--secret-key",
+            key.to_str().unwrap(),
+            sideload.to_str().unwrap(),
+            &path,
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout.iter().filter(|b| **b == b'\n').count(), 1);
+    let output: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(output["platform"], "any");
+    assert_eq!(output["storePath"], record.store_path);
+    assert!(Path::new(output["archive"].as_str().unwrap()).is_file());
+    assert!(!sideload.join("catalog.json").exists());
 }

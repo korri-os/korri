@@ -5,6 +5,7 @@ use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::Path};
 
 fn report(source: &str) -> package::Report {
     package::Report {
+        publisher: None,
         id: "@example:not-ssh".into(),
         package: "/nix/store/00000000000000000000000000000000-service".into(),
         provenance: Provenance::RawCache {

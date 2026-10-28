@@ -9,9 +9,8 @@ use crate::{
     package, process,
 };
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -19,6 +18,7 @@ use std::{
 
 pub struct PublishArgs {
     pub nix: PathBuf,
+    pub secret_key: PathBuf,
     pub input_store_path: PathBuf,
     pub release_version: String,
     pub platform: String,
@@ -45,23 +45,6 @@ pub fn archive_name(id: &str, release: &str, platform: &str) -> Result<String, S
     ))
 }
 
-pub fn catalog_from_records(paths: &[PathBuf]) -> Result<Vec<u8>, String> {
-    if paths.is_empty() || paths.len() > 10_000 {
-        return Err("supply 1–10,000 catalog record files".into());
-    }
-    let records = paths
-        .iter()
-        .map(|path| {
-            let bytes = read_metadata(path)?;
-            serde_json::from_slice::<CatalogRecord>(&bytes).map_err(|e| e.to_string())
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let bytes = Catalog { records }.to_json_pretty()?;
-    // Enforce the reader's serialized-size limit as well as record validation.
-    Catalog::from_json(&bytes)?;
-    Ok(bytes)
-}
-
 fn read_metadata(path: &Path) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
     fs::File::open(path)
@@ -75,110 +58,98 @@ fn read_metadata(path: &Path) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-/// Validate a complete single-plugin release before any external write. The
-/// expected platforms are the workflow's explicit build matrix, not metadata.
-/// Return upload names only after every asset passes the reader's contract.
-pub fn release_assets(
-    catalog_path: &Path,
-    asset_dir: &Path,
-    base_url: &str,
-    id: &str,
-    release: &str,
-    platforms: &[String],
-) -> Result<Vec<String>, String> {
-    validate_archive_url(base_url)?;
-    let base = url::Url::parse(base_url).map_err(|e| e.to_string())?;
-    if !base_url.ends_with('/') || base.query().is_some() {
-        return Err("asset base URL must end in / and have no query".into());
-    }
-    let catalog = Catalog::from_json(&read_metadata(catalog_path)?)?;
-    let expected: HashSet<_> = platforms.iter().collect();
-    if expected.is_empty()
-        || expected.len() != platforms.len()
-        || catalog.records.len() != expected.len()
-    {
-        return Err("release must contain exactly one record per expected platform".into());
-    }
-    let mut assets = Vec::new();
-    for platform in platforms {
-        let record = catalog.record(id, release, platform)?;
-        let name = archive_name(id, release, platform)?;
-        if record.archive_url != format!("{base_url}{name}") {
-            return Err(format!("archive URL does not match uploaded asset {name}"));
-        }
-        let path = asset_dir.join(&name);
-        let metadata = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
-        if !metadata.is_file() || metadata.len() == 0 {
-            return Err(format!("asset {name} must be a nonempty regular file"));
-        }
-        let mut file = fs::File::open(&path).map_err(|e| e.to_string())?;
-        let mut hash = Sha256::new();
-        let mut buffer = [0u8; 64 * 1024];
-        loop {
-            let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
-            if count == 0 {
-                break;
-            }
-            hash.update(&buffer[..count]);
-        }
-        if hex::encode(hash.finalize()) != record.archive_sha256 {
-            return Err(format!("archive hash mismatch for {name}"));
-        }
-        assets.push(name);
-    }
-    Ok(assets)
+pub struct ArchiveResult {
+    pub ca_store_path: String,
+    pub archive_path: PathBuf,
+    pub archive_sha256: String,
+    pub platform: String,
+    pub declaration: crate::declaration::Declaration,
+    pub public_key: String,
 }
 
 pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
+    validate_archive_url(&args.archive_url)?;
+    let result = publish_archive(args)?;
+    let record = CatalogRecord {
+        plugin_id: result.declaration.id(),
+        title: result.declaration.title,
+        description: result.declaration.description,
+        release_version: args.release_version.clone(),
+        platform: result.platform.clone(),
+        store_path: result.ca_store_path.clone(),
+        archive_url: format!(
+            "{}{}",
+            args.archive_url,
+            result
+                .archive_path
+                .file_name()
+                .ok_or("invalid archive filename")?
+                .to_str()
+                .ok_or("invalid archive name")?
+        ),
+        archive_sha256: result.archive_sha256.clone(),
+        public_key: Some(result.public_key),
+    };
+    record.validate()?;
+    Ok(PublishResult {
+        ca_store_path: result.ca_store_path,
+        archive_path: result.archive_path,
+        archive_sha256: result.archive_sha256,
+        record,
+    })
+}
+
+pub fn publish_archive(args: &PublishArgs) -> Result<ArchiveResult, String> {
     package::validate_store_path(&args.input_store_path)?;
     validate_release_version(&args.release_version)?;
     validate_platform(&args.platform)?;
-    validate_archive_url(&args.archive_url)?;
     let nix = package::tools(&args.nix)?;
     let output_dir =
         fs::canonicalize(&args.output_dir).map_err(|e| format!("invalid output directory: {e}"))?;
     if !output_dir.is_dir() {
         return Err("output must be an existing directory".into());
     }
+    let secret = read_metadata(&args.secret_key)?;
+    let secret = std::str::from_utf8(&secret)
+        .map_err(|_| "invalid secret key")?
+        .trim();
+    let public_key = public_half(secret)?;
     let declaration = package::load_declaration(&args.input_store_path)?;
     // Reuse the host's collision-free identity name, not a lossy punctuation
     // replacement that conflates different plugin namespaces.
+    let ca_store_path = content_addressed(&nix, &args.input_store_path)?;
+    let platform = if package::architecture_independent(Path::new(&ca_store_path))?
+        && package::no_references(&nix, Path::new(&ca_store_path))?
+    {
+        "any"
+    } else {
+        if args.platform == "any" {
+            return Err("any-architecture package has references or manifest paths".into());
+        }
+        &args.platform
+    };
     let archive_path = output_dir.join(archive_name(
         &declaration.id(),
         &args.release_version,
-        &args.platform,
+        platform,
     )?);
     if fs::symlink_metadata(&archive_path).is_ok() {
         return Err("publication output already exists".into());
     }
-    let input = args
-        .input_store_path
-        .to_str()
-        .ok_or("non-UTF-8 store path")?;
-    let json = process::checked_uncapped(
+    process::checked_uncapped(
         &nix,
         [
             "--extra-experimental-features",
             "nix-command",
             "store",
-            "make-content-addressed",
-            "--json",
-            input,
+            "sign",
+            "--recursive",
+            "--key-file",
+            args.secret_key.to_str().ok_or("invalid secret key path")?,
+            &ca_store_path,
         ],
         None,
     )?;
-    #[derive(Deserialize)]
-    struct Rewrites {
-        rewrites: HashMap<String, String>,
-    }
-    let rewrites: Rewrites =
-        serde_json::from_str(&json).map_err(|e| format!("invalid Nix rewrite response: {e}"))?;
-    let ca_store_path = rewrites
-        .rewrites
-        .get(input)
-        .ok_or("Nix did not return the converted package")?
-        .clone();
-    package::validate_store_path(Path::new(&ca_store_path))?;
     // A private export is disposable on every failure, so a retry cannot pick
     // up half an earlier cache or leave a persistent unpacked copy behind.
     let export = tempfile::tempdir_in(&output_dir).map_err(|e| e.to_string())?;
@@ -203,21 +174,151 @@ pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
         return Err("conversion changed plugin identity".into());
     }
     let archive_sha256 = archive::pack(&cache_dir, &archive_path)?;
-    let record = CatalogRecord {
-        plugin_id: converted.id(),
-        title: converted.title,
-        description: converted.description,
-        release_version: args.release_version.clone(),
-        platform: args.platform.clone(),
-        store_path: ca_store_path.clone(),
-        archive_url: args.archive_url.clone(),
-        archive_sha256: archive_sha256.clone(),
-    };
-    record.validate()?;
-    Ok(PublishResult {
+    Ok(ArchiveResult {
         ca_store_path,
         archive_path,
         archive_sha256,
-        record,
+        platform: platform.into(),
+        declaration: converted,
+        public_key,
     })
+}
+
+fn content_addressed(nix: &Path, package: &Path) -> Result<String, String> {
+    package::validate_store_path(package)?;
+    let input = package.to_str().ok_or("non-UTF-8 store path")?;
+    let json = process::checked_uncapped(
+        nix,
+        [
+            "--extra-experimental-features",
+            "nix-command",
+            "store",
+            "make-content-addressed",
+            "--json",
+            input,
+        ],
+        None,
+    )?;
+    #[derive(Deserialize)]
+    struct Rewrites {
+        rewrites: HashMap<String, String>,
+    }
+    let rewrites: Rewrites =
+        serde_json::from_str(&json).map_err(|e| format!("invalid Nix rewrite response: {e}"))?;
+    let ca_store_path = rewrites
+        .rewrites
+        .get(input)
+        .ok_or("Nix did not return the converted package")?
+        .clone();
+    package::validate_store_path(Path::new(&ca_store_path))?;
+    Ok(ca_store_path)
+}
+
+/// Nix secret keys contain an Ed25519 seed followed by its public half.
+pub fn public_half(secret: &str) -> Result<String, String> {
+    use base64::Engine;
+    let (label, encoded) = secret.split_once(':').ok_or("invalid Nix secret key")?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|_| "invalid Nix secret key encoding")?;
+    if bytes.len() != 64 {
+        return Err("Nix secret key must contain 64 bytes".into());
+    }
+    ring::signature::Ed25519KeyPair::from_seed_and_public_key(&bytes[..32], &bytes[32..])
+        .map_err(|_| "Nix secret key public half does not match its seed")?;
+    let key = format!(
+        "{label}:{}",
+        base64::engine::general_purpose::STANDARD.encode(&bytes[32..])
+    );
+    package::public_key_bytes(&key)?;
+    Ok(key)
+}
+
+pub fn detected_platform(nix: &Path, package: &Path) -> Result<String, String> {
+    if package::architecture_independent(package)? && package::no_references(nix, package)? {
+        return Ok("any".into());
+    }
+    let derivation = process::checked_uncapped(
+        nix,
+        [
+            "--extra-experimental-features",
+            "nix-command",
+            "derivation",
+            "show",
+            package.to_str().ok_or("invalid path")?,
+        ],
+        None,
+    )?;
+    let values: BTreeMap<String, serde_json::Value> =
+        serde_json::from_str(&derivation).map_err(|e| e.to_string())?;
+    let systems: HashSet<_> = values
+        .values()
+        .filter_map(|v| v.get("system").and_then(|s| s.as_str()))
+        .collect();
+    if systems.len() != 1 {
+        return Err("cannot detect the native package platform from its derivation".into());
+    }
+    let system = systems.into_iter().next().unwrap();
+    validate_platform(system)?;
+    Ok(system.into())
+}
+
+pub fn publish_repository(
+    nix: &Path,
+    secret_key: &Path,
+    release: &str,
+    base_url: &str,
+    output: &Path,
+    packages: &[PathBuf],
+) -> Result<Catalog, String> {
+    validate_archive_url(base_url)?;
+    let base = url::Url::parse(base_url).map_err(|e| e.to_string())?;
+    if !base_url.ends_with('/') || base.query().is_some() {
+        return Err("base URL must end in / and have no query".into());
+    }
+    if packages.is_empty() || packages.len() > 10_000 {
+        return Err("supply 1–10,000 plugin outputs".into());
+    }
+    fs::create_dir_all(output).map_err(|e| e.to_string())?;
+    let mut records = Vec::new();
+    let mut seen_inputs = HashSet::new();
+    for package in packages {
+        if !seen_inputs.insert(package.clone()) {
+            continue;
+        }
+        let platform = detected_platform(nix, package)?;
+        let converted = content_addressed(nix, package)?;
+        if records
+            .iter()
+            .any(|r: &CatalogRecord| r.store_path == converted)
+        {
+            continue;
+        }
+        let result = publish(&PublishArgs {
+            nix: nix.into(),
+            secret_key: secret_key.into(),
+            input_store_path: converted.into(),
+            release_version: release.into(),
+            platform,
+            archive_url: base_url.into(),
+            output_dir: output.into(),
+        })?;
+        if records.iter().any(|r: &CatalogRecord| {
+            r.plugin_id == result.record.plugin_id && r.platform == result.record.platform
+        }) {
+            return Err("duplicate release output".into());
+        }
+        records.push(result.record);
+    }
+    let latest = records
+        .iter()
+        .map(|r| (r.plugin_id.clone(), release.to_owned()))
+        .collect();
+    let catalog = Catalog { records, latest };
+    crate::storage::write_atomic_mode(
+        &output.join("catalog.json"),
+        &catalog.to_json_pretty()?,
+        0o644,
+    )?;
+    Ok(catalog)
 }

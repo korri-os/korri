@@ -60,6 +60,10 @@ pub struct Host {
     /// repeat rehashes inside one install or enable without trusting
     /// anything an earlier command checked.
     rehashed: RefCell<BTreeSet<PathBuf>>,
+    /// Only this locked inspection's exact, independently verified candidates.
+    candidates: RefCell<BTreeMap<PathBuf, (Provenance, crate::plugin_admin::PluginPublisher)>>,
+    resolved: RefCell<BTreeMap<PathBuf, Vec<PathBuf>>>,
+    candidate_roots: RefCell<Vec<tempfile::TempDir>>,
     #[cfg(test)]
     test_runtime: Option<TestRuntime>,
 }
@@ -150,6 +154,9 @@ impl Host {
             lifecycle,
             owner_uid: 0,
             rehashed: RefCell::default(),
+            candidates: RefCell::default(),
+            resolved: RefCell::default(),
+            candidate_roots: RefCell::default(),
             #[cfg(test)]
             test_runtime: None,
         })
@@ -187,6 +194,9 @@ impl Host {
             lifecycle,
             owner_uid: unsafe { libc::geteuid() },
             rehashed: RefCell::default(),
+            candidates: RefCell::default(),
+            resolved: RefCell::default(),
+            candidate_roots: RefCell::default(),
             test_runtime: Some(runtime),
         })
     }
@@ -197,6 +207,19 @@ impl Host {
         let download = self.paths.roots.join("download");
         storage::root_link(&download, package)?;
         package::import(&self.nix, source, package)?;
+        let mut releases = false;
+        crate::dependencies::dependency_order([package.to_path_buf()], |path| {
+            releases |= !package::manifest_releases(path)?.is_empty();
+            package::manifest_requires(path)
+        })?;
+        if releases {
+            self.state.cleanup_staging()?;
+            self.pin_candidate(package)?;
+            let curl = std::env::var_os("KORRI_PLUGIN_CURL")
+                .ok_or("release requirements need the packaged KORRI_PLUGIN_CURL")?;
+            let config = Configuration::from_host(Path::new(&curl))?;
+            self.resolve_candidates(&config, package)?;
+        }
         self.load(
             package,
             Provenance::RawCache {
@@ -300,7 +323,7 @@ impl Host {
         let receipt = self.status(id)?.ok_or("plugin is not installed")?;
         match receipt.provenance {
             Provenance::Repository { source_url, .. } => SourceUrl::parse(&source_url),
-            Provenance::RawCache { .. } => Err("plugin was installed from a raw cache; inspect and switch to a repository explicitly".into()),
+            Provenance::RawCache { .. } | Provenance::Sideload { .. } => Err("plugin was installed from a raw cache; inspect and switch to a repository explicitly".into()),
         }
     }
 
@@ -329,9 +352,23 @@ impl Host {
                     if source_url == source.as_str() && plugin_id == id && release_version == release
             )).cloned().ok_or_else(|| "repository fixture release not found".into());
         }
+        self.candidate_roots.borrow_mut().clear();
+        self.candidates.borrow_mut().clear();
+        self.resolved.borrow_mut().clear();
         let catalog = self.catalog(config, source)?;
         let record = catalog.record(id, release, current_platform())?;
         self.state.cleanup_staging()?;
+        let package = self.fetch_record(config, source, record)?;
+        self.resolve_candidates(config, &package)?;
+        self.load(&package, self.candidates.borrow()[&package].0.clone())
+    }
+
+    fn fetch_record(
+        &self,
+        config: &Configuration,
+        source: &SourceUrl,
+        record: &crate::catalog::CatalogRecord,
+    ) -> Result<PathBuf, String> {
         let stage = self.state.staging()?;
         let archive_path = stage.path().join("archive.tar");
         repository::download(
@@ -344,21 +381,340 @@ impl Host {
             },
         )?;
         repository::verify_archive_hash(&archive_path, &record.archive_sha256)?;
+        self.import_archive_file(&archive_path, Some((source, record)))
+    }
+
+    pub fn inspect_archive(&self, config: &Configuration, path: &Path) -> Result<Report, String> {
+        self.graph_update_pending()?;
+        self.candidate_roots.borrow_mut().clear();
+        self.candidates.borrow_mut().clear();
+        self.resolved.borrow_mut().clear();
+        self.state.cleanup_staging()?;
+        let package = self.import_archive_file(path, None)?;
+        self.resolve_candidates(config, &package)?;
+        self.load(&package, self.candidates.borrow()[&package].0.clone())
+    }
+
+    fn import_archive_file(
+        &self,
+        path: &Path,
+        record: Option<(&SourceUrl, &crate::catalog::CatalogRecord)>,
+    ) -> Result<PathBuf, String> {
+        use sha2::{Digest, Sha256};
+        use std::io::Read;
+        let stage = self.state.staging()?;
+        // Freeze a korrid-owned input into this root-owned request directory.
+        // Hash and extract these same bytes even if the caller replaces its file.
+        let snapshot = stage.path().join("archive.tar");
+        let sideload_digest = if record.is_none() {
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut input = fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+                .open(path)
+                .map_err(|e| e.to_string())?;
+            if !input.metadata().map_err(|e| e.to_string())?.is_file() {
+                return Err("archive must be a regular file".into());
+            }
+            let mut output = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&snapshot)
+                .map_err(|e| e.to_string())?;
+            use std::io::Write;
+            let mut hash = Sha256::new();
+            let mut buffer = [0u8; 64 * 1024];
+            loop {
+                let count = input.read(&mut buffer).map_err(|e| e.to_string())?;
+                if count == 0 {
+                    break;
+                }
+                output
+                    .write_all(&buffer[..count])
+                    .map_err(|e| e.to_string())?;
+                hash.update(&buffer[..count]);
+            }
+            Some(hex::encode(hash.finalize()))
+        } else {
+            None
+        };
         let cache = stage.path().join("cache");
         storage::directory(&cache)?;
-        archive::extract(&archive_path, &cache)?;
-        archive::preflight_cache(&self.nix, &record.store_path, &cache)?;
-        let package = Path::new(&record.store_path);
-        storage::root_link(&self.paths.roots.join("download"), package)?;
-        package::import(&self.nix, &archive::path_to_file_uri(&cache)?, package)?;
-        let provenance = Provenance::Repository {
-            source_url: source.to_string(),
-            plugin_id: record.plugin_id.clone(),
-            release_version: record.release_version.clone(),
-            platform: record.platform.clone(),
-            archive_sha256: record.archive_sha256.clone(),
+        archive::extract(if record.is_none() { &snapshot } else { path }, &cache)?;
+        let package = match record {
+            Some((_, r)) => PathBuf::from(&r.store_path),
+            None => archive::root_path(&cache)?,
         };
-        self.load(package, provenance)
+        archive::preflight_cache(&self.nix, package.to_str().ok_or("invalid path")?, &cache)?;
+        // Import only the verified CA archive. Never consult a configured cache.
+        storage::root_link(&self.paths.roots.join("download"), &package)?;
+        let cache_uri = archive::path_to_file_uri(&cache)?;
+        package::import_archive(&self.nix, &cache_uri, &package)?;
+        self.pin_candidate(&package)?;
+        let namespace = package::manifest_namespace(&package)?;
+        let pins = self.pins()?;
+        let key = record
+            .and_then(|(_, r)| r.public_key.as_deref())
+            .or_else(|| {
+                self.publishers
+                    .get(&namespace)
+                    .map(|b| b.public_key.as_str())
+            })
+            .or_else(|| pins.get(&namespace).map(|p| p.public_key.as_str()));
+        let signed =
+            package::archive_signature(&self.nix, &package, &cache_uri, key).map_err(|e| {
+                if record.is_none() || e == "signed archive requires a trusted publisher key" {
+                    format!("publisher {namespace} is not trusted on this device")
+                } else {
+                    e
+                }
+            })?;
+        if record.is_some_and(|(_, r)| r.public_key.is_some()) && !signed {
+            return Err("catalog publicKey requires an in-archive signature".into());
+        }
+        let publisher = crate::trust::inspect(
+            &namespace,
+            signed.then_some(key).flatten(),
+            &self.publishers,
+            &pins,
+        )?;
+        let platform = if package::architecture_independent(&package)?
+            && package::no_references(&self.nix, &package)?
+        {
+            "any"
+        } else {
+            current_platform()
+        };
+        let provenance = match record {
+            Some((source, record)) => {
+                if record.platform == "any" && platform != "any" {
+                    return Err("any-architecture package has references or manifest paths".into());
+                }
+                Provenance::Repository {
+                    source_url: source.to_string(),
+                    plugin_id: record.plugin_id.clone(),
+                    release_version: record.release_version.clone(),
+                    platform: record.platform.clone(),
+                    archive_sha256: record.archive_sha256.clone(),
+                    signed,
+                }
+            }
+            None => Provenance::Sideload {
+                archive_sha256: sideload_digest.ok_or("sideload snapshot digest missing")?,
+                platform: platform.into(),
+                signed,
+            },
+        };
+        self.candidates
+            .borrow_mut()
+            .insert(package.clone(), (provenance, publisher));
+        Ok(package)
+    }
+
+    /// Nix owns the indirect root registry. Korri retains only the existing
+    /// private staging TempDir for this request; no candidate lock is persisted.
+    fn pin_candidate(&self, package: &Path) -> Result<(), String> {
+        let stage = self.state.staging()?;
+        let root = stage.path().join("download");
+        let nix_store = package::tools(
+            &self
+                .nix
+                .parent()
+                .ok_or("Nix helper has no directory")?
+                .join("nix-store"),
+        )?;
+        crate::process::checked_uncapped(
+            &nix_store,
+            [
+                "--option",
+                "max-jobs",
+                "0",
+                "--option",
+                "builders",
+                "",
+                "--option",
+                "fallback",
+                "false",
+                "--option",
+                "substituters",
+                "",
+                "--add-root",
+                root.to_str().ok_or("invalid candidate root path")?,
+                "--indirect",
+                "--realise",
+                package.to_str().ok_or("invalid package path")?,
+            ],
+            None,
+        )?;
+        self.candidate_roots.borrow_mut().push(stage);
+        Ok(())
+    }
+
+    fn pins(&self) -> Result<crate::trust::Pins, String> {
+        let pins: crate::trust::Pins =
+            storage::read_json(&self.state.root().join("publishers.json"))?.unwrap_or_default();
+        for (namespace, pin) in &pins {
+            validate_id(&format!("{namespace}:pin"))?;
+            package::public_key_bytes(&pin.public_key)?;
+            if self.publishers.contains_key(namespace) {
+                return Err(format!(
+                    "config-bound publisher {namespace} cannot have a pin"
+                ));
+            }
+        }
+        Ok(pins)
+    }
+
+    pub fn trust_publisher(&self, namespace: &str, public_key: &str) -> Result<(), String> {
+        self.graph_update_pending()?;
+        validate_id(&format!("{namespace}:pin"))?;
+        package::public_key_bytes(public_key)?;
+        if self.publishers.contains_key(namespace) {
+            return Err(format!("publisher {namespace} is config-bound"));
+        }
+        let unsigned: Vec<_> = self
+            .receipts()?
+            .into_iter()
+            .filter(|r| {
+                r.id.split_once(':').is_some_and(|(ns, _)| ns == namespace)
+                    && matches!(
+                        r.provenance,
+                        Provenance::Repository { signed: false, .. }
+                            | Provenance::Sideload { signed: false, .. }
+                    )
+            })
+            .map(|r| r.id)
+            .collect();
+        if !unsigned.is_empty() {
+            return Err(format!(
+                "remove the unsigned {namespace} plugins first: {}",
+                unsigned.join(", ")
+            ));
+        }
+        let mut pins = self.pins()?;
+        pins.insert(
+            namespace.into(),
+            crate::trust::Pin {
+                public_key: public_key.into(),
+            },
+        );
+        storage::write_json(&self.state.root().join("publishers.json"), &pins)?;
+        self.candidates.borrow_mut().clear();
+        self.resolved.borrow_mut().clear();
+        Ok(())
+    }
+
+    pub fn revoke_publisher(&self, namespace: &str) -> Result<(), String> {
+        self.graph_update_pending()?;
+        validate_id(&format!("{namespace}:pin"))?;
+        if self.publishers.contains_key(namespace) {
+            return Err(format!("publisher {namespace} is config-bound"));
+        }
+        let mut pins = self.pins()?;
+        pins.remove(namespace);
+        self.candidates.borrow_mut().clear();
+        self.resolved.borrow_mut().clear();
+        storage::write_json(&self.state.root().join("publishers.json"), &pins)?;
+        self.invalidate_registry()
+    }
+
+    pub fn publishers(&self) -> Result<crate::plugin_admin::PluginPublishers, String> {
+        use crate::plugin_admin::*;
+        let receipts = self.installed()?;
+        let mut entries = Vec::new();
+        for (namespace, key, state) in self
+            .publishers
+            .iter()
+            .map(|(ns, b)| {
+                (
+                    ns.clone(),
+                    b.public_key.clone(),
+                    PluginPublisherState::Bound,
+                )
+            })
+            .chain(
+                self.pins()?
+                    .into_iter()
+                    .map(|(ns, p)| (ns, p.public_key, PluginPublisherState::Trusted)),
+            )
+        {
+            entries.push(PluginPublisherEntry {
+                installed: receipts
+                    .iter()
+                    .filter(|r| {
+                        !matches!(r.desired, Desired::Removed { .. })
+                            && r.id.split_once(':').is_some_and(|(ns, _)| ns == namespace)
+                    })
+                    .map(|r| r.id.clone())
+                    .collect(),
+                fingerprint: crate::trust::fingerprint(&key)?,
+                namespace,
+                state,
+            });
+        }
+        entries.sort_by(|a, b| a.namespace.cmp(&b.namespace));
+        Ok(PluginPublishers { entries })
+    }
+
+    pub fn catalog_publisher(
+        &self,
+        namespace: &str,
+    ) -> Result<crate::plugin_admin::PluginPublisher, String> {
+        use crate::plugin_admin::PluginPublisherState::*;
+        crate::trust::publisher(
+            namespace,
+            if self.publishers.contains_key(namespace) {
+                Bound
+            } else if self.pins()?.contains_key(namespace) {
+                Trusted
+            } else {
+                New
+            },
+            None,
+        )
+    }
+
+    fn resolve_candidates(&self, config: &Configuration, root: &Path) -> Result<(), String> {
+        crate::dependencies::dependency_order([root.to_path_buf()], |path| {
+            let mut requires = package::manifest_requires(path)?;
+            for requirement in package::manifest_releases(path)? {
+                let source = SourceUrl::parse(&requirement.repository)?;
+                // A declared requirement explicitly selects its own repository;
+                // it need not be registered as a browsing source.
+                let catalog =
+                    repository::fetch_catalog(&config.curl, &source, config.ca_bundle.as_deref())?;
+                let release = requirement
+                    .release
+                    .as_ref()
+                    .or_else(|| catalog.latest.get(&requirement.id))
+                    .ok_or_else(|| {
+                        format!("repository has no latest release for {}", requirement.id)
+                    })?;
+                let record = catalog.record(&requirement.id, release, current_platform())?;
+                let package = PathBuf::from(&record.store_path);
+                if !self.candidates.borrow().contains_key(&package) {
+                    self.fetch_record(config, &source, record)?;
+                }
+                requires.push(package);
+            }
+            self.resolved
+                .borrow_mut()
+                .insert(path.clone(), requires.clone());
+            Ok(requires)
+        })?;
+        Ok(())
+    }
+
+    fn locked_releases(path: &Path, receipts: &[Receipt]) -> Result<Vec<PathBuf>, String> {
+        package::manifest_releases(path)?.iter().map(|spec| {
+            let source = SourceUrl::parse(&spec.repository)?;
+            let receipt = receipts.iter().find(|r| r.id == spec.id && !matches!(r.desired, Desired::Removed { .. })).ok_or_else(|| format!("required plugin {} is not installed", spec.id))?;
+            if !matches!(&receipt.provenance, Provenance::Repository { source_url, release_version, .. } if source_url == source.as_str() && spec.release.as_ref().is_none_or(|label| label == release_version)) {
+                return Err(format!("required plugin {} has a mismatched repository or release", spec.id));
+            }
+            Ok(receipt.package.clone())
+        }).collect()
     }
 
     fn load(&self, selected: &Path, provenance: Provenance) -> Result<Report, String> {
@@ -408,18 +764,86 @@ impl Host {
         if let Some(contents) = contents {
             self.verify_publisher_in(snapshot, selected, &provenance, contents)?;
         }
-        let receipts = if package::manifest_requires(selected)?.is_empty() {
+        let receipts = if package::manifest_requires(selected)?.is_empty()
+            && package::manifest_releases(selected)?.is_empty()
+        {
             Vec::new()
         } else {
             self.receipts()?
         };
-        package::load_graph(&self.nix, snapshot, selected, provenance, |path| {
-            let provenance = dependency_provenance(path, &receipts, &self.publishers)?;
-            if let Some(contents) = contents {
-                self.verify_publisher_in(snapshot, path, &provenance, contents)?;
-            }
-            Ok(provenance)
-        })
+        let mut report = package::load_resolved_graph(
+            &self.nix,
+            snapshot,
+            selected,
+            provenance,
+            |path| {
+                if let Some(paths) = self.resolved.borrow().get(path) {
+                    let exact = package::manifest_requires(path)?;
+                    return Ok(paths
+                        .iter()
+                        .filter(|p| !exact.contains(p))
+                        .cloned()
+                        .collect());
+                }
+                if contents.is_some() {
+                    return Self::locked_releases(path, &receipts);
+                }
+                Ok(package::manifest_releases(path)?
+                    .iter()
+                    .filter_map(|spec| {
+                        receipts
+                            .iter()
+                            .find(|r| {
+                                r.id == spec.id && !matches!(r.desired, Desired::Removed { .. })
+                            })
+                            .map(|r| r.package.clone())
+                    })
+                    .collect())
+            },
+            |path| {
+                let provenance = match self.candidates.borrow().get(path) {
+                    Some((provenance, _)) => provenance.clone(),
+                    None => dependency_provenance(path, &receipts, &self.publishers)?,
+                };
+                if let Some(contents) = contents {
+                    self.verify_publisher_in(snapshot, path, &provenance, contents)?;
+                }
+                Ok(provenance)
+            },
+        )?;
+        for dep in &mut report.brings {
+            dep.report.publisher = Some(self.report_publisher(&dep.report)?);
+        }
+        report.publisher = Some(self.report_publisher(&report)?);
+        Ok(report)
+    }
+
+    fn report_publisher(
+        &self,
+        report: &Report,
+    ) -> Result<crate::plugin_admin::PluginPublisher, String> {
+        if let Some((_, publisher)) = self.candidates.borrow().get(&report.package) {
+            return Ok(publisher.clone());
+        }
+        let namespace = report.id.split_once(':').ok_or("invalid plugin ID")?.0;
+        let pins = self.pins()?;
+        let key = self
+            .publishers
+            .get(namespace)
+            .map(|b| b.public_key.as_str())
+            .or_else(|| pins.get(namespace).map(|p| p.public_key.as_str()));
+        let unsigned = matches!(
+            report.provenance,
+            Provenance::Repository { signed: false, .. }
+                | Provenance::Sideload { signed: false, .. }
+        );
+        if unsigned {
+            return crate::trust::inspect(namespace, None, &self.publishers, &pins);
+        }
+        match key {
+            Some(key) => crate::trust::inspect(namespace, Some(key), &self.publishers, &pins),
+            None => self.catalog_publisher(namespace),
+        }
     }
 
     fn verify_report(
@@ -464,7 +888,7 @@ impl Host {
         }
         let cache = match provenance {
             Provenance::RawCache { cache_url } => Some(cache_url.as_str()),
-            Provenance::Repository { .. } => None,
+            Provenance::Repository { .. } | Provenance::Sideload { .. } => None,
         };
         // Rehash a package's contents at most once per command. The signature
         // over its registered hash is still checked on every call.
@@ -475,6 +899,31 @@ impl Host {
         } else {
             contents
         };
+        if !matches!(provenance, Provenance::RawCache { .. }) {
+            let namespace = package::manifest_namespace(selected)?;
+            let pins = self.pins()?;
+            let signed = matches!(
+                provenance,
+                Provenance::Repository { signed: true, .. }
+                    | Provenance::Sideload { signed: true, .. }
+            );
+            if !signed {
+                crate::trust::inspect(&namespace, None, &self.publishers, &pins)?;
+                return package::verify_unsigned(&self.nix, selected, contents);
+            }
+            let candidate = self.candidates.borrow();
+            let key = candidate
+                .get(selected)
+                .and_then(|(_, p)| p.public_key.as_deref())
+                .or_else(|| {
+                    self.publishers
+                        .get(&namespace)
+                        .map(|b| b.public_key.as_str())
+                })
+                .or_else(|| pins.get(&namespace).map(|p| p.public_key.as_str()))
+                .ok_or_else(|| format!("publisher {namespace} is not trusted on this device"))?;
+            return package::verify_local_signature(&self.nix, snapshot, selected, key, contents);
+        }
         package::verify_publisher_in(
             &self.nix,
             snapshot,
@@ -490,6 +939,7 @@ impl Host {
     }
 
     pub fn release_download(&self) -> Result<(), String> {
+        self.candidate_roots.borrow_mut().clear();
         for name in ["download", "download.new"] {
             storage::remove(&self.paths.roots.join(name))?;
         }
@@ -712,15 +1162,25 @@ impl Host {
         intent: SelectionIntent<'_>,
     ) -> Result<(), String> {
         self.graph_update_pending()?;
-        if report.approval != approval {
+        if self.review_approval(&report)? != approval {
             return Err(
                 "approval does not match this package and its execution policy; inspect it first"
                     .into(),
             );
         }
         let checked = self.load(&report.package, report.provenance.clone())?;
-        if checked.approval != approval || checked.id != report.id {
+        if self.review_approval(&checked)? != approval || checked.id != report.id {
             return Err("package dependency closure no longer matches its approval".into());
+        }
+        for r in checked
+            .brings
+            .iter()
+            .map(|d| &d.report)
+            .chain(std::iter::once(&checked))
+        {
+            if let Some(publisher) = &r.publisher {
+                crate::trust::require_trusted(publisher)?;
+            }
         }
         let old = self.receipt(&report.id)?;
         intent.validate(
@@ -757,10 +1217,7 @@ impl Host {
                         if !matches!(intent, SelectionIntent::Update { .. })
                             || matches!(receipt.desired, Desired::Removed { .. })
                         {
-                            return Err(format!(
-                                "conflicting exact selection for required plugin {}",
-                                dep.id
-                            ));
+                            return Err(self.requirement_conflict(&checked, dep, &receipt)?);
                         }
                         replacements
                             .insert(dep.id.clone(), matches!(receipt.desired, Desired::Enabled));
@@ -778,7 +1235,22 @@ impl Host {
             .chain((!replacements.is_empty()).then(|| report.id.clone()))
             .collect();
         for id in replacements.keys() {
-            self.check_required_by_except(id, false, &updating)?;
+            if let Err(error) = self.check_required_by_except(id, false, &updating) {
+                let target = &checked
+                    .brings
+                    .iter()
+                    .find(|d| &d.report.id == id)
+                    .unwrap()
+                    .report;
+                if matches!(target.provenance, Provenance::Repository { .. }) {
+                    return Err(self.requirement_conflict(
+                        &checked,
+                        target,
+                        &self.receipt(id)?.ok_or("dependency missing")?,
+                    )?);
+                }
+                return Err(error);
+            }
         }
         if !replacements.is_empty() {
             let committed = self.approved(old.as_ref().ok_or("plugin is not installed")?)?;
@@ -839,10 +1311,10 @@ impl Host {
                 // the committed pack disabled on failure, never half-active.
                 self.deactivate(&report.id, Desired::Disabled)?;
                 self.activate_dependencies(&checked)?;
-                self.install_one(report.clone(), approval, intent)?;
+                self.install_one(checked.clone(), &checked.approval, intent)?;
                 self.set_enabled(&report.id, true)
             } else {
-                self.install_one(report.clone(), approval, intent)
+                self.install_one(checked.clone(), &checked.approval, intent)
             }
         })();
         if let Err(error) = result {
@@ -873,6 +1345,49 @@ impl Host {
             ));
         }
         self.release_download()
+    }
+
+    fn requirement_conflict(
+        &self,
+        root: &Report,
+        dep: &Report,
+        locked: &Receipt,
+    ) -> Result<String, String> {
+        let release = |provenance: &Provenance, path: &Path| match provenance {
+            Provenance::Repository {
+                release_version, ..
+            } => release_version.clone(),
+            _ => path.display().to_string(),
+        };
+        let mut owner = locked.id.clone();
+        for receipt in self.receipts()? {
+            if receipt.id != root.id
+                && receipt.id != dep.id
+                && self
+                    .selection_requires(&receipt.package)?
+                    .contains(&locked.package)
+            {
+                owner = receipt.id;
+                break;
+            }
+        }
+        Ok(format!(
+            "{} needs {} {}, but {} locked {} {} (conflicting exact selection)",
+            root.id,
+            dep.id,
+            release(&dep.provenance, &dep.package),
+            owner,
+            dep.id,
+            release(&locked.provenance, &locked.package)
+        ))
+    }
+
+    pub fn review_approval(&self, report: &Report) -> Result<String, String> {
+        #[cfg(test)]
+        if self.test_runtime.as_ref().is_some_and(|r| !r.real_packages) {
+            return Ok(report.approval.clone());
+        }
+        package::review_approval(report)
     }
 
     fn install_one(
@@ -1042,6 +1557,21 @@ impl Host {
         enabled: bool,
         checks: Option<&BootChecks>,
     ) -> Result<(), String> {
+        #[cfg(test)]
+        let real = self.test_runtime.as_ref().is_none_or(|r| r.real_packages);
+        #[cfg(not(test))]
+        let real = true;
+        if real {
+            let receipts = self.receipts()?;
+            for r in report
+                .brings
+                .iter()
+                .map(|d| &d.report)
+                .chain(std::iter::once(report))
+            {
+                Self::locked_releases(&r.package, &receipts)?;
+            }
+        }
         for dep in &report.brings {
             let dep = &dep.report;
             let receipt = self.receipt(&dep.id)?.ok_or_else(|| {
@@ -1182,7 +1712,9 @@ impl Host {
                 .map(|r| r.requires.clone())
                 .ok_or_else(|| format!("cannot discover required plugins for {}", path.display()));
         }
-        package::manifest_requires(path)
+        let mut paths = package::manifest_requires(path)?;
+        paths.extend(Self::locked_releases(path, &self.receipts()?)?);
+        Ok(paths)
     }
 
     /// Stop may never use durable disable/removal intent as evidence that an
@@ -1364,7 +1896,9 @@ impl Host {
         let mut receipts = Vec::new();
         for entry in fs::read_dir(self.state.root()).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
-            if entry.file_name() == "lock"
+            if entry.file_name() == "publishers.json"
+                || entry.file_name() == "publishers.new"
+                || entry.file_name() == "lock"
                 || entry.file_name() == storage::SOURCES_DIR
                 || entry.file_name() == storage::STAGING_DIR
                 || entry.file_name() == graph_update::JOURNAL
@@ -1521,7 +2055,10 @@ impl Host {
         }
         for entry in fs::read_dir(self.state.root()).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
-            if entry.file_name() == "lock" {
+            if entry.file_name() == "publishers.json"
+                || entry.file_name() == "publishers.new"
+                || entry.file_name() == "lock"
+            {
                 continue;
             }
             let result = if entry.file_name() == storage::SOURCES_DIR
@@ -1706,13 +2243,23 @@ impl Host {
         let loaded = crate::parallel::map(&receipts, |receipt| {
             // Each graph uses the same metadata snapshot and independently
             // resolves dependency provenance from receipts or bound caches.
-            package::load_graph(
+            package::load_resolved_graph(
                 nix,
                 Some(&snapshot),
                 &receipt.package,
                 receipt.provenance.clone(),
+                |path| Self::locked_releases(path, &selected),
                 |path| dependency_provenance(path, &selected, publishers),
             )
+        });
+        let loaded = loaded.into_iter().map(|result| {
+            result.and_then(|mut report| {
+                for dep in &mut report.brings {
+                    dep.report.publisher = Some(self.report_publisher(&dep.report)?);
+                }
+                report.publisher = Some(self.report_publisher(&report)?);
+                Ok(report)
+            })
         });
         let reports = receipts
             .into_iter()
@@ -2254,6 +2801,7 @@ mod tests {
             cache_url: "https://cache.example".into(),
         };
         Report {
+            publisher: None,
             id: id.into(),
             package,
             provenance,
@@ -2314,6 +2862,38 @@ mod tests {
         let approval = report.approval.clone();
         host.install(report, &approval, SelectionIntent::Install)
             .unwrap();
+    }
+
+    #[test]
+    fn publishers_emit_only_bound_or_trusted_with_sheet_fingerprints() {
+        let root = tempfile::tempdir().unwrap();
+        let mut host = Host::for_test(
+            root.path(),
+            "/unavailable-nix".into(),
+            permitted_policy(),
+            runtime(&[]),
+        )
+        .unwrap();
+        let key = "label:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        host.trust_publisher("@pinned", key).unwrap();
+        host.publishers.insert(
+            "@bound".into(),
+            package::PublisherBinding {
+                public_key: key.into(),
+                cache_url: "https://cache.invalid/".into(),
+            },
+        );
+        let list = host.publishers().unwrap();
+        assert_eq!(list.entries.len(), 2);
+        assert!(list.entries.iter().all(|entry| matches!(
+            entry.state,
+            crate::plugin_admin::PluginPublisherState::Bound
+                | crate::plugin_admin::PluginPublisherState::Trusted
+        )));
+        assert!(list
+            .entries
+            .iter()
+            .all(|entry| entry.fingerprint == "label AAAA AAAA AAAA AAAA"));
     }
 
     #[test]
@@ -3816,6 +4396,7 @@ mod tests {
             cache_url: host.publishers["@games"].cache_url.clone(),
         };
         let dependency_origin = Provenance::Repository {
+            signed: true,
             source_url: "https://repository.example/catalog.json".into(),
             plugin_id: "@runtime:fake08".into(),
             release_version: "0".into(),
@@ -5371,6 +5952,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let mut selected = report("@test:clock", "clock-v1");
         selected.provenance = Provenance::Repository {
+            signed: true,
             source_url: "https://removed.example/catalog.json".into(),
             plugin_id: selected.id.clone(),
             release_version: "v1".into(),
@@ -5462,6 +6044,7 @@ mod tests {
     fn repository_report(id: &str, suffix: &str, source: &str, release: &str) -> Report {
         let mut selected = report(id, suffix);
         selected.provenance = Provenance::Repository {
+            signed: true,
             source_url: source.into(),
             plugin_id: id.into(),
             release_version: release.into(),
@@ -5615,5 +6198,448 @@ mod tests {
             host.status(&selected.id).unwrap().unwrap().approval,
             selected.approval
         );
+    }
+    #[test]
+    #[ignore = "requires writable build-machine Nix; no device services or shared-data cleanup"]
+    fn direction_signed_archives_trust_unsigned_sideload_and_locked_latest_requirements() {
+        use crate::catalog::Catalog;
+        use crate::plugin_admin::PluginPublisherState;
+        let nix = PathBuf::from(std::env::var_os("KORRI_PUBLISH_NIX").expect("immutable Nix"));
+        let helper = package::tools(&PathBuf::from(
+            std::env::var_os("KORRI_TEST_TRUE").expect("immutable true"),
+        ))
+        .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let run = |args: &[&str]| {
+            let result = Command::new(&nix)
+                .args(["--extra-experimental-features", "nix-command"])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            String::from_utf8(result.stdout).unwrap().trim().to_owned()
+        };
+        let secret = run(&["key", "generate-secret", "--key-name", "direction-test"]);
+        let key = root.path().join("key");
+        fs::write(&key, &secret).unwrap();
+        let public = crate::publisher::public_half(&secret).unwrap();
+        let source_url = "https://direction.invalid/catalog.json";
+        let make = |namespace: &str, name: &str, title: &str, release: Option<Option<&str>>| {
+            let source = root.path().join(format!("{name}-{title}"));
+            fs::create_dir(&source).unwrap();
+            fs::write(
+                source.join("plugin.ts"),
+                format!("export const name = {name:?}; export const title = {title:?};"),
+            )
+            .unwrap();
+            let mut manifest = serde_json::json!({"publisher":{"namespace":namespace},"entry":"plugin.ts","sources":["plugin.ts"]});
+            if let Some(label) = release {
+                let mut spec = serde_json::json!({"repository":source_url,"id":"@dep:runner"});
+                if let Some(label) = label {
+                    spec["release"] = label.into();
+                }
+                manifest["requiresReleases"] = serde_json::json!([spec]);
+            }
+            fs::write(source.join("manifest.json"), manifest.to_string()).unwrap();
+            PathBuf::from(run(&["store", "add-path", source.to_str().unwrap()]))
+        };
+        let assets = root.path().join("assets");
+        fs::create_dir(&assets).unwrap();
+        let publish = |path: &Path, label: &str| {
+            crate::publisher::publish(&crate::publisher::PublishArgs {
+                nix: nix.clone(),
+                secret_key: key.clone(),
+                input_store_path: path.into(),
+                release_version: label.into(),
+                platform: current_platform().into(),
+                archive_url: "https://direction.invalid/".into(),
+                output_dir: assets.clone(),
+            })
+            .unwrap()
+        };
+        let dep1 = publish(&make("@dep", "runner", "one", None), "v1");
+        let dep2 = publish(&make("@dep", "runner", "two", None), "v2");
+        let pack = publish(&make("@pack", "pack", "Pack", Some(None)), "root");
+        let other = publish(&make("@pack", "other", "Other", Some(Some("v1"))), "root");
+        assert_eq!(pack.record.platform, "any");
+        let unpacked = root.path().join("unpacked");
+        fs::create_dir(&unpacked).unwrap();
+        archive::extract(&pack.archive_path, &unpacked).unwrap();
+        assert!(fs::read_dir(&unpacked)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "narinfo"))
+            .all(|e| fs::read_to_string(e.path())
+                .unwrap()
+                .contains("Sig: direction-test:")));
+        let catalog_file = root.path().join("catalog.json");
+        let catalog = |latest: &str| Catalog {
+            records: vec![
+                pack.record.clone(),
+                other.record.clone(),
+                dep1.record.clone(),
+                dep2.record.clone(),
+            ],
+            latest: BTreeMap::from([
+                ("@dep:runner".into(), latest.into()),
+                ("@pack:pack".into(), "root".into()),
+                ("@pack:other".into(), "root".into()),
+            ]),
+        };
+        fs::write(&catalog_file, catalog("v1").to_json().unwrap()).unwrap();
+        // A deterministic resource server, not an intercepted network client.
+        // It implements curl's --output/--url file transfer contract with real
+        // processes, while signature, import, archive and host code stay real.
+        let server = root.path().join("server");
+        fs::create_dir_all(server.join("bin")).unwrap();
+        let script = server.join("bin/curl");
+        fs::write(&script, format!("#!/bin/sh\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) shift; out=$1;; --url) shift; url=$1;; esac; shift; done\ncase \"$url\" in */catalog.json) exec {} {} \"$out\";; *) name=${{url##*/}}; exec {} {}/\"$name\" \"$out\";; esac\n", helper.parent().unwrap().join("cp").display(), catalog_file.display(), helper.parent().unwrap().join("cp").display(), assets.display())).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let curl =
+            PathBuf::from(run(&["store", "add-path", server.to_str().unwrap()])).join("bin/curl");
+        let config = Configuration {
+            curl,
+            official: Some(SourceUrl::parse(source_url).unwrap()),
+            ca_bundle: None,
+        };
+        let host_dir = root.path().join("host");
+        fs::create_dir(&host_dir).unwrap();
+        let mut host = Host::for_test(
+            &host_dir,
+            nix.clone(),
+            permitted_policy(),
+            TestRuntime::default(),
+        )
+        .unwrap();
+        host.test_runtime = None;
+        host.units.systemctl = helper.clone();
+        host.units.firewall.ipv4 = helper.clone();
+        host.units.firewall.ipv6 = helper.clone();
+        let inspect = |host: &Host, id: &str| {
+            host.inspect_repository(&config, config.official.as_ref().unwrap(), id, "root")
+                .unwrap()
+        };
+        let new = inspect(&host, "@pack:pack");
+        assert_eq!(
+            new.publisher.as_ref().unwrap().state,
+            PluginPublisherState::New
+        );
+        assert_eq!(
+            new.brings[0].report.publisher.as_ref().unwrap().state,
+            PluginPublisherState::New
+        );
+        assert!(host
+            .install_reviewed(new.clone(), &host.review_approval(&new).unwrap())
+            .unwrap_err()
+            .contains("not trusted"));
+        host.trust_publisher("@pack", &public).unwrap();
+        host.trust_publisher("@dep", &public).unwrap();
+        let first = inspect(&host, "@pack:pack");
+        let first_digest = host.review_approval(&first).unwrap();
+        host.install_reviewed(first.clone(), &first_digest).unwrap();
+        assert_eq!(
+            host.receipt("@dep:runner").unwrap().unwrap().package,
+            PathBuf::from(&dep1.ca_store_path)
+        );
+        fs::write(&catalog_file, catalog("v2").to_json().unwrap()).unwrap();
+        // Ordinary activation reads the dependency receipt, never the catalog.
+        host.resolved.borrow_mut().clear();
+        host.candidates.borrow_mut().clear();
+        host.set_enabled("@pack:pack", true).unwrap();
+        assert_eq!(
+            host.receipt("@dep:runner").unwrap().unwrap().package,
+            PathBuf::from(&dep1.ca_store_path)
+        );
+        let blocker = inspect(&host, "@pack:other");
+        host.install_reviewed(blocker.clone(), &host.review_approval(&blocker).unwrap())
+            .unwrap();
+        let next = inspect(&host, "@pack:pack");
+        assert_ne!(host.review_approval(&next).unwrap(), first_digest);
+        assert_eq!(
+            next.approval, first.approval,
+            "receipt approval is root authority, review approval binds the graph"
+        );
+        assert_eq!(
+            next.brings[0].report.package,
+            PathBuf::from(&dep2.ca_store_path)
+        );
+        let error = host
+            .install(
+                next.clone(),
+                &host.review_approval(&next).unwrap(),
+                SelectionIntent::Update { id: "@pack:pack" },
+            )
+            .unwrap_err();
+        assert!(
+            error
+                .contains("@pack:pack needs @dep:runner v2, but @pack:other locked @dep:runner v1"),
+            "{error}"
+        );
+        // The disabled no-service blocker has no native effects. Remove only
+        // this test's receipt/roots, not a real Nix store GC.
+        host.selection("@pack:other").remove().unwrap();
+        host.install(
+            next.clone(),
+            &host.review_approval(&next).unwrap(),
+            SelectionIntent::Update { id: "@pack:pack" },
+        )
+        .unwrap();
+        assert_eq!(
+            host.receipt("@dep:runner").unwrap().unwrap().package,
+            PathBuf::from(&dep2.ca_store_path)
+        );
+        assert_eq!(
+            host.receipt("@dep:runner")
+                .unwrap()
+                .unwrap()
+                .previous
+                .unwrap()
+                .package,
+            PathBuf::from(&dep1.ca_store_path)
+        );
+        let other_secret = run(&["key", "generate-secret", "--key-name", "direction-test"]);
+        host.trust_publisher(
+            "@pack",
+            &crate::publisher::public_half(&other_secret).unwrap(),
+        )
+        .unwrap();
+        let changed = inspect(&host, "@pack:pack");
+        assert_eq!(
+            changed.publisher.as_ref().unwrap().state,
+            PluginPublisherState::KeyChanged
+        );
+        assert!(host
+            .install_reviewed(changed.clone(), &host.review_approval(&changed).unwrap())
+            .unwrap_err()
+            .contains("key changed: was"));
+        host.revoke_publisher("@pack").unwrap();
+        host.publishers.insert(
+            "@pack".into(),
+            package::PublisherBinding {
+                public_key: public.clone(),
+                cache_url: "https://unreachable.invalid/never-contacted".into(),
+            },
+        );
+        let bound = inspect(&host, "@pack:pack");
+        assert_eq!(
+            bound.publisher.as_ref().unwrap().state,
+            PluginPublisherState::Bound
+        );
+        assert!(host
+            .trust_publisher("@pack", &public)
+            .unwrap_err()
+            .contains("config-bound"));
+        host.publishers.remove("@pack");
+        host.candidates.borrow_mut().clear();
+        host.resolved.borrow_mut().clear();
+        assert!(host.set_enabled("@pack:pack", true).is_err());
+        host.set_enabled("@pack:pack", false).unwrap();
+        // Signed sideload needs an existing pin; no key is invented from a Sig label.
+        assert!(host
+            .inspect_archive(&config, &pack.archive_path)
+            .err()
+            .unwrap()
+            .contains("@pack"));
+        host.trust_publisher("@pack", &public).unwrap();
+        assert!(matches!(
+            host.inspect_archive(&config, &pack.archive_path)
+                .unwrap()
+                .provenance,
+            Provenance::Sideload { signed: true, .. }
+        ));
+        // Strip only the in-archive signatures. Local Nix still has its saved
+        // signature, which must not turn this archive into a signed release.
+        let unsigned_cache = root.path().join("unsigned-cache");
+        fs::create_dir(&unsigned_cache).unwrap();
+        archive::extract(&dep1.archive_path, &unsigned_cache).unwrap();
+        for e in fs::read_dir(&unsigned_cache)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "narinfo"))
+        {
+            let text = fs::read_to_string(e.path()).unwrap();
+            fs::write(
+                e.path(),
+                text.lines()
+                    .filter(|line| !line.starts_with("Sig:"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    + "\n",
+            )
+            .unwrap();
+        }
+        let unsigned_path = root.path().join("unsigned.tar");
+        archive::pack(&unsigned_cache, &unsigned_path).unwrap();
+        assert!(host
+            .inspect_archive(&config, &unsigned_path)
+            .err()
+            .unwrap()
+            .contains("unsigned plugins are refused"));
+        let unsigned_dir = root.path().join("unsigned-host");
+        fs::create_dir(&unsigned_dir).unwrap();
+        let mut unsigned_host = Host::for_test(
+            &unsigned_dir,
+            nix,
+            permitted_policy(),
+            TestRuntime::default(),
+        )
+        .unwrap();
+        unsigned_host.test_runtime = None;
+        unsigned_host.units.systemctl = helper.clone();
+        unsigned_host.units.firewall.ipv4 = helper.clone();
+        unsigned_host.units.firewall.ipv6 = helper;
+        let unsigned = unsigned_host
+            .inspect_archive(&config, &unsigned_path)
+            .unwrap();
+        assert_eq!(
+            unsigned.publisher.as_ref().unwrap().disclosure.as_deref(),
+            Some(crate::trust::DISCLOSURE)
+        );
+        assert!(matches!(
+            unsigned.provenance,
+            Provenance::Sideload { signed: false, .. }
+        ));
+        unsigned_host
+            .install_reviewed(unsigned.clone(), &unsigned.approval)
+            .unwrap();
+        unsigned_host.set_enabled("@dep:runner", true).unwrap();
+        assert!(unsigned_host
+            .trust_publisher("@dep", &public)
+            .unwrap_err()
+            .contains("remove the unsigned @dep plugins first: @dep:runner"));
+        let roots: Vec<_> = host
+            .candidate_roots
+            .borrow()
+            .iter()
+            .map(|d| d.path().to_path_buf())
+            .collect();
+        assert!(!roots.is_empty());
+        host.release_download().unwrap();
+        assert!(roots.iter().all(|p| !p.exists()));
+        host.pin_candidate(&PathBuf::from(&pack.ca_store_path))
+            .unwrap();
+        let abandoned = host.candidate_roots.borrow_mut().pop().unwrap().keep();
+        drop(host);
+        let mut next_request = Host::for_test(
+            &host_dir,
+            PathBuf::from(std::env::var_os("KORRI_PUBLISH_NIX").unwrap()),
+            permitted_policy(),
+            TestRuntime::default(),
+        )
+        .unwrap();
+        next_request.test_runtime = None;
+        let reviewed = inspect(&next_request, "@pack:pack");
+        assert_eq!(reviewed.id, "@pack:pack");
+        assert!(
+            !abandoned.exists(),
+            "the next request removes stale staging, including its dangling indirect root"
+        );
+        let roots: Vec<_> = next_request
+            .candidate_roots
+            .borrow()
+            .iter()
+            .map(|d| d.path().to_path_buf())
+            .collect();
+        next_request.release_download().unwrap();
+        assert!(roots.iter().all(|p| !p.exists()));
+    }
+    #[test]
+    #[ignore = "requires builder fixtures and writable build-machine Nix; no native service starts"]
+    fn direction_unsigned_native_services_keep_privileged_review_and_any_is_refused() {
+        let fixtures = PathBuf::from(
+            std::env::var_os("KORRI_TEST_DEPENDENCY_FIXTURES").expect("builder fixtures"),
+        );
+        let nix = PathBuf::from(std::env::var_os("KORRI_PUBLISH_NIX").expect("immutable Nix"));
+        let package = fs::canonicalize(fixtures.join("native")).unwrap();
+        assert_eq!(
+            crate::publisher::detected_platform(&nix, &package).unwrap(),
+            current_platform()
+        );
+        let root = tempfile::tempdir().unwrap();
+        let secret = Command::new(&nix)
+            .args([
+                "--extra-experimental-features",
+                "nix-command",
+                "key",
+                "generate-secret",
+                "--key-name",
+                "unsigned-native-test",
+            ])
+            .output()
+            .unwrap();
+        assert!(secret.status.success());
+        let key = root.path().join("secret");
+        fs::write(&key, secret.stdout).unwrap();
+        let mut args = crate::publisher::PublishArgs {
+            nix: nix.clone(),
+            secret_key: key,
+            input_store_path: package,
+            release_version: "native".into(),
+            platform: "any".into(),
+            archive_url: String::new(),
+            output_dir: root.path().into(),
+        };
+        assert!(crate::publisher::publish_archive(&args)
+            .err()
+            .unwrap()
+            .contains("any-architecture"));
+        args.platform = current_platform().into();
+        let archive = crate::publisher::publish_archive(&args).unwrap();
+        let cache = root.path().join("cache");
+        fs::create_dir(&cache).unwrap();
+        archive::extract(&archive.archive_path, &cache).unwrap();
+        for entry in fs::read_dir(&cache)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.path().extension().is_some_and(|e| e == "narinfo"))
+        {
+            let text = fs::read_to_string(entry.path()).unwrap();
+            fs::write(
+                entry.path(),
+                text.lines()
+                    .filter(|l| !l.starts_with("Sig:"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    + "\n",
+            )
+            .unwrap();
+        }
+        let unsigned = root.path().join("unsigned.tar");
+        archive::pack(&cache, &unsigned).unwrap();
+        let state = root.path().join("host");
+        fs::create_dir(&state).unwrap();
+        let host = Host::for_test(
+            &state,
+            nix,
+            permitted_policy(),
+            TestRuntime {
+                real_packages: true,
+                ..TestRuntime::default()
+            },
+        )
+        .unwrap();
+        let config = admin_configuration(None);
+        let report = host.inspect_archive(&config, &unsigned).unwrap();
+        assert_eq!(report.native_units.len(), 2);
+        assert!(report.warning.contains("DEVICE-WIDE ROOT AUTHORITY"));
+        assert!(report.warning.contains("CAP_NET_RAW"));
+        assert_eq!(
+            report.publisher.as_ref().unwrap().state,
+            crate::plugin_admin::PluginPublisherState::Unsigned
+        );
+        assert_eq!(
+            report.publisher.as_ref().unwrap().disclosure.as_deref(),
+            Some(crate::trust::DISCLOSURE)
+        );
+        host.install_reviewed(report.clone(), &report.approval)
+            .unwrap();
+        assert!(matches!(
+            host.status("@runtime:native").unwrap().unwrap().desired,
+            Desired::Disabled
+        ));
     }
 }

@@ -2,6 +2,113 @@
 
 The host installs previously unknown plugins without a NixOS update or a device build. It admits up to three native units named by one plugin declaration and refuses any packaged unit that the declaration did not name. It validates each shipped systemd unit and binds its exact authority to that plugin's approval. It accepts no installation scripts or TypeScript service directives.
 
+## Signed publishing and sideload archives
+
+Authors publish a complete repository folder with:
+
+```sh
+korri-publish repository --secret-key FILE --release LABEL --base-url https://example.org/releases/ OUTPUT_DIR STORE_PATH...
+korri-publish archive --secret-key FILE OUTPUT_DIR STORE_PATH
+```
+
+Both commands convert the complete closure to content-addressed outputs, run
+`nix store sign --recursive --key-file FILE` before file-cache export, then
+pack a confined archive. Every exported narinfo carries a standard `Sig:` line.
+`repository` writes `catalog.json`, one archive per record, each record's full
+`publicKey`, and `latest: { "<pluginId>": "<releaseVersion>" }`. Labels have no
+version ordering. `archive` writes no catalog. It prints one JSON line with
+`archive`, `sha256`, `platform`, and `storePath` for the upload caller.
+Only the existing `declaration NAMESPACE SOURCE_ROOT SOURCE...` metadata mode
+remains. There is no positional publication form or compatibility reader.
+
+The publisher detects a native output's platform from its Nix derivation. It
+emits `any` automatically when the package has no references and no manifest
+`packages`, `files`, `services`, or exact `requires` paths. The host checks both
+conditions before accepting an `any` record on its own platform. Release
+requirements do not themselves make a source-only package architecture-specific.
+A native output whose build platform cannot be determined is refused.
+
+## Publisher trust
+
+Repository and sideload admission verify the signature **inside the archive**.
+They never ask a configured Nix cache for that signature or for package bytes.
+The complete CA closure, measured archive hash, NAR hashes and sizes, immutable
+source, native policy and exact owner approval remain mandatory.
+
+Config `PublisherBindings` retain their exact namespace-to-full-key check.
+Their cache URLs apply only to the raw-cache route. Runtime trust cannot replace
+or shadow a configured binding. Other namespaces use the approved device-local
+`publishers.json` map under the locked host state root:
+`{ "<namespace>": { "publicKey": "<label:base64>" } }`. The host writes it
+atomically, mode 0600. There are no fallback reads, dual writes or migrations.
+
+Inspection reports `Bound`, `Trusted`, `New`, `KeyChanged`, or `Unsigned`.
+`New` and `KeyChanged` include the release's full `publicKey` so an explicit
+`TrustPublisher` can pin it. A changed key also reports the previous fingerprint.
+Install refuses New and KeyChanged; the owner must trust the key first. A
+fingerprint is the key label, one space, then the first 16 base64 characters in
+four-character groups, for example `korri-plugins-1 AbCd EfGh IjKl MnOp`.
+Catalog browsing reports only the namespace and current trust state. Archive
+inspection supplies verified key details. Every dependency in `brings` has its
+own publisher and state; trusting the root grants no authority to dependencies.
+
+`RevokePublisher` removes a pin and withdraws the enabled projection. Revoked
+packages cannot start. Disable, approved cleanup and purge still work. This is
+not a running-service watcher: running units stop at the next disable, removal,
+or `restore-all`, like removal of a configured binding.
+
+A CA archive with no signature uses the unsigned lane. Inspection shows:
+
+> This plugin is not signed. Korri cannot confirm who made it, or that updates come from the same person. Install it only if you trust the address you got it from.
+
+Approval binds `signed: false` in Repository or Sideload provenance. Every
+update needs a fresh inspection and approval. Unsigned plugins have the same
+native-service affordances, with the normal privileged warnings in addition to
+this disclosure. They cannot use a configured or pinned namespace. Trusting a
+namespace occupied by unsigned installations is refused and names those plugin
+IDs; remove them first. A local Nix signature left by an earlier import cannot
+make an unsigned archive signed.
+
+Signed sideloads carry no new public-key metadata. Their signature must verify
+against an already bound or pinned namespace key. Otherwise InspectArchive
+returns `PluginPublisherNotTrusted` and names the namespace. The owner can
+explicitly trust the author's public key, then inspect the same upload again.
+`Sideload { archive_sha256, platform, signed }` is distinct approval-bound
+provenance; a disposable staging path is never part of it.
+
+### Chunked sideload transport
+
+Korrid exposes the following calls on its existing local RPC and signed peer
+wire. All require the same authority as plugin inspection/install: the local
+full-permission portal or CLI, or a verified same-owner device. No caller names
+a filesystem path.
+
+| RPC | Payload | Result |
+| --- | --- | --- |
+| `system.plugins.archive.begin` | `{ sha256, size }` | `{ uploadId }` |
+| `system.plugins.archive.chunk` | `{ uploadId, offset, data }` | `{}` |
+| `system.plugins.archive.finish` | `{ uploadId }` | `{}` |
+| `system.plugins.archive.inspect` | `{ uploadId }` | `PluginInspection` |
+| `system.plugins.archive.install` | `{ uploadId, approval }` | `Applied` |
+
+Korrid holds one upload per device at
+`<korrid-private-state-root>/plugin-archive/archive.tar` (directory 0700, file
+0600 while uploading and 0400 after finish). Its random upload ID exists only
+in memory. Chunks are strict base64, at most 1 MiB decoded, and their offset
+must equal the received byte count. Begin checks free space against the declared
+size. Finish checks both the complete size and SHA-256. The root host then runs
+the same archive checks as repository installation, through `InspectArchive`
+and `InstallArchive` on the private admin socket.
+
+An upload idle for ten minutes expires. Inspect and install reset that timer.
+Successful install and failures remove the staged file, except an inspection
+refused with `PluginPublisherNotTrusted` or `PluginPublisherKeyChanged`: that
+file and ID survive for explicit trust and reinspection. Unknown, expired or
+already-deleted IDs return only `PluginUploadNotFound` from chunk, finish,
+inspect and install. A korrid restart forgets IDs; the next begin removes the
+single stale staging file. This uses bounded memory, not a new upload journal.
+The whole archive still occupies disk until install, failure or expiry.
+
 ## Host installation
 
 Import `nixosModules.korri-plugin-host` and enable `services.korri.pluginHost.enable` in the base system. This installs the generic CLI, boot recovery, TUN support, the download-only policy, and the upstream OpenSSH privilege-separation account/PAM prerequisites on SSH-disabled hosts. It does not enable SSH, provision account keys, generate recovery host keys, or replace existing recovery SSH/PAM. It preserves the stock NixOS cache and key. No option names a plugin.
@@ -12,13 +119,13 @@ Core exports `packages.<system>.korri-plugin-host`, including the generic Rust h
 
 ## Build-side authoring API
 
-`lib.<system>.mkPlugin { pkgs; } { publisher; source; plugin; }` is exported directly from `interface.nix`, independently of host composition. `source` is a directory whose required entry is `plugin.ts`; imported TS/JS/JSON modules and package metadata live below that root. The source package is a closed regular-file tree: the root, directories, and files must not be symlinks. Authors must copy package sources into that tree instead of relying on build-machine `node_modules` links. The builder admits only TS, JS, and JSON files, copies them, and generates a sorted manifest inventory. It caps the graph at 512 files, 4 MiB of content, 64 KiB of aggregate relative-path bytes, and 4096 aggregate path components. The path limits are deliberately below the host's admission budgets. A single source file is not accepted. `plugin` is a `plugin.nix` path or a function receiving `{ pkgs; }`. `publisher.namespace` comes from trusted publication composition, not TypeScript. The public builder uses the caller-owned package set; Core no longer exports its `pkgs` through this API. Rendering always imports that same `pkgs.path` and passes those `pkgs` to NixOS `eval-config.nix`.
+`lib.<system>.mkPlugin { pkgs; } { publisher; source; plugin ? { }; }` is exported directly from `interface.nix`, independently of host composition. `source` is a directory whose required entry is `plugin.ts`; imported TS/JS/JSON modules and package metadata live below that root. The source package is a closed regular-file tree: the root, directories, and files must not be symlinks. Authors must copy package sources into that tree instead of relying on build-machine `node_modules` links. The builder admits only TS, JS, and JSON files, copies them, and generates a sorted manifest inventory. It caps the graph at 512 files, 4 MiB of content, 64 KiB of aggregate relative-path bytes, and 4096 aggregate path components. The path limits are deliberately below the host's admission budgets. A single source file is not accepted. `plugin` is an attribute set, a `plugin.nix` path, or a function receiving `{ pkgs; }`. It defaults to `{ }`; a source-only plugin needs no plugin.nix. `publisher.namespace` comes from trusted publication composition, not TypeScript. The public builder uses the caller-owned package set; Core no longer exports its `pkgs` through this API. Rendering always imports that same `pkgs.path` and passes those `pkgs` to NixOS `eval-config.nix`.
 
 `lib.<system>.pluginContract` references the existing generated `contracts/generated/korrid.ts`, sourced by file content. `lib.<system>.pluginBuilderCheck { pkgs; }` runs the shared build-only regression with the same supported builder. Neither entry builds a host binary. `checks.<system>.korri-plugin-host-vm` exposes Core's existing test-policy host build for publisher lifecycle tests. It is not a production package and is not installed on devices. Core-only SSH/Sunshine integration uses the exact signed outputs in `nix/product/published-plugins.nix`; images and proof selections do not change. Publisher integration injects its newly built candidates into the host harness.
 
 The concrete example is `tests/fixtures/tailscale/plugin.nix`. Its `packages`, named `files`, and standard NixOS `services` produce the generated manifest. `files` are checked with `test -e` during the build. Service values can be standard NixOS service attributes or references to actual native `.service` files (paths, strings, or derivation outputs). Attribute values are rendered by NixOS, not a Korri template. Native file references pass through unchanged. Both reach the same runtime admission and approval boundary. The build context has no global locale, timezone or command-search environment from the CI system. Explicit service `path` is refused; use an admitted native `ExecStart` path. Environment directives stay in the rendered unit and enter the approval report and digest.
 
-The manifest fields generated by this builder are `publisher`, `entry`, `sources`, `packages`, `files`, `services`, and `ports`, plus `requires` and `hosts` when nonempty. `hosts` lists the exact lowercase DNS names a provider plugin may reach (ADR 0016); the host refuses wildcards, ports, schemes, trailing dots, IP literals, duplicates, more than 128 names, and `hosts` without a `providers` contribution. korrid refuses every other host on each request and redirect hop. An empty list means no network. `services` maps names to rendered immutable unit paths. The declaration must request that exact set by name. `ports` uses NixOS's `allowedUDPPorts` and `allowedTCPPorts` lists. Tailscale requests UDP 41641. Empty contributions need no payload. Native libraries remain ordinary Nix references. `plugin.nix` can also require exact outputs of independent Korri plugins; see **Required plugin graphs** below.
+The manifest fields generated by this builder are `publisher`, `entry`, `sources`, `packages`, `files`, `services`, and `ports`, plus `requires`, `requiresReleases`, and `hosts` when nonempty. `hosts` lists the exact lowercase DNS names a provider plugin may reach (ADR 0016); the host refuses wildcards, ports, schemes, trailing dots, IP literals, duplicates, more than 128 names, and `hosts` without a `providers` contribution. korrid refuses every other host on each request and redirect hop. An empty list means no network. `services` maps names to rendered immutable unit paths. The declaration must request that exact set by name. `ports` uses NixOS's `allowedUDPPorts` and `allowedTCPPorts` lists. Tailscale requests UDP 41641. Empty contributions need no payload. Native libraries remain ordinary Nix references. `plugin.nix` can also require exact outputs of independent Korri plugins; see **Required plugin graphs** below.
 
 ## HTTPS repositories
 
@@ -41,7 +148,7 @@ Review `warning`, `provenance`, `declaration`, `native_units`, `ports`, `hosts`,
 
 Acquisition validates certificates and follows at most three HTTPS redirects. HTTP downgrades, URL credentials, curlrc and netrc credentials are disabled. Catalog transfers allow 30 seconds and 4 MiB. Archive transfers have no size or total time limit; one that moves less than 1 KiB/s for 60 seconds has stalled and fails, as in the plugin prepare programs. Connection setup allows 10 seconds for every transfer. The host measures the actual archive SHA256 **before** extraction. It checks confined extraction, typed Nix closure metadata, compressed file sizes and actual decompressed xz/NAR sizes and hashes through `archive::preflight_cache`. Only this private local file cache reaches the existing Nix importer. Recursive `--sigs-needed 1` verification remains active. No downloaded Nix options, builds, flake evaluation or signature bypass are accepted.
 
-A repository archive must now also identify an output signed by the namespace's bound key. Unsigned content-addressed archives alone are refused. If the archive omits that signature, the bound cache must supply matching signed metadata; the catalog URL is not signing authority.
+The archive itself supplies signing evidence. Repository admission has no bound-cache fallback. See **Publisher trust** for signed and unsigned namespace rules.
 
 The cost is a complete per-release archive and temporary disk use: the whole archive plus its extracted compressed cache, in addition to imported store paths. Plugins have no size limit. Archive download, cache path-info, Nix import and store verification have no deadline. Nix output that grows with a closure (recursive path-info, and per-path build, copy and verify lines) has no output cap; other helpers keep their 1 MiB cap. The boot store-metadata query and closure listing keep their local deadlines (60 and 30 seconds). Publisher content-address conversion and cache export have no deadline. The archive keeps its 100,000-entry bound. Catalogs, release evidence and plugin source manifests keep their bounds. Downloads and validation hold the exclusive host lock, so concurrent commands fail as busy. A large package holds that lock until it finishes. Stall detection ends a stalled archive transfer, so it releases the lock. A lost connection requires a new download; there is no partial resume.
 
@@ -49,19 +156,24 @@ The cost is a complete per-release archive and temporary disk use: the whole arc
 
 The portal manages repositories through korrid, which stays unprivileged. When the device also runs korrid (`services.korridLinuxDevice`), the module adds `korri-plugin-admin.socket` at `services.korri.pluginHost.adminSocket` (`/run/korri-plugin-admin/admin.sock`, `root:korrid`, mode 0660). It activates `korri-plugin serve-admin` as root with the restore unit's hardening. The server reads `SO_PEERCRED` and answers only `KORRI_PLUGIN_ADMIN_PEER_UID`, korrid's uid; any other peer gets no answer. One request at a time opens the host, so each request takes the host lock exactly like a CLI command.
 
-The socket accepts seven JSON requests (`services/korrid/src/plugin_admin.rs`). Each calls the same `Host` method as one CLI command:
+The socket accepts the typed JSON requests (`services/korrid/src/plugin_admin.rs`). Each calls the same `Host` method as one CLI command:
 
 | Request | CLI command |
 |---|---|
 | `Repositories` | `repository list`, plus every installed receipt that is not being removed: `repositoryInstalls` for `Repository` provenance, `otherInstalls` (with the installed declaration's title) for the rest |
 | `RepositoryAdd` | `repository add URL` |
 | `RepositoryRemove` | `repository remove URL` |
-| `Catalog` | `repository catalog URL`, this platform only, with each plugin's receipt state and whether its namespace is bound |
+| `Catalog` | `repository catalog URL`, this platform only, with each plugin's receipt state and its namespace trust state |
 | `Inspect` | `repository inspect URL ID RELEASE` |
 | `Install` | `repository install URL ID RELEASE APPROVAL` |
 | `SetEnabled` | `enable ID` / `disable ID` |
+| `Publishers` | List bound and pinned keys, fingerprints and installed IDs |
+| `TrustPublisher` | Pin or knowingly replace an unbound namespace key |
+| `RevokePublisher` | Remove a runtime pin |
+| `InspectArchive` | Inspect korrid's staged local archive |
+| `InstallArchive` | Install the staged archive with its exact reviewed approval |
 
-Raw-cache install, update, switch, remove, purge, restore and `enabled-packages` are not reachable through the socket. Any other request is refused. Install re-inspects and refuses an approval that does not match, exactly as the CLI does. For a plugin that is already installed, it accepts only a new review of the exact installed package and provenance, for example after a host policy change made the stored approval stale. That uses the existing update intent and keeps the plugin on or off. It replaces only the approval; the stale one is not kept as a rollback selection. A review never adopts a pending cleanup journal (see **Lifecycle commands**), so it is refused while one exists. Any other release, source or package for an installed plugin is refused with "use update or explicit source switch". Refusals carry the host's own text. Codes: `PluginRepositoryUrlInvalid` for an address that fails the HTTPS URL policy, `PluginNeedsReview` when enable finds that the stored approval no longer matches the package or host policy, and `PluginHostRefused` for every other refusal.
+Raw-cache install, update, switch, remove, purge, restore and `enabled-packages` are not reachable through the socket. Any other request is refused. Install re-inspects and refuses an approval that does not match, exactly as the CLI does. For a plugin that is already installed, it accepts only a new review of the exact installed package and provenance, for example after a host policy change made the stored approval stale. That uses the existing update intent and keeps the plugin on or off. It replaces only the approval; the stale one is not kept as a rollback selection. A review never adopts a pending cleanup journal (see **Lifecycle commands**), so it is refused while one exists. Any other release, source or package for an installed plugin is refused with "use update or explicit source switch". Refusals carry the host's own text. Publisher and requirement refusals use `PluginPublisherNotTrusted`, `PluginPublisherKeyChanged`, `PluginNamespaceTaken`, and `PluginRequirementConflict`. Other codes: `PluginRepositoryUrlInvalid` for an address that fails the HTTPS URL policy, `PluginNeedsReview` when enable finds that the stored approval no longer matches the package or host policy, and `PluginHostRefused` for every other refusal.
 
 ## Raw-cache installation and approval
 
@@ -80,7 +192,7 @@ sudo korri-plugin enable @korri:tailscale
 
 Install leaves new plugins disabled, including required plugins. Approval binds to the exact store path, the complete manifest-selected source graph (including any launch code), manifest bytes, explicit input provenance, declaration, base policy, and complete rendered unit. A non-leaf approval also binds every required plugin's exact independent approval. Nix closure membership alone grants no Korri installation or activation authority. Repository approval never includes the disposable staging/cache path. Two sources serving identical bytes have different approvals. There is no blanket `--yes` grant.
 
-The device binds each publisher namespace to one full Nix public key and one exact cache URL through `services.korri.pluginHost.publishers`. Each binding has `publicKey` and `cacheUrl`; the module writes `/etc/korri-plugin-host/publishers.json` and adds those keys to Nix's trust list. A non-NixOS administrator supplies that root-owned file and configures the same Nix keys. Missing or malformed configuration fails closed. An empty map permits no external plugin.
+The device binds each publisher namespace to one full Nix public key and one exact cache URL through `services.korri.pluginHost.publishers`. Each binding has `publicKey` and `cacheUrl`; the module writes `/etc/korri-plugin-host/publishers.json` and adds those keys to Nix's trust list. A non-NixOS administrator supplies that root-owned file and configures the same Nix keys. Missing or malformed configuration fails closed. An empty configuration map still permits explicitly pinned publishers and the disclosed unsigned lane.
 
 The immutable package contains a closed source graph rooted at `plugin.ts` and a generated `manifest.json`. The manifest records the fixed entry and sorted admitted source inventory. Its only identity field is `publisher.namespace`, grounded in the approved authoring brief. The shared builder generates the manifest from trusted publisher composition, the source root, and native package artifacts; `tests/fixtures/tailscale/package.nix` is the build-side fixture. No manifest key is authoritative. The host verifies the actual selected NAR contents and checks an Ed25519 signature over Nix's fingerprint (path, NAR hash, NAR size, sorted references) with the bound full key. A matching signature label, another globally trusted signer, or content-addressed identity alone is insufficient. Raw-cache inspection also requires the bound cache URL.
 
@@ -90,7 +202,50 @@ Namespace verification does not authorize permissions. The administrator still a
 
 ## Required plugin graphs
 
-This deliberately restores `plugin.nix requires`, generated manifest `requires`, inspection `requires`/`brings`, and dependency-first lifecycle from `f3aa66d91`, before `1425b2c12` removed them. Requirements are exact store outputs, not IDs, version ranges, native binary inclusion, or inferred Nix closure edges. A starter pack can require the FAKE-08 Korri plugin without owning that plugin's executable or runner. No game catalogue or bundled-game schema is added here.
+The builder's `requires` list also accepts
+`{ repository = "https://example.org/catalog.json"; id = "@ns:plugin"; release = "label"; }`
+next to exact outputs. Omit `release` to use that catalog's `latest` mark. The
+builder emits these items as `requiresReleases`, separately from exact `requires`.
+At inspection/install the host resolves each spec against that repository for
+this platform, imports and inspects each exact build, and lists the whole graph
+under `brings`. A requirement is an explicit repository choice; that repository
+need not also be registered for catalog browsing. The graph limits remain 128
+plugins, 1024 links and no cycles.
+
+The existing `approval` request string carries one graph digest covering the
+root and all resolved dependency reports. The dependency receipts keep their
+exact package/provenance/approval and are the device lock; ordinary enable and
+restore never consult a catalog. Each release spec needs an installed receipt
+with its ID and Repository source, and with the specified release label when
+present. Missing or mismatched dependencies refuse starts by name.
+
+For release requirements, the root's **stored receipt** approval covers its own
+report and manifest requirement specs, not the resolved release builds. Exact
+`requires` still bind their exact dependency approvals as before. This makes a
+displaced root's cleanup approval derivable without searching dependency history.
+The review digest also covers dynamic dependencies below exact requirements.
+Root update re-resolves latest specs, discloses changed dependencies and checks
+one new graph digest before any effects. Conflicting installed locks refuse with
+`<new> needs <dep> <release>, but <installed> locked <dep> <release>`.
+
+Independent candidate closures get Nix indirect temporary roots inside the
+existing private staging TempDirs. The current request holds these directories
+through import, inspection and commit. `release_download` drops all of them;
+there is no assumption that a candidate survives into a later admin request.
+Install refetches and reinspects. The next request cleans crash-left staging
+before proceeding; dangling Nix `gcroots/auto` links grant no Korri authority and
+do not block later requests. The existing single `roots/download` link keeps
+its original role. Image `seed`/`seed-graph` remain exact-output APIs and refuse
+release requirements; repository image seeding and product pins are a later stage.
+
+The review graph digest is checked at commit and is **not retained**. Interrupted
+updates trust only the existing private, fsynced, host-written `graph-update.json`
+before/after selections as the lock. Recovery rechecks each package's own
+approval, requirement identity/source/label and graph bounds. It retains the
+journal for repair on mismatches. Completing the selection switch does not grant
+start authority: ordinary restore still rechecks current publisher trust.
+
+This deliberately restores `plugin.nix requires`, generated manifest `requires`, inspection `requires`/`brings`, and dependency-first lifecycle from `f3aa66d91`, before `1425b2c12` removed them. Exact requirements remain exact store outputs, not native binary inclusion or inferred Nix closure edges. Repository release requirements are described above. A starter pack can require the FAKE-08 Korri plugin without owning that plugin's executable or runner. No game catalogue or bundled-game schema is added here.
 
 Inspection discloses a flat, dependency-first `brings` list. Each entry includes the current full report and `already_approved`. The full report replaces the historical single `native_unit` summary with the current `native_units`, policy, warning, source inventory, files, and provenance. This delta follows the current multi-unit and closed-source consumers, not a new permission language. The historical closure approval used dependency IDs, exact outputs, and approvals. This implementation binds the same summaries to the current package approval; leaf digests and generated leaf manifest bytes remain unchanged.
 
@@ -269,19 +424,19 @@ The CLI uses korrid's actual evaluator from `services/korrid/src/script.rs`. Tha
 
 ## Catalog, source-state and receipt contract grounding
 
-`src/catalog.rs` is the shared strict Rust/Serde contract for publisher and reader. `Catalog` contains `records`; unknown fields and repeated `(plugin_id, release_version, platform)` records fail. Optional title/description may be absent but not null. No official flag, permissions, approval, channels or version ordering are accepted.
+`src/catalog.rs` is the shared strict Rust/Serde contract for publisher and reader. `Catalog` contains `records` and the catalog-level `latest` map; unknown fields and repeated `(plugin_id, release_version, platform)` records fail. Optional title/description may be absent but not null. Each latest mark must name an existing plugin/release. An `any` record cannot compete with a native record for the same release. No official flag, permissions, approval, channels or version ordering are accepted.
 
 | Field | Existing producer grounding |
 |---|---|
 | `plugin_id` | `Declaration::id()` combines the manifest publisher namespace with the named `name` export. The imported declaration must match the selected ID. |
 | `title`, `description` | The existing optional fields in `plugin.ts`; the publisher loads the real declaration through `package::load_declaration`. |
 | `release_version` | The explicit publisher CLI release label, independent of upstream binary version. |
-| `platform` | The Nix build system string supplied to the publisher. The consumer selects its compiled Nix system, not one supplied by the catalog caller. |
+| `platform` | The Nix build system detected from the output derivation, or `any` after the reference/path checks. The consumer selects its compiled Nix system, not one supplied by the catalog caller. |
 | `store_path` | The exact output returned by Nix `store make-content-addressed`. |
 | `archive_url` | The publisher's explicit HTTPS asset destination. It is only a download location, never a Nix cache URI/options string. |
 | `archive_sha256` | SHA256 measured over the publisher's actual tar bytes. The consumer measures the downloaded file independently. |
 
-`src/provenance.rs` adds the required `provenance` sum type to the existing report and receipt. Its `kind` is exactly `RawCache` or `Repository`. `RawCache.cache_url` is the existing raw CLI's CACHE argument. `Repository.source_url` is the explicitly configured, normalized catalog URL; `plugin_id`, `release_version`, `platform`, and `archive_sha256` come from the selected catalog record above. The surrounding receipt retains its existing `id`, `package`, `approval`, and `desired` fields. Package and provenance commit in the same atomic `selection.json` write; failed updates and interrupted source switches restore both together. No catalog reachability or source registration is needed to validate the committed approval locally.
+`src/provenance.rs` adds the required `provenance` sum type to the existing report and receipt. Its `kind` is exactly `RawCache`, `Repository`, or `Sideload`. Repository and Sideload carry required `signed` provenance; Sideload carries `archive_sha256` and `platform`. `RawCache.cache_url` is the existing raw CLI's CACHE argument. `Repository.source_url` is the explicitly configured, normalized catalog URL; `plugin_id`, `release_version`, `platform`, and `archive_sha256` come from the selected catalog record above. The surrounding receipt retains its existing `id`, `package`, `approval`, and `desired` fields. Package and provenance commit in the same atomic `selection.json` write; failed updates and interrupted source switches restore both together. No catalog reachability or source registration is needed to validate the committed approval locally.
 
 This is a clean receipt cut. A receipt without `provenance` fails deserialization and remains unchanged. There are no source guesses, compatibility reads or runtime migrations. Existing development receipts need an explicit one-off operational decision before deployment; this change performs none.
 
@@ -306,13 +461,11 @@ private. This reader grants no plugin authority. The settings backend still
 refuses plugin enable changes made as setting writes.
 
 Plugin administration from the portal has one separate route, approved
-2026-10-20: korrid, and only korrid's uid, reaches seven host operations
-through `korri-plugin-admin.socket` (see **korrid's admin socket** above):
-repository list, add, remove, catalog, inspect, install and enable/disable.
+2026-10-20: korrid, and only korrid's uid, reaches typed host operations
+through `korri-plugin-admin.socket` (see **korrid's admin socket** above), including publisher trust/revoke and staged archive inspection/install.
 The host keeps every check for those operations: the lock, catalog
 validation, archive hash, publisher signature and approval digest. korrid
-exposes them only to the full-permission local portal. Peer devices,
-including the owner's other devices, and read-only portals get nothing.
+exposes them only to the full-permission local portal. Verified same-owner peer devices have the same plugin authority. Read-only portals can list repositories, catalogs and publishers but cannot inspect, install or change trust.
 
 Linux discovery reads these selections. Several
 claims for one system make one catalog candidate; a disagreement about the

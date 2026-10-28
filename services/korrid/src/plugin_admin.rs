@@ -1,7 +1,7 @@
 //! Wire between korrid and the root plugin host's admin socket.
 //!
 //! korrid runs unprivileged and still cannot reach the host's state, receipts
-//! or store. The host's `korri-plugin serve-admin` accepts exactly the seven
+//! or store. The host's `korri-plugin serve-admin` accepts only the typed
 //! requests below from korrid's uid only, and runs each through the same
 //! `Host` method the `korri-plugin` CLI uses. Lock, catalog validation,
 //! archive hash, publisher signature and approval-digest checks stay in the
@@ -16,6 +16,7 @@ use typeshare::typeshare;
 pub const MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
 
 /// korrid could not reach the admin socket or read its answer.
+pub const CODE_UPLOAD_NOT_FOUND: &str = "PluginUploadNotFound";
 pub const CODE_UNAVAILABLE: &str = "PluginHostUnavailable";
 /// The host refused the request; the message is the host's own error text.
 pub const CODE_REFUSED: &str = "PluginHostRefused";
@@ -23,6 +24,10 @@ pub const CODE_REFUSED: &str = "PluginHostRefused";
 pub const CODE_URL_INVALID: &str = "PluginRepositoryUrlInvalid";
 /// Enable was refused because the stored approval no longer matches the
 /// installed package or host policy (`host.rs` approved_in).
+pub const CODE_PUBLISHER_NOT_TRUSTED: &str = "PluginPublisherNotTrusted";
+pub const CODE_PUBLISHER_KEY_CHANGED: &str = "PluginPublisherKeyChanged";
+pub const CODE_NAMESPACE_TAKEN: &str = "PluginNamespaceTaken";
+pub const CODE_REQUIREMENT_CONFLICT: &str = "PluginRequirementConflict";
 pub const CODE_NEEDS_REVIEW: &str = "PluginNeedsReview";
 
 // Producers: `main.rs` `repository list` (official vs user-added split),
@@ -118,7 +123,7 @@ pub struct PluginCatalogEntry {
     pub release_version: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed: Option<PluginInstalledState>,
-    pub publisher_trusted: bool,
+    pub publisher: PluginPublisher,
 }
 
 // Producer: `package.rs:24-52` Report, returned by `host.rs:270`
@@ -128,6 +133,7 @@ pub struct PluginCatalogEntry {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginInspection {
+    pub publisher: PluginPublisher,
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -155,6 +161,7 @@ pub struct PluginPorts {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginDependency {
+    pub publisher: PluginPublisher,
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -208,12 +215,97 @@ pub struct PluginSetEnabledRequest {
     pub enabled: bool,
 }
 
+// Approved plugin-direction schema sheet, rows 7, 9, 14-17.
+#[typeshare]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum PluginPublisherState {
+    Bound,
+    Trusted,
+    New,
+    KeyChanged,
+    Unsigned,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginPublisher {
+    pub namespace: String,
+    pub state: PluginPublisherState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_fingerprint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disclosure: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_key: Option<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+/// Publishers emits only Bound or Trusted; the shared state type also serves inspection.
+pub struct PluginPublisherEntry {
+    pub namespace: String,
+    pub fingerprint: String,
+    pub state: PluginPublisherState,
+    pub installed: Vec<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginPublishers {
+    pub entries: Vec<PluginPublisherEntry>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginPublishersRequest {}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginTrustPublisherRequest {
+    pub namespace: String,
+    pub public_key: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginRevokePublisherRequest {
+    pub namespace: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginArchiveRequest {
+    pub path: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginArchiveInstallRequest {
+    pub path: String,
+    pub approval: String,
+}
+
 /// The complete admin socket request set. Each maps 1:1 to the `Host` method
 /// that the named `korri-plugin` CLI command already calls. Anything else
 /// fails to parse and is refused.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload", deny_unknown_fields)]
 pub enum PluginAdminRequest {
+    Publishers(PluginPublishersRequest),
+    TrustPublisher(PluginTrustPublisherRequest),
+    RevokePublisher(PluginRevokePublisherRequest),
+    InspectArchive(PluginArchiveRequest),
+    InstallArchive(PluginArchiveInstallRequest),
     /// `repository list`
     Repositories(PluginRepositoriesRequest),
     /// `repository add URL`
@@ -239,7 +331,10 @@ pub struct PluginAdminFailure {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload", deny_unknown_fields)]
+// One owned JSON response per connection; keep the shared constructors simple.
+#[allow(clippy::large_enum_variant)]
 pub enum PluginAdminResponse {
+    Publishers(PluginPublishers),
     Repositories(PluginRepositories),
     RepositoryAdded(PluginRepositoryAddResult),
     RepositoryRemoved(PluginRepositoryRemoveResult),
@@ -247,4 +342,42 @@ pub enum PluginAdminResponse {
     Inspection(PluginInspection),
     Applied(PluginChangeApplied),
     Refused(PluginAdminFailure),
+}
+
+// Chunked archive transport. Only korrid maps these opaque IDs to paths.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginArchiveBeginRequest {
+    pub sha256: String,
+    #[typeshare(serialized_as = "f64")]
+    pub size: u64,
+}
+#[typeshare]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginArchiveUpload {
+    pub upload_id: String,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginArchiveChunkRequest {
+    pub upload_id: String,
+    #[typeshare(serialized_as = "f64")]
+    pub offset: u64,
+    pub data: String,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginArchiveUploadRequest {
+    pub upload_id: String,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginArchiveUploadInstallRequest {
+    pub upload_id: String,
+    pub approval: String,
 }

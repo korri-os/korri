@@ -122,6 +122,7 @@ fn cycles_conflicting_versions_outside_closure_and_borrowed_repository_identity_
         .contains("conflicting exact versions"));
     assert!(load("cycle").err().unwrap().contains("cycle"));
     let parent = Provenance::Repository {
+        signed: true,
         source_url: "https://games.example/catalog.json".into(),
         plugin_id: "@games:starter-pack".into(),
         release_version: "1".into(),

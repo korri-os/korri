@@ -161,6 +161,42 @@ pub fn extract(archive_path: &Path, staging_dir: &Path) -> Result<(), String> {
     validate_cache_layout(staging_dir)
 }
 
+/// A sideload has no catalog. Select the unique closure root from its narinfos.
+pub fn root_path(cache: &Path) -> Result<PathBuf, String> {
+    let mut paths = std::collections::BTreeSet::new();
+    let mut referenced = std::collections::BTreeSet::new();
+    for entry in fs::read_dir(cache).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if !entry.path().extension().is_some_and(|e| e == "narinfo") {
+            continue;
+        }
+        let mut text = String::new();
+        open_regular(&entry.path())?
+            .take(1024 * 1024 + 1)
+            .read_to_string(&mut text)
+            .map_err(|e| e.to_string())?;
+        if text.len() > 1024 * 1024 {
+            return Err("narinfo exceeds 1 MiB".into());
+        }
+        for line in text.lines() {
+            if let Some(path) = line.strip_prefix("StorePath: ") {
+                crate::package::validate_store_path(Path::new(path))?;
+                paths.insert(PathBuf::from(path));
+            }
+            if let Some(refs) = line.strip_prefix("References: ") {
+                for reference in refs.split_whitespace() {
+                    referenced.insert(PathBuf::from("/nix/store").join(reference));
+                }
+            }
+        }
+    }
+    let roots: Vec<_> = paths.difference(&referenced).collect();
+    if roots.len() != 1 {
+        return Err("archive must contain exactly one plugin closure root".into());
+    }
+    Ok(roots[0].clone())
+}
+
 fn create_entry(root: &File, path: &Path) -> Result<File, String> {
     let nar_directory;
     let directory = if path.parent() == Some(Path::new("nar")) {

@@ -5,12 +5,17 @@
 {
   publisher,
   source,
-  plugin,
+  plugin ? { },
 }:
 let
   lib = pkgs.lib;
   definition =
-    if builtins.isFunction plugin then plugin { inherit pkgs; } else import plugin { inherit pkgs; };
+    if builtins.isFunction plugin then
+      plugin { inherit pkgs; }
+    else if builtins.isAttrs plugin then
+      plugin
+    else
+      import plugin { inherit pkgs; };
   build =
     {
       packages ? { },
@@ -23,6 +28,8 @@ let
       hosts ? [ ],
     }:
     let
+      releases = builtins.filter (item: builtins.isAttrs item && !lib.isDerivation item) requires;
+      exact = builtins.filter (item: !(builtins.isAttrs item && !lib.isDerivation item)) requires;
       isNative =
         service: builtins.isPath service || builtins.isString service || lib.isDerivation service;
       nativeServices = lib.filterAttrs (_: isNative) services;
@@ -66,9 +73,10 @@ let
             packages = lib.mapAttrs (_: toString) packages;
             services = units;
           }
-          // lib.optionalAttrs (requires != [ ]) {
-            requires = map toString requires;
+          // lib.optionalAttrs (exact != [ ]) {
+            requires = map toString exact;
           }
+          // lib.optionalAttrs (releases != [ ]) { requiresReleases = releases; }
           // lib.optionalAttrs (hosts != [ ]) {
             inherit hosts;
           }
@@ -98,13 +106,34 @@ let
     assert builtins.attrNames publisher == [ "namespace" ];
     assert lib.assertMsg (
       builtins.length requires <= 128
-      && builtins.length (lib.unique (map toString requires)) == builtins.length requires
+      && builtins.length (lib.unique (map builtins.toJSON requires)) == builtins.length requires
       && builtins.all (
         path:
         builtins.match "/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-[^/]+" (toString path) != null
         && !lib.hasSuffix ".drv" (toString path)
-      ) requires
-    ) "plugin requires must name at most 128 exact store outputs";
+      ) exact
+      && builtins.all (
+        item:
+        item ? repository
+        && item ? id
+        && builtins.all (
+          name:
+          builtins.elem name [
+            "repository"
+            "id"
+            "release"
+          ]
+        ) (builtins.attrNames item)
+        && builtins.isString item.repository
+        && lib.hasPrefix "https://" item.repository
+        && builtins.isString item.id
+        && builtins.match "@[a-z0-9][a-z0-9_.-]*:[a-z0-9][a-z0-9_.-]*" item.id != null
+        && (
+          !(item ? release)
+          || (builtins.isString item.release && builtins.match "[a-zA-Z0-9+_.-]+" item.release != null)
+        )
+      ) releases
+    ) "plugin requires must name at most 128 distinct exact outputs or repository releases";
     assert lib.assertMsg (
       builtins.length hosts <= 128
       && builtins.length (lib.unique hosts) == builtins.length hosts
@@ -125,7 +154,7 @@ let
         )}
         ${lib.concatStringsSep "\n" (
           map (path: "test -f ${lib.escapeShellArg path}") (builtins.attrValues units)
-          ++ map (path: "test -f ${lib.escapeShellArg (toString path + "/manifest.json")}") requires
+          ++ map (path: "test -f ${lib.escapeShellArg (toString path + "/manifest.json")}") exact
         )}
         python3 ${./source-package.py} "$pluginSource" "$out" ${manifestBase}
       '';

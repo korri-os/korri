@@ -7,7 +7,7 @@ let
     cat > "$out/plugin.ts" <<'EOF'
     export { handlers } from "./launch.ts";
     export const name = "fake08";
-    export const runners = { fake08: { id: "@runtime:fake08/fake08", program: "fake08" } };
+    export const runners = { fake08: { program: "fake08" } };
     EOF
     echo 'export const handlers = { "launch.prepare": (input: unknown) => input };' > "$out/launch.ts"
   '';

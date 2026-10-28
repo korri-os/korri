@@ -3,6 +3,7 @@ use korri_plugin_host::catalog::{Catalog, CatalogRecord};
 // A minimal valid record; tests mutate fields to exercise rejection paths.
 fn valid_record() -> CatalogRecord {
     CatalogRecord {
+        public_key: None,
         plugin_id: "@example:network".into(),
         title: Some("Network".into()),
         description: Some("Provides networking.".into()),
@@ -15,7 +16,7 @@ fn valid_record() -> CatalogRecord {
 }
 
 fn catalog_with(records: Vec<CatalogRecord>) -> Vec<u8> {
-    serde_json::to_vec(&serde_json::json!({ "records": records })).unwrap()
+    serde_json::to_vec(&serde_json::json!({ "records": records, "latest": {} })).unwrap()
 }
 
 #[test]
@@ -283,10 +284,40 @@ fn release_version_path_separator_is_rejected() {
 #[test]
 fn serialized_catalog_round_trips_through_from_json() {
     let catalog = Catalog {
+        latest: Default::default(),
         records: vec![valid_record()],
     };
     let bytes = catalog.to_json().unwrap();
     let reparsed = Catalog::from_json(&bytes).unwrap();
     assert_eq!(reparsed.records.len(), 1);
     assert_eq!(reparsed.records[0].archive_sha256, "a".repeat(64));
+}
+
+#[test]
+fn latest_marks_and_any_architecture_are_explicit_and_unambiguous() {
+    let mut record = valid_record();
+    record.platform = "any".into();
+    let mut catalog = Catalog {
+        records: vec![record.clone()],
+        latest: std::collections::BTreeMap::from([(
+            record.plugin_id.clone(),
+            record.release_version.clone(),
+        )]),
+    };
+    let parsed = Catalog::from_json(&catalog.to_json().unwrap()).unwrap();
+    assert_eq!(
+        parsed
+            .record(&record.plugin_id, &record.release_version, "aarch64-linux")
+            .unwrap()
+            .platform,
+        "any"
+    );
+    catalog
+        .latest
+        .insert(record.plugin_id.clone(), "missing".into());
+    assert!(catalog.to_json().unwrap_err().contains("latest"));
+    catalog.latest.clear();
+    record.platform = "x86_64-linux".into();
+    catalog.records.push(record);
+    assert!(catalog.to_json().unwrap_err().contains("ambiguous any"));
 }

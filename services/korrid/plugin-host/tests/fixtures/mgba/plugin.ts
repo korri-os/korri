@@ -6,11 +6,10 @@ export const name = "mgba"
 export const title = "mGBA"
 export const description = "Runs Game Boy Advance content with the mGBA libretro core."
 export const systems = {
-  "gba": { id: "gba", title: "Game Boy Advance", content: { extensions: ["gba"] } },
+  "gba": { title: "Game Boy Advance", content: { extensions: ["gba"] } },
 }
 export const runners = {
   "mgba": {
-    id: "@korri:mgba/mgba",
     family: "@korri:retroarch",
     program: "retroarch",
     core: "mgba",

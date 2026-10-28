@@ -295,6 +295,14 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::PluginCatalog(_)
         | RpcRequest::PluginInspect(_)
         | RpcRequest::PluginInstall(_)
+        | RpcRequest::PluginPublishers(_)
+        | RpcRequest::PluginTrustPublisher(_)
+        | RpcRequest::PluginRevokePublisher(_)
+        | RpcRequest::PluginArchiveBegin(_)
+        | RpcRequest::PluginArchiveChunk(_)
+        | RpcRequest::PluginArchiveFinish(_)
+        | RpcRequest::PluginArchiveInspect(_)
+        | RpcRequest::PluginArchiveInstall(_)
         | RpcRequest::PluginSetEnabled(_) => PeerPolicy::LocalPortalOrOwnerDevice,
     }
 }
@@ -375,6 +383,13 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::PluginRepositoryRemove(_)
             | RpcRequest::PluginInspect(_)
             | RpcRequest::PluginInstall(_)
+            | RpcRequest::PluginTrustPublisher(_)
+            | RpcRequest::PluginRevokePublisher(_)
+            | RpcRequest::PluginArchiveBegin(_)
+            | RpcRequest::PluginArchiveChunk(_)
+            | RpcRequest::PluginArchiveFinish(_)
+            | RpcRequest::PluginArchiveInspect(_)
+            | RpcRequest::PluginArchiveInstall(_)
             | RpcRequest::PluginSetEnabled(_)
     )
 }
@@ -1483,6 +1498,35 @@ mod tests {
             .unwrap();
         for (tag, payload) in [
             ("system.plugins.repositories", serde_json::json!({})),
+            ("system.plugins.publishers", serde_json::json!({})),
+            (
+                "system.plugins.publisher.trust",
+                serde_json::json!({"namespace":"@test", "publicKey":"key"}),
+            ),
+            (
+                "system.plugins.publisher.revoke",
+                serde_json::json!({"namespace":"@test"}),
+            ),
+            (
+                "system.plugins.archive.begin",
+                serde_json::json!({"sha256":"a".repeat(64), "size":3}),
+            ),
+            (
+                "system.plugins.archive.chunk",
+                serde_json::json!({"uploadId":"id", "offset":0, "data":"YWJj"}),
+            ),
+            (
+                "system.plugins.archive.finish",
+                serde_json::json!({"uploadId":"id"}),
+            ),
+            (
+                "system.plugins.archive.inspect",
+                serde_json::json!({"uploadId":"id"}),
+            ),
+            (
+                "system.plugins.archive.install",
+                serde_json::json!({"uploadId":"id", "approval":"digest"}),
+            ),
             (
                 "system.plugins.repository.add",
                 serde_json::json!({"url":"https://example.com"}),

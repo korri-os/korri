@@ -76,7 +76,7 @@ fn cached_output_requires_the_bound_full_key_not_a_second_trusted_signer_or_labe
     )
     .unwrap();
     let source = "export const name = 'game';
-        export const systems = {gba: {id: 'gba', title: 'Game Boy Advance'}};
+        export const systems = {gba: {title: 'Game Boy Advance'}};
         export const handlers = {'launch.prepare': function (input) { return input; }}";
     fs::write(package.join("plugin.ts"), source).unwrap();
     // Unique contents prevent a signature from another test run masking the rejection.

@@ -159,6 +159,7 @@ mod seed_tests {
     use super::*;
     fn report(name: &str, requires: Vec<std::path::PathBuf>) -> package::Report {
         package::Report {
+            publisher: None,
             id: format!("@korri:{name}"),
             package: format!("/nix/store/{name}").into(),
             requires,
@@ -274,6 +275,12 @@ fn seed_selection(report: &package::Report) -> Receipt {
         desired: Desired::Enabled,
         previous: None,
     }
+}
+
+fn print_review(host: &Host, report: &package::Report) -> Result<(), String> {
+    let mut reviewed = report.clone();
+    reviewed.approval = host.review_approval(report)?;
+    print_json(&reviewed)
 }
 
 fn print_json(value: &impl serde::Serialize) -> Result<(), String> {
@@ -395,27 +402,27 @@ fn run(args: Vec<String>) -> Result<(), String> {
             repository_command(&host, &repository_configuration()?, commands)
         }
         ["inspect", source, path] => {
-            print_json(&host.inspect(source, Path::new(path))?)?;
+            print_review(&host, &host.inspect(source, Path::new(path))?)?;
             host.release_download()
         }
         ["install", source, id, "--release", revision] => {
             let curl = env::var("KORRI_PLUGIN_CURL").map_err(|_| "host package must supply KORRI_PLUGIN_CURL")?;
             let report = host.inspect_release(Path::new(&curl), source, id, revision)?;
-            print_json(&report)?;
+            print_review(&host, &report)?;
             eprintln!(
                 "Release {revision}: not installed. Review this exact package and approval report, then run:\nsudo korri-plugin install '{}' '{}' '{}'\nEnable the plugin separately after installation.",
-                source, report.package.display(), report.approval,
+                source, report.package.display(), host.review_approval(&report)?,
             );
             host.release_download()
         }
         ["install", source, path, approval] => {
             let report = host.inspect(source, Path::new(path))?;
-            print_json(&report)?;
+            print_review(&host, &report)?;
             host.install(report, approval, SelectionIntent::Install)
         }
         ["update", id, source, path, approval] => {
             let report = host.inspect(source, Path::new(path))?;
-            print_json(&report)?;
+            print_review(&host, &report)?;
             host.install(report, approval, SelectionIntent::Update { id })
         }
         ["enable", id] => host.set_enabled(id, true),
@@ -462,23 +469,23 @@ fn repository_command(host: &Host, config: &Configuration, args: &[&str]) -> Res
         }
         ["catalog", source] => print_json(&host.catalog(config, &SourceUrl::parse(source)?)?),
         ["inspect", source, id, release] => {
-            print_json(&host.inspect_repository(config, &SourceUrl::parse(source)?, id, release)?)?;
+            print_review(host, &host.inspect_repository(config, &SourceUrl::parse(source)?, id, release)?)?;
             host.release_download()
         }
         ["install", source, id, release, approval] => {
             let report = host.inspect_repository(config, &SourceUrl::parse(source)?, id, release)?;
-            print_json(&report)?;
+            print_review(host, &report)?;
             host.install(report, approval, SelectionIntent::Install)
         }
         ["update", id, release, approval] => {
             let source = host.installed_source(id)?;
             let report = host.inspect_repository(config, &source, id, release)?;
-            print_json(&report)?;
+            print_review(host, &report)?;
             host.install(report, approval, SelectionIntent::Update { id })
         }
         ["switch", id, source, release, approval] => {
             let report = host.inspect_repository(config, &SourceUrl::parse(source)?, id, release)?;
-            print_json(&report)?;
+            print_review(host, &report)?;
             host.install(report, approval, SelectionIntent::SwitchSource { id })
         }
         _ => Err("usage: korri-plugin repository add URL | remove URL | list | catalog URL | inspect URL ID RELEASE | install URL ID RELEASE APPROVAL | update ID RELEASE APPROVAL | switch ID URL RELEASE APPROVAL".into()),
