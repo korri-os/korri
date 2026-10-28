@@ -112,7 +112,10 @@ TypeScript contract. Publish writes a signed repository folder, not an upload.
 Sideload uses the same selected-device publisher trust and exact-digest approval
 as repository installation, after korrid's chunked staging transport. `--yes`
 never supplies either trust or approval. JSON owner/sideload replies remain the
-wire types; offline author command JSON is a string, like `version`.
+wire types. Fresh sideload includes its native begin response and resume ID;
+`--upload ID --approval DIGEST` reinspects and installs that existing upload
+without building or uploading again. Resumed JSON contains no fabricated begin
+response. Offline author command JSON is a string, like `version`.
 
 Remaining limit: peers have no Nix platform producer. Native sideload needs an
 explicit `--platform`; only publisher-verified `any` packages may omit it. Nix

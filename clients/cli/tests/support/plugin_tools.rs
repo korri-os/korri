@@ -22,6 +22,11 @@ impl AuthorTools {
         fs::create_dir(root.path().join("bin")).unwrap();
         fs::create_dir(root.path().join("output")).unwrap();
         fs::write(
+            root.path().join("flake.nix"),
+            "{ outputs = _: { packages = {}; }; }\n",
+        )
+        .unwrap();
+        fs::write(
             root.path().join("output/manifest.json"),
             r#"{"publisher":{"namespace":"@author"}}"#,
         )
@@ -34,7 +39,12 @@ if [ "$1" = key ] && [ -n "${NIX_REAL_KEYS:-}" ]; then exec "$NIX_REAL_KEYS" "$@
 if [ "${NIX_EXIT:-0}" -ne 0 ]; then exit "$NIX_EXIT"; fi
 case "$1 $2" in
   'config show') printf '%s\n' '{"system":{"value":"x86_64-linux"},"extra-platforms":{"value":["aarch64-linux"]}}' ;;
-  'eval --json') printf '%s\n' '["x86_64-linux","aarch64-linux"]' ;;
+  'eval --json')
+    if [ "$5" = 'packages: builtins.mapAttrs (_: outputs: outputs.default.outPath) packages' ]; then
+      printf '{"x86_64-linux":"%s/output"}\n' "$TOOLS_ROOT"
+    else
+      printf '%s\n' '["x86_64-linux","aarch64-linux"]'
+    fi ;;
   'build --json') printf '[{"outputs":{"out":"%s/output"}}]\n' "$TOOLS_ROOT" ;;
   'key generate-secret') printf '%s\n' 'author:secret-bytes' ;;
   'key convert-secret-to-public') cat >/dev/null; printf '%s\n' 'author:AbCdEfGhIjKlMnOpAAAAAAAAAAAAAAAAAAAAAAAAAAA=' ;;

@@ -33,6 +33,9 @@ pub fn commands() -> Vec<Command> {
         Command::new("sideload")
             .about("Build locally, then review and approve a signed archive on a device")
             .arg(Arg::new("dir").default_value("."))
+            .arg(Arg::new("upload").long("upload").value_name("ID")
+                .value_parser(clap::builder::NonEmptyStringValueParser::new())
+                .help("Review or install this existing upload without building or sending it again"))
             .arg(
                 Arg::new("platform")
                     .long("platform")
@@ -357,11 +360,37 @@ pub fn namespace(outputs: &[PathBuf]) -> Result<String, CliError> {
     Ok(namespaces.into_iter().next().expect("one namespace"))
 }
 
+/// Resolve the project's existing output paths without building. Namespace
+/// still comes from the same generated manifest used by a fresh author build.
+pub fn project_namespace(directory: &Path) -> Result<String, CliError> {
+    if !directory.join("flake.nix").is_file() {
+        return Err(file_error("read the local plugin project"));
+    }
+    let outputs: BTreeMap<String, PathBuf> = decode(&checked(
+        Process::new("nix").current_dir(directory).args([
+            "eval",
+            "--json",
+            ".#packages",
+            "--apply",
+            "packages: builtins.mapAttrs (_: outputs: outputs.default.outPath) packages",
+        ]),
+        "PluginBuildFailed",
+        "locate the project's already-built outputs",
+    )?)?;
+    let built = outputs
+        .into_values()
+        .filter(|path| path.is_absolute() && path.join("manifest.json").is_file())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    namespace(&built)
+}
+
 pub struct AuthorKey {
     pub path: PathBuf,
     pub public: String,
 }
-pub fn author_key(namespace: &str) -> Result<AuthorKey, CliError> {
+fn publisher_key_path(namespace: &str) -> Result<PathBuf, CliError> {
     validate_namespace(namespace)?;
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .filter(|path| !path.is_empty())
@@ -375,9 +404,15 @@ pub fn author_key(namespace: &str) -> Result<AuthorKey, CliError> {
                 "Set XDG_CONFIG_HOME to an absolute private folder.",
             )
         })?;
-    let directory = config.join("korri/publishers");
-    fs::create_dir_all(&directory).map_err(|_| file_error("create the publisher key folder"))?;
-    let path = directory.join(format!("{namespace}.secret"));
+    Ok(config
+        .join("korri/publishers")
+        .join(format!("{namespace}.secret")))
+}
+
+pub fn author_key(namespace: &str) -> Result<AuthorKey, CliError> {
+    let path = publisher_key_path(namespace)?;
+    fs::create_dir_all(path.parent().expect("publisher key parent"))
+        .map_err(|_| file_error("create the publisher key folder"))?;
     match OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -413,6 +448,15 @@ pub fn author_key(namespace: &str) -> Result<AuthorKey, CliError> {
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
         Err(_) => return Err(file_error("create the publisher key")),
     }
+    read_author_key(path)
+}
+
+/// Resume never creates a key or its parent directory.
+pub fn existing_author_key(namespace: &str) -> Result<AuthorKey, CliError> {
+    read_author_key(publisher_key_path(namespace)?)
+}
+
+fn read_author_key(path: PathBuf) -> Result<AuthorKey, CliError> {
     let file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW)

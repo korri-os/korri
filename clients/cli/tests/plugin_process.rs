@@ -12,6 +12,9 @@ use std::{
 #[path = "support/plugin_tools.rs"]
 mod plugin_tools;
 use plugin_tools::AuthorTools;
+#[path = "support/plugin_staging.rs"]
+mod plugin_staging;
+use plugin_staging::Staging;
 const KEY: &str = "author:AbCdEfGhIjKlMnOpAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 const FP: &str = "author AbCd EfGh IjKl MnOp";
 const OLD_FP: &str = "author AAAA BBBB CCCC DDDD";
@@ -96,6 +99,7 @@ fn target() -> Vec<Exchange> {
 #[derive(Clone)]
 struct Service {
     exchanges: Arc<Mutex<VecDeque<Exchange>>>,
+    staging: Option<Arc<Mutex<Staging>>>,
 }
 struct Server {
     root: tempfile::TempDir,
@@ -104,6 +108,9 @@ struct Server {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 fn respond(state: Service, device: bool, request: Value) -> Value {
+    if let Some(staging) = state.staging {
+        return staging.lock().unwrap().respond(device, request);
+    }
     let next = state
         .exchanges
         .lock()
@@ -116,12 +123,19 @@ fn respond(state: Service, device: bool, request: Value) -> Value {
 }
 impl Server {
     fn new(exchanges: Vec<Exchange>) -> Self {
+        Self::configured(exchanges, None)
+    }
+    fn staging(trusted: bool) -> Self {
+        Self::configured(vec![], Some(Arc::new(Mutex::new(Staging::new(trusted)))))
+    }
+    fn configured(exchanges: Vec<Exchange>, staging: Option<Arc<Mutex<Staging>>>) -> Self {
         let root = tempfile::tempdir().unwrap();
         let listener =
             std::os::unix::net::UnixListener::bind(root.path().join("cli.sock")).unwrap();
         listener.set_nonblocking(true).unwrap();
         let state = Service {
             exchanges: Arc::new(Mutex::new(exchanges.into())),
+            staging,
         };
         let serving = state.clone();
         let (stop, stopped) = tokio::sync::oneshot::channel();
@@ -197,6 +211,20 @@ fn assert_json(output: Output, expected: &Value, exit: i32) {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+fn assert_staged_json(output: Output, response: &Value, exit: i32) {
+    assert_json(
+        output,
+        &json!([
+            ok(
+                "system.plugins.archive.begin",
+                json!({"uploadId":"upload-1"})
+            ),
+            response
+        ]),
+        exit,
+    );
+}
+
 #[test]
 fn plugin_review_shows_all_publisher_states_and_each_dependency_locally_and_on_device() {
     for remote in [false, true] {
@@ -478,7 +506,7 @@ fn plugin_sideload_builds_locally_uploads_sequential_chunks_and_requires_exact_a
         }
         let output = command.output().unwrap();
         match approval {
-            None => assert_json(
+            None => assert_staged_json(
                 output,
                 &ok("system.plugins.archive.inspect", inspection("Trusted")),
                 0,
@@ -491,7 +519,7 @@ fn plugin_sideload_builds_locally_uploads_sequential_chunks_and_requires_exact_a
                     "PluginNeedsReview"
                 );
             }
-            _ => assert_json(output, &response, 0),
+            _ => assert_staged_json(output, &response, 0),
         }
         let calls = fs::read_to_string(tools.root.path().join("nix.calls")).unwrap();
         assert!(calls.contains(".#packages.aarch64-linux.default"));
@@ -504,7 +532,7 @@ fn plugin_sideload_stops_on_upload_failure_without_finish_inspect_or_install() {
     let tools = AuthorTools::new();
     let bytes = archive_bytes();
     let server = Server::new(upload_exchanges(&bytes, true));
-    assert_json(
+    assert_staged_json(
         sideload_command(&tools, &server, &bytes).output().unwrap(),
         &refused("system.plugins.archive.chunk", "PluginUploadFailed"),
         1,
@@ -527,7 +555,7 @@ fn plugin_sideload_yes_does_not_trust_the_author() {
         response.clone(),
     ));
     let server = Server::new(exchanges);
-    assert_json(
+    assert_staged_json(
         sideload_command(&tools, &server, &bytes)
             .args(["--approval", "exact-digest"])
             .output()
@@ -667,7 +695,7 @@ fn plugin_sideload_platform_is_explicit_unless_the_publisher_proves_any_architec
             .output()
             .unwrap();
         if platform == "any" {
-            assert_json(
+            assert_staged_json(
                 output,
                 &ok("system.plugins.archive.inspect", inspection("Trusted")),
                 0,
@@ -768,7 +796,7 @@ fn plugin_sideload_accepts_host_platform_names_and_any_architecture() {
             .env("ARCHIVE_SHA256", format!("{:x}", Sha256::digest(bytes)))
             .output()
             .unwrap();
-        assert_json(output, &response, 0);
+        assert_staged_json(output, &response, 0);
         let calls = fs::read_to_string(tools.root.path().join("nix.calls")).unwrap();
         if platform == "any" {
             assert!(!calls.contains(".#packages.any.default"));
@@ -852,4 +880,360 @@ fn plugin_sideload_any_refuses_native_archives_before_upload() {
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     server.done();
+}
+
+#[test]
+fn plugin_sideload_review_then_resume_installs_the_same_staged_upload() {
+    let tools = AuthorTools::new();
+    let server = Server::staging(true);
+    let first = sideload_command(&tools, &server, b"archive")
+        .output()
+        .unwrap();
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let responses: Value = serde_json::from_slice(&first.stdout).unwrap();
+    assert_eq!(
+        responses
+            .as_array()
+            .expect("sideload returns observed RPC responses")
+            .len(),
+        2
+    );
+    let upload = responses[0]["outcome"]["payload"]["uploadId"]
+        .as_str()
+        .expect("begin response exposes the resumable upload ID");
+    let approval = responses[1]["outcome"]["payload"]["approval"]
+        .as_str()
+        .unwrap();
+    let builds = fs::read(tools.root.path().join("nix.calls")).unwrap();
+    let publications = fs::read(tools.root.path().join("publisher.calls")).unwrap();
+    let output = tools
+        .cli()
+        .arg("--socket")
+        .arg(server.root.path().join("cli.sock"))
+        .args([
+            "plugins",
+            "sideload",
+            "--device",
+            "There",
+            "--upload",
+            upload,
+            "--approval",
+            approval,
+            "--json",
+        ])
+        .env("NIX_EXIT", "7")
+        .env("PUBLISH_EXIT", "7")
+        .output()
+        .unwrap();
+    assert_json(
+        output,
+        &json!([ok("system.plugins.archive.install", json!({}))]),
+        0,
+    );
+    assert_eq!(
+        fs::read(tools.root.path().join("nix.calls")).unwrap(),
+        builds
+    );
+    assert_eq!(
+        fs::read(tools.root.path().join("publisher.calls")).unwrap(),
+        publications
+    );
+    let staged = server.state.staging.as_ref().unwrap().lock().unwrap();
+    assert_eq!(staged.begins, 1);
+    assert!(staged.installed);
+}
+
+#[test]
+fn plugin_sideload_trust_then_resume_keeps_the_original_upload() {
+    let tools = AuthorTools::new();
+    let server = Server::staging(false);
+    let first = sideload_command(&tools, &server, b"archive")
+        .output()
+        .unwrap();
+    assert_eq!(first.status.code(), Some(1));
+    let responses: Value = serde_json::from_slice(&first.stdout).unwrap();
+    let upload = responses[0]["outcome"]["payload"]["uploadId"]
+        .as_str()
+        .expect("a trust refusal still exposes its upload ID");
+    assert_json(
+        server.run(&[
+            "plugins", "trust", "@author", "--key", KEY, "--device", "There", "--json",
+        ]),
+        &ok("system.plugins.publisher.trust", json!({})),
+        0,
+    );
+    let reviewed = tools
+        .cli()
+        .arg("--socket")
+        .arg(server.root.path().join("cli.sock"))
+        .args([
+            "plugins", "sideload", "--device", "There", "--upload", upload, "--json",
+        ])
+        .env("NIX_EXIT", "7")
+        .env("PUBLISH_EXIT", "7")
+        .output()
+        .unwrap();
+    assert!(
+        reviewed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&reviewed.stderr)
+    );
+    let reviewed: Value = serde_json::from_slice(&reviewed.stdout).unwrap();
+    assert_eq!(
+        reviewed,
+        json!([ok("system.plugins.archive.inspect", inspection("Trusted"))])
+    );
+    let approval = reviewed[0]["outcome"]["payload"]["approval"]
+        .as_str()
+        .unwrap();
+    let output = tools
+        .cli()
+        .arg("--socket")
+        .arg(server.root.path().join("cli.sock"))
+        .args([
+            "plugins",
+            "sideload",
+            "--device",
+            "There",
+            "--upload",
+            upload,
+            "--approval",
+            approval,
+            "--json",
+        ])
+        .env("NIX_EXIT", "7")
+        .env("PUBLISH_EXIT", "7")
+        .output()
+        .unwrap();
+    assert_json(
+        output,
+        &json!([ok("system.plugins.archive.install", json!({}))]),
+        0,
+    );
+    let staged = server.state.staging.as_ref().unwrap().lock().unwrap();
+    assert_eq!(staged.begins, 1);
+    assert!(staged.installed);
+}
+
+#[test]
+fn plugin_sideload_missing_upload_returns_failure_and_requires_a_fresh_run() {
+    let unused = Server::new(vec![]);
+    assert_eq!(
+        unused
+            .run(&["plugins", "sideload", "--device", "There", "--upload", ""])
+            .status
+            .code(),
+        Some(2)
+    );
+    unused.done();
+    let server = Server::staging(true);
+    let output = server.run(&[
+        "plugins", "sideload", "--device", "There", "--upload", "expired",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        text.contains("Next: run sideload again without --upload"),
+        "{text}"
+    );
+    assert_json(
+        server.run(&[
+            "plugins", "sideload", "--device", "There", "--upload", "expired", "--json",
+        ]),
+        &json!([refused(
+            "system.plugins.archive.inspect",
+            "PluginUploadNotFound"
+        )]),
+        1,
+    );
+    let staged = server.state.staging.as_ref().unwrap().lock().unwrap();
+    assert_eq!(staged.begins, 0);
+    assert!(!staged.installed);
+    assert_eq!(
+        staged
+            .calls
+            .iter()
+            .filter(|request| request["_tag"] == "system.plugins.archive.inspect")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn plugin_sideload_resumed_terminal_trust_uses_the_project_and_existing_key() {
+    let tools = AuthorTools::new();
+    let server = Server::staging(false);
+    let first = sideload_command(&tools, &server, b"archive")
+        .output()
+        .unwrap();
+    assert_eq!(first.status.code(), Some(1));
+    let responses: Value = serde_json::from_slice(&first.stdout).unwrap();
+    let upload = responses[0]["outcome"]["payload"]["uploadId"]
+        .as_str()
+        .unwrap();
+    let publications = fs::read(tools.root.path().join("publisher.calls")).unwrap();
+    let mut command = server.terminal(
+        &[
+            "plugins", "sideload", "--device", "There", "--upload", upload, "--yes",
+        ],
+        json!([
+            ["Trust this author's key", "yes"],
+            ["then type the exact approval digest", "exact-digest"]
+        ]),
+    );
+    tools.configure(&mut command);
+    let output = command.env("PUBLISH_EXIT", "7").output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains(FP));
+    assert!(text.contains("Plugin installed, off"));
+    let calls = fs::read_to_string(tools.root.path().join("nix.calls")).unwrap();
+    assert_eq!(
+        calls
+            .lines()
+            .filter(|line| line.starts_with("build "))
+            .count(),
+        1
+    );
+    assert_eq!(calls.matches("key generate-secret").count(), 1);
+    assert_eq!(calls.matches("key convert-secret-to-public").count(), 2);
+    assert_eq!(
+        fs::read(tools.root.path().join("publisher.calls")).unwrap(),
+        publications
+    );
+    let staged = server.state.staging.as_ref().unwrap().lock().unwrap();
+    assert_eq!(staged.begins, 1);
+    assert!(staged.installed);
+}
+
+#[test]
+fn plugin_sideload_resumed_terminal_without_project_or_key_never_prompts_or_creates_a_key() {
+    for missing in ["project", "key"] {
+        let tools = AuthorTools::new();
+        let server = Server::staging(false);
+        let first = sideload_command(&tools, &server, b"archive")
+            .output()
+            .unwrap();
+        assert_eq!(first.status.code(), Some(1));
+        let responses: Value = serde_json::from_slice(&first.stdout).unwrap();
+        let upload = responses[0]["outcome"]["payload"]["uploadId"]
+            .as_str()
+            .unwrap();
+        let key = tools
+            .root
+            .path()
+            .join("config/korri/publishers/@author.secret");
+        if missing == "project" {
+            fs::remove_file(tools.root.path().join("flake.nix")).unwrap();
+        } else {
+            fs::remove_file(&key).unwrap();
+        }
+        let mut command = server.terminal(
+            &[
+                "plugins", "sideload", "--device", "There", "--upload", upload, "--yes",
+            ],
+            json!([]),
+        );
+        tools.configure(&mut command);
+        let output = command.output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            text.contains("no available plugin publisher and existing author key"),
+            "{text}"
+        );
+        assert!(
+            text.contains("korri plugins trust <namespace> --key <full public key> --device"),
+            "{text}"
+        );
+        assert!(text.contains(&format!("--upload '{upload}'")), "{text}");
+        assert!(!text.contains("Trust this author's key on the selected device?"));
+        if missing == "key" {
+            assert!(!key.exists());
+        }
+        let calls = fs::read_to_string(tools.root.path().join("nix.calls")).unwrap();
+        assert_eq!(calls.matches("key generate-secret").count(), 1);
+        let staged = server.state.staging.as_ref().unwrap().lock().unwrap();
+        assert_eq!(staged.begins, 1);
+        assert!(!staged.installed);
+    }
+}
+
+#[test]
+fn plugin_sideload_human_review_prints_an_executable_resume_command() {
+    let tools = AuthorTools::new();
+    let server = Server::staging(true);
+    fs::create_dir(tools.root.path().join("plugin project")).unwrap();
+    fs::write(tools.root.path().join("archive.bytes"), b"archive").unwrap();
+    let first = tools
+        .cli()
+        .arg("--socket")
+        .arg(server.root.path().join("cli.sock"))
+        .args([
+            "plugins",
+            "sideload",
+            "plugin project",
+            "--device",
+            "There",
+            "--platform",
+            "aarch64-linux",
+        ])
+        .env(
+            "ARCHIVE_SHA256",
+            format!("{:x}", Sha256::digest(b"archive")),
+        )
+        .output()
+        .unwrap();
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let text = String::from_utf8(first.stdout).unwrap();
+    assert!(text.contains("Upload: upload-1"), "{text}");
+    let resume = text
+        .lines()
+        .find_map(|line| line.strip_prefix("Resume: "))
+        .expect("exact resume command");
+    assert!(resume.contains("'plugin project'"));
+    assert!(resume.contains("--upload 'upload-1' --approval 'exact-digest'"));
+    std::os::unix::fs::symlink(
+        env!("CARGO_BIN_EXE_korri"),
+        tools.root.path().join("bin/korri"),
+    )
+    .unwrap();
+    let mut command = Command::new("/bin/sh");
+    tools.configure(&mut command);
+    let output = command
+        .args(["-c", resume])
+        .env("KORRI_CLI_SOCKET", server.root.path().join("cli.sock"))
+        .env("NIX_EXIT", "7")
+        .env("PUBLISH_EXIT", "7")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Plugin installed, off"));
+    let staged = server.state.staging.as_ref().unwrap().lock().unwrap();
+    assert_eq!(staged.begins, 1);
+    assert!(staged.installed);
 }
