@@ -9,7 +9,9 @@ let
     export const name = "fake08";
     export const runners = { fake08: { program: "fake08" } };
     EOF
-    echo 'export const handlers = { "launch.prepare": (input: unknown) => input };' > "$out/launch.ts"
+    # With no systems or releases this is a settings-only native runner. It
+    # keeps a separate launch module to exercise source-graph approval.
+    echo 'export const handlers = { "launch.prepare": (input: unknown) => input, "settings.render": () => ({ args: [] }) };' > "$out/launch.ts"
   '';
   packSource = pkgs.writeTextDir "plugin.ts" ''export const name = "starter-pack";'';
   program = pkgs.writeShellScriptBin "fixture-fake08" "exit 0";
