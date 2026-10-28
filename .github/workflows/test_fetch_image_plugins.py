@@ -122,11 +122,15 @@ let path = {json.dumps(PACKAGE)}; in {{
 """)
                 if consumer == "--inputd":
                     (root / "flake.nix").write_text('{ outputs = _: throw "Inputd must not evaluate devices"; }')
+                # NIX_CONFIG supplements global nix.conf; it does not replace it.
+                # Keep host-only settings out of this locked-Nix fixture too.
+                (root / "nix-conf").mkdir()
                 env = {k: v for k, v in os.environ.items() if not k.startswith("NIX_")}
                 env.update({
                     "HOME": str(root / "home"),
                     "XDG_CACHE_HOME": str(root / "xdg-cache"),
                     "NIX_REMOTE": f"local?root={root / 'store-root'}",
+                    "NIX_CONF_DIR": str(root / "nix-conf"),
                     "NIX_USER_CONF_FILES": "/dev/null",
                     "NIX_CONFIG": "experimental-features = nix-command flakes\n"
                     "substituters =\nextra-substituters =\n"
@@ -140,6 +144,10 @@ let path = {json.dumps(PACKAGE)}; in {{
                 result = subprocess.run(
                     ["bash", str(SCRIPT), consumer], cwd=root, env=env,
                     capture_output=True, text=True, timeout=90,
+                )
+                self.assertNotIn(
+                    "unknown setting", result.stderr,
+                    "host Nix configuration leaked into the fixture",
                 )
                 installed = root / "store-root" / PACKAGE.lstrip("/")
                 success = failed_payloads < 4 and not wrong_key and not bad_metadata
