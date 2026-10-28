@@ -1,20 +1,19 @@
 /** Fixtures for the plugin repository flow, in the generated wire types. */
 import {
   PluginInstalledState,
-  type PluginRepositories,
-  type RpcFailure,
-} from "@contracts/generated/korrid"
-import {
-  UNSIGNED_DISCLOSURE,
+  PluginPublisherState,
   type PluginCatalogEntry,
   type PluginInspection,
   type PluginPublisher,
   type PluginPublishers,
-} from "../korrid/plugin-admin"
+  type PluginRepositories,
+  type RpcFailure,
+} from "@contracts/generated/korrid"
+import { UNSIGNED_DISCLOSURE } from "../korrid/client"
 import type { PluginFacts, PluginRepositoryClient } from "./plugin-repositories"
 
 export const OFFICIAL = "https://plugins.korri.example/official"
-export const RETRO = "https://github.com/ada/retro-plugins"
+export const RETRO = "https://git.example/ada/retro-plugins"
 export const BROKEN = "https://broken.example/catalog"
 export const REMOVED = "https://old.example/plugins"
 
@@ -29,26 +28,26 @@ export const ADA_NEW_FINGERPRINT = "ada-plugins-2 QWRh IG5l dyBz YW1w"
 export const LIB_KEY = "lib-1:TGliIHNhbXBsZSBrZXksIG5vdCBhIHJlYWwga2V5IQ=="
 export const LIB_FINGERPRINT = "lib-1 TGli IHNh bXBs ZSBr"
 
-export const ada: PluginPublisher = { namespace: "@ada", fingerprint: ADA_FINGERPRINT, state: "Trusted" }
-export const korri: PluginPublisher = { namespace: "@korri", fingerprint: KORRI_FINGERPRINT, state: "Bound" }
-export const mallory: PluginPublisher = { namespace: "@mallory", fingerprint: MALLORY_FINGERPRINT, state: "New", publicKey: MALLORY_KEY }
+export const ada: PluginPublisher = { namespace: "@ada", fingerprint: ADA_FINGERPRINT, state: PluginPublisherState.Trusted }
+export const korri: PluginPublisher = { namespace: "@korri", fingerprint: KORRI_FINGERPRINT, state: PluginPublisherState.Bound }
+export const mallory: PluginPublisher = { namespace: "@mallory", fingerprint: MALLORY_FINGERPRINT, state: PluginPublisherState.New, publicKey: MALLORY_KEY }
 export const adaKeyChanged: PluginPublisher = {
   namespace: "@ada",
   fingerprint: ADA_NEW_FINGERPRINT,
-  state: "KeyChanged",
+  state: PluginPublisherState.KeyChanged,
   previousFingerprint: ADA_FINGERPRINT,
   publicKey: ADA_NEW_KEY,
 }
-export const lib: PluginPublisher = { namespace: "@lib", fingerprint: LIB_FINGERPRINT, state: "New", publicKey: LIB_KEY }
-export const pocket: PluginPublisher = { namespace: "@pocket", state: "Unsigned", disclosure: UNSIGNED_DISCLOSURE }
+export const lib: PluginPublisher = { namespace: "@lib", fingerprint: LIB_FINGERPRINT, state: PluginPublisherState.New, publicKey: LIB_KEY }
+export const pocket: PluginPublisher = { namespace: "@pocket", state: PluginPublisherState.Unsigned, disclosure: UNSIGNED_DISCLOSURE }
 
 export const retroCatalog: PluginCatalogEntry[] = [
-  { pluginId: "@ada:chiptune", title: "Chiptune", description: "Music player for tracker songs", releaseVersion: "1.0.0", publisher: { namespace: "@ada", state: "Trusted" } },
-  { pluginId: "@ada:crt", title: "CRT look", releaseVersion: "2.1.0", publisher: { namespace: "@ada", state: "Trusted" } },
-  { pluginId: "@ada:crt", title: "CRT look", releaseVersion: "2.0.3", publisher: { namespace: "@ada", state: "Trusted" } },
-  { pluginId: "@ada:netplay", title: "Netplay", releaseVersion: "0.4.0", installed: PluginInstalledState.Enabled, publisher: { namespace: "@ada", state: "Trusted" } },
-  { pluginId: "@mallory:miner", title: "Free coins", releaseVersion: "9.9.9", publisher: { namespace: "@mallory", state: "New" } },
-  { pluginId: "@pocket:dither", title: "Pocket dither", description: "Ordered dithering for small screens", releaseVersion: "0.1.0", publisher: { namespace: "@pocket", state: "New" } },
+  { pluginId: "@ada:chiptune", title: "Chiptune", description: "Music player for tracker songs", releaseVersion: "1.0.0", publisher: { namespace: "@ada", state: PluginPublisherState.Trusted } },
+  { pluginId: "@ada:crt", title: "CRT look", releaseVersion: "2.1.0", publisher: { namespace: "@ada", state: PluginPublisherState.Trusted } },
+  { pluginId: "@ada:crt", title: "CRT look", releaseVersion: "2.0.3", publisher: { namespace: "@ada", state: PluginPublisherState.Trusted } },
+  { pluginId: "@ada:netplay", title: "Netplay", releaseVersion: "0.4.0", installed: PluginInstalledState.Enabled, publisher: { namespace: "@ada", state: PluginPublisherState.Trusted } },
+  { pluginId: "@mallory:miner", title: "Free coins", releaseVersion: "9.9.9", publisher: { namespace: "@mallory", state: PluginPublisherState.New } },
+  { pluginId: "@pocket:dither", title: "Pocket dither", description: "Ordered dithering for small screens", releaseVersion: "0.1.0", publisher: { namespace: "@pocket", state: PluginPublisherState.New } },
 ]
 
 /** Chiptune from a trusted publisher, bringing a plugin from the same one and
@@ -108,9 +107,9 @@ export const unsignedInspection: PluginInspection = {
  * its owner trusted, one of them with nothing installed. */
 export const trustedPublishers: PluginPublishers = {
   entries: [
-    { namespace: "@korri", fingerprint: KORRI_FINGERPRINT, state: "Bound", installed: ["@korri:mgba", "@korri:retroarch"] },
-    { namespace: "@ada", fingerprint: ADA_FINGERPRINT, state: "Trusted", installed: ["@ada:netplay"] },
-    { namespace: "@pixel-collective-handheld", fingerprint: "pixel-collective-2026 UGl4 ZWwg Y29s bGVj", state: "Trusted", installed: [] },
+    { namespace: "@korri", fingerprint: KORRI_FINGERPRINT, state: PluginPublisherState.Bound, installed: ["@korri:mgba", "@korri:retroarch"] },
+    { namespace: "@ada", fingerprint: ADA_FINGERPRINT, state: PluginPublisherState.Trusted, installed: ["@ada:netplay"] },
+    { namespace: "@pixel-collective-handheld", fingerprint: "pixel-collective-2026 UGl4 ZWwg Y29s bGVj", state: PluginPublisherState.Trusted, installed: [] },
   ],
 }
 

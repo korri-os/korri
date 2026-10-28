@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import {
   PluginInstalledState,
+  PluginPublisherState,
   PluginRepositoryAddResult,
   PluginRepositoryRemoveResult,
 } from "@contracts/generated/korrid"
@@ -97,15 +98,15 @@ describe("plugin repositories in the in-memory brain", () => {
     expect(official.filter(entry => entry.pluginId === "@korri:ppsspp").map(entry => entry.releaseVersion)).toEqual(["1.18.1"])
     expect(official.filter(entry => entry.pluginId === "@korri:sunshine").map(entry => entry.releaseVersion)).toEqual(["2026.10.1", "2026.09.2"])
     expect(official.find(entry => entry.pluginId === "@korri:tailscale")?.installed).toBe(PluginInstalledState.Disabled)
-    expect(official.every(entry => entry.publisher.state === "Bound")).toBe(true)
+    expect(official.every(entry => entry.publisher.state === PluginPublisherState.Bound)).toBe(true)
     const community = ok(await client.pluginCatalog(COMMUNITY)).entries
     // A catalog states Bound or Trusted, else New, and never a key.
     expect(Object.fromEntries(community.map(entry => [entry.pluginId, entry.publisher]))).toEqual({
-      "@korri:syncthing": { namespace: "@korri", state: "Bound" },
-      "@ada:chiptune": { namespace: "@ada", state: "Trusted" },
-      "@community:clock": { namespace: "@community", state: "New" },
-      "@pixel:scanlines": { namespace: "@pixel", state: "New" },
-      "@homebrew:dither": { namespace: "@homebrew", state: "New" },
+      "@korri:syncthing": { namespace: "@korri", state: PluginPublisherState.Bound },
+      "@ada:chiptune": { namespace: "@ada", state: PluginPublisherState.Trusted },
+      "@community:clock": { namespace: "@community", state: PluginPublisherState.New },
+      "@pixel:scanlines": { namespace: "@pixel", state: PluginPublisherState.New },
+      "@homebrew:dither": { namespace: "@homebrew", state: PluginPublisherState.New },
     })
   })
 
@@ -192,12 +193,12 @@ describe("publisher trust in the in-memory brain", () => {
   it("reaches every publisher state on inspection", async () => {
     const client = createInMemoryKorridClient()
     expect((ok(await client.inspectPlugin(OFFICIAL, "@korri:sunshine", "2026.10.1"))).publisher).toEqual({
-      namespace: "@korri", fingerprint: "korri-plugins-1 S29y cmkg c2Ft cGxl", state: "Bound",
+      namespace: "@korri", fingerprint: "korri-plugins-1 S29y cmkg c2Ft cGxl", state: PluginPublisherState.Bound,
     })
-    expect(await states(client, "@ada:chiptune", "1.0.0")).toEqual(["Trusted", "New", "Bound"])
-    expect(await states(client, "@community:clock", "0.3.0")).toEqual(["New"])
-    expect(await states(client, "@pixel:scanlines", "2.0.0")).toEqual(["KeyChanged"])
-    expect(await states(client, "@homebrew:dither", "0.1.0")).toEqual(["Unsigned"])
+    expect(await states(client, "@ada:chiptune", "1.0.0")).toEqual([PluginPublisherState.Trusted, PluginPublisherState.New, PluginPublisherState.Bound])
+    expect(await states(client, "@community:clock", "0.3.0")).toEqual([PluginPublisherState.New])
+    expect(await states(client, "@pixel:scanlines", "2.0.0")).toEqual([PluginPublisherState.KeyChanged])
+    expect(await states(client, "@homebrew:dither", "0.1.0")).toEqual([PluginPublisherState.Unsigned])
     const changed = ok(await client.inspectPlugin(COMMUNITY, "@pixel:scanlines", "2.0.0")).publisher
     expect(changed.previousFingerprint).not.toBe(changed.fingerprint)
     expect(changed.publicKey).toStartWith("pixel-2:")
@@ -215,7 +216,7 @@ describe("publisher trust in the in-memory brain", () => {
     const lib = report.brings.find(bring => bring.publisher.namespace === "@lib")?.publisher
     ok(await client.trustPublisher("@lib", lib?.publicKey ?? ""))
     const again = ok(await client.inspectPlugin(COMMUNITY, "@ada:chiptune", "1.0.0"))
-    expect(again.brings.map(bring => bring.publisher.state)).toEqual(["Trusted", "Bound"])
+    expect(again.brings.map(bring => bring.publisher.state)).toEqual([PluginPublisherState.Trusted, PluginPublisherState.Bound])
     expect(ok(await client.installPlugin(COMMUNITY, "@ada:chiptune", "1.0.0", again.approval))).toEqual({})
   })
 
@@ -228,7 +229,7 @@ describe("publisher trust in the in-memory brain", () => {
       message: `publisher @pixel key changed: was ${report.publisher.previousFingerprint}, now ${report.publisher.fingerprint}`,
     } })
     ok(await client.trustPublisher("@pixel", report.publisher.publicKey ?? ""))
-    expect(ok(await client.inspectPlugin(COMMUNITY, "@pixel:scanlines", "2.0.0")).publisher.state).toBe("Trusted")
+    expect(ok(await client.inspectPlugin(COMMUNITY, "@pixel:scanlines", "2.0.0")).publisher.state).toBe(PluginPublisherState.Trusted)
   })
 
   it("lists bound and trusted publishers with what is installed from each, and revokes a trusted one", async () => {

@@ -225,18 +225,18 @@ const askRow = (model: SurfaceModel, rowId: string): PicoMessage[] => {
     ? [{ _tag: "AskedSettingConfirmation", actionId: row.control.actionId, confirmation: row.control.confirmation }]
     : []
 }
-const RETRO_GROUP = "github.com/ada/retro-plugins"
+const RETRO_GROUP = "git.example/ada/retro-plugins"
 
 export function PluginsOfficialOnly() {
   return <Settings model={pluginModels.officialOnly} opening={[openGroup(pluginModels.officialOnly, "Plugins")]} />
 }
 export function PluginsAdding() {
   const model = pluginModels.adding
-  return <Settings model={model} openedOn={pluginModels.officialOnly} opening={[openGroup(model, "Plugins"), edit(pluginIds.add), ...typeText("https://github.com/ada/retro-plugins")]} />
+  return <Settings model={model} openedOn={pluginModels.officialOnly} opening={[openGroup(model, "Plugins"), edit(pluginIds.add), ...typeText("https://git.example/ada/retro-plugins")]} />
 }
 export function PluginsInvalidAddress() {
   const model = pluginModels.invalidAddress
-  return <Settings model={model} opening={[openGroup(model, "Plugins"), edit(pluginIds.add), ...typeText("http://github.com/ada")]} />
+  return <Settings model={model} opening={[openGroup(model, "Plugins"), edit(pluginIds.add), ...typeText("http://git.example/ada")]} />
 }
 export function PluginsUnreachableAddress() {
   const model = pluginModels.unreachableAddress
@@ -244,7 +244,7 @@ export function PluginsUnreachableAddress() {
 }
 export function PluginsAlreadyAdded() {
   const model = pluginModels.alreadyAdded
-  return <Settings model={model} opening={[openGroup(model, "Plugins"), edit(pluginIds.add), ...typeText("https://github.com/ada/retro-plugins")]} />
+  return <Settings model={model} opening={[openGroup(model, "Plugins"), edit(pluginIds.add), ...typeText("https://git.example/ada/retro-plugins")]} />
 }
 export function PluginsHub() {
   return <Settings model={pluginModels.repositories} opening={[openGroup(pluginModels.repositories, "Plugins")]} />
@@ -335,7 +335,7 @@ export function PluginsManyPublishers() {
 }
 export function PluginsLongRepositoryName() {
   const model = pluginModels.many
-  return <Settings model={model} opening={[openGroup(model, "codeberg.org/pixel-collective/korri-handheld-plugins-for-small-screens")]} />
+  return <Settings model={model} opening={[openGroup(model, "forge.example/pixel-collective/korri-handheld-plugins-for-small-screens")]} />
 }
 
 // Settings → Launch settings: this device's CPU and GPU limits and governor,

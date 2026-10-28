@@ -14,17 +14,17 @@ import { fixtureModel } from "./fixture-host"
 /** Row and action ids the previews put a status or a question on. */
 export const pluginIds = {
   "add": "plugin-repository-add",
-  "chiptuneRow": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
-  "chiptuneReview": "plugin-review:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
-  "chiptuneTrustKey": "plugin-trust:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40ada",
-  "chiptuneTrustLib": "plugin-trust:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40lib",
-  "minerRow": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
-  "minerTrust": "plugin-trust:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9:%40mallory",
-  "ditherRow": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
-  "ditherReview": "plugin-review:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
+  "chiptuneRow": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
+  "chiptuneReview": "plugin-review:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
+  "chiptuneTrustKey": "plugin-trust:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40ada",
+  "chiptuneTrustLib": "plugin-trust:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40lib",
+  "minerRow": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
+  "minerTrust": "plugin-trust:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9:%40mallory",
+  "ditherRow": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
+  "ditherReview": "plugin-review:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
   "netplay": "plugin-toggle:%40ada%3Anetplay",
   "mgba": "plugin-toggle:%40korri%3Amgba",
-  "removeRetro": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+  "removeRetro": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
   "adaPublisher": "plugin-publisher:%40ada",
   "revokeAda": "plugin-publisher-revoke:%40ada"
 } as const
@@ -90,8 +90,8 @@ const repositoriesGroups: readonly SurfaceSettingGroup[] = [
         "description": "Korri's own plugins will appear here."
       },
       {
-        "id": "plugin-repository:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
-        "label": "github.com/ada/retro-plugins",
+        "id": "plugin-repository:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
+        "label": "git.example/ada/retro-plugins",
         "value": "5 plugins"
       },
       {
@@ -112,35 +112,35 @@ const repositoriesGroups: readonly SurfaceSettingGroup[] = [
     ]
   },
   {
-    "title": "github.com/ada/retro-plugins",
+    "title": "git.example/ada/retro-plugins",
     "items": [
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
         "label": "Chiptune",
         "value": "Install",
         "description": "Music player for tracker songs",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
         "label": "CRT look",
         "value": "Install 2.1.0",
         "description": "Pick the version to install.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
         "label": "CRT look",
         "value": "Install 2.0.3",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
         }
       },
       {
@@ -163,35 +163,35 @@ const repositoriesGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
         "label": "Free coins",
         "value": "Install",
         "description": "Publisher @mallory is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
         "label": "Pocket dither",
         "value": "Install",
         "description": "Publisher @pocket is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
         }
       },
       {
-        "id": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+        "id": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
         "label": "Remove this repository",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+          "actionId": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
           "destructive": true,
           "confirmation": {
             "title": "Remove this repository?",
-            "message": "Korri stops showing plugins from github.com/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
+            "message": "Korri stops showing plugins from git.example/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
             "confirmLabel": "Remove"
           }
         }
@@ -324,8 +324,8 @@ const reviewingGroups: readonly SurfaceSettingGroup[] = [
         "description": "Korri's own plugins will appear here."
       },
       {
-        "id": "plugin-repository:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
-        "label": "github.com/ada/retro-plugins",
+        "id": "plugin-repository:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
+        "label": "git.example/ada/retro-plugins",
         "value": "5 plugins"
       },
       {
@@ -346,15 +346,15 @@ const reviewingGroups: readonly SurfaceSettingGroup[] = [
     ]
   },
   {
-    "title": "github.com/ada/retro-plugins",
+    "title": "git.example/ada/retro-plugins",
     "items": [
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
         "label": "Chiptune",
         "value": "Review and turn on",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-review:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
+          "actionId": "plugin-review:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
           "confirmation": {
             "title": "Turn on Chiptune?",
             "message": "Publisher @ada, trusted on this device. Key ada-plugins-1 QWRh IHNh bXBs ZSBr.\nWarning: Plays sound over the network to paired speakers.\nOpens network ports: TCP 7000, 7001; UDP 5353.\nRuns in the background: chiptune-daemon.service.\nAlso installs Audio core from @ada (trusted). Warning: Can change the system volume.\nAlso uses PipeWire bridge from @korri (configured). You approved it before.",
@@ -363,34 +363,34 @@ const reviewingGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-review-publisher:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40ada",
+        "id": "plugin-review-publisher:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40ada",
         "label": "Publisher @ada",
         "value": "Trusted",
         "description": "Key ada-plugins-1 QWRh IHNh bXBs ZSBr. You trusted it on this device."
       },
       {
-        "id": "plugin-review-publisher:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40korri",
+        "id": "plugin-review-publisher:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40korri",
         "label": "Publisher @korri",
         "value": "Configured",
         "description": "Key korri-plugins-1 S29y cmkg c2Ft cGxl. This device's configuration trusts it."
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
         "label": "CRT look",
         "value": "Install 2.1.0",
         "description": "Pick the version to install.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
         "label": "CRT look",
         "value": "Install 2.0.3",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
         }
       },
       {
@@ -413,35 +413,35 @@ const reviewingGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
         "label": "Free coins",
         "value": "Install",
         "description": "Publisher @mallory is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
         "label": "Pocket dither",
         "value": "Install",
         "description": "Publisher @pocket is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
         }
       },
       {
-        "id": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+        "id": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
         "label": "Remove this repository",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+          "actionId": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
           "destructive": true,
           "confirmation": {
             "title": "Remove this repository?",
-            "message": "Korri stops showing plugins from github.com/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
+            "message": "Korri stops showing plugins from git.example/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
             "confirmLabel": "Remove"
           }
         }
@@ -574,8 +574,8 @@ const needsReviewGroups: readonly SurfaceSettingGroup[] = [
         "description": "Korri's own plugins will appear here."
       },
       {
-        "id": "plugin-repository:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
-        "label": "github.com/ada/retro-plugins",
+        "id": "plugin-repository:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
+        "label": "git.example/ada/retro-plugins",
         "value": "5 plugins"
       },
       {
@@ -596,35 +596,35 @@ const needsReviewGroups: readonly SurfaceSettingGroup[] = [
     ]
   },
   {
-    "title": "github.com/ada/retro-plugins",
+    "title": "git.example/ada/retro-plugins",
     "items": [
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
         "label": "Chiptune",
         "value": "Install",
         "description": "Music player for tracker songs",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
         "label": "CRT look",
         "value": "Install 2.1.0",
         "description": "Pick the version to install.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
         "label": "CRT look",
         "value": "Install 2.0.3",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
         }
       },
       {
@@ -634,39 +634,39 @@ const needsReviewGroups: readonly SurfaceSettingGroup[] = [
         "description": "It changed since you approved it. Check it again to turn it on.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Anetplay:0.4.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Anetplay:0.4.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
         "label": "Free coins",
         "value": "Install",
         "description": "Publisher @mallory is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
         "label": "Pocket dither",
         "value": "Install",
         "description": "Publisher @pocket is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
         }
       },
       {
-        "id": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+        "id": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
         "label": "Remove this repository",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+          "actionId": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
           "destructive": true,
           "confirmation": {
             "title": "Remove this repository?",
-            "message": "Korri stops showing plugins from github.com/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
+            "message": "Korri stops showing plugins from git.example/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
             "confirmLabel": "Remove"
           }
         }
@@ -799,8 +799,8 @@ const trustNewGroups: readonly SurfaceSettingGroup[] = [
         "description": "Korri's own plugins will appear here."
       },
       {
-        "id": "plugin-repository:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
-        "label": "github.com/ada/retro-plugins",
+        "id": "plugin-repository:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
+        "label": "git.example/ada/retro-plugins",
         "value": "5 plugins"
       },
       {
@@ -821,35 +821,35 @@ const trustNewGroups: readonly SurfaceSettingGroup[] = [
     ]
   },
   {
-    "title": "github.com/ada/retro-plugins",
+    "title": "git.example/ada/retro-plugins",
     "items": [
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
         "label": "Chiptune",
         "value": "Install",
         "description": "Music player for tracker songs",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
         "label": "CRT look",
         "value": "Install 2.1.0",
         "description": "Pick the version to install.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
         "label": "CRT look",
         "value": "Install 2.0.3",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
         }
       },
       {
@@ -872,13 +872,13 @@ const trustNewGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
         "label": "Free coins",
         "value": "Trust @mallory",
         "description": "@mallory is not trusted yet. Check its key, then trust it.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-trust:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9:%40mallory",
+          "actionId": "plugin-trust:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9:%40mallory",
           "confirmation": {
             "title": "Trust @mallory?",
             "message": "Free coins comes from @mallory. This device has not trusted it before.\nKey mallory-1 TWFs bG9y eSBz YW1w.\nTrust it only if the plugin maker gave you this key.\nLater plugins from @mallory must have the same key.",
@@ -887,31 +887,31 @@ const trustNewGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-review-publisher:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9:%40mallory",
+        "id": "plugin-review-publisher:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9:%40mallory",
         "label": "Publisher @mallory",
         "value": "Not trusted yet",
         "description": "Key mallory-1 TWFs bG9y eSBz YW1w. Check it with the plugin maker before you trust it."
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
         "label": "Pocket dither",
         "value": "Install",
         "description": "Publisher @pocket is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
         }
       },
       {
-        "id": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+        "id": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
         "label": "Remove this repository",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+          "actionId": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
           "destructive": true,
           "confirmation": {
             "title": "Remove this repository?",
-            "message": "Korri stops showing plugins from github.com/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
+            "message": "Korri stops showing plugins from git.example/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
             "confirmLabel": "Remove"
           }
         }
@@ -1044,8 +1044,8 @@ const keyChangedGroups: readonly SurfaceSettingGroup[] = [
         "description": "Korri's own plugins will appear here."
       },
       {
-        "id": "plugin-repository:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
-        "label": "github.com/ada/retro-plugins",
+        "id": "plugin-repository:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
+        "label": "git.example/ada/retro-plugins",
         "value": "5 plugins"
       },
       {
@@ -1066,16 +1066,16 @@ const keyChangedGroups: readonly SurfaceSettingGroup[] = [
     ]
   },
   {
-    "title": "github.com/ada/retro-plugins",
+    "title": "git.example/ada/retro-plugins",
     "items": [
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
         "label": "Chiptune",
         "value": "Trust the new key",
         "description": "The publisher key for @ada changed.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-trust:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40ada",
+          "actionId": "plugin-trust:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40ada",
           "destructive": true,
           "confirmation": {
             "title": "Trust the new key for @ada?",
@@ -1085,28 +1085,28 @@ const keyChangedGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-review-publisher:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40ada",
+        "id": "plugin-review-publisher:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40ada",
         "label": "Publisher @ada",
         "value": "Key changed",
         "description": "Before ada-plugins-1 QWRh IHNh bXBs ZSBr. Now ada-plugins-2 QWRh IG5l dyBz YW1w."
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
         "label": "CRT look",
         "value": "Install 2.1.0",
         "description": "Pick the version to install.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
         "label": "CRT look",
         "value": "Install 2.0.3",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
         }
       },
       {
@@ -1129,35 +1129,35 @@ const keyChangedGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
         "label": "Free coins",
         "value": "Install",
         "description": "Publisher @mallory is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
         "label": "Pocket dither",
         "value": "Install",
         "description": "Publisher @pocket is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
         }
       },
       {
-        "id": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+        "id": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
         "label": "Remove this repository",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+          "actionId": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
           "destructive": true,
           "confirmation": {
             "title": "Remove this repository?",
-            "message": "Korri stops showing plugins from github.com/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
+            "message": "Korri stops showing plugins from git.example/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
             "confirmLabel": "Remove"
           }
         }
@@ -1290,8 +1290,8 @@ const bringsNewGroups: readonly SurfaceSettingGroup[] = [
         "description": "Korri's own plugins will appear here."
       },
       {
-        "id": "plugin-repository:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
-        "label": "github.com/ada/retro-plugins",
+        "id": "plugin-repository:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
+        "label": "git.example/ada/retro-plugins",
         "value": "5 plugins"
       },
       {
@@ -1312,16 +1312,16 @@ const bringsNewGroups: readonly SurfaceSettingGroup[] = [
     ]
   },
   {
-    "title": "github.com/ada/retro-plugins",
+    "title": "git.example/ada/retro-plugins",
     "items": [
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
         "label": "Chiptune",
         "value": "Trust @lib",
         "description": "@lib is not trusted yet. Check its key, then trust it.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-trust:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40lib",
+          "actionId": "plugin-trust:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40lib",
           "confirmation": {
             "title": "Trust @lib?",
             "message": "Chiptune needs Audio core from @lib. This device has not trusted it before.\nKey lib-1 TGli IHNh bXBs ZSBr.\nTrust it only if the plugin maker gave you this key.\nLater plugins from @lib must have the same key.",
@@ -1330,40 +1330,40 @@ const bringsNewGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-review-publisher:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40ada",
+        "id": "plugin-review-publisher:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40ada",
         "label": "Publisher @ada",
         "value": "Trusted",
         "description": "Key ada-plugins-1 QWRh IHNh bXBs ZSBr. You trusted it on this device."
       },
       {
-        "id": "plugin-review-publisher:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40lib",
+        "id": "plugin-review-publisher:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40lib",
         "label": "Publisher @lib",
         "value": "Not trusted yet",
         "description": "Key lib-1 TGli IHNh bXBs ZSBr. Check it with the plugin maker before you trust it."
       },
       {
-        "id": "plugin-review-publisher:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40korri",
+        "id": "plugin-review-publisher:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0:%40korri",
         "label": "Publisher @korri",
         "value": "Configured",
         "description": "Key korri-plugins-1 S29y cmkg c2Ft cGxl. This device's configuration trusts it."
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
         "label": "CRT look",
         "value": "Install 2.1.0",
         "description": "Pick the version to install.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
         "label": "CRT look",
         "value": "Install 2.0.3",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
         }
       },
       {
@@ -1386,35 +1386,35 @@ const bringsNewGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
         "label": "Free coins",
         "value": "Install",
         "description": "Publisher @mallory is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
         "label": "Pocket dither",
         "value": "Install",
         "description": "Publisher @pocket is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
         }
       },
       {
-        "id": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+        "id": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
         "label": "Remove this repository",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+          "actionId": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
           "destructive": true,
           "confirmation": {
             "title": "Remove this repository?",
-            "message": "Korri stops showing plugins from github.com/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
+            "message": "Korri stops showing plugins from git.example/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
             "confirmLabel": "Remove"
           }
         }
@@ -1547,8 +1547,8 @@ const unsignedGroups: readonly SurfaceSettingGroup[] = [
         "description": "Korri's own plugins will appear here."
       },
       {
-        "id": "plugin-repository:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
-        "label": "github.com/ada/retro-plugins",
+        "id": "plugin-repository:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
+        "label": "git.example/ada/retro-plugins",
         "value": "5 plugins"
       },
       {
@@ -1569,35 +1569,35 @@ const unsignedGroups: readonly SurfaceSettingGroup[] = [
     ]
   },
   {
-    "title": "github.com/ada/retro-plugins",
+    "title": "git.example/ada/retro-plugins",
     "items": [
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
         "label": "Chiptune",
         "value": "Install",
         "description": "Music player for tracker songs",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
         "label": "CRT look",
         "value": "Install 2.1.0",
         "description": "Pick the version to install.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
         "label": "CRT look",
         "value": "Install 2.0.3",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
         }
       },
       {
@@ -1620,22 +1620,22 @@ const unsignedGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
         "label": "Free coins",
         "value": "Install",
         "description": "Publisher @mallory is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
         "label": "Pocket dither",
         "value": "Review and turn on",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-review:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
+          "actionId": "plugin-review:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
           "destructive": true,
           "confirmation": {
             "title": "Turn on Pocket dither?",
@@ -1645,21 +1645,21 @@ const unsignedGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-review-publisher:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0:%40pocket",
+        "id": "plugin-review-publisher:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0:%40pocket",
         "label": "Publisher @pocket",
         "value": "Not signed",
         "description": "This plugin is not signed. Korri cannot confirm who made it, or that updates come from the same person. Install it only if you trust the address you got it from."
       },
       {
-        "id": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+        "id": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
         "label": "Remove this repository",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+          "actionId": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
           "destructive": true,
           "confirmation": {
             "title": "Remove this repository?",
-            "message": "Korri stops showing plugins from github.com/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
+            "message": "Korri stops showing plugins from git.example/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
             "confirmLabel": "Remove"
           }
         }
@@ -1792,8 +1792,8 @@ const publishersGroups: readonly SurfaceSettingGroup[] = [
         "description": "Korri's own plugins will appear here."
       },
       {
-        "id": "plugin-repository:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
-        "label": "github.com/ada/retro-plugins",
+        "id": "plugin-repository:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
+        "label": "git.example/ada/retro-plugins",
         "value": "5 plugins"
       },
       {
@@ -1814,35 +1814,35 @@ const publishersGroups: readonly SurfaceSettingGroup[] = [
     ]
   },
   {
-    "title": "github.com/ada/retro-plugins",
+    "title": "git.example/ada/retro-plugins",
     "items": [
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
         "label": "Chiptune",
         "value": "Install",
         "description": "Music player for tracker songs",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
         "label": "CRT look",
         "value": "Install 2.1.0",
         "description": "Pick the version to install.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
         "label": "CRT look",
         "value": "Install 2.0.3",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
         }
       },
       {
@@ -1865,35 +1865,35 @@ const publishersGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
         "label": "Free coins",
         "value": "Install",
         "description": "Publisher @mallory is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
         "label": "Pocket dither",
         "value": "Install",
         "description": "Publisher @pocket is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
         }
       },
       {
-        "id": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+        "id": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
         "label": "Remove this repository",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+          "actionId": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
           "destructive": true,
           "confirmation": {
             "title": "Remove this repository?",
-            "message": "Korri stops showing plugins from github.com/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
+            "message": "Korri stops showing plugins from git.example/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".",
             "confirmLabel": "Remove"
           }
         }
@@ -2069,13 +2069,13 @@ const manyGroups: readonly SurfaceSettingGroup[] = [
         "description": "Always here. It can't be removed."
       },
       {
-        "id": "plugin-repository:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
-        "label": "github.com/ada/retro-plugins",
+        "id": "plugin-repository:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
+        "label": "git.example/ada/retro-plugins",
         "value": "5 plugins"
       },
       {
-        "id": "plugin-repository:https%3A%2F%2Fcodeberg.org%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens",
-        "label": "codeberg.org/pixel-collective/korri-handheld-plugins-for-small-screens",
+        "id": "plugin-repository:https%3A%2F%2Fforge.example%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens",
+        "label": "forge.example/pixel-collective/korri-handheld-plugins-for-small-screens",
         "value": "2 plugins"
       },
       {
@@ -2084,13 +2084,13 @@ const manyGroups: readonly SurfaceSettingGroup[] = [
         "value": "Checking…"
       },
       {
-        "id": "plugin-repository:https%3A%2F%2Fraw.githubusercontent.com%2Fsomeone%2Faveryveryverylongrepositorynamewithoutanybreakpoints%2Fmain%2Fcatalog.json",
-        "label": "raw.githubusercontent.com/someone/averyveryverylongrepositorynamewithoutanybreakpoints/main/catalog.json",
+        "id": "plugin-repository:https%3A%2F%2Fraw.files.example%2Fsomeone%2Faveryveryverylongrepositorynamewithoutanybreakpoints%2Fmain%2Fcatalog.json",
+        "label": "raw.files.example/someone/averyveryverylongrepositorynamewithoutanybreakpoints/main/catalog.json",
         "value": "1 plugin"
       },
       {
-        "id": "plugin-repository:https%3A%2F%2Fgitlab.com%2Fmira%2Fkorri",
-        "label": "gitlab.com/mira/korri",
+        "id": "plugin-repository:https%3A%2F%2Flab.example%2Fmira%2Fkorri",
+        "label": "lab.example/mira/korri",
         "value": "Can't reach it"
       },
       {
@@ -2151,35 +2151,35 @@ const manyGroups: readonly SurfaceSettingGroup[] = [
     ]
   },
   {
-    "title": "github.com/ada/retro-plugins",
+    "title": "git.example/ada/retro-plugins",
     "items": [
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0",
         "label": "Chiptune",
         "value": "Install",
         "description": "Music player for tracker songs",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Achiptune:1.0.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0",
         "label": "CRT look",
         "value": "Install 2.1.0",
         "description": "Pick the version to install.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.1.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3",
         "label": "CRT look",
         "value": "Install 2.0.3",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40ada%3Acrt:2.0.3"
         }
       },
       {
@@ -2202,35 +2202,35 @@ const manyGroups: readonly SurfaceSettingGroup[] = [
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9",
         "label": "Free coins",
         "value": "Install",
         "description": "Publisher @mallory is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40mallory%3Aminer:9.9.9"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
+        "id": "plugin-release:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0",
         "label": "Pocket dither",
         "value": "Install",
         "description": "Publisher @pocket is not trusted yet.",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins:%40pocket%3Adither:0.1.0"
         }
       },
       {
-        "id": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+        "id": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
         "label": "Remove this repository",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-repository-remove:https%3A%2F%2Fgithub.com%2Fada%2Fretro-plugins",
+          "actionId": "plugin-repository-remove:https%3A%2F%2Fgit.example%2Fada%2Fretro-plugins",
           "destructive": true,
           "confirmation": {
             "title": "Remove this repository?",
-            "message": "Korri stops showing plugins from github.com/ada/retro-plugins. You can add it again later.",
+            "message": "Korri stops showing plugins from git.example/ada/retro-plugins. You can add it again later.",
             "confirmLabel": "Remove"
           }
         }
@@ -2238,37 +2238,37 @@ const manyGroups: readonly SurfaceSettingGroup[] = [
     ]
   },
   {
-    "title": "codeberg.org/pixel-collective/korri-handheld-plugins-for-small-screens",
+    "title": "forge.example/pixel-collective/korri-handheld-plugins-for-small-screens",
     "items": [
       {
-        "id": "plugin-release:https%3A%2F%2Fcodeberg.org%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens:%40ada%3Achiptune:1.0.0",
+        "id": "plugin-release:https%3A%2F%2Fforge.example%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens:%40ada%3Achiptune:1.0.0",
         "label": "Chiptune",
         "value": "Install",
         "description": "Music player for tracker songs",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fcodeberg.org%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens:%40ada%3Achiptune:1.0.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fforge.example%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens:%40ada%3Achiptune:1.0.0"
         }
       },
       {
-        "id": "plugin-release:https%3A%2F%2Fcodeberg.org%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens:%40ada%3Acrt:2.1.0",
+        "id": "plugin-release:https%3A%2F%2Fforge.example%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens:%40ada%3Acrt:2.1.0",
         "label": "CRT look",
         "value": "Install",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fcodeberg.org%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens:%40ada%3Acrt:2.1.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fforge.example%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens:%40ada%3Acrt:2.1.0"
         }
       },
       {
-        "id": "plugin-repository-remove:https%3A%2F%2Fcodeberg.org%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens",
+        "id": "plugin-repository-remove:https%3A%2F%2Fforge.example%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens",
         "label": "Remove this repository",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-repository-remove:https%3A%2F%2Fcodeberg.org%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens",
+          "actionId": "plugin-repository-remove:https%3A%2F%2Fforge.example%2Fpixel-collective%2Fkorri-handheld-plugins-for-small-screens",
           "destructive": true,
           "confirmation": {
             "title": "Remove this repository?",
-            "message": "Korri stops showing plugins from codeberg.org/pixel-collective/korri-handheld-plugins-for-small-screens. You can add it again later.",
+            "message": "Korri stops showing plugins from forge.example/pixel-collective/korri-handheld-plugins-for-small-screens. You can add it again later.",
             "confirmLabel": "Remove"
           }
         }
@@ -2299,28 +2299,28 @@ const manyGroups: readonly SurfaceSettingGroup[] = [
     ]
   },
   {
-    "title": "raw.githubusercontent.com/someone/averyveryverylongrepositorynamewithoutanybreakpoints/main/catalog.json",
+    "title": "raw.files.example/someone/averyveryverylongrepositorynamewithoutanybreakpoints/main/catalog.json",
     "items": [
       {
-        "id": "plugin-release:https%3A%2F%2Fraw.githubusercontent.com%2Fsomeone%2Faveryveryverylongrepositorynamewithoutanybreakpoints%2Fmain%2Fcatalog.json:%40ada%3Achiptune:1.0.0",
+        "id": "plugin-release:https%3A%2F%2Fraw.files.example%2Fsomeone%2Faveryveryverylongrepositorynamewithoutanybreakpoints%2Fmain%2Fcatalog.json:%40ada%3Achiptune:1.0.0",
         "label": "Chiptune",
         "value": "Install",
         "description": "Music player for tracker songs",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-inspect:https%3A%2F%2Fraw.githubusercontent.com%2Fsomeone%2Faveryveryverylongrepositorynamewithoutanybreakpoints%2Fmain%2Fcatalog.json:%40ada%3Achiptune:1.0.0"
+          "actionId": "plugin-inspect:https%3A%2F%2Fraw.files.example%2Fsomeone%2Faveryveryverylongrepositorynamewithoutanybreakpoints%2Fmain%2Fcatalog.json:%40ada%3Achiptune:1.0.0"
         }
       },
       {
-        "id": "plugin-repository-remove:https%3A%2F%2Fraw.githubusercontent.com%2Fsomeone%2Faveryveryverylongrepositorynamewithoutanybreakpoints%2Fmain%2Fcatalog.json",
+        "id": "plugin-repository-remove:https%3A%2F%2Fraw.files.example%2Fsomeone%2Faveryveryverylongrepositorynamewithoutanybreakpoints%2Fmain%2Fcatalog.json",
         "label": "Remove this repository",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-repository-remove:https%3A%2F%2Fraw.githubusercontent.com%2Fsomeone%2Faveryveryverylongrepositorynamewithoutanybreakpoints%2Fmain%2Fcatalog.json",
+          "actionId": "plugin-repository-remove:https%3A%2F%2Fraw.files.example%2Fsomeone%2Faveryveryverylongrepositorynamewithoutanybreakpoints%2Fmain%2Fcatalog.json",
           "destructive": true,
           "confirmation": {
             "title": "Remove this repository?",
-            "message": "Korri stops showing plugins from raw.githubusercontent.com/someone/averyveryverylongrepositorynamewithoutanybreakpoints/main/catalog.json. You can add it again later.",
+            "message": "Korri stops showing plugins from raw.files.example/someone/averyveryverylongrepositorynamewithoutanybreakpoints/main/catalog.json. You can add it again later.",
             "confirmLabel": "Remove"
           }
         }
@@ -2328,23 +2328,23 @@ const manyGroups: readonly SurfaceSettingGroup[] = [
     ]
   },
   {
-    "title": "gitlab.com/mira/korri",
+    "title": "lab.example/mira/korri",
     "items": [
       {
-        "id": "plugin-repository:https%3A%2F%2Fgitlab.com%2Fmira%2Fkorri:status",
+        "id": "plugin-repository:https%3A%2F%2Flab.example%2Fmira%2Fkorri:status",
         "label": "Can't reach this repository",
-        "description": "Could not reach gitlab.com"
+        "description": "Could not reach lab.example"
       },
       {
-        "id": "plugin-repository-remove:https%3A%2F%2Fgitlab.com%2Fmira%2Fkorri",
+        "id": "plugin-repository-remove:https%3A%2F%2Flab.example%2Fmira%2Fkorri",
         "label": "Remove this repository",
         "interaction": {
           "kind": "action",
-          "actionId": "plugin-repository-remove:https%3A%2F%2Fgitlab.com%2Fmira%2Fkorri",
+          "actionId": "plugin-repository-remove:https%3A%2F%2Flab.example%2Fmira%2Fkorri",
           "destructive": true,
           "confirmation": {
             "title": "Remove this repository?",
-            "message": "Korri stops showing plugins from gitlab.com/mira/korri. You can add it again later.",
+            "message": "Korri stops showing plugins from lab.example/mira/korri. You can add it again later.",
             "confirmLabel": "Remove"
           }
         }

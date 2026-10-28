@@ -70,7 +70,7 @@ describe("useLaunchables plugin rows", () => {
     })
     const launchables = mount({ ...createInMemoryKorridClient(), ...client })
     await waitFor(() => launchables().facts.plugins?.catalogs[RETRO]?._tag === "Ready")
-    expect(settingsFrom(launchables().facts).map(group => group.title)).toContain("github.com/ada/retro-plugins")
+    expect(settingsFrom(launchables().facts).map(group => group.title)).toContain("git.example/ada/retro-plugins")
 
     act(() => launchables().changeSetting(ADD_REPOSITORY_SETTING, RETRO))
     await waitFor(() => launchables().settingsStatus._tag === "Problem")

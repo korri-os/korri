@@ -18,7 +18,7 @@
  * `busy` is the portal's shared settings lock.
  */
 import type { SurfaceSettingsStatus } from "@contracts/surface/korri-surface"
-import { PluginRepositoryAddResult, type RpcFailure } from "@contracts/generated/korrid"
+import { PluginRepositoryAddResult, type PluginInspection, type RpcFailure } from "@contracts/generated/korrid"
 import {
   ALREADY_ADDED,
   INVALID_ADDRESS,
@@ -232,7 +232,7 @@ export function createPluginRepositoriesController(
     if (review === undefined || publicKey === undefined) return
     const rowId = rowIdForRelease(host.facts(), target)
     let trusted = false
-    locked(
+    locked<PluginInspection>(
       rowId,
       async () => {
         const outcome = await client.trustPublisher(namespace, publicKey)

@@ -11,7 +11,7 @@
  * Test and preview data only; nothing the portal ships imports it.
  */
 import type { PluginSetting } from "@contracts/generated/korrid"
-import { PluginInstalledState } from "@contracts/generated/korrid"
+import { PluginInstalledState, PluginPublisherState } from "@contracts/generated/korrid"
 import {
   withNeedsReview,
   withReview,
@@ -66,11 +66,11 @@ export const miner: ReleaseTarget = { sourceUrl: RETRO, pluginId: "@mallory:mine
 export const dither: ReleaseTarget = { sourceUrl: RETRO, pluginId: "@pocket:dither", releaseVersion: "0.1.0" }
 
 const longRepos = [
-  "https://github.com/ada/retro-plugins",
-  "https://codeberg.org/pixel-collective/korri-handheld-plugins-for-small-screens",
+  "https://git.example/ada/retro-plugins",
+  "https://forge.example/pixel-collective/korri-handheld-plugins-for-small-screens",
   "https://plugins.example.org",
-  "https://raw.githubusercontent.com/someone/averyveryverylongrepositorynamewithoutanybreakpoints/main/catalog.json",
-  "https://gitlab.com/mira/korri",
+  "https://raw.files.example/someone/averyveryverylongrepositorynamewithoutanybreakpoints/main/catalog.json",
+  "https://lab.example/mira/korri",
   "https://cdn.example.net/k/plugins/v1",
   "https://homebrew.example/korri",
 ]
@@ -79,11 +79,11 @@ const longRepos = [
 const manyPublishers = {
   entries: [
     ...trustedPublishers.entries,
-    { namespace: "@averyveryverylongnamespacewithoutanybreakpointsatall", fingerprint: "averyveryverylongkeylabelwithoutanybreakpoints-2026 QXZl cnlW ZXJ5 TG9u", state: "Trusted" as const, installed: ["@averyveryverylongnamespacewithoutanybreakpointsatall:x"] },
+    { namespace: "@averyveryverylongnamespacewithoutanybreakpointsatall", fingerprint: "averyveryverylongkeylabelwithoutanybreakpoints-2026 QXZl cnlW ZXJ5 TG9u", state: PluginPublisherState.Trusted, installed: ["@averyveryverylongnamespacewithoutanybreakpointsatall:x"] },
     ...["@mira", "@homebrew-hub", "@retro-friends", "@scanline", "@tiny"].map((namespace, index) => ({
       namespace,
       fingerprint: `${namespace.slice(1)}-1 S2V5 ${"IG5v dCBy ZWFs".slice(0, 4 + index)}`,
-      state: "Trusted" as const,
+      state: PluginPublisherState.Trusted,
       installed: index % 2 === 0 ? [] : [`${namespace}:plugin`],
     })),
   ],
@@ -93,13 +93,13 @@ const many: PluginFacts = readyFacts({
   repositories: { _tag: "Ready", value: repositories({ official: OFFICIAL, userAdded: longRepos, otherInstalls }) },
   catalogs: {
     [OFFICIAL]: { _tag: "Ready", entries: [
-      { pluginId: "@korri:tailscale", title: "Tailscale", description: "Reach this device from your other devices", releaseVersion: "1.76.1", publisher: { namespace: "@korri", state: "Bound" } },
-      { pluginId: "@korri:syncthing", title: "Syncthing", description: "Keep saves in step with your other devices", releaseVersion: "1.27.0", installed: PluginInstalledState.Enabled, publisher: { namespace: "@korri", state: "Bound" } },
+      { pluginId: "@korri:tailscale", title: "Tailscale", description: "Reach this device from your other devices", releaseVersion: "1.76.1", publisher: { namespace: "@korri", state: PluginPublisherState.Bound } },
+      { pluginId: "@korri:syncthing", title: "Syncthing", description: "Keep saves in step with your other devices", releaseVersion: "1.27.0", installed: PluginInstalledState.Enabled, publisher: { namespace: "@korri", state: PluginPublisherState.Bound } },
     ] },
     ...Object.fromEntries(longRepos.map((url, index) => [url,
       index === 0 ? { _tag: "Ready" as const, entries: retroCatalog }
       : index === 2 ? { _tag: "Checking" as const }
-      : index === 4 ? { _tag: "Unreachable" as const, message: "Could not reach gitlab.com" }
+      : index === 4 ? { _tag: "Unreachable" as const, message: "Could not reach lab.example" }
       : { _tag: "Ready" as const, entries: retroCatalog.slice(0, index % 3 + 1) }])),
   },
   publishers: { _tag: "Ready", value: manyPublishers },
