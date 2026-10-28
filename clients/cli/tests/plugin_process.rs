@@ -798,6 +798,12 @@ fn plugin_sideload_accepts_host_platform_names_and_any_architecture() {
             .unwrap();
         assert_staged_json(output, &response, 0);
         let calls = fs::read_to_string(tools.root.path().join("nix.calls")).unwrap();
+        assert!(
+            calls
+                .find("eval --json .#packages --apply builtins.attrNames")
+                .unwrap()
+                < calls.find("build --json").unwrap()
+        );
         if platform == "any" {
             assert!(!calls.contains(".#packages.any.default"));
             assert!(calls.contains(".#packages.x86_64-linux.default"));
