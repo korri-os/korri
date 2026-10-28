@@ -249,6 +249,17 @@ This deliberately restores `plugin.nix requires`, generated manifest `requires`,
 
 Inspection discloses a flat, dependency-first `brings` list. Each entry includes the current full report and `already_approved`. The full report replaces the historical single `native_unit` summary with the current `native_units`, policy, warning, source inventory, files, and provenance. This delta follows the current multi-unit and closed-source consumers, not a new permission language. The historical closure approval used dependency IDs, exact outputs, and approvals. This implementation binds the same summaries to the current package approval; leaf digests and generated leaf manifest bytes remain unchanged.
 
+A fresh exact dependency from an unbound namespace needs its own record in the
+same repository catalog, selected by the exact `store_path` for this platform.
+It is fetched and verified from that record, retains that record's Repository
+provenance and uses its own pinned/New/KeyChanged/unsigned trust lane. An unsigned
+dependency has its own disclosure in `brings`; a parent signature grants nothing.
+A missing record names the dependency and repository and asks the author to
+publish it there or use a release requirement. Sideloads cannot supply a repository
+for an unbound exact dependency and give the same next step. Config-bound exact
+dependencies retain the RawCache route. Matching installed selections keep their
+independent receipt provenance.
+
 The old host passed parent provenance to dependencies. This host does not. A matching installed dependency retains its own receipt provenance. A new dependency uses its manifest publisher's existing bound raw-cache URL. Each output must pass its own namespace, full-key, exact cache-binding, immutable closure, source, and native-policy checks. Parent repository identity is never copied into another plugin's receipt. An exact output requirement does not invent a repository release record. Install and source switch refuse an existing conflicting package, provenance, approval, or unfinished removal; they do not silently replace it.
 
 Updating a root can replace installed dependencies with the exact builds and individual approvals disclosed by inspection and bound into the root's approval. Use the existing `update ID CACHE PACKAGE APPROVAL` or repository update command, with the root's single approval. No separate graph command or dependency approval arguments are needed. Every candidate still passes its own publisher, signature, immutable-closure and permission checks before native effects. Other installed roots still veto conflicting replacements, including disabled roots, and direct dependency updates stay refused. Existing pending selections or unrecorded native cleanup must be recovered first; a new transaction does not adopt them. Each changed plugin keeps its displaced package, provenance and approval in its own existing `previous` slot. An enabled root enables its exact closure as before; a disabled root preserves independent dependency choices, and new dependencies remain disabled.

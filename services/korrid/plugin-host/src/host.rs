@@ -675,9 +675,89 @@ impl Host {
         )
     }
 
+    fn candidate_for_record(
+        &self,
+        config: &Configuration,
+        source: &SourceUrl,
+        record: &crate::catalog::CatalogRecord,
+    ) -> Result<PathBuf, String> {
+        let package = PathBuf::from(&record.store_path);
+        let existing = self
+            .candidates
+            .borrow()
+            .get(&package)
+            .map(|(origin, _)| origin.clone());
+        if let Some(origin) = &existing {
+            if !matches!(origin, Provenance::Repository { source_url, plugin_id, release_version, archive_sha256, .. }
+                if source_url == source.as_str() && plugin_id == &record.plugin_id
+                    && release_version == &record.release_version && archive_sha256 == &record.archive_sha256)
+            {
+                return Err(format!("conflicting repository requirements for {}: exact build has different source or release provenance", record.plugin_id));
+            }
+        } else {
+            self.fetch_record(config, source, record)?;
+        }
+        Ok(package)
+    }
+
     fn resolve_candidates(&self, config: &Configuration, root: &Path) -> Result<(), String> {
+        let receipts = self.receipts()?;
+        let repository_of = |path: &Path| -> Result<Option<SourceUrl>, String> {
+            let origin = self
+                .candidates
+                .borrow()
+                .get(path)
+                .map(|(origin, _)| origin.clone())
+                .or_else(|| {
+                    receipts
+                        .iter()
+                        .find(|receipt| receipt.package == path)
+                        .map(|receipt| receipt.provenance.clone())
+                });
+            match origin {
+                Some(Provenance::Repository { source_url, .. }) => {
+                    SourceUrl::parse(&source_url).map(Some)
+                }
+                _ => Ok(None),
+            }
+        };
+        let mut repositories = BTreeMap::from([(root.to_path_buf(), repository_of(root)?)]);
         crate::dependencies::dependency_order([root.to_path_buf()], |path| {
+            let source = repository_of(path)?.or_else(|| repositories.get(path).cloned().flatten());
             let mut requires = package::manifest_requires(path)?;
+            for exact in &requires {
+                let namespace = package::manifest_namespace(exact)?;
+                if !self.publishers.contains_key(&namespace) {
+                    let id = package::load_declaration(exact)?.id();
+                    let Some(source) = &source else {
+                        return Err(format!("{id} is not in a repository; publish it there or use a release requirement."));
+                    };
+                    // Existing selections keep their independent provenance.
+                    // A fresh unbound exact build needs its own release record;
+                    // the parent's archive/signature grants no namespace trust.
+                    let locked = receipts.iter().any(|receipt| {
+                        receipt.package == *exact
+                            || receipt
+                                .previous
+                                .as_ref()
+                                .is_some_and(|previous| previous.package == *exact)
+                    });
+                    if !locked {
+                        let catalog = repository::fetch_catalog(
+                            &config.curl,
+                            source,
+                            config.ca_bundle.as_deref(),
+                        )?;
+                        let record = catalog.records.iter().find(|record| record.store_path == exact.to_string_lossy()
+                            && (record.platform == current_platform() || record.platform == "any"))
+                            .ok_or_else(|| format!("{id} is not in {source}; publish it there or use a release requirement."))?;
+                        self.candidate_for_record(config, source, record)?;
+                    }
+                }
+                repositories
+                    .entry(exact.clone())
+                    .or_insert(repository_of(exact)?.or_else(|| source.clone()));
+            }
             for requirement in package::manifest_releases(path)? {
                 let source = SourceUrl::parse(&requirement.repository)?;
                 // A declared requirement explicitly selects its own repository;
@@ -692,20 +772,8 @@ impl Host {
                         format!("repository has no latest release for {}", requirement.id)
                     })?;
                 let record = catalog.record(&requirement.id, release, current_platform())?;
-                let package = PathBuf::from(&record.store_path);
-                let existing = self
-                    .candidates
-                    .borrow()
-                    .get(&package)
-                    .map(|(origin, _)| origin.clone());
-                if let Some(origin) = &existing {
-                    if !matches!(origin, Provenance::Repository { source_url, plugin_id, release_version, archive_sha256, .. } if source_url == source.as_str() && plugin_id == &record.plugin_id && release_version == &record.release_version && archive_sha256 == &record.archive_sha256)
-                    {
-                        return Err(format!("conflicting repository requirements for {}: exact build has different source or release provenance", record.plugin_id));
-                    }
-                } else {
-                    self.fetch_record(config, &source, record)?;
-                }
+                let package = self.candidate_for_record(config, &source, record)?;
+                repositories.insert(package.clone(), Some(source));
                 requires.push(package);
             }
             self.resolved
@@ -6681,5 +6749,185 @@ mod tests {
             host.status("@runtime:native").unwrap().unwrap().desired,
             Desired::Disabled
         ));
+    }
+    #[test]
+    #[ignore = "requires builder fixtures and writable build-machine Nix; no native service starts"]
+    fn direction_exact_requirements_use_each_publishers_repository_record() {
+        use crate::catalog::Catalog;
+        use crate::plugin_admin::PluginPublisherState;
+        let nix = PathBuf::from(std::env::var_os("KORRI_PUBLISH_NIX").expect("immutable Nix"));
+        let fixtures = PathBuf::from(
+            std::env::var_os("KORRI_TEST_DEPENDENCY_FIXTURES").expect("builder fixtures"),
+        );
+        let root = tempfile::tempdir().unwrap();
+        let run = |args: &[&str]| {
+            let result = Command::new(&nix)
+                .args(["--extra-experimental-features", "nix-command"])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            String::from_utf8(result.stdout).unwrap().trim().to_owned()
+        };
+        let assets = root.path().join("assets");
+        fs::create_dir(&assets).unwrap();
+        let publish = |name: &str, label: &str| {
+            let secret = root.path().join(format!("{name}.secret"));
+            fs::write(
+                &secret,
+                run(&["key", "generate-secret", "--key-name", name]),
+            )
+            .unwrap();
+            crate::publisher::publish(&crate::publisher::PublishArgs {
+                nix: nix.clone(),
+                secret_key: secret,
+                input_store_path: fs::canonicalize(fixtures.join(name)).unwrap(),
+                release_version: label.into(),
+                platform: current_platform().into(),
+                archive_url: "https://exact.invalid/".into(),
+                output_dir: assets.clone(),
+            })
+            .unwrap()
+        };
+        let dependency = publish("runner", "v1");
+        let pack = publish("pack", "root");
+        assert_eq!(
+            package::manifest_requires(Path::new(&pack.ca_store_path)).unwrap(),
+            [PathBuf::from(&dependency.ca_store_path)]
+        );
+        let unsigned_cache = root.path().join("unsigned-cache");
+        fs::create_dir(&unsigned_cache).unwrap();
+        archive::extract(&dependency.archive_path, &unsigned_cache).unwrap();
+        for entry in fs::read_dir(&unsigned_cache)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.path().extension().is_some_and(|e| e == "narinfo"))
+        {
+            let text = fs::read_to_string(entry.path()).unwrap();
+            fs::write(
+                entry.path(),
+                text.lines()
+                    .filter(|line| !line.starts_with("Sig:"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    + "\n",
+            )
+            .unwrap();
+        }
+        let mut unsigned_record = dependency.record.clone();
+        unsigned_record.public_key = None;
+        unsigned_record.archive_url = "https://exact.invalid/unsigned.tar".into();
+        unsigned_record.archive_sha256 =
+            archive::pack(&unsigned_cache, &assets.join("unsigned.tar")).unwrap();
+        let catalog_file = root.path().join("catalog.json");
+        let server = root.path().join("server");
+        fs::create_dir_all(server.join("bin")).unwrap();
+        let cp = PathBuf::from(std::env::var_os("KORRI_TEST_TRUE").expect("immutable true"))
+            .parent()
+            .unwrap()
+            .join("cp");
+        let script = server.join("bin/curl");
+        fs::write(&script, format!("#!/bin/sh\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) shift; out=$1;; --url) shift; url=$1;; esac; shift; done\ncase \"$url\" in */catalog.json) exec {} {} \"$out\";; *) name=${{url##*/}}; exec {} {}/\"$name\" \"$out\";; esac\n", cp.display(), catalog_file.display(), cp.display(), assets.display())).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let curl =
+            PathBuf::from(run(&["store", "add-path", server.to_str().unwrap()])).join("bin/curl");
+        let source = SourceUrl::parse("https://exact.invalid/catalog.json").unwrap();
+        let config = Configuration {
+            curl,
+            official: Some(source.clone()),
+            ca_bundle: None,
+        };
+        for lane in ["new", "pinned", "unsigned", "missing"] {
+            let record = if lane == "unsigned" {
+                &unsigned_record
+            } else {
+                &dependency.record
+            };
+            let records = if lane == "missing" {
+                vec![pack.record.clone()]
+            } else {
+                vec![pack.record.clone(), record.clone()]
+            };
+            let latest = records
+                .iter()
+                .map(|record| (record.plugin_id.clone(), record.release_version.clone()))
+                .collect();
+            fs::write(
+                &catalog_file,
+                Catalog { records, latest }.to_json().unwrap(),
+            )
+            .unwrap();
+            let directory = root.path().join(lane);
+            fs::create_dir(&directory).unwrap();
+            let host = Host::for_test(
+                &directory,
+                nix.clone(),
+                permitted_policy(),
+                TestRuntime {
+                    real_packages: true,
+                    ..TestRuntime::default()
+                },
+            )
+            .unwrap();
+            host.trust_publisher("@games", pack.record.public_key.as_deref().unwrap())
+                .unwrap();
+            if lane == "pinned" {
+                host.trust_publisher("@runtime", dependency.record.public_key.as_deref().unwrap())
+                    .unwrap();
+            }
+            let inspected =
+                host.inspect_repository(&config, &source, "@games:starter-pack", "root");
+            if lane == "missing" {
+                assert_eq!(inspected.err().unwrap(), "@runtime:fake08 is not in https://exact.invalid/catalog.json; publish it there or use a release requirement.");
+                assert!(host.installed().unwrap().is_empty());
+                continue;
+            }
+            let inspected = inspected.unwrap();
+            let dep = &inspected.brings[0].report;
+            assert_eq!(dep.id, "@runtime:fake08");
+            assert_eq!(
+                dep.publisher.as_ref().unwrap().state,
+                match lane {
+                    "new" => PluginPublisherState::New,
+                    "pinned" => PluginPublisherState::Trusted,
+                    _ => PluginPublisherState::Unsigned,
+                }
+            );
+            assert!(
+                matches!(&dep.provenance, Provenance::Repository { source_url, release_version, signed, .. } if source_url == source.as_str() && release_version == "v1" && *signed == (lane != "unsigned"))
+            );
+            if lane == "new" {
+                assert!(host
+                    .install_reviewed(inspected.clone(), &inspected.approval)
+                    .unwrap_err()
+                    .contains("publisher @runtime is not trusted"));
+            } else {
+                if lane == "unsigned" {
+                    assert_eq!(
+                        dep.publisher.as_ref().unwrap().disclosure.as_deref(),
+                        Some(crate::trust::DISCLOSURE)
+                    );
+                }
+                host.install_reviewed(inspected.clone(), &inspected.approval)
+                    .unwrap();
+                assert_eq!(
+                    host.status("@runtime:fake08").unwrap().unwrap().provenance,
+                    dep.provenance
+                );
+            }
+            let error = host
+                .inspect_archive(&config, &pack.archive_path)
+                .err()
+                .unwrap();
+            assert!(
+                error.contains("@runtime:fake08 is not in a repository;")
+                    && error.contains("publish it there or use a release requirement"),
+                "{error}"
+            );
+        }
     }
 }

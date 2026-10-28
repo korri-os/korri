@@ -146,6 +146,7 @@ in
             export KORRI_TEST_TRUE=${pkgs.coreutils}/bin/true
             nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --test dependencies --test seed --test namespace -- --ignored
             nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --lib real_store_graph -- --ignored
+            nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --lib direction_ -- --ignored
             nix build --no-link .#checks.${pkgs.stdenv.hostPlatform.system}.korri-plugin-host .#checks.${pkgs.stdenv.hostPlatform.system}.korri-plugin-image-seed .#checks.${pkgs.stdenv.hostPlatform.system}.korri-runtime-plugin-host
           '';
         }
