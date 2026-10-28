@@ -77,7 +77,8 @@ pub(crate) fn registry(
     registry.with_linux_viewer(viewer)
 }
 
-pub(crate) fn spawn_watch(peers: upstreams::UpstreamRegistry) {
+/// Polls the selected far session so its end stops this device's viewer.
+pub(crate) fn spawn_watch(peers: upstreams::UpstreamRegistry) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticks = tokio::time::interval(std::time::Duration::from_secs(1));
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -87,7 +88,7 @@ pub(crate) fn spawn_watch(peers: upstreams::UpstreamRegistry) {
                 let _ = peers.session_status().await;
             }
         }
-    });
+    })
 }
 
 pub(crate) async fn dispatch(

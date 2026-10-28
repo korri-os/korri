@@ -1254,11 +1254,18 @@ impl UpstreamRegistry {
                                 self.clear_selected_if(&selected);
                             }
                             Ok(_) => {
-                                self.set_viewer_confirmed(&selected, false);
-                                return Err(viewer_error(
-                                    "NativeViewerRecoveryIncomplete",
-                                    "far launch ended while the exact viewer remains live",
-                                ));
+                                // The holder reports that the exact launch ended, for
+                                // example after the player quit the game. This device's
+                                // own viewer has nothing left to show, so stop it, as
+                                // stream play does when its holder ends the session.
+                                if let Err(error) = self.viewer.stop(&selected.launch_id).await {
+                                    self.set_viewer_confirmed(&selected, false);
+                                    return Err(viewer_error(
+                                        "NativeViewerRecoveryIncomplete",
+                                        error.to_string(),
+                                    ));
+                                }
+                                self.clear_selected_if(&selected);
                             }
                             Err(error) => {
                                 self.set_viewer_confirmed(&selected, false);
@@ -4026,6 +4033,42 @@ command = ["native-game"]
                 .map(|selected| selected.launch_id.as_str()),
             Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         );
+    }
+
+    #[tokio::test]
+    async fn far_launch_end_stops_the_exact_live_viewer_and_clears_the_route() {
+        let (native_url, state) = exact_native_server(false).await;
+        NativeClient::new(native_url.clone())
+            .prepare_stream("game")
+            .await
+            .unwrap();
+        let viewer = TestLinuxStreamViewer::default();
+        viewer.seed(state.launch_id.clone(), LinuxViewerStatus::Running);
+        let registry = selected_viewer_registry(
+            UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+                .with_linux_viewer(Arc::new(viewer.clone())),
+            &state.launch_id,
+        )
+        .await;
+        // The player quits the game on the holder; its status reports no session.
+        *state.active_phase.lock().unwrap() = None;
+
+        assert!(matches!(
+            registry.session_status().await.unwrap(),
+            UpstreamSessionStatus::SessionStatus { active: None }
+        ));
+        assert_eq!(
+            viewer
+                .calls()
+                .into_iter()
+                .map(|call| (call.action, call.launch_id))
+                .collect::<Vec<_>>(),
+            vec![
+                (LinuxViewerAction::Status, state.launch_id.clone()),
+                (LinuxViewerAction::Stop, state.launch_id.clone()),
+            ]
+        );
+        assert!(registry.selected().is_none());
     }
 
     #[tokio::test]

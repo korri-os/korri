@@ -4991,7 +4991,7 @@ fn secure_host_routers_with_federation(
     let peers = stream_play::device::registry(&runtime, &resources);
     lan.remote = Some(peers.clone());
     local.remote = Some(peers.clone());
-    stream_play::device::spawn_watch(peers);
+    let _ = stream_play::device::spawn_watch(peers);
     let sessions = runtime.clone();
     let save_peer = Arc::new(
         saves::peer::SavePeerService::new(
@@ -5181,6 +5181,7 @@ fn start_local_server_for_platform(
         federation.credentials.clone(),
     )
     .with_federation(federation.directory.clone());
+    let has_viewer = platform.viewer.is_some();
     let upstream = match platform.viewer {
         Some(viewer) => upstream.with_linux_viewer(viewer),
         None => upstream,
@@ -5210,6 +5211,9 @@ fn start_local_server_for_platform(
     .start();
     let server_federation_wake = federation_wake.clone();
     let server_upstream = upstream.clone();
+    // As on Linux, a selected far session is polled so that its end stops the
+    // exact viewer, even while the portal WebView is paused behind it.
+    let watched_upstream = has_viewer.then(|| upstream.clone());
     let (stop, stopped) = oneshot::channel();
     let thread = std::thread::Builder::new()
         .name("korrid".into())
@@ -5263,7 +5267,12 @@ fn start_local_server_for_platform(
                 });
                 // Both tasks live inside this runtime and are joined before it exits.
                 let discovery = tokio::spawn(discovery);
+                let watch = watched_upstream.map(stream_play::device::spawn_watch);
                 let result = server.await;
+                if let Some(watch) = watch {
+                    watch.abort();
+                    let _ = watch.await;
+                }
                 server_federation_wake.cancel();
                 discovery.await.expect("join relay discovery");
                 result.expect("serve korrid");
