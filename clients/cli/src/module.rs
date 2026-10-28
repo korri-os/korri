@@ -30,14 +30,6 @@ impl Context {
         Ok(responses)
     }
 
-    pub fn plugin_rpc(
-        &self,
-        request: &crate::plugin_wire::RpcRequest,
-    ) -> Result<crate::plugin_wire::RpcResponse, CliError> {
-        self.client
-            .plugin_request_on(self.device.as_deref(), request)
-    }
-
     pub fn rpc(&self, request: &RpcRequest) -> Result<RpcResponse, CliError> {
         self.client.request_on(self.device.as_deref(), request)
     }

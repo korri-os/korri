@@ -1447,7 +1447,7 @@ fn target_responses() -> Vec<RpcResponse> {
 
 #[test]
 fn play_library_remote_plugin_install_requires_selected_device_review_not_yes() {
-    use korri::plugin_wire::*;
+    use korrid::plugin_admin::*;
     for (approval, installed) in [
         (None, false),
         (Some("stale"), false),

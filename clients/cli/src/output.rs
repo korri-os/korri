@@ -6,7 +6,6 @@ pub enum Responses {
     Many(Vec<RpcResponse>),
     /// Author commands have no daemon response. Like version, JSON is a string.
     Text,
-    Plugin(Box<crate::plugin_wire::RpcResponse>),
 }
 
 pub struct Output {
@@ -18,12 +17,6 @@ impl Output {
     pub fn text(human: String) -> Self {
         Self {
             responses: Responses::Text,
-            human,
-        }
-    }
-    pub fn plugin(response: crate::plugin_wire::RpcResponse, human: String) -> Self {
-        Self {
-            responses: Responses::Plugin(Box::new(response)),
             human,
         }
     }
@@ -44,7 +37,6 @@ impl Output {
             Responses::One(response) => serde_json::to_value(response),
             Responses::Many(responses) => serde_json::to_value(responses),
             Responses::Text => serde_json::to_value(&self.human),
-            Responses::Plugin(response) => serde_json::to_value(response),
         }
         .map_err(|_| {
             CliError::failure(
@@ -61,12 +53,9 @@ impl Output {
         let responses: &[RpcResponse] = match &self.responses {
             Responses::One(response) => std::slice::from_ref(response.as_ref()),
             Responses::Many(responses) => responses,
-            Responses::Text | Responses::Plugin(_) => &[],
+            Responses::Text => &[],
         };
-        let mut failures: Vec<_> = responses.iter().filter_map(failure).collect();
-        if let Responses::Plugin(response) = &self.responses {
-            failures.extend(response.failure());
-        }
+        let failures: Vec<_> = responses.iter().filter_map(failure).collect();
         Ok(
             if failures
                 .iter()

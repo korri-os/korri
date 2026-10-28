@@ -111,53 +111,12 @@ impl Client {
         }
     }
 
-    /// Same socket and forwarding boundary for the parallel admin-contract cut.
-    pub fn plugin_request_on(
-        &self,
-        device: Option<&str>,
-        request: &crate::plugin_wire::RpcRequest,
-    ) -> Result<crate::plugin_wire::RpcResponse, CliError> {
-        #[derive(serde::Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Forward<'a> {
-            device_public_key: &'a str,
-            request: &'a crate::plugin_wire::RpcRequest,
-        }
-        match device {
-            None => self.send_wire("/rpc", request, request, None),
-            Some(device) => self.send_wire(
-                "/forward",
-                &Forward {
-                    device_public_key: device,
-                    request,
-                },
-                request,
-                None,
-            ),
-        }
-    }
-
     fn send(
         &self,
         route: &str,
         body: &impl serde::Serialize,
         request: &RpcRequest,
     ) -> Result<RpcResponse, CliError> {
-        self.send_wire(
-            route,
-            body,
-            request,
-            request_wait(request, self.default_timeout),
-        )
-    }
-
-    fn send_wire<T: serde::de::DeserializeOwned + serde::Serialize>(
-        &self,
-        route: &str,
-        body: &impl serde::Serialize,
-        request: &impl serde::Serialize,
-        wait: Option<Duration>,
-    ) -> Result<T, CliError> {
         // reqwest connects only to the Unix socket. No caller can supply a URL,
         // bearer capability, signing key, or remote endpoint.
         let mut pending = self
@@ -166,7 +125,7 @@ impl Client {
             .json(body)
             .build()
             .map_err(|_| CliError::unreachable())?;
-        *pending.timeout_mut() = wait;
+        *pending.timeout_mut() = request_wait(request, self.default_timeout);
         let response = self
             .http
             .execute(pending)
@@ -204,7 +163,7 @@ impl Client {
                 "Check that korri and korrid use the same version.",
             )
         };
-        let response: T = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+        let response: RpcResponse = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
         let request_tag = serde_json::to_value(request).map_err(|_| invalid())?;
         let response_tag = serde_json::to_value(&response).map_err(|_| invalid())?;
         if request_tag["_tag"] != response_tag["_tag"] {
@@ -450,42 +409,42 @@ with socketserver.UnixStreamServer(socket_path, Handler) as server:
     }
     #[test]
     fn new_plugin_owner_and_upload_calls_wait_for_the_target_without_retry() {
-        use crate::plugin_wire as wire;
+        use korrid::plugin_admin::*;
         let requests = [
-            wire::RpcRequest::PluginPublishers(wire::PluginPublishersRequest {}),
-            wire::RpcRequest::PluginTrustPublisher(wire::PluginTrustPublisherRequest {
+            RpcRequest::PluginPublishers(PluginPublishersRequest {}),
+            RpcRequest::PluginTrustPublisher(PluginTrustPublisherRequest {
                 namespace: "@author".into(),
                 public_key: "author:public".into(),
             }),
-            wire::RpcRequest::PluginRevokePublisher(wire::PluginRevokePublisherRequest {
+            RpcRequest::PluginRevokePublisher(PluginRevokePublisherRequest {
                 namespace: "@author".into(),
             }),
-            wire::RpcRequest::PluginArchiveBegin(wire::PluginArchiveBeginRequest {
+            RpcRequest::PluginArchiveBegin(PluginArchiveBeginRequest {
                 sha256: "00".repeat(32),
                 size: 1,
             }),
-            wire::RpcRequest::PluginArchiveChunk(wire::PluginArchiveChunkRequest {
+            RpcRequest::PluginArchiveChunk(PluginArchiveChunkRequest {
                 upload_id: "upload".into(),
                 offset: 0,
                 data: "YQ==".into(),
             }),
-            wire::RpcRequest::PluginArchiveFinish(wire::PluginArchiveUploadRequest {
+            RpcRequest::PluginArchiveFinish(PluginArchiveUploadRequest {
                 upload_id: "upload".into(),
             }),
-            wire::RpcRequest::PluginArchiveInspect(wire::PluginArchiveUploadRequest {
+            RpcRequest::PluginArchiveInspect(PluginArchiveUploadRequest {
                 upload_id: "upload".into(),
             }),
-            wire::RpcRequest::PluginArchiveInstall(wire::PluginArchiveInstallRequest {
+            RpcRequest::PluginArchiveInstall(PluginArchiveUploadInstallRequest {
                 upload_id: "upload".into(),
                 approval: "reviewed".into(),
             }),
         ];
         for request in requests {
             let tag = serde_json::to_value(&request).unwrap()["_tag"].clone();
-            let expected: wire::RpcResponse = serde_json::from_value(serde_json::json!({ "_tag":tag, "outcome":{"_tag":"Err","payload":{"code":"PluginHostUnavailable","message":"Host unavailable"}} })).unwrap();
+            let expected: RpcResponse = serde_json::from_value(serde_json::json!({ "_tag":tag, "outcome":{"_tag":"Err","payload":{"code":"PluginHostUnavailable","message":"Host unavailable"}} })).unwrap();
             for device in [None, Some("peer")] {
                 let server = DelayedServer::start(&expected);
-                let result = server.client.plugin_request_on(device, &request).unwrap();
+                let result = server.client.request_on(device, &request).unwrap();
                 assert_eq!(
                     serde_json::to_value(result).unwrap(),
                     serde_json::to_value(&expected).unwrap()

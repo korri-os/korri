@@ -12,7 +12,6 @@ pub mod output;
 pub mod play;
 pub mod plugin_author;
 pub mod plugin_sideload;
-pub mod plugin_wire;
 pub mod plugins;
 mod private_terminal;
 pub mod prompt;
