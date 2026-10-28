@@ -1224,6 +1224,7 @@ fn play_library_resume_names_exact_observed_launch() {
 fn play_library_remote_folder_selection_requires_ssh_and_never_issues_receipt() {
     let server = Server::start(vec![
         RpcResponse::IdentityStatus(IdentityStatusOutcome::Ok(IdentityStatus {
+            can_switch_identity: true,
             identity: identity::IdentityState::Unowned {
                 device_public_key: "11".repeat(32),
             },
@@ -1407,6 +1408,7 @@ fn play_library_remote_refused_save_preflight_stays_visible_and_does_not_lock_la
 fn target_responses() -> Vec<RpcResponse> {
     vec![
         RpcResponse::IdentityStatus(IdentityStatusOutcome::Ok(IdentityStatus {
+            can_switch_identity: true,
             identity: identity::IdentityState::Unowned {
                 device_public_key: "11".repeat(32),
             },
