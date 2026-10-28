@@ -23,7 +23,6 @@ import { mergePlayStats, type PortalGameCopy } from "../launchables/fold-games"
 import type { PlayStats } from "@contracts/generated/korrid"
 import type { GameDownloadFacts } from "./game-downloads"
 import {
-  entryForLaunch,
   entryKey,
   isLocalCatalogSession,
   type LaunchablesState,
@@ -125,9 +124,14 @@ export function entryForLaunchLocation(
     candidate => copyLocationId(candidate) === launchLocationId,
   )
   if (copy === undefined) return undefined
-  return entryForLaunch(copy.kind === "local"
-    ? { kind: "local-game", game: copy.game }
-    : { kind: "game", game: copy.game }, [entry])
+  // A local record supplies display metadata, not a launch route. Resolve
+  // This device to its catalog copy before discarding the folded alternatives.
+  const launchable = copy.kind === "local"
+    ? orderedCopiesForEntry(entry).find(candidate => candidate.kind === "remote" && candidate.game.source.isLocal) ?? copy
+    : copy
+  return launchable.kind === "local"
+    ? { kind: "local-game", game: launchable.game }
+    : { kind: "game", game: launchable.game }
 }
 
 /**

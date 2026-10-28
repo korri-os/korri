@@ -88,6 +88,8 @@ async function mount(initialView: ComponentProps<typeof PicoSurface>["initialVie
       await waitFor(() => model.catalog._tag === "Ready" && model.catalog.games.some(game => game.resumable))
       expect(await base.sessionStatus()).toMatchObject({ _tag: "Ok", payload: { active: { gameId: game.id } } })
       expect(reserve).toHaveBeenCalledTimes(1)
+      expect(reserve).toHaveBeenCalledWith({ gameId: game.id })
+      expect(start).toHaveBeenCalledTimes(1)
       expect(prepare).not.toHaveBeenCalled()
     },
   }
