@@ -36,8 +36,8 @@ pub fn commands() -> Vec<Command> {
             .arg(
                 Arg::new("platform")
                     .long("platform")
-                    .value_name("NIX_SYSTEM")
-                    .help("Target platform; peers do not report this yet"),
+                    .value_name("NIX_SYSTEM_OR_ANY")
+                    .help("Target platform, or any for a source-only plugin; peers do not report platforms yet"),
             )
             .arg(
                 Arg::new("approval")
@@ -246,15 +246,17 @@ struct NixConfig {
 }
 
 pub fn build(directory: &Path, platform: Option<&str>) -> Result<Vec<PathBuf>, CliError> {
-    let platforms = if let Some(platform) = platform {
-        // Nix system strings enter an attribute path, not an expression.
-        if platform == "any"
+    // "any" is release metadata, not a Nix package attribute. Build locally
+    // like an omitted platform; the publisher must prove architecture independence.
+    let platforms = if let Some(platform) = platform.filter(|platform| *platform != "any") {
+        // Match plugin-host/catalog.rs validate_platform before forming an attribute path.
+        if platform.len() > 64
             || !platform
                 .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || c == b'-')
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
             || !platform.contains('-')
         {
-            return Err(CliError::usage("Use a Nix platform such as aarch64-linux; any is publication metadata, not a build platform."));
+            return Err(CliError::usage("Use a Nix platform such as x86_64-linux, or any for an architecture-independent plugin. Platform names allow at most 64 letters, digits, hyphens or underscores."));
         }
         vec![platform.to_owned()]
     } else {
@@ -458,6 +460,8 @@ pub fn author_key(namespace: &str) -> Result<AuthorKey, CliError> {
     fingerprint(&public)?;
     Ok(AuthorKey { path, public })
 }
+// Approved schema sheet row 16. The matching host formatter lives in plugin-host,
+// which is not a CLI dependency; pin this display contract in the author tests.
 pub fn fingerprint(public: &str) -> Result<String, CliError> {
     use base64::{engine::general_purpose::STANDARD, Engine};
     let (label, key) = public

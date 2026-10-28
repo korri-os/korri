@@ -388,7 +388,9 @@ Sideload signs one archive locally with `korri-publish archive`, then sends it
 through the local korrid to the selected device: begin with SHA-256 and size,
 sequential base64 chunks of at most 1 MiB raw, then finish. Terminal output shows
 upload progress. Peers do not report a platform yet: supply `--platform` for
-native packages. Only packages the publisher marks `any` may omit it.
+native packages. Only packages the publisher marks `any` may omit it or use
+`--platform any`; this builds locally and still requires the publisher to verify
+that the package is architecture-independent.
 
 The target must already bind or pin the signing key. When inspection refuses
 an unknown/changed author key, terminal sideload shows the local author's

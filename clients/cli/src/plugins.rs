@@ -73,7 +73,10 @@ impl Module for Plugins {
                 plugin_author::validate_namespace(&namespace)?;
                 let public_key = args.get_one::<String>("key").expect("required").clone();
                 if plugin_author::fingerprint(&public_key).is_err() {
-                    return Err(CliError::failure("PluginPublicKeyRequired", "A fingerprint is not a full publisher public key.", "Run korri plugins review <source> <plugin> <release> to trust the key it shows, or pass the full public key."));
+                    return Err(CliError {
+                        next: "Run korri plugins review <source> <plugin> <release> to trust the key it shows, or pass the full public key.".into(),
+                        ..CliError::usage("A fingerprint is not a full publisher public key.")
+                    });
                 }
                 RpcRequest::PluginTrustPublisher(PluginTrustPublisherRequest {
                     namespace,

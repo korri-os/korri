@@ -456,3 +456,14 @@ fn plugin_new_builds_and_admits_the_generated_runner() {
     assert!(output.status.success());
     assert_eq!(output.stdout, b"Hello from the generated plugin.\n");
 }
+
+#[test]
+fn plugin_fingerprint_uses_the_approved_row_16_label_and_four_groups() {
+    assert_eq!(
+        korri::plugin_author::fingerprint(
+            "korri-plugins-1:AbCdEfGhIjKlMnOpAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        )
+        .unwrap(),
+        "korri-plugins-1 AbCd EfGh IjKl MnOp",
+    );
+}
