@@ -251,7 +251,8 @@ struct NixConfig {
 pub fn build(directory: &Path, platform: Option<&str>) -> Result<Vec<PathBuf>, CliError> {
     // "any" is release metadata, not a Nix package attribute. Build locally
     // like an omitted platform; the publisher must prove architecture independence.
-    let platforms = if let Some(platform) = platform.filter(|platform| *platform != "any") {
+    let platform = platform.filter(|platform| *platform != "any");
+    if let Some(platform) = platform {
         // Match plugin-host/catalog.rs validate_platform before forming an attribute path.
         if platform.len() > 64
             || !platform
@@ -261,23 +262,28 @@ pub fn build(directory: &Path, platform: Option<&str>) -> Result<Vec<PathBuf>, C
         {
             return Err(CliError::usage("Use a Nix platform such as x86_64-linux, or any for an architecture-independent plugin. Platform names allow at most 64 letters, digits, hyphens or underscores."));
         }
+    }
+    // Resolve inputs before the build snapshots this project. In particular,
+    // a newly written native flake.lock must be part of that source snapshot
+    // so a later --upload lookup still resolves the already-built output.
+    let available: Vec<String> = decode(&checked(
+        Process::new("nix").current_dir(directory).args([
+            "eval",
+            "--json",
+            ".#packages",
+            "--apply",
+            "builtins.attrNames",
+        ]),
+        "PluginBuildFailed",
+        "read the plugin's build platforms",
+    )?)?;
+    let platforms = if let Some(platform) = platform {
         vec![platform.to_owned()]
     } else {
         let config: NixConfig = decode(&checked(
             Process::new("nix").args(["config", "show", "--json"]),
             "PluginBuildFailed",
             "read Nix's build platforms",
-        )?)?;
-        let available: Vec<String> = decode(&checked(
-            Process::new("nix").current_dir(directory).args([
-                "eval",
-                "--json",
-                ".#packages",
-                "--apply",
-                "builtins.attrNames",
-            ]),
-            "PluginBuildFailed",
-            "read the plugin's build platforms",
         )?)?;
         available
             .into_iter()

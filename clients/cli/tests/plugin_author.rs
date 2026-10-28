@@ -404,12 +404,44 @@ fn plugin_new_builds_and_admits_the_generated_runner() {
     // The project's own input must resolve to this checkout for both the build
     // and the later read-only namespace lookup. A per-command override would
     // not persist in the project's native lock file.
+    let revision = Command::new("git")
+        .current_dir(repository)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    assert!(revision.status.success());
+    let revision = String::from_utf8(revision.stdout).unwrap();
     let flake_path = root.path().join("hello/flake.nix");
     let flake = fs::read_to_string(&flake_path).unwrap().replace(
         "github:korri-os/korri",
-        &format!("git+file://{}", repository.display()),
+        &format!(
+            "git+file://{}?rev={}",
+            repository.display(),
+            revision.trim()
+        ),
     );
     fs::write(flake_path, flake).unwrap();
+    // Match the CLI's input-resolution-before-build order. A pinned, clean
+    // input makes Nix write its native lock, including in a dirty test checkout.
+    let locked = Command::new("nix")
+        .current_dir(root.path().join("hello"))
+        .args([
+            "eval",
+            "--json",
+            ".#packages",
+            "--apply",
+            "builtins.attrNames",
+            "--extra-experimental-features",
+            "nix-command flakes",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        locked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&locked.stderr)
+    );
+    assert!(root.path().join("hello/flake.lock").is_file());
     let output = Command::new("nix")
         .current_dir(root.path().join("hello"))
         .args(["build", "--json", "--no-link"])
