@@ -741,7 +741,6 @@ async fn second_peer(f: &Fixture) -> (tempfile::TempDir, String, String) {
 #[derive(Clone, Copy, Debug)]
 enum BufferedOperation {
     Catalog,
-    Recovery,
     Certificate,
 }
 
@@ -763,12 +762,6 @@ async fn revoked_buffered_result_is_unavailable(operation: BufferedOperation) {
         crate::tests::RecordingMoonlightCertificates::matching("sunshine-host"),
     );
     let a_url = serve(crate::secure_host_routers(runtime, f._peer_root.path(), None).0).await;
-    if matches!(operation, BufferedOperation::Recovery) {
-        NativeClient::new_secure(a_url.clone(), f.key(), f.credentials.clone())
-            .prepare_stream("game")
-            .await
-            .unwrap();
-    }
     announce(&f, &d, vec![a_url], None);
     let (_b_root, b_key, b_url) = second_peer(&f).await;
     let started = Arc::new(tokio::sync::Notify::new());
@@ -813,10 +806,6 @@ async fn revoked_buffered_result_is_unavailable(operation: BufferedOperation) {
                     .any(|game| game.source.device_public_key.as_deref() == Some(key.as_str()))
                     && catalog.games.len() == 1
             }
-            BufferedOperation::Recovery => matches!(
-                registry.session_status().await,
-                Err(crate::upstreams::UpstreamError::NativeSessionRecoveryIncomplete)
-            ),
             BufferedOperation::Certificate => registry
                 .moonlight_certificate_attest("sunshine-host")
                 .await
@@ -854,8 +843,42 @@ async fn revoked_buffered_catalog_is_not_published_after_slow_peer_completes() {
 }
 
 #[tokio::test]
-async fn revoked_buffered_session_is_not_recovered_after_slow_peer_completes() {
-    revoked_buffered_result_is_unavailable(BufferedOperation::Recovery).await;
+async fn idle_status_never_probes_or_adopts_a_directory_peer() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let f = Fixture::new();
+    let d = f.directory().unwrap();
+    f.roster(&d);
+    let reads = Arc::new(AtomicUsize::new(0));
+    let observed = reads.clone();
+    let gateway = serve(axum::Router::new().route(
+        "/peer-rpc",
+        axum::routing::post(move || {
+            let reads = observed.clone();
+            async move {
+                reads.fetch_add(1, Ordering::SeqCst);
+                "unselected peer must not be contacted"
+            }
+        }),
+    ))
+    .await;
+    announce(&f, &d, vec![gateway], None);
+    let registry =
+        UpstreamRegistry::new_secure(vec![], f.credentials.clone()).with_federation(d.clone());
+    for revoked in [false, true] {
+        if revoked {
+            d.apply_membership(
+                &d.begin_work().unwrap(),
+                &[binding(&f.owner, &f.key(), "revoked", 1001)],
+            )
+            .unwrap();
+        }
+        assert!(matches!(
+            registry.session_status().await.unwrap(),
+            crate::upstream::UpstreamSessionStatus::SessionStatus { active: None }
+        ));
+        assert_eq!(reads.load(Ordering::SeqCst), 0);
+        assert!(!registry.has_selected_session());
+    }
 }
 
 #[tokio::test]

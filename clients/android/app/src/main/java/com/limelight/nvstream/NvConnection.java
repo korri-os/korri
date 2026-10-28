@@ -24,7 +24,6 @@ import java.security.cert.X509Certificate;
 import java.util.Objects;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.Semaphore;
 
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -48,13 +47,21 @@ public class NvConnection {
     private LimelightCryptoProvider cryptoProvider;
     private String uniqueId;
     private ConnectionContext context;
-    private static Semaphore connectionAllowed = new Semaphore(1);
+    public enum AppLaunchPolicy { EXACT, REPLACE }
+    private static final NvConnectionLifecycle.Slot NATIVE_SLOT = new NvConnectionLifecycle.Slot(MoonBridge.class);
+    private final NvConnectionLifecycle lifecycle = new NvConnectionLifecycle(NATIVE_SLOT, new NvConnectionLifecycle.Bridge() {
+        public void interrupt() { MoonBridge.interruptConnection(); }
+        public void stop() { MoonBridge.stopConnection(); }
+        public void cleanup() { MoonBridge.cleanupBridge(); }
+    });
+    private final AppLaunchPolicy appLaunchPolicy;
     private final boolean isMonkey;
     private final Context appContext;
 
-    public NvConnection(Context appContext, ComputerDetails.AddressTuple host, int httpsPort, String uniqueId, StreamConfiguration config, LimelightCryptoProvider cryptoProvider, X509Certificate serverCert)
+    public NvConnection(Context appContext, ComputerDetails.AddressTuple host, int httpsPort, String uniqueId, StreamConfiguration config, LimelightCryptoProvider cryptoProvider, X509Certificate serverCert, AppLaunchPolicy appLaunchPolicy)
     {
         this.appContext = appContext;
+        this.appLaunchPolicy = appLaunchPolicy;
         this.cryptoProvider = cryptoProvider;
         this.uniqueId = uniqueId;
 
@@ -90,18 +97,9 @@ public class NvConnection {
     }
 
     public void stop() {
-        // Interrupt any pending connection. This is thread-safe.
-        MoonBridge.interruptConnection();
-
-        // Moonlight-core is not thread-safe with respect to connection start and stop, so
-        // we must not invoke that functionality in parallel.
-        synchronized (MoonBridge.class) {
-            MoonBridge.stopConnection();
-            MoonBridge.cleanupBridge();
-        }
-
-        // Now a pending connection can be processed
-        connectionAllowed.release();
+        // The exact startup thread must drain before the viewer acknowledges
+        // closure. Only this connection may interrupt/stop its owned native slot.
+        lifecycle.stop();
     }
 
     private InetAddress resolveServerAddress() throws IOException {
@@ -224,9 +222,11 @@ public class NvConnection {
     
     private boolean startApp() throws XmlPullParserException, IOException
     {
+        if (lifecycle.isStopped()) return false;
         NvHTTP h = new NvHTTP(context.serverAddress, context.httpsPort, uniqueId, context.serverCert, cryptoProvider);
 
         String serverInfo = h.getServerInfo(true);
+        if (lifecycle.isStopped()) return false;
         
         context.serverAppVersion = h.getServerVersion(serverInfo);
         if (context.serverAppVersion == null) {
@@ -302,6 +302,7 @@ public class NvConnection {
         
         // If the client did not provide an exact app ID, do a lookup with the applist
         if (!context.streamConfig.getApp().isInitialized()) {
+            if (appLaunchPolicy == AppLaunchPolicy.EXACT) return false;
             LimeLog.info("Using deprecated app lookup method - Please specify an app ID in your StreamConfiguration instead");
             app = h.getAppByName(context.streamConfig.getApp().getAppName());
             if (app == null) {
@@ -310,10 +311,11 @@ public class NvConnection {
             }
         }
         
+        if (lifecycle.isStopped()) return false;
         // If there's a game running, resume it
         if (h.getCurrentGame(serverInfo) != 0 || (h.getCurrentGameUUID(serverInfo) != null && !h.getCurrentGameUUID(serverInfo).isEmpty())) {
             try {
-                if (h.getCurrentGame(serverInfo) == app.getAppId() || Objects.equals(h.getCurrentGameUUID(serverInfo), app.getAppUUID())) {
+                if (matchesRunningApp(appLaunchPolicy, h.getCurrentGame(serverInfo), h.getCurrentGameUUID(serverInfo), app)) {
                     if (!h.launchApp(context, "resume", app.getAppUUID(), app.getAppId(), context.negotiatedHdr)) {
                         context.connListener.displayMessage("Failed to resume existing session");
                         return false;
@@ -350,8 +352,17 @@ public class NvConnection {
         }
     }
 
+    static boolean matchesRunningApp(AppLaunchPolicy policy, int currentId, String currentUuid, NvApp app) {
+        // Exact native viewers require the positive ID selected from the pinned
+        // app list. Missing/empty UUIDs must never match a different app.
+        return (currentId > 0 && currentId == app.getAppId())
+                || (policy == AppLaunchPolicy.REPLACE && Objects.equals(currentUuid, app.getAppUUID()));
+    }
+
     protected boolean quitAndLaunch(NvHTTP h, ConnectionContext context) throws IOException,
             XmlPullParserException {
+        // The korrid-owned viewer never replaces another Sunshine app.
+        if (appLaunchPolicy == AppLaunchPolicy.EXACT || lifecycle.isStopped()) return false;
         try {
             if (!h.quitApp()) {
                 context.connListener.displayMessage("Failed to quit previous session! You must quit it manually");
@@ -374,6 +385,7 @@ public class NvConnection {
     
     private boolean launchNotRunningApp(NvHTTP h, ConnectionContext context)
             throws IOException, XmlPullParserException {
+        if (lifecycle.isStopped()) return false;
         // Launch the app since it's not running
         if (!h.launchApp(context, "launch", context.streamConfig.getApp().getAppUUID(), context.streamConfig.getApp().getAppId(), context.negotiatedHdr)) {
             context.connListener.displayMessage("Failed to launch application");
@@ -387,8 +399,9 @@ public class NvConnection {
 
     public void start(final AudioRenderer audioRenderer, final VideoDecoderRenderer videoDecoderRenderer, final NvConnectionListener connectionListener)
     {
-        new Thread(new Runnable() {
+        lifecycle.start(new Runnable() {
             public void run() {
+                if (lifecycle.isStopped()) return;
                 context.connListener = connectionListener;
                 context.videoCapabilities = videoDecoderRenderer.getCapabilities();
 
@@ -401,7 +414,9 @@ public class NvConnection {
                 do {
                     boolean retry = false;
                     try {
-                        if (!startApp()) {
+                        boolean appStarted = startApp();
+                        if (lifecycle.isStopped()) return;
+                        if (!appStarted) {
                             retry = context.connListener.stageFailed(appName, 0, 0);
                             if (!retry) {
                                 return;
@@ -409,6 +424,7 @@ public class NvConnection {
                         }
                         context.connListener.stageComplete(appName);
                     } catch (HostHttpResponseException e) {
+                        if (lifecycle.isStopped()) return;
                         e.printStackTrace();
                         context.connListener.displayMessage(e.getMessage());
                         retry = context.connListener.stageFailed(appName, 0, e.getErrorCode());
@@ -416,6 +432,7 @@ public class NvConnection {
                             return;
                         }
                     } catch (XmlPullParserException | IOException e) {
+                        if (lifecycle.isStopped()) return;
                         e.printStackTrace();
                         context.connListener.displayMessage(e.getMessage());
                         retry = context.connListener.stageFailed(appName, MoonBridge.ML_PORT_FLAG_TCP_47984 | MoonBridge.ML_PORT_FLAG_TCP_47989, tryCount < 2 ? 0 : -408);
@@ -424,12 +441,15 @@ public class NvConnection {
                         }
                     }
 
+                    if (lifecycle.isStopped()) return;
                     if (!retry) break;
                     tryCount += 1;
 
                     try {
                         sleep(2000);
                     } catch (InterruptedException e) {
+                        if (lifecycle.isStopped()) return;
+                        Thread.currentThread().interrupt();
                         throw new RuntimeException(e);
                     }
                 } while (tryCount < 5);
@@ -442,21 +462,10 @@ public class NvConnection {
                 ByteBuffer ib = ByteBuffer.allocate(16);
                 ib.putInt(context.riKeyId);
 
-                // Acquire the connection semaphore to ensure we only have one
-                // connection going at once.
                 try {
-                    connectionAllowed.acquire();
-                } catch (InterruptedException e) {
-                    context.connListener.displayMessage(e.getMessage());
-                    context.connListener.stageFailed(appName, 0, 0);
-                    return;
-                }
-
-                // Moonlight-core is not thread-safe with respect to connection start and stop, so
-                // we must not invoke that functionality in parallel.
-                synchronized (MoonBridge.class) {
+                    lifecycle.connect(() -> {
                     MoonBridge.setupBridge(videoDecoderRenderer, audioRenderer, connectionListener);
-                    int ret = MoonBridge.startConnection(context.serverAddress.address,
+                    return MoonBridge.startConnection(context.serverAddress.address,
                             context.serverAppVersion, context.serverGfeVersion, context.rtspSessionUrl,
                             context.serverCodecModeSupport,
                             context.negotiatedWidth, context.negotiatedHeight,
@@ -469,16 +478,13 @@ public class NvConnection {
                             context.videoCapabilities,
                             context.streamConfig.getColorSpace(),
                             context.streamConfig.getColorRange());
-                    if (ret != 0) {
-                        // LiStartConnection() failed, so the caller is not expected
-                        // to stop the connection themselves. We need to release their
-                        // semaphore count for them.
-                        connectionAllowed.release();
-                        return;
-                    }
+                    });
+                } catch (InterruptedException error) {
+                    if (!lifecycle.isStopped()) context.connListener.stageFailed(appName, 0, 0);
+                    Thread.currentThread().interrupt();
                 }
             }
-        }).start();
+        });
     }
 
     public void sendMouseMove(final short deltaX, final short deltaY)

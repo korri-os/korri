@@ -30,7 +30,7 @@ impl UpstreamRegistry {
     }
 
     /// Only verified same-owner directory members produce idle signals. This
-    /// reads the peer directly: session_status() would recover a selection.
+    /// reads peers directly; session_status() observes only this device's selection.
     pub(crate) async fn invite_sessions(
         &self,
         same_owner: &BTreeSet<String>,

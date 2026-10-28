@@ -58,12 +58,8 @@ pub enum UpstreamError {
     MoonlightHostNotFound,
     #[error("more than one configured native peer owns the requested Sunshine host UUID")]
     MoonlightHostAmbiguous,
-    #[error("more than one native peer reports an active session")]
-    AmbiguousActiveSessions,
     #[error("the selected remote session was replaced by a different launch")]
     SelectedRemoteSessionReplaced,
-    #[error("native peer session recovery could not prove one active route")]
-    NativeSessionRecoveryIncomplete,
     #[error("a remote peer already has an active session")]
     ActiveRemoteSessionConflict,
     #[error("expectedLaunchId is required for exact remote session control")]
@@ -95,9 +91,7 @@ impl UpstreamError {
             Self::MoonlightHostChanged => "MoonlightHostChanged",
             Self::MoonlightHostNotFound => "MoonlightHostNotFound",
             Self::MoonlightHostAmbiguous => "MoonlightHostAmbiguous",
-            Self::AmbiguousActiveSessions => "AmbiguousActiveSessions",
             Self::SelectedRemoteSessionReplaced => "SelectedRemoteSessionReplaced",
-            Self::NativeSessionRecoveryIncomplete => "NativeSessionRecoveryIncomplete",
             Self::ActiveRemoteSessionConflict => "ActiveRemoteSessionConflict",
             Self::ExpectedLaunchIdRequired => "ExpectedLaunchIdRequired",
             Self::StaleLaunchIdentity => "StaleLaunchIdentity",
@@ -1211,9 +1205,8 @@ impl UpstreamRegistry {
                 }
             }
         }
-        if self.recover_native_session().await?.is_some() {
-            return Err(UpstreamError::ActiveRemoteSessionConflict);
-        }
+        // ADR 0035: only an explicitly selected route belongs to this device.
+        // The chosen holder admits its own launch; unrelated peers do not vote.
         match self.legacy_status_or_no_active().await? {
             UpstreamSessionStatus::SessionStatus { active: Some(_) } => {
                 Err(UpstreamError::ActiveRemoteSessionConflict)
@@ -1284,12 +1277,6 @@ impl UpstreamRegistry {
             }
         }
 
-        if let Some((selected, status)) = self.recover_native_session().await? {
-            let active = active_session(&status).expect("recovered status has an active launch");
-            let phase = RecoveredFarPhase::parse(active.phase.as_deref())?;
-            self.recover_viewer(&selected, phase).await?;
-            return Ok(status);
-        }
         self.legacy_status_or_no_active().await
     }
 
@@ -1326,20 +1313,6 @@ impl UpstreamRegistry {
             return self.stop_selected(&selected, force).await;
         }
 
-        if !self.has_native_hosts() {
-            return self.legacy_stop_or_nothing(force).await;
-        }
-        if let Some((recovered, status)) = self.recover_native_session().await? {
-            let expected = expected_launch_id
-                .filter(|expected| !expected.is_empty())
-                .ok_or(UpstreamError::ExpectedLaunchIdRequired)?;
-            if expected != recovered.launch_id {
-                return Err(UpstreamError::StaleLaunchIdentity);
-            }
-            let active = active_session(&status).expect("recovered status has an active launch");
-            RecoveredFarPhase::parse(active.phase.as_deref())?;
-            return self.stop_selected(&recovered, force).await;
-        }
         self.legacy_stop_or_nothing(force).await
     }
 
@@ -1393,7 +1366,7 @@ impl UpstreamRegistry {
     }
 
     /// Routes an exact freeze or thaw through the selected remote session.
-    /// The route is selected or recovered the same way as stop. Only native
+    /// Only the explicitly selected route can be controlled. Only native
     /// peers support freezer control; a legacy route fails with a typed
     /// error and no legacy call is made.
     async fn session_freezer_resolved(
@@ -1416,21 +1389,7 @@ impl UpstreamRegistry {
                 if !self.has_native_hosts() {
                     return Err(UpstreamError::FreezerUnsupportedOnLegacyRoute);
                 }
-                let expected = expected_launch_id
-                    .filter(|expected| !expected.is_empty())
-                    .ok_or(UpstreamError::ExpectedLaunchIdRequired)?;
-                match self.recover_native_session().await? {
-                    Some((recovered, status)) => {
-                        if expected != recovered.launch_id {
-                            return Err(UpstreamError::StaleLaunchIdentity);
-                        }
-                        let active =
-                            active_session(&status).expect("recovered status has an active launch");
-                        RecoveredFarPhase::parse(active.phase.as_deref())?;
-                        recovered
-                    }
-                    None => return Err(UpstreamError::NoActiveSession),
-                }
+                return Err(UpstreamError::NoActiveSession);
             }
         };
         let expected = expected_launch_id
@@ -1600,77 +1559,6 @@ impl UpstreamRegistry {
             }
             other => other,
         }
-    }
-
-    async fn recover_native_session(
-        &self,
-    ) -> Result<Option<(SelectedRemoteSession, UpstreamSessionStatus)>, UpstreamError> {
-        let native_hosts = self
-            .hosts
-            .iter()
-            .filter(|host| matches!(&host.client, RegisteredClient::Native(_)))
-            .collect::<Vec<_>>();
-        if native_hosts.is_empty() {
-            return Ok(None);
-        }
-        let results = join_all(native_hosts.iter().map(|host| async move {
-            host.native_session_status()
-                .await
-                .map(|status| (*host, status))
-        }))
-        .await;
-        let mut active = Vec::new();
-        let mut failed = false;
-        for result in results {
-            match result {
-                Ok((host, status)) => {
-                    let RegisteredClient::Native(client) = &host.client else {
-                        unreachable!("native recovery returned a legacy client")
-                    };
-                    if client.ensure_not_revoked().is_err() {
-                        failed = true;
-                        continue;
-                    }
-                    if let Some(session) = active_session(&status) {
-                        active.push((host, session.clone(), status));
-                    }
-                }
-                Err(_) => failed = true,
-            }
-        }
-        if active.len() > 1 {
-            return Err(UpstreamError::AmbiguousActiveSessions);
-        }
-        if failed {
-            return Err(UpstreamError::NativeSessionRecoveryIncomplete);
-        }
-        let Some((host, session, status)) = active.pop() else {
-            return Ok(None);
-        };
-        let route_key = host.native_route_key().ok_or_else(|| {
-            UpstreamError::Wire("native peer has no stable device identity".into())
-        })?;
-        let moonlight_address = host.viewer_address().await.unwrap_or_default();
-        let selected = SelectedRemoteSession {
-            participation: Participation::Starter,
-            route: SelectedRemoteRoute::Native {
-                device_public_key: route_key,
-            },
-            launch_id: session.launch_id,
-            viewer: Some(SelectedViewer {
-                moonlight_address: moonlight_address.clone(),
-                confirmed_live: false,
-                reach: None,
-            }),
-        };
-        self.set_selected(selected.clone());
-        if moonlight_address.is_empty() {
-            return Err(viewer_error(
-                "NativeViewerRecoveryIncomplete",
-                "selected peer has no moonlightAddress",
-            ));
-        }
-        Ok(Some((self.selected().unwrap_or(selected), status)))
     }
 
     async fn stop_selected(
@@ -1982,6 +1870,32 @@ mod tests {
     use axum::{extract::State, routing::post, Json, Router};
     use serde_json::{json, Value};
     use std::sync::Arc;
+
+    /// A known process-local selection whose viewer needs observation or recovery.
+    /// This does not ask peers to infer which launch belongs to this device.
+    async fn selected_viewer_registry(
+        registry: UpstreamRegistry,
+        launch_id: &str,
+    ) -> UpstreamRegistry {
+        let host = registry
+            .hosts
+            .iter()
+            .find(|host| matches!(host.client, RegisteredClient::Native(_)))
+            .unwrap();
+        registry.set_selected(SelectedRemoteSession {
+            participation: Participation::Starter,
+            route: SelectedRemoteRoute::Native {
+                device_public_key: host.native_route_key().unwrap(),
+            },
+            launch_id: launch_id.into(),
+            viewer: Some(SelectedViewer {
+                moonlight_address: host.viewer_address().await.unwrap(),
+                confirmed_live: false,
+                reach: None,
+            }),
+        });
+        registry
+    }
 
     #[derive(Clone)]
     struct LegacyServerState {
@@ -3062,7 +2976,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn native_recovery_failure_blocks_legacy_status_and_stop_fallback() {
+    async fn selected_native_failure_blocks_legacy_status_and_stop_fallback() {
         let state = LegacyServerState {
             prepared: Default::default(),
         };
@@ -3071,15 +2985,79 @@ command = ["native-game"]
             UpstreamHostConfig::native("zao", "http://127.0.0.1:9".into()),
         ]);
 
+        let launch_id = "aa".repeat(16);
+        let host = registry
+            .hosts
+            .iter()
+            .find(|host| matches!(host.client, RegisteredClient::Native(_)))
+            .unwrap();
+        registry.set_selected(SelectedRemoteSession {
+            participation: Participation::Starter,
+            route: SelectedRemoteRoute::Native {
+                device_public_key: host.native_route_key().unwrap(),
+            },
+            launch_id: launch_id.clone(),
+            viewer: Some(SelectedViewer {
+                moonlight_address: "zao:47989".into(),
+                confirmed_live: true,
+                reach: None,
+            }),
+        });
         assert!(matches!(
             registry.session_status().await,
-            Err(UpstreamError::NativeSessionRecoveryIncomplete)
+            Err(UpstreamError::Unreachable(_))
         ));
         assert!(matches!(
-            registry.session_stop(None, true).await,
-            Err(UpstreamError::NativeSessionRecoveryIncomplete)
+            registry.session_stop(Some(&launch_id), true).await,
+            Err(UpstreamError::Unreachable(_))
         ));
+        assert_eq!(registry.selected().unwrap().launch_id, launch_id);
         assert!(state.prepared.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn unselected_failed_peer_does_not_block_explicit_native_prepare() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = calls.clone();
+        let router = axum::Router::new().route(
+            "/rpc",
+            axum::routing::post(move || {
+                let calls = observed.clone();
+                async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    axum::Json(serde_json::json!({
+                        "_tag": "app.session.status",
+                        "outcome": {"_tag": "Err", "payload": {
+                            "code": "HostLaunchFailed",
+                            "message": "game unit exited with status 143"
+                        }}
+                    }))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let failed_url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let (ready_url, ready) = exact_native_server(false).await;
+        let viewer = TestLinuxStreamViewer::default();
+        let registry = UpstreamRegistry::new(vec![
+            UpstreamHostConfig::native("failed", failed_url),
+            UpstreamHostConfig::native("ready", ready_url),
+        ])
+        .with_linux_viewer(Arc::new(viewer.clone()));
+
+        let prepared = registry.prepare_stream("game", Some("ready")).await;
+        server.abort();
+        let prepared = prepared.expect("an unselected peer does not own this device's session");
+        assert_eq!(prepared.session.launch_id, ready.launch_id);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "unselected peer was queried"
+        );
+        assert_eq!(viewer.calls().len(), 1);
+        assert_eq!(viewer.calls()[0].action, LinuxViewerAction::Start);
     }
 
     #[tokio::test]
@@ -3207,15 +3185,19 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn stale_recovery_requests_have_zero_viewer_effects() {
+    async fn stale_selected_route_requests_have_zero_viewer_effects() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
             .prepare_stream("game")
             .await
             .unwrap();
         let viewer = TestLinuxStreamViewer::default();
-        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
-            .with_linux_viewer(Arc::new(viewer.clone()));
+        let registry = selected_viewer_registry(
+            UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+                .with_linux_viewer(Arc::new(viewer.clone())),
+            &state.launch_id,
+        )
+        .await;
         let stale = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
         assert!(matches!(
@@ -3235,15 +3217,19 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn native_freeze_and_thaw_require_nonempty_exact_ids_before_recovery() {
-        let (native_url, _state) = exact_native_server(false).await;
+    async fn native_freeze_and_thaw_require_nonempty_exact_ids_on_the_selected_route() {
+        let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
             .prepare_stream("game")
             .await
             .unwrap();
         let viewer = TestLinuxStreamViewer::default();
-        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
-            .with_linux_viewer(Arc::new(viewer.clone()));
+        let registry = selected_viewer_registry(
+            UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+                .with_linux_viewer(Arc::new(viewer.clone())),
+            &state.launch_id,
+        )
+        .await;
 
         assert!(matches!(
             registry.session_freeze(None).await,
@@ -3254,7 +3240,7 @@ command = ["native-game"]
             Err(UpstreamError::ExpectedLaunchIdRequired)
         ));
         assert!(viewer.calls().is_empty());
-        assert!(registry.selected().is_none());
+        assert_eq!(registry.selected().unwrap().launch_id, state.launch_id);
     }
 
     #[tokio::test]
@@ -3398,15 +3384,19 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn recovery_restores_only_the_exact_far_launch_viewer() {
+    async fn recovery_restores_only_the_explicitly_selected_far_launch_viewer() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
             .prepare_stream("game")
             .await
             .unwrap();
         let viewer = TestLinuxStreamViewer::default();
-        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
-            .with_linux_viewer(Arc::new(viewer.clone()));
+        let registry = selected_viewer_registry(
+            UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+                .with_linux_viewer(Arc::new(viewer.clone())),
+            &state.launch_id,
+        )
+        .await;
 
         let status = registry.session_status().await.unwrap();
 
@@ -3436,8 +3426,12 @@ command = ["native-game"]
         client.session_freeze(&state.launch_id).await.unwrap();
         let viewer = TestLinuxStreamViewer::default();
         viewer.seed(state.launch_id.clone(), LinuxViewerStatus::Running);
-        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
-            .with_linux_viewer(Arc::new(viewer.clone()));
+        let registry = selected_viewer_registry(
+            UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+                .with_linux_viewer(Arc::new(viewer.clone())),
+            &state.launch_id,
+        )
+        .await;
 
         registry.session_status().await.unwrap();
 
@@ -3460,8 +3454,12 @@ command = ["native-game"]
             .unwrap();
         state.set_phase("stopping");
         let viewer = TestLinuxStreamViewer::default();
-        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
-            .with_linux_viewer(Arc::new(viewer.clone()));
+        let registry = selected_viewer_registry(
+            UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+                .with_linux_viewer(Arc::new(viewer.clone())),
+            &state.launch_id,
+        )
+        .await;
 
         assert!(matches!(
             registry.session_status().await,
@@ -3486,8 +3484,12 @@ command = ["native-game"]
         let status_release = Arc::new(tokio::sync::Semaphore::new(0));
         viewer.block_status(status_started.clone(), status_release.clone());
         let registry = Arc::new(
-            UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
-                .with_linux_viewer(Arc::new(viewer.clone())),
+            selected_viewer_registry(
+                UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+                    .with_linux_viewer(Arc::new(viewer.clone())),
+                &state.launch_id,
+            )
+            .await,
         );
 
         let status_registry = registry.clone();
@@ -3530,8 +3532,12 @@ command = ["native-game"]
             .unwrap();
         let viewer = TestLinuxStreamViewer::default();
         viewer.fail_next(LinuxViewerAction::Status, "viewer status unavailable");
-        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
-            .with_linux_viewer(Arc::new(viewer.clone()));
+        let registry = selected_viewer_registry(
+            UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+                .with_linux_viewer(Arc::new(viewer.clone())),
+            &state.launch_id,
+        )
+        .await;
 
         assert!(matches!(
             registry.session_status().await,
@@ -3594,7 +3600,7 @@ command = ["native-game"]
 
         assert!(matches!(
             registry.session_freeze(None).await,
-            Err(UpstreamError::ExpectedLaunchIdRequired)
+            Err(UpstreamError::NoActiveSession)
         ));
         let prepared = registry.prepare_stream("neverball", None).await.unwrap();
         assert!(matches!(
@@ -3622,8 +3628,16 @@ command = ["native-game"]
             prepared.session.launch_id
         );
 
-        // A fresh registry with no cached route recovers the frozen session.
+        // An idle registry cannot adopt the frozen session. A known selected
+        // route still requires the holder's exact focus authority on thaw.
         let recovered = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)]);
+        assert!(matches!(
+            recovered
+                .session_thaw(Some(&prepared.session.launch_id))
+                .await,
+            Err(UpstreamError::NoActiveSession)
+        ));
+        let recovered = selected_viewer_registry(recovered, &prepared.session.launch_id).await;
         assert!(matches!(
             recovered.session_thaw(Some(&prepared.session.launch_id)).await,
             Err(UpstreamError::Tagged { code, message })
@@ -3680,16 +3694,13 @@ command = ["native-game"]
                 .with_linux_viewer(Arc::new(viewer.clone()));
         let prepared = first.prepare_stream("neverball", None).await.unwrap();
 
-        // A second brain stops the launch and starts a replacement. The
-        // first brain still holds the old route.
+        // The holder ends its launch; another device then selects a new one.
+        // The first device still holds the old route.
+        NativeClient::new(native_url.clone())
+            .session_stop(&prepared.session.launch_id, false)
+            .await
+            .unwrap();
         let second = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)]);
-        assert!(matches!(
-            second
-                .session_stop(Some(&prepared.session.launch_id), false)
-                .await
-                .unwrap(),
-            UpstreamSessionStop::Stopped { .. }
-        ));
         let replacement = second.prepare_stream("neverball", None).await.unwrap();
         assert_ne!(replacement.session.launch_id, prepared.session.launch_id);
 
@@ -3860,36 +3871,37 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn empty_native_route_cache_recovers_one_active_peer() {
+    async fn idle_native_registry_never_adopts_or_controls_an_unselected_live_peer() {
         let native_url = native_server("zao", "neverball").await;
         let starter =
             UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url.clone())]);
         let prepared = starter.prepare_stream("neverball", None).await.unwrap();
-        let recovered = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)]);
-
-        let UpstreamSessionStatus::SessionStatus {
-            active: Some(active),
-        } = recovered.session_status().await.unwrap()
-        else {
-            panic!("recovery fan-out must find the active native session")
-        };
-        assert_eq!(active.launch_id, prepared.session.launch_id);
-        assert_eq!(
-            recovered
-                .selected_remote_session
-                .lock()
-                .unwrap()
-                .as_ref()
-                .map(|selected| selected.launch_id.as_str()),
-            Some(prepared.session.launch_id.as_str())
-        );
+        let viewer = TestLinuxStreamViewer::default();
+        let idle = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+            .with_linux_viewer(Arc::new(viewer.clone()));
         assert!(matches!(
-            recovered
-                .session_stop(Some(&prepared.session.launch_id), false)
+            idle.session_status().await.unwrap(),
+            UpstreamSessionStatus::SessionStatus { active: None }
+        ));
+        assert!(matches!(
+            idle.session_stop(Some(&prepared.session.launch_id), false)
                 .await
                 .unwrap(),
-            UpstreamSessionStop::Stopped { .. }
+            UpstreamSessionStop::NothingToStop {}
         ));
+        assert!(matches!(
+            idle.session_freeze(Some(&prepared.session.launch_id)).await,
+            Err(UpstreamError::NoActiveSession)
+        ));
+        assert!(matches!(
+            idle.session_thaw(Some(&prepared.session.launch_id)).await,
+            Err(UpstreamError::NoActiveSession)
+        ));
+        assert!(idle.selected().is_none());
+        assert!(viewer.calls().is_empty());
+        assert!(
+            matches!(starter.session_status().await.unwrap(), UpstreamSessionStatus::SessionStatus { active: Some(active) } if active.launch_id == prepared.session.launch_id)
+        );
     }
 
     #[tokio::test]
@@ -4048,18 +4060,12 @@ command = ["native-game"]
             UpstreamSessionStop::NothingToStop {}
         ));
 
-        let UpstreamSessionStatus::SessionStatus {
-            active: Some(active),
-        } = registry.session_status().await.unwrap()
-        else {
-            panic!("full native recovery must find the replacement peer")
-        };
-        assert_eq!(active.launch_id, second.session.launch_id);
-        assert_eq!(active.host.as_deref(), Some("sobo"));
-        assert_eq!(
-            registry.selected().unwrap().launch_id,
-            second.session.launch_id
-        );
+        assert!(matches!(
+            registry.session_status().await.unwrap(),
+            UpstreamSessionStatus::SessionStatus { active: None }
+        ));
+        assert!(registry.selected().is_none());
+        assert_ne!(first.session.launch_id, second.session.launch_id);
     }
 
     #[tokio::test]
@@ -4093,7 +4099,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn recovery_rejects_more_than_one_active_native_peer() {
+    async fn idle_registry_does_not_adopt_any_of_several_live_peers() {
         let zao = native_server("zao", "one").await;
         let sobo = native_server("sobo", "two").await;
         NativeClient::new(zao.clone())
@@ -4110,8 +4116,8 @@ command = ["native-game"]
         ]);
 
         assert!(matches!(
-            registry.session_status().await,
-            Err(UpstreamError::AmbiguousActiveSessions)
+            registry.session_status().await.unwrap(),
+            UpstreamSessionStatus::SessionStatus { active: None }
         ));
         assert!(registry.selected_remote_session.lock().unwrap().is_none());
     }

@@ -410,7 +410,7 @@ final class KorriMoonlightProvisioning {
         return value;
     }
 
-    private static X509Certificate parseSingleCertificate(String value) throws Failure {
+    static X509Certificate parseSingleCertificate(String value) throws Failure {
         String pem = requireSinglePem(value);
         try {
             CertificateFactory factory = CertificateFactory.getInstance("X.509");

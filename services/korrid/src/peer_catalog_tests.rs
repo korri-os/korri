@@ -84,7 +84,7 @@ async fn peer_catalog_case(has_local_game: bool) {
         plugin_policy::RegistrySource::Selected(Arc::new(local_plugins)),
         config::snapshot::ConfigSnapshotCoordinator::new(readable.path()),
         discovery::FolderSelectionGrantStore::default(),
-        Some(registry),
+        Some(registry.clone()),
         None,
         None,
     );
@@ -96,7 +96,7 @@ async fn peer_catalog_case(has_local_game: bool) {
     let client = upstream_native::NativeClient::new_secure_at(
         peer.origin.clone(),
         device_key.clone(),
-        credentials,
+        credentials.clone(),
         NOW,
         "11".repeat(32),
         "22".repeat(32),
@@ -169,6 +169,60 @@ async fn peer_catalog_case(has_local_game: bool) {
         0,
         "signed peer read fanned out into the federation"
     );
+
+    // A local selection must remain private to the local caller. Peers still
+    // address this device's holder, even while its viewer is playing elsewhere.
+    let prepared = registry
+        .prepare_stream("wl4", Some("remote"))
+        .await
+        .unwrap();
+    reads.store(0, Ordering::SeqCst);
+
+    // Peer session calls also address only this device's own holder.
+    // Each signed call consumes its own replay nonce.
+    let status_client = upstream_native::NativeClient::new_secure_at(
+        peer.origin.clone(),
+        device_key.clone(),
+        credentials.clone(),
+        NOW,
+        "55".repeat(32),
+        "66".repeat(32),
+    );
+    let status = status_client.session_status().await.unwrap();
+    assert!(matches!(
+        status,
+        upstream::UpstreamSessionStatus::SessionStatus { active: None }
+    ));
+    assert_eq!(reads.load(Ordering::SeqCst), 0, "peer status fanned out");
+    let prepare_client = upstream_native::NativeClient::new_secure_at(
+        peer.origin.clone(),
+        device_key.clone(),
+        credentials,
+        NOW,
+        "77".repeat(32),
+        "88".repeat(32),
+    );
+    assert!(matches!(
+        prepare_client.prepare_stream("wl4").await,
+        Err(upstreams::UpstreamError::Tagged { code, .. }) if code == "OperationUnsupported"
+    ));
+    assert_eq!(
+        reads.load(Ordering::SeqCst),
+        0,
+        "peer prepare was forwarded"
+    );
+    let local_status = registry.session_status().await.unwrap();
+    assert!(
+        matches!(local_status, upstream::UpstreamSessionStatus::SessionStatus { active: Some(active) }
+        if active.launch_id == prepared.session.launch_id)
+    );
+
+    assert_eq!(
+        reads.load(Ordering::SeqCst),
+        1,
+        "local selected status must still read its holder"
+    );
+    reads.store(0, Ordering::SeqCst);
 
     // The same brain still aggregates for its own portal.
     let local: serde_json::Value = reqwest::Client::new()

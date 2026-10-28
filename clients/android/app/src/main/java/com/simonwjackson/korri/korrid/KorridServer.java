@@ -42,14 +42,34 @@ public final class KorridServer {
     public static native String takeOwnerBindingRequest(long generation);
     public static native void detachOwnerSigner(long generation);
     public static native void stop();
+    /** Semantic Leave from the native viewer; Rust applies the existing exact RPC. */
+    public static native boolean leaveViewer(String expectedLaunchId);
 
     /** Called by Rust through the captured application class, never a browser bridge. */
     public static String networkSnapshot(android.content.Context context) {
         return KorridNetwork.snapshot(context);
     }
 
+    /** Exact native effects called by Rust, never exposed to a WebView. */
+    public static String viewerStart(String launchId, String address) throws Exception {
+        return com.limelight.KorriStreamViewer.start(launchId, address);
+    }
+    public static String viewerStatus(String launchId) {
+        return com.limelight.KorriStreamViewer.status(launchId);
+    }
+    public static String viewerBackground(String launchId) throws Exception {
+        return com.limelight.KorriStreamViewer.background(launchId);
+    }
+    public static String viewerResume(String launchId) throws Exception {
+        return com.limelight.KorriStreamViewer.resume(launchId);
+    }
+    public static String viewerStop(String launchId) throws Exception {
+        return com.limelight.KorriStreamViewer.stop(launchId);
+    }
+
     public static int startAndLog(
             android.content.Context context, String allowedOrigin, String localStorageRoot, String privateStateRoot) {
+        com.limelight.KorriStreamViewer.initialize(context);
         int port = start(context.getApplicationContext(), allowedOrigin, localStorageRoot, privateStateRoot, BuildConfig.PRODUCT_RELAYS);
         Log.i("KorridServer", "brain started");
         return port;

@@ -461,4 +461,5 @@
 
     <string name="title_checkbox_full_screen">Enable Full Screen</string>
     <string name="summary_checkbox_full_screen">Hide system bars with immersive mode</string>
+    <string name="korri_stream_leave_failed">Could not leave the session. Try again.</string>
 </resources>

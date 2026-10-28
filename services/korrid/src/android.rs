@@ -15,6 +15,7 @@ use jni::{
 };
 use std::ptr;
 mod network;
+mod viewer;
 
 #[no_mangle]
 pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_version(
@@ -101,10 +102,23 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_start(
             return -1;
         }
     };
+    let viewer = match viewer::adapter(&mut env, &_class) {
+        Ok(viewer) => viewer,
+        Err(_) => {
+            if !env.exception_check().unwrap_or(true) {
+                let _ = env.throw_new(
+                    "java/lang/IllegalStateException",
+                    "Android viewer effects are unavailable",
+                );
+            }
+            return -1;
+        }
+    };
     let platform = EmbeddedPlatform {
         relays: Some(relays),
         owner_binding: Some(crate::owner_binding::OwnerBindingCoordinator::default()),
         reach: Some(reach),
+        viewer: Some(viewer),
     };
     match start_local_server(
         &allowed_origin,
@@ -457,6 +471,70 @@ fn provision_result(
     match env.new_string(json.to_string()) {
         Ok(value) => value.into_raw(),
         Err(_) => ptr::null_mut(),
+    }
+}
+
+/// A semantic local Leave action from the exact native viewer. The same
+/// authenticated RPC performs selection checks, far freeze and overlay effects.
+#[no_mangle]
+pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_leaveViewer(
+    mut env: JNIEnv,
+    _class: JClass,
+    launch: JString,
+) -> jni::sys::jboolean {
+    let launch = match env.get_string(&launch) {
+        Ok(value) => String::from(value),
+        Err(_) => return jni::sys::JNI_FALSE,
+    };
+    if launch.len() != 32
+        || !launch
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return jni::sys::JNI_FALSE;
+    }
+    let (Some(port), Some(capability)) =
+        (crate::local_server_port(), crate::local_server_capability())
+    else {
+        return jni::sys::JNI_FALSE;
+    };
+    let result = (|| {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()?;
+        runtime.block_on(async move {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(60))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .ok()?;
+            let response = client
+                .post(format!("http://127.0.0.1:{port}/rpc"))
+                .bearer_auth(capability)
+                .json(&RpcRequest::SessionLeave(crate::SessionLeaveRequest {
+                    expected_launch_id: Some(launch.clone()),
+                }))
+                .send()
+                .await
+                .ok()?
+                .error_for_status()
+                .ok()?;
+            match response.json::<RpcResponse>().await.ok()? {
+                RpcResponse::SessionLeave(crate::SessionTransitionOutcome::Ok(result))
+                    if result.launch_id == launch
+                        && result.state == crate::SessionFreezerState::Frozen =>
+                {
+                    Some(())
+                }
+                _ => None,
+            }
+        })
+    })();
+    if result.is_some() {
+        jni::sys::JNI_TRUE
+    } else {
+        jni::sys::JNI_FALSE
     }
 }
 

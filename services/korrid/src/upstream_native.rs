@@ -197,9 +197,7 @@ impl NativeClient {
             | UpstreamError::MoonlightHostChanged
             | UpstreamError::MoonlightHostNotFound
             | UpstreamError::MoonlightHostAmbiguous
-            | UpstreamError::AmbiguousActiveSessions
             | UpstreamError::SelectedRemoteSessionReplaced
-            | UpstreamError::NativeSessionRecoveryIncomplete
             | UpstreamError::ActiveRemoteSessionConflict
             | UpstreamError::ExpectedLaunchIdRequired
             | UpstreamError::StaleLaunchIdentity

@@ -285,6 +285,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     // overlay replacing the native spinner. Null for stock entry points.
     private KorriSessionOverlay korriSessionOverlay;
     private String korriLaunchId;
+    private boolean korriViewerRequested;
+    private long korriViewerLease;
     private volatile KorriSunshineRuntimeSettings korriSunshineRuntimeSettings;
     private int activeMouseMode;
     private final KorriGameLaunchScope korriLaunchScope =
@@ -340,6 +342,15 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        korriViewerRequested = getIntent().hasExtra(KorriStreamViewer.EXTRA_GENERATION);
+        if (korriViewerRequested) {
+            korriViewerLease = KorriStreamViewer.attach(this);
+            if (korriViewerLease == 0) {
+                // Process recreation cannot resurrect a route korrid no longer owns.
+                finish();
+                return;
+            }
+        }
         instance = this;
         korriLaunchId = getIntent().getStringExtra(EXTRA_KORRI_LAUNCH_ID);
         timerHandler = new Handler(Looper.getMainLooper());
@@ -939,7 +950,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         conn = new NvConnection(getApplicationContext(),
                 new ComputerDetails.AddressTuple(host, port),
                 httpsPort, uniqueId, config,
-                PlatformBinding.getCryptoProvider(this), serverCert);
+                PlatformBinding.getCryptoProvider(this), serverCert,
+                korriViewerRequested ? NvConnection.AppLaunchPolicy.EXACT : NvConnection.AppLaunchPolicy.REPLACE);
         controllerHandler = new ControllerHandler(this, conn, this, prefConfig);
         keyboardTranslator = new KeyboardTranslator(prefConfig);
 
@@ -968,6 +980,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
 
         if (!decoderRenderer.isAvcSupported()) {
+            if (korriViewerRequested) {
+                KorriStreamViewer.failed(this, korriViewerLease);
+                finish();
+                return;
+            }
             if (spinner != null) {
                 spinner.dismiss();
                 spinner = null;
@@ -992,18 +1009,29 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         streamContainer.setOnSurfaceAvailable(() -> {
             if (!attemptedConnection) {
                 LimeLog.info("Surface is available, starting connection...");
+                if (korriViewerRequested && !KorriStreamViewer.opening(Game.this, korriViewerLease)) {
+                    finish();
+                    return;
+                }
                 attemptedConnection = true;
+                connecting = true;
 
                 // Der Decoder erhält die jeweils aktive Oberfläche vom Container
                 decoderRenderer.setRenderTarget(streamContainer.getSurface());
 
                 // Starten Sie die NvConnection
-                conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
-                        decoderRenderer, Game.this);
+                try {
+                    conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
+                            decoderRenderer, Game.this);
+                } catch (RuntimeException error) {
+                    if (!korriViewerRequested) throw error;
+                    KorriStreamViewer.failed(Game.this, korriViewerLease);
+                    finish();
+                }
             }
         });
 
-        createLegacyGameOverlay();
+        if (!korriViewerRequested) createLegacyGameOverlay();
 
         floatingMenuButton = findViewById(R.id.floatingMenuButton);
         updateFloatingButtonVisibility(prefConfig.enableBackMenu && prefConfig.enableFloatingButton);
@@ -1466,6 +1494,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (korriViewerRequested) {
+            if (korriViewerLease == 0) return;
+            KorriStreamViewer.focus(this, korriViewerLease, hasFocus);
+        }
 
         // We can't guarantee the state of modifiers keys which may have
         // lifted while focus was not on us. Clear the modifier state.
@@ -1759,6 +1791,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     protected void onDestroy() {
+        if (korriViewerRequested && korriViewerLease == 0) {
+            super.onDestroy();
+            return;
+        }
         korriConnectionLifecycle.retire();
         if (korriOverlay != null) {
             korriOverlay.closeAndDestroy();
@@ -1810,10 +1846,15 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         // Destroy the capture provider
         inputCaptureProvider.destroy();
         streamContainer.onDestroy();
+        if (korriViewerRequested) KorriStreamViewer.destroyed(this, korriViewerLease);
     }
 
     @Override
     protected void onPause() {
+        if (korriViewerRequested && korriViewerLease == 0) {
+            super.onPause();
+            return;
+        }
         if (isFinishing()) {
             // Stop any further input device notifications before we lose focus (and pointer capture)
             if (controllerHandler != null) {
@@ -1987,7 +2028,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
                     // Quit
                     case KeyEvent.KEYCODE_Q:
-                        finish();
+                        disconnect();
                         break;
 
                     // Toggle cursor visibility
@@ -2066,6 +2107,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (korriViewerRequested && event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_MODE) {
+            if (event.getAction() == KeyEvent.ACTION_UP) KorriStreamViewer.leave(this, korriViewerLease);
+            return true;
+        }
         // Guide toggles the overlay closed. This must live at dispatch
         // level: while the overlay is showing its WebView holds focus, and
         // key events route to Chromium's internal focused child — skipping
@@ -3382,7 +3427,16 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             // during the process of stopping this one.
             new Thread() {
                 public void run() {
-                    conn.stop();
+                    try {
+                        conn.stop();
+                        if (korriViewerRequested) KorriStreamViewer.closed(Game.this, korriViewerLease);
+                    } catch (RuntimeException error) {
+                        if (!korriViewerRequested) throw error;
+                        // No close acknowledgement: the exact viewer stays uncertain.
+                        KorriStreamViewer.failed(Game.this, korriViewerLease);
+                        Log.e("KorriStreamViewer", "Stream teardown was not confirmed");
+                        return;
+                    }
                     if (httpConn != null && quitOnStop) {
                         try {
                             sleep(1000);
@@ -3417,6 +3471,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             return true;
         }
 
+        if (korriViewerRequested) {
+            KorriStreamViewer.failed(this, korriViewerLease);
+            runOnUiThread(this::finish);
+            return false;
+        }
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -3480,6 +3539,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionTerminated(final int errorCode) {
+        if (korriViewerRequested) {
+            korriConnectionLifecycle.retire();
+            KorriStreamViewer.failed(this, korriViewerLease);
+            runOnUiThread(() -> { stopConnection(); finish(); });
+            return;
+        }
         logKorriLifecycle("connection-terminated", "code-" + errorCode);
         korriLaunchScope.connectionTerminated();
         // Perform a connection test if the failure could be due to a blocked port
@@ -3611,12 +3676,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionStarted() {
+        if (korriViewerRequested && !KorriStreamViewer.canPresent(this, korriViewerLease)) return;
         final long connectionToken = korriConnectionLifecycle.started();
         korriLaunchScope.connectionStarted();
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
                 korriConnectionLifecycle.runIfCurrent(connectionToken, () -> {
+                    if (korriViewerRequested && !KorriStreamViewer.canPresent(Game.this, korriViewerLease)) return;
                     if (spinner != null) {
                         spinner.dismiss();
                         spinner = null;
@@ -3635,6 +3702,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     // Gameplay controls become truthful only after the live stream
                     // and all Game-owned action fields are ready.
                     logKorriLifecycle("connection-started", "connected");
+                    if (korriViewerRequested) {
+                        KorriStreamViewer.focus(Game.this, korriViewerLease, hasWindowFocus());
+                        KorriStreamViewer.connected(Game.this, korriViewerLease);
+                    }
 
                     // Hide the mouse cursor after the spinner is gone.
                     timerHandler.postDelayed(() -> setInputGrabState(true), 500);
@@ -3889,6 +3960,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void onBackPressed() {
+        if (korriViewerRequested) {
+            KorriStreamViewer.leave(this, korriViewerLease);
+            return;
+        }
         if(prefConfig.enableBackMenu){
             showGameMenu();
             return;
@@ -4109,10 +4184,15 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     public void disconnect() {
-        finish();
+        if (korriViewerRequested) KorriStreamViewer.leave(this, korriViewerLease);
+        else finish();
     }
 
     public void quit() {
+        if (korriViewerRequested) {
+            KorriStreamViewer.leave(this, korriViewerLease);
+            return;
+        }
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle(R.string.game_dialog_title_quit_confirm);
         builder.setMessage(R.string.game_dialog_message_quit_confirm);
@@ -4135,6 +4215,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void showGameMenu() {
+        if (korriViewerRequested) {
+            KorriStreamViewer.leave(this, korriViewerLease);
+            return;
+        }
         if (korriOverlay == null) createLegacyGameOverlay();
         korriOverlay.show();
     }

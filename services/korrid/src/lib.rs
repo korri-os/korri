@@ -3203,6 +3203,15 @@ async fn dispatch(
             );
             RpcResponse::SessionCancel(outcome)
         }
+        RpcRequest::SessionPrepare(_)
+            if matches!(state.mode, ServerMode::Brain(_))
+                && matches!(authorization, authorization::AuthorizationContext::Peer(_)) =>
+        {
+            // A peer asks this device's holder, never its selected viewer route.
+            RpcResponse::SessionPrepare(game_routes::SelectedGameLaunchOutcome::Err(
+                installed_routes_unsupported(),
+            ))
+        }
         RpcRequest::SessionPrepare(request) => {
             let outcome = match (&state.mode, state.rpc_surface) {
                 (ServerMode::Brain(brain), RpcSurface::Lan) => brain
@@ -3249,6 +3258,15 @@ async fn dispatch(
         }
         RpcRequest::InvitesDismiss(request) => {
             RpcResponse::InvitesDismiss(invites::device::dismiss(state, &request))
+        }
+        RpcRequest::SessionStatus(_)
+            if matches!(state.mode, ServerMode::Brain(_))
+                && matches!(authorization, authorization::AuthorizationContext::Peer(_)) =>
+        {
+            RpcResponse::SessionStatus(SessionStatusOutcome::Err(RpcFailure {
+                code: "NoActiveSession".into(),
+                message: "This device holds no local game session.".into(),
+            }))
         }
         RpcRequest::SessionStatus(_) => {
             let (outcome, recovered_overlay_intent) = match (&state.mode, state.rpc_surface) {
@@ -5087,6 +5105,7 @@ pub struct EmbeddedPlatform {
     pub relays: Option<relay::RelayList>,
     pub owner_binding: Option<owner_binding::OwnerBindingCoordinator>,
     pub(crate) reach: Option<federation::reach::Environment>,
+    pub(crate) viewer: Option<Arc<dyn linux_viewer::LinuxStreamViewer>>,
 }
 
 /// Start one localhost brain with explicitly supplied native effects.
@@ -5162,6 +5181,10 @@ fn start_local_server_for_platform(
         federation.credentials.clone(),
     )
     .with_federation(federation.directory.clone());
+    let upstream = match platform.viewer {
+        Some(viewer) => upstream.with_linux_viewer(viewer),
+        None => upstream,
+    };
     let server_federation = federation.clone();
     let relay_config = moonlight_config_snapshot.clone();
     let product_relays = platform.relays;

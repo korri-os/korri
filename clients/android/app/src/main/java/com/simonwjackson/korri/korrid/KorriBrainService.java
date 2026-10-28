@@ -147,7 +147,10 @@ public final class KorriBrainService extends Service {
 
     private static synchronized void stopBrain() {
         try {
-            if (started) KorridServer.stop();
+            if (started) {
+                com.limelight.KorriStreamViewer.shutdown();
+                KorridServer.stop();
+            }
         } finally {
             started = false;
             port = 0;
