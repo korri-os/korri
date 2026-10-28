@@ -435,6 +435,15 @@ let
         ++ graphFixtures
       )
   );
+  # .drvPath normally carries a deep output dependency. Publication needs only
+  # its native derivation metadata, not every output of its build-tool chain.
+  publicationDeriver = package: builtins.unsafeDiscardOutputDependency package.drvPath;
+  publicationDerivers = map publicationDeriver [
+    tailscalePackage
+    updated
+    broken
+    interrupted
+  ];
   # A test-only signing identity. This key grants no authority outside this VM.
   key = pkgs.writeText "plugin-test-cache-key" "korri-plugin-test:XMn+6POJ5fj568Beg6v8OLo4wMcNKehDPxH+7bUrt0Svsk3i8ixelBTno9/D1z0UPghq8N+uzEcf+5dLDFa9JQ==";
   publicKey = "korri-plugin-test:r7JN4vIsXpQU56Pfw9c9FD4IavDfrsxHH/uXSwxWvSU=";
@@ -488,14 +497,8 @@ pkgs.testers.runNixOSTest {
           splitPlugin
           impostor
           splitDependency.drvPath
-          # The cache VM is the author/publisher. Carry native Nix derivation
-          # metadata for platform detection; never build it or send it to the
-          # cold client. Store-image registration otherwise drops the deriver.
-          tailscalePackage.drvPath
-          updated.drvPath
-          broken.drvPath
-          interrupted.drvPath
         ]
+        ++ publicationDerivers
         ++ injections
         ++ graphFixtures;
         services.nix-serve = {
@@ -551,7 +554,8 @@ pkgs.testers.runNixOSTest {
         system.extraDependencies = [
           cacheFixtureRoots
           splitDependency.drvPath
-        ];
+        ]
+        ++ publicationDerivers;
         virtualisation.writableStore = true;
         virtualisation.writableStoreUseTmpfs = false;
         virtualisation.diskSize = 8192;
@@ -1285,7 +1289,7 @@ pkgs.testers.runNixOSTest {
         cache.succeed("printf %s " + shlex.quote(json.dumps({"records": records, "latest": {record["plugin_id"]: record["release_version"] for record in records}})) + " > /var/www/repositories/" + name + ".json")
 
     records = []
-    for release, package, deriver in [("v1", "${tailscalePackage}", "${tailscalePackage.drvPath}"), ("v2", "${updated}", "${updated.drvPath}"), ("broken", "${broken}", "${broken.drvPath}"), ("pending", "${interrupted}", "${interrupted.drvPath}")]:
+    for release, package, deriver in [("v1", "${tailscalePackage}", "${publicationDeriver tailscalePackage}"), ("v2", "${updated}", "${publicationDeriver updated}"), ("broken", "${broken}", "${publicationDeriver broken}"), ("pending", "${interrupted}", "${publicationDeriver interrupted}")]:
         # This VM's store image has prebuilt outputs, not build-history records.
         # Restore only their genuine native Nix registration metadata. This is
         # not a Korri manifest field and does not realise a derivation.
