@@ -174,6 +174,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
 
   const loadSeq = useRef(0)
   const appliedCatalogPeersKey = useRef<string | undefined>(undefined)
+  const retryEmptyCatalog = useRef(false)
   const actionSeq = useRef(0)
   const stopPollSeq = useRef(0)
   const startupRef = useRef<{
@@ -347,6 +348,11 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
     publish(preserveAction && current._tag === "Ready" && current.notice !== null && current.notice._tag !== "Catalog" && loaded._tag === "Ready"
       ? { ...loaded, notice: current.notice } : loaded)
     appliedCatalogPeersKey.current = peerCatalogKey(peers)
+    // A failed read is not an empty library. Retry it even when peers have
+    // settled; an authoritative empty success clears this without a loop.
+    retryEmptyCatalog.current = loaded._tag !== "Loading" &&
+      !loaded.entries.some(entry => entry.kind === "game" || entry.kind === "local-game") &&
+      (games._tag === "Err" || (games.payload.failures?.length ?? 0) > 0)
   }, [korrid, plugins, publish, sessionStatusWithTimeout])
   reloadRef.current = () => void load(true)
 
@@ -371,7 +377,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
       const peers = await korrid.peerList()
       if (disposed) return
       // A newer reload owns its readiness observation too.
-      if (seq === loadSeq.current && peerCatalogKey(peers) !== appliedCatalogPeersKey.current) await load(true, peers)
+      if (seq === loadSeq.current && (retryEmptyCatalog.current || peerCatalogKey(peers) !== appliedCatalogPeersKey.current)) await load(true, peers)
       if (!disposed) timer = setTimeout(() => void poll(), PEER_POLL_INTERVAL_MS)
     }
     timer = setTimeout(() => void poll(), PEER_POLL_INTERVAL_MS)

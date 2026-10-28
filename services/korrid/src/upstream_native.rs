@@ -702,15 +702,25 @@ impl NativeClient {
         if may_try_reach {
             if let (Some(directory), Some(key)) = (&self.directory, &self.expected_peer_public_key)
             {
-                if let Ok(connection) = directory.reach_connection(key).await {
+                // Route discovery and the signed request share the candidate
+                // deadline. Reach may wait 20 seconds on its own; giving it a
+                // fresh budget here held every catalog behind one offline peer.
+                if let Ok(Ok(connection)) = tokio::time::timeout_at(
+                    deadline,
+                    directory.reach_connection(key),
+                ).await {
                     self.ensure_not_revoked()?;
+                    let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                    if remaining.is_zero() {
+                        return Err(UpstreamError::Unreachable("peer operation timed out".into()));
+                    }
                     return match self
                         .attempt_with_wait(
                             "/peer-rpc",
                             request.clone(),
                             Some(&connection),
                             answered,
-                            self.operation_timeout,
+                            remaining,
                         )
                         .await
                     {
