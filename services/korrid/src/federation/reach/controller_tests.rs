@@ -1,4 +1,5 @@
 use super::*;
+use crate::relay::{PublishState, RelayCoordinator};
 use crate::{
     federation::reach::tests::Devices, relay::InProcessRelayNetwork, upstreams::UpstreamError,
 };
@@ -392,7 +393,11 @@ impl crate::relay::RelayTransport for ReachReceiveTransports {
         event: &'a str,
         auth: Arc<dyn crate::relay::RelayAuthSigner>,
     ) -> futures::future::BoxFuture<'a, Result<(), crate::relay::RelayError>> {
-        crate::relay::RelayTransport::publish(self.live.as_ref(), relay, event, auth)
+        if relay == self.unavailable {
+            crate::relay::RelayTransport::publish(&self.websocket, relay, event, auth)
+        } else {
+            crate::relay::RelayTransport::publish(self.live.as_ref(), relay, event, auth)
+        }
     }
     fn read<'a>(
         &'a self,
@@ -544,5 +549,379 @@ async fn reach_admits_matching_live_batch_before_slow_relay_expires_pending_offe
     assert_eq!(
         controller.bindings.read().unwrap().get(&remote),
         Some(&peer)
+    );
+}
+
+struct PublicationFixture {
+    devices: Devices,
+    controller: Controller,
+    signal: CoordinatedRelays<ReachReceiveTransports>,
+    receiver: CoordinatedRelays<InProcessRelayNetwork>,
+    network: Arc<InProcessRelayNetwork>,
+    sockets: tokio::sync::mpsc::UnboundedReceiver<tokio::net::TcpStream>,
+    accepting: JoinHandle<()>,
+}
+impl Drop for PublicationFixture {
+    fn drop(&mut self) {
+        self.accepting.abort();
+    }
+}
+async fn publication_fixture() -> PublicationFixture {
+    use std::sync::atomic::AtomicU64;
+    let devices = Devices::new();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let unavailable = format!("ws://{}", listener.local_addr().unwrap());
+    let (sent, sockets) = tokio::sync::mpsc::unbounded_channel();
+    let accepting = tokio::spawn(async move {
+        loop {
+            let socket = listener.accept().await.unwrap().0;
+            if sent.send(socket).is_err() {
+                break;
+            }
+        }
+    });
+    let relays =
+        RelayList::configured(vec!["wss://live.invalid".into(), unavailable.clone()]).unwrap();
+    let network = Arc::new(InProcessRelayNetwork::new(&relays));
+    let transport = Arc::new(ReachReceiveTransports {
+        live: network.clone(),
+        websocket: WebSocketRelayTransport::new(),
+        unavailable,
+        live_completed: AtomicU64::new(0),
+        unavailable_completed: AtomicU64::new(0),
+    });
+    let signal =
+        CoordinatedRelays::new(relays, devices.ca.identity_snapshot().unwrap(), transport).unwrap();
+    let receiver = CoordinatedRelays::new(
+        RelayList::configured(vec!["wss://live.invalid".into()]).unwrap(),
+        devices.cb.identity_snapshot().unwrap(),
+        network.clone(),
+    )
+    .unwrap();
+    let key = iroh::SecretKey::generate();
+    let endpoint = relay_only_endpoint_with_key(key.clone()).await;
+    let controller = Controller {
+        environment: Environment::linux(),
+        directory: devices.da.clone(),
+        credentials: devices.ca.clone(),
+        config: None,
+        key,
+        peer_router: axum::Router::new(),
+        relay_port: 0,
+        endpoint: Some(endpoint),
+        tasks: JoinSet::new(),
+        relay_task: None,
+        bindings: Arc::new(RwLock::new(BTreeMap::new())),
+        dialing: Arc::new(Mutex::new(BTreeSet::new())),
+        relay_addresses: Arc::new(RwLock::new(Vec::new())),
+        pending: BTreeMap::new(),
+        processed: BTreeMap::new(),
+        retry: BTreeMap::new(),
+        relaying: Arc::new(RwLock::new(BTreeMap::new())),
+    };
+    PublicationFixture {
+        devices,
+        controller,
+        signal,
+        receiver,
+        network,
+        sockets,
+        accepting,
+    }
+}
+
+#[tokio::test]
+async fn reach_offer_advances_on_first_ack_and_keeps_the_bounded_fanout_alive() {
+    use tokio::io::AsyncReadExt;
+    let mut fixture = publication_fixture().await;
+    let peer = fixture.devices.cb.public_key().unwrap();
+    let snapshot = fixture.devices.da.snapshot().unwrap().remove(0);
+    let offered = timeout(
+        Duration::from_secs(2),
+        fixture.controller.offer_peer(
+            snapshot,
+            &fixture.signal,
+            &StunList(Vec::new()),
+            unix_time(),
+        ),
+    )
+    .await;
+    if offered.is_err() {
+        fixture.controller.reset().await;
+        panic!("a working relay ack was withheld behind the unavailable relay's 8-second timeout");
+    }
+    let received = fixture.receiver.receive(unix_time()).await.unwrap();
+    assert!(received
+        .commands
+        .iter()
+        .any(|command| matches!(command, CoordinationCommand::ReachOffer { .. })));
+    assert!(fixture.controller.pending.contains_key(&peer));
+    let mut socket = timeout(Duration::from_secs(1), fixture.sockets.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut bytes = Vec::new();
+    assert!(
+        timeout(Duration::from_millis(100), socket.read_to_end(&mut bytes))
+            .await
+            .is_err(),
+        "the other relay attempt was cancelled on first ack instead of continuing fanout"
+    );
+    timeout(Duration::from_secs(9), socket.read_to_end(&mut bytes))
+        .await
+        .expect("background publication exceeded the existing bound")
+        .unwrap();
+    fixture.controller.reset().await;
+}
+
+#[tokio::test]
+async fn reach_reset_aborts_background_publication_and_closes_its_socket() {
+    use tokio::io::AsyncReadExt;
+    let mut fixture = publication_fixture().await;
+    let snapshot = fixture.devices.da.snapshot().unwrap().remove(0);
+    timeout(
+        Duration::from_secs(2),
+        fixture.controller.offer_peer(
+            snapshot,
+            &fixture.signal,
+            &StunList(Vec::new()),
+            unix_time(),
+        ),
+    )
+    .await
+    .expect("working relay did not release offer");
+    let mut socket = timeout(Duration::from_secs(1), fixture.sockets.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut bytes = Vec::new();
+    assert!(
+        timeout(Duration::from_millis(50), socket.read_to_end(&mut bytes))
+            .await
+            .is_err()
+    );
+    fixture.controller.reset().await;
+    timeout(Duration::from_secs(1), socket.read_to_end(&mut bytes))
+        .await
+        .expect("reset leaked a publication socket")
+        .unwrap();
+}
+
+#[tokio::test]
+async fn reach_drop_aborts_background_publication_and_closes_its_socket() {
+    use tokio::io::AsyncReadExt;
+    let mut fixture = publication_fixture().await;
+    let snapshot = fixture.devices.da.snapshot().unwrap().remove(0);
+    timeout(
+        Duration::from_secs(2),
+        fixture.controller.offer_peer(
+            snapshot,
+            &fixture.signal,
+            &StunList(Vec::new()),
+            unix_time(),
+        ),
+    )
+    .await
+    .expect("working relay did not release offer");
+    let mut socket = timeout(Duration::from_secs(1), fixture.sockets.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut bytes = Vec::new();
+    assert!(
+        timeout(Duration::from_millis(50), socket.read_to_end(&mut bytes))
+            .await
+            .is_err()
+    );
+    drop(fixture);
+    timeout(Duration::from_secs(1), socket.read_to_end(&mut bytes))
+        .await
+        .expect("controller drop leaked a publication socket")
+        .unwrap();
+}
+
+#[tokio::test]
+async fn reach_all_failed_relays_report_failure_within_the_existing_bound() {
+    let mut fixture = publication_fixture().await;
+    fixture.network.set_available("wss://live.invalid", false);
+    let peer = fixture.devices.cb.public_key().unwrap();
+    let now = unix_time();
+    let command = CoordinationCommand::ReachOffer {
+        sender_device_public_key: fixture.devices.ca.public_key().unwrap(),
+        offer: Offer {
+            endpoint_id: fixture.controller.key.public().to_string(),
+            direct_addresses: Vec::new(),
+            expires_at: now + SIGNAL_LIFETIME,
+            request_id: "ef".repeat(32),
+        },
+    };
+    let accepted = timeout(
+        Duration::from_secs(9),
+        fixture
+            .controller
+            .publish_reach(&fixture.signal, &peer, command, now, "offer_published"),
+    )
+    .await
+    .expect("all-relay failure exceeded its existing deadline");
+    assert!(
+        !accepted,
+        "all failed relays were reported as a successful offer"
+    );
+    fixture.controller.reset().await;
+}
+
+#[tokio::test]
+async fn non_reach_publication_still_waits_for_complete_per_relay_results() {
+    let fixture = publication_fixture().await;
+    let started = Instant::now();
+    let now = unix_time();
+    let result = timeout(
+        Duration::from_secs(9),
+        fixture.signal.queue_command(
+            &fixture.devices.cb.public_key().unwrap(),
+            CoordinationCommand::RunIdleKorrid {
+                sender_device_public_key: fixture.devices.ca.public_key().unwrap(),
+                requested_at: now,
+                expires_at: now + 60,
+            },
+            now,
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(
+        started.elapsed() >= Duration::from_secs(7),
+        "non-reach publication returned first-ack results"
+    );
+    assert!(
+        matches!(result, PublishState::Partial { accepted_relays, failed_relays }
+        if accepted_relays == ["wss://live.invalid"] && failed_relays.len() == 1)
+    );
+}
+
+#[tokio::test]
+async fn reach_sends_its_own_offer_before_an_unavailable_read_tail() {
+    let mut fixture = publication_fixture().await;
+    let reader = CoordinatedRelays::new(
+        RelayList::configured(vec!["wss://live.invalid".into()]).unwrap(),
+        fixture.devices.cb.identity_snapshot().unwrap(),
+        fixture.network.clone(),
+    )
+    .unwrap();
+    let exchange = tokio::spawn(async move {
+        fixture
+            .controller
+            .exchange_reach(&fixture.signal, &StunList(Vec::new()), unix_time())
+            .await;
+    });
+    let offered = timeout(Duration::from_secs(2), async {
+        loop {
+            if reader
+                .receive(unix_time())
+                .await
+                .unwrap()
+                .commands
+                .iter()
+                .any(|command| matches!(command, CoordinationCommand::ReachOffer { .. }))
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    let tail_still_active = !exchange.is_finished();
+    exchange.abort();
+    let _ = exchange.await;
+    assert!(
+        offered.is_ok(),
+        "an unavailable read tail delayed our own signed offer"
+    );
+    assert!(
+        tail_still_active,
+        "fixture did not keep a real unavailable read in flight"
+    );
+}
+
+async fn publication_loopback_endpoint(key: iroh::SecretKey) -> Endpoint {
+    Builder::empty()
+        .crypto_provider(iroh::tls::default_provider())
+        .secret_key(key)
+        .alpns(vec![ALPN.to_vec()])
+        .relay_mode(RelayMode::Custom(iroh::RelayMap::empty()))
+        .portmapper_config(iroh::endpoint::PortmapperConfig::Disabled)
+        .clear_ip_transports()
+        .bind_addr("127.0.0.1:0")
+        .unwrap()
+        .bind()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn reach_answer_and_direct_dial_advance_before_the_failed_publication_tail() {
+    let mut fixture = publication_fixture().await;
+    let endpoint = publication_loopback_endpoint(fixture.controller.key.clone()).await;
+    fixture.controller.endpoint.take().unwrap().close().await;
+    fixture.controller.endpoint = Some(endpoint.clone());
+    let peer_endpoint = publication_loopback_endpoint(iroh::SecretKey::generate()).await;
+    let observing = CoordinatedRelays::new(
+        RelayList::configured(vec!["wss://live.invalid".into()]).unwrap(),
+        fixture.devices.cb.identity_snapshot().unwrap(),
+        fixture.network.clone(),
+    )
+    .unwrap();
+    let request_id = "cd".repeat(32);
+    let now = unix_time();
+    fixture
+        .receiver
+        .queue_command(
+            &fixture.devices.ca.public_key().unwrap(),
+            CoordinationCommand::ReachOffer {
+                sender_device_public_key: fixture.devices.cb.public_key().unwrap(),
+                offer: Offer {
+                    endpoint_id: peer_endpoint.id().to_string(),
+                    direct_addresses: endpoint_addresses(&peer_endpoint),
+                    expires_at: now + SIGNAL_LIFETIME,
+                    request_id: request_id.clone(),
+                },
+            },
+            now,
+        )
+        .await
+        .unwrap();
+    let (sent, connected) = tokio::sync::oneshot::channel();
+    let serving_endpoint = peer_endpoint.clone();
+    let router = fixture.devices.router();
+    let serving = tokio::spawn(async move {
+        let connection = serving_endpoint.accept().await.unwrap().await.unwrap();
+        let _ = sent.send(());
+        tunnel::serve(connection, router).await;
+    });
+    let receiving = tokio::spawn(async move {
+        fixture
+            .controller
+            .receive_reach(&fixture.signal, &StunList(Vec::new()), unix_time())
+            .await;
+    });
+    let result = timeout(Duration::from_secs(2), connected).await;
+    let replies = observing.receive(unix_time()).await.unwrap();
+    receiving.abort();
+    let _ = receiving.await;
+    serving.abort();
+    let _ = serving.await;
+    endpoint.close().await;
+    peer_endpoint.close().await;
+    assert!(
+        matches!(result, Ok(Ok(()))),
+        "the answer's slow relay prevented the direct dial"
+    );
+    assert!(
+        replies.commands.iter().any(
+            |command| matches!(command, CoordinationCommand::ReachAnswer { answer, .. }
+        if answer.request_id == request_id)
+        ),
+        "the peer never received a valid signed answer"
     );
 }

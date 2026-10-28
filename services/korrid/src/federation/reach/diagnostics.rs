@@ -9,7 +9,7 @@ use std::{
     fmt,
     net::{IpAddr, SocketAddr},
     sync::{Arc, RwLock},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 #[derive(Clone)]
@@ -43,6 +43,13 @@ impl Default for Diagnostics {
         Self(Arc::new(RwLock::new(Epoch::new(Instant::now()))))
     }
 }
+#[derive(Default)]
+pub(super) struct PublicationProgress {
+    pub(super) relay_count: usize,
+    pub(super) completed_relays: usize,
+    pub(super) first_ack_ms: Option<u128>,
+    pub(super) operation_ms: u128,
+}
 impl Diagnostics {
     pub(super) fn stamp(&self) -> Stamp {
         let epoch = self.0.read().expect("reach diagnostic clock");
@@ -53,19 +60,24 @@ impl Diagnostics {
         stage: &'static str,
         peer: &str,
         result: &Result<PublishState, RelayError>,
-        duration: Duration,
+        progress: &PublicationProgress,
     ) {
+        let first_ack_ms = progress
+            .first_ack_ms
+            .map(|ms| ms.to_string())
+            .unwrap_or_else(|| "none".into());
+        let final_outcome = progress.completed_relays == progress.relay_count;
         match result {
             Ok(state) => {
                 let outcomes = publication_outcomes(state);
                 eprintln!(
-                    "korrid: reach: {} stage={stage} peer={} relay_count={} outcomes={} operation_ms={}",
-                    self.stamp(), short_peer(peer), outcomes.len(), outcomes.join(","), duration.as_millis()
+                    "korrid: reach: {} stage={stage} peer={} relay_count={} completed_relays={} outcomes={} operation_ms={} first_ack_ms={first_ack_ms} final={final_outcome}",
+                    self.stamp(), short_peer(peer), progress.relay_count, progress.completed_relays, outcomes.join(","), progress.operation_ms
                 );
             }
             Err(_) => eprintln!(
-                "korrid: reach: {} stage={stage} peer={} relay_count=0 error=queue_failed operation_ms={}",
-                self.stamp(), short_peer(peer), duration.as_millis()
+                "korrid: reach: {} stage={stage} peer={} relay_count=0 error=queue_failed operation_ms={} first_ack_ms=none final=true",
+                self.stamp(), short_peer(peer), progress.operation_ms
             ),
         }
     }

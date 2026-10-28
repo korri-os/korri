@@ -484,6 +484,153 @@ where
         .boxed())
     }
 
+    // Both publication APIs encode and authorize the exact same command once.
+    // The aggregate API below retains its complete per-relay result contract.
+    fn command_event(
+        &self,
+        recipient_device_public_key: &str,
+        command: CoordinationCommand,
+        now: u64,
+    ) -> Result<String, RelayError> {
+        validate_public_key(recipient_device_public_key)?;
+        if command.expires_at() <= now {
+            return Err(RelayError::Expired);
+        }
+        let own_key = self
+            .identity
+            .device_public_key()
+            .ok_or(RelayError::Identity)?;
+        let queued = match command {
+            CoordinationCommand::ReachOffer {
+                sender_device_public_key,
+                offer,
+            } => {
+                if sender_device_public_key != own_key {
+                    return Err(RelayError::Identity);
+                }
+                offer.validate(now)?;
+                QueuedMessage::ReachOffer(offer)
+            }
+            CoordinationCommand::ReachAnswer {
+                sender_device_public_key,
+                answer,
+            } => {
+                if sender_device_public_key != own_key {
+                    return Err(RelayError::Identity);
+                }
+                answer.validate(now)?;
+                QueuedMessage::ReachAnswer(answer)
+            }
+            CoordinationCommand::RunIdleKorrid {
+                sender_device_public_key,
+                requested_at,
+                expires_at,
+            } => {
+                if sender_device_public_key != own_key {
+                    return Err(RelayError::InvalidEvent(
+                        "command sender is not this device".into(),
+                    ));
+                }
+                QueuedMessage::RunIdleKorrid {
+                    requested_at,
+                    expires_at,
+                }
+            }
+            CoordinationCommand::OwnerBindingRequested {
+                sender_device_public_key,
+                unsigned_event_template,
+                requested_at,
+                expires_at,
+            } => {
+                if sender_device_public_key != own_key
+                    || unsigned_event_template.len() > MAX_EVENT_BYTES
+                {
+                    return Err(RelayError::InvalidEvent(
+                        "owner binding request is invalid".into(),
+                    ));
+                }
+                QueuedMessage::OwnerBindingRequested {
+                    unsigned_event_template,
+                    requested_at,
+                    expires_at,
+                }
+            }
+            CoordinationCommand::OwnerBindingResponse {
+                sender_device_public_key,
+                owner_public_key,
+                unsigned_event_template,
+                signed_event_json,
+                requested_at,
+                expires_at,
+            } => {
+                if sender_device_public_key != own_key
+                    || unsigned_event_template.len() > MAX_EVENT_BYTES
+                    || signed_event_json.len() > MAX_EVENT_BYTES
+                {
+                    return Err(RelayError::InvalidEvent(
+                        "owner binding response is invalid".into(),
+                    ));
+                }
+                validate_public_key(&owner_public_key)?;
+                DeviceIdentity::verify_event(&signed_event_json).map_err(|_| {
+                    RelayError::InvalidEvent("owner binding response is not signed".into())
+                })?;
+                QueuedMessage::OwnerBindingResponse {
+                    owner_public_key,
+                    unsigned_event_template,
+                    signed_event_json,
+                    requested_at,
+                    expires_at,
+                }
+            }
+        };
+        let content = serde_json::to_string(&queued)
+            .map_err(|_| RelayError::InvalidEvent("command cannot be encoded".into()))?;
+        let event = self
+            .identity
+            .gift_wrap(
+                recipient_device_public_key,
+                COORDINATION_RUMOR_KIND,
+                &content,
+                now,
+                queued.expires_at(),
+            )
+            .map_err(|_| RelayError::Identity)?;
+        Ok(event.json)
+    }
+
+    /// Each future owns its transport, ciphertext and signer. The consumer
+    /// owns the stream's lifetime and can keep fanout alive after the first ack.
+    pub(crate) fn queue_command_results(
+        &self,
+        recipient: &str,
+        command: CoordinationCommand,
+        now: u64,
+    ) -> Result<futures::stream::BoxStream<'static, Result<String, RelayFailure>>, RelayError> {
+        let event = self.command_event(recipient, command, now)?;
+        let auth: Arc<dyn RelayAuthSigner> = Arc::new(DeviceAuthSigner(self.identity.clone()));
+        let results = self
+            .relays
+            .as_slice()
+            .iter()
+            .cloned()
+            .map(|relay| {
+                let (transport, auth, event) =
+                    (self.transport.clone(), auth.clone(), event.clone());
+                async move {
+                    match transport.publish(&relay, &event, auth).await {
+                        Ok(()) => Ok(relay),
+                        Err(error) => Err(RelayFailure {
+                            relay,
+                            message: error.to_string(),
+                        }),
+                    }
+                }
+            })
+            .collect::<futures::stream::FuturesUnordered<_>>();
+        Ok(results.boxed())
+    }
+
     pub fn relay_list(&self) -> &RelayList {
         &self.relays
     }
@@ -832,111 +979,8 @@ where
         now: u64,
     ) -> BoxFuture<'a, Result<PublishState, RelayError>> {
         Box::pin(async move {
-            validate_public_key(recipient_device_public_key)?;
-            if command.expires_at() <= now {
-                return Err(RelayError::Expired);
-            }
-            let own_key = self
-                .identity
-                .device_public_key()
-                .ok_or(RelayError::Identity)?;
-            let queued = match command {
-                CoordinationCommand::ReachOffer {
-                    sender_device_public_key,
-                    offer,
-                } => {
-                    if sender_device_public_key != own_key {
-                        return Err(RelayError::Identity);
-                    }
-                    offer.validate(now)?;
-                    QueuedMessage::ReachOffer(offer)
-                }
-                CoordinationCommand::ReachAnswer {
-                    sender_device_public_key,
-                    answer,
-                } => {
-                    if sender_device_public_key != own_key {
-                        return Err(RelayError::Identity);
-                    }
-                    answer.validate(now)?;
-                    QueuedMessage::ReachAnswer(answer)
-                }
-                CoordinationCommand::RunIdleKorrid {
-                    sender_device_public_key,
-                    requested_at,
-                    expires_at,
-                } => {
-                    if sender_device_public_key != own_key {
-                        return Err(RelayError::InvalidEvent(
-                            "command sender is not this device".into(),
-                        ));
-                    }
-                    QueuedMessage::RunIdleKorrid {
-                        requested_at,
-                        expires_at,
-                    }
-                }
-                CoordinationCommand::OwnerBindingRequested {
-                    sender_device_public_key,
-                    unsigned_event_template,
-                    requested_at,
-                    expires_at,
-                } => {
-                    if sender_device_public_key != own_key
-                        || unsigned_event_template.len() > MAX_EVENT_BYTES
-                    {
-                        return Err(RelayError::InvalidEvent(
-                            "owner binding request is invalid".into(),
-                        ));
-                    }
-                    QueuedMessage::OwnerBindingRequested {
-                        unsigned_event_template,
-                        requested_at,
-                        expires_at,
-                    }
-                }
-                CoordinationCommand::OwnerBindingResponse {
-                    sender_device_public_key,
-                    owner_public_key,
-                    unsigned_event_template,
-                    signed_event_json,
-                    requested_at,
-                    expires_at,
-                } => {
-                    if sender_device_public_key != own_key
-                        || unsigned_event_template.len() > MAX_EVENT_BYTES
-                        || signed_event_json.len() > MAX_EVENT_BYTES
-                    {
-                        return Err(RelayError::InvalidEvent(
-                            "owner binding response is invalid".into(),
-                        ));
-                    }
-                    validate_public_key(&owner_public_key)?;
-                    DeviceIdentity::verify_event(&signed_event_json).map_err(|_| {
-                        RelayError::InvalidEvent("owner binding response is not signed".into())
-                    })?;
-                    QueuedMessage::OwnerBindingResponse {
-                        owner_public_key,
-                        unsigned_event_template,
-                        signed_event_json,
-                        requested_at,
-                        expires_at,
-                    }
-                }
-            };
-            let content = serde_json::to_string(&queued)
-                .map_err(|_| RelayError::InvalidEvent("command cannot be encoded".into()))?;
-            let event = self
-                .identity
-                .gift_wrap(
-                    recipient_device_public_key,
-                    COORDINATION_RUMOR_KIND,
-                    &content,
-                    now,
-                    queued.expires_at(),
-                )
-                .map_err(|_| RelayError::Identity)?;
-            Ok(self.publish_json(&event.json).await)
+            let event = self.command_event(recipient_device_public_key, command, now)?;
+            Ok(self.publish_json(&event).await)
         })
     }
 
@@ -1229,7 +1273,7 @@ fn validate_public_key(value: &str) -> Result<(), RelayError> {
     }
 }
 
-fn publish_state(results: Vec<Result<String, RelayFailure>>) -> PublishState {
+pub(crate) fn publish_state(results: Vec<Result<String, RelayFailure>>) -> PublishState {
     let mut accepted_relays = Vec::new();
     let mut failed_relays = Vec::new();
     for result in results {

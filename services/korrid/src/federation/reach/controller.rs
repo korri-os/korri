@@ -1,5 +1,5 @@
 use super::{
-    diagnostics::{connection_path, short_peer},
+    diagnostics::{connection_path, short_peer, PublicationProgress},
     relay,
     settings::StunList,
     signal::{Answer, Offer, SIGNAL_LIFETIME},
@@ -9,10 +9,7 @@ use crate::{
     config::snapshot::{ConfigSnapshotCoordinator, SnapshotAuthorization},
     federation::{connect, interfaces, FederationDirectory, PeerState},
     peer_rpc::{unix_time, PeerCredentials},
-    relay::{
-        CoordinatedRelays, CoordinationCommand, RelayCoordinator, RelayList,
-        WebSocketRelayTransport,
-    },
+    relay::{CoordinatedRelays, CoordinationCommand, RelayList, WebSocketRelayTransport},
 };
 use futures::StreamExt;
 use iroh::{
@@ -458,43 +455,57 @@ impl Controller {
                 .write()
                 .expect("relay answers")
                 .retain(|_, (expires, _)| *expires > now);
-            self.receive_reach(&signal, &stun, now).await;
-            let Ok(peers) = self.directory.snapshot() else {
-                self.reset().await;
+            if !self.exchange_reach(&signal, &stun, now).await {
                 continue;
-            };
-            let devices = peers
-                .iter()
-                .map(|p| p.device_public_key.clone())
-                .collect::<BTreeSet<_>>();
-            self.directory
-                .reach
-                .recovery
-                .lock()
-                .expect("reach recovery")
-                .retain_members(&devices);
-            self.directory
-                .reach
-                .live
-                .write()
-                .expect("reach routes")
-                .retain(|device, route| {
-                    let keep =
-                        devices.contains(device) && route.connection.close_reason().is_none();
-                    if !keep {
-                        route
-                            .connection
-                            .close(0u32.into(), b"membership or connection changed");
-                    }
-                    keep
-                });
-            for peer in peers.into_iter().take(1024) {
-                self.offer_peer(peer, &signal, &stun, now).await;
             }
             while self.tasks.try_join_next().is_some() {}
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
+    async fn exchange_reach<T: crate::relay::RelayTransport + 'static>(
+        &mut self,
+        signal: &CoordinatedRelays<T>,
+        stun: &StunList,
+        now: u64,
+    ) -> bool {
+        let Ok(peers) = self.directory.snapshot() else {
+            self.reset().await;
+            return false;
+        };
+        let devices = peers
+            .iter()
+            .map(|p| p.device_public_key.clone())
+            .collect::<BTreeSet<_>>();
+        self.directory
+            .reach
+            .recovery
+            .lock()
+            .expect("reach recovery")
+            .retain_members(&devices);
+        self.directory
+            .reach
+            .live
+            .write()
+            .expect("reach routes")
+            .retain(|device, route| {
+                let keep = devices.contains(device) && route.connection.close_reason().is_none();
+                if !keep {
+                    route
+                        .connection
+                        .close(0u32.into(), b"membership or connection changed");
+                }
+                keep
+            });
+        // A useful relay read is admitted immediately, but its failed tail can
+        // still take the full operation bound. Send fresh offers before that
+        // wait, rather than making every recovering peer wait for the tail.
+        for peer in peers.into_iter().take(1024) {
+            self.offer_peer(peer, signal, stun, now).await;
+        }
+        self.receive_reach(signal, stun, unix_time()).await;
+        true
+    }
+
     async fn receive_reach<T: crate::relay::RelayTransport + 'static>(
         &mut self,
         signal: &CoordinatedRelays<T>,
@@ -562,17 +573,16 @@ impl Controller {
                                     .unwrap_or_default(),
                                 answer,
                             };
-                            let started = Instant::now();
-                            let published = signal
-                                .queue_command(&sender_device_public_key, command, now)
-                                .await;
-                            self.directory.reach.diagnostics.publication(
-                                "answer_sent",
-                                &sender_device_public_key,
-                                &published,
-                                started.elapsed(),
-                            );
-                            if published.is_ok_and(|p| p.accepted()) {
+                            if self
+                                .publish_reach(
+                                    signal,
+                                    &sender_device_public_key,
+                                    command,
+                                    now,
+                                    "answer_sent",
+                                )
+                                .await
+                            {
                                 self.processed.insert(
                                     (sender_device_public_key.clone(), offer.request_id.clone()),
                                     offer.expires_at,
@@ -644,10 +654,70 @@ impl Controller {
             }
         }
     }
-    async fn offer_peer(
+    async fn publish_reach<T: crate::relay::RelayTransport + 'static>(
+        &mut self,
+        signal: &CoordinatedRelays<T>,
+        device: &str,
+        command: CoordinationCommand,
+        now: u64,
+        stage: &'static str,
+    ) -> bool {
+        let started = Instant::now();
+        let mut results = match signal.queue_command_results(device, command, now) {
+            Ok(results) => results,
+            Err(error) => {
+                self.directory.reach.diagnostics.publication(
+                    stage,
+                    device,
+                    &Err(error),
+                    &PublicationProgress {
+                        operation_ms: started.elapsed().as_millis(),
+                        ..Default::default()
+                    },
+                );
+                return false;
+            }
+        };
+        let (sent, received) = tokio::sync::oneshot::channel();
+        let diagnostics = self.directory.reach.diagnostics.clone();
+        let device = device.to_owned();
+        let relay_count = signal.relay_list().as_slice().len();
+        // The controller owns every remaining attempt after the first ack.
+        // Reset/drop aborts this task and drops its sockets and signer too.
+        self.tasks.spawn(async move {
+            let mut first = Some(sent);
+            let mut progress = PublicationProgress {
+                relay_count,
+                ..Default::default()
+            };
+            let mut completed = Vec::with_capacity(relay_count);
+            while let Some(result) = results.next().await {
+                let accepted = result.is_ok();
+                progress.completed_relays += 1;
+                progress.operation_ms = started.elapsed().as_millis();
+                if accepted && progress.first_ack_ms.is_none() {
+                    progress.first_ack_ms = Some(progress.operation_ms);
+                }
+                completed.push(result);
+                let state = crate::relay::publish_state(completed.clone());
+                diagnostics.publication(stage, &device, &Ok(state), &progress);
+                if accepted {
+                    if let Some(first) = first.take() {
+                        let _ = first.send(true);
+                    }
+                }
+            }
+            if let Some(first) = first {
+                let _ = first.send(false);
+            }
+        });
+        received.await.unwrap_or(false)
+    }
+
+    async fn offer_peer<T: crate::relay::RelayTransport + 'static>(
         &mut self,
         peer: crate::federation::PeerSnapshot,
-        signal: &impl RelayCoordinator,
+        signal: &CoordinatedRelays<T>,
         stun: &StunList,
         now: u64,
     ) {
@@ -752,15 +822,10 @@ impl Controller {
             sender_device_public_key: self.credentials.public_key().unwrap_or_default(),
             offer,
         };
-        let started = Instant::now();
-        let published = signal.queue_command(&device, command, now).await;
-        self.directory.reach.diagnostics.publication(
-            "offer_published",
-            &device,
-            &published,
-            started.elapsed(),
-        );
-        if !published.is_ok_and(|p| p.accepted()) {
+        if !self
+            .publish_reach(signal, &device, command, now, "offer_published")
+            .await
+        {
             self.pending.remove(&device);
             handle_signalling_failure(&self.directory, &device, &token).await;
         }

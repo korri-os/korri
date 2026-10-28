@@ -100,6 +100,13 @@ iroh's endpoint and publishing a fresh offer. Native HTTP alone cannot carry
 netplay or stream forwards. Invite calls keep their existing bounded route wait
 while the endpoint rebinds.
 
+Reach offers and answers advance when the first configured relay accepts the
+signed event. The controller owns the remaining bounded publication attempts;
+network reset or controller drop aborts them. Each relay completion records the
+first-ack timing and whether fanout has finished. Other publication APIs keep
+their complete all-relay results. Fresh outgoing offers precede draining a read
+cycle's failed-relay tail. No relay is removed or substituted by this policy.
+
 ## Local stream forwards
 
 While a nearby link is up, korrid uses its peer IP instead of the remembered
