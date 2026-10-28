@@ -120,7 +120,7 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
     sessionControls: unavailable,
     invokeSessionControl: unavailable,
     sourceStatus: unavailable,
-    peerList: unavailable,
+    async peerList() { return { _tag: "Ok", payload: { peers: [] } } },
     ...overrides,
   }
 }

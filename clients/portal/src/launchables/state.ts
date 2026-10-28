@@ -4,12 +4,13 @@ import type {
   CatalogSnapshotOutcome,
   Game,
   LocalGamesListOutcome,
+  PeerListOutcome,
   SelectedGameLaunchOutcome,
   SessionPrepared,
   SessionStatusOutcome,
   SessionEndOutcome,
 } from "@contracts/generated/korrid"
-import { InitialHandoff, PendingLaunchPhase } from "@contracts/generated/korrid"
+import { InitialHandoff, PeerListState, PendingLaunchPhase } from "@contracts/generated/korrid"
 import { foldGameCopies, type PortalGameCopy, type PortalLocalGame } from "./fold-games"
 
 /**
@@ -245,6 +246,7 @@ export const LaunchablesState = {
     session?: SessionStatusOutcome,
     localGames?: LocalGamesListOutcome,
     previousEntries: readonly PortalEntry[] = [],
+    peers?: PeerListOutcome,
   ): LaunchablesState => {
     const entries: PortalEntry[] = []
     const failures: string[] = []
@@ -290,6 +292,10 @@ export const LaunchablesState = {
       failures.push(`local games: ${localGames.payload.code}: ${localGames.payload.message}`)
     }
 
+    if (peers?._tag === "Err") {
+      failures.push(`peers: ${peers.payload.code}: ${peers.payload.message}`)
+    }
+
     if (korrid._tag === "Ok") {
       for (const failure of korrid.payload.failures ?? []) {
         failures.push(`${failure.host}: ${failure.code}: ${failure.message}`)
@@ -308,12 +314,17 @@ export const LaunchablesState = {
         }
       }
     }
-    return LaunchablesState.recoverStartup({
+    const recovered = LaunchablesState.recoverStartup({
       _tag: "Ready",
       entries,
       notice:
         failures.length > 0 ? { _tag: "Catalog", message: failures.join(" · ") } : null,
     }, session)
+    // An empty read is provisional while known peers are connecting. Do not
+    // hide available games, errors, or an owned session behind that wait.
+    return recovered._tag === "Ready" && recovered.entries.length === 0 && recovered.notice === null &&
+      peers?._tag === "Ok" && peers.payload.peers.some(peer => peer.state === PeerListState.Loading)
+      ? LaunchablesState.loading() : recovered
   },
 
   /** Daemon facts, never current focus or browser history, define fresh recovery. */

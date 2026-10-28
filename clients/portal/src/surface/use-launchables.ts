@@ -19,6 +19,7 @@ import type {
   IdentityDataDisposition,
   LocalGame,
   LocalGamesListOutcome,
+  PeerListOutcome,
   RpcFailure,
   ActiveSession,
   LaunchWarning,
@@ -57,6 +58,15 @@ const STOP_POLL_INTERVAL_MS = 500
 const STOP_POLL_DEADLINE_MS = 8000
 const DISCOVERY_POLL_INTERVAL_MS = 750
 const LOCAL_SESSION_POLL_INTERVAL_MS = 500
+const PEER_POLL_INTERVAL_MS = 1000
+
+// updatedAt is an observation timestamp, not a catalog revision. Successful
+// catalog reads also update it; watching it would cause a refresh loop.
+const peerCatalogKey = (outcome: PeerListOutcome): string => JSON.stringify(
+  outcome._tag === "Ok"
+    ? outcome.payload.peers.map(peer => [peer.devicePublicKey, peer.label, peer.state, peer.lastError])
+    : outcome,
+)
 
 const discoveryActive = (snapshot: LibraryFoldersSnapshot | undefined): boolean =>
   snapshot?.state._tag === "Scanning" || snapshot?.state._tag === "Enriching"
@@ -163,6 +173,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
   )
 
   const loadSeq = useRef(0)
+  const catalogPeersKey = useRef<string | undefined>(undefined)
   const actionSeq = useRef(0)
   const stopPollSeq = useRef(0)
   const startupRef = useRef<{
@@ -244,7 +255,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
     [publishSettingsStatus],
   )
 
-  const load = useCallback(async (preserveAction = false) => {
+  const load = useCallback(async (preserveAction = false, observedPeers?: PeerListOutcome) => {
     if (!mountedRef.current) return
     const preservingCommand = stateRef.current._tag === "Stopping" || stateRef.current._tag === "Starting" || stateRef.current._tag === "Choosing"
     if (stateRef.current._tag === "Starting" || stateRef.current._tag === "Choosing") preserveAction = true
@@ -258,6 +269,11 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
     const action = actionSeq.current
     // Overlapping loads: only the latest invocation may write state.
     const seq = ++loadSeq.current
+    // Observe readiness BEFORE the catalog: a Ready observation must never
+    // finalize an empty catalog read that started while peers were Loading.
+    const peers = observedPeers ?? await korrid.peerList()
+    if (!mountedRef.current || seq !== loadSeq.current || action !== actionSeq.current) return
+    catalogPeersKey.current = peerCatalogKey(peers)
     // Plugin facts are read beside the rest and publish on their own.
     void plugins.refresh()
     const [games, localGames, session, health, settings, discovery, identity] =
@@ -314,6 +330,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
       session,
       localGames,
       previousEntries,
+      peers,
     )
     if (current._tag === "Stopping") {
       const active = session._tag === "Ok" ? session.payload.active : undefined
@@ -325,7 +342,7 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
       actionSeq.current += 1
       stopPollSeq.current += 1
     }
-    publish(preserveAction && current._tag === "Ready" && current.notice !== null && loaded._tag === "Ready"
+    publish(preserveAction && current._tag === "Ready" && current.notice !== null && current.notice._tag !== "Catalog" && loaded._tag === "Ready"
       ? { ...loaded, notice: current.notice } : loaded)
   }, [korrid, plugins, publish, sessionStatusWithTimeout])
   reloadRef.current = () => void load(true)
@@ -340,6 +357,23 @@ export function useLaunchables(korrid: KorridClient, options: LaunchablesOptions
       discoveryPoller.current.dispose()
     }
   }, [load])
+
+  // PeerList is the existing local readiness contract. Observe membership and
+  // state changes even after an empty/failed initial read, and refresh in place.
+  useEffect(() => {
+    let disposed = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const poll = async () => {
+      const seq = loadSeq.current
+      const peers = await korrid.peerList()
+      if (disposed) return
+      // A newer reload owns its readiness observation too.
+      if (seq === loadSeq.current && peerCatalogKey(peers) !== catalogPeersKey.current) await load(true, peers)
+      if (!disposed) timer = setTimeout(() => void poll(), PEER_POLL_INTERVAL_MS)
+    }
+    timer = setTimeout(() => void poll(), PEER_POLL_INTERVAL_MS)
+    return () => { disposed = true; clearTimeout(timer) }
+  }, [korrid, load])
 
   // Read on desktop return without
   // invalidating an in-flight prepare/stop, and keep the catalog mounted so the
