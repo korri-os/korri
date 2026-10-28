@@ -32,6 +32,11 @@ MAPPINGS = {
     "plugin-release:": "plugins review|install URL ID VERSION",
     "plugin-inspect:": "plugins review URL ID VERSION",
     "plugin-review:": "plugins install URL ID VERSION --approval DIGEST",
+    "plugin-review-publisher:": "plugins review URL ID VERSION (read-only publisher facts)",
+    "plugin-trust:": "plugins trust NAMESPACE --key FULL_PUBLIC_KEY; plugins review URL ID VERSION trust prompt",
+    "plugin-publisher:": "plugins publishers",
+    "plugin-publisher-revoke:": "plugins revoke NAMESPACE",
+    "plugin-publishers:status": "plugins publishers (read-only status)",
     "plugin-toggle:": "plugins on|off ID",
     "launch-device:": "launch-settings set KEY=VALUE",
     "launch:set:": "launch-settings set KEY=VALUE [layer and scope]",
@@ -102,6 +107,31 @@ def setting_ids(source):
     return ids
 
 
+def plugin_ids(source):
+    # Plugin rows and actions use the reviewed constructors. Include their
+    # constants too, so changing a prefix cannot leave a stale mapping green.
+    factories = {
+        "toggleSettingId": "plugin-toggle:",
+        "releaseRowId": "plugin-release:",
+        "repositoryRowId": "plugin-repository:",
+        "removeRepositoryActionId": "plugin-repository-remove:",
+        "inspectActionId": "plugin-inspect:",
+        "reviewActionId": "plugin-review:",
+        "reviewPublisherRowId": "plugin-review-publisher:",
+        "trustActionId": "plugin-trust:",
+        "publisherRowId": "plugin-publisher:",
+        "revokeActionId": "plugin-publisher-revoke:",
+    }
+    ids = set()
+    for value in re.findall(r'\b(?:id|actionId):\s*("[^"]*"|`[^`]*`|[\w$]+)', source):
+        if value in ("string", '`${repositoryRowId(url)}:status`'):
+            continue  # parameter type or read-only catalog status
+        ids.add(factories[value] if value in factories else literal_id(value, source))
+    ids.update(literal_id(value, source) for value in re.findall(
+        r'const (?:REPOSITORY_ROW|REMOVE_ACTION|RELEASE_ROW|INSPECT_ACTION|REVIEW_ACTION|TOGGLE_SETTING|TRUST_ACTION|REVIEW_PUBLISHER_ROW|PUBLISHER_ROW|REVOKE_ACTION|PUBLISHERS_STATUS_ROW) = ("[^"]*")', source))
+    return ids
+
+
 def launch_ids(source):
     block = source.split("export const LAUNCH_ID = {", 1)[1].split("} as const", 1)[0]
     return {literal_id(value, source) for value in re.findall(r'(?:=>\s*|:\s*)("[^"]*"|`[^`]*`)', block)}
@@ -144,18 +174,7 @@ class Parity(unittest.TestCase):
         source = (PORTAL / "settings-model.ts").read_text()
         check_ids(setting_ids(source))
         plugins = (PORTAL / "plugin-repositories.ts").read_text()
-        # Plugin rows are built through the existing ID constructors. Include
-        # their literal constants plus literal row IDs added in future changes.
-        factories = {"toggleSettingId": "plugin-toggle:", "releaseRowId": "plugin-release:",
-                     "repositoryRowId": "plugin-repository:", "removeRepositoryActionId": "plugin-repository-remove:"}
-        for value in re.findall(r'\bid:\s*("[^"]*"|`[^`]*`|[\w$]+)', plugins):
-            if value in ("string", '`${repositoryRowId(url)}:status`'):
-                continue  # parameter type or read-only catalog status
-            check_ids({factories[value] if value in factories else literal_id(value, plugins)})
-        # Also read the constants behind those factories, so changing a dynamic
-        # family cannot keep passing through a stale factory-name mapping.
-        check_ids({literal_id(value, plugins) for value in re.findall(
-            r'const (?:REPOSITORY_ROW|REMOVE_ACTION|RELEASE_ROW|INSPECT_ACTION|REVIEW_ACTION|TOGGLE_SETTING) = ("[^"]*")', plugins)})
+        check_ids(plugin_ids(plugins))
         launch = (PORTAL / "launch-settings-model.ts").read_text()
         check_ids(launch_ids(launch))
         # Explicit constructor arguments: any new path fails, including a path
@@ -194,6 +213,22 @@ class Parity(unittest.TestCase):
         # New dynamic families cannot hide behind a broad prefix rule.
         with self.assertRaisesRegex(AssertionError, "need korri commands"):
             check_ids(setting_ids('{ id: `new-family:${item.id}` }'))
+
+    def test_new_plugin_actions_and_changed_publisher_prefixes_are_rejected(self):
+        for source in [
+            '{ actionId: "unmapped-publisher-action" }',
+            '{ actionId: `new-publisher-family:${namespace}` }',
+            'const TRUST_ACTION = "unmapped-trust:"; { actionId: trustActionId(target, namespace) }',
+            'const PUBLISHER_ROW = "unmapped-publisher:"; { id: publisherRowId(namespace) }',
+        ]:
+            with self.subTest(source=source), self.assertRaisesRegex(AssertionError, "need korri commands"):
+                check_ids(plugin_ids(source))
+        for source in [
+            '{ actionId: NEW_ACTION }',
+            '{ actionId: newPublisherActionId(namespace) }',
+        ]:
+            with self.subTest(source=source), self.assertRaisesRegex(AssertionError, "Unreviewed"):
+                check_ids(plugin_ids(source))
 
 
 if __name__ == "__main__":
