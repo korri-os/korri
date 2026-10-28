@@ -30,7 +30,8 @@ person hosts to carry their traffic.
 - Korri never asks the person to change their router, such as forwarding a port
   by hand.
 - No third-party relay carries traffic, including n0's public relays and
-  Tailscale's DERP. Korri accepts that some pairs of networks cannot connect,
+  Tailscale's DERP. ADR 0041 changes this for devices that have the optional
+  Tailscale plugin. Korri accepts that some pairs of networks cannot connect,
   and it says so clearly when that happens.
 - Small records, such as settings and the person name, are also kept
   encrypted on several public Nostr relays, so they arrive when no other device
