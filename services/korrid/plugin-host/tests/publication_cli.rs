@@ -71,6 +71,8 @@ fn repository_and_archive_commands_sign_and_write_complete_outputs() {
             "repository",
             "--secret-key",
             key.to_str().unwrap(),
+            "--platform",
+            "aarch64-linux",
             "--release",
             "v1",
             "--base-url",
@@ -105,6 +107,8 @@ fn repository_and_archive_commands_sign_and_write_complete_outputs() {
         .env("KORRI_PUBLISH_NIX", &nix)
         .args([
             "archive",
+            "--platform",
+            "x86_64-linux",
             "--secret-key",
             key.to_str().unwrap(),
             sideload.to_str().unwrap(),

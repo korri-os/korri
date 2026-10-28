@@ -435,15 +435,6 @@ let
         ++ graphFixtures
       )
   );
-  # .drvPath normally carries a deep output dependency. Publication needs only
-  # its native derivation metadata, not every output of its build-tool chain.
-  publicationDeriver = package: builtins.unsafeDiscardOutputDependency package.drvPath;
-  publicationDerivers = map publicationDeriver [
-    tailscalePackage
-    updated
-    broken
-    interrupted
-  ];
   # A test-only signing identity. This key grants no authority outside this VM.
   key = pkgs.writeText "plugin-test-cache-key" "korri-plugin-test:XMn+6POJ5fj568Beg6v8OLo4wMcNKehDPxH+7bUrt0Svsk3i8ixelBTno9/D1z0UPghq8N+uzEcf+5dLDFa9JQ==";
   publicKey = "korri-plugin-test:r7JN4vIsXpQU56Pfw9c9FD4IavDfrsxHH/uXSwxWvSU=";
@@ -498,7 +489,6 @@ pkgs.testers.runNixOSTest {
           impostor
           splitDependency.drvPath
         ]
-        ++ publicationDerivers
         ++ injections
         ++ graphFixtures;
         services.nix-serve = {
@@ -554,8 +544,7 @@ pkgs.testers.runNixOSTest {
         system.extraDependencies = [
           cacheFixtureRoots
           splitDependency.drvPath
-        ]
-        ++ publicationDerivers;
+        ];
         virtualisation.writableStore = true;
         virtualisation.writableStoreUseTmpfs = false;
         virtualisation.diskSize = 8192;
@@ -1289,17 +1278,10 @@ pkgs.testers.runNixOSTest {
         cache.succeed("printf %s " + shlex.quote(json.dumps({"records": records, "latest": {record["plugin_id"]: record["release_version"] for record in records}})) + " > /var/www/repositories/" + name + ".json")
 
     records = []
-    for release, package, deriver in [("v1", "${tailscalePackage}", "${publicationDeriver tailscalePackage}"), ("v2", "${updated}", "${publicationDeriver updated}"), ("broken", "${broken}", "${publicationDeriver broken}"), ("pending", "${interrupted}", "${publicationDeriver interrupted}")]:
-        # This VM's store image has prebuilt outputs, not build-history records.
-        # Restore only their genuine native Nix registration metadata. This is
-        # not a Korri manifest field and does not realise a derivation.
-        info = json.loads(cache.succeed("nix --extra-experimental-features nix-command path-info --json " + package))[package]
-        nar_hash = cache.succeed("nix --extra-experimental-features nix-command hash convert --hash-algo sha256 --to base16 " + shlex.quote(info["narHash"])).strip()
-        registration = "\n".join([package, nar_hash, str(info["narSize"]), deriver, str(len(info["references"])), *info["references"]]) + "\n"
-        cache.succeed("printf %s " + shlex.quote(registration) + " | nix-store --register-validity --hash-given --reregister")
+    for release, package in [("v1", "${tailscalePackage}"), ("v2", "${updated}"), ("broken", "${broken}"), ("pending", "${interrupted}")]:
         output = "/var/lib/publication-" + release
         cache.succeed("mkdir -p " + output)
-        cache.succeed("korri-publish repository --secret-key ${key} --release " + release + " --base-url https://cache/repositories/ " + output + " " + package)
+        cache.succeed("korri-publish repository --platform ${pkgs.stdenv.hostPlatform.system} --secret-key ${key} --release " + release + " --base-url https://cache/repositories/ " + output + " " + package)
         record = json.loads(cache.succeed("cat " + output + "/catalog.json"))["records"][0]
         cache.succeed("cp " + output + "/*.tar /var/www/repositories/")
         records.append(record)

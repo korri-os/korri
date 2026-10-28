@@ -6731,7 +6731,8 @@ mod tests {
         let nix = PathBuf::from(std::env::var_os("KORRI_PUBLISH_NIX").expect("immutable Nix"));
         let package = fs::canonicalize(fixtures.join("native")).unwrap();
         assert_eq!(
-            crate::publisher::detected_platform(&nix, &package).unwrap(),
+            crate::publisher::publication_platform(&nix, &package, Some(current_platform()))
+                .unwrap(),
             current_platform()
         );
         let root = tempfile::tempdir().unwrap();
