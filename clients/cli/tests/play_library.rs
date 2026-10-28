@@ -9,7 +9,7 @@ type Calls = Arc<Mutex<Vec<RpcRequest>>>;
 #[derive(Clone)]
 struct Service {
     calls: Calls,
-    responses: Arc<Mutex<VecDeque<RpcResponse>>>,
+    responses: Arc<Mutex<VecDeque<serde_json::Value>>>,
     grants: discovery::FolderSelectionGrantStore,
 }
 struct Server {
@@ -23,6 +23,15 @@ impl Server {
         Self::start_in(tempfile::tempdir().unwrap(), responses)
     }
     fn start_in(root: tempfile::TempDir, responses: Vec<RpcResponse>) -> Self {
+        Self::start_wire(
+            root,
+            responses
+                .into_iter()
+                .map(|response| serde_json::to_value(response).unwrap())
+                .collect(),
+        )
+    }
+    fn start_wire(root: tempfile::TempDir, responses: Vec<serde_json::Value>) -> Self {
         let listener =
             std::os::unix::net::UnixListener::bind(root.path().join("cli.sock")).unwrap();
         listener.set_nonblocking(true).unwrap();
@@ -1438,15 +1447,18 @@ fn target_responses() -> Vec<RpcResponse> {
 
 #[test]
 fn play_library_remote_plugin_install_requires_selected_device_review_not_yes() {
-    use plugin_admin::*;
+    use korri::plugin_wire::*;
     for (approval, installed) in [
         (None, false),
         (Some("stale"), false),
         (Some("reviewed"), true),
     ] {
-        let mut responses = target_responses();
+        let mut responses = target_responses()
+            .into_iter()
+            .map(|response| serde_json::to_value(response).unwrap())
+            .collect::<Vec<_>>();
         if approval.is_some() {
-            responses.push(RpcResponse::PluginInspect(PluginInspectOutcome::Ok(
+            responses.push(serde_json::to_value(RpcResponse::PluginInspect(PluginInspectOutcome::Ok(
                 PluginInspection {
                     id: "@test:clock".into(),
                     title: None,
@@ -1458,15 +1470,19 @@ fn play_library_remote_plugin_install_requires_selected_device_review_not_yes() 
                     },
                     native_units: vec![],
                     brings: vec![],
+                    publisher: serde_json::from_value(serde_json::json!({"namespace":"@test","state":"Bound","fingerprint":"test AbCd EfGh IjKl MnOp"})).unwrap(),
                 },
-            )));
+            ))).unwrap());
         }
         if installed {
-            responses.push(RpcResponse::PluginInstall(PluginChangeOutcome::Ok(
-                PluginChangeApplied {},
-            )));
+            responses.push(
+                serde_json::to_value(RpcResponse::PluginInstall(PluginChangeOutcome::Ok(
+                    PluginChangeApplied {},
+                )))
+                .unwrap(),
+            );
         }
-        let server = Server::start(responses);
+        let server = Server::start_wire(tempfile::tempdir().unwrap(), responses);
         let mut args = vec![
             "--device",
             "There",
@@ -1500,12 +1516,12 @@ fn play_library_remote_plugin_install_requires_selected_device_review_not_yes() 
         );
         if installed {
             assert!(
-                matches!(calls.last().unwrap(), RpcRequest::PluginInstall(request) if request.approval == "reviewed")
+                matches!(calls.last().unwrap(), korrid::RpcRequest::PluginInstall(request) if request.approval == "reviewed")
             );
         } else {
             assert!(!calls
                 .iter()
-                .any(|request| matches!(request, RpcRequest::PluginInstall(_))));
+                .any(|request| matches!(request, korrid::RpcRequest::PluginInstall(_))));
         }
     }
 }

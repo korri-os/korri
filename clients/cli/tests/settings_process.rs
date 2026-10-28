@@ -10,7 +10,7 @@ use std::{
 #[derive(Clone)]
 struct Exchange {
     request: RpcRequest,
-    response: RpcResponse,
+    response: serde_json::Value,
     denied: bool,
 }
 #[derive(Clone)]
@@ -120,10 +120,10 @@ impl Drop for RpcServer {
         self.thread.take().unwrap().join().unwrap();
     }
 }
-fn exchange(request: RpcRequest, response: RpcResponse) -> Exchange {
+fn exchange(request: RpcRequest, response: impl serde::Serialize) -> Exchange {
     Exchange {
         request,
-        response,
+        response: serde_json::to_value(response).unwrap(),
         denied: false,
     }
 }
@@ -250,7 +250,8 @@ fn settings_authorization_refusal_never_tries_another_effect_path() {
     use korrid::network::*;
     let server = RpcServer::start(vec![Exchange {
         request: RpcRequest::WifiScan(WifiScanRequest {}),
-        response: RpcResponse::WifiScan(NetworkStatusOutcome::Err(failure())),
+        response: serde_json::to_value(RpcResponse::WifiScan(NetworkStatusOutcome::Err(failure())))
+            .unwrap(),
         denied: true,
     }]);
     let output = server.run(&["wifi", "scan", "--json"], "");
@@ -402,8 +403,11 @@ fn settings_metadata_never_prints_the_credential() {
     server.done();
 }
 
-fn inspection() -> plugin_admin::PluginInspection {
-    plugin_admin::PluginInspection {
+fn publisher() -> korri::plugin_wire::PluginPublisher {
+    serde_json::from_value(serde_json::json!({"namespace":"@test", "state":"Bound", "fingerprint":"test AbCd EfGh IjKl MnOp"})).unwrap()
+}
+fn inspection() -> korri::plugin_wire::PluginInspection {
+    korri::plugin_wire::PluginInspection {
         id: "plugin".into(),
         title: Some("Plugin".into()),
         approval: "exact-digest".into(),
@@ -413,11 +417,13 @@ fn inspection() -> plugin_admin::PluginInspection {
             allowed_udp_ports: vec![90],
         },
         native_units: vec!["plugin.service".into()],
-        brings: vec![plugin_admin::PluginDependency {
+        publisher: publisher(),
+        brings: vec![korri::plugin_wire::PluginDependency {
             id: "dependency".into(),
             title: None,
             warning: "Dependency warning".into(),
             already_approved: false,
+            publisher: publisher(),
         }],
     }
 }
@@ -430,7 +436,9 @@ fn inspect_request() -> RpcRequest {
 }
 #[test]
 fn settings_plugin_review_shows_every_permission_before_approval() {
-    let response = RpcResponse::PluginInspect(PluginInspectOutcome::Ok(inspection()));
+    let response = korri::plugin_wire::RpcResponse::PluginInspect(korri::plugin_wire::Outcome::Ok(
+        inspection(),
+    ));
     let server = RpcServer::start(vec![exchange(inspect_request(), response)]);
     let output = server.run(
         &[
@@ -477,7 +485,9 @@ fn settings_plugin_yes_never_fabricates_review_and_stale_digest_never_installs()
     assert!(server.service.calls.lock().unwrap().is_empty());
     let server = RpcServer::start(vec![exchange(
         inspect_request(),
-        RpcResponse::PluginInspect(PluginInspectOutcome::Ok(inspection())),
+        korri::plugin_wire::RpcResponse::PluginInspect(korri::plugin_wire::Outcome::Ok(
+            inspection(),
+        )),
     )]);
     let output = server.run(
         &[
@@ -509,7 +519,9 @@ fn settings_plugin_install_passes_exact_reviewed_digest_and_keeps_host_refusals(
     let server = RpcServer::start(vec![
         exchange(
             inspect_request(),
-            RpcResponse::PluginInspect(PluginInspectOutcome::Ok(inspection())),
+            korri::plugin_wire::RpcResponse::PluginInspect(korri::plugin_wire::Outcome::Ok(
+                inspection(),
+            )),
         ),
         exchange(
             RpcRequest::PluginInstall(plugin_admin::PluginInstallRequest {

@@ -31,6 +31,8 @@ publish and route plugin rows.
 | `plugin-repository-remove:URL` | `plugins repositories remove URL --yes` | Installed plugins stay |
 | `plugin-release:TARGET` / `plugin-inspect:TARGET` | `plugins review URL PLUGIN VERSION` | Same exact release inspection |
 | `plugin-review:TARGET` | `plugins install URL PLUGIN VERSION --approval DIGEST`; `plugins on PLUGIN` | Explicit current inspection digest; `--yes` grants nothing |
+| Publisher list / trust / revoke | `plugins publishers`; `plugins trust NAMESPACE --key FULL_PUBLIC_KEY`; `plugins revoke NAMESPACE --yes` | Same selected-device publisher policy; config-bound keys cannot be replaced; revoke confirmation only is skipped |
+| Publisher facts and dependency publishers in review | `plugins review URL PLUGIN VERSION` | Bound, Trusted, New, Key changed, Unsigned, fingerprint, disclosure/key-change warning; terminal trust is separate from approval |
 | `plugin-toggle:ID` | `plugins on ID` / `plugins off ID` | Stale approval requires review and explicit reapproval |
 | `launch-device:cpu.min`, `cpu.max`, `gpu.min`, `gpu.max` | `launch-settings set KEY=PERCENT` | Same Device/Any place |
 | `launch-device:cpu.governor` | `launch-settings set cpu.governor=VALUE` | Device/Any only, when advertised |
@@ -98,6 +100,21 @@ Library folder add and attention assign/ignore are additional CLI paths;
 this portal has no corresponding action site. Folder change exists in the
 portal client interface but has no portal action site or CLI command. An
 interface method alone does not establish an editable portal action.
+
+## Author exception (ADR 0046)
+
+`plugins new`, `build`, `publish` and `sideload` have no portal equivalent.
+They build and sign on the author computer only. New embeds the generated
+TypeScript contract. Publish writes a signed repository folder, not an upload.
+Sideload uses the same selected-device publisher trust and exact-digest approval
+as repository installation, after korrid's chunked staging transport. `--yes`
+never supplies either trust or approval. JSON owner/sideload replies remain the
+wire types; offline author command JSON is a string, like `version`.
+
+Remaining limit: peers have no Nix platform producer. Native sideload needs an
+explicit `--platform`; only publisher-verified `any` packages may omit it. Nix
+installation is still visible to authors (#327). See README for commands, key
+storage, terminal/piped behavior and staging expiry.
 
 ## Guard and remaining work
 

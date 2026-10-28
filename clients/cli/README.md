@@ -1,8 +1,9 @@
 # Person CLI: `korri`
 
-`korri` uses HTTP over the local person socket. It never opens korrid state,
-loads signing keys, or connects directly to a peer. The CLI depends on korrid's
-Rust library so `RpcRequest`, `RpcResponse`, and `RpcFailure` have one producer.
+Owner commands use HTTP over the local person socket. They never open korrid
+state, load device signing keys, or connect directly to a peer. ADR 0046's
+author commands build locally and manage the author's publisher key only.
+The CLI depends on korrid's Rust library so `RpcRequest`, `RpcResponse`, and `RpcFailure` have one producer.
 The cost is that a CLI build also compiles the daemon's library dependencies.
 
 ## Commands and checks
@@ -50,7 +51,9 @@ returns an array, including failed preflights; after launch it contains the
 save-check and launch responses. Setup orchestration returns an array of its
 completed operations; setup restart/finish and an initial failed status return
 one response. Setting writes return their final native response only. `version --json` and
-`completion <shell> --json` return JSON strings. Help stays text, even when
+`completion <shell> --json` return JSON strings. The offline author commands
+`plugins new`, `build` and `publish` also return JSON strings; they have no RPC
+response. Help stays text, even when
 `--json` is supplied; neither help nor these commands contact korrid.
 
 JSON stdout contains no prompts or progress. Usage, transport and orchestration
@@ -265,10 +268,12 @@ and exact-session controls already do.
 
 ### Plugins
 
-The minimum widening covers the seven existing admin operations: installed and
-repository listing, repository add/remove, catalog, inspect, install-disabled,
-and enable/disable. It exposes no raw-cache install, update, source switch,
-remove/purge, restore, package build or publisher-trust mutation.
+Plugin administration includes installed and repository listing, repository
+add/remove, catalog, inspect, install-disabled, enable/disable, publisher
+list/trust/revoke, and chunked archive staging/inspect/install. It exposes no
+raw-cache install, update, source switch, remove/purge, restore, or target-side
+package build. Publisher trust is per device, not shared with the author's
+computer or the owner's other devices.
 
 Run `plugins review` and `plugins install --approval DIGEST` with the same
 `--device`. Both inspect the selected device's package and execution policy.
@@ -277,7 +282,7 @@ installed report and checks the stored approved digest there. A stale digest
 cannot install or enable a plugin. `--yes` never supplies that approval. There
 is no second manifest, approval store, or copied signing credential.
 
-The seven plugin calls have no total response deadline, locally or through a
+Plugin calls have no total response deadline, locally or through a
 peer. The root host bounds catalog transfers and detects stalled archives;
 remote install waits as long as the target's active download does. Connection
 and candidate selection remain bounded. Other native calls keep their 5-second
@@ -293,7 +298,7 @@ now permits these plugin administration calls on its peers, including activation
 of previously approved native artifacts. Repository registration is not plugin
 approval. Removing a repository retains installed plugins and their state.
 
-| Caller | Selected launch/status/exact controls | Seven plugin admin operations | Saves check/choose/restore, identity, Wi-Fi, onboarding |
+| Caller | Selected launch/status/exact controls | Plugin admin operations | Saves check/choose/restore, identity, Wi-Fi, onboarding |
 | --- | --- | --- | --- |
 | Full browser / local person CLI | Unchanged | Unchanged | Unchanged, local only |
 | LocalSessions / ReadOnly browser | Existing session/read permissions | Still installed/repository listing only | Existing local permissions |
@@ -302,6 +307,93 @@ approval. Removing a repository retains installed plugins and their state.
 | Unknown, other-owner or revoked peer | Still denied | Still denied | Still denied |
 | inputd LocalUnixControl | Unchanged | Still denied | Unchanged |
 | Trust reconciliation | Unchanged | Still denied | Unchanged |
+
+### Publishers and review
+
+```sh
+korri plugins publishers --device DEVICE
+korri plugins trust @author --key 'label:FULL_BASE64_PUBLIC_KEY' --device DEVICE
+korri plugins revoke @author --device DEVICE --yes
+korri plugins review https://example.com/catalog.json @author:hello v1 --device DEVICE
+```
+
+`publishers` shows namespace, fingerprint, bound or pinned state, and installed
+plugins. Revoke confirms before removing a pin. Config-bound keys remain host
+policy; the CLI cannot replace or revoke them. Revoked plugins can no longer
+start; stop and cleanup stay available. Existing running units stop at the next
+disable, remove or restore-all, not immediately on revoke.
+
+Review shows Bound, Trusted, New, Key changed or Unsigned for the root and every
+dependency, plus native warnings and the exact approval digest. Fingerprints
+use the key label and first 16 base64 characters, grouped in fours. Unsigned
+releases show the full disclosure each time. Changed keys show both fingerprints
+and the key-change warning.
+
+On a terminal, review offers explicit trust for New or Key changed keys and
+reinspects after trust. `--yes` never answers that question. Piped and JSON
+review never prompt or trust. `trust --key` accepts a **full Nix public key**,
+not a fingerprint. For a fingerprint-only input, run review to trust the key it
+shows, or obtain the full key from the author. `--json` preserves the wire
+response, including publisher facts and refusals.
+
+### Plugin authors (ADR 0046)
+
+These are the exception to portal mirroring. Nix and `korri-publish` must be
+installed on the author computer (#327 remains out of scope). New, build and
+publish need no korrid, and reject `--device`. No build runs on the target.
+
+```sh
+korri plugins new hello --namespace @author
+cd hello
+korri plugins build
+korri plugins publish ./repository --release v1 --url https://example.com/plugins/
+korri plugins sideload . --device DEVICE --platform aarch64-linux
+```
+
+New refuses existing folders and invalid names. Without `--namespace`, it asks
+on a terminal; scripts must supply it. It writes `plugin.ts` without runner or
+system IDs or a launch handler, a `flake.nix` using Korri's per-system `mkPlugin`,
+`plugin.nix` with a native coreutils program, and the CLI build's complete
+`korrid.ts` contract. Imports use `./korrid`; the
+project needs no Core checkout or package registry for TypeScript checking.
+The Hello runner opens `.hello` files with coreutils `cat`. On a device, its
+output goes to the game's journal, not to the screen. Replace `cat` with your
+runner's program in `plugin.ts` and `plugin.nix`. A plugin without a runner can
+delete `plugin.nix` and the flake's `plugin` line; that argument is optional.
+
+Build prints each Nix output. It builds the plugin's platforms that match Nix's
+`system` or `extra-platforms` on this computer. It does not discover remote Nix
+builder capabilities. Publish builds the same outputs, then calls
+`korri-publish repository` with the explicit release label and HTTPS base URL.
+It prints the repository folder and fingerprint; it does not upload anything.
+The folder contains the catalog, archives and latest mark.
+
+The first publish or sideload creates a Nix secret key with
+`nix key generate-secret` at
+`$XDG_CONFIG_HOME/korri/publishers/<namespace>.secret` (or under `~/.config` when
+XDG_CONFIG_HOME is unset). Keys must be private regular files owned by you,
+mode 0600. Keep this key backed up. Replacing it changes the fingerprint and
+requires each device owner to trust the new key. Secrets never appear in output.
+
+Sideload signs one archive locally with `korri-publish archive`, then sends it
+through the local korrid to the selected device: begin with SHA-256 and size,
+sequential base64 chunks of at most 1 MiB raw, then finish. Terminal output shows
+upload progress. Peers do not report a platform yet: supply `--platform` for
+native packages. Only packages the publisher marks `any` may omit it.
+
+The target must already bind or pin the signing key. When inspection refuses
+an unknown/changed author key, terminal sideload shows the local author's
+fingerprint and asks explicitly to trust it, then reinspects the same upload.
+`--yes` supplies neither trust nor permission approval. The target retains that
+upload for this trust step; an idle upload expires after 10 minutes. If it
+expires during trust, the CLI explains and uploads the same signed bytes once
+more. Other failures stop without retry; korrid owns staging cleanup.
+
+After inspection, terminal sideload asks for the exact approval digest. Piped
+or JSON sideload without `--approval` returns only the inspection and installs
+nothing. Review it, then repeat sideload with `--approval DIGEST` on the same
+device. The host rechecks the digest. Install leaves the plugin off; enable it
+with `plugins on ID`. Owner approval and the sandbox are unchanged.
 
 ### Host-only process proof
 
