@@ -1106,9 +1106,59 @@ export interface PlayLog {
 	entries: PlayEntry[];
 }
 
+export interface PluginArchiveBeginRequest {
+	sha256: string;
+	size: number;
+}
+
+export interface PluginArchiveChunkRequest {
+	uploadId: string;
+	offset: number;
+	data: string;
+}
+
+export interface PluginArchiveInstallRequest {
+	path: string;
+	approval: string;
+}
+
+export interface PluginArchiveRequest {
+	path: string;
+}
+
+export interface PluginArchiveUpload {
+	uploadId: string;
+}
+
+export interface PluginArchiveUploadInstallRequest {
+	uploadId: string;
+	approval: string;
+}
+
+export interface PluginArchiveUploadRequest {
+	uploadId: string;
+}
+
 export enum PluginInstalledState {
 	Disabled = "Disabled",
 	Enabled = "Enabled",
+}
+
+export enum PluginPublisherState {
+	Bound = "Bound",
+	Trusted = "Trusted",
+	New = "New",
+	KeyChanged = "KeyChanged",
+	Unsigned = "Unsigned",
+}
+
+export interface PluginPublisher {
+	namespace: string;
+	state: PluginPublisherState;
+	fingerprint?: string;
+	previousFingerprint?: string;
+	disclosure?: string;
+	publicKey?: string;
 }
 
 export interface PluginCatalogEntry {
@@ -1117,7 +1167,7 @@ export interface PluginCatalogEntry {
 	description?: string;
 	releaseVersion: string;
 	installed?: PluginInstalledState;
-	publisherTrusted: boolean;
+	publisher: PluginPublisher;
 }
 
 export interface PluginCatalog {
@@ -1181,6 +1231,7 @@ export interface PluginComposeInput {
 }
 
 export interface PluginDependency {
+	publisher: PluginPublisher;
 	id: string;
 	title?: string;
 	warning: string;
@@ -1239,6 +1290,7 @@ export interface PluginPorts {
 }
 
 export interface PluginInspection {
+	publisher: PluginPublisher;
 	id: string;
 	title?: string;
 	approval: string;
@@ -1298,6 +1350,21 @@ export interface PluginOtherInstall {
 	enabled: boolean;
 }
 
+/** Publishers emits only Bound or Trusted; the shared state type also serves inspection. */
+export interface PluginPublisherEntry {
+	namespace: string;
+	fingerprint: string;
+	state: PluginPublisherState;
+	installed: string[];
+}
+
+export interface PluginPublishers {
+	entries: PluginPublisherEntry[];
+}
+
+export interface PluginPublishersRequest {
+}
+
 export interface PluginRepositoryInstall {
 	id: string;
 	sourceUrl: string;
@@ -1336,6 +1403,10 @@ export interface PluginResolveDownloadInput {
 	candidateUrl: string;
 	fileName?: string;
 	responses: PluginHttpResponse[];
+}
+
+export interface PluginRevokePublisherRequest {
+	namespace: string;
 }
 
 /** `claims.search` input: legacy `SearchRequest.query` for one provider. */
@@ -1397,6 +1468,11 @@ export interface PluginSettingsValidateInput {
 export interface PluginSettingsValidateOutput {
 	valid: boolean;
 	diagnostics?: PluginSettingsDiagnostic[];
+}
+
+export interface PluginTrustPublisherRequest {
+	namespace: string;
+	publicKey: string;
 }
 
 export interface ProviderClaim {
@@ -1964,6 +2040,10 @@ export type PeerListOutcome =
 	| { _tag: "Ok", payload: PeerList }
 	| { _tag: "Err", payload: RpcFailure };
 
+export type PluginArchiveBeginOutcome =
+	| { _tag: "Ok", payload: PluginArchiveUpload }
+	| { _tag: "Err", payload: RpcFailure };
+
 export type PluginCatalogOutcome =
 	| { _tag: "Ok", payload: PluginCatalog }
 	| { _tag: "Err", payload: RpcFailure };
@@ -1978,6 +2058,10 @@ export type PluginInspectOutcome =
 
 export type PluginListOutcome =
 	| { _tag: "Ok", payload: PluginListResponse }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type PluginPublishersOutcome =
+	| { _tag: "Ok", payload: PluginPublishers }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type PluginRepositoriesOutcome =
@@ -2079,6 +2163,14 @@ export type RpcRequest =
 	| { _tag: "system.identity.switch.nip46", payload: IdentityNip46SwitchRequest }
 	| { _tag: "system.identity.retired.export", payload: IdentityRetiredExportRequest }
 	| { _tag: "system.identity.retired.delete", payload: IdentityRetiredDeleteRequest }
+	| { _tag: "system.plugins.publishers", payload: PluginPublishersRequest }
+	| { _tag: "system.plugins.publisher.trust", payload: PluginTrustPublisherRequest }
+	| { _tag: "system.plugins.publisher.revoke", payload: PluginRevokePublisherRequest }
+	| { _tag: "system.plugins.archive.begin", payload: PluginArchiveBeginRequest }
+	| { _tag: "system.plugins.archive.chunk", payload: PluginArchiveChunkRequest }
+	| { _tag: "system.plugins.archive.finish", payload: PluginArchiveUploadRequest }
+	| { _tag: "system.plugins.archive.inspect", payload: PluginArchiveUploadRequest }
+	| { _tag: "system.plugins.archive.install", payload: PluginArchiveUploadInstallRequest }
 	| { _tag: "system.plugins.repositories", payload: PluginRepositoriesRequest }
 	| { _tag: "system.plugins.repository.add", payload: PluginRepositoryRequest }
 	| { _tag: "system.plugins.repository.remove", payload: PluginRepositoryRequest }
@@ -2164,6 +2256,14 @@ export type RpcResponse =
 	| { _tag: "system.identity.switch.nip46", outcome: IdentitySwitchOutcome }
 	| { _tag: "system.identity.retired.export", outcome: IdentityBackupOutcome }
 	| { _tag: "system.identity.retired.delete", outcome: IdentityRetiredDeleteOutcome }
+	| { _tag: "system.plugins.publishers", outcome: PluginPublishersOutcome }
+	| { _tag: "system.plugins.publisher.trust", outcome: PluginChangeOutcome }
+	| { _tag: "system.plugins.publisher.revoke", outcome: PluginChangeOutcome }
+	| { _tag: "system.plugins.archive.begin", outcome: PluginArchiveBeginOutcome }
+	| { _tag: "system.plugins.archive.chunk", outcome: PluginChangeOutcome }
+	| { _tag: "system.plugins.archive.finish", outcome: PluginChangeOutcome }
+	| { _tag: "system.plugins.archive.inspect", outcome: PluginInspectOutcome }
+	| { _tag: "system.plugins.archive.install", outcome: PluginChangeOutcome }
 	| { _tag: "system.plugins.repositories", outcome: PluginRepositoriesOutcome }
 	| { _tag: "system.plugins.repository.add", outcome: PluginRepositoryAddOutcome }
 	| { _tag: "system.plugins.repository.remove", outcome: PluginRepositoryRemoveOutcome }

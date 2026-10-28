@@ -147,14 +147,14 @@ fn redirect(url: &str) -> Vec<u8> {
 
 #[test]
 fn fetches_a_real_https_catalog() {
-    let server = HttpsServer::start(|_, _| ok(br#"{"records":[]}"#));
+    let server = HttpsServer::start(|_, _| ok(br#"{"records":[],"latest":{}}"#));
     assert!(server.fetch().unwrap().records.is_empty());
     assert_eq!(server.requests.lock().unwrap().len(), 1);
 }
 
 #[test]
 fn fetches_literal_brackets_and_ranges_without_curl_expansion() {
-    let server = HttpsServer::start(|_, _| ok(br#"{"records":[]}"#));
+    let server = HttpsServer::start(|_, _| ok(br#"{"records":[],"latest":{}}"#));
     let base = server.url.as_str().strip_suffix("/catalog").unwrap();
     for target in ["/catalog?filters[platform]=linux", "/catalog[1-2].json"] {
         let url = SourceUrl::parse(&format!("{base}{target}")).unwrap();
@@ -172,7 +172,7 @@ fn follows_https_redirects_and_bounds_redirect_loops() {
         if request.starts_with("GET /catalog ") {
             redirect(&format!("https://127.0.0.1:{port}/final"))
         } else {
-            ok(br#"{"records":[]}"#)
+            ok(br#"{"records":[],"latest":{}}"#)
         }
     });
     server.fetch().unwrap();
@@ -204,7 +204,7 @@ fn never_follows_an_http_downgrade() {
 #[test]
 fn invalid_certificates_fail_and_tls_threads_finish() {
     let start = Instant::now();
-    let server = HttpsServer::start(|_, _| ok(br#"{"records":[]}"#));
+    let server = HttpsServer::start(|_, _| ok(br#"{"records":[],"latest":{}}"#));
     let other = HttpsServer::start(|_, _| ok(b""));
     assert!(fetch_catalog(&curl(), &server.url, Some(&other.ca)).is_err());
     drop(server);
@@ -231,7 +231,7 @@ fn rejects_oversized_malformed_partial_and_forged_official_catalogs() {
 fn timeout_terminates_a_slow_https_transfer() {
     let server = HttpsServer::start(|_, _| {
         thread::sleep(Duration::from_millis(200));
-        ok(br#"{"records":[]}"#)
+        ok(br#"{"records":[],"latest":{}}"#)
     });
     let output = tempfile::NamedTempFile::new().unwrap();
     let start = Instant::now();
@@ -386,7 +386,7 @@ fn a_stalled_archive_download_fails_without_a_total_time_limit() {
 
 #[test]
 fn ambient_netrc_and_curlrc_cannot_supply_credentials_or_disable_tls() {
-    let server = HttpsServer::start(|_, _| ok(br#"{"records":[]}"#));
+    let server = HttpsServer::start(|_, _| ok(br#"{"records":[],"latest":{}}"#));
     let home = tempfile::tempdir().unwrap();
     let netrc = home.path().join(".netrc");
     std::fs::write(

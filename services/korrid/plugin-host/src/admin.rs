@@ -52,7 +52,7 @@ pub fn peer_uid(stream: &UnixStream) -> Result<u32, String> {
 
 /// Serve one connection. A peer other than `expected_uid` gets no response
 /// and its request is never read or parsed. A request that does not parse as
-/// one of the seven known requests is refused without calling `handle`.
+/// one of the known requests is refused without calling `handle`.
 pub fn serve_connection(
     mut stream: UnixStream,
     expected_uid: u32,
@@ -106,7 +106,22 @@ fn source(raw: &str) -> Result<SourceUrl, PluginAdminFailure> {
 }
 
 fn host_failure(error: String) -> PluginAdminFailure {
-    failure(CODE_REFUSED, error)
+    failure(
+        if error.contains("key changed: was") {
+            CODE_PUBLISHER_KEY_CHANGED
+        } else if error.contains("is not trusted on this device") {
+            CODE_PUBLISHER_NOT_TRUSTED
+        } else if error.contains("namespace") && error.contains("unsigned")
+            || error.contains("remove the unsigned")
+        {
+            CODE_NAMESPACE_TAKEN
+        } else if error.contains(" needs ") && error.contains(" locked ") {
+            CODE_REQUIREMENT_CONFLICT
+        } else {
+            CODE_REFUSED
+        },
+        error,
+    )
 }
 
 pub fn host_refused(error: String) -> PluginAdminResponse {
@@ -120,6 +135,31 @@ pub fn handle(
     request: PluginAdminRequest,
 ) -> PluginAdminResponse {
     let result = match request {
+        PluginAdminRequest::Publishers(_) => host
+            .publishers()
+            .map(PluginAdminResponse::Publishers)
+            .map_err(host_failure),
+        PluginAdminRequest::TrustPublisher(request) => host
+            .trust_publisher(&request.namespace, &request.public_key)
+            .map(|()| PluginAdminResponse::Applied(PluginChangeApplied {}))
+            .map_err(host_failure),
+        PluginAdminRequest::RevokePublisher(request) => host
+            .revoke_publisher(&request.namespace)
+            .map(|()| PluginAdminResponse::Applied(PluginChangeApplied {}))
+            .map_err(host_failure),
+        PluginAdminRequest::InspectArchive(request) => host
+            .inspect_archive(config, std::path::Path::new(&request.path))
+            .and_then(|report| {
+                host.release_download()?;
+                inspection(host, &report)
+            })
+            .map(PluginAdminResponse::Inspection)
+            .map_err(host_failure),
+        PluginAdminRequest::InstallArchive(request) => host
+            .inspect_archive(config, std::path::Path::new(&request.path))
+            .and_then(|report| host.install_reviewed(report, &request.approval))
+            .map(|()| PluginAdminResponse::Applied(PluginChangeApplied {}))
+            .map_err(host_failure),
         PluginAdminRequest::Repositories(PluginRepositoriesRequest {}) => {
             repositories(host, config).map_err(host_failure)
         }
@@ -147,7 +187,9 @@ pub fn handle(
                 .inspect_repository(config, &url, &request.plugin_id, &request.release_version)
                 .map_err(host_failure)?;
             host.release_download().map_err(host_failure)?;
-            Ok(PluginAdminResponse::Inspection(inspection(&report)))
+            Ok(PluginAdminResponse::Inspection(
+                inspection(host, &report).map_err(host_failure)?,
+            ))
         }),
         PluginAdminRequest::Install(request) => source(&request.url).and_then(|url| {
             let report = host
@@ -207,13 +249,15 @@ fn repositories(host: &Host, config: &Configuration) -> Result<PluginAdminRespon
             }),
             // Image-seeded and raw-cache installs. The title is the
             // installed declaration's; a failed read omits it.
-            Provenance::RawCache { .. } => other_installs.push(PluginOtherInstall {
-                title: package::load_declaration(&receipt.package)
-                    .ok()
-                    .and_then(|declaration| declaration.title),
-                id: receipt.id,
-                enabled,
-            }),
+            Provenance::RawCache { .. } | Provenance::Sideload { .. } => {
+                other_installs.push(PluginOtherInstall {
+                    title: package::load_declaration(&receipt.package)
+                        .ok()
+                        .and_then(|declaration| declaration.title),
+                    id: receipt.id,
+                    enabled,
+                })
+            }
         }
     }
     Ok(PluginAdminResponse::Repositories(PluginRepositories {
@@ -235,7 +279,7 @@ fn catalog(
     for record in catalog
         .records
         .iter()
-        .filter(|record| record.platform == current_platform())
+        .filter(|record| record.platform == current_platform() || record.platform == "any")
     {
         if !installed.contains_key(&record.plugin_id) {
             let state = host
@@ -254,17 +298,20 @@ fn catalog(
             description: record.description.clone(),
             release_version: record.release_version.clone(),
             installed: installed[&record.plugin_id],
-            publisher_trusted: host.publisher_bound(namespace),
+            publisher: host.catalog_publisher(namespace)?,
         });
     }
     Ok(PluginAdminResponse::Catalog(PluginCatalog { entries }))
 }
 
-pub fn inspection(report: &Report) -> PluginInspection {
-    PluginInspection {
+pub fn inspection(host: &Host, report: &Report) -> Result<PluginInspection, String> {
+    Ok(PluginInspection {
+        publisher: report.publisher.clone().unwrap_or(
+            host.catalog_publisher(report.id.split_once(':').ok_or("invalid plugin ID")?.0)?,
+        ),
         id: report.id.clone(),
         title: report.declaration.title.clone(),
-        approval: report.approval.clone(),
+        approval: host.review_approval(report)?,
         warning: report.warning.clone(),
         ports: PluginPorts {
             allowed_tcp_ports: report.ports.allowed_tcp_ports.clone(),
@@ -275,13 +322,21 @@ pub fn inspection(report: &Report) -> PluginInspection {
             .brings
             .iter()
             .map(|dependency| PluginDependency {
+                publisher: dependency.report.publisher.clone().unwrap_or_else(|| {
+                    crate::trust::publisher(
+                        dependency.report.id.split_once(':').unwrap().0,
+                        PluginPublisherState::New,
+                        None,
+                    )
+                    .unwrap()
+                }),
                 id: dependency.report.id.clone(),
                 title: dependency.report.declaration.title.clone(),
                 warning: dependency.report.warning.clone(),
                 already_approved: dependency.already_approved,
             })
             .collect(),
-    }
+    })
 }
 
 #[cfg(test)]
@@ -352,7 +407,7 @@ mod tests {
     }
 
     #[test]
-    fn exactly_seven_requests_parse() {
+    fn all_admin_requests_parse() {
         for request in [
             r#"{"_tag":"Repositories","payload":{}}"#,
             r#"{"_tag":"RepositoryAdd","payload":{"url":"https://a.example/"}}"#,

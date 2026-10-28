@@ -81,7 +81,7 @@ let
         hashes: ["sha256:${builtins.hashString "sha256" "offline cartridge"}"],
         file: { packageFile: "cartridges", path: "game.p8" }
       } } } };
-      export const runners = { run: { id: "@korri:offline-pack/run", program: "run",
+      export const runners = { run: { program: "run",
         releases: ["sha256:${builtins.hashString "sha256" "offline cartridge"}"] } };
       export const handlers = { "launch.prepare": input => ({ command: input.program, args: [input.contentPath] }) };
     '';
@@ -1275,14 +1275,15 @@ pkgs.testers.runNixOSTest {
     cache.succeed("mkdir -p /var/www/repositories")
 
     def write_catalog(name, records):
-        cache.succeed("printf %s " + shlex.quote(json.dumps({"records": records})) + " > /var/www/repositories/" + name + ".json")
+        cache.succeed("printf %s " + shlex.quote(json.dumps({"records": records, "latest": {record["plugin_id"]: record["release_version"] for record in records}})) + " > /var/www/repositories/" + name + ".json")
 
     records = []
     for release, package in [("v1", "${tailscalePackage}"), ("v2", "${updated}"), ("broken", "${broken}"), ("pending", "${interrupted}")]:
         output = "/var/lib/publication-" + release
         cache.succeed("mkdir -p " + output)
-        record = json.loads(cache.succeed("korri-publish " + package + " " + release + " ${pkgs.stdenv.hostPlatform.system} https://cache/repositories/" + release + ".tar " + output))
-        cache.succeed("cp " + output + "/*.tar /var/www/repositories/" + release + ".tar")
+        cache.succeed("korri-publish repository --secret-key ${key} --release " + release + " --base-url https://cache/repositories/ " + output + " " + package)
+        record = json.loads(cache.succeed("cat " + output + "/catalog.json"))["records"][0]
+        cache.succeed("cp " + output + "/*.tar /var/www/repositories/")
         records.append(record)
     write_catalog("a", records)
     write_catalog("b", records)

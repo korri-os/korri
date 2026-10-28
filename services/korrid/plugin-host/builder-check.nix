@@ -24,6 +24,23 @@ let
       files.evidence = bareFile;
     };
   };
+  sourceOnly = mkPlugin { inherit publisher source; };
+  releasePack = mkPlugin {
+    inherit publisher source;
+    plugin = {
+      requires = [
+        {
+          repository = "https://example.invalid/catalog.json";
+          id = "@runtime:fake08";
+        }
+        {
+          repository = "https://example.invalid/catalog.json";
+          id = "@runtime:solarus";
+          release = "v1";
+        }
+      ];
+    };
+  };
   dependencies = import ./dependency-fixtures.nix { inherit pkgs mkPlugin; };
   invalidRequirement =
     requires:
@@ -61,6 +78,8 @@ pkgs.runCommand "korri-plugin-builder-check"
     ];
   }
   ''
+    jq -e '.packages == {} and .files == {} and .services == {} and (has("requiresReleases") | not)' ${sourceOnly}/manifest.json
+    jq -e '.requiresReleases == [{"id":"@runtime:fake08","repository":"https://example.invalid/catalog.json"},{"id":"@runtime:solarus","repository":"https://example.invalid/catalog.json","release":"v1"}] and (has("requires") | not)' ${releasePack}/manifest.json
     test -f ${nested}/manifest.json
     test -f ${nested}/plugin.ts
     test -f ${nested}/src/prefix.ts

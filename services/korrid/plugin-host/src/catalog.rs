@@ -24,7 +24,7 @@
 
 use crate::declaration::validate_id;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 /// One release entry inside a catalog file.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -57,6 +57,13 @@ pub struct CatalogRecord {
     pub archive_url: String,
     /// Lowercase hex SHA-256 of the archive file bytes.
     pub archive_sha256: String,
+    #[serde(
+        rename = "publicKey",
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub public_key: Option<String>,
 }
 
 /// A parsed and validated catalog file.
@@ -64,11 +71,15 @@ pub struct CatalogRecord {
 #[serde(deny_unknown_fields)]
 pub struct Catalog {
     pub records: Vec<CatalogRecord>,
+    pub latest: BTreeMap<String, String>,
 }
 
 impl CatalogRecord {
     pub fn validate(&self) -> Result<(), String> {
         validate_id(&self.plugin_id)?;
+        if let Some(key) = &self.public_key {
+            crate::package::public_key_bytes(key)?;
+        }
 
         validate_release_version(&self.release_version)?;
 
@@ -131,6 +142,30 @@ impl Catalog {
                 ));
             }
         }
+        for (id, release) in &self.latest {
+            if !self
+                .records
+                .iter()
+                .any(|r| &r.plugin_id == id && &r.release_version == release)
+            {
+                return Err(format!(
+                    "latest mark for {id} names missing release {release}"
+                ));
+            }
+        }
+        // An any record and a platform record must not compete for a selection.
+        for record in self.records.iter().filter(|r| r.platform == "any") {
+            if self.records.iter().any(|r| {
+                r.plugin_id == record.plugin_id
+                    && r.release_version == record.release_version
+                    && r.platform != "any"
+            }) {
+                return Err(format!(
+                    "ambiguous any-architecture record for {}",
+                    record.plugin_id
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -167,7 +202,7 @@ impl Catalog {
             .find(|r| {
                 r.plugin_id == plugin_id
                     && r.release_version == release_version
-                    && r.platform == platform
+                    && (r.platform == platform || r.platform == "any")
             })
             .ok_or_else(|| {
                 format!("no catalog record for {plugin_id} version {release_version} on {platform}")
@@ -176,6 +211,9 @@ impl Catalog {
 }
 
 pub fn validate_platform(platform: &str) -> Result<(), String> {
+    if platform == "any" {
+        return Ok(());
+    }
     // Nix system strings are "{cpu}-{os}" with alphanumeric and "-".
     if platform.is_empty()
         || platform.len() > 64

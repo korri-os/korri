@@ -155,16 +155,12 @@ in
   help = ''
     nix run .#korri-plugin -- COMMAND
         Manage independently packaged Linux plugins with explicit administrator approval.
-    nix run .#korri-publish -- STORE_PATH RELEASE_VERSION PLATFORM ARCHIVE_URL OUTPUT_DIR
-        Convert a built plugin package to a content-addressed archive and emit a catalog record.
+    nix run .#korri-publish -- repository --secret-key FILE --release LABEL --base-url URL OUTPUT_DIR STORE_PATH...
+        Sign complete content-addressed archives and write a repository catalog with latest marks.
+    nix run .#korri-publish -- archive --secret-key FILE OUTPUT_DIR STORE_PATH
+        Sign one content-addressed sideload archive; print archive metadata as JSON.
     nix run .#korri-publish -- declaration NAMESPACE SOURCE_ROOT SOURCE...
         Evaluate a closed source inventory as JSON for build-time metadata; grants no admission or effect authority.
-    nix run .#korri-publish -- archive-name STORE_PATH RELEASE PLATFORM
-        Derive the upload name from the actual plugin declaration and publisher naming contract.
-    nix run .#korri-publish -- catalog RECORD_FILE...
-        Merge records through the same strict Rust contract used by devices.
-    nix run .#korri-publish -- verify-release CATALOG ASSET_DIR BASE_URL ID RELEASE PLATFORM...
-        Verify the complete platform set, upload URLs, sizes and archive hashes.
     nix run .#korri-publisher-check -- [STORE_PACKAGE]
         Test the actual Tailscale package (default: core test fixture) with pinned core and toolchain on a build machine.
     nix run .#korri-plugin-check

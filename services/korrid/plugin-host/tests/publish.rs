@@ -580,6 +580,7 @@ fn catalog_rejects_archive_url_with_empty_host() {
     use korri_plugin_host::catalog::{Catalog, CatalogRecord};
     fn valid_record() -> CatalogRecord {
         CatalogRecord {
+            public_key: None,
             plugin_id: "@example:network".into(),
             title: None,
             description: None,
@@ -591,7 +592,7 @@ fn catalog_rejects_archive_url_with_empty_host() {
         }
     }
     fn catalog_with(records: Vec<CatalogRecord>) -> Vec<u8> {
-        serde_json::to_vec(&serde_json::json!({ "records": records })).unwrap()
+        serde_json::to_vec(&serde_json::json!({ "records": records, "latest": {} })).unwrap()
     }
 
     for bad_url in [
@@ -623,6 +624,7 @@ fn publisher_validates_inputs_without_nix() {
     let root = tempfile::tempdir().unwrap();
     // Bad archive_url (HTTP, not HTTPS): must be rejected before any Nix call.
     let err = publish(&PublishArgs {
+        secret_key: std::path::PathBuf::from("/unavailable-secret-key"),
         nix: Path::new("/nonexistent/nix").to_path_buf(),
         input_store_path: Path::new("/nix/store/00000000000000000000000000000000-x").to_path_buf(),
         release_version: "1.0.0".into(),
@@ -657,23 +659,33 @@ fn publisher_converts_and_packs_korri_tailscale() {
 
     let platform = std::env::var("KORRI_PUBLISH_TEST_SYSTEM")
         .expect("Nix must supply the current system under test");
-    let name = std::process::Command::new(env!("CARGO_BIN_EXE_korri-publish"))
-        .args(["archive-name", input_path, "1.0.0", &platform])
-        .env_remove("KORRI_PUBLISH_NIX")
-        .output()
-        .unwrap();
-    assert!(name.status.success());
-    let name = String::from_utf8(name.stdout).unwrap();
+    let name =
+        korri_plugin_host::publisher::archive_name("@korri:tailscale", "1.0.0", &platform).unwrap();
     let cwd = std::env::current_dir().unwrap();
     let root = tempfile::tempdir_in(&cwd).unwrap();
     let relative_output = root.path().strip_prefix(&cwd).unwrap().join(".");
+    let secret_key = root.path().join("secret.key");
+    let secret = std::process::Command::new(&nix)
+        .args([
+            "--extra-experimental-features",
+            "nix-command",
+            "key",
+            "generate-secret",
+            "--key-name",
+            "publisher-integration",
+        ])
+        .output()
+        .unwrap();
+    assert!(secret.status.success());
+    fs::write(&secret_key, secret.stdout).unwrap();
     let result =
         korri_plugin_host::publisher::publish(&korri_plugin_host::publisher::PublishArgs {
+            secret_key,
             nix: Path::new(&nix).to_path_buf(),
             input_store_path: Path::new(input_path).to_path_buf(),
             release_version: "1.0.0".into(),
             platform: platform.clone(),
-            archive_url: format!("https://example.com/{}", name.trim()),
+            archive_url: "https://example.com/".into(),
             output_dir: relative_output,
         })
         .unwrap();
@@ -778,6 +790,7 @@ fn publisher_rejects_invalid_store_path_nix() {
         std::env::var("KORRI_PUBLISH_NIX").expect("KORRI_PUBLISH_NIX must be set to run this test");
     let root = tempfile::tempdir().unwrap();
     let err = korri_plugin_host::publisher::publish(&korri_plugin_host::publisher::PublishArgs {
+        secret_key: std::path::PathBuf::from("/unavailable-secret-key"),
         nix: Path::new(&nix).to_path_buf(),
         input_store_path: Path::new("/tmp/not-a-store-path").to_path_buf(),
         release_version: "1.0.0".into(),

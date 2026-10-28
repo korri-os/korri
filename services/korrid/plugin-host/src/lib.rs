@@ -19,6 +19,7 @@ pub mod selection;
 pub mod software_cleanup;
 pub mod source_store;
 pub mod storage;
+pub mod trust;
 pub mod unit;
 
 #[path = "../../src/plugin_admin.rs"]

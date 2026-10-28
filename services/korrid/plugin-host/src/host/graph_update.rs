@@ -159,7 +159,7 @@ impl Host {
             .iter()
             .filter_map(|selection| selection.before.as_ref())
         {
-            let report = self.approved(before)?;
+            let report = self.graph_selection_report(before, update, false)?;
             for dep in &report.brings {
                 reports.insert(dep.report.package.clone(), dep.report.requires.clone());
             }
@@ -187,6 +187,13 @@ impl Host {
                 if before.package == selection.after.package
                     && before.provenance == selection.after.provenance
                     && before.approval == selection.after.approval
+                    && !update.selections.iter().any(|s| {
+                        s.before.as_ref().is_some_and(|b| {
+                            b.package != s.after.package
+                                || b.provenance != s.after.provenance
+                                || b.approval != s.after.approval
+                        })
+                    })
                 {
                     continue;
                 }
@@ -386,19 +393,35 @@ impl Host {
         // supply it reliably, and current publisher bindings may have changed
         // since approval. Re-derive exact approvals from these recorded inputs;
         // ordinary restore still checks current authority before any start.
-        let report = package::load_graph(
+        self.graph_selection_report(receipt, update, true)
+    }
+
+    fn graph_selection_report(
+        &self,
+        receipt: &Receipt,
+        update: &GraphUpdate,
+        after: bool,
+    ) -> Result<Report, String> {
+        #[cfg(test)]
+        if self.test_runtime.as_ref().is_some_and(|r| !r.real_packages) {
+            return self.approved(receipt);
+        }
+        let mut selected = self.receipts()?;
+        for selection in &update.selections {
+            selected.retain(|r| r.id != selection.after.id);
+            if after {
+                selected.push(selection.after.clone());
+            } else if let Some(before) = &selection.before {
+                selected.push(before.clone());
+            }
+        }
+        let report = package::load_resolved_graph(
             &self.nix,
             None,
             &receipt.package,
             receipt.provenance.clone(),
-            |path| {
-                update
-                    .selections
-                    .iter()
-                    .find(|selection| selection.after.package == path)
-                    .map(|selection| selection.after.provenance.clone())
-                    .ok_or_else(|| "pending graph update omits an exact dependency".into())
-            },
+            |path| Self::locked_releases(path, &selected),
+            |path| super::dependency_provenance(path, &selected, &self.publishers),
         )?;
         if report.id != receipt.id || report.approval != receipt.approval {
             return Err(super::APPROVAL_STALE.into());

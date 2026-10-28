@@ -1289,6 +1289,22 @@ pub enum PluginChangeOutcome {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
+pub enum PluginPublishersOutcome {
+    Ok(plugin_admin::PluginPublishers),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum PluginArchiveBeginOutcome {
+    Ok(plugin_admin::PluginArchiveUpload),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
 pub enum RpcRequest {
     #[serde(rename = "app.displays.wake")]
     DisplayWake(host::display_placement::DisplayWakeRequest),
@@ -1458,6 +1474,22 @@ pub enum RpcRequest {
     IdentityRetiredExport(IdentityRetiredExportRequest),
     #[serde(rename = "system.identity.retired.delete")]
     IdentityRetiredDelete(IdentityRetiredDeleteRequest),
+    #[serde(rename = "system.plugins.publishers")]
+    PluginPublishers(plugin_admin::PluginPublishersRequest),
+    #[serde(rename = "system.plugins.publisher.trust")]
+    PluginTrustPublisher(plugin_admin::PluginTrustPublisherRequest),
+    #[serde(rename = "system.plugins.publisher.revoke")]
+    PluginRevokePublisher(plugin_admin::PluginRevokePublisherRequest),
+    #[serde(rename = "system.plugins.archive.begin")]
+    PluginArchiveBegin(plugin_admin::PluginArchiveBeginRequest),
+    #[serde(rename = "system.plugins.archive.chunk")]
+    PluginArchiveChunk(plugin_admin::PluginArchiveChunkRequest),
+    #[serde(rename = "system.plugins.archive.finish")]
+    PluginArchiveFinish(plugin_admin::PluginArchiveUploadRequest),
+    #[serde(rename = "system.plugins.archive.inspect")]
+    PluginArchiveInspect(plugin_admin::PluginArchiveUploadRequest),
+    #[serde(rename = "system.plugins.archive.install")]
+    PluginArchiveInstall(plugin_admin::PluginArchiveUploadInstallRequest),
     #[serde(rename = "system.plugins.repositories")]
     PluginRepositories(plugin_admin::PluginRepositoriesRequest),
     #[serde(rename = "system.plugins.repository.add")]
@@ -1641,6 +1673,22 @@ pub enum RpcResponse {
     IdentityRetiredExport(IdentityBackupOutcome),
     #[serde(rename = "system.identity.retired.delete")]
     IdentityRetiredDelete(IdentityRetiredDeleteOutcome),
+    #[serde(rename = "system.plugins.publishers")]
+    PluginPublishers(PluginPublishersOutcome),
+    #[serde(rename = "system.plugins.publisher.trust")]
+    PluginTrustPublisher(PluginChangeOutcome),
+    #[serde(rename = "system.plugins.publisher.revoke")]
+    PluginRevokePublisher(PluginChangeOutcome),
+    #[serde(rename = "system.plugins.archive.begin")]
+    PluginArchiveBegin(PluginArchiveBeginOutcome),
+    #[serde(rename = "system.plugins.archive.chunk")]
+    PluginArchiveChunk(PluginChangeOutcome),
+    #[serde(rename = "system.plugins.archive.finish")]
+    PluginArchiveFinish(PluginChangeOutcome),
+    #[serde(rename = "system.plugins.archive.inspect")]
+    PluginArchiveInspect(PluginInspectOutcome),
+    #[serde(rename = "system.plugins.archive.install")]
+    PluginArchiveInstall(PluginChangeOutcome),
     #[serde(rename = "system.plugins.repositories")]
     PluginRepositories(PluginRepositoriesOutcome),
     #[serde(rename = "system.plugins.repository.add")]
@@ -4000,6 +4048,85 @@ async fn dispatch(
             };
             RpcResponse::IdentityRetiredDelete(outcome)
         }
+        RpcRequest::PluginPublishers(request) => RpcResponse::PluginPublishers(
+            (plugin_admin_call(
+                state,
+                PluginAdminRequest::Publishers(request),
+                |r| match r {
+                    PluginAdminResponse::Publishers(payload) => Some(payload),
+                    _ => None,
+                },
+            )
+            .await)
+                .map(PluginPublishersOutcome::Ok)
+                .unwrap_or_else(PluginPublishersOutcome::Err),
+        ),
+        RpcRequest::PluginTrustPublisher(request) => RpcResponse::PluginTrustPublisher(
+            (plugin_admin_call(state, PluginAdminRequest::TrustPublisher(request), applied).await)
+                .map(PluginChangeOutcome::Ok)
+                .unwrap_or_else(PluginChangeOutcome::Err),
+        ),
+        RpcRequest::PluginRevokePublisher(request) => RpcResponse::PluginRevokePublisher(
+            (plugin_admin_call(state, PluginAdminRequest::RevokePublisher(request), applied).await)
+                .map(PluginChangeOutcome::Ok)
+                .unwrap_or_else(PluginChangeOutcome::Err),
+        ),
+        RpcRequest::PluginArchiveBegin(request) => RpcResponse::PluginArchiveBegin(
+            (match &state.plugin_admin {
+                Some(socket) => {
+                    socket
+                        .begin_archive(state.private_state_root(), request)
+                        .await
+                }
+                None => Err(plugin_repositories::not_configured()),
+            })
+            .map(PluginArchiveBeginOutcome::Ok)
+            .unwrap_or_else(PluginArchiveBeginOutcome::Err),
+        ),
+        RpcRequest::PluginArchiveChunk(request) => RpcResponse::PluginArchiveChunk(
+            (match &state.plugin_admin {
+                Some(socket) => socket.chunk_archive(request).await,
+                None => Err(plugin_repositories::not_configured()),
+            })
+            .map(PluginChangeOutcome::Ok)
+            .unwrap_or_else(PluginChangeOutcome::Err),
+        ),
+        RpcRequest::PluginArchiveFinish(request) => RpcResponse::PluginArchiveFinish(
+            (match &state.plugin_admin {
+                Some(socket) => socket.finish_archive(request).await,
+                None => Err(plugin_repositories::not_configured()),
+            })
+            .map(PluginChangeOutcome::Ok)
+            .unwrap_or_else(PluginChangeOutcome::Err),
+        ),
+        RpcRequest::PluginArchiveInspect(request) => RpcResponse::PluginArchiveInspect(
+            (match &state.plugin_admin {
+                Some(socket) => socket
+                    .use_archive(&request.upload_id, None)
+                    .await
+                    .and_then(|r| {
+                        (|r| match r {
+                            PluginAdminResponse::Inspection(payload) => Some(payload),
+                            _ => None,
+                        })(r)
+                        .ok_or_else(plugin_repositories::wrong_response)
+                    }),
+                None => Err(plugin_repositories::not_configured()),
+            })
+            .map(PluginInspectOutcome::Ok)
+            .unwrap_or_else(PluginInspectOutcome::Err),
+        ),
+        RpcRequest::PluginArchiveInstall(request) => RpcResponse::PluginArchiveInstall(
+            (match &state.plugin_admin {
+                Some(socket) => socket
+                    .use_archive(&request.upload_id, Some(request.approval))
+                    .await
+                    .and_then(|r| (applied)(r).ok_or_else(plugin_repositories::wrong_response)),
+                None => Err(plugin_repositories::not_configured()),
+            })
+            .map(PluginChangeOutcome::Ok)
+            .unwrap_or_else(PluginChangeOutcome::Err),
+        ),
         RpcRequest::PluginRepositories(request) => RpcResponse::PluginRepositories(
             plugin_admin_call(
                 state,

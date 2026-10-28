@@ -9,12 +9,18 @@ pub enum Provenance {
     RawCache {
         cache_url: String,
     },
+    Sideload {
+        archive_sha256: String,
+        platform: String,
+        signed: bool,
+    },
     Repository {
         source_url: String,
         plugin_id: String,
         release_version: String,
         platform: String,
         archive_sha256: String,
+        signed: bool,
     },
 }
 
@@ -22,12 +28,21 @@ impl Provenance {
     pub fn validate(&self, id: &str) -> Result<(), String> {
         match self {
             Self::RawCache { cache_url } => package::validate_cache_source(cache_url),
+            Self::Sideload {
+                archive_sha256,
+                platform,
+                ..
+            } => {
+                validate_selected_platform(platform)?;
+                catalog::validate_sha256_hex(archive_sha256, "archive_sha256")
+            }
             Self::Repository {
                 source_url,
                 plugin_id,
                 release_version,
                 platform,
                 archive_sha256,
+                ..
             } => {
                 if SourceUrl::parse(source_url)?.as_str() != source_url {
                     return Err("repository provenance URL must be canonical".into());
@@ -38,13 +53,18 @@ impl Provenance {
                 }
                 catalog::validate_release_version(release_version)?;
                 catalog::validate_platform(platform)?;
-                if platform != current_platform() {
-                    return Err("repository platform does not match this host".into());
-                }
+                validate_selected_platform(platform)?;
                 catalog::validate_sha256_hex(archive_sha256, "archive_sha256")
             }
         }
     }
+}
+
+fn validate_selected_platform(platform: &str) -> Result<(), String> {
+    if platform != "any" && platform != current_platform() {
+        return Err("repository platform does not match this host".into());
+    }
+    Ok(())
 }
 
 pub fn current_platform() -> &'static str {
@@ -88,7 +108,8 @@ impl SelectionIntent<'_> {
                 Err("selection cannot change the plugin identity".into())
             }
             (Self::Update { .. }, Some(old)) => match (old, selected) {
-                (Provenance::RawCache { .. }, Provenance::RawCache { .. }) => Ok(()),
+                (Provenance::RawCache { .. }, Provenance::RawCache { .. })
+                | (Provenance::Sideload { .. }, Provenance::Sideload { .. }) => Ok(()),
                 (
                     Provenance::Repository { source_url: a, .. },
                     Provenance::Repository { source_url: b, .. },
@@ -114,6 +135,7 @@ mod tests {
     use super::*;
     fn repository(source: &str) -> Provenance {
         Provenance::Repository {
+            signed: true,
             source_url: source.into(),
             plugin_id: "@test:plugin".into(),
             release_version: "1".into(),

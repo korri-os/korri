@@ -99,6 +99,14 @@ impl PortalPermission {
             | RpcRequest::PluginCatalog(_)
             | RpcRequest::PluginInspect(_)
             | RpcRequest::PluginInstall(_)
+            | RpcRequest::PluginPublishers(_)
+            | RpcRequest::PluginTrustPublisher(_)
+            | RpcRequest::PluginRevokePublisher(_)
+            | RpcRequest::PluginArchiveBegin(_)
+            | RpcRequest::PluginArchiveChunk(_)
+            | RpcRequest::PluginArchiveFinish(_)
+            | RpcRequest::PluginArchiveInspect(_)
+            | RpcRequest::PluginArchiveInstall(_)
             | RpcRequest::PluginSetEnabled(_) => false,
         };
         match self {
