@@ -1,6 +1,8 @@
 # RG35XX Pro hardware facts. The H700 family facts are in ../h700/board.nix.
 { ... }:
 {
+  imports = [ ./owner-publisher.nix ];
+
   networking.hostName = "rg35xxpro";
 
   # ROCKNIX's Pro tree (kernel patch 0223) is the Plus board with the joypad's
