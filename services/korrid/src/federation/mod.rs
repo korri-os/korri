@@ -735,15 +735,7 @@ impl FederationDirectory {
                         remembered_endpoint: endpoint,
                         first_seen: peer.first_seen,
                         last_seen: peer.last_seen,
-                        // Native signed HTTP proves peer contact, but shared
-                        // play also needs the recovering iroh transport.
-                        state: if matches!(live.state, PeerState::Ready)
-                            && self.reach.awaiting_route(key)
-                        {
-                            PeerState::Loading
-                        } else {
-                            live.state.clone()
-                        },
+                        state: live.state.clone(),
                         updated_at: live.updated_at,
                     });
                 }

@@ -142,9 +142,6 @@ impl Routes {
             .any(owns)
     }
 
-    pub(super) fn awaiting_route(&self, device: &str) -> bool {
-        self.active.load(Ordering::Acquire) && self.connection(device).is_none()
-    }
     fn connection(&self, device: &str) -> Option<Connection> {
         self.live
             .read()
