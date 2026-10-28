@@ -18,6 +18,12 @@ let
       "wss://relay.nostr.band"
       "wss://relay.primal.net"
     ];
+    # Owner decision, 2026-10-28 (#313): two independent operators, so one
+    # outage leaves the other. They see a device's public IP, never traffic.
+    stun = [
+      "stun.cloudflare.com:3478"
+      "stun.l.google.com:19302"
+    ];
     # Every product device opens Pico.
     surfaceId = "pico";
     korridAddress = "[::]:39217";
@@ -195,6 +201,11 @@ in
       "korriLinuxHost"
       "relays"
     ] constants.relays [ "wss://invalid.example" ])
+    (lockedSettingWithTestValue "product stun" [
+      "services"
+      "korriLinuxHost"
+      "stun"
+    ] constants.stun [ "stun.invalid:3478" ])
     (setting "host validation enabled" [
       "services"
       "korriLinuxHost"

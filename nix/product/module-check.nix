@@ -1029,6 +1029,10 @@ assert
   == rg353m.systemd.services.korri-compositor.environment.KORRI_WAYLAND_DISPLAY;
 assert rg353m.services.korriLinuxHost.label == "haku";
 assert rg353m.services.korriLinuxHost.relays == requirements.constants.relays;
+assert rg353m.services.korriLinuxHost.stun == requirements.constants.stun;
+assert
+  rg353m.systemd.services.korrid.environment.KORRID_STUN
+  == builtins.toJSON requirements.constants.stun;
 # Every product device opens Pico (Phase 2 of Pico on Korri).
 assert requirements.constants.surfaceId == "pico";
 assert rg353m.services.korri.webSurfaceHost.surfaceId == "pico";

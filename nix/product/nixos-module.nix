@@ -116,6 +116,7 @@ in
       # automatic first-boot identity still publishes nothing and does not join
       # federation until that separate identity behavior permits it.
       relays = lib.mkForce constants.relays;
+      stun = lib.mkForce constants.stun;
       validation.enable = true;
       audio.enable = true;
       # The shared portal's real Wayland app id has not been accepted on a

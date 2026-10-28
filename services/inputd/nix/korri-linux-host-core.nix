@@ -314,6 +314,10 @@ in
       default = "/var/lib/korrid";
     };
     relays = lib.mkOption { type = lib.types.listOf lib.types.str; };
+    stun = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+    };
     ownerBindingFile = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
       default = null;
@@ -511,6 +515,7 @@ in
       privateStateRoot = cfg.privateStateRoot;
       inherit (cfg)
         relays
+        stun
         ownerBindingFile
         ;
       inherit compositorControlDirectory compositorControlSocket;

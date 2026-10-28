@@ -69,6 +69,11 @@ let
     }) cfg.nativePeers
   );
   relayJson = builtins.toJSON relayUrls;
+  # The same host:port shape that StunList::configured accepts in settings.rs.
+  validStunAddress =
+    value:
+    builtins.match "^[^][[:space:]/@?#]+:[1-9][0-9]{0,4}$" value != null
+    || builtins.match "^\\[[0-9A-Fa-f:.]+]:[1-9][0-9]{0,4}$" value != null;
   identityExecutable =
     if bundleCfg.enable then
       "${bundleCfg.launcherPackage}/bin/korri-bundle-launch korrid"
@@ -288,6 +293,11 @@ in
       type = lib.types.listOf lib.types.str;
       description = "Ordered relay URLs. Production relays use wss://; ws:// is limited to loopback tests.";
     };
+    stun = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "Ordered public STUN host:port addresses passed as KORRID_STUN. Empty leaves korrid to device.yaml host.stun.";
+    };
     moonlightAddress = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -360,6 +370,13 @@ in
           && lib.all validRelayUrl relayUrls
           && builtins.length (lib.unique relayUrls) == builtins.length relayUrls;
         message = "korrid relays must contain one to eight unique normalized wss:// URLs, with ws:// allowed only for loopback tests.";
+      }
+      {
+        assertion =
+          builtins.length cfg.stun <= 8
+          && lib.all validStunAddress cfg.stun
+          && builtins.length (lib.unique cfg.stun) == builtins.length cfg.stun;
+        message = "korrid stun must contain at most eight unique host:port addresses.";
       }
       {
         assertion =
@@ -800,6 +817,9 @@ in
         KORRID_LIMITS_SOCKET = cfg.limitsSocket;
         KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
         KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
+      }
+      // lib.optionalAttrs (cfg.stun != [ ]) {
+        KORRID_STUN = builtins.toJSON cfg.stun;
       }
       // lib.optionalAttrs pluginHostCfg.enable {
         KORRID_PLUGIN_ADMIN_SOCKET = pluginHostCfg.adminSocket;

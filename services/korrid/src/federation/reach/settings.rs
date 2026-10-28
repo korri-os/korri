@@ -2,7 +2,9 @@ use crate::{config::ConfigSnapshot, relay::RelayError};
 
 /// The same snapshot and JSON-array environment pattern as
 /// relay.rs::RelayList::{from_device_settings,from_linux_environment}.
-/// Korri includes no public STUN service. Korri accepts an empty list.
+/// korrid builds in no public STUN service and accepts an empty list. The
+/// Linux product supplies its default list through KORRID_STUN
+/// (nix/product/requirements.nix).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct StunList(pub Vec<String>);
 impl StunList {

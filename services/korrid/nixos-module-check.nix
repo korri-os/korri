@@ -196,6 +196,30 @@ let
       ];
     };
   };
+  withStun = evaluate {
+    services.korridLinuxDevice = {
+      enable = true;
+      stun = [
+        "stun.example.com:3478"
+        "[2001:db8::1]:3478"
+      ];
+    };
+  };
+  portlessStun = evaluate {
+    services.korridLinuxDevice = {
+      enable = true;
+      stun = [ "stun.example.com" ];
+    };
+  };
+  duplicateStun = evaluate {
+    services.korridLinuxDevice = {
+      enable = true;
+      stun = [
+        "stun.example.com:3478"
+        "stun.example.com:3478"
+      ];
+    };
+  };
   invalidPeerKey = evaluate {
     services.korridLinuxDevice.enable = true;
     services.korridLinuxDevice.nativePeers = lib.mkForce [
@@ -515,6 +539,13 @@ assert !(lib.hasInfix ''/^korri-hook-[0-9a-f]{32}-[0-9]{1,3}\\.service$/'' polki
 assert !(lib.hasInfix ''/^korri-game-[0-9a-f]{32}\\.service$/'' polkit);
 assert allAssertionsPass bundled;
 assert allAssertionsPass loopbackRelay;
+assert allAssertionsPass withStun;
+assert
+  withStun.config.systemd.services.korrid.environment.KORRID_STUN
+  == ''["stun.example.com:3478","[2001:db8::1]:3478"]'';
+assert !(service.environment ? KORRID_STUN);
+assert hasFailedAssertion "at most eight unique host:port" portlessStun;
+assert hasFailedAssertion "at most eight unique host:port" duplicateStun;
 assert
   loopbackRelay.config.systemd.services.korrid.environment.KORRID_RELAYS
   == ''["ws://127.0.0.1:7447"]'';
