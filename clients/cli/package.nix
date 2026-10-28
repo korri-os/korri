@@ -24,6 +24,8 @@ let
         "services/korrid"
         "contracts"
         "contracts/input"
+        "contracts/generated"
+        "contracts/generated/korrid.ts"
       ]
       || (
         (
@@ -35,6 +37,7 @@ let
       )
       || builtins.elem relative [
         "clients/cli/tests/settings-terminal.py"
+        "clients/cli/tests/plugin-terminal.py"
         "clients/cli/tests/play-library-terminal.py"
         "services/korrid/src/script/completion.js"
         "services/korrid/src/script/code_generation.js"
@@ -78,7 +81,11 @@ craneLib.buildPackage (
   // {
     inherit cargoArtifacts;
     cargoBuildExtraArgs = "--bin korri";
-    nativeCheckInputs = [ pkgs.python3 ];
+    nativeCheckInputs = [
+      pkgs.python3
+      pkgs.typescript
+      pkgs.nix
+    ];
     meta.mainProgram = "korri";
   }
   # Only the final binary carries source identity. Dependencies must stay

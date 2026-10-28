@@ -75,6 +75,14 @@ fn run(matches: &clap::ArgMatches) -> Result<u8, CliError> {
         }
         _ => {}
     }
+    if let Some(("plugins", args)) = matches.subcommand() {
+        if korri::plugin_author::is_offline(args) {
+            if matches.get_one::<String>("device").is_some() {
+                return Err(CliError::usage("Plugin new, build and publish run on this computer. Use sideload to send a build to --device."));
+            }
+            return korri::plugin_author::run(args)?.print(json);
+        }
+    }
     let socket = matches
         .get_one::<String>("socket")
         .map(PathBuf::from)

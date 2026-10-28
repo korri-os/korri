@@ -2338,6 +2338,7 @@ name = "korri"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "clap",
  "clap_complete",
  "korrid",
@@ -2345,6 +2346,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "signal-hook-registry",
  "tempfile",
  "tokio",
