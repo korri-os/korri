@@ -355,10 +355,9 @@ fn plugin_publish_validates_release_and_repository_address_before_building_or_cr
     assert!(!tools.root.path().join("config").exists());
 }
 
-/// Requires ADR 0045's declaration cut in the merged korrid/builder. The CLI
-/// branch deliberately does not patch that other worker's producer to pass it.
+/// Separate real-build proof; ordinary CLI tests use configured author tools.
 #[test]
-#[ignore = "Run after merging the korrid declaration worker; performs a local Nix plugin build"]
+#[ignore = "Performs a local Nix plugin build; run explicitly with --ignored --exact"]
 fn plugin_new_builds_and_admits_the_generated_runner() {
     use std::{collections::BTreeMap, path::PathBuf};
     let root = tempfile::tempdir().unwrap();

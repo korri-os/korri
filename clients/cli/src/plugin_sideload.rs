@@ -4,11 +4,11 @@ use crate::{
     module::Context,
     output::Output,
     plugin_author::{self, AuthorKey},
-    plugin_wire::*,
     plugins, prompt,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use clap::ArgMatches;
+use korrid::{plugin_admin::*, *};
 use serde::Deserialize;
 use std::{io::Read, path::Path};
 
@@ -58,8 +58,8 @@ pub fn run(args: &ArgMatches, context: &Context) -> Result<Output, CliError> {
         upload_id: upload_id.clone(),
     });
     let mut response = plugins::inspect_with_trust(context, &inspect, args.get_flag("json"))?;
-    if response.failure().is_some_and(|failure| {
-        failure.code == "PluginPublisherNotTrusted" || failure.code == "PluginPublisherKeyChanged"
+    if crate::output::failure(&response).is_some_and(|failure| {
+        failure.code == CODE_PUBLISHER_NOT_TRUSTED || failure.code == CODE_PUBLISHER_KEY_CHANGED
     }) {
         // Signed archives do not carry a key-discovery catalog. Use the actual
         // local author's public key, never a key inferred from the signature.
@@ -69,7 +69,7 @@ pub fn run(args: &ArgMatches, context: &Context) -> Result<Output, CliError> {
             }
             return Ok(plugins::result(response));
         }
-        if let Some(failure) = response.failure() {
+        if let Some(failure) = crate::output::failure(&response) {
             eprintln!("{}", crate::output::text(&failure.message));
         }
         eprintln!(
@@ -79,13 +79,12 @@ pub fn run(args: &ArgMatches, context: &Context) -> Result<Output, CliError> {
         );
         prompt::confirm("Trust this author's key on the selected device? Plugin permissions still need separate approval.", false)?;
         let applied = trust(context, &namespace, &key)?;
-        if applied.failure().is_some() {
+        if crate::output::failure(&applied).is_some() {
             return Ok(plugins::result(applied));
         }
         response = plugins::inspect_with_trust(context, &inspect, args.get_flag("json"))?;
-        if response
-            .failure()
-            .is_some_and(|failure| failure.code == "PluginUploadNotFound")
+        if crate::output::failure(&response)
+            .is_some_and(|failure| failure.code == CODE_UPLOAD_NOT_FOUND)
         {
             if !args.get_flag("json") {
                 eprintln!("The staged archive expired while you reviewed the publisher key. Sending the same signed archive again.");
@@ -118,8 +117,8 @@ pub fn run(args: &ArgMatches, context: &Context) -> Result<Output, CliError> {
         return Ok(plugins::result(response));
     }
     let approval = plugins::approval(args, report)?;
-    Ok(plugins::result(context.plugin_rpc(
-        &RpcRequest::PluginArchiveInstall(PluginArchiveInstallRequest {
+    Ok(plugins::result(context.rpc(
+        &RpcRequest::PluginArchiveInstall(PluginArchiveUploadInstallRequest {
             upload_id,
             approval,
         }),
@@ -127,7 +126,7 @@ pub fn run(args: &ArgMatches, context: &Context) -> Result<Output, CliError> {
 }
 
 fn trust(context: &Context, namespace: &str, key: &AuthorKey) -> Result<RpcResponse, CliError> {
-    context.plugin_rpc(&RpcRequest::PluginTrustPublisher(
+    context.rpc(&RpcRequest::PluginTrustPublisher(
         PluginTrustPublisherRequest {
             namespace: namespace.to_owned(),
             public_key: key.public.clone(),
@@ -146,11 +145,10 @@ fn upload(
     size: u64,
     json: bool,
 ) -> Result<Upload, CliError> {
-    let response =
-        context.plugin_rpc(&RpcRequest::PluginArchiveBegin(PluginArchiveBeginRequest {
-            sha256,
-            size,
-        }))?;
+    let response = context.rpc(&RpcRequest::PluginArchiveBegin(PluginArchiveBeginRequest {
+        sha256,
+        size,
+    }))?;
     let upload_id = match response {
         RpcResponse::PluginArchiveBegin(PluginArchiveBeginOutcome::Ok(upload)) => upload.upload_id,
         response => return Ok(Upload::Refused(Box::new(response))),
@@ -169,13 +167,12 @@ fn upload(
         if count == 0 {
             break;
         }
-        let response =
-            context.plugin_rpc(&RpcRequest::PluginArchiveChunk(PluginArchiveChunkRequest {
-                upload_id: upload_id.clone(),
-                offset,
-                data: STANDARD.encode(&buffer[..count]),
-            }))?;
-        if response.failure().is_some() {
+        let response = context.rpc(&RpcRequest::PluginArchiveChunk(PluginArchiveChunkRequest {
+            upload_id: upload_id.clone(),
+            offset,
+            data: STANDARD.encode(&buffer[..count]),
+        }))?;
+        if crate::output::failure(&response).is_some() {
             return Ok(Upload::Refused(Box::new(response)));
         }
         offset += count as u64;
@@ -183,12 +180,12 @@ fn upload(
             eprintln!("Uploaded {offset} of {size} bytes.");
         }
     }
-    let response = context.plugin_rpc(&RpcRequest::PluginArchiveFinish(
+    let response = context.rpc(&RpcRequest::PluginArchiveFinish(
         PluginArchiveUploadRequest {
             upload_id: upload_id.clone(),
         },
     ))?;
-    if response.failure().is_some() {
+    if crate::output::failure(&response).is_some() {
         return Ok(Upload::Refused(Box::new(response)));
     }
     Ok(Upload::Ready(upload_id))

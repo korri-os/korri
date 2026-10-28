@@ -2,11 +2,10 @@ use crate::{
     error::CliError,
     module::{Context, Module},
     output::{self, Output},
-    plugin_author,
-    plugin_wire::*,
-    prompt, settings_input,
+    plugin_author, prompt, settings_input,
 };
 use clap::{Arg, ArgMatches, Command};
+use korrid::{plugin_admin::*, *};
 use std::io::{self, IsTerminal};
 
 pub struct Plugins;
@@ -123,7 +122,7 @@ impl Module for Plugins {
                 ))
             }
         };
-        Ok(result(context.plugin_rpc(&request)?))
+        Ok(result(context.rpc(&request)?))
     }
 }
 fn source_command(name: &'static str) -> Command {
@@ -168,7 +167,7 @@ fn install(args: &ArgMatches, context: &Context) -> Result<Output, CliError> {
         release_version: source.release_version,
         approval,
     });
-    Ok(result(context.plugin_rpc(&request)?))
+    Ok(result(context.rpc(&request)?))
 }
 pub(crate) fn result(response: RpcResponse) -> Output {
     let human = match &response {
@@ -257,12 +256,12 @@ pub(crate) fn result(response: RpcResponse) -> Output {
         RpcResponse::PluginRevokePublisher(PluginChangeOutcome::Ok(_)) => "Publisher revoked on this device. Its plugins can no longer start; stop and cleanup remain available.".into(),
         RpcResponse::PluginArchiveInspect(PluginInspectOutcome::Ok(inspection)) => describe_inspection(inspection),
         RpcResponse::PluginArchiveInstall(PluginChangeOutcome::Ok(_)) => "Plugin installed, off. Use korri plugins on with its ID to enable it.".into(),
-        _ => match response.failure() {
+        _ => match crate::output::failure(&response) {
             Some(failure) => format!("{}\nNext: {}", output::text(&failure.message), next_step(&failure.code)),
             None => "Plugins: unknown.\nNext: Check that korri and korrid use the same version.".into(),
         },
     };
-    Output::plugin(response, human)
+    Output::one(response, human)
 }
 fn state(enabled: bool) -> &'static str {
     if enabled {
@@ -343,7 +342,7 @@ pub(crate) fn inspect_with_trust(
     request: &RpcRequest,
     json: bool,
 ) -> Result<RpcResponse, CliError> {
-    let response = context.plugin_rpc(request)?;
+    let response = context.rpc(request)?;
     let Some(report) = inspection(&response) else {
         return Ok(response);
     };
@@ -387,17 +386,17 @@ pub(crate) fn inspect_with_trust(
             ),
             false,
         )?;
-        let applied = context.plugin_rpc(&RpcRequest::PluginTrustPublisher(
+        let applied = context.rpc(&RpcRequest::PluginTrustPublisher(
             PluginTrustPublisherRequest {
                 namespace: publisher.namespace.clone(),
                 public_key: key,
             },
         ))?;
-        if applied.failure().is_some() {
+        if crate::output::failure(&applied).is_some() {
             return Ok(applied);
         }
     }
-    context.plugin_rpc(request)
+    context.rpc(request)
 }
 
 pub(crate) fn approval(args: &ArgMatches, report: &PluginInspection) -> Result<String, CliError> {
@@ -443,9 +442,9 @@ fn describe_publisher(publisher: &PluginPublisher) -> String {
 }
 fn next_step(code: &str) -> &'static str {
     match code {
-        "PluginPublisherNotTrusted" | "PluginPublisherKeyChanged" => "Review the publisher key, then explicitly trust it on this device with korri plugins trust NAMESPACE --key PUBLIC_KEY.",
-        "PluginNamespaceTaken" => "Remove the unsigned plugins in this namespace before trusting its publisher.",
-        "PluginRequirementConflict" => "Review the installed plugins that lock this dependency before changing releases.",
+        CODE_PUBLISHER_NOT_TRUSTED | CODE_PUBLISHER_KEY_CHANGED => "Review the publisher key, then explicitly trust it on this device with korri plugins trust NAMESPACE --key PUBLIC_KEY.",
+        CODE_NAMESPACE_TAKEN => "Remove the unsigned plugins in this namespace before trusting its publisher.",
+        CODE_REQUIREMENT_CONFLICT => "Review the installed plugins that lock this dependency before changing releases.",
         CODE_NEEDS_REVIEW => "Run korri plugins review and approve its exact current digest.",
         _ => "Check korri status and the repository address, then try again.",
     }
