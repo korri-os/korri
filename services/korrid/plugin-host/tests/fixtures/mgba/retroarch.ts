@@ -148,8 +148,10 @@ input_player1_joypad_index = "0"
 input_player1_analog_dpad_mode = "1"
 # RetroArch value 2 is L3 + R3. Guide remains exclusive to Korri.
 input_menu_toggle_gamepad_combo = "2"
-# Select + Start exits to Korri (RetroArch 1.22.2 INPUT_COMBO_START_SELECT = 4).
-input_quit_gamepad_combo = "4"
+# No RetroArch quit combo (1.22.2 INPUT_COMBO_NONE = 0). Korri inputd owns the
+# global kill chord: hold L1 + R1 + Start + Select. A RetroArch Start + Select
+# combo would quit first, because Start + Select is part of that chord.
+input_quit_gamepad_combo = "0"
 quit_press_twice = "false"
 
 kiosk_mode_enable = "true"
