@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# Publish the paused endpoint and its GNU timeout transport scope atomically.
+# timeout starts its own process group, outside the gate's setsid group.
+pause_modeled_endpoint() {
+  local marker="${HARNESS_PAUSE_MARKER:?}"
+  printf '%s %s\n' "$BASHPID" "$PPID" >"$marker.next"
+  mv -T -- "$marker.next" "$marker"
+  sleep "${HARNESS_PAUSE_SECONDS:-30}"
+}
+
 # This file is also the modeled SSH endpoint used by the tests below.
 case "$(basename "$0")" in
   id)
@@ -215,14 +224,12 @@ case "$(basename "$0")" in
             exit 77
           fi
           if [[ "${HARNESS_ATTEMPT_START_PAUSE:-}" == pre-marker ]]; then
-            : >"${HARNESS_PAUSE_MARKER:?}"
-            sleep "${HARNESS_PAUSE_SECONDS:-30}"
+            pause_modeled_endpoint
           fi
           printf 'nonce=%s\ncandidate=%s\n' "$nonce" "$candidate" >"$HARNESS_ATTEMPT_MARKER"
           : >"$HARNESS_ATTEMPT_LEASE"
           if [[ "${HARNESS_ATTEMPT_START_PAUSE:-}" == post-marker ]]; then
-            : >"${HARNESS_PAUSE_MARKER:?}"
-            sleep "${HARNESS_PAUSE_SECONDS:-30}"
+            pause_modeled_endpoint
           fi
           exit 0
           ;;
@@ -254,8 +261,7 @@ case "$(basename "$0")" in
           ;;
       esac
       if [[ "${HARNESS_PAUSE_ACTION:-}" == "$action" ]]; then
-        : >"${HARNESS_PAUSE_MARKER:?}"
-        sleep "${HARNESS_PAUSE_SECONDS:-30}"
+        pause_modeled_endpoint
       fi
       if [[ "${HARNESS_FAIL_ACTION_ONCE:-}" == "$action" ]]; then
         fail_marker="${HARNESS_FAIL_ACTION_MARKER:?}"
@@ -2528,11 +2534,27 @@ run_interactive() {
   return "$status"
 }
 
+kill_paused_gate() {
+  local pid="$1" marker="$2" endpoint_pid transport_pid
+  read -r endpoint_pid transport_pid <"$marker"
+  [[ "$pid" =~ ^[1-9][0-9]*$ && "$endpoint_pid" =~ ^[1-9][0-9]*$ && "$transport_pid" =~ ^[1-9][0-9]*$ ]]
+  [[ "$endpoint_pid" != "$pid" && "$transport_pid" != "$pid" ]]
+  kill -0 "$endpoint_pid"
+  kill -0 -- "-$transport_pid"
+  # Killing only setsid's group leaves timeout's paused endpoint alive. A late
+  # pre-marker endpoint can then overwrite a later attempt's marker. Kill both
+  # owned scopes before the modeled lock/lease cleanup permits another attempt.
+  kill -KILL -- "-$pid"
+  kill -KILL -- "-$transport_pid"
+  wait "$pid" 2>/dev/null || true
+}
+
 run_abrupt_kill() {
   local mode="$1" pause_action="$2" ledger_state="$3" ledger="$4"
   shift 4
   local pause_marker="$TMP/abrupt-$RANDOM.ready" pid started=$SECONDS
   local alive=no paused=no marker=no lease=no state_matches=no refusal=no child_status=running
+  rm -f -- "$pause_marker" "$pause_marker.next"
   export HARNESS_PAUSE_ACTION="$pause_action" HARNESS_PAUSE_MARKER="$pause_marker"
   setsid "$GATE" --host "$HOSTNAME" --expected-machine-id "$MACHINE_ID" --expected-hostname "$HOSTNAME" \
     --mode "$mode" "$@" >"$pause_marker.stdout" 2>"$pause_marker.stderr" &
@@ -2571,8 +2593,7 @@ run_abrupt_kill() {
     unset HARNESS_PAUSE_ACTION HARNESS_PAUSE_MARKER
     return 1
   fi
-  kill -KILL -- "-$pid"
-  wait "$pid" 2>/dev/null || true
+  kill_paused_gate "$pid" "$pause_marker"
   # The real flock is released by SIGKILL. The mkdir-based harness needs the
   # equivalent modeled release because its EXIT trap cannot run after SIGKILL.
   rmdir "$HARNESS_LOG.lock" 2>/dev/null || true
@@ -2583,6 +2604,7 @@ run_startup_abrupt_kill() {
   local mode="$1" window="$2" ledger_state="$3" ledger="$4"
   shift 4
   local pause_marker="$TMP/startup-abrupt-$RANDOM.ready" pid
+  rm -f -- "$pause_marker" "$pause_marker.next"
   export HARNESS_ATTEMPT_START_PAUSE="$window" HARNESS_PAUSE_MARKER="$pause_marker"
   setsid "$GATE" --host "$HOSTNAME" --expected-machine-id "$MACHINE_ID" --expected-hostname "$HOSTNAME" \
     --mode "$mode" "$@" >"$pause_marker.stdout" 2>"$pause_marker.stderr" &
@@ -2605,8 +2627,7 @@ run_startup_abrupt_kill() {
     grep -Fx "candidate=$CANDIDATE" "$HARNESS_ATTEMPT_MARKER" >/dev/null
     [[ -e "$HARNESS_ATTEMPT_LEASE" ]]
   fi
-  kill -KILL -- "-$pid"
-  wait "$pid" 2>/dev/null || true
+  kill_paused_gate "$pid" "$pause_marker"
   for _ in $(seq 1 100); do
     ! kill -0 -- "-$pid" 2>/dev/null && break
     sleep 0.01
@@ -2638,6 +2659,27 @@ run_stalled_interactive() {
   [[ ! -e "$HARNESS_ATTEMPT_MARKER" && ! -e "$HARNESS_ATTEMPT_LEASE" ]]
   return "$status"
 }
+
+# Regression: GNU timeout owns a group outside setsid's gate group. Both are
+# real child processes here, so wait proves the paused writer cannot resume.
+paused_transport_marker="$TMP/paused-transport.ready"
+setsid sleep 30 &
+paused_gate_pid=$!
+HARNESS_PAUSE_MARKER="$paused_transport_marker" \
+  timeout --signal=TERM --kill-after=5s 30s bash -c \
+  "$(declare -f pause_modeled_endpoint); pause_modeled_endpoint" &
+paused_transport_pid=$!
+for _ in $(seq 1 500); do
+  if [[ -e "$paused_transport_marker" ]] && kill -0 -- "-$paused_gate_pid" 2>/dev/null; then
+    break
+  fi
+  sleep 0.01
+done
+[[ -e "$paused_transport_marker" ]]
+kill_paused_gate "$paused_gate_pid" "$paused_transport_marker"
+paused_transport_status=0
+wait "$paused_transport_pid" 2>/dev/null || paused_transport_status=$?
+[[ "$paused_transport_status" -eq 137 ]]
 
 # A stalled controlling terminal reaches the bounded read timeout while
 # rollback is armed. Cleanup restores the baseline and releases the marker.
